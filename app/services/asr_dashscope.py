@@ -208,5 +208,5 @@ def transcribe_audio_file(audio_wav_path: str, *, requests_timeout: int = 120) -
         "task_status": task_status,
         "transcription_url": transcription_url,
         "preview_text": preview_text,
+        "asr_result_json": result_payload,
     }
-

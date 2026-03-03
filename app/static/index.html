@@ -71,6 +71,17 @@
         resize: vertical;
         font-family: Consolas, "Courier New", monospace;
       }
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 12px;
+        background: #0e1630;
+        color: var(--text);
+        font-family: Consolas, "Courier New", monospace;
+      }
       .status {
         font-weight: 600;
         margin-top: 8px;
@@ -107,7 +118,13 @@
           value="https://www.bilibili.com/video/BV1yP4y1n7tB?vd_source=17b43bcad6b2b6b22a6274c0e52bab67"
         />
         <button id="biliBtn">提交 /api/transcribe/bilibili</button>
+        <button id="guideBtn">生成下载指引 /api/bilibili/download-guide</button>
         <div id="biliStatus" class="status"></div>
+      </div>
+
+      <div class="card">
+        <h2>下载指引（B站失败时使用）</h2>
+        <pre id="guideBox">暂无</pre>
       </div>
 
       <div class="card">
@@ -119,9 +136,11 @@
     <script>
       const fileBtn = document.getElementById("fileBtn");
       const biliBtn = document.getElementById("biliBtn");
+      const guideBtn = document.getElementById("guideBtn");
       const fileInput = document.getElementById("fileInput");
       const biliInput = document.getElementById("biliInput");
       const resultBox = document.getElementById("resultBox");
+      const guideBox = document.getElementById("guideBox");
       const fileStatus = document.getElementById("fileStatus");
       const biliStatus = document.getElementById("biliStatus");
 
@@ -132,6 +151,19 @@
 
       function renderResult(payload) {
         resultBox.value = JSON.stringify(payload, null, 2);
+      }
+
+      function renderGuide(payload) {
+        if (!payload || payload.ok !== true) {
+          guideBox.textContent = JSON.stringify(payload, null, 2);
+          return;
+        }
+        const notes = Array.isArray(payload.notes) ? payload.notes.map((x, i) => `${i + 1}. ${x}`).join("\n") : "";
+        guideBox.textContent =
+          `URL: ${payload.url}\n\n` +
+          `Windows 命令:\n${payload.download_command_windows}\n\n` +
+          `macOS/Linux 命令:\n${payload.download_command_macos_linux}\n\n` +
+          `说明:\n${notes}`;
       }
 
       async function requestJson(url, options) {
@@ -173,8 +205,21 @@
         });
         renderResult(res.data);
         setStatus(biliStatus, res.ok ? "成功" : "失败", res.ok);
+        if (!res.ok && res.data && res.data.error_code === "BILIBILI_DOWNLOAD_FAILED") {
+          const guide = await requestJson(`/api/bilibili/download-guide?url=${encodeURIComponent(url)}`, { method: "GET" });
+          renderGuide(guide.data);
+        }
+      });
+
+      guideBtn.addEventListener("click", async () => {
+        const url = (biliInput.value || "").trim();
+        if (!url) {
+          setStatus(biliStatus, "请先填写 B站链接", false);
+          return;
+        }
+        const guide = await requestJson(`/api/bilibili/download-guide?url=${encodeURIComponent(url)}`, { method: "GET" });
+        renderGuide(guide.data);
       });
     </script>
   </body>
 </html>
-
