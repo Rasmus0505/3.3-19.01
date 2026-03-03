@@ -29,12 +29,6 @@ ALLOWED_EXTENSIONS = {
 }
 
 SUBPROCESS_TIMEOUT_SECONDS = 300
-DEFAULT_BILIBILI_REFERER = "https://www.bilibili.com"
-DEFAULT_BILIBILI_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/131.0.0.0 Safari/537.36"
-)
 
 
 def create_request_dir(base_tmp_dir: Path) -> Path:
@@ -73,57 +67,6 @@ def run_cmd(cmd: list[str], *, timeout_seconds: int = SUBPROCESS_TIMEOUT_SECONDS
         raise MediaError("COMMAND_FAILED", "媒体处理命令执行失败", detail[:1000])
 
 
-def build_bilibili_download_cmd(url: str, out_tpl: Path, cookie_header: str | None = None) -> list[str]:
-    cmd = [
-        "yt-dlp",
-        "--no-playlist",
-        "--retries",
-        "3",
-        "--fragment-retries",
-        "3",
-        "--extractor-args",
-        "bilibili:player_client=web",
-        "--add-header",
-        f"User-Agent:{DEFAULT_BILIBILI_UA}",
-        "--add-header",
-        f"Referer:{DEFAULT_BILIBILI_REFERER}",
-        "-f",
-        "ba",
-        "-o",
-        str(out_tpl),
-        url,
-    ]
-    if cookie_header:
-        cmd.extend(["--add-header", f"Cookie:{cookie_header}"])
-    return cmd
-
-
-def build_bilibili_download_guide(url: str, has_cookie: bool) -> dict:
-    notes = [
-        "推荐先在本地命令行下载音频，再通过上传接口转写。",
-        "如果出现 412/403，请在环境变量配置 BILI_COOKIE 后重试服务端下载，或直接本地下载上传。",
-        "下载完成后把得到的音频/视频文件上传到 /api/transcribe/file。",
-    ]
-    if has_cookie:
-        notes.append("当前服务已检测到 BILI_COOKIE，会在服务端下载时自动携带。")
-    windows_cmd = (
-        f'yt-dlp --no-playlist --extractor-args "bilibili:player_client=web" '
-        f'--add-header "User-Agent:{DEFAULT_BILIBILI_UA}" --add-header "Referer:{DEFAULT_BILIBILI_REFERER}" '
-        f'-f ba -o "bilibili_audio.%(ext)s" "{url}"'
-    )
-    mac_cmd = (
-        f"yt-dlp --no-playlist --extractor-args 'bilibili:player_client=web' "
-        f"--add-header 'User-Agent:{DEFAULT_BILIBILI_UA}' --add-header 'Referer:{DEFAULT_BILIBILI_REFERER}' "
-        f"-f ba -o 'bilibili_audio.%(ext)s' '{url}'"
-    )
-    return {
-        "url": url,
-        "download_command_windows": windows_cmd,
-        "download_command_macos_linux": mac_cmd,
-        "notes": notes,
-    }
-
-
 def save_upload_file_stream(upload_file, dst_path: Path, *, max_bytes: int) -> int:
     total = 0
     dst_path.parent.mkdir(parents=True, exist_ok=True)
@@ -143,23 +86,6 @@ def save_upload_file_stream(upload_file, dst_path: Path, *, max_bytes: int) -> i
     if total <= 0:
         raise MediaError("EMPTY_FILE", "上传文件为空")
     return total
-
-
-def download_bilibili_audio(url: str, work_dir: Path, *, cookie_header: str | None = None) -> Path:
-    out_tpl = work_dir / "bilibili_audio.%(ext)s"
-    try:
-        run_cmd(
-            build_bilibili_download_cmd(url, out_tpl, cookie_header=cookie_header),
-            timeout_seconds=SUBPROCESS_TIMEOUT_SECONDS,
-            cwd=work_dir,
-        )
-    except MediaError as exc:
-        raise MediaError("BILIBILI_DOWNLOAD_FAILED", "B站音频下载失败", exc.detail) from exc
-
-    candidates = sorted(work_dir.glob("bilibili_audio.*"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if not candidates:
-        raise MediaError("BILIBILI_DOWNLOAD_FAILED", "B站音频下载失败", "yt-dlp 未产出音频文件")
-    return candidates[0]
 
 
 def extract_wav(input_path: Path, output_wav: Path) -> None:

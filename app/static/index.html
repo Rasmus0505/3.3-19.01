@@ -47,7 +47,6 @@
         margin: 0 0 8px;
         color: var(--sub);
       }
-      input[type="text"],
       input[type="file"],
       button,
       textarea {
@@ -71,17 +70,6 @@
         resize: vertical;
         font-family: Consolas, "Courier New", monospace;
       }
-      pre {
-        margin: 0;
-        white-space: pre-wrap;
-        word-break: break-word;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 10px 12px;
-        background: #0e1630;
-        color: var(--text);
-        font-family: Consolas, "Courier New", monospace;
-      }
       .status {
         font-weight: 600;
         margin-top: 8px;
@@ -92,25 +80,6 @@
       .err {
         color: var(--err);
       }
-      .quick-link {
-        display: block;
-        width: 100%;
-        margin-top: 10px;
-        padding: 10px 12px;
-        border-radius: 8px;
-        border: 1px solid var(--line);
-        background: #0e1630;
-        color: var(--text);
-        text-decoration: none;
-        font-size: 14px;
-        text-align: center;
-      }
-      .hint {
-        margin-top: 10px;
-        font-size: 13px;
-        color: var(--sub);
-        line-height: 1.5;
-      }
     </style>
   </head>
   <body>
@@ -118,43 +87,14 @@
       <div class="card">
         <h1>Zeabur3.3 最小 ASR 跑通页</h1>
         <p>模型：qwen3-asr-flash-filetrans</p>
-        <p>路径：上传文件 / B站公开视频链接</p>
+        <p>路径：仅上传本地视频/音频</p>
       </div>
 
       <div class="card">
-        <h2>1) 上传本地视频/音频</h2>
+        <h2>上传本地视频/音频</h2>
         <input id="fileInput" type="file" />
         <button id="fileBtn">提交 /api/transcribe/file</button>
         <div id="fileStatus" class="status"></div>
-      </div>
-
-      <div class="card">
-        <h2>2) 提交 B站链接</h2>
-        <input
-          id="biliInput"
-          type="text"
-          placeholder="https://www.bilibili.com/video/..."
-          value="https://www.bilibili.com/video/BV1yP4y1n7tB?vd_source=17b43bcad6b2b6b22a6274c0e52bab67"
-        />
-        <button id="biliBtn">提交 /api/transcribe/bilibili</button>
-        <button id="guideBtn">生成下载指引 /api/bilibili/download-guide</button>
-        <a
-          class="quick-link"
-          href="https://snapwc.com/zh/youtube"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          去第三方下载站（新窗口）
-        </a>
-        <div class="hint">
-          兜底流程：1) 点上方按钮去下载视频 2) 下载完成后回到本页 3) 用“上传本地视频/音频”提交转写
-        </div>
-        <div id="biliStatus" class="status"></div>
-      </div>
-
-      <div class="card">
-        <h2>下载指引（B站失败时使用）</h2>
-        <pre id="guideBox">暂无</pre>
       </div>
 
       <div class="card">
@@ -165,14 +105,9 @@
 
     <script>
       const fileBtn = document.getElementById("fileBtn");
-      const biliBtn = document.getElementById("biliBtn");
-      const guideBtn = document.getElementById("guideBtn");
       const fileInput = document.getElementById("fileInput");
-      const biliInput = document.getElementById("biliInput");
       const resultBox = document.getElementById("resultBox");
-      const guideBox = document.getElementById("guideBox");
       const fileStatus = document.getElementById("fileStatus");
-      const biliStatus = document.getElementById("biliStatus");
 
       function setStatus(el, text, ok) {
         el.textContent = text;
@@ -181,19 +116,6 @@
 
       function renderResult(payload) {
         resultBox.value = JSON.stringify(payload, null, 2);
-      }
-
-      function renderGuide(payload) {
-        if (!payload || payload.ok !== true) {
-          guideBox.textContent = JSON.stringify(payload, null, 2);
-          return;
-        }
-        const notes = Array.isArray(payload.notes) ? payload.notes.map((x, i) => `${i + 1}. ${x}`).join("\n") : "";
-        guideBox.textContent =
-          `URL: ${payload.url}\n\n` +
-          `Windows 命令:\n${payload.download_command_windows}\n\n` +
-          `macOS/Linux 命令:\n${payload.download_command_macos_linux}\n\n` +
-          `说明:\n${notes}`;
       }
 
       async function requestJson(url, options) {
@@ -219,36 +141,6 @@
         const res = await requestJson("/api/transcribe/file", { method: "POST", body: form });
         renderResult(res.data);
         setStatus(fileStatus, res.ok ? "成功" : "失败", res.ok);
-      });
-
-      biliBtn.addEventListener("click", async () => {
-        const url = (biliInput.value || "").trim();
-        if (!url) {
-          setStatus(biliStatus, "请填写链接", false);
-          return;
-        }
-        setStatus(biliStatus, "处理中...", true);
-        const res = await requestJson("/api/transcribe/bilibili", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url }),
-        });
-        renderResult(res.data);
-        setStatus(biliStatus, res.ok ? "成功" : "失败", res.ok);
-        if (!res.ok && res.data && res.data.error_code === "BILIBILI_DOWNLOAD_FAILED") {
-          const guide = await requestJson(`/api/bilibili/download-guide?url=${encodeURIComponent(url)}`, { method: "GET" });
-          renderGuide(guide.data);
-        }
-      });
-
-      guideBtn.addEventListener("click", async () => {
-        const url = (biliInput.value || "").trim();
-        if (!url) {
-          setStatus(biliStatus, "请先填写 B站链接", false);
-          return;
-        }
-        const guide = await requestJson(`/api/bilibili/download-guide?url=${encodeURIComponent(url)}`, { method: "GET" });
-        renderGuide(guide.data);
       });
     </script>
   </body>
