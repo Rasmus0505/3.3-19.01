@@ -1,32 +1,50 @@
-# Zeabur3.3 Minimal ASR (File Only)
+# English Sentence Spelling Trainer (Zeabur MVP)
 
-最小跑通项目：`FastAPI + 上传页面 + DashScope ASR`。  
-本版本仅保留一条链路：上传本地视频/音频文件转写（支持模型切换）。
+本项目是 Zeabur 托管部署的英语句级拼写练习 MVP：
 
-## 功能
+1. 上传音视频素材  
+2. 自动 ASR（带时间戳）+ 逐句翻译中文  
+3. 句级播放 + 逐词拼写检查（严格+轻微容错）  
+4. 登录后同步学习进度（Postgres）
 
-- `GET /health` 健康检查
-- `POST /api/transcribe/file` 上传本地文件转写（`model` 可选：`qwen3-asr-flash-filetrans` / `paraformer-v2`）
-- `GET /` 极简网页测试入口
+## 技术栈
 
-核心链路：
+- Backend: FastAPI + SQLAlchemy
+- Frontend: React + Tailwind + shadcn-style components
+- ASR: DashScope (`paraformer-v2` / `qwen3-asr-flash-filetrans`)
+- MT: Qwen-MT (`qwen-mt-plus`, OpenAI-compatible)
+- Storage: Postgres + 本地文件（课程音频片段）
 
-1. 接收上传文件
-2. `ffmpeg` 提取音轨并转 `16k/mono/opus (libopus)`
-3. `DashScope Files.upload`
-4. `Files.get` 拿签名 URL
-5. 根据模型调用：
-   - `qwen3-asr-flash-filetrans` -> `QwenTranscription.async_call + wait`
-   - `paraformer-v2` -> `Transcription.async_call + wait`（开启 `timestamp_alignment_enabled=true`）
-6. 下载 `transcription_url` 并返回 `preview_text + asr_result_json`
+## 主要接口
 
-为什么使用 Opus 预处理：
+- 认证
+  - `POST /api/auth/register`
+  - `POST /api/auth/login`
+  - `POST /api/auth/refresh`
+  - `POST /api/auth/logout`
+- 课程
+  - `POST /api/lessons` (form-data: `video_file`, `asr_model`)
+  - `GET /api/lessons`
+  - `GET /api/lessons/{lesson_id}`
+- 练习
+  - `POST /api/lessons/{lesson_id}/check`
+  - `POST /api/lessons/{lesson_id}/progress`
+  - `GET /api/lessons/{lesson_id}/progress`
+  - `GET /api/lessons/{lesson_id}/sentences/{idx}/audio`
+- 保留原能力
+  - `POST /api/transcribe/file`
+  - `GET /health`
 
-- 音频体积更小，上传到 DashScope 更快
-- 在同等带宽下吞吐更高，整体转写等待时间更短
-- 保留语音识别所需的单声道和 16k 采样率
+## 必要环境变量
 
-## 本地运行
+- `DASHSCOPE_API_KEY` (必填)
+- `DATABASE_URL` (建议 Zeabur Postgres 连接串)
+- `JWT_SECRET` (必填，生产必须替换)
+- `TMP_WORK_DIR` (可选，默认 `/tmp/zeabur3.3`)
+- `MT_BASE_URL` (可选，默认北京: `https://dashscope.aliyuncs.com/compatible-mode/v1`)
+- `MT_MODEL` (可选，默认 `qwen-mt-plus`)
+
+## 本地开发
 
 ```powershell
 cd D:\GITHUB\英语产品\3.3-19.01
@@ -35,51 +53,32 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-确保本机已安装并可执行：
-
-- `ffmpeg -version`
-
-配置环境变量：
+后端：
 
 ```powershell
-$env:DASHSCOPE_API_KEY="你的key"
-```
-
-启动：
-
-```powershell
+$env:DASHSCOPE_API_KEY="sk-xxx"
+$env:DATABASE_URL="sqlite:///./app.db"
+$env:JWT_SECRET="change-me"
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-访问：`http://localhost:8000`
-
-前端本地预览（生产构建效果）：
+前端：
 
 ```powershell
 cd frontend
 npm ci
-npm run preview:local
+npm run dev
 ```
-
-访问：`http://localhost:4173`
-
-双击一键预览（Windows）：
-
-- 在仓库根目录双击 `preview-local.bat`
-- 脚本会自动进入 `frontend`，打开浏览器并启动 `npm run preview:local`
 
 ## Zeabur 部署
 
-1. 连接仓库并使用 Docker 部署（自动识别 `Dockerfile`）。
-2. 设置环境变量：
-   - `DASHSCOPE_API_KEY`（必填）
-   - `PYTHONUNBUFFERED=1`（建议）
-   - `TMP_WORK_DIR=/tmp/zeabur3.3`（可选）
-3. 健康检查路径：`/health`
+1. 连接 GitHub 仓库，使用 Docker 部署（已配置多阶段构建）
+2. 新增 Postgres 服务，并把连接串写入 `DATABASE_URL`
+3. 配置 `DASHSCOPE_API_KEY` 与 `JWT_SECRET`
+4. 健康检查路径使用 `/health`
 
-## 约束
+## 说明
 
-- 上传大小限制：200MB
-- 单次同步请求超时：480 秒
-- 不做历史存储与鉴权（仅最小验证）
-- 请求结束后临时文件立即删除
+- 切句逻辑直接使用 ASR 返回 `sentences`，避免时间戳错位。
+- 翻译失败不阻断课程生成；失败句翻译为空字符串。
+- 请求结束后会清理临时目录。

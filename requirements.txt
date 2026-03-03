@@ -3,3 +3,8 @@ uvicorn==0.34.0
 dashscope==1.25.11
 requests==2.32.3
 python-multipart==0.0.20
+sqlalchemy==2.0.38
+psycopg2-binary==2.9.10
+passlib[bcrypt]==1.7.4
+PyJWT==2.10.1
+openai==1.65.4

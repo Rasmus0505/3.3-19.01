@@ -9,12 +9,36 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.schemas import ErrorResponse, SuccessResponse
+from app.db import get_db, init_db
+from app.deps import get_current_user
+from app.models import Lesson, LessonProgress, LessonSentence, MediaAsset, User
+from app.schemas import (
+    AuthRequest,
+    AuthResponse,
+    ErrorResponse,
+    LessonCreateResponse,
+    LessonDetailResponse,
+    LessonItemResponse,
+    LessonSentenceResponse,
+    LogoutResponse,
+    ProgressResponse,
+    ProgressUpdateRequest,
+    RefreshRequest,
+    SuccessResponse,
+    TokenCheckRequest,
+    TokenCheckResponse,
+    TokenResult,
+    UserResponse,
+)
+from app.security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from app.services.asr_dashscope import AsrError, DEFAULT_MODEL, SUPPORTED_MODELS, setup_dashscope, transcribe_audio_file
+from app.services.lesson_builder import cut_sentence_audio_clips, estimate_duration_ms, extract_sentences, normalize_token, tokenize_sentence
 from app.services.media import (
     MediaError,
     cleanup_dir,
@@ -23,13 +47,16 @@ from app.services.media import (
     save_upload_file_stream,
     validate_suffix,
 )
+from app.services.translation_qwen_mt import translate_sentences_to_zh
 
 
 SERVICE_NAME = "zeabur3.3-min-asr"
 REQUEST_TIMEOUT_SECONDS = 480
 UPLOAD_MAX_BYTES = 200 * 1024 * 1024
 BASE_TMP_DIR = Path(os.getenv("TMP_WORK_DIR", "/tmp/zeabur3.3"))
+BASE_DATA_DIR = BASE_TMP_DIR / "data"
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "").strip()
+LESSON_DEFAULT_ASR_MODEL = os.getenv("LESSON_DEFAULT_ASR_MODEL", "paraformer-v2").strip()
 
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
@@ -63,9 +90,142 @@ def _error(status_code: int, code: str, message: str, detail: Any = "") -> JSONR
 def _map_media_error(exc: MediaError) -> JSONResponse:
     if exc.code == "FILE_TOO_LARGE":
         return _error(413, exc.code, exc.message, exc.detail)
-    if exc.code in {"INVALID_FILE_TYPE", "EMPTY_FILE"}:
+    if exc.code in {"INVALID_FILE_TYPE", "EMPTY_FILE", "SENTENCE_CLIP_FAILED"}:
         return _error(400, exc.code, exc.message, exc.detail)
     return _error(500, exc.code, exc.message, exc.detail)
+
+
+def _to_user_response(user: User) -> UserResponse:
+    return UserResponse(id=user.id, email=user.email, created_at=user.created_at)
+
+
+def _to_sentence_response(lesson_id: int, sentence: LessonSentence) -> LessonSentenceResponse:
+    return LessonSentenceResponse(
+        idx=sentence.idx,
+        begin_ms=sentence.begin_ms,
+        end_ms=sentence.end_ms,
+        text_en=sentence.text_en,
+        text_zh=sentence.text_zh,
+        tokens=sentence.tokens_json,
+        audio_url=f"/api/lessons/{lesson_id}/sentences/{sentence.idx}/audio",
+    )
+
+
+def _to_lesson_item_response(lesson: Lesson) -> LessonItemResponse:
+    return LessonItemResponse(
+        id=lesson.id,
+        title=lesson.title,
+        source_filename=lesson.source_filename,
+        asr_model=lesson.asr_model,
+        duration_ms=lesson.duration_ms,
+        status=lesson.status,
+        created_at=lesson.created_at,
+    )
+
+
+def _to_lesson_detail_response(lesson: Lesson, sentences: list[LessonSentence]) -> LessonDetailResponse:
+    base = _to_lesson_item_response(lesson)
+    return LessonDetailResponse(
+        id=base.id,
+        title=base.title,
+        source_filename=base.source_filename,
+        asr_model=base.asr_model,
+        duration_ms=base.duration_ms,
+        status=base.status,
+        created_at=base.created_at,
+        sentences=[_to_sentence_response(lesson.id, s) for s in sentences],
+    )
+
+
+def _require_lesson_owner(db: Session, lesson_id: int, user_id: int) -> Lesson:
+    lesson = db.get(Lesson, lesson_id)
+    if not lesson or lesson.user_id != user_id:
+        raise HTTPException(status_code=404, detail="课程不存在")
+    return lesson
+
+
+def _sync_transcribe_from_uploaded_file(upload_file: UploadFile, req_dir: Path, model: str) -> dict:
+    suffix = validate_suffix(upload_file.filename or "")
+    input_path = req_dir / f"upload{suffix}"
+    save_upload_file_stream(upload_file, input_path, max_bytes=UPLOAD_MAX_BYTES)
+    audio_path = req_dir / "input.opus"
+    extract_audio_for_asr(input_path, audio_path)
+    return transcribe_audio_file(str(audio_path), model=model)
+
+
+def _sync_generate_lesson(
+    upload_file: UploadFile,
+    req_dir: Path,
+    owner_id: int,
+    asr_model: str,
+    db: Session,
+) -> Lesson:
+    suffix = validate_suffix(upload_file.filename or "")
+    original_path = req_dir / f"source{suffix}"
+    save_upload_file_stream(upload_file, original_path, max_bytes=UPLOAD_MAX_BYTES)
+
+    opus_path = req_dir / "lesson_input.opus"
+    extract_audio_for_asr(original_path, opus_path)
+    asr_result = transcribe_audio_file(str(opus_path), model=asr_model)
+    asr_payload = asr_result["asr_result_json"]
+
+    sentences = extract_sentences(asr_payload)
+    if not sentences:
+        raise MediaError("ASR_SENTENCE_MISSING", "ASR 返回结果缺少句级信息", "未找到 transcripts[].sentences[]")
+
+    zh_list, failed_count = translate_sentences_to_zh([x["text"] for x in sentences], DASHSCOPE_API_KEY)
+    failed_ratio = failed_count / max(len(sentences), 1)
+    lesson_status = "partial_ready" if failed_ratio >= 0.3 else "ready"
+
+    clips_dir = req_dir / "clips"
+    clip_paths = cut_sentence_audio_clips(opus_path, clips_dir, sentences)
+    duration_ms = estimate_duration_ms(asr_payload, sentences)
+
+    lesson = Lesson(
+        user_id=owner_id,
+        title=Path(upload_file.filename or "lesson").stem[:200] or "lesson",
+        source_filename=(upload_file.filename or "unknown")[:255],
+        asr_model=asr_model,
+        duration_ms=duration_ms,
+        status=lesson_status,
+    )
+    db.add(lesson)
+    db.flush()
+
+    lesson_dir = BASE_DATA_DIR / f"lesson_{lesson.id}"
+    lesson_dir.mkdir(parents=True, exist_ok=True)
+    stored_original = lesson_dir / f"original{suffix}"
+    stored_opus = lesson_dir / "input.opus"
+    shutil.copyfile(original_path, stored_original)
+    shutil.copyfile(opus_path, stored_opus)
+
+    media_asset = MediaAsset(lesson_id=lesson.id, original_path=str(stored_original), opus_path=str(stored_opus))
+    db.add(media_asset)
+
+    clips_store_dir = lesson_dir / "clips"
+    clips_store_dir.mkdir(parents=True, exist_ok=True)
+
+    for idx, sentence in enumerate(sentences):
+        clip_store_path = clips_store_dir / f"sentence_{idx:04d}.opus"
+        shutil.copyfile(clip_paths[idx], clip_store_path)
+        db.add(
+            LessonSentence(
+                lesson_id=lesson.id,
+                idx=idx,
+                begin_ms=int(sentence["begin_ms"]),
+                end_ms=int(sentence["end_ms"]),
+                text_en=sentence["text"],
+                text_zh=zh_list[idx] if idx < len(zh_list) else "",
+                tokens_json=tokenize_sentence(sentence["text"]),
+                audio_clip_path=str(clip_store_path),
+            )
+        )
+
+    progress = LessonProgress(lesson_id=lesson.id, user_id=owner_id, current_sentence_idx=0, completed_indexes_json=[], last_played_at_ms=0)
+    db.add(progress)
+    db.commit()
+    db.refresh(lesson)
+    return lesson
 
 
 @asynccontextmanager
@@ -75,11 +235,13 @@ async def lifespan(_: FastAPI):
     if not DASHSCOPE_API_KEY:
         raise RuntimeError("missing_env: `DASHSCOPE_API_KEY` 未配置")
     BASE_TMP_DIR.mkdir(parents=True, exist_ok=True)
+    BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
     setup_dashscope(DASHSCOPE_API_KEY)
+    init_db()
     yield
 
 
-app = FastAPI(title=SERVICE_NAME, version="0.1.0", lifespan=lifespan)
+app = FastAPI(title=SERVICE_NAME, version="0.2.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
@@ -93,13 +255,60 @@ def health() -> dict:
     return {"ok": True, "service": SERVICE_NAME}
 
 
-def _sync_transcribe_from_uploaded_file(upload_file: UploadFile, req_dir: Path, model: str) -> dict:
-    suffix = validate_suffix(upload_file.filename or "")
-    input_path = req_dir / f"upload{suffix}"
-    save_upload_file_stream(upload_file, input_path, max_bytes=UPLOAD_MAX_BYTES)
-    audio_path = req_dir / "input.opus"
-    extract_audio_for_asr(input_path, audio_path)
-    return transcribe_audio_file(str(audio_path), model=model)
+@app.post("/api/auth/register", response_model=AuthResponse, responses={400: {"model": ErrorResponse}})
+def register(payload: AuthRequest, db: Session = Depends(get_db)):
+    exists = db.scalar(select(User).where(User.email == payload.email.lower()))
+    if exists:
+        return _error(400, "EMAIL_EXISTS", "邮箱已注册")
+    user = User(email=payload.email.lower(), password_hash=hash_password(payload.password))
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return AuthResponse(
+        ok=True,
+        access_token=create_access_token(user.id),
+        refresh_token=create_refresh_token(user.id),
+        user=_to_user_response(user),
+    )
+
+
+@app.post("/api/auth/login", response_model=AuthResponse, responses={401: {"model": ErrorResponse}})
+def login(payload: AuthRequest, db: Session = Depends(get_db)):
+    user = db.scalar(select(User).where(User.email == payload.email.lower()))
+    if not user or not verify_password(payload.password, user.password_hash):
+        return _error(401, "INVALID_CREDENTIALS", "邮箱或密码错误")
+    return AuthResponse(
+        ok=True,
+        access_token=create_access_token(user.id),
+        refresh_token=create_refresh_token(user.id),
+        user=_to_user_response(user),
+    )
+
+
+@app.post("/api/auth/refresh", response_model=AuthResponse, responses={401: {"model": ErrorResponse}})
+def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
+    try:
+        decoded = decode_token(payload.refresh_token)
+        if decoded.get("type") != "refresh":
+            raise ValueError("invalid token type")
+        user_id = int(decoded.get("sub"))
+    except Exception:
+        return _error(401, "INVALID_REFRESH_TOKEN", "无效或过期的刷新令牌")
+
+    user = db.get(User, user_id)
+    if not user:
+        return _error(401, "INVALID_REFRESH_TOKEN", "用户不存在")
+    return AuthResponse(
+        ok=True,
+        access_token=create_access_token(user.id),
+        refresh_token=create_refresh_token(user.id),
+        user=_to_user_response(user),
+    )
+
+
+@app.post("/api/auth/logout", response_model=LogoutResponse)
+def logout() -> LogoutResponse:
+    return LogoutResponse(ok=True, message="已退出登录")
 
 
 @app.post(
@@ -141,3 +350,164 @@ async def transcribe_file_with_model(video_file: UploadFile = File(...), model: 
     finally:
         cleanup_dir(req_dir)
         await video_file.close()
+
+
+@app.post(
+    "/api/lessons",
+    response_model=LessonCreateResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+async def create_lesson(
+    video_file: UploadFile = File(...),
+    asr_model: str = Form(LESSON_DEFAULT_ASR_MODEL),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    selected_model = (asr_model or "").strip() or LESSON_DEFAULT_ASR_MODEL
+    if selected_model not in SUPPORTED_MODELS:
+        return _error(400, "INVALID_MODEL", "不支持的模型", {"supported_models": sorted(SUPPORTED_MODELS), "input_model": selected_model})
+
+    req_dir = create_request_dir(BASE_TMP_DIR)
+    try:
+        lesson = await asyncio.wait_for(
+            asyncio.to_thread(_sync_generate_lesson, video_file, req_dir, current_user.id, selected_model, db),
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        sentences = db.scalars(select(LessonSentence).where(LessonSentence.lesson_id == lesson.id).order_by(LessonSentence.idx.asc())).all()
+        return LessonCreateResponse(ok=True, lesson=_to_lesson_detail_response(lesson, list(sentences)))
+    except asyncio.TimeoutError:
+        return _error(504, "REQUEST_TIMEOUT", "课程生成超时", f"超过 {REQUEST_TIMEOUT_SECONDS} 秒")
+    except MediaError as exc:
+        return _map_media_error(exc)
+    except AsrError as exc:
+        return _error(502, exc.code, exc.message, exc.detail)
+    except Exception as exc:
+        db.rollback()
+        return _error(500, "INTERNAL_ERROR", "课程生成失败", str(exc)[:1200])
+    finally:
+        cleanup_dir(req_dir)
+        await video_file.close()
+
+
+@app.get("/api/lessons", response_model=list[LessonItemResponse], responses={401: {"model": ErrorResponse}})
+def list_lessons(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    lessons = db.scalars(select(Lesson).where(Lesson.user_id == current_user.id).order_by(Lesson.created_at.desc())).all()
+    return [_to_lesson_item_response(item) for item in lessons]
+
+
+@app.get("/api/lessons/{lesson_id}", response_model=LessonDetailResponse, responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}})
+def get_lesson(lesson_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    lesson = _require_lesson_owner(db, lesson_id, current_user.id)
+    sentences = db.scalars(select(LessonSentence).where(LessonSentence.lesson_id == lesson.id).order_by(LessonSentence.idx.asc())).all()
+    return _to_lesson_detail_response(lesson, list(sentences))
+
+
+@app.get(
+    "/api/lessons/{lesson_id}/progress",
+    response_model=ProgressResponse,
+    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
+def get_progress(lesson_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_lesson_owner(db, lesson_id, current_user.id)
+    progress = db.scalar(select(LessonProgress).where(LessonProgress.lesson_id == lesson_id, LessonProgress.user_id == current_user.id))
+    if not progress:
+        return _error(404, "PROGRESS_NOT_FOUND", "学习进度不存在")
+    return ProgressResponse(
+        ok=True,
+        lesson_id=lesson_id,
+        current_sentence_index=progress.current_sentence_idx,
+        completed_sentence_indexes=list(progress.completed_indexes_json or []),
+        last_played_at_ms=int(progress.last_played_at_ms or 0),
+        updated_at=progress.updated_at,
+    )
+
+
+@app.post(
+    "/api/lessons/{lesson_id}/progress",
+    response_model=ProgressResponse,
+    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
+def update_progress(
+    lesson_id: int,
+    payload: ProgressUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_lesson_owner(db, lesson_id, current_user.id)
+    progress = db.scalar(select(LessonProgress).where(LessonProgress.lesson_id == lesson_id, LessonProgress.user_id == current_user.id))
+    if not progress:
+        return _error(404, "PROGRESS_NOT_FOUND", "学习进度不存在")
+
+    progress.current_sentence_idx = payload.current_sentence_index
+    progress.completed_indexes_json = sorted(set(payload.completed_sentence_indexes))
+    progress.last_played_at_ms = payload.last_played_at_ms
+    db.add(progress)
+    db.commit()
+    db.refresh(progress)
+    return ProgressResponse(
+        ok=True,
+        lesson_id=lesson_id,
+        current_sentence_index=progress.current_sentence_idx,
+        completed_sentence_indexes=list(progress.completed_indexes_json or []),
+        last_played_at_ms=int(progress.last_played_at_ms or 0),
+        updated_at=progress.updated_at,
+    )
+
+
+@app.post(
+    "/api/lessons/{lesson_id}/check",
+    response_model=TokenCheckResponse,
+    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
+def check_sentence_tokens(
+    lesson_id: int,
+    payload: TokenCheckRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_lesson_owner(db, lesson_id, current_user.id)
+    sentence = db.scalar(select(LessonSentence).where(LessonSentence.lesson_id == lesson_id, LessonSentence.idx == payload.sentence_index))
+    if not sentence:
+        return _error(404, "SENTENCE_NOT_FOUND", "句子不存在")
+
+    expected_tokens = [normalize_token(tok) for tok in list(sentence.tokens_json or []) if normalize_token(tok)]
+    input_tokens = [normalize_token(tok) for tok in payload.user_tokens if normalize_token(tok)]
+    max_len = max(len(expected_tokens), len(input_tokens))
+    token_results: list[TokenResult] = []
+    passed = len(expected_tokens) == len(input_tokens)
+
+    for i in range(max_len):
+        expected = expected_tokens[i] if i < len(expected_tokens) else ""
+        actual = input_tokens[i] if i < len(input_tokens) else ""
+        correct = bool(expected and actual and expected == actual)
+        if expected != actual:
+            passed = False
+        token_results.append(TokenResult(expected=expected, input=actual, correct=correct))
+
+    return TokenCheckResponse(
+        ok=True,
+        passed=passed,
+        token_results=token_results,
+        expected_tokens=expected_tokens,
+        normalized_expected=" ".join(expected_tokens),
+    )
+
+
+@app.get(
+    "/api/lessons/{lesson_id}/sentences/{idx}/audio",
+    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
+def get_sentence_audio(
+    lesson_id: int,
+    idx: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_lesson_owner(db, lesson_id, current_user.id)
+    sentence = db.scalar(select(LessonSentence).where(LessonSentence.lesson_id == lesson_id, LessonSentence.idx == idx))
+    if not sentence:
+        return _error(404, "SENTENCE_NOT_FOUND", "句子不存在")
+    clip_path = Path(sentence.audio_clip_path)
+    if not clip_path.exists():
+        return _error(404, "AUDIO_CLIP_MISSING", "句级音频不存在")
+    return FileResponse(path=str(clip_path), media_type="audio/ogg")
