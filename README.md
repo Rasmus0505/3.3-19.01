@@ -12,13 +12,19 @@
 核心链路：
 
 1. 接收上传文件
-2. `ffmpeg` 转 `16k/mono/wav`
+2. `ffmpeg` 提取音轨并转 `16k/mono/opus (libopus)`
 3. `DashScope Files.upload`
 4. `Files.get` 拿签名 URL
 5. 根据模型调用：
    - `qwen3-asr-flash-filetrans` -> `QwenTranscription.async_call + wait`
    - `paraformer-v2` -> `Transcription.async_call + wait`（开启 `timestamp_alignment_enabled=true`）
 6. 下载 `transcription_url` 并返回 `preview_text + asr_result_json`
+
+为什么使用 Opus 预处理：
+
+- 音频体积更小，上传到 DashScope 更快
+- 在同等带宽下吞吐更高，整体转写等待时间更短
+- 保留语音识别所需的单声道和 16k 采样率
 
 ## 本地运行
 
