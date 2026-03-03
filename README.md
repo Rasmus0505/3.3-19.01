@@ -53,6 +53,21 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 访问：`http://localhost:8000`
 
+前端本地预览（生产构建效果）：
+
+```powershell
+cd frontend
+npm ci
+npm run preview:local
+```
+
+访问：`http://localhost:4173`
+
+双击一键预览（Windows）：
+
+- 在仓库根目录双击 `preview-local.bat`
+- 脚本会自动进入 `frontend`，打开浏览器并启动 `npm run preview:local`
+
 ## Zeabur 部署
 
 1. 连接仓库并使用 Docker 部署（自动识别 `Dockerfile`）。
