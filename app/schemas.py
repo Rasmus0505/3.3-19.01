@@ -2,11 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
-
-
-class BilibiliTranscribeRequest(BaseModel):
-    url: str = Field(..., min_length=1)
+from pydantic import BaseModel
 
 
 class SuccessResponse(BaseModel):
@@ -26,11 +22,3 @@ class ErrorResponse(BaseModel):
     error_code: str
     message: str
     detail: Any = ""
-
-
-class BilibiliDownloadGuideResponse(BaseModel):
-    ok: bool = True
-    url: str
-    download_command_windows: str
-    download_command_macos_linux: str
-    notes: list[str]

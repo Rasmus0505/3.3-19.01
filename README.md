@@ -1,47 +1,27 @@
-# Zeabur3.3 Minimal ASR
+# Zeabur3.3 Minimal ASR (File Only)
 
-最小跑通项目：`FastAPI + 上传页面 + qwen3-asr-flash-filetrans`。
+最小跑通项目：`FastAPI + 上传页面 + qwen3-asr-flash-filetrans`。  
+本版本仅保留一条链路：上传本地视频/音频文件转写。
 
 ## 功能
 
 - `GET /health` 健康检查
 - `POST /api/transcribe/file` 上传本地文件转写
-- `POST /api/transcribe/bilibili` 输入 B 站公开链接转写
-- `GET /api/bilibili/download-guide?url=...` 获取本地下载命令指引
 - `GET /` 极简网页测试入口
 
 核心链路：
 
-1. 音频准备（本地上传或 B 站下载后转 wav）
-2. `DashScope Files.upload`
-3. `Files.get` 拿签名 URL
-4. `QwenTranscription.async_call + wait`
-5. 下载 `transcription_url` 并返回文本预览
-
-## 目录
-
-```text
-zeabur3.3/
-  app/
-    main.py
-    schemas.py
-    services/
-      media.py
-      asr_dashscope.py
-    static/
-      index.html
-  requirements.txt
-  Dockerfile
-  .dockerignore
-  .env.example
-```
+1. 接收上传文件
+2. `ffmpeg` 转 `16k/mono/wav`
+3. `DashScope Files.upload`
+4. `Files.get` 拿签名 URL
+5. `QwenTranscription.async_call + wait`
+6. 下载 `transcription_url` 并返回 `preview_text + asr_result_json`
 
 ## 本地运行
 
-### 1) 安装依赖
-
 ```powershell
-cd D:\GITHUB\英语产品\zeabur3.3
+cd D:\GITHUB\英语产品\3.3-19.01
 python -m venv .venv
 . .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -50,15 +30,14 @@ pip install -r requirements.txt
 确保本机已安装并可执行：
 
 - `ffmpeg -version`
-- `yt-dlp --version`
 
-### 2) 配置环境变量
+配置环境变量：
 
 ```powershell
 $env:DASHSCOPE_API_KEY="你的key"
 ```
 
-### 3) 启动
+启动：
 
 ```powershell
 uvicorn app.main:app --host 0.0.0.0 --port 8000
@@ -68,61 +47,12 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ## Zeabur 部署
 
-1. 新建项目并连接仓库。
-2. 服务类型选择 Docker（自动识别 `Dockerfile`）。
-3. 设置环境变量：
+1. 连接仓库并使用 Docker 部署（自动识别 `Dockerfile`）。
+2. 设置环境变量：
    - `DASHSCOPE_API_KEY`（必填）
-   - `BILI_COOKIE`（可选，提升 B 站下载成功率）
    - `PYTHONUNBUFFERED=1`（建议）
-4. 健康检查路径：`/health`
-5. 部署完成后打开分配域名，访问 `/` 测试上传。
-
-## API 示例
-
-### `GET /health`
-
-```json
-{ "ok": true, "service": "zeabur3.3-min-asr" }
-```
-
-### `POST /api/transcribe/bilibili`
-
-请求：
-
-```json
-{ "url": "https://www.bilibili.com/video/BV1yP4y1n7tB" }
-```
-
-成功响应示例：
-
-```json
-{
-  "ok": true,
-  "source_type": "bilibili",
-  "model": "qwen3-asr-flash-filetrans",
-  "task_id": "xxxx",
-  "task_status": "SUCCEEDED",
-  "transcription_url": "http://...",
-  "preview_text": "...",
-  "asr_result_json": {},
-  "elapsed_ms": 12345
-}
-```
-
-失败响应示例：
-
-```json
-{
-  "ok": false,
-  "error_code": "BILIBILI_DOWNLOAD_FAILED",
-  "message": "B站音频下载失败",
-  "detail": {
-    "raw_error": "...",
-    "suggestions": ["..."],
-    "next_action": "..."
-  }
-}
-```
+   - `TMP_WORK_DIR=/tmp/zeabur3.3`（可选）
+3. 健康检查路径：`/health`
 
 ## 约束
 
