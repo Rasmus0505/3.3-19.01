@@ -11,6 +11,7 @@ frontend/dist/
 
 asr_test_results.json
 asr_filetrans_via_dashscope_files_results.json
+test_app.db
 
 run_asr_matrix.py
 run_filetrans_via_dashscope_files.py
