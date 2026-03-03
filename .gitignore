@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+tmp/
+tmp_filetrans/
+
+asr_test_results.json
+asr_filetrans_via_dashscope_files_results.json
+
+run_asr_matrix.py
+run_filetrans_via_dashscope_files.py
