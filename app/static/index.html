@@ -92,6 +92,25 @@
       .err {
         color: var(--err);
       }
+      .quick-link {
+        display: block;
+        width: 100%;
+        margin-top: 10px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: #0e1630;
+        color: var(--text);
+        text-decoration: none;
+        font-size: 14px;
+        text-align: center;
+      }
+      .hint {
+        margin-top: 10px;
+        font-size: 13px;
+        color: var(--sub);
+        line-height: 1.5;
+      }
     </style>
   </head>
   <body>
@@ -119,6 +138,17 @@
         />
         <button id="biliBtn">提交 /api/transcribe/bilibili</button>
         <button id="guideBtn">生成下载指引 /api/bilibili/download-guide</button>
+        <a
+          class="quick-link"
+          href="https://snapwc.com/zh/youtube"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          去第三方下载站（新窗口）
+        </a>
+        <div class="hint">
+          兜底流程：1) 点上方按钮去下载视频 2) 下载完成后回到本页 3) 用“上传本地视频/音频”提交转写
+        </div>
         <div id="biliStatus" class="status"></div>
       </div>
 
