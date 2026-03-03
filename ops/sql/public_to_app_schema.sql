@@ -1,0 +1,11 @@
+BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS app;
+
+ALTER TABLE IF EXISTS public.users SET SCHEMA app;
+ALTER TABLE IF EXISTS public.lessons SET SCHEMA app;
+ALTER TABLE IF EXISTS public.lesson_sentences SET SCHEMA app;
+ALTER TABLE IF EXISTS public.lesson_progress SET SCHEMA app;
+ALTER TABLE IF EXISTS public.media_assets SET SCHEMA app;
+
+COMMIT;

@@ -38,7 +38,7 @@
 ## 必要环境变量
 
 - `DASHSCOPE_API_KEY` (必填)
-- `DATABASE_URL` (建议 Zeabur Postgres 连接串)
+- `DATABASE_URL` (建议 Zeabur Postgres 连接串，推荐包含 `search_path=app,public`)
 - `JWT_SECRET` (必填，生产必须替换)
 - `TMP_WORK_DIR` (可选，默认 `/tmp/zeabur3.3`)
 - `MT_BASE_URL` (可选，默认北京: `https://dashscope.aliyuncs.com/compatible-mode/v1`)
@@ -76,6 +76,37 @@ npm run dev
 2. 新增 Postgres 服务，并把连接串写入 `DATABASE_URL`
 3. 配置 `DASHSCOPE_API_KEY` 与 `JWT_SECRET`
 4. 健康检查路径使用 `/health`
+
+## Postgres schema 收敛（Metabase 只显示网站表）
+
+目标：把业务表从 `public` 迁到 `app`，并让 Metabase 只同步 `app` schema。
+
+1. 维护窗口内暂停主应用写入（2-5 分钟）
+2. 先做数据库备份
+3. 在 Adminer 执行迁移 SQL：`ops/sql/public_to_app_schema.sql`
+4. 如需回滚，执行：`ops/sql/app_to_public_schema_rollback.sql`
+5. 迁移前后计数核对：
+   - 迁移前：`ops/sql/verify_business_tables.sql`
+   - 迁移后：`ops/sql/verify_business_tables_app.sql`
+6. 更新 Zeabur 的 `DATABASE_URL`，追加 `search_path=app,public`
+
+`DATABASE_URL` 示例（无其他参数）：
+
+```text
+postgresql://root:password@postgres-host:5432/zeabur?options=-csearch_path%3Dapp%2Cpublic
+```
+
+若原 URL 已有参数，使用 `&options=` 追加：
+
+```text
+postgresql://root:password@postgres-host:5432/zeabur?sslmode=require&options=-csearch_path%3Dapp%2Cpublic
+```
+
+Metabase 设置：
+
+1. 进入数据库连接 `PG`
+2. schema 同步范围仅保留 `app`（移除 `public`）
+3. 执行一次“同步数据库结构 + 重扫字段值”
 
 ## 说明
 
