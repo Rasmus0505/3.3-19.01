@@ -8,12 +8,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.schemas import ErrorResponse, SuccessResponse
-from app.services.asr_dashscope import AsrError, setup_dashscope, transcribe_audio_file
+from app.services.asr_dashscope import AsrError, DEFAULT_MODEL, SUPPORTED_MODELS, setup_dashscope, transcribe_audio_file
 from app.services.media import (
     MediaError,
     cleanup_dir,
@@ -76,13 +76,13 @@ def health() -> dict:
     return {"ok": True, "service": SERVICE_NAME}
 
 
-def _sync_transcribe_from_uploaded_file(upload_file: UploadFile, req_dir: Path) -> dict:
+def _sync_transcribe_from_uploaded_file(upload_file: UploadFile, req_dir: Path, model: str) -> dict:
     suffix = validate_suffix(upload_file.filename or "")
     input_path = req_dir / f"upload{suffix}"
     save_upload_file_stream(upload_file, input_path, max_bytes=UPLOAD_MAX_BYTES)
     wav_path = req_dir / "input.wav"
     extract_wav(input_path, wav_path)
-    return transcribe_audio_file(str(wav_path))
+    return transcribe_audio_file(str(wav_path), model=model)
 
 
 @app.post(
@@ -90,12 +90,13 @@ def _sync_transcribe_from_uploaded_file(upload_file: UploadFile, req_dir: Path) 
     response_model=SuccessResponse,
     responses={400: {"model": ErrorResponse}, 413: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
 )
-async def transcribe_file(video_file: UploadFile = File(...)):
+async def transcribe_file_with_model(video_file: UploadFile = File(...), model: str = Form(DEFAULT_MODEL)):
+    selected_model = (model or "").strip() or DEFAULT_MODEL
     started = time.monotonic()
     req_dir = create_request_dir(BASE_TMP_DIR)
     try:
         asr_result = await asyncio.wait_for(
-            asyncio.to_thread(_sync_transcribe_from_uploaded_file, video_file, req_dir),
+            asyncio.to_thread(_sync_transcribe_from_uploaded_file, video_file, req_dir, selected_model),
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
         elapsed_ms = int((time.monotonic() - started) * 1000)
@@ -115,6 +116,8 @@ async def transcribe_file(video_file: UploadFile = File(...)):
     except MediaError as exc:
         return _map_media_error(exc)
     except AsrError as exc:
+        if exc.code == "INVALID_MODEL":
+            return _error(400, exc.code, exc.message, {"supported_models": sorted(SUPPORTED_MODELS), "input_model": exc.detail})
         return _error(502, exc.code, exc.message, exc.detail)
     except Exception as exc:
         return _error(500, "INTERNAL_ERROR", "服务内部错误", str(exc)[:1200])

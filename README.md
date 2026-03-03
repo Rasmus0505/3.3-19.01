@@ -1,12 +1,12 @@
 # Zeabur3.3 Minimal ASR (File Only)
 
-最小跑通项目：`FastAPI + 上传页面 + qwen3-asr-flash-filetrans`。  
-本版本仅保留一条链路：上传本地视频/音频文件转写。
+最小跑通项目：`FastAPI + 上传页面 + DashScope ASR`。  
+本版本仅保留一条链路：上传本地视频/音频文件转写（支持模型切换）。
 
 ## 功能
 
 - `GET /health` 健康检查
-- `POST /api/transcribe/file` 上传本地文件转写
+- `POST /api/transcribe/file` 上传本地文件转写（`model` 可选：`qwen3-asr-flash-filetrans` / `paraformer-v2`）
 - `GET /` 极简网页测试入口
 
 核心链路：
@@ -15,7 +15,9 @@
 2. `ffmpeg` 转 `16k/mono/wav`
 3. `DashScope Files.upload`
 4. `Files.get` 拿签名 URL
-5. `QwenTranscription.async_call + wait`
+5. 根据模型调用：
+   - `qwen3-asr-flash-filetrans` -> `QwenTranscription.async_call + wait`
+   - `paraformer-v2` -> `Transcription.async_call + wait`（开启 `timestamp_alignment_enabled=true`）
 6. 下载 `transcription_url` 并返回 `preview_text + asr_result_json`
 
 ## 本地运行

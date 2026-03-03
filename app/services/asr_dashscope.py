@@ -5,11 +5,13 @@ from typing import Any
 
 import dashscope
 import requests
+from dashscope.audio.asr import Transcription
 from dashscope.audio.qwen_asr import QwenTranscription
 from dashscope.files import Files
 
 
-MODEL_NAME = "qwen3-asr-flash-filetrans"
+DEFAULT_MODEL = "qwen3-asr-flash-filetrans"
+SUPPORTED_MODELS = {DEFAULT_MODEL, "paraformer-v2"}
 
 
 class AsrError(RuntimeError):
@@ -113,7 +115,36 @@ def _build_preview_text(payload: dict[str, Any], max_items: int = 3) -> str:
     return " ".join(texts).strip()
 
 
-def transcribe_audio_file(audio_wav_path: str, *, requests_timeout: int = 120) -> dict[str, Any]:
+def _create_task(model: str, signed_url: str) -> Any:
+    if model == "qwen3-asr-flash-filetrans":
+        return QwenTranscription.async_call(
+            model=model,
+            file_url=signed_url,
+            enable_words=True,
+            enable_itn=False,
+        )
+    if model == "paraformer-v2":
+        return Transcription.async_call(
+            model=model,
+            file_urls=[signed_url],
+            timestamp_alignment_enabled=True,
+        )
+    raise AsrError("INVALID_MODEL", "不支持的模型", model)
+
+
+def _wait_task(model: str, task_id: str) -> Any:
+    if model == "qwen3-asr-flash-filetrans":
+        return QwenTranscription.wait(task=task_id)
+    if model == "paraformer-v2":
+        return Transcription.wait(task=task_id)
+    raise AsrError("INVALID_MODEL", "不支持的模型", model)
+
+
+def transcribe_audio_file(audio_wav_path: str, *, model: str = DEFAULT_MODEL, requests_timeout: int = 120) -> dict[str, Any]:
+    model_name = (model or "").strip()
+    if model_name not in SUPPORTED_MODELS:
+        raise AsrError("INVALID_MODEL", "不支持的模型", model_name)
+
     try:
         upload_resp = Files.upload(file_path=audio_wav_path, purpose="inference")
     except Exception as exc:
@@ -143,12 +174,9 @@ def transcribe_audio_file(audio_wav_path: str, *, requests_timeout: int = 120) -
         )
 
     try:
-        task_resp = QwenTranscription.async_call(
-            model=MODEL_NAME,
-            file_url=signed_url,
-            enable_words=True,
-            enable_itn=False,
-        )
+        task_resp = _create_task(model_name, signed_url)
+    except AsrError:
+        raise
     except Exception as exc:
         raise AsrError("ASR_TASK_CREATE_FAILED", "创建 ASR 任务失败", str(exc)[:1200]) from exc
 
@@ -162,7 +190,9 @@ def transcribe_audio_file(audio_wav_path: str, *, requests_timeout: int = 120) -
         )
 
     try:
-        wait_resp = QwenTranscription.wait(task=task_id)
+        wait_resp = _wait_task(model_name, task_id)
+    except AsrError:
+        raise
     except Exception as exc:
         raise AsrError("ASR_TASK_WAIT_FAILED", "轮询 ASR 任务失败", str(exc)[:1200]) from exc
 
@@ -203,7 +233,7 @@ def transcribe_audio_file(audio_wav_path: str, *, requests_timeout: int = 120) -
 
     preview_text = _build_preview_text(result_payload)
     return {
-        "model": MODEL_NAME,
+        "model": model_name,
         "task_id": task_id,
         "task_status": task_status,
         "transcription_url": transcription_url,

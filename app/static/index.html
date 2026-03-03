@@ -48,6 +48,7 @@
         color: var(--sub);
       }
       input[type="file"],
+      select,
       button,
       textarea {
         width: 100%;
@@ -86,12 +87,16 @@
     <div class="wrap">
       <div class="card">
         <h1>Zeabur3.3 最小 ASR 跑通页</h1>
-        <p>模型：qwen3-asr-flash-filetrans</p>
+        <p>模型：qwen3-asr-flash-filetrans / paraformer-v2</p>
         <p>路径：仅上传本地视频/音频</p>
       </div>
 
       <div class="card">
         <h2>上传本地视频/音频</h2>
+        <select id="modelSelect">
+          <option value="qwen3-asr-flash-filetrans">qwen3-asr-flash-filetrans</option>
+          <option value="paraformer-v2">paraformer-v2（时间戳校准开启）</option>
+        </select>
         <input id="fileInput" type="file" />
         <button id="fileBtn">提交 /api/transcribe/file</button>
         <div id="fileStatus" class="status"></div>
@@ -105,6 +110,7 @@
 
     <script>
       const fileBtn = document.getElementById("fileBtn");
+      const modelSelect = document.getElementById("modelSelect");
       const fileInput = document.getElementById("fileInput");
       const resultBox = document.getElementById("resultBox");
       const fileStatus = document.getElementById("fileStatus");
@@ -138,6 +144,7 @@
         setStatus(fileStatus, "处理中...", true);
         const form = new FormData();
         form.append("video_file", f);
+        form.append("model", modelSelect.value);
         const res = await requestJson("/api/transcribe/file", { method: "POST", body: form });
         renderResult(res.data);
         setStatus(fileStatus, res.ok ? "成功" : "失败", res.ok);
