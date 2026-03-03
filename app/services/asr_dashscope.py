@@ -140,13 +140,13 @@ def _wait_task(model: str, task_id: str) -> Any:
     raise AsrError("INVALID_MODEL", "不支持的模型", model)
 
 
-def transcribe_audio_file(audio_wav_path: str, *, model: str = DEFAULT_MODEL, requests_timeout: int = 120) -> dict[str, Any]:
+def transcribe_audio_file(audio_path: str, *, model: str = DEFAULT_MODEL, requests_timeout: int = 120) -> dict[str, Any]:
     model_name = (model or "").strip()
     if model_name not in SUPPORTED_MODELS:
         raise AsrError("INVALID_MODEL", "不支持的模型", model_name)
 
     try:
-        upload_resp = Files.upload(file_path=audio_wav_path, purpose="inference")
+        upload_resp = Files.upload(file_path=audio_path, purpose="inference")
     except Exception as exc:
         raise AsrError("ASR_UPLOAD_FAILED", "上传音频到 DashScope 失败", str(exc)[:1200]) from exc
     upload_out = _to_dict(getattr(upload_resp, "output", None))

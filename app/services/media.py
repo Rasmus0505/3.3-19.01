@@ -88,8 +88,8 @@ def save_upload_file_stream(upload_file, dst_path: Path, *, max_bytes: int) -> i
     return total
 
 
-def extract_wav(input_path: Path, output_wav: Path) -> None:
-    output_wav.parent.mkdir(parents=True, exist_ok=True)
+def extract_audio_for_asr(input_path: Path, output_audio: Path) -> None:
+    output_audio.parent.mkdir(parents=True, exist_ok=True)
     try:
         run_cmd(
             [
@@ -103,8 +103,8 @@ def extract_wav(input_path: Path, output_wav: Path) -> None:
                 "-ar",
                 "16000",
                 "-c:a",
-                "pcm_s16le",
-                str(output_wav),
+                "libopus",
+                str(output_audio),
             ],
             timeout_seconds=SUBPROCESS_TIMEOUT_SECONDS,
         )

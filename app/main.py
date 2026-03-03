@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import subprocess
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -18,7 +19,7 @@ from app.services.media import (
     MediaError,
     cleanup_dir,
     create_request_dir,
-    extract_wav,
+    extract_audio_for_asr,
     save_upload_file_stream,
     validate_suffix,
 )
@@ -39,6 +40,21 @@ def _ensure_cmd_exists(cmd: str) -> None:
         raise RuntimeError(f"missing_dependency: `{cmd}` 未安装或不可执行")
 
 
+def _ensure_ffmpeg_supports_libopus() -> None:
+    try:
+        proc = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception as exc:
+        raise RuntimeError(f"ffmpeg 检查失败: {exc}") from exc
+    output = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    if "libopus" not in output:
+        raise RuntimeError("missing_dependency: ffmpeg 未启用 libopus 编码器，请安装支持 libopus 的 ffmpeg")
+
+
 def _error(status_code: int, code: str, message: str, detail: Any = "") -> JSONResponse:
     payload = ErrorResponse(ok=False, error_code=code, message=message, detail=detail).model_dump()
     return JSONResponse(status_code=status_code, content=payload)
@@ -55,6 +71,7 @@ def _map_media_error(exc: MediaError) -> JSONResponse:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     _ensure_cmd_exists("ffmpeg")
+    _ensure_ffmpeg_supports_libopus()
     if not DASHSCOPE_API_KEY:
         raise RuntimeError("missing_env: `DASHSCOPE_API_KEY` 未配置")
     BASE_TMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -80,9 +97,9 @@ def _sync_transcribe_from_uploaded_file(upload_file: UploadFile, req_dir: Path, 
     suffix = validate_suffix(upload_file.filename or "")
     input_path = req_dir / f"upload{suffix}"
     save_upload_file_stream(upload_file, input_path, max_bytes=UPLOAD_MAX_BYTES)
-    wav_path = req_dir / "input.wav"
-    extract_wav(input_path, wav_path)
-    return transcribe_audio_file(str(wav_path), model=model)
+    audio_path = req_dir / "input.opus"
+    extract_audio_for_asr(input_path, audio_path)
+    return transcribe_audio_file(str(audio_path), model=model)
 
 
 @app.post(
