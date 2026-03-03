@@ -7,4 +7,5 @@ __pycache__/
 .gitignore
 tmp/
 tmp_filetrans/
-
+frontend/node_modules/
+frontend/dist/

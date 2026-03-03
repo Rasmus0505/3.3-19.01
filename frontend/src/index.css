@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 219 66% 7%;
+  --foreground: 216 100% 96%;
+  --card: 221 62% 11%;
+  --card-foreground: 216 100% 96%;
+  --border: 223 38% 26%;
+  --input: 223 38% 26%;
+  --primary: 162 73% 41%;
+  --primary-foreground: 224 70% 6%;
+  --muted: 222 45% 18%;
+  --muted-foreground: 220 20% 73%;
+  --accent: 219 50% 16%;
+  --accent-foreground: 216 100% 96%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 216 100% 96%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "IBM Plex Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
