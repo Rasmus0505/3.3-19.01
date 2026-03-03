@@ -7,6 +7,7 @@
 - `GET /health` 健康检查
 - `POST /api/transcribe/file` 上传本地文件转写
 - `POST /api/transcribe/bilibili` 输入 B 站公开链接转写
+- `GET /api/bilibili/download-guide?url=...` 获取本地下载命令指引
 - `GET /` 极简网页测试入口
 
 核心链路：
@@ -71,6 +72,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 2. 服务类型选择 Docker（自动识别 `Dockerfile`）。
 3. 设置环境变量：
    - `DASHSCOPE_API_KEY`（必填）
+   - `BILI_COOKIE`（可选，提升 B 站下载成功率）
    - `PYTHONUNBUFFERED=1`（建议）
 4. 健康检查路径：`/health`
 5. 部署完成后打开分配域名，访问 `/` 测试上传。
@@ -102,6 +104,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
   "task_status": "SUCCEEDED",
   "transcription_url": "http://...",
   "preview_text": "...",
+  "asr_result_json": {},
   "elapsed_ms": 12345
 }
 ```
@@ -113,7 +116,11 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
   "ok": false,
   "error_code": "BILIBILI_DOWNLOAD_FAILED",
   "message": "B站音频下载失败",
-  "detail": "..."
+  "detail": {
+    "raw_error": "...",
+    "suggestions": ["..."],
+    "next_action": "..."
+  }
 }
 ```
 
@@ -123,4 +130,3 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - 单次同步请求超时：480 秒
 - 不做历史存储与鉴权（仅最小验证）
 - 请求结束后临时文件立即删除
-
