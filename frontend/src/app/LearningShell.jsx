@@ -1,6 +1,7 @@
 ﻿import { LogOut, Menu, Search, Shield, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 import { AuthPanel } from "../features/auth/AuthPanel";
 import { ImmersiveLessonPage } from "../features/immersive/ImmersiveLessonPage";
@@ -301,15 +302,15 @@ export function LearningShell() {
       const currentSnapshot = lessons;
       const removedIndex = currentSnapshot.findIndex((item) => item.id === lessonId);
       const nextLessons = currentSnapshot.filter((item) => item.id !== lessonId);
+      const deletingCurrentLesson = currentLesson?.id === lessonId;
+      const keepImmersiveAfterFallback = immersiveActive;
       setLessons(nextLessons);
 
-      try {
-        await deleteLessonMedia(lessonId);
-      } catch (_) {
+      void deleteLessonMedia(lessonId).catch(() => {
         // Ignore local cache cleanup errors.
-      }
+      });
 
-      if (currentLesson?.id === lessonId) {
+      if (deletingCurrentLesson) {
         if (!nextLessons.length) {
           setCurrentLesson(null);
           setImmersiveActive(false);
@@ -317,7 +318,7 @@ export function LearningShell() {
           const fallbackIndex = removedIndex >= 0 ? Math.min(removedIndex, nextLessons.length - 1) : 0;
           const nextLessonId = nextLessons[fallbackIndex]?.id;
           if (nextLessonId) {
-            await loadLessonDetail(nextLessonId, { autoEnterImmersive: immersiveActive });
+            void loadLessonDetail(nextLessonId, { autoEnterImmersive: keepImmersiveAfterFallback });
           } else {
             setCurrentLesson(null);
           }
@@ -325,7 +326,8 @@ export function LearningShell() {
       }
 
       setGlobalStatus("");
-      return { ok: true };
+      toast.success("删除历史成功");
+      return { ok: true, message: "删除历史成功" };
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
       setGlobalStatus(message);
@@ -552,3 +554,4 @@ export function LearningShell() {
     </div>
   );
 }
+
