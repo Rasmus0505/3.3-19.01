@@ -3,6 +3,7 @@
 import io
 import os
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,6 +14,7 @@ from app.db import Base, get_db
 from app.main import create_app
 from app.models import Lesson, LessonProgress, LessonSentence, MediaAsset, User, WalletLedger
 from app.services.billing_service import ensure_default_billing_rates
+from app.services.lesson_builder import split_sentences_by_word_limit
 
 
 @pytest.fixture()
@@ -492,3 +494,141 @@ def test_local_media_mode_requires_client_binding(test_client):
     clip_resp = client.get(f"/api/lessons/{lesson_id}/sentences/0/audio", headers=headers)
     assert clip_resp.status_code == 409
     assert clip_resp.json()["error_code"] == "LOCAL_MEDIA_REQUIRED"
+
+
+def _build_sentence_for_split(tokens: list[str], punctuation_map: dict[int, str] | None = None) -> dict:
+    punctuation_map = punctuation_map or {}
+    words = []
+    cursor = 0
+    for idx, token in enumerate(tokens):
+        punctuation = punctuation_map.get(idx, "")
+        surface = f"{token}{punctuation}" if punctuation else token
+        words.append(
+            {
+                "text": token,
+                "surface": surface,
+                "punctuation": punctuation,
+                "begin_ms": cursor,
+                "end_ms": cursor + 120,
+            }
+        )
+        cursor += 180
+
+    text = " ".join(word["surface"] for word in words)
+    text = text.replace(" .", ".").replace(" ,", ",").replace(" ;", ";").replace(" :", ":").replace(" !", "!").replace(" ?", "?")
+    return {
+        "text": text,
+        "begin_ms": words[0]["begin_ms"],
+        "end_ms": words[-1]["end_ms"],
+        "words": words,
+    }
+
+
+def test_split_sentences_by_word_limit_splits_long_sentence():
+    sentence = _build_sentence_for_split([f"word{i}" for i in range(1, 27)], {19: "."})
+    split_items = split_sentences_by_word_limit([sentence], max_words=20)
+    assert len(split_items) >= 2
+    for item in split_items:
+        assert len(item["words"]) <= 20
+
+
+def test_split_sentences_by_word_limit_keeps_short_sentence():
+    sentence = _build_sentence_for_split([f"term{i}" for i in range(1, 13)])
+    split_items = split_sentences_by_word_limit([sentence], max_words=20)
+    assert len(split_items) == 1
+    assert split_items[0]["text"] == sentence["text"]
+
+
+def test_split_sentences_by_word_limit_prefers_natural_boundary():
+    tokens = [f"token{i}" for i in range(1, 25)]
+    tokens[20] = "and"
+    sentence = _build_sentence_for_split(tokens, {17: ","})
+    split_items = split_sentences_by_word_limit([sentence], max_words=20)
+    assert len(split_items) >= 2
+    first_words = split_items[0]["words"]
+    assert len(first_words) == 18
+    assert split_items[0]["text"].endswith(",")
+
+
+def test_split_sentences_by_word_limit_preserves_monotonic_timestamps():
+    sentence = _build_sentence_for_split([f"item{i}" for i in range(1, 31)], {10: ",", 20: ";"})
+    split_items = split_sentences_by_word_limit([sentence], max_words=20)
+    assert len(split_items) >= 2
+    previous_end = -1
+    for item in split_items:
+        assert item["end_ms"] > item["begin_ms"]
+        assert item["begin_ms"] >= previous_end
+        previous_end = item["end_ms"]
+
+
+def test_create_lesson_endpoint_applies_word_limit_split(test_client, monkeypatch):
+    client, _, _ = test_client
+    token = _register_and_login(client, email="split-creator@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from app.services import lesson_service as lesson_service_module
+
+    def fake_save_upload_file_stream(upload_file, input_path, max_bytes):
+        input_path.write_bytes(b"demo")
+
+    def fake_extract_audio_for_asr(input_path, audio_path):
+        audio_path.write_bytes(b"demo-audio")
+
+    def fake_probe_audio_duration_ms(opus_path):
+        return 60_000
+
+    def fake_transcribe_audio_file(audio_path, model):
+        words = []
+        cursor = 0
+        for idx in range(1, 27):
+            token = f"word{idx}"
+            punctuation = "." if idx == 20 else ""
+            words.append(
+                {
+                    "text": token,
+                    "begin_time": cursor,
+                    "end_time": cursor + 120,
+                    "punctuation": punctuation,
+                }
+            )
+            cursor += 180
+        sentence_text = " ".join(f"{word['text']}{word.get('punctuation', '')}" for word in words).replace(" .", ".")
+        return {
+            "asr_result_json": {
+                "transcripts": [
+                    {
+                        "sentences": [
+                            {
+                                "text": sentence_text,
+                                "begin_time": 0,
+                                "end_time": words[-1]["end_time"],
+                                "words": words,
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+
+    def fake_translate_sentences_to_zh(sentences, api_key):
+        return [f"zh-{idx}" for idx, _ in enumerate(sentences)], 0
+
+    monkeypatch.setattr(lesson_service_module, "save_upload_file_stream", fake_save_upload_file_stream)
+    monkeypatch.setattr(lesson_service_module, "extract_audio_for_asr", fake_extract_audio_for_asr)
+    monkeypatch.setattr(lesson_service_module, "probe_audio_duration_ms", fake_probe_audio_duration_ms)
+    monkeypatch.setattr(lesson_service_module, "transcribe_audio_file", fake_transcribe_audio_file)
+    monkeypatch.setattr(lesson_service_module, "translate_sentences_to_zh", fake_translate_sentences_to_zh)
+    monkeypatch.setattr(lesson_service_module, "get_model_rate", lambda db, model_name: SimpleNamespace(points_per_minute=1))
+    monkeypatch.setattr(lesson_service_module, "calculate_points", lambda duration_ms, ppm: 1)
+    monkeypatch.setattr(lesson_service_module, "reserve_points", lambda *args, **kwargs: SimpleNamespace(id=1))
+    monkeypatch.setattr(lesson_service_module, "record_consume", lambda *args, **kwargs: None)
+    monkeypatch.setattr(lesson_service_module, "refund_points", lambda *args, **kwargs: None)
+
+    files = {"video_file": ("split_demo.mp4", io.BytesIO(b"dummy"), "video/mp4")}
+    data = {"asr_model": "paraformer-v2"}
+    resp = client.post("/api/lessons", headers=headers, files=files, data=data)
+    assert resp.status_code == 200
+    lesson = resp.json()["lesson"]
+    assert len(lesson["sentences"]) >= 2
+    for sentence in lesson["sentences"]:
+        assert len(sentence["tokens"]) <= 20

@@ -92,7 +92,7 @@ export function LearningShell() {
         await loadLessonDetail(nextLessons[0].id, { autoEnterImmersive: false });
       }
     } catch (error) {
-      setGlobalStatus(`网络错误: ${String(error)}`);
+      setGlobalStatus("网络连接异常，请重试。");
     } finally {
       setLoadingLessons(false);
     }
@@ -134,7 +134,7 @@ export function LearningShell() {
         return true;
       });
     } catch (error) {
-      setGlobalStatus(`网络错误: ${String(error)}`);
+      setGlobalStatus("网络连接异常，请重试。");
     }
   }
 
@@ -279,7 +279,7 @@ export function LearningShell() {
       setGlobalStatus("");
       return { ok: true };
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
+      const message = "网络连接异常，请重试。";
       setGlobalStatus(message);
       return { ok: false, message };
     }
@@ -329,7 +329,7 @@ export function LearningShell() {
       toast.success("删除历史成功");
       return { ok: true, message: "删除历史成功" };
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
+      const message = "网络连接异常，请重试。";
       setGlobalStatus(message);
       return { ok: false, message };
     }
@@ -348,20 +348,19 @@ export function LearningShell() {
               <Sparkles className="size-4" />
             </Button>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold">English Trainer</span>
-              <Badge variant="outline">shadcn style</Badge>
+              <span className="text-sm font-semibold">英语句子训练</span>
             </div>
             <Separator orientation="vertical" className="mx-1 hidden h-4 md:block" />
             <div className="hidden items-center gap-2 md:flex">
               <Badge variant="outline">{accessToken ? "已登录" : "未登录"}</Badge>
-              {accessToken ? <Badge variant="outline">{lessons.length} lessons</Badge> : null}
+              {accessToken ? <Badge variant="outline">{lessons.length} 门课程</Badge> : null}
               <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
             </div>
             <div className="ml-auto flex items-center gap-2">
               {accessToken && lessons.length > 0 ? (
                 <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={() => setCommandOpen(true)}>
                   <Search className="size-4" />
-                  快速跳转
+                  切换课程
                 </Button>
               ) : null}
               {accessToken && isAdminUser ? (
@@ -373,7 +372,7 @@ export function LearningShell() {
               {accessToken ? (
                 <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={handleLogout}>
                   <LogOut className="size-4" />
-                  退出
+                  退出登录
                 </Button>
               ) : null}
 
@@ -390,7 +389,7 @@ export function LearningShell() {
                       <SheetDescription>移动端导航与课程切换入口。</SheetDescription>
                     </SheetHeader>
                     <div className="mt-4 space-y-2">
-                      <Badge variant="outline">{lessons.length} lessons</Badge>
+                      <Badge variant="outline">{lessons.length} 门课程</Badge>
                       <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
                       {lessons.length > 0 ? (
                         <Button
@@ -402,7 +401,7 @@ export function LearningShell() {
                           }}
                         >
                           <Search className="size-4" />
-                          快速跳转课程
+                          切换课程
                         </Button>
                       ) : null}
                       {isAdminUser ? (
@@ -476,18 +475,18 @@ export function LearningShell() {
             ) : (
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Preview</CardTitle>
-                  <CardDescription>登录后可在中间区域进入沉浸模式学习。</CardDescription>
+                  <CardTitle className="text-base">学习区预览</CardTitle>
+                  <CardDescription>请先登录或注册，随后上传素材开始训练。</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-muted-foreground">请在右侧先完成登录或注册。</p>
+                  <p className="text-sm text-muted-foreground">登录成功后，课程会自动显示在左侧历史列表。</p>
                 </CardContent>
               </Card>
             )}
 
             {globalStatus ? (
               <Alert variant="destructive">
-                <AlertTitle>系统消息</AlertTitle>
+                <AlertTitle>操作反馈</AlertTitle>
                 <AlertDescription>{globalStatus}</AlertDescription>
               </Alert>
             ) : null}
@@ -554,4 +553,5 @@ export function LearningShell() {
     </div>
   );
 }
+
 

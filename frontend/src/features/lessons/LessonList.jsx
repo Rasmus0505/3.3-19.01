@@ -1,4 +1,4 @@
-﻿import { Compass, Pencil, Trash2 } from "lucide-react";
+﻿import { Compass, Ellipsis, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import {
@@ -25,8 +25,23 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
   Skeleton,
 } from "../../shared/ui";
+
+const STATUS_LABEL_MAP = {
+  pending: "待处理",
+  processing: "处理中",
+  completed: "已完成",
+  failed: "处理失败",
+};
+
+function toLessonStatusLabel(status) {
+  const key = String(status || "").trim().toLowerCase();
+  return STATUS_LABEL_MAP[key] || "处理中";
+}
 
 export function LessonList({ lessons, currentLessonId, onSelect, onRename, onDelete, loading = false }) {
   const [renamingLesson, setRenamingLesson] = useState(null);
@@ -34,6 +49,7 @@ export function LessonList({ lessons, currentLessonId, onSelect, onRename, onDel
   const [renameBusy, setRenameBusy] = useState(false);
   const [deletingLesson, setDeletingLesson] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [menuOpenLessonId, setMenuOpenLessonId] = useState(null);
   const [status, setStatus] = useState("");
 
   useEffect(() => {
@@ -44,7 +60,10 @@ export function LessonList({ lessons, currentLessonId, onSelect, onRename, onDel
     if (deletingLesson && !lessons.some((item) => item.id === deletingLesson.id)) {
       setDeletingLesson(null);
     }
-  }, [deletingLesson, lessons, renamingLesson]);
+    if (menuOpenLessonId && !lessons.some((item) => item.id === menuOpenLessonId)) {
+      setMenuOpenLessonId(null);
+    }
+  }, [deletingLesson, lessons, menuOpenLessonId, renamingLesson]);
 
   function openRenameDialog(lesson) {
     setRenamingLesson(lesson);
@@ -96,9 +115,9 @@ export function LessonList({ lessons, currentLessonId, onSelect, onRename, onDel
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Compass className="size-4" />
-          Explorer
+          课程历史
         </CardTitle>
-        <CardDescription>选择课程进入沉浸学习，可直接重命名或删除历史记录。</CardDescription>
+        <CardDescription>选择课程进入沉浸学习，可直接重命名；删除在更多操作中。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
         {loading ? (
@@ -123,7 +142,7 @@ export function LessonList({ lessons, currentLessonId, onSelect, onRename, onDel
                 <button type="button" className="w-full text-left" onClick={() => onSelect(lesson.id)}>
                   <div className="font-medium">{lesson.title}</div>
                   <div className="text-xs text-muted-foreground">
-                    {lesson.status} · {lesson.asr_model} · {lesson.sentences?.length || 0} 句
+                    {toLessonStatusLabel(lesson.status)} · {lesson.asr_model || "未设置模型"} · {lesson.sentences?.length || 0} 句
                   </div>
                 </button>
                 <div className="mt-2 flex items-center gap-2">
@@ -137,16 +156,40 @@ export function LessonList({ lessons, currentLessonId, onSelect, onRename, onDel
                     <Pencil className="size-4" />
                     重命名
                   </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => setDeletingLesson(lesson)}
-                    disabled={renameBusy || deleteBusy}
+                  <Popover
+                    open={menuOpenLessonId === lesson.id}
+                    onOpenChange={(open) => {
+                      setMenuOpenLessonId(open ? lesson.id : null);
+                    }}
                   >
-                    <Trash2 className="size-4" />
-                    删除
-                  </Button>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="outline"
+                        aria-label="更多操作"
+                        disabled={renameBusy || deleteBusy}
+                      >
+                        <Ellipsis className="size-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-40 p-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        className="w-full justify-start"
+                        onClick={() => {
+                          setMenuOpenLessonId(null);
+                          setDeletingLesson(lesson);
+                        }}
+                        disabled={renameBusy || deleteBusy}
+                      >
+                        <Trash2 className="size-4" />
+                        删除历史记录
+                      </Button>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
             ))
@@ -203,7 +246,7 @@ export function LessonList({ lessons, currentLessonId, onSelect, onRename, onDel
             <AlertDialogHeader>
               <AlertDialogTitle>确认删除历史记录？</AlertDialogTitle>
               <AlertDialogDescription>
-                课程与学习进度会被彻底删除，不可恢复。
+                删除后无法恢复，相关学习进度将一并清除。
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

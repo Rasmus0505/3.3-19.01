@@ -6,7 +6,7 @@ import { datetimeLocalToBeijingOffset, formatDateTimeBeijing } from "../../share
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
-  return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
+  return data?.message || fallback;
 }
 
 async function jsonOrEmpty(resp) {
@@ -22,6 +22,16 @@ function fileNameFromDisposition(disposition, fallback) {
   const match = disposition.match(/filename=([^;]+)/i);
   if (!match?.[1]) return fallback;
   return match[1].trim().replace(/^"|"$/g, "");
+}
+
+function toCodeStatusLabel(status) {
+  const key = String(status || "").trim().toLowerCase();
+  if (key === "unredeemed") return "未兑";
+  if (key === "redeemed") return "已兑";
+  if (key === "disabled") return "已停用";
+  if (key === "abandoned") return "已废弃";
+  if (key === "expired") return "已失效";
+  return "未知状态";
 }
 
 export function AdminRedeemCodesTab({ apiCall }) {
@@ -73,7 +83,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
       setTotal(Number(data.total || 0));
       setSelectedIds(new Set());
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
+      const message = "网络连接异常，请重试。";
       setStatus(message);
       toast.error(message);
     } finally {
@@ -99,6 +109,10 @@ export function AdminRedeemCodesTab({ apiCall }) {
   }
 
   async function applyCodeAction(codeId, actionPath, actionLabel) {
+    if (actionPath === "disable" || actionPath === "abandon") {
+      const ok = window.confirm("操作后不可自动恢复，请确认。");
+      if (!ok) return;
+    }
     setStatus("");
     try {
       const resp = await apiCall(`/api/admin/redeem-codes/${codeId}/${actionPath}`, { method: "POST" });
@@ -112,7 +126,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
       toast.success(`${actionLabel}成功`);
       await loadCodes(page);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
+      const message = "网络连接异常，请重试。";
       setStatus(message);
       toast.error(message);
     }
@@ -125,7 +139,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
       toast.error(message);
       return;
     }
-    if (!window.confirm(`确认批量停用 ${selectedIds.size} 个兑换码？`)) return;
+    if (!window.confirm(`确认批量停用 ${selectedIds.size} 个兑换码？操作后不可自动恢复，请确认。`)) return;
 
     setStatus("");
     try {
@@ -144,14 +158,14 @@ export function AdminRedeemCodesTab({ apiCall }) {
       toast.success(`已停用 ${Number(data.changed_count || 0)} 个兑换码`);
       await loadCodes(page);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
+      const message = "网络连接异常，请重试。";
       setStatus(message);
       toast.error(message);
     }
   }
 
   async function exportUnredeemedCsv() {
-    const confirmText = window.prompt("请输入 EXPORT 确认导出未兑换码");
+    const confirmText = window.prompt("此操作会导出敏感记录，请输入 EXPORT 确认。");
     if (!confirmText) return;
 
     setExporting(true);
@@ -187,7 +201,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
       URL.revokeObjectURL(href);
       toast.success("导出成功");
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
+      const message = "网络连接异常，请重试。";
       setStatus(message);
       toast.error(message);
     } finally {
@@ -241,7 +255,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
           </Button>
           <Button onClick={exportUnredeemedCsv} disabled={exporting}>
             <Download className="size-4" />
-            {exporting ? "导出中..." : "导出未兑换 CSV"}
+            {exporting ? "导出中..." : "导出记录（CSV）"}
           </Button>
         </div>
 
@@ -279,8 +293,8 @@ export function AdminRedeemCodesTab({ apiCall }) {
                     <TableCell>{item.code_mask}</TableCell>
                     <TableCell>{item.batch_name} (#{item.batch_id})</TableCell>
                     <TableCell>{item.face_value_points}</TableCell>
-                    <TableCell><Badge variant="outline">{item.status}</Badge></TableCell>
-                    <TableCell><Badge>{item.effective_status}</Badge></TableCell>
+                    <TableCell><Badge variant="outline">{toCodeStatusLabel(item.status)}</Badge></TableCell>
+                    <TableCell><Badge>{toCodeStatusLabel(item.effective_status)}</Badge></TableCell>
                     <TableCell>{item.redeemed_user_email || "-"}</TableCell>
                     <TableCell>{formatDateTimeBeijing(item.redeemed_at)}</TableCell>
                     <TableCell>{formatDateTimeBeijing(item.created_at)}</TableCell>
@@ -300,7 +314,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
               })}
               {items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={11} className="text-muted-foreground">暂无数据</TableCell>
+                  <TableCell colSpan={11} className="text-muted-foreground">暂无数据，请调整筛选条件后重试。</TableCell>
                 </TableRow>
               ) : null}
             </TableBody>

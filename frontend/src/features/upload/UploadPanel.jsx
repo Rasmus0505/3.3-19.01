@@ -126,15 +126,14 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
         await requestPersistentStorage();
         await saveLessonMedia(data.lesson.id, file);
         localMediaSaved = true;
-        console.debug("[DEBUG] upload.local_media_saved", { lessonId: data.lesson.id });
-      } catch (error) {
-        console.debug("[DEBUG] upload.local_media_save_failed", { lessonId: data.lesson?.id, error: String(error) });
+      } catch (_) {
+        // Ignore local media save failure. User can re-bind local media later.
       }
 
       setPhase("success");
       if (localMediaSaved) {
-        setStatus("生成成功");
-        toast.success("课程已生成");
+        setStatus("课程生成成功，已为你自动进入学习页。");
+        toast.success("课程生成成功，已为你自动进入学习页。");
       } else {
         setStatus("课程已创建，但本地媒体保存失败，需要重新绑定。");
         toast.warning("课程已创建，但本地媒体保存失败，需要重新绑定。");
@@ -142,7 +141,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       await onWalletChanged?.();
       onCreated(data.lesson);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
+      const message = "网络连接异常，请重试。";
       setStatus(message);
       setPhase("error");
       toast.error(message);
@@ -156,9 +155,9 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <UploadCloud className="size-4" />
-          导入素材并生成练习
+          上传音视频，生成课程
         </CardTitle>
-        <CardDescription>流程：抽音频 → ASR（时间戳）→ 逐句对齐 → 中文翻译。</CardDescription>
+        <CardDescription>系统会自动转写、切句并生成中文释义。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <Alert>
@@ -170,7 +169,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
                   <span className="cursor-help underline decoration-dotted underline-offset-2">预估扣费</span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  向上取整秒数后按分钟计费，再向上取整到点数。
+                  按素材时长计费，结果向上取整到点数。
                 </TooltipContent>
               </Tooltip>
               ：
@@ -182,7 +181,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
                     : "选择文件后显示"
                 : "该模型未配置单价"}
             </p>
-            {likelyInsufficient ? <p className="mt-1 text-destructive">余额可能不足，提交将被拒绝。</p> : null}
+            {likelyInsufficient ? <p className="mt-1 text-destructive">当前余额不足，无法开始生成。请先兑换点数。</p> : null}
           </AlertDescription>
         </Alert>
 
