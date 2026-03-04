@@ -44,6 +44,9 @@ export function AdminUsersTab({ apiCall }) {
   const [reason, setReason] = useState("");
   const [adjustLoading, setAdjustLoading] = useState(false);
   const [confirmAdjustOpen, setConfirmAdjustOpen] = useState(false);
+  const [deletingUserId, setDeletingUserId] = useState(null);
+  const [deletingUser, setDeletingUser] = useState(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   async function loadUsers() {
     setLoading(true);
@@ -110,6 +113,57 @@ export function AdminUsersTab({ apiCall }) {
       toast.error(message);
     } finally {
       setAdjustLoading(false);
+    }
+  }
+
+  function openDeleteConfirm(user) {
+    setDeletingUser(user);
+    setConfirmDeleteOpen(true);
+  }
+
+  async function submitDelete() {
+    if (!deletingUser) return false;
+    setDeletingUserId(deletingUser.id);
+    setStatus("");
+    try {
+      const resp = await apiCall(`/api/admin/users/${deletingUser.id}`, {
+        method: "DELETE",
+      });
+      const data = await jsonOrEmpty(resp);
+      if (!resp.ok) {
+        const message = parseError(data, "删除用户失败");
+        setStatus(message);
+        toast.error(message);
+        return false;
+      }
+
+      if (adjustingUser?.id === deletingUser.id) {
+        setAdjustingUser(null);
+        setConfirmAdjustOpen(false);
+        setDeltaPoints(0);
+        setReason("");
+      }
+
+      const failedCount = Array.isArray(data.file_cleanup_failed_dirs) ? data.file_cleanup_failed_dirs.length : 0;
+      const message = `删除成功：${deletingUser.email}，课程 ${Number(data.deleted_lessons || 0)}，流水 ${Number(data.deleted_ledger_rows || 0)}，操作员引用清理 ${Number(data.cleared_operator_refs || 0)}，文件清理失败 ${failedCount}`;
+      setStatus(message);
+      toast.success(message);
+      setConfirmDeleteOpen(false);
+      setDeletingUser(null);
+
+      if (users.length <= 1 && page > 1) {
+        setPage((prev) => Math.max(1, prev - 1));
+      } else {
+        await loadUsers();
+      }
+      return true;
+    } catch (error) {
+      const message = `网络错误: ${String(error)}`;
+      setStatus(message);
+      toast.error(message);
+      return false;
+    } finally {
+      setDeletingUserId(null);
     }
   }
 
@@ -199,18 +253,29 @@ export function AdminUsersTab({ apiCall }) {
                   <TableCell>{formatPoints(item.balance_points)}</TableCell>
                   <TableCell>{formatDateTime(item.created_at)}</TableCell>
                   <TableCell>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setAdjustingUser(item);
-                        setDeltaPoints(0);
-                        setReason("");
-                        setConfirmAdjustOpen(false);
-                      }}
-                    >
-                      调账
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={deletingUserId === item.id}
+                        onClick={() => {
+                          setAdjustingUser(item);
+                          setDeltaPoints(0);
+                          setReason("");
+                          setConfirmAdjustOpen(false);
+                        }}
+                      >
+                        调账
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={deletingUserId === item.id}
+                        onClick={() => openDeleteConfirm(item)}
+                      >
+                        {deletingUserId === item.id ? "删除中..." : "删除"}
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -313,6 +378,38 @@ export function AdminUsersTab({ apiCall }) {
                 }}
               >
                 确认提交
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog
+          open={confirmDeleteOpen}
+          onOpenChange={(open) => {
+            setConfirmDeleteOpen(open);
+            if (!open && !deletingUserId) {
+              setDeletingUser(null);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认删除用户？</AlertDialogTitle>
+              <AlertDialogDescription>
+                <span className="block">用户：{deletingUser?.email || "-"}</span>
+                <span className="block">该操作会删除账号、课程、余额账户和流水，且不可恢复。</span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={Boolean(deletingUserId)}>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={async (event) => {
+                  event.preventDefault();
+                  await submitDelete();
+                }}
+                disabled={Boolean(deletingUserId)}
+              >
+                {deletingUserId ? "删除中..." : "确认删除"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
