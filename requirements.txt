@@ -8,3 +8,6 @@ psycopg2-binary==2.9.10
 passlib[bcrypt]==1.7.4
 PyJWT==2.10.1
 openai==1.65.4
+alembic==1.14.1
+pytest==8.3.5
+httpx==0.28.1
