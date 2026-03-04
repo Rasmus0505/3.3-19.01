@@ -2,7 +2,7 @@ import { Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
+import { Alert, AlertDescription, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Label, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
   return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
@@ -43,6 +43,7 @@ export function AdminUsersTab({ apiCall }) {
   const [deltaPoints, setDeltaPoints] = useState(0);
   const [reason, setReason] = useState("");
   const [adjustLoading, setAdjustLoading] = useState(false);
+  const [confirmAdjustOpen, setConfirmAdjustOpen] = useState(false);
 
   async function loadUsers() {
     setLoading(true);
@@ -167,73 +168,80 @@ export function AdminUsersTab({ apiCall }) {
         </form>
 
         {loading ? <Skeleton className="h-10 w-full" /> : null}
-        <Table className="min-w-[760px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>
-                <Button type="button" variant="ghost" size="sm" onClick={() => toggleSort("email")}>
-                  邮箱
-                </Button>
-              </TableHead>
-              <TableHead>
-                <Button type="button" variant="ghost" size="sm" onClick={() => toggleSort("balance_points")}>
-                  余额
-                </Button>
-              </TableHead>
-              <TableHead>
-                <Button type="button" variant="ghost" size="sm" onClick={() => toggleSort("created_at")}>
-                  创建时间
-                </Button>
-              </TableHead>
-              <TableHead>操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {users.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell>{item.id}</TableCell>
-                <TableCell>{item.email}</TableCell>
-                <TableCell>{formatPoints(item.balance_points)}</TableCell>
-                <TableCell>{formatDateTime(item.created_at)}</TableCell>
-                <TableCell>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setAdjustingUser(item);
-                      setDeltaPoints(0);
-                      setReason("");
-                    }}
-                  >
-                    调账
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-            {users.length === 0 ? (
+        <ScrollArea className="w-full rounded-md border">
+          <Table className="min-w-[760px]">
+            <TableHeader>
               <TableRow>
-                <TableCell className="text-muted-foreground" colSpan={5}>
-                  暂无数据
-                </TableCell>
+                <TableHead>ID</TableHead>
+                <TableHead>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => toggleSort("email")}>
+                    邮箱
+                  </Button>
+                </TableHead>
+                <TableHead>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => toggleSort("balance_points")}>
+                    余额
+                  </Button>
+                </TableHead>
+                <TableHead>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => toggleSort("created_at")}>
+                    创建时间
+                  </Button>
+                </TableHead>
+                <TableHead>操作</TableHead>
               </TableRow>
-            ) : null}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {users.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell>{item.id}</TableCell>
+                  <TableCell>{item.email}</TableCell>
+                  <TableCell>{formatPoints(item.balance_points)}</TableCell>
+                  <TableCell>{formatDateTime(item.created_at)}</TableCell>
+                  <TableCell>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setAdjustingUser(item);
+                        setDeltaPoints(0);
+                        setReason("");
+                        setConfirmAdjustOpen(false);
+                      }}
+                    >
+                      调账
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {users.length === 0 ? (
+                <TableRow>
+                  <TableCell className="text-muted-foreground" colSpan={5}>
+                    暂无数据
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
+        </ScrollArea>
 
         <div className="flex items-center justify-between">
           <p className="text-xs text-muted-foreground">总计 {total} 条</p>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-              上一页
-            </Button>
-            <span className="text-xs text-muted-foreground">
-              {page} / {pageCount}
-            </span>
-            <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => setPage(page + 1)}>
-              下一页
-            </Button>
-          </div>
+          <Pagination className="mx-0 w-auto justify-end">
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious disabled={page <= 1} onClick={() => setPage(page - 1)} />
+              </PaginationItem>
+              <PaginationItem>
+                <PaginationLink isActive className="px-2.5">
+                  {page} / {pageCount}
+                </PaginationLink>
+              </PaginationItem>
+              <PaginationItem>
+                <PaginationNext disabled={page >= pageCount} onClick={() => setPage(page + 1)} />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
         </div>
 
         {status ? (
@@ -242,7 +250,14 @@ export function AdminUsersTab({ apiCall }) {
           </Alert>
         ) : null}
 
-        <Dialog open={Boolean(adjustingUser)} onOpenChange={(open) => !open && setAdjustingUser(null)}>
+        <Dialog
+          open={Boolean(adjustingUser)}
+          onOpenChange={(open) => {
+            if (open) return;
+            setAdjustingUser(null);
+            setConfirmAdjustOpen(false);
+          }}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>余额调账</DialogTitle>
@@ -272,12 +287,36 @@ export function AdminUsersTab({ apiCall }) {
               <Button variant="ghost" onClick={() => setAdjustingUser(null)}>
                 取消
               </Button>
-              <Button onClick={submitAdjust} disabled={adjustLoading || !reason.trim()}>
-                {adjustLoading ? "提交中..." : "确认调账"}
+              <Button onClick={() => setConfirmAdjustOpen(true)} disabled={adjustLoading || !reason.trim()}>
+                {adjustLoading ? "提交中..." : "下一步确认"}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <AlertDialog open={confirmAdjustOpen} onOpenChange={setConfirmAdjustOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认提交调账？</AlertDialogTitle>
+              <AlertDialogDescription>
+                <span className="block">用户：{adjustingUser?.email || "-"}</span>
+                <span className="block">点数变动：{Number(deltaPoints || 0)} 点</span>
+                <span className="block">备注：{reason || "-"}</span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>返回修改</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={async () => {
+                  await submitAdjust();
+                  setConfirmAdjustOpen(false);
+                }}
+              >
+                确认提交
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   );

@@ -3,14 +3,16 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
 import { BootstrapApp } from "./app/bootstrap";
-import { Toaster } from "./shared/ui";
+import { Toaster, TooltipProvider } from "./shared/ui";
 import "./index.css";
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
-      <BootstrapApp />
-      <Toaster />
+      <TooltipProvider delayDuration={150}>
+        <BootstrapApp />
+        <Toaster />
+      </TooltipProvider>
     </BrowserRouter>
   </React.StrictMode>,
 );
