@@ -702,13 +702,14 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   );
 
   useEffect(() => {
-    if (!immersiveActive) return undefined;
     if (typeof window === "undefined") return undefined;
 
     const onWindowKeyDown = (event) => {
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       const fromTypingInput = event.target === typingInputRef.current;
       if (isEditableShortcutTarget(event.target) && !fromTypingInput) return;
+      const isReplayShortcut = event.shiftKey && event.key.toLowerCase() === "r";
+      if (!immersiveActive && !isReplayShortcut) return;
 
       if (event.key === "Escape") {
         event.preventDefault();
@@ -716,7 +717,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
         exitImmersive("shortcut_esc");
         return;
       }
-      if (event.shiftKey && event.key.toLowerCase() === "r") {
+      if (isReplayShortcut) {
         event.preventDefault();
         event.stopPropagation();
         replayCurrentSentence("shortcut_shift_r");
