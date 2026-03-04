@@ -1,4 +1,5 @@
 import { cva } from "class-variance-authority";
+import { Slot } from "@radix-ui/react-slot";
 
 import { cn } from "../../lib/utils";
 
@@ -32,6 +33,7 @@ const buttonVariants = cva(
   },
 );
 
-export function Button({ className, variant, size, type = "button", ...props }) {
-  return <button type={type} data-slot="button" data-variant={variant} data-size={size} className={cn(buttonVariants({ variant, size, className }))} {...props} />;
+export function Button({ className, variant, size, type = "button", asChild = false, ...props }) {
+  const Comp = asChild ? Slot : "button";
+  return <Comp type={asChild ? undefined : type} data-slot="button" data-variant={variant} data-size={size} className={cn(buttonVariants({ variant, size, className }))} {...props} />;
 }

@@ -1,5 +1,6 @@
-﻿import { LogOut, Shield, Sparkles } from "lucide-react";
+import { LogOut, Shield, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { AuthPanel } from "../features/auth/AuthPanel";
 import { ImmersiveLessonPage } from "../features/immersive/ImmersiveLessonPage";
@@ -8,10 +9,11 @@ import { PracticePanel } from "../features/practice/PracticePanel";
 import { UploadPanel } from "../features/upload/UploadPanel";
 import { WalletBadge } from "../features/wallet/WalletBadge";
 import { api, parseResponse, toErrorText } from "../shared/api/client";
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Separator } from "../shared/ui";
+import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Separator } from "../shared/ui";
 import { clearAuthStorage, REFRESH_KEY, TOKEN_KEY } from "./authStorage";
 
 export function LearningShell() {
+  const navigate = useNavigate();
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
   const [lessons, setLessons] = useState([]);
   const [currentLesson, setCurrentLesson] = useState(null);
@@ -89,6 +91,10 @@ export function LearningShell() {
   }
 
   async function loadBillingRates() {
+    if (!accessToken) {
+      setBillingRates([]);
+      return;
+    }
     const resp = await api("/api/billing/rates", {}, accessToken);
     const data = await parseResponse(resp);
     if (resp.ok) {
@@ -150,7 +156,7 @@ export function LearningShell() {
   }
 
   return (
-    <div className="style-vega section-soft min-h-screen bg-background">
+    <div className="section-soft min-h-screen bg-background">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="container-wrapper">
           <div className="container flex h-14 items-center gap-2">
@@ -158,19 +164,18 @@ export function LearningShell() {
               <Sparkles className="size-4" />
             </Button>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold">shadcn/create</span>
-              <Badge variant="outline">English Trainer</Badge>
+              <span className="text-sm font-semibold">English Trainer</span>
+              <Badge variant="outline">shadcn style</Badge>
             </div>
             <Separator orientation="vertical" className="mx-1 hidden h-4 md:block" />
             <div className="hidden items-center gap-2 md:flex">
-              <Badge variant="secondary">Vega</Badge>
               <Badge variant="outline">{accessToken ? "已登录" : "未登录"}</Badge>
               {accessToken ? <Badge variant="outline">{lessons.length} lessons</Badge> : null}
               <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
             </div>
             <div className="ml-auto flex items-center gap-2">
               {accessToken && isAdminUser ? (
-                <Button variant="outline" size="sm" onClick={() => { window.location.href = "/admin"; }}>
+                <Button variant="outline" size="sm" onClick={() => navigate("/admin/users")}>
                   <Shield className="size-4" />
                   管理后台
                 </Button>
@@ -189,7 +194,7 @@ export function LearningShell() {
       <main className="container-wrapper pb-6">
         <div className="container grid gap-4 pt-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
           <aside className="space-y-4">
-            <LessonList lessons={lessons} currentLessonId={currentLesson?.id} onSelect={loadLessonDetail} />
+            <LessonList lessons={lessons} currentLessonId={currentLesson?.id} onSelect={loadLessonDetail} loading={loadingLessons} />
             <Card size="sm">
               <CardHeader>
                 <CardTitle className="text-base">状态</CardTitle>
@@ -198,7 +203,6 @@ export function LearningShell() {
                 <p className="text-muted-foreground">课程加载：{loadingLessons ? "进行中" : "空闲"}</p>
                 <p className="text-muted-foreground">当前课程：{currentLesson?.title || "未选择"}</p>
                 <p className="text-muted-foreground">学习模式：{viewMode === "immersive" ? "沉浸模式" : "普通模式"}</p>
-                <p className="text-muted-foreground">接口：/api/lessons / /api/lessons/:id/check</p>
               </CardContent>
             </Card>
           </aside>
@@ -243,14 +247,10 @@ export function LearningShell() {
             )}
 
             {globalStatus ? (
-              <Card size="sm">
-                <CardHeader>
-                  <CardTitle className="text-base">系统消息</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-destructive">{globalStatus}</p>
-                </CardContent>
-              </Card>
+              <Alert variant="destructive">
+                <AlertTitle>系统消息</AlertTitle>
+                <AlertDescription>{globalStatus}</AlertDescription>
+              </Alert>
             ) : null}
           </section>
 

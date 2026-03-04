@@ -1,7 +1,8 @@
-﻿import { ScrollText } from "lucide-react";
+import { ScrollText } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Select } from "../../shared/ui";
+import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
   return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
@@ -55,13 +56,17 @@ export function AdminLogsTab({ apiCall }) {
       const resp = await apiCall(`/api/admin/wallet-logs?${query.toString()}`);
       const data = await jsonOrEmpty(resp);
       if (!resp.ok) {
-        setStatus(parseError(data, "加载流水失败"));
+        const message = parseError(data, "加载流水失败");
+        setStatus(message);
+        toast.error(message);
         return;
       }
       setItems(Array.isArray(data.items) ? data.items : []);
       setTotal(Number(data.total || 0));
     } catch (error) {
-      setStatus(`网络错误: ${String(error)}`);
+      const message = `网络错误: ${String(error)}`;
+      setStatus(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -84,94 +89,121 @@ export function AdminLogsTab({ apiCall }) {
         <CardDescription>预扣 / 消费 / 退款 / 手工调账明细。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid gap-2 md:grid-cols-5">
+        <form
+          className="grid gap-2 md:grid-cols-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setPage(1);
+            loadLogs();
+          }}
+        >
           <Input value={userEmail} onChange={(e) => setUserEmail(e.target.value)} placeholder="用户邮箱" />
-          <Select value={eventType} onChange={(e) => setEventType(e.target.value)}>
-            <option value="all">全部类型</option>
-            <option value="reserve">reserve</option>
-            <option value="consume">consume</option>
-            <option value="refund">refund</option>
-            <option value="manual_adjust">manual_adjust</option>
+          <Select value={eventType} onValueChange={setEventType}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部类型</SelectItem>
+              <SelectItem value="reserve">reserve</SelectItem>
+              <SelectItem value="consume">consume</SelectItem>
+              <SelectItem value="refund">refund</SelectItem>
+              <SelectItem value="manual_adjust">manual_adjust</SelectItem>
+            </SelectContent>
           </Select>
           <Input type="datetime-local" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
           <Input type="datetime-local" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-          <Button
-            variant="outline"
-            onClick={() => {
-              setPage(1);
-              loadLogs();
-            }}
-            disabled={loading}
-          >
+          <Button type="submit" variant="outline" disabled={loading}>
             查询
           </Button>
-        </div>
+        </form>
 
-        <div className="overflow-x-auto rounded-md border border-input">
-          <table className="w-full min-w-[940px] text-sm">
-            <thead className="bg-muted/40">
-              <tr>
-                <th className="px-3 py-2 text-left">时间</th>
-                <th className="px-3 py-2 text-left">用户</th>
-                <th className="px-3 py-2 text-left">类型</th>
-                <th className="px-3 py-2 text-left">变动</th>
-                <th className="px-3 py-2 text-left">余额</th>
-                <th className="px-3 py-2 text-left">模型</th>
-                <th className="px-3 py-2 text-left">时长(ms)</th>
-                <th className="px-3 py-2 text-left">课程ID</th>
-                <th className="px-3 py-2 text-left">备注</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id} className="border-t border-input">
-                  <td className="px-3 py-2">{formatDateTime(item.created_at)}</td>
-                  <td className="px-3 py-2">{item.user_email}</td>
-                  <td className="px-3 py-2">
-                    <Badge
-                      variant={
-                        item.event_type === "refund"
-                          ? "secondary"
-                          : item.event_type === "manual_adjust"
-                            ? "outline"
-                            : "default"
-                      }
-                    >
-                      {item.event_type}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-2">{item.delta_points}</td>
-                  <td className="px-3 py-2">{item.balance_after}</td>
-                  <td className="px-3 py-2">{item.model_name || "-"}</td>
-                  <td className="px-3 py-2">{item.duration_ms ?? "-"}</td>
-                  <td className="px-3 py-2">{item.lesson_id ?? "-"}</td>
-                  <td className="px-3 py-2">{item.note || "-"}</td>
-                </tr>
-              ))}
-              {items.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-4 text-muted-foreground" colSpan={9}>暂无数据</td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+        {loading ? <Skeleton className="h-10 w-full" /> : null}
+        <Table className="min-w-[940px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>时间</TableHead>
+              <TableHead>用户</TableHead>
+              <TableHead>类型</TableHead>
+              <TableHead>变动</TableHead>
+              <TableHead>余额</TableHead>
+              <TableHead>模型</TableHead>
+              <TableHead>时长(ms)</TableHead>
+              <TableHead>课程ID</TableHead>
+              <TableHead>备注</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell>{formatDateTime(item.created_at)}</TableCell>
+                <TableCell>{item.user_email}</TableCell>
+                <TableCell>
+                  <Badge
+                    variant={
+                      item.event_type === "refund"
+                        ? "secondary"
+                        : item.event_type === "manual_adjust"
+                          ? "outline"
+                          : "default"
+                    }
+                  >
+                    {item.event_type}
+                  </Badge>
+                </TableCell>
+                <TableCell>{item.delta_points}</TableCell>
+                <TableCell>{item.balance_after}</TableCell>
+                <TableCell>{item.model_name || "-"}</TableCell>
+                <TableCell>{item.duration_ms ?? "-"}</TableCell>
+                <TableCell>{item.lesson_id ?? "-"}</TableCell>
+                <TableCell>{item.note || "-"}</TableCell>
+              </TableRow>
+            ))}
+            {items.length === 0 ? (
+              <TableRow>
+                <TableCell className="text-muted-foreground" colSpan={9}>
+                  暂无数据
+                </TableCell>
+              </TableRow>
+            ) : null}
+          </TableBody>
+        </Table>
 
         <div className="flex items-center justify-between">
           <p className="text-xs text-muted-foreground">总计 {total} 条</p>
           <div className="flex items-center gap-2">
-            <Select value={String(pageSize)} onChange={(e) => { setPage(1); setPageSize(Number(e.target.value)); }} className="max-w-[120px]">
-              <option value="10">10 / 页</option>
-              <option value="20">20 / 页</option>
-              <option value="50">50 / 页</option>
+            <Select
+              value={String(pageSize)}
+              onValueChange={(value) => {
+                setPage(1);
+                setPageSize(Number(value));
+              }}
+            >
+              <SelectTrigger className="w-[120px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10 / 页</SelectItem>
+                <SelectItem value="20">20 / 页</SelectItem>
+                <SelectItem value="50">50 / 页</SelectItem>
+              </SelectContent>
             </Select>
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button>
-            <span className="text-xs text-muted-foreground">{page} / {pageCount}</span>
-            <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => setPage(page + 1)}>下一页</Button>
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+              上一页
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {page} / {pageCount}
+            </span>
+            <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => setPage(page + 1)}>
+              下一页
+            </Button>
           </div>
         </div>
 
-        {status ? <p className="text-sm text-muted-foreground">{status}</p> : null}
+        {status ? (
+          <Alert>
+            <AlertDescription>{status}</AlertDescription>
+          </Alert>
+        ) : null}
       </CardContent>
     </Card>
   );
