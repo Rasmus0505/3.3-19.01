@@ -88,7 +88,7 @@ export function LearningShell() {
 
       const currentExists = currentLesson?.id && nextLessons.some((item) => item.id === currentLesson.id);
       if (!currentExists) {
-        await loadLessonDetail(nextLessons[0].id, { autoEnterImmersive: true, source: "initial_auto_select" });
+        await loadLessonDetail(nextLessons[0].id, { autoEnterImmersive: false });
       }
     } catch (error) {
       setGlobalStatus(`网络错误: ${String(error)}`);
@@ -99,7 +99,7 @@ export function LearningShell() {
 
   async function loadLessonDetail(lessonId, options = {}) {
     if (!lessonId || !accessToken) return;
-    const { autoEnterImmersive = true, source = "lesson_selected" } = options;
+    const { autoEnterImmersive = true } = options;
     try {
       const [detailResp, progressResp] = await Promise.all([
         api(`/api/lessons/${lessonId}`, {}, accessToken),
@@ -129,9 +129,6 @@ export function LearningShell() {
       setImmersiveActive((prev) => {
         if (!autoEnterImmersive) {
           return prev;
-        }
-        if (!prev) {
-          console.debug("[DEBUG] learning.immersive.enter", { lessonId, source });
         }
         return true;
       });
@@ -227,23 +224,22 @@ export function LearningShell() {
     setImmersiveActive(false);
   }
 
-  function handleExitImmersive(source = "button") {
+  function handleExitImmersive(_source = "button") {
     setImmersiveActive((prev) => {
       if (!prev) return prev;
-      console.debug("[DEBUG] learning.immersive.exit", { lessonId: currentLesson?.id ?? null, source });
       return false;
     });
   }
 
   async function handleLessonCreated(lesson) {
     await loadLessons();
-    await loadLessonDetail(lesson.id, { autoEnterImmersive: true, source: "lesson_created" });
+    await loadLessonDetail(lesson.id, { autoEnterImmersive: true });
     await loadWallet();
   }
 
   async function refreshCurrentLesson() {
     if (!currentLesson?.id) return;
-    await loadLessonDetail(currentLesson.id, { autoEnterImmersive: false, source: "progress_refresh" });
+    await loadLessonDetail(currentLesson.id, { autoEnterImmersive: false });
   }
 
   async function handleCommandSelect(lessonId) {
@@ -251,7 +247,7 @@ export function LearningShell() {
     setCommandOpen(false);
     setCommandQuery("");
     if (lessonId !== currentLesson?.id) {
-      await loadLessonDetail(lessonId, { autoEnterImmersive: true, source: "command_select" });
+      await loadLessonDetail(lessonId, { autoEnterImmersive: true });
     }
   }
 
@@ -277,7 +273,6 @@ export function LearningShell() {
         return { ok: false, message };
       }
 
-      console.debug("[DEBUG] learning.lesson.rename_success", { lessonId, title: data.title });
       setLessons((prev) => prev.map((item) => (item.id === lessonId ? { ...item, title: data.title } : item)));
       setCurrentLesson((prev) => (prev?.id === lessonId ? { ...prev, title: data.title } : prev));
       setGlobalStatus("");
@@ -303,7 +298,6 @@ export function LearningShell() {
         return { ok: false, message };
       }
 
-      console.debug("[DEBUG] learning.lesson.delete_success", { lessonId });
       const currentSnapshot = lessons;
       const removedIndex = currentSnapshot.findIndex((item) => item.id === lessonId);
       const nextLessons = currentSnapshot.filter((item) => item.id !== lessonId);
@@ -323,7 +317,7 @@ export function LearningShell() {
           const fallbackIndex = removedIndex >= 0 ? Math.min(removedIndex, nextLessons.length - 1) : 0;
           const nextLessonId = nextLessons[fallbackIndex]?.id;
           if (nextLessonId) {
-            await loadLessonDetail(nextLessonId, { autoEnterImmersive: true, source: "delete_fallback" });
+            await loadLessonDetail(nextLessonId, { autoEnterImmersive: immersiveActive });
           } else {
             setCurrentLesson(null);
           }

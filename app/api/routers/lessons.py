@@ -5,6 +5,7 @@ import logging
 import shutil
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
@@ -13,7 +14,7 @@ from app.api.serializers import to_lesson_detail_response, to_lesson_item_respon
 from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, LESSON_DEFAULT_ASR_MODEL, REQUEST_TIMEOUT_SECONDS
 from app.core.errors import error_response, map_billing_error, map_media_error
 from app.db import get_db
-from app.models import User
+from app.models import User, WalletLedger
 from app.repositories.lessons import get_lesson_sentences, list_lessons_for_user, update_lesson_title_for_user
 from app.schemas import ErrorResponse, LessonCreateResponse, LessonDeleteResponse, LessonDetailResponse, LessonItemResponse, LessonRenameRequest
 from app.services.asr_dashscope import AsrError, SUPPORTED_MODELS
@@ -124,9 +125,11 @@ def delete_lesson(
 
     try:
         logger.info("[DEBUG] lessons.delete.request lesson_id=%s user_id=%s", lesson_id, current_user.id)
+        db.execute(update(WalletLedger).where(WalletLedger.lesson_id == lesson.id).values(lesson_id=None))
         db.delete(lesson)
         db.commit()
     except Exception as exc:
+        logger.exception("lessons.delete.failed lesson_id=%s user_id=%s", lesson_id, current_user.id)
         db.rollback()
         return error_response(500, "INTERNAL_ERROR", "删除课程失败", str(exc)[:1200])
 
