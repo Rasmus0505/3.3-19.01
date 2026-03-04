@@ -1,7 +1,14 @@
-﻿import { AdminPage } from "../pages/AdminPage";
+import { Navigate, Route, Routes } from "react-router-dom";
+
+import { AdminPage } from "../pages/AdminPage";
 import { LearningPage } from "../pages/LearningPage";
 
 export function BootstrapApp() {
-  const isAdminRoute = window.location.pathname.startsWith("/admin");
-  return isAdminRoute ? <AdminPage /> : <LearningPage />;
+  return (
+    <Routes>
+      <Route path="/" element={<LearningPage />} />
+      <Route path="/admin/*" element={<AdminPage />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
 }

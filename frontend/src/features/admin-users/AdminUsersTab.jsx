@@ -1,7 +1,8 @@
-﻿import { Users } from "lucide-react";
+import { Users } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, Select } from "../../shared/ui";
+import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
   return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
@@ -42,7 +43,6 @@ export function AdminUsersTab({ apiCall }) {
   const [deltaPoints, setDeltaPoints] = useState(0);
   const [reason, setReason] = useState("");
   const [adjustLoading, setAdjustLoading] = useState(false);
-  const [deletingUserId, setDeletingUserId] = useState(null);
 
   async function loadUsers() {
     setLoading(true);
@@ -58,13 +58,17 @@ export function AdminUsersTab({ apiCall }) {
       const resp = await apiCall(`/api/admin/users?${query.toString()}`);
       const data = await jsonOrEmpty(resp);
       if (!resp.ok) {
-        setStatus(parseError(data, "加载用户失败"));
+        const message = parseError(data, "加载用户失败");
+        setStatus(message);
+        toast.error(message);
         return;
       }
       setUsers(Array.isArray(data.items) ? data.items : []);
       setTotal(Number(data.total || 0));
     } catch (error) {
-      setStatus(`网络错误: ${String(error)}`);
+      const message = `网络错误: ${String(error)}`;
+      setStatus(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -87,57 +91,24 @@ export function AdminUsersTab({ apiCall }) {
       });
       const data = await jsonOrEmpty(resp);
       if (!resp.ok) {
-        setStatus(parseError(data, "调账失败"));
+        const message = parseError(data, "调账失败");
+        setStatus(message);
+        toast.error(message);
         return;
       }
-      setStatus(`调账成功：${adjustingUser.email}，余额 ${formatPoints(data.balance_points)}`);
+      const message = `调账成功：${adjustingUser.email}，余额 ${formatPoints(data.balance_points)}`;
+      setStatus(message);
+      toast.success(message);
       setAdjustingUser(null);
       setDeltaPoints(0);
       setReason("");
       await loadUsers();
     } catch (error) {
-      setStatus(`网络错误: ${String(error)}`);
+      const message = `网络错误: ${String(error)}`;
+      setStatus(message);
+      toast.error(message);
     } finally {
       setAdjustLoading(false);
-    }
-  }
-
-  async function submitDelete(user) {
-    const confirmed = window.confirm(
-      `确认删除用户 ${user.email}？\n该操作会删除账号、课程、余额账户和流水，且不可恢复。`,
-    );
-    if (!confirmed) return;
-
-    setDeletingUserId(user.id);
-    setStatus("");
-    try {
-      const resp = await apiCall(`/api/admin/users/${user.id}`, { method: "DELETE" });
-      const data = await jsonOrEmpty(resp);
-      if (!resp.ok) {
-        setStatus(parseError(data, "删除用户失败"));
-        return;
-      }
-
-      if (adjustingUser?.id === user.id) {
-        setAdjustingUser(null);
-        setDeltaPoints(0);
-        setReason("");
-      }
-
-      const failedDirs = Array.isArray(data.file_cleanup_failed_dirs) ? data.file_cleanup_failed_dirs : [];
-      setStatus(
-        `删除成功：${user.email}，课程 ${Number(data.deleted_lessons || 0)}，流水 ${Number(data.deleted_ledger_rows || 0)}，操作员引用清理 ${Number(data.cleared_operator_refs || 0)}，文件清理失败 ${failedDirs.length}`,
-      );
-
-      if (users.length <= 1 && page > 1) {
-        setPage(page - 1);
-      } else {
-        await loadUsers();
-      }
-    } catch (error) {
-      setStatus(`网络错误: ${String(error)}`);
-    } finally {
-      setDeletingUserId(null);
     }
   }
 
@@ -162,110 +133,151 @@ export function AdminUsersTab({ apiCall }) {
         <CardDescription>搜索、分页、排序与手工调账。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex flex-wrap gap-2">
+        <form
+          className="flex flex-wrap gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setPage(1);
+            setKeyword(keywordInput.trim());
+          }}
+        >
           <Input value={keywordInput} onChange={(e) => setKeywordInput(e.target.value)} placeholder="按邮箱搜索" className="max-w-xs" />
-          <Button
-            variant="outline"
-            onClick={() => {
-              setPage(1);
-              setKeyword(keywordInput.trim());
-            }}
-          >
+          <Button type="submit" variant="outline">
             查询
           </Button>
-          <Button variant="ghost" onClick={loadUsers} disabled={loading}>刷新</Button>
-          <Select value={String(pageSize)} onChange={(e) => { setPage(1); setPageSize(Number(e.target.value)); }} className="max-w-[120px]">
-            <option value="10">10 / 页</option>
-            <option value="20">20 / 页</option>
-            <option value="50">50 / 页</option>
+          <Button type="button" variant="ghost" onClick={loadUsers} disabled={loading}>
+            刷新
+          </Button>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(value) => {
+              setPage(1);
+              setPageSize(Number(value));
+            }}
+          >
+            <SelectTrigger className="w-[120px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="10">10 / 页</SelectItem>
+              <SelectItem value="20">20 / 页</SelectItem>
+              <SelectItem value="50">50 / 页</SelectItem>
+            </SelectContent>
           </Select>
-        </div>
+        </form>
 
-        <div className="overflow-x-auto rounded-md border border-input">
-          <table className="w-full min-w-[760px] text-sm">
-            <thead className="bg-muted/40">
-              <tr>
-                <th className="px-3 py-2 text-left">ID</th>
-                <th className="px-3 py-2 text-left"><button type="button" onClick={() => toggleSort("email")}>邮箱</button></th>
-                <th className="px-3 py-2 text-left"><button type="button" onClick={() => toggleSort("balance_points")}>余额</button></th>
-                <th className="px-3 py-2 text-left"><button type="button" onClick={() => toggleSort("created_at")}>创建时间</button></th>
-                <th className="px-3 py-2 text-left">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((item) => (
-                <tr key={item.id} className="border-t border-input">
-                  <td className="px-3 py-2">{item.id}</td>
-                  <td className="px-3 py-2">{item.email}</td>
-                  <td className="px-3 py-2">{formatPoints(item.balance_points)}</td>
-                  <td className="px-3 py-2">{formatDateTime(item.created_at)}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={deletingUserId === item.id}
-                        onClick={() => {
-                          setAdjustingUser(item);
-                          setDeltaPoints(0);
-                          setReason("");
-                        }}
-                      >
-                        调账
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        disabled={deletingUserId === item.id}
-                        onClick={() => submitDelete(item)}
-                      >
-                        {deletingUserId === item.id ? "删除中..." : "删除"}
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {users.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-4 text-muted-foreground" colSpan={5}>暂无数据</td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+        {loading ? <Skeleton className="h-10 w-full" /> : null}
+        <Table className="min-w-[760px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>ID</TableHead>
+              <TableHead>
+                <Button type="button" variant="ghost" size="sm" onClick={() => toggleSort("email")}>
+                  邮箱
+                </Button>
+              </TableHead>
+              <TableHead>
+                <Button type="button" variant="ghost" size="sm" onClick={() => toggleSort("balance_points")}>
+                  余额
+                </Button>
+              </TableHead>
+              <TableHead>
+                <Button type="button" variant="ghost" size="sm" onClick={() => toggleSort("created_at")}>
+                  创建时间
+                </Button>
+              </TableHead>
+              <TableHead>操作</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {users.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell>{item.id}</TableCell>
+                <TableCell>{item.email}</TableCell>
+                <TableCell>{formatPoints(item.balance_points)}</TableCell>
+                <TableCell>{formatDateTime(item.created_at)}</TableCell>
+                <TableCell>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setAdjustingUser(item);
+                      setDeltaPoints(0);
+                      setReason("");
+                    }}
+                  >
+                    调账
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+            {users.length === 0 ? (
+              <TableRow>
+                <TableCell className="text-muted-foreground" colSpan={5}>
+                  暂无数据
+                </TableCell>
+              </TableRow>
+            ) : null}
+          </TableBody>
+        </Table>
 
         <div className="flex items-center justify-between">
           <p className="text-xs text-muted-foreground">总计 {total} 条</p>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button>
-            <span className="text-xs text-muted-foreground">{page} / {pageCount}</span>
-            <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => setPage(page + 1)}>下一页</Button>
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+              上一页
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {page} / {pageCount}
+            </span>
+            <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => setPage(page + 1)}>
+              下一页
+            </Button>
           </div>
         </div>
 
-        {status ? <p className="text-sm text-muted-foreground">{status}</p> : null}
+        {status ? (
+          <Alert>
+            <AlertDescription>{status}</AlertDescription>
+          </Alert>
+        ) : null}
 
-        {adjustingUser ? (
-          <div className="rounded-md border border-input bg-muted/20 p-3">
-            <p className="mb-2 text-sm font-medium">调账用户：{adjustingUser.email}</p>
-            <div className="grid gap-2 md:grid-cols-3">
+        <Dialog open={Boolean(adjustingUser)} onOpenChange={(open) => !open && setAdjustingUser(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>余额调账</DialogTitle>
+              <DialogDescription>调账用户：{adjustingUser?.email || "-"}</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-3">
               <div className="grid gap-1">
-                <Label>增减点数（可负数）</Label>
-                <Input type="number" value={deltaPoints} onChange={(e) => setDeltaPoints(Number(e.target.value || 0))} />
+                <Label htmlFor="delta-points">增减点数（可负数）</Label>
+                <Input
+                  id="delta-points"
+                  type="number"
+                  value={deltaPoints}
+                  onChange={(e) => setDeltaPoints(Number(e.target.value || 0))}
+                />
               </div>
-              <div className="grid gap-1 md:col-span-2">
-                <Label>备注（必填）</Label>
-                <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例如：线下充值 1000 点" />
+              <div className="grid gap-1">
+                <Label htmlFor="adjust-reason">备注（必填）</Label>
+                <Input
+                  id="adjust-reason"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="例如：线下充值 1000 点"
+                />
               </div>
             </div>
-            <div className="mt-3 flex gap-2">
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setAdjustingUser(null)}>
+                取消
+              </Button>
               <Button onClick={submitAdjust} disabled={adjustLoading || !reason.trim()}>
                 {adjustLoading ? "提交中..." : "确认调账"}
               </Button>
-              <Button variant="ghost" onClick={() => setAdjustingUser(null)}>取消</Button>
-            </div>
-          </div>
-        ) : null}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

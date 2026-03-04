@@ -1,8 +1,9 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { NavLink } from "react-router-dom";
 
 import { AdminApp } from "../AdminApp";
 import { api } from "../shared/api/client";
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "../shared/ui";
+import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton } from "../shared/ui";
 import { clearAuthStorage, TOKEN_KEY } from "./authStorage";
 
 export function AdminShell() {
@@ -46,7 +47,7 @@ export function AdminShell() {
 
   if (!accessToken) {
     return (
-      <div className="style-vega section-soft min-h-screen bg-background">
+      <div className="section-soft min-h-screen bg-background">
         <div className="container-wrapper py-8">
           <div className="container">
             <Card>
@@ -55,7 +56,9 @@ export function AdminShell() {
                 <CardDescription>请先登录后再访问管理员后台。</CardDescription>
               </CardHeader>
               <CardContent>
-                <Button onClick={() => { window.location.href = "/"; }}>返回学习页登录</Button>
+                <Button asChild>
+                  <NavLink to="/">返回学习页登录</NavLink>
+                </Button>
               </CardContent>
             </Card>
           </div>
@@ -66,12 +69,13 @@ export function AdminShell() {
 
   if (adminAuthState === "idle" || adminAuthState === "checking") {
     return (
-      <div className="style-vega section-soft min-h-screen bg-background">
+      <div className="section-soft min-h-screen bg-background">
         <div className="container-wrapper py-8">
           <div className="container">
             <Card>
-              <CardContent className="p-6">
+              <CardContent className="space-y-3 p-6">
                 <p className="text-sm text-muted-foreground">正在验证管理员权限...</p>
+                <Skeleton className="h-4 w-52" />
               </CardContent>
             </Card>
           </div>
@@ -82,7 +86,7 @@ export function AdminShell() {
 
   if (!isAdminUser) {
     return (
-      <div className="style-vega section-soft min-h-screen bg-background">
+      <div className="section-soft min-h-screen bg-background">
         <div className="container-wrapper py-8">
           <div className="container">
             <Card>
@@ -91,7 +95,9 @@ export function AdminShell() {
                 <CardDescription>当前账号不在 `ADMIN_EMAILS` 白名单中。</CardDescription>
               </CardHeader>
               <CardContent className="flex gap-2">
-                <Button variant="outline" onClick={() => { window.location.href = "/"; }}>返回学习页</Button>
+                <Button variant="outline" asChild>
+                  <NavLink to="/">返回学习页</NavLink>
+                </Button>
                 <Button onClick={handleLogout}>退出登录</Button>
               </CardContent>
             </Card>

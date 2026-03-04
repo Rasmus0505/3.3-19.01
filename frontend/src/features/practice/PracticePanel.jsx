@@ -1,8 +1,8 @@
-﻿import { ArrowLeft, ArrowRight, BookOpen, Loader2, Play } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Loader2, Play } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { api, parseResponse } from "../../shared/api/client";
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Textarea } from "../../shared/ui";
+import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Textarea } from "../../shared/ui";
 
 function normalizeInputTokens(text) {
   return text
@@ -121,18 +121,17 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="rounded-md border border-input bg-background p-3">
-          <p className="text-xs text-muted-foreground">英文句子</p>
-          <p className="mt-1 text-sm leading-relaxed">{current.text_en}</p>
-          {showChinese ? (
-            <>
-              <p className="mt-3 text-xs text-muted-foreground">中文</p>
-              <p className="mt-1 text-sm leading-relaxed">{current.text_zh || "(翻译失败，暂缺)"}</p>
-            </>
-          ) : null}
-        </div>
+        <Alert>
+          <AlertTitle>句子内容</AlertTitle>
+          <AlertDescription>
+            <p className="text-sm leading-relaxed">{current.text_en}</p>
+            {showChinese ? (
+              <p className="mt-2 text-sm text-muted-foreground">{current.text_zh || "(翻译失败，暂缺)"}</p>
+            ) : null}
+          </AlertDescription>
+        </Alert>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             onClick={async () => {
@@ -163,6 +162,7 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
             {audioLoading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
             播放本句
           </Button>
+          <Badge variant="outline">已通过 {completedIndexes.length} 句</Badge>
         </div>
 
         <Textarea
@@ -175,19 +175,18 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
         <Button onClick={checkAnswer}>检查拼写</Button>
 
         {checkResult?.token_results ? (
-          <div className="rounded-md border border-input bg-background p-3">
-            <p className="mb-2 text-xs text-muted-foreground">逐词结果</p>
-            <div className="flex flex-wrap gap-2">
-              {checkResult.token_results.map((item, i) => (
-                <span
-                  key={`${item.expected}-${i}`}
-                  className={`rounded px-2 py-1 text-xs ${item.correct ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive"}`}
-                >
-                  {item.input || "(空)"} / {item.expected || "(空)"}
-                </span>
-              ))}
-            </div>
-          </div>
+          <Alert variant={checkResult.passed ? "success" : "destructive"}>
+            <AlertTitle>{checkResult.passed ? "通过" : "未通过"}</AlertTitle>
+            <AlertDescription>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {checkResult.token_results.map((item, i) => (
+                  <Badge key={`${item.expected}-${i}`} variant={item.correct ? "secondary" : "destructive"}>
+                    {item.input || "(空)"} / {item.expected || "(空)"}
+                  </Badge>
+                ))}
+              </div>
+            </AlertDescription>
+          </Alert>
         ) : null}
       </CardContent>
     </Card>

@@ -1,7 +1,8 @@
-﻿import { Settings2 } from "lucide-react";
+import { Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Select } from "../../shared/ui";
+import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
   return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
@@ -36,7 +37,9 @@ export function AdminRatesTab({ apiCall }) {
       const resp = await apiCall("/api/admin/billing-rates");
       const data = await jsonOrEmpty(resp);
       if (!resp.ok) {
-        setStatus(parseError(data, "加载计费配置失败"));
+        const message = parseError(data, "加载计费配置失败");
+        setStatus(message);
+        toast.error(message);
         return;
       }
       const list = Array.isArray(data.rates) ? data.rates : [];
@@ -50,7 +53,9 @@ export function AdminRatesTab({ apiCall }) {
       });
       setDrafts(draftMap);
     } catch (error) {
-      setStatus(`网络错误: ${String(error)}`);
+      const message = `网络错误: ${String(error)}`;
+      setStatus(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -77,13 +82,19 @@ export function AdminRatesTab({ apiCall }) {
       });
       const data = await jsonOrEmpty(resp);
       if (!resp.ok) {
-        setStatus(parseError(data, "保存失败"));
+        const message = parseError(data, "保存失败");
+        setStatus(message);
+        toast.error(message);
         return;
       }
-      setStatus(`模型 ${modelName} 已更新`);
+      const message = `模型 ${modelName} 已更新`;
+      setStatus(message);
+      toast.success(message);
       await loadRates();
     } catch (error) {
-      setStatus(`网络错误: ${String(error)}`);
+      const message = `网络错误: ${String(error)}`;
+      setStatus(message);
+      toast.error(message);
     } finally {
       setSavingModel("");
     }
@@ -99,83 +110,90 @@ export function AdminRatesTab({ apiCall }) {
         <CardDescription>按模型维护每分钟点数与启用状态。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="overflow-x-auto rounded-md border border-input">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead className="bg-muted/40">
-              <tr>
-                <th className="px-3 py-2 text-left">模型</th>
-                <th className="px-3 py-2 text-left">点数/分钟</th>
-                <th className="px-3 py-2 text-left">状态</th>
-                <th className="px-3 py-2 text-left">更新时间</th>
-                <th className="px-3 py-2 text-left">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rates.map((item) => {
-                const draft = drafts[item.model_name] || item;
-                return (
-                  <tr key={item.model_name} className="border-t border-input">
-                    <td className="px-3 py-2">{item.model_name}</td>
-                    <td className="px-3 py-2">
-                      <Input
-                        type="number"
-                        min={1}
-                        value={draft.points_per_minute}
-                        onChange={(e) => {
-                          const nextValue = Number(e.target.value || 1);
-                          setDrafts((prev) => ({
-                            ...prev,
-                            [item.model_name]: {
-                              ...prev[item.model_name],
-                              points_per_minute: nextValue,
-                            },
-                          }));
-                        }}
-                        className="max-w-[160px]"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <Select
-                        value={draft.is_active ? "active" : "inactive"}
-                        onChange={(e) => {
-                          setDrafts((prev) => ({
-                            ...prev,
-                            [item.model_name]: {
-                              ...prev[item.model_name],
-                              is_active: e.target.value === "active",
-                            },
-                          }));
-                        }}
-                        className="max-w-[160px]"
-                      >
-                        <option value="active">启用</option>
-                        <option value="inactive">停用</option>
-                      </Select>
-                    </td>
-                    <td className="px-3 py-2">{formatDateTime(item.updated_at)}</td>
-                    <td className="px-3 py-2">
-                      <Button
-                        size="sm"
-                        onClick={() => saveRate(item.model_name)}
-                        disabled={savingModel === item.model_name}
-                      >
-                        {savingModel === item.model_name ? "保存中..." : "保存"}
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {rates.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-4 text-muted-foreground" colSpan={5}>
-                    {loading ? "加载中..." : "暂无配置"}
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-        {status ? <p className="text-sm text-muted-foreground">{status}</p> : null}
+        {loading ? <Skeleton className="h-10 w-full" /> : null}
+        <Table className="min-w-[720px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>模型</TableHead>
+              <TableHead>点数/分钟</TableHead>
+              <TableHead>状态</TableHead>
+              <TableHead>更新时间</TableHead>
+              <TableHead>操作</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rates.map((item) => {
+              const draft = drafts[item.model_name] || item;
+              return (
+                <TableRow key={item.model_name}>
+                  <TableCell>{item.model_name}</TableCell>
+                  <TableCell>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={draft.points_per_minute}
+                      onChange={(e) => {
+                        const nextValue = Number(e.target.value || 1);
+                        setDrafts((prev) => ({
+                          ...prev,
+                          [item.model_name]: {
+                            ...prev[item.model_name],
+                            points_per_minute: nextValue,
+                          },
+                        }));
+                      }}
+                      className="max-w-[160px]"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Select
+                      value={draft.is_active ? "active" : "inactive"}
+                      onValueChange={(value) => {
+                        setDrafts((prev) => ({
+                          ...prev,
+                          [item.model_name]: {
+                            ...prev[item.model_name],
+                            is_active: value === "active",
+                          },
+                        }));
+                      }}
+                    >
+                      <SelectTrigger className="max-w-[160px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">启用</SelectItem>
+                        <SelectItem value="inactive">停用</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell>{formatDateTime(item.updated_at)}</TableCell>
+                  <TableCell>
+                    <Button
+                      size="sm"
+                      onClick={() => saveRate(item.model_name)}
+                      disabled={savingModel === item.model_name}
+                    >
+                      {savingModel === item.model_name ? "保存中..." : "保存"}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {rates.length === 0 ? (
+              <TableRow>
+                <TableCell className="text-muted-foreground" colSpan={5}>
+                  {loading ? "加载中..." : "暂无配置"}
+                </TableCell>
+              </TableRow>
+            ) : null}
+          </TableBody>
+        </Table>
+        {status ? (
+          <Alert>
+            <AlertDescription>{status}</AlertDescription>
+          </Alert>
+        ) : null}
       </CardContent>
     </Card>
   );
