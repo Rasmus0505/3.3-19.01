@@ -257,6 +257,16 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     [accessToken, apiClient, lesson],
   );
 
+  const resetWordTyping = useCallback((sentence, playbackRequired = true) => {
+    const next = createWordState(sentence?.tokens || []);
+    setActiveWordIndex(next.activeWordIndex);
+    setCurrentWordInput(next.currentWordInput);
+    setWordInputs(next.wordInputs);
+    setWordStatuses(next.wordStatuses);
+    currentWordInputRef.current = "";
+    resetSentenceGate(playbackRequired);
+  }, [resetSentenceGate]);
+
   const handleSentencePassed = useCallback(async () => {
     if (!lesson || !currentSentence) return;
 
@@ -296,16 +306,6 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     accessToken,
     onSentenceFinished,
   });
-
-  const resetWordTyping = useCallback((sentence, playbackRequired = true) => {
-    const next = createWordState(sentence?.tokens || []);
-    setActiveWordIndex(next.activeWordIndex);
-    setCurrentWordInput(next.currentWordInput);
-    setWordInputs(next.wordInputs);
-    setWordStatuses(next.wordStatuses);
-    currentWordInputRef.current = "";
-    resetSentenceGate(playbackRequired);
-  }, [resetSentenceGate]);
 
   const tryPlayCurrentSentence = useCallback(
     async ({ manual = false } = {}) => {
