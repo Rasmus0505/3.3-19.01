@@ -632,3 +632,76 @@ def test_create_lesson_endpoint_applies_word_limit_split(test_client, monkeypatc
     assert len(lesson["sentences"]) >= 2
     for sentence in lesson["sentences"]:
         assert len(sentence["tokens"]) <= 20
+
+
+def test_create_lesson_endpoint_skips_split_when_disabled(test_client, monkeypatch):
+    client, _, _ = test_client
+    token = _register_and_login(client, email="split-disabled@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from app.services import lesson_service as lesson_service_module
+
+    def fake_save_upload_file_stream(upload_file, input_path, max_bytes):
+        input_path.write_bytes(b"demo")
+
+    def fake_extract_audio_for_asr(input_path, audio_path):
+        audio_path.write_bytes(b"demo-audio")
+
+    def fake_probe_audio_duration_ms(opus_path):
+        return 60_000
+
+    def fake_transcribe_audio_file(audio_path, model):
+        words = []
+        cursor = 0
+        for idx in range(1, 27):
+            token = f"word{idx}"
+            punctuation = "." if idx == 20 else ""
+            words.append(
+                {
+                    "text": token,
+                    "begin_time": cursor,
+                    "end_time": cursor + 120,
+                    "punctuation": punctuation,
+                }
+            )
+            cursor += 180
+        sentence_text = " ".join(f"{word['text']}{word.get('punctuation', '')}" for word in words).replace(" .", ".")
+        return {
+            "asr_result_json": {
+                "transcripts": [
+                    {
+                        "sentences": [
+                            {
+                                "text": sentence_text,
+                                "begin_time": 0,
+                                "end_time": words[-1]["end_time"],
+                                "words": words,
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+
+    def fake_translate_sentences_to_zh(sentences, api_key):
+        return [f"zh-{idx}" for idx, _ in enumerate(sentences)], 0
+
+    monkeypatch.setattr(lesson_service_module, "ASR_SPLIT_ENABLED", False)
+    monkeypatch.setattr(lesson_service_module, "save_upload_file_stream", fake_save_upload_file_stream)
+    monkeypatch.setattr(lesson_service_module, "extract_audio_for_asr", fake_extract_audio_for_asr)
+    monkeypatch.setattr(lesson_service_module, "probe_audio_duration_ms", fake_probe_audio_duration_ms)
+    monkeypatch.setattr(lesson_service_module, "transcribe_audio_file", fake_transcribe_audio_file)
+    monkeypatch.setattr(lesson_service_module, "translate_sentences_to_zh", fake_translate_sentences_to_zh)
+    monkeypatch.setattr(lesson_service_module, "get_model_rate", lambda db, model_name: SimpleNamespace(points_per_minute=1))
+    monkeypatch.setattr(lesson_service_module, "calculate_points", lambda duration_ms, ppm: 1)
+    monkeypatch.setattr(lesson_service_module, "reserve_points", lambda *args, **kwargs: SimpleNamespace(id=1))
+    monkeypatch.setattr(lesson_service_module, "record_consume", lambda *args, **kwargs: None)
+    monkeypatch.setattr(lesson_service_module, "refund_points", lambda *args, **kwargs: None)
+
+    files = {"video_file": ("split_disabled.mp4", io.BytesIO(b"dummy"), "video/mp4")}
+    data = {"asr_model": "paraformer-v2"}
+    resp = client.post("/api/lessons", headers=headers, files=files, data=data)
+    assert resp.status_code == 200
+    lesson = resp.json()["lesson"]
+    assert len(lesson["sentences"]) == 1
+    assert len(lesson["sentences"][0]["tokens"]) > 20
