@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
-from app.core.config import ASR_SPLIT_MAX_WORDS, DASHSCOPE_API_KEY, UPLOAD_MAX_BYTES
+from app.core.config import ASR_SPLIT_ENABLED, ASR_SPLIT_MAX_WORDS, DASHSCOPE_API_KEY, UPLOAD_MAX_BYTES
 from app.models import Lesson, LessonSentence
 from app.repositories.progress import create_progress
 from app.services.asr_dashscope import transcribe_audio_file
@@ -68,9 +68,12 @@ class LessonService:
             if not sentences:
                 raise MediaError("ASR_SENTENCE_MISSING", "ASR 返回结果缺少句级信息", "未找到 transcripts[].sentences[]")
             source_sentence_count = len(sentences)
-            sentences = split_sentences_by_word_limit(sentences, ASR_SPLIT_MAX_WORDS)
+            split_enabled = ASR_SPLIT_ENABLED and ASR_SPLIT_MAX_WORDS > 0
+            if split_enabled:
+                sentences = split_sentences_by_word_limit(sentences, ASR_SPLIT_MAX_WORDS)
             logger.info(
-                "[DEBUG] lesson.generate split source_sentences=%s split_sentences=%s split_delta=%s max_words=%s",
+                "[DEBUG] lesson.generate split enabled=%s source_sentences=%s split_sentences=%s split_delta=%s max_words=%s",
+                split_enabled,
                 source_sentence_count,
                 len(sentences),
                 len(sentences) - source_sentence_count,
