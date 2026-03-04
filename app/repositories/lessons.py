@@ -23,3 +23,12 @@ def get_lesson_sentences(db: Session, lesson_id: int) -> list[LessonSentence]:
 
 def get_sentence(db: Session, lesson_id: int, idx: int) -> LessonSentence | None:
     return db.scalar(select(LessonSentence).where(LessonSentence.lesson_id == lesson_id, LessonSentence.idx == idx))
+
+
+def update_lesson_title_for_user(db: Session, lesson_id: int, user_id: int, title: str) -> Lesson | None:
+    lesson = get_lesson_for_user(db, lesson_id, user_id)
+    if not lesson:
+        return None
+    lesson.title = title
+    db.add(lesson)
+    return lesson

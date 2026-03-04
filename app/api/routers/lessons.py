@@ -1,6 +1,8 @@
 ﻿from __future__ import annotations
 
 import asyncio
+import logging
+import shutil
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
@@ -8,12 +10,12 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import get_current_user
 from app.api.routers._helpers import require_lesson_owner
 from app.api.serializers import to_lesson_detail_response, to_lesson_item_response
-from app.core.config import BASE_TMP_DIR, LESSON_DEFAULT_ASR_MODEL, REQUEST_TIMEOUT_SECONDS
+from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, LESSON_DEFAULT_ASR_MODEL, REQUEST_TIMEOUT_SECONDS
 from app.core.errors import error_response, map_billing_error, map_media_error
 from app.db import get_db
 from app.models import User
-from app.repositories.lessons import get_lesson_sentences, list_lessons_for_user
-from app.schemas import ErrorResponse, LessonCreateResponse, LessonDetailResponse, LessonItemResponse
+from app.repositories.lessons import get_lesson_sentences, list_lessons_for_user, update_lesson_title_for_user
+from app.schemas import ErrorResponse, LessonCreateResponse, LessonDeleteResponse, LessonDetailResponse, LessonItemResponse, LessonRenameRequest
 from app.services.asr_dashscope import AsrError, SUPPORTED_MODELS
 from app.services.billing_service import BillingError
 from app.services.lesson_service import LessonService
@@ -21,6 +23,7 @@ from app.services.media import cleanup_dir, create_request_dir
 
 
 router = APIRouter(prefix="/api/lessons", tags=["lessons"])
+logger = logging.getLogger(__name__)
 
 
 @router.post(
@@ -75,3 +78,63 @@ def get_lesson(lesson_id: int, db: Session = Depends(get_db), current_user: User
     lesson = require_lesson_owner(db, lesson_id, current_user.id)
     sentences = get_lesson_sentences(db, lesson.id)
     return to_lesson_detail_response(lesson, sentences)
+
+
+@router.patch(
+    "/{lesson_id}",
+    response_model=LessonItemResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
+def rename_lesson(
+    lesson_id: int,
+    payload: LessonRenameRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    title = str(payload.title or "").strip()
+    if not title:
+        return error_response(400, "INVALID_TITLE", "课程标题不能为空")
+    if len(title) > 255:
+        return error_response(400, "INVALID_TITLE", "课程标题长度不能超过 255")
+
+    logger.info("[DEBUG] lessons.rename.request lesson_id=%s user_id=%s", lesson_id, current_user.id)
+    require_lesson_owner(db, lesson_id, current_user.id)
+    lesson = update_lesson_title_for_user(db, lesson_id, current_user.id, title)
+    if not lesson:
+        return error_response(404, "LESSON_NOT_FOUND", "课程不存在")
+
+    db.commit()
+    db.refresh(lesson)
+    logger.info("[DEBUG] lessons.rename.success lesson_id=%s user_id=%s", lesson_id, current_user.id)
+    return to_lesson_item_response(lesson)
+
+
+@router.delete(
+    "/{lesson_id}",
+    response_model=LessonDeleteResponse,
+    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def delete_lesson(
+    lesson_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lesson = require_lesson_owner(db, lesson_id, current_user.id)
+    lesson_dir = BASE_DATA_DIR / f"lesson_{lesson_id}"
+
+    try:
+        logger.info("[DEBUG] lessons.delete.request lesson_id=%s user_id=%s", lesson_id, current_user.id)
+        db.delete(lesson)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        return error_response(500, "INTERNAL_ERROR", "删除课程失败", str(exc)[:1200])
+
+    if lesson_dir.exists():
+        try:
+            shutil.rmtree(lesson_dir)
+        except Exception as exc:
+            logger.warning("lesson_delete.cleanup_failed lesson_id=%s dir=%s error=%s", lesson_id, lesson_dir, exc)
+
+    logger.info("[DEBUG] lessons.delete.success lesson_id=%s user_id=%s", lesson_id, current_user.id)
+    return LessonDeleteResponse(ok=True, lesson_id=lesson_id)

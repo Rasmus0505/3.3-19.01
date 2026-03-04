@@ -27,7 +27,14 @@
 from app.schemas.auth import AuthRequest, AuthResponse, LogoutResponse, RefreshRequest, UserResponse
 from app.schemas.billing import BillingRateItem, BillingRatesResponse, WalletMeResponse, WalletRedeemCodeRequest, WalletRedeemCodeResponse
 from app.schemas.common import ErrorResponse, SuccessResponse
-from app.schemas.lesson import LessonCreateResponse, LessonDetailResponse, LessonItemResponse, LessonSentenceResponse
+from app.schemas.lesson import (
+    LessonCreateResponse,
+    LessonDeleteResponse,
+    LessonDetailResponse,
+    LessonItemResponse,
+    LessonRenameRequest,
+    LessonSentenceResponse,
+)
 from app.schemas.practice import ProgressResponse, ProgressUpdateRequest, TokenCheckRequest, TokenCheckResponse, TokenResult
 
 __all__ = [
@@ -42,6 +49,8 @@ __all__ = [
     "LessonItemResponse",
     "LessonDetailResponse",
     "LessonCreateResponse",
+    "LessonRenameRequest",
+    "LessonDeleteResponse",
     "TokenCheckRequest",
     "TokenResult",
     "TokenCheckResponse",

@@ -229,6 +229,57 @@ def test_lessons_progress_and_check(test_client):
     assert check.json()["passed"] is True
 
 
+def test_lesson_rename_and_delete_endpoints(test_client):
+    client, session_factory, _ = test_client
+    owner_token = _register_and_login(client, email="rename-owner@example.com")
+    other_token = _register_and_login(client, email="rename-other@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+
+    session = session_factory()
+    try:
+        owner = session.query(User).filter(User.email == "rename-owner@example.com").one()
+        lesson = Lesson(
+            user_id=owner.id,
+            title="old title",
+            source_filename="rename.mp4",
+            asr_model="paraformer-v2",
+            duration_ms=3000,
+            media_storage="client_indexeddb",
+            source_duration_ms=3000,
+            status="ready",
+        )
+        session.add(lesson)
+        session.flush()
+        lesson_id = lesson.id
+        session.commit()
+    finally:
+        session.close()
+
+    rename_ok = client.patch(f"/api/lessons/{lesson_id}", headers=owner_headers, json={"title": "  New Lesson Title  "})
+    assert rename_ok.status_code == 200
+    assert rename_ok.json()["title"] == "New Lesson Title"
+
+    rename_empty = client.patch(f"/api/lessons/{lesson_id}", headers=owner_headers, json={"title": "   "})
+    assert rename_empty.status_code == 400
+    assert rename_empty.json()["error_code"] == "INVALID_TITLE"
+
+    rename_too_long = client.patch(f"/api/lessons/{lesson_id}", headers=owner_headers, json={"title": "x" * 256})
+    assert rename_too_long.status_code == 400
+    assert rename_too_long.json()["error_code"] == "INVALID_TITLE"
+
+    delete_cross_user = client.delete(f"/api/lessons/{lesson_id}", headers=other_headers)
+    assert delete_cross_user.status_code == 404
+
+    delete_ok = client.delete(f"/api/lessons/{lesson_id}", headers=owner_headers)
+    assert delete_ok.status_code == 200
+    assert delete_ok.json()["ok"] is True
+    assert delete_ok.json()["lesson_id"] == lesson_id
+
+    get_deleted = client.get(f"/api/lessons/{lesson_id}", headers=owner_headers)
+    assert get_deleted.status_code == 404
+
+
 def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch):
     client, session_factory, _ = test_client
     token = _register_and_login(client, email="creator@example.com")
