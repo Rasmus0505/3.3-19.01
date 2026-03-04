@@ -1,5 +1,5 @@
-import { LogOut, Shield, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
+﻿import { LogOut, Menu, Search, Shield, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { AuthPanel } from "../features/auth/AuthPanel";
@@ -9,7 +9,7 @@ import { PracticePanel } from "../features/practice/PracticePanel";
 import { UploadPanel } from "../features/upload/UploadPanel";
 import { WalletBadge } from "../features/wallet/WalletBadge";
 import { api, parseResponse, toErrorText } from "../shared/api/client";
-import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Separator } from "../shared/ui";
+import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, Separator, Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "../shared/ui";
 import { clearAuthStorage, REFRESH_KEY, TOKEN_KEY } from "./authStorage";
 
 export function LearningShell() {
@@ -23,6 +23,15 @@ export function LearningShell() {
   const [walletBalance, setWalletBalance] = useState(0);
   const [billingRates, setBillingRates] = useState([]);
   const [isAdminUser, setIsAdminUser] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [commandQuery, setCommandQuery] = useState("");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  const filteredLessons = useMemo(() => {
+    const keyword = commandQuery.trim().toLowerCase();
+    if (!keyword) return lessons;
+    return lessons.filter((item) => `${item.title || ""} ${item.asr_model || ""}`.toLowerCase().includes(keyword));
+  }, [commandQuery, lessons]);
 
   async function loadLessons() {
     if (!accessToken) {
@@ -133,6 +142,8 @@ export function LearningShell() {
     setViewMode("dashboard");
     setWalletBalance(0);
     setIsAdminUser(false);
+    setMobileNavOpen(false);
+    setCommandOpen(false);
   }
 
   async function handleLessonCreated(lesson) {
@@ -155,6 +166,16 @@ export function LearningShell() {
     await loadLessonDetail(currentLesson.id);
   }
 
+  async function handleCommandSelect(lessonId) {
+    if (!lessonId) return;
+    setCommandOpen(false);
+    setCommandQuery("");
+    if (lessonId !== currentLesson?.id) {
+      await loadLessonDetail(lessonId);
+    }
+    setViewMode("dashboard");
+  }
+
   return (
     <div className="section-soft min-h-screen bg-background">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -174,17 +195,73 @@ export function LearningShell() {
               <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
             </div>
             <div className="ml-auto flex items-center gap-2">
+              {accessToken && lessons.length > 0 ? (
+                <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={() => setCommandOpen(true)}>
+                  <Search className="size-4" />
+                  快速跳转
+                </Button>
+              ) : null}
               {accessToken && isAdminUser ? (
-                <Button variant="outline" size="sm" onClick={() => navigate("/admin/users")}>
+                <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={() => navigate("/admin/users")}>
                   <Shield className="size-4" />
                   管理后台
                 </Button>
               ) : null}
               {accessToken ? (
-                <Button variant="outline" size="sm" onClick={handleLogout}>
+                <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={handleLogout}>
                   <LogOut className="size-4" />
                   退出
                 </Button>
+              ) : null}
+
+              {accessToken ? (
+                <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+                  <SheetTrigger asChild>
+                    <Button variant="outline" size="icon-sm" className="md:hidden" aria-label="open-menu">
+                      <Menu className="size-4" />
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="right" className="w-[280px] sm:w-[320px]">
+                    <SheetHeader>
+                      <SheetTitle>快捷操作</SheetTitle>
+                      <SheetDescription>移动端导航与课程切换入口。</SheetDescription>
+                    </SheetHeader>
+                    <div className="mt-4 space-y-2">
+                      <Badge variant="outline">{lessons.length} lessons</Badge>
+                      <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
+                      {lessons.length > 0 ? (
+                        <Button
+                          variant="outline"
+                          className="w-full justify-start"
+                          onClick={() => {
+                            setMobileNavOpen(false);
+                            setCommandOpen(true);
+                          }}
+                        >
+                          <Search className="size-4" />
+                          快速跳转课程
+                        </Button>
+                      ) : null}
+                      {isAdminUser ? (
+                        <Button
+                          variant="outline"
+                          className="w-full justify-start"
+                          onClick={() => {
+                            setMobileNavOpen(false);
+                            navigate("/admin/users");
+                          }}
+                        >
+                          <Shield className="size-4" />
+                          管理后台
+                        </Button>
+                      ) : null}
+                      <Button className="w-full justify-start" onClick={handleLogout}>
+                        <LogOut className="size-4" />
+                        退出登录
+                      </Button>
+                    </div>
+                  </SheetContent>
+                </Sheet>
               ) : null}
             </div>
           </div>
@@ -269,6 +346,39 @@ export function LearningShell() {
           </aside>
         </div>
       </main>
+
+      <CommandDialog
+        open={commandOpen}
+        onOpenChange={(open) => {
+          setCommandOpen(open);
+          if (!open) {
+            setCommandQuery("");
+          }
+        }}
+      >
+        <CommandInput placeholder="搜索课程标题或模型..." value={commandQuery} onValueChange={setCommandQuery} />
+        <CommandList>
+          <CommandEmpty>没有匹配的课程</CommandEmpty>
+          <CommandGroup heading="课程列表">
+            {filteredLessons.map((lesson) => (
+              <CommandItem
+                key={lesson.id}
+                value={`${lesson.title || ""} ${lesson.asr_model || ""} ${lesson.id}`}
+                onSelect={() => {
+                  void handleCommandSelect(lesson.id);
+                }}
+              >
+                <div className="flex w-full flex-col">
+                  <span>{lesson.title}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {lesson.asr_model || "-"} · {lesson.sentences?.length || 0} 句
+                  </span>
+                </div>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </CommandList>
+      </CommandDialog>
     </div>
   );
 }

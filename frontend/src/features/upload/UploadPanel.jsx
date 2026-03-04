@@ -3,12 +3,30 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
-import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../shared/ui";
+import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, Input, Label, Progress, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
 
 const ASR_MODELS = [
   { value: "paraformer-v2", label: "paraformer-v2 (推荐，带时间戳)" },
   { value: "qwen3-asr-flash-filetrans", label: "qwen3-asr-flash-filetrans" },
 ];
+
+const PHASE_PROGRESS = {
+  idle: 0,
+  probing: 25,
+  ready: 45,
+  submitting: 75,
+  success: 100,
+  error: 100,
+};
+
+const PHASE_LABEL = {
+  idle: "等待上传",
+  probing: "读取媒体时长",
+  ready: "可提交",
+  submitting: "正在生成",
+  success: "生成成功",
+  error: "生成失败",
+};
 
 function calculatePointsBySeconds(seconds, pointsPerMinute) {
   if (!Number.isFinite(seconds) || seconds <= 0 || !Number.isFinite(pointsPerMinute) || pointsPerMinute <= 0) {
@@ -47,22 +65,30 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   const [status, setStatus] = useState("");
   const [durationSec, setDurationSec] = useState(null);
   const [probing, setProbing] = useState(false);
+  const [phase, setPhase] = useState("idle");
 
   const selectedRate = getRateByModel(billingRates, model);
   const estimatedPoints = selectedRate ? calculatePointsBySeconds(durationSec || 0, selectedRate.points_per_minute) : 0;
   const likelyInsufficient = Number.isFinite(balancePoints) && estimatedPoints > 0 && balancePoints < estimatedPoints;
+  const progressValue = PHASE_PROGRESS[phase] ?? 0;
 
   async function onSelectFile(nextFile) {
     setFile(nextFile);
     setStatus("");
     setDurationSec(null);
-    if (!nextFile) return;
+    if (!nextFile) {
+      setPhase("idle");
+      return;
+    }
+    setPhase("probing");
     setProbing(true);
     try {
       const seconds = await readMediaDurationSeconds(nextFile);
       setDurationSec(seconds);
+      setPhase("ready");
     } catch (_) {
       setDurationSec(null);
+      setPhase("ready");
     } finally {
       setProbing(false);
     }
@@ -72,11 +98,13 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     if (!file) {
       const message = "请先选择文件";
       setStatus(message);
+      setPhase("error");
       toast.error(message);
       return;
     }
     setLoading(true);
     setStatus("AI 正在生成课程...");
+    setPhase("submitting");
     try {
       const form = new FormData();
       form.append("video_file", file);
@@ -86,17 +114,20 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       if (!resp.ok) {
         const message = toErrorText(data, "生成失败");
         setStatus(message);
+        setPhase("error");
         toast.error(message);
         await onWalletChanged?.();
         return;
       }
       setStatus("生成成功");
+      setPhase("success");
       toast.success("课程已生成");
       await onWalletChanged?.();
       onCreated(data.lesson);
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
       setStatus(message);
+      setPhase("error");
       toast.error(message);
     } finally {
       setLoading(false);
@@ -117,7 +148,15 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
           <AlertDescription>
             <p className="text-muted-foreground">当前余额：{Number(balancePoints || 0)} 点</p>
             <p className="text-muted-foreground">
-              预估扣费：
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="cursor-help underline decoration-dotted underline-offset-2">预估扣费</span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  向上取整秒数后按分钟计费，再向上取整到点数。
+                </TooltipContent>
+              </Tooltip>
+              ：
               {selectedRate
                 ? probing
                   ? "读取时长中..."
@@ -129,6 +168,14 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
             {likelyInsufficient ? <p className="mt-1 text-destructive">余额可能不足，提交将被拒绝。</p> : null}
           </AlertDescription>
         </Alert>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>处理进度</span>
+            <span>{PHASE_LABEL[phase] || "处理中"}</span>
+          </div>
+          <Progress value={progressValue} />
+        </div>
 
         <form
           className="space-y-3"
