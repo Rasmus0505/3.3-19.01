@@ -1,4 +1,4 @@
-# Zeabur + GHCR 稳定发布手册（迁移独立执行）
+# Zeabur + GHCR 稳定发布手册（启动自动迁移）
 
 ## 目标
 
@@ -6,9 +6,8 @@
 
 1. GitHub Actions 构建并推送 GHCR 镜像
 2. Zeabur 拉取成品镜像运行
-3. 数据库迁移在服务运行后手动执行
-
-这样可避免把迁移写进启动命令导致的启动链路不稳定。
+3. 容器启动时自动执行 `alembic upgrade head`
+4. 迁移失败则阻断启动（失败阻断策略）
 
 ## 前置条件
 
@@ -17,10 +16,12 @@
 - 已存在：
   - `alembic.ini`
   - `migrations/versions/*.py`
+  - `scripts/start.sh`
   - `Dockerfile` 中包含：
     - `COPY alembic.ini ./`
     - `COPY migrations ./migrations`
-    - `CMD ... uvicorn ...`
+    - `COPY scripts ./scripts`
+    - `CMD ["sh", "/app/scripts/start.sh"]`
 
 ## A. 触发 GHCR 镜像构建
 
@@ -39,7 +40,7 @@
 - 先修复 GitHub Actions（权限、Dockerfile、构建错误）
 - 不要先改 Zeabur
 
-## B. Zeabur 改为拉 GHCR 镜像
+## B. Zeabur 使用 GHCR 镜像
 
 1. 打开 Zeabur 服务
 2. 部署方式选 `Custom Image`（或 `Image Deploy`）
@@ -54,24 +55,34 @@
    - `DB_INIT_MODE=auto`
    - `MT_BASE_URL`
    - `MT_MODEL`
+   - `AUTO_MIGRATE_ON_START=true`
+   - `ALEMBIC_CONFIG=alembic.ini`
 5. 启动命令留空（使用镜像内默认 CMD）
 
-## C. 独立执行数据库迁移（最稳）
+## C. 上线前预检（一次）
 
-服务状态到 `RUNNING` 后，在 Zeabur Console 运行：
+在当前运行环境先执行：
 
 ```bash
 cd /app
-python -m alembic -c alembic.ini upgrade head
 python -m alembic -c alembic.ini current
 ```
 
-预期：
+预期是当前链路的基线版本（当前为 `20260304_0001`）。若不一致，先对齐版本再发布新镜像。
 
-- `upgrade head` 成功
-- `current` 显示非空 revision
+## D. 自动迁移日志预期
 
-## D. 发布后验收
+发布后检查启动日志，预期顺序：
+
+```text
+[boot] running alembic upgrade head
+[boot] starting uvicorn
+INFO:     Application startup complete.
+```
+
+有新迁移时会出现 `Running upgrade ...`；无新迁移则为 no-op。
+
+## E. 发布后验收
 
 1. 健康检查：
    - `GET /health` -> `200`
@@ -79,20 +90,26 @@ python -m alembic -c alembic.ini current
    - `GET /api/wallet/me` -> `200`
 3. 管理接口（管理员 token）：
    - `GET /api/admin/billing-rates` -> `200`
-4. 容器文件验证（可选）：
-   - `ls /app` 应看到 `alembic.ini` 和 `migrations/`
 
-## E. 回滚
+## F. 应急与回滚
 
-1. Zeabur 镜像 tag 从 `latest` 切回上个 `sha-xxxx`
-2. 重启服务
-3. 如需回滚数据库：
+1. 迁移失败导致启动失败时，临时止血：
+
+```bash
+AUTO_MIGRATE_ON_START=false
+```
+
+然后重启服务，恢复可用性。
+
+2. 镜像回滚：
+   - 从 `latest` 切回上一个稳定 `sha-xxxx`
+3. 数据库回滚（仅确认需要时）：
 
 ```bash
 python -m alembic -c alembic.ini downgrade -1
 ```
 
-4. 重跑验收步骤
+4. 回滚后重跑验收步骤。
 
 ## 常见问题
 
@@ -103,8 +120,8 @@ python -m alembic -c alembic.ini downgrade -1
 
 ### 2) `No such revision`
 
-- 原因：`migrations/versions` 没进镜像
-- 修复：确认 `Dockerfile` 有 `COPY migrations ./migrations`，重建镜像
+- 原因：数据库记录 revision 与代码中的迁移脚本不一致
+- 修复：先对齐 `alembic_version`，再执行升级
 
 ### 3) `/api/...` 返回 401
 

@@ -22,9 +22,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY alembic.ini ./
 COPY migrations ./migrations
+COPY scripts ./scripts
 COPY app ./app
 COPY --from=frontend-builder /frontend/dist/ ./app/static/
 
+RUN chmod +x /app/scripts/start.sh
+
 EXPOSE 8000
 
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "/app/scripts/start.sh"]
