@@ -51,6 +51,9 @@ export function LearningShell() {
   const [commandQuery, setCommandQuery] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [currentLessonNeedsBinding, setCurrentLessonNeedsBinding] = useState(false);
+  const [immersiveActive, setImmersiveActive] = useState(false);
+
+  const immersiveLayoutActive = Boolean(accessToken && currentLesson?.id && immersiveActive);
 
   const filteredLessons = useMemo(() => {
     const keyword = commandQuery.trim().toLowerCase();
@@ -62,6 +65,7 @@ export function LearningShell() {
     if (!accessToken) {
       setLessons([]);
       setCurrentLesson(null);
+      setImmersiveActive(false);
       return;
     }
 
@@ -78,12 +82,13 @@ export function LearningShell() {
       setLessons(nextLessons);
       if (!nextLessons.length) {
         setCurrentLesson(null);
+        setImmersiveActive(false);
         return;
       }
 
       const currentExists = currentLesson?.id && nextLessons.some((item) => item.id === currentLesson.id);
       if (!currentExists) {
-        await loadLessonDetail(nextLessons[0].id);
+        await loadLessonDetail(nextLessons[0].id, { autoEnterImmersive: true, source: "initial_auto_select" });
       }
     } catch (error) {
       setGlobalStatus(`网络错误: ${String(error)}`);
@@ -92,8 +97,9 @@ export function LearningShell() {
     }
   }
 
-  async function loadLessonDetail(lessonId) {
+  async function loadLessonDetail(lessonId, options = {}) {
     if (!lessonId || !accessToken) return;
+    const { autoEnterImmersive = true, source = "lesson_selected" } = options;
     try {
       const [detailResp, progressResp] = await Promise.all([
         api(`/api/lessons/${lessonId}`, {}, accessToken),
@@ -120,6 +126,15 @@ export function LearningShell() {
             },
       };
       setCurrentLesson(merged);
+      setImmersiveActive((prev) => {
+        if (!autoEnterImmersive) {
+          return prev;
+        }
+        if (!prev) {
+          console.debug("[DEBUG] learning.immersive.enter", { lessonId, source });
+        }
+        return true;
+      });
     } catch (error) {
       setGlobalStatus(`网络错误: ${String(error)}`);
     }
@@ -209,17 +224,26 @@ export function LearningShell() {
     setIsAdminUser(false);
     setMobileNavOpen(false);
     setCommandOpen(false);
+    setImmersiveActive(false);
+  }
+
+  function handleExitImmersive(source = "button") {
+    setImmersiveActive((prev) => {
+      if (!prev) return prev;
+      console.debug("[DEBUG] learning.immersive.exit", { lessonId: currentLesson?.id ?? null, source });
+      return false;
+    });
   }
 
   async function handleLessonCreated(lesson) {
     await loadLessons();
-    await loadLessonDetail(lesson.id);
+    await loadLessonDetail(lesson.id, { autoEnterImmersive: true, source: "lesson_created" });
     await loadWallet();
   }
 
   async function refreshCurrentLesson() {
     if (!currentLesson?.id) return;
-    await loadLessonDetail(currentLesson.id);
+    await loadLessonDetail(currentLesson.id, { autoEnterImmersive: false, source: "progress_refresh" });
   }
 
   async function handleCommandSelect(lessonId) {
@@ -227,7 +251,7 @@ export function LearningShell() {
     setCommandOpen(false);
     setCommandQuery("");
     if (lessonId !== currentLesson?.id) {
-      await loadLessonDetail(lessonId);
+      await loadLessonDetail(lessonId, { autoEnterImmersive: true, source: "command_select" });
     }
   }
 
@@ -294,11 +318,12 @@ export function LearningShell() {
       if (currentLesson?.id === lessonId) {
         if (!nextLessons.length) {
           setCurrentLesson(null);
+          setImmersiveActive(false);
         } else {
           const fallbackIndex = removedIndex >= 0 ? Math.min(removedIndex, nextLessons.length - 1) : 0;
           const nextLessonId = nextLessons[fallbackIndex]?.id;
           if (nextLessonId) {
-            await loadLessonDetail(nextLessonId);
+            await loadLessonDetail(nextLessonId, { autoEnterImmersive: true, source: "delete_fallback" });
           } else {
             setCurrentLesson(null);
           }
@@ -316,7 +341,11 @@ export function LearningShell() {
 
   return (
     <div className="section-soft min-h-screen bg-background">
-      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <header
+        className={`sticky top-0 z-40 overflow-hidden border-b bg-background/95 backdrop-blur transition-all duration-300 ease-out supports-[backdrop-filter]:bg-background/80 ${
+          immersiveLayoutActive ? "pointer-events-none max-h-0 -translate-y-3 opacity-0 border-transparent" : "max-h-24 translate-y-0 opacity-100"
+        }`}
+      >
         <div className="container-wrapper">
           <div className="container flex h-14 items-center gap-2">
             <Button size="icon-sm" variant="ghost" aria-label="logo">
@@ -406,9 +435,17 @@ export function LearningShell() {
         </div>
       </header>
 
-      <main className="container-wrapper pb-6">
-        <div className="container grid gap-4 pt-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
-          <aside className="space-y-4">
+      <main className={`container-wrapper transition-all duration-300 ease-out ${immersiveLayoutActive ? "pb-0" : "pb-6"}`}>
+        <div
+          className={`container grid gap-4 transition-all duration-300 ease-out ${
+            immersiveLayoutActive ? "pt-2 xl:grid-cols-1" : "pt-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]"
+          }`}
+        >
+          <aside
+            className={`space-y-4 transition-all duration-300 ease-out ${
+              immersiveLayoutActive ? "pointer-events-none max-h-0 -translate-x-3 overflow-hidden opacity-0" : "max-h-[4000px] translate-x-0 opacity-100"
+            }`}
+          >
             <LessonList
               lessons={lessons}
               currentLessonId={currentLesson?.id}
@@ -430,13 +467,15 @@ export function LearningShell() {
             </Card>
           </aside>
 
-          <section className="min-w-0 space-y-4">
+          <section className={`min-w-0 space-y-4 transition-all duration-300 ease-out ${immersiveLayoutActive ? "xl:col-span-1" : ""}`}>
             {accessToken ? (
               <ImmersiveLessonPage
                 lesson={currentLesson}
                 accessToken={accessToken}
                 apiClient={api}
                 onProgressSynced={refreshCurrentLesson}
+                immersiveActive={immersiveLayoutActive}
+                onExitImmersive={handleExitImmersive}
               />
             ) : (
               <Card>
@@ -458,7 +497,11 @@ export function LearningShell() {
             ) : null}
           </section>
 
-          <aside className="space-y-4">
+          <aside
+            className={`space-y-4 transition-all duration-300 ease-out ${
+              immersiveLayoutActive ? "pointer-events-none max-h-0 translate-x-3 overflow-hidden opacity-0" : "max-h-[4000px] translate-x-0 opacity-100"
+            }`}
+          >
             {!accessToken ? (
               <AuthPanel onAuthed={handleAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
             ) : (

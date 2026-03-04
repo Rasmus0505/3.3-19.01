@@ -1,8 +1,21 @@
-﻿import { ArrowLeft, CheckCircle2, Link2, Loader2, RotateCcw } from "lucide-react";
+﻿import { ArrowLeft, ArrowRight, CheckCircle2, Eye, Link2, Loader2, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getStorageEstimate, getLessonMedia, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Switch } from "../../shared/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Switch,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../../shared/ui";
 import { getMediaExt, isAudioFilename, isVideoFilename, normalizeToken } from "./tokenNormalize";
 import { useSentencePlayback } from "./useSentencePlayback";
 import { useTypingFeedbackSounds } from "./useTypingFeedbackSounds";
@@ -93,6 +106,13 @@ function createWordState(tokens) {
   };
 }
 
+function isEditableShortcutTarget(target) {
+  if (!target) return false;
+  if (target?.isContentEditable) return true;
+  const tagName = String(target?.tagName || "").toLowerCase();
+  return tagName === "input" || tagName === "textarea" || tagName === "select";
+}
+
 function resolveMediaModeFromFileName(fileName) {
   if (isAudioFilename(fileName)) {
     return "audio";
@@ -154,7 +174,7 @@ function formatMediaLoadError(resp, payload) {
   return "濯掍綋鍔犺浇澶辫触銆?;
 }
 
-export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, onProgressSynced }) {
+export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, onProgressSynced, immersiveActive = false, onExitImmersive }) {
   const [phase, setPhase] = useState("idle");
   const [mediaMode, setMediaMode] = useState("video");
   const [mediaBlobUrl, setMediaBlobUrl] = useState("");
@@ -568,13 +588,131 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     clearActiveWordInput();
   }, [clearActiveWordInput, playWrongSound]);
 
+  const exitImmersive = useCallback(
+    (source = "button") => {
+      const handler = typeof onExitImmersive === "function" ? onExitImmersive : onBack;
+      if (typeof handler !== "function") return;
+      console.debug("[DEBUG] immersive.exit.request", { lessonId: lesson?.id ?? null, source });
+      handler(source);
+    },
+    [lesson?.id, onBack, onExitImmersive],
+  );
+
+  const jumpToSentence = useCallback(
+    async (targetIndex, source = "manual") => {
+      if (!lesson || sentenceCount <= 0) return;
+      const safeTarget = Math.max(0, Math.min(sentenceCount - 1, Number(targetIndex) || 0));
+      if (safeTarget === currentSentenceIndex) return;
+
+      stopPlayback();
+      setPhase("auto_play_pending");
+      setCurrentSentenceIndex(safeTarget);
+      resetWordTyping(lesson?.sentences?.[safeTarget]);
+      await syncProgress(safeTarget, completedIndexes, lesson?.sentences?.[safeTarget]?.begin_ms || 0);
+      onProgressSynced?.();
+      console.debug("[DEBUG] immersive.sentence.jump", {
+        lessonId: lesson.id,
+        fromSentenceIndex: currentSentenceIndex,
+        toSentenceIndex: safeTarget,
+        source,
+      });
+    },
+    [completedIndexes, currentSentenceIndex, lesson, onProgressSynced, resetWordTyping, sentenceCount, stopPlayback, syncProgress],
+  );
+
+  const goToPreviousSentence = useCallback(
+    (source = "button_prev") => {
+      if (currentSentenceIndex <= 0) return;
+      void jumpToSentence(currentSentenceIndex - 1, source);
+    },
+    [currentSentenceIndex, jumpToSentence],
+  );
+
+  const goToNextSentence = useCallback(
+    (source = "button_next") => {
+      if (currentSentenceIndex >= sentenceCount - 1) return;
+      void jumpToSentence(currentSentenceIndex + 1, source);
+    },
+    [currentSentenceIndex, jumpToSentence, sentenceCount],
+  );
+
+  const revealCurrentWord = useCallback(
+    (source = "button_reveal") => {
+      if (phase !== "typing") return;
+      const expected = expectedTokens[activeWordIndex] || "";
+      if (!expected) return;
+      console.debug("[DEBUG] immersive.word.reveal", {
+        lessonId: lesson?.id ?? null,
+        sentenceIndex: currentSentenceIndex,
+        wordIndex: activeWordIndex,
+        source,
+      });
+      commitCorrectWord(expected);
+    },
+    [activeWordIndex, commitCorrectWord, currentSentenceIndex, expectedTokens, lesson?.id, phase],
+  );
+
+  useEffect(() => {
+    if (!immersiveActive) return undefined;
+    if (typeof window === "undefined") return undefined;
+
+    const onWindowKeyDown = (event) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const fromTypingInput = event.target === typingInputRef.current;
+      if (isEditableShortcutTarget(event.target) && !fromTypingInput) return;
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        exitImmersive("shortcut_esc");
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        event.stopPropagation();
+        goToNextSentence("shortcut_enter");
+        return;
+      }
+      if (event.key === " ") {
+        event.preventDefault();
+        event.stopPropagation();
+        revealCurrentWord("shortcut_space");
+      }
+    };
+
+    window.addEventListener("keydown", onWindowKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onWindowKeyDown);
+    };
+  }, [exitImmersive, goToNextSentence, immersiveActive, revealCurrentWord]);
+
   const handleKeyDown = useCallback(
     (event) => {
-      if (phase !== "typing" || !currentSentence) return;
+      if (!currentSentence) return;
 
       const key = event.key;
-      if (key === " " || key === "Enter") {
+      if (key === "Escape") {
         event.preventDefault();
+        event.stopPropagation();
+        exitImmersive("shortcut_esc");
+        return;
+      }
+      if (key === "Enter") {
+        event.preventDefault();
+        event.stopPropagation();
+        goToNextSentence("shortcut_enter");
+        return;
+      }
+      if (key === " ") {
+        event.preventDefault();
+        event.stopPropagation();
+        revealCurrentWord("shortcut_space");
+        return;
+      }
+
+      if (phase !== "typing") return;
+
+      if (event.ctrlKey || event.metaKey || event.altKey) {
         return;
       }
 
@@ -638,9 +776,12 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
       commitCorrectWord,
       commitWrongWord,
       currentSentence,
+      exitImmersive,
       expectedTokens,
+      goToNextSentence,
       phase,
       playKeySound,
+      revealCurrentWord,
     ],
   );
 
@@ -665,25 +806,30 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   };
 
   const showMediaLoadingOverlay = mediaLoading && !needsBinding && !mediaReady;
+  const canGoPrevious = currentSentenceIndex > 0;
+  const canGoNext = currentSentenceIndex < Math.max(0, sentenceCount - 1);
+  const canRevealWord = phase === "typing" && activeWordIndex < expectedTokens.length && expectedTokens.length > 0;
 
   return (
-    <Card className="immersive-page" onClick={focusTypingInput}>
+    <Card className={`immersive-page ${immersiveActive ? "immersive-page--immersive" : ""}`} onClick={focusTypingInput}>
       <CardHeader>
         <div className="immersive-header">
-          <div>
-            <CardTitle className="text-base">娌夋蹈寮忓彞瀛愭嫾鍐欏涔?/CardTitle>
-            <CardDescription>
-              绗?{Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 鍙?
-            </CardDescription>
+          <div className="immersive-header-left">
+            {immersiveActive && (typeof onExitImmersive === "function" || typeof onBack === "function") ? (
+              <Button variant="outline" size="sm" onClick={() => exitImmersive("button")}>
+                <ArrowLeft className="size-4" />
+                退出沉浸
+              </Button>
+            ) : null}
+            <div>
+              <CardTitle className="text-base">娌夋蹈寮忓彞瀛愭嫾鍐欏涔?/CardTitle>
+              <CardDescription>
+                绗?{Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 鍙?
+              </CardDescription>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="secondary">{phaseLabelMap[phase] || "瀛︿範涓?}</Badge>
-            {typeof onBack === "function" ? (
-              <Button variant="outline" size="sm" onClick={onBack}>
-                <ArrowLeft className="size-4" />
-                杩斿洖
-              </Button>
-            ) : null}
           </div>
         </div>
       </CardHeader>
@@ -757,6 +903,32 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
             <RotateCcw className="size-4" />
             閲嶆挱鏈彞
           </Button>
+          <TooltipProvider delayDuration={120}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" onClick={() => revealCurrentWord("button_reveal")} disabled={!canRevealWord}>
+                  <Eye className="size-4" />
+                  揭示单词
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>space</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <Button variant="outline" onClick={() => goToPreviousSentence("button_prev")} disabled={!canGoPrevious || phase === "transition"}>
+            <ArrowLeft className="size-4" />
+            上一句
+          </Button>
+          <TooltipProvider delayDuration={120}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" onClick={() => goToNextSentence("button_next")} disabled={!canGoNext || phase === "transition"}>
+                  下一句
+                  <ArrowRight className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>enter</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <Badge variant="outline">
             宸插畬鎴?{completedIndexes.length} / {sentenceCount}
           </Badge>
@@ -862,6 +1034,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     </Card>
   );
 }
+
 
 
 
