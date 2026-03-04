@@ -163,15 +163,15 @@ function formatMediaLoadError(resp, payload) {
   const message = String(payload?.message || "").trim();
   const head = [statusText, errorCode].filter(Boolean).join(" ");
   if (head && message) {
-    return `濯掍綋鍔犺浇澶辫触锛?{head}: ${message}锛夈€俙;
+    return `媒体加载失败（${head}: ${message}）。`;
   }
   if (head) {
-    return `濯掍綋鍔犺浇澶辫触锛?{head}锛夈€俙;
+    return `媒体加载失败（${head}）。`;
   }
   if (message) {
-    return `濯掍綋鍔犺浇澶辫触锛?{message}锛夈€俙;
+    return `媒体加载失败（${message}）。`;
   }
-  return "濯掍綋鍔犺浇澶辫触銆?;
+  return "媒体加载失败。";
 }
 
 export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, onProgressSynced, immersiveActive = false, onExitImmersive }) {
@@ -296,7 +296,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     async ({ manual = false } = {}) => {
       if (!currentSentence) return;
       if (needsBinding) {
-        setMediaError("褰撳墠璇剧▼缂哄皯鍙挱鏀惧獟浣擄紝璇峰厛缁戝畾鏈湴鏂囦欢銆?);
+        setMediaError("当前课程缺少可播放媒体，请先绑定本地文件。");
         setPhase("typing");
         return;
       }
@@ -309,7 +309,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
       }
       if (result.reason === "clip_unavailable") {
         setNeedsBinding(true);
-        setMediaError("鏈彞鏈嶅姟绔煶棰戜笉鍙敤锛岃鍏堢粦瀹氭湰鍦版枃浠躲€?);
+        setMediaError("本句服务器音频不可用，请先绑定本地文件。");
         setPhase("typing");
         return;
       }
@@ -317,12 +317,12 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
         setPhase("typing");
         setMediaError(
           manual
-            ? "娴忚鍣ㄤ粛闃绘鑷姩鎾斁锛屽彲缁х画杈撳叆锛屾垨绋嶅悗鐐瑰嚮鈥滈噸鎾湰鍙モ€濄€?
-            : "鑷姩鎾斁鍙楅檺锛屽彲鐩存帴杈撳叆锛屾垨鐐瑰嚮鈥滈噸鎾湰鍙モ€濇墜鍔ㄦ挱鏀俱€?,
+            ? "浏览器仍阻止自动播放。你可以继续输入，或稍后点击“重播本句”。"
+            : "自动播放受限。你可以直接输入，或点击“重播本句”手动播放。",
         );
         return;
       }
-      setMediaError("褰撳墠鍙ユ挱鏀惧け璐ワ紝宸插垏鎹负杈撳叆妯″紡銆?);
+      setMediaError("当前句播放失败，已切换为输入模式。");
       setPhase("typing");
     },
     [currentSentence, needsBinding, playSentence, resetWordTyping],
@@ -373,13 +373,12 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           const localMediaType = String(localMedia.media_type || inferMediaTypeFromFileName(localMedia.file_name || lesson.source_filename || ""));
           setMediaMode(resolveMediaModeByTypeAndName(localMediaType, localMedia.file_name || lesson.source_filename || ""));
           setMediaBlobUrl(objectUrl);
-          setBindingHint("宸插姞杞芥祻瑙堝櫒鏈湴濯掍綋");
+          setBindingHint("已加载浏览器本地媒体");
           setMediaLoading(false);
-          console.debug("[DEBUG] immersive.media.local_loaded", { lessonId: lesson.id });
           return;
         }
       } catch (error) {
-        console.debug("[DEBUG] immersive.media.local_read_failed", { lessonId: lesson.id, error: String(error) });
+        // Ignore local media read errors and fallback to server media loading.
       }
 
       if (lesson.media_storage !== "server") {
@@ -387,7 +386,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
         setMediaBlobUrl("");
         setNeedsBinding(true);
         setBindingHint("");
-        setMediaError("褰撳墠璇剧▼濯掍綋浠呬繚瀛樺湪娴忚鍣ㄦ湰鍦帮紝璇峰厛缁戝畾鏈湴鏂囦欢銆?);
+        setMediaError("当前课程媒体仅保存在浏览器本地，请先绑定本地文件。");
         setMediaLoading(false);
         return;
       }
@@ -401,10 +400,10 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           setMediaBlobUrl("");
           if (isLocalMediaRequiredPayload(resp, payload) || Number(resp.status) === 404) {
             setNeedsBinding(true);
-            setMediaError("鏈嶅姟鍣ㄥ獟浣撲笉鍙敤锛岃缁戝畾鏈湴鏂囦欢缁х画瀛︿範銆?);
+            setMediaError("服务器媒体不可用，请绑定本地文件继续学习。");
           } else {
             setNeedsBinding(true);
-            setMediaError(`${formatMediaLoadError(resp, payload)} 璇风粦瀹氭湰鍦版枃浠剁户缁€俙);
+            setMediaError(`${formatMediaLoadError(resp, payload)} 请绑定本地文件继续。`);
           }
           return;
         }
@@ -431,7 +430,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
         const detail = String(error || "").trim();
         setMediaBlobUrl("");
         setNeedsBinding(true);
-        setMediaError(detail ? `濯掍綋鍔犺浇寮傚父锛?{detail}锛夛紝璇风粦瀹氭湰鍦版枃浠躲€俙 : "濯掍綋鍔犺浇寮傚父锛岃缁戝畾鏈湴鏂囦欢銆?);
+        setMediaError(detail ? `媒体加载异常（${detail}），请绑定本地文件。` : "媒体加载异常，请绑定本地文件。");
       } finally {
         if (!canceled) {
           setMediaLoading(false);
@@ -479,13 +478,13 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     const hasClipFallback = lesson?.media_storage === "server" && Array.isArray(lesson?.sentences) && lesson.sentences.some((item) => item?.audio_url);
     if (hasClipFallback) {
       setMediaMode("clip");
-      setMediaError("褰撳墠娴忚鍣ㄤ笉鏀寔璇ュ獟浣撴牸寮忥紝宸茶嚜鍔ㄥ垏鎹负鍙ョ骇闊抽妯″紡銆?);
+      setMediaError("当前浏览器不支持该媒体格式，已自动切换为句级音频模式。");
       setPhase("auto_play_pending");
       return;
     }
     setMediaBlobUrl("");
     setNeedsBinding(true);
-    setMediaError("褰撳墠濯掍綋鏍煎紡鏃犳硶鎾斁锛岃缁戝畾鏈湴鏂囦欢缁х画銆?);
+    setMediaError("当前媒体格式无法播放，请绑定本地文件继续。");
     setPhase("typing");
   }, [lesson?.media_storage, lesson?.sentences]);
 
@@ -501,7 +500,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           const delta = Math.abs(localDurationSec - expectedSourceDurationSec);
           if (delta > 0.5) {
             setBindingError(
-              `缁戝畾澶辫触锛氭枃浠舵椂闀垮樊 ${delta.toFixed(3)} 绉掞紝瓒呰繃 0.5 绉掗槇鍊硷紙鏈湴 ${localDurationSec.toFixed(3)} 绉掞紝璇剧▼ ${expectedSourceDurationSec.toFixed(3)} 绉掞級銆俙,
+              `绑定失败：文件时长差 ${delta.toFixed(3)} 秒，超过 0.5 秒阈值（本地 ${localDurationSec.toFixed(3)} 秒，课程 ${expectedSourceDurationSec.toFixed(3)} 秒）。`,
             );
             return;
           }
@@ -509,18 +508,17 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
 
         await requestPersistentStorage();
         await saveLessonMedia(lesson.id, nextFile);
-        console.debug("[DEBUG] immersive.media.bound_local_file", { lessonId: lesson.id });
         setNeedsBinding(false);
         setMediaError("");
-        setBindingHint("鏈湴濯掍綋宸茬粦瀹氾紝姝ｅ湪鍔犺浇銆?);
+        setBindingHint("本地媒体已绑定，正在加载。");
         setMediaReloadKey((value) => value + 1);
       } catch (error) {
-        let message = `缁戝畾澶辫触锛?{String(error)}`;
+        let message = `绑定失败：${String(error)}`;
         try {
           const estimate = await getStorageEstimate();
           if (estimate && Number.isFinite(estimate.quota) && Number.isFinite(estimate.usage) && estimate.quota > 0) {
             const usageRatio = (estimate.usage / estimate.quota) * 100;
-            message = `${message}锛堝瓨鍌ㄥ崰鐢ㄧ害 ${usageRatio.toFixed(1)}%锛塦;
+            message = `${message}（存储占用约 ${usageRatio.toFixed(1)}%）`;
           }
         } catch (_) {
           // ignore estimate errors
@@ -592,10 +590,9 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     (source = "button") => {
       const handler = typeof onExitImmersive === "function" ? onExitImmersive : onBack;
       if (typeof handler !== "function") return;
-      console.debug("[DEBUG] immersive.exit.request", { lessonId: lesson?.id ?? null, source });
       handler(source);
     },
-    [lesson?.id, onBack, onExitImmersive],
+    [onBack, onExitImmersive],
   );
 
   const jumpToSentence = useCallback(
@@ -610,12 +607,6 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
       resetWordTyping(lesson?.sentences?.[safeTarget]);
       await syncProgress(safeTarget, completedIndexes, lesson?.sentences?.[safeTarget]?.begin_ms || 0);
       onProgressSynced?.();
-      console.debug("[DEBUG] immersive.sentence.jump", {
-        lessonId: lesson.id,
-        fromSentenceIndex: currentSentenceIndex,
-        toSentenceIndex: safeTarget,
-        source,
-      });
     },
     [completedIndexes, currentSentenceIndex, lesson, onProgressSynced, resetWordTyping, sentenceCount, stopPlayback, syncProgress],
   );
@@ -641,15 +632,9 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
       if (phase !== "typing") return;
       const expected = expectedTokens[activeWordIndex] || "";
       if (!expected) return;
-      console.debug("[DEBUG] immersive.word.reveal", {
-        lessonId: lesson?.id ?? null,
-        sentenceIndex: currentSentenceIndex,
-        wordIndex: activeWordIndex,
-        source,
-      });
       commitCorrectWord(expected);
     },
-    [activeWordIndex, commitCorrectWord, currentSentenceIndex, expectedTokens, lesson?.id, phase],
+    [activeWordIndex, commitCorrectWord, expectedTokens, phase],
   );
 
   useEffect(() => {
@@ -789,20 +774,20 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">娌夋蹈瀛︿範</CardTitle>
-          <CardDescription>褰撳墠璇剧▼鏆傛棤鍙涔犲彞瀛愩€?/CardDescription>
+          <CardTitle className="text-base">沉浸学习</CardTitle>
+          <CardDescription>当前课程暂无可学习句子。</CardDescription>
         </CardHeader>
       </Card>
     );
   }
 
   const phaseLabelMap = {
-    idle: "鍑嗗涓?,
-    auto_play_pending: "鍗冲皢鎾斁",
-    playing: "鎾斁涓?,
-    typing: "杈撳叆涓?,
-    transition: "鍒囨崲涓嬩竴鍙?,
-    lesson_completed: "宸插畬鎴?,
+    idle: "准备中",
+    auto_play_pending: "即将播放",
+    playing: "播放中",
+    typing: "输入中",
+    transition: "切换下一句",
+    lesson_completed: "已完成",
   };
 
   const showMediaLoadingOverlay = mediaLoading && !needsBinding && !mediaReady;
@@ -822,14 +807,14 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
               </Button>
             ) : null}
             <div>
-              <CardTitle className="text-base">娌夋蹈寮忓彞瀛愭嫾鍐欏涔?/CardTitle>
+              <CardTitle className="text-base">沉浸式句子拼写学习</CardTitle>
               <CardDescription>
-                绗?{Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 鍙?
+                第 {Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 句
               </CardDescription>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="secondary">{phaseLabelMap[phase] || "瀛︿範涓?}</Badge>
+            <Badge variant="secondary">{phaseLabelMap[phase] || "学习中"}</Badge>
           </div>
         </div>
       </CardHeader>
@@ -853,8 +838,8 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           {!needsBinding && mediaMode === "audio" ? (
             <div className="w-full px-6">
               <div className="immersive-media-audio-placeholder">
-                <p>闊抽绱犳潗妯″紡</p>
-                <p className="immersive-hint">灏嗘寜鍙ヨ嚜鍔ㄦ挱鏀惧苟鍦ㄤ笅鏂规嫾鍐?/p>
+                <p>音频素材模式</p>
+                <p className="immersive-hint">将按句自动播放并在下方拼写。</p>
               </div>
               <audio
                 ref={mediaElementRef}
@@ -872,8 +857,8 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           {!needsBinding && mediaMode === "clip" ? (
             <div className="w-full px-6">
               <div className="immersive-media-audio-placeholder">
-                <p>闊抽闄嶇骇妯″紡</p>
-                <p className="immersive-hint">濯掍綋涓嶅彲鐢紝宸叉敼涓洪€愬彞闊抽鎾斁</p>
+                <p>音频降级模式</p>
+                <p className="immersive-hint">媒体不可用，已改为逐句音频播放。</p>
               </div>
               <audio ref={clipAudioRef} controls />
             </div>
@@ -883,7 +868,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
             <div className="immersive-overlay">
               <Button variant="secondary" disabled>
                 <Loader2 className="size-4 animate-spin" />
-                濯掍綋鍔犺浇涓?
+                媒体加载中
               </Button>
             </div>
           ) : null}
@@ -897,11 +882,11 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
             disabled={bindingBusy}
           >
             {bindingBusy ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />}
-            缁戝畾鏈湴鏂囦欢
+            绑定本地文件
           </Button>
           <Button variant="outline" onClick={() => tryPlayCurrentSentence({ manual: true })} disabled={mediaLoading || phase === "transition" || needsBinding}>
             <RotateCcw className="size-4" />
-            閲嶆挱鏈彞
+            重播本句
           </Button>
           <TooltipProvider delayDuration={120}>
             <Tooltip>
@@ -930,9 +915,9 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
             </Tooltip>
           </TooltipProvider>
           <Badge variant="outline">
-            宸插畬鎴?{completedIndexes.length} / {sentenceCount}
+            已完成 {completedIndexes.length} / {sentenceCount}
           </Badge>
-          {isPlaying ? <Badge variant="secondary">姝ｅ湪鎾斁鏈彞</Badge> : null}
+          {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
           {bindingHint ? (
             <Badge variant="secondary">
               <CheckCircle2 className="size-4" />
@@ -943,8 +928,8 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           {needsBinding ? (
             <div className="w-full px-6">
               <div className="immersive-media-audio-placeholder">
-                <p>寰呯粦瀹氭湰鍦板獟浣?/p>
-                <p className="immersive-hint">璇剧▼鍙锛屼絾鎾斁鍙楅檺銆傝鐐瑰嚮鈥滅粦瀹氭湰鍦版枃浠垛€濄€?/p>
+                <p>待绑定本地媒体</p>
+                <p className="immersive-hint">课程可见，但播放受限。请点击“绑定本地文件”。</p>
               </div>
             </div>
           ) : null}
@@ -954,13 +939,13 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
 
         <div className="immersive-typing">
           <div className="immersive-typing-toolbar">
-            <p className="immersive-hint">杈撳叆杈惧埌鍗曡瘝闀垮害鍚庤嚜鍔ㄥ垽瀹氾紱瓒呰繃 2 涓敊璇細娓呯┖閲嶆墦銆?/p>
+            <p className="immersive-hint">输入达到单词长度后自动判定；超过 2 个错误会清空重打。</p>
             <div className="immersive-display-toggle">
-              <span className="text-xs text-muted-foreground">涓嬪垝绾挎ā寮?/span>
+              <span className="text-xs text-muted-foreground">下划线模式</span>
               <Switch
                 checked={displayMode === "underline"}
                 onCheckedChange={(checked) => setDisplayMode(checked ? "underline" : "chip")}
-                aria-label="鍒囨崲鍗曡瘝鏄剧ず妯″紡"
+                aria-label="切换单词显示模式"
               />
             </div>
           </div>
@@ -994,9 +979,9 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           </div>
 
           <p className="text-sm text-muted-foreground">
-            褰撳墠鍙ヤ腑鏂囷細{currentSentence.text_zh || "(缈昏瘧澶辫触锛屾殏缂?"}
+            当前句中文：{currentSentence.text_zh || "(翻译失败，暂缺)"}
           </p>
-          {phase === "lesson_completed" ? <p className="text-sm text-primary">璇剧▼宸插畬鎴愶紝鎭枩浣狅紒</p> : null}
+          {phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
         </div>
 
         <input
