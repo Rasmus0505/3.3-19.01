@@ -14,6 +14,11 @@ from app.security import decode_token
 bearer_scheme = HTTPBearer(auto_error=True)
 
 
+def get_admin_emails() -> set[str]:
+    raw = os.getenv("ADMIN_EMAILS", "").strip()
+    return {x.strip().lower() for x in raw.split(",") if x.strip()}
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
@@ -33,8 +38,7 @@ def get_current_user(
 
 
 def get_admin_user(current_user: User = Depends(get_current_user)) -> User:
-    raw = os.getenv("ADMIN_EMAILS", "").strip()
-    admin_emails = {x.strip().lower() for x in raw.split(",") if x.strip()}
+    admin_emails = get_admin_emails()
     if current_user.email.lower() not in admin_emails:
         raise HTTPException(status_code=403, detail="无管理员权限")
     return current_user

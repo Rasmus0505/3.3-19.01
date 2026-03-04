@@ -1,6 +1,7 @@
 ﻿from app.schemas.admin import (
     AdminBillingRateUpdateRequest,
     AdminBillingRatesResponse,
+    AdminUserDeleteResponse,
     AdminUserItem,
     AdminUsersResponse,
     AdminWalletLogsResponse,
@@ -34,6 +35,7 @@ __all__ = [
     "WalletMeResponse",
     "BillingRateItem",
     "BillingRatesResponse",
+    "AdminUserDeleteResponse",
     "AdminUserItem",
     "AdminUsersResponse",
     "WalletAdjustRequest",

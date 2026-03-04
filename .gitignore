@@ -15,3 +15,4 @@ test_app.db
 
 run_asr_matrix.py
 run_filetrans_via_dashscope_files.py
+项目结构.md

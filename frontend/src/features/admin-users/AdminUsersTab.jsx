@@ -42,6 +42,7 @@ export function AdminUsersTab({ apiCall }) {
   const [deltaPoints, setDeltaPoints] = useState(0);
   const [reason, setReason] = useState("");
   const [adjustLoading, setAdjustLoading] = useState(false);
+  const [deletingUserId, setDeletingUserId] = useState(null);
 
   async function loadUsers() {
     setLoading(true);
@@ -98,6 +99,45 @@ export function AdminUsersTab({ apiCall }) {
       setStatus(`网络错误: ${String(error)}`);
     } finally {
       setAdjustLoading(false);
+    }
+  }
+
+  async function submitDelete(user) {
+    const confirmed = window.confirm(
+      `确认删除用户 ${user.email}？\n该操作会删除账号、课程、余额账户和流水，且不可恢复。`,
+    );
+    if (!confirmed) return;
+
+    setDeletingUserId(user.id);
+    setStatus("");
+    try {
+      const resp = await apiCall(`/api/admin/users/${user.id}`, { method: "DELETE" });
+      const data = await jsonOrEmpty(resp);
+      if (!resp.ok) {
+        setStatus(parseError(data, "删除用户失败"));
+        return;
+      }
+
+      if (adjustingUser?.id === user.id) {
+        setAdjustingUser(null);
+        setDeltaPoints(0);
+        setReason("");
+      }
+
+      const failedDirs = Array.isArray(data.file_cleanup_failed_dirs) ? data.file_cleanup_failed_dirs : [];
+      setStatus(
+        `删除成功：${user.email}，课程 ${Number(data.deleted_lessons || 0)}，流水 ${Number(data.deleted_ledger_rows || 0)}，操作员引用清理 ${Number(data.cleared_operator_refs || 0)}，文件清理失败 ${failedDirs.length}`,
+      );
+
+      if (users.length <= 1 && page > 1) {
+        setPage(page - 1);
+      } else {
+        await loadUsers();
+      }
+    } catch (error) {
+      setStatus(`网络错误: ${String(error)}`);
+    } finally {
+      setDeletingUserId(null);
     }
   }
 
@@ -160,17 +200,28 @@ export function AdminUsersTab({ apiCall }) {
                   <td className="px-3 py-2">{formatPoints(item.balance_points)}</td>
                   <td className="px-3 py-2">{formatDateTime(item.created_at)}</td>
                   <td className="px-3 py-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setAdjustingUser(item);
-                        setDeltaPoints(0);
-                        setReason("");
-                      }}
-                    >
-                      调账
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={deletingUserId === item.id}
+                        onClick={() => {
+                          setAdjustingUser(item);
+                          setDeltaPoints(0);
+                          setReason("");
+                        }}
+                      >
+                        调账
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={deletingUserId === item.id}
+                        onClick={() => submitDelete(item)}
+                      >
+                        {deletingUserId === item.id ? "删除中..." : "删除"}
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}

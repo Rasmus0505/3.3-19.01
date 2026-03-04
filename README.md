@@ -59,6 +59,7 @@ frontend/src/
   - `GET /api/billing/rates`
 - 管理后台（管理员）
   - `GET /api/admin/users`
+  - `DELETE /api/admin/users/{user_id}`
   - `POST /api/admin/users/{user_id}/wallet-adjust`
   - `GET /api/admin/wallet-logs`
   - `GET /api/admin/billing-rates`
