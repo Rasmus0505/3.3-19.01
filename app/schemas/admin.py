@@ -54,6 +54,9 @@ class WalletLedgerItem(BaseModel):
     model_name: str | None
     duration_ms: int | None
     lesson_id: int | None
+    redeem_batch_id: int | None
+    redeem_code_id: int | None
+    redeem_code_mask: str | None
     note: str
     created_at: datetime
 
@@ -74,3 +77,130 @@ class AdminBillingRateUpdateRequest(BaseModel):
 class AdminBillingRatesResponse(BaseModel):
     ok: bool = True
     rates: list[BillingRateItem]
+
+
+class AdminRedeemBatchCreateRequest(BaseModel):
+    batch_name: str = Field(min_length=1, max_length=120)
+    face_value_points: int = Field(gt=0)
+    generate_quantity: int = Field(gt=0, le=5000)
+    active_from: datetime | None = None
+    expire_at: datetime | None = None
+    daily_limit_per_user: int | None = Field(default=None, gt=0)
+    remark: str = Field(default="", max_length=1000)
+
+
+class AdminRedeemBatchCopyRequest(BaseModel):
+    generate_quantity: int = Field(gt=0, le=5000)
+
+
+class AdminRedeemBatchItem(BaseModel):
+    id: int
+    batch_name: str
+    face_value_points: int
+    generated_count: int
+    redeemed_count: int
+    remaining_count: int
+    redeem_rate: float
+    total_issued_points: int
+    total_redeemed_points: int
+    status: str
+    active_from: datetime
+    expire_at: datetime
+    daily_limit_per_user: int | None
+    effective_daily_limit: int
+    remark: str
+    created_by_user_id: int | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminRedeemBatchListResponse(BaseModel):
+    ok: bool = True
+    page: int
+    page_size: int
+    total: int
+    items: list[AdminRedeemBatchItem]
+
+
+class AdminRedeemBatchCreateResponse(BaseModel):
+    ok: bool = True
+    batch: AdminRedeemBatchItem
+    generated_codes: list[str]
+
+
+class AdminRedeemBatchActionResponse(BaseModel):
+    ok: bool = True
+    batch: AdminRedeemBatchItem
+
+
+class AdminRedeemCodeItem(BaseModel):
+    id: int
+    batch_id: int
+    batch_name: str
+    code_mask: str
+    status: str
+    effective_status: str
+    face_value_points: int
+    redeemed_user_email: str | None
+    redeemed_at: datetime | None
+    created_by_user_id: int | None
+    created_at: datetime
+
+
+class AdminRedeemCodeListResponse(BaseModel):
+    ok: bool = True
+    page: int
+    page_size: int
+    total: int
+    items: list[AdminRedeemCodeItem]
+
+
+class AdminRedeemCodeStatusActionResponse(BaseModel):
+    ok: bool = True
+    code_id: int
+    status: str
+    effective_status: str
+
+
+class AdminRedeemCodeBulkDisableRequest(BaseModel):
+    code_ids: list[int] = Field(default_factory=list)
+    batch_id: int | None = None
+
+
+class AdminRedeemCodeBulkDisableResponse(BaseModel):
+    ok: bool = True
+    changed_count: int
+
+
+class AdminRedeemCodeExportRequest(BaseModel):
+    batch_id: int | None = None
+    confirm_text: str = Field(min_length=1, max_length=32)
+
+
+class AdminRedeemAuditItem(BaseModel):
+    id: int
+    user_id: int | None
+    user_email: str | None
+    batch_id: int | None
+    batch_name: str | None
+    code_id: int | None
+    code_mask: str
+    success: bool
+    failure_reason: str
+    created_at: datetime
+
+
+class AdminRedeemAuditListResponse(BaseModel):
+    ok: bool = True
+    page: int
+    page_size: int
+    total: int
+    items: list[AdminRedeemAuditItem]
+
+
+class AdminRedeemAuditExportRequest(BaseModel):
+    confirm_text: str = Field(min_length=1, max_length=32)
+    batch_id: int | None = None
+    user_email: str = ""
+    date_from: datetime | None = None
+    date_to: datetime | None = None

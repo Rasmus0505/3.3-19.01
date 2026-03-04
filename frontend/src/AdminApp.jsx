@@ -1,7 +1,10 @@
-﻿import { LogOut, Menu, ScrollText, Settings2, Shield, Users } from "lucide-react";
+﻿import { Gift, LogOut, Menu, ScrollText, Settings2, Shield, Ticket, Users } from "lucide-react";
 import { useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
+import { AdminRedeemAuditTab } from "./features/admin-redeem/AdminRedeemAuditTab";
+import { AdminRedeemBatchesTab } from "./features/admin-redeem/AdminRedeemBatchesTab";
+import { AdminRedeemCodesTab } from "./features/admin-redeem/AdminRedeemCodesTab";
 import { AdminLogsTab } from "./features/admin-logs/AdminLogsTab";
 import { AdminRatesTab } from "./features/admin-rates/AdminRatesTab";
 import { AdminUsersTab } from "./features/admin-users/AdminUsersTab";
@@ -13,6 +16,9 @@ export function AdminApp({ apiCall, onLogout }) {
   const isUsersTab = location.pathname.startsWith("/admin/users");
   const isLogsTab = location.pathname.startsWith("/admin/logs");
   const isRatesTab = location.pathname.startsWith("/admin/rates");
+  const isRedeemBatchesTab = location.pathname.startsWith("/admin/redeem-batches");
+  const isRedeemCodesTab = location.pathname.startsWith("/admin/redeem-codes");
+  const isRedeemAuditTab = location.pathname.startsWith("/admin/redeem-audit");
 
   return (
     <div className="section-soft min-h-screen bg-background">
@@ -31,6 +37,9 @@ export function AdminApp({ apiCall, onLogout }) {
               <Badge variant={isUsersTab ? "default" : "outline"}>用户</Badge>
               <Badge variant={isLogsTab ? "default" : "outline"}>流水</Badge>
               <Badge variant={isRatesTab ? "default" : "outline"}>计费</Badge>
+              <Badge variant={isRedeemBatchesTab ? "default" : "outline"}>批次</Badge>
+              <Badge variant={isRedeemCodesTab ? "default" : "outline"}>兑换码</Badge>
+              <Badge variant={isRedeemAuditTab ? "default" : "outline"}>审计</Badge>
             </div>
             <div className="ml-auto flex items-center gap-2">
               <Button variant="outline" size="sm" asChild className="hidden md:inline-flex">
@@ -47,7 +56,7 @@ export function AdminApp({ apiCall, onLogout }) {
                     <Menu className="size-4" />
                   </Button>
                 </SheetTrigger>
-                <SheetContent side="right" className="w-[260px]">
+                <SheetContent side="right" className="w-[280px]">
                   <SheetHeader>
                     <SheetTitle>后台导航</SheetTitle>
                     <SheetDescription>在移动端快速切换管理页面。</SheetDescription>
@@ -69,6 +78,24 @@ export function AdminApp({ apiCall, onLogout }) {
                       <NavLink to="/admin/rates" onClick={() => setMobileNavOpen(false)}>
                         <Settings2 className="size-4" />
                         计费配置
+                      </NavLink>
+                    </Button>
+                    <Button asChild variant={isRedeemBatchesTab ? "default" : "outline"}>
+                      <NavLink to="/admin/redeem-batches" onClick={() => setMobileNavOpen(false)}>
+                        <Gift className="size-4" />
+                        兑换批次
+                      </NavLink>
+                    </Button>
+                    <Button asChild variant={isRedeemCodesTab ? "default" : "outline"}>
+                      <NavLink to="/admin/redeem-codes" onClick={() => setMobileNavOpen(false)}>
+                        <Ticket className="size-4" />
+                        兑换码列表
+                      </NavLink>
+                    </Button>
+                    <Button asChild variant={isRedeemAuditTab ? "default" : "outline"}>
+                      <NavLink to="/admin/redeem-audit" onClick={() => setMobileNavOpen(false)}>
+                        <ScrollText className="size-4" />
+                        兑换审计
                       </NavLink>
                     </Button>
                     <Button asChild variant="outline">
@@ -109,6 +136,24 @@ export function AdminApp({ apiCall, onLogout }) {
                 计费配置
               </NavLink>
             </Button>
+            <Button asChild variant={isRedeemBatchesTab ? "default" : "outline"}>
+              <NavLink to="/admin/redeem-batches">
+                <Gift className="size-4" />
+                兑换批次
+              </NavLink>
+            </Button>
+            <Button asChild variant={isRedeemCodesTab ? "default" : "outline"}>
+              <NavLink to="/admin/redeem-codes">
+                <Ticket className="size-4" />
+                兑换码列表
+              </NavLink>
+            </Button>
+            <Button asChild variant={isRedeemAuditTab ? "default" : "outline"}>
+              <NavLink to="/admin/redeem-audit">
+                <ScrollText className="size-4" />
+                兑换审计
+              </NavLink>
+            </Button>
           </div>
 
           <Routes>
@@ -116,6 +161,9 @@ export function AdminApp({ apiCall, onLogout }) {
             <Route path="users" element={<AdminUsersTab apiCall={apiCall} />} />
             <Route path="logs" element={<AdminLogsTab apiCall={apiCall} />} />
             <Route path="rates" element={<AdminRatesTab apiCall={apiCall} />} />
+            <Route path="redeem-batches" element={<AdminRedeemBatchesTab apiCall={apiCall} />} />
+            <Route path="redeem-codes" element={<AdminRedeemCodesTab apiCall={apiCall} />} />
+            <Route path="redeem-audit" element={<AdminRedeemAuditTab apiCall={apiCall} />} />
             <Route path="*" element={<Navigate to="users" replace />} />
           </Routes>
         </div>

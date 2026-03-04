@@ -2,6 +2,7 @@
 
 import io
 import os
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -88,6 +89,79 @@ def test_wallet_and_admin_endpoints(test_client):
     logs = client.get("/api/admin/wallet-logs", headers=headers)
     assert logs.status_code == 200
     assert "items" in logs.json()
+
+
+def test_redeem_code_admin_and_wallet_flow(test_client):
+    client, _, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "redeem-admin@example.com")
+
+    user_token = _register_and_login(client, email="redeem-user@example.com")
+    admin_token = _register_and_login(client, email="redeem-admin@example.com")
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    now = datetime.utcnow()
+    batch_resp = client.post(
+        "/api/admin/redeem-batches",
+        headers=admin_headers,
+        json={
+            "batch_name": "regression_batch",
+            "face_value_points": 66,
+            "generate_quantity": 2,
+            "active_from": now.isoformat(),
+            "expire_at": (now + timedelta(days=2)).isoformat(),
+            "daily_limit_per_user": 1,
+            "remark": "regression",
+        },
+    )
+    assert batch_resp.status_code == 200
+    batch_data = batch_resp.json()
+    assert batch_data["batch"]["generated_count"] == 2
+    generated_codes = batch_data["generated_codes"]
+    assert len(generated_codes) == 2
+
+    wallet_before = client.get("/api/wallet/me", headers=user_headers)
+    assert wallet_before.status_code == 200
+    before_points = wallet_before.json()["balance_points"]
+
+    redeem_ok = client.post("/api/wallet/redeem-code", headers=user_headers, json={"code": generated_codes[0]})
+    assert redeem_ok.status_code == 200
+    assert redeem_ok.json()["redeemed_points"] == 66
+    assert redeem_ok.json()["balance_points"] == before_points + 66
+
+    redeem_used = client.post("/api/wallet/redeem-code", headers=user_headers, json={"code": generated_codes[0]})
+    assert redeem_used.status_code == 400
+    assert redeem_used.json()["error_code"] == "REDEEM_CODE_ALREADY_USED"
+
+    redeem_limit = client.post("/api/wallet/redeem-code", headers=user_headers, json={"code": generated_codes[1]})
+    assert redeem_limit.status_code == 400
+    assert redeem_limit.json()["error_code"] == "REDEEM_CODE_DAILY_LIMIT_EXCEEDED"
+
+    logs = client.get(
+        "/api/admin/wallet-logs",
+        headers=admin_headers,
+        params={"user_email": "redeem-user@example.com", "event_type": "redeem_code"},
+    )
+    assert logs.status_code == 200
+    assert logs.json()["total"] >= 1
+    assert any(item["event_type"] == "redeem_code" for item in logs.json()["items"])
+
+    audit = client.get("/api/admin/redeem-audit", headers=admin_headers, params={"user_email": "redeem-user@example.com"})
+    assert audit.status_code == 200
+    assert audit.json()["total"] >= 3
+    assert any(item["success"] is True for item in audit.json()["items"])
+    assert any(item["success"] is False for item in audit.json()["items"])
+
+    forbidden = client.post(
+        "/api/admin/redeem-batches",
+        headers=user_headers,
+        json={
+            "batch_name": "forbidden",
+            "face_value_points": 50,
+            "generate_quantity": 1,
+        },
+    )
+    assert forbidden.status_code == 403
 
 
 def test_lessons_progress_and_check(test_client):

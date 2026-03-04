@@ -5,6 +5,7 @@
   },
   lessons: "/api/lessons",
   walletMe: "/api/wallet/me",
+  walletRedeemCode: "/api/wallet/redeem-code",
   billingRates: "/api/billing/rates",
   adminBillingRates: "/api/admin/billing-rates",
 };
