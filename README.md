@@ -99,6 +99,7 @@ frontend/src/
 - `TMP_WORK_DIR` (可选，默认 `/tmp/zeabur3.3`)
 - `MT_BASE_URL` (可选，默认北京: `https://dashscope.aliyuncs.com/compatible-mode/v1`)
 - `MT_MODEL` (可选，默认 `qwen-mt-plus`)
+- `ASR_SPLIT_MAX_WORDS` (可选，默认 `20`；课程入库时英文句超过该词数会触发保底切分)
 
 ## 时间策略（东八区）
 

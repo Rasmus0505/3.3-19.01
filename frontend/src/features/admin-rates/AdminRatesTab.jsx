@@ -6,7 +6,7 @@ import { formatDateTimeBeijing } from "../../shared/lib/datetime";
 import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, ScrollArea, Skeleton, Switch, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
-  return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
+  return data?.message || fallback;
 }
 
 async function jsonOrEmpty(resp) {
@@ -47,7 +47,7 @@ export function AdminRatesTab({ apiCall }) {
       });
       setDrafts(draftMap);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
+      const message = "网络连接异常，请重试。";
       setStatus(message);
       toast.error(message);
     } finally {
@@ -86,7 +86,7 @@ export function AdminRatesTab({ apiCall }) {
       toast.success(message);
       await loadRates();
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
+      const message = "网络连接异常，请重试。";
       setStatus(message);
       toast.error(message);
     } finally {
@@ -175,7 +175,7 @@ export function AdminRatesTab({ apiCall }) {
               {rates.length === 0 ? (
                 <TableRow>
                   <TableCell className="text-muted-foreground" colSpan={5}>
-                    {loading ? "加载中..." : "暂无配置"}
+                    {loading ? "加载中..." : "暂无配置，请先创建计费模型。"}
                   </TableCell>
                 </TableRow>
               ) : null}

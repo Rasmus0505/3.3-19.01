@@ -14,7 +14,7 @@ async function jsonOrEmpty(resp) {
 }
 
 function toError(data, fallback) {
-  return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
+  return data?.message || fallback;
 }
 
 export function RedeemCodePanel({ apiCall, onWalletChanged }) {
@@ -45,13 +45,13 @@ export function RedeemCodePanel({ apiCall, onWalletChanged }) {
         return;
       }
 
-      const message = `兑换成功：+${Number(data.redeemed_points || 0)} 点`;
+      const message = `兑换成功，已到账 ${Number(data.redeemed_points || 0)} 点。`;
       setStatus(message);
       toast.success(message);
       setCode("");
       await onWalletChanged();
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
+      const message = "网络连接异常，请重试。";
       setStatus(message);
       toast.error(message);
     } finally {
@@ -66,7 +66,7 @@ export function RedeemCodePanel({ apiCall, onWalletChanged }) {
           <Gift className="size-4" />
           兑换码充值
         </CardTitle>
-        <CardDescription>输入兑换码后自动充值到当前账户。</CardDescription>
+        <CardDescription>输入兑换码后，点数会立即到账。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <form className="space-y-2" onSubmit={submitRedeem}>
