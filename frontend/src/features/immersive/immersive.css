@@ -59,45 +59,128 @@
   gap: 12px;
 }
 
-.immersive-word-row {
+.immersive-typing-toolbar {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 
-.immersive-word-chip {
-  min-width: var(--word-width, 56px);
-  padding: 8px 6px 6px;
-  border-radius: 8px;
+.immersive-display-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
   border: 1px solid var(--color-border);
-  border-bottom-width: 3px;
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: 14px;
-  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+  background: color-mix(in oklch, var(--color-card) 84%, var(--color-muted) 16%);
 }
 
-.immersive-word-chip--pending {
-  color: var(--color-muted-foreground);
+.immersive-word-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+}
+
+.immersive-word-slot {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.immersive-word-slot--chip {
+  padding: 8px 8px 6px;
+  border: 1px solid var(--color-border);
   background: color-mix(in oklch, var(--color-card) 90%, var(--color-muted) 10%);
 }
 
-.immersive-word-chip--active {
-  color: var(--color-foreground);
-  background: color-mix(in oklch, var(--color-primary) 16%, white 84%);
+.immersive-word-slot--chip.immersive-word-slot--pending {
+  border-color: var(--color-border);
+}
+
+.immersive-word-slot--chip.immersive-word-slot--active {
   border-color: color-mix(in oklch, var(--color-primary) 45%, var(--color-border));
+  background: color-mix(in oklch, var(--color-primary) 14%, white 86%);
 }
 
-.immersive-word-chip--correct {
-  color: oklch(0.38 0.11 145);
-  background: oklch(0.95 0.08 145);
+.immersive-word-slot--chip.immersive-word-slot--correct {
   border-color: oklch(0.74 0.15 145);
+  background: oklch(0.95 0.08 145);
 }
 
-.immersive-word-chip--wrong {
-  color: oklch(0.49 0.19 25);
-  background: oklch(0.96 0.07 25);
+.immersive-word-slot--chip.immersive-word-slot--wrong {
   border-color: oklch(0.71 0.21 25);
+  background: oklch(0.96 0.07 25);
+}
+
+.immersive-word-slot--underline {
+  padding: 4px 2px 2px;
+  border-radius: 0;
+  border-bottom: 2px solid var(--color-border);
+  background: transparent;
+}
+
+.immersive-word-slot--underline.immersive-word-slot--active {
+  border-bottom-color: color-mix(in oklch, var(--color-primary) 55%, var(--color-border));
+}
+
+.immersive-word-slot--underline.immersive-word-slot--correct {
+  border-bottom-color: oklch(0.67 0.16 145);
+}
+
+.immersive-word-slot--underline.immersive-word-slot--wrong {
+  border-bottom-color: oklch(0.64 0.22 25);
+}
+
+.immersive-letter-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.immersive-letter-cell {
+  min-width: 14px;
+  height: 24px;
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 2px 2px;
+  border-bottom: 2px solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1;
+  color: var(--color-muted-foreground);
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.immersive-word-slot--active .immersive-letter-cell--empty {
+  border-bottom-color: color-mix(in oklch, var(--color-primary) 55%, var(--color-border));
+}
+
+.immersive-letter-cell--empty {
+  color: var(--color-muted-foreground);
+  border-bottom-color: var(--color-border);
+}
+
+.immersive-letter-cell--correct {
+  color: oklch(0.38 0.11 145);
+  border-bottom-color: oklch(0.67 0.16 145);
+}
+
+.immersive-letter-cell--wrong {
+  color: oklch(0.49 0.19 25);
+  border-bottom-color: oklch(0.64 0.22 25);
+}
+
+.immersive-letter-cell--extra {
+  border-bottom-style: dashed;
+}
+
+.immersive-letter-char {
+  min-width: 1ch;
+  text-align: center;
 }
 
 .immersive-hidden-input {
@@ -116,5 +199,15 @@
 @media (max-width: 768px) {
   .immersive-media {
     min-height: 210px;
+  }
+
+  .immersive-word-row {
+    gap: 8px 10px;
+  }
+
+  .immersive-letter-cell {
+    min-width: 12px;
+    height: 22px;
+    font-size: 13px;
   }
 }

@@ -1,11 +1,71 @@
 import { ArrowLeft, Loader2, Play, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../shared/ui";
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Switch } from "../../shared/ui";
 import { isAudioFilename, isVideoFilename, normalizeToken } from "./tokenNormalize";
 import { useSentencePlayback } from "./useSentencePlayback";
 import { useTypingFeedbackSounds } from "./useTypingFeedbackSounds";
 import "./immersive.css";
+
+const DISPLAY_MODE_STORAGE_KEY = "immersive_word_display_mode";
+
+function getInitialDisplayMode() {
+  if (typeof window === "undefined") return "underline";
+  const saved = window.localStorage.getItem(DISPLAY_MODE_STORAGE_KEY);
+  return saved === "chip" || saved === "underline" ? saved : "underline";
+}
+
+function countTokenInputErrors(inputValue, expectedToken) {
+  const actual = String(inputValue || "");
+  const expected = String(expectedToken || "");
+  const sameLength = Math.min(actual.length, expected.length);
+
+  let mismatchCount = 0;
+  for (let idx = 0; idx < sameLength; idx += 1) {
+    if (actual[idx]?.toLowerCase() !== expected[idx]?.toLowerCase()) {
+      mismatchCount += 1;
+    }
+  }
+
+  if (actual.length > expected.length) {
+    mismatchCount += actual.length - expected.length;
+  }
+  return mismatchCount;
+}
+
+function buildLetterSlots(expectedToken, inputValue) {
+  const expected = String(expectedToken || "");
+  const actual = String(inputValue || "");
+  const slots = [];
+
+  for (let idx = 0; idx < expected.length; idx += 1) {
+    const typedChar = actual[idx] || "";
+    let state = "empty";
+    if (typedChar) {
+      state = typedChar.toLowerCase() === expected[idx].toLowerCase() ? "correct" : "wrong";
+    }
+    slots.push({
+      key: `slot-${idx}`,
+      char: typedChar || "\u00A0",
+      state,
+      extra: false,
+    });
+  }
+
+  for (let idx = expected.length; idx < actual.length; idx += 1) {
+    slots.push({
+      key: `extra-${idx}`,
+      char: actual[idx] || "\u00A0",
+      state: "wrong",
+      extra: true,
+    });
+  }
+
+  if (!slots.length) {
+    return [{ key: "slot-empty", char: "\u00A0", state: "empty", extra: false }];
+  }
+  return slots;
+}
 
 function createWordState(tokens) {
   const safeTokens = Array.isArray(tokens) ? tokens : [];
@@ -15,6 +75,50 @@ function createWordState(tokens) {
     wordInputs: safeTokens.map(() => ""),
     wordStatuses: safeTokens.map((_, idx) => (idx === 0 ? "active" : "pending")),
   };
+}
+
+function resolveMediaModeFromFileName(fileName) {
+  if (isAudioFilename(fileName)) {
+    return "audio";
+  }
+  // Unknown extensions should still try loading main media once.
+  return "video";
+}
+
+function inferMediaModeFromContentType(contentType) {
+  const normalized = String(contentType || "").toLowerCase();
+  if (normalized.startsWith("video/")) {
+    return "video";
+  }
+  if (normalized.startsWith("audio/")) {
+    return "audio";
+  }
+  return "";
+}
+
+async function readErrorPayload(resp) {
+  try {
+    return await resp.clone().json();
+  } catch (_) {
+    return {};
+  }
+}
+
+function formatMediaLoadError(resp, payload) {
+  const statusText = Number(resp?.status) > 0 ? String(resp.status) : "";
+  const errorCode = String(payload?.error_code || "").trim();
+  const message = String(payload?.message || "").trim();
+  const head = [statusText, errorCode].filter(Boolean).join(" ");
+  if (head && message) {
+    return `媒体加载失败（${head}: ${message}），已自动降级为音频模式。`;
+  }
+  if (head) {
+    return `媒体加载失败（${head}），已自动降级为音频模式。`;
+  }
+  if (message) {
+    return `媒体加载失败（${message}），已自动降级为音频模式。`;
+  }
+  return "媒体加载失败，已自动降级为音频模式。";
 }
 
 export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, onProgressSynced }) {
@@ -30,12 +134,12 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   const [currentWordInput, setCurrentWordInput] = useState("");
   const [wordInputs, setWordInputs] = useState([]);
   const [wordStatuses, setWordStatuses] = useState([]);
-  const [wordLocked, setWordLocked] = useState(false);
+  const [displayMode, setDisplayMode] = useState(() => getInitialDisplayMode());
 
   const mediaElementRef = useRef(null);
   const clipAudioRef = useRef(null);
   const typingInputRef = useRef(null);
-  const wrongResetTimerRef = useRef(null);
+  const currentWordInputRef = useRef("");
 
   const currentSentence = lesson?.sentences?.[currentSentenceIndex] || null;
   const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens : []), [currentSentence?.tokens]);
@@ -111,7 +215,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     setCurrentWordInput(next.currentWordInput);
     setWordInputs(next.wordInputs);
     setWordStatuses(next.wordStatuses);
-    setWordLocked(false);
+    currentWordInputRef.current = "";
   }, []);
 
   const tryPlayCurrentSentence = useCallback(
@@ -139,11 +243,6 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
 
   useEffect(() => {
     if (!lesson) return;
-
-    if (wrongResetTimerRef.current) {
-      clearTimeout(wrongResetTimerRef.current);
-      wrongResetTimerRef.current = null;
-    }
     stopPlayback();
     setMediaError("");
     setMediaReady(false);
@@ -160,13 +259,8 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     setPhase("idle");
 
     const fileName = String(lesson.source_filename || "");
-    if (isVideoFilename(fileName)) {
-      setMediaMode("video");
-    } else if (isAudioFilename(fileName)) {
-      setMediaMode("audio");
-    } else {
-      setMediaMode("clip");
-    }
+    const preferredMode = isVideoFilename(fileName) ? "video" : resolveMediaModeFromFileName(fileName);
+    setMediaMode(preferredMode);
   }, [lesson?.id, resetWordTyping, stopPlayback]);
 
   useEffect(() => {
@@ -185,14 +279,21 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
 
       setMediaLoading(true);
       setMediaReady(false);
+      setMediaError("");
       setPhase("idle");
       try {
         const resp = await apiClient(`/api/lessons/${lesson.id}/media`, {}, accessToken);
         if (!resp.ok) {
           if (canceled) return;
+          const payload = await readErrorPayload(resp);
+          if (canceled) return;
           setMediaMode("clip");
-          setMediaError("媒体加载失败，已自动降级为音频模式。");
+          setMediaError(formatMediaLoadError(resp, payload));
           return;
+        }
+        const inferredMode = inferMediaModeFromContentType(resp.headers.get("content-type"));
+        if (inferredMode && inferredMode !== mediaMode) {
+          setMediaMode(inferredMode);
         }
         const blob = await resp.blob();
         objectUrl = URL.createObjectURL(blob);
@@ -204,8 +305,9 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
         setMediaLoading(false);
       } catch (error) {
         if (canceled) return;
+        const detail = String(error || "").trim();
         setMediaMode("clip");
-        setMediaError("媒体加载异常，已自动降级为音频模式。");
+        setMediaError(detail ? `媒体加载异常（${detail}），已自动降级为音频模式。` : "媒体加载异常，已自动降级为音频模式。");
       } finally {
         if (!canceled) {
           setMediaLoading(false);
@@ -243,12 +345,9 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   }, [phase, currentSentenceIndex]);
 
   useEffect(() => {
-    return () => {
-      if (wrongResetTimerRef.current) {
-        clearTimeout(wrongResetTimerRef.current);
-      }
-    };
-  }, []);
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(DISPLAY_MODE_STORAGE_KEY, displayMode);
+  }, [displayMode]);
 
   const handleMainMediaError = useCallback(() => {
     setMediaMode("clip");
@@ -256,88 +355,85 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     setPhase("auto_play_pending");
   }, [lesson?.id]);
 
+  const clearActiveWordInput = useCallback(() => {
+    currentWordInputRef.current = "";
+    setCurrentWordInput("");
+    setWordInputs((prev) => {
+      const next = [...prev];
+      if (activeWordIndex < next.length) {
+        next[activeWordIndex] = "";
+      }
+      return next;
+    });
+    setWordStatuses((prev) => {
+      const next = [...prev];
+      if (activeWordIndex < next.length) {
+        next[activeWordIndex] = "active";
+      }
+      return next;
+    });
+  }, [activeWordIndex]);
+
+  const commitCorrectWord = useCallback(
+    (typedWord) => {
+      playCorrectSound();
+      setWordStatuses((prev) => {
+        const next = [...prev];
+        next[activeWordIndex] = "correct";
+        if (activeWordIndex + 1 < expectedTokens.length) {
+          next[activeWordIndex + 1] = "active";
+        }
+        return next;
+      });
+      setWordInputs((prev) => {
+        const next = [...prev];
+        next[activeWordIndex] = typedWord.trim();
+        return next;
+      });
+      currentWordInputRef.current = "";
+      setCurrentWordInput("");
+
+      if (activeWordIndex + 1 >= expectedTokens.length) {
+        setPhase("transition");
+        setTimeout(() => {
+          handleSentencePassed();
+        }, 120);
+        return;
+      }
+      setActiveWordIndex((prev) => prev + 1);
+    },
+    [activeWordIndex, expectedTokens.length, handleSentencePassed, playCorrectSound],
+  );
+
+  const commitWrongWord = useCallback(() => {
+    playWrongSound();
+    clearActiveWordInput();
+  }, [clearActiveWordInput, playWrongSound]);
+
   const handleKeyDown = useCallback(
     (event) => {
-      if (phase !== "typing" || wordLocked || !currentSentence) return;
+      if (phase !== "typing" || !currentSentence) return;
 
       const key = event.key;
       if (key === " " || key === "Enter") {
         event.preventDefault();
-        const expected = expectedTokens[activeWordIndex] || "";
-        if (!expected) return;
-
-        const actualNormalized = normalizeToken(currentWordInput);
-        if (actualNormalized === expected) {
-          playCorrectSound();
-          setWordStatuses((prev) => {
-            const next = [...prev];
-            next[activeWordIndex] = "correct";
-            if (activeWordIndex + 1 < expectedTokens.length) {
-              next[activeWordIndex + 1] = "active";
-            }
-            return next;
-          });
-          setWordInputs((prev) => {
-            const next = [...prev];
-            next[activeWordIndex] = currentWordInput.trim();
-            return next;
-          });
-          setCurrentWordInput("");
-
-          if (activeWordIndex + 1 >= expectedTokens.length) {
-            setPhase("transition");
-            setTimeout(() => {
-              handleSentencePassed();
-            }, 120);
-            return;
-          }
-          setActiveWordIndex((prev) => prev + 1);
-          return;
-        }
-
-        playWrongSound();
-        setWordLocked(true);
-        setWordStatuses((prev) => {
-          const next = [...prev];
-          next[activeWordIndex] = "wrong";
-          return next;
-        });
-        setWordInputs((prev) => {
-          const next = [...prev];
-          next[activeWordIndex] = currentWordInput.trim();
-          return next;
-        });
-
-        if (wrongResetTimerRef.current) {
-          clearTimeout(wrongResetTimerRef.current);
-        }
-        wrongResetTimerRef.current = setTimeout(() => {
-          setCurrentWordInput("");
-          setWordInputs((prev) => {
-            const next = [...prev];
-            next[activeWordIndex] = "";
-            return next;
-          });
-          setWordStatuses((prev) => {
-            const next = [...prev];
-            next[activeWordIndex] = "active";
-            return next;
-          });
-          setWordLocked(false);
-        }, 300);
         return;
       }
 
       if (key === "Backspace") {
         event.preventDefault();
         playKeySound();
-        setCurrentWordInput((prev) => {
-          const next = prev.slice(0, -1);
-          setWordInputs((old) => {
-            const copied = [...old];
-            copied[activeWordIndex] = next;
-            return copied;
-          });
+        const nextInput = currentWordInputRef.current.slice(0, -1);
+        currentWordInputRef.current = nextInput;
+        setCurrentWordInput(nextInput);
+        setWordInputs((prev) => {
+          const next = [...prev];
+          next[activeWordIndex] = nextInput;
+          return next;
+        });
+        setWordStatuses((prev) => {
+          const next = [...prev];
+          next[activeWordIndex] = "active";
           return next;
         });
         return;
@@ -346,28 +442,47 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
       if (key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
         event.preventDefault();
         playKeySound();
-        setCurrentWordInput((prev) => {
-          const next = prev + key;
-          setWordInputs((old) => {
-            const copied = [...old];
-            copied[activeWordIndex] = next;
-            return copied;
-          });
+        const expected = expectedTokens[activeWordIndex] || "";
+        if (!expected) return;
+
+        const nextInput = `${currentWordInputRef.current}${key}`;
+        currentWordInputRef.current = nextInput;
+        setCurrentWordInput(nextInput);
+        setWordInputs((prev) => {
+          const next = [...prev];
+          next[activeWordIndex] = nextInput;
           return next;
         });
+        setWordStatuses((prev) => {
+          const next = [...prev];
+          next[activeWordIndex] = "active";
+          return next;
+        });
+
+        const errorCount = countTokenInputErrors(nextInput, expected);
+        if (errorCount > 2) {
+          commitWrongWord();
+          return;
+        }
+
+        if (nextInput.length >= expected.length) {
+          const normalizedInput = normalizeToken(nextInput);
+          if (normalizedInput === expected) {
+            commitCorrectWord(nextInput);
+          } else {
+            commitWrongWord();
+          }
+        }
       }
     },
     [
       activeWordIndex,
+      commitCorrectWord,
+      commitWrongWord,
       currentSentence,
-      currentWordInput,
       expectedTokens,
-      handleSentencePassed,
       phase,
-      playCorrectSound,
       playKeySound,
-      playWrongSound,
-      wordLocked,
     ],
   );
 
@@ -447,7 +562,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
             <div className="w-full px-6">
               <div className="immersive-media-audio-placeholder">
                 <p>音频降级模式</p>
-                <p className="immersive-hint">媒体格式不兼容，已改为逐句音频播放</p>
+                <p className="immersive-hint">媒体不可用，已改为逐句音频播放</p>
               </div>
               <audio ref={clipAudioRef} controls />
             </div>
@@ -485,24 +600,46 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
         </div>
 
         <div className="immersive-typing">
+          <div className="immersive-typing-toolbar">
+            <p className="immersive-hint">输入达到单词长度后自动判定；超过 2 个错误会清空重打。</p>
+            <div className="immersive-display-toggle">
+              <span className="text-xs text-muted-foreground">下划线模式</span>
+              <Switch
+                checked={displayMode === "underline"}
+                onCheckedChange={(checked) => setDisplayMode(checked ? "underline" : "chip")}
+                aria-label="切换单词显示模式"
+              />
+            </div>
+          </div>
+
           <div className="immersive-word-row">
             {expectedTokens.map((token, index) => {
-              const width = Math.max(56, token.length * 14);
               const status = wordStatuses[index] || "pending";
-              const display = wordInputs[index] || "\u00A0";
+              const slots = buildLetterSlots(token, wordInputs[index] || "");
               return (
                 <div
                   key={`${token}-${index}`}
-                  className={`immersive-word-chip immersive-word-chip--${status}`}
-                  style={{ "--word-width": `${width}px` }}
+                  className={`immersive-word-slot immersive-word-slot--${status} ${
+                    displayMode === "underline" ? "immersive-word-slot--underline" : "immersive-word-slot--chip"
+                  }`}
                 >
-                  {display}
+                  <div className="immersive-letter-row">
+                    {slots.map((slot) => (
+                      <span
+                        key={slot.key}
+                        className={`immersive-letter-cell immersive-letter-cell--${slot.state} ${
+                          slot.extra ? "immersive-letter-cell--extra" : ""
+                        }`}
+                      >
+                        <span className="immersive-letter-char">{slot.char}</span>
+                      </span>
+                    ))}
+                  </div>
                 </div>
               );
             })}
           </div>
 
-          <p className="immersive-hint">空格或 Enter 提交当前单词；输入错误会红色提示并重打该词。</p>
           <p className="text-sm text-muted-foreground">
             当前句中文：{currentSentence.text_zh || "(翻译失败，暂缺)"}
           </p>
