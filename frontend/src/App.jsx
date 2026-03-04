@@ -6,6 +6,7 @@ import {
   Loader2,
   LogOut,
   Play,
+  Shield,
   Sparkles,
   UploadCloud,
 } from "lucide-react";
@@ -19,6 +20,8 @@ import { Label } from "./components/ui/label";
 import { Select } from "./components/ui/select";
 import { Separator } from "./components/ui/separator";
 import { Textarea } from "./components/ui/textarea";
+import { AdminApp } from "./AdminApp";
+import { ImmersiveLessonPage } from "./features/immersive/ImmersiveLessonPage";
 
 const ASR_MODELS = [
   { value: "paraformer-v2", label: "paraformer-v2 (推荐，带时间戳)" },
@@ -34,6 +37,48 @@ function api(path, options = {}, accessToken = "") {
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
   return fetch(path, { ...options, headers });
+}
+
+async function parseResponse(resp) {
+  try {
+    return await resp.json();
+  } catch (_) {
+    return {};
+  }
+}
+
+function toErrorText(data, fallback) {
+  return `${data.error_code || "ERROR"}: ${data.message || fallback}`;
+}
+
+function calculatePointsBySeconds(seconds, pointsPerMinute) {
+  if (!Number.isFinite(seconds) || seconds <= 0 || !Number.isFinite(pointsPerMinute) || pointsPerMinute <= 0) {
+    return 0;
+  }
+  const roundedSeconds = Math.ceil(seconds);
+  return Math.ceil((roundedSeconds * pointsPerMinute) / 60);
+}
+
+function getRateByModel(rates, modelName) {
+  return rates.find((item) => item.model_name === modelName && item.is_active);
+}
+
+function readMediaDurationSeconds(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const media = document.createElement(file.type.startsWith("video") ? "video" : "audio");
+    media.preload = "metadata";
+    media.onloadedmetadata = () => {
+      const duration = Number(media.duration || 0);
+      URL.revokeObjectURL(objectUrl);
+      resolve(duration > 0 ? duration : 0);
+    };
+    media.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("读取媒体时长失败"));
+    };
+    media.src = objectUrl;
+  });
 }
 
 function normalizeInputTokens(text) {
@@ -58,9 +103,9 @@ function AuthPanel({ onAuthed }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      const data = await resp.json();
+      const data = await parseResponse(resp);
       if (!resp.ok) {
-        setStatus(`${data.error_code || "ERROR"}: ${data.message || "请求失败"}`);
+        setStatus(toErrorText(data, "请求失败"));
         return;
       }
       localStorage.setItem(TOKEN_KEY, data.access_token);
@@ -101,11 +146,33 @@ function AuthPanel({ onAuthed }) {
   );
 }
 
-function UploadPanel({ accessToken, onCreated }) {
+function UploadPanel({ accessToken, onCreated, balancePoints, billingRates, onWalletChanged }) {
   const [file, setFile] = useState(null);
   const [model, setModel] = useState(ASR_MODELS[0].value);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
+  const [durationSec, setDurationSec] = useState(null);
+  const [probing, setProbing] = useState(false);
+
+  const selectedRate = getRateByModel(billingRates, model);
+  const estimatedPoints = selectedRate ? calculatePointsBySeconds(durationSec || 0, selectedRate.points_per_minute) : 0;
+  const likelyInsufficient = Number.isFinite(balancePoints) && estimatedPoints > 0 && balancePoints < estimatedPoints;
+
+  async function onSelectFile(nextFile) {
+    setFile(nextFile);
+    setStatus("");
+    setDurationSec(null);
+    if (!nextFile) return;
+    setProbing(true);
+    try {
+      const seconds = await readMediaDurationSeconds(nextFile);
+      setDurationSec(seconds);
+    } catch (_) {
+      setDurationSec(null);
+    } finally {
+      setProbing(false);
+    }
+  }
 
   async function submit() {
     if (!file) {
@@ -119,12 +186,14 @@ function UploadPanel({ accessToken, onCreated }) {
       form.append("video_file", file);
       form.append("asr_model", model);
       const resp = await api("/api/lessons", { method: "POST", body: form }, accessToken);
-      const data = await resp.json();
+      const data = await parseResponse(resp);
       if (!resp.ok) {
-        setStatus(`${data.error_code || "ERROR"}: ${data.message || "生成失败"}`);
+        setStatus(toErrorText(data, "生成失败"));
+        await onWalletChanged?.();
         return;
       }
       setStatus("生成成功");
+      await onWalletChanged?.();
       onCreated(data.lesson);
     } catch (error) {
       setStatus(`网络错误: ${String(error)}`);
@@ -143,6 +212,21 @@ function UploadPanel({ accessToken, onCreated }) {
         <CardDescription>流程：抽音频 → ASR（时间戳）→ 逐句对齐 → 中文翻译。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        <div className="rounded-md border border-input bg-muted/20 p-3 text-sm">
+          <p className="text-muted-foreground">当前余额：{Number(balancePoints || 0)} 点</p>
+          <p className="text-muted-foreground">
+            预估扣费：
+            {selectedRate
+              ? probing
+                ? "读取时长中..."
+                : durationSec != null
+                  ? `${estimatedPoints} 点（${selectedRate.points_per_minute} 点/分钟）`
+                  : "选择文件后显示"
+              : "该模型未配置单价"}
+          </p>
+          {likelyInsufficient ? <p className="mt-1 text-destructive">余额可能不足，提交将被拒绝。</p> : null}
+        </div>
+
         <div className="grid gap-2">
           <Label htmlFor="asr-model">模型选择</Label>
           <Select id="asr-model" value={model} onChange={(e) => setModel(e.target.value)} disabled={loading}>
@@ -158,7 +242,7 @@ function UploadPanel({ accessToken, onCreated }) {
             id="asr-file"
             type="file"
             className="h-11 cursor-pointer py-2 file:mr-2 file:rounded-md file:border file:border-border file:bg-muted file:px-2.5 file:py-1 file:text-xs"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            onChange={(e) => onSelectFile(e.target.files?.[0] ?? null)}
             disabled={loading}
           />
         </div>
@@ -288,7 +372,7 @@ function PracticePanel({ lesson, accessToken, onProgressSynced }) {
       },
       accessToken,
     );
-    const data = await resp.json();
+    const data = await parseResponse(resp);
     setCheckResult(data);
     if (resp.ok && data.passed) {
       setShowChinese(true);
@@ -399,24 +483,31 @@ function PracticePanel({ lesson, accessToken, onProgressSynced }) {
 }
 
 export default function App() {
+  const isAdminRoute = window.location.pathname.startsWith("/admin");
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
   const [lessons, setLessons] = useState([]);
   const [currentLesson, setCurrentLesson] = useState(null);
   const [loadingLessons, setLoadingLessons] = useState(false);
   const [globalStatus, setGlobalStatus] = useState("");
+  const [viewMode, setViewMode] = useState("dashboard");
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [billingRates, setBillingRates] = useState([]);
+  const [isAdminUser, setIsAdminUser] = useState(false);
+  const [adminAuthState, setAdminAuthState] = useState("idle");
 
   async function loadLessons() {
     if (!accessToken) {
       setLessons([]);
       setCurrentLesson(null);
+      setViewMode("dashboard");
       return;
     }
     setLoadingLessons(true);
     try {
       const listResp = await api("/api/lessons", {}, accessToken);
-      const listData = await listResp.json();
+      const listData = await parseResponse(listResp);
       if (!listResp.ok) {
-        setGlobalStatus(`${listData.error_code || "ERROR"}: ${listData.message || "加载课程失败"}`);
+        setGlobalStatus(toErrorText(listData, "加载课程失败"));
         return;
       }
       setLessons(listData);
@@ -435,10 +526,10 @@ export default function App() {
       api(`/api/lessons/${lessonId}`, {}, accessToken),
       api(`/api/lessons/${lessonId}/progress`, {}, accessToken),
     ]);
-    const detailData = await detailResp.json();
-    const progressData = await progressResp.json();
+    const detailData = await parseResponse(detailResp);
+    const progressData = await parseResponse(progressResp);
     if (!detailResp.ok) {
-      setGlobalStatus(`${detailData.error_code || "ERROR"}: ${detailData.message || "加载课程详情失败"}`);
+      setGlobalStatus(toErrorText(detailData, "加载课程详情失败"));
       return;
     }
     const merged = {
@@ -458,8 +549,53 @@ export default function App() {
     setCurrentLesson(merged);
   }
 
+  async function loadWallet() {
+    if (!accessToken) {
+      setWalletBalance(0);
+      return;
+    }
+    const resp = await api("/api/wallet/me", {}, accessToken);
+    const data = await parseResponse(resp);
+    if (resp.ok) {
+      setWalletBalance(Number(data.balance_points || 0));
+    }
+  }
+
+  async function loadBillingRates() {
+    const resp = await api("/api/billing/rates", {}, accessToken);
+    const data = await parseResponse(resp);
+    if (resp.ok) {
+      setBillingRates(Array.isArray(data.rates) ? data.rates : []);
+    }
+  }
+
+  async function detectAdmin() {
+    if (!accessToken) {
+      setAdminAuthState("idle");
+      setIsAdminUser(false);
+      return;
+    }
+    setAdminAuthState("checking");
+    const resp = await api("/api/admin/billing-rates", {}, accessToken);
+    if (resp.ok) {
+      setIsAdminUser(true);
+      setAdminAuthState("ready");
+      return;
+    }
+    if (resp.status === 403) {
+      setIsAdminUser(false);
+      setAdminAuthState("forbidden");
+      return;
+    }
+    setIsAdminUser(false);
+    setAdminAuthState("forbidden");
+  }
+
   useEffect(() => {
     loadLessons();
+    loadWallet();
+    loadBillingRates();
+    detectAdmin();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
 
@@ -475,11 +611,96 @@ export default function App() {
     setLessons([]);
     setCurrentLesson(null);
     setGlobalStatus("");
+    setViewMode("dashboard");
+    setWalletBalance(0);
+    setIsAdminUser(false);
+    setAdminAuthState("idle");
   }
 
   async function handleLessonCreated(lesson) {
     await loadLessons();
-    setCurrentLesson(lesson);
+    await loadLessonDetail(lesson.id);
+    await loadWallet();
+    setViewMode("immersive");
+  }
+
+  async function handleEnterImmersive(lessonId) {
+    if (!lessonId) return;
+    if (lessonId !== currentLesson?.id) {
+      await loadLessonDetail(lessonId);
+    }
+    setViewMode("immersive");
+  }
+
+  async function refreshCurrentLesson() {
+    if (!currentLesson?.id) return;
+    await loadLessonDetail(currentLesson.id);
+  }
+
+  if (isAdminRoute) {
+    if (!accessToken) {
+      return (
+        <div className="style-vega section-soft min-h-screen bg-background">
+          <div className="container-wrapper py-8">
+            <div className="container">
+              <Card>
+                <CardHeader>
+                  <CardTitle>未登录</CardTitle>
+                  <CardDescription>请先登录后再访问管理员后台。</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button onClick={() => { window.location.href = "/"; }}>返回学习页登录</Button>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (adminAuthState === "idle" || adminAuthState === "checking") {
+      return (
+        <div className="style-vega section-soft min-h-screen bg-background">
+          <div className="container-wrapper py-8">
+            <div className="container">
+              <Card>
+                <CardContent className="p-6">
+                  <p className="text-sm text-muted-foreground">正在验证管理员权限...</p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (!isAdminUser) {
+      return (
+        <div className="style-vega section-soft min-h-screen bg-background">
+          <div className="container-wrapper py-8">
+            <div className="container">
+              <Card>
+                <CardHeader>
+                  <CardTitle>无管理员权限</CardTitle>
+                  <CardDescription>当前账号不在 `ADMIN_EMAILS` 白名单中。</CardDescription>
+                </CardHeader>
+                <CardContent className="flex gap-2">
+                  <Button variant="outline" onClick={() => { window.location.href = "/"; }}>返回学习页</Button>
+                  <Button onClick={handleLogout}>退出登录</Button>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <AdminApp
+        apiCall={(path, options = {}) => api(path, options, accessToken)}
+        onLogout={handleLogout}
+      />
+    );
   }
 
   return (
@@ -499,8 +720,15 @@ export default function App() {
               <Badge variant="secondary">Vega</Badge>
               <Badge variant="outline">{accessToken ? "已登录" : "未登录"}</Badge>
               {accessToken ? <Badge variant="outline">{lessons.length} lessons</Badge> : null}
+              {accessToken ? <Badge variant="outline">余额 {walletBalance} 点</Badge> : null}
             </div>
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-2">
+              {accessToken && isAdminUser ? (
+                <Button variant="outline" size="sm" onClick={() => { window.location.href = "/admin"; }}>
+                  <Shield className="size-4" />
+                  管理后台
+                </Button>
+              ) : null}
               {accessToken ? (
                 <Button variant="outline" size="sm" onClick={handleLogout}>
                   <LogOut className="size-4" />
@@ -523,6 +751,7 @@ export default function App() {
               <CardContent className="space-y-2 text-sm">
                 <p className="text-muted-foreground">课程加载：{loadingLessons ? "进行中" : "空闲"}</p>
                 <p className="text-muted-foreground">当前课程：{currentLesson?.title || "未选择"}</p>
+                <p className="text-muted-foreground">学习模式：{viewMode === "immersive" ? "沉浸模式" : "普通模式"}</p>
                 <p className="text-muted-foreground">接口：/api/lessons / /api/lessons/:id/check</p>
               </CardContent>
             </Card>
@@ -530,7 +759,31 @@ export default function App() {
 
           <section className="min-w-0 space-y-4">
             {accessToken ? (
-              <PracticePanel lesson={currentLesson} accessToken={accessToken} onProgressSynced={loadLessons} />
+              viewMode === "immersive" ? (
+                <ImmersiveLessonPage
+                  lesson={currentLesson}
+                  accessToken={accessToken}
+                  apiClient={api}
+                  onBack={() => {
+                    setViewMode("dashboard");
+                    refreshCurrentLesson();
+                  }}
+                  onProgressSynced={refreshCurrentLesson}
+                />
+              ) : (
+                <>
+                  <div className="flex justify-end">
+                    <Button
+                      variant="secondary"
+                      onClick={() => handleEnterImmersive(currentLesson?.id)}
+                      disabled={!currentLesson}
+                    >
+                      沉浸学习模式
+                    </Button>
+                  </div>
+                  <PracticePanel lesson={currentLesson} accessToken={accessToken} onProgressSynced={loadLessons} />
+                </>
+              )
             ) : (
               <Card>
                 <CardHeader>
@@ -556,7 +809,17 @@ export default function App() {
           </section>
 
           <aside className="space-y-4">
-            {!accessToken ? <AuthPanel onAuthed={handleAuthed} /> : <UploadPanel accessToken={accessToken} onCreated={handleLessonCreated} />}
+            {!accessToken ? (
+              <AuthPanel onAuthed={handleAuthed} />
+            ) : (
+              <UploadPanel
+                accessToken={accessToken}
+                onCreated={handleLessonCreated}
+                balancePoints={walletBalance}
+                billingRates={billingRates}
+                onWalletChanged={loadWallet}
+              />
+            )}
           </aside>
         </div>
       </main>

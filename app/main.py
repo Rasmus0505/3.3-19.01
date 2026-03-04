@@ -1,26 +1,35 @@
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 import os
 import shutil
 import subprocess
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
-from app.db import get_db, init_db
-from app.deps import get_current_user
-from app.models import Lesson, LessonProgress, LessonSentence, MediaAsset, User
+from app.db import SessionLocal, get_db, init_db
+from app.deps import get_admin_user, get_current_user
+from app.models import BillingModelRate, Lesson, LessonProgress, LessonSentence, MediaAsset, User, WalletAccount, WalletLedger
 from app.schemas import (
+    AdminBillingRateUpdateRequest,
+    AdminBillingRatesResponse,
+    AdminUserItem,
+    AdminUsersResponse,
+    AdminWalletLogsResponse,
     AuthRequest,
     AuthResponse,
+    BillingRateItem,
+    BillingRatesResponse,
     ErrorResponse,
     LessonCreateResponse,
     LessonDetailResponse,
@@ -35,15 +44,32 @@ from app.schemas import (
     TokenCheckResponse,
     TokenResult,
     UserResponse,
+    WalletAdjustRequest,
+    WalletAdjustResponse,
+    WalletLedgerItem,
+    WalletMeResponse,
 )
 from app.security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from app.services.asr_dashscope import AsrError, DEFAULT_MODEL, SUPPORTED_MODELS, setup_dashscope, transcribe_audio_file
+from app.services.billing import (
+    BillingError,
+    calculate_points,
+    ensure_default_billing_rates,
+    get_model_rate,
+    get_or_create_wallet_account,
+    list_public_rates,
+    manual_adjust,
+    record_consume,
+    refund_points,
+    reserve_points,
+)
 from app.services.lesson_builder import cut_sentence_audio_clips, estimate_duration_ms, extract_sentences, normalize_token, tokenize_sentence
 from app.services.media import (
     MediaError,
     cleanup_dir,
     create_request_dir,
     extract_audio_for_asr,
+    probe_audio_duration_ms,
     save_upload_file_stream,
     validate_suffix,
 )
@@ -90,7 +116,15 @@ def _error(status_code: int, code: str, message: str, detail: Any = "") -> JSONR
 def _map_media_error(exc: MediaError) -> JSONResponse:
     if exc.code == "FILE_TOO_LARGE":
         return _error(413, exc.code, exc.message, exc.detail)
-    if exc.code in {"INVALID_FILE_TYPE", "EMPTY_FILE", "SENTENCE_CLIP_FAILED"}:
+    if exc.code in {"INVALID_FILE_TYPE", "EMPTY_FILE", "SENTENCE_CLIP_FAILED", "FFPROBE_FAILED"}:
+        return _error(400, exc.code, exc.message, exc.detail)
+    return _error(500, exc.code, exc.message, exc.detail)
+
+
+def _map_billing_error(exc: BillingError) -> JSONResponse:
+    if exc.code in {"INSUFFICIENT_BALANCE", "BILLING_RATE_DISABLED"}:
+        return _error(400, exc.code, exc.message, exc.detail)
+    if exc.code in {"BILLING_RATE_NOT_FOUND", "INVALID_REASON", "INVALID_POINTS"}:
         return _error(400, exc.code, exc.message, exc.detail)
     return _error(500, exc.code, exc.message, exc.detail)
 
@@ -137,6 +171,15 @@ def _to_lesson_detail_response(lesson: Lesson, sentences: list[LessonSentence]) 
     )
 
 
+def _to_rate_item(rate: BillingModelRate) -> BillingRateItem:
+    return BillingRateItem(
+        model_name=rate.model_name,
+        points_per_minute=rate.points_per_minute,
+        is_active=rate.is_active,
+        updated_at=rate.updated_at,
+    )
+
+
 def _require_lesson_owner(db: Session, lesson_id: int, user_id: int) -> Lesson:
     lesson = db.get(Lesson, lesson_id)
     if not lesson or lesson.user_id != user_id:
@@ -166,71 +209,115 @@ def _sync_generate_lesson(
 
     opus_path = req_dir / "lesson_input.opus"
     extract_audio_for_asr(original_path, opus_path)
-    asr_result = transcribe_audio_file(str(opus_path), model=asr_model)
-    asr_payload = asr_result["asr_result_json"]
+    reserved_points = 0
+    reserved_duration_ms = 0
+    reserve_ledger_id: int | None = None
 
-    sentences = extract_sentences(asr_payload)
-    if not sentences:
-        raise MediaError("ASR_SENTENCE_MISSING", "ASR 返回结果缺少句级信息", "未找到 transcripts[].sentences[]")
-
-    zh_list, failed_count = translate_sentences_to_zh([x["text"] for x in sentences], DASHSCOPE_API_KEY)
-    failed_ratio = failed_count / max(len(sentences), 1)
-    lesson_status = "partial_ready" if failed_ratio >= 0.3 else "ready"
-
-    clips_dir = req_dir / "clips"
-    clip_paths = cut_sentence_audio_clips(opus_path, clips_dir, sentences)
-    duration_ms = estimate_duration_ms(asr_payload, sentences)
-
-    lesson = Lesson(
-        user_id=owner_id,
-        title=Path(upload_file.filename or "lesson").stem[:200] or "lesson",
-        source_filename=(upload_file.filename or "unknown")[:255],
-        asr_model=asr_model,
-        duration_ms=duration_ms,
-        status=lesson_status,
-    )
-    db.add(lesson)
-    db.flush()
-
-    lesson_dir = BASE_DATA_DIR / f"lesson_{lesson.id}"
-    lesson_dir.mkdir(parents=True, exist_ok=True)
-    stored_original = lesson_dir / f"original{suffix}"
-    stored_opus = lesson_dir / "input.opus"
-    shutil.copyfile(original_path, stored_original)
-    shutil.copyfile(opus_path, stored_opus)
-
-    media_asset = MediaAsset(lesson_id=lesson.id, original_path=str(stored_original), opus_path=str(stored_opus))
-    db.add(media_asset)
-
-    clips_store_dir = lesson_dir / "clips"
-    clips_store_dir.mkdir(parents=True, exist_ok=True)
-
-    for idx, sentence in enumerate(sentences):
-        clip_store_path = clips_store_dir / f"sentence_{idx:04d}.opus"
-        shutil.copyfile(clip_paths[idx], clip_store_path)
-        db.add(
-            LessonSentence(
-                lesson_id=lesson.id,
-                idx=idx,
-                begin_ms=int(sentence["begin_ms"]),
-                end_ms=int(sentence["end_ms"]),
-                text_en=sentence["text"],
-                text_zh=zh_list[idx] if idx < len(zh_list) else "",
-                tokens_json=tokenize_sentence(sentence["text"]),
-                audio_clip_path=str(clip_store_path),
-            )
+    try:
+        reserved_duration_ms = probe_audio_duration_ms(opus_path)
+        rate = get_model_rate(db, asr_model)
+        reserved_points = calculate_points(reserved_duration_ms, rate.points_per_minute)
+        reserve_ledger = reserve_points(
+            db,
+            user_id=owner_id,
+            points=reserved_points,
+            model_name=asr_model,
+            duration_ms=reserved_duration_ms,
+            note=f"课程生成预扣，模型={asr_model}",
         )
+        reserve_ledger_id = reserve_ledger.id
+        db.commit()
 
-    progress = LessonProgress(lesson_id=lesson.id, user_id=owner_id, current_sentence_idx=0, completed_indexes_json=[], last_played_at_ms=0)
-    db.add(progress)
-    db.commit()
-    db.refresh(lesson)
-    return lesson
+        asr_result = transcribe_audio_file(str(opus_path), model=asr_model)
+        asr_payload = asr_result["asr_result_json"]
+
+        sentences = extract_sentences(asr_payload)
+        if not sentences:
+            raise MediaError("ASR_SENTENCE_MISSING", "ASR 返回结果缺少句级信息", "未找到 transcripts[].sentences[]")
+
+        zh_list, failed_count = translate_sentences_to_zh([x["text"] for x in sentences], DASHSCOPE_API_KEY)
+        failed_ratio = failed_count / max(len(sentences), 1)
+        lesson_status = "partial_ready" if failed_ratio >= 0.3 else "ready"
+
+        clips_dir = req_dir / "clips"
+        clip_paths = cut_sentence_audio_clips(opus_path, clips_dir, sentences)
+        duration_ms = estimate_duration_ms(asr_payload, sentences)
+
+        lesson = Lesson(
+            user_id=owner_id,
+            title=Path(upload_file.filename or "lesson").stem[:200] or "lesson",
+            source_filename=(upload_file.filename or "unknown")[:255],
+            asr_model=asr_model,
+            duration_ms=duration_ms,
+            status=lesson_status,
+        )
+        db.add(lesson)
+        db.flush()
+
+        lesson_dir = BASE_DATA_DIR / f"lesson_{lesson.id}"
+        lesson_dir.mkdir(parents=True, exist_ok=True)
+        stored_original = lesson_dir / f"original{suffix}"
+        stored_opus = lesson_dir / "input.opus"
+        shutil.copyfile(original_path, stored_original)
+        shutil.copyfile(opus_path, stored_opus)
+
+        media_asset = MediaAsset(lesson_id=lesson.id, original_path=str(stored_original), opus_path=str(stored_opus))
+        db.add(media_asset)
+
+        clips_store_dir = lesson_dir / "clips"
+        clips_store_dir.mkdir(parents=True, exist_ok=True)
+
+        for idx, sentence in enumerate(sentences):
+            clip_store_path = clips_store_dir / f"sentence_{idx:04d}.opus"
+            shutil.copyfile(clip_paths[idx], clip_store_path)
+            db.add(
+                LessonSentence(
+                    lesson_id=lesson.id,
+                    idx=idx,
+                    begin_ms=int(sentence["begin_ms"]),
+                    end_ms=int(sentence["end_ms"]),
+                    text_en=sentence["text"],
+                    text_zh=zh_list[idx] if idx < len(zh_list) else "",
+                    tokens_json=tokenize_sentence(sentence["text"]),
+                    audio_clip_path=str(clip_store_path),
+                )
+            )
+
+        progress = LessonProgress(lesson_id=lesson.id, user_id=owner_id, current_sentence_idx=0, completed_indexes_json=[], last_played_at_ms=0)
+        db.add(progress)
+        record_consume(
+            db,
+            user_id=owner_id,
+            model_name=asr_model,
+            duration_ms=duration_ms,
+            lesson_id=lesson.id,
+            note=f"课程生成完成，预扣流水#{reserve_ledger_id}，预扣点数={reserved_points}",
+        )
+        db.commit()
+        db.refresh(lesson)
+        return lesson
+    except Exception:
+        db.rollback()
+        if reserve_ledger_id is not None:
+            try:
+                refund_points(
+                    db,
+                    user_id=owner_id,
+                    points=reserved_points,
+                    model_name=asr_model,
+                    duration_ms=reserved_duration_ms,
+                    note=f"课程生成失败，退回预扣点数，预扣流水#{reserve_ledger_id}",
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
+        raise
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     _ensure_cmd_exists("ffmpeg")
+    _ensure_cmd_exists("ffprobe")
     _ensure_ffmpeg_supports_libopus()
     if not DASHSCOPE_API_KEY:
         raise RuntimeError("missing_env: `DASHSCOPE_API_KEY` 未配置")
@@ -238,6 +325,11 @@ async def lifespan(_: FastAPI):
     BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
     setup_dashscope(DASHSCOPE_API_KEY)
     init_db()
+    seed_db = SessionLocal()
+    try:
+        ensure_default_billing_rates(seed_db)
+    finally:
+        seed_db.close()
     yield
 
 
@@ -247,6 +339,14 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 @app.get("/", include_in_schema=False)
 def root_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/admin", include_in_schema=False)
+@app.get("/admin/{full_path:path}", include_in_schema=False)
+def admin_page(full_path: str = "") -> FileResponse:
+    if full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="Not Found")
     return FileResponse(STATIC_DIR / "index.html")
 
 
@@ -262,6 +362,8 @@ def register(payload: AuthRequest, db: Session = Depends(get_db)):
         return _error(400, "EMAIL_EXISTS", "邮箱已注册")
     user = User(email=payload.email.lower(), password_hash=hash_password(payload.password))
     db.add(user)
+    db.flush()
+    get_or_create_wallet_account(db, user.id, for_update=False)
     db.commit()
     db.refresh(user)
     return AuthResponse(
@@ -309,6 +411,195 @@ def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
 @app.post("/api/auth/logout", response_model=LogoutResponse)
 def logout() -> LogoutResponse:
     return LogoutResponse(ok=True, message="已退出登录")
+
+
+@app.get("/api/wallet/me", response_model=WalletMeResponse, responses={401: {"model": ErrorResponse}})
+def wallet_me(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    account = get_or_create_wallet_account(db, current_user.id, for_update=False)
+    db.commit()
+    db.refresh(account)
+    return WalletMeResponse(ok=True, balance_points=account.balance_points, updated_at=account.updated_at)
+
+
+@app.get("/api/billing/rates", response_model=BillingRatesResponse)
+def public_billing_rates(db: Session = Depends(get_db)):
+    rates = list_public_rates(db)
+    return BillingRatesResponse(ok=True, rates=[_to_rate_item(item) for item in rates])
+
+
+@app.get("/api/admin/users", response_model=AdminUsersResponse, responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}})
+def admin_list_users(
+    keyword: str = "",
+    page: int = 1,
+    page_size: int = 20,
+    sort_by: str = "created_at",
+    sort_dir: str = "desc",
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    page = max(page, 1)
+    page_size = max(1, min(page_size, 100))
+
+    balance_col = func.coalesce(WalletAccount.balance_points, 0)
+    base_stmt = select(User.id, User.email, User.created_at, balance_col.label("balance_points")).outerjoin(
+        WalletAccount, WalletAccount.user_id == User.id
+    )
+    count_stmt = select(func.count(User.id))
+    if keyword.strip():
+        pattern = f"%{keyword.strip().lower()}%"
+        base_stmt = base_stmt.where(func.lower(User.email).like(pattern))
+        count_stmt = count_stmt.where(func.lower(User.email).like(pattern))
+
+    sort_key = (sort_by or "created_at").strip().lower()
+    sort_desc = (sort_dir or "desc").strip().lower() != "asc"
+    if sort_key == "email":
+        col = User.email
+    elif sort_key == "balance_points":
+        col = balance_col
+    else:
+        col = User.created_at
+    order_col = desc(col) if sort_desc else col.asc()
+
+    total = int(db.scalar(count_stmt) or 0)
+    rows = db.execute(
+        base_stmt.order_by(order_col, desc(User.id)).offset((page - 1) * page_size).limit(page_size)
+    ).all()
+    items = [
+        AdminUserItem(
+            id=row.id,
+            email=row.email,
+            created_at=row.created_at,
+            balance_points=int(row.balance_points or 0),
+        )
+        for row in rows
+    ]
+    return AdminUsersResponse(ok=True, page=page, page_size=page_size, total=total, items=items)
+
+
+@app.post(
+    "/api/admin/users/{user_id}/wallet-adjust",
+    response_model=WalletAdjustResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
+def admin_wallet_adjust(
+    user_id: int,
+    payload: WalletAdjustRequest,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    target_user = db.get(User, user_id)
+    if not target_user:
+        return _error(404, "USER_NOT_FOUND", "用户不存在")
+    try:
+        ledger = manual_adjust(
+            db,
+            user_id=user_id,
+            operator_user_id=current_admin.id,
+            delta_points=payload.delta_points,
+            note=payload.reason,
+        )
+        db.commit()
+        return WalletAdjustResponse(ok=True, user_id=user_id, balance_points=ledger.balance_after)
+    except BillingError as exc:
+        db.rollback()
+        return _map_billing_error(exc)
+    except Exception as exc:
+        db.rollback()
+        return _error(500, "INTERNAL_ERROR", "调账失败", str(exc)[:1200])
+
+
+@app.get(
+    "/api/admin/wallet-logs",
+    response_model=AdminWalletLogsResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_wallet_logs(
+    user_email: str = "",
+    event_type: str = "",
+    page: int = 1,
+    page_size: int = 20,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    page = max(page, 1)
+    page_size = max(1, min(page_size, 100))
+    base = select(WalletLedger, User.email).join(User, User.id == WalletLedger.user_id)
+    count_stmt = select(func.count(WalletLedger.id)).join(User, User.id == WalletLedger.user_id)
+
+    if user_email.strip():
+        pattern = f"%{user_email.strip().lower()}%"
+        base = base.where(func.lower(User.email).like(pattern))
+        count_stmt = count_stmt.where(func.lower(User.email).like(pattern))
+
+    normalized_event = event_type.strip().lower()
+    if normalized_event and normalized_event != "all":
+        base = base.where(WalletLedger.event_type == normalized_event)
+        count_stmt = count_stmt.where(WalletLedger.event_type == normalized_event)
+
+    if date_from:
+        base = base.where(WalletLedger.created_at >= date_from)
+        count_stmt = count_stmt.where(WalletLedger.created_at >= date_from)
+    if date_to:
+        base = base.where(WalletLedger.created_at <= date_to)
+        count_stmt = count_stmt.where(WalletLedger.created_at <= date_to)
+
+    total = int(db.scalar(count_stmt) or 0)
+    rows = db.execute(
+        base.order_by(WalletLedger.created_at.desc(), WalletLedger.id.desc()).offset((page - 1) * page_size).limit(page_size)
+    ).all()
+    items = [
+        WalletLedgerItem(
+            id=ledger.id,
+            user_id=ledger.user_id,
+            user_email=email,
+            operator_user_id=ledger.operator_user_id,
+            event_type=ledger.event_type,
+            delta_points=int(ledger.delta_points),
+            balance_after=int(ledger.balance_after),
+            model_name=ledger.model_name,
+            duration_ms=ledger.duration_ms,
+            lesson_id=ledger.lesson_id,
+            note=ledger.note,
+            created_at=ledger.created_at,
+        )
+        for ledger, email in rows
+    ]
+    return AdminWalletLogsResponse(ok=True, page=page, page_size=page_size, total=total, items=items)
+
+
+@app.get(
+    "/api/admin/billing-rates",
+    response_model=AdminBillingRatesResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_billing_rates(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
+    rates = list(db.scalars(select(BillingModelRate).order_by(BillingModelRate.model_name.asc())).all())
+    return AdminBillingRatesResponse(ok=True, rates=[_to_rate_item(item) for item in rates])
+
+
+@app.put(
+    "/api/admin/billing-rates/{model_name}",
+    response_model=AdminBillingRatesResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
+def admin_update_billing_rate(
+    model_name: str,
+    payload: AdminBillingRateUpdateRequest,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    rate = db.get(BillingModelRate, model_name)
+    if not rate:
+        return _error(404, "BILLING_RATE_NOT_FOUND", "计费模型不存在", model_name)
+    rate.points_per_minute = payload.points_per_minute
+    rate.is_active = payload.is_active
+    rate.updated_by_user_id = current_admin.id
+    db.add(rate)
+    db.commit()
+    db.refresh(rate)
+    return AdminBillingRatesResponse(ok=True, rates=[_to_rate_item(rate)])
 
 
 @app.post(
@@ -379,6 +670,8 @@ async def create_lesson(
         return _error(504, "REQUEST_TIMEOUT", "课程生成超时", f"超过 {REQUEST_TIMEOUT_SECONDS} 秒")
     except MediaError as exc:
         return _map_media_error(exc)
+    except BillingError as exc:
+        return _map_billing_error(exc)
     except AsrError as exc:
         return _error(502, exc.code, exc.message, exc.detail)
     except Exception as exc:
@@ -491,6 +784,28 @@ def check_sentence_tokens(
         expected_tokens=expected_tokens,
         normalized_expected=" ".join(expected_tokens),
     )
+
+
+@app.get(
+    "/api/lessons/{lesson_id}/media",
+    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
+def get_lesson_media(
+    lesson_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_lesson_owner(db, lesson_id, current_user.id)
+    media_asset = db.scalar(select(MediaAsset).where(MediaAsset.lesson_id == lesson_id))
+    if not media_asset:
+        return _error(404, "MEDIA_NOT_FOUND", "课程媒体不存在")
+
+    media_path = Path(media_asset.original_path)
+    if not media_path.exists():
+        return _error(404, "MEDIA_FILE_MISSING", "课程媒体文件不存在")
+
+    media_type = mimetypes.guess_type(str(media_path))[0] or "application/octet-stream"
+    return FileResponse(path=str(media_path), media_type=media_type, filename=media_path.name)
 
 
 @app.get(

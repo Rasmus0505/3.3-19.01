@@ -31,6 +31,16 @@
   - `POST /api/lessons/{lesson_id}/progress`
   - `GET /api/lessons/{lesson_id}/progress`
   - `GET /api/lessons/{lesson_id}/sentences/{idx}/audio`
+  - `GET /api/lessons/{lesson_id}/media`
+- 钱包与计费
+  - `GET /api/wallet/me`
+  - `GET /api/billing/rates`
+- 管理后台（管理员）
+  - `GET /api/admin/users`
+  - `POST /api/admin/users/{user_id}/wallet-adjust`
+  - `GET /api/admin/wallet-logs`
+  - `GET /api/admin/billing-rates`
+  - `PUT /api/admin/billing-rates/{model_name}`
 - 保留原能力
   - `POST /api/transcribe/file`
   - `GET /health`
@@ -40,6 +50,7 @@
 - `DASHSCOPE_API_KEY` (必填)
 - `DATABASE_URL` (建议 Zeabur Postgres 连接串，推荐包含 `search_path=app,public`)
 - `JWT_SECRET` (必填，生产必须替换)
+- `ADMIN_EMAILS` (可选，管理员邮箱白名单，逗号分隔)
 - `TMP_WORK_DIR` (可选，默认 `/tmp/zeabur3.3`)
 - `MT_BASE_URL` (可选，默认北京: `https://dashscope.aliyuncs.com/compatible-mode/v1`)
 - `MT_MODEL` (可选，默认 `qwen-mt-plus`)
@@ -84,11 +95,12 @@ npm run dev
 1. 维护窗口内暂停主应用写入（2-5 分钟）
 2. 先做数据库备份
 3. 在 Adminer 执行迁移 SQL：`ops/sql/public_to_app_schema.sql`
-4. 如需回滚，执行：`ops/sql/app_to_public_schema_rollback.sql`
-5. 迁移前后计数核对：
+4. 新增钱包与计费表：`ops/sql/add_wallet_billing_tables.sql`
+5. 如需回滚，执行：`ops/sql/app_to_public_schema_rollback.sql`
+6. 迁移前后计数核对：
    - 迁移前：`ops/sql/verify_business_tables.sql`
    - 迁移后：`ops/sql/verify_business_tables_app.sql`
-6. 更新 Zeabur 的 `DATABASE_URL`，追加 `search_path=app,public`
+7. 更新 Zeabur 的 `DATABASE_URL`，追加 `search_path=app,public`
 
 `DATABASE_URL` 示例（无其他参数）：
 
@@ -113,3 +125,4 @@ Metabase 设置：
 - 切句逻辑直接使用 ASR 返回 `sentences`，避免时间戳错位。
 - 翻译失败不阻断课程生成；失败句翻译为空字符串。
 - 请求结束后会清理临时目录。
+- `/admin` 为后台入口，非管理员会被后端权限拦截。
