@@ -2,10 +2,10 @@
 
 from datetime import datetime
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import delete, desc, func, select, update
 from sqlalchemy.orm import Session
 
-from app.models import User, WalletAccount, WalletLedger
+from app.models import BillingModelRate, Lesson, User, WalletAccount, WalletLedger
 
 
 def list_admin_users(
@@ -81,3 +81,29 @@ def list_wallet_logs(
         base.order_by(WalletLedger.created_at.desc(), WalletLedger.id.desc()).offset((page - 1) * page_size).limit(page_size)
     ).all()
     return total, rows
+
+
+def list_lesson_ids_for_user(db: Session, user_id: int) -> list[int]:
+    return [int(value) for value in db.scalars(select(Lesson.id).where(Lesson.user_id == user_id)).all()]
+
+
+def clear_wallet_ledger_operator_refs(db: Session, user_id: int) -> int:
+    stmt = (
+        update(WalletLedger)
+        .where(WalletLedger.operator_user_id == user_id, WalletLedger.user_id != user_id)
+        .values(operator_user_id=None)
+    )
+    result = db.execute(stmt)
+    return int(result.rowcount or 0)
+
+
+def delete_wallet_ledger_for_user(db: Session, user_id: int) -> int:
+    result = db.execute(delete(WalletLedger).where(WalletLedger.user_id == user_id))
+    return int(result.rowcount or 0)
+
+
+def clear_billing_rate_updated_by_refs(db: Session, user_id: int) -> int:
+    result = db.execute(
+        update(BillingModelRate).where(BillingModelRate.updated_by_user_id == user_id).values(updated_by_user_id=None)
+    )
+    return int(result.rowcount or 0)

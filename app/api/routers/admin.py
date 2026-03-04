@@ -5,7 +5,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.deps.auth import get_admin_user
+from app.api.deps.auth import get_admin_emails, get_admin_user
 from app.api.serializers import to_rate_item
 from app.core.errors import error_response, map_billing_error
 from app.db import get_db
@@ -15,6 +15,7 @@ from app.repositories.wallet_ledger import list_wallet_ledger_rows
 from app.schemas import (
     AdminBillingRateUpdateRequest,
     AdminBillingRatesResponse,
+    AdminUserDeleteResponse,
     AdminUserItem,
     AdminUsersResponse,
     AdminWalletLogsResponse,
@@ -24,6 +25,7 @@ from app.schemas import (
     WalletLedgerItem,
 )
 from app.services.billing_service import BillingError, manual_adjust
+from app.services.admin_service import AdminUserDeleteError, delete_user_hard
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -59,6 +61,36 @@ def admin_list_users(
         for user_id, email, created_at, balance_points in rows
     ]
     return AdminUsersResponse(ok=True, page=page, page_size=page_size, total=total, items=items)
+
+
+@router.delete(
+    "/users/{user_id}",
+    response_model=AdminUserDeleteResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def admin_delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    try:
+        result = delete_user_hard(
+            db,
+            target_user_id=user_id,
+            current_admin=current_admin,
+            admin_emails=get_admin_emails(),
+        )
+        return AdminUserDeleteResponse(
+            ok=True,
+            user_id=result.user_id,
+            email=result.email,
+            deleted_lessons=result.deleted_lessons,
+            deleted_ledger_rows=result.deleted_ledger_rows,
+            cleared_operator_refs=result.cleared_operator_refs,
+            file_cleanup_failed_dirs=result.file_cleanup_failed_dirs,
+        )
+    except AdminUserDeleteError as exc:
+        return error_response(exc.status_code, exc.code, exc.message, exc.detail)
 
 
 @router.post(

@@ -22,6 +22,16 @@ class AdminUsersResponse(BaseModel):
     items: list[AdminUserItem]
 
 
+class AdminUserDeleteResponse(BaseModel):
+    ok: bool = True
+    user_id: int
+    email: str
+    deleted_lessons: int
+    deleted_ledger_rows: int
+    cleared_operator_refs: int
+    file_cleanup_failed_dirs: list[str]
+
+
 class WalletAdjustRequest(BaseModel):
     delta_points: int
     reason: str = Field(min_length=1, max_length=500)
