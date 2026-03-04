@@ -193,14 +193,19 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   const [wordInputs, setWordInputs] = useState([]);
   const [wordStatuses, setWordStatuses] = useState([]);
   const [displayMode, setDisplayMode] = useState(() => getInitialDisplayMode());
+  const [sentenceTypingDone, setSentenceTypingDone] = useState(false);
+  const [sentencePlaybackDone, setSentencePlaybackDone] = useState(false);
+  const [sentencePlaybackRequired, setSentencePlaybackRequired] = useState(true);
 
   const mediaElementRef = useRef(null);
   const clipAudioRef = useRef(null);
   const typingInputRef = useRef(null);
   const bindingInputRef = useRef(null);
   const currentWordInputRef = useRef("");
+  const sentenceAdvanceLockedRef = useRef(false);
+  const typingEnabled = Boolean(lesson?.sentences?.[currentSentenceIndex]) && phase !== "transition" && phase !== "lesson_completed";
   const focusTypingInput = useCallback(() => {
-    if (phase !== "typing") return;
+    if (!typingEnabled) return;
     requestAnimationFrame(() => {
       const input = typingInputRef.current;
       if (!input) return;
@@ -212,7 +217,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
         // Ignore selection errors for unsupported input types/browsers.
       }
     });
-  }, [phase]);
+  }, [typingEnabled]);
 
   const currentSentence = lesson?.sentences?.[currentSentenceIndex] || null;
   const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens : []), [currentSentence?.tokens]);
@@ -220,6 +225,13 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   const expectedSourceDurationSec = Math.max(0, Number(lesson?.source_duration_ms || 0) / 1000);
 
   const { playKeySound, playWrongSound, playCorrectSound } = useTypingFeedbackSounds();
+
+  const resetSentenceGate = useCallback((playbackRequired = true) => {
+    sentenceAdvanceLockedRef.current = false;
+    setSentenceTypingDone(false);
+    setSentencePlaybackDone(false);
+    setSentencePlaybackRequired(Boolean(playbackRequired));
+  }, []);
 
   const syncProgress = useCallback(
     async (nextIndex, nextCompleted, lastPlayedAtMs) => {
@@ -262,17 +274,19 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
       return;
     }
 
+    resetWordTyping(lesson?.sentences?.[nextIdx], true);
     setCurrentSentenceIndex(nextIdx);
     setPhase("auto_play_pending");
-  }, [completedIndexes, currentSentence, currentSentenceIndex, lesson, onProgressSynced, sentenceCount, syncProgress]);
+  }, [completedIndexes, currentSentence, currentSentenceIndex, lesson, onProgressSynced, resetWordTyping, sentenceCount, syncProgress]);
 
   const onSentenceFinished = useCallback(() => {
+    setSentencePlaybackDone(true);
     if (!expectedTokens.length) {
-      handleSentencePassed();
+      setSentenceTypingDone(true);
       return;
     }
     setPhase("typing");
-  }, [expectedTokens.length, handleSentencePassed]);
+  }, [expectedTokens.length]);
 
   const { isPlaying, playSentence, stopPlayback, onMainMediaTimeUpdate } = useSentencePlayback({
     mode: mediaMode,
@@ -283,37 +297,51 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     onSentenceFinished,
   });
 
-  const resetWordTyping = useCallback((sentence) => {
+  const resetWordTyping = useCallback((sentence, playbackRequired = true) => {
     const next = createWordState(sentence?.tokens || []);
     setActiveWordIndex(next.activeWordIndex);
     setCurrentWordInput(next.currentWordInput);
     setWordInputs(next.wordInputs);
     setWordStatuses(next.wordStatuses);
     currentWordInputRef.current = "";
-  }, []);
+    resetSentenceGate(playbackRequired);
+  }, [resetSentenceGate]);
 
   const tryPlayCurrentSentence = useCallback(
     async ({ manual = false } = {}) => {
       if (!currentSentence) return;
       if (needsBinding) {
         setMediaError("当前课程缺少可播放媒体，请先绑定本地文件。");
+        setSentencePlaybackRequired(false);
+        if (!expectedTokens.length) {
+          setSentenceTypingDone(true);
+        }
         setPhase("typing");
         return;
       }
-      resetWordTyping(currentSentence);
       const result = await playSentence(currentSentence);
       if (result.ok) {
+        setSentencePlaybackRequired(true);
+        setSentencePlaybackDone(false);
         setMediaError("");
         setPhase("playing");
         return;
       }
       if (result.reason === "clip_unavailable") {
         setNeedsBinding(true);
+        setSentencePlaybackRequired(false);
+        if (!expectedTokens.length) {
+          setSentenceTypingDone(true);
+        }
         setMediaError("本句服务器音频不可用，请先绑定本地文件。");
         setPhase("typing");
         return;
       }
       if (result.reason === "autoplay_blocked") {
+        setSentencePlaybackRequired(false);
+        if (!expectedTokens.length) {
+          setSentenceTypingDone(true);
+        }
         setPhase("typing");
         setMediaError(
           manual
@@ -322,10 +350,14 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
         );
         return;
       }
+      setSentencePlaybackRequired(false);
+      if (!expectedTokens.length) {
+        setSentenceTypingDone(true);
+      }
       setMediaError("当前句播放失败，已切换为输入模式。");
       setPhase("typing");
     },
-    [currentSentence, needsBinding, playSentence, resetWordTyping],
+    [currentSentence, expectedTokens.length, needsBinding, playSentence],
   );
 
   useEffect(() => {
@@ -346,7 +378,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
       : [];
     setCurrentSentenceIndex(safeIdx);
     setCompletedIndexes(savedCompleted);
-    resetWordTyping(lesson?.sentences?.[safeIdx]);
+    resetWordTyping(lesson?.sentences?.[safeIdx], true);
     setPhase("idle");
 
     const fileName = String(lesson.source_filename || "");
@@ -465,9 +497,36 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   }, [currentSentence, mediaMode, mediaReady, needsBinding, phase, tryPlayCurrentSentence]);
 
   useEffect(() => {
-    if (phase !== "typing") return;
+    if (!typingEnabled) return;
     focusTypingInput();
-  }, [activeWordIndex, currentSentenceIndex, focusTypingInput, phase]);
+  }, [activeWordIndex, currentSentenceIndex, focusTypingInput, typingEnabled]);
+
+  useEffect(() => {
+    if (!typingEnabled || !immersiveActive) return undefined;
+    if (typeof window === "undefined") return undefined;
+
+    const onPointerDownCapture = () => {
+      setTimeout(() => {
+        focusTypingInput();
+      }, 0);
+    };
+
+    window.addEventListener("pointerdown", onPointerDownCapture, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDownCapture, true);
+    };
+  }, [focusTypingInput, immersiveActive, typingEnabled]);
+
+  useEffect(() => {
+    if (!sentenceTypingDone) return;
+    if (sentencePlaybackRequired && !sentencePlaybackDone) return;
+    if (sentenceAdvanceLockedRef.current) return;
+    sentenceAdvanceLockedRef.current = true;
+    setPhase("transition");
+    setTimeout(() => {
+      void handleSentencePassed();
+    }, 120);
+  }, [handleSentencePassed, sentencePlaybackDone, sentencePlaybackRequired, sentenceTypingDone]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -570,15 +629,12 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
       setCurrentWordInput("");
 
       if (activeWordIndex + 1 >= expectedTokens.length) {
-        setPhase("transition");
-        setTimeout(() => {
-          handleSentencePassed();
-        }, 120);
+        setSentenceTypingDone(true);
         return;
       }
       setActiveWordIndex((prev) => prev + 1);
     },
-    [activeWordIndex, expectedTokens.length, handleSentencePassed, playCorrectSound],
+    [activeWordIndex, expectedTokens.length, playCorrectSound],
   );
 
   const commitWrongWord = useCallback(() => {
@@ -604,7 +660,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
       stopPlayback();
       setPhase("auto_play_pending");
       setCurrentSentenceIndex(safeTarget);
-      resetWordTyping(lesson?.sentences?.[safeTarget]);
+      resetWordTyping(lesson?.sentences?.[safeTarget], true);
       await syncProgress(safeTarget, completedIndexes, lesson?.sentences?.[safeTarget]?.begin_ms || 0);
       onProgressSynced?.();
     },
@@ -629,12 +685,20 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
 
   const revealCurrentWord = useCallback(
     (source = "button_reveal") => {
-      if (phase !== "typing") return;
+      if (!typingEnabled) return;
       const expected = expectedTokens[activeWordIndex] || "";
       if (!expected) return;
       commitCorrectWord(expected);
     },
-    [activeWordIndex, commitCorrectWord, expectedTokens, phase],
+    [activeWordIndex, commitCorrectWord, expectedTokens, typingEnabled],
+  );
+
+  const replayCurrentSentence = useCallback(
+    (source = "button_replay") => {
+      if (!currentSentence || mediaLoading || phase === "transition" || needsBinding) return;
+      void tryPlayCurrentSentence({ manual: true });
+    },
+    [currentSentence, mediaLoading, needsBinding, phase, tryPlayCurrentSentence],
   );
 
   useEffect(() => {
@@ -650,6 +714,12 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
         event.preventDefault();
         event.stopPropagation();
         exitImmersive("shortcut_esc");
+        return;
+      }
+      if (event.shiftKey && event.key.toLowerCase() === "r") {
+        event.preventDefault();
+        event.stopPropagation();
+        replayCurrentSentence("shortcut_shift_r");
         return;
       }
       if (event.key === "Enter") {
@@ -669,7 +739,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     return () => {
       window.removeEventListener("keydown", onWindowKeyDown);
     };
-  }, [exitImmersive, goToNextSentence, immersiveActive, revealCurrentWord]);
+  }, [exitImmersive, goToNextSentence, immersiveActive, replayCurrentSentence, revealCurrentWord]);
 
   const handleKeyDown = useCallback(
     (event) => {
@@ -680,6 +750,12 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
         event.preventDefault();
         event.stopPropagation();
         exitImmersive("shortcut_esc");
+        return;
+      }
+      if (event.shiftKey && key.toLowerCase() === "r") {
+        event.preventDefault();
+        event.stopPropagation();
+        replayCurrentSentence("shortcut_shift_r");
         return;
       }
       if (key === "Enter") {
@@ -695,7 +771,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
         return;
       }
 
-      if (phase !== "typing") return;
+      if (!typingEnabled) return;
 
       if (event.ctrlKey || event.metaKey || event.altKey) {
         return;
@@ -764,9 +840,10 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
       exitImmersive,
       expectedTokens,
       goToNextSentence,
-      phase,
       playKeySound,
+      replayCurrentSentence,
       revealCurrentWord,
+      typingEnabled,
     ],
   );
 
@@ -793,7 +870,8 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   const showMediaLoadingOverlay = mediaLoading && !needsBinding && !mediaReady;
   const canGoPrevious = currentSentenceIndex > 0;
   const canGoNext = currentSentenceIndex < Math.max(0, sentenceCount - 1);
-  const canRevealWord = phase === "typing" && activeWordIndex < expectedTokens.length && expectedTokens.length > 0;
+  const canRevealWord = typingEnabled && activeWordIndex < expectedTokens.length && expectedTokens.length > 0;
+  const canReplaySentence = Boolean(currentSentence) && !mediaLoading && phase !== "transition" && !needsBinding;
 
   return (
     <Card className={`immersive-page ${immersiveActive ? "immersive-page--immersive" : ""}`} onClick={focusTypingInput}>
@@ -801,10 +879,17 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
         <div className="immersive-header">
           <div className="immersive-header-left">
             {immersiveActive && (typeof onExitImmersive === "function" || typeof onBack === "function") ? (
-              <Button variant="outline" size="sm" onClick={() => exitImmersive("button")}>
-                <ArrowLeft className="size-4" />
-                退出沉浸
-              </Button>
+              <TooltipProvider delayDuration={120}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" size="sm" onClick={() => exitImmersive("button")}>
+                      <ArrowLeft className="size-4" />
+                      退出沉浸
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>esc</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             ) : null}
             <div>
               <CardTitle className="text-base">沉浸式句子拼写学习</CardTitle>
@@ -884,10 +969,17 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
             {bindingBusy ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />}
             绑定本地文件
           </Button>
-          <Button variant="outline" onClick={() => tryPlayCurrentSentence({ manual: true })} disabled={mediaLoading || phase === "transition" || needsBinding}>
-            <RotateCcw className="size-4" />
-            重播本句
-          </Button>
+          <TooltipProvider delayDuration={120}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" onClick={() => replayCurrentSentence("button_replay")} disabled={!canReplaySentence}>
+                  <RotateCcw className="size-4" />
+                  重播本句
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>shift+r</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <TooltipProvider delayDuration={120}>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -935,6 +1027,9 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           ) : null}
           {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
           {bindingError ? <p className="text-xs text-destructive">{bindingError}</p> : null}
+          {sentenceTypingDone && !sentencePlaybackDone && sentencePlaybackRequired ? (
+            <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p>
+          ) : null}
         </div>
 
         <div className="immersive-typing">
@@ -1005,7 +1100,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           onChange={() => {}}
           onKeyDown={handleKeyDown}
           onBlur={() => {
-            if (phase === "typing") {
+            if (typingEnabled) {
               setTimeout(() => {
                 focusTypingInput();
               }, 0);
@@ -1013,7 +1108,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           }}
           autoComplete="off"
           spellCheck={false}
-          readOnly={phase !== "typing"}
+          readOnly={!typingEnabled}
         />
       </CardContent>
     </Card>
