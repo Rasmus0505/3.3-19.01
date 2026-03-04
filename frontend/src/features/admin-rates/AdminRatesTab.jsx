@@ -2,6 +2,7 @@ import { Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { formatDateTimeBeijing } from "../../shared/lib/datetime";
 import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, ScrollArea, Skeleton, Switch, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
@@ -14,13 +15,6 @@ async function jsonOrEmpty(resp) {
   } catch (_) {
     return {};
   }
-}
-
-function formatDateTime(value) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString();
 }
 
 export function AdminRatesTab({ apiCall }) {
@@ -107,7 +101,7 @@ export function AdminRatesTab({ apiCall }) {
           <Settings2 className="size-4" />
           计费配置
         </CardTitle>
-        <CardDescription>按模型维护每分钟点数与启用状态。</CardDescription>
+        <CardDescription>按模型维护每分钟点数与启用状态（时间为北京时间）。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {loading ? <Skeleton className="h-10 w-full" /> : null}
@@ -165,7 +159,7 @@ export function AdminRatesTab({ apiCall }) {
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell>{formatDateTime(item.updated_at)}</TableCell>
+                    <TableCell>{formatDateTimeBeijing(item.updated_at)}</TableCell>
                     <TableCell>
                       <Button
                         size="sm"

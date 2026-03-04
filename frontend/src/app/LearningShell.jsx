@@ -10,6 +10,7 @@ import { UploadPanel } from "../features/upload/UploadPanel";
 import { RedeemCodePanel } from "../features/wallet/RedeemCodePanel";
 import { WalletBadge } from "../features/wallet/WalletBadge";
 import { api, parseResponse, toErrorText } from "../shared/api/client";
+import { hasLessonMedia } from "../shared/media/localMediaStore";
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, Separator, Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "../shared/ui";
 import { clearAuthStorage, REFRESH_KEY, TOKEN_KEY } from "./authStorage";
 
@@ -27,6 +28,7 @@ export function LearningShell() {
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [currentLessonNeedsBinding, setCurrentLessonNeedsBinding] = useState(false);
 
   const filteredLessons = useMemo(() => {
     const keyword = commandQuery.trim().toLowerCase();
@@ -128,6 +130,34 @@ export function LearningShell() {
     detectAdmin();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
+
+  useEffect(() => {
+    let canceled = false;
+
+    async function detectCurrentLessonMediaStatus() {
+      if (!currentLesson?.id) {
+        setCurrentLessonNeedsBinding(false);
+        return;
+      }
+      if (currentLesson.media_storage !== "client_indexeddb") {
+        setCurrentLessonNeedsBinding(false);
+        return;
+      }
+      try {
+        const bound = await hasLessonMedia(currentLesson.id);
+        if (canceled) return;
+        setCurrentLessonNeedsBinding(!bound);
+      } catch (_) {
+        if (canceled) return;
+        setCurrentLessonNeedsBinding(true);
+      }
+    }
+
+    detectCurrentLessonMediaStatus();
+    return () => {
+      canceled = true;
+    };
+  }, [currentLesson?.id, currentLesson?.media_storage]);
 
   function handleAuthed() {
     setAccessToken(localStorage.getItem(TOKEN_KEY) || "");
@@ -281,6 +311,7 @@ export function LearningShell() {
                 <p className="text-muted-foreground">课程加载：{loadingLessons ? "进行中" : "空闲"}</p>
                 <p className="text-muted-foreground">当前课程：{currentLesson?.title || "未选择"}</p>
                 <p className="text-muted-foreground">学习模式：{viewMode === "immersive" ? "沉浸模式" : "普通模式"}</p>
+                {currentLessonNeedsBinding ? <p className="text-amber-600">待绑定本地媒体：课程可见，但播放受限</p> : null}
               </CardContent>
             </Card>
           </aside>

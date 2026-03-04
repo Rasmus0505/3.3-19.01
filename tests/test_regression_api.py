@@ -178,6 +178,8 @@ def test_lessons_progress_and_check(test_client):
             source_filename="demo.mp4",
             asr_model="paraformer-v2",
             duration_ms=10000,
+            media_storage="server",
+            source_duration_ms=10000,
             status="ready",
         )
         session.add(lesson)
@@ -241,6 +243,8 @@ def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch):
             source_filename="fake.mp4",
             asr_model=asr_model,
             duration_ms=1000,
+            media_storage="client_indexeddb",
+            source_duration_ms=1234,
             status="ready",
         )
         db.add(lesson)
@@ -254,7 +258,7 @@ def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch):
                 text_en="hello",
                 text_zh="你好",
                 tokens_json=["hello"],
-                audio_clip_path="/tmp/fake.opus",
+                audio_clip_path=None,
             )
         )
         db.add(
@@ -279,6 +283,9 @@ def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch):
     body = resp.json()
     assert body["ok"] is True
     assert body["lesson"]["title"] == "fake lesson"
+    assert body["lesson"]["media_storage"] == "client_indexeddb"
+    assert body["lesson"]["source_duration_ms"] == 1234
+    assert body["lesson"]["sentences"][0]["audio_url"] is None
 
 
 def test_lesson_media_prefers_source_filename_content_type(test_client, tmp_path):
@@ -298,6 +305,8 @@ def test_lesson_media_prefers_source_filename_content_type(test_client, tmp_path
             source_filename="lesson-video.mp4",
             asr_model="paraformer-v2",
             duration_ms=5000,
+            media_storage="server",
+            source_duration_ms=5000,
             status="ready",
         )
         session.add(lesson)
@@ -317,3 +326,65 @@ def test_lesson_media_prefers_source_filename_content_type(test_client, tmp_path
     resp = client.get(f"/api/lessons/{lesson_id}/media", headers=headers)
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("video/mp4")
+
+
+def test_local_media_mode_requires_client_binding(test_client):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="local-media@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "local-media@example.com").one()
+        lesson = Lesson(
+            user_id=user.id,
+            title="local-only",
+            source_filename="local.mp4",
+            asr_model="paraformer-v2",
+            duration_ms=2000,
+            media_storage="client_indexeddb",
+            source_duration_ms=2000,
+            status="ready",
+        )
+        session.add(lesson)
+        session.flush()
+        session.add(
+            LessonSentence(
+                lesson_id=lesson.id,
+                idx=0,
+                begin_ms=0,
+                end_ms=1000,
+                text_en="hello world",
+                text_zh="你好 世界",
+                tokens_json=["hello", "world"],
+                audio_clip_path=None,
+            )
+        )
+        session.add(
+            LessonProgress(
+                lesson_id=lesson.id,
+                user_id=user.id,
+                current_sentence_idx=0,
+                completed_indexes_json=[],
+                last_played_at_ms=0,
+            )
+        )
+        session.commit()
+        lesson_id = lesson.id
+    finally:
+        session.close()
+
+    detail_resp = client.get(f"/api/lessons/{lesson_id}", headers=headers)
+    assert detail_resp.status_code == 200
+    detail_data = detail_resp.json()
+    assert detail_data["media_storage"] == "client_indexeddb"
+    assert detail_data["source_duration_ms"] == 2000
+    assert detail_data["sentences"][0]["audio_url"] is None
+
+    media_resp = client.get(f"/api/lessons/{lesson_id}/media", headers=headers)
+    assert media_resp.status_code == 409
+    assert media_resp.json()["error_code"] == "LOCAL_MEDIA_REQUIRED"
+
+    clip_resp = client.get(f"/api/lessons/{lesson_id}/sentences/0/audio", headers=headers)
+    assert clip_resp.status_code == 409
+    assert clip_resp.json()["error_code"] == "LOCAL_MEDIA_REQUIRED"

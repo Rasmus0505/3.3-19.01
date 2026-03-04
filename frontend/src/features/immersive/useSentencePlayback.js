@@ -62,6 +62,9 @@ export function useSentencePlayback({
       stopPlayback();
 
       if (mode === "clip") {
+        if (!sentence.audio_url) {
+          return { ok: false, reason: "clip_unavailable" };
+        }
         const token = ++playTokenRef.current;
         let resp;
         try {

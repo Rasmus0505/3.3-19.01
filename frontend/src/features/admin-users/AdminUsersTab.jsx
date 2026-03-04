@@ -2,6 +2,7 @@ import { Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { formatDateTimeBeijing } from "../../shared/lib/datetime";
 import { Alert, AlertDescription, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Label, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
@@ -14,13 +15,6 @@ async function jsonOrEmpty(resp) {
   } catch (_) {
     return {};
   }
-}
-
-function formatDateTime(value) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString();
 }
 
 function formatPoints(points) {
@@ -185,7 +179,7 @@ export function AdminUsersTab({ apiCall }) {
           <Users className="size-4" />
           用户与余额
         </CardTitle>
-        <CardDescription>搜索、分页、排序与手工调账。</CardDescription>
+        <CardDescription>搜索、分页、排序与手工调账（时间均为北京时间）。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <form
@@ -251,7 +245,7 @@ export function AdminUsersTab({ apiCall }) {
                   <TableCell>{item.id}</TableCell>
                   <TableCell>{item.email}</TableCell>
                   <TableCell>{formatPoints(item.balance_points)}</TableCell>
-                  <TableCell>{formatDateTime(item.created_at)}</TableCell>
+                  <TableCell>{formatDateTimeBeijing(item.created_at)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <Button

@@ -92,12 +92,19 @@ frontend/src/
 - `ALEMBIC_CONFIG` (可选，默认 `alembic.ini`)
 - `JWT_SECRET` (必填，生产必须替换)
 - `ADMIN_EMAILS` (可选，管理员邮箱白名单，逗号分隔)
+- `APP_TIMEZONE` (可选，默认 `Asia/Shanghai`，用于时间写入与接口输出时区语义)
 - `REDEEM_CODE_DEFAULT_VALID_DAYS` (可选，兑换批次默认有效期天数，默认 `30`)
 - `REDEEM_CODE_DEFAULT_DAILY_LIMIT` (可选，全局默认单账号每日兑换上限，默认 `5`)
 - `REDEEM_CODE_EXPORT_CONFIRM_TEXT` (可选，导出 CSV 二次确认口令，默认 `EXPORT`)
 - `TMP_WORK_DIR` (可选，默认 `/tmp/zeabur3.3`)
 - `MT_BASE_URL` (可选，默认北京: `https://dashscope.aliyuncs.com/compatible-mode/v1`)
 - `MT_MODEL` (可选，默认 `qwen-mt-plus`)
+
+## 时间策略（东八区）
+
+- 数据库时间字段（如 `created_at`、`updated_at`）按东八区语义写入（naive）。
+- API 返回时间统一为 ISO8601 且带 `+08:00` 偏移。
+- 历史数据不做回填，仅发布后的新写入数据按新策略生效。
 
 ## 本地开发
 

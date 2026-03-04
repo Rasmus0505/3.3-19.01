@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
 from app.core.errors import error_response, map_billing_error
+from app.core.timezone import to_shanghai_aware
 from app.db import get_db
 from app.models import User
 from app.schemas import ErrorResponse, WalletMeResponse, WalletRedeemCodeRequest, WalletRedeemCodeResponse
@@ -19,7 +20,7 @@ def wallet_me(db: Session = Depends(get_db), current_user: User = Depends(get_cu
     account = get_or_create_wallet_account(db, current_user.id, for_update=False)
     db.commit()
     db.refresh(account)
-    return WalletMeResponse(ok=True, balance_points=account.balance_points, updated_at=account.updated_at)
+    return WalletMeResponse(ok=True, balance_points=account.balance_points, updated_at=to_shanghai_aware(account.updated_at))
 
 
 @router.post(

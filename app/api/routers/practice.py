@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import get_current_user
 from app.api.routers._helpers import require_lesson_owner
 from app.core.errors import error_response
+from app.core.timezone import to_shanghai_aware
 from app.db import get_db
 from app.models import User
 from app.repositories.lessons import get_sentence
@@ -33,7 +34,7 @@ def get_progress(lesson_id: int, db: Session = Depends(get_db), current_user: Us
         current_sentence_index=progress.current_sentence_idx,
         completed_sentence_indexes=list(progress.completed_indexes_json or []),
         last_played_at_ms=int(progress.last_played_at_ms or 0),
-        updated_at=progress.updated_at,
+        updated_at=to_shanghai_aware(progress.updated_at),
     )
 
 
@@ -65,7 +66,7 @@ def update_progress(
         current_sentence_index=progress.current_sentence_idx,
         completed_sentence_indexes=list(progress.completed_indexes_json or []),
         last_played_at_ms=int(progress.last_played_at_ms or 0),
-        updated_at=progress.updated_at,
+        updated_at=to_shanghai_aware(progress.updated_at),
     )
 
 

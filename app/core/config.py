@@ -13,6 +13,9 @@ BASE_DATA_DIR = BASE_TMP_DIR / "data"
 
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "").strip()
 LESSON_DEFAULT_ASR_MODEL = os.getenv("LESSON_DEFAULT_ASR_MODEL", "paraformer-v2").strip()
+APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Asia/Shanghai").strip() or "Asia/Shanghai"
+
+
 def _get_env_int(name: str, default: int) -> int:
     raw = os.getenv(name, str(default)).strip()
     try:
