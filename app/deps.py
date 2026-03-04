@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
@@ -28,3 +30,11 @@ def get_current_user(
     if not user:
         raise HTTPException(status_code=401, detail="用户不存在")
     return user
+
+
+def get_admin_user(current_user: User = Depends(get_current_user)) -> User:
+    raw = os.getenv("ADMIN_EMAILS", "").strip()
+    admin_emails = {x.strip().lower() for x in raw.split(",") if x.strip()}
+    if current_user.email.lower() not in admin_emails:
+        raise HTTPException(status_code=403, detail="无管理员权限")
+    return current_user

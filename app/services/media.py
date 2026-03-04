@@ -110,3 +110,32 @@ def extract_audio_for_asr(input_path: Path, output_audio: Path) -> None:
         )
     except MediaError as exc:
         raise MediaError("FFMPEG_EXTRACT_FAILED", "音频提取失败", exc.detail) from exc
+
+
+def probe_audio_duration_ms(audio_path: Path) -> int:
+    proc = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(audio_path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=SUBPROCESS_TIMEOUT_SECONDS,
+    )
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip()
+        raise MediaError("FFPROBE_FAILED", "媒体时长探测失败", detail[:1000])
+    text = (proc.stdout or "").strip()
+    try:
+        seconds = float(text)
+    except ValueError as exc:
+        raise MediaError("FFPROBE_FAILED", "媒体时长探测失败", f"invalid duration output: {text[:120]}") from exc
+    if seconds < 0:
+        return 0
+    return int(seconds * 1000)
