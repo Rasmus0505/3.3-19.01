@@ -35,3 +35,12 @@ class LessonDetailResponse(LessonItemResponse):
 class LessonCreateResponse(BaseModel):
     ok: bool = True
     lesson: LessonDetailResponse
+
+
+class LessonRenameRequest(BaseModel):
+    title: str
+
+
+class LessonDeleteResponse(BaseModel):
+    ok: bool = True
+    lesson_id: int

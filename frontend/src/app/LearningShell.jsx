@@ -5,13 +5,36 @@ import { useNavigate } from "react-router-dom";
 import { AuthPanel } from "../features/auth/AuthPanel";
 import { ImmersiveLessonPage } from "../features/immersive/ImmersiveLessonPage";
 import { LessonList } from "../features/lessons/LessonList";
-import { PracticePanel } from "../features/practice/PracticePanel";
 import { UploadPanel } from "../features/upload/UploadPanel";
 import { RedeemCodePanel } from "../features/wallet/RedeemCodePanel";
 import { WalletBadge } from "../features/wallet/WalletBadge";
 import { api, parseResponse, toErrorText } from "../shared/api/client";
-import { hasLessonMedia } from "../shared/media/localMediaStore";
-import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, Separator, Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "../shared/ui";
+import { deleteLessonMedia, hasLessonMedia } from "../shared/media/localMediaStore";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  Separator,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "../shared/ui";
 import { clearAuthStorage, REFRESH_KEY, TOKEN_KEY } from "./authStorage";
 
 export function LearningShell() {
@@ -21,7 +44,6 @@ export function LearningShell() {
   const [currentLesson, setCurrentLesson] = useState(null);
   const [loadingLessons, setLoadingLessons] = useState(false);
   const [globalStatus, setGlobalStatus] = useState("");
-  const [viewMode, setViewMode] = useState("dashboard");
   const [walletBalance, setWalletBalance] = useState(0);
   const [billingRates, setBillingRates] = useState([]);
   const [isAdminUser, setIsAdminUser] = useState(false);
@@ -40,9 +62,9 @@ export function LearningShell() {
     if (!accessToken) {
       setLessons([]);
       setCurrentLesson(null);
-      setViewMode("dashboard");
       return;
     }
+
     setLoadingLessons(true);
     try {
       const listResp = await api("/api/lessons", {}, accessToken);
@@ -51,9 +73,17 @@ export function LearningShell() {
         setGlobalStatus(toErrorText(listData, "加载课程失败"));
         return;
       }
-      setLessons(listData);
-      if (listData.length > 0 && !currentLesson) {
-        await loadLessonDetail(listData[0].id);
+
+      const nextLessons = Array.isArray(listData) ? listData : [];
+      setLessons(nextLessons);
+      if (!nextLessons.length) {
+        setCurrentLesson(null);
+        return;
+      }
+
+      const currentExists = currentLesson?.id && nextLessons.some((item) => item.id === currentLesson.id);
+      if (!currentExists) {
+        await loadLessonDetail(nextLessons[0].id);
       }
     } catch (error) {
       setGlobalStatus(`网络错误: ${String(error)}`);
@@ -63,31 +93,36 @@ export function LearningShell() {
   }
 
   async function loadLessonDetail(lessonId) {
-    const [detailResp, progressResp] = await Promise.all([
-      api(`/api/lessons/${lessonId}`, {}, accessToken),
-      api(`/api/lessons/${lessonId}/progress`, {}, accessToken),
-    ]);
-    const detailData = await parseResponse(detailResp);
-    const progressData = await parseResponse(progressResp);
-    if (!detailResp.ok) {
-      setGlobalStatus(toErrorText(detailData, "加载课程详情失败"));
-      return;
+    if (!lessonId || !accessToken) return;
+    try {
+      const [detailResp, progressResp] = await Promise.all([
+        api(`/api/lessons/${lessonId}`, {}, accessToken),
+        api(`/api/lessons/${lessonId}/progress`, {}, accessToken),
+      ]);
+      const detailData = await parseResponse(detailResp);
+      const progressData = await parseResponse(progressResp);
+      if (!detailResp.ok) {
+        setGlobalStatus(toErrorText(detailData, "加载课程详情失败"));
+        return;
+      }
+      const merged = {
+        ...detailData,
+        progress: progressResp.ok
+          ? {
+              current_sentence_index: progressData.current_sentence_index || 0,
+              completed_sentence_indexes: progressData.completed_sentence_indexes || [],
+              last_played_at_ms: progressData.last_played_at_ms || 0,
+            }
+          : {
+              current_sentence_index: 0,
+              completed_sentence_indexes: [],
+              last_played_at_ms: 0,
+            },
+      };
+      setCurrentLesson(merged);
+    } catch (error) {
+      setGlobalStatus(`网络错误: ${String(error)}`);
     }
-    const merged = {
-      ...detailData,
-      progress: progressResp.ok
-        ? {
-            current_sentence_index: progressData.current_sentence_index || 0,
-            completed_sentence_indexes: progressData.completed_sentence_indexes || [],
-            last_played_at_ms: progressData.last_played_at_ms || 0,
-          }
-        : {
-            current_sentence_index: 0,
-            completed_sentence_indexes: [],
-            last_played_at_ms: 0,
-          },
-    };
-    setCurrentLesson(merged);
   }
 
   async function loadWallet() {
@@ -170,7 +205,6 @@ export function LearningShell() {
     setLessons([]);
     setCurrentLesson(null);
     setGlobalStatus("");
-    setViewMode("dashboard");
     setWalletBalance(0);
     setIsAdminUser(false);
     setMobileNavOpen(false);
@@ -181,15 +215,6 @@ export function LearningShell() {
     await loadLessons();
     await loadLessonDetail(lesson.id);
     await loadWallet();
-    setViewMode("immersive");
-  }
-
-  async function handleEnterImmersive(lessonId) {
-    if (!lessonId) return;
-    if (lessonId !== currentLesson?.id) {
-      await loadLessonDetail(lessonId);
-    }
-    setViewMode("immersive");
   }
 
   async function refreshCurrentLesson() {
@@ -204,7 +229,89 @@ export function LearningShell() {
     if (lessonId !== currentLesson?.id) {
       await loadLessonDetail(lessonId);
     }
-    setViewMode("dashboard");
+  }
+
+  async function handleRenameLesson(lessonId, title) {
+    if (!accessToken) {
+      return { ok: false, message: "请先登录" };
+    }
+
+    try {
+      const resp = await api(
+        `/api/lessons/${lessonId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title }),
+        },
+        accessToken,
+      );
+      const data = await parseResponse(resp);
+      if (!resp.ok) {
+        const message = toErrorText(data, "重命名课程失败");
+        setGlobalStatus(message);
+        return { ok: false, message };
+      }
+
+      console.debug("[DEBUG] learning.lesson.rename_success", { lessonId, title: data.title });
+      setLessons((prev) => prev.map((item) => (item.id === lessonId ? { ...item, title: data.title } : item)));
+      setCurrentLesson((prev) => (prev?.id === lessonId ? { ...prev, title: data.title } : prev));
+      setGlobalStatus("");
+      return { ok: true };
+    } catch (error) {
+      const message = `网络错误: ${String(error)}`;
+      setGlobalStatus(message);
+      return { ok: false, message };
+    }
+  }
+
+  async function handleDeleteLesson(lessonId) {
+    if (!accessToken) {
+      return { ok: false, message: "请先登录" };
+    }
+
+    try {
+      const resp = await api(`/api/lessons/${lessonId}`, { method: "DELETE" }, accessToken);
+      const data = await parseResponse(resp);
+      if (!resp.ok) {
+        const message = toErrorText(data, "删除课程失败");
+        setGlobalStatus(message);
+        return { ok: false, message };
+      }
+
+      console.debug("[DEBUG] learning.lesson.delete_success", { lessonId });
+      const currentSnapshot = lessons;
+      const removedIndex = currentSnapshot.findIndex((item) => item.id === lessonId);
+      const nextLessons = currentSnapshot.filter((item) => item.id !== lessonId);
+      setLessons(nextLessons);
+
+      try {
+        await deleteLessonMedia(lessonId);
+      } catch (_) {
+        // Ignore local cache cleanup errors.
+      }
+
+      if (currentLesson?.id === lessonId) {
+        if (!nextLessons.length) {
+          setCurrentLesson(null);
+        } else {
+          const fallbackIndex = removedIndex >= 0 ? Math.min(removedIndex, nextLessons.length - 1) : 0;
+          const nextLessonId = nextLessons[fallbackIndex]?.id;
+          if (nextLessonId) {
+            await loadLessonDetail(nextLessonId);
+          } else {
+            setCurrentLesson(null);
+          }
+        }
+      }
+
+      setGlobalStatus("");
+      return { ok: true };
+    } catch (error) {
+      const message = `网络错误: ${String(error)}`;
+      setGlobalStatus(message);
+      return { ok: false, message };
+    }
   }
 
   return (
@@ -302,7 +409,14 @@ export function LearningShell() {
       <main className="container-wrapper pb-6">
         <div className="container grid gap-4 pt-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
           <aside className="space-y-4">
-            <LessonList lessons={lessons} currentLessonId={currentLesson?.id} onSelect={loadLessonDetail} loading={loadingLessons} />
+            <LessonList
+              lessons={lessons}
+              currentLessonId={currentLesson?.id}
+              onSelect={loadLessonDetail}
+              onRename={handleRenameLesson}
+              onDelete={handleDeleteLesson}
+              loading={loadingLessons}
+            />
             <Card size="sm">
               <CardHeader>
                 <CardTitle className="text-base">状态</CardTitle>
@@ -310,7 +424,7 @@ export function LearningShell() {
               <CardContent className="space-y-2 text-sm">
                 <p className="text-muted-foreground">课程加载：{loadingLessons ? "进行中" : "空闲"}</p>
                 <p className="text-muted-foreground">当前课程：{currentLesson?.title || "未选择"}</p>
-                <p className="text-muted-foreground">学习模式：{viewMode === "immersive" ? "沉浸模式" : "普通模式"}</p>
+                <p className="text-muted-foreground">学习模式：沉浸模式</p>
                 {currentLessonNeedsBinding ? <p className="text-amber-600">待绑定本地媒体：课程可见，但播放受限</p> : null}
               </CardContent>
             </Card>
@@ -318,36 +432,17 @@ export function LearningShell() {
 
           <section className="min-w-0 space-y-4">
             {accessToken ? (
-              viewMode === "immersive" ? (
-                <ImmersiveLessonPage
-                  lesson={currentLesson}
-                  accessToken={accessToken}
-                  apiClient={api}
-                  onBack={() => {
-                    setViewMode("dashboard");
-                    refreshCurrentLesson();
-                  }}
-                  onProgressSynced={refreshCurrentLesson}
-                />
-              ) : (
-                <>
-                  <div className="flex justify-end">
-                    <Button
-                      variant="secondary"
-                      onClick={() => handleEnterImmersive(currentLesson?.id)}
-                      disabled={!currentLesson}
-                    >
-                      沉浸学习模式
-                    </Button>
-                  </div>
-                  <PracticePanel lesson={currentLesson} accessToken={accessToken} onProgressSynced={loadLessons} />
-                </>
-              )
+              <ImmersiveLessonPage
+                lesson={currentLesson}
+                accessToken={accessToken}
+                apiClient={api}
+                onProgressSynced={refreshCurrentLesson}
+              />
             ) : (
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">Preview</CardTitle>
-                  <CardDescription>登录后可在中间区域进行逐句拼写练习与结果预览。</CardDescription>
+                  <CardDescription>登录后可在中间区域进入沉浸模式学习。</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground">请在右侧先完成登录或注册。</p>
