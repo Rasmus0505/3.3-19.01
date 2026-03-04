@@ -7,6 +7,7 @@ import { ImmersiveLessonPage } from "../features/immersive/ImmersiveLessonPage";
 import { LessonList } from "../features/lessons/LessonList";
 import { PracticePanel } from "../features/practice/PracticePanel";
 import { UploadPanel } from "../features/upload/UploadPanel";
+import { RedeemCodePanel } from "../features/wallet/RedeemCodePanel";
 import { WalletBadge } from "../features/wallet/WalletBadge";
 import { api, parseResponse, toErrorText } from "../shared/api/client";
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, Separator, Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "../shared/ui";
@@ -335,13 +336,19 @@ export function LearningShell() {
             {!accessToken ? (
               <AuthPanel onAuthed={handleAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
             ) : (
-              <UploadPanel
-                accessToken={accessToken}
-                onCreated={handleLessonCreated}
-                balancePoints={walletBalance}
-                billingRates={billingRates}
-                onWalletChanged={loadWallet}
-              />
+              <>
+                <RedeemCodePanel
+                  apiCall={(path, options = {}) => api(path, options, accessToken)}
+                  onWalletChanged={loadWallet}
+                />
+                <UploadPanel
+                  accessToken={accessToken}
+                  onCreated={handleLessonCreated}
+                  balancePoints={walletBalance}
+                  billingRates={billingRates}
+                  onWalletChanged={loadWallet}
+                />
+              </>
             )}
           </aside>
         </div>

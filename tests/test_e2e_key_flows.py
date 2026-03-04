@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -188,3 +189,38 @@ def test_e2e_admin_update_rate_visible_in_public_api(e2e_client):
     target = next(item for item in public_resp.json()["rates"] if item["model_name"] == "paraformer-v2")
     assert target["points_per_minute"] == 222
     assert target["is_active"] is True
+
+
+def test_e2e_redeem_batch_pause_blocks_redeem(e2e_client):
+    client, _, monkeypatch = e2e_client
+    monkeypatch.setenv("ADMIN_EMAILS", "admin-redeem@example.com")
+
+    admin_token = _register_and_login(client, email="admin-redeem@example.com")
+    user_token = _register_and_login(client, email="redeem-e2e-user@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+
+    now = datetime.utcnow()
+    create_resp = client.post(
+        "/api/admin/redeem-batches",
+        headers=admin_headers,
+        json={
+            "batch_name": "e2e_redeem_batch",
+            "face_value_points": 88,
+            "generate_quantity": 1,
+            "active_from": now.isoformat(),
+            "expire_at": (now + timedelta(days=1)).isoformat(),
+        },
+    )
+    assert create_resp.status_code == 200
+    data = create_resp.json()
+    batch_id = data["batch"]["id"]
+    code = data["generated_codes"][0]
+
+    pause_resp = client.post(f"/api/admin/redeem-batches/{batch_id}/pause", headers=admin_headers)
+    assert pause_resp.status_code == 200
+    assert pause_resp.json()["batch"]["status"] == "paused"
+
+    redeem_resp = client.post("/api/wallet/redeem-code", headers=user_headers, json={"code": code})
+    assert redeem_resp.status_code == 400
+    assert redeem_resp.json()["error_code"] == "REDEEM_CODE_DISABLED"

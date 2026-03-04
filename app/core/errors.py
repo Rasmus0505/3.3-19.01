@@ -25,6 +25,22 @@ def map_media_error(exc: MediaError) -> JSONResponse:
 def map_billing_error(exc: BillingError) -> JSONResponse:
     if exc.code in {"INSUFFICIENT_BALANCE", "BILLING_RATE_DISABLED"}:
         return error_response(400, exc.code, exc.message, exc.detail)
-    if exc.code in {"BILLING_RATE_NOT_FOUND", "INVALID_REASON", "INVALID_POINTS"}:
+    if exc.code in {
+        "BILLING_RATE_NOT_FOUND",
+        "INVALID_REASON",
+        "INVALID_POINTS",
+        "INVALID_QUANTITY",
+        "INVALID_DAILY_LIMIT",
+        "INVALID_TIME_RANGE",
+        "INVALID_REDEEM_CODE",
+        "REDEEM_BATCH_NOT_FOUND",
+        "REDEEM_CODE_NOT_FOUND",
+        "REDEEM_CODE_ALREADY_USED",
+        "REDEEM_CODE_EXPIRED",
+        "REDEEM_CODE_DISABLED",
+        "REDEEM_CODE_NOT_ACTIVE",
+        "REDEEM_CODE_DAILY_LIMIT_EXCEEDED",
+        "INVALID_STATUS",
+    }:
         return error_response(400, exc.code, exc.message, exc.detail)
     return error_response(500, exc.code, exc.message, exc.detail)

@@ -11,6 +11,7 @@ from app.core.config import BASE_DATA_DIR
 from app.models import User
 from app.repositories.admin import (
     clear_billing_rate_updated_by_refs,
+    clear_redeem_related_user_refs,
     clear_wallet_ledger_operator_refs,
     delete_wallet_ledger_for_user,
     list_lesson_ids_for_user,
@@ -78,6 +79,7 @@ def delete_user_hard(
 
     try:
         cleared_operator_refs = clear_wallet_ledger_operator_refs(db, target_user.id)
+        clear_redeem_related_user_refs(db, target_user.id)
         deleted_ledger_rows = delete_wallet_ledger_for_user(db, target_user.id)
         clear_billing_rate_updated_by_refs(db, target_user.id)
         db.delete(target_user)

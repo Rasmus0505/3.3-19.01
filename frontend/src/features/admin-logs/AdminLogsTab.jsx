@@ -106,7 +106,7 @@ export function AdminLogsTab({ apiCall }) {
           <ScrollText className="size-4" />
           余额流水
         </CardTitle>
-        <CardDescription>预扣 / 消费 / 退款 / 手工调账明细。</CardDescription>
+        <CardDescription>预扣 / 消费 / 退款 / 手工调账 / 兑换码充值明细。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <form
@@ -139,6 +139,7 @@ export function AdminLogsTab({ apiCall }) {
               <SelectItem value="consume">consume</SelectItem>
               <SelectItem value="refund">refund</SelectItem>
               <SelectItem value="manual_adjust">manual_adjust</SelectItem>
+              <SelectItem value="redeem_code">redeem_code</SelectItem>
             </SelectContent>
           </Select>
 
@@ -175,7 +176,7 @@ export function AdminLogsTab({ apiCall }) {
 
         {loading ? <Skeleton className="h-10 w-full" /> : null}
         <ScrollArea className="w-full rounded-md border">
-          <Table className="min-w-[940px]">
+          <Table className="min-w-[1160px]">
             <TableHeader>
               <TableRow>
                 <TableHead>时间</TableHead>
@@ -186,6 +187,8 @@ export function AdminLogsTab({ apiCall }) {
                 <TableHead>模型</TableHead>
                 <TableHead>时长(ms)</TableHead>
                 <TableHead>课程ID</TableHead>
+                <TableHead>兑换批次ID</TableHead>
+                <TableHead>兑换码</TableHead>
                 <TableHead>备注</TableHead>
               </TableRow>
             </TableHeader>
@@ -212,12 +215,14 @@ export function AdminLogsTab({ apiCall }) {
                   <TableCell>{item.model_name || "-"}</TableCell>
                   <TableCell>{item.duration_ms ?? "-"}</TableCell>
                   <TableCell>{item.lesson_id ?? "-"}</TableCell>
+                  <TableCell>{item.redeem_batch_id ?? "-"}</TableCell>
+                  <TableCell>{item.redeem_code_mask || "-"}</TableCell>
                   <TableCell>{item.note || "-"}</TableCell>
                 </TableRow>
               ))}
               {items.length === 0 ? (
                 <TableRow>
-                  <TableCell className="text-muted-foreground" colSpan={9}>
+                  <TableCell className="text-muted-foreground" colSpan={11}>
                     暂无数据
                   </TableCell>
                 </TableRow>

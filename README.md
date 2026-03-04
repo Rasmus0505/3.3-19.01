@@ -56,6 +56,7 @@ frontend/src/
   - `GET /api/lessons/{lesson_id}/media`
 - 钱包与计费
   - `GET /api/wallet/me`
+  - `POST /api/wallet/redeem-code`
   - `GET /api/billing/rates`
 - 管理后台（管理员）
   - `GET /api/admin/users`
@@ -64,6 +65,20 @@ frontend/src/
   - `GET /api/admin/wallet-logs`
   - `GET /api/admin/billing-rates`
   - `PUT /api/admin/billing-rates/{model_name}`
+  - `POST /api/admin/redeem-batches`
+  - `GET /api/admin/redeem-batches`
+  - `POST /api/admin/redeem-batches/{batch_id}/activate`
+  - `POST /api/admin/redeem-batches/{batch_id}/pause`
+  - `POST /api/admin/redeem-batches/{batch_id}/expire`
+  - `POST /api/admin/redeem-batches/{batch_id}/copy`
+  - `GET /api/admin/redeem-codes`
+  - `POST /api/admin/redeem-codes/export`
+  - `POST /api/admin/redeem-codes/{code_id}/enable`
+  - `POST /api/admin/redeem-codes/{code_id}/disable`
+  - `POST /api/admin/redeem-codes/{code_id}/abandon`
+  - `POST /api/admin/redeem-codes/bulk-disable`
+  - `GET /api/admin/redeem-audit`
+  - `POST /api/admin/redeem-audit/export`
 - 保留原能力
   - `POST /api/transcribe/file`
   - `GET /health`
@@ -77,6 +92,9 @@ frontend/src/
 - `ALEMBIC_CONFIG` (可选，默认 `alembic.ini`)
 - `JWT_SECRET` (必填，生产必须替换)
 - `ADMIN_EMAILS` (可选，管理员邮箱白名单，逗号分隔)
+- `REDEEM_CODE_DEFAULT_VALID_DAYS` (可选，兑换批次默认有效期天数，默认 `30`)
+- `REDEEM_CODE_DEFAULT_DAILY_LIMIT` (可选，全局默认单账号每日兑换上限，默认 `5`)
+- `REDEEM_CODE_EXPORT_CONFIRM_TEXT` (可选，导出 CSV 二次确认口令，默认 `EXPORT`)
 - `TMP_WORK_DIR` (可选，默认 `/tmp/zeabur3.3`)
 - `MT_BASE_URL` (可选，默认北京: `https://dashscope.aliyuncs.com/compatible-mode/v1`)
 - `MT_MODEL` (可选，默认 `qwen-mt-plus`)
