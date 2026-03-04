@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.db import Base, get_db
 from app.main import create_app
-from app.models import Lesson, LessonProgress, LessonSentence, User
+from app.models import Lesson, LessonProgress, LessonSentence, MediaAsset, User
 from app.services.billing_service import ensure_default_billing_rates
 
 
@@ -205,3 +205,41 @@ def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch):
     body = resp.json()
     assert body["ok"] is True
     assert body["lesson"]["title"] == "fake lesson"
+
+
+def test_lesson_media_prefers_source_filename_content_type(test_client, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="media-learner@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    media_path = tmp_path / "stored_media_without_ext"
+    media_path.write_bytes(b"fake-video-binary")
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "media-learner@example.com").one()
+        lesson = Lesson(
+            user_id=user.id,
+            title="media mime test",
+            source_filename="lesson-video.mp4",
+            asr_model="paraformer-v2",
+            duration_ms=5000,
+            status="ready",
+        )
+        session.add(lesson)
+        session.flush()
+        session.add(
+            MediaAsset(
+                lesson_id=lesson.id,
+                original_path=str(media_path),
+                opus_path=str(media_path),
+            )
+        )
+        session.commit()
+        lesson_id = lesson.id
+    finally:
+        session.close()
+
+    resp = client.get(f"/api/lessons/{lesson_id}/media", headers=headers)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("video/mp4")

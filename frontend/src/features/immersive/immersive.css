@@ -118,20 +118,7 @@
 .immersive-word-slot--underline {
   padding: 4px 2px 2px;
   border-radius: 0;
-  border-bottom: 2px solid var(--color-border);
   background: transparent;
-}
-
-.immersive-word-slot--underline.immersive-word-slot--active {
-  border-bottom-color: color-mix(in oklch, var(--color-primary) 55%, var(--color-border));
-}
-
-.immersive-word-slot--underline.immersive-word-slot--correct {
-  border-bottom-color: oklch(0.67 0.16 145);
-}
-
-.immersive-word-slot--underline.immersive-word-slot--wrong {
-  border-bottom-color: oklch(0.64 0.22 25);
 }
 
 .immersive-letter-row {
@@ -141,15 +128,15 @@
 }
 
 .immersive-letter-cell {
-  min-width: 14px;
-  height: 24px;
+  min-width: 18px;
+  height: 32px;
   display: inline-flex;
   align-items: flex-end;
   justify-content: center;
-  padding: 0 2px 2px;
+  padding: 0 3px 2px;
   border-bottom: 2px solid var(--color-border);
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: 18px;
   line-height: 1;
   color: var(--color-muted-foreground);
   transition: color 120ms ease, border-color 120ms ease;
@@ -184,8 +171,9 @@
 }
 
 .immersive-hidden-input {
-  position: absolute;
-  pointer-events: none;
+  position: fixed;
+  left: -9999px;
+  top: 0;
   opacity: 0;
   width: 1px;
   height: 1px;
@@ -206,8 +194,8 @@
   }
 
   .immersive-letter-cell {
-    min-width: 12px;
-    height: 22px;
-    font-size: 13px;
+    min-width: 16px;
+    height: 28px;
+    font-size: 16px;
   }
 }

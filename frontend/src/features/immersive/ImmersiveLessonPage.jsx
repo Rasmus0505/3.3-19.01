@@ -1,13 +1,27 @@
-import { ArrowLeft, Loader2, Play, RotateCcw } from "lucide-react";
+import { ArrowLeft, Loader2, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Switch } from "../../shared/ui";
-import { isAudioFilename, isVideoFilename, normalizeToken } from "./tokenNormalize";
+import { getMediaExt, isAudioFilename, isVideoFilename, normalizeToken } from "./tokenNormalize";
 import { useSentencePlayback } from "./useSentencePlayback";
 import { useTypingFeedbackSounds } from "./useTypingFeedbackSounds";
 import "./immersive.css";
 
 const DISPLAY_MODE_STORAGE_KEY = "immersive_word_display_mode";
+const MEDIA_TYPE_BY_EXTENSION = {
+  ".mp4": "video/mp4",
+  ".mov": "video/quicktime",
+  ".mkv": "video/x-matroska",
+  ".avi": "video/x-msvideo",
+  ".webm": "video/webm",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".m4a": "audio/mp4",
+  ".flac": "audio/flac",
+  ".aac": "audio/aac",
+  ".ogg": "audio/ogg",
+  ".opus": "audio/ogg; codecs=opus",
+};
 
 function getInitialDisplayMode() {
   if (typeof window === "undefined") return "underline";
@@ -96,6 +110,11 @@ function inferMediaModeFromContentType(contentType) {
   return "";
 }
 
+function inferMediaTypeFromFileName(fileName) {
+  const ext = getMediaExt(fileName);
+  return MEDIA_TYPE_BY_EXTENSION[ext] || "";
+}
+
 async function readErrorPayload(resp) {
   try {
     return await resp.clone().json();
@@ -140,6 +159,20 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   const clipAudioRef = useRef(null);
   const typingInputRef = useRef(null);
   const currentWordInputRef = useRef("");
+  const focusTypingInput = useCallback(() => {
+    if (phase !== "typing") return;
+    requestAnimationFrame(() => {
+      const input = typingInputRef.current;
+      if (!input) return;
+      input.focus({ preventScroll: true });
+      const len = String(input.value || "").length;
+      try {
+        input.setSelectionRange(len, len);
+      } catch (_) {
+        // Ignore selection errors for unsupported input types/browsers.
+      }
+    });
+  }, [phase]);
 
   const currentSentence = lesson?.sentences?.[currentSentenceIndex] || null;
   const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens : []), [currentSentence?.tokens]);
@@ -229,10 +262,12 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
         return;
       }
       if (result.reason === "autoplay_blocked") {
-        setPhase("autoplay_blocked");
-        if (manual) {
-          setMediaError("浏览器阻止了自动播放，请再次点击播放。");
-        }
+        setPhase("typing");
+        setMediaError(
+          manual
+            ? "浏览器仍阻止自动播放，可继续输入，或稍后点击“重播本句”。"
+            : "自动播放受限，可直接输入，或点击“重播本句”手动播放。",
+        );
         return;
       }
       setMediaError("当前句播放失败，已切换为输入模式。");
@@ -291,11 +326,18 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           setMediaError(formatMediaLoadError(resp, payload));
           return;
         }
-        const inferredMode = inferMediaModeFromContentType(resp.headers.get("content-type"));
+        const rawContentType = String(resp.headers.get("content-type") || "").toLowerCase();
+        const inferredMode = inferMediaModeFromContentType(rawContentType);
         if (inferredMode && inferredMode !== mediaMode) {
           setMediaMode(inferredMode);
         }
-        const blob = await resp.blob();
+        let blob = await resp.blob();
+        const fallbackType = inferMediaTypeFromFileName(lesson?.source_filename || "");
+        const needsTypeOverride =
+          (!rawContentType || rawContentType.startsWith("application/octet-stream")) && Boolean(fallbackType);
+        if (needsTypeOverride) {
+          blob = new Blob([blob], { type: fallbackType });
+        }
         objectUrl = URL.createObjectURL(blob);
         if (canceled) {
           URL.revokeObjectURL(objectUrl);
@@ -341,8 +383,8 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
 
   useEffect(() => {
     if (phase !== "typing") return;
-    typingInputRef.current?.focus();
-  }, [phase, currentSentenceIndex]);
+    focusTypingInput();
+  }, [activeWordIndex, currentSentenceIndex, focusTypingInput, phase]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -501,14 +543,13 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     idle: "准备中",
     auto_play_pending: "即将播放",
     playing: "播放中",
-    autoplay_blocked: "等待点击播放",
     typing: "输入中",
     transition: "切换下一句",
     lesson_completed: "已完成",
   };
 
   return (
-    <Card className="immersive-page" onClick={() => typingInputRef.current?.focus()}>
+    <Card className="immersive-page" onClick={focusTypingInput}>
       <CardHeader>
         <div className="immersive-header">
           <div>
@@ -533,6 +574,8 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
             <video
               ref={mediaElementRef}
               src={mediaBlobUrl || undefined}
+              preload="metadata"
+              onLoadedMetadata={() => setMediaReady(true)}
               onCanPlay={() => setMediaReady(true)}
               onError={handleMainMediaError}
               onTimeUpdate={onMainMediaTimeUpdate}
@@ -550,6 +593,8 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
               <audio
                 ref={mediaElementRef}
                 src={mediaBlobUrl || undefined}
+                preload="metadata"
+                onLoadedMetadata={() => setMediaReady(true)}
                 onCanPlay={() => setMediaReady(true)}
                 onError={handleMainMediaError}
                 onTimeUpdate={onMainMediaTimeUpdate}
@@ -577,14 +622,6 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
             </div>
           ) : null}
 
-          {phase === "autoplay_blocked" ? (
-            <div className="immersive-overlay">
-              <Button onClick={() => tryPlayCurrentSentence({ manual: true })}>
-                <Play className="size-4" />
-                点击开始本句播放
-              </Button>
-            </div>
-          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -655,7 +692,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           onBlur={() => {
             if (phase === "typing") {
               setTimeout(() => {
-                typingInputRef.current?.focus();
+                focusTypingInput();
               }, 0);
             }
           }}
