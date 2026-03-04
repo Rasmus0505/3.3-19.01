@@ -73,6 +73,8 @@ frontend/src/
 - `DASHSCOPE_API_KEY` (必填)
 - `DATABASE_URL` (建议 Zeabur Postgres 连接串，推荐包含 `search_path=app,public`)
 - `DB_INIT_MODE` (`auto`/`create_all`/`skip`，默认 `auto`)
+- `AUTO_MIGRATE_ON_START` (`true`/`false`，默认 `true`，容器启动时是否自动执行 Alembic)
+- `ALEMBIC_CONFIG` (可选，默认 `alembic.ini`)
 - `JWT_SECRET` (必填，生产必须替换)
 - `ADMIN_EMAILS` (可选，管理员邮箱白名单，逗号分隔)
 - `TMP_WORK_DIR` (可选，默认 `/tmp/zeabur3.3`)
@@ -157,19 +159,31 @@ alembic downgrade -1
    - `DB_INIT_MODE=auto`
    - `MT_BASE_URL`
    - `MT_MODEL`
-4. 启动命令保持镜像内默认 `uvicorn`，不要拼接 `alembic && uvicorn`
+4. 启动命令使用镜像内默认 `scripts/start.sh`（会先迁移，再启动 Uvicorn）
+5. 生产建议默认保留 `AUTO_MIGRATE_ON_START=true`
 
-### 3) 迁移作为独立步骤（必须）
+### 3) 自动迁移日志预期
 
-服务状态 `RUNNING` 后，在 Zeabur Console 执行：
+服务启动日志应包含：
 
 ```bash
-cd /app
-python -m alembic -c alembic.ini upgrade head
-python -m alembic -c alembic.ini current
+[boot] running alembic upgrade head
+[boot] starting uvicorn
 ```
 
-### 4) 发布后验证
+有新迁移时会出现 `Running upgrade ...`，没有新迁移时为 no-op。
+
+### 4) 紧急止血开关
+
+若迁移异常导致服务无法启动，可临时设置：
+
+```bash
+AUTO_MIGRATE_ON_START=false
+```
+
+然后重新部署。问题修复后再改回 `true`。
+
+### 5) 发布后验证
 
 1. `GET /health` 返回 200
 2. 使用有效用户 token 调用 `GET /api/wallet/me` 返回 200
