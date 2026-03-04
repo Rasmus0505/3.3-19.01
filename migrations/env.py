@@ -12,7 +12,10 @@ from app import models  # noqa: F401
 
 
 config = context.config
-config.set_main_option("sqlalchemy.url", DATABASE_URL)
+# ConfigParser treats "%" as interpolation marker. DATABASE_URL from managed
+# platforms may contain URL-encoded fragments like "%3D" and "%2C", so we
+# escape "%" before injecting into Alembic config.
+config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
