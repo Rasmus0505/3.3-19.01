@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.db import Base, get_db
 from app.main import create_app
-from app.models import Lesson, LessonProgress, LessonSentence, MediaAsset, User
+from app.models import Lesson, LessonProgress, LessonSentence, MediaAsset, User, WalletLedger
 from app.services.billing_service import ensure_default_billing_rates
 
 
@@ -278,6 +278,59 @@ def test_lesson_rename_and_delete_endpoints(test_client):
 
     get_deleted = client.get(f"/api/lessons/{lesson_id}", headers=owner_headers)
     assert get_deleted.status_code == 404
+
+
+def test_delete_lesson_clears_wallet_ledger_reference(test_client):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="delete-ledger-owner@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session = session_factory()
+    try:
+        owner = session.query(User).filter(User.email == "delete-ledger-owner@example.com").one()
+        lesson = Lesson(
+            user_id=owner.id,
+            title="ledger linked lesson",
+            source_filename="ledger.mp4",
+            asr_model="paraformer-v2",
+            duration_ms=2000,
+            media_storage="client_indexeddb",
+            source_duration_ms=2000,
+            status="ready",
+        )
+        session.add(lesson)
+        session.flush()
+
+        ledger = WalletLedger(
+            user_id=owner.id,
+            operator_user_id=None,
+            event_type="consume",
+            delta_points=0,
+            balance_after=0,
+            model_name="paraformer-v2",
+            duration_ms=lesson.duration_ms,
+            lesson_id=lesson.id,
+            note="regression: lesson delete should clear reference",
+        )
+        session.add(ledger)
+        session.flush()
+        lesson_id = lesson.id
+        ledger_id = ledger.id
+        session.commit()
+    finally:
+        session.close()
+
+    delete_ok = client.delete(f"/api/lessons/{lesson_id}", headers=headers)
+    assert delete_ok.status_code == 200
+    assert delete_ok.json()["ok"] is True
+    assert delete_ok.json()["lesson_id"] == lesson_id
+
+    verify = session_factory()
+    try:
+        ledger_after = verify.query(WalletLedger).filter(WalletLedger.id == ledger_id).one()
+        assert ledger_after.lesson_id is None
+    finally:
+        verify.close()
 
 
 def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch):
