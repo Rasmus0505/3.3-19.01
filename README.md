@@ -131,13 +131,51 @@ alembic downgrade -1
 - 非 sqlite 环境建议固定使用 Alembic，不依赖 `create_all`。
 - sqlite 本地开发默认可通过 `DB_INIT_MODE=auto` 自动建表。
 
-## Zeabur 部署
+## Zeabur 部署（推荐：GHCR 成品镜像）
 
-1. 连接 GitHub 仓库，使用 Docker 部署（单服务）
-2. 新增 Postgres 服务并写入 `DATABASE_URL`
-3. 配置 `DASHSCOPE_API_KEY`、`JWT_SECRET`、`ADMIN_EMAILS`
-4. 发布前在构建命令或启动脚本中执行 `alembic upgrade head`
-5. 健康检查路径使用 `/health`
+本仓库已支持「GitHub Actions 构建镜像 -> GHCR 推送 -> Zeabur 拉取成品镜像」流程，避免 Zeabur 侧构建不稳定。
+
+### 1) 启用镜像构建工作流
+
+- 工作流文件：`.github/workflows/ghcr-image.yml`
+- 触发方式：
+  - push 到 `main`
+  - GitHub Actions 手动触发（`workflow_dispatch`）
+- 产物标签：
+  - `ghcr.io/rasmus0505/3.3-19.01:latest`
+  - `ghcr.io/rasmus0505/3.3-19.01:sha-<commit>`
+
+### 2) Zeabur 使用 Custom Image
+
+1. 在 Zeabur 新建或修改服务为镜像部署（Custom Image / Image Deploy）
+2. 镜像填写：`ghcr.io/rasmus0505/3.3-19.01:latest`（建议生产改用 `sha-xxxx`）
+3. 配置环境变量：
+   - `DATABASE_URL`（建议包含 `search_path=app,public`）
+   - `DASHSCOPE_API_KEY`
+   - `JWT_SECRET`
+   - `ADMIN_EMAILS`
+   - `DB_INIT_MODE=auto`
+   - `MT_BASE_URL`
+   - `MT_MODEL`
+4. 启动命令保持镜像内默认 `uvicorn`，不要拼接 `alembic && uvicorn`
+
+### 3) 迁移作为独立步骤（必须）
+
+服务状态 `RUNNING` 后，在 Zeabur Console 执行：
+
+```bash
+cd /app
+python -m alembic -c alembic.ini upgrade head
+python -m alembic -c alembic.ini current
+```
+
+### 4) 发布后验证
+
+1. `GET /health` 返回 200
+2. 使用有效用户 token 调用 `GET /api/wallet/me` 返回 200
+3. 使用管理员 token 调用 `GET /api/admin/billing-rates` 返回 200
+
+详细步骤见：`docs/ZEABUR_GHCR_DEPLOY.md`
 
 ## Metabase schema 约束
 
