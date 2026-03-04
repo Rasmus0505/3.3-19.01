@@ -1,6 +1,7 @@
-import { ArrowLeft, Loader2, RotateCcw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Link2, Loader2, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { getStorageEstimate, getLessonMedia, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Switch } from "../../shared/ui";
 import { getMediaExt, isAudioFilename, isVideoFilename, normalizeToken } from "./tokenNormalize";
 import { useSentencePlayback } from "./useSentencePlayback";
@@ -8,6 +9,7 @@ import { useTypingFeedbackSounds } from "./useTypingFeedbackSounds";
 import "./immersive.css";
 
 const DISPLAY_MODE_STORAGE_KEY = "immersive_word_display_mode";
+const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
 const MEDIA_TYPE_BY_EXTENSION = {
   ".mp4": "video/mp4",
   ".mov": "video/quicktime",
@@ -115,6 +117,18 @@ function inferMediaTypeFromFileName(fileName) {
   return MEDIA_TYPE_BY_EXTENSION[ext] || "";
 }
 
+function resolveMediaModeByTypeAndName(mediaType, fileName) {
+  const byType = inferMediaModeFromContentType(mediaType);
+  if (byType) {
+    return byType;
+  }
+  return resolveMediaModeFromFileName(fileName);
+}
+
+function isLocalMediaRequiredPayload(resp, payload) {
+  return Number(resp?.status) === 409 && String(payload?.error_code || "").trim() === LOCAL_MEDIA_REQUIRED_CODE;
+}
+
 async function readErrorPayload(resp) {
   try {
     return await resp.clone().json();
@@ -129,24 +143,29 @@ function formatMediaLoadError(resp, payload) {
   const message = String(payload?.message || "").trim();
   const head = [statusText, errorCode].filter(Boolean).join(" ");
   if (head && message) {
-    return `媒体加载失败（${head}: ${message}），已自动降级为音频模式。`;
+    return `媒体加载失败（${head}: ${message}）。`;
   }
   if (head) {
-    return `媒体加载失败（${head}），已自动降级为音频模式。`;
+    return `媒体加载失败（${head}）。`;
   }
   if (message) {
-    return `媒体加载失败（${message}），已自动降级为音频模式。`;
+    return `媒体加载失败（${message}）。`;
   }
-  return "媒体加载失败，已自动降级为音频模式。";
+  return "媒体加载失败。";
 }
 
 export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, onProgressSynced }) {
   const [phase, setPhase] = useState("idle");
-  const [mediaMode, setMediaMode] = useState("clip");
+  const [mediaMode, setMediaMode] = useState("video");
   const [mediaBlobUrl, setMediaBlobUrl] = useState("");
   const [mediaLoading, setMediaLoading] = useState(false);
   const [mediaReady, setMediaReady] = useState(false);
   const [mediaError, setMediaError] = useState("");
+  const [needsBinding, setNeedsBinding] = useState(false);
+  const [bindingBusy, setBindingBusy] = useState(false);
+  const [bindingError, setBindingError] = useState("");
+  const [bindingHint, setBindingHint] = useState("");
+  const [mediaReloadKey, setMediaReloadKey] = useState(0);
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
   const [completedIndexes, setCompletedIndexes] = useState([]);
   const [activeWordIndex, setActiveWordIndex] = useState(0);
@@ -158,6 +177,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   const mediaElementRef = useRef(null);
   const clipAudioRef = useRef(null);
   const typingInputRef = useRef(null);
+  const bindingInputRef = useRef(null);
   const currentWordInputRef = useRef("");
   const focusTypingInput = useCallback(() => {
     if (phase !== "typing") return;
@@ -177,6 +197,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   const currentSentence = lesson?.sentences?.[currentSentenceIndex] || null;
   const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens : []), [currentSentence?.tokens]);
   const sentenceCount = lesson?.sentences?.length || 0;
+  const expectedSourceDurationSec = Math.max(0, Number(lesson?.source_duration_ms || 0) / 1000);
 
   const { playKeySound, playWrongSound, playCorrectSound } = useTypingFeedbackSounds();
 
@@ -254,11 +275,22 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   const tryPlayCurrentSentence = useCallback(
     async ({ manual = false } = {}) => {
       if (!currentSentence) return;
+      if (needsBinding) {
+        setMediaError("当前课程缺少可播放媒体，请先绑定本地文件。");
+        setPhase("typing");
+        return;
+      }
       resetWordTyping(currentSentence);
       const result = await playSentence(currentSentence);
       if (result.ok) {
         setMediaError("");
         setPhase("playing");
+        return;
+      }
+      if (result.reason === "clip_unavailable") {
+        setNeedsBinding(true);
+        setMediaError("本句服务端音频不可用，请先绑定本地文件。");
+        setPhase("typing");
         return;
       }
       if (result.reason === "autoplay_blocked") {
@@ -273,13 +305,17 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
       setMediaError("当前句播放失败，已切换为输入模式。");
       setPhase("typing");
     },
-    [currentSentence, playSentence, resetWordTyping],
+    [currentSentence, needsBinding, playSentence, resetWordTyping],
   );
 
   useEffect(() => {
     if (!lesson) return;
     stopPlayback();
     setMediaError("");
+    setBindingError("");
+    setBindingHint("");
+    setNeedsBinding(false);
+    setMediaBlobUrl("");
     setMediaReady(false);
     setMediaLoading(false);
 
@@ -304,33 +340,55 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     let objectUrl = "";
 
     async function loadMediaBlob() {
-      if (mediaMode === "clip") {
-        setMediaBlobUrl("");
-        setMediaReady(true);
-        setMediaLoading(false);
-        setPhase("auto_play_pending");
-        return;
-      }
-
       setMediaLoading(true);
       setMediaReady(false);
       setMediaError("");
       setPhase("idle");
+      setNeedsBinding(false);
+      try {
+        const localMedia = await getLessonMedia(lesson.id);
+        if (canceled) return;
+        if (localMedia?.blob) {
+          objectUrl = URL.createObjectURL(localMedia.blob);
+          const localMediaType = String(localMedia.media_type || inferMediaTypeFromFileName(localMedia.file_name || lesson.source_filename || ""));
+          setMediaMode(resolveMediaModeByTypeAndName(localMediaType, localMedia.file_name || lesson.source_filename || ""));
+          setMediaBlobUrl(objectUrl);
+          setBindingHint("已加载浏览器本地媒体");
+          console.debug("[DEBUG] immersive.media.local_loaded", { lessonId: lesson.id });
+          return;
+        }
+      } catch (error) {
+        console.debug("[DEBUG] immersive.media.local_read_failed", { lessonId: lesson.id, error: String(error) });
+      }
+
+      if (lesson.media_storage !== "server") {
+        if (canceled) return;
+        setMediaBlobUrl("");
+        setNeedsBinding(true);
+        setBindingHint("");
+        setMediaError("当前课程媒体仅保存在浏览器本地，请先绑定本地文件。");
+        setMediaLoading(false);
+        return;
+      }
+
       try {
         const resp = await apiClient(`/api/lessons/${lesson.id}/media`, {}, accessToken);
-        if (!resp.ok) {
+        if (!resp.ok || canceled) {
           if (canceled) return;
           const payload = await readErrorPayload(resp);
           if (canceled) return;
-          setMediaMode("clip");
-          setMediaError(formatMediaLoadError(resp, payload));
+          setMediaBlobUrl("");
+          if (isLocalMediaRequiredPayload(resp, payload) || Number(resp.status) === 404) {
+            setNeedsBinding(true);
+            setMediaError("服务器媒体不可用，请绑定本地文件继续学习。");
+          } else {
+            setNeedsBinding(true);
+            setMediaError(`${formatMediaLoadError(resp, payload)} 请绑定本地文件继续。`);
+          }
           return;
         }
+
         const rawContentType = String(resp.headers.get("content-type") || "").toLowerCase();
-        const inferredMode = inferMediaModeFromContentType(rawContentType);
-        if (inferredMode && inferredMode !== mediaMode) {
-          setMediaMode(inferredMode);
-        }
         let blob = await resp.blob();
         const fallbackType = inferMediaTypeFromFileName(lesson?.source_filename || "");
         const needsTypeOverride =
@@ -343,13 +401,16 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           URL.revokeObjectURL(objectUrl);
           return;
         }
+        setMediaMode(resolveMediaModeByTypeAndName(blob.type || rawContentType, lesson?.source_filename || ""));
         setMediaBlobUrl(objectUrl);
+        setBindingHint("");
         setMediaLoading(false);
       } catch (error) {
         if (canceled) return;
         const detail = String(error || "").trim();
-        setMediaMode("clip");
-        setMediaError(detail ? `媒体加载异常（${detail}），已自动降级为音频模式。` : "媒体加载异常，已自动降级为音频模式。");
+        setMediaBlobUrl("");
+        setNeedsBinding(true);
+        setMediaError(detail ? `媒体加载异常（${detail}），请绑定本地文件。` : "媒体加载异常，请绑定本地文件。");
       } finally {
         if (!canceled) {
           setMediaLoading(false);
@@ -365,21 +426,23 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [accessToken, apiClient, lesson?.id, mediaMode]);
+  }, [accessToken, apiClient, lesson?.id, lesson?.media_storage, lesson?.source_filename, mediaReloadKey]);
 
   useEffect(() => {
+    if (needsBinding) return;
     if (mediaMode === "clip") return;
     if (!mediaReady) return;
     if (!mediaBlobUrl) return;
     setPhase("auto_play_pending");
-  }, [mediaBlobUrl, mediaMode, mediaReady]);
+  }, [mediaBlobUrl, mediaMode, mediaReady, needsBinding]);
 
   useEffect(() => {
     if (!currentSentence) return;
+    if (needsBinding) return;
     if (phase !== "auto_play_pending") return;
     if (mediaMode !== "clip" && !mediaReady) return;
     tryPlayCurrentSentence();
-  }, [currentSentence, mediaMode, mediaReady, phase, tryPlayCurrentSentence]);
+  }, [currentSentence, mediaMode, mediaReady, needsBinding, phase, tryPlayCurrentSentence]);
 
   useEffect(() => {
     if (phase !== "typing") return;
@@ -392,10 +455,62 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   }, [displayMode]);
 
   const handleMainMediaError = useCallback(() => {
-    setMediaMode("clip");
-    setMediaError("当前浏览器不支持该媒体格式，已自动切换为音频模式。");
-    setPhase("auto_play_pending");
-  }, [lesson?.id]);
+    const hasClipFallback = lesson?.media_storage === "server" && Array.isArray(lesson?.sentences) && lesson.sentences.some((item) => item?.audio_url);
+    if (hasClipFallback) {
+      setMediaMode("clip");
+      setMediaError("当前浏览器不支持该媒体格式，已自动切换为句级音频模式。");
+      setPhase("auto_play_pending");
+      return;
+    }
+    setMediaBlobUrl("");
+    setNeedsBinding(true);
+    setMediaError("当前媒体格式无法播放，请绑定本地文件继续。");
+    setPhase("typing");
+  }, [lesson?.media_storage, lesson?.sentences]);
+
+  const handleBindLocalFile = useCallback(
+    async (nextFile) => {
+      if (!lesson?.id || !nextFile) return;
+      setBindingBusy(true);
+      setBindingError("");
+      setBindingHint("");
+      try {
+        const localDurationSec = await readMediaDurationSeconds(nextFile, nextFile.name || lesson.source_filename || "");
+        if (expectedSourceDurationSec > 0) {
+          const delta = Math.abs(localDurationSec - expectedSourceDurationSec);
+          if (delta > 0.5) {
+            setBindingError(
+              `绑定失败：文件时长差 ${delta.toFixed(3)} 秒，超过 0.5 秒阈值（本地 ${localDurationSec.toFixed(3)} 秒，课程 ${expectedSourceDurationSec.toFixed(3)} 秒）。`,
+            );
+            return;
+          }
+        }
+
+        await requestPersistentStorage();
+        await saveLessonMedia(lesson.id, nextFile);
+        console.debug("[DEBUG] immersive.media.bound_local_file", { lessonId: lesson.id });
+        setNeedsBinding(false);
+        setMediaError("");
+        setBindingHint("本地媒体已绑定，正在加载。");
+        setMediaReloadKey((value) => value + 1);
+      } catch (error) {
+        let message = `绑定失败：${String(error)}`;
+        try {
+          const estimate = await getStorageEstimate();
+          if (estimate && Number.isFinite(estimate.quota) && Number.isFinite(estimate.usage) && estimate.quota > 0) {
+            const usageRatio = (estimate.usage / estimate.quota) * 100;
+            message = `${message}（存储占用约 ${usageRatio.toFixed(1)}%）`;
+          }
+        } catch (_) {
+          // ignore estimate errors
+        }
+        setBindingError(message);
+      } finally {
+        setBindingBusy(false);
+      }
+    },
+    [expectedSourceDurationSec, lesson?.id, lesson?.source_filename],
+  );
 
   const clearActiveWordInput = useCallback(() => {
     currentWordInputRef.current = "";
@@ -570,7 +685,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
 
       <CardContent className="space-y-4">
         <div className="immersive-media">
-          {mediaMode === "video" ? (
+          {!needsBinding && mediaMode === "video" ? (
             <video
               ref={mediaElementRef}
               src={mediaBlobUrl || undefined}
@@ -584,7 +699,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
             />
           ) : null}
 
-          {mediaMode === "audio" ? (
+          {!needsBinding && mediaMode === "audio" ? (
             <div className="w-full px-6">
               <div className="immersive-media-audio-placeholder">
                 <p>音频素材模式</p>
@@ -603,7 +718,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
             </div>
           ) : null}
 
-          {mediaMode === "clip" ? (
+          {!needsBinding && mediaMode === "clip" ? (
             <div className="w-full px-6">
               <div className="immersive-media-audio-placeholder">
                 <p>音频降级模式</p>
@@ -625,7 +740,15 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={() => tryPlayCurrentSentence({ manual: true })} disabled={mediaLoading || phase === "transition"}>
+          <Button
+            variant={needsBinding ? "secondary" : "outline"}
+            onClick={() => bindingInputRef.current?.click()}
+            disabled={bindingBusy}
+          >
+            {bindingBusy ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />}
+            绑定本地文件
+          </Button>
+          <Button variant="outline" onClick={() => tryPlayCurrentSentence({ manual: true })} disabled={mediaLoading || phase === "transition" || needsBinding}>
             <RotateCcw className="size-4" />
             重播本句
           </Button>
@@ -633,7 +756,23 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
             已完成 {completedIndexes.length} / {sentenceCount}
           </Badge>
           {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
+          {bindingHint ? (
+            <Badge variant="secondary">
+              <CheckCircle2 className="size-4" />
+              {bindingHint}
+            </Badge>
+          ) : null}
+
+          {needsBinding ? (
+            <div className="w-full px-6">
+              <div className="immersive-media-audio-placeholder">
+                <p>待绑定本地媒体</p>
+                <p className="immersive-hint">课程可见，但播放受限。请点击“绑定本地文件”。</p>
+              </div>
+            </div>
+          ) : null}
           {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
+          {bindingError ? <p className="text-xs text-destructive">{bindingError}</p> : null}
         </div>
 
         <div className="immersive-typing">
@@ -682,6 +821,20 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           </p>
           {phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
         </div>
+
+        <input
+          ref={bindingInputRef}
+          type="file"
+          accept="video/*,audio/*"
+          className="hidden"
+          onChange={(event) => {
+            const nextFile = event.target.files?.[0] ?? null;
+            if (nextFile) {
+              void handleBindLocalFile(nextFile);
+            }
+            event.target.value = "";
+          }}
+        />
 
         <input
           ref={typingInputRef}

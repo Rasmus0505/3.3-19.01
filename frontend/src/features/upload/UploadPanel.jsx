@@ -3,6 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
+import { requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, Input, Label, Progress, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
 
 const ASR_MODELS = [
@@ -119,9 +120,25 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
         await onWalletChanged?.();
         return;
       }
-      setStatus("生成成功");
+
+      let localMediaSaved = false;
+      try {
+        await requestPersistentStorage();
+        await saveLessonMedia(data.lesson.id, file);
+        localMediaSaved = true;
+        console.debug("[DEBUG] upload.local_media_saved", { lessonId: data.lesson.id });
+      } catch (error) {
+        console.debug("[DEBUG] upload.local_media_save_failed", { lessonId: data.lesson?.id, error: String(error) });
+      }
+
       setPhase("success");
-      toast.success("课程已生成");
+      if (localMediaSaved) {
+        setStatus("生成成功");
+        toast.success("课程已生成");
+      } else {
+        setStatus("课程已创建，但本地媒体保存失败，需要重新绑定。");
+        toast.warning("课程已创建，但本地媒体保存失败，需要重新绑定。");
+      }
       await onWalletChanged?.();
       onCreated(data.lesson);
     } catch (error) {

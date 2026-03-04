@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { cn } from "../../lib/utils";
+import { buildBeijingOffsetDateTime, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
 import { Alert, AlertDescription, Badge, Button, Calendar, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, Popover, PopoverContent, PopoverTrigger, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
@@ -17,13 +18,6 @@ async function jsonOrEmpty(resp) {
   }
 }
 
-function formatDateTime(value) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString();
-}
-
 function pad2(value) {
   return String(value).padStart(2, "0");
 }
@@ -36,14 +30,9 @@ function toTimeOnlyString(date) {
   return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
-function buildDateTimeLocalValue(date, timeValue) {
-  if (!date) return "";
-  return `${toDateOnlyString(date)}T${timeValue || "00:00"}`;
-}
-
 export function AdminLogsTab({ apiCall }) {
-  const now = new Date();
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const now = getBeijingNowForPicker();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState("");
@@ -62,8 +51,8 @@ export function AdminLogsTab({ apiCall }) {
     setLoading(true);
     setStatus("");
     try {
-      const dateFrom = buildDateTimeLocalValue(dateFromDate, dateFromTime);
-      const dateTo = buildDateTimeLocalValue(dateToDate, dateToTime);
+      const dateFrom = buildBeijingOffsetDateTime(dateFromDate, dateFromTime);
+      const dateTo = buildBeijingOffsetDateTime(dateToDate, dateToTime);
 
       const query = new URLSearchParams({
         page: String(nextPage),
@@ -106,15 +95,15 @@ export function AdminLogsTab({ apiCall }) {
           <ScrollText className="size-4" />
           余额流水
         </CardTitle>
-        <CardDescription>预扣 / 消费 / 退款 / 手工调账 / 兑换码充值明细。</CardDescription>
+        <CardDescription>预扣 / 消费 / 退款 / 手工调账 / 兑换码充值明细（筛选与展示均按北京时间）。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <form
           className="grid gap-2 md:grid-cols-7"
           onSubmit={(event) => {
             event.preventDefault();
-            const fromValue = buildDateTimeLocalValue(dateFromDate, dateFromTime);
-            const toValue = buildDateTimeLocalValue(dateToDate, dateToTime);
+            const fromValue = buildBeijingOffsetDateTime(dateFromDate, dateFromTime);
+            const toValue = buildBeijingOffsetDateTime(dateToDate, dateToTime);
             if (fromValue && toValue && new Date(fromValue).getTime() > new Date(toValue).getTime()) {
               const message = "开始时间不能晚于结束时间";
               setStatus(message);
@@ -179,7 +168,7 @@ export function AdminLogsTab({ apiCall }) {
           <Table className="min-w-[1160px]">
             <TableHeader>
               <TableRow>
-                <TableHead>时间</TableHead>
+                <TableHead>时间（北京时间）</TableHead>
                 <TableHead>用户</TableHead>
                 <TableHead>类型</TableHead>
                 <TableHead>变动</TableHead>
@@ -195,7 +184,7 @@ export function AdminLogsTab({ apiCall }) {
             <TableBody>
               {items.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell>{formatDateTime(item.created_at)}</TableCell>
+                  <TableCell>{formatDateTimeBeijing(item.created_at)}</TableCell>
                   <TableCell>{item.user_email}</TableCell>
                   <TableCell>
                     <Badge

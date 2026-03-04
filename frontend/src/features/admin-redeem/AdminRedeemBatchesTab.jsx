@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea } from "../../shared/ui";
 
 function parseError(data, fallback) {
@@ -16,13 +17,6 @@ async function jsonOrEmpty(resp) {
   }
 }
 
-function formatDateTime(value) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString();
-}
-
 function toLocalDatetimeValue(date) {
   if (!date) return "";
   const pad = (v) => String(v).padStart(2, "0");
@@ -30,6 +24,7 @@ function toLocalDatetimeValue(date) {
 }
 
 export function AdminRedeemBatchesTab({ apiCall }) {
+  const beijingNow = getBeijingNowForPicker();
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState([]);
@@ -43,8 +38,8 @@ export function AdminRedeemBatchesTab({ apiCall }) {
   const [batchName, setBatchName] = useState("");
   const [faceValuePoints, setFaceValuePoints] = useState(100);
   const [generateQuantity, setGenerateQuantity] = useState(100);
-  const [activeFrom, setActiveFrom] = useState(toLocalDatetimeValue(new Date()));
-  const [expireAt, setExpireAt] = useState(toLocalDatetimeValue(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)));
+  const [activeFrom, setActiveFrom] = useState(toLocalDatetimeValue(beijingNow));
+  const [expireAt, setExpireAt] = useState(toLocalDatetimeValue(new Date(beijingNow.getTime() + 30 * 24 * 60 * 60 * 1000)));
   const [dailyLimit, setDailyLimit] = useState("");
   const [remark, setRemark] = useState("");
   const [lastGeneratedCodes, setLastGeneratedCodes] = useState([]);
@@ -94,8 +89,8 @@ export function AdminRedeemBatchesTab({ apiCall }) {
         batch_name: batchName.trim() || `batch-${Date.now()}`,
         face_value_points: Number(faceValuePoints),
         generate_quantity: Number(generateQuantity),
-        active_from: activeFrom ? new Date(activeFrom).toISOString() : null,
-        expire_at: expireAt ? new Date(expireAt).toISOString() : null,
+        active_from: datetimeLocalToBeijingOffset(activeFrom) || null,
+        expire_at: datetimeLocalToBeijingOffset(expireAt) || null,
         remark: remark.trim(),
       };
       if (dailyLimit.trim()) {
@@ -191,11 +186,11 @@ export function AdminRedeemBatchesTab({ apiCall }) {
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
+        <CardTitle className="flex items-center gap-2 text-base">
             <Gift className="size-4" />
             创建兑换码批次
           </CardTitle>
-          <CardDescription>一次性单码、固定面额、批量生成。</CardDescription>
+          <CardDescription>一次性单码、固定面额、批量生成（时间按北京时间）。</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="grid gap-3 md:grid-cols-2" onSubmit={createBatch}>
@@ -304,8 +299,8 @@ export function AdminRedeemBatchesTab({ apiCall }) {
                     <TableCell>{item.total_issued_points}</TableCell>
                     <TableCell>{item.total_redeemed_points}</TableCell>
                     <TableCell><Badge variant="outline">{item.status}</Badge></TableCell>
-                    <TableCell>{formatDateTime(item.active_from)}</TableCell>
-                    <TableCell>{formatDateTime(item.expire_at)}</TableCell>
+                    <TableCell>{formatDateTimeBeijing(item.active_from)}</TableCell>
+                    <TableCell>{formatDateTimeBeijing(item.expire_at)}</TableCell>
                     <TableCell>{item.effective_daily_limit}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">

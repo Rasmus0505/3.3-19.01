@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_DEFAULT_VALID_DAYS
+from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
 from app.models import (
     AdminOperationLog,
     BillingModelRate,
@@ -64,8 +65,8 @@ class BillingError(Exception):
         return self.message
 
 
-def _utcnow() -> datetime:
-    return datetime.utcnow()
+def _now() -> datetime:
+    return now_shanghai_naive()
 
 
 def normalize_redeem_code_input(code: str) -> str:
@@ -355,9 +356,9 @@ def create_redeem_batch_and_codes(
     if daily_limit_per_user is not None and daily_limit_per_user <= 0:
         raise BillingError("INVALID_DAILY_LIMIT", "单账号日限必须大于 0")
 
-    now = _utcnow()
-    start_at = active_from or now
-    end_at = expire_at or (start_at + timedelta(days=max(1, REDEEM_CODE_DEFAULT_VALID_DAYS)))
+    now = _now()
+    start_at = to_shanghai_naive(active_from) or now
+    end_at = to_shanghai_naive(expire_at) or (start_at + timedelta(days=max(1, REDEEM_CODE_DEFAULT_VALID_DAYS)))
     if end_at <= start_at:
         raise BillingError("INVALID_TIME_RANGE", "失效时间必须晚于生效时间")
 
@@ -401,8 +402,8 @@ def create_redeem_batch_and_codes(
             "batch_name": batch.batch_name,
             "face_value_points": batch.face_value_points,
             "generated_count": batch.generated_count,
-            "active_from": batch.active_from.isoformat(),
-            "expire_at": batch.expire_at.isoformat(),
+            "active_from": to_shanghai_aware(batch.active_from).isoformat(),
+            "expire_at": to_shanghai_aware(batch.expire_at).isoformat(),
             "daily_limit_per_user": batch.daily_limit_per_user,
             "status": batch.status,
         },
@@ -452,13 +453,13 @@ def set_redeem_batch_status(
 
     before = {
         "status": batch.status,
-        "active_from": batch.active_from.isoformat(),
-        "expire_at": batch.expire_at.isoformat(),
+        "active_from": to_shanghai_aware(batch.active_from).isoformat(),
+        "expire_at": to_shanghai_aware(batch.expire_at).isoformat(),
     }
 
     batch.status = next_status
     if next_status == REDEEM_BATCH_STATUS_EXPIRED:
-        now = _utcnow()
+        now = _now()
         if batch.expire_at > now:
             batch.expire_at = now
     db.add(batch)
@@ -471,7 +472,7 @@ def set_redeem_batch_status(
         target_type="redeem_batch",
         target_id=str(batch.id),
         before_value=before,
-        after_value={"status": batch.status, "expire_at": batch.expire_at.isoformat()},
+        after_value={"status": batch.status, "expire_at": to_shanghai_aware(batch.expire_at).isoformat()},
         note=(note or "").strip(),
     )
     return batch
@@ -604,7 +605,7 @@ def redeem_code(
 
     code_hash = hash_redeem_code(normalized)
     code_mask = mask_redeem_code(normalized)
-    now = _utcnow()
+    now = _now()
 
     code = db.scalar(select(RedeemCode).where(RedeemCode.code_hash == code_hash).with_for_update())
     if not code:

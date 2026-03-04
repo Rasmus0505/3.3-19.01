@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { datetimeLocalToBeijingOffset, formatDateTimeBeijing } from "../../shared/lib/datetime";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
@@ -14,13 +15,6 @@ async function jsonOrEmpty(resp) {
   } catch (_) {
     return {};
   }
-}
-
-function formatDateTime(value) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString();
 }
 
 function fileNameFromDisposition(disposition, fallback) {
@@ -56,8 +50,8 @@ export function AdminRedeemAuditTab({ apiCall }) {
         user_email: userEmail.trim(),
       });
       if (batchId.trim()) query.set("batch_id", batchId.trim());
-      if (dateFrom) query.set("date_from", new Date(dateFrom).toISOString());
-      if (dateTo) query.set("date_to", new Date(dateTo).toISOString());
+      if (dateFrom) query.set("date_from", datetimeLocalToBeijingOffset(dateFrom));
+      if (dateTo) query.set("date_to", datetimeLocalToBeijingOffset(dateTo));
 
       const resp = await apiCall(`/api/admin/redeem-audit?${query.toString()}`);
       const data = await jsonOrEmpty(resp);
@@ -95,8 +89,8 @@ export function AdminRedeemAuditTab({ apiCall }) {
         user_email: userEmail.trim(),
       };
       if (batchId.trim()) payload.batch_id = Number(batchId.trim());
-      if (dateFrom) payload.date_from = new Date(dateFrom).toISOString();
-      if (dateTo) payload.date_to = new Date(dateTo).toISOString();
+      if (dateFrom) payload.date_from = datetimeLocalToBeijingOffset(dateFrom);
+      if (dateTo) payload.date_to = datetimeLocalToBeijingOffset(dateTo);
 
       const resp = await apiCall("/api/admin/redeem-audit/export", {
         method: "POST",
@@ -137,7 +131,7 @@ export function AdminRedeemAuditTab({ apiCall }) {
           <ScrollText className="size-4" />
           兑换记录 / 审计
         </CardTitle>
-        <CardDescription>记录成功和失败兑换，支持筛选导出。</CardDescription>
+        <CardDescription>记录成功和失败兑换，支持筛选导出（时间按北京时间）。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <form
@@ -176,7 +170,7 @@ export function AdminRedeemAuditTab({ apiCall }) {
               {items.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>{item.id}</TableCell>
-                  <TableCell>{formatDateTime(item.created_at)}</TableCell>
+                  <TableCell>{formatDateTimeBeijing(item.created_at)}</TableCell>
                   <TableCell>{item.user_email || "-"}</TableCell>
                   <TableCell>{item.batch_name ? `${item.batch_name} (#${item.batch_id})` : "-"}</TableCell>
                   <TableCell>{item.code_mask || "-"}</TableCell>

@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { datetimeLocalToBeijingOffset, formatDateTimeBeijing } from "../../shared/lib/datetime";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
@@ -14,13 +15,6 @@ async function jsonOrEmpty(resp) {
   } catch (_) {
     return {};
   }
-}
-
-function formatDateTime(value) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString();
 }
 
 function fileNameFromDisposition(disposition, fallback) {
@@ -62,10 +56,10 @@ export function AdminRedeemCodesTab({ apiCall }) {
         redeem_user_email: redeemUserEmail.trim(),
       });
       if (batchId.trim()) query.set("batch_id", batchId.trim());
-      if (createdFrom) query.set("created_from", new Date(createdFrom).toISOString());
-      if (createdTo) query.set("created_to", new Date(createdTo).toISOString());
-      if (redeemedFrom) query.set("redeemed_from", new Date(redeemedFrom).toISOString());
-      if (redeemedTo) query.set("redeemed_to", new Date(redeemedTo).toISOString());
+      if (createdFrom) query.set("created_from", datetimeLocalToBeijingOffset(createdFrom));
+      if (createdTo) query.set("created_to", datetimeLocalToBeijingOffset(createdTo));
+      if (redeemedFrom) query.set("redeemed_from", datetimeLocalToBeijingOffset(redeemedFrom));
+      if (redeemedTo) query.set("redeemed_to", datetimeLocalToBeijingOffset(redeemedTo));
 
       const resp = await apiCall(`/api/admin/redeem-codes?${query.toString()}`);
       const data = await jsonOrEmpty(resp);
@@ -208,7 +202,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
           <Ticket className="size-4" />
           兑换码列表
         </CardTitle>
-        <CardDescription>支持筛选、停用/启用、废弃、批量停用与 CSV 导出。</CardDescription>
+        <CardDescription>支持筛选、停用/启用、废弃、批量停用与 CSV 导出（时间按北京时间）。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <form
@@ -288,8 +282,8 @@ export function AdminRedeemCodesTab({ apiCall }) {
                     <TableCell><Badge variant="outline">{item.status}</Badge></TableCell>
                     <TableCell><Badge>{item.effective_status}</Badge></TableCell>
                     <TableCell>{item.redeemed_user_email || "-"}</TableCell>
-                    <TableCell>{formatDateTime(item.redeemed_at)}</TableCell>
-                    <TableCell>{formatDateTime(item.created_at)}</TableCell>
+                    <TableCell>{formatDateTimeBeijing(item.redeemed_at)}</TableCell>
+                    <TableCell>{formatDateTimeBeijing(item.created_at)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Button size="sm" variant="outline" onClick={() => applyCodeAction(item.id, "enable", "启用")}>

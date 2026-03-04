@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import logging
 import mimetypes
 from pathlib import Path
 
@@ -18,6 +19,12 @@ from app.schemas import ErrorResponse
 
 
 router = APIRouter(prefix="/api/lessons", tags=["media"])
+logger = logging.getLogger(__name__)
+LOCAL_MEDIA_REQUIRED_MESSAGE = "该课程仅支持本地绑定媒体，请先在浏览器绑定本地文件"
+
+
+def local_media_required_response():
+    return error_response(409, "LOCAL_MEDIA_REQUIRED", LOCAL_MEDIA_REQUIRED_MESSAGE)
 
 
 def resolve_media_type(source_filename: str, media_path: Path) -> str:
@@ -32,7 +39,7 @@ def resolve_media_type(source_filename: str, media_path: Path) -> str:
 
 @router.get(
     "/{lesson_id}/media",
-    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
 )
 def get_lesson_media(
     lesson_id: int,
@@ -40,6 +47,10 @@ def get_lesson_media(
     current_user: User = Depends(get_current_user),
 ):
     lesson = require_lesson_owner(db, lesson_id, current_user.id)
+    if lesson.media_storage == "client_indexeddb":
+        logger.info("[DEBUG] media.main local_required lesson_id=%s", lesson_id)
+        return local_media_required_response()
+
     media_asset = get_media_asset_for_lesson(db, lesson_id)
     if not media_asset:
         return error_response(404, "MEDIA_NOT_FOUND", "课程媒体不存在")
@@ -54,7 +65,7 @@ def get_lesson_media(
 
 @router.get(
     "/{lesson_id}/sentences/{idx}/audio",
-    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
 )
 def get_sentence_audio(
     lesson_id: int,
@@ -62,10 +73,24 @@ def get_sentence_audio(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_lesson_owner(db, lesson_id, current_user.id)
+    lesson = require_lesson_owner(db, lesson_id, current_user.id)
     sentence = get_sentence(db, lesson_id, idx)
     if not sentence:
         return error_response(404, "SENTENCE_NOT_FOUND", "句子不存在")
+
+    if lesson.media_storage == "client_indexeddb":
+        if not sentence.audio_clip_path:
+            logger.info("[DEBUG] media.clip local_required lesson_id=%s idx=%s", lesson_id, idx)
+            return local_media_required_response()
+        clip_path = Path(sentence.audio_clip_path)
+        if not clip_path.exists():
+            logger.info("[DEBUG] media.clip local_required_missing_file lesson_id=%s idx=%s", lesson_id, idx)
+            return local_media_required_response()
+        return FileResponse(path=str(clip_path), media_type="audio/ogg")
+
+    if not sentence.audio_clip_path:
+        return error_response(404, "AUDIO_CLIP_MISSING", "句级音频不存在")
+
     clip_path = Path(sentence.audio_clip_path)
     if not clip_path.exists():
         return error_response(404, "AUDIO_CLIP_MISSING", "句级音频不存在")

@@ -1,14 +1,37 @@
-import { ArrowLeft, ArrowRight, BookOpen, Loader2, Play } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+﻿import { ArrowLeft, ArrowRight, BookOpen, Loader2, Play } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { api, parseResponse } from "../../shared/api/client";
+import { getLessonMedia } from "../../shared/media/localMediaStore";
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Textarea } from "../../shared/ui";
+
+const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
 
 function normalizeInputTokens(text) {
   return text
     .split(/\s+/)
     .map((x) => x.trim())
     .filter(Boolean);
+}
+
+function resolveMediaModeFromTypeAndName(contentType, fileName) {
+  const normalizedType = String(contentType || "").toLowerCase();
+  if (normalizedType.startsWith("video/")) return "video";
+  if (normalizedType.startsWith("audio/")) return "audio";
+
+  const normalizedFileName = String(fileName || "").toLowerCase();
+  if (/(\.mp3|\.wav|\.m4a|\.flac|\.aac|\.ogg|\.opus)$/.test(normalizedFileName)) {
+    return "audio";
+  }
+  return "video";
+}
+
+async function readErrorPayload(resp) {
+  try {
+    return await resp.clone().json();
+  } catch (_) {
+    return {};
+  }
 }
 
 export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
@@ -18,9 +41,15 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
   const [checkResult, setCheckResult] = useState(null);
   const [showChinese, setShowChinese] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
+  const [mediaBlobUrl, setMediaBlobUrl] = useState("");
+  const [mediaMode, setMediaMode] = useState("");
+  const [mediaBindingRequired, setMediaBindingRequired] = useState(false);
+  const [mediaNotice, setMediaNotice] = useState("");
 
   const current = lesson?.sentences?.[idx] || null;
-  const audioRef = useMemo(() => new Audio(), [lesson?.id]);
+  const clipAudioRef = useRef(new Audio());
+  const clipUrlRef = useRef("");
+  const segmentMediaRef = useRef(null);
 
   useEffect(() => {
     const savedIdx = lesson?.progress?.current_sentence_index;
@@ -34,6 +63,128 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
     setCheckResult(null);
     setShowChinese(false);
   }, [idx, lesson?.id]);
+
+  useEffect(() => {
+    if (!lesson?.id) {
+      setMediaBlobUrl("");
+      setMediaMode("");
+      setMediaBindingRequired(false);
+      setMediaNotice("");
+      return;
+    }
+
+    let canceled = false;
+    let objectUrl = "";
+
+    async function loadMainMedia() {
+      setMediaBlobUrl("");
+      setMediaMode("");
+      setMediaBindingRequired(false);
+      setMediaNotice("");
+
+      try {
+        const localMedia = await getLessonMedia(lesson.id);
+        if (canceled) return;
+        if (localMedia?.blob) {
+          objectUrl = URL.createObjectURL(localMedia.blob);
+          const localMode = resolveMediaModeFromTypeAndName(localMedia.media_type, localMedia.file_name || lesson.source_filename || "");
+          setMediaBlobUrl(objectUrl);
+          setMediaMode(localMode);
+          console.debug("[DEBUG] practice.media.local_loaded", { lessonId: lesson.id });
+          return;
+        }
+      } catch (error) {
+        console.debug("[DEBUG] practice.media.local_read_failed", { lessonId: lesson.id, error: String(error) });
+      }
+
+      if (lesson.media_storage !== "server") {
+        if (canceled) return;
+        setMediaBindingRequired(true);
+        setMediaNotice("当前课程媒体仅保存在浏览器本地，请先在沉浸模式绑定本地文件。");
+        return;
+      }
+
+      try {
+        const resp = await api(`/api/lessons/${lesson.id}/media`, {}, accessToken);
+        if (!resp.ok) {
+          if (canceled) return;
+          const payload = await readErrorPayload(resp);
+          if (canceled) return;
+          if (Number(resp.status) === 404 || String(payload?.error_code || "") === LOCAL_MEDIA_REQUIRED_CODE) {
+            setMediaBindingRequired(true);
+            setMediaNotice("服务器媒体不可用，请先在沉浸模式绑定本地文件。");
+            return;
+          }
+          setMediaBindingRequired(true);
+          setMediaNotice(`媒体加载失败（${resp.status} ${payload?.error_code || ""}）。请先在沉浸模式绑定本地文件。`);
+          return;
+        }
+
+        let blob = await resp.blob();
+        const rawContentType = String(resp.headers.get("content-type") || "");
+        if ((!rawContentType || rawContentType.startsWith("application/octet-stream")) && lesson.source_filename) {
+          blob = new Blob([blob], { type: blob.type || "application/octet-stream" });
+        }
+        objectUrl = URL.createObjectURL(blob);
+        if (canceled) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        setMediaBlobUrl(objectUrl);
+        setMediaMode(resolveMediaModeFromTypeAndName(blob.type || rawContentType, lesson.source_filename || ""));
+      } catch (error) {
+        if (canceled) return;
+        setMediaBindingRequired(true);
+        setMediaNotice(`媒体加载异常（${String(error)}），请先在沉浸模式绑定本地文件。`);
+      }
+    }
+
+    loadMainMedia();
+
+    return () => {
+      canceled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [accessToken, lesson?.id, lesson?.media_storage, lesson?.source_filename]);
+
+  useEffect(() => {
+    if (!mediaBlobUrl || !mediaMode || mediaMode === "clip") {
+      segmentMediaRef.current = null;
+      return;
+    }
+
+    const media = document.createElement(mediaMode === "video" ? "video" : "audio");
+    media.preload = "metadata";
+    media.src = mediaBlobUrl;
+    segmentMediaRef.current = media;
+
+    return () => {
+      media.pause();
+      media.src = "";
+      if (segmentMediaRef.current === media) {
+        segmentMediaRef.current = null;
+      }
+    };
+  }, [mediaBlobUrl, mediaMode]);
+
+  useEffect(() => {
+    return () => {
+      if (clipUrlRef.current) {
+        URL.revokeObjectURL(clipUrlRef.current);
+        clipUrlRef.current = "";
+      }
+      const clipAudio = clipAudioRef.current;
+      clipAudio.pause();
+      clipAudio.src = "";
+      const segmentMedia = segmentMediaRef.current;
+      if (segmentMedia) {
+        segmentMedia.pause();
+        segmentMedia.src = "";
+      }
+    };
+  }, []);
 
   async function syncProgress(nextIndex, nextCompleted = []) {
     const payload = {
@@ -49,22 +200,93 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
     onProgressSynced?.();
   }
 
+  async function playByMainMedia() {
+    const media = segmentMediaRef.current;
+    if (!media || !current) {
+      return false;
+    }
+
+    const startSec = Math.max(0, Number(current.begin_ms || 0) / 1000);
+    const endSec = Math.max(startSec + 0.1, Number(current.end_ms || 0) / 1000);
+
+    const onTimeUpdate = () => {
+      if (media.currentTime >= endSec) {
+        media.pause();
+        media.removeEventListener("timeupdate", onTimeUpdate);
+      }
+    };
+
+    media.removeEventListener("timeupdate", onTimeUpdate);
+    media.addEventListener("timeupdate", onTimeUpdate);
+    media.currentTime = startSec;
+    await media.play();
+    return true;
+  }
+
+  async function playBySentenceAudioFallback() {
+    if (!current?.audio_url || lesson?.media_storage !== "server") {
+      return false;
+    }
+
+    const audioResp = await api(current.audio_url, {}, accessToken);
+    if (!audioResp.ok) {
+      const payload = await readErrorPayload(audioResp);
+      if (Number(audioResp.status) === 404 || String(payload?.error_code || "") === LOCAL_MEDIA_REQUIRED_CODE) {
+        setMediaBindingRequired(true);
+        setMediaNotice("句级音频不可用，请先在沉浸模式绑定本地文件。");
+      }
+      return false;
+    }
+
+    const clipBlob = await audioResp.blob();
+    const clipUrl = URL.createObjectURL(clipBlob);
+    if (clipUrlRef.current) {
+      URL.revokeObjectURL(clipUrlRef.current);
+    }
+    clipUrlRef.current = clipUrl;
+    const clipAudio = clipAudioRef.current;
+    clipAudio.pause();
+    clipAudio.src = clipUrl;
+    clipAudio.onended = () => {
+      URL.revokeObjectURL(clipUrl);
+      if (clipUrlRef.current === clipUrl) {
+        clipUrlRef.current = "";
+      }
+    };
+    clipAudio.onerror = () => {
+      URL.revokeObjectURL(clipUrl);
+      if (clipUrlRef.current === clipUrl) {
+        clipUrlRef.current = "";
+      }
+    };
+    await clipAudio.play();
+    return true;
+  }
+
   async function playCurrent() {
     if (!current) {
       return;
     }
     setAudioLoading(true);
     try {
-      const audioResp = await api(current.audio_url, {}, accessToken);
-      if (!audioResp.ok) {
+      if (mediaBlobUrl && mediaMode && mediaMode !== "clip") {
+        const played = await playByMainMedia();
+        if (played) {
+          setMediaNotice("");
+          return;
+        }
+      }
+
+      const fallbackPlayed = await playBySentenceAudioFallback();
+      if (fallbackPlayed) {
+        setMediaNotice("已回退到服务端句级音频播放。");
         return;
       }
-      const blob = await audioResp.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      audioRef.src = blobUrl;
-      await audioRef.play();
-    } catch (_) {
-      // ignore playback errors
+
+      setMediaBindingRequired(true);
+      setMediaNotice("当前课程无可播放媒体，请先在沉浸模式绑定本地文件。");
+    } catch (error) {
+      setMediaNotice(`播放失败：${String(error)}`);
     } finally {
       setAudioLoading(false);
     }
@@ -121,6 +343,13 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {mediaBindingRequired ? (
+          <Alert>
+            <AlertTitle>待绑定本地媒体</AlertTitle>
+            <AlertDescription>{mediaNotice || "当前课程可见，但播放受限。请先在沉浸模式绑定本地文件。"}</AlertDescription>
+          </Alert>
+        ) : null}
+
         <Alert>
           <AlertTitle>句子内容</AlertTitle>
           <AlertDescription>
@@ -163,6 +392,7 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
             播放本句
           </Button>
           <Badge variant="outline">已通过 {completedIndexes.length} 句</Badge>
+          {mediaNotice ? <p className="text-xs text-muted-foreground">{mediaNotice}</p> : null}
         </div>
 
         <Textarea
@@ -192,3 +422,4 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
     </Card>
   );
 }
+

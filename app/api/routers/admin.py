@@ -3,6 +3,7 @@
 import csv
 import io
 from datetime import datetime
+import logging
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -13,6 +14,7 @@ from app.api.deps.auth import get_admin_emails, get_admin_user
 from app.api.serializers import to_rate_item
 from app.core.config import REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_EXPORT_CONFIRM_TEXT
 from app.core.errors import error_response, map_billing_error
+from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
 from app.db import get_db
 from app.models import BillingModelRate, RedeemCode, RedeemCodeBatch, User
 from app.repositories.admin import (
@@ -71,26 +73,29 @@ from app.services.billing_service import (
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
-    return datetime.utcnow()
+    return now_shanghai_naive()
 
 
 def _effective_batch_status(*, status: str, expire_at: datetime, now: datetime) -> str:
-    if status == REDEEM_BATCH_STATUS_EXPIRED or now >= expire_at:
+    expire_at_naive = to_shanghai_naive(expire_at) or expire_at
+    if status == REDEEM_BATCH_STATUS_EXPIRED or now >= expire_at_naive:
         return REDEEM_BATCH_STATUS_EXPIRED
     return status
 
 
 def _effective_code_status(*, code_status: str, batch_status: str, expire_at: datetime, now: datetime) -> str:
+    expire_at_naive = to_shanghai_naive(expire_at) or expire_at
     if code_status == "redeemed":
         return "redeemed"
     if code_status == "abandoned":
         return "abandoned"
     if code_status == "disabled" or batch_status == REDEEM_BATCH_STATUS_PAUSED:
         return "disabled"
-    if batch_status == REDEEM_BATCH_STATUS_EXPIRED or now >= expire_at:
+    if batch_status == REDEEM_BATCH_STATUS_EXPIRED or now >= expire_at_naive:
         return "expired"
     return "unredeemed"
 
@@ -115,14 +120,14 @@ def _to_batch_item(batch: RedeemCodeBatch, redeemed_count: int, *, now: datetime
         total_issued_points=total_issued_points,
         total_redeemed_points=total_redeemed_points,
         status=_effective_batch_status(status=batch.status, expire_at=batch.expire_at, now=now),
-        active_from=batch.active_from,
-        expire_at=batch.expire_at,
+        active_from=to_shanghai_aware(batch.active_from),
+        expire_at=to_shanghai_aware(batch.expire_at),
         daily_limit_per_user=batch.daily_limit_per_user,
         effective_daily_limit=effective_daily_limit,
         remark=batch.remark,
         created_by_user_id=batch.created_by_user_id,
-        created_at=batch.created_at,
-        updated_at=batch.updated_at,
+        created_at=to_shanghai_aware(batch.created_at),
+        updated_at=to_shanghai_aware(batch.updated_at),
     )
 
 
@@ -154,7 +159,7 @@ def admin_list_users(
         AdminUserItem(
             id=user_id,
             email=email,
-            created_at=created_at,
+            created_at=to_shanghai_aware(created_at),
             balance_points=balance_points,
         )
         for user_id, email, created_at, balance_points in rows
@@ -241,6 +246,13 @@ def admin_wallet_logs(
 ):
     page = max(page, 1)
     page_size = max(1, min(page_size, 100))
+    normalized_date_from = to_shanghai_naive(date_from)
+    normalized_date_to = to_shanghai_naive(date_to)
+    logger.debug(
+        "[DEBUG] /api/admin/wallet-logs normalized filters date_from=%s date_to=%s",
+        normalized_date_from.isoformat() if normalized_date_from else "",
+        normalized_date_to.isoformat() if normalized_date_to else "",
+    )
 
     total, rows = list_wallet_ledger_rows(
         db,
@@ -248,8 +260,8 @@ def admin_wallet_logs(
         event_type=event_type,
         page=page,
         page_size=page_size,
-        date_from=date_from,
-        date_to=date_to,
+        date_from=normalized_date_from,
+        date_to=normalized_date_to,
     )
 
     items = [
@@ -268,7 +280,7 @@ def admin_wallet_logs(
             redeem_code_id=ledger.redeem_code_id,
             redeem_code_mask=ledger.redeem_code_mask,
             note=ledger.note,
-            created_at=ledger.created_at,
+            created_at=to_shanghai_aware(ledger.created_at),
         )
         for ledger, email in rows
     ]
@@ -324,8 +336,8 @@ def admin_create_redeem_batch(
             batch_name=payload.batch_name,
             face_value_points=payload.face_value_points,
             generate_quantity=payload.generate_quantity,
-            active_from=payload.active_from,
-            expire_at=payload.expire_at,
+            active_from=to_shanghai_naive(payload.active_from),
+            expire_at=to_shanghai_naive(payload.expire_at),
             daily_limit_per_user=payload.daily_limit_per_user,
             remark=payload.remark,
             created_by_user_id=current_admin.id,
@@ -501,16 +513,20 @@ def admin_list_redeem_codes(
     page = max(page, 1)
     page_size = max(1, min(page_size, 100))
     now = _now()
+    normalized_created_from = to_shanghai_naive(created_from)
+    normalized_created_to = to_shanghai_naive(created_to)
+    normalized_redeemed_from = to_shanghai_naive(redeemed_from)
+    normalized_redeemed_to = to_shanghai_naive(redeemed_to)
 
     total, rows = list_redeem_codes(
         db,
         batch_id=batch_id,
         status=status,
         redeem_user_email=redeem_user_email,
-        created_from=created_from,
-        created_to=created_to,
-        redeemed_from=redeemed_from,
-        redeemed_to=redeemed_to,
+        created_from=normalized_created_from,
+        created_to=normalized_created_to,
+        redeemed_from=normalized_redeemed_from,
+        redeemed_to=normalized_redeemed_to,
         page=page,
         page_size=page_size,
         now=now,
@@ -531,9 +547,9 @@ def admin_list_redeem_codes(
             ),
             face_value_points=batch.face_value_points,
             redeemed_user_email=redeemed_user_email_item,
-            redeemed_at=code.redeemed_at,
+            redeemed_at=to_shanghai_aware(code.redeemed_at),
             created_by_user_id=code.created_by_user_id,
-            created_at=code.created_at,
+            created_at=to_shanghai_aware(code.created_at),
         )
         for code, batch, redeemed_user_email_item in rows
     ]
@@ -688,8 +704,8 @@ def admin_export_redeem_codes(
                 int(batch.face_value_points),
                 code.code_plain,
                 code.masked_code,
-                batch.active_from.isoformat(),
-                batch.expire_at.isoformat(),
+                to_shanghai_aware(batch.active_from).isoformat(),
+                to_shanghai_aware(batch.expire_at).isoformat(),
             ]
         )
 
@@ -730,13 +746,15 @@ def admin_list_redeem_audit(
 ):
     page = max(page, 1)
     page_size = max(1, min(page_size, 100))
+    normalized_date_from = to_shanghai_naive(date_from)
+    normalized_date_to = to_shanghai_naive(date_to)
 
     total, rows = list_redeem_audit_rows(
         db,
         user_email=user_email,
         batch_id=batch_id,
-        date_from=date_from,
-        date_to=date_to,
+        date_from=normalized_date_from,
+        date_to=normalized_date_to,
         page=page,
         page_size=page_size,
     )
@@ -752,7 +770,7 @@ def admin_list_redeem_audit(
             code_mask=row.code_mask,
             success=row.success,
             failure_reason=row.failure_reason,
-            created_at=row.created_at,
+            created_at=to_shanghai_aware(row.created_at),
         )
         for row, user_email_item, batch_name_item in rows
     ]
@@ -771,12 +789,14 @@ def admin_export_redeem_audit(
     if payload.confirm_text.strip().upper() != REDEEM_CODE_EXPORT_CONFIRM_TEXT.upper():
         return error_response(400, "EXPORT_CONFIRM_REQUIRED", "导出需要二次确认")
 
+    normalized_date_from = to_shanghai_naive(payload.date_from)
+    normalized_date_to = to_shanghai_naive(payload.date_to)
     rows = list_all_redeem_audit_rows(
         db,
         user_email=payload.user_email,
         batch_id=payload.batch_id,
-        date_from=payload.date_from,
-        date_to=payload.date_to,
+        date_from=normalized_date_from,
+        date_to=normalized_date_to,
     )
 
     output = io.StringIO()
@@ -793,7 +813,7 @@ def admin_export_redeem_audit(
                 row.code_mask,
                 "success" if row.success else "failed",
                 row.failure_reason,
-                row.created_at.isoformat(),
+                to_shanghai_aware(row.created_at).isoformat(),
             ]
         )
 
@@ -806,8 +826,8 @@ def admin_export_redeem_audit(
         before_value={
             "batch_id": payload.batch_id,
             "user_email": payload.user_email,
-            "date_from": payload.date_from.isoformat() if payload.date_from else "",
-            "date_to": payload.date_to.isoformat() if payload.date_to else "",
+            "date_from": to_shanghai_aware(normalized_date_from).isoformat() if normalized_date_from else "",
+            "date_to": to_shanghai_aware(normalized_date_to).isoformat() if normalized_date_to else "",
         },
         after_value={"exported_count": len(rows)},
         note="export_redeem_audit",

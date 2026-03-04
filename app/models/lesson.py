@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.timezone import now_shanghai_naive
 from app.db import Base
 
 
@@ -17,8 +18,10 @@ class Lesson(Base):
     source_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     asr_model: Mapped[str] = mapped_column(String(100), nullable=False)
     duration_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    media_storage: Mapped[str] = mapped_column(String(32), default="server", nullable=False)
+    source_duration_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="ready", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
 
     user: Mapped["User"] = relationship(back_populates="lessons")
     sentences: Mapped[list["LessonSentence"]] = relationship(back_populates="lesson", cascade="all, delete-orphan")
@@ -38,7 +41,7 @@ class LessonSentence(Base):
     text_en: Mapped[str] = mapped_column(String, nullable=False)
     text_zh: Mapped[str] = mapped_column(String, default="", nullable=False)
     tokens_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
-    audio_clip_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    audio_clip_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     lesson: Mapped[Lesson] = relationship(back_populates="sentences")
 
@@ -53,7 +56,7 @@ class LessonProgress(Base):
     current_sentence_idx: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     completed_indexes_json: Mapped[list[int]] = mapped_column(JSON, default=list, nullable=False)
     last_played_at_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
 
     lesson: Mapped[Lesson] = relationship(back_populates="progress_records")
 
@@ -65,6 +68,6 @@ class MediaAsset(Base):
     lesson_id: Mapped[int] = mapped_column(ForeignKey("lessons.id"), nullable=False, index=True)
     original_path: Mapped[str] = mapped_column(String(500), nullable=False)
     opus_path: Mapped[str] = mapped_column(String(500), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
 
     lesson: Mapped[Lesson] = relationship(back_populates="media_assets")

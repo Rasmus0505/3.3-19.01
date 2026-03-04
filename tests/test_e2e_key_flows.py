@@ -61,6 +61,8 @@ def _stub_lesson_generation(monkeypatch):
             source_filename="e2e.mp4",
             asr_model=asr_model,
             duration_ms=1000,
+            media_storage="client_indexeddb",
+            source_duration_ms=1000,
             status="ready",
         )
         db.add(lesson)
@@ -74,7 +76,7 @@ def _stub_lesson_generation(monkeypatch):
                 text_en="hello world",
                 text_zh="你好 世界",
                 tokens_json=["hello", "world"],
-                audio_clip_path="/tmp/e2e.opus",
+                audio_clip_path=None,
             )
         )
         db.add(
@@ -110,6 +112,9 @@ def test_e2e_login_create_lesson_practice_progress(e2e_client):
     lesson = create_resp.json()["lesson"]
     lesson_id = lesson["id"]
     assert lesson["title"] == "e2e lesson"
+    assert lesson["media_storage"] == "client_indexeddb"
+    assert lesson["source_duration_ms"] == 1000
+    assert lesson["sentences"][0]["audio_url"] is None
 
     check_resp = client.post(
         f"/api/lessons/{lesson_id}/check",
