@@ -163,6 +163,8 @@ alembic downgrade -1
 ### 1) 启用镜像构建工作流
 
 - 工作流文件：`.github/workflows/ghcr-image.yml`
+- PostgreSQL 镜像预热工作流：`.github/workflows/postgres-mirror-ghcr.yml`
+- PostgreSQL 自定义镜像工作流：`.github/workflows/postgres-custom-ghcr.yml`
 - 触发方式：
   - push 到 `main`
   - GitHub Actions 手动触发（`workflow_dispatch`）
@@ -195,10 +197,11 @@ alembic upgrade head
 ### 4) 发布后验证
 
 1. `GET /health` 返回 200
-2. 使用有效用户 token 调用 `GET /api/wallet/me` 返回 200
-3. 使用管理员 token 调用 `GET /api/admin/billing-rates` 返回 200
+2. 上传文件调用 `POST /api/transcribe/file` 返回成功
+3. 使用有效用户 token 调用 `GET /api/wallet/me` 返回 200
+4. 使用管理员 token 调用 `GET /api/admin/billing-rates` 返回 200
 
-详细步骤见：`docs/ZEABUR_GHCR_DEPLOY.md`
+详细步骤见：`docs/ZEABUR_POSTGRES_IMAGE_DEPLOY.md`
 
 ## Metabase schema 约束
 
