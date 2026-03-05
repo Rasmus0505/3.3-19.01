@@ -13,6 +13,7 @@ from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, DASHSCOPE_API_KEY, SERV
 from app.core.logging import setup_logging
 from app.db import SessionLocal, init_db
 from app.services.asr_dashscope import setup_dashscope
+from app.services.admin_bootstrap import ensure_admin_users
 from app.services.billing_service import ensure_default_billing_rates
 
 
@@ -53,6 +54,7 @@ async def app_lifespan(_: FastAPI):
     seed_db = SessionLocal()
     try:
         ensure_default_billing_rates(seed_db)
+        ensure_admin_users(seed_db)
     finally:
         seed_db.close()
     yield
