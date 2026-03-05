@@ -159,12 +159,14 @@ async function readErrorPayload(resp) {
 
 function formatMediaLoadError(resp, payload) {
   const statusText = Number(resp?.status) > 0 ? String(resp.status) : "";
+  const errorCode = String(payload?.error_code || "").trim();
   const message = String(payload?.message || "").trim();
-  if (statusText && message) {
-    return `媒体加载失败（${statusText}: ${message}）。`;
+  const head = [statusText, errorCode].filter(Boolean).join(" ");
+  if (head && message) {
+    return `媒体加载失败（${head}: ${message}）。`;
   }
-  if (statusText) {
-    return `媒体加载失败（${statusText}）。`;
+  if (head) {
+    return `媒体加载失败（${head}）。`;
   }
   if (message) {
     return `媒体加载失败（${message}）。`;
@@ -331,7 +333,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
         if (!expectedTokens.length) {
           setSentenceTypingDone(true);
         }
-        setMediaError("媒体不可用，请绑定本地文件继续。");
+        setMediaError("本句服务器音频不可用，请先绑定本地文件。");
         setPhase("typing");
         return;
       }
@@ -352,7 +354,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
       if (!expectedTokens.length) {
         setSentenceTypingDone(true);
       }
-      setMediaError("媒体不可用，已切换到句级音频播放，你可以继续输入。");
+      setMediaError("当前句播放失败，已切换为输入模式。");
       setPhase("typing");
     },
     [currentSentence, expectedTokens.length, needsBinding, playSentence],
@@ -535,7 +537,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     const hasClipFallback = lesson?.media_storage === "server" && Array.isArray(lesson?.sentences) && lesson.sentences.some((item) => item?.audio_url);
     if (hasClipFallback) {
       setMediaMode("clip");
-      setMediaError("媒体不可用，已切换到句级音频播放，你可以继续输入。");
+      setMediaError("当前浏览器不支持该媒体格式，已自动切换为句级音频模式。");
       setPhase("auto_play_pending");
       return;
     }
@@ -891,7 +893,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
               </TooltipProvider>
             ) : null}
             <div>
-              <CardTitle className="text-base">沉浸式拼写训练</CardTitle>
+              <CardTitle className="text-base">沉浸式句子拼写学习</CardTitle>
               <CardDescription>
                 第 {Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 句
               </CardDescription>
@@ -984,7 +986,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
               <TooltipTrigger asChild>
                 <Button variant="outline" onClick={() => revealCurrentWord("button_reveal")} disabled={!canRevealWord}>
                   <Eye className="size-4" />
-                  提示单词
+                  揭示单词
                 </Button>
               </TooltipTrigger>
               <TooltipContent>space</TooltipContent>
@@ -1031,33 +1033,11 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           ) : null}
         </div>
 
-        <div className="immersive-shortcut-bar" role="note" aria-label="快捷键提示">
-          <span className="immersive-shortcut-bar__title">快捷键</span>
-          <span className="immersive-shortcut-bar__item">
-            <kbd>Esc</kbd>
-            <span>退出沉浸</span>
-          </span>
-          <span className="immersive-shortcut-bar__item">
-            <kbd>Shift+R</kbd>
-            <span>重播本句</span>
-          </span>
-          <span className="immersive-shortcut-bar__item">
-            <kbd>Enter</kbd>
-            <span>下一句</span>
-          </span>
-          <span className="immersive-shortcut-bar__item">
-            <kbd>Space</kbd>
-            <span>提示单词</span>
-          </span>
-        </div>
-
         <div className="immersive-typing">
           <div className="immersive-typing-toolbar">
-            <p className="immersive-hint">输入满单词长度后自动判定；错误较多时会提示重输。</p>
+            <p className="immersive-hint">输入达到单词长度后自动判定；超过 2 个错误会清空重打。</p>
             <div className="immersive-display-toggle">
-              <span className="text-xs text-muted-foreground">
-                显示模式：{displayMode === "underline" ? "下划线" : "卡片"}
-              </span>
+              <span className="text-xs text-muted-foreground">下划线模式</span>
               <Switch
                 checked={displayMode === "underline"}
                 onCheckedChange={(checked) => setDisplayMode(checked ? "underline" : "chip")}
@@ -1097,7 +1077,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           <p className="text-sm text-muted-foreground">
             当前句中文：{currentSentence.text_zh || "(翻译失败，暂缺)"}
           </p>
-          {phase === "lesson_completed" ? <p className="text-sm text-primary">本课已完成。可返回课程历史继续下一课。</p> : null}
+          {phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
         </div>
 
         <input
@@ -1135,7 +1115,6 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     </Card>
   );
 }
-
 
 
 

@@ -13,7 +13,7 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
 
   async function submit(path) {
     setLoading(true);
-    setStatus("正在验证账号...");
+    setStatus("提交中...");
     try {
       const resp = await api(path, {
         method: "POST",
@@ -33,7 +33,7 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
       toast.success("登录成功");
       onAuthed(data);
     } catch (error) {
-      const message = "网络连接异常，请重试。";
+      const message = `网络错误: ${String(error)}`;
       setStatus(message);
       toast.error(message);
     } finally {
@@ -45,7 +45,7 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
     <Card>
       <CardHeader>
         <CardTitle>登录 / 注册</CardTitle>
-        <CardDescription>登录后即可上传音视频，自动生成句子训练。</CardDescription>
+        <CardDescription>先登录后再上传素材并开始句级练习。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <form
@@ -92,7 +92,7 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
             <AlertDescription>{status}</AlertDescription>
           </Alert>
         ) : (
-          <p className="text-sm text-muted-foreground">登录后可开始学习。</p>
+          <p className="text-sm text-muted-foreground">未登录状态</p>
         )}
       </CardFooter>
     </Card>

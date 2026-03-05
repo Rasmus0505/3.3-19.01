@@ -7,7 +7,7 @@ import { buildBeijingOffsetDateTime, formatDateTimeBeijing, getBeijingNowForPick
 import { Alert, AlertDescription, Badge, Button, Calendar, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, Popover, PopoverContent, PopoverTrigger, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
-  return data?.message || fallback;
+  return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
 }
 
 async function jsonOrEmpty(resp) {
@@ -73,7 +73,7 @@ export function AdminLogsTab({ apiCall }) {
       setItems(Array.isArray(data.items) ? data.items : []);
       setTotal(Number(data.total || 0));
     } catch (error) {
-      const message = "网络连接异常，请重试。";
+      const message = `网络错误: ${String(error)}`;
       setStatus(message);
       toast.error(message);
     } finally {
@@ -212,7 +212,7 @@ export function AdminLogsTab({ apiCall }) {
               {items.length === 0 ? (
                 <TableRow>
                   <TableCell className="text-muted-foreground" colSpan={11}>
-                    暂无数据，请调整时间范围或筛选条件。
+                    暂无数据
                   </TableCell>
                 </TableRow>
               ) : null}
