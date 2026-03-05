@@ -61,6 +61,70 @@ def test_health_endpoint(test_client):
     assert data["service"]
 
 
+def test_startup_without_dashscope_key_keeps_health_alive(monkeypatch, tmp_path):
+    from app import main as app_main
+
+    class _DummySession:
+        def close(self):
+            return None
+
+    tmp_base = tmp_path / "startup"
+    monkeypatch.setattr(app_main, "BASE_TMP_DIR", tmp_base)
+    monkeypatch.setattr(app_main, "BASE_DATA_DIR", tmp_base / "data")
+    monkeypatch.setattr(app_main, "DASHSCOPE_API_KEY", "")
+    monkeypatch.setattr(app_main, "_ensure_cmd_exists", lambda _cmd: None)
+    monkeypatch.setattr(app_main, "_ensure_ffmpeg_supports_libopus", lambda: None)
+    monkeypatch.setattr(app_main, "setup_dashscope", lambda _key: None)
+    monkeypatch.setattr(app_main, "init_db", lambda: None)
+    monkeypatch.setattr(app_main, "ensure_default_billing_rates", lambda _db: None)
+    monkeypatch.setattr(app_main, "SessionLocal", lambda: _DummySession())
+
+    app = app_main.create_app(enable_lifespan=True)
+    with TestClient(app) as client:
+        resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+def test_transcribe_audio_requires_dashscope_api_key(monkeypatch, tmp_path):
+    from app.infra import asr_dashscope
+
+    audio_file = tmp_path / "sample.opus"
+    audio_file.write_bytes(b"dummy")
+    monkeypatch.setattr(asr_dashscope.dashscope, "api_key", "", raising=False)
+    with pytest.raises(asr_dashscope.AsrError) as exc:
+        asr_dashscope.transcribe_audio_file(str(audio_file), model=asr_dashscope.DEFAULT_MODEL)
+    assert exc.value.code == "ASR_API_KEY_MISSING"
+
+
+def test_transcribe_file_endpoint_with_stubbed_service(test_client, monkeypatch, tmp_path):
+    client, _, _ = test_client
+    from app.api.routers import transcribe as transcribe_router
+
+    monkeypatch.setattr(transcribe_router, "BASE_TMP_DIR", tmp_path)
+
+    def fake_transcribe_uploaded_file(upload_file, req_dir, model):
+        return {
+            "model": model,
+            "task_id": "task_stub_001",
+            "task_status": "SUCCEEDED",
+            "transcription_url": "https://example.com/result.json",
+            "preview_text": "hello world",
+            "asr_result_json": {"sentences": [{"text": "hello world"}]},
+        }
+
+    monkeypatch.setattr(transcribe_router, "transcribe_uploaded_file", fake_transcribe_uploaded_file)
+
+    files = {"video_file": ("demo.mp4", io.BytesIO(b"dummy"), "video/mp4")}
+    resp = client.post("/api/transcribe/file", files=files, data={"model": "qwen3-asr-flash-filetrans"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["task_status"] == "SUCCEEDED"
+    assert body["source_type"] == "file"
+    assert body["model"] == "qwen3-asr-flash-filetrans"
+
+
 def test_auth_register_and_login(test_client):
     client, _, _ = test_client
     token = _register_and_login(client, email="user1@example.com")
@@ -333,12 +397,13 @@ def test_delete_lesson_clears_wallet_ledger_reference(test_client):
         verify.close()
 
 
-def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch):
+def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch, tmp_path):
     client, session_factory, _ = test_client
     token = _register_and_login(client, email="creator@example.com")
     headers = {"Authorization": f"Bearer {token}"}
 
     from app.api.routers import lessons as lesson_router
+    monkeypatch.setattr(lesson_router, "BASE_TMP_DIR", tmp_path)
 
     def fake_generate(upload_file, req_dir, owner_id, asr_model, db):
         lesson = Lesson(
