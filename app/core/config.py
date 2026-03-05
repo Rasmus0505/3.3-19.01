@@ -28,10 +28,6 @@ def _get_env_int(name: str, default: int) -> int:
 REDEEM_CODE_DEFAULT_VALID_DAYS = _get_env_int("REDEEM_CODE_DEFAULT_VALID_DAYS", 30)
 REDEEM_CODE_DEFAULT_DAILY_LIMIT = _get_env_int("REDEEM_CODE_DEFAULT_DAILY_LIMIT", 5)
 REDEEM_CODE_EXPORT_CONFIRM_TEXT = os.getenv("REDEEM_CODE_EXPORT_CONFIRM_TEXT", "EXPORT").strip() or "EXPORT"
-<<<<<<< HEAD
-=======
-ASR_SPLIT_MAX_WORDS = _get_env_int("ASR_SPLIT_MAX_WORDS", 20)
->>>>>>> parent of 6829dc6 (ASR_SPLIT_ENABLED)
 
 APP_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = APP_DIR / "static"
