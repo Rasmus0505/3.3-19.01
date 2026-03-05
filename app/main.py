@@ -1,5 +1,8 @@
 ﻿from __future__ import annotations
 
+import asyncio
+import logging
+import os
 import shutil
 import subprocess
 from contextlib import asynccontextmanager
@@ -18,6 +21,7 @@ from app.services.billing_service import ensure_default_billing_rates
 
 
 setup_logging()
+logger = logging.getLogger(__name__)
 
 
 def _ensure_cmd_exists(cmd: str) -> None:
@@ -40,23 +44,64 @@ def _ensure_ffmpeg_supports_libopus() -> None:
         raise RuntimeError("missing_dependency: ffmpeg 未启用 libopus 编码器，请安装支持 libopus 的 ffmpeg")
 
 
+def _read_positive_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        value = int(raw)
+    except Exception:
+        return default
+    return value if value > 0 else default
+
+
+def _read_positive_float_env(name: str, default: float) -> float:
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        value = float(raw)
+    except Exception:
+        return default
+    return value if value > 0 else default
+
+
+def _setup_dashscope_if_configured() -> None:
+    if DASHSCOPE_API_KEY:
+        setup_dashscope(DASHSCOPE_API_KEY)
+        logger.info("[DEBUG] startup.dashscope configured")
+        return
+    logger.warning("[DEBUG] startup.dashscope missing DASHSCOPE_API_KEY; ASR endpoints may fail")
+
+
+async def _bootstrap_db_with_retry() -> None:
+    retries = _read_positive_int_env("STARTUP_DB_MAX_RETRIES", 8)
+    delay_seconds = _read_positive_float_env("STARTUP_DB_RETRY_DELAY_SECONDS", 2.0)
+    for attempt in range(1, retries + 1):
+        try:
+            init_db()
+            seed_db = SessionLocal()
+            try:
+                ensure_default_billing_rates(seed_db)
+                ensure_admin_users(seed_db)
+            finally:
+                seed_db.close()
+            logger.info("[DEBUG] startup.db ready attempt=%s/%s", attempt, retries)
+            return
+        except Exception as exc:
+            logger.exception("[DEBUG] startup.db failed attempt=%s/%s", attempt, retries)
+            if attempt >= retries:
+                raise RuntimeError(f"db_bootstrap_failed: {exc}") from exc
+            await asyncio.sleep(delay_seconds)
+
+
 @asynccontextmanager
 async def app_lifespan(_: FastAPI):
+    logger.info("[DEBUG] startup.begin")
     _ensure_cmd_exists("ffmpeg")
     _ensure_cmd_exists("ffprobe")
     _ensure_ffmpeg_supports_libopus()
-    if not DASHSCOPE_API_KEY:
-        raise RuntimeError("missing_env: `DASHSCOPE_API_KEY` 未配置")
     BASE_TMP_DIR.mkdir(parents=True, exist_ok=True)
     BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    setup_dashscope(DASHSCOPE_API_KEY)
-    init_db()
-    seed_db = SessionLocal()
-    try:
-        ensure_default_billing_rates(seed_db)
-        ensure_admin_users(seed_db)
-    finally:
-        seed_db.close()
+    _setup_dashscope_if_configured()
+    await _bootstrap_db_with_retry()
+    logger.info("[DEBUG] startup.ready")
     yield
 
 
