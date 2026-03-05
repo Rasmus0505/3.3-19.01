@@ -1,6 +1,5 @@
 ﻿from __future__ import annotations
 
-import logging
 import shutil
 import subprocess
 from contextlib import asynccontextmanager
@@ -18,7 +17,6 @@ from app.services.billing_service import ensure_default_billing_rates
 
 
 setup_logging()
-logger = logging.getLogger(__name__)
 
 
 def _ensure_cmd_exists(cmd: str) -> None:
@@ -63,15 +61,6 @@ async def app_lifespan(_: FastAPI):
 def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app = FastAPI(title=SERVICE_NAME, version="0.3.0", lifespan=app_lifespan if enable_lifespan else None)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-    @app.get("/favicon.ico", include_in_schema=False)
-    @app.get("/favicon.svg", include_in_schema=False)
-    def favicon() -> FileResponse:
-        favicon_path = STATIC_DIR / "favicon.svg"
-        if not favicon_path.exists():
-            raise HTTPException(status_code=404, detail="Not Found")
-        logger.debug("[DEBUG] favicon request served from %s", favicon_path)
-        return FileResponse(favicon_path, media_type="image/svg+xml")
 
     @app.get("/", include_in_schema=False)
     def root_page() -> FileResponse:

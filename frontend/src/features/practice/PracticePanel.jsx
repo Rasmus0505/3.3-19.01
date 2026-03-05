@@ -321,7 +321,7 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">学习区预览</CardTitle>
+          <CardTitle className="text-base">Preview</CardTitle>
           <CardDescription>请先从左侧选择课程。</CardDescription>
         </CardHeader>
         <CardContent>

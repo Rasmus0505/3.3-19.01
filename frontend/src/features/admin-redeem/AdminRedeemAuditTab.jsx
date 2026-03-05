@@ -6,7 +6,7 @@ import { datetimeLocalToBeijingOffset, formatDateTimeBeijing } from "../../share
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
-  return data?.message || fallback;
+  return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
 }
 
 async function jsonOrEmpty(resp) {
@@ -64,7 +64,7 @@ export function AdminRedeemAuditTab({ apiCall }) {
       setItems(Array.isArray(data.items) ? data.items : []);
       setTotal(Number(data.total || 0));
     } catch (error) {
-      const message = "网络连接异常，请重试。";
+      const message = `网络错误: ${String(error)}`;
       setStatus(message);
       toast.error(message);
     } finally {
@@ -78,7 +78,7 @@ export function AdminRedeemAuditTab({ apiCall }) {
   }, [page, pageSize]);
 
   async function exportCsv() {
-    const confirmText = window.prompt("此操作会导出敏感记录，请输入 EXPORT 确认。");
+    const confirmText = window.prompt("请输入 EXPORT 确认导出审计 CSV");
     if (!confirmText) return;
 
     setExporting(true);
@@ -116,7 +116,7 @@ export function AdminRedeemAuditTab({ apiCall }) {
       URL.revokeObjectURL(href);
       toast.success("导出成功");
     } catch (error) {
-      const message = "网络连接异常，请重试。";
+      const message = `网络错误: ${String(error)}`;
       setStatus(message);
       toast.error(message);
     } finally {
@@ -149,7 +149,7 @@ export function AdminRedeemAuditTab({ apiCall }) {
           <Button type="submit" variant="outline">查询</Button>
           <Button type="button" onClick={exportCsv} disabled={exporting}>
             <Download className="size-4" />
-            {exporting ? "导出中..." : "导出记录（CSV）"}
+            {exporting ? "导出中..." : "导出 CSV"}
           </Button>
         </form>
 
@@ -182,7 +182,7 @@ export function AdminRedeemAuditTab({ apiCall }) {
               ))}
               {items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-muted-foreground">暂无数据，请调整筛选条件后重试。</TableCell>
+                  <TableCell colSpan={7} className="text-muted-foreground">暂无数据</TableCell>
                 </TableRow>
               ) : null}
             </TableBody>

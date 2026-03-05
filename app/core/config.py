@@ -25,23 +25,13 @@ def _get_env_int(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
-def _get_env_bool(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    normalized = raw.strip().lower()
-    if normalized in {"1", "true", "yes", "on"}:
-        return True
-    if normalized in {"0", "false", "no", "off"}:
-        return False
-    return default
-
-
 REDEEM_CODE_DEFAULT_VALID_DAYS = _get_env_int("REDEEM_CODE_DEFAULT_VALID_DAYS", 30)
 REDEEM_CODE_DEFAULT_DAILY_LIMIT = _get_env_int("REDEEM_CODE_DEFAULT_DAILY_LIMIT", 5)
 REDEEM_CODE_EXPORT_CONFIRM_TEXT = os.getenv("REDEEM_CODE_EXPORT_CONFIRM_TEXT", "EXPORT").strip() or "EXPORT"
-ASR_SPLIT_ENABLED = _get_env_bool("ASR_SPLIT_ENABLED", True)
+<<<<<<< HEAD
+=======
 ASR_SPLIT_MAX_WORDS = _get_env_int("ASR_SPLIT_MAX_WORDS", 20)
+>>>>>>> parent of 6829dc6 (ASR_SPLIT_ENABLED)
 
 APP_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = APP_DIR / "static"

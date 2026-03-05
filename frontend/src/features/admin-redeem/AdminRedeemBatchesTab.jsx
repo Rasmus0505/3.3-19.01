@@ -6,7 +6,7 @@ import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPi
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea } from "../../shared/ui";
 
 function parseError(data, fallback) {
-  return data?.message || fallback;
+  return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
 }
 
 async function jsonOrEmpty(resp) {
@@ -21,14 +21,6 @@ function toLocalDatetimeValue(date) {
   if (!date) return "";
   const pad = (v) => String(v).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function toBatchStatusLabel(status) {
-  const key = String(status || "").trim().toLowerCase();
-  if (key === "active") return "生效中";
-  if (key === "paused") return "已停用";
-  if (key === "expired") return "已失效";
-  return "未知状态";
 }
 
 export function AdminRedeemBatchesTab({ apiCall }) {
@@ -73,7 +65,7 @@ export function AdminRedeemBatchesTab({ apiCall }) {
       setItems(Array.isArray(data.items) ? data.items : []);
       setTotal(Number(data.total || 0));
     } catch (error) {
-      const message = "网络连接异常，请重试。";
+      const message = `网络错误: ${String(error)}`;
       setStatus(message);
       toast.error(message);
     } finally {
@@ -125,7 +117,7 @@ export function AdminRedeemBatchesTab({ apiCall }) {
       setPage(1);
       await loadBatches(1);
     } catch (error) {
-      const message = "网络连接异常，请重试。";
+      const message = `网络错误: ${String(error)}`;
       setStatus(message);
       toast.error(message);
     } finally {
@@ -147,7 +139,7 @@ export function AdminRedeemBatchesTab({ apiCall }) {
       toast.success(`${actionLabel}成功`);
       await loadBatches(page);
     } catch (error) {
-      const message = "网络连接异常，请重试。";
+      const message = `网络错误: ${String(error)}`;
       setStatus(message);
       toast.error(message);
     }
@@ -184,7 +176,7 @@ export function AdminRedeemBatchesTab({ apiCall }) {
       setPage(1);
       await loadBatches(1);
     } catch (error) {
-      const message = "网络连接异常，请重试。";
+      const message = `网络错误: ${String(error)}`;
       setStatus(message);
       toast.error(message);
     }
@@ -266,9 +258,9 @@ export function AdminRedeemBatchesTab({ apiCall }) {
               <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="active">生效中</SelectItem>
-                <SelectItem value="paused">已停用</SelectItem>
-                <SelectItem value="expired">已失效</SelectItem>
+                <SelectItem value="active">active</SelectItem>
+                <SelectItem value="paused">paused</SelectItem>
+                <SelectItem value="expired">expired</SelectItem>
               </SelectContent>
             </Select>
             <Button type="submit" variant="outline">查询</Button>
@@ -306,7 +298,7 @@ export function AdminRedeemBatchesTab({ apiCall }) {
                     <TableCell>{(Number(item.redeem_rate || 0) * 100).toFixed(2)}%</TableCell>
                     <TableCell>{item.total_issued_points}</TableCell>
                     <TableCell>{item.total_redeemed_points}</TableCell>
-                    <TableCell><Badge variant="outline">{toBatchStatusLabel(item.status)}</Badge></TableCell>
+                    <TableCell><Badge variant="outline">{item.status}</Badge></TableCell>
                     <TableCell>{formatDateTimeBeijing(item.active_from)}</TableCell>
                     <TableCell>{formatDateTimeBeijing(item.expire_at)}</TableCell>
                     <TableCell>{item.effective_daily_limit}</TableCell>
@@ -330,7 +322,7 @@ export function AdminRedeemBatchesTab({ apiCall }) {
                 ))}
                 {items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={14} className="text-muted-foreground">暂无数据，请先创建批次或调整筛选条件。</TableCell>
+                    <TableCell colSpan={14} className="text-muted-foreground">暂无数据</TableCell>
                   </TableRow>
                 ) : null}
               </TableBody>

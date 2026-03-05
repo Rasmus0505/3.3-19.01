@@ -29,16 +29,17 @@ export function AdminApp({ apiCall, onLogout }) {
               <Shield className="size-4" />
             </Button>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold">管理后台</span>
+              <span className="text-sm font-semibold">Admin</span>
+              <Badge variant="outline">shadcn style</Badge>
             </div>
             <Separator orientation="vertical" className="mx-1 hidden h-4 md:block" />
             <div className="hidden items-center gap-2 md:flex">
-              <Badge variant={isUsersTab ? "default" : "outline"}>用户管理</Badge>
-              <Badge variant={isLogsTab ? "default" : "outline"}>余额流水</Badge>
-              <Badge variant={isRatesTab ? "default" : "outline"}>计费配置</Badge>
-              <Badge variant={isRedeemBatchesTab ? "default" : "outline"}>兑换批次</Badge>
+              <Badge variant={isUsersTab ? "default" : "outline"}>用户</Badge>
+              <Badge variant={isLogsTab ? "default" : "outline"}>流水</Badge>
+              <Badge variant={isRatesTab ? "default" : "outline"}>计费</Badge>
+              <Badge variant={isRedeemBatchesTab ? "default" : "outline"}>批次</Badge>
               <Badge variant={isRedeemCodesTab ? "default" : "outline"}>兑换码</Badge>
-              <Badge variant={isRedeemAuditTab ? "default" : "outline"}>兑换审计</Badge>
+              <Badge variant={isRedeemAuditTab ? "default" : "outline"}>审计</Badge>
             </div>
             <div className="ml-auto flex items-center gap-2">
               <Button variant="outline" size="sm" asChild className="hidden md:inline-flex">
@@ -64,13 +65,13 @@ export function AdminApp({ apiCall, onLogout }) {
                     <Button asChild variant={isUsersTab ? "default" : "outline"}>
                       <NavLink to="/admin/users" onClick={() => setMobileNavOpen(false)}>
                         <Users className="size-4" />
-                        用户管理
+                        用户
                       </NavLink>
                     </Button>
                     <Button asChild variant={isLogsTab ? "default" : "outline"}>
                       <NavLink to="/admin/logs" onClick={() => setMobileNavOpen(false)}>
                         <ScrollText className="size-4" />
-                        余额流水
+                        流水
                       </NavLink>
                     </Button>
                     <Button asChild variant={isRatesTab ? "default" : "outline"}>
@@ -120,13 +121,13 @@ export function AdminApp({ apiCall, onLogout }) {
             <Button asChild variant={isUsersTab ? "default" : "outline"}>
               <NavLink to="/admin/users">
                 <Users className="size-4" />
-                用户管理
+                用户
               </NavLink>
             </Button>
             <Button asChild variant={isLogsTab ? "default" : "outline"}>
               <NavLink to="/admin/logs">
                 <ScrollText className="size-4" />
-                余额流水
+                流水
               </NavLink>
             </Button>
             <Button asChild variant={isRatesTab ? "default" : "outline"}>
@@ -170,4 +171,3 @@ export function AdminApp({ apiCall, onLogout }) {
     </div>
   );
 }
-

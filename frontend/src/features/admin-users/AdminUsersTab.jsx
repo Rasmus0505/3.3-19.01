@@ -6,7 +6,7 @@ import { formatDateTimeBeijing } from "../../shared/lib/datetime";
 import { Alert, AlertDescription, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Label, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
-  return data?.message || fallback;
+  return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
 }
 
 async function jsonOrEmpty(resp) {
@@ -64,7 +64,7 @@ export function AdminUsersTab({ apiCall }) {
       setUsers(Array.isArray(data.items) ? data.items : []);
       setTotal(Number(data.total || 0));
     } catch (error) {
-      const message = "网络连接异常，请重试。";
+      const message = `网络错误: ${String(error)}`;
       setStatus(message);
       toast.error(message);
     } finally {
@@ -102,7 +102,7 @@ export function AdminUsersTab({ apiCall }) {
       setReason("");
       await loadUsers();
     } catch (error) {
-      const message = "网络连接异常，请重试。";
+      const message = `网络错误: ${String(error)}`;
       setStatus(message);
       toast.error(message);
     } finally {
@@ -152,7 +152,7 @@ export function AdminUsersTab({ apiCall }) {
       }
       return true;
     } catch (error) {
-      const message = "网络连接异常，请重试。";
+      const message = `网络错误: ${String(error)}`;
       setStatus(message);
       toast.error(message);
       return false;
@@ -276,7 +276,7 @@ export function AdminUsersTab({ apiCall }) {
               {users.length === 0 ? (
                 <TableRow>
                   <TableCell className="text-muted-foreground" colSpan={5}>
-                    暂无数据，请调整筛选条件或等待新用户注册。
+                    暂无数据
                   </TableCell>
                 </TableRow>
               ) : null}

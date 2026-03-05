@@ -15,5 +15,5 @@ export async function parseResponse(resp) {
 }
 
 export function toErrorText(data, fallback) {
-  return data?.message || fallback;
+  return `${data.error_code || "ERROR"}: ${data.message || fallback}`;
 }
