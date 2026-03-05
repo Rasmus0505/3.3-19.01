@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 
 from sqlalchemy import select
@@ -10,8 +9,6 @@ from app.models import User
 from app.security import hash_password
 from app.services.billing_service import get_or_create_wallet_account
 
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_ADMIN_BOOTSTRAP_PASSWORD = "123123"
 
@@ -33,16 +30,12 @@ def _parse_admin_emails() -> list[str]:
 
 def _resolve_bootstrap_password() -> str:
     password = os.getenv("ADMIN_BOOTSTRAP_PASSWORD", DEFAULT_ADMIN_BOOTSTRAP_PASSWORD).strip()
-    if len(password) < 6:
-        logger.warning("[DEBUG] admin bootstrap password too short, fallback to default password")
-        return DEFAULT_ADMIN_BOOTSTRAP_PASSWORD
-    return password
+    return password if len(password) >= 6 else DEFAULT_ADMIN_BOOTSTRAP_PASSWORD
 
 
 def ensure_admin_users(db: Session) -> int:
     admin_emails = _parse_admin_emails()
     if not admin_emails:
-        logger.info("[DEBUG] admin bootstrap skipped: ADMIN_EMAILS is empty")
         return 0
 
     bootstrap_password = _resolve_bootstrap_password()
@@ -57,7 +50,6 @@ def ensure_admin_users(db: Session) -> int:
         db.flush()
         get_or_create_wallet_account(db, user.id, for_update=False)
         created_count += 1
-        logger.info("[DEBUG] admin bootstrap created admin user email=%s", email)
 
     if created_count > 0:
         db.commit()
