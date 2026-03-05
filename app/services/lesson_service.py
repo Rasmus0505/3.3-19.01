@@ -6,11 +6,7 @@ from pathlib import Path
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
-<<<<<<< HEAD
 from app.core.config import DASHSCOPE_API_KEY, UPLOAD_MAX_BYTES
-=======
-from app.core.config import ASR_SPLIT_MAX_WORDS, DASHSCOPE_API_KEY, UPLOAD_MAX_BYTES
->>>>>>> parent of 6829dc6 (ASR_SPLIT_ENABLED)
 from app.models import Lesson, LessonSentence
 from app.repositories.progress import create_progress
 from app.services.asr_dashscope import transcribe_audio_file
@@ -71,20 +67,6 @@ class LessonService:
             sentences = extract_sentences(asr_payload)
             if not sentences:
                 raise MediaError("ASR_SENTENCE_MISSING", "ASR 返回结果缺少句级信息", "未找到 transcripts[].sentences[]")
-<<<<<<< HEAD
-=======
-            source_sentence_count = len(sentences)
-            sentences = split_sentences_by_word_limit(sentences, ASR_SPLIT_MAX_WORDS)
-            logger.info(
-                "[DEBUG] lesson.generate split source_sentences=%s split_sentences=%s split_delta=%s max_words=%s",
-                source_sentence_count,
-                len(sentences),
-                len(sentences) - source_sentence_count,
-                ASR_SPLIT_MAX_WORDS,
-            )
-            if not sentences:
-                raise MediaError("ASR_SENTENCE_MISSING", "ASR 分句后无有效句子", "分句结果为空")
->>>>>>> parent of 6829dc6 (ASR_SPLIT_ENABLED)
 
             zh_list, failed_count = translate_sentences_to_zh([x["text"] for x in sentences], DASHSCOPE_API_KEY)
             failed_ratio = failed_count / max(len(sentences), 1)
