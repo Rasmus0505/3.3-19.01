@@ -23,8 +23,15 @@ class AsrError(RuntimeError):
 
 
 def setup_dashscope(api_key: str) -> None:
-    dashscope.api_key = api_key
+    dashscope.api_key = (api_key or "").strip()
     dashscope.base_http_api_url = "https://dashscope.aliyuncs.com/api/v1"
+
+
+def _ensure_dashscope_api_key() -> str:
+    api_key = str(getattr(dashscope, "api_key", "") or "").strip()
+    if api_key:
+        return api_key
+    raise AsrError("ASR_API_KEY_MISSING", "DASHSCOPE_API_KEY 未配置")
 
 
 def _to_dict(value: Any) -> dict[str, Any]:
@@ -141,6 +148,7 @@ def _wait_task(model: str, task_id: str) -> Any:
 
 
 def transcribe_audio_file(audio_path: str, *, model: str = DEFAULT_MODEL, requests_timeout: int = 120) -> dict[str, Any]:
+    _ensure_dashscope_api_key()
     model_name = (model or "").strip()
     if model_name not in SUPPORTED_MODELS:
         raise AsrError("INVALID_MODEL", "不支持的模型", model_name)
