@@ -88,8 +88,6 @@ frontend/src/
 - `DASHSCOPE_API_KEY` (必填)
 - `DATABASE_URL` (建议 Zeabur Postgres 连接串，推荐包含 `search_path=app,public`)
 - `DB_INIT_MODE` (`auto`/`create_all`/`skip`，默认 `auto`)
-- `AUTO_MIGRATE_ON_START` (`true`/`false`，默认 `true`，容器启动时是否自动执行 Alembic)
-- `ALEMBIC_CONFIG` (可选，默认 `alembic.ini`)
 - `JWT_SECRET` (必填，生产必须替换)
 - `ADMIN_EMAILS` (可选，管理员邮箱白名单，逗号分隔)
 - `APP_TIMEZONE` (可选，默认 `Asia/Shanghai`，用于时间写入与接口输出时区语义)
@@ -99,10 +97,6 @@ frontend/src/
 - `TMP_WORK_DIR` (可选，默认 `/tmp/zeabur3.3`)
 - `MT_BASE_URL` (可选，默认北京: `https://dashscope.aliyuncs.com/compatible-mode/v1`)
 - `MT_MODEL` (可选，默认 `qwen-mt-plus`)
-<<<<<<< HEAD
-=======
-- `ASR_SPLIT_MAX_WORDS` (可选，默认 `20`；课程入库时英文句超过该词数会触发保底切分)
->>>>>>> parent of 6829dc6 (ASR_SPLIT_ENABLED)
 
 ## 时间策略（东八区）
 
@@ -188,31 +182,17 @@ alembic downgrade -1
    - `DB_INIT_MODE=auto`
    - `MT_BASE_URL`
    - `MT_MODEL`
-4. 启动命令使用镜像内默认 `scripts/start.sh`（会先迁移，再启动 Uvicorn）
-5. 生产建议默认保留 `AUTO_MIGRATE_ON_START=true`
+4. 启动命令使用镜像内默认容器命令（直接启动 `uvicorn`，不自动执行 Alembic）
 
-### 3) 自动迁移日志预期
+### 3) 手动迁移（仅在需要时执行）
 
-服务启动日志应包含：
-
-```bash
-[boot] running alembic upgrade head
-[boot] starting uvicorn
-```
-
-有新迁移时会出现 `Running upgrade ...`，没有新迁移时为 no-op。
-
-### 4) 紧急止血开关
-
-若迁移异常导致服务无法启动，可临时设置：
+当数据库结构有变更时，在部署前手动执行：
 
 ```bash
-AUTO_MIGRATE_ON_START=false
+alembic upgrade head
 ```
 
-然后重新部署。问题修复后再改回 `true`。
-
-### 5) 发布后验证
+### 4) 发布后验证
 
 1. `GET /health` 返回 200
 2. 使用有效用户 token 调用 `GET /api/wallet/me` 返回 200

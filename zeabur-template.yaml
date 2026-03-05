@@ -127,8 +127,6 @@ spec:
             default: "1"
           DB_INIT_MODE:
             default: auto
-          AUTO_MIGRATE_ON_START:
-            default: "true"
           DATABASE_URL:
             default: "${POSTGRES_CONNECTION_STRING}?options=-csearch_path%3Dapp%2Cpublic"
           DASHSCOPE_API_KEY:
