@@ -7,41 +7,18 @@ import { requestPersistentStorage, saveLessonMedia } from "../../shared/media/lo
 import {
   Alert,
   AlertDescription,
-  Badge,
   Button,
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
-  Input,
-  Label,
-  Progress,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "../../shared/ui";
 
 const QWEN_MODEL = "qwen3-asr-flash-filetrans";
-
-const LOCAL_PHASE_PROGRESS = {
-  idle: 0,
-  probing: 20,
-  ready: 35,
-  submitting: 50,
-  success: 100,
-  error: 100,
-};
-
-const LOCAL_PHASE_LABEL = {
-  idle: "等待上传",
-  probing: "读取媒体信息",
-  ready: "可提交",
-  submitting: "创建上传任务",
-  success: "生成成功",
-  error: "生成失败",
-};
 
 function calculatePointsBySeconds(seconds, pointsPerMinute) {
   if (!Number.isFinite(seconds) || seconds <= 0 || !Number.isFinite(pointsPerMinute) || pointsPerMinute <= 0) {
@@ -119,13 +96,6 @@ function extractVideoCoverDataUrl(file) {
   });
 }
 
-function stageStatusClass(status) {
-  if (status === "completed") return "text-green-600";
-  if (status === "running") return "text-foreground";
-  if (status === "failed") return "text-destructive";
-  return "text-muted-foreground";
-}
-
 export function UploadPanel({ accessToken, onCreated, balancePoints, billingRates, onWalletChanged }) {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -138,13 +108,11 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   const [taskSnapshot, setTaskSnapshot] = useState(null);
 
   const pollingAbortRef = useRef(false);
+  const fileInputRef = useRef(null);
 
   const selectedRate = getRateByModel(billingRates, QWEN_MODEL);
   const estimatedPoints = selectedRate ? calculatePointsBySeconds(durationSec || 0, selectedRate.points_per_minute) : 0;
   const likelyInsufficient = Number.isFinite(balancePoints) && estimatedPoints > 0 && balancePoints < estimatedPoints;
-
-  const progressValue = taskSnapshot?.overall_percent ?? LOCAL_PHASE_PROGRESS[phase] ?? 0;
-  const phaseLabel = taskSnapshot?.current_text || LOCAL_PHASE_LABEL[phase] || "处理中";
 
   useEffect(() => {
     return () => {
@@ -310,7 +278,6 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
           <UploadCloud className="size-4" />
           导入素材并生成练习
         </CardTitle>
-        <CardDescription>流程：抽音频 → ASR（时间戳）→ 逐句对齐 → 中文翻译。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <Alert>
@@ -348,26 +315,6 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
           </div>
         ) : null}
 
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>处理进度</span>
-            <span>{phaseLabel}</span>
-          </div>
-          <Progress value={progressValue} />
-          <div className="space-y-1 text-xs">
-            <p className="text-muted-foreground">{taskSnapshot?.current_text || "等待上传"}</p>
-            {taskSnapshot?.stages?.length ? (
-              <div className="flex flex-wrap gap-2">
-                {taskSnapshot.stages.map((item) => (
-                  <Badge key={item.key} variant="outline" className={stageStatusClass(item.status)}>
-                    {item.label}
-                  </Badge>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        </div>
-
         <form
           className="space-y-3"
           onSubmit={(event) => {
@@ -376,19 +323,18 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
           }}
         >
           <div className="grid gap-2">
-            <Label htmlFor="asr-model">模型</Label>
-            <Input id="asr-model" value={QWEN_MODEL} disabled readOnly className="h-11" />
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="asr-file">上传素材</Label>
-            <Input
+            <input
               id="asr-file"
+              ref={fileInputRef}
               type="file"
-              className="h-11 cursor-pointer py-2 file:mr-2 file:rounded-md file:border file:border-border file:bg-muted file:px-2.5 file:py-1 file:text-xs"
+              className="hidden"
               onChange={(e) => onSelectFile(e.target.files?.[0] ?? null)}
               disabled={loading}
             />
+            <Button type="button" variant="outline" className="h-11" onClick={() => fileInputRef.current?.click()} disabled={loading}>
+              选择文件
+            </Button>
+            {file ? <p className="text-xs text-muted-foreground">{file.name}</p> : null}
           </div>
 
           <Button type="submit" disabled={loading} className="w-full">
@@ -403,9 +349,11 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
           </Button>
         </form>
       </CardContent>
-      <CardFooter>
-        {status ? <p className="text-sm text-muted-foreground">{status}</p> : <p className="text-sm text-muted-foreground">等待上传</p>}
-      </CardFooter>
+      {status ? (
+        <CardFooter>
+          <p className="text-sm text-muted-foreground">{status}</p>
+        </CardFooter>
+      ) : null}
     </Card>
   );
 }
