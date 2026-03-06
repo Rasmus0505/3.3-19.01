@@ -1,5 +1,5 @@
-﻿import { Compass, Pencil, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+﻿import { Compass, MoreVertical, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   Alert,
@@ -25,16 +25,31 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
   Skeleton,
 } from "../../shared/ui";
 
-export function LessonList({ lessons, currentLessonId, onSelect, onRename, onDelete, loading = false }) {
+export function LessonList({
+  lessons,
+  currentLessonId,
+  onSelect,
+  onRename,
+  onDelete,
+  onRestoreMedia,
+  loading = false,
+}) {
   const [renamingLesson, setRenamingLesson] = useState(null);
   const [renameTitle, setRenameTitle] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
   const [deletingLesson, setDeletingLesson] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [menuLessonId, setMenuLessonId] = useState(null);
+  const [restoringLessonId, setRestoringLessonId] = useState(null);
   const [status, setStatus] = useState("");
+  const restoreInputRef = useRef(null);
+  const restoreTargetRef = useRef(null);
 
   useEffect(() => {
     if (renamingLesson && !lessons.some((item) => item.id === renamingLesson.id)) {
@@ -44,7 +59,14 @@ export function LessonList({ lessons, currentLessonId, onSelect, onRename, onDel
     if (deletingLesson && !lessons.some((item) => item.id === deletingLesson.id)) {
       setDeletingLesson(null);
     }
-  }, [deletingLesson, lessons, renamingLesson]);
+    if (menuLessonId && !lessons.some((item) => item.id === menuLessonId)) {
+      setMenuLessonId(null);
+    }
+    if (restoringLessonId && !lessons.some((item) => item.id === restoringLessonId)) {
+      setRestoringLessonId(null);
+      restoreTargetRef.current = null;
+    }
+  }, [deletingLesson, lessons, menuLessonId, renamingLesson, restoringLessonId]);
 
   function openRenameDialog(lesson) {
     setRenamingLesson(lesson);
@@ -91,6 +113,31 @@ export function LessonList({ lessons, currentLessonId, onSelect, onRename, onDel
     }
   }
 
+  function openRestorePicker(lesson) {
+    if (!onRestoreMedia || !lesson) return;
+    restoreTargetRef.current = lesson;
+    setMenuLessonId(null);
+    restoreInputRef.current?.click();
+  }
+
+  async function submitRestore(file) {
+    const lesson = restoreTargetRef.current;
+    if (!lesson || !file || !onRestoreMedia) return;
+    setRestoringLessonId(lesson.id);
+    setStatus("");
+    try {
+      const result = await onRestoreMedia(lesson, file);
+      if (result?.ok) {
+        setStatus(result?.message || "恢复视频成功");
+      } else {
+        setStatus(result?.message || "恢复视频失败");
+      }
+    } finally {
+      setRestoringLessonId(null);
+      restoreTargetRef.current = null;
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -98,7 +145,7 @@ export function LessonList({ lessons, currentLessonId, onSelect, onRename, onDel
           <Compass className="size-4" />
           Explorer
         </CardTitle>
-        <CardDescription>选择课程进入沉浸学习，可直接重命名或删除历史记录。</CardDescription>
+        <CardDescription>选择课程进入沉浸学习，可通过右上角菜单管理历史记录。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
         {loading ? (
@@ -120,33 +167,69 @@ export function LessonList({ lessons, currentLessonId, onSelect, onRename, onDel
                     : "border-input bg-background hover:bg-muted/30"
                 }`}
               >
-                <button type="button" className="w-full text-left" onClick={() => onSelect(lesson.id)}>
-                  <div className="font-medium">{lesson.title}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {lesson.status} · {lesson.asr_model} · {lesson.sentences?.length || 0} 句
-                  </div>
-                </button>
-                <div className="mt-2 flex items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => openRenameDialog(lesson)}
-                    disabled={renameBusy || deleteBusy}
-                  >
-                    <Pencil className="size-4" />
-                    重命名
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => setDeletingLesson(lesson)}
-                    disabled={renameBusy || deleteBusy}
-                  >
-                    <Trash2 className="size-4" />
-                    删除
-                  </Button>
+                <div className="mb-1 flex items-start justify-between gap-2">
+                  <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onSelect(lesson.id)}>
+                    <div className="truncate font-medium">{lesson.title}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {lesson.status} · {lesson.asr_model} · {lesson.sentences?.length || 0} 句
+                    </div>
+                  </button>
+                  <Popover open={menuLessonId === lesson.id} onOpenChange={(open) => setMenuLessonId(open ? lesson.id : null)}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="open-lesson-menu"
+                        disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                      >
+                        <MoreVertical className="size-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-40 p-1">
+                      <div className="flex flex-col gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="justify-start"
+                          onClick={() => {
+                            openRenameDialog(lesson);
+                            setMenuLessonId(null);
+                          }}
+                          disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                        >
+                          <Pencil className="size-4" />
+                          重命名
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="justify-start"
+                          onClick={() => openRestorePicker(lesson)}
+                          disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                        >
+                          <RotateCcw className="size-4" />
+                          恢复视频
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="justify-start text-destructive hover:text-destructive"
+                          onClick={() => {
+                            setDeletingLesson(lesson);
+                            setMenuLessonId(null);
+                          }}
+                          disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                        >
+                          <Trash2 className="size-4" />
+                          删除
+                        </Button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
             ))
@@ -226,6 +309,20 @@ export function LessonList({ lessons, currentLessonId, onSelect, onRename, onDel
             <AlertDescription>{status}</AlertDescription>
           </Alert>
         ) : null}
+
+        <input
+          ref={restoreInputRef}
+          type="file"
+          accept="video/*,audio/*"
+          className="hidden"
+          onChange={(event) => {
+            const nextFile = event.target.files?.[0] ?? null;
+            if (nextFile) {
+              void submitRestore(nextFile);
+            }
+            event.target.value = "";
+          }}
+        />
       </CardContent>
     </Card>
   );

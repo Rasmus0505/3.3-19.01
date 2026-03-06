@@ -1,4 +1,4 @@
-﻿import { ArrowLeft, ArrowRight, CheckCircle2, Eye, Link2, Loader2, RotateCcw } from "lucide-react";
+﻿import { ArrowLeft, ArrowRight, Eye, Loader2, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getStorageEstimate, getLessonMedia, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
@@ -205,6 +205,7 @@ export function ImmersiveLessonPage({
   immersiveActive = false,
   onExitImmersive,
   onStartImmersive,
+  externalMediaReloadToken = 0,
 }) {
   const [phase, setPhase] = useState("idle");
   const [mediaMode, setMediaMode] = useState("video");
@@ -343,7 +344,7 @@ export function ImmersiveLessonPage({
     async ({ manual = false } = {}) => {
       if (!currentSentence) return;
       if (needsBinding) {
-        setMediaError("当前课程缺少可播放媒体，请先绑定本地文件。");
+        setMediaError("当前课程缺少可播放媒体，请先在历史记录中恢复视频。");
         setSentencePlaybackRequired(false);
         if (!expectedTokens.length) {
           setSentenceTypingDone(true);
@@ -365,7 +366,7 @@ export function ImmersiveLessonPage({
         if (!expectedTokens.length) {
           setSentenceTypingDone(true);
         }
-        setMediaError("本句服务器音频不可用，请先绑定本地文件。");
+        setMediaError("本句服务器音频不可用，请先在历史记录中恢复视频。");
         setPhase("typing");
         return;
       }
@@ -437,7 +438,6 @@ export function ImmersiveLessonPage({
           const localMediaType = String(localMedia.media_type || inferMediaTypeFromFileName(localMedia.file_name || lesson.source_filename || ""));
           setMediaMode(resolveMediaModeByTypeAndName(localMediaType, localMedia.file_name || lesson.source_filename || ""));
           setMediaBlobUrl(objectUrl);
-          setBindingHint("已加载浏览器本地媒体");
           setMediaLoading(false);
           return;
         }
@@ -450,7 +450,7 @@ export function ImmersiveLessonPage({
         setMediaBlobUrl("");
         setNeedsBinding(true);
         setBindingHint("");
-        setMediaError("当前课程媒体仅保存在浏览器本地，请先绑定本地文件。");
+        setMediaError("当前课程媒体仅保存在浏览器本地，请先在历史记录中恢复视频。");
         setMediaLoading(false);
         return;
       }
@@ -464,10 +464,10 @@ export function ImmersiveLessonPage({
           setMediaBlobUrl("");
           if (isLocalMediaRequiredPayload(resp, payload) || Number(resp.status) === 404) {
             setNeedsBinding(true);
-            setMediaError("服务器媒体不可用，请绑定本地文件继续学习。");
+            setMediaError("服务器媒体不可用，请先在历史记录中恢复视频。");
           } else {
             setNeedsBinding(true);
-            setMediaError(`${formatMediaLoadError(resp, payload)} 请绑定本地文件继续。`);
+            setMediaError(`${formatMediaLoadError(resp, payload)} 请先在历史记录中恢复视频。`);
           }
           return;
         }
@@ -494,7 +494,7 @@ export function ImmersiveLessonPage({
         const detail = String(error || "").trim();
         setMediaBlobUrl("");
         setNeedsBinding(true);
-        setMediaError(detail ? `媒体加载异常（${detail}），请绑定本地文件。` : "媒体加载异常，请绑定本地文件。");
+        setMediaError(detail ? `媒体加载异常（${detail}），请先在历史记录中恢复视频。` : "媒体加载异常，请先在历史记录中恢复视频。");
       } finally {
         if (!canceled) {
           setMediaLoading(false);
@@ -510,7 +510,7 @@ export function ImmersiveLessonPage({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [accessToken, apiClient, lesson?.id, lesson?.media_storage, lesson?.source_filename, mediaReloadKey]);
+  }, [accessToken, apiClient, externalMediaReloadToken, lesson?.id, lesson?.media_storage, lesson?.source_filename, mediaReloadKey]);
 
   useEffect(() => {
     if (!immersiveActive) return;
@@ -584,7 +584,7 @@ export function ImmersiveLessonPage({
     }
     setMediaBlobUrl("");
     setNeedsBinding(true);
-    setMediaError("当前媒体格式无法播放，请绑定本地文件继续。");
+    setMediaError("当前媒体格式无法播放，请先在历史记录中恢复视频。");
     setPhase("typing");
   }, [immersiveActive, lesson?.media_storage, lesson?.sentences]);
 
@@ -907,15 +907,6 @@ export function ImmersiveLessonPage({
     );
   }
 
-  const phaseLabelMap = {
-    idle: "准备中",
-    auto_play_pending: "即将播放",
-    playing: "播放中",
-    typing: "输入中",
-    transition: "切换下一句",
-    lesson_completed: "已完成",
-  };
-
   const showMediaLoadingOverlay = mediaLoading && !needsBinding && !mediaReady;
   const canGoPrevious = currentSentenceIndex > 0;
   const canGoNext = currentSentenceIndex < Math.max(0, sentenceCount - 1);
@@ -946,9 +937,6 @@ export function ImmersiveLessonPage({
                 第 {Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 句
               </CardDescription>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary">{phaseLabelMap[phase] || "学习中"}</Badge>
           </div>
         </div>
       </CardHeader>
@@ -1018,14 +1006,6 @@ export function ImmersiveLessonPage({
         {immersiveActive ? (
           <>
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant={needsBinding ? "secondary" : "outline"}
-                onClick={() => bindingInputRef.current?.click()}
-                disabled={bindingBusy}
-              >
-                {bindingBusy ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />}
-                绑定本地文件
-              </Button>
               <TooltipProvider delayDuration={120}>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1067,23 +1047,8 @@ export function ImmersiveLessonPage({
                 已完成 {completedIndexes.length} / {sentenceCount}
               </Badge>
               {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
-              {bindingHint ? (
-                <Badge variant="secondary">
-                  <CheckCircle2 className="size-4" />
-                  {bindingHint}
-                </Badge>
-              ) : null}
-
-              {needsBinding ? (
-                <div className="w-full px-6">
-                  <div className="immersive-media-audio-placeholder">
-                    <p>待绑定本地媒体</p>
-                    <p className="immersive-hint">课程可见，但播放受限。请点击“绑定本地文件”。</p>
-                  </div>
-                </div>
-              ) : null}
               {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
-              {bindingError ? <p className="text-xs text-destructive">{bindingError}</p> : null}
+
               {sentenceTypingDone && !sentencePlaybackDone && sentencePlaybackRequired ? (
                 <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p>
               ) : null}
@@ -1091,7 +1056,7 @@ export function ImmersiveLessonPage({
 
             <div className="immersive-typing">
               <div className="immersive-typing-toolbar">
-                <p className="immersive-hint">输入达到单词长度后自动判定；超过 2 个错误会清空重打。</p>
+
                 <div className="immersive-display-toggle">
                   <span className="text-xs text-muted-foreground">下划线模式</span>
                   <Switch
@@ -1175,10 +1140,3 @@ export function ImmersiveLessonPage({
     </Card>
   );
 }
-
-
-
-
-
-
-
