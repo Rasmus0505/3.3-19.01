@@ -114,6 +114,51 @@ def test_health_ready_returns_503_when_database_unavailable(monkeypatch):
     assert payload["status"]["db_error"] == "db offline"
 
 
+def test_probe_database_ready_reports_missing_critical_columns(monkeypatch):
+    from app import main as app_main
+
+    class DummyConnection:
+        def execute(self, _sql):
+            return None
+
+    class DummyEngineConnection:
+        def __enter__(self):
+            return DummyConnection()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class DummyEngine:
+        def connect(self):
+            return DummyEngineConnection()
+
+    class DummyInspector:
+        def has_table(self, table_name, schema=None):
+            return table_name == "billing_model_rates"
+
+        def get_columns(self, table_name, schema=None):
+            if table_name != "billing_model_rates":
+                return []
+            return [
+                {"name": "model_name"},
+                {"name": "points_per_minute"},
+                {"name": "is_active"},
+                {"name": "updated_at"},
+                {"name": "updated_by_user_id"},
+            ]
+
+    monkeypatch.setattr(app_main, "init_db", lambda: None)
+    monkeypatch.setattr(app_main, "schema_name_for_url", lambda _url: "app")
+    monkeypatch.setattr(app_main, "engine", DummyEngine())
+    monkeypatch.setattr(app_main, "inspect", lambda _conn: DummyInspector())
+    monkeypatch.setattr(app_main, "BUSINESS_TABLES", ("billing_model_rates",))
+
+    ready, error = app_main._probe_database_ready()
+    assert ready is False
+    assert error.startswith("missing critical columns:")
+    assert "billing_model_rates.parallel_enabled" in error
+
+
 def test_transcribe_audio_requires_dashscope_api_key(monkeypatch, tmp_path):
     from app.infra import asr_dashscope
 
