@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:admin": "vite build -c vite.admin.config.js",
     "preview": "vite preview",
     "preview:local": "npm run build && vite preview --host 0.0.0.0 --port 4173"
   },
