@@ -253,6 +253,11 @@ export function ImmersiveLessonPage({
   }, [typingEnabled]);
 
   const currentSentence = lesson?.sentences?.[currentSentenceIndex] || null;
+  const previousSentence = currentSentenceIndex > 0 ? lesson?.sentences?.[currentSentenceIndex - 1] || null : null;
+  const previousSentenceEn = previousSentence?.text_en || "(当前是第一句，无上一句)";
+  const previousSentenceZh = previousSentence
+    ? previousSentence.text_zh || "(翻译失败，暂缺)"
+    : "(暂无上一句中文翻译)";
   const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens : []), [currentSentence?.tokens]);
   const sentenceCount = lesson?.sentences?.length || 0;
   const expectedSourceDurationSec = Math.max(0, Number(lesson?.source_duration_ms || 0) / 1000);
@@ -1095,9 +1100,10 @@ export function ImmersiveLessonPage({
                 })}
               </div>
 
-              <p className="text-sm text-muted-foreground">
-                当前句中文：{currentSentence.text_zh || "(翻译失败，暂缺)"}
-              </p>
+              <div className="space-y-1 text-sm text-muted-foreground">
+                <p>上一句：{previousSentenceEn}</p>
+                <p className="pl-[4.5em]">{previousSentenceZh}</p>
+              </div>
               {phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
             </div>
           </>
