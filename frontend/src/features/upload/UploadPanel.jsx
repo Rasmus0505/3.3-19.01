@@ -13,6 +13,12 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -106,6 +112,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   const [coverDataUrl, setCoverDataUrl] = useState("");
   const [isVideoSource, setIsVideoSource] = useState(false);
   const [taskSnapshot, setTaskSnapshot] = useState(null);
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
 
   const pollingAbortRef = useRef(false);
   const fileInputRef = useRef(null);
@@ -271,6 +278,17 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskSnapshot?.lesson?.id]);
 
+  function openLinkDialog() {
+    console.debug("[DEBUG] 打开链接生成视频提示弹窗");
+    setLinkDialogOpen(true);
+  }
+
+  function jumpToRecommendedTool() {
+    console.debug("[DEBUG] 跳转链接转视频工具网站", "https://snapany.com/zh");
+    window.open("https://snapany.com/zh", "_blank", "noopener,noreferrer");
+    setLinkDialogOpen(false);
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -334,6 +352,9 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
             <Button type="button" variant="outline" className="h-11" onClick={() => fileInputRef.current?.click()} disabled={loading}>
               选择文件
             </Button>
+            <Button type="button" variant="secondary" className="h-11" onClick={openLinkDialog} disabled={loading}>
+              链接生成视频
+            </Button>
             {file ? <p className="text-xs text-muted-foreground">{file.name}</p> : null}
           </div>
 
@@ -348,6 +369,29 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
             )}
           </Button>
         </form>
+
+        <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>链接生成视频</DialogTitle>
+              <DialogDescription asChild>
+                <div className="space-y-1">
+                  <p>上传视频才可以获取素材</p>
+                  <p>您可自行寻找可以链接转视频的合法工具</p>
+                  <p>或使用推荐的工具网站</p>
+                </div>
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setLinkDialogOpen(false)}>
+                取消
+              </Button>
+              <Button type="button" onClick={jumpToRecommendedTool}>
+                跳转
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
       {status ? (
         <CardFooter>
