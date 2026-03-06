@@ -171,64 +171,62 @@ export function LessonList({
                       {lesson.status} · {lesson.asr_model} · {lesson.sentences?.length || 0} 句
                     </div>
                   </button>
-                  <div className="relative">
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label="open-lesson-menu"
-                      onClick={() => setMenuLessonId((prev) => (prev === lesson.id ? null : lesson.id))}
-                      disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
-                    >
-                      <MoreVertical className="size-4" />
-                    </Button>
-                    {menuLessonId === lesson.id ? (
-                      <div className="absolute right-0 top-10 z-50 w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
-                        <div className="flex flex-col gap-1">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="justify-start"
-                            onClick={() => {
-                              openRenameDialog(lesson);
-                              setMenuLessonId(null);
-                            }}
-                            disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
-                          >
-                            <Pencil className="size-4" />
-                            重命名
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="justify-start"
-                            onClick={() => openRestorePicker(lesson)}
-                            disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
-                          >
-                            <RotateCcw className="size-4" />
-                            恢复视频
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="justify-start text-destructive hover:text-destructive"
-                            onClick={() => {
-                              setDeletingLesson(lesson);
-                              setMenuLessonId(null);
-                            }}
-                            disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
-                          >
-                            <Trash2 className="size-4" />
-                            删除
-                          </Button>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label="open-lesson-menu"
+                    onClick={() => setMenuLessonId((prev) => (prev === lesson.id ? null : lesson.id))}
+                    disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                  >
+                    <MoreVertical className="size-4" />
+                  </Button>
                 </div>
+                {menuLessonId === lesson.id ? (
+                  <div className="mt-2 rounded-md border bg-muted/30 p-1">
+                    <div className="flex flex-col gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="justify-start"
+                        onClick={() => {
+                          openRenameDialog(lesson);
+                          setMenuLessonId(null);
+                        }}
+                        disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                      >
+                        <Pencil className="size-4" />
+                        重命名
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="justify-start"
+                        onClick={() => openRestorePicker(lesson)}
+                        disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                      >
+                        <RotateCcw className="size-4" />
+                        恢复视频
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="justify-start text-destructive hover:text-destructive"
+                        onClick={() => {
+                          setDeletingLesson(lesson);
+                          setMenuLessonId(null);
+                        }}
+                        disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                      >
+                        <Trash2 className="size-4" />
+                        删除
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ))
           : null}
