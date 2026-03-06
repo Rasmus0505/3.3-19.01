@@ -12,7 +12,7 @@ BASE_TMP_DIR = Path(os.getenv("TMP_WORK_DIR", "/tmp/zeabur3.3"))
 BASE_DATA_DIR = BASE_TMP_DIR / "data"
 
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "").strip()
-LESSON_DEFAULT_ASR_MODEL = os.getenv("LESSON_DEFAULT_ASR_MODEL", "paraformer-v2").strip()
+LESSON_DEFAULT_ASR_MODEL = os.getenv("LESSON_DEFAULT_ASR_MODEL", "qwen3-asr-flash-filetrans").strip()
 APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Asia/Shanghai").strip() or "Asia/Shanghai"
 
 

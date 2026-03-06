@@ -11,7 +11,8 @@ _PUNCT_EDGE_RE = re.compile(r"^[\s\.,!?;:\"'`~\-\(\)\[\]\{\}]+|[\s\.,!?;:\"'`~\-
 
 
 def normalize_token(token: str) -> str:
-    return _PUNCT_EDGE_RE.sub("", (token or "").strip().lower())
+    normalized = (token or "").strip().lower().replace("’", "'")
+    return _PUNCT_EDGE_RE.sub("", normalized)
 
 
 def tokenize_sentence(sentence: str) -> list[str]:

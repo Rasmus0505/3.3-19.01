@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from typing import Callable
 
 from openai import OpenAI
 
@@ -37,13 +38,20 @@ def translate_to_zh(text: str, api_key: str) -> str:
     return content
 
 
-def translate_sentences_to_zh(sentences: list[str], api_key: str) -> tuple[list[str], int]:
+def translate_sentences_to_zh(
+    sentences: list[str],
+    api_key: str,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> tuple[list[str], int]:
     output: list[str] = []
     failed = 0
-    for item in sentences:
+    total = len(sentences)
+    for index, item in enumerate(sentences, start=1):
         try:
             output.append(translate_to_zh(item, api_key))
         except Exception:
             output.append("")
             failed += 1
+        if progress_callback:
+            progress_callback(index, total)
     return output, failed

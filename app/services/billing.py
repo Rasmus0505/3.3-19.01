@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from math import ceil
 from typing import Iterable
 
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_DEFAULT_VALID_DAYS
@@ -49,9 +49,8 @@ REDEEM_FAIL_NOT_ACTIVE = "not_active"
 _REDEEM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
-DEFAULT_MODEL_RATES: tuple[tuple[str, int], ...] = (
-    ("paraformer-v2", 100),
-    ("qwen3-asr-flash-filetrans", 130),
+DEFAULT_MODEL_RATES: tuple[tuple[str, int, bool, int, int, int], ...] = (
+    ("qwen3-asr-flash-filetrans", 130, True, 600, 300, 4),
 )
 
 
@@ -67,6 +66,35 @@ class BillingError(Exception):
 
 def _now() -> datetime:
     return now_shanghai_naive()
+
+
+def _ensure_legacy_sqlite_billing_columns(db: Session) -> None:
+    bind = db.get_bind()
+    if bind is None or bind.dialect.name != "sqlite":
+        return
+
+    inspector = inspect(bind)
+    table_name = BillingModelRate.__tablename__
+    if not inspector.has_table(table_name):
+        return
+
+    existing_columns = {str(item.get("name") or "").strip() for item in inspector.get_columns(table_name)}
+    alter_sql: list[str] = []
+    if "parallel_enabled" not in existing_columns:
+        alter_sql.append("ALTER TABLE billing_model_rates ADD COLUMN parallel_enabled BOOLEAN NOT NULL DEFAULT 0")
+    if "parallel_threshold_seconds" not in existing_columns:
+        alter_sql.append("ALTER TABLE billing_model_rates ADD COLUMN parallel_threshold_seconds INTEGER NOT NULL DEFAULT 600")
+    if "segment_seconds" not in existing_columns:
+        alter_sql.append("ALTER TABLE billing_model_rates ADD COLUMN segment_seconds INTEGER NOT NULL DEFAULT 300")
+    if "max_concurrency" not in existing_columns:
+        alter_sql.append("ALTER TABLE billing_model_rates ADD COLUMN max_concurrency INTEGER NOT NULL DEFAULT 2")
+
+    if not alter_sql:
+        return
+
+    for sql in alter_sql:
+        db.execute(text(sql))
+    db.commit()
 
 
 def normalize_redeem_code_input(code: str) -> str:
@@ -116,13 +144,49 @@ def append_admin_operation_log(
     return row
 
 
-def ensure_default_billing_rates(db: Session, defaults: Iterable[tuple[str, int]] = DEFAULT_MODEL_RATES) -> None:
+def ensure_default_billing_rates(
+    db: Session,
+    defaults: Iterable[tuple[str, int, bool, int, int, int]] = DEFAULT_MODEL_RATES,
+) -> None:
+    _ensure_legacy_sqlite_billing_columns(db)
+
     changed = False
-    for model_name, points_per_minute in defaults:
+    legacy_para = db.get(BillingModelRate, "paraformer-v2")
+    if legacy_para is not None:
+        db.delete(legacy_para)
+        changed = True
+
+    for model_name, points_per_minute, parallel_enabled, parallel_threshold_seconds, segment_seconds, max_concurrency in defaults:
         exists = db.get(BillingModelRate, model_name)
         if exists:
+            row_changed = False
+            if exists.parallel_enabled is None:
+                exists.parallel_enabled = bool(parallel_enabled)
+                row_changed = True
+            if int(exists.parallel_threshold_seconds or 0) <= 0:
+                exists.parallel_threshold_seconds = int(parallel_threshold_seconds)
+                row_changed = True
+            if int(exists.segment_seconds or 0) <= 0:
+                exists.segment_seconds = int(segment_seconds)
+                row_changed = True
+            if int(exists.max_concurrency or 0) <= 0:
+                exists.max_concurrency = int(max_concurrency)
+                row_changed = True
+            if row_changed:
+                db.add(exists)
+                changed = True
             continue
-        db.add(BillingModelRate(model_name=model_name, points_per_minute=points_per_minute, is_active=True))
+        db.add(
+            BillingModelRate(
+                model_name=model_name,
+                points_per_minute=points_per_minute,
+                is_active=True,
+                parallel_enabled=parallel_enabled,
+                parallel_threshold_seconds=parallel_threshold_seconds,
+                segment_seconds=segment_seconds,
+                max_concurrency=max_concurrency,
+            )
+        )
         changed = True
     if changed:
         db.commit()

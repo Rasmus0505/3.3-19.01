@@ -167,6 +167,11 @@
   border-bottom-color: oklch(0.67 0.16 145);
 }
 
+.immersive-letter-cell--fixed {
+  color: var(--color-foreground);
+  border-bottom-color: transparent;
+}
+
 .immersive-letter-cell--wrong {
   color: oklch(0.49 0.19 25);
   border-bottom-color: oklch(0.64 0.22 25);

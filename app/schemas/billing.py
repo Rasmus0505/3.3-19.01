@@ -26,6 +26,10 @@ class BillingRateItem(BaseModel):
     model_name: str
     points_per_minute: int
     is_active: bool
+    parallel_enabled: bool
+    parallel_threshold_seconds: int
+    segment_seconds: int
+    max_concurrency: int
     updated_at: datetime
 
 

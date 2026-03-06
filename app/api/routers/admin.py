@@ -313,6 +313,10 @@ def admin_update_billing_rate(
         return error_response(404, "BILLING_RATE_NOT_FOUND", "计费模型不存在", model_name)
     rate.points_per_minute = payload.points_per_minute
     rate.is_active = payload.is_active
+    rate.parallel_enabled = payload.parallel_enabled
+    rate.parallel_threshold_seconds = payload.parallel_threshold_seconds
+    rate.segment_seconds = payload.segment_seconds
+    rate.max_concurrency = payload.max_concurrency
     rate.updated_by_user_id = current_admin.id
     db.add(rate)
     db.commit()

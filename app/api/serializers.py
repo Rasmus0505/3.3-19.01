@@ -59,5 +59,9 @@ def to_rate_item(rate: BillingModelRate) -> BillingRateItem:
         model_name=rate.model_name,
         points_per_minute=rate.points_per_minute,
         is_active=rate.is_active,
+        parallel_enabled=bool(rate.parallel_enabled),
+        parallel_threshold_seconds=int(rate.parallel_threshold_seconds),
+        segment_seconds=int(rate.segment_seconds),
+        max_concurrency=int(rate.max_concurrency),
         updated_at=to_shanghai_aware(rate.updated_at),
     )

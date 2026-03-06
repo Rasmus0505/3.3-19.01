@@ -72,6 +72,10 @@ class AdminWalletLogsResponse(BaseModel):
 class AdminBillingRateUpdateRequest(BaseModel):
     points_per_minute: int = Field(gt=0)
     is_active: bool
+    parallel_enabled: bool
+    parallel_threshold_seconds: int = Field(gt=0, le=24 * 60 * 60)
+    segment_seconds: int = Field(gt=0, le=2 * 60 * 60)
+    max_concurrency: int = Field(gt=0, le=64)
 
 
 class AdminBillingRatesResponse(BaseModel):

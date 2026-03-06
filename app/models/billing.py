@@ -60,11 +60,20 @@ class WalletLedger(Base):
 
 class BillingModelRate(Base):
     __tablename__ = "billing_model_rates"
-    __table_args__ = table_args(CheckConstraint("points_per_minute > 0", name="ck_billing_rate_positive"))
+    __table_args__ = table_args(
+        CheckConstraint("points_per_minute > 0", name="ck_billing_rate_positive"),
+        CheckConstraint("parallel_threshold_seconds > 0", name="ck_billing_parallel_threshold_positive"),
+        CheckConstraint("segment_seconds > 0", name="ck_billing_segment_seconds_positive"),
+        CheckConstraint("max_concurrency > 0", name="ck_billing_max_concurrency_positive"),
+    )
 
     model_name: Mapped[str] = mapped_column(String(100), primary_key=True)
     points_per_minute: Mapped[int] = mapped_column(Integer, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    parallel_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    parallel_threshold_seconds: Mapped[int] = mapped_column(Integer, default=900, nullable=False)
+    segment_seconds: Mapped[int] = mapped_column(Integer, default=300, nullable=False)
+    max_concurrency: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
     updated_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey(schema_fk("users.id"), ondelete="SET NULL"),

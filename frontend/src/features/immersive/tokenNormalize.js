@@ -7,6 +7,7 @@ export function normalizeToken(token) {
   return String(token || "")
     .trim()
     .toLowerCase()
+    .replaceAll("’", "'")
     .replace(EDGE_PUNCT_REGEX, "");
 }
 

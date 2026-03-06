@@ -34,6 +34,10 @@ from app.schemas.lesson import (
     LessonItemResponse,
     LessonRenameRequest,
     LessonSentenceResponse,
+    LessonTaskCountersResponse,
+    LessonTaskCreateResponse,
+    LessonTaskResponse,
+    LessonTaskStageResponse,
 )
 from app.schemas.practice import ProgressResponse, ProgressUpdateRequest, TokenCheckRequest, TokenCheckResponse, TokenResult
 
@@ -51,6 +55,10 @@ __all__ = [
     "LessonCreateResponse",
     "LessonRenameRequest",
     "LessonDeleteResponse",
+    "LessonTaskStageResponse",
+    "LessonTaskCountersResponse",
+    "LessonTaskResponse",
+    "LessonTaskCreateResponse",
     "TokenCheckRequest",
     "TokenResult",
     "TokenCheckResponse",
