@@ -91,7 +91,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - 选择当前仓库
 - 构建方式使用仓库根目录 `Dockerfile`
 - 启动命令使用镜像内默认入口 `scripts/start.sh`
-- 仓库内保留的 GHCR workflow 现在仅作手动回退，不再是默认发布链路
+- 当前仓库不再保留 GitHub Actions workflow，部署链路为 Zeabur 直接读取 GitHub 仓库并按 Dockerfile 构建
 
 ### 2）在 Zeabur 新建 Postgres 服务
 
