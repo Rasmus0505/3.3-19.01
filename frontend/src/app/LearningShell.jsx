@@ -100,7 +100,7 @@ export function LearningShell() {
 
   async function loadLessonDetail(lessonId, options = {}) {
     if (!lessonId || !accessToken) return;
-    const { autoEnterImmersive = false } = options;
+    const { autoEnterImmersive = false, keepCurrentImmersiveState = false } = options;
     try {
       const [detailResp, progressResp] = await Promise.all([
         api(`/api/lessons/${lessonId}`, {}, accessToken),
@@ -127,7 +127,12 @@ export function LearningShell() {
             },
       };
       setCurrentLesson(merged);
-      setImmersiveActive(Boolean(autoEnterImmersive));
+      console.debug("[DEBUG] loadLessonDetail immersive policy", {
+        lessonId,
+        autoEnterImmersive,
+        keepCurrentImmersiveState,
+      });
+      setImmersiveActive((prev) => (keepCurrentImmersiveState ? prev : Boolean(autoEnterImmersive)));
     } catch (error) {
       setGlobalStatus(`网络错误: ${String(error)}`);
     }
@@ -235,7 +240,7 @@ export function LearningShell() {
 
   async function refreshCurrentLesson() {
     if (!currentLesson?.id) return;
-    await loadLessonDetail(currentLesson.id, { autoEnterImmersive: false });
+    await loadLessonDetail(currentLesson.id, { keepCurrentImmersiveState: true });
   }
 
   async function handleCommandSelect(lessonId) {
