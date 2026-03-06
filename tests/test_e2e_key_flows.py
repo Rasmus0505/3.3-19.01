@@ -5,10 +5,9 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db import Base, get_db
+from app.db import Base, create_database_engine, get_db
 from app.main import create_app
 from app.models import Lesson, LessonProgress, LessonSentence, User
 from app.services.billing_service import ensure_default_billing_rates
@@ -17,7 +16,7 @@ from app.services.billing_service import ensure_default_billing_rates
 @pytest.fixture()
 def e2e_client(tmp_path, monkeypatch):
     db_file = tmp_path / "e2e_app.db"
-    engine = create_engine(f"sqlite:///{db_file}", connect_args={"check_same_thread": False}, future=True)
+    engine = create_database_engine(f"sqlite:///{db_file}")
     testing_session = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=Session, future=True)
 
     Base.metadata.create_all(bind=engine)

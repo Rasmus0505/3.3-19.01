@@ -6,10 +6,9 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db import Base, get_db
+from app.db import Base, create_database_engine, get_db
 from app.main import create_app
 from app.models import Lesson, LessonProgress, LessonSentence, MediaAsset, User, WalletLedger
 from app.services.billing_service import ensure_default_billing_rates
@@ -18,7 +17,7 @@ from app.services.billing_service import ensure_default_billing_rates
 @pytest.fixture()
 def test_client(tmp_path, monkeypatch):
     db_file = tmp_path / "test_app.db"
-    engine = create_engine(f"sqlite:///{db_file}", connect_args={"check_same_thread": False}, future=True)
+    engine = create_database_engine(f"sqlite:///{db_file}")
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=Session, future=True)
 
     Base.metadata.create_all(bind=engine)
@@ -61,29 +60,56 @@ def test_health_endpoint(test_client):
     assert data["service"]
 
 
+def test_health_ready_endpoint(test_client):
+    client, _, _ = test_client
+    resp = client.get("/health/ready")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is True
+    assert data["status"]["db_ready"] is True
+
+
 def test_startup_without_dashscope_key_keeps_health_alive(monkeypatch, tmp_path):
     from app import main as app_main
-
-    class _DummySession:
-        def close(self):
-            return None
 
     tmp_base = tmp_path / "startup"
     monkeypatch.setattr(app_main, "BASE_TMP_DIR", tmp_base)
     monkeypatch.setattr(app_main, "BASE_DATA_DIR", tmp_base / "data")
     monkeypatch.setattr(app_main, "DASHSCOPE_API_KEY", "")
-    monkeypatch.setattr(app_main, "_ensure_cmd_exists", lambda _cmd: None)
-    monkeypatch.setattr(app_main, "_ensure_ffmpeg_supports_libopus", lambda: None)
-    monkeypatch.setattr(app_main, "setup_dashscope", lambda _key: None)
-    monkeypatch.setattr(app_main, "init_db", lambda: None)
-    monkeypatch.setattr(app_main, "ensure_default_billing_rates", lambda _db: None)
-    monkeypatch.setattr(app_main, "SessionLocal", lambda: _DummySession())
+    monkeypatch.setattr(app_main, "_refresh_optional_runtime_status", lambda _app: None)
+
+    async def fake_bootstrap(app):
+        runtime_status = app_main._ensure_runtime_status(app)
+        runtime_status.db_ready = True
+        runtime_status.checked_at = "2026-03-06T00:00:00+00:00"
+
+    monkeypatch.setattr(app_main, "_bootstrap_runtime_state", fake_bootstrap)
 
     app = app_main.create_app(enable_lifespan=True)
     with TestClient(app) as client:
         resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
+    assert resp.json()["ready"] is True
+
+
+def test_health_ready_returns_503_when_database_unavailable(monkeypatch):
+    from app import main as app_main
+
+    monkeypatch.setattr(app_main, "_probe_database_ready", lambda: (False, "db offline"))
+
+    app = app_main.create_app(enable_lifespan=False)
+    with TestClient(app) as client:
+        health = client.get("/health")
+        ready = client.get("/health/ready")
+
+    assert health.status_code == 200
+    assert health.json()["ok"] is True
+    assert ready.status_code == 503
+    payload = ready.json()
+    assert payload["ok"] is False
+    assert payload["status"]["db_ready"] is False
+    assert payload["status"]["db_error"] == "db offline"
 
 
 def test_transcribe_audio_requires_dashscope_api_key(monkeypatch, tmp_path):
