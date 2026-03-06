@@ -25,6 +25,16 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 
+READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
+    "billing_model_rates": (
+        "parallel_enabled",
+        "parallel_threshold_seconds",
+        "segment_seconds",
+        "max_concurrency",
+    )
+}
+
+
 @dataclass
 class RuntimeStatus:
     db_ready: bool = False
@@ -76,11 +86,28 @@ def _probe_database_ready() -> tuple[bool, str]:
             connection.execute(text("SELECT 1"))
             inspector = inspect(connection)
             missing_tables = [table_name for table_name in BUSINESS_TABLES if not inspector.has_table(table_name, schema=schema)]
+            missing_columns = _find_missing_required_columns(inspector, schema)
         if missing_tables:
+            logger.warning("[DEBUG] readiness.missing_tables count=%s detail=%s", len(missing_tables), ",".join(missing_tables))
             return False, f"missing business tables: {', '.join(missing_tables)}"
+        if missing_columns:
+            logger.warning("[DEBUG] readiness.missing_columns count=%s detail=%s", len(missing_columns), ",".join(missing_columns))
+            return False, f"missing critical columns: {', '.join(missing_columns)}"
         return True, ""
     except Exception as exc:
         return False, str(exc)[:1200]
+
+
+def _find_missing_required_columns(db_inspector, schema: str | None) -> list[str]:
+    missing: list[str] = []
+    for table_name, required_columns in READINESS_REQUIRED_COLUMNS.items():
+        if not db_inspector.has_table(table_name, schema=schema):
+            continue
+        available_columns = {col.get("name") for col in db_inspector.get_columns(table_name, schema=schema)}
+        for column_name in required_columns:
+            if column_name not in available_columns:
+                missing.append(f"{table_name}.{column_name}")
+    return missing
 
 
 def _bootstrap_admin_users() -> tuple[bool, str]:
