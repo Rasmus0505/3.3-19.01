@@ -40,6 +40,8 @@
 建议一并保留：
 
 - `AUTO_MIGRATE_ON_START=true`
+- `ALEMBIC_CONFIG=alembic.ini`
+- `DB_INIT_MODE=auto`
 - `TMP_WORK_DIR=/tmp/zeabur3.3`
 - `MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 - `MT_MODEL=qwen-mt-plus`
@@ -71,11 +73,29 @@
 2. Alembic 迁移日志
 3. Postgres 是否已经 ready
 
+### 迁移链路专项检查（管理员页面 500 必做）
+
+如果你在浏览器控制台调用：
+
+- `GET /api/admin/billing-rates`
+
+出现 `500`，优先判定为“迁移未成功”而不是“权限问题”。按下面做：
+
+1. 确认 `web` 服务环境变量已设置：
+   - `AUTO_MIGRATE_ON_START=true`
+   - `ALEMBIC_CONFIG=alembic.ini`
+   - `DB_INIT_MODE=auto`
+2. 在 Zeabur 点 `Redeploy`（同一个 `web` 服务）。
+3. 打开部署日志，确认出现两行关键日志：
+   - `[boot] running alembic upgrade head`
+   - `[DEBUG] boot.migrate success`
+4. 如果没有出现第二行，先检查 `DATABASE_URL` 可达性和数据库权限，再次 `Redeploy`。
+
 ### 最后验证业务
 
 1. 登录成功
 2. `GET /api/wallet/me` 返回 `200`
-3. `GET /api/admin/billing-rates` 返回 `200`
+3. `GET /api/admin/billing-rates`（带管理员 token）返回 `200`
 4. 上传文件到 `POST /api/transcribe/file` 成功
 
 ## 可直接发给 Zeabur AI 的提示词
@@ -85,11 +105,16 @@
 部署方式使用仓库根目录 Dockerfile，不要用 GHCR 镜像。
 这次先只创建两个服务：web 和 postgresql，不要先创建 metabase。
 请提醒我填写环境变量：DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS。
+并确认 AUTO_MIGRATE_ON_START=true、ALEMBIC_CONFIG=alembic.ini、DB_INIT_MODE=auto。
+请在 redeploy 后检查启动日志里是否成功执行：
+1. [boot] running alembic upgrade head
+2. [DEBUG] boot.migrate success
 部署完成后，请按顺序帮我验证：
 1. GET /health 返回 200
 2. GET /health/ready 返回 200
-3. POST /api/transcribe/file 上传媒体文件成功
-如果 /health 正常但 /health/ready 失败，请优先排查数据库连接与 Alembic 迁移。
+3. GET /api/admin/billing-rates（带管理员 token）返回 200
+4. POST /api/transcribe/file 上传媒体文件成功
+如果 /api/admin/billing-rates 返回 500，请优先排查 Alembic 迁移是否真的成功，再排查数据库连接与权限。
 ```
 
 ## 第二阶段再做什么
