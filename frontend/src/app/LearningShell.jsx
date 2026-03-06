@@ -10,7 +10,13 @@ import { UploadPanel } from "../features/upload/UploadPanel";
 import { RedeemCodePanel } from "../features/wallet/RedeemCodePanel";
 import { WalletBadge } from "../features/wallet/WalletBadge";
 import { api, parseResponse, toErrorText } from "../shared/api/client";
-import { deleteLessonMedia, hasLessonMedia } from "../shared/media/localMediaStore";
+import {
+  deleteLessonMedia,
+  hasLessonMedia,
+  readMediaDurationSeconds,
+  requestPersistentStorage,
+  saveLessonMedia,
+} from "../shared/media/localMediaStore";
 import {
   Alert,
   AlertDescription,
@@ -53,6 +59,7 @@ export function LearningShell() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [currentLessonNeedsBinding, setCurrentLessonNeedsBinding] = useState(false);
   const [immersiveActive, setImmersiveActive] = useState(false);
+  const [mediaRestoreTick, setMediaRestoreTick] = useState(0);
 
   const immersiveLayoutActive = Boolean(accessToken && currentLesson?.id && immersiveActive);
 
@@ -340,6 +347,40 @@ export function LearningShell() {
     }
   }
 
+  async function handleRestoreLessonMedia(lesson, file) {
+    if (!lesson?.id || !file) {
+      return { ok: false, message: "恢复视频参数无效" };
+    }
+    console.debug("[DEBUG] lessons.restore_media.start", { lessonId: lesson.id, fileName: file.name, fileSize: file.size });
+    try {
+      const expectedSourceDurationSec = Math.max(0, Number(lesson.source_duration_ms || 0) / 1000);
+      if (expectedSourceDurationSec > 0) {
+        const localDurationSec = await readMediaDurationSeconds(file, file.name || lesson.source_filename || "");
+        const delta = Math.abs(localDurationSec - expectedSourceDurationSec);
+        if (delta > 0.5) {
+          const message = `恢复失败：文件时长差 ${delta.toFixed(3)} 秒，超过 0.5 秒阈值（本地 ${localDurationSec.toFixed(
+            3,
+          )} 秒，课程 ${expectedSourceDurationSec.toFixed(3)} 秒）。`;
+          console.debug("[DEBUG] lessons.restore_media.duration_mismatch", { lessonId: lesson.id, deltaSec: delta });
+          return { ok: false, message };
+        }
+      }
+
+      await requestPersistentStorage();
+      await saveLessonMedia(lesson.id, file);
+      if (currentLesson?.id === lesson.id) {
+        setCurrentLessonNeedsBinding(false);
+      }
+      setMediaRestoreTick((value) => value + 1);
+      console.debug("[DEBUG] lessons.restore_media.success", { lessonId: lesson.id });
+      return { ok: true, message: "恢复视频成功" };
+    } catch (error) {
+      const message = `恢复失败：${String(error)}`;
+      console.debug("[DEBUG] lessons.restore_media.failed", { lessonId: lesson.id, error: String(error) });
+      return { ok: false, message };
+    }
+  }
+
   return (
     <div className="section-soft min-h-screen bg-background">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur transition-all duration-500 ease-out supports-[backdrop-filter]:bg-background/80">
@@ -446,6 +487,7 @@ export function LearningShell() {
                 onSelect={loadLessonDetail}
                 onRename={handleRenameLesson}
                 onDelete={handleDeleteLesson}
+                onRestoreMedia={handleRestoreLessonMedia}
                 loading={loadingLessons}
               />
               <Card size="sm">
@@ -472,6 +514,7 @@ export function LearningShell() {
                 immersiveActive={immersiveLayoutActive}
                 onExitImmersive={handleExitImmersive}
                 onStartImmersive={handleStartImmersive}
+                externalMediaReloadToken={mediaRestoreTick}
               />
             ) : (
               <Card>
