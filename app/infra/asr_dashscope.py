@@ -95,6 +95,33 @@ def _extract_transcription_url(wait_out: dict[str, Any]) -> str:
     return ""
 
 
+def _extract_usage_seconds(wait_out: dict[str, Any], wait_resp: Any) -> int | None:
+    # DashScope SDK object may expose usage either as top-level attribute or nested dict payload.
+    candidates: list[Any] = []
+    resp_usage = _to_dict(getattr(wait_resp, "usage", None))
+    if resp_usage:
+        candidates.append(resp_usage)
+    top_level = _to_dict(wait_resp)
+    if isinstance(top_level, dict) and top_level.get("usage") is not None:
+        candidates.append(_to_dict(top_level.get("usage")))
+    if wait_out.get("usage") is not None:
+        candidates.append(_to_dict(wait_out.get("usage")))
+
+    for usage in candidates:
+        if not isinstance(usage, dict):
+            continue
+        raw = usage.get("seconds")
+        if raw is None:
+            continue
+        try:
+            seconds = int(float(raw))
+        except Exception:
+            continue
+        if seconds > 0:
+            return seconds
+    return None
+
+
 def _build_preview_text(payload: dict[str, Any], max_items: int = 3) -> str:
     texts: list[str] = []
     transcripts = payload.get("transcripts")
@@ -196,6 +223,7 @@ def transcribe_audio_file(audio_path: str, *, model: str = DEFAULT_MODEL, reques
         raise AsrError("ASR_TASK_WAIT_FAILED", "轮询 ASR 任务失败", str(exc)[:1200]) from exc
 
     wait_out = _to_dict(getattr(wait_resp, "output", None))
+    usage_seconds = _extract_usage_seconds(wait_out, wait_resp)
     task_status = str(wait_out.get("task_status") or "").strip().upper()
     if task_status != "SUCCEEDED":
         sub_code = str(wait_out.get("code") or "").strip()
@@ -235,6 +263,7 @@ def transcribe_audio_file(audio_path: str, *, model: str = DEFAULT_MODEL, reques
         "model": model_name,
         "task_id": task_id,
         "task_status": task_status,
+        "usage_seconds": usage_seconds,
         "transcription_url": transcription_url,
         "preview_text": preview_text,
         "asr_result_json": result_payload,

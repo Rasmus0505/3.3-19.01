@@ -11,7 +11,7 @@ from app.db import Base, schema_fk, table_args
 
 class WalletAccount(Base):
     __tablename__ = "wallet_accounts"
-    __table_args__ = table_args(CheckConstraint("balance_points >= 0", name="ck_wallet_balance_non_negative"))
+    __table_args__ = table_args()
 
     user_id: Mapped[int] = mapped_column(ForeignKey(schema_fk("users.id")), primary_key=True)
     balance_points: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)

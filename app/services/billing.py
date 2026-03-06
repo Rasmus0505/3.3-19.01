@@ -348,6 +348,52 @@ def refund_points(
     )
 
 
+def settle_reserved_points(
+    db: Session,
+    *,
+    user_id: int,
+    model_name: str,
+    reserved_points: int,
+    actual_points: int,
+    duration_ms: int | None,
+    note: str = "",
+) -> WalletLedger | None:
+    if reserved_points < 0:
+        raise BillingError("INVALID_POINTS", "预扣点数不能为负数", str(reserved_points))
+    if actual_points < 0:
+        raise BillingError("INVALID_POINTS", "实耗点数不能为负数", str(actual_points))
+
+    diff = int(actual_points) - int(reserved_points)
+    if diff == 0:
+        return None
+
+    if diff < 0:
+        return refund_points(
+            db,
+            user_id=user_id,
+            points=abs(diff),
+            model_name=model_name,
+            duration_ms=duration_ms,
+            note=note or "结算退款",
+        )
+
+    account = get_or_create_wallet_account(db, user_id, for_update=True)
+    account.balance_points -= diff
+    db.add(account)
+    db.flush()
+    return _append_ledger(
+        db,
+        user_id=user_id,
+        operator_user_id=None,
+        event_type=EVENT_CONSUME,
+        delta_points=-diff,
+        balance_after=account.balance_points,
+        model_name=model_name,
+        duration_ms=duration_ms,
+        note=note or "结算补扣",
+    )
+
+
 def manual_adjust(
     db: Session,
     *,
