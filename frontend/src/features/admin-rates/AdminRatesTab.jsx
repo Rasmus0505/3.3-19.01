@@ -43,6 +43,10 @@ export function AdminRatesTab({ apiCall }) {
         draftMap[item.model_name] = {
           points_per_minute: item.points_per_minute,
           is_active: item.is_active,
+          parallel_enabled: Boolean(item.parallel_enabled),
+          parallel_threshold_seconds: Number(item.parallel_threshold_seconds || 600),
+          segment_seconds: Number(item.segment_seconds || 300),
+          max_concurrency: Number(item.max_concurrency || 4),
         };
       });
       setDrafts(draftMap);
@@ -72,6 +76,10 @@ export function AdminRatesTab({ apiCall }) {
         body: JSON.stringify({
           points_per_minute: Number(draft.points_per_minute),
           is_active: Boolean(draft.is_active),
+          parallel_enabled: Boolean(draft.parallel_enabled),
+          parallel_threshold_seconds: Number(draft.parallel_threshold_seconds),
+          segment_seconds: Number(draft.segment_seconds),
+          max_concurrency: Number(draft.max_concurrency),
         }),
       });
       const data = await jsonOrEmpty(resp);
@@ -106,12 +114,16 @@ export function AdminRatesTab({ apiCall }) {
       <CardContent className="space-y-3">
         {loading ? <Skeleton className="h-10 w-full" /> : null}
         <ScrollArea className="w-full rounded-md border">
-          <Table className="min-w-[720px]">
+          <Table className="min-w-[1080px]">
             <TableHeader>
               <TableRow>
                 <TableHead>模型</TableHead>
                 <TableHead>点数/分钟</TableHead>
                 <TableHead>状态</TableHead>
+                <TableHead>并发开关</TableHead>
+                <TableHead>并发阈值(秒)</TableHead>
+                <TableHead>分段时长(秒)</TableHead>
+                <TableHead>并发上限</TableHead>
                 <TableHead>更新时间</TableHead>
                 <TableHead>操作</TableHead>
               </TableRow>
@@ -159,6 +171,79 @@ export function AdminRatesTab({ apiCall }) {
                         </span>
                       </div>
                     </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={Boolean(draft.parallel_enabled)}
+                          onCheckedChange={(checked) => {
+                            setDrafts((prev) => ({
+                              ...prev,
+                              [item.model_name]: {
+                                ...prev[item.model_name],
+                                parallel_enabled: checked,
+                              },
+                            }));
+                          }}
+                        />
+                        <span className="text-xs text-muted-foreground">
+                          {draft.parallel_enabled ? "启用" : "关闭"}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={draft.parallel_threshold_seconds}
+                        onChange={(e) => {
+                          const nextValue = Number(e.target.value || 1);
+                          setDrafts((prev) => ({
+                            ...prev,
+                            [item.model_name]: {
+                              ...prev[item.model_name],
+                              parallel_threshold_seconds: nextValue,
+                            },
+                          }));
+                        }}
+                        className="max-w-[160px]"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={draft.segment_seconds}
+                        onChange={(e) => {
+                          const nextValue = Number(e.target.value || 1);
+                          setDrafts((prev) => ({
+                            ...prev,
+                            [item.model_name]: {
+                              ...prev[item.model_name],
+                              segment_seconds: nextValue,
+                            },
+                          }));
+                        }}
+                        className="max-w-[160px]"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={draft.max_concurrency}
+                        onChange={(e) => {
+                          const nextValue = Number(e.target.value || 1);
+                          setDrafts((prev) => ({
+                            ...prev,
+                            [item.model_name]: {
+                              ...prev[item.model_name],
+                              max_concurrency: nextValue,
+                            },
+                          }));
+                        }}
+                        className="max-w-[140px]"
+                      />
+                    </TableCell>
                     <TableCell>{formatDateTimeBeijing(item.updated_at)}</TableCell>
                     <TableCell>
                       <Button
@@ -174,7 +259,7 @@ export function AdminRatesTab({ apiCall }) {
               })}
               {rates.length === 0 ? (
                 <TableRow>
-                  <TableCell className="text-muted-foreground" colSpan={5}>
+                  <TableCell className="text-muted-foreground" colSpan={9}>
                     {loading ? "加载中..." : "暂无配置"}
                   </TableCell>
                 </TableRow>

@@ -44,3 +44,36 @@ class LessonRenameRequest(BaseModel):
 class LessonDeleteResponse(BaseModel):
     ok: bool = True
     lesson_id: int
+
+
+class LessonTaskStageResponse(BaseModel):
+    key: str
+    label: str
+    status: Literal["pending", "running", "completed", "failed"]
+
+
+class LessonTaskCountersResponse(BaseModel):
+    asr_done: int = 0
+    asr_estimated: int = 0
+    translate_done: int = 0
+    translate_total: int = 0
+    segment_done: int = 0
+    segment_total: int = 0
+
+
+class LessonTaskResponse(BaseModel):
+    ok: bool = True
+    task_id: str
+    status: Literal["pending", "running", "succeeded", "failed"]
+    overall_percent: int
+    current_text: str
+    stages: list[LessonTaskStageResponse]
+    counters: LessonTaskCountersResponse
+    lesson: LessonDetailResponse | None = None
+    error_code: str = ""
+    message: str = ""
+
+
+class LessonTaskCreateResponse(BaseModel):
+    ok: bool = True
+    task_id: str

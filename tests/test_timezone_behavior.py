@@ -152,7 +152,7 @@ def test_api_time_fields_use_plus_eight_offset(timezone_client):
             user_id=user.id,
             title="timezone lesson",
             source_filename="timezone.mp4",
-            asr_model="paraformer-v2",
+            asr_model="qwen3-asr-flash-filetrans",
             duration_ms=1000,
             status="ready",
         )
@@ -244,3 +244,4 @@ def test_wallet_logs_filters_accept_plus_eight_and_naive(timezone_client):
 
     wallet_resp = client.get("/api/wallet/me", headers={"Authorization": f"Bearer {user_token}"})
     assert wallet_resp.status_code == 200
+

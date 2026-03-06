@@ -5,13 +5,12 @@ from typing import Any
 
 import dashscope
 import requests
-from dashscope.audio.asr import Transcription
 from dashscope.audio.qwen_asr import QwenTranscription
 from dashscope.files import Files
 
 
 DEFAULT_MODEL = "qwen3-asr-flash-filetrans"
-SUPPORTED_MODELS = {DEFAULT_MODEL, "paraformer-v2"}
+SUPPORTED_MODELS = {DEFAULT_MODEL}
 
 
 class AsrError(RuntimeError):
@@ -130,20 +129,12 @@ def _create_task(model: str, signed_url: str) -> Any:
             enable_words=True,
             enable_itn=False,
         )
-    if model == "paraformer-v2":
-        return Transcription.async_call(
-            model=model,
-            file_urls=[signed_url],
-            timestamp_alignment_enabled=True,
-        )
     raise AsrError("INVALID_MODEL", "不支持的模型", model)
 
 
 def _wait_task(model: str, task_id: str) -> Any:
     if model == "qwen3-asr-flash-filetrans":
         return QwenTranscription.wait(task=task_id)
-    if model == "paraformer-v2":
-        return Transcription.wait(task=task_id)
     raise AsrError("INVALID_MODEL", "不支持的模型", model)
 
 

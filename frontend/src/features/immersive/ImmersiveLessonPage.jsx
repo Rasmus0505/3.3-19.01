@@ -23,6 +23,7 @@ import "./immersive.css";
 
 const DISPLAY_MODE_STORAGE_KEY = "immersive_word_display_mode";
 const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
+const APOSTROPHE_RE = /[’']/g;
 const MEDIA_TYPE_BY_EXTENSION = {
   ".mp4": "video/mp4",
   ".mov": "video/quicktime",
@@ -45,8 +46,8 @@ function getInitialDisplayMode() {
 }
 
 function countTokenInputErrors(inputValue, expectedToken) {
-  const actual = String(inputValue || "");
-  const expected = String(expectedToken || "");
+  const actual = normalizeComparableToken(inputValue);
+  const expected = normalizeComparableToken(expectedToken);
   const sameLength = Math.min(actual.length, expected.length);
 
   let mismatchCount = 0;
@@ -62,16 +63,37 @@ function countTokenInputErrors(inputValue, expectedToken) {
   return mismatchCount;
 }
 
+function isApostropheChar(char) {
+  return char === "'" || char === "’";
+}
+
+function normalizeComparableToken(token) {
+  return normalizeToken(String(token || "")).replace(APOSTROPHE_RE, "");
+}
+
 function buildLetterSlots(expectedToken, inputValue) {
   const expected = String(expectedToken || "");
-  const actual = String(inputValue || "");
+  const actual = normalizeComparableToken(inputValue);
   const slots = [];
+  let typedIndex = 0;
 
   for (let idx = 0; idx < expected.length; idx += 1) {
-    const typedChar = actual[idx] || "";
+    const expectedChar = expected[idx];
+    if (isApostropheChar(expectedChar)) {
+      slots.push({
+        key: `slot-fixed-${idx}`,
+        char: "'",
+        state: "fixed",
+        extra: false,
+      });
+      continue;
+    }
+
+    const typedChar = actual[typedIndex] || "";
     let state = "empty";
     if (typedChar) {
-      state = typedChar.toLowerCase() === expected[idx].toLowerCase() ? "correct" : "wrong";
+      state = typedChar.toLowerCase() === expectedChar.toLowerCase() ? "correct" : "wrong";
+      typedIndex += 1;
     }
     slots.push({
       key: `slot-${idx}`,
@@ -81,7 +103,7 @@ function buildLetterSlots(expectedToken, inputValue) {
     });
   }
 
-  for (let idx = expected.length; idx < actual.length; idx += 1) {
+  for (let idx = typedIndex; idx < actual.length; idx += 1) {
     slots.push({
       key: `extra-${idx}`,
       char: actual[idx] || "\u00A0",
@@ -174,7 +196,16 @@ function formatMediaLoadError(resp, payload) {
   return "媒体加载失败。";
 }
 
-export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, onProgressSynced, immersiveActive = false, onExitImmersive }) {
+export function ImmersiveLessonPage({
+  lesson,
+  accessToken,
+  apiClient,
+  onBack,
+  onProgressSynced,
+  immersiveActive = false,
+  onExitImmersive,
+  onStartImmersive,
+}) {
   const [phase, setPhase] = useState("idle");
   const [mediaMode, setMediaMode] = useState("video");
   const [mediaBlobUrl, setMediaBlobUrl] = useState("");
@@ -203,7 +234,8 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   const bindingInputRef = useRef(null);
   const currentWordInputRef = useRef("");
   const sentenceAdvanceLockedRef = useRef(false);
-  const typingEnabled = Boolean(lesson?.sentences?.[currentSentenceIndex]) && phase !== "transition" && phase !== "lesson_completed";
+  const typingEnabled =
+    immersiveActive && Boolean(lesson?.sentences?.[currentSentenceIndex]) && phase !== "transition" && phase !== "lesson_completed";
   const focusTypingInput = useCallback(() => {
     if (!typingEnabled) return;
     requestAnimationFrame(() => {
@@ -481,20 +513,22 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   }, [accessToken, apiClient, lesson?.id, lesson?.media_storage, lesson?.source_filename, mediaReloadKey]);
 
   useEffect(() => {
+    if (!immersiveActive) return;
     if (needsBinding) return;
     if (mediaMode === "clip") return;
     if (!mediaReady) return;
     if (!mediaBlobUrl) return;
     setPhase("auto_play_pending");
-  }, [mediaBlobUrl, mediaMode, mediaReady, needsBinding]);
+  }, [immersiveActive, mediaBlobUrl, mediaMode, mediaReady, needsBinding]);
 
   useEffect(() => {
+    if (!immersiveActive) return;
     if (!currentSentence) return;
     if (needsBinding) return;
     if (phase !== "auto_play_pending") return;
     if (mediaMode !== "clip" && !mediaReady) return;
     tryPlayCurrentSentence();
-  }, [currentSentence, mediaMode, mediaReady, needsBinding, phase, tryPlayCurrentSentence]);
+  }, [currentSentence, immersiveActive, mediaMode, mediaReady, needsBinding, phase, tryPlayCurrentSentence]);
 
   useEffect(() => {
     if (!typingEnabled) return;
@@ -518,6 +552,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   }, [focusTypingInput, immersiveActive, typingEnabled]);
 
   useEffect(() => {
+    if (!immersiveActive) return;
     if (!sentenceTypingDone) return;
     if (sentencePlaybackRequired && !sentencePlaybackDone) return;
     if (sentenceAdvanceLockedRef.current) return;
@@ -526,7 +561,13 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     setTimeout(() => {
       void handleSentencePassed();
     }, 120);
-  }, [handleSentencePassed, sentencePlaybackDone, sentencePlaybackRequired, sentenceTypingDone]);
+  }, [handleSentencePassed, immersiveActive, sentencePlaybackDone, sentencePlaybackRequired, sentenceTypingDone]);
+
+  useEffect(() => {
+    if (immersiveActive) return;
+    stopPlayback();
+    setPhase("idle");
+  }, [immersiveActive, stopPlayback]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -538,14 +579,14 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     if (hasClipFallback) {
       setMediaMode("clip");
       setMediaError("当前浏览器不支持该媒体格式，已自动切换为句级音频模式。");
-      setPhase("auto_play_pending");
+      setPhase(immersiveActive ? "auto_play_pending" : "idle");
       return;
     }
     setMediaBlobUrl("");
     setNeedsBinding(true);
     setMediaError("当前媒体格式无法播放，请绑定本地文件继续。");
     setPhase("typing");
-  }, [lesson?.media_storage, lesson?.sentences]);
+  }, [immersiveActive, lesson?.media_storage, lesson?.sentences]);
 
   const handleBindLocalFile = useCallback(
     async (nextFile) => {
@@ -612,6 +653,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
   const commitCorrectWord = useCallback(
     (typedWord) => {
       playCorrectSound();
+      const canonicalWord = expectedTokens[activeWordIndex] || typedWord.trim();
       setWordStatuses((prev) => {
         const next = [...prev];
         next[activeWordIndex] = "correct";
@@ -622,7 +664,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
       });
       setWordInputs((prev) => {
         const next = [...prev];
-        next[activeWordIndex] = typedWord.trim();
+        next[activeWordIndex] = canonicalWord;
         return next;
       });
       currentWordInputRef.current = "";
@@ -634,7 +676,7 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
       }
       setActiveWordIndex((prev) => prev + 1);
     },
-    [activeWordIndex, expectedTokens.length, playCorrectSound],
+    [activeWordIndex, expectedTokens, playCorrectSound],
   );
 
   const commitWrongWord = useCallback(() => {
@@ -651,6 +693,11 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
     [onBack, onExitImmersive],
   );
 
+  const startImmersive = useCallback(() => {
+    if (typeof onStartImmersive !== "function") return;
+    onStartImmersive();
+  }, [onStartImmersive]);
+
   const jumpToSentence = useCallback(
     async (targetIndex, source = "manual") => {
       if (!lesson || sentenceCount <= 0) return;
@@ -658,13 +705,13 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
       if (safeTarget === currentSentenceIndex) return;
 
       stopPlayback();
-      setPhase("auto_play_pending");
+      setPhase(immersiveActive ? "auto_play_pending" : "idle");
       setCurrentSentenceIndex(safeTarget);
       resetWordTyping(lesson?.sentences?.[safeTarget], true);
       await syncProgress(safeTarget, completedIndexes, lesson?.sentences?.[safeTarget]?.begin_ms || 0);
       onProgressSynced?.();
     },
-    [completedIndexes, currentSentenceIndex, lesson, onProgressSynced, resetWordTyping, sentenceCount, stopPlayback, syncProgress],
+    [completedIndexes, currentSentenceIndex, immersiveActive, lesson, onProgressSynced, resetWordTyping, sentenceCount, stopPlayback, syncProgress],
   );
 
   const goToPreviousSentence = useCallback(
@@ -708,8 +755,8 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       const fromTypingInput = event.target === typingInputRef.current;
       if (isEditableShortcutTarget(event.target) && !fromTypingInput) return;
+      if (!immersiveActive) return;
       const isReplayShortcut = event.shiftKey && event.key.toLowerCase() === "r";
-      if (!immersiveActive && !isReplayShortcut) return;
 
       if (event.key === "Escape") {
         event.preventDefault();
@@ -823,9 +870,10 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
           return;
         }
 
-        if (nextInput.length >= expected.length) {
-          const normalizedInput = normalizeToken(nextInput);
-          if (normalizedInput === expected) {
+        const normalizedExpected = normalizeComparableToken(expected);
+        const normalizedInput = normalizeComparableToken(nextInput);
+        if (normalizedInput.length >= normalizedExpected.length) {
+          if (normalizedInput === normalizedExpected) {
             commitCorrectWord(nextInput);
           } else {
             commitWrongWord();
@@ -961,124 +1009,136 @@ export function ImmersiveLessonPage({ lesson, accessToken, apiClient, onBack, on
 
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant={needsBinding ? "secondary" : "outline"}
-            onClick={() => bindingInputRef.current?.click()}
-            disabled={bindingBusy}
-          >
-            {bindingBusy ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />}
-            绑定本地文件
+        {!immersiveActive ? (
+          <Button className="h-12 w-full bg-black text-base font-semibold text-white hover:bg-black/90" onClick={startImmersive}>
+            开始学习
           </Button>
-          <TooltipProvider delayDuration={120}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" onClick={() => replayCurrentSentence("button_replay")} disabled={!canReplaySentence}>
-                  <RotateCcw className="size-4" />
-                  重播本句
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>shift+r</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <TooltipProvider delayDuration={120}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" onClick={() => revealCurrentWord("button_reveal")} disabled={!canRevealWord}>
-                  <Eye className="size-4" />
-                  揭示单词
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>space</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <Button variant="outline" onClick={() => goToPreviousSentence("button_prev")} disabled={!canGoPrevious || phase === "transition"}>
-            <ArrowLeft className="size-4" />
-            上一句
-          </Button>
-          <TooltipProvider delayDuration={120}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" onClick={() => goToNextSentence("button_next")} disabled={!canGoNext || phase === "transition"}>
-                  下一句
-                  <ArrowRight className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>enter</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <Badge variant="outline">
-            已完成 {completedIndexes.length} / {sentenceCount}
-          </Badge>
-          {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
-          {bindingHint ? (
-            <Badge variant="secondary">
-              <CheckCircle2 className="size-4" />
-              {bindingHint}
-            </Badge>
-          ) : null}
+        ) : null}
 
-          {needsBinding ? (
-            <div className="w-full px-6">
-              <div className="immersive-media-audio-placeholder">
-                <p>待绑定本地媒体</p>
-                <p className="immersive-hint">课程可见，但播放受限。请点击“绑定本地文件”。</p>
-              </div>
-            </div>
-          ) : null}
-          {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
-          {bindingError ? <p className="text-xs text-destructive">{bindingError}</p> : null}
-          {sentenceTypingDone && !sentencePlaybackDone && sentencePlaybackRequired ? (
-            <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p>
-          ) : null}
-        </div>
+        {immersiveActive ? (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant={needsBinding ? "secondary" : "outline"}
+                onClick={() => bindingInputRef.current?.click()}
+                disabled={bindingBusy}
+              >
+                {bindingBusy ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />}
+                绑定本地文件
+              </Button>
+              <TooltipProvider delayDuration={120}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" onClick={() => replayCurrentSentence("button_replay")} disabled={!canReplaySentence}>
+                      <RotateCcw className="size-4" />
+                      重播本句
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>shift+r</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <TooltipProvider delayDuration={120}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" onClick={() => revealCurrentWord("button_reveal")} disabled={!canRevealWord}>
+                      <Eye className="size-4" />
+                      揭示单词
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>space</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <Button variant="outline" onClick={() => goToPreviousSentence("button_prev")} disabled={!canGoPrevious || phase === "transition"}>
+                <ArrowLeft className="size-4" />
+                上一句
+              </Button>
+              <TooltipProvider delayDuration={120}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" onClick={() => goToNextSentence("button_next")} disabled={!canGoNext || phase === "transition"}>
+                      下一句
+                      <ArrowRight className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>enter</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <Badge variant="outline">
+                已完成 {completedIndexes.length} / {sentenceCount}
+              </Badge>
+              {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
+              {bindingHint ? (
+                <Badge variant="secondary">
+                  <CheckCircle2 className="size-4" />
+                  {bindingHint}
+                </Badge>
+              ) : null}
 
-        <div className="immersive-typing">
-          <div className="immersive-typing-toolbar">
-            <p className="immersive-hint">输入达到单词长度后自动判定；超过 2 个错误会清空重打。</p>
-            <div className="immersive-display-toggle">
-              <span className="text-xs text-muted-foreground">下划线模式</span>
-              <Switch
-                checked={displayMode === "underline"}
-                onCheckedChange={(checked) => setDisplayMode(checked ? "underline" : "chip")}
-                aria-label="切换单词显示模式"
-              />
-            </div>
-          </div>
-
-          <div className="immersive-word-row">
-            {expectedTokens.map((token, index) => {
-              const status = wordStatuses[index] || "pending";
-              const slots = buildLetterSlots(token, wordInputs[index] || "");
-              return (
-                <div
-                  key={`${token}-${index}`}
-                  className={`immersive-word-slot immersive-word-slot--${status} ${
-                    displayMode === "underline" ? "immersive-word-slot--underline" : "immersive-word-slot--chip"
-                  }`}
-                >
-                  <div className="immersive-letter-row">
-                    {slots.map((slot) => (
-                      <span
-                        key={slot.key}
-                        className={`immersive-letter-cell immersive-letter-cell--${slot.state} ${
-                          slot.extra ? "immersive-letter-cell--extra" : ""
-                        }`}
-                      >
-                        <span className="immersive-letter-char">{slot.char}</span>
-                      </span>
-                    ))}
+              {needsBinding ? (
+                <div className="w-full px-6">
+                  <div className="immersive-media-audio-placeholder">
+                    <p>待绑定本地媒体</p>
+                    <p className="immersive-hint">课程可见，但播放受限。请点击“绑定本地文件”。</p>
                   </div>
                 </div>
-              );
-            })}
-          </div>
+              ) : null}
+              {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
+              {bindingError ? <p className="text-xs text-destructive">{bindingError}</p> : null}
+              {sentenceTypingDone && !sentencePlaybackDone && sentencePlaybackRequired ? (
+                <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p>
+              ) : null}
+            </div>
 
-          <p className="text-sm text-muted-foreground">
-            当前句中文：{currentSentence.text_zh || "(翻译失败，暂缺)"}
-          </p>
-          {phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
-        </div>
+            <div className="immersive-typing">
+              <div className="immersive-typing-toolbar">
+                <p className="immersive-hint">输入达到单词长度后自动判定；超过 2 个错误会清空重打。</p>
+                <div className="immersive-display-toggle">
+                  <span className="text-xs text-muted-foreground">下划线模式</span>
+                  <Switch
+                    checked={displayMode === "underline"}
+                    onCheckedChange={(checked) => setDisplayMode(checked ? "underline" : "chip")}
+                    aria-label="切换单词显示模式"
+                  />
+                </div>
+              </div>
+
+              <div className="immersive-word-row">
+                {expectedTokens.map((token, index) => {
+                  const status = wordStatuses[index] || "pending";
+                  const slots = buildLetterSlots(token, wordInputs[index] || "");
+                  return (
+                    <div
+                      key={`${token}-${index}`}
+                      className={`immersive-word-slot immersive-word-slot--${status} ${
+                        displayMode === "underline" ? "immersive-word-slot--underline" : "immersive-word-slot--chip"
+                      }`}
+                    >
+                      <div className="immersive-letter-row">
+                        {slots.map((slot) => (
+                          <span
+                            key={slot.key}
+                            className={`immersive-letter-cell immersive-letter-cell--${slot.state} ${
+                              slot.extra ? "immersive-letter-cell--extra" : ""
+                            }`}
+                          >
+                            <span className="immersive-letter-char">{slot.char}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <p className="text-sm text-muted-foreground">
+                当前句中文：{currentSentence.text_zh || "(翻译失败，暂缺)"}
+              </p>
+              {phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">可先预览视频，准备好后点击“开始学习”进入沉浸模式。</p>
+        )}
 
         <input
           ref={bindingInputRef}

@@ -100,7 +100,7 @@ export function LearningShell() {
 
   async function loadLessonDetail(lessonId, options = {}) {
     if (!lessonId || !accessToken) return;
-    const { autoEnterImmersive = true } = options;
+    const { autoEnterImmersive = false } = options;
     try {
       const [detailResp, progressResp] = await Promise.all([
         api(`/api/lessons/${lessonId}`, {}, accessToken),
@@ -127,12 +127,7 @@ export function LearningShell() {
             },
       };
       setCurrentLesson(merged);
-      setImmersiveActive((prev) => {
-        if (!autoEnterImmersive) {
-          return prev;
-        }
-        return true;
-      });
+      setImmersiveActive(Boolean(autoEnterImmersive));
     } catch (error) {
       setGlobalStatus(`网络错误: ${String(error)}`);
     }
@@ -234,7 +229,7 @@ export function LearningShell() {
 
   async function handleLessonCreated(lesson) {
     await loadLessons();
-    await loadLessonDetail(lesson.id, { autoEnterImmersive: true });
+    await loadLessonDetail(lesson.id, { autoEnterImmersive: false });
     await loadWallet();
   }
 
@@ -248,8 +243,13 @@ export function LearningShell() {
     setCommandOpen(false);
     setCommandQuery("");
     if (lessonId !== currentLesson?.id) {
-      await loadLessonDetail(lessonId, { autoEnterImmersive: true });
+      await loadLessonDetail(lessonId, { autoEnterImmersive: false });
     }
+  }
+
+  function handleStartImmersive() {
+    if (!currentLesson?.id) return;
+    setImmersiveActive(true);
   }
 
   async function handleRenameLesson(lessonId, title) {
@@ -338,8 +338,8 @@ export function LearningShell() {
   return (
     <div className="section-soft min-h-screen bg-background">
       <header
-        className={`sticky top-0 z-40 overflow-hidden border-b bg-background/95 backdrop-blur transition-all duration-300 ease-out supports-[backdrop-filter]:bg-background/80 ${
-          immersiveLayoutActive ? "pointer-events-none max-h-0 -translate-y-3 opacity-0 border-transparent" : "max-h-24 translate-y-0 opacity-100"
+        className={`sticky top-0 z-40 border-b bg-background/95 backdrop-blur transition-all duration-500 ease-out supports-[backdrop-filter]:bg-background/80 ${
+          immersiveLayoutActive ? "pointer-events-none -translate-y-2 opacity-0" : "translate-y-0 opacity-100"
         }`}
       >
         <div className="container-wrapper">
@@ -431,15 +431,15 @@ export function LearningShell() {
         </div>
       </header>
 
-      <main className={`container-wrapper transition-all duration-300 ease-out ${immersiveLayoutActive ? "pb-0" : "pb-6"}`}>
+      <main className={`container-wrapper transition-all duration-500 ease-out ${immersiveLayoutActive ? "pb-0" : "pb-6"}`}>
         <div
-          className={`container grid gap-4 transition-all duration-300 ease-out ${
+          className={`container grid gap-4 transition-all duration-500 ease-out ${
             immersiveLayoutActive ? "pt-2 xl:grid-cols-1" : "pt-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]"
           }`}
         >
           <aside
-            className={`space-y-4 transition-all duration-300 ease-out ${
-              immersiveLayoutActive ? "pointer-events-none max-h-0 -translate-x-3 overflow-hidden opacity-0" : "max-h-[4000px] translate-x-0 opacity-100"
+            className={`space-y-4 transition-all duration-500 ease-out ${
+              immersiveLayoutActive ? "pointer-events-none -translate-x-3 opacity-0" : "translate-x-0 opacity-100"
             }`}
           >
             <LessonList
@@ -463,7 +463,7 @@ export function LearningShell() {
             </Card>
           </aside>
 
-          <section className={`min-w-0 space-y-4 transition-all duration-300 ease-out ${immersiveLayoutActive ? "xl:col-span-1" : ""}`}>
+          <section className={`min-w-0 space-y-4 transition-all duration-500 ease-out ${immersiveLayoutActive ? "xl:col-span-1" : ""}`}>
             {accessToken ? (
               <ImmersiveLessonPage
                 lesson={currentLesson}
@@ -472,6 +472,7 @@ export function LearningShell() {
                 onProgressSynced={refreshCurrentLesson}
                 immersiveActive={immersiveLayoutActive}
                 onExitImmersive={handleExitImmersive}
+                onStartImmersive={handleStartImmersive}
               />
             ) : (
               <Card>
@@ -494,8 +495,8 @@ export function LearningShell() {
           </section>
 
           <aside
-            className={`space-y-4 transition-all duration-300 ease-out ${
-              immersiveLayoutActive ? "pointer-events-none max-h-0 translate-x-3 overflow-hidden opacity-0" : "max-h-[4000px] translate-x-0 opacity-100"
+            className={`space-y-4 transition-all duration-500 ease-out ${
+              immersiveLayoutActive ? "pointer-events-none translate-x-3 opacity-0" : "translate-x-0 opacity-100"
             }`}
           >
             {!accessToken ? (

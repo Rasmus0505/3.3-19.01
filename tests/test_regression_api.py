@@ -13,6 +13,8 @@ from app.main import create_app
 from app.models import Lesson, LessonProgress, LessonSentence, MediaAsset, User, WalletLedger
 from app.services.billing_service import ensure_default_billing_rates
 
+QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
+
 
 @pytest.fixture()
 def test_client(tmp_path, monkeypatch):
@@ -142,13 +144,31 @@ def test_transcribe_file_endpoint_with_stubbed_service(test_client, monkeypatch,
     monkeypatch.setattr(transcribe_router, "transcribe_uploaded_file", fake_transcribe_uploaded_file)
 
     files = {"video_file": ("demo.mp4", io.BytesIO(b"dummy"), "video/mp4")}
-    resp = client.post("/api/transcribe/file", files=files, data={"model": "qwen3-asr-flash-filetrans"})
+    resp = client.post("/api/transcribe/file", files=files, data={"model": QWEN_ASR_MODEL})
     assert resp.status_code == 200
     body = resp.json()
     assert body["ok"] is True
     assert body["task_status"] == "SUCCEEDED"
     assert body["source_type"] == "file"
-    assert body["model"] == "qwen3-asr-flash-filetrans"
+    assert body["model"] == QWEN_ASR_MODEL
+
+
+def test_create_lesson_rejects_para_model(test_client):
+    client, _, _ = test_client
+    token = _register_and_login(client, email="reject-model@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.post(
+        "/api/lessons",
+        headers=headers,
+        files={"video_file": ("demo.mp4", io.BytesIO(b"dummy"), "video/mp4")},
+        data={"asr_model": "paraformer-v2"},
+    )
+    assert resp.status_code == 400
+    data = resp.json()
+    assert data["error_code"] == "INVALID_MODEL"
+    assert "supported_models" in data.get("detail", {})
+    assert data["detail"]["supported_models"] == [QWEN_ASR_MODEL]
 
 
 def test_auth_register_and_login(test_client):
@@ -266,7 +286,7 @@ def test_lessons_progress_and_check(test_client):
             user_id=user.id,
             title="demo",
             source_filename="demo.mp4",
-            asr_model="paraformer-v2",
+            asr_model="qwen3-asr-flash-filetrans",
             duration_ms=10000,
             media_storage="server",
             source_duration_ms=10000,
@@ -333,7 +353,7 @@ def test_lesson_rename_and_delete_endpoints(test_client):
             user_id=owner.id,
             title="old title",
             source_filename="rename.mp4",
-            asr_model="paraformer-v2",
+            asr_model="qwen3-asr-flash-filetrans",
             duration_ms=3000,
             media_storage="client_indexeddb",
             source_duration_ms=3000,
@@ -382,7 +402,7 @@ def test_delete_lesson_clears_wallet_ledger_reference(test_client):
             user_id=owner.id,
             title="ledger linked lesson",
             source_filename="ledger.mp4",
-            asr_model="paraformer-v2",
+            asr_model="qwen3-asr-flash-filetrans",
             duration_ms=2000,
             media_storage="client_indexeddb",
             source_duration_ms=2000,
@@ -397,7 +417,7 @@ def test_delete_lesson_clears_wallet_ledger_reference(test_client):
             event_type="consume",
             delta_points=0,
             balance_after=0,
-            model_name="paraformer-v2",
+            model_name="qwen3-asr-flash-filetrans",
             duration_ms=lesson.duration_ms,
             lesson_id=lesson.id,
             note="regression: lesson delete should clear reference",
@@ -472,7 +492,7 @@ def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch, t
     monkeypatch.setattr(lesson_router.LessonService, "generate_from_upload", fake_generate)
 
     files = {"video_file": ("demo.mp4", io.BytesIO(b"dummy"), "video/mp4")}
-    data = {"asr_model": "paraformer-v2"}
+    data = {"asr_model": QWEN_ASR_MODEL}
     resp = client.post("/api/lessons", headers=headers, files=files, data=data)
     assert resp.status_code == 200
     body = resp.json()
@@ -498,7 +518,7 @@ def test_lesson_media_prefers_source_filename_content_type(test_client, tmp_path
             user_id=user.id,
             title="media mime test",
             source_filename="lesson-video.mp4",
-            asr_model="paraformer-v2",
+            asr_model="qwen3-asr-flash-filetrans",
             duration_ms=5000,
             media_storage="server",
             source_duration_ms=5000,
@@ -535,7 +555,7 @@ def test_local_media_mode_requires_client_binding(test_client):
             user_id=user.id,
             title="local-only",
             source_filename="local.mp4",
-            asr_model="paraformer-v2",
+            asr_model=QWEN_ASR_MODEL,
             duration_ms=2000,
             media_storage="client_indexeddb",
             source_duration_ms=2000,
@@ -583,3 +603,151 @@ def test_local_media_mode_requires_client_binding(test_client):
     clip_resp = client.get(f"/api/lessons/{lesson_id}/sentences/0/audio", headers=headers)
     assert clip_resp.status_code == 409
     assert clip_resp.json()["error_code"] == "LOCAL_MEDIA_REQUIRED"
+
+
+def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="task-user@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from app.api.routers import lessons as lesson_router
+
+    monkeypatch.setattr(lesson_router, "BASE_TMP_DIR", tmp_path)
+    monkeypatch.setattr(lesson_router, "SessionLocal", session_factory)
+
+    class InlineThread:
+        def __init__(self, *, target, kwargs=None, daemon=None):
+            self._target = target
+            self._kwargs = kwargs or {}
+
+        def start(self):
+            self._target(**self._kwargs)
+
+    monkeypatch.setattr(lesson_router.threading, "Thread", InlineThread)
+
+    def fake_generate_from_saved_file(*, source_path, source_filename, req_dir, owner_id, asr_model, db, progress_callback=None):
+        if progress_callback:
+            progress_callback({"stage_key": "convert_audio", "stage_status": "completed", "overall_percent": 20, "current_text": "转换音频格式完成"})
+            progress_callback({"stage_key": "asr_transcribe", "stage_status": "completed", "overall_percent": 60, "current_text": "转写字幕 3/约3", "counters": {"asr_done": 3, "asr_estimated": 3}})
+            progress_callback({"stage_key": "translate_zh", "stage_status": "completed", "overall_percent": 90, "current_text": "翻译字幕 3/3", "counters": {"translate_done": 3, "translate_total": 3}})
+            progress_callback({"stage_key": "write_lesson", "stage_status": "completed", "overall_percent": 100, "current_text": "课程生成完成"})
+
+        lesson = Lesson(
+            user_id=owner_id,
+            title="task lesson",
+            source_filename=source_filename,
+            asr_model=asr_model,
+            duration_ms=1200,
+            media_storage="client_indexeddb",
+            source_duration_ms=1200,
+            status="ready",
+        )
+        db.add(lesson)
+        db.flush()
+        db.add(
+            LessonSentence(
+                lesson_id=lesson.id,
+                idx=0,
+                begin_ms=0,
+                end_ms=900,
+                text_en="hello world",
+                text_zh="你好世界",
+                tokens_json=["hello", "world"],
+                audio_clip_path=None,
+            )
+        )
+        db.add(
+            LessonProgress(
+                lesson_id=lesson.id,
+                user_id=owner_id,
+                current_sentence_idx=0,
+                completed_indexes_json=[],
+                last_played_at_ms=0,
+            )
+        )
+        db.commit()
+        db.refresh(lesson)
+        return lesson
+
+    monkeypatch.setattr(lesson_router.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+
+    create_resp = client.post(
+        "/api/lessons/tasks",
+        headers=headers,
+        files={"video_file": ("task.mp4", io.BytesIO(b"dummy"), "video/mp4")},
+        data={"asr_model": QWEN_ASR_MODEL},
+    )
+    assert create_resp.status_code == 200
+    task_id = create_resp.json()["task_id"]
+
+    poll_resp = client.get(f"/api/lessons/tasks/{task_id}", headers=headers)
+    assert poll_resp.status_code == 200
+    payload = poll_resp.json()
+    assert payload["status"] == "succeeded"
+    assert payload["overall_percent"] == 100
+    assert payload["lesson"]["title"] == "task lesson"
+    assert payload["counters"]["translate_done"] == 3
+    assert all(item["status"] == "completed" for item in payload["stages"])
+
+
+def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
+    from app.services import lesson_service as lesson_service_module
+
+    single_calls = {"count": 0}
+
+    def fake_single_transcribe(path: str, model: str):
+        single_calls["count"] += 1
+        return {
+            "asr_result_json": {
+                "properties": {"original_duration_in_milliseconds": 4000},
+                "transcripts": [{"channel_id": 0, "sentences": [{"sentence_id": 0, "begin_time": 0, "end_time": 900, "text": "single"}]}],
+            }
+        }
+
+    monkeypatch.setattr(lesson_service_module, "transcribe_audio_file", fake_single_transcribe)
+    payload_single = lesson_service_module.LessonService._transcribe_with_optional_parallel(
+        opus_path=tmp_path / "single.opus",
+        req_dir=tmp_path,
+        asr_model=QWEN_ASR_MODEL,
+        source_duration_ms=4000,
+        parallel_enabled=True,
+        parallel_threshold_seconds=10,
+        segment_seconds=2,
+        max_concurrency=4,
+        progress_callback=None,
+    )
+    assert single_calls["count"] == 1
+    assert payload_single["transcripts"][0]["sentences"][0]["text"] == "single"
+
+    monkeypatch.setattr(
+        lesson_service_module,
+        "_split_audio_segments",
+        lambda source_audio, segments_dir, segment_seconds, duration_ms: [
+            (0, 0, tmp_path / "seg0.opus"),
+            (1, 5000, tmp_path / "seg1.opus"),
+        ],
+    )
+    monkeypatch.setattr(
+        lesson_service_module,
+        "_transcribe_segment",
+        lambda segment_index, segment_start_ms, segment_path, asr_model: (
+            segment_index,
+            [{"text": f"seg-{segment_index}", "begin_ms": segment_start_ms, "end_ms": segment_start_ms + 1000}],
+        ),
+    )
+    payload_parallel = lesson_service_module.LessonService._transcribe_with_optional_parallel(
+        opus_path=tmp_path / "parallel.opus",
+        req_dir=tmp_path,
+        asr_model=QWEN_ASR_MODEL,
+        source_duration_ms=15000,
+        parallel_enabled=True,
+        parallel_threshold_seconds=10,
+        segment_seconds=5,
+        max_concurrency=4,
+        progress_callback=None,
+    )
+    sentences = payload_parallel["transcripts"][0]["sentences"]
+    assert len(sentences) == 2
+    assert sentences[0]["text"] == "seg-0"
+    assert sentences[1]["text"] == "seg-1"
+

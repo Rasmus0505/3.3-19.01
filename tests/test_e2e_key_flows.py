@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import io
 from datetime import datetime, timedelta
@@ -105,7 +105,7 @@ def test_e2e_login_create_lesson_practice_progress(e2e_client):
         "/api/lessons",
         headers=headers,
         files={"video_file": ("demo.mp4", io.BytesIO(b"dummy"), "video/mp4")},
-        data={"asr_model": "paraformer-v2"},
+        data={"asr_model": "qwen3-asr-flash-filetrans"},
     )
     assert create_resp.status_code == 200
     lesson = create_resp.json()["lesson"]
@@ -179,18 +179,29 @@ def test_e2e_admin_update_rate_visible_in_public_api(e2e_client):
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
     update_resp = client.put(
-        "/api/admin/billing-rates/paraformer-v2",
+        "/api/admin/billing-rates/qwen3-asr-flash-filetrans",
         headers=admin_headers,
-        json={"points_per_minute": 222, "is_active": True},
+        json={
+            "points_per_minute": 222,
+            "is_active": True,
+            "parallel_enabled": True,
+            "parallel_threshold_seconds": 1200,
+            "segment_seconds": 240,
+            "max_concurrency": 6,
+        },
     )
     assert update_resp.status_code == 200
     rate = update_resp.json()["rates"][0]
-    assert rate["model_name"] == "paraformer-v2"
+    assert rate["model_name"] == "qwen3-asr-flash-filetrans"
     assert rate["points_per_minute"] == 222
+    assert rate["parallel_enabled"] is True
+    assert rate["parallel_threshold_seconds"] == 1200
+    assert rate["segment_seconds"] == 240
+    assert rate["max_concurrency"] == 6
 
     public_resp = client.get("/api/billing/rates")
     assert public_resp.status_code == 200
-    target = next(item for item in public_resp.json()["rates"] if item["model_name"] == "paraformer-v2")
+    target = next(item for item in public_resp.json()["rates"] if item["model_name"] == "qwen3-asr-flash-filetrans")
     assert target["points_per_minute"] == 222
     assert target["is_active"] is True
 
@@ -228,3 +239,4 @@ def test_e2e_redeem_batch_pause_blocks_redeem(e2e_client):
     redeem_resp = client.post("/api/wallet/redeem-code", headers=user_headers, json={"code": code})
     assert redeem_resp.status_code == 400
     assert redeem_resp.json()["error_code"] == "REDEEM_CODE_DISABLED"
+
