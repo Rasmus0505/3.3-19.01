@@ -337,11 +337,7 @@ export function LearningShell() {
 
   return (
     <div className="section-soft min-h-screen bg-background">
-      <header
-        className={`sticky top-0 z-40 border-b bg-background/95 backdrop-blur transition-all duration-500 ease-out supports-[backdrop-filter]:bg-background/80 ${
-          immersiveLayoutActive ? "pointer-events-none -translate-y-2 opacity-0" : "translate-y-0 opacity-100"
-        }`}
-      >
+      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur transition-all duration-500 ease-out supports-[backdrop-filter]:bg-background/80">
         <div className="container-wrapper">
           <div className="container flex h-14 items-center gap-2">
             <Button size="icon-sm" variant="ghost" aria-label="logo">
@@ -437,31 +433,29 @@ export function LearningShell() {
             immersiveLayoutActive ? "pt-2 xl:grid-cols-1" : "pt-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]"
           }`}
         >
-          <aside
-            className={`space-y-4 transition-all duration-500 ease-out ${
-              immersiveLayoutActive ? "pointer-events-none -translate-x-3 opacity-0" : "translate-x-0 opacity-100"
-            }`}
-          >
-            <LessonList
-              lessons={lessons}
-              currentLessonId={currentLesson?.id}
-              onSelect={loadLessonDetail}
-              onRename={handleRenameLesson}
-              onDelete={handleDeleteLesson}
-              loading={loadingLessons}
-            />
-            <Card size="sm">
-              <CardHeader>
-                <CardTitle className="text-base">状态</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <p className="text-muted-foreground">课程加载：{loadingLessons ? "进行中" : "空闲"}</p>
-                <p className="text-muted-foreground">当前课程：{currentLesson?.title || "未选择"}</p>
-                <p className="text-muted-foreground">学习模式：沉浸模式</p>
-                {currentLessonNeedsBinding ? <p className="text-amber-600">待绑定本地媒体：课程可见，但播放受限</p> : null}
-              </CardContent>
-            </Card>
-          </aside>
+          {!immersiveLayoutActive ? (
+            <aside className="space-y-4 transition-all duration-500 ease-out">
+              <LessonList
+                lessons={lessons}
+                currentLessonId={currentLesson?.id}
+                onSelect={loadLessonDetail}
+                onRename={handleRenameLesson}
+                onDelete={handleDeleteLesson}
+                loading={loadingLessons}
+              />
+              <Card size="sm">
+                <CardHeader>
+                  <CardTitle className="text-base">状态</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <p className="text-muted-foreground">课程加载：{loadingLessons ? "进行中" : "空闲"}</p>
+                  <p className="text-muted-foreground">当前课程：{currentLesson?.title || "未选择"}</p>
+                  <p className="text-muted-foreground">学习模式：沉浸模式</p>
+                  {currentLessonNeedsBinding ? <p className="text-amber-600">待绑定本地媒体：课程可见，但播放受限</p> : null}
+                </CardContent>
+              </Card>
+            </aside>
+          ) : null}
 
           <section className={`min-w-0 space-y-4 transition-all duration-500 ease-out ${immersiveLayoutActive ? "xl:col-span-1" : ""}`}>
             {accessToken ? (
@@ -494,29 +488,27 @@ export function LearningShell() {
             ) : null}
           </section>
 
-          <aside
-            className={`space-y-4 transition-all duration-500 ease-out ${
-              immersiveLayoutActive ? "pointer-events-none translate-x-3 opacity-0" : "translate-x-0 opacity-100"
-            }`}
-          >
-            {!accessToken ? (
-              <AuthPanel onAuthed={handleAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
-            ) : (
-              <>
-                <RedeemCodePanel
-                  apiCall={(path, options = {}) => api(path, options, accessToken)}
-                  onWalletChanged={loadWallet}
-                />
-                <UploadPanel
-                  accessToken={accessToken}
-                  onCreated={handleLessonCreated}
-                  balancePoints={walletBalance}
-                  billingRates={billingRates}
-                  onWalletChanged={loadWallet}
-                />
-              </>
-            )}
-          </aside>
+          {!immersiveLayoutActive ? (
+            <aside className="space-y-4 transition-all duration-500 ease-out">
+              {!accessToken ? (
+                <AuthPanel onAuthed={handleAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
+              ) : (
+                <>
+                  <RedeemCodePanel
+                    apiCall={(path, options = {}) => api(path, options, accessToken)}
+                    onWalletChanged={loadWallet}
+                  />
+                  <UploadPanel
+                    accessToken={accessToken}
+                    onCreated={handleLessonCreated}
+                    balancePoints={walletBalance}
+                    billingRates={billingRates}
+                    onWalletChanged={loadWallet}
+                  />
+                </>
+              )}
+            </aside>
+          ) : null}
         </div>
       </main>
 
