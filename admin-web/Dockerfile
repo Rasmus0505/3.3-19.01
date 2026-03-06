@@ -5,7 +5,7 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
 COPY frontend ./
-RUN npm run build:admin
+RUN npm run build:admin && if [ -f dist-admin/index.admin.html ]; then mv dist-admin/index.admin.html dist-admin/index.html; fi
 
 FROM nginx:1.27-alpine
 COPY admin-web/nginx.conf.template /etc/nginx/templates/default.conf.template
