@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.db import Base, create_database_engine, get_db
 from app.main import create_app
 from app.models import Lesson, LessonProgress, LessonSentence, MediaAsset, User, WalletLedger
-from app.services.billing_service import ensure_default_billing_rates
+from app.services.billing_service import ensure_default_billing_rates, get_or_create_wallet_account, settle_reserved_points
 
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
 
@@ -705,7 +705,7 @@ def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
         }
 
     monkeypatch.setattr(lesson_service_module, "transcribe_audio_file", fake_single_transcribe)
-    payload_single = lesson_service_module.LessonService._transcribe_with_optional_parallel(
+    result_single = lesson_service_module.LessonService._transcribe_with_optional_parallel(
         opus_path=tmp_path / "single.opus",
         req_dir=tmp_path,
         asr_model=QWEN_ASR_MODEL,
@@ -716,6 +716,7 @@ def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
         max_concurrency=4,
         progress_callback=None,
     )
+    payload_single = result_single["asr_payload"]
     assert single_calls["count"] == 1
     assert payload_single["transcripts"][0]["sentences"][0]["text"] == "single"
 
@@ -733,9 +734,10 @@ def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
         lambda segment_index, segment_start_ms, segment_path, asr_model: (
             segment_index,
             [{"text": f"seg-{segment_index}", "begin_ms": segment_start_ms, "end_ms": segment_start_ms + 1000}],
+            None,
         ),
     )
-    payload_parallel = lesson_service_module.LessonService._transcribe_with_optional_parallel(
+    result_parallel = lesson_service_module.LessonService._transcribe_with_optional_parallel(
         opus_path=tmp_path / "parallel.opus",
         req_dir=tmp_path,
         asr_model=QWEN_ASR_MODEL,
@@ -746,8 +748,230 @@ def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
         max_concurrency=4,
         progress_callback=None,
     )
+    payload_parallel = result_parallel["asr_payload"]
     sentences = payload_parallel["transcripts"][0]["sentences"]
     assert len(sentences) == 2
     assert sentences[0]["text"] == "seg-0"
     assert sentences[1]["text"] == "seg-1"
+
+
+def test_settle_reserved_points_allows_negative_balance(test_client):
+    client, session_factory, _ = test_client
+    _register_and_login(client, email="settle-negative@example.com")
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "settle-negative@example.com").one()
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 10
+        session.add(account)
+        session.commit()
+
+        ledger = settle_reserved_points(
+            session,
+            user_id=user.id,
+            model_name=QWEN_ASR_MODEL,
+            reserved_points=10,
+            actual_points=25,
+            duration_ms=120000,
+            note="regression settle negative",
+        )
+        session.commit()
+        session.refresh(account)
+        assert ledger is not None
+        assert ledger.event_type == "consume"
+        assert ledger.delta_points == -15
+        assert account.balance_points == -5
+    finally:
+        session.close()
+
+
+def test_generate_lesson_settles_with_usage_seconds(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    _register_and_login(client, email="usage-settle@example.com")
+
+    from app.services import lesson_service as lesson_service_module
+
+    monkeypatch.setattr(
+        lesson_service_module,
+        "extract_audio_for_asr",
+        lambda source_path, opus_path: opus_path.write_bytes(b"opus"),
+    )
+    monkeypatch.setattr(lesson_service_module, "probe_audio_duration_ms", lambda opus_path: 120000)
+    monkeypatch.setattr(
+        lesson_service_module,
+        "translate_sentences_to_zh",
+        lambda texts, api_key, progress_callback=None: (["你好"] * len(texts), 0),
+    )
+    monkeypatch.setattr(
+        lesson_service_module,
+        "extract_sentences",
+        lambda payload: [{"text": "hello world", "begin_ms": 0, "end_ms": 1000}],
+    )
+    monkeypatch.setattr(lesson_service_module, "estimate_duration_ms", lambda payload, sentences: 999999)
+    monkeypatch.setattr(
+        lesson_service_module.LessonService,
+        "_transcribe_with_optional_parallel",
+        lambda **kwargs: {"asr_payload": {"transcripts": [{"sentences": [{"text": "hello world"}]}]}, "usage_seconds": 60},
+    )
+
+    source_path = tmp_path / "usage.mp4"
+    req_dir = tmp_path / "req_usage"
+    source_path.write_bytes(b"source")
+    req_dir.mkdir(parents=True, exist_ok=True)
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "usage-settle@example.com").one()
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 1000
+        session.add(account)
+        session.commit()
+
+        lesson = lesson_service_module.LessonService.generate_from_saved_file(
+            source_path=source_path,
+            source_filename="usage.mp4",
+            req_dir=req_dir,
+            owner_id=user.id,
+            asr_model=QWEN_ASR_MODEL,
+            db=session,
+        )
+        session.refresh(account)
+        assert lesson.id > 0
+        assert account.balance_points == 870
+
+        ledgers = (
+            session.query(WalletLedger)
+            .filter(WalletLedger.user_id == user.id)
+            .order_by(WalletLedger.id.asc())
+            .all()
+        )
+        assert [item.event_type for item in ledgers[-3:]] == ["reserve", "refund", "consume"]
+        assert ledgers[-2].delta_points == 130
+        assert ledgers[-1].delta_points == 0
+    finally:
+        session.close()
+
+
+def test_generate_lesson_settles_with_fallback_and_can_go_negative(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    _register_and_login(client, email="fallback-settle@example.com")
+
+    from app.services import lesson_service as lesson_service_module
+
+    monkeypatch.setattr(
+        lesson_service_module,
+        "extract_audio_for_asr",
+        lambda source_path, opus_path: opus_path.write_bytes(b"opus"),
+    )
+    monkeypatch.setattr(lesson_service_module, "probe_audio_duration_ms", lambda opus_path: 120000)
+    monkeypatch.setattr(
+        lesson_service_module,
+        "translate_sentences_to_zh",
+        lambda texts, api_key, progress_callback=None: (["你好"] * len(texts), 0),
+    )
+    monkeypatch.setattr(
+        lesson_service_module,
+        "extract_sentences",
+        lambda payload: [{"text": "hello world", "begin_ms": 0, "end_ms": 1000}],
+    )
+    monkeypatch.setattr(lesson_service_module, "estimate_duration_ms", lambda payload, sentences: 300000)
+    monkeypatch.setattr(
+        lesson_service_module.LessonService,
+        "_transcribe_with_optional_parallel",
+        lambda **kwargs: {"asr_payload": {"transcripts": [{"sentences": [{"text": "hello world"}]}]}, "usage_seconds": None},
+    )
+
+    source_path = tmp_path / "fallback.mp4"
+    req_dir = tmp_path / "req_fallback"
+    source_path.write_bytes(b"source")
+    req_dir.mkdir(parents=True, exist_ok=True)
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "fallback-settle@example.com").one()
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 400
+        session.add(account)
+        session.commit()
+
+        lesson = lesson_service_module.LessonService.generate_from_saved_file(
+            source_path=source_path,
+            source_filename="fallback.mp4",
+            req_dir=req_dir,
+            owner_id=user.id,
+            asr_model=QWEN_ASR_MODEL,
+            db=session,
+        )
+        session.refresh(account)
+        assert lesson.id > 0
+        assert account.balance_points == -250
+
+        ledgers = (
+            session.query(WalletLedger)
+            .filter(WalletLedger.user_id == user.id)
+            .order_by(WalletLedger.id.asc())
+            .all()
+        )
+        assert [item.event_type for item in ledgers[-3:]] == ["reserve", "consume", "consume"]
+        assert ledgers[-2].delta_points == -390
+        assert ledgers[-1].delta_points == 0
+    finally:
+        session.close()
+
+
+def test_generate_lesson_failure_still_refunds_reserved_points(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    _register_and_login(client, email="settle-fail@example.com")
+
+    from app.services import lesson_service as lesson_service_module
+
+    monkeypatch.setattr(
+        lesson_service_module,
+        "extract_audio_for_asr",
+        lambda source_path, opus_path: opus_path.write_bytes(b"opus"),
+    )
+    monkeypatch.setattr(lesson_service_module, "probe_audio_duration_ms", lambda opus_path: 120000)
+    monkeypatch.setattr(
+        lesson_service_module.LessonService,
+        "_transcribe_with_optional_parallel",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("asr failed")),
+    )
+
+    source_path = tmp_path / "fail.mp4"
+    req_dir = tmp_path / "req_fail"
+    source_path.write_bytes(b"source")
+    req_dir.mkdir(parents=True, exist_ok=True)
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "settle-fail@example.com").one()
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 500
+        session.add(account)
+        session.commit()
+
+        with pytest.raises(RuntimeError):
+            lesson_service_module.LessonService.generate_from_saved_file(
+                source_path=source_path,
+                source_filename="fail.mp4",
+                req_dir=req_dir,
+                owner_id=user.id,
+                asr_model=QWEN_ASR_MODEL,
+                db=session,
+            )
+
+        session.refresh(account)
+        assert account.balance_points == 500
+        ledgers = (
+            session.query(WalletLedger)
+            .filter(WalletLedger.user_id == user.id)
+            .order_by(WalletLedger.id.asc())
+            .all()
+        )
+        assert [item.event_type for item in ledgers[-2:]] == ["reserve", "refund"]
+        assert ledgers[-2].delta_points == -260
+        assert ledgers[-1].delta_points == 260
+    finally:
+        session.close()
 

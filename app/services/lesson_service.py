@@ -13,7 +13,14 @@ from app.core.config import DASHSCOPE_API_KEY, UPLOAD_MAX_BYTES
 from app.models import Lesson, LessonSentence
 from app.repositories.progress import create_progress
 from app.services.asr_dashscope import transcribe_audio_file
-from app.services.billing_service import calculate_points, get_model_rate, record_consume, refund_points, reserve_points
+from app.services.billing_service import (
+    calculate_points,
+    get_model_rate,
+    record_consume,
+    refund_points,
+    reserve_points,
+    settle_reserved_points,
+)
 from app.services.lesson_builder import estimate_duration_ms, extract_sentences, tokenize_sentence
 from app.services.media import MediaError, extract_audio_for_asr, probe_audio_duration_ms, run_cmd, save_upload_file_stream, validate_suffix
 from app.services.translation_qwen_mt import translate_sentences_to_zh
@@ -111,9 +118,12 @@ def _split_audio_segments(source_audio: Path, segments_dir: Path, segment_second
     return output
 
 
-def _transcribe_segment(segment_index: int, segment_start_ms: int, segment_path: Path, asr_model: str) -> tuple[int, list[dict[str, Any]]]:
+def _transcribe_segment(
+    segment_index: int, segment_start_ms: int, segment_path: Path, asr_model: str
+) -> tuple[int, list[dict[str, Any]], int | None]:
     asr_result = transcribe_audio_file(str(segment_path), model=asr_model)
     segment_payload = asr_result["asr_result_json"]
+    usage_seconds = asr_result.get("usage_seconds")
     segment_sentences = extract_sentences(segment_payload)
     shifted: list[dict[str, Any]] = []
     for item in segment_sentences:
@@ -124,7 +134,7 @@ def _transcribe_segment(segment_index: int, segment_start_ms: int, segment_path:
                 "end_ms": int(item["end_ms"]) + segment_start_ms,
             }
         )
-    return segment_index, shifted
+    return segment_index, shifted, int(usage_seconds) if isinstance(usage_seconds, int) and usage_seconds > 0 else None
 
 
 class LessonService:
@@ -204,7 +214,12 @@ class LessonService:
                     "translate_total": 0,
                 },
             )
-            return asr_payload
+            return {
+                "asr_payload": asr_payload,
+                "usage_seconds": int(asr_result.get("usage_seconds"))
+                if isinstance(asr_result.get("usage_seconds"), int) and int(asr_result.get("usage_seconds")) > 0
+                else None,
+            }
 
         segments = _split_audio_segments(opus_path, req_dir / "asr_segments", segment_seconds, source_duration_ms)
         total_segments = len(segments)
@@ -234,7 +249,7 @@ class LessonService:
             },
         )
 
-        merged: list[tuple[int, list[dict[str, Any]]]] = []
+        merged: list[tuple[int, list[dict[str, Any]], int | None]] = []
         completed_segments = 0
 
         with ThreadPoolExecutor(max_workers=max(1, min(max_concurrency, total_segments))) as executor:
@@ -243,8 +258,8 @@ class LessonService:
                 for segment_index, segment_start_ms, segment_path in segments
             }
             for future in as_completed(future_map):
-                segment_index, segment_sentences = future.result()
-                merged.append((segment_index, segment_sentences))
+                segment_index, segment_sentences, usage_seconds = future.result()
+                merged.append((segment_index, segment_sentences, usage_seconds))
                 completed_segments += 1
                 asr_done_estimate = max(1, int(round(estimate_total_subtitles * completed_segments / total_segments)))
                 ratio = completed_segments / total_segments
@@ -273,8 +288,11 @@ class LessonService:
 
         merged.sort(key=lambda item: item[0])
         ordered_sentences: list[dict[str, Any]] = []
-        for _, segment_sentences in merged:
+        usage_values: list[int] = []
+        for _, segment_sentences, usage_seconds in merged:
             ordered_sentences.extend(segment_sentences)
+            if isinstance(usage_seconds, int) and usage_seconds > 0:
+                usage_values.append(usage_seconds)
         ordered_sentences.sort(key=lambda item: (int(item["begin_ms"]), int(item["end_ms"])))
 
         if not ordered_sentences:
@@ -296,7 +314,11 @@ class LessonService:
             },
         )
 
-        return _build_parallel_payload(source_duration_ms, ordered_sentences)
+        usage_total_seconds = sum(usage_values) if len(usage_values) == total_segments else None
+        return {
+            "asr_payload": _build_parallel_payload(source_duration_ms, ordered_sentences),
+            "usage_seconds": usage_total_seconds,
+        }
 
     @staticmethod
     def generate_from_saved_file(
@@ -356,7 +378,7 @@ class LessonService:
             reserve_ledger_id = reserve_ledger.id
             db.commit()
 
-            asr_payload = LessonService._transcribe_with_optional_parallel(
+            asr_transcribe = LessonService._transcribe_with_optional_parallel(
                 opus_path=opus_path,
                 req_dir=req_dir,
                 asr_model=asr_model,
@@ -367,6 +389,8 @@ class LessonService:
                 max_concurrency=max(1, int(getattr(rate, "max_concurrency", 2))),
                 progress_callback=progress_callback,
             )
+            asr_payload = asr_transcribe["asr_payload"]
+            usage_seconds = asr_transcribe.get("usage_seconds")
 
             sentences = extract_sentences(asr_payload)
             if not sentences:
@@ -425,6 +449,19 @@ class LessonService:
             failed_ratio = failed_count / max(len(sentences), 1)
             lesson_status = "partial_ready" if failed_ratio >= 0.3 else "ready"
             duration_ms = estimate_duration_ms(asr_payload, sentences)
+            usage_hit = isinstance(usage_seconds, int) and usage_seconds > 0
+            actual_duration_ms = int(usage_seconds * 1000) if usage_hit else int(duration_ms)
+            actual_points = calculate_points(actual_duration_ms, rate.points_per_minute)
+            points_diff = int(actual_points) - int(reserved_points)
+            logger.info(
+                "[DEBUG] lesson.generate settle owner_id=%s model=%s usage_hit=%s reserved_points=%s actual_points=%s diff=%s",
+                owner_id,
+                asr_model,
+                usage_hit,
+                reserved_points,
+                actual_points,
+                points_diff,
+            )
 
             _emit_progress(
                 progress_callback,
@@ -473,13 +510,28 @@ class LessonService:
                 )
 
             create_progress(db, lesson_id=lesson.id, user_id=owner_id)
+            settle_reserved_points(
+                db,
+                user_id=owner_id,
+                model_name=asr_model,
+                reserved_points=reserved_points,
+                actual_points=actual_points,
+                duration_ms=actual_duration_ms,
+                note=(
+                    f"课程生成结算，预扣流水#{reserve_ledger_id}，预扣={reserved_points}，实耗={actual_points}，差额={points_diff}，"
+                    f"usage_seconds={usage_seconds if usage_hit else 'fallback'}"
+                ),
+            )
             record_consume(
                 db,
                 user_id=owner_id,
                 model_name=asr_model,
-                duration_ms=duration_ms,
+                duration_ms=actual_duration_ms,
                 lesson_id=lesson.id,
-                note=f"课程生成完成，预扣流水#{reserve_ledger_id}，预扣点数={reserved_points}",
+                note=(
+                    f"课程生成完成，预扣流水#{reserve_ledger_id}，预扣={reserved_points}，实耗={actual_points}，差额={points_diff}，"
+                    f"usage_seconds={usage_seconds if usage_hit else 'fallback'}"
+                ),
             )
             db.commit()
             db.refresh(lesson)

@@ -26,6 +26,7 @@ from app.services.billing import (
     redeem_code,
     refund_points,
     reserve_points,
+    settle_reserved_points,
     set_redeem_batch_status,
     update_redeem_code_status,
 )
@@ -56,6 +57,7 @@ __all__ = [
     "redeem_code",
     "refund_points",
     "reserve_points",
+    "settle_reserved_points",
     "set_redeem_batch_status",
     "update_redeem_code_status",
 ]
