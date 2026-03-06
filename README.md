@@ -1,108 +1,54 @@
-﻿# English Sentence Spelling Trainer (Zeabur MVP)
+# English Sentence Spelling Trainer (Zeabur MVP)
 
-本项目是 Zeabur 托管部署的英语句级拼写练习 MVP：
+本项目是一个部署在 Zeabur 上的英语句级拼写练习 MVP：
 
 1. 上传音视频素材
-2. 自动 ASR（带时间戳）+ 逐句翻译中文
-3. 句级播放 + 逐词拼写检查（严格+轻微容错）
-4. 登录后同步学习进度（Postgres）
-5. 钱包余额与按模型分钟计费
+2. 调用 DashScope 做 ASR
+3. 自动按句切分、翻译中文
+4. 登录后同步学习进度与钱包余额
+5. 提供管理员计费与兑换码后台
 
 ## 技术栈
 
-- Backend: FastAPI + SQLAlchemy + Alembic
-- Frontend: React + Tailwind + shadcn-style components
-- ASR: DashScope (`paraformer-v2` / `qwen3-asr-flash-filetrans`)
-- MT: Qwen-MT (`qwen-mt-plus`, OpenAI-compatible)
-- Storage: Postgres + 本地文件（课程音频片段）
+- Backend：FastAPI + SQLAlchemy + Alembic
+- Frontend：React + Tailwind
+- Database：Postgres（业务表固定在 `app` schema）
+- Runtime：Dockerfile + Zeabur GitHub 直构
 
-## 目录结构（可持续分层）
+## 核心接口
 
-```text
-app/
-  main.py                  # app 装配、生命周期、路由注册
-  api/                     # 路由层
-  core/                    # 配置、错误映射、日志
-  db/                      # 会话、元数据、初始化策略
-  domain/                  # 业务规则（纯逻辑）
-  infra/                   # 外部系统适配（ASR/MT/ffmpeg）
-  models/                  # ORM 模型（按域拆分）
-  repositories/            # 数据访问
-  schemas/                 # API DTO（按域拆分）
-  services/                # 用例编排
-frontend/src/
-  app/                     # 壳层与入口分发
-  pages/                   # 页面入口
-  features/                # 业务功能模块
-  shared/                  # 公共 API/UI/hook
-```
-
-## 主要接口（保持原契约）
-
-- 认证
-  - `POST /api/auth/register`
-  - `POST /api/auth/login`
-  - `POST /api/auth/refresh`
-  - `POST /api/auth/logout`
-- 课程
-  - `POST /api/lessons` (form-data: `video_file`, `asr_model`)
-  - `GET /api/lessons`
-  - `GET /api/lessons/{lesson_id}`
-- 练习
-  - `POST /api/lessons/{lesson_id}/check`
-  - `POST /api/lessons/{lesson_id}/progress`
-  - `GET /api/lessons/{lesson_id}/progress`
-  - `GET /api/lessons/{lesson_id}/sentences/{idx}/audio`
-  - `GET /api/lessons/{lesson_id}/media`
-- 钱包与计费
-  - `GET /api/wallet/me`
-  - `POST /api/wallet/redeem-code`
-  - `GET /api/billing/rates`
-- 管理后台（管理员）
-  - `GET /api/admin/users`
-  - `DELETE /api/admin/users/{user_id}`
-  - `POST /api/admin/users/{user_id}/wallet-adjust`
-  - `GET /api/admin/wallet-logs`
-  - `GET /api/admin/billing-rates`
-  - `PUT /api/admin/billing-rates/{model_name}`
-  - `POST /api/admin/redeem-batches`
-  - `GET /api/admin/redeem-batches`
-  - `POST /api/admin/redeem-batches/{batch_id}/activate`
-  - `POST /api/admin/redeem-batches/{batch_id}/pause`
-  - `POST /api/admin/redeem-batches/{batch_id}/expire`
-  - `POST /api/admin/redeem-batches/{batch_id}/copy`
-  - `GET /api/admin/redeem-codes`
-  - `POST /api/admin/redeem-codes/export`
-  - `POST /api/admin/redeem-codes/{code_id}/enable`
-  - `POST /api/admin/redeem-codes/{code_id}/disable`
-  - `POST /api/admin/redeem-codes/{code_id}/abandon`
-  - `POST /api/admin/redeem-codes/bulk-disable`
-  - `GET /api/admin/redeem-audit`
-  - `POST /api/admin/redeem-audit/export`
-- 保留原能力
+- 保持不变：
   - `POST /api/transcribe/file`
   - `GET /health`
+- 新增就绪探针：
+  - `GET /health/ready`
+
+`/health` 只表示 Web 进程还活着。  
+`/health/ready` 用来判断数据库与业务表是否就绪；数据库异常时会返回 `503`。
 
 ## 必要环境变量
 
-- `DASHSCOPE_API_KEY` (必填)
-- `DATABASE_URL` (建议 Zeabur Postgres 连接串，推荐包含 `search_path=app,public`)
-- `DB_INIT_MODE` (`auto`/`create_all`/`skip`，默认 `auto`)
-- `JWT_SECRET` (必填，生产必须替换)
-- `ADMIN_EMAILS` (可选，管理员邮箱白名单，逗号分隔)
-- `APP_TIMEZONE` (可选，默认 `Asia/Shanghai`，用于时间写入与接口输出时区语义)
-- `REDEEM_CODE_DEFAULT_VALID_DAYS` (可选，兑换批次默认有效期天数，默认 `30`)
-- `REDEEM_CODE_DEFAULT_DAILY_LIMIT` (可选，全局默认单账号每日兑换上限，默认 `5`)
-- `REDEEM_CODE_EXPORT_CONFIRM_TEXT` (可选，导出 CSV 二次确认口令，默认 `EXPORT`)
-- `TMP_WORK_DIR` (可选，默认 `/tmp/zeabur3.3`)
-- `MT_BASE_URL` (可选，默认北京: `https://dashscope.aliyuncs.com/compatible-mode/v1`)
-- `MT_MODEL` (可选，默认 `qwen-mt-plus`)
+- `DATABASE_URL`：Zeabur Postgres 连接串，不需要再手工拼 `search_path`
+- `DASHSCOPE_API_KEY`：ASR/翻译使用
+- `JWT_SECRET`：登录鉴权签名
+- `ADMIN_EMAILS`：管理员邮箱白名单，多个用逗号分隔
 
-## 时间策略（东八区）
+## 常用可选环境变量
 
-- 数据库时间字段（如 `created_at`、`updated_at`）按东八区语义写入（naive）。
-- API 返回时间统一为 ISO8601 且带 `+08:00` 偏移。
-- 历史数据不做回填，仅发布后的新写入数据按新策略生效。
+- `AUTO_MIGRATE_ON_START=true`
+- `DB_INIT_MODE=auto`
+- `ALEMBIC_CONFIG=alembic.ini`
+- `TMP_WORK_DIR=/tmp/zeabur3.3`
+- `MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
+- `MT_MODEL=qwen-mt-plus`
+- `APP_TIMEZONE=Asia/Shanghai`
+
+## 数据库约定
+
+- 生产环境只走 Alembic 迁移，不再依赖 `search_path`
+- ORM 与迁移统一显式使用 `app` schema
+- 默认计费费率通过迁移写入，不再依赖应用启动时 seed
+- 本地 SQLite 仍可用 `DB_INIT_MODE=auto` 走 `create_all`
 
 ## 本地开发
 
@@ -113,107 +59,121 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-后端：
+本地 SQLite 快速运行：
 
 ```powershell
-$env:DASHSCOPE_API_KEY="sk-xxx"
 $env:DATABASE_URL="sqlite:///./app.db"
 $env:DB_INIT_MODE="auto"
 $env:JWT_SECRET="change-me"
-alembic upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-前端：
+本地 Postgres 迁移运行：
 
 ```powershell
-cd frontend
-npm ci
-npm run dev
+$env:DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/app_test"
+$env:JWT_SECRET="change-me"
+python -m alembic upgrade head
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-## 数据库迁移（Alembic）
+## Zeabur 部署（推荐）
 
-初始化（新环境）：
+首轮恢复只部署两个服务：
+
+1. `web`
+2. `postgresql`
+
+不要把 `metabase` 放进第一次恢复上线。
+
+### 1）在 Zeabur 连接 GitHub 仓库
+
+- 选择当前仓库
+- 构建方式使用仓库根目录 `Dockerfile`
+- 启动命令使用镜像内默认入口 `scripts/start.sh`
+- 仓库内保留的 GHCR workflow 现在仅作手动回退，不再是默认发布链路
+
+### 2）在 Zeabur 新建 Postgres 服务
+
+- 使用 Zeabur 的 Postgres 模板
+- 新库保持为空库即可
+- 把连接串填到 `web` 服务的 `DATABASE_URL`
+
+### 3）给 `web` 服务填写环境变量
+
+至少填写：
+
+- `DATABASE_URL`
+- `DASHSCOPE_API_KEY`
+- `JWT_SECRET`
+- `ADMIN_EMAILS`
+
+建议同时保留：
+
+- `AUTO_MIGRATE_ON_START=true`
+- `TMP_WORK_DIR=/tmp/zeabur3.3`
+- `MT_BASE_URL`
+- `MT_MODEL`
+
+### 4）部署后如何验证
+
+先验证 liveness：
 
 ```bash
-alembic upgrade head
+GET /health
 ```
 
-新增迁移：
+预期：`200`，返回 `ok=true`
+
+再验证 readiness：
 
 ```bash
-alembic revision -m "add_xxx"
+GET /health/ready
 ```
 
-回滚一步：
+预期：`200`，返回 `ok=true`
 
-```bash
-alembic downgrade -1
+最后验证业务：
+
+1. 注册/登录成功
+2. `GET /api/wallet/me` 返回 `200`
+3. `GET /api/admin/billing-rates` 返回 `200`
+4. 上传文件调用 `POST /api/transcribe/file` 成功
+
+## Zeabur AI 可直接使用的提示词
+
+```text
+请帮我在 Zeabur 上部署这个 GitHub 仓库，按仓库根目录 Dockerfile 构建。
+本次先只部署两个服务：web 和 postgresql，不要先部署 Metabase。
+请提醒我填写这 4 个环境变量：DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS。
+web 服务启动后，请依次验证：
+1. GET /health 返回 200
+2. GET /health/ready 返回 200
+3. POST /api/transcribe/file 上传一个媒体文件能成功
+如果 /health 正常但 /health/ready 不正常，请优先检查数据库连接和迁移日志。
 ```
 
-说明：
-- 非 sqlite 环境建议固定使用 Alembic，不依赖 `create_all`。
-- sqlite 本地开发默认可通过 `DB_INIT_MODE=auto` 自动建表。
+## 可选第二阶段
 
-## Zeabur 部署（推荐：GHCR 成品镜像）
+当 `web + postgresql` 稳定后，再接回：
 
-本仓库已支持「GitHub Actions 构建镜像 -> GHCR 推送 -> Zeabur 拉取成品镜像」流程，避免 Zeabur 侧构建不稳定。
+- `metabase`
 
-### 1) 启用镜像构建工作流
+接回后只同步 `app` schema，避免系统表和业务表混在一起。
 
-- 工作流文件：`.github/workflows/ghcr-image.yml`
-- PostgreSQL 镜像预热工作流：`.github/workflows/postgres-mirror-ghcr.yml`
-- PostgreSQL 自定义镜像工作流：`.github/workflows/postgres-custom-ghcr.yml`
-- 触发方式：
-  - push 到 `main`
-  - GitHub Actions 手动触发（`workflow_dispatch`）
-- 产物标签：
-  - `ghcr.io/rasmus0505/3.3-19.01:latest`
-  - `ghcr.io/rasmus0505/3.3-19.01:sha-<commit>`
+## 回归验证
 
-### 2) Zeabur 使用 Custom Image
+- SQLite 快速回归：`pytest -q`
+- Postgres 启动冒烟：`pytest -q tests/test_start_script_smoke.py`
 
-1. 在 Zeabur 新建或修改服务为镜像部署（Custom Image / Image Deploy）
-2. 镜像填写：`ghcr.io/rasmus0505/3.3-19.01:latest`（建议生产改用 `sha-xxxx`）
-3. 配置环境变量：
-   - `DATABASE_URL`（建议包含 `search_path=app,public`）
-   - `DASHSCOPE_API_KEY`
-   - `JWT_SECRET`
-   - `ADMIN_EMAILS`
-   - `DB_INIT_MODE=auto`
-   - `MT_BASE_URL`
-   - `MT_MODEL`
-4. 启动命令使用镜像内默认容器命令（直接启动 `uvicorn`，不自动执行 Alembic）
+## 常见排查
 
-### 3) 手动迁移（仅在需要时执行）
-
-当数据库结构有变更时，在部署前手动执行：
-
-```bash
-alembic upgrade head
-```
-
-### 4) 发布后验证
-
-1. `GET /health` 返回 200
-2. 上传文件调用 `POST /api/transcribe/file` 返回成功
-3. 使用有效用户 token 调用 `GET /api/wallet/me` 返回 200
-4. 使用管理员 token 调用 `GET /api/admin/billing-rates` 返回 200
-
-详细步骤见：`docs/ZEABUR_POSTGRES_IMAGE_DEPLOY.md`
-
-## Metabase schema 约束
-
-目标：Metabase 只同步 `app` schema，避免系统表与业务表混杂。
-
-1. 进入数据库连接 `PG`
-2. schema 同步范围仅保留 `app`
-3. 执行一次“同步数据库结构 + 重扫字段值”
-
-## 说明
-
-- 切句逻辑直接使用 ASR 返回 `sentences`，避免时间戳错位。
-- 翻译失败不阻断课程生成；失败句翻译为空字符串。
-- 请求结束后会清理临时目录。
-- `/admin` 为后台入口，非管理员会被后端权限拦截。
+- `/health` 正常但 `/health/ready` 返回 `503`
+  - 先看 `DATABASE_URL`
+  - 再看 Alembic 迁移日志
+- `POST /api/transcribe/file` 失败
+  - 先看 `DASHSCOPE_API_KEY`
+  - 再看 ffmpeg/libopus 是否可用
+- 首次部署后 502
+  - 先确认 Zeabur 是否真的使用了仓库 `Dockerfile`
+  - 再确认 `web` 与 `postgresql` 是否已经绑定在同一个项目内

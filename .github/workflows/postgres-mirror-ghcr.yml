@@ -1,4 +1,4 @@
-name: Sync PostgreSQL Mirror to GHCR
+name: Mirror PostgreSQL to GHCR (Fallback)
 
 on:
   workflow_dispatch:
@@ -12,8 +12,6 @@ on:
         required: true
         type: boolean
         default: false
-  schedule:
-    - cron: "17 3 * * *"
 
 permissions:
   contents: read
@@ -74,6 +72,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "Fallback only: preferred production path is Zeabur managed PostgreSQL." >> "$GITHUB_STEP_SUMMARY"
           echo "Mirrored docker.io/library/postgres:${POSTGRES_TAG}" >> "$GITHUB_STEP_SUMMARY"
           echo "Primary image: ${GHCR_IMAGE}:${POSTGRES_TAG}" >> "$GITHUB_STEP_SUMMARY"
           echo "Fallback image: docker.io/\${DOCKERHUB_IMAGE}:${POSTGRES_TAG} (if enabled)" >> "$GITHUB_STEP_SUMMARY"

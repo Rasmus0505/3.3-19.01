@@ -10,6 +10,8 @@ from __future__ import annotations
 from alembic import op
 import sqlalchemy as sa
 
+from app.db import APP_SCHEMA
+
 
 revision = "20260304_0003"
 down_revision = "20260304_0002"
@@ -19,7 +21,7 @@ depends_on = None
 
 def _schema_name() -> str | None:
     bind = op.get_bind()
-    return None if bind.dialect.name == "sqlite" else "app"
+    return None if bind.dialect.name == "sqlite" else APP_SCHEMA
 
 
 def _dialect_name() -> str:
@@ -107,7 +109,7 @@ def _ensure_lesson_columns_not_null(schema: str | None) -> None:
 def upgrade() -> None:
     schema = _schema_name()
     if schema:
-        op.execute("CREATE SCHEMA IF NOT EXISTS app")
+        op.execute(f"CREATE SCHEMA IF NOT EXISTS {APP_SCHEMA}")
 
     if _has_table("lessons", schema):
         if not _has_column("lessons", "media_storage", schema):

@@ -10,6 +10,8 @@ from __future__ import annotations
 from alembic import op
 import sqlalchemy as sa
 
+from app.db import APP_SCHEMA
+
 
 revision = "20260304_0002"
 down_revision = "20260304_0001"
@@ -19,7 +21,7 @@ depends_on = None
 
 def _schema_name() -> str | None:
     bind = op.get_bind()
-    return None if bind.dialect.name == "sqlite" else "app"
+    return None if bind.dialect.name == "sqlite" else APP_SCHEMA
 
 
 def _dialect_name() -> str:
@@ -63,10 +65,71 @@ def _has_check_constraint(table_name: str, constraint_name: str, schema: str | N
     return any(item.get("name") == constraint_name for item in checks)
 
 
+def _wallet_ledger_fk_specs(schema: str | None) -> tuple[tuple[str, str, str], ...]:
+    table_prefix = f"{schema}." if schema else ""
+    return (
+        ("redeem_batch_id", f"{table_prefix}redeem_code_batches.id", "fk_wallet_ledger_redeem_batch_id"),
+        ("redeem_code_id", f"{table_prefix}redeem_codes.id", "fk_wallet_ledger_redeem_code_id"),
+    )
+
+
+def _upgrade_wallet_ledger_sqlite() -> None:
+    existing_columns = {
+        column["name"]
+        for column in sa.inspect(op.get_bind()).get_columns("wallet_ledger")
+    }
+
+    with op.batch_alter_table("wallet_ledger", schema=None) as batch_op:
+        if "redeem_batch_id" not in existing_columns:
+            batch_op.add_column(sa.Column("redeem_batch_id", sa.Integer(), nullable=True))
+        if "redeem_code_id" not in existing_columns:
+            batch_op.add_column(sa.Column("redeem_code_id", sa.Integer(), nullable=True))
+        if "redeem_code_mask" not in existing_columns:
+            batch_op.add_column(sa.Column("redeem_code_mask", sa.String(length=32), nullable=True))
+        if "redeem_batch_id" not in existing_columns:
+            batch_op.create_foreign_key(
+                "fk_wallet_ledger_redeem_batch_id",
+                "redeem_code_batches",
+                ["redeem_batch_id"],
+                ["id"],
+                ondelete="SET NULL",
+            )
+        if "redeem_code_id" not in existing_columns:
+            batch_op.create_foreign_key(
+                "fk_wallet_ledger_redeem_code_id",
+                "redeem_codes",
+                ["redeem_code_id"],
+                ["id"],
+                ondelete="SET NULL",
+            )
+
+
+def _downgrade_wallet_ledger_sqlite() -> None:
+    existing_columns = {
+        column["name"]
+        for column in sa.inspect(op.get_bind()).get_columns("wallet_ledger")
+    }
+
+    if not {"redeem_batch_id", "redeem_code_id", "redeem_code_mask"} & existing_columns:
+        return
+
+    with op.batch_alter_table("wallet_ledger", schema=None) as batch_op:
+        if "redeem_code_id" in existing_columns:
+            batch_op.drop_constraint("fk_wallet_ledger_redeem_code_id", type_="foreignkey")
+        if "redeem_batch_id" in existing_columns:
+            batch_op.drop_constraint("fk_wallet_ledger_redeem_batch_id", type_="foreignkey")
+        if "redeem_code_mask" in existing_columns:
+            batch_op.drop_column("redeem_code_mask")
+        if "redeem_code_id" in existing_columns:
+            batch_op.drop_column("redeem_code_id")
+        if "redeem_batch_id" in existing_columns:
+            batch_op.drop_column("redeem_batch_id")
+
+
 def upgrade() -> None:
     schema = _schema_name()
     if schema:
-        op.execute("CREATE SCHEMA IF NOT EXISTS app")
+        op.execute(f"CREATE SCHEMA IF NOT EXISTS {APP_SCHEMA}")
 
     if not _has_table("redeem_code_batches", schema):
         op.create_table(
@@ -191,20 +254,18 @@ def upgrade() -> None:
         op.create_index("ix_admin_operation_logs_created_at", "admin_operation_logs", ["created_at"], unique=False, schema=schema)
 
     if _has_table("wallet_ledger", schema):
-        if not _has_column("wallet_ledger", "redeem_batch_id", schema):
-            op.add_column(
-                "wallet_ledger",
-                sa.Column("redeem_batch_id", sa.Integer(), sa.ForeignKey(f"{schema + '.' if schema else ''}redeem_code_batches.id", ondelete="SET NULL"), nullable=True),
-                schema=schema,
-            )
-        if not _has_column("wallet_ledger", "redeem_code_id", schema):
-            op.add_column(
-                "wallet_ledger",
-                sa.Column("redeem_code_id", sa.Integer(), sa.ForeignKey(f"{schema + '.' if schema else ''}redeem_codes.id", ondelete="SET NULL"), nullable=True),
-                schema=schema,
-            )
-        if not _has_column("wallet_ledger", "redeem_code_mask", schema):
-            op.add_column("wallet_ledger", sa.Column("redeem_code_mask", sa.String(length=32), nullable=True), schema=schema)
+        if _dialect_name() == "sqlite":
+            _upgrade_wallet_ledger_sqlite()
+        else:
+            for column_name, target_ref, _constraint_name in _wallet_ledger_fk_specs(schema):
+                if not _has_column("wallet_ledger", column_name, schema):
+                    op.add_column(
+                        "wallet_ledger",
+                        sa.Column(column_name, sa.Integer(), sa.ForeignKey(target_ref, ondelete="SET NULL"), nullable=True),
+                        schema=schema,
+                    )
+            if not _has_column("wallet_ledger", "redeem_code_mask", schema):
+                op.add_column("wallet_ledger", sa.Column("redeem_code_mask", sa.String(length=32), nullable=True), schema=schema)
 
         if not _has_index("wallet_ledger", "ix_wallet_ledger_redeem_batch_id", schema):
             op.create_index("ix_wallet_ledger_redeem_batch_id", "wallet_ledger", ["redeem_batch_id"], unique=False, schema=schema)
@@ -224,6 +285,25 @@ def downgrade() -> None:
     schema = _schema_name()
 
     if _has_table("wallet_ledger", schema):
+        if _dialect_name() == "sqlite":
+            if _has_index("wallet_ledger", "ix_wallet_ledger_redeem_code_id", schema):
+                op.drop_index("ix_wallet_ledger_redeem_code_id", table_name="wallet_ledger", schema=schema)
+            if _has_index("wallet_ledger", "ix_wallet_ledger_redeem_batch_id", schema):
+                op.drop_index("ix_wallet_ledger_redeem_batch_id", table_name="wallet_ledger", schema=schema)
+            _downgrade_wallet_ledger_sqlite()
+        else:
+            if _has_index("wallet_ledger", "ix_wallet_ledger_redeem_code_id", schema):
+                op.drop_index("ix_wallet_ledger_redeem_code_id", table_name="wallet_ledger", schema=schema)
+            if _has_index("wallet_ledger", "ix_wallet_ledger_redeem_batch_id", schema):
+                op.drop_index("ix_wallet_ledger_redeem_batch_id", table_name="wallet_ledger", schema=schema)
+
+            if _has_column("wallet_ledger", "redeem_code_mask", schema):
+                op.drop_column("wallet_ledger", "redeem_code_mask", schema=schema)
+            if _has_column("wallet_ledger", "redeem_code_id", schema):
+                op.drop_column("wallet_ledger", "redeem_code_id", schema=schema)
+            if _has_column("wallet_ledger", "redeem_batch_id", schema):
+                op.drop_column("wallet_ledger", "redeem_batch_id", schema=schema)
+
         if _dialect_name() == "postgresql":
             q_wallet_ledger = _qualified_table("wallet_ledger", schema)
             op.execute(f"ALTER TABLE {q_wallet_ledger} DROP CONSTRAINT IF EXISTS ck_wallet_ledger_event_type")
@@ -231,18 +311,6 @@ def downgrade() -> None:
                 f"ALTER TABLE {q_wallet_ledger} ADD CONSTRAINT ck_wallet_ledger_event_type "
                 f"CHECK (event_type IN ('reserve','consume','refund','manual_adjust'))"
             )
-
-        if _has_index("wallet_ledger", "ix_wallet_ledger_redeem_code_id", schema):
-            op.drop_index("ix_wallet_ledger_redeem_code_id", table_name="wallet_ledger", schema=schema)
-        if _has_index("wallet_ledger", "ix_wallet_ledger_redeem_batch_id", schema):
-            op.drop_index("ix_wallet_ledger_redeem_batch_id", table_name="wallet_ledger", schema=schema)
-
-        if _has_column("wallet_ledger", "redeem_code_mask", schema):
-            op.drop_column("wallet_ledger", "redeem_code_mask", schema=schema)
-        if _has_column("wallet_ledger", "redeem_code_id", schema):
-            op.drop_column("wallet_ledger", "redeem_code_id", schema=schema)
-        if _has_column("wallet_ledger", "redeem_batch_id", schema):
-            op.drop_column("wallet_ledger", "redeem_batch_id", schema=schema)
 
     if _has_table("admin_operation_logs", schema):
         op.drop_table("admin_operation_logs", schema=schema)

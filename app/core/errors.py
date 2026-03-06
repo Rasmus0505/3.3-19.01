@@ -19,6 +19,10 @@ def map_media_error(exc: MediaError) -> JSONResponse:
         return error_response(413, exc.code, exc.message, exc.detail)
     if exc.code in {"INVALID_FILE_TYPE", "EMPTY_FILE", "SENTENCE_CLIP_FAILED", "FFPROBE_FAILED"}:
         return error_response(400, exc.code, exc.message, exc.detail)
+    if exc.code in {"COMMAND_MISSING", "FFMPEG_LIBOPUS_MISSING"}:
+        return error_response(503, exc.code, exc.message, exc.detail)
+    if exc.code == "COMMAND_TIMEOUT":
+        return error_response(504, exc.code, exc.message, exc.detail)
     return error_response(500, exc.code, exc.message, exc.detail)
 
 

@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db import Base
+from app.db import Base, create_database_engine
 from app.models import User, WalletAccount
 from app.security import verify_password
 from app.services.admin_bootstrap import ensure_admin_users
 
 
 def _build_session_factory(db_path: str):
-    engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False}, future=True)
+    engine = create_database_engine(f"sqlite:///{db_path}")
     Base.metadata.create_all(bind=engine)
     factory = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=Session, future=True)
     return engine, factory

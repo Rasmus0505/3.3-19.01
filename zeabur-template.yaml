@@ -1,62 +1,43 @@
-﻿# yaml-language-server: $schema=https://schema.zeabur.app/template.json
+# yaml-language-server: $schema=https://schema.zeabur.app/template.json
 apiVersion: zeabur.com/v1
 kind: Template
 metadata:
-  name: English Trainer Minimal Deploy
+  name: English Trainer Fallback Template
 spec:
-  description: Deploy FastAPI web, PostgreSQL, and Metabase with minimum manual setup for Zeabur.
+  description: Fallback template for web + postgresql. Preferred production path is GitHub direct build.
   icon: https://cdn.zeabur.com/marketplace/python.svg
   tags:
-    - Website
-    - Database
-    - Tool
+    - python
+    - fastapi
+    - postgres
   variables:
     - key: APP_DASHSCOPE_API_KEY
-      type: PASSWORD
+      type: STRING
       name: DashScope API Key
-      description: API key for ASR and translation features.
+      description: API key used by ASR and translation.
     - key: APP_JWT_SECRET
-      type: PASSWORD
+      type: STRING
       name: JWT Secret
       description: Secret used to sign JWT tokens.
     - key: APP_ADMIN_EMAILS
       type: STRING
       name: Admin Emails
       description: Comma-separated admin email list.
-    - key: APP_POSTGRES_IMAGE
-      type: STRING
-      name: PostgreSQL Image
-      description: PostgreSQL image reference, e.g. ghcr.io/<github-owner>/postgres-mirror:18
-      default: postgres:18
   readme: |-
-    # English Trainer Minimal Deploy
+    Preferred deployment path:
 
-    This template creates 3 services in one project:
+    1. Connect this GitHub repository directly in Zeabur
+    2. Build from the repository Dockerfile
+    3. Deploy only `web` + `postgresql` for the first rollout
 
-    1. `web`: FastAPI + static frontend from GHCR image
-    2. `postgresql`: business database
-    3. `metabase`: optional BI service
-
-    ## What to fill during import
-
-    - APP_DASHSCOPE_API_KEY
-    - APP_JWT_SECRET
-    - APP_ADMIN_EMAILS
-    - APP_POSTGRES_IMAGE (optional; keep postgres:18 or set ghcr.io/<owner>/postgres-mirror:18)
-
-    ## After deploy
-
-    1. Check `GET /health` returns 200.
-    2. Test `POST /api/transcribe/file` with an uploaded media file.
-    3. In Metabase, keep business sync scope to `app` schema only.
-    4. If APP_POSTGRES_IMAGE points to private GHCR, configure image pull credentials in Zeabur service settings.
+    This template remains as a fallback import option.
   services:
     - name: postgresql
       icon: https://cdn.zeabur.com/marketplace/postgresql.svg
       template: PREBUILT
       spec:
         source:
-          image: ${APP_POSTGRES_IMAGE}
+          image: postgres:18
           command:
             - docker-entrypoint.sh
             - -c
@@ -132,10 +113,12 @@ spec:
             default: "8080"
           PYTHONUNBUFFERED:
             default: "1"
+          AUTO_MIGRATE_ON_START:
+            default: "true"
           DB_INIT_MODE:
             default: auto
           DATABASE_URL:
-            default: "${POSTGRES_CONNECTION_STRING}?options=-csearch_path%3Dapp%2Cpublic"
+            default: ${POSTGRES_CONNECTION_STRING}
           DASHSCOPE_API_KEY:
             default: ${APP_DASHSCOPE_API_KEY}
           JWT_SECRET:
@@ -156,31 +139,3 @@ spec:
             default: "5"
           REDEEM_CODE_EXPORT_CONFIRM_TEXT:
             default: EXPORT
-    - name: metabase
-      icon: https://avatars.githubusercontent.com/u/10520629?s=1600&v=4
-      template: PREBUILT
-      dependencies:
-        - postgresql
-      spec:
-        source:
-          image: metabase/metabase:latest
-        ports:
-          - id: web
-            port: 3000
-            type: HTTP
-        env:
-          MB_DB_DBNAME:
-            default: ${POSTGRES_DATABASE}
-          MB_DB_HOST:
-            default: ${POSTGRES_HOST}
-          MB_DB_PASS:
-            default: ${POSTGRES_PASSWORD}
-          MB_DB_PORT:
-            default: ${POSTGRES_PORT}
-          MB_DB_TYPE:
-            default: postgres
-          MB_DB_USER:
-            default: ${POSTGRES_USERNAME}
-        instructions:
-          - title: Metabase setup note
-            content: Keep sync scope to app schema only after first login.

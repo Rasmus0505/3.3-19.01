@@ -1,74 +1,101 @@
-﻿# Zeabur Minimal Manual Deploy Guide
+# Zeabur 最小部署指南（GitHub 直构）
 
-This project is designed for GitHub -> Zeabur automatic deployment.
+这个项目默认走：
 
-## Goal
+- GitHub 仓库
+- Zeabur 读取仓库
+- Zeabur 按根目录 `Dockerfile` 构建并启动
 
-Keep Zeabur-side manual actions to a minimum:
+不需要你自己处理 Nginx、PM2 或 Linux 运维。
 
-1. Import one template file.
-2. Fill only three app variables.
-3. Redeploy by updating GitHub code.
+## 首轮上线只做两件事
 
-## Files involved
+1. 建一个 `postgresql`
+2. 建一个 `web`
 
-- `zeabur-template.yaml`: service topology + env defaults
-- `.github/workflows/ghcr-image.yml`: GHCR image build and push
+`metabase` 放到第二阶段再接。
 
-## One-time setup
+## 你在 Zeabur 里要做什么
 
-1. Push code to GitHub main branch.
-2. Ensure GitHub Actions is enabled for this repository.
-3. Confirm the workflow `Build and Push GHCR Image` finishes successfully.
+### 第一步：连接 GitHub 仓库
 
-## Deploy from template
+- 在 Zeabur 新建服务
+- 选择当前 GitHub 仓库
+- 构建入口用仓库根目录 `Dockerfile`
 
-Use Zeabur CLI:
+### 第二步：新建 Postgres
 
-```bash
-npx zeabur@latest template deploy -f zeabur-template.yaml
-```
+- 直接选 Zeabur 的 Postgres 服务
+- 用一个全新的空数据库
 
-During import, fill these variables:
+### 第三步：给 web 填环境变量
 
-- `APP_DASHSCOPE_API_KEY`
-- `APP_JWT_SECRET`
-- `APP_ADMIN_EMAILS`
+至少填这 4 个：
 
-## Services created
+- `DATABASE_URL`
+- `DASHSCOPE_API_KEY`
+- `JWT_SECRET`
+- `ADMIN_EMAILS`
 
-- `web` (FastAPI + static frontend from GHCR)
-- `postgresql`
-- `metabase`
+建议一并保留：
 
-## Required validation
+- `AUTO_MIGRATE_ON_START=true`
+- `TMP_WORK_DIR=/tmp/zeabur3.3`
+- `MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
+- `MT_MODEL=qwen-mt-plus`
 
-1. Health endpoint:
+## 为什么现在不用 `search_path`
 
-```bash
-curl -i https://<your-web-domain>/health
-```
+这次重构后：
 
-Expect `200` with JSON body containing `ok: true`.
+- ORM 已经显式绑定 `app` schema
+- Alembic 也显式迁移到 `app` schema
 
-2. Upload transcription endpoint (`/api/transcribe/file`):
+所以 `DATABASE_URL` 直接用普通 Postgres 连接串即可，不需要额外拼 `search_path=app,public`。
 
-Use browser or API tool to upload media and confirm a successful JSON result.
+## 部署后怎么验证
 
-## Metabase constraint
+### 先验证服务活着
 
-After first login:
+- `GET /health`
+- 预期：`200`
 
-1. Open database settings.
-2. Keep sync scope to `app` schema only.
-3. Exclude system tables from business browsing.
+### 再验证数据库就绪
 
-## Prompt for Zeabur AI
+- `GET /health/ready`
+- 预期：`200`
+
+如果这里返回 `503`，优先看：
+
+1. `DATABASE_URL`
+2. Alembic 迁移日志
+3. Postgres 是否已经 ready
+
+### 最后验证业务
+
+1. 登录成功
+2. `GET /api/wallet/me` 返回 `200`
+3. `GET /api/admin/billing-rates` 返回 `200`
+4. 上传文件到 `POST /api/transcribe/file` 成功
+
+## 可直接发给 Zeabur AI 的提示词
 
 ```text
-Please deploy this repository using zeabur-template.yaml.
-Create services: web, postgresql, metabase.
-For template variables, ask me only for APP_DASHSCOPE_API_KEY, APP_JWT_SECRET, APP_ADMIN_EMAILS.
-After deployment, verify GET /health returns 200 and help me test POST /api/transcribe/file.
-In Metabase, keep sync scope to app schema only.
+请帮我把这个 GitHub 仓库部署到 Zeabur。
+部署方式使用仓库根目录 Dockerfile，不要用 GHCR 镜像。
+这次先只创建两个服务：web 和 postgresql，不要先创建 metabase。
+请提醒我填写环境变量：DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS。
+部署完成后，请按顺序帮我验证：
+1. GET /health 返回 200
+2. GET /health/ready 返回 200
+3. POST /api/transcribe/file 上传媒体文件成功
+如果 /health 正常但 /health/ready 失败，请优先排查数据库连接与 Alembic 迁移。
 ```
+
+## 第二阶段再做什么
+
+首轮稳定后，再接：
+
+- `metabase`
+
+接回后只同步 `app` schema。

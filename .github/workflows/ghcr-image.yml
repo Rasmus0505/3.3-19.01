@@ -1,8 +1,6 @@
-name: Build and Push GHCR Image
+name: Build App Image to GHCR (Fallback)
 
 on:
-  push:
-    branches: ["main"]
   workflow_dispatch:
 
 permissions:
@@ -10,7 +8,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: ghcr-main
+  group: ghcr-app-fallback
   cancel-in-progress: true
 
 jobs:
@@ -34,7 +32,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/rasmus0505/3.3-19.01
+          images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=latest
             type=sha,prefix=sha-
@@ -49,3 +47,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Publish summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "This GHCR workflow is now fallback-only." >> "$GITHUB_STEP_SUMMARY"
+          echo "Preferred deploy path: Zeabur -> GitHub repository -> Dockerfile build." >> "$GITHUB_STEP_SUMMARY"

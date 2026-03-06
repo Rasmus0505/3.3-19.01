@@ -1,4 +1,4 @@
-name: Build Custom PostgreSQL Image to GHCR
+name: Build Custom PostgreSQL Image to GHCR (Fallback)
 
 on:
   workflow_dispatch:
@@ -49,4 +49,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "Fallback only: preferred production path is Zeabur managed PostgreSQL." >> "$GITHUB_STEP_SUMMARY"
           echo "Custom postgres image published: ${GHCR_IMAGE}:${IMAGE_TAG}" >> "$GITHUB_STEP_SUMMARY"
