@@ -103,17 +103,36 @@ export function AdminRatesTab({ apiCall }) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Settings2 className="size-4" />
-          计费配置
-        </CardTitle>
-        <CardDescription>按模型维护每分钟点数与启用状态（时间为北京时间）。</CardDescription>
+    <Card className="apple-panel admin-page-card">
+      <CardHeader className="space-y-4">
+        <div className="apple-kicker w-fit">Pricing</div>
+        <div className="admin-page-header">
+          <div className="admin-page-header-copy">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Settings2 className="size-4" />
+              计费配置
+            </CardTitle>
+            <CardDescription>按模型维护每分钟点数与启用状态（时间为北京时间）。</CardDescription>
+          </div>
+          <div className="admin-page-summary">
+            <div>
+              <span className="apple-eyebrow">模型数</span>
+              <strong>{rates.length}</strong>
+            </div>
+            <div>
+              <span className="apple-eyebrow">加载状态</span>
+              <strong>{loading ? "同步中" : "已就绪"}</strong>
+            </div>
+            <div>
+              <span className="apple-eyebrow">保存状态</span>
+              <strong>{savingModel ? "保存中" : "空闲"}</strong>
+            </div>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
         {loading ? <Skeleton className="h-10 w-full" /> : null}
-        <ScrollArea className="w-full rounded-md border">
+        <ScrollArea className="w-full rounded-[1.5rem] border border-white/70 bg-white/60">
           <Table className="min-w-[1080px]">
             <TableHeader>
               <TableRow>
@@ -268,7 +287,7 @@ export function AdminRatesTab({ apiCall }) {
           </Table>
         </ScrollArea>
         {status ? (
-          <Alert>
+          <Alert className="border-white/75 bg-white/76">
             <AlertDescription>{status}</AlertDescription>
           </Alert>
         ) : null}

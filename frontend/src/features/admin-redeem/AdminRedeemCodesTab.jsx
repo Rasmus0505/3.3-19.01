@@ -196,17 +196,36 @@ export function AdminRedeemCodesTab({ apiCall }) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Ticket className="size-4" />
-          兑换码列表
-        </CardTitle>
-        <CardDescription>支持筛选、停用/启用、废弃、批量停用与 CSV 导出（时间按北京时间）。</CardDescription>
+    <Card className="apple-panel admin-page-card">
+      <CardHeader className="space-y-4">
+        <div className="apple-kicker w-fit">Redeem Codes</div>
+        <div className="admin-page-header">
+          <div className="admin-page-header-copy">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Ticket className="size-4" />
+              兑换码列表
+            </CardTitle>
+            <CardDescription>支持筛选、停用/启用、废弃、批量停用与 CSV 导出（时间按北京时间）。</CardDescription>
+          </div>
+          <div className="admin-page-summary">
+            <div>
+              <span className="apple-eyebrow">总条数</span>
+              <strong>{total}</strong>
+            </div>
+            <div>
+              <span className="apple-eyebrow">当前页</span>
+              <strong>{page}</strong>
+            </div>
+            <div>
+              <span className="apple-eyebrow">已勾选</span>
+              <strong>{selectedIds.size}</strong>
+            </div>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
         <form
-          className="grid gap-2 md:grid-cols-8"
+          className="grid gap-2 rounded-[1.5rem] border border-white/70 bg-white/72 p-3 md:grid-cols-8"
           onSubmit={(event) => {
             event.preventDefault();
             setPage(1);
@@ -233,7 +252,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
           <Button type="submit" variant="outline">查询</Button>
         </form>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 rounded-[1.5rem] border border-white/70 bg-white/72 p-3">
           <Button variant="outline" onClick={() => loadCodes(page)} disabled={loading}>刷新</Button>
           <Button variant="outline" onClick={bulkDisable} disabled={selectedIds.size === 0}>
             <ShieldBan className="size-4" />
@@ -245,7 +264,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
           </Button>
         </div>
 
-        <ScrollArea className="w-full rounded-md border">
+        <ScrollArea className="w-full rounded-[1.5rem] border border-white/70 bg-white/60">
           <Table className="min-w-[1240px]">
             <TableHeader>
               <TableRow>
@@ -308,7 +327,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
         </ScrollArea>
 
         <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">总计 {total} 条</p>
+          <p className="text-xs text-slate-500">总计 {total} 条</p>
           <div className="flex items-center gap-2">
             <Select value={String(pageSize)} onValueChange={(value) => { setPage(1); setPageSize(Number(value)); }}>
               <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
@@ -328,7 +347,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
           </div>
         </div>
 
-        {status ? <Alert><AlertDescription>{status}</AlertDescription></Alert> : null}
+        {status ? <Alert className="border-white/75 bg-white/76"><AlertDescription>{status}</AlertDescription></Alert> : null}
       </CardContent>
     </Card>
   );

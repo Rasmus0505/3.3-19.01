@@ -1,4 +1,5 @@
 ﻿import { Compass, MoreVertical, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { Clock3, Film, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -12,6 +13,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  Badge,
   Button,
   Card,
   CardContent,
@@ -136,39 +138,84 @@ export function LessonList({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Compass className="size-4" />
-          Explorer
-        </CardTitle>
-        <CardDescription>选择课程进入沉浸学习，可通过右上角菜单管理历史记录。</CardDescription>
+    <Card className="apple-panel">
+      <CardHeader className="space-y-4">
+        <div className="apple-kicker w-fit">
+          <Sparkles className="size-3.5" />
+          Library
+        </div>
+        <div className="space-y-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Compass className="size-4" />
+            课程 Explorer
+          </CardTitle>
+          <CardDescription>选择课程进入沉浸学习，历史记录管理被整理成更清晰的产品化导航。</CardDescription>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="rounded-[1.25rem] border border-white/70 bg-white/72 p-3">
+            <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">课程数</p>
+            <p className="mt-2 text-xl font-semibold tracking-tight text-slate-950">{lessons.length}</p>
+          </div>
+          <div className="rounded-[1.25rem] border border-white/70 bg-white/72 p-3">
+            <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">可学课程</p>
+            <p className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
+              {lessons.filter((item) => Number(item.sentences?.length || 0) > 0).length}
+            </p>
+          </div>
+          <div className="rounded-[1.25rem] border border-white/70 bg-white/72 p-3">
+            <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">当前选中</p>
+            <p className="mt-2 truncate text-sm font-semibold tracking-tight text-slate-950">
+              {lessons.find((item) => item.id === currentLessonId)?.title || "未选择"}
+            </p>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-3">
         {loading ? (
           <>
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-24 w-full rounded-[1.5rem]" />
+            <Skeleton className="h-24 w-full rounded-[1.5rem]" />
           </>
         ) : null}
 
-        {!loading && lessons.length === 0 ? <p className="text-sm text-muted-foreground">暂无课程，请先上传素材。</p> : null}
+        {!loading && lessons.length === 0 ? (
+          <div className="rounded-[1.5rem] border border-white/70 bg-white/70 px-4 py-5 text-sm leading-6 text-slate-500">
+            暂无课程，请先在右侧导入素材并生成第一节课。
+          </div>
+        ) : null}
 
         {!loading
-          ? lessons.map((lesson) => (
+          ? lessons.map((lesson, index) => (
               <div
                 key={lesson.id}
-                className={`rounded-md border p-3 ${
+                className={`rounded-[1.75rem] border p-4 transition-all duration-200 ${
                   currentLessonId === lesson.id
-                    ? "border-primary bg-primary/10"
-                    : "border-input bg-background hover:bg-muted/30"
+                    ? "border-white/80 bg-white/90 shadow-[0_24px_70px_-42px_rgba(37,99,235,0.25)] ring-1 ring-primary/15"
+                    : "border-white/70 bg-white/68 hover:bg-white/80"
                 }`}
               >
-                <div className="mb-1 flex items-start justify-between gap-2">
+                <div className="flex items-start justify-between gap-3">
                   <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onSelect(lesson.id)}>
-                    <div className="truncate font-medium">{lesson.title}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {lesson.status} · {lesson.asr_model} · {lesson.sentences?.length || 0} 句
+                    <div className="flex items-center gap-2">
+                      <Badge variant={currentLessonId === lesson.id ? "default" : "outline"} className="shrink-0">
+                        {String(index + 1).padStart(2, "0")}
+                      </Badge>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-slate-950">{lesson.title}</div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-50/80 px-2.5 py-1">
+                            <Film className="size-3.5" />
+                            {lesson.asr_model || "默认模型"}
+                          </span>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-50/80 px-2.5 py-1">
+                            <Clock3 className="size-3.5" />
+                            {lesson.sentences?.length || 0} 句
+                          </span>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-50/80 px-2.5 py-1">
+                            {lesson.status}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </button>
                   <Button
@@ -183,7 +230,7 @@ export function LessonList({
                   </Button>
                 </div>
                 {menuLessonId === lesson.id ? (
-                  <div className="mt-2 rounded-md border bg-muted/30 p-1">
+                  <div className="mt-3 rounded-[1.25rem] border border-white/70 bg-white/76 p-2">
                     <div className="flex flex-col gap-1">
                       <Button
                         type="button"
@@ -301,7 +348,7 @@ export function LessonList({
         </AlertDialog>
 
         {status ? (
-          <Alert>
+          <Alert className="border-white/75 bg-white/76">
             <AlertDescription>{status}</AlertDescription>
           </Alert>
         ) : null}

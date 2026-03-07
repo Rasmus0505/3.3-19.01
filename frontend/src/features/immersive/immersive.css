@@ -1,7 +1,7 @@
 .immersive-page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .immersive-page--immersive {
@@ -10,34 +10,46 @@
 
 .immersive-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
 }
 
 .immersive-header-left {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+}
+
+.immersive-header-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .immersive-media {
   position: relative;
   overflow: hidden;
-  border-radius: 12px;
-  border: 1px solid color-mix(in oklch, var(--color-border) 80%, transparent);
-  background: linear-gradient(145deg, color-mix(in oklch, var(--color-muted) 90%, black 10%), var(--color-card));
-  min-height: 300px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background:
+    radial-gradient(circle at top right, rgba(191, 219, 254, 0.28), transparent 34%),
+    linear-gradient(145deg, rgba(248, 250, 252, 0.88), rgba(255, 255, 255, 0.74));
+  min-height: 320px;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 24px 80px -56px rgba(15, 23, 42, 0.32);
 }
 
 .immersive-media video,
 .immersive-media audio {
   width: 100%;
-  max-height: 56vh;
+  max-height: 58vh;
   background: #000;
 }
 
@@ -48,7 +60,7 @@
   justify-content: center;
   gap: 8px;
   color: var(--color-muted-foreground);
-  padding: 24px;
+  padding: 28px;
 }
 
 .immersive-overlay {
@@ -57,17 +69,28 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in oklch, black 50%, transparent);
+  background: color-mix(in oklch, black 42%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.immersive-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
 }
 
 .immersive-typing {
-  border-radius: 12px;
-  border: 1px solid var(--color-border);
-  background: var(--color-card);
-  padding: 16px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(248, 250, 252, 0.74));
+  padding: 18px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 20px 60px -46px rgba(15, 23, 42, 0.28);
 }
 
 .immersive-typing-toolbar {
@@ -75,55 +98,63 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
 }
 
 .immersive-display-toggle {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 10px;
+  padding: 7px 12px;
   border-radius: 999px;
-  border: 1px solid var(--color-border);
-  background: color-mix(in oklch, var(--color-card) 84%, var(--color-muted) 16%);
+  border: 1px solid rgba(255, 255, 255, 0.74);
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .immersive-word-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 12px;
+  gap: 12px 14px;
 }
 
 .immersive-word-slot {
   display: inline-flex;
   align-items: center;
-  border-radius: 8px;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  border-radius: 10px;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
 }
 
 .immersive-word-slot--chip {
   padding: 8px 8px 6px;
-  border: 1px solid var(--color-border);
-  background: color-mix(in oklch, var(--color-card) 90%, var(--color-muted) 10%);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .immersive-word-slot--chip.immersive-word-slot--pending {
-  border-color: var(--color-border);
+  border-color: rgba(255, 255, 255, 0.7);
 }
 
 .immersive-word-slot--chip.immersive-word-slot--active {
-  border-color: color-mix(in oklch, var(--color-primary) 45%, var(--color-border));
-  background: color-mix(in oklch, var(--color-primary) 14%, white 86%);
+  border-color: color-mix(in oklch, var(--color-primary) 52%, white 48%);
+  background: color-mix(in oklch, var(--color-primary) 12%, white 88%);
+  box-shadow: 0 18px 44px -38px rgba(37, 99, 235, 0.34);
+  transform: translateY(-1px);
 }
 
 .immersive-word-slot--chip.immersive-word-slot--correct {
   border-color: oklch(0.74 0.15 145);
-  background: oklch(0.95 0.08 145);
+  background: oklch(0.96 0.08 145);
 }
 
 .immersive-word-slot--chip.immersive-word-slot--wrong {
   border-color: oklch(0.71 0.21 25);
-  background: oklch(0.96 0.07 25);
+  background: oklch(0.97 0.07 25);
 }
 
 .immersive-word-slot--underline {
@@ -140,12 +171,12 @@
 
 .immersive-letter-cell {
   min-width: 18px;
-  height: 32px;
+  height: 34px;
   display: inline-flex;
   align-items: flex-end;
   justify-content: center;
-  padding: 0 3px 2px;
-  border-bottom: 2px solid var(--color-border);
+  padding: 0 3px 3px;
+  border-bottom: 2px solid rgba(148, 163, 184, 0.45);
   font-family: var(--font-mono);
   font-size: 18px;
   line-height: 1;
@@ -186,6 +217,16 @@
   text-align: center;
 }
 
+.immersive-previous-sentence {
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.7);
+  padding: 12px 14px;
+  font-size: 14px;
+  color: var(--color-muted-foreground);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
 .immersive-hidden-input {
   position: fixed;
   left: -9999px;
@@ -200,8 +241,9 @@
   color: var(--color-muted-foreground);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .immersive-header {
+    flex-direction: column;
     align-items: flex-start;
   }
 
@@ -211,8 +253,18 @@
     gap: 8px;
   }
 
+  .immersive-header-meta {
+    justify-content: flex-start;
+  }
+
+  .immersive-typing-toolbar {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 768px) {
   .immersive-media {
-    min-height: 210px;
+    min-height: 220px;
   }
 
   .immersive-word-row {
