@@ -19,6 +19,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  Switch,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -102,7 +103,7 @@ function extractVideoCoverDataUrl(file) {
   });
 }
 
-export function UploadPanel({ accessToken, onCreated, balancePoints, billingRates, onWalletChanged }) {
+export function UploadPanel({ accessToken, onCreated, balancePoints, billingRates, subtitleSettings, onWalletChanged }) {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
@@ -113,6 +114,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   const [isVideoSource, setIsVideoSource] = useState(false);
   const [taskSnapshot, setTaskSnapshot] = useState(null);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [semanticSplitEnabled, setSemanticSplitEnabled] = useState(Boolean(subtitleSettings?.semantic_split_default_enabled));
 
   const pollingAbortRef = useRef(false);
   const fileInputRef = useRef(null);
@@ -126,6 +128,10 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       pollingAbortRef.current = true;
     };
   }, []);
+
+  useEffect(() => {
+    setSemanticSplitEnabled(Boolean(subtitleSettings?.semantic_split_default_enabled));
+  }, [subtitleSettings?.semantic_split_default_enabled]);
 
   async function pollTask(taskId) {
     if (!taskId || pollingAbortRef.current) return;
@@ -227,6 +233,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       const form = new FormData();
       form.append("video_file", file);
       form.append("asr_model", QWEN_MODEL);
+      form.append("semantic_split_enabled", semanticSplitEnabled ? "true" : "false");
 
       const resp = await api("/api/lessons/tasks", { method: "POST", body: form }, accessToken);
       const data = await parseResponse(resp);
@@ -356,6 +363,17 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
               链接生成视频
             </Button>
             {file ? <p className="text-xs text-muted-foreground">{file.name}</p> : null}
+          </div>
+
+          <div className="flex items-start justify-between gap-3 rounded-md border p-3">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">开启语义分句</p>
+              <p className="text-xs text-muted-foreground">更贴近语义，但会更慢，且可能增加模型调用。</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">{semanticSplitEnabled ? "已开启" : "已关闭"}</span>
+              <Switch checked={semanticSplitEnabled} onCheckedChange={setSemanticSplitEnabled} disabled={loading} />
+            </div>
           </div>
 
           <Button type="submit" disabled={loading} className="w-full">

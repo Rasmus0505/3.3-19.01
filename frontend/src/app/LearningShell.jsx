@@ -53,6 +53,7 @@ export function LearningShell() {
   const [globalStatus, setGlobalStatus] = useState("");
   const [walletBalance, setWalletBalance] = useState(0);
   const [billingRates, setBillingRates] = useState([]);
+  const [subtitleSettings, setSubtitleSettings] = useState({ semantic_split_default_enabled: false });
   const [isAdminUser, setIsAdminUser] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState("");
@@ -160,12 +161,16 @@ export function LearningShell() {
   async function loadBillingRates() {
     if (!accessToken) {
       setBillingRates([]);
+      setSubtitleSettings({ semantic_split_default_enabled: false });
       return;
     }
     const resp = await api("/api/billing/rates", {}, accessToken);
     const data = await parseResponse(resp);
     if (resp.ok) {
       setBillingRates(Array.isArray(data.rates) ? data.rates : []);
+      setSubtitleSettings({
+        semantic_split_default_enabled: Boolean(data.subtitle_settings?.semantic_split_default_enabled),
+      });
     }
   }
 
@@ -551,6 +556,7 @@ export function LearningShell() {
                     onCreated={handleLessonCreated}
                     balancePoints={walletBalance}
                     billingRates={billingRates}
+                    subtitleSettings={subtitleSettings}
                     onWalletChanged={loadWallet}
                   />
                 </>

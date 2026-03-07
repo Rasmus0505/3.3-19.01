@@ -21,7 +21,11 @@ router = APIRouter(prefix="/api/transcribe", tags=["transcribe"])
     response_model=SuccessResponse,
     responses={400: {"model": ErrorResponse}, 413: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
 )
-async def transcribe_file_with_model(video_file: UploadFile = File(...), model: str = Form(DEFAULT_MODEL)):
+async def transcribe_file_with_model(
+    video_file: UploadFile = File(...),
+    model: str = Form(DEFAULT_MODEL),
+    semantic_split_enabled: bool | None = Form(None),
+):
     selected_model = (model or "").strip() or DEFAULT_MODEL
     started = time.monotonic()
     req_dir = create_request_dir(BASE_TMP_DIR)

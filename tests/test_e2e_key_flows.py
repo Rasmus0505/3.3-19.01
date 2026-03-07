@@ -53,7 +53,7 @@ def _register_and_login(client: TestClient, email: str, password: str = "123456"
 def _stub_lesson_generation(monkeypatch):
     from app.api.routers import lessons as lesson_router
 
-    def fake_generate(upload_file, req_dir, owner_id, asr_model, db):
+    def fake_generate(upload_file, req_dir, owner_id, asr_model, db, progress_callback=None, semantic_split_enabled=None):
         lesson = Lesson(
             user_id=owner_id,
             title="e2e lesson",
@@ -201,6 +201,7 @@ def test_e2e_admin_update_rate_visible_in_public_api(e2e_client):
 
     public_resp = client.get("/api/billing/rates")
     assert public_resp.status_code == 200
+    assert public_resp.json()["subtitle_settings"]["semantic_split_default_enabled"] is False
     target = next(item for item in public_resp.json()["rates"] if item["model_name"] == "qwen3-asr-flash-filetrans")
     assert target["points_per_minute"] == 222
     assert target["is_active"] is True

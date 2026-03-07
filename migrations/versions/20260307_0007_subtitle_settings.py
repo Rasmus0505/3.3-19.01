@@ -1,0 +1,88 @@
+"""subtitle settings: add database-driven subtitle config
+
+Revision ID: 20260307_0007
+Revises: 20260306_0006
+Create Date: 2026-03-07 15:20:00
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from alembic import op
+import sqlalchemy as sa
+
+from app.db import APP_SCHEMA
+
+
+revision = "20260307_0007"
+down_revision = "20260306_0006"
+branch_labels = None
+depends_on = None
+
+
+DEFAULT_VALUES = {
+    "id": 1,
+    "semantic_split_default_enabled": False,
+    "subtitle_split_enabled": True,
+    "subtitle_split_target_words": 18,
+    "subtitle_split_max_words": 28,
+    "semantic_split_max_words_threshold": 24,
+    "semantic_split_model": "qwen-plus",
+    "semantic_split_timeout_seconds": 40,
+    "updated_at": datetime.utcnow(),
+}
+
+
+def _schema_name() -> str | None:
+    bind = op.get_bind()
+    return None if bind.dialect.name == "sqlite" else APP_SCHEMA
+
+
+def _qualified_table(table_name: str, schema: str | None) -> str:
+    return f"{schema}.{table_name}" if schema else table_name
+
+
+def upgrade() -> None:
+    schema = _schema_name()
+    op.create_table(
+        "subtitle_settings",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("semantic_split_default_enabled", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column("subtitle_split_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column("subtitle_split_target_words", sa.Integer(), nullable=False, server_default="18"),
+        sa.Column("subtitle_split_max_words", sa.Integer(), nullable=False, server_default="28"),
+        sa.Column("semantic_split_max_words_threshold", sa.Integer(), nullable=False, server_default="24"),
+        sa.Column("semantic_split_model", sa.String(length=100), nullable=False, server_default="qwen-plus"),
+        sa.Column("semantic_split_timeout_seconds", sa.Integer(), nullable=False, server_default="40"),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_by_user_id", sa.Integer(), nullable=True),
+        sa.CheckConstraint("subtitle_split_target_words > 0", name="ck_subtitle_split_target_words_positive"),
+        sa.CheckConstraint("subtitle_split_max_words > 0", name="ck_subtitle_split_max_words_positive"),
+        sa.CheckConstraint("semantic_split_max_words_threshold > 0", name="ck_semantic_split_threshold_positive"),
+        sa.CheckConstraint("semantic_split_timeout_seconds > 0", name="ck_semantic_split_timeout_positive"),
+        sa.ForeignKeyConstraint(["updated_by_user_id"], [f"{APP_SCHEMA}.users.id" if schema else "users.id"], ondelete="SET NULL"),
+        sa.PrimaryKeyConstraint("id"),
+        schema=schema,
+    )
+
+    table_name = _qualified_table("subtitle_settings", schema)
+    bind = op.get_bind()
+    bind.execute(
+        sa.text(
+            f"""
+            INSERT INTO {table_name}
+                (id, semantic_split_default_enabled, subtitle_split_enabled, subtitle_split_target_words, subtitle_split_max_words,
+                 semantic_split_max_words_threshold, semantic_split_model, semantic_split_timeout_seconds, updated_at, updated_by_user_id)
+            VALUES
+                (:id, :semantic_split_default_enabled, :subtitle_split_enabled, :subtitle_split_target_words, :subtitle_split_max_words,
+                 :semantic_split_max_words_threshold, :semantic_split_model, :semantic_split_timeout_seconds, :updated_at, NULL)
+            """
+        ),
+        DEFAULT_VALUES,
+    )
+
+
+def downgrade() -> None:
+    schema = _schema_name()
+    op.drop_table("subtitle_settings", schema=schema)

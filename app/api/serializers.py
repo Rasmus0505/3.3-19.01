@@ -1,8 +1,16 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from app.core.timezone import to_shanghai_aware
-from app.models import BillingModelRate, Lesson, LessonSentence, User
-from app.schemas import BillingRateItem, LessonDetailResponse, LessonItemResponse, LessonSentenceResponse, UserResponse
+from app.models import BillingModelRate, Lesson, LessonSentence, SubtitleSetting, User
+from app.schemas import (
+    AdminSubtitleSettingsItem,
+    BillingRateItem,
+    LessonDetailResponse,
+    LessonItemResponse,
+    LessonSentenceResponse,
+    PublicSubtitleSettings,
+    UserResponse,
+)
 
 
 def to_user_response(user: User) -> UserResponse:
@@ -64,4 +72,21 @@ def to_rate_item(rate: BillingModelRate) -> BillingRateItem:
         segment_seconds=int(rate.segment_seconds),
         max_concurrency=int(rate.max_concurrency),
         updated_at=to_shanghai_aware(rate.updated_at),
+    )
+
+
+def to_public_subtitle_settings(item: SubtitleSetting) -> PublicSubtitleSettings:
+    return PublicSubtitleSettings(semantic_split_default_enabled=bool(item.semantic_split_default_enabled))
+
+
+def to_admin_subtitle_settings_item(item: SubtitleSetting) -> AdminSubtitleSettingsItem:
+    return AdminSubtitleSettingsItem(
+        semantic_split_default_enabled=bool(item.semantic_split_default_enabled),
+        subtitle_split_enabled=bool(item.subtitle_split_enabled),
+        subtitle_split_target_words=int(item.subtitle_split_target_words),
+        subtitle_split_max_words=int(item.subtitle_split_max_words),
+        semantic_split_max_words_threshold=int(item.semantic_split_max_words_threshold),
+        semantic_split_model=str(item.semantic_split_model),
+        semantic_split_timeout_seconds=int(item.semantic_split_timeout_seconds),
+        updated_at=to_shanghai_aware(item.updated_at),
     )
