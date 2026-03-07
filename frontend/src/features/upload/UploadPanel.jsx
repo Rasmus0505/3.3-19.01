@@ -8,7 +8,6 @@ import { requestPersistentStorage, saveLessonMedia } from "../../shared/media/lo
 import {
   Alert,
   AlertDescription,
-  Badge,
   Button,
   Card,
   CardContent,
@@ -308,48 +307,49 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
 
   return (
     <Card className="apple-panel">
-      <CardHeader className="space-y-4">
+      <CardHeader className="space-y-5">
         <div className="apple-kicker w-fit">
           <Sparkles className="size-3.5" />
           Create Lesson
         </div>
-        <div className="space-y-2">
-          <CardTitle className="flex items-center gap-2 text-base">
+        <div className="space-y-1.5">
+          <CardTitle className="flex items-center gap-2 text-lg">
             <UploadCloud className="size-4" />
-            导入素材并生成练习
+            导入素材
           </CardTitle>
-          <CardDescription>保留原有上传、计费和转写逻辑，只把操作区升级为更接近消费级产品的工作舱。</CardDescription>
+          <CardDescription className="max-w-md">上传、计费和转写逻辑保持不变，只把流程收敛成更清晰的一条主路径。</CardDescription>
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <span className="rounded-full border border-white/72 bg-white/74 px-3 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+            默认模型 {QWEN_MODEL}
+          </span>
+          <span className="rounded-full border border-white/72 bg-white/74 px-3 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+            {semanticSplitEnabled ? "语义分句已开启" : "语义分句已关闭"}
+          </span>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2">
           <div className="rounded-[1.25rem] border border-white/70 bg-white/72 p-3">
-            <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">当前余额</p>
+            <p className="inline-flex items-center gap-1.5 text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
+              <Coins className="size-3.5" />
+              当前余额
+            </p>
             <p className="mt-2 text-xl font-semibold tracking-tight text-slate-950">{balanceValue} 点</p>
           </div>
           <div className="rounded-[1.25rem] border border-white/70 bg-white/72 p-3">
-            <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">预估扣费</p>
+            <p className="inline-flex items-center gap-1.5 text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
+              <TimerReset className="size-3.5" />
+              预估扣费
+            </p>
             <p className="mt-2 text-sm font-semibold tracking-tight text-slate-950">{estimatedLabel}</p>
-          </div>
-          <div className="rounded-[1.25rem] border border-white/70 bg-white/72 p-3">
-            <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">默认模型</p>
-            <p className="mt-2 text-sm font-semibold tracking-tight text-slate-950">{QWEN_MODEL}</p>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
         <Alert className="border-white/75 bg-white/78">
-          <AlertDescription>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="gap-1.5">
-                <Coins className="size-3.5" />
-                余额 {balanceValue} 点
-              </Badge>
-              <Badge variant="outline" className="gap-1.5">
-                <TimerReset className="size-3.5" />
-                预估 {estimatedLabel}
-              </Badge>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-slate-500">
+          <AlertDescription className="space-y-2">
+            <p className="text-sm leading-6 text-slate-600">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span className="cursor-help underline decoration-dotted underline-offset-2">计费说明</span>
@@ -358,7 +358,11 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
               </Tooltip>
               ：保持现有结算逻辑不变。
             </p>
-            {likelyInsufficient ? <p className="mt-2 text-sm font-medium text-destructive">余额可能不足，提交将被拒绝。</p> : null}
+            {likelyInsufficient ? (
+              <p className="text-sm font-medium text-destructive">余额可能不足，提交将被拒绝。</p>
+            ) : (
+              <p className="text-xs leading-5 text-slate-500">选择素材后会自动读取时长、封面与本地媒体缓存信息。</p>
+            )}
           </AlertDescription>
         </Alert>
 
@@ -373,12 +377,12 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
             )}
           </div>
         ) : (
-          <div className="rounded-[1.75rem] border border-dashed border-white/75 bg-white/68 px-5 py-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+          <div className="rounded-[1.75rem] border border-dashed border-white/75 bg-white/68 px-5 py-10 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
             <div className="mx-auto flex size-14 items-center justify-center rounded-[1.5rem] bg-slate-950 text-white shadow-[0_22px_44px_-30px_rgba(15,23,42,0.56)]">
               <Video className="size-5" />
             </div>
-            <p className="mt-4 text-base font-semibold tracking-tight text-slate-950">拖入或选择一段素材，快速生成课程</p>
-            <p className="mt-2 text-sm leading-6 text-slate-500">支持视频和音频素材。时长读取、封面提取和本地媒体缓存逻辑保持现状。</p>
+            <p className="mt-4 text-base font-semibold tracking-tight text-slate-950">先导入一段视频或音频</p>
+            <p className="mt-2 text-sm leading-6 text-slate-500">支持视频和音频素材。时长读取、封面提取和本地缓存逻辑保持现状。</p>
           </div>
         )}
 
@@ -398,22 +402,27 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
               onChange={(e) => onSelectFile(e.target.files?.[0] ?? null)}
               disabled={loading}
             />
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Button type="button" variant="outline" className="h-12" onClick={() => fileInputRef.current?.click()} disabled={loading}>
-                选择文件
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_160px]">
+              <Button type="button" className="h-12" onClick={() => fileInputRef.current?.click()} disabled={loading}>
+                <UploadCloud className="size-4" />
+                导入本地素材
               </Button>
-              <Button type="button" variant="secondary" className="h-12" onClick={openLinkDialog} disabled={loading}>
+              <Button type="button" variant="outline" className="h-12" onClick={openLinkDialog} disabled={loading}>
                 <Link2 className="size-4" />
                 链接生成视频
               </Button>
             </div>
-            {file ? <p className="text-xs text-slate-500">{file.name}</p> : null}
+            {file ? (
+              <div className="rounded-[1.1rem] border border-white/72 bg-white/72 px-3 py-2 text-xs text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                {file.name}
+              </div>
+            ) : null}
           </div>
 
           <div className="flex items-start justify-between gap-3 rounded-[1.5rem] border border-white/70 bg-white/72 p-4">
             <div className="space-y-1">
               <p className="text-sm font-medium text-slate-950">开启语义分句</p>
-              <p className="text-xs leading-5 text-slate-500">更贴近语义，但会更慢，且可能增加模型调用。</p>
+              <p className="text-xs leading-5 text-slate-500">更贴近语义，但速度会稍慢，且可能增加模型调用。</p>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-500">{semanticSplitEnabled ? "已开启" : "已关闭"}</span>
@@ -421,7 +430,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
             </div>
           </div>
 
-          <Button type="submit" disabled={loading} className="w-full">
+          <Button type="submit" disabled={loading} className="h-12 w-full">
             {loading ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="size-4 animate-spin" />
