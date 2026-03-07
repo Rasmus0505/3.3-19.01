@@ -385,17 +385,17 @@ export function LearningShell() {
     {
       label: "课程库",
       value: `${lessons.length} 节`,
-      note: accessToken ? "自动同步你的历史记录" : "登录后可继续累计",
+      note: accessToken ? "自动接续你的历史进度" : "登录后自动同步",
     },
     {
       label: "可练句子",
       value: `${totalSentenceCount} 句`,
-      note: totalSentenceCount > 0 ? "已生成的句级训练内容" : "上传后自动生成",
+      note: totalSentenceCount > 0 ? "可直接进入逐句训练" : "上传后自动生成",
     },
     {
       label: "账户积分",
       value: accessToken ? `${walletBalance} 点` : "登录后可见",
-      note: accessToken ? "用于上传与转写" : "支持兑换码补充",
+      note: accessToken ? "用于上传与转写" : "可通过兑换码补充",
     },
   ];
 
@@ -521,25 +521,25 @@ export function LearningShell() {
 
       <main className={`container-wrapper ${immersiveLayoutActive ? "pb-4" : "pb-8"}`}>
         <div className="container space-y-6">
-          <section className={`apple-panel p-5 md:p-7 ${immersiveLayoutActive ? "pt-5" : "pt-6"}`}>
+          <section className={`apple-panel p-6 md:p-8 ${immersiveLayoutActive ? "pt-6" : "pt-7 lg:pt-8"}`}>
             <div className={`apple-hero-grid ${immersiveLayoutActive ? "" : "apple-hero-grid--main"} items-start`}>
-              <div className="space-y-6">
-                <div className="space-y-4">
+              <div className="space-y-7">
+                <div className="space-y-5">
                   <div className="apple-kicker w-fit">
                     <WandSparkles className="size-3.5" />
                     Premium Learning Workspace
                   </div>
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     <h1 className={immersiveLayoutActive ? "text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl" : "apple-title"}>
-                      像大牌产品一样学习英语，而不是像后台一样练习英语。
+                      把英语学习做得更像产品，而不是更像后台。
                     </h1>
                     <p className="apple-copy">
-                      现在的界面会先给你一层安静、轻盈、接近 Apple 官网的品牌感，再把上传、课程管理、沉浸学习和积分体系自然地组织成一个可持续使用的工作台。
+                      先把首屏留出呼吸感，再把课程、上传、积分和沉浸学习自然收进一个安静的工作台。
                     </p>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap gap-3">
+                <div className="flex flex-wrap gap-3 pt-1">
                   {!accessToken ? (
                     <>
                       <Button
@@ -593,63 +593,87 @@ export function LearningShell() {
                   )}
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-2.5 sm:grid-cols-3">
                   {heroStats.map((item) => (
                     <div key={item.label} className="apple-stat-card">
                       <p className="apple-stat-title">{item.label}</p>
                       <p className="apple-stat-value">{item.value}</p>
-                      <p className="mt-2 text-sm leading-6 text-slate-500">{item.note}</p>
+                      <p className="mt-1.5 text-sm leading-6 text-slate-500">{item.note}</p>
                     </div>
                   ))}
                 </div>
               </div>
 
               <div className="apple-preview-stack">
-                <div className="apple-preview-tile">
+                <div className="apple-preview-tile space-y-4 md:p-6">
                   <p className="apple-eyebrow">Current Session</p>
-                  <div className="mt-3 space-y-2">
-                    <p className="text-xl font-semibold tracking-tight text-slate-950">{currentLesson?.title || "尚未选择课程"}</p>
-                    <p className="text-sm leading-6 text-slate-500">
+                  <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                    <div className="space-y-2">
+                      <p className="text-[1.35rem] font-semibold tracking-tight text-slate-950">{currentLesson?.title || "尚未选择课程"}</p>
+                      <p className="text-sm leading-6 text-slate-500">
+                        {accessToken
+                          ? currentLesson
+                            ? `${currentLessonSentenceCount} 句内容已就绪，可直接继续本轮训练。`
+                            : "登录后可从历史课程继续，或直接导入第一份素材。"
+                          : "登录后自动同步课程、积分和沉浸学习进度。"}
+                      </p>
+                    </div>
+                    <div className="rounded-[1.25rem] border border-white/70 bg-white/72 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                      <p className="apple-stat-title">当前状态</p>
+                      <p className="mt-1 text-sm font-semibold tracking-tight text-slate-950">
+                        {currentLessonNeedsBinding ? "等待绑定媒体" : currentLesson ? "可直接开始" : "等待导入素材"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                    <span className="rounded-full border border-white/72 bg-white/75 px-3 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                      {subtitleSettings.semantic_split_default_enabled ? "默认语义分句" : "默认规则分句"}
+                    </span>
+                    <span className="rounded-full border border-white/72 bg-white/75 px-3 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
                       {accessToken
-                        ? currentLesson
-                          ? `${currentLessonSentenceCount} 句 · ${currentLesson.status || "ready"}`
-                          : "登录成功后，上传素材或从历史课程开始。"
-                        : "登录后自动同步课程、积分与沉浸学习进度。"}
-                    </p>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Badge variant="outline">{subtitleSettings.semantic_split_default_enabled ? "默认语义分句" : "默认规则分句"}</Badge>
-                    <Badge variant="outline">{currentLessonNeedsBinding ? "待绑定本地媒体" : "媒体状态正常"}</Badge>
+                        ? currentLessonSentenceCount > 0
+                          ? `${currentLessonSentenceCount} 句已准备`
+                          : "等待生成句子"
+                        : "登录后自动同步课程与积分"}
+                    </span>
                   </div>
                 </div>
 
-                <div className="apple-preview-tile">
-                  <p className="apple-eyebrow">Workflow</p>
-                  <div className="mt-3 space-y-3 text-sm leading-6 text-slate-600">
-                    <div className="flex items-start gap-3">
-                      <Badge variant="outline" className="shrink-0">01</Badge>
-                      <p>导入视频或音频，系统读取时长并预估积分消耗。</p>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Badge variant="outline" className="shrink-0">02</Badge>
-                      <p>自动转写、分句、生成课程与历史记录，无需改现有 API。</p>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Badge variant="outline" className="shrink-0">03</Badge>
-                      <p>进入沉浸学习舞台，逐句播放、跟写并持续推进进度。</p>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="apple-preview-tile space-y-3">
+                    <p className="apple-eyebrow">Workflow</p>
+                    <div className="grid gap-3">
+                      {[
+                        "导入视频或音频，自动读取时长与预估积分。",
+                        "转写、分句并生成课程，现有接口逻辑保持不变。",
+                        "进入沉浸学习舞台，逐句播放、跟写并持续推进进度。",
+                      ].map((step, index) => (
+                        <div key={step} className="flex items-start gap-3">
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-white/72 bg-white/78 text-[11px] font-semibold text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                            {String(index + 1).padStart(2, "0")}
+                          </span>
+                          <p className="text-sm leading-6 text-slate-600">{step}</p>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </div>
 
-                <div className="apple-preview-tile">
-                  <p className="apple-eyebrow">Account</p>
-                  <div className="mt-3 space-y-3">
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="outline">{accessToken ? "账号已连接" : "游客模式"}</Badge>
-                      {isAdminUser ? <Badge>管理员权限</Badge> : null}
+                  <div className="apple-preview-tile space-y-3">
+                    <p className="apple-eyebrow">Account</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-white/72 bg-white/75 px-3 py-1 text-xs text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                        {accessToken ? "账号已连接" : "游客模式"}
+                      </span>
+                      {isAdminUser ? (
+                        <span className="rounded-full border border-slate-900/10 bg-slate-950 px-3 py-1 text-xs text-white shadow-[0_18px_32px_-28px_rgba(15,23,42,0.5)]">
+                          管理员权限
+                        </span>
+                      ) : null}
                       <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
                     </div>
-                    <p className="text-sm leading-6 text-slate-500">主站与后台维持同一套账户、积分和管理员鉴权逻辑，只重构为更成熟的产品体验。</p>
+                    <p className="text-sm leading-6 text-slate-500">
+                      主站与后台继续共用同一套账户、积分和权限，只把入口做得更安静、更像成品。
+                    </p>
                   </div>
                 </div>
               </div>
@@ -657,39 +681,35 @@ export function LearningShell() {
           </section>
 
           <section id="learning-workbench" className="apple-workbench">
-            <div className="apple-toolbar px-2 pb-3 pt-1 md:px-3">
-              <div className="space-y-3">
-                <div className="apple-kicker w-fit">
+            <div className="apple-toolbar px-2 pb-4 pt-2 md:px-4">
+              <div className="space-y-2.5">
+                <div className="apple-eyebrow inline-flex items-center gap-2">
                   <LibraryBig className="size-3.5" />
                   Workspace
                 </div>
-                <div className="space-y-2">
-                  <h2 className="text-2xl font-semibold tracking-tight text-slate-950 md:text-3xl">学习工作台</h2>
-                  <p className="max-w-2xl text-sm leading-6 text-slate-500">
-                    左侧整理课程与历史记录，中间聚焦学习舞台，右侧完成登录、充值和上传。所有逻辑保持不变，只让信息层级更像成熟产品。
+                <div className="space-y-1.5">
+                  <h2 className="text-[1.75rem] font-semibold tracking-tight text-slate-950 md:text-[2.15rem]">学习工作台</h2>
+                  <p className="max-w-xl text-sm leading-6 text-slate-500">
+                    课程在左，学习舞台居中，上传和账户操作在右；先把注意力留给正在练习的内容。
                   </p>
                 </div>
               </div>
 
               <div className="apple-inline-metrics">
                 <div className="apple-inline-metric">
-                  <p className="apple-inline-metric-label">当前课程</p>
-                  <p className="apple-inline-metric-value">{currentLesson?.title || "未选择"}</p>
+                  <p className="apple-inline-metric-label">工作台</p>
+                  <p className="apple-inline-metric-value">{accessToken ? (loadingLessons ? "同步中" : "已准备好") : "等待登录"}</p>
                 </div>
                 <div className="apple-inline-metric">
-                  <p className="apple-inline-metric-label">沉浸模式</p>
-                  <p className="apple-inline-metric-value">{immersiveLayoutActive ? "进行中" : "待开始"}</p>
-                </div>
-                <div className="apple-inline-metric">
-                  <p className="apple-inline-metric-label">课程加载</p>
-                  <p className="apple-inline-metric-value">{loadingLessons ? "同步中" : "已就绪"}</p>
+                  <p className="apple-inline-metric-label">学习舞台</p>
+                  <p className="apple-inline-metric-value">{immersiveLayoutActive ? "沉浸中" : currentLesson?.id ? "可开始" : "先选课程"}</p>
                 </div>
               </div>
             </div>
 
             <div
-              className={`grid gap-4 transition-all duration-500 ease-out ${
-                immersiveLayoutActive ? "xl:grid-cols-1" : "xl:grid-cols-[330px_minmax(0,1fr)_360px]"
+              className={`grid gap-5 transition-all duration-500 ease-out lg:gap-6 ${
+                immersiveLayoutActive ? "xl:grid-cols-1" : "xl:grid-cols-[300px_minmax(0,1.2fr)_320px]"
               }`}
             >
               {!immersiveLayoutActive ? (
@@ -704,32 +724,35 @@ export function LearningShell() {
                     loading={loadingLessons}
                   />
                   <Card size="sm" className="apple-panel-muted">
-                    <CardHeader className="space-y-3">
-                      <div className="apple-kicker w-fit">Status</div>
+                    <CardHeader className="space-y-2 pb-0">
+                      <div className="apple-eyebrow">Ready</div>
                       <div>
-                        <CardTitle className="text-base">本轮学习状态</CardTitle>
-                        <CardDescription>帮助你快速判断课程、媒体和默认分句配置是否准备就绪。</CardDescription>
+                        <CardTitle className="text-sm">进入学习前</CardTitle>
+                        <CardDescription>只保留真正影响开始学习的几个状态。</CardDescription>
                       </div>
                     </CardHeader>
-                    <CardContent className="space-y-3 text-sm">
-                      <div className="flex items-center justify-between rounded-[1.25rem] border border-white/70 bg-white/72 px-4 py-3">
-                        <span className="text-slate-500">当前课程</span>
-                        <span className="font-medium text-slate-950">{currentLesson?.title || "未选择"}</span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-[1.25rem] border border-white/70 bg-white/72 px-4 py-3">
-                        <span className="text-slate-500">学习模式</span>
-                        <span className="font-medium text-slate-950">{immersiveLayoutActive ? "沉浸中" : "待进入"}</span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-[1.25rem] border border-white/70 bg-white/72 px-4 py-3">
-                        <span className="text-slate-500">默认分句</span>
-                        <span className="font-medium text-slate-950">{subtitleSettings.semantic_split_default_enabled ? "语义优先" : "规则优先"}</span>
+                    <CardContent className="space-y-3 pt-4 text-sm">
+                      <div className="flex flex-wrap gap-2">
+                        <span className="rounded-full border border-white/72 bg-white/74 px-3 py-1.5 text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                          {currentLesson?.title || "未选择课程"}
+                        </span>
+                        <span className="rounded-full border border-white/72 bg-white/74 px-3 py-1.5 text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                          {immersiveLayoutActive ? "沉浸中" : "待进入"}
+                        </span>
+                        <span className="rounded-full border border-white/72 bg-white/74 px-3 py-1.5 text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                          {subtitleSettings.semantic_split_default_enabled ? "语义优先" : "规则优先"}
+                        </span>
                       </div>
                       {currentLessonNeedsBinding ? (
                         <Alert className="border-amber-200/80 bg-amber-50/80">
                           <AlertTitle>待绑定本地媒体</AlertTitle>
                           <AlertDescription>当前课程可见，但播放受限。请在沉浸模式中绑定本地媒体后继续。</AlertDescription>
                         </Alert>
-                      ) : null}
+                      ) : (
+                        <p className="rounded-[1.2rem] border border-white/70 bg-white/70 px-4 py-3 text-sm leading-6 text-slate-500">
+                          媒体已就绪时，可直接从中间舞台开始逐句学习。
+                        </p>
+                      )}
                     </CardContent>
                   </Card>
                 </aside>

@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getStorageEstimate, getLessonMedia, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import {
-  Badge,
   Button,
   Card,
   CardContent,
@@ -920,7 +919,7 @@ export function ImmersiveLessonPage({
 
   return (
     <Card className={`immersive-page apple-panel ${immersiveActive ? "immersive-page--immersive" : ""}`} onClick={focusTypingInput}>
-      <CardHeader>
+      <CardHeader className="space-y-0 pb-2">
         <div className="immersive-header">
           <div className="immersive-header-left">
             {immersiveActive && (typeof onExitImmersive === "function" || typeof onBack === "function") ? (
@@ -936,22 +935,22 @@ export function ImmersiveLessonPage({
                 </Tooltip>
               </TooltipProvider>
             ) : null}
-            <div>
-              <CardTitle className="text-base">沉浸式句子拼写学习</CardTitle>
+            <div className="space-y-1">
+              <CardTitle className="text-lg tracking-tight">沉浸式句子拼写学习</CardTitle>
               <CardDescription>
-                第 {Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 句
+                第 {Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 句 · 跟着音频逐句推进
               </CardDescription>
             </div>
           </div>
           <div className="immersive-header-meta">
-            <Badge variant="outline">已完成 {completedIndexes.length} 句</Badge>
-            <Badge variant="outline">{displayMode === "underline" ? "下划线模式" : "卡片模式"}</Badge>
-            {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
+            <span className="immersive-meta-pill">已完成 {completedIndexes.length} 句</span>
+            <span className="immersive-meta-pill">{displayMode === "underline" ? "下划线模式" : "卡片模式"}</span>
+            {isPlaying ? <span className="immersive-meta-pill immersive-meta-pill--accent">本句播放中</span> : null}
           </div>
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5 pt-2">
         <div className="immersive-media">
           {!needsBinding && mediaMode === "video" ? (
             <video
@@ -1016,55 +1015,75 @@ export function ImmersiveLessonPage({
         {immersiveActive ? (
           <>
             <div className="immersive-action-row">
-              <TooltipProvider delayDuration={120}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="outline" onClick={() => replayCurrentSentence("button_replay")} disabled={!canReplaySentence}>
-                      <RotateCcw className="size-4" />
-                      重播本句
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>shift+r</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider delayDuration={120}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="outline" onClick={() => revealCurrentWord("button_reveal")} disabled={!canRevealWord}>
-                      <Eye className="size-4" />
-                      揭示单词
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>space</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <Button variant="outline" onClick={() => goToPreviousSentence("button_prev")} disabled={!canGoPrevious || phase === "transition"}>
-                <ArrowLeft className="size-4" />
-                上一句
-              </Button>
-              <TooltipProvider delayDuration={120}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="outline" onClick={() => goToNextSentence("button_next")} disabled={!canGoNext || phase === "transition"}>
-                      下一句
-                      <ArrowRight className="size-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>enter</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
-
-              {sentenceTypingDone && !sentencePlaybackDone && sentencePlaybackRequired ? (
-                <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p>
-              ) : null}
+              <div className="immersive-action-row-primary">
+                <TooltipProvider delayDuration={120}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="secondary"
+                        className="min-w-[124px]"
+                        onClick={() => replayCurrentSentence("button_replay")}
+                        disabled={!canReplaySentence}
+                      >
+                        <RotateCcw className="size-4" />
+                        重播本句
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>shift+r</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <TooltipProvider delayDuration={120}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="min-w-[124px]"
+                        onClick={() => revealCurrentWord("button_reveal")}
+                        disabled={!canRevealWord}
+                      >
+                        <Eye className="size-4" />
+                        揭示单词
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>space</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <div className="immersive-action-row-secondary">
+                <Button
+                  variant="ghost"
+                  className="min-w-[112px]"
+                  onClick={() => goToPreviousSentence("button_prev")}
+                  disabled={!canGoPrevious || phase === "transition"}
+                >
+                  <ArrowLeft className="size-4" />
+                  上一句
+                </Button>
+                <TooltipProvider delayDuration={120}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button className="min-w-[124px]" onClick={() => goToNextSentence("button_next")} disabled={!canGoNext || phase === "transition"}>
+                        下一句
+                        <ArrowRight className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>enter</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
             </div>
+
+            {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
+
+            {sentenceTypingDone && !sentencePlaybackDone && sentencePlaybackRequired ? (
+              <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p>
+            ) : null}
 
             <div className="immersive-typing">
               <div className="immersive-typing-toolbar">
                 <div className="space-y-1">
-                  <p className="text-sm font-semibold tracking-tight text-slate-950">单词逐个浮现，尽量保持手感流畅。</p>
-                  <p className="text-xs leading-5 text-slate-500">按空格揭示单词，按 Enter 前进，Shift + R 重播当前句。</p>
+                  <p className="text-base font-semibold tracking-tight text-slate-950">跟着音频逐词拼写，保持节奏。</p>
+                  <p className="text-xs leading-5 text-slate-500">空格揭示单词，Enter 前进，Shift + R 重播当前句。</p>
                 </div>
                 <div className="immersive-display-toggle">
                   <span className="text-xs text-muted-foreground">下划线模式</span>
@@ -1105,8 +1124,9 @@ export function ImmersiveLessonPage({
               </div>
 
               <div className="immersive-previous-sentence">
-                <p>上一句：{previousSentenceEn}</p>
-                <p className="pl-[4.5em]">{previousSentenceZh}</p>
+                <p className="immersive-previous-sentence-label">上一句</p>
+                <p>{previousSentenceEn}</p>
+                <p className="immersive-previous-sentence-translation">{previousSentenceZh}</p>
               </div>
               {phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
             </div>
