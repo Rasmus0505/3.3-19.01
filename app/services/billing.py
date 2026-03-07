@@ -19,6 +19,7 @@ from app.models import (
     RedeemCode,
     RedeemCodeAttempt,
     RedeemCodeBatch,
+    SubtitleSetting,
     WalletAccount,
     WalletLedger,
 )
@@ -53,6 +54,16 @@ DEFAULT_MODEL_RATES: tuple[tuple[str, int, bool, int, int, int], ...] = (
     ("qwen3-asr-flash-filetrans", 130, True, 600, 300, 4),
 )
 
+DEFAULT_SUBTITLE_SETTINGS = {
+    "semantic_split_default_enabled": False,
+    "subtitle_split_enabled": True,
+    "subtitle_split_target_words": 18,
+    "subtitle_split_max_words": 28,
+    "semantic_split_max_words_threshold": 24,
+    "semantic_split_model": "qwen-plus",
+    "semantic_split_timeout_seconds": 40,
+}
+
 
 @dataclass
 class BillingError(Exception):
@@ -62,6 +73,17 @@ class BillingError(Exception):
 
     def __str__(self) -> str:  # pragma: no cover
         return self.message
+
+
+@dataclass(frozen=True)
+class SubtitleSettingsSnapshot:
+    semantic_split_default_enabled: bool
+    subtitle_split_enabled: bool
+    subtitle_split_target_words: int
+    subtitle_split_max_words: int
+    semantic_split_max_words_threshold: int
+    semantic_split_model: str
+    semantic_split_timeout_seconds: int
 
 
 def _now() -> datetime:
@@ -149,6 +171,7 @@ def ensure_default_billing_rates(
     defaults: Iterable[tuple[str, int, bool, int, int, int]] = DEFAULT_MODEL_RATES,
 ) -> None:
     _ensure_legacy_sqlite_billing_columns(db)
+    ensure_default_subtitle_settings(db)
 
     changed = False
     legacy_para = db.get(BillingModelRate, "paraformer-v2")
@@ -190,6 +213,48 @@ def ensure_default_billing_rates(
         changed = True
     if changed:
         db.commit()
+
+
+def ensure_default_subtitle_settings(db: Session) -> SubtitleSetting:
+    row = db.get(SubtitleSetting, 1)
+    if row is None:
+        row = SubtitleSetting(id=1, **DEFAULT_SUBTITLE_SETTINGS)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return row
+
+    changed = False
+    for key, value in DEFAULT_SUBTITLE_SETTINGS.items():
+        current = getattr(row, key)
+        if current in (None, "", 0) and value not in (False, 0, ""):
+            setattr(row, key, value)
+            changed = True
+    if changed:
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    return row
+
+
+def get_subtitle_settings(db: Session) -> SubtitleSetting:
+    row = db.get(SubtitleSetting, 1)
+    if row is None:
+        row = ensure_default_subtitle_settings(db)
+    return row
+
+
+def get_subtitle_settings_snapshot(db: Session) -> SubtitleSettingsSnapshot:
+    row = get_subtitle_settings(db)
+    return SubtitleSettingsSnapshot(
+        semantic_split_default_enabled=bool(row.semantic_split_default_enabled),
+        subtitle_split_enabled=bool(row.subtitle_split_enabled),
+        subtitle_split_target_words=int(row.subtitle_split_target_words),
+        subtitle_split_max_words=int(row.subtitle_split_max_words),
+        semantic_split_max_words_threshold=int(row.semantic_split_max_words_threshold),
+        semantic_split_model=str(row.semantic_split_model),
+        semantic_split_timeout_seconds=int(row.semantic_split_timeout_seconds),
+    )
 
 
 def get_or_create_wallet_account(db: Session, user_id: int, *, for_update: bool = False) -> WalletAccount:

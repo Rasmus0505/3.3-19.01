@@ -3,6 +3,7 @@
 import io
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,6 +15,16 @@ from app.models import Lesson, LessonProgress, LessonSentence, MediaAsset, User,
 from app.services.billing_service import ensure_default_billing_rates, get_or_create_wallet_account, settle_reserved_points
 
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
+
+
+def _word_entry(text: str, begin_ms: int, end_ms: int, *, punctuation: str = "", surface: str | None = None) -> dict[str, object]:
+    return {
+        "text": text,
+        "surface": surface or (f"{text}{punctuation}" if punctuation else text),
+        "punctuation": punctuation,
+        "begin_time": begin_ms,
+        "end_time": end_ms,
+    }
 
 
 @pytest.fixture()
@@ -244,6 +255,45 @@ def test_wallet_and_admin_endpoints(test_client):
     logs = client.get("/api/admin/wallet-logs", headers=headers)
     assert logs.status_code == 200
     assert "items" in logs.json()
+
+    public_rates = client.get("/api/billing/rates", headers=headers)
+    assert public_rates.status_code == 200
+    assert "subtitle_settings" in public_rates.json()
+    assert public_rates.json()["subtitle_settings"]["semantic_split_default_enabled"] is False
+
+    subtitle_settings = client.get("/api/admin/subtitle-settings", headers=headers)
+    assert subtitle_settings.status_code == 200
+    assert subtitle_settings.json()["settings"]["subtitle_split_enabled"] is True
+
+
+def test_admin_subtitle_settings_roundtrip(test_client):
+    client, _, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "subtitle-admin@example.com")
+    admin_token = _register_and_login(client, email="subtitle-admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    update_resp = client.put(
+        "/api/admin/subtitle-settings",
+        headers=admin_headers,
+        json={
+            "semantic_split_default_enabled": True,
+            "subtitle_split_enabled": True,
+            "subtitle_split_target_words": 16,
+            "subtitle_split_max_words": 26,
+            "semantic_split_max_words_threshold": 20,
+            "semantic_split_model": "qwen-plus",
+            "semantic_split_timeout_seconds": 35,
+        },
+    )
+    assert update_resp.status_code == 200
+    payload = update_resp.json()["settings"]
+    assert payload["semantic_split_default_enabled"] is True
+    assert payload["subtitle_split_target_words"] == 16
+    assert payload["semantic_split_max_words_threshold"] == 20
+
+    fetch_resp = client.get("/api/admin/subtitle-settings", headers=admin_headers)
+    assert fetch_resp.status_code == 200
+    assert fetch_resp.json()["settings"]["semantic_split_timeout_seconds"] == 35
 
 
 def test_redeem_code_admin_and_wallet_flow(test_client):
@@ -496,7 +546,10 @@ def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch, t
     from app.api.routers import lessons as lesson_router
     monkeypatch.setattr(lesson_router, "BASE_TMP_DIR", tmp_path)
 
-    def fake_generate(upload_file, req_dir, owner_id, asr_model, db):
+    captured = {}
+
+    def fake_generate(upload_file, req_dir, owner_id, asr_model, db, progress_callback=None, semantic_split_enabled=None):
+        captured["semantic_split_enabled"] = semantic_split_enabled
         lesson = Lesson(
             user_id=owner_id,
             title="fake lesson",
@@ -537,7 +590,7 @@ def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch, t
     monkeypatch.setattr(lesson_router.LessonService, "generate_from_upload", fake_generate)
 
     files = {"video_file": ("demo.mp4", io.BytesIO(b"dummy"), "video/mp4")}
-    data = {"asr_model": QWEN_ASR_MODEL}
+    data = {"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "true"}
     resp = client.post("/api/lessons", headers=headers, files=files, data=data)
     assert resp.status_code == 200
     body = resp.json()
@@ -546,6 +599,7 @@ def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch, t
     assert body["lesson"]["media_storage"] == "client_indexeddb"
     assert body["lesson"]["source_duration_ms"] == 1234
     assert body["lesson"]["sentences"][0]["audio_url"] is None
+    assert captured["semantic_split_enabled"] is True
 
 
 def test_lesson_media_prefers_source_filename_content_type(test_client, tmp_path):
@@ -670,7 +724,20 @@ def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path)
 
     monkeypatch.setattr(lesson_router.threading, "Thread", InlineThread)
 
-    def fake_generate_from_saved_file(*, source_path, source_filename, req_dir, owner_id, asr_model, db, progress_callback=None):
+    captured = {}
+
+    def fake_generate_from_saved_file(
+        *,
+        source_path,
+        source_filename,
+        req_dir,
+        owner_id,
+        asr_model,
+        db,
+        progress_callback=None,
+        semantic_split_enabled=None,
+    ):
+        captured["semantic_split_enabled"] = semantic_split_enabled
         if progress_callback:
             progress_callback({"stage_key": "convert_audio", "stage_status": "completed", "overall_percent": 20, "current_text": "转换音频格式完成"})
             progress_callback({"stage_key": "asr_transcribe", "stage_status": "completed", "overall_percent": 60, "current_text": "转写字幕 3/约3", "counters": {"asr_done": 3, "asr_estimated": 3}})
@@ -720,9 +787,10 @@ def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path)
         "/api/lessons/tasks",
         headers=headers,
         files={"video_file": ("task.mp4", io.BytesIO(b"dummy"), "video/mp4")},
-        data={"asr_model": QWEN_ASR_MODEL},
+        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
     )
     assert create_resp.status_code == 200
+    assert captured["semantic_split_enabled"] is False
     task_id = create_resp.json()["task_id"]
 
     poll_resp = client.get(f"/api/lessons/tasks/{task_id}", headers=headers)
@@ -757,7 +825,7 @@ def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
         source_duration_ms=4000,
         parallel_enabled=True,
         parallel_threshold_seconds=10,
-        segment_seconds=2,
+        segment_target_seconds=2,
         max_concurrency=4,
         progress_callback=None,
     )
@@ -768,7 +836,7 @@ def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
     monkeypatch.setattr(
         lesson_service_module,
         "_split_audio_segments",
-        lambda source_audio, segments_dir, segment_seconds, duration_ms: [
+        lambda source_audio, segments_dir, target_seconds, search_window_seconds, duration_ms: [
             (0, 0, tmp_path / "seg0.opus"),
             (1, 5000, tmp_path / "seg1.opus"),
         ],
@@ -778,6 +846,15 @@ def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
         "_transcribe_segment",
         lambda segment_index, segment_start_ms, segment_path, asr_model: (
             segment_index,
+            [
+                {
+                    "text": f"seg-{segment_index}",
+                    "surface": f"seg-{segment_index}",
+                    "punctuation": "",
+                    "begin_ms": segment_start_ms,
+                    "end_ms": segment_start_ms + 1000,
+                }
+            ],
             [{"text": f"seg-{segment_index}", "begin_ms": segment_start_ms, "end_ms": segment_start_ms + 1000}],
             None,
         ),
@@ -789,15 +866,115 @@ def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
         source_duration_ms=15000,
         parallel_enabled=True,
         parallel_threshold_seconds=10,
-        segment_seconds=5,
+        segment_target_seconds=5,
         max_concurrency=4,
         progress_callback=None,
     )
     payload_parallel = result_parallel["asr_payload"]
-    sentences = payload_parallel["transcripts"][0]["sentences"]
-    assert len(sentences) == 2
-    assert sentences[0]["text"] == "seg-0"
-    assert sentences[1]["text"] == "seg-1"
+    assert payload_parallel["transcripts"][0]["words"][0]["text"] == "seg-0"
+    assert payload_parallel["transcripts"][0]["words"][1]["text"] == "seg-1"
+
+
+def test_build_lesson_sentences_prefers_word_level_split():
+    from app.services import lesson_builder as lesson_builder_module
+
+    payload = {
+        "transcripts": [
+            {
+                "words": [
+                    _word_entry("Hello", 0, 200),
+                    _word_entry("world", 200, 500, punctuation="."),
+                    _word_entry("This", 600, 800),
+                    _word_entry("is", 800, 900),
+                    _word_entry("a", 900, 950),
+                    _word_entry("test", 950, 1300, punctuation="."),
+                ]
+            }
+        ]
+    }
+
+    result = lesson_builder_module.build_lesson_sentences(payload, split_enabled=True, target_words=8, max_words=12)
+
+    assert result["mode"] == "word_level_split"
+    assert [item["text"] for item in result["sentences"]] == ["Hello world.", "This is a test."]
+
+
+def test_build_lesson_sentences_falls_back_when_words_missing():
+    from app.services import lesson_builder as lesson_builder_module
+
+    payload = {
+        "transcripts": [
+            {
+                "sentences": [
+                    {"text": "fallback line", "begin_time": 0, "end_time": 900},
+                ]
+            }
+        ]
+    }
+
+    result = lesson_builder_module.build_lesson_sentences(payload, split_enabled=True)
+
+    assert result["mode"] == "asr_sentences_no_words"
+    assert result["sentences"][0]["text"] == "fallback line"
+
+
+def test_build_lesson_sentences_splits_on_connectors():
+    from app.services import lesson_builder as lesson_builder_module
+
+    payload = {
+        "transcripts": [
+            {
+                "words": [
+                    _word_entry("I", 0, 100),
+                    _word_entry("stayed", 100, 250),
+                    _word_entry("home", 250, 400),
+                    _word_entry("last", 400, 520),
+                    _word_entry("night", 520, 700),
+                    _word_entry("because", 700, 900),
+                    _word_entry("the", 900, 1000),
+                    _word_entry("storm", 1000, 1150),
+                    _word_entry("was", 1150, 1250),
+                    _word_entry("getting", 1250, 1400),
+                    _word_entry("worse", 1400, 1650),
+                ]
+            }
+        ]
+    }
+
+    result = lesson_builder_module.build_lesson_sentences(payload, split_enabled=True, target_words=12, max_words=20)
+
+    assert result["mode"] == "word_level_split"
+    assert len(result["sentences"]) == 2
+    assert result["sentences"][1]["text"].startswith("because")
+
+
+def test_split_audio_segments_prefers_silence(monkeypatch, tmp_path):
+    from app.services import lesson_service as lesson_service_module
+
+    monkeypatch.setattr(
+        lesson_service_module,
+        "_detect_silence_ranges",
+        lambda source_audio, search_start_sec, search_end_sec: [(5.2, 5.9)],
+    )
+
+    def fake_run_cmd(cmd, **kwargs):
+        output_path = Path(cmd[-1])
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"segment")
+
+    monkeypatch.setattr(lesson_service_module, "run_cmd", fake_run_cmd)
+
+    segments = lesson_service_module._split_audio_segments(
+        tmp_path / "source.opus",
+        tmp_path / "segments",
+        target_seconds=5,
+        search_window_seconds=2,
+        duration_ms=9000,
+    )
+
+    assert len(segments) == 2
+    assert segments[0][1] == 0
+    assert segments[1][1] == 5700
 
 
 def test_settle_reserved_points_allows_negative_balance(test_client):
@@ -850,14 +1027,26 @@ def test_generate_lesson_settles_with_usage_seconds(test_client, monkeypatch, tm
     )
     monkeypatch.setattr(
         lesson_service_module,
-        "extract_sentences",
-        lambda payload: [{"text": "hello world", "begin_ms": 0, "end_ms": 1000}],
+        "estimate_duration_ms",
+        lambda payload, sentences: 999999,
     )
-    monkeypatch.setattr(lesson_service_module, "estimate_duration_ms", lambda payload, sentences: 999999)
+    monkeypatch.setattr(
+        lesson_service_module,
+        "build_lesson_sentences",
+        lambda payload, **kwargs: {
+            "sentences": [{"text": "hello world", "begin_ms": 0, "end_ms": 1000}],
+            "mode": "word_level_split",
+        },
+    )
+    monkeypatch.setattr(
+        lesson_service_module,
+        "extract_word_items",
+        lambda payload: [_word_entry("hello", 0, 500), _word_entry("world", 500, 1000)],
+    )
     monkeypatch.setattr(
         lesson_service_module.LessonService,
         "_transcribe_with_optional_parallel",
-        lambda **kwargs: {"asr_payload": {"transcripts": [{"sentences": [{"text": "hello world"}]}]}, "usage_seconds": 60},
+        lambda **kwargs: {"asr_payload": {"transcripts": [{"words": [_word_entry("hello", 0, 500)]}]}, "usage_seconds": 60},
     )
 
     source_path = tmp_path / "usage.mp4"
@@ -917,14 +1106,26 @@ def test_generate_lesson_settles_with_fallback_and_can_go_negative(test_client, 
     )
     monkeypatch.setattr(
         lesson_service_module,
-        "extract_sentences",
-        lambda payload: [{"text": "hello world", "begin_ms": 0, "end_ms": 1000}],
+        "estimate_duration_ms",
+        lambda payload, sentences: 300000,
     )
-    monkeypatch.setattr(lesson_service_module, "estimate_duration_ms", lambda payload, sentences: 300000)
+    monkeypatch.setattr(
+        lesson_service_module,
+        "build_lesson_sentences",
+        lambda payload, **kwargs: {
+            "sentences": [{"text": "hello world", "begin_ms": 0, "end_ms": 1000}],
+            "mode": "word_level_split",
+        },
+    )
+    monkeypatch.setattr(
+        lesson_service_module,
+        "extract_word_items",
+        lambda payload: [_word_entry("hello", 0, 500), _word_entry("world", 500, 1000)],
+    )
     monkeypatch.setattr(
         lesson_service_module.LessonService,
         "_transcribe_with_optional_parallel",
-        lambda **kwargs: {"asr_payload": {"transcripts": [{"sentences": [{"text": "hello world"}]}]}, "usage_seconds": None},
+        lambda **kwargs: {"asr_payload": {"transcripts": [{"words": [_word_entry("hello", 0, 500)]}]}, "usage_seconds": None},
     )
 
     source_path = tmp_path / "fallback.mp4"
@@ -961,6 +1162,176 @@ def test_generate_lesson_settles_with_fallback_and_can_go_negative(test_client, 
         assert [item.event_type for item in ledgers[-3:]] == ["reserve", "consume", "consume"]
         assert ledgers[-2].delta_points == -390
         assert ledgers[-1].delta_points == 0
+    finally:
+        session.close()
+
+
+def test_generate_lesson_applies_semantic_split_when_enabled(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    _register_and_login(client, email="semantic-ok@example.com")
+
+    from app.services import lesson_service as lesson_service_module
+    from app.services.billing_service import get_or_create_wallet_account, get_subtitle_settings
+
+    word_chunk = [
+        {"text": "alpha", "surface": "alpha", "punctuation": "", "begin_ms": 0, "end_ms": 500},
+        {"text": "beta", "surface": "beta", "punctuation": "", "begin_ms": 500, "end_ms": 1000},
+        {"text": "gamma", "surface": "gamma", "punctuation": "", "begin_ms": 1000, "end_ms": 1500},
+        {"text": "delta", "surface": "delta", "punctuation": "", "begin_ms": 1500, "end_ms": 2000},
+        {"text": "epsilon", "surface": "epsilon", "punctuation": "", "begin_ms": 2000, "end_ms": 2500},
+        {"text": "zeta", "surface": "zeta", "punctuation": "", "begin_ms": 2500, "end_ms": 3000},
+    ]
+
+    monkeypatch.setattr(
+        lesson_service_module,
+        "extract_audio_for_asr",
+        lambda source_path, opus_path: opus_path.write_bytes(b"opus"),
+    )
+    monkeypatch.setattr(lesson_service_module, "probe_audio_duration_ms", lambda opus_path: 120000)
+    monkeypatch.setattr(
+        lesson_service_module,
+        "translate_sentences_to_zh",
+        lambda texts, api_key, progress_callback=None: ([f"中:{item}" for item in texts], 0),
+    )
+    monkeypatch.setattr(lesson_service_module, "estimate_duration_ms", lambda payload, sentences: 3000)
+    monkeypatch.setattr(
+        lesson_service_module,
+        "build_lesson_sentences",
+        lambda payload, **kwargs: {
+            "sentences": [{"text": "alpha beta gamma delta epsilon zeta", "begin_ms": 0, "end_ms": 3000}],
+            "chunks": [word_chunk],
+            "mode": "word_level_split",
+        },
+    )
+    monkeypatch.setattr(
+        lesson_service_module,
+        "extract_word_items",
+        lambda payload: [_word_entry("alpha", 0, 500), _word_entry("zeta", 2500, 3000)],
+    )
+    monkeypatch.setattr(
+        lesson_service_module,
+        "split_sentence_by_semantic",
+        lambda text, **kwargs: ["alpha beta gamma", "delta epsilon zeta"],
+    )
+    monkeypatch.setattr(
+        lesson_service_module.LessonService,
+        "_transcribe_with_optional_parallel",
+        lambda **kwargs: {"asr_payload": {"transcripts": [{"words": [_word_entry("alpha", 0, 500)]}]}, "usage_seconds": None},
+    )
+
+    source_path = tmp_path / "semantic_ok.mp4"
+    req_dir = tmp_path / "req_semantic_ok"
+    source_path.write_bytes(b"source")
+    req_dir.mkdir(parents=True, exist_ok=True)
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "semantic-ok@example.com").one()
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 500
+        settings = get_subtitle_settings(session)
+        settings.semantic_split_max_words_threshold = 3
+        session.add_all([account, settings])
+        session.commit()
+
+        lesson = lesson_service_module.LessonService.generate_from_saved_file(
+            source_path=source_path,
+            source_filename="semantic_ok.mp4",
+            req_dir=req_dir,
+            owner_id=user.id,
+            asr_model=QWEN_ASR_MODEL,
+            db=session,
+            semantic_split_enabled=True,
+        )
+
+        stored = session.query(LessonSentence).filter(LessonSentence.lesson_id == lesson.id).order_by(LessonSentence.idx.asc()).all()
+        assert [item.text_en for item in stored] == ["alpha beta gamma", "delta epsilon zeta"]
+        assert [item.begin_ms for item in stored] == [0, 1500]
+        assert [item.end_ms for item in stored] == [1500, 3000]
+    finally:
+        session.close()
+
+
+def test_generate_lesson_semantic_split_failure_falls_back_to_rule_split(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    _register_and_login(client, email="semantic-fallback@example.com")
+
+    from app.services import lesson_service as lesson_service_module
+    from app.services.billing_service import get_or_create_wallet_account, get_subtitle_settings
+    from app.services.translation_qwen_mt import SemanticSplitError
+
+    word_chunk = [
+        {"text": "alpha", "surface": "alpha", "punctuation": "", "begin_ms": 0, "end_ms": 500},
+        {"text": "beta", "surface": "beta", "punctuation": "", "begin_ms": 500, "end_ms": 1000},
+        {"text": "gamma", "surface": "gamma", "punctuation": "", "begin_ms": 1000, "end_ms": 1500},
+        {"text": "delta", "surface": "delta", "punctuation": "", "begin_ms": 1500, "end_ms": 2000},
+    ]
+
+    monkeypatch.setattr(
+        lesson_service_module,
+        "extract_audio_for_asr",
+        lambda source_path, opus_path: opus_path.write_bytes(b"opus"),
+    )
+    monkeypatch.setattr(lesson_service_module, "probe_audio_duration_ms", lambda opus_path: 120000)
+    monkeypatch.setattr(
+        lesson_service_module,
+        "translate_sentences_to_zh",
+        lambda texts, api_key, progress_callback=None: ([f"中:{item}" for item in texts], 0),
+    )
+    monkeypatch.setattr(lesson_service_module, "estimate_duration_ms", lambda payload, sentences: 2000)
+    monkeypatch.setattr(
+        lesson_service_module,
+        "build_lesson_sentences",
+        lambda payload, **kwargs: {
+            "sentences": [{"text": "alpha beta gamma delta", "begin_ms": 0, "end_ms": 2000}],
+            "chunks": [word_chunk],
+            "mode": "word_level_split",
+        },
+    )
+    monkeypatch.setattr(
+        lesson_service_module,
+        "extract_word_items",
+        lambda payload: [_word_entry("alpha", 0, 500), _word_entry("delta", 1500, 2000)],
+    )
+    monkeypatch.setattr(
+        lesson_service_module,
+        "split_sentence_by_semantic",
+        lambda text, **kwargs: (_ for _ in ()).throw(SemanticSplitError("boom")),
+    )
+    monkeypatch.setattr(
+        lesson_service_module.LessonService,
+        "_transcribe_with_optional_parallel",
+        lambda **kwargs: {"asr_payload": {"transcripts": [{"words": [_word_entry("alpha", 0, 500)]}]}, "usage_seconds": None},
+    )
+
+    source_path = tmp_path / "semantic_fallback.mp4"
+    req_dir = tmp_path / "req_semantic_fallback"
+    source_path.write_bytes(b"source")
+    req_dir.mkdir(parents=True, exist_ok=True)
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "semantic-fallback@example.com").one()
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 500
+        settings = get_subtitle_settings(session)
+        settings.semantic_split_max_words_threshold = 3
+        session.add_all([account, settings])
+        session.commit()
+
+        lesson = lesson_service_module.LessonService.generate_from_saved_file(
+            source_path=source_path,
+            source_filename="semantic_fallback.mp4",
+            req_dir=req_dir,
+            owner_id=user.id,
+            asr_model=QWEN_ASR_MODEL,
+            db=session,
+            semantic_split_enabled=True,
+        )
+
+        stored = session.query(LessonSentence).filter(LessonSentence.lesson_id == lesson.id).order_by(LessonSentence.idx.asc()).all()
+        assert len(stored) == 1
+        assert stored[0].text_en == "alpha beta gamma delta"
     finally:
         session.close()
 

@@ -61,6 +61,7 @@ def _run_lesson_generation_task(
     source_path,
     req_dir,
     asr_model: str,
+    semantic_split_enabled: bool | None = None,
 ) -> None:
     db = SessionLocal()
     try:
@@ -82,6 +83,7 @@ def _run_lesson_generation_task(
             req_dir=req_dir,
             owner_id=owner_id,
             asr_model=asr_model,
+            semantic_split_enabled=semantic_split_enabled,
             db=db,
             progress_callback=_progress,
         )
@@ -118,6 +120,7 @@ def _run_lesson_generation_task(
 async def create_lesson(
     video_file: UploadFile = File(...),
     asr_model: str = Form(LESSON_DEFAULT_ASR_MODEL),
+    semantic_split_enabled: bool | None = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -128,7 +131,16 @@ async def create_lesson(
     req_dir = create_request_dir(BASE_TMP_DIR)
     try:
         lesson = await asyncio.wait_for(
-            asyncio.to_thread(LessonService.generate_from_upload, video_file, req_dir, current_user.id, selected_model, db),
+            asyncio.to_thread(
+                LessonService.generate_from_upload,
+                video_file,
+                req_dir,
+                current_user.id,
+                selected_model,
+                db,
+                None,
+                semantic_split_enabled,
+            ),
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
         sentences = get_lesson_sentences(db, lesson.id)
@@ -157,6 +169,7 @@ async def create_lesson(
 async def create_lesson_task(
     video_file: UploadFile = File(...),
     asr_model: str = Form(LESSON_DEFAULT_ASR_MODEL),
+    semantic_split_enabled: bool | None = Form(None),
     current_user: User = Depends(get_current_user),
 ):
     selected_model = (asr_model or "").strip() or LESSON_DEFAULT_ASR_MODEL
@@ -180,6 +193,7 @@ async def create_lesson_task(
                 "source_path": source_path,
                 "req_dir": req_dir,
                 "asr_model": selected_model,
+                "semantic_split_enabled": semantic_split_enabled,
             },
             daemon=True,
         )

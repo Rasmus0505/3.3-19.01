@@ -83,6 +83,32 @@ class AdminBillingRatesResponse(BaseModel):
     rates: list[BillingRateItem]
 
 
+class AdminSubtitleSettingsItem(BaseModel):
+    semantic_split_default_enabled: bool
+    subtitle_split_enabled: bool
+    subtitle_split_target_words: int
+    subtitle_split_max_words: int
+    semantic_split_max_words_threshold: int
+    semantic_split_model: str
+    semantic_split_timeout_seconds: int
+    updated_at: datetime
+
+
+class AdminSubtitleSettingsUpdateRequest(BaseModel):
+    semantic_split_default_enabled: bool
+    subtitle_split_enabled: bool
+    subtitle_split_target_words: int = Field(gt=0, le=200)
+    subtitle_split_max_words: int = Field(gt=0, le=300)
+    semantic_split_max_words_threshold: int = Field(gt=0, le=300)
+    semantic_split_model: str = Field(min_length=1, max_length=100)
+    semantic_split_timeout_seconds: int = Field(gt=0, le=300)
+
+
+class AdminSubtitleSettingsResponse(BaseModel):
+    ok: bool = True
+    settings: AdminSubtitleSettingsItem
+
+
 class AdminRedeemBatchCreateRequest(BaseModel):
     batch_name: str = Field(min_length=1, max_length=120)
     face_value_points: int = Field(gt=0)

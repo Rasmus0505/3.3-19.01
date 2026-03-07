@@ -16,6 +16,15 @@ LESSON_DEFAULT_ASR_MODEL = os.getenv("LESSON_DEFAULT_ASR_MODEL", "qwen3-asr-flas
 APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Asia/Shanghai").strip() or "Asia/Shanghai"
 
 
+def _get_env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name, "true" if default else "false").strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 def _get_env_int(name: str, default: int) -> int:
     raw = os.getenv(name, str(default)).strip()
     try:
@@ -24,6 +33,9 @@ def _get_env_int(name: str, default: int) -> int:
         return default
     return value if value > 0 else default
 
+
+ASR_SEGMENT_TARGET_SECONDS = _get_env_int("ASR_SEGMENT_TARGET_SECONDS", 300)
+ASR_SEGMENT_SEARCH_WINDOW_SECONDS = _get_env_int("ASR_SEGMENT_SEARCH_WINDOW_SECONDS", 45)
 
 REDEEM_CODE_DEFAULT_VALID_DAYS = _get_env_int("REDEEM_CODE_DEFAULT_VALID_DAYS", 30)
 REDEEM_CODE_DEFAULT_DAILY_LIMIT = _get_env_int("REDEEM_CODE_DEFAULT_DAILY_LIMIT", 5)

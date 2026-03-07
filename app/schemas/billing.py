@@ -22,6 +22,10 @@ class WalletRedeemCodeResponse(BaseModel):
     redeem_code_mask: str
 
 
+class PublicSubtitleSettings(BaseModel):
+    semantic_split_default_enabled: bool
+
+
 class BillingRateItem(BaseModel):
     model_name: str
     points_per_minute: int
@@ -36,3 +40,4 @@ class BillingRateItem(BaseModel):
 class BillingRatesResponse(BaseModel):
     ok: bool = True
     rates: list[BillingRateItem]
+    subtitle_settings: PublicSubtitleSettings

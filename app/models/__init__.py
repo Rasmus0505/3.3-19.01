@@ -4,6 +4,7 @@
     RedeemCode,
     RedeemCodeAttempt,
     RedeemCodeBatch,
+    SubtitleSetting,
     WalletAccount,
     WalletLedger,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "WalletAccount",
     "WalletLedger",
     "BillingModelRate",
+    "SubtitleSetting",
     "RedeemCodeBatch",
     "RedeemCode",
     "RedeemCodeAttempt",

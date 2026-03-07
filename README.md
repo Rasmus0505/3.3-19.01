@@ -1,4 +1,4 @@
-# English Sentence Spelling Trainer (Zeabur MVP)
+﻿# English Sentence Spelling Trainer (Zeabur MVP)
 
 本项目是一个部署在 Zeabur 上的英语句级拼写练习 MVP：
 
@@ -42,6 +42,12 @@
 - `MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 - `MT_MODEL=qwen-mt-plus`
 - `APP_TIMEZONE=Asia/Shanghai`
+- `ASR_SEGMENT_TARGET_SECONDS=300`
+- `ASR_SEGMENT_SEARCH_WINDOW_SECONDS=45`
+- 字幕规则分句与语义分句默认值改为后台“字幕/分句设置”维护，不再新增环境变量
+
+当前英文分句链路已改为：`静音优先切段 -> ASR 词级时间 -> VideoLingo 风格规则分句`。  
+本轮不启用 Qwen 语义切句；若词级结果缺失，会降级为 ASR 原始句子。
 
 ## 数据库约定
 
@@ -114,6 +120,9 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - `TMP_WORK_DIR=/tmp/zeabur3.3`
 - `MT_BASE_URL`
 - `MT_MODEL`
+- `ASR_SEGMENT_TARGET_SECONDS=300`
+- `ASR_SEGMENT_SEARCH_WINDOW_SECONDS=45`
+- 上传页“开启语义分句”默认状态与分句阈值请到后台“字幕/分句设置”中调整
 
 ### 4）部署后如何验证
 
@@ -145,7 +154,7 @@ GET /health/ready
 ```text
 请帮我在 Zeabur 上部署这个 GitHub 仓库，按仓库根目录 Dockerfile 构建。
 本次先只部署两个服务：web 和 postgresql，不要先部署 Metabase。
-请提醒我填写这 4 个环境变量：DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS。
+请提醒我填写这 6 个环境变量：DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS、ASR_SEGMENT_TARGET_SECONDS、ASR_SEGMENT_SEARCH_WINDOW_SECONDS。字幕/分句默认值请到后台“字幕/分句设置”中调整。
 web 服务启动后，请依次验证：
 1. GET /health 返回 200
 2. GET /health/ready 返回 200
@@ -177,3 +186,4 @@ web 服务启动后，请依次验证：
 - 首次部署后 502
   - 先确认 Zeabur 是否真的使用了仓库 `Dockerfile`
   - 再确认 `web` 与 `postgresql` 是否已经绑定在同一个项目内
+

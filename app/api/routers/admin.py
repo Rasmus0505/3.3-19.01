@@ -11,12 +11,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_admin_emails, get_admin_user
-from app.api.serializers import to_rate_item
+from app.api.serializers import to_admin_subtitle_settings_item, to_rate_item
 from app.core.config import REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_EXPORT_CONFIRM_TEXT
 from app.core.errors import error_response, map_billing_error
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
 from app.db import get_db
-from app.models import BillingModelRate, RedeemCode, RedeemCodeBatch, User
+from app.models import BillingModelRate, RedeemCode, RedeemCodeBatch, SubtitleSetting, User
 from app.repositories.admin import (
     list_admin_users,
     list_all_redeem_audit_rows,
@@ -29,6 +29,8 @@ from app.repositories.wallet_ledger import list_wallet_ledger_rows
 from app.schemas import (
     AdminBillingRateUpdateRequest,
     AdminBillingRatesResponse,
+    AdminSubtitleSettingsResponse,
+    AdminSubtitleSettingsUpdateRequest,
     AdminRedeemAuditExportRequest,
     AdminRedeemAuditItem,
     AdminRedeemAuditListResponse,
@@ -66,6 +68,7 @@ from app.services.billing_service import (
     bulk_disable_redeem_codes,
     copy_redeem_batch_and_codes,
     create_redeem_batch_and_codes,
+    get_subtitle_settings,
     manual_adjust,
     set_redeem_batch_status,
     update_redeem_code_status,
@@ -322,6 +325,53 @@ def admin_update_billing_rate(
     db.commit()
     db.refresh(rate)
     return AdminBillingRatesResponse(ok=True, rates=[to_rate_item(rate)])
+
+
+@router.get(
+    "/subtitle-settings",
+    response_model=AdminSubtitleSettingsResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_get_subtitle_settings(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
+    settings = get_subtitle_settings(db)
+    return AdminSubtitleSettingsResponse(ok=True, settings=to_admin_subtitle_settings_item(settings))
+
+
+@router.put(
+    "/subtitle-settings",
+    response_model=AdminSubtitleSettingsResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_update_subtitle_settings(
+    payload: AdminSubtitleSettingsUpdateRequest,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    settings = get_subtitle_settings(db)
+    before = to_admin_subtitle_settings_item(settings).model_dump(mode="json")
+    settings.semantic_split_default_enabled = payload.semantic_split_default_enabled
+    settings.subtitle_split_enabled = payload.subtitle_split_enabled
+    settings.subtitle_split_target_words = payload.subtitle_split_target_words
+    settings.subtitle_split_max_words = payload.subtitle_split_max_words
+    settings.semantic_split_max_words_threshold = payload.semantic_split_max_words_threshold
+    settings.semantic_split_model = payload.semantic_split_model.strip()
+    settings.semantic_split_timeout_seconds = payload.semantic_split_timeout_seconds
+    settings.updated_by_user_id = current_admin.id
+    db.add(settings)
+    db.flush()
+    append_admin_operation_log(
+        db,
+        operator_user_id=current_admin.id,
+        action_type="subtitle_settings_update",
+        target_type="subtitle_settings",
+        target_id=str(getattr(settings, "id", 1)),
+        before_value=before,
+        after_value=to_admin_subtitle_settings_item(settings).model_dump(mode="json"),
+        note="subtitle_settings",
+    )
+    db.commit()
+    db.refresh(settings)
+    return AdminSubtitleSettingsResponse(ok=True, settings=to_admin_subtitle_settings_item(settings))
 
 
 @router.post(
