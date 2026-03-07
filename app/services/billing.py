@@ -10,6 +10,7 @@ from math import ceil
 from typing import Iterable
 
 from sqlalchemy import func, inspect, select, text
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.core.config import REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_DEFAULT_VALID_DAYS
@@ -221,6 +222,8 @@ def ensure_default_subtitle_settings(db: Session) -> SubtitleSetting:
     try:
         row = db.get(SubtitleSetting, 1)
     except Exception as exc:
+        if _is_missing_subtitle_settings_error(exc):
+            return _self_heal_subtitle_settings(db)
         logger.exception("[DEBUG] subtitle_settings.ensure_failed detail=%s", str(exc)[:400])
         raise
     if row is None:
@@ -247,6 +250,8 @@ def get_subtitle_settings(db: Session) -> SubtitleSetting:
     try:
         row = db.get(SubtitleSetting, 1)
     except Exception as exc:
+        if _is_missing_subtitle_settings_error(exc):
+            return _self_heal_subtitle_settings(db)
         logger.exception("[DEBUG] subtitle_settings.load_failed detail=%s", str(exc)[:400])
         raise
     if row is None:
@@ -265,6 +270,50 @@ def get_subtitle_settings_snapshot(db: Session) -> SubtitleSettingsSnapshot:
         semantic_split_model=str(row.semantic_split_model),
         semantic_split_timeout_seconds=int(row.semantic_split_timeout_seconds),
     )
+
+
+def _is_missing_subtitle_settings_error(exc: Exception) -> bool:
+    candidates = [str(exc)]
+    original = getattr(exc, "orig", None)
+    if original is not None:
+        candidates.append(str(original))
+        candidates.append(original.__class__.__name__)
+    normalized = " | ".join(item.lower() for item in candidates if item)
+    return (
+        "subtitle_settings" in normalized
+        and ("does not exist" in normalized or "no such table" in normalized or "undefinedtable" in normalized)
+    )
+
+
+def _self_heal_subtitle_settings(db: Session) -> SubtitleSetting:
+    logger.warning("[DEBUG] subtitle_settings.self_heal_start")
+    bind = db.get_bind()
+    if bind is None:
+        raise RuntimeError("subtitle_settings self-heal missing bind")
+
+    try:
+        db.rollback()
+        if bind.dialect.name != "sqlite":
+            db.execute(text("CREATE SCHEMA IF NOT EXISTS app"))
+            db.commit()
+        SubtitleSetting.__table__.create(bind=bind, checkfirst=True)
+        db.commit()
+        row = db.get(SubtitleSetting, 1)
+        if row is None:
+            row = SubtitleSetting(id=1, **DEFAULT_SUBTITLE_SETTINGS)
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+        logger.info("[DEBUG] subtitle_settings.self_heal_success")
+        return row
+    except ProgrammingError as exc:
+        db.rollback()
+        logger.exception("[DEBUG] subtitle_settings.self_heal_failed detail=%s", str(exc)[:400])
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.exception("[DEBUG] subtitle_settings.self_heal_failed detail=%s", str(exc)[:400])
+        raise
 
 
 def get_or_create_wallet_account(db: Session, user_id: int, *, for_update: bool = False) -> WalletAccount:
