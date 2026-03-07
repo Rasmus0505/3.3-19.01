@@ -310,40 +310,26 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       <CardHeader className="space-y-5">
         <div className="apple-kicker w-fit">
           <Sparkles className="size-3.5" />
-          Create Lesson
+          上传
         </div>
         <div className="space-y-1.5">
           <CardTitle className="flex items-center gap-2 text-lg">
             <UploadCloud className="size-4" />
-            导入素材
+            上传素材
           </CardTitle>
-          <CardDescription className="max-w-md">上传、计费和转写逻辑保持不变，只把流程收敛成更清晰的一条主路径。</CardDescription>
+          <CardDescription className="max-w-md">上传视频或音频，系统会自动生成课程。</CardDescription>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-          <span className="rounded-full border border-white/72 bg-white/74 px-3 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-            默认模型 {QWEN_MODEL}
+        <div className="flex flex-wrap items-center gap-2 rounded-[1.25rem] border border-white/72 bg-white/74 px-3 py-2 text-xs text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+          <span className="inline-flex items-center gap-1.5">
+            <Coins className="size-3.5" />
+            余额 {balanceValue} 点
           </span>
-          <span className="rounded-full border border-white/72 bg-white/74 px-3 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-            {semanticSplitEnabled ? "语义分句已开启" : "语义分句已关闭"}
+          <span className="text-slate-300">·</span>
+          <span className="inline-flex items-center gap-1.5">
+            <TimerReset className="size-3.5" />
+            预估 {estimatedLabel}
           </span>
-        </div>
-
-        <div className="grid gap-2 sm:grid-cols-2">
-          <div className="rounded-[1.25rem] border border-white/70 bg-white/72 p-3">
-            <p className="inline-flex items-center gap-1.5 text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
-              <Coins className="size-3.5" />
-              当前余额
-            </p>
-            <p className="mt-2 text-xl font-semibold tracking-tight text-slate-950">{balanceValue} 点</p>
-          </div>
-          <div className="rounded-[1.25rem] border border-white/70 bg-white/72 p-3">
-            <p className="inline-flex items-center gap-1.5 text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
-              <TimerReset className="size-3.5" />
-              预估扣费
-            </p>
-            <p className="mt-2 text-sm font-semibold tracking-tight text-slate-950">{estimatedLabel}</p>
-          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -361,7 +347,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
             {likelyInsufficient ? (
               <p className="text-sm font-medium text-destructive">余额可能不足，提交将被拒绝。</p>
             ) : (
-              <p className="text-xs leading-5 text-slate-500">选择素材后会自动读取时长、封面与本地媒体缓存信息。</p>
+              <p className="text-xs leading-5 text-slate-500">选择素材后会自动读取时长和封面。</p>
             )}
           </AlertDescription>
         </Alert>
@@ -381,8 +367,8 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
             <div className="mx-auto flex size-14 items-center justify-center rounded-[1.5rem] bg-slate-950 text-white shadow-[0_22px_44px_-30px_rgba(15,23,42,0.56)]">
               <Video className="size-5" />
             </div>
-            <p className="mt-4 text-base font-semibold tracking-tight text-slate-950">先导入一段视频或音频</p>
-            <p className="mt-2 text-sm leading-6 text-slate-500">支持视频和音频素材。时长读取、封面提取和本地缓存逻辑保持现状。</p>
+            <p className="mt-4 text-base font-semibold tracking-tight text-slate-950">先上传一段视频或音频</p>
+            <p className="mt-2 text-sm leading-6 text-slate-500">上传后会自动生成课程。</p>
           </div>
         )}
 
@@ -421,8 +407,8 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
 
           <div className="flex items-start justify-between gap-3 rounded-[1.5rem] border border-white/70 bg-white/72 p-4">
             <div className="space-y-1">
-              <p className="text-sm font-medium text-slate-950">开启语义分句</p>
-              <p className="text-xs leading-5 text-slate-500">更贴近语义，但速度会稍慢，且可能增加模型调用。</p>
+              <p className="text-sm font-medium text-slate-950">语义分句</p>
+              <p className="text-xs leading-5 text-slate-500">更贴近语义，但会稍慢一些。</p>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-500">{semanticSplitEnabled ? "已开启" : "已关闭"}</span>
@@ -437,7 +423,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
                 处理中
               </span>
             ) : (
-              "开始生成课程"
+              "生成课程"
             )}
           </Button>
         </form>
@@ -448,9 +434,8 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
               <DialogTitle>链接生成视频</DialogTitle>
               <DialogDescription asChild>
                 <div className="space-y-1">
-                  <p>上传视频才可以获取素材</p>
-                  <p>您可自行寻找可以链接转视频的合法工具</p>
-                  <p>或使用推荐的工具网站</p>
+                  <p>先把链接转成视频文件，再回来上传。</p>
+                  <p>也可以直接上传本地视频或音频。</p>
                 </div>
               </DialogDescription>
             </DialogHeader>

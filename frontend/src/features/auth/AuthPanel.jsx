@@ -1,28 +1,10 @@
-import { ShieldCheck, Sparkles, WandSparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { ENDPOINTS } from "../../shared/api/endpoints";
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, Input, Label } from "../../shared/ui";
-
-const benefitItems = [
-  {
-    icon: Sparkles,
-    title: "更像产品，不像工具",
-    description: "登录后即可进入品牌化学习工作台，上传素材、管理课程与开始沉浸学习。",
-  },
-  {
-    icon: WandSparkles,
-    title: "上传后自动生成课程",
-    description: "沿用现有转写链路，不改接口和业务字段，只升级外观与层级。",
-  },
-  {
-    icon: ShieldCheck,
-    title: "同账号同步积分与权限",
-    description: "钱包余额、兑换码和管理员入口保持原有逻辑，仍可直接继续使用。",
-  },
-];
 
 export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
   const [email, setEmail] = useState("");
@@ -65,14 +47,14 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
       <CardHeader className="space-y-3.5">
         <div className="apple-kicker w-fit">
           <Sparkles className="size-3.5" />
-          Welcome
+          登录
         </div>
         <div className="space-y-1.5">
-          <CardTitle className="text-[1.8rem] tracking-tight">登录后继续你的学习进度</CardTitle>
-          <CardDescription className="max-w-md">保留现有登录 / 注册逻辑，把入口收敛为更直接、更像主操作区的表单体验。</CardDescription>
+          <CardTitle className="text-[1.8rem] tracking-tight">登录开始学习</CardTitle>
+          <CardDescription className="max-w-md">登录后上传素材，系统会自动生成课程。</CardDescription>
         </div>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-5">
         <form
           className="space-y-4 rounded-[1.85rem] border border-white/72 bg-white/80 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.74),0_18px_42px_-38px_rgba(15,23,42,0.16)] md:p-6"
           onSubmit={(event) => {
@@ -81,8 +63,8 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
           }}
         >
           <div className="space-y-1">
-            <p className="apple-eyebrow">Sign In</p>
-            <p className="text-sm leading-6 text-slate-500">用同一账户继续课程、积分与上传记录。</p>
+            <p className="apple-eyebrow">开始学习</p>
+            <p className="text-sm leading-6 text-slate-500">用同一个账号继续课程和进度。</p>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="email">邮箱</Label>
@@ -115,22 +97,6 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
             </Button>
           </div>
         </form>
-
-        <div className="grid gap-2.5 sm:grid-cols-3">
-          {benefitItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <div
-                key={item.title}
-                className="rounded-[1.35rem] border border-white/72 bg-white/68 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]"
-              >
-                <Icon className="size-4 text-slate-700" />
-                <p className="mt-3 text-sm font-medium text-slate-950">{item.title}</p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">{item.description}</p>
-              </div>
-            );
-          })}
-        </div>
       </CardContent>
       <CardFooter className="pt-0">
         {status ? (
@@ -138,7 +104,7 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
             <AlertDescription>{status}</AlertDescription>
           </Alert>
         ) : (
-          <p className="text-sm text-slate-500">未登录状态，可直接注册后开始上传素材。</p>
+          <p className="text-sm text-slate-500">没有账号也可以直接注册。</p>
         )}
       </CardFooter>
     </Card>
