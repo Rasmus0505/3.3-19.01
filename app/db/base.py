@@ -15,6 +15,7 @@ BUSINESS_TABLES = (
     "wallet_accounts",
     "wallet_ledger",
     "billing_model_rates",
+    "subtitle_settings",
     "redeem_code_batches",
     "redeem_codes",
     "redeem_code_attempts",

@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -48,6 +49,7 @@ REDEEM_FAIL_DAILY_LIMIT = "daily_limit_exceeded"
 REDEEM_FAIL_NOT_ACTIVE = "not_active"
 
 _REDEEM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_MODEL_RATES: tuple[tuple[str, int, bool, int, int, int], ...] = (
@@ -216,7 +218,11 @@ def ensure_default_billing_rates(
 
 
 def ensure_default_subtitle_settings(db: Session) -> SubtitleSetting:
-    row = db.get(SubtitleSetting, 1)
+    try:
+        row = db.get(SubtitleSetting, 1)
+    except Exception as exc:
+        logger.exception("[DEBUG] subtitle_settings.ensure_failed detail=%s", str(exc)[:400])
+        raise
     if row is None:
         row = SubtitleSetting(id=1, **DEFAULT_SUBTITLE_SETTINGS)
         db.add(row)
@@ -238,7 +244,11 @@ def ensure_default_subtitle_settings(db: Session) -> SubtitleSetting:
 
 
 def get_subtitle_settings(db: Session) -> SubtitleSetting:
-    row = db.get(SubtitleSetting, 1)
+    try:
+        row = db.get(SubtitleSetting, 1)
+    except Exception as exc:
+        logger.exception("[DEBUG] subtitle_settings.load_failed detail=%s", str(exc)[:400])
+        raise
     if row is None:
         row = ensure_default_subtitle_settings(db)
     return row
