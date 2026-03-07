@@ -31,7 +31,16 @@ READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "parallel_threshold_seconds",
         "segment_seconds",
         "max_concurrency",
-    )
+    ),
+    "subtitle_settings": (
+        "semantic_split_default_enabled",
+        "subtitle_split_enabled",
+        "subtitle_split_target_words",
+        "subtitle_split_max_words",
+        "semantic_split_max_words_threshold",
+        "semantic_split_model",
+        "semantic_split_timeout_seconds",
+    ),
 }
 
 
@@ -95,6 +104,7 @@ def _probe_database_ready() -> tuple[bool, str]:
             return False, f"missing critical columns: {', '.join(missing_columns)}"
         return True, ""
     except Exception as exc:
+        logger.exception("[DEBUG] readiness.exception detail=%s", str(exc)[:400])
         return False, str(exc)[:1200]
 
 
