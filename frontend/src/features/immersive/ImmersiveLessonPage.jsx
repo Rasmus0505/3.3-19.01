@@ -919,7 +919,7 @@ export function ImmersiveLessonPage({
   const canReplaySentence = Boolean(currentSentence) && !mediaLoading && phase !== "transition" && !needsBinding;
 
   return (
-    <Card className={`immersive-page ${immersiveActive ? "immersive-page--immersive" : ""}`} onClick={focusTypingInput}>
+    <Card className={`immersive-page apple-panel ${immersiveActive ? "immersive-page--immersive" : ""}`} onClick={focusTypingInput}>
       <CardHeader>
         <div className="immersive-header">
           <div className="immersive-header-left">
@@ -942,6 +942,11 @@ export function ImmersiveLessonPage({
                 第 {Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 句
               </CardDescription>
             </div>
+          </div>
+          <div className="immersive-header-meta">
+            <Badge variant="outline">已完成 {completedIndexes.length} 句</Badge>
+            <Badge variant="outline">{displayMode === "underline" ? "下划线模式" : "卡片模式"}</Badge>
+            {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
           </div>
         </div>
       </CardHeader>
@@ -1003,14 +1008,14 @@ export function ImmersiveLessonPage({
         </div>
 
         {!immersiveActive ? (
-          <Button className="h-12 w-full bg-black text-base font-semibold text-white hover:bg-black/90" onClick={startImmersive}>
+          <Button className="h-12 w-full text-base font-semibold" onClick={startImmersive}>
             开始学习
           </Button>
         ) : null}
 
         {immersiveActive ? (
           <>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="immersive-action-row">
               <TooltipProvider delayDuration={120}>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1048,10 +1053,6 @@ export function ImmersiveLessonPage({
                   <TooltipContent>enter</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-              <Badge variant="outline">
-                已完成 {completedIndexes.length} / {sentenceCount}
-              </Badge>
-              {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
               {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
 
               {sentenceTypingDone && !sentencePlaybackDone && sentencePlaybackRequired ? (
@@ -1061,7 +1062,10 @@ export function ImmersiveLessonPage({
 
             <div className="immersive-typing">
               <div className="immersive-typing-toolbar">
-
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold tracking-tight text-slate-950">单词逐个浮现，尽量保持手感流畅。</p>
+                  <p className="text-xs leading-5 text-slate-500">按空格揭示单词，按 Enter 前进，Shift + R 重播当前句。</p>
+                </div>
                 <div className="immersive-display-toggle">
                   <span className="text-xs text-muted-foreground">下划线模式</span>
                   <Switch
@@ -1100,7 +1104,7 @@ export function ImmersiveLessonPage({
                 })}
               </div>
 
-              <div className="space-y-1 text-sm text-muted-foreground">
+              <div className="immersive-previous-sentence">
                 <p>上一句：{previousSentenceEn}</p>
                 <p className="pl-[4.5em]">{previousSentenceZh}</p>
               </div>
@@ -1108,7 +1112,9 @@ export function ImmersiveLessonPage({
             </div>
           </>
         ) : (
-          <p className="text-sm text-muted-foreground">可先预览视频，准备好后点击“开始学习”进入沉浸模式。</p>
+          <p className="rounded-[1.25rem] border border-white/70 bg-white/72 px-4 py-3 text-sm leading-6 text-slate-500">
+            可先预览视频，准备好后点击“开始学习”进入沉浸模式。
+          </p>
         )}
 
         <input
