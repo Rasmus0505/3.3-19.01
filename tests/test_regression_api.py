@@ -7,12 +7,13 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db import Base, create_database_engine, get_db
 from app.main import create_app
-from app.models import Lesson, LessonProgress, LessonSentence, MediaAsset, User, WalletLedger
-from app.services.billing_service import ensure_default_billing_rates, get_or_create_wallet_account, settle_reserved_points
+from app.models import Lesson, LessonProgress, LessonSentence, MediaAsset, SubtitleSetting, User, WalletLedger
+from app.services.billing_service import ensure_default_billing_rates, get_or_create_wallet_account, get_subtitle_settings, settle_reserved_points
 
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
 
@@ -342,6 +343,62 @@ def test_admin_subtitle_settings_roundtrip(test_client):
     fetch_resp = client.get("/api/admin/subtitle-settings", headers=admin_headers)
     assert fetch_resp.status_code == 200
     assert fetch_resp.json()["settings"]["semantic_split_timeout_seconds"] == 35
+
+
+def test_public_billing_rates_self_heals_missing_subtitle_settings_table(test_client):
+    client, session_factory, _ = test_client
+
+    session = session_factory()
+    try:
+        session.execute(text("DROP TABLE subtitle_settings"))
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.get("/api/billing/rates")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["subtitle_settings"]["semantic_split_default_enabled"] is False
+
+    verify = session_factory()
+    try:
+        row = get_subtitle_settings(verify)
+        assert isinstance(row, SubtitleSetting)
+        assert row.id == 1
+    finally:
+        verify.close()
+
+
+def test_admin_subtitle_settings_update_self_heals_missing_table(test_client):
+    client, session_factory, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "self-heal-admin@example.com")
+    admin_token = _register_and_login(client, email="self-heal-admin@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    session = session_factory()
+    try:
+        session.execute(text("DROP TABLE subtitle_settings"))
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.put(
+        "/api/admin/subtitle-settings",
+        headers=headers,
+        json={
+            "semantic_split_default_enabled": True,
+            "subtitle_split_enabled": True,
+            "subtitle_split_target_words": 17,
+            "subtitle_split_max_words": 29,
+            "semantic_split_max_words_threshold": 21,
+            "semantic_split_model": "qwen-plus",
+            "semantic_split_timeout_seconds": 50,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["settings"]["semantic_split_default_enabled"] is True
+    assert body["settings"]["semantic_split_timeout_seconds"] == 50
 
 
 def test_redeem_code_admin_and_wallet_flow(test_client):
