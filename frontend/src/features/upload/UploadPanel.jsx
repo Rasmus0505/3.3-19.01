@@ -1,5 +1,4 @@
 ﻿import { Loader2, UploadCloud } from "lucide-react";
-import { Coins, Link2, Sparkles, TimerReset, Video } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -8,11 +7,9 @@ import { requestPersistentStorage, saveLessonMedia } from "../../shared/media/lo
 import {
   Alert,
   AlertDescription,
-  Badge,
   Button,
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -289,101 +286,62 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   }, [taskSnapshot?.lesson?.id]);
 
   function openLinkDialog() {
+    console.debug("[DEBUG] 打开链接生成视频提示弹窗");
     setLinkDialogOpen(true);
   }
 
   function jumpToRecommendedTool() {
+    console.debug("[DEBUG] 跳转链接转视频工具网站", "https://snapany.com/zh");
     window.open("https://snapany.com/zh", "_blank", "noopener,noreferrer");
     setLinkDialogOpen(false);
   }
 
-  const balanceValue = Number(balancePoints || 0);
-  const estimatedLabel = selectedRate
-    ? probing
-      ? "读取时长中..."
-      : durationSec != null
-        ? `${estimatedPoints} 点（${selectedRate.points_per_minute} 点/分钟）`
-        : "选择文件后显示"
-    : "该模型未配置单价";
-
   return (
-    <Card className="apple-panel">
-      <CardHeader className="space-y-4">
-        <div className="apple-kicker w-fit">
-          <Sparkles className="size-3.5" />
-          Create Lesson
-        </div>
-        <div className="space-y-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <UploadCloud className="size-4" />
-            导入素材并生成练习
-          </CardTitle>
-          <CardDescription>保留原有上传、计费和转写逻辑，只把操作区升级为更接近消费级产品的工作舱。</CardDescription>
-        </div>
-
-        <div className="grid gap-2 sm:grid-cols-3">
-          <div className="rounded-[1.25rem] border border-white/70 bg-white/72 p-3">
-            <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">当前余额</p>
-            <p className="mt-2 text-xl font-semibold tracking-tight text-slate-950">{balanceValue} 点</p>
-          </div>
-          <div className="rounded-[1.25rem] border border-white/70 bg-white/72 p-3">
-            <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">预估扣费</p>
-            <p className="mt-2 text-sm font-semibold tracking-tight text-slate-950">{estimatedLabel}</p>
-          </div>
-          <div className="rounded-[1.25rem] border border-white/70 bg-white/72 p-3">
-            <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">默认模型</p>
-            <p className="mt-2 text-sm font-semibold tracking-tight text-slate-950">{QWEN_MODEL}</p>
-          </div>
-        </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <UploadCloud className="size-4" />
+          导入素材并生成练习
+        </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <Alert className="border-white/75 bg-white/78">
+      <CardContent className="space-y-3">
+        <Alert>
           <AlertDescription>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="gap-1.5">
-                <Coins className="size-3.5" />
-                余额 {balanceValue} 点
-              </Badge>
-              <Badge variant="outline" className="gap-1.5">
-                <TimerReset className="size-3.5" />
-                预估 {estimatedLabel}
-              </Badge>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-slate-500">
+            <p className="text-muted-foreground">当前余额：{Number(balancePoints || 0)} 点</p>
+            <p className="text-muted-foreground">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="cursor-help underline decoration-dotted underline-offset-2">计费说明</span>
+                  <span className="cursor-help underline decoration-dotted underline-offset-2">预估扣费</span>
                 </TooltipTrigger>
                 <TooltipContent>向上取整秒数后按分钟计费，再向上取整到点数。</TooltipContent>
               </Tooltip>
-              ：保持现有结算逻辑不变。
+              ：
+              {selectedRate
+                ? probing
+                  ? "读取时长中..."
+                  : durationSec != null
+                    ? `${estimatedPoints} 点（${selectedRate.points_per_minute} 点/分钟）`
+                    : "选择文件后显示"
+                : "该模型未配置单价"}
             </p>
-            {likelyInsufficient ? <p className="mt-2 text-sm font-medium text-destructive">余额可能不足，提交将被拒绝。</p> : null}
+            {likelyInsufficient ? <p className="mt-1 text-destructive">余额可能不足，提交将被拒绝。</p> : null}
           </AlertDescription>
         </Alert>
 
         {file ? (
-          <div className="overflow-hidden rounded-[1.75rem] border border-white/72 bg-white/68 shadow-[0_18px_50px_-38px_rgba(15,23,42,0.24)]">
+          <div className="overflow-hidden rounded-md border bg-muted/20">
             {coverDataUrl ? (
-              <img src={coverDataUrl} alt="视频封面" className="h-44 w-full object-cover" />
+              <img src={coverDataUrl} alt="视频封面" className="h-40 w-full object-cover" />
             ) : (
-              <div className="flex h-44 w-full items-center justify-center text-sm text-slate-500">
+              <div className="flex h-40 w-full items-center justify-center text-sm text-muted-foreground">
                 {isVideoSource ? "封面提取中或失败" : "音频素材（无视频封面）"}
               </div>
             )}
           </div>
-        ) : (
-          <div className="rounded-[1.75rem] border border-dashed border-white/75 bg-white/68 px-5 py-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-            <div className="mx-auto flex size-14 items-center justify-center rounded-[1.5rem] bg-slate-950 text-white shadow-[0_22px_44px_-30px_rgba(15,23,42,0.56)]">
-              <Video className="size-5" />
-            </div>
-            <p className="mt-4 text-base font-semibold tracking-tight text-slate-950">拖入或选择一段素材，快速生成课程</p>
-            <p className="mt-2 text-sm leading-6 text-slate-500">支持视频和音频素材。时长读取、封面提取和本地媒体缓存逻辑保持现状。</p>
-          </div>
-        )}
+        ) : null}
 
         <form
-          className="space-y-4"
+          className="space-y-3"
           onSubmit={(event) => {
             event.preventDefault();
             submit();
@@ -398,25 +356,22 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
               onChange={(e) => onSelectFile(e.target.files?.[0] ?? null)}
               disabled={loading}
             />
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Button type="button" variant="outline" className="h-12" onClick={() => fileInputRef.current?.click()} disabled={loading}>
-                选择文件
-              </Button>
-              <Button type="button" variant="secondary" className="h-12" onClick={openLinkDialog} disabled={loading}>
-                <Link2 className="size-4" />
-                链接生成视频
-              </Button>
-            </div>
-            {file ? <p className="text-xs text-slate-500">{file.name}</p> : null}
+            <Button type="button" variant="outline" className="h-11" onClick={() => fileInputRef.current?.click()} disabled={loading}>
+              选择文件
+            </Button>
+            <Button type="button" variant="secondary" className="h-11" onClick={openLinkDialog} disabled={loading}>
+              链接生成视频
+            </Button>
+            {file ? <p className="text-xs text-muted-foreground">{file.name}</p> : null}
           </div>
 
-          <div className="flex items-start justify-between gap-3 rounded-[1.5rem] border border-white/70 bg-white/72 p-4">
+          <div className="flex items-start justify-between gap-3 rounded-md border p-3">
             <div className="space-y-1">
-              <p className="text-sm font-medium text-slate-950">开启语义分句</p>
-              <p className="text-xs leading-5 text-slate-500">更贴近语义，但会更慢，且可能增加模型调用。</p>
+              <p className="text-sm font-medium">开启语义分句</p>
+              <p className="text-xs text-muted-foreground">更贴近语义，但会更慢，且可能增加模型调用。</p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500">{semanticSplitEnabled ? "已开启" : "已关闭"}</span>
+              <span className="text-xs text-muted-foreground">{semanticSplitEnabled ? "已开启" : "已关闭"}</span>
               <Switch checked={semanticSplitEnabled} onCheckedChange={setSemanticSplitEnabled} disabled={loading} />
             </div>
           </div>
@@ -458,7 +413,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       </CardContent>
       {status ? (
         <CardFooter>
-          <p className="text-sm text-slate-500">{status}</p>
+          <p className="text-sm text-muted-foreground">{status}</p>
         </CardFooter>
       ) : null}
     </Card>

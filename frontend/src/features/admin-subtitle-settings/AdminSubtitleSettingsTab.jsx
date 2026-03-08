@@ -104,43 +104,24 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
   }
 
   return (
-    <Card className="apple-panel admin-page-card">
-      <CardHeader className="space-y-4">
-        <div className="apple-kicker w-fit">Subtitle</div>
-        <div className="admin-page-header">
-          <div className="admin-page-header-copy">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Sparkles className="size-4" />
-              字幕/分句设置
-            </CardTitle>
-            <CardDescription>维护上传页默认语义分句开关，以及规则分句和语义分句阈值。</CardDescription>
-          </div>
-          <div className="admin-page-summary">
-            <div>
-              <span className="apple-eyebrow">加载状态</span>
-              <strong>{loading ? "同步中" : "已就绪"}</strong>
-            </div>
-            <div>
-              <span className="apple-eyebrow">保存状态</span>
-              <strong>{saving ? "保存中" : "空闲"}</strong>
-            </div>
-            <div>
-              <span className="apple-eyebrow">默认分句</span>
-              <strong>{draft.semantic_split_default_enabled ? "语义优先" : "规则优先"}</strong>
-            </div>
-          </div>
-        </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Sparkles className="size-4" />
+          字幕/分句设置
+        </CardTitle>
+        <CardDescription>维护上传页默认语义分句开关，以及规则分句和语义分句阈值。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {loading ? <Skeleton className="h-10 w-full" /> : null}
         {status ? (
-          <Alert className="border-white/75 bg-white/76">
+          <Alert>
             <AlertDescription>{status}</AlertDescription>
           </Alert>
         ) : null}
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-3 rounded-[1.5rem] border border-white/70 bg-white/72 p-4">
+          <div className="space-y-3 rounded-md border p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-medium">上传页默认开启语义分句</p>
@@ -166,7 +147,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
             </div>
           </div>
 
-          <div className="space-y-3 rounded-[1.5rem] border border-white/70 bg-white/72 p-4">
+          <div className="space-y-3 rounded-md border p-4">
             <div className="space-y-2">
               <p className="text-sm font-medium">语义分句模型</p>
               <Input
@@ -190,7 +171,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
             </div>
           </div>
 
-          <div className="space-y-3 rounded-[1.5rem] border border-white/70 bg-white/72 p-4">
+          <div className="space-y-3 rounded-md border p-4">
             <div className="space-y-2">
               <p className="text-sm font-medium">规则分句目标词数</p>
               <Input
@@ -219,7 +200,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
             </div>
           </div>
 
-          <div className="space-y-3 rounded-[1.5rem] border border-white/70 bg-white/72 p-4">
+          <div className="space-y-3 rounded-md border p-4">
             <div className="space-y-2">
               <p className="text-sm font-medium">触发语义分句阈值</p>
               <Input

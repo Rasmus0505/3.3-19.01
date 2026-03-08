@@ -173,36 +173,17 @@ export function AdminUsersTab({ apiCall }) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   return (
-    <Card className="apple-panel admin-page-card">
-      <CardHeader className="space-y-4">
-        <div className="apple-kicker w-fit">User Ops</div>
-        <div className="admin-page-header">
-          <div className="admin-page-header-copy">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Users className="size-4" />
-              用户与余额
-            </CardTitle>
-            <CardDescription>搜索、分页、排序与手工调账（时间均为北京时间）。</CardDescription>
-          </div>
-          <div className="admin-page-summary">
-            <div>
-              <span className="apple-eyebrow">总用户</span>
-              <strong>{total}</strong>
-            </div>
-            <div>
-              <span className="apple-eyebrow">当前页</span>
-              <strong>{page}</strong>
-            </div>
-            <div>
-              <span className="apple-eyebrow">分页</span>
-              <strong>{pageSize} / 页</strong>
-            </div>
-          </div>
-        </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Users className="size-4" />
+          用户与余额
+        </CardTitle>
+        <CardDescription>搜索、分页、排序与手工调账（时间均为北京时间）。</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3">
         <form
-          className="flex flex-wrap gap-2 rounded-[1.5rem] border border-white/70 bg-white/72 p-3"
+          className="flex flex-wrap gap-2"
           onSubmit={(event) => {
             event.preventDefault();
             setPage(1);
@@ -235,7 +216,7 @@ export function AdminUsersTab({ apiCall }) {
         </form>
 
         {loading ? <Skeleton className="h-10 w-full" /> : null}
-        <ScrollArea className="w-full rounded-[1.5rem] border border-white/70 bg-white/60">
+        <ScrollArea className="w-full rounded-md border">
           <Table className="min-w-[760px]">
             <TableHeader>
               <TableRow>
@@ -304,7 +285,7 @@ export function AdminUsersTab({ apiCall }) {
         </ScrollArea>
 
         <div className="flex items-center justify-between">
-          <p className="text-xs text-slate-500">总计 {total} 条</p>
+          <p className="text-xs text-muted-foreground">总计 {total} 条</p>
           <Pagination className="mx-0 w-auto justify-end">
             <PaginationContent>
               <PaginationItem>
@@ -323,7 +304,7 @@ export function AdminUsersTab({ apiCall }) {
         </div>
 
         {status ? (
-          <Alert className="border-white/75 bg-white/76">
+          <Alert>
             <AlertDescription>{status}</AlertDescription>
           </Alert>
         ) : null}

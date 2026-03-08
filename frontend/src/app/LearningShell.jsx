@@ -1,5 +1,4 @@
 ﻿import { LogOut, Menu, Search, Shield, Sparkles } from "lucide-react";
-import { ArrowRight, CirclePlay, Command as CommandIcon, LibraryBig, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -136,6 +135,11 @@ export function LearningShell() {
             },
       };
       setCurrentLesson(merged);
+      console.debug("[DEBUG] loadLessonDetail immersive policy", {
+        lessonId,
+        autoEnterImmersive,
+        keepCurrentImmersiveState,
+      });
       setImmersiveActive((prev) => (keepCurrentImmersiveState ? prev : Boolean(autoEnterImmersive)));
     } catch (error) {
       setGlobalStatus(`网络错误: ${String(error)}`);
@@ -352,6 +356,7 @@ export function LearningShell() {
     if (!lesson?.id || !file) {
       return { ok: false, message: "恢复视频参数无效" };
     }
+    console.debug("[DEBUG] lessons.restore_media.start", { lessonId: lesson.id, fileName: file.name, fileSize: file.size });
     try {
       const expectedSourceDurationSec = Math.max(0, Number(lesson.source_duration_ms || 0) / 1000);
       if (expectedSourceDurationSec > 0) {
@@ -361,6 +366,7 @@ export function LearningShell() {
           const message = `恢复失败：文件时长差 ${delta.toFixed(3)} 秒，超过 0.5 秒阈值（本地 ${localDurationSec.toFixed(
             3,
           )} 秒，课程 ${expectedSourceDurationSec.toFixed(3)} 秒）。`;
+          console.debug("[DEBUG] lessons.restore_media.duration_mismatch", { lessonId: lesson.id, deltaSec: delta });
           return { ok: false, message };
         }
       }
@@ -371,53 +377,31 @@ export function LearningShell() {
         setCurrentLessonNeedsBinding(false);
       }
       setMediaRestoreTick((value) => value + 1);
+      console.debug("[DEBUG] lessons.restore_media.success", { lessonId: lesson.id });
       return { ok: true, message: "恢复视频成功" };
     } catch (error) {
       const message = `恢复失败：${String(error)}`;
+      console.debug("[DEBUG] lessons.restore_media.failed", { lessonId: lesson.id, error: String(error) });
       return { ok: false, message };
     }
   }
 
-  const totalSentenceCount = lessons.reduce((sum, item) => sum + Number(item.sentences?.length || 0), 0);
-  const generatedLessonCount = lessons.filter((item) => Number(item.sentences?.length || 0) > 0).length;
-  const currentLessonSentenceCount = Number(currentLesson?.sentences?.length || 0);
-  const heroStats = [
-    {
-      label: "课程库",
-      value: `${lessons.length} 节`,
-      note: accessToken ? "自动同步你的历史记录" : "登录后可继续累计",
-    },
-    {
-      label: "可练句子",
-      value: `${totalSentenceCount} 句`,
-      note: totalSentenceCount > 0 ? "已生成的句级训练内容" : "上传后自动生成",
-    },
-    {
-      label: "账户积分",
-      value: accessToken ? `${walletBalance} 点` : "登录后可见",
-      note: accessToken ? "用于上传与转写" : "支持兑换码补充",
-    },
-  ];
-
   return (
     <div className="section-soft min-h-screen bg-background">
-      <header className="container-wrapper py-3">
-        <div className="container">
-          <div className="apple-shell-header flex min-h-16 items-center gap-2 px-4 py-2 md:px-5">
-            <Button size="icon-sm" variant="ghost" aria-label="logo" className="bg-white/45">
+      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur transition-all duration-500 ease-out supports-[backdrop-filter]:bg-background/80">
+        <div className="container-wrapper">
+          <div className="container flex h-14 items-center gap-2">
+            <Button size="icon-sm" variant="ghost" aria-label="logo">
               <Sparkles className="size-4" />
             </Button>
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold tracking-tight text-slate-950">English Trainer</p>
-                <p className="hidden text-xs text-slate-500 md:block">上传素材、自动生成课程、进入沉浸式学习舞台。</p>
-              </div>
-              <Badge variant="outline" className="hidden md:inline-flex">Apple inspired UI</Badge>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold">English Trainer</span>
+              <Badge variant="outline">shadcn style</Badge>
             </div>
-            <Separator orientation="vertical" className="mx-1 hidden h-5 border-white/70 md:block" />
+            <Separator orientation="vertical" className="mx-1 hidden h-4 md:block" />
             <div className="hidden items-center gap-2 md:flex">
               <Badge variant="outline">{accessToken ? "已登录" : "未登录"}</Badge>
-              <Badge variant="outline">{generatedLessonCount} 节可学课程</Badge>
+              {accessToken ? <Badge variant="outline">{lessons.length} lessons</Badge> : null}
               <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
             </div>
             <div className="ml-auto flex items-center gap-2">
@@ -440,369 +424,145 @@ export function LearningShell() {
                 </Button>
               ) : null}
 
-              <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-                <SheetTrigger asChild>
-                  <Button variant="outline" size="icon-sm" className="md:hidden" aria-label="open-menu">
-                    <Menu className="size-4" />
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className="w-[300px] border-white/70 bg-white/88 sm:w-[340px]">
-                  <SheetHeader>
-                    <SheetTitle>快捷操作</SheetTitle>
-                    <SheetDescription>移动端切换课程、查看积分与进入管理后台。</SheetDescription>
-                  </SheetHeader>
-                  <div className="mt-6 space-y-3">
-                    <Badge variant="outline" className="w-fit">{lessons.length} 节课程</Badge>
-                    <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
-                    {lessons.length > 0 ? (
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start"
-                        onClick={() => {
-                          setMobileNavOpen(false);
-                          setCommandOpen(true);
-                        }}
-                      >
-                        <Search className="size-4" />
-                        快速跳转课程
-                      </Button>
-                    ) : null}
-                    {accessToken ? (
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start"
-                        onClick={() => {
-                          setMobileNavOpen(false);
-                          document.getElementById("learning-workbench")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                        }}
-                      >
-                        <LibraryBig className="size-4" />
-                        查看学习工作台
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start"
-                        onClick={() => {
-                          setMobileNavOpen(false);
-                          document.getElementById("auth-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                        }}
-                      >
-                        <Sparkles className="size-4" />
-                        前往登录
-                      </Button>
-                    )}
-                    {isAdminUser ? (
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start"
-                        onClick={() => {
-                          setMobileNavOpen(false);
-                          navigate("/admin/users");
-                        }}
-                      >
-                        <Shield className="size-4" />
-                        管理后台
-                      </Button>
-                    ) : null}
-                    {accessToken ? (
+              {accessToken ? (
+                <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+                  <SheetTrigger asChild>
+                    <Button variant="outline" size="icon-sm" className="md:hidden" aria-label="open-menu">
+                      <Menu className="size-4" />
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="right" className="w-[280px] sm:w-[320px]">
+                    <SheetHeader>
+                      <SheetTitle>快捷操作</SheetTitle>
+                      <SheetDescription>移动端导航与课程切换入口。</SheetDescription>
+                    </SheetHeader>
+                    <div className="mt-4 space-y-2">
+                      <Badge variant="outline">{lessons.length} lessons</Badge>
+                      <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
+                      {lessons.length > 0 ? (
+                        <Button
+                          variant="outline"
+                          className="w-full justify-start"
+                          onClick={() => {
+                            setMobileNavOpen(false);
+                            setCommandOpen(true);
+                          }}
+                        >
+                          <Search className="size-4" />
+                          快速跳转课程
+                        </Button>
+                      ) : null}
+                      {isAdminUser ? (
+                        <Button
+                          variant="outline"
+                          className="w-full justify-start"
+                          onClick={() => {
+                            setMobileNavOpen(false);
+                            navigate("/admin/users");
+                          }}
+                        >
+                          <Shield className="size-4" />
+                          管理后台
+                        </Button>
+                      ) : null}
                       <Button className="w-full justify-start" onClick={handleLogout}>
                         <LogOut className="size-4" />
                         退出登录
                       </Button>
-                    ) : null}
-                  </div>
-                </SheetContent>
-              </Sheet>
+                    </div>
+                  </SheetContent>
+                </Sheet>
+              ) : null}
             </div>
           </div>
         </div>
       </header>
 
-      <main className={`container-wrapper ${immersiveLayoutActive ? "pb-4" : "pb-8"}`}>
-        <div className="container space-y-6">
-          <section className={`apple-panel p-5 md:p-7 ${immersiveLayoutActive ? "pt-5" : "pt-6"}`}>
-            <div className={`apple-hero-grid ${immersiveLayoutActive ? "" : "apple-hero-grid--main"} items-start`}>
-              <div className="space-y-6">
-                <div className="space-y-4">
-                  <div className="apple-kicker w-fit">
-                    <WandSparkles className="size-3.5" />
-                    Premium Learning Workspace
-                  </div>
-                  <div className="space-y-3">
-                    <h1 className={immersiveLayoutActive ? "text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl" : "apple-title"}>
-                      像大牌产品一样学习英语，而不是像后台一样练习英语。
-                    </h1>
-                    <p className="apple-copy">
-                      现在的界面会先给你一层安静、轻盈、接近 Apple 官网的品牌感，再把上传、课程管理、沉浸学习和积分体系自然地组织成一个可持续使用的工作台。
-                    </p>
-                  </div>
-                </div>
+      <main className={`container-wrapper transition-all duration-500 ease-out ${immersiveLayoutActive ? "pb-0" : "pb-6"}`}>
+        <div
+          className={`container grid gap-4 transition-all duration-500 ease-out ${
+            immersiveLayoutActive ? "pt-2 xl:grid-cols-1" : "pt-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]"
+          }`}
+        >
+          {!immersiveLayoutActive ? (
+            <aside className="space-y-4 transition-all duration-500 ease-out">
+              <LessonList
+                lessons={lessons}
+                currentLessonId={currentLesson?.id}
+                onSelect={loadLessonDetail}
+                onRename={handleRenameLesson}
+                onDelete={handleDeleteLesson}
+                onRestoreMedia={handleRestoreLessonMedia}
+                loading={loadingLessons}
+              />
+              <Card size="sm">
+                <CardHeader>
+                  <CardTitle className="text-base">状态</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <p className="text-muted-foreground">课程加载：{loadingLessons ? "进行中" : "空闲"}</p>
+                  <p className="text-muted-foreground">当前课程：{currentLesson?.title || "未选择"}</p>
+                  <p className="text-muted-foreground">学习模式：沉浸模式</p>
+                  {currentLessonNeedsBinding ? <p className="text-amber-600">待绑定本地媒体：课程可见，但播放受限</p> : null}
+                </CardContent>
+              </Card>
+            </aside>
+          ) : null}
 
-                <div className="flex flex-wrap gap-3">
-                  {!accessToken ? (
-                    <>
-                      <Button
-                        size="lg"
-                        onClick={() => document.getElementById("auth-panel")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                      >
-                        立即开始
-                        <ArrowRight className="size-4" />
-                      </Button>
-                      <Button
-                        size="lg"
-                        variant="outline"
-                        onClick={() => document.getElementById("learning-workbench")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                      >
-                        先看工作台
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button
-                        size="lg"
-                        onClick={() => {
-                          if (currentLesson?.id) {
-                            if (!immersiveLayoutActive) {
-                              handleStartImmersive();
-                            }
-                            document.getElementById("learning-workbench")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                            return;
-                          }
-                          document.getElementById("upload-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                        }}
-                      >
-                        {currentLesson?.id ? (immersiveLayoutActive ? "回到学习舞台" : "开始当前课程") : "上传第一份素材"}
-                        <CirclePlay className="size-4" />
-                      </Button>
-                      {lessons.length > 0 ? (
-                        <Button size="lg" variant="outline" onClick={() => setCommandOpen(true)}>
-                          <CommandIcon className="size-4" />
-                          快速切换课程
-                        </Button>
-                      ) : (
-                        <Button
-                          size="lg"
-                          variant="outline"
-                          onClick={() => document.getElementById("upload-panel")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                        >
-                          前往导入素材
-                        </Button>
-                      )}
-                    </>
-                  )}
-                </div>
+          <section className={`min-w-0 space-y-4 transition-all duration-500 ease-out ${immersiveLayoutActive ? "xl:col-span-1" : ""}`}>
+            {accessToken ? (
+              <ImmersiveLessonPage
+                lesson={currentLesson}
+                accessToken={accessToken}
+                apiClient={api}
+                onProgressSynced={refreshCurrentLesson}
+                immersiveActive={immersiveLayoutActive}
+                onExitImmersive={handleExitImmersive}
+                onStartImmersive={handleStartImmersive}
+                externalMediaReloadToken={mediaRestoreTick}
+              />
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Preview</CardTitle>
+                  <CardDescription>登录后可在中间区域进入沉浸模式学习。</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">请在右侧先完成登录或注册。</p>
+                </CardContent>
+              </Card>
+            )}
 
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {heroStats.map((item) => (
-                    <div key={item.label} className="apple-stat-card">
-                      <p className="apple-stat-title">{item.label}</p>
-                      <p className="apple-stat-value">{item.value}</p>
-                      <p className="mt-2 text-sm leading-6 text-slate-500">{item.note}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="apple-preview-stack">
-                <div className="apple-preview-tile">
-                  <p className="apple-eyebrow">Current Session</p>
-                  <div className="mt-3 space-y-2">
-                    <p className="text-xl font-semibold tracking-tight text-slate-950">{currentLesson?.title || "尚未选择课程"}</p>
-                    <p className="text-sm leading-6 text-slate-500">
-                      {accessToken
-                        ? currentLesson
-                          ? `${currentLessonSentenceCount} 句 · ${currentLesson.status || "ready"}`
-                          : "登录成功后，上传素材或从历史课程开始。"
-                        : "登录后自动同步课程、积分与沉浸学习进度。"}
-                    </p>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Badge variant="outline">{subtitleSettings.semantic_split_default_enabled ? "默认语义分句" : "默认规则分句"}</Badge>
-                    <Badge variant="outline">{currentLessonNeedsBinding ? "待绑定本地媒体" : "媒体状态正常"}</Badge>
-                  </div>
-                </div>
-
-                <div className="apple-preview-tile">
-                  <p className="apple-eyebrow">Workflow</p>
-                  <div className="mt-3 space-y-3 text-sm leading-6 text-slate-600">
-                    <div className="flex items-start gap-3">
-                      <Badge variant="outline" className="shrink-0">01</Badge>
-                      <p>导入视频或音频，系统读取时长并预估积分消耗。</p>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Badge variant="outline" className="shrink-0">02</Badge>
-                      <p>自动转写、分句、生成课程与历史记录，无需改现有 API。</p>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Badge variant="outline" className="shrink-0">03</Badge>
-                      <p>进入沉浸学习舞台，逐句播放、跟写并持续推进进度。</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="apple-preview-tile">
-                  <p className="apple-eyebrow">Account</p>
-                  <div className="mt-3 space-y-3">
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="outline">{accessToken ? "账号已连接" : "游客模式"}</Badge>
-                      {isAdminUser ? <Badge>管理员权限</Badge> : null}
-                      <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
-                    </div>
-                    <p className="text-sm leading-6 text-slate-500">主站与后台维持同一套账户、积分和管理员鉴权逻辑，只重构为更成熟的产品体验。</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+            {globalStatus ? (
+              <Alert variant="destructive">
+                <AlertTitle>系统消息</AlertTitle>
+                <AlertDescription>{globalStatus}</AlertDescription>
+              </Alert>
+            ) : null}
           </section>
 
-          <section id="learning-workbench" className="apple-workbench">
-            <div className="apple-toolbar px-2 pb-3 pt-1 md:px-3">
-              <div className="space-y-3">
-                <div className="apple-kicker w-fit">
-                  <LibraryBig className="size-3.5" />
-                  Workspace
-                </div>
-                <div className="space-y-2">
-                  <h2 className="text-2xl font-semibold tracking-tight text-slate-950 md:text-3xl">学习工作台</h2>
-                  <p className="max-w-2xl text-sm leading-6 text-slate-500">
-                    左侧整理课程与历史记录，中间聚焦学习舞台，右侧完成登录、充值和上传。所有逻辑保持不变，只让信息层级更像成熟产品。
-                  </p>
-                </div>
-              </div>
-
-              <div className="apple-inline-metrics">
-                <div className="apple-inline-metric">
-                  <p className="apple-inline-metric-label">当前课程</p>
-                  <p className="apple-inline-metric-value">{currentLesson?.title || "未选择"}</p>
-                </div>
-                <div className="apple-inline-metric">
-                  <p className="apple-inline-metric-label">沉浸模式</p>
-                  <p className="apple-inline-metric-value">{immersiveLayoutActive ? "进行中" : "待开始"}</p>
-                </div>
-                <div className="apple-inline-metric">
-                  <p className="apple-inline-metric-label">课程加载</p>
-                  <p className="apple-inline-metric-value">{loadingLessons ? "同步中" : "已就绪"}</p>
-                </div>
-              </div>
-            </div>
-
-            <div
-              className={`grid gap-4 transition-all duration-500 ease-out ${
-                immersiveLayoutActive ? "xl:grid-cols-1" : "xl:grid-cols-[330px_minmax(0,1fr)_360px]"
-              }`}
-            >
-              {!immersiveLayoutActive ? (
-                <aside className="space-y-4 transition-all duration-500 ease-out">
-                  <LessonList
-                    lessons={lessons}
-                    currentLessonId={currentLesson?.id}
-                    onSelect={loadLessonDetail}
-                    onRename={handleRenameLesson}
-                    onDelete={handleDeleteLesson}
-                    onRestoreMedia={handleRestoreLessonMedia}
-                    loading={loadingLessons}
+          {!immersiveLayoutActive ? (
+            <aside className="space-y-4 transition-all duration-500 ease-out">
+              {!accessToken ? (
+                <AuthPanel onAuthed={handleAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
+              ) : (
+                <>
+                  <RedeemCodePanel
+                    apiCall={(path, options = {}) => api(path, options, accessToken)}
+                    onWalletChanged={loadWallet}
                   />
-                  <Card size="sm" className="apple-panel-muted">
-                    <CardHeader className="space-y-3">
-                      <div className="apple-kicker w-fit">Status</div>
-                      <div>
-                        <CardTitle className="text-base">本轮学习状态</CardTitle>
-                        <CardDescription>帮助你快速判断课程、媒体和默认分句配置是否准备就绪。</CardDescription>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-3 text-sm">
-                      <div className="flex items-center justify-between rounded-[1.25rem] border border-white/70 bg-white/72 px-4 py-3">
-                        <span className="text-slate-500">当前课程</span>
-                        <span className="font-medium text-slate-950">{currentLesson?.title || "未选择"}</span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-[1.25rem] border border-white/70 bg-white/72 px-4 py-3">
-                        <span className="text-slate-500">学习模式</span>
-                        <span className="font-medium text-slate-950">{immersiveLayoutActive ? "沉浸中" : "待进入"}</span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-[1.25rem] border border-white/70 bg-white/72 px-4 py-3">
-                        <span className="text-slate-500">默认分句</span>
-                        <span className="font-medium text-slate-950">{subtitleSettings.semantic_split_default_enabled ? "语义优先" : "规则优先"}</span>
-                      </div>
-                      {currentLessonNeedsBinding ? (
-                        <Alert className="border-amber-200/80 bg-amber-50/80">
-                          <AlertTitle>待绑定本地媒体</AlertTitle>
-                          <AlertDescription>当前课程可见，但播放受限。请在沉浸模式中绑定本地媒体后继续。</AlertDescription>
-                        </Alert>
-                      ) : null}
-                    </CardContent>
-                  </Card>
-                </aside>
-              ) : null}
-
-              <section className={`min-w-0 space-y-4 transition-all duration-500 ease-out ${immersiveLayoutActive ? "xl:col-span-1" : ""}`}>
-                <div className="apple-stage p-1.5">
-                  {accessToken ? (
-                    <ImmersiveLessonPage
-                      lesson={currentLesson}
-                      accessToken={accessToken}
-                      apiClient={api}
-                      onProgressSynced={refreshCurrentLesson}
-                      immersiveActive={immersiveLayoutActive}
-                      onExitImmersive={handleExitImmersive}
-                      onStartImmersive={handleStartImmersive}
-                      externalMediaReloadToken={mediaRestoreTick}
-                    />
-                  ) : (
-                    <Card className="apple-panel-muted">
-                      <CardHeader>
-                        <CardTitle className="text-base">Preview</CardTitle>
-                        <CardDescription>登录后即可在这里进入沉浸学习舞台，保留现有学习逻辑。</CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <p className="text-sm leading-6 text-slate-500">先在右侧完成登录或注册，再上传素材并生成课程。</p>
-                        <Button
-                          variant="outline"
-                          onClick={() => document.getElementById("auth-panel")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                        >
-                          前往登录
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  )}
-                </div>
-
-                {globalStatus ? (
-                  <Alert variant="destructive">
-                    <AlertTitle>系统消息</AlertTitle>
-                    <AlertDescription>{globalStatus}</AlertDescription>
-                  </Alert>
-                ) : null}
-              </section>
-
-              {!immersiveLayoutActive ? (
-                <aside className="space-y-4 transition-all duration-500 ease-out">
-                  {!accessToken ? (
-                    <div id="auth-panel">
-                      <AuthPanel onAuthed={handleAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
-                    </div>
-                  ) : (
-                    <>
-                      <RedeemCodePanel
-                        apiCall={(path, options = {}) => api(path, options, accessToken)}
-                        onWalletChanged={loadWallet}
-                      />
-                      <div id="upload-panel">
-                        <UploadPanel
-                          accessToken={accessToken}
-                          onCreated={handleLessonCreated}
-                          balancePoints={walletBalance}
-                          billingRates={billingRates}
-                          subtitleSettings={subtitleSettings}
-                          onWalletChanged={loadWallet}
-                        />
-                      </div>
-                    </>
-                  )}
-                </aside>
-              ) : null}
-            </div>
-          </section>
+                  <UploadPanel
+                    accessToken={accessToken}
+                    onCreated={handleLessonCreated}
+                    balancePoints={walletBalance}
+                    billingRates={billingRates}
+                    subtitleSettings={subtitleSettings}
+                    onWalletChanged={loadWallet}
+                  />
+                </>
+              )}
+            </aside>
+          ) : null}
         </div>
       </main>
 

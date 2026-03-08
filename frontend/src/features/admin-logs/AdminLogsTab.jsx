@@ -89,36 +89,17 @@ export function AdminLogsTab({ apiCall }) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   return (
-    <Card className="apple-panel admin-page-card">
-      <CardHeader className="space-y-4">
-        <div className="apple-kicker w-fit">Billing Logs</div>
-        <div className="admin-page-header">
-          <div className="admin-page-header-copy">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <ScrollText className="size-4" />
-              余额流水
-            </CardTitle>
-            <CardDescription>预扣 / 消费 / 退款 / 手工调账 / 兑换码充值明细（筛选与展示均按北京时间）。</CardDescription>
-          </div>
-          <div className="admin-page-summary">
-            <div>
-              <span className="apple-eyebrow">总条数</span>
-              <strong>{total}</strong>
-            </div>
-            <div>
-              <span className="apple-eyebrow">当前页</span>
-              <strong>{page}</strong>
-            </div>
-            <div>
-              <span className="apple-eyebrow">分页</span>
-              <strong>{pageSize} / 页</strong>
-            </div>
-          </div>
-        </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ScrollText className="size-4" />
+          余额流水
+        </CardTitle>
+        <CardDescription>预扣 / 消费 / 退款 / 手工调账 / 兑换码充值明细（筛选与展示均按北京时间）。</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3">
         <form
-          className="grid gap-2 rounded-[1.5rem] border border-white/70 bg-white/72 p-3 md:grid-cols-7"
+          className="grid gap-2 md:grid-cols-7"
           onSubmit={(event) => {
             event.preventDefault();
             const fromValue = buildBeijingOffsetDateTime(dateFromDate, dateFromTime);
@@ -183,7 +164,7 @@ export function AdminLogsTab({ apiCall }) {
         </form>
 
         {loading ? <Skeleton className="h-10 w-full" /> : null}
-        <ScrollArea className="w-full rounded-[1.5rem] border border-white/70 bg-white/60">
+        <ScrollArea className="w-full rounded-md border">
           <Table className="min-w-[1160px]">
             <TableHeader>
               <TableRow>
@@ -240,7 +221,7 @@ export function AdminLogsTab({ apiCall }) {
         </ScrollArea>
 
         <div className="flex items-center justify-between">
-          <p className="text-xs text-slate-500">总计 {total} 条</p>
+          <p className="text-xs text-muted-foreground">总计 {total} 条</p>
           <div className="flex items-center gap-2">
             <Select
               value={String(pageSize)}
@@ -277,7 +258,7 @@ export function AdminLogsTab({ apiCall }) {
         </div>
 
         {status ? (
-          <Alert className="border-white/75 bg-white/76">
+          <Alert>
             <AlertDescription>{status}</AlertDescription>
           </Alert>
         ) : null}
