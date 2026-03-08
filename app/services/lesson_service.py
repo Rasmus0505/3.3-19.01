@@ -35,8 +35,10 @@ from app.services.lesson_builder import (
     estimate_duration_ms,
     extract_sentences,
     extract_word_items,
+    normalize_learning_english_text,
     sentences_from_word_chunks,
     split_words_by_semantic_segments,
+    tokenize_learning_sentence,
     tokenize_sentence,
 )
 from app.services.media import MediaError, extract_audio_for_asr, probe_audio_duration_ms, run_cmd, save_upload_file_stream, validate_suffix
@@ -343,6 +345,107 @@ def _apply_semantic_split(
 
 class LessonService:
     @staticmethod
+    def _normalize_runtime_sentences(sentences: list[dict[str, Any]], zh_list: list[str]) -> list[dict[str, Any]]:
+        normalized_sentences: list[dict[str, Any]] = []
+        for idx, sentence in enumerate(sentences):
+            normalized_text_en = normalize_learning_english_text(str(sentence["text"]))
+            normalized_tokens = tokenize_learning_sentence(normalized_text_en)
+            normalized_sentences.append(
+                {
+                    "idx": idx,
+                    "begin_ms": int(sentence["begin_ms"]),
+                    "end_ms": int(sentence["end_ms"]),
+                    "text_en": normalized_text_en,
+                    "text_zh": zh_list[idx] if idx < len(zh_list) else "",
+                    "tokens": normalized_tokens,
+                    "audio_url": None,
+                }
+            )
+        return normalized_sentences
+
+    @staticmethod
+    def build_subtitle_variant(
+        *,
+        asr_payload: dict[str, Any],
+        db: Session,
+        semantic_split_enabled: bool | None = None,
+        before_translate_callback: Callable[[int], None] | None = None,
+        translation_progress_callback: Callable[[int, int], None] | None = None,
+    ) -> dict[str, Any]:
+        if not isinstance(asr_payload, dict):
+            raise MediaError("ASR_PAYLOAD_INVALID", "字幕源数据无效", "asr_payload 必须是对象")
+
+        subtitle_settings = get_subtitle_settings_snapshot(db)
+        effective_semantic_split_enabled = (
+            subtitle_settings.semantic_split_default_enabled
+            if semantic_split_enabled is None
+            else bool(semantic_split_enabled)
+        )
+
+        sentence_result = build_lesson_sentences(
+            asr_payload,
+            split_enabled=subtitle_settings.subtitle_split_enabled,
+            target_words=subtitle_settings.subtitle_split_target_words,
+            max_words=subtitle_settings.subtitle_split_max_words,
+        )
+        sentences = sentence_result["sentences"]
+        chunks = sentence_result.get("chunks") or []
+        split_mode = sentence_result["mode"]
+        semantic_split_applied = False
+        if effective_semantic_split_enabled and chunks:
+            chunks, semantic_split_applied = _apply_semantic_split(
+                chunks,
+                enabled=True,
+                threshold_words=subtitle_settings.semantic_split_max_words_threshold,
+                model=subtitle_settings.semantic_split_model,
+                timeout_seconds=subtitle_settings.semantic_split_timeout_seconds,
+            )
+            if semantic_split_applied:
+                sentences = sentences_from_word_chunks(chunks)
+                split_mode = "word_level_split+semantic"
+        if not sentences:
+            raise MediaError("ASR_SENTENCE_MISSING", "ASR 返回结果缺少句级信息", "未找到有效句子")
+
+        source_word_count = len(extract_word_items(asr_payload))
+        logger.info(
+            "[DEBUG] lesson.subtitle_variant split_mode=%s split_enabled=%s semantic_split_enabled=%s semantic_split_applied=%s source_words=%s output_sentences=%s",
+            split_mode,
+            subtitle_settings.subtitle_split_enabled,
+            effective_semantic_split_enabled,
+            semantic_split_applied,
+            source_word_count,
+            len(sentences),
+        )
+        if split_mode not in {"word_level_split", "word_level_split+semantic"} and subtitle_settings.subtitle_split_enabled:
+            logger.warning("[DEBUG] lesson.subtitle_variant split_fallback mode=%s output_sentences=%s", split_mode, len(sentences))
+
+        if before_translate_callback:
+            before_translate_callback(len(sentences))
+        zh_list, failed_count = translate_sentences_to_zh(
+            [x["text"] for x in sentences],
+            api_key=DASHSCOPE_API_KEY,
+            progress_callback=translation_progress_callback,
+        )
+        normalized_sentences = LessonService._normalize_runtime_sentences(sentences, zh_list)
+        return {
+            "semantic_split_enabled": bool(effective_semantic_split_enabled),
+            "split_mode": split_mode,
+            "source_word_count": source_word_count,
+            "sentences": normalized_sentences,
+            "translate_failed_count": failed_count,
+        }
+
+    @staticmethod
+    def build_subtitle_cache_seed(*, asr_payload: dict[str, Any], variant: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "semantic_split_enabled": bool(variant.get("semantic_split_enabled")),
+            "split_mode": str(variant.get("split_mode") or ""),
+            "source_word_count": int(variant.get("source_word_count", 0)),
+            "asr_payload": dict(asr_payload or {}),
+            "sentences": [dict(item) for item in list(variant.get("sentences") or []) if isinstance(item, dict)],
+        }
+
+    @staticmethod
     def generate_from_upload(
         upload_file: UploadFile,
         req_dir: Path,
@@ -579,12 +682,6 @@ class LessonService:
         try:
             reserved_duration_ms = probe_audio_duration_ms(opus_path)
             rate = get_model_rate(db, asr_model)
-            subtitle_settings = get_subtitle_settings_snapshot(db)
-            effective_semantic_split_enabled = (
-                subtitle_settings.semantic_split_default_enabled
-                if semantic_split_enabled is None
-                else bool(semantic_split_enabled)
-            )
             reserved_points = calculate_points(reserved_duration_ms, rate.points_per_minute)
             logger.info(
                 "[DEBUG] lesson.generate reserve owner_id=%s model=%s duration_ms=%s points=%s",
@@ -621,60 +718,28 @@ class LessonService:
             )
             asr_payload = asr_transcribe["asr_payload"]
             usage_seconds = asr_transcribe.get("usage_seconds")
+            runtime_sentences: list[dict[str, Any]] = []
+            translate_total = 0
 
-            sentence_result = build_lesson_sentences(
-                asr_payload,
-                split_enabled=subtitle_settings.subtitle_split_enabled,
-                target_words=subtitle_settings.subtitle_split_target_words,
-                max_words=subtitle_settings.subtitle_split_max_words,
-            )
-            sentences = sentence_result["sentences"]
-            chunks = sentence_result.get("chunks") or []
-            split_mode = sentence_result["mode"]
-            semantic_split_applied = False
-            if effective_semantic_split_enabled and chunks:
-                chunks, semantic_split_applied = _apply_semantic_split(
-                    chunks,
-                    enabled=True,
-                    threshold_words=subtitle_settings.semantic_split_max_words_threshold,
-                    model=subtitle_settings.semantic_split_model,
-                    timeout_seconds=subtitle_settings.semantic_split_timeout_seconds,
+            def _on_before_translation(total: int) -> None:
+                nonlocal translate_total
+                translate_total = max(0, int(total))
+                _emit_progress(
+                    progress_callback,
+                    stage_key="translate_zh",
+                    stage_status="running",
+                    overall_percent=_progress_percent_by_stage("translate_zh", 0.0),
+                    current_text=f"翻译字幕 0/{translate_total}",
+                    counters={
+                        "asr_done": translate_total,
+                        "asr_estimated": translate_total,
+                        "translate_done": 0,
+                        "translate_total": translate_total,
+                    },
                 )
-                if semantic_split_applied:
-                    sentences = sentences_from_word_chunks(chunks)
-                    split_mode = "word_level_split+semantic"
-            if not sentences:
-                raise MediaError("ASR_SENTENCE_MISSING", "ASR 返回结果缺少句级信息", "未找到有效句子")
-
-            source_word_count = len(extract_word_items(asr_payload))
-            logger.info(
-                "[DEBUG] lesson.generate split_mode=%s split_enabled=%s semantic_split_enabled=%s semantic_split_applied=%s source_words=%s output_sentences=%s",
-                split_mode,
-                subtitle_settings.subtitle_split_enabled,
-                effective_semantic_split_enabled,
-                semantic_split_applied,
-                source_word_count,
-                len(sentences),
-            )
-            if split_mode not in {"word_level_split", "word_level_split+semantic"} and subtitle_settings.subtitle_split_enabled:
-                logger.warning("[DEBUG] lesson.generate split_fallback mode=%s output_sentences=%s", split_mode, len(sentences))
-
-            translate_total = len(sentences)
-            _emit_progress(
-                progress_callback,
-                stage_key="translate_zh",
-                stage_status="running",
-                overall_percent=_progress_percent_by_stage("translate_zh", 0.0),
-                current_text=f"翻译字幕 0/{translate_total}",
-                counters={
-                    "asr_done": len(sentences),
-                    "asr_estimated": len(sentences),
-                    "translate_done": 0,
-                    "translate_total": translate_total,
-                },
-            )
 
             def _on_translation_progress(done: int, total: int) -> None:
+                sentence_total = len(runtime_sentences) if runtime_sentences else total
                 _emit_progress(
                     progress_callback,
                     stage_key="translate_zh",
@@ -682,18 +747,22 @@ class LessonService:
                     overall_percent=_progress_percent_by_stage("translate_zh", done / max(total, 1)),
                     current_text=f"翻译字幕 {done}/{total}",
                     counters={
-                        "asr_done": len(sentences),
-                        "asr_estimated": len(sentences),
+                        "asr_done": sentence_total,
+                        "asr_estimated": sentence_total,
                         "translate_done": done,
                         "translate_total": total,
                     },
                 )
 
-            zh_list, failed_count = translate_sentences_to_zh(
-                [x["text"] for x in sentences],
-                DASHSCOPE_API_KEY,
-                progress_callback=_on_translation_progress,
+            variant = LessonService.build_subtitle_variant(
+                asr_payload=asr_payload,
+                db=db,
+                semantic_split_enabled=semantic_split_enabled,
+                before_translate_callback=_on_before_translation,
+                translation_progress_callback=_on_translation_progress,
             )
+            runtime_sentences = list(variant["sentences"])
+            translate_total = len(runtime_sentences)
             _emit_progress(
                 progress_callback,
                 stage_key="translate_zh",
@@ -701,16 +770,17 @@ class LessonService:
                 overall_percent=_progress_percent_by_stage("translate_zh", 1.0),
                 current_text=f"翻译字幕 {translate_total}/{translate_total}",
                 counters={
-                    "asr_done": len(sentences),
-                    "asr_estimated": len(sentences),
+                    "asr_done": translate_total,
+                    "asr_estimated": translate_total,
                     "translate_done": translate_total,
                     "translate_total": translate_total,
                 },
             )
 
-            failed_ratio = failed_count / max(len(sentences), 1)
+            failed_count = int(variant.get("translate_failed_count", 0))
+            failed_ratio = failed_count / max(translate_total, 1)
             lesson_status = "partial_ready" if failed_ratio >= 0.3 else "ready"
-            duration_ms = estimate_duration_ms(asr_payload, sentences)
+            duration_ms = estimate_duration_ms(asr_payload, runtime_sentences)
             usage_hit = isinstance(usage_seconds, int) and usage_seconds > 0
             actual_duration_ms = int(usage_seconds * 1000) if usage_hit else int(duration_ms)
             actual_points = calculate_points(actual_duration_ms, rate.points_per_minute)
@@ -732,8 +802,8 @@ class LessonService:
                 overall_percent=_progress_percent_by_stage("write_lesson", 0.2),
                 current_text="写入课程",
                 counters={
-                    "asr_done": len(sentences),
-                    "asr_estimated": len(sentences),
+                    "asr_done": translate_total,
+                    "asr_estimated": translate_total,
                     "translate_done": translate_total,
                     "translate_total": translate_total,
                 },
@@ -757,16 +827,16 @@ class LessonService:
                 reserved_duration_ms,
             )
 
-            for idx, sentence in enumerate(sentences):
+            for sentence in runtime_sentences:
                 db.add(
                     LessonSentence(
                         lesson_id=lesson.id,
-                        idx=idx,
+                        idx=int(sentence["idx"]),
                         begin_ms=int(sentence["begin_ms"]),
                         end_ms=int(sentence["end_ms"]),
-                        text_en=sentence["text"],
-                        text_zh=zh_list[idx] if idx < len(zh_list) else "",
-                        tokens_json=tokenize_sentence(sentence["text"]),
+                        text_en=str(sentence["text_en"]),
+                        text_zh=str(sentence["text_zh"]),
+                        tokens_json=[str(item) for item in list(sentence.get("tokens") or [])],
                         audio_clip_path=None,
                     )
                 )
@@ -797,6 +867,7 @@ class LessonService:
             )
             db.commit()
             db.refresh(lesson)
+            lesson.subtitle_cache_seed = LessonService.build_subtitle_cache_seed(asr_payload=asr_payload, variant=variant)
 
             _emit_progress(
                 progress_callback,
@@ -805,8 +876,8 @@ class LessonService:
                 overall_percent=100,
                 current_text="课程生成完成",
                 counters={
-                    "asr_done": len(sentences),
-                    "asr_estimated": len(sentences),
+                    "asr_done": translate_total,
+                    "asr_estimated": translate_total,
                     "translate_done": translate_total,
                     "translate_total": translate_total,
                 },

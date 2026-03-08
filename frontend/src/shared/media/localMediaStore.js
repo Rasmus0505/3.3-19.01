@@ -37,6 +37,10 @@ function inferMediaTypeFromFileName(fileName) {
   return MEDIA_TYPE_BY_EXT[ext] || "";
 }
 
+function isVideoMediaType(mediaType) {
+  return String(mediaType || "").toLowerCase().startsWith("video/");
+}
+
 function openDatabase() {
   assertIndexedDbAvailable();
   return new Promise((resolve, reject) => {
@@ -81,7 +85,7 @@ function withStore(mode, handler) {
 export function readMediaDurationSeconds(blob, fallbackFileName = "") {
   return new Promise((resolve, reject) => {
     const mediaType = String(blob?.type || inferMediaTypeFromFileName(fallbackFileName));
-    const isVideo = mediaType.toLowerCase().startsWith("video/");
+    const isVideo = isVideoMediaType(mediaType);
     const media = document.createElement(isVideo ? "video" : "audio");
     const url = URL.createObjectURL(blob);
 
@@ -99,6 +103,54 @@ export function readMediaDurationSeconds(blob, fallbackFileName = "") {
   });
 }
 
+export function extractMediaCoverDataUrl(blob, fallbackFileName = "") {
+  return new Promise((resolve) => {
+    const mediaType = String(blob?.type || inferMediaTypeFromFileName(fallbackFileName));
+    if (!isVideoMediaType(mediaType)) {
+      resolve("");
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(blob);
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+
+    const cleanup = () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+
+    video.onloadeddata = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, video.videoWidth || 640);
+        canvas.height = Math.max(1, video.videoHeight || 360);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          cleanup();
+          resolve("");
+          return;
+        }
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        cleanup();
+        resolve(dataUrl);
+      } catch (_) {
+        cleanup();
+        resolve("");
+      }
+    };
+
+    video.onerror = () => {
+      cleanup();
+      resolve("");
+    };
+
+    video.src = objectUrl;
+  });
+}
+
 export async function saveLessonMedia(lessonId, file) {
   const normalizedLessonId = normalizeLessonId(lessonId);
   if (!(file instanceof Blob)) {
@@ -106,10 +158,17 @@ export async function saveLessonMedia(lessonId, file) {
   }
 
   let durationSeconds = 0;
+  let coverDataUrl = "";
   try {
     durationSeconds = await readMediaDurationSeconds(file, file.name || "");
   } catch (_) {
     durationSeconds = 0;
+  }
+
+  try {
+    coverDataUrl = await extractMediaCoverDataUrl(file, file.name || "");
+  } catch (_) {
+    coverDataUrl = "";
   }
 
   const mediaType = String(file.type || inferMediaTypeFromFileName(file.name || ""));
@@ -119,6 +178,7 @@ export async function saveLessonMedia(lessonId, file) {
     media_type: mediaType,
     size_bytes: Number(file.size || 0),
     duration_seconds: durationSeconds,
+    cover_data_url: coverDataUrl,
     updated_at: Date.now(),
     blob: file,
   };
@@ -135,6 +195,44 @@ export async function getLessonMedia(lessonId) {
     return null;
   }
   return result;
+}
+
+export async function getLessonMediaPreview(lessonId) {
+  const normalizedLessonId = normalizeLessonId(lessonId);
+  const media = await getLessonMedia(normalizedLessonId);
+  if (!media) {
+    return { lessonId: normalizedLessonId, hasMedia: false, mediaType: "", coverDataUrl: "", fileName: "" };
+  }
+
+  const mediaType = String(media.media_type || inferMediaTypeFromFileName(media.file_name || ""));
+  let coverDataUrl = String(media.cover_data_url || "");
+
+  if (!coverDataUrl && media.blob instanceof Blob && isVideoMediaType(mediaType)) {
+    try {
+      coverDataUrl = await extractMediaCoverDataUrl(media.blob, media.file_name || "");
+      if (coverDataUrl) {
+        await withStore("readwrite", (store) =>
+          store.put({
+            ...media,
+            media_type: mediaType,
+            cover_data_url: coverDataUrl,
+            updated_at: Date.now(),
+          }),
+        );
+        console.debug("[DEBUG] localMediaStore.cover.backfill", { lessonId: normalizedLessonId });
+      }
+    } catch (_) {
+      coverDataUrl = "";
+    }
+  }
+
+  return {
+    lessonId: normalizedLessonId,
+    hasMedia: true,
+    mediaType,
+    coverDataUrl,
+    fileName: String(media.file_name || ""),
+  };
 }
 
 export async function hasLessonMedia(lessonId) {

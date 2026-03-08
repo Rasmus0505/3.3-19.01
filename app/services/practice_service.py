@@ -1,11 +1,11 @@
 ﻿from __future__ import annotations
 
-from app.services.lesson_builder import normalize_token
+from app.services.lesson_builder import normalize_learning_token_list, normalize_token
 
 
 def check_tokens(expected_tokens: list[str], user_tokens: list[str]) -> tuple[bool, list[dict[str, object]], list[str], str]:
-    normalized_expected = [normalize_token(tok) for tok in list(expected_tokens or []) if normalize_token(tok)]
-    normalized_input = [normalize_token(tok) for tok in list(user_tokens or []) if normalize_token(tok)]
+    normalized_expected = [normalize_token(tok) for tok in normalize_learning_token_list(expected_tokens) if normalize_token(tok)]
+    normalized_input = [normalize_token(tok) for tok in normalize_learning_token_list(user_tokens) if normalize_token(tok)]
 
     max_len = max(len(normalized_expected), len(normalized_input))
     token_results: list[dict[str, object]] = []

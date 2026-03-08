@@ -66,12 +66,14 @@ export function RedeemCodePanel({ apiCall, onWalletChanged }) {
           <Gift className="size-4" />
           兑换码充值
         </CardTitle>
-        <CardDescription>输入兑换码后自动充值到当前账户。</CardDescription>
+        <CardDescription>输入兑换码后自动充值到当前账户，可直接回到历史记录继续学习。</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
-        <form className="space-y-2" onSubmit={submitRedeem}>
+      <CardContent className="space-y-4">
+        <form className="space-y-3" onSubmit={submitRedeem}>
           <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="例如 ABCD-EFGH-IJKL-MNPQ" />
-          <Button type="submit" disabled={loading}>{loading ? "兑换中..." : "立即兑换"}</Button>
+          <Button type="submit" disabled={loading} className="h-11 w-full">
+            {loading ? "兑换中..." : "立即兑换"}
+          </Button>
         </form>
         {status ? (
           <Alert>

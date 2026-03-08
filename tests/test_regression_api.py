@@ -15,6 +15,7 @@ from app.db import Base, create_database_engine, get_db
 from app.main import create_app
 from app.models import Lesson, LessonProgress, LessonSentence, MediaAsset, SubtitleSetting, User, WalletLedger
 from app.services.billing_service import ensure_default_billing_rates, get_or_create_wallet_account, get_subtitle_settings, settle_reserved_points
+from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
 
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
 
@@ -34,6 +35,16 @@ def _word_entry(text: str, begin_ms: int, end_ms: int, *, punctuation: str = "",
         "begin_time": begin_ms,
         "end_time": end_ms,
     }
+
+
+def test_normalize_learning_english_text_spells_usd_amounts():
+    assert normalize_learning_english_text("$40?") == "forty dollars?"
+    assert normalize_learning_english_text("It is $1.") == "It is one dollar."
+    assert normalize_learning_english_text("$0.50") == "fifty cents"
+    assert normalize_learning_english_text("We spent $40.50 today.") == "We spent forty dollars and fifty cents today."
+    assert normalize_learning_english_text("Room 40") == "Room 40"
+    assert normalize_learning_english_text("$FOO") == "$FOO"
+    assert tokenize_learning_sentence("$40?") == ["forty", "dollars"]
 
 
 @pytest.fixture()
@@ -570,6 +581,60 @@ def test_lessons_progress_and_check(test_client):
     assert check.json()["passed"] is True
 
 
+def test_legacy_lesson_detail_and_check_spell_usd_amounts(test_client):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="legacy-money@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "legacy-money@example.com").one()
+        lesson = Lesson(
+            user_id=user.id,
+            title="legacy money",
+            source_filename="legacy_money.mp4",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=1000,
+            media_storage="client_indexeddb",
+            source_duration_ms=1000,
+            status="ready",
+        )
+        session.add(lesson)
+        session.flush()
+        session.add(
+            LessonSentence(
+                lesson_id=lesson.id,
+                idx=0,
+                begin_ms=0,
+                end_ms=1000,
+                text_en="$40?",
+                text_zh="40美元？",
+                tokens_json=["$40"],
+                audio_clip_path=None,
+            )
+        )
+        session.commit()
+        lesson_id = lesson.id
+    finally:
+        session.close()
+
+    detail_resp = client.get(f"/api/lessons/{lesson_id}", headers=headers)
+    assert detail_resp.status_code == 200
+    detail_data = detail_resp.json()
+    assert detail_data["sentences"][0]["text_en"] == "forty dollars?"
+    assert detail_data["sentences"][0]["tokens"] == ["forty", "dollars"]
+
+    check_resp = client.post(
+        f"/api/lessons/{lesson_id}/check",
+        headers=headers,
+        json={"sentence_index": 0, "user_tokens": ["forty", "dollars"]},
+    )
+    assert check_resp.status_code == 200
+    check_data = check_resp.json()
+    assert check_data["passed"] is True
+    assert check_data["expected_tokens"] == ["forty", "dollars"]
+
+
 def test_lesson_rename_and_delete_endpoints(test_client):
     client, session_factory, _ = test_client
     owner_token = _register_and_login(client, email="rename-owner@example.com")
@@ -721,6 +786,23 @@ def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch, t
         )
         db.commit()
         db.refresh(lesson)
+        lesson.subtitle_cache_seed = {
+            "semantic_split_enabled": True,
+            "split_mode": "word_level_split+semantic",
+            "source_word_count": 2,
+            "asr_payload": {"transcripts": [{"words": [_word_entry("hello", 0, 300), _word_entry("world", 300, 900)]}]},
+            "sentences": [
+                {
+                    "idx": 0,
+                    "begin_ms": 0,
+                    "end_ms": 900,
+                    "text_en": "hello",
+                    "text_zh": "你好",
+                    "tokens": ["hello"],
+                    "audio_url": None,
+                }
+            ],
+        }
         return lesson
 
     monkeypatch.setattr(lesson_router.LessonService, "generate_from_upload", fake_generate)
@@ -735,6 +817,9 @@ def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch, t
     assert body["lesson"]["media_storage"] == "client_indexeddb"
     assert body["lesson"]["source_duration_ms"] == 1234
     assert body["lesson"]["sentences"][0]["audio_url"] is None
+    assert body["lesson"]["subtitle_cache_seed"]["semantic_split_enabled"] is True
+    assert body["lesson"]["subtitle_cache_seed"]["split_mode"] == "word_level_split+semantic"
+    assert body["lesson"]["subtitle_cache_seed"]["asr_payload"]["transcripts"][0]["words"][0]["text"] == "hello"
     assert captured["semantic_split_enabled"] is True
 
 
@@ -915,6 +1000,23 @@ def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path)
         )
         db.commit()
         db.refresh(lesson)
+        lesson.subtitle_cache_seed = {
+            "semantic_split_enabled": True,
+            "split_mode": "word_level_split+semantic",
+            "source_word_count": 2,
+            "asr_payload": {"transcripts": [{"words": [_word_entry("hello", 0, 300), _word_entry("world", 300, 900)]}]},
+            "sentences": [
+                {
+                    "idx": 0,
+                    "begin_ms": 0,
+                    "end_ms": 900,
+                    "text_en": "hello",
+                    "text_zh": "你好",
+                    "tokens": ["hello"],
+                    "audio_url": None,
+                }
+            ],
+        }
         return lesson
 
     monkeypatch.setattr(lesson_router.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
@@ -935,10 +1037,82 @@ def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path)
     assert payload["status"] == "succeeded"
     assert payload["overall_percent"] == 100
     assert payload["lesson"]["title"] == "task lesson"
+    assert payload["subtitle_cache_seed"]["semantic_split_enabled"] is True
+    assert payload["lesson"]["subtitle_cache_seed"]["split_mode"] == "word_level_split+semantic"
     assert payload["counters"]["translate_done"] == 3
     assert all(item["status"] == "completed" for item in payload["stages"])
 
 
+
+def test_regenerate_lesson_subtitle_variant_endpoint(test_client, monkeypatch):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="variant-user@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "variant-user@example.com").one()
+        lesson = Lesson(
+            user_id=user.id,
+            title="variant lesson",
+            source_filename="variant.mp4",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=1600,
+            media_storage="client_indexeddb",
+            source_duration_ms=1600,
+            status="ready",
+        )
+        session.add(lesson)
+        session.commit()
+        lesson_id = lesson.id
+    finally:
+        session.close()
+
+    from app.api.routers import lessons as lesson_router
+
+    captured = {}
+
+    def fake_build_subtitle_variant(*, asr_payload, db, semantic_split_enabled=None, before_translate_callback=None, translation_progress_callback=None):
+        captured["asr_payload"] = asr_payload
+        captured["semantic_split_enabled"] = semantic_split_enabled
+        return {
+            "semantic_split_enabled": True,
+            "split_mode": "word_level_split+semantic",
+            "source_word_count": 3,
+            "sentences": [
+                {
+                    "idx": 0,
+                    "begin_ms": 0,
+                    "end_ms": 1200,
+                    "text_en": "hello world again",
+                    "text_zh": "你好世界再次",
+                    "tokens": ["hello", "world", "again"],
+                    "audio_url": None,
+                }
+            ],
+            "translate_failed_count": 0,
+        }
+
+    monkeypatch.setattr(lesson_router.LessonService, "build_subtitle_variant", fake_build_subtitle_variant)
+
+    resp = client.post(
+        f"/api/lessons/{lesson_id}/subtitle-variants",
+        headers=headers,
+        json={
+            "asr_payload": {"transcripts": [{"words": [_word_entry("hello", 0, 400)]}]},
+            "semantic_split_enabled": True,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["lesson_id"] == lesson_id
+    assert body["semantic_split_enabled"] is True
+    assert body["split_mode"] == "word_level_split+semantic"
+    assert body["source_word_count"] == 3
+    assert body["sentences"][0]["text_en"] == "hello world again"
+    assert captured["semantic_split_enabled"] is True
+    assert captured["asr_payload"]["transcripts"][0]["words"][0]["text"] == "hello"
 def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
     from app.services import lesson_service as lesson_service_module
 
@@ -1302,6 +1476,73 @@ def test_generate_lesson_settles_with_fallback_and_can_go_negative(test_client, 
         session.close()
 
 
+def test_generate_lesson_stores_spoken_usd_amounts(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    _register_and_login(client, email="spoken-money@example.com")
+
+    from app.services import lesson_service as lesson_service_module
+
+    monkeypatch.setattr(
+        lesson_service_module,
+        "extract_audio_for_asr",
+        lambda source_path, opus_path: opus_path.write_bytes(b"opus"),
+    )
+    monkeypatch.setattr(lesson_service_module, "probe_audio_duration_ms", lambda opus_path: 1000)
+    monkeypatch.setattr(
+        lesson_service_module,
+        "translate_sentences_to_zh",
+        lambda texts, api_key, progress_callback=None: (["40美元？"] * len(texts), 0),
+    )
+    monkeypatch.setattr(lesson_service_module, "estimate_duration_ms", lambda payload, sentences: 1000)
+    monkeypatch.setattr(
+        lesson_service_module,
+        "build_lesson_sentences",
+        lambda payload, **kwargs: {
+            "sentences": [{"text": "$40?", "begin_ms": 0, "end_ms": 1000}],
+            "mode": "word_level_split",
+        },
+    )
+    monkeypatch.setattr(
+        lesson_service_module,
+        "extract_word_items",
+        lambda payload: [_word_entry("$40", 0, 1000, punctuation="?", surface="$40?")],
+    )
+    monkeypatch.setattr(
+        lesson_service_module.LessonService,
+        "_transcribe_with_optional_parallel",
+        lambda **kwargs: {"asr_payload": {"transcripts": [{"words": [_word_entry("$40", 0, 1000, punctuation="?")]}]}, "usage_seconds": 1},
+    )
+
+    source_path = tmp_path / "spoken_money.mp4"
+    req_dir = tmp_path / "req_spoken_money"
+    source_path.write_bytes(b"source")
+    req_dir.mkdir(parents=True, exist_ok=True)
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "spoken-money@example.com").one()
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 100
+        session.add(account)
+        session.commit()
+
+        lesson = lesson_service_module.LessonService.generate_from_saved_file(
+            source_path=source_path,
+            source_filename="spoken_money.mp4",
+            req_dir=req_dir,
+            owner_id=user.id,
+            asr_model=QWEN_ASR_MODEL,
+            db=session,
+        )
+
+        stored = session.query(LessonSentence).filter(LessonSentence.lesson_id == lesson.id).order_by(LessonSentence.idx.asc()).all()
+        assert len(stored) == 1
+        assert stored[0].text_en == "forty dollars?"
+        assert stored[0].tokens_json == ["forty", "dollars"]
+    finally:
+        session.close()
+
+
 def test_generate_lesson_applies_semantic_split_when_enabled(test_client, monkeypatch, tmp_path):
     client, session_factory, _ = test_client
     _register_and_login(client, email="semantic-ok@example.com")
@@ -1526,4 +1767,8 @@ def test_generate_lesson_failure_still_refunds_reserved_points(test_client, monk
         assert ledgers[-1].delta_points == 260
     finally:
         session.close()
+
+
+
+
 

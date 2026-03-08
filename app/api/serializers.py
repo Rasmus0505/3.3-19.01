@@ -9,8 +9,10 @@ from app.schemas import (
     LessonItemResponse,
     LessonSentenceResponse,
     PublicSubtitleSettings,
+    SubtitleCacheSeedResponse,
     UserResponse,
 )
+from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
 
 
 def to_user_response(user: User) -> UserResponse:
@@ -21,13 +23,30 @@ def to_sentence_response(lesson: Lesson, sentence: LessonSentence) -> LessonSent
     audio_url = None
     if lesson.media_storage != "client_indexeddb":
         audio_url = f"/api/lessons/{lesson.id}/sentences/{sentence.idx}/audio"
+    normalized_text_en = normalize_learning_english_text(sentence.text_en)
     return LessonSentenceResponse(
         idx=sentence.idx,
         begin_ms=sentence.begin_ms,
         end_ms=sentence.end_ms,
-        text_en=sentence.text_en,
+        text_en=normalized_text_en,
         text_zh=sentence.text_zh,
-        tokens=sentence.tokens_json,
+        tokens=tokenize_learning_sentence(normalized_text_en),
+        audio_url=audio_url,
+    )
+
+
+def to_runtime_sentence_response(sentence: dict, *, audio_url: str | None = None) -> LessonSentenceResponse:
+    normalized_text_en = normalize_learning_english_text(str(sentence.get("text_en") or sentence.get("text") or ""))
+    tokens = sentence.get("tokens")
+    if not isinstance(tokens, list):
+        tokens = tokenize_learning_sentence(normalized_text_en)
+    return LessonSentenceResponse(
+        idx=int(sentence.get("idx", 0)),
+        begin_ms=int(sentence.get("begin_ms", 0)),
+        end_ms=int(sentence.get("end_ms", 0)),
+        text_en=normalized_text_en,
+        text_zh=str(sentence.get("text_zh") or ""),
+        tokens=[str(item) for item in tokens],
         audio_url=audio_url,
     )
 
@@ -48,6 +67,20 @@ def to_lesson_item_response(lesson: Lesson) -> LessonItemResponse:
 
 def to_lesson_detail_response(lesson: Lesson, sentences: list[LessonSentence]) -> LessonDetailResponse:
     base = to_lesson_item_response(lesson)
+    subtitle_cache_seed_payload = getattr(lesson, "subtitle_cache_seed", None)
+    subtitle_cache_seed = None
+    if isinstance(subtitle_cache_seed_payload, dict):
+        subtitle_cache_seed = SubtitleCacheSeedResponse(
+            semantic_split_enabled=bool(subtitle_cache_seed_payload.get("semantic_split_enabled")),
+            split_mode=str(subtitle_cache_seed_payload.get("split_mode") or ""),
+            source_word_count=int(subtitle_cache_seed_payload.get("source_word_count", 0)),
+            asr_payload=dict(subtitle_cache_seed_payload.get("asr_payload") or {}),
+            sentences=[
+                to_runtime_sentence_response(item)
+                for item in list(subtitle_cache_seed_payload.get("sentences") or [])
+                if isinstance(item, dict)
+            ],
+        )
     return LessonDetailResponse(
         id=base.id,
         title=base.title,
@@ -59,6 +92,7 @@ def to_lesson_detail_response(lesson: Lesson, sentences: list[LessonSentence]) -
         status=base.status,
         created_at=base.created_at,
         sentences=[to_sentence_response(lesson, item) for item in sentences],
+        subtitle_cache_seed=subtitle_cache_seed,
     )
 
 
