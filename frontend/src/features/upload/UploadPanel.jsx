@@ -1,8 +1,9 @@
-﻿import { Loader2, UploadCloud } from "lucide-react";
+import { Loader2, UploadCloud } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { api, parseResponse, toErrorText } from "../../shared/api/client";
+import { cn } from "../../lib/utils";
+import { api, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
 import { requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import {
   Alert,
@@ -26,6 +27,17 @@ import {
 } from "../../shared/ui";
 
 const QWEN_MODEL = "qwen3-asr-flash-filetrans";
+
+const DEFAULT_STAGE_ITEMS = [
+  { key: "convert_audio", label: "转换音频格式", status: "pending" },
+  { key: "asr_transcribe", label: "ASR转写字幕", status: "pending" },
+  { key: "translate_zh", label: "翻译中文", status: "pending" },
+  { key: "write_lesson", label: "写入课程", status: "pending" },
+];
+
+function clampPercent(value) {
+  return Math.max(0, Math.min(100, Number(value) || 0));
+}
 
 function calculatePointsBySeconds(seconds, pointsPerMinute) {
   if (!Number.isFinite(seconds) || seconds <= 0 || !Number.isFinite(pointsPerMinute) || pointsPerMinute <= 0) {
@@ -103,6 +115,68 @@ function extractVideoCoverDataUrl(file) {
   });
 }
 
+function getStageItems(taskSnapshot) {
+  return Array.isArray(taskSnapshot?.stages) && taskSnapshot.stages.length ? taskSnapshot.stages : DEFAULT_STAGE_ITEMS;
+}
+
+function getStageStatusText(status) {
+  if (status === "completed") return "已完成";
+  if (status === "running") return "进行中";
+  if (status === "failed") return "失败";
+  return "待开始";
+}
+
+function getStageDotClass(status) {
+  if (status === "completed") return "bg-emerald-500";
+  if (status === "running") return "bg-amber-500 ring-4 ring-amber-500/15";
+  if (status === "failed") return "bg-red-500";
+  return "bg-muted-foreground/20";
+}
+
+function getProgressBarClass(phase) {
+  if (phase === "success") return "bg-emerald-500";
+  if (phase === "error") return "bg-red-500";
+  if (phase === "uploading") return "bg-sky-500";
+  if (phase === "processing") return "bg-amber-500";
+  return "bg-muted-foreground/20";
+}
+
+function getVisualProgress(phase, uploadPercent, taskSnapshot) {
+  if (phase === "success") return 100;
+
+  const taskPercent = clampPercent(taskSnapshot?.overall_percent);
+  if (phase === "processing" || taskSnapshot) {
+    return Math.round(45 + taskPercent * 0.55);
+  }
+
+  const safeUploadPercent = clampPercent(uploadPercent);
+  if (phase === "uploading") {
+    return Math.round(Math.max(3, Math.min(45, safeUploadPercent * 0.45)));
+  }
+
+  if (phase === "error" && safeUploadPercent > 0) {
+    return Math.round(Math.max(3, Math.min(45, safeUploadPercent * 0.45)));
+  }
+
+  return 0;
+}
+
+function getProgressAssistiveText({ phase, uploadPercent, progressPercent, taskSnapshot, status }) {
+  if (phase === "uploading") {
+    return `文件上传 ${clampPercent(uploadPercent)}%，总进度 ${progressPercent}%`;
+  }
+  if (phase === "processing") {
+    return `${taskSnapshot?.current_text || "课程处理中"}，总进度 ${progressPercent}%`;
+  }
+  if (phase === "success") {
+    return "课程生成成功，进度 100%";
+  }
+  if (phase === "error") {
+    return status || taskSnapshot?.current_text || "课程生成失败";
+  }
+  return "等待上传";
+}
+
 export function UploadPanel({ accessToken, onCreated, balancePoints, billingRates, subtitleSettings, onWalletChanged }) {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -115,17 +189,25 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   const [taskSnapshot, setTaskSnapshot] = useState(null);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [semanticSplitEnabled, setSemanticSplitEnabled] = useState(Boolean(subtitleSettings?.semantic_split_default_enabled));
+  const [uploadPercent, setUploadPercent] = useState(0);
 
   const pollingAbortRef = useRef(false);
+  const uploadAbortRef = useRef(null);
   const fileInputRef = useRef(null);
 
   const selectedRate = getRateByModel(billingRates, QWEN_MODEL);
   const estimatedPoints = selectedRate ? calculatePointsBySeconds(durationSec || 0, selectedRate.points_per_minute) : 0;
   const likelyInsufficient = Number.isFinite(balancePoints) && estimatedPoints > 0 && balancePoints < estimatedPoints;
+  const stageItems = getStageItems(taskSnapshot);
+  const progressPercent = getVisualProgress(phase, uploadPercent, taskSnapshot);
+  const progressBarClass = getProgressBarClass(phase);
+  const progressAssistiveText = getProgressAssistiveText({ phase, uploadPercent, progressPercent, taskSnapshot, status });
+  const showProgress = loading || phase === "success" || phase === "error" || Boolean(taskSnapshot);
 
   useEffect(() => {
     return () => {
       pollingAbortRef.current = true;
+      uploadAbortRef.current?.abort();
     };
   }, []);
 
@@ -139,8 +221,10 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     try {
       const resp = await api(`/api/lessons/tasks/${taskId}`, {}, accessToken);
       const data = await parseResponse(resp);
+      if (pollingAbortRef.current) return;
       if (!resp.ok) {
         const message = toErrorText(data, "查询任务失败");
+        console.debug("[DEBUG] 上传任务轮询失败", message);
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -149,10 +233,11 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       }
 
       setTaskSnapshot(data);
+      setPhase("processing");
       const taskStatus = String(data.status || "").toLowerCase();
       if (taskStatus === "succeeded") {
         setPhase("success");
-        setStatus("生成成功");
+        setStatus("");
         setLoading(false);
         await onWalletChanged?.();
         if (data.lesson) {
@@ -164,6 +249,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
 
       if (taskStatus === "failed") {
         const message = `${data.error_code || "ERROR"}: ${data.message || "生成失败"}`;
+        console.debug("[DEBUG] 上传任务处理失败", message);
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -176,7 +262,9 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
         void pollTask(taskId);
       }, 1000);
     } catch (error) {
+      if (pollingAbortRef.current || error?.name === "AbortError") return;
       const message = `网络错误: ${String(error)}`;
+      console.debug("[DEBUG] 上传任务轮询网络错误", message);
       setStatus(message);
       setPhase("error");
       setLoading(false);
@@ -185,12 +273,14 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   }
 
   async function onSelectFile(nextFile) {
+    uploadAbortRef.current?.abort();
     setFile(nextFile);
     setStatus("");
     setDurationSec(null);
     setTaskSnapshot(null);
     setCoverDataUrl("");
     setIsVideoSource(false);
+    setUploadPercent(0);
 
     if (!nextFile) {
       setPhase("idle");
@@ -224,10 +314,15 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       return;
     }
 
+    console.debug("[DEBUG] 开始上传素材并创建任务", { fileName: file.name, semanticSplitEnabled });
+    pollingAbortRef.current = false;
+    uploadAbortRef.current?.abort();
+
     setLoading(true);
-    setStatus("正在创建上传任务...");
+    setStatus("");
     setTaskSnapshot(null);
-    setPhase("submitting");
+    setUploadPercent(0);
+    setPhase("uploading");
 
     try {
       const form = new FormData();
@@ -235,10 +330,25 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       form.append("asr_model", QWEN_MODEL);
       form.append("semantic_split_enabled", semanticSplitEnabled ? "true" : "false");
 
-      const resp = await api("/api/lessons/tasks", { method: "POST", body: form }, accessToken);
-      const data = await parseResponse(resp);
-      if (!resp.ok) {
+      const abortController = new AbortController();
+      uploadAbortRef.current = abortController;
+      const { ok, data } = await uploadWithProgress(
+        "/api/lessons/tasks",
+        {
+          method: "POST",
+          body: form,
+          signal: abortController.signal,
+          onUploadProgress: ({ percent }) => {
+            setUploadPercent(percent);
+          },
+        },
+        accessToken,
+      );
+      uploadAbortRef.current = null;
+
+      if (!ok) {
         const message = toErrorText(data, "创建上传任务失败");
+        console.debug("[DEBUG] 上传任务创建失败", message);
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -250,6 +360,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       const taskId = String(data.task_id || "");
       if (!taskId) {
         const message = "任务创建成功但缺少 task_id";
+        console.debug("[DEBUG] 上传任务缺少 task_id");
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -257,10 +368,15 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
         return;
       }
 
-      setStatus("任务已创建，正在处理...");
+      console.debug("[DEBUG] 上传完成，开始轮询任务", { taskId });
+      setUploadPercent(100);
+      setPhase("processing");
       void pollTask(taskId);
     } catch (error) {
+      uploadAbortRef.current = null;
+      if (error?.name === "AbortError") return;
       const message = `网络错误: ${String(error)}`;
+      console.debug("[DEBUG] 上传任务请求网络错误", message);
       setStatus(message);
       setPhase("error");
       setLoading(false);
@@ -340,6 +456,39 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
           </div>
         ) : null}
 
+        {showProgress ? (
+          <div className="space-y-2 rounded-xl border bg-muted/20 p-3" title={progressAssistiveText}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2" aria-hidden="true">
+                {stageItems.map((item) => (
+                  <span
+                    key={item.key}
+                    title={`${item.label}：${getStageStatusText(item.status)}`}
+                    className={cn("size-2.5 rounded-full transition-all", getStageDotClass(item.status))}
+                  />
+                ))}
+              </div>
+              <span className="text-xs font-medium tabular-nums text-muted-foreground">{progressPercent}%</span>
+            </div>
+            <div
+              role="progressbar"
+              aria-label={progressAssistiveText}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progressPercent}
+              className="h-2 w-full overflow-hidden rounded-full bg-muted"
+            >
+              <div
+                className={cn("h-full rounded-full transition-[width,background-color] duration-300", progressBarClass)}
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+            <span className="sr-only">
+              {progressAssistiveText}；{stageItems.map((item) => `${item.label}${getStageStatusText(item.status)}`).join("；")}
+            </span>
+          </div>
+        ) : null}
+
         <form
           className="space-y-3"
           onSubmit={(event) => {
@@ -380,7 +529,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
             {loading ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="size-4 animate-spin" />
-                处理中
+                请稍候
               </span>
             ) : (
               "开始生成课程"
@@ -411,9 +560,9 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
           </DialogContent>
         </Dialog>
       </CardContent>
-      {status ? (
+      {phase === "error" && status ? (
         <CardFooter>
-          <p className="text-sm text-muted-foreground">{status}</p>
+          <p className="text-sm text-destructive">{status}</p>
         </CardFooter>
       ) : null}
     </Card>
