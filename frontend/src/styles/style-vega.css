@@ -1,22 +1,22 @@
 @layer components {
   .cn-button {
-    @apply focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 aria-invalid:border-destructive rounded-full border border-transparent bg-clip-padding text-sm font-medium focus-visible:ring-3 aria-invalid:ring-3 [&_svg:not([class*='size-'])]:size-4;
+    @apply focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 aria-invalid:border-destructive rounded-md border border-transparent bg-clip-padding text-sm font-medium focus-visible:ring-3 aria-invalid:ring-3 [&_svg:not([class*='size-'])]:size-4;
   }
 
   .cn-button-variant-default {
-    @apply bg-primary text-primary-foreground hover:bg-primary/92 shadow-[0_18px_44px_-28px_rgba(37,99,235,0.65)];
+    @apply bg-primary text-primary-foreground hover:bg-primary/80;
   }
 
   .cn-button-variant-outline {
-    @apply border-white/75 bg-white/80 hover:bg-white hover:text-foreground aria-expanded:bg-white aria-expanded:text-foreground shadow-[0_18px_40px_-34px_rgba(15,23,42,0.35)] backdrop-blur-xl;
+    @apply border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground shadow-xs;
   }
 
   .cn-button-variant-secondary {
-    @apply bg-secondary/90 text-secondary-foreground hover:bg-secondary aria-expanded:bg-secondary aria-expanded:text-secondary-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.7)];
+    @apply bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground;
   }
 
   .cn-button-variant-ghost {
-    @apply hover:bg-white/75 hover:text-foreground aria-expanded:bg-white aria-expanded:text-foreground;
+    @apply hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground;
   }
 
   .cn-button-variant-destructive {
@@ -36,11 +36,11 @@
   }
 
   .cn-button-size-default {
-    @apply h-10 gap-1.5 px-4 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3;
+    @apply h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2;
   }
 
   .cn-button-size-lg {
-    @apply h-11 gap-2 px-5 has-data-[icon=inline-end]:pr-4 has-data-[icon=inline-start]:pl-4;
+    @apply h-10 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3;
   }
 
   .cn-button-size-icon-xs {
@@ -60,19 +60,19 @@
   }
 
   .cn-badge {
-    @apply h-6 gap-1 rounded-full border border-transparent px-2.5 py-0.5 text-xs font-medium transition-all has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&>svg]:size-3;
+    @apply h-5 gap-1 rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium transition-all has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&>svg]:size-3;
   }
 
   .cn-badge-variant-default {
-    @apply bg-primary/92 text-primary-foreground shadow-[0_16px_40px_-30px_rgba(37,99,235,0.55)];
+    @apply bg-primary text-primary-foreground;
   }
 
   .cn-badge-variant-secondary {
-    @apply bg-secondary/92 text-secondary-foreground;
+    @apply bg-secondary text-secondary-foreground;
   }
 
   .cn-badge-variant-outline {
-    @apply border-white/70 bg-white/75 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.72)];
+    @apply border-border text-foreground;
   }
 
   .cn-badge-variant-destructive {
@@ -88,19 +88,19 @@
   }
 
   .cn-card {
-    @apply ring-white/65 bg-white/80 text-card-foreground gap-6 overflow-hidden rounded-[2rem] py-6 text-sm shadow-[0_30px_90px_-56px_rgba(15,23,42,0.35)] ring-1 backdrop-blur-2xl has-[>img:first-child]:pt-0 data-[size=sm]:gap-4 data-[size=sm]:py-4;
+    @apply ring-foreground/10 bg-card text-card-foreground gap-6 overflow-hidden rounded-xl py-6 text-sm shadow-xs ring-1 has-[>img:first-child]:pt-0 data-[size=sm]:gap-4 data-[size=sm]:py-4;
   }
 
   .cn-card-header {
-    @apply gap-2 rounded-t-[2rem] px-6 group-data-[size=sm]/card:px-4 [.border-b]:pb-6 group-data-[size=sm]/card:[.border-b]:pb-4;
+    @apply gap-1 rounded-t-xl px-6 group-data-[size=sm]/card:px-4 [.border-b]:pb-6 group-data-[size=sm]/card:[.border-b]:pb-4;
   }
 
   .cn-card-title {
-    @apply text-base leading-normal font-semibold tracking-tight group-data-[size=sm]/card:text-sm;
+    @apply text-base leading-normal font-medium group-data-[size=sm]/card:text-sm;
   }
 
   .cn-card-description {
-    @apply text-muted-foreground text-sm leading-6;
+    @apply text-muted-foreground text-sm;
   }
 
   .cn-card-content {
@@ -112,7 +112,7 @@
   }
 
   .cn-input {
-    @apply border-white/75 focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 aria-invalid:border-destructive h-11 rounded-2xl border bg-white/84 px-3.5 py-2 text-base shadow-[0_18px_44px_-38px_rgba(15,23,42,0.28)] backdrop-blur-xl transition-[color,box-shadow,border-color] file:h-7 file:text-sm file:font-medium focus-visible:ring-3 aria-invalid:ring-3 md:text-sm;
+    @apply border-input focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 aria-invalid:border-destructive h-9 rounded-md border bg-transparent px-2.5 py-1 text-base shadow-xs transition-[color,box-shadow] file:h-7 file:text-sm file:font-medium focus-visible:ring-3 aria-invalid:ring-3 md:text-sm;
   }
 
   .cn-label {
@@ -120,7 +120,7 @@
   }
 
   .cn-select-trigger {
-    @apply relative border-white/75 data-placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 aria-invalid:border-destructive gap-1.5 rounded-2xl border bg-white/84 py-2 pr-8 pl-3.5 text-sm shadow-[0_18px_44px_-38px_rgba(15,23,42,0.28)] backdrop-blur-xl transition-[color,box-shadow,border-color] focus-visible:ring-3 aria-invalid:ring-3 data-[size=default]:h-11 data-[size=sm]:h-9;
+    @apply relative border-input data-placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 aria-invalid:border-destructive gap-1.5 rounded-md border bg-transparent py-2 pr-8 pl-2.5 text-sm shadow-xs transition-[color,box-shadow] focus-visible:ring-3 aria-invalid:ring-3 data-[size=default]:h-9 data-[size=sm]:h-8;
   }
 
   .cn-select-trigger-icon {
@@ -140,34 +140,6 @@
   }
 
   .cn-textarea {
-    @apply border-white/75 focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 aria-invalid:border-destructive rounded-[1.5rem] border bg-white/84 px-3.5 py-3 text-base shadow-[0_18px_44px_-38px_rgba(15,23,42,0.28)] backdrop-blur-xl transition-[color,box-shadow,border-color] focus-visible:ring-3 aria-invalid:ring-3 md:text-sm;
-  }
-
-  .cn-table-container {
-    @apply overflow-hidden rounded-[1.5rem] border border-white/75 bg-white/78 shadow-[0_20px_60px_-42px_rgba(15,23,42,0.24)] backdrop-blur-xl;
-  }
-
-  .cn-table-header {
-    @apply bg-slate-50/90;
-  }
-
-  .cn-table-row {
-    @apply border-white/60;
-  }
-
-  .cn-table-head {
-    @apply px-4 py-3 text-[12px] font-semibold tracking-[0.16em] uppercase;
-  }
-
-  .cn-table-cell {
-    @apply px-4 py-3.5;
-  }
-
-  .cn-alert {
-    @apply rounded-[1.5rem] border-white/75 bg-white/80 shadow-[0_18px_44px_-36px_rgba(15,23,42,0.24)] backdrop-blur-xl;
-  }
-
-  .cn-alert-title {
-    @apply tracking-tight;
+    @apply border-input focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 aria-invalid:border-destructive rounded-md border bg-transparent px-2.5 py-2 text-base shadow-xs transition-[color,box-shadow] focus-visible:ring-3 aria-invalid:ring-3 md:text-sm;
   }
 }

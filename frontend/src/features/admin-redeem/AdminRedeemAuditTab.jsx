@@ -125,36 +125,17 @@ export function AdminRedeemAuditTab({ apiCall }) {
   }
 
   return (
-    <Card className="apple-panel admin-page-card">
-      <CardHeader className="space-y-4">
-        <div className="apple-kicker w-fit">Redeem Audit</div>
-        <div className="admin-page-header">
-          <div className="admin-page-header-copy">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <ScrollText className="size-4" />
-              兑换记录 / 审计
-            </CardTitle>
-            <CardDescription>记录成功和失败兑换，支持筛选导出（时间按北京时间）。</CardDescription>
-          </div>
-          <div className="admin-page-summary">
-            <div>
-              <span className="apple-eyebrow">总条数</span>
-              <strong>{total}</strong>
-            </div>
-            <div>
-              <span className="apple-eyebrow">当前页</span>
-              <strong>{page}</strong>
-            </div>
-            <div>
-              <span className="apple-eyebrow">分页</span>
-              <strong>{pageSize} / 页</strong>
-            </div>
-          </div>
-        </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ScrollText className="size-4" />
+          兑换记录 / 审计
+        </CardTitle>
+        <CardDescription>记录成功和失败兑换，支持筛选导出（时间按北京时间）。</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3">
         <form
-          className="grid gap-2 rounded-[1.5rem] border border-white/70 bg-white/72 p-3 md:grid-cols-6"
+          className="grid gap-2 md:grid-cols-6"
           onSubmit={(event) => {
             event.preventDefault();
             setPage(1);
@@ -172,7 +153,7 @@ export function AdminRedeemAuditTab({ apiCall }) {
           </Button>
         </form>
 
-        <ScrollArea className="w-full rounded-[1.5rem] border border-white/70 bg-white/60">
+        <ScrollArea className="w-full rounded-md border">
           <Table className="min-w-[980px]">
             <TableHeader>
               <TableRow>
@@ -209,7 +190,7 @@ export function AdminRedeemAuditTab({ apiCall }) {
         </ScrollArea>
 
         <div className="flex items-center justify-between">
-          <p className="text-xs text-slate-500">总计 {total} 条</p>
+          <p className="text-xs text-muted-foreground">总计 {total} 条</p>
           <div className="flex items-center gap-2">
             <Select value={String(pageSize)} onValueChange={(value) => { setPage(1); setPageSize(Number(value)); }}>
               <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
@@ -229,7 +210,7 @@ export function AdminRedeemAuditTab({ apiCall }) {
           </div>
         </div>
 
-        {status ? <Alert className="border-white/75 bg-white/76"><AlertDescription>{status}</AlertDescription></Alert> : null}
+        {status ? <Alert><AlertDescription>{status}</AlertDescription></Alert> : null}
       </CardContent>
     </Card>
   );

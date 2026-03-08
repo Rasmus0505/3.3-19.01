@@ -3,7 +3,7 @@ export { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 export { Badge } from "../../components/ui/badge";
 export { Button } from "../../components/ui/button";
 export { Calendar } from "../../components/ui/calendar";
-export { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../../components/ui/card";
+export { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../../components/ui/card";
 export { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut } from "../../components/ui/command";
 export { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog";
 export { Input } from "../../components/ui/input";
