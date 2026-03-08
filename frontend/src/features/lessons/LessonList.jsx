@@ -1,5 +1,5 @@
 ﻿import { Compass, MoreVertical, Pencil, RotateCcw, Trash2 } from "lucide-react";
-import { Sparkles } from "lucide-react";
+import { Clock3, Film, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -141,18 +141,25 @@ export function LessonList({
       <CardHeader className="space-y-3.5">
         <div className="apple-kicker w-fit">
           <Sparkles className="size-3.5" />
-          课程
+          Library
         </div>
         <div className="space-y-1.5">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Compass className="size-4" />
-            我的课程
+            课程库
           </CardTitle>
-          <CardDescription>选一节课，继续学习。</CardDescription>
+          <CardDescription>从历史课程中继续学习，列表更像内容库，操作菜单保持原有逻辑。</CardDescription>
         </div>
-        <div className="rounded-[1.2rem] border border-white/72 bg-white/74 px-3 py-2 text-xs text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-          共 {lessons.length} 节课程 · {lessons.filter((item) => Number(item.sentences?.length || 0) > 0).length} 节可学
-          {currentLessonId ? ` · 当前 ${lessons.find((item) => item.id === currentLessonId)?.title || "未选择"}` : ""}
+        <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+          <span className="rounded-full border border-white/72 bg-white/74 px-3 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+            共 {lessons.length} 节
+          </span>
+          <span className="rounded-full border border-white/72 bg-white/74 px-3 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+            {lessons.filter((item) => Number(item.sentences?.length || 0) > 0).length} 节可学
+          </span>
+          <span className="rounded-full border border-white/72 bg-white/74 px-3 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+            当前 {lessons.find((item) => item.id === currentLessonId)?.title || "未选择"}
+          </span>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -165,7 +172,7 @@ export function LessonList({
 
         {!loading && lessons.length === 0 ? (
           <div className="rounded-[1.5rem] border border-white/70 bg-white/70 px-4 py-5 text-sm leading-6 text-slate-500">
-            暂无课程，先在右侧上传素材生成第一节课。
+            暂无课程，请先在右侧导入素材并生成第一节课。
           </div>
         ) : null}
 
@@ -193,10 +200,18 @@ export function LessonList({
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="min-h-[2.75rem] break-words text-[15px] font-semibold leading-6 text-slate-950">{lesson.title}</div>
-                        <div className="mt-2 text-xs leading-5 text-slate-500">
-                          <span>{lesson.sentences?.length || 0} 句</span>
-                          <span className="px-1.5 text-slate-300">·</span>
-                          <span>{lesson.status || "ready"}</span>
+                        <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-slate-500">
+                          <span className="inline-flex items-center gap-1 rounded-full border border-white/72 bg-white/75 px-2.5 py-1">
+                            <Film className="size-3.5" />
+                            {lesson.asr_model || "默认模型"}
+                          </span>
+                          <span className="inline-flex items-center gap-1 rounded-full border border-white/72 bg-white/75 px-2.5 py-1">
+                            <Clock3 className="size-3.5" />
+                            {lesson.sentences?.length || 0} 句
+                          </span>
+                          <span className="inline-flex items-center gap-1 rounded-full border border-white/72 bg-white/75 px-2.5 py-1">
+                            {lesson.status || "ready"}
+                          </span>
                         </div>
                       </div>
                     </div>
