@@ -1,19 +1,17 @@
-import { Gift, History, LogOut, Menu, Search, Shield, Sparkles, UploadCloud } from "lucide-react";
+﻿import { LogOut, Menu, Search, Shield, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { AuthPanel } from "../features/auth/AuthPanel";
 import { ImmersiveLessonPage } from "../features/immersive/ImmersiveLessonPage";
-import { LessonList } from "../features/lessons/LessonList";
+import { LessonListLocalSubtitles } from "../features/lessons/LessonListLocalSubtitles";
 import { UploadPanel } from "../features/upload/UploadPanel";
 import { RedeemCodePanel } from "../features/wallet/RedeemCodePanel";
 import { WalletBadge } from "../features/wallet/WalletBadge";
-import { cn } from "../lib/utils";
 import { api, parseResponse, toErrorText } from "../shared/api/client";
 import {
   deleteLessonMedia,
-  getLessonMediaPreview,
   hasLessonMedia,
   readMediaDurationSeconds,
   requestPersistentStorage,
@@ -35,6 +33,11 @@ import {
   AlertTitle,
   Badge,
   Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
   CommandDialog,
   CommandEmpty,
   CommandGroup,
@@ -51,62 +54,7 @@ import {
 } from "../shared/ui";
 import { clearAuthStorage, REFRESH_KEY, TOKEN_KEY } from "./authStorage";
 
-const PANEL_ITEMS = [
-  {
-    key: "history",
-    title: "历史记录",
-    description: "查看课程、继续学习与管理历史素材。",
-    icon: History,
-  },
-  {
-    key: "upload",
-    title: "上传素材",
-    description: "导入音视频并查看实时生成进度。",
-    icon: UploadCloud,
-  },
-  {
-    key: "redeem",
-    title: "兑换码充值",
-    description: "输入兑换码，给当前账号补充点数。",
-    icon: Gift,
-  },
-];
-
-function buildProgressSnapshot(progressData = {}) {
-  return {
-    current_sentence_index: Number(progressData.current_sentence_index || 0),
-    completed_sentence_indexes: Array.isArray(progressData.completed_sentence_indexes)
-      ? progressData.completed_sentence_indexes
-      : [],
-    last_played_at_ms: Number(progressData.last_played_at_ms || 0),
-  };
-}
-
-function getSentenceCount(detailData, fallbackLesson) {
-  if (Array.isArray(detailData?.sentences)) {
-    return detailData.sentences.length;
-  }
-  const sentenceCount = Number(detailData?.sentence_count);
-  if (Number.isFinite(sentenceCount) && sentenceCount > 0) {
-    return sentenceCount;
-  }
-  if (Array.isArray(fallbackLesson?.sentences)) {
-    return fallbackLesson.sentences.length;
-  }
-  return 0;
-}
-
-function getDefaultMediaPreview(lessonId) {
-  return {
-    lessonId,
-    hasMedia: false,
-    mediaType: "",
-    coverDataUrl: "",
-    fileName: "",
-  };
-}
-
-export function LearningShell() {
+export function LearningShellLocalSubtitles() {
   const navigate = useNavigate();
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
   const [lessons, setLessons] = useState([]);
@@ -123,9 +71,6 @@ export function LearningShell() {
   const [currentLessonNeedsBinding, setCurrentLessonNeedsBinding] = useState(false);
   const [immersiveActive, setImmersiveActive] = useState(false);
   const [mediaRestoreTick, setMediaRestoreTick] = useState(0);
-  const [activePanel, setActivePanel] = useState("history");
-  const [lessonCardMetaMap, setLessonCardMetaMap] = useState({});
-  const [lessonMediaMetaMap, setLessonMediaMetaMap] = useState({});
   const [subtitleCacheMetaMap, setSubtitleCacheMetaMap] = useState({});
 
   const immersiveLayoutActive = Boolean(accessToken && currentLesson?.id && immersiveActive);
@@ -168,6 +113,7 @@ export function LearningShell() {
       setSubtitleCacheMetaMap({});
       return;
     }
+
     const entries = await Promise.all(
       sourceLessons.map(async (lesson) => {
         try {
@@ -207,59 +153,11 @@ export function LearningShell() {
     }
   }
 
-  async function loadLessonDetail(lessonId, options = {}) {
-    if (!lessonId || !accessToken) return;
-    const { autoEnterImmersive = false, keepCurrentImmersiveState = false } = options;
-    try {
-      const [detailResp, progressResp] = await Promise.all([
-        api(`/api/lessons/${lessonId}`, {}, accessToken),
-        api(`/api/lessons/${lessonId}/progress`, {}, accessToken),
-      ]);
-      const detailData = await parseResponse(detailResp);
-      const progressData = await parseResponse(progressResp);
-      if (!detailResp.ok) {
-        setGlobalStatus(toErrorText(detailData, "加载课程详情失败"));
-        return;
-      }
-
-      const progress = progressResp.ok ? buildProgressSnapshot(progressData) : buildProgressSnapshot();
-      const merged = {
-        ...detailData,
-        progress,
-      };
-      const mergedWithLocalVariant = await applyLocalSubtitleVariant(merged);
-
-      setCurrentLesson(mergedWithLocalVariant);
-      setLessonCardMetaMap((prev) => ({
-        ...prev,
-        [lessonId]: {
-          sentenceCount: Array.isArray(mergedWithLocalVariant?.sentences)
-            ? mergedWithLocalVariant.sentences.length
-            : getSentenceCount(detailData, mergedWithLocalVariant),
-          progress,
-        },
-      }));
-      console.debug("[DEBUG] lesson.detail.loaded", {
-        lessonId,
-        autoEnterImmersive,
-        keepCurrentImmersiveState,
-      });
-      setImmersiveActive((prev) => (keepCurrentImmersiveState ? prev : Boolean(autoEnterImmersive)));
-      setGlobalStatus("");
-    } catch (error) {
-      setGlobalStatus(`网络错误: ${String(error)}`);
-    }
-  }
-
-  async function loadLessons(options = {}) {
-    const { preferredLessonId = null, autoEnterImmersive = false } = options;
+  async function loadLessons() {
     if (!accessToken) {
       setLessons([]);
       setCurrentLesson(null);
-      setCurrentLessonNeedsBinding(false);
       setImmersiveActive(false);
-      setLessonCardMetaMap({});
-      setLessonMediaMetaMap({});
       setSubtitleCacheMetaMap({});
       return;
     }
@@ -276,41 +174,61 @@ export function LearningShell() {
       const nextLessons = Array.isArray(listData) ? listData : [];
       setLessons(nextLessons);
       await refreshSubtitleCacheMeta(nextLessons);
-      setLessonCardMetaMap((prev) => {
-        const next = {};
-        nextLessons.forEach((lesson) => {
-          next[lesson.id] = prev[lesson.id] || {
-            sentenceCount: Array.isArray(lesson.sentences) ? lesson.sentences.length : 0,
-            progress: null,
-          };
-        });
-        return next;
-      });
-      setLessonMediaMetaMap((prev) => {
-        const next = {};
-        nextLessons.forEach((lesson) => {
-          next[lesson.id] = prev[lesson.id] || getDefaultMediaPreview(lesson.id);
-        });
-        return next;
-      });
-
-      const currentExists = currentLesson?.id && nextLessons.some((item) => item.id === currentLesson.id);
-      const targetLessonId = preferredLessonId || (!currentExists ? nextLessons[0]?.id : null);
-      if (!nextLessons.length && !targetLessonId) {
+      if (!nextLessons.length) {
         setCurrentLesson(null);
         setImmersiveActive(false);
-        setGlobalStatus("");
         return;
       }
 
-      if (targetLessonId) {
-        await loadLessonDetail(targetLessonId, { autoEnterImmersive });
+      const currentExists = currentLesson?.id && nextLessons.some((item) => item.id === currentLesson.id);
+      if (!currentExists) {
+        await loadLessonDetail(nextLessons[0].id, { autoEnterImmersive: false });
       }
-      setGlobalStatus("");
     } catch (error) {
       setGlobalStatus(`网络错误: ${String(error)}`);
     } finally {
       setLoadingLessons(false);
+    }
+  }
+
+  async function loadLessonDetail(lessonId, options = {}) {
+    if (!lessonId || !accessToken) return;
+    const { autoEnterImmersive = false, keepCurrentImmersiveState = false } = options;
+    try {
+      const [detailResp, progressResp] = await Promise.all([
+        api(`/api/lessons/${lessonId}`, {}, accessToken),
+        api(`/api/lessons/${lessonId}/progress`, {}, accessToken),
+      ]);
+      const detailData = await parseResponse(detailResp);
+      const progressData = await parseResponse(progressResp);
+      if (!detailResp.ok) {
+        setGlobalStatus(toErrorText(detailData, "加载课程详情失败"));
+        return;
+      }
+      const merged = {
+        ...detailData,
+        progress: progressResp.ok
+          ? {
+              current_sentence_index: progressData.current_sentence_index || 0,
+              completed_sentence_indexes: progressData.completed_sentence_indexes || [],
+              last_played_at_ms: progressData.last_played_at_ms || 0,
+            }
+          : {
+              current_sentence_index: 0,
+              completed_sentence_indexes: [],
+              last_played_at_ms: 0,
+            },
+      };
+      const mergedWithLocalVariant = await applyLocalSubtitleVariant(merged);
+      setCurrentLesson(mergedWithLocalVariant);
+      console.debug("[DEBUG] loadLessonDetail immersive policy", {
+        lessonId,
+        autoEnterImmersive,
+        keepCurrentImmersiveState,
+      });
+      setImmersiveActive((prev) => (keepCurrentImmersiveState ? prev : Boolean(autoEnterImmersive)));
+    } catch (error) {
+      setGlobalStatus(`网络错误: ${String(error)}`);
     }
   }
 
@@ -319,16 +237,10 @@ export function LearningShell() {
       setWalletBalance(0);
       return;
     }
-    try {
-      const resp = await api("/api/wallet/me", {}, accessToken);
-      const data = await parseResponse(resp);
-      if (resp.ok) {
-        setWalletBalance(Number(data.balance_points || 0));
-      } else {
-        console.debug("[DEBUG] wallet.load.failed", toErrorText(data, "加载余额失败"));
-      }
-    } catch (error) {
-      console.debug("[DEBUG] wallet.load.network_error", String(error));
+    const resp = await api("/api/wallet/me", {}, accessToken);
+    const data = await parseResponse(resp);
+    if (resp.ok) {
+      setWalletBalance(Number(data.balance_points || 0));
     }
   }
 
@@ -338,19 +250,13 @@ export function LearningShell() {
       setSubtitleSettings({ semantic_split_default_enabled: false });
       return;
     }
-    try {
-      const resp = await api("/api/billing/rates", {}, accessToken);
-      const data = await parseResponse(resp);
-      if (resp.ok) {
-        setBillingRates(Array.isArray(data.rates) ? data.rates : []);
-        setSubtitleSettings({
-          semantic_split_default_enabled: Boolean(data.subtitle_settings?.semantic_split_default_enabled),
-        });
-      } else {
-        console.debug("[DEBUG] billing.rates.load.failed", toErrorText(data, "加载计费失败"));
-      }
-    } catch (error) {
-      console.debug("[DEBUG] billing.rates.load.network_error", String(error));
+    const resp = await api("/api/billing/rates", {}, accessToken);
+    const data = await parseResponse(resp);
+    if (resp.ok) {
+      setBillingRates(Array.isArray(data.rates) ? data.rates : []);
+      setSubtitleSettings({
+        semantic_split_default_enabled: Boolean(data.subtitle_settings?.semantic_split_default_enabled),
+      });
     }
   }
 
@@ -359,157 +265,17 @@ export function LearningShell() {
       setIsAdminUser(false);
       return;
     }
-    try {
-      const resp = await api("/api/admin/billing-rates", {}, accessToken);
-      setIsAdminUser(resp.ok);
-    } catch (error) {
-      console.debug("[DEBUG] admin.detect.failed", String(error));
-      setIsAdminUser(false);
-    }
+    const resp = await api("/api/admin/billing-rates", {}, accessToken);
+    setIsAdminUser(resp.ok);
   }
 
   useEffect(() => {
-    void loadLessons();
-    void loadWallet();
-    void loadBillingRates();
-    void detectAdmin();
+    loadLessons();
+    loadWallet();
+    loadBillingRates();
+    detectAdmin();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
-
-  useEffect(() => {
-    if (!accessToken) {
-      setLessonCardMetaMap({});
-      setLessonMediaMetaMap({});
-      setSubtitleCacheMetaMap({});
-      return;
-    }
-    if (lessons.length === 0) {
-      setLessonCardMetaMap({});
-      setLessonMediaMetaMap({});
-      setSubtitleCacheMetaMap({});
-      return;
-    }
-    if (activePanel !== "history" || immersiveLayoutActive) {
-      return;
-    }
-
-    let canceled = false;
-    console.debug("[DEBUG] history.meta.load.start", { lessonCount: lessons.length });
-
-    setLessonCardMetaMap((prev) => {
-      const next = {};
-      lessons.forEach((lesson) => {
-        next[lesson.id] = prev[lesson.id] || {
-          sentenceCount: Array.isArray(lesson.sentences) ? lesson.sentences.length : 0,
-          progress: null,
-        };
-      });
-      return next;
-    });
-    setLessonMediaMetaMap((prev) => {
-      const next = {};
-      lessons.forEach((lesson) => {
-        next[lesson.id] = prev[lesson.id] || getDefaultMediaPreview(lesson.id);
-      });
-      return next;
-    });
-
-    void Promise.allSettled(
-      lessons.map(async (lesson) => {
-        const [detailResult, progressResult, mediaResult, subtitleVariantResult] = await Promise.allSettled([
-          (async () => {
-            const resp = await api(`/api/lessons/${lesson.id}`, {}, accessToken);
-            const data = await parseResponse(resp);
-            return { ok: resp.ok, data };
-          })(),
-          (async () => {
-            const resp = await api(`/api/lessons/${lesson.id}/progress`, {}, accessToken);
-            const data = await parseResponse(resp);
-            return { ok: resp.ok, data };
-          })(),
-          getLessonMediaPreview(lesson.id),
-          getActiveLessonSubtitleVariant(lesson.id),
-        ]);
-
-        if (detailResult.status === "rejected") {
-          console.debug("[DEBUG] history.meta.detail.failed", { lessonId: lesson.id, error: String(detailResult.reason) });
-        }
-        if (progressResult.status === "rejected") {
-          console.debug("[DEBUG] history.meta.progress.failed", {
-            lessonId: lesson.id,
-            error: String(progressResult.reason),
-          });
-        }
-        if (mediaResult.status === "rejected") {
-          console.debug("[DEBUG] history.meta.cover.failed", { lessonId: lesson.id, error: String(mediaResult.reason) });
-        }
-        if (subtitleVariantResult.status === "rejected") {
-          console.debug("[DEBUG] history.meta.subtitle_variant.failed", {
-            lessonId: lesson.id,
-            error: String(subtitleVariantResult.reason),
-          });
-        }
-
-        const activeSubtitleVariant = subtitleVariantResult.status === "fulfilled" ? subtitleVariantResult.value : null;
-        const sentenceCount = Array.isArray(activeSubtitleVariant?.sentences)
-          ? activeSubtitleVariant.sentences.length
-          : detailResult.status === "fulfilled" && detailResult.value.ok
-            ? getSentenceCount(detailResult.value.data, lesson)
-            : Array.isArray(lesson.sentences)
-              ? lesson.sentences.length
-              : 0;
-
-        return {
-          lessonId: lesson.id,
-          cardMeta: {
-            sentenceCount,
-            progress:
-              progressResult.status === "fulfilled" && progressResult.value.ok
-                ? buildProgressSnapshot(progressResult.value.data)
-                : null,
-          },
-          mediaMeta: mediaResult.status === "fulfilled" ? mediaResult.value : getDefaultMediaPreview(lesson.id),
-        };
-      }),
-    ).then((results) => {
-      if (canceled) return;
-
-      setLessonCardMetaMap((prev) => {
-        const next = {};
-        lessons.forEach((lesson) => {
-          next[lesson.id] = prev[lesson.id] || {
-            sentenceCount: Array.isArray(lesson.sentences) ? lesson.sentences.length : 0,
-            progress: null,
-          };
-        });
-        results.forEach((result) => {
-          if (result.status === "fulfilled") {
-            next[result.value.lessonId] = result.value.cardMeta;
-          }
-        });
-        return next;
-      });
-
-      setLessonMediaMetaMap((prev) => {
-        const next = {};
-        lessons.forEach((lesson) => {
-          next[lesson.id] = prev[lesson.id] || getDefaultMediaPreview(lesson.id);
-        });
-        results.forEach((result) => {
-          if (result.status === "fulfilled") {
-            next[result.value.lessonId] = result.value.mediaMeta;
-          }
-        });
-        return next;
-      });
-
-      console.debug("[DEBUG] history.meta.load.complete", { lessonCount: lessons.length });
-    });
-
-    return () => {
-      canceled = true;
-    };
-  }, [accessToken, activePanel, immersiveLayoutActive, lessons]);
 
   useEffect(() => {
     let canceled = false;
@@ -533,7 +299,7 @@ export function LearningShell() {
       }
     }
 
-    void detectCurrentLessonMediaStatus();
+    detectCurrentLessonMediaStatus();
     return () => {
       canceled = true;
     };
@@ -542,13 +308,6 @@ export function LearningShell() {
   function handleAuthed() {
     setAccessToken(localStorage.getItem(TOKEN_KEY) || "");
     setGlobalStatus("");
-    setActivePanel("history");
-  }
-
-  function handlePanelChange(nextPanel) {
-    setActivePanel(nextPanel);
-    setMobileNavOpen(false);
-    console.debug("[DEBUG] home.panel.change", { panel: nextPanel });
   }
 
   function handleLogout() {
@@ -561,26 +320,21 @@ export function LearningShell() {
     setIsAdminUser(false);
     setMobileNavOpen(false);
     setCommandOpen(false);
-    setCommandQuery("");
-    setCurrentLessonNeedsBinding(false);
     setImmersiveActive(false);
-    setActivePanel("history");
-    setLessonCardMetaMap({});
-    setLessonMediaMetaMap({});
     setSubtitleCacheMetaMap({});
   }
 
-  function handleExitImmersive() {
-    setImmersiveActive(false);
-    setActivePanel("history");
+  function handleExitImmersive(_source = "button") {
+    setImmersiveActive((prev) => {
+      if (!prev) return prev;
+      return false;
+    });
   }
 
   async function handleLessonCreated(lesson) {
-    const lessonId = lesson?.id;
-    console.debug("[DEBUG] upload.lesson.created", { lessonId });
-    setActivePanel("history");
     await persistLessonSubtitleCacheSeed(lesson);
-    await loadLessons({ preferredLessonId: lessonId, autoEnterImmersive: true });
+    await loadLessons();
+    await loadLessonDetail(lesson.id, { autoEnterImmersive: false });
     await loadWallet();
   }
 
@@ -593,22 +347,22 @@ export function LearningShell() {
     if (!lessonId) return;
     setCommandOpen(false);
     setCommandQuery("");
-    setActivePanel("history");
     if (lessonId !== currentLesson?.id) {
       await loadLessonDetail(lessonId, { autoEnterImmersive: false });
     }
   }
 
-  function handleStartImmersive() {
-    if (!currentLesson?.id) return;
+  async function handleStartLesson(lessonId) {
+    if (!lessonId) return;
+    if (lessonId !== currentLesson?.id) {
+      await loadLessonDetail(lessonId, { autoEnterImmersive: false });
+    }
     setImmersiveActive(true);
   }
 
-  async function handleStartLesson(lessonId) {
-    if (!lessonId) return;
-    console.debug("[DEBUG] history.lesson.start.request", { lessonId });
-    setActivePanel("history");
-    await loadLessonDetail(lessonId, { autoEnterImmersive: true });
+  function handleStartImmersive() {
+    if (!currentLesson?.id) return;
+    setImmersiveActive(true);
   }
 
   async function handleRenameLesson(lessonId, title) {
@@ -664,16 +418,6 @@ export function LearningShell() {
       const deletingCurrentLesson = currentLesson?.id === lessonId;
       const keepImmersiveAfterFallback = immersiveActive;
       setLessons(nextLessons);
-      setLessonCardMetaMap((prev) => {
-        const next = { ...prev };
-        delete next[lessonId];
-        return next;
-      });
-      setLessonMediaMetaMap((prev) => {
-        const next = { ...prev };
-        delete next[lessonId];
-        return next;
-      });
       setSubtitleCacheMetaMap((prev) => {
         const next = { ...prev };
         delete next[lessonId];
@@ -762,13 +506,6 @@ export function LearningShell() {
         if (!prev || prev.id !== lessonId) return prev;
         return mergeLessonWithSubtitleVariant(prev, activeVariant);
       });
-      setLessonCardMetaMap((prev) => ({
-        ...prev,
-        [lessonId]: {
-          ...(prev[lessonId] || {}),
-          sentenceCount: Array.isArray(activeVariant.sentences) ? activeVariant.sentences.length : Number(prev[lessonId]?.sentenceCount || 0),
-        },
-      }));
       await refreshSubtitleCacheMeta([{ id: lessonId }], { merge: true });
       setGlobalStatus("");
       const message = semanticSplitEnabled ? "已切换为语义分句字幕" : "已切换为普通分句字幕";
@@ -785,11 +522,7 @@ export function LearningShell() {
     if (!lesson?.id || !file) {
       return { ok: false, message: "恢复视频参数无效" };
     }
-    console.debug("[DEBUG] lessons.restore_media.start", {
-      lessonId: lesson.id,
-      fileName: file.name,
-      fileSize: file.size,
-    });
+    console.debug("[DEBUG] lessons.restore_media.start", { lessonId: lesson.id, fileName: file.name, fileSize: file.size });
     try {
       const expectedSourceDurationSec = Math.max(0, Number(lesson.source_duration_ms || 0) / 1000);
       if (expectedSourceDurationSec > 0) {
@@ -806,11 +539,6 @@ export function LearningShell() {
 
       await requestPersistentStorage();
       await saveLessonMedia(lesson.id, file);
-      const mediaPreview = await getLessonMediaPreview(lesson.id);
-      setLessonMediaMetaMap((prev) => ({
-        ...prev,
-        [lesson.id]: mediaPreview,
-      }));
       if (currentLesson?.id === lesson.id) {
         setCurrentLessonNeedsBinding(false);
       }
@@ -824,11 +552,9 @@ export function LearningShell() {
     }
   }
 
-  const currentPanel = PANEL_ITEMS.find((item) => item.key === activePanel) || PANEL_ITEMS[0];
-
   return (
     <div className="section-soft min-h-screen bg-background">
-      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur transition-all duration-500 ease-out supports-[backdrop-filter]:bg-background/80">
         <div className="container-wrapper">
           <div className="container flex h-14 items-center gap-2">
             <Button size="icon-sm" variant="ghost" aria-label="logo">
@@ -836,14 +562,14 @@ export function LearningShell() {
             </Button>
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold">English Trainer</span>
-              <Badge variant="outline">{accessToken ? "已登录" : "未登录"}</Badge>
+              <Badge variant="outline">shadcn style</Badge>
             </div>
             <Separator orientation="vertical" className="mx-1 hidden h-4 md:block" />
             <div className="hidden items-center gap-2 md:flex">
-              {accessToken ? <Badge variant="outline">{lessons.length} 门课程</Badge> : null}
+              <Badge variant="outline">{accessToken ? "已登录" : "未登录"}</Badge>
+              {accessToken ? <Badge variant="outline">{lessons.length} lessons</Badge> : null}
               <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
             </div>
-
             <div className="ml-auto flex items-center gap-2">
               {accessToken && lessons.length > 0 ? (
                 <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={() => setCommandOpen(true)}>
@@ -871,43 +597,14 @@ export function LearningShell() {
                       <Menu className="size-4" />
                     </Button>
                   </SheetTrigger>
-                  <SheetContent side="right" className="w-[300px] sm:w-[340px]">
+                  <SheetContent side="right" className="w-[280px] sm:w-[320px]">
                     <SheetHeader>
-                      <SheetTitle>{currentPanel.title}</SheetTitle>
-                      <SheetDescription>在移动端切换首页面板、课程跳转与账号操作。</SheetDescription>
+                      <SheetTitle>快捷操作</SheetTitle>
+                      <SheetDescription>移动端导航与课程切换入口。</SheetDescription>
                     </SheetHeader>
-                    <div className="mt-4 space-y-3">
+                    <div className="mt-4 space-y-2">
+                      <Badge variant="outline">{lessons.length} lessons</Badge>
                       <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
-                      <div className="space-y-2">
-                        {PANEL_ITEMS.map((item) => {
-                          const Icon = item.icon;
-                          const selected = activePanel === item.key;
-                          return (
-                            <button
-                              key={item.key}
-                              type="button"
-                              className={cn(
-                                "flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-colors",
-                                selected ? "border-primary bg-primary/8" : "border-border bg-background hover:bg-muted/30",
-                              )}
-                              onClick={() => handlePanelChange(item.key)}
-                            >
-                              <span
-                                className={cn(
-                                  "flex size-9 shrink-0 items-center justify-center rounded-xl border",
-                                  selected ? "border-primary/30 bg-primary/12 text-primary" : "border-border bg-muted/30 text-muted-foreground",
-                                )}
-                              >
-                                <Icon className="size-4" />
-                              </span>
-                              <span className="space-y-1">
-                                <span className="block text-sm font-medium">{item.title}</span>
-                                <span className="block text-xs text-muted-foreground">{item.description}</span>
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
                       {lessons.length > 0 ? (
                         <Button
                           variant="outline"
@@ -947,16 +644,43 @@ export function LearningShell() {
         </div>
       </header>
 
-      <main className={cn("container-wrapper transition-all duration-300", immersiveLayoutActive ? "pb-0" : "pb-6")}>
-        <div className={cn("container transition-all duration-300", immersiveLayoutActive ? "pt-2" : "pt-4")}>
-          {immersiveLayoutActive ? (
-            <section className="min-w-0 space-y-4">
-              {globalStatus ? (
-                <Alert variant="destructive">
-                  <AlertTitle>系统消息</AlertTitle>
-                  <AlertDescription>{globalStatus}</AlertDescription>
-                </Alert>
-              ) : null}
+      <main className={`container-wrapper transition-all duration-500 ease-out ${immersiveLayoutActive ? "pb-0" : "pb-6"}`}>
+        <div
+          className={`container grid gap-4 transition-all duration-500 ease-out ${
+            immersiveLayoutActive ? "pt-2 xl:grid-cols-1" : "pt-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]"
+          }`}
+        >
+          {!immersiveLayoutActive ? (
+            <aside className="space-y-4 transition-all duration-500 ease-out">
+              <LessonListLocalSubtitles
+                lessons={lessons}
+                currentLessonId={currentLesson?.id}
+                currentLessonNeedsBinding={currentLessonNeedsBinding}
+                subtitleCacheMetaMap={subtitleCacheMetaMap}
+                onSelect={loadLessonDetail}
+                onStartLesson={handleStartLesson}
+                onRename={handleRenameLesson}
+                onDelete={handleDeleteLesson}
+                onRestoreMedia={handleRestoreLessonMedia}
+                onRegenerateSubtitles={handleRegenerateSubtitles}
+                loading={loadingLessons}
+              />
+              <Card size="sm">
+                <CardHeader>
+                  <CardTitle className="text-base">状态</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <p className="text-muted-foreground">课程加载：{loadingLessons ? "进行中" : "空闲"}</p>
+                  <p className="text-muted-foreground">当前课程：{currentLesson?.title || "未选择"}</p>
+                  <p className="text-muted-foreground">学习模式：沉浸模式</p>
+                  {currentLessonNeedsBinding ? <p className="text-amber-600">待绑定本地媒体：课程可见，但播放受限</p> : null}
+                </CardContent>
+              </Card>
+            </aside>
+          ) : null}
+
+          <section className={`min-w-0 space-y-4 transition-all duration-500 ease-out ${immersiveLayoutActive ? "xl:col-span-1" : ""}`}>
+            {accessToken ? (
               <ImmersiveLessonPage
                 lesson={currentLesson}
                 accessToken={accessToken}
@@ -967,76 +691,36 @@ export function LearningShell() {
                 onStartImmersive={handleStartImmersive}
                 externalMediaReloadToken={mediaRestoreTick}
               />
-            </section>
-          ) : (
-            <div className={cn("grid gap-4", accessToken ? "xl:grid-cols-[280px_minmax(0,1fr)]" : "xl:grid-cols-1")}>
-              {accessToken ? (
-                <aside className="hidden xl:block">
-                  <nav className="sticky top-20 space-y-3">
-                    {PANEL_ITEMS.map((item) => {
-                      const Icon = item.icon;
-                      const selected = activePanel === item.key;
-                      return (
-                        <button
-                          key={item.key}
-                          type="button"
-                          className={cn(
-                            "flex w-full items-start gap-4 rounded-3xl border px-4 py-4 text-left transition-all",
-                            selected
-                              ? "border-primary bg-primary/8 shadow-sm"
-                              : "border-border bg-background hover:border-primary/30 hover:bg-muted/20",
-                          )}
-                          onClick={() => handlePanelChange(item.key)}
-                        >
-                          <span
-                            className={cn(
-                              "flex size-11 shrink-0 items-center justify-center rounded-2xl border",
-                              selected ? "border-primary/30 bg-primary/12 text-primary" : "border-border bg-muted/30 text-muted-foreground",
-                            )}
-                          >
-                            <Icon className="size-5" />
-                          </span>
-                          <span className="min-w-0 space-y-1">
-                            <span className="block text-sm font-semibold">{item.title}</span>
-                            <span className="block text-sm text-muted-foreground">{item.description}</span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </nav>
-                </aside>
-              ) : null}
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Preview</CardTitle>
+                  <CardDescription>登录后可在中间区域进入沉浸模式学习。</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">请在右侧先完成登录或注册。</p>
+                </CardContent>
+              </Card>
+            )}
 
-              <section className="min-w-0 space-y-4">
-                {globalStatus ? (
-                  <Alert variant="destructive">
-                    <AlertTitle>系统消息</AlertTitle>
-                    <AlertDescription>{globalStatus}</AlertDescription>
-                  </Alert>
-                ) : null}
+            {globalStatus ? (
+              <Alert variant="destructive">
+                <AlertTitle>系统消息</AlertTitle>
+                <AlertDescription>{globalStatus}</AlertDescription>
+              </Alert>
+            ) : null}
+          </section>
 
-                {!accessToken ? (
-                  <div className="mx-auto max-w-md">
-                    <AuthPanel onAuthed={handleAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
-                  </div>
-                ) : activePanel === "history" ? (
-                  <LessonList
-                    lessons={lessons}
-                    currentLessonId={currentLesson?.id}
-                    currentLessonNeedsBinding={currentLessonNeedsBinding}
-                    lessonCardMetaMap={lessonCardMetaMap}
-                    lessonMediaMetaMap={lessonMediaMetaMap}
-                    subtitleCacheMetaMap={subtitleCacheMetaMap}
-                    onSelect={(lessonId) => loadLessonDetail(lessonId, { autoEnterImmersive: false })}
-                    onStartLesson={handleStartLesson}
-                    onRename={handleRenameLesson}
-                    onDelete={handleDeleteLesson}
-                    onRestoreMedia={handleRestoreLessonMedia}
-                    onRegenerateSubtitles={handleRegenerateSubtitles}
-                    onSwitchToUpload={() => handlePanelChange("upload")}
-                    loading={loadingLessons}
+          {!immersiveLayoutActive ? (
+            <aside className="space-y-4 transition-all duration-500 ease-out">
+              {!accessToken ? (
+                <AuthPanel onAuthed={handleAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
+              ) : (
+                <>
+                  <RedeemCodePanel
+                    apiCall={(path, options = {}) => api(path, options, accessToken)}
+                    onWalletChanged={loadWallet}
                   />
-                ) : activePanel === "upload" ? (
                   <UploadPanel
                     accessToken={accessToken}
                     onCreated={handleLessonCreated}
@@ -1045,15 +729,10 @@ export function LearningShell() {
                     subtitleSettings={subtitleSettings}
                     onWalletChanged={loadWallet}
                   />
-                ) : (
-                  <RedeemCodePanel
-                    apiCall={(path, options = {}) => api(path, options, accessToken)}
-                    onWalletChanged={loadWallet}
-                  />
-                )}
-              </section>
-            </div>
-          )}
+                </>
+              )}
+            </aside>
+          ) : null}
         </div>
       </main>
 
@@ -1081,7 +760,7 @@ export function LearningShell() {
                 <div className="flex w-full flex-col">
                   <span>{lesson.title}</span>
                   <span className="text-xs text-muted-foreground">
-                    {lesson.asr_model || "-"} · {Number(lessonCardMetaMap[lesson.id]?.sentenceCount || lesson.sentences?.length || 0)} 句
+                    {lesson.asr_model || "-"} · {lesson.sentences?.length || 0} 句
                   </span>
                 </div>
               </CommandItem>
@@ -1092,3 +771,4 @@ export function LearningShell() {
     </div>
   );
 }
+

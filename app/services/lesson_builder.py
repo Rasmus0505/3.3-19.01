@@ -10,6 +10,7 @@ from app.services.media import MediaError, run_cmd
 
 
 _PUNCT_EDGE_RE = re.compile(r"^[\s\.,!?;:\"'`~\-\(\)\[\]\{\}]+|[\s\.,!?;:\"'`~\-\(\)\[\]\{\}]+$")
+_USD_AMOUNT_RE = re.compile(r"(?<![A-Za-z0-9])\$(\d[\d,]*)(?:\.(\d{1,2}))?(?![A-Za-z0-9])")
 _STRONG_BOUNDARY_PUNCT = {".", "!", "?", ";"}
 _WEAK_BOUNDARY_PUNCT = {",", ":"}
 _CONNECTOR_WORDS = {"that", "which", "where", "when", "because", "but", "and", "or"}
@@ -21,6 +22,36 @@ _DEFAULT_SUBTITLE_SPLIT_TARGET_WORDS = 18
 _DEFAULT_SUBTITLE_SPLIT_MAX_WORDS = 28
 
 logger = logging.getLogger(__name__)
+
+_NUMBER_WORDS_LT_20 = [
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+]
+_NUMBER_WORDS_TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"]
+_NUMBER_WORDS_SCALES = [
+    (1_000_000_000_000, "trillion"),
+    (1_000_000_000, "billion"),
+    (1_000_000, "million"),
+    (1_000, "thousand"),
+]
 
 try:
     import spacy
@@ -40,6 +71,70 @@ def tokenize_sentence(sentence: str) -> list[str]:
     raw_tokens = re.split(r"\s+", (sentence or "").strip())
     tokens = [normalize_token(tok) for tok in raw_tokens]
     return [tok for tok in tokens if tok]
+
+
+def _integer_to_english(value: int) -> str:
+    if value < 0:
+        raise ValueError("only non-negative values are supported")
+    if value < 20:
+        return _NUMBER_WORDS_LT_20[value]
+    if value < 100:
+        tens, remainder = divmod(value, 10)
+        head = _NUMBER_WORDS_TENS[tens]
+        return head if remainder == 0 else f"{head}-{_integer_to_english(remainder)}"
+    if value < 1_000:
+        hundreds, remainder = divmod(value, 100)
+        head = f"{_integer_to_english(hundreds)} hundred"
+        return head if remainder == 0 else f"{head} {_integer_to_english(remainder)}"
+    for scale_value, scale_name in _NUMBER_WORDS_SCALES:
+        if value >= scale_value:
+            major, remainder = divmod(value, scale_value)
+            head = f"{_integer_to_english(major)} {scale_name}"
+            return head if remainder == 0 else f"{head} {_integer_to_english(remainder)}"
+    return str(value)
+
+
+def _usd_amount_to_spoken_text(dollar_text: str, cent_text: str | None) -> str:
+    dollars = int((dollar_text or "0").replace(",", "") or "0")
+    cents = 0
+    if cent_text:
+        cents = int(str(cent_text).ljust(2, "0")[:2])
+
+    dollar_words = ""
+    if dollars > 0 or cents == 0:
+        dollar_unit = "dollar" if dollars == 1 else "dollars"
+        dollar_words = f"{_integer_to_english(dollars)} {dollar_unit}"
+
+    if cents <= 0:
+        return dollar_words
+
+    cent_unit = "cent" if cents == 1 else "cents"
+    cent_words = f"{_integer_to_english(cents)} {cent_unit}"
+    if dollars <= 0:
+        return cent_words
+    return f"{dollar_words} and {cent_words}"
+
+
+def normalize_learning_english_text(text: str) -> str:
+    source = str(text or "").strip()
+    if not source:
+        return ""
+
+    def _replace(match: re.Match[str]) -> str:
+        return _usd_amount_to_spoken_text(match.group(1), match.group(2))
+
+    return _USD_AMOUNT_RE.sub(_replace, source)
+
+
+def tokenize_learning_sentence(sentence: str) -> list[str]:
+    return tokenize_sentence(normalize_learning_english_text(sentence))
+
+
+def normalize_learning_token_list(tokens: list[str]) -> list[str]:
+    output: list[str] = []
+    for item in list(tokens or []):
+        output.extend(tokenize_learning_sentence(str(item or "")))
+    return output
 
 
 def _safe_int(value: Any, default: int = 0) -> int:

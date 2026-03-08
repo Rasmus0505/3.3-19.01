@@ -24,6 +24,8 @@ from app.schemas import (
     LessonDetailResponse,
     LessonItemResponse,
     LessonRenameRequest,
+    LessonSubtitleVariantRequest,
+    LessonSubtitleVariantResponse,
     LessonTaskCreateResponse,
     LessonTaskResponse,
 )
@@ -48,6 +50,7 @@ def _to_task_response(task: dict) -> LessonTaskResponse:
         stages=list(task.get("stages", [])),
         counters=dict(task.get("counters", {})),
         lesson=task.get("lesson"),
+        subtitle_cache_seed=task.get("subtitle_cache_seed"),
         error_code=str(task.get("error_code", "")),
         message=str(task.get("message", "")),
     )
@@ -89,7 +92,11 @@ def _run_lesson_generation_task(
         )
         sentences = get_lesson_sentences(db, lesson.id)
         lesson_payload = to_lesson_detail_response(lesson, sentences).model_dump()
-        mark_task_succeeded(task_id, lesson_payload=lesson_payload)
+        mark_task_succeeded(
+            task_id,
+            lesson_payload=lesson_payload,
+            subtitle_cache_seed=getattr(lesson, "subtitle_cache_seed", None),
+        )
         logger.info("[DEBUG] lessons.task.succeeded task_id=%s lesson_id=%s", task_id, lesson.id)
     except BillingError as exc:
         db.rollback()
@@ -232,6 +239,45 @@ def get_lesson(lesson_id: int, db: Session = Depends(get_db), current_user: User
     lesson = require_lesson_owner(db, lesson_id, current_user.id)
     sentences = get_lesson_sentences(db, lesson.id)
     return to_lesson_detail_response(lesson, sentences)
+
+
+@router.post(
+    "/{lesson_id}/subtitle-variants",
+    response_model=LessonSubtitleVariantResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def regenerate_lesson_subtitle_variant(
+    lesson_id: int,
+    payload: LessonSubtitleVariantRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lesson = require_lesson_owner(db, lesson_id, current_user.id)
+    try:
+        variant = LessonService.build_subtitle_variant(
+            asr_payload=payload.asr_payload,
+            db=db,
+            semantic_split_enabled=payload.semantic_split_enabled,
+        )
+        logger.info(
+            "[DEBUG] lessons.subtitle_variant.success lesson_id=%s user_id=%s semantic_split_enabled=%s split_mode=%s",
+            lesson.id,
+            current_user.id,
+            bool(variant.get("semantic_split_enabled")),
+            str(variant.get("split_mode") or ""),
+        )
+        return LessonSubtitleVariantResponse(
+            ok=True,
+            lesson_id=lesson.id,
+            semantic_split_enabled=bool(variant.get("semantic_split_enabled")),
+            split_mode=str(variant.get("split_mode") or ""),
+            source_word_count=int(variant.get("source_word_count", 0)),
+            sentences=list(variant.get("sentences") or []),
+        )
+    except MediaError as exc:
+        return map_media_error(exc)
+    except Exception as exc:
+        return error_response(500, "INTERNAL_ERROR", "重新生成字幕失败", str(exc)[:1200])
 
 
 @router.patch(

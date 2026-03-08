@@ -45,6 +45,40 @@ function getInitialDisplayMode() {
   return saved === "chip" || saved === "underline" ? saved : "underline";
 }
 
+function getFullscreenElement() {
+  if (typeof document === "undefined") return null;
+  return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null;
+}
+
+async function requestElementFullscreen(element) {
+  if (!element) {
+    throw new Error("fullscreen_target_missing");
+  }
+  if (typeof element.requestFullscreen === "function") {
+    return element.requestFullscreen();
+  }
+  if (typeof element.webkitRequestFullscreen === "function") {
+    return element.webkitRequestFullscreen();
+  }
+  if (typeof element.msRequestFullscreen === "function") {
+    return element.msRequestFullscreen();
+  }
+  throw new Error("fullscreen_not_supported");
+}
+
+async function exitElementFullscreen() {
+  if (typeof document === "undefined") return;
+  if (document.fullscreenElement && typeof document.exitFullscreen === "function") {
+    return document.exitFullscreen();
+  }
+  if (document.webkitFullscreenElement && typeof document.webkitExitFullscreen === "function") {
+    return document.webkitExitFullscreen();
+  }
+  if (document.msFullscreenElement && typeof document.msExitFullscreen === "function") {
+    return document.msExitFullscreen();
+  }
+}
+
 function countTokenInputErrors(inputValue, expectedToken) {
   const actual = normalizeComparableToken(inputValue);
   const expected = normalizeComparableToken(expectedToken);
@@ -228,13 +262,19 @@ export function ImmersiveLessonPage({
   const [sentenceTypingDone, setSentenceTypingDone] = useState(false);
   const [sentencePlaybackDone, setSentencePlaybackDone] = useState(false);
   const [sentencePlaybackRequired, setSentencePlaybackRequired] = useState(true);
+  const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
+  const [isFullscreenFallback, setIsFullscreenFallback] = useState(false);
+  const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(false);
 
+  const immersiveContainerRef = useRef(null);
   const mediaElementRef = useRef(null);
   const clipAudioRef = useRef(null);
   const typingInputRef = useRef(null);
   const bindingInputRef = useRef(null);
   const currentWordInputRef = useRef("");
   const sentenceAdvanceLockedRef = useRef(false);
+  const cinemaFullscreenActive = isCinemaFullscreen || isFullscreenFallback;
+  const hasExitHandler = typeof onExitImmersive === "function" || typeof onBack === "function";
   const typingEnabled =
     immersiveActive && Boolean(lesson?.sentences?.[currentSentenceIndex]) && phase !== "transition" && phase !== "lesson_completed";
   const focusTypingInput = useCallback(() => {
@@ -690,18 +730,57 @@ export function ImmersiveLessonPage({
   }, [clearActiveWordInput, playWrongSound]);
 
   const exitImmersive = useCallback(
-    (source = "button") => {
+    async (source = "button") => {
       const handler = typeof onExitImmersive === "function" ? onExitImmersive : onBack;
       if (typeof handler !== "function") return;
+      if (isCinemaFullscreen || isFullscreenFallback) {
+        await exitElementFullscreen().catch(() => {});
+        setIsCinemaFullscreen(false);
+        setIsFullscreenFallback(false);
+        setShowFullscreenPreviousSentence(false);
+      }
       handler(source);
     },
-    [onBack, onExitImmersive],
+    [isCinemaFullscreen, isFullscreenFallback, onBack, onExitImmersive],
   );
 
   const startImmersive = useCallback(() => {
     if (typeof onStartImmersive !== "function") return;
     onStartImmersive();
   }, [onStartImmersive]);
+
+  const exitCinemaFullscreen = useCallback(async () => {
+    setShowFullscreenPreviousSentence(false);
+    if (isFullscreenFallback) {
+      setIsFullscreenFallback(false);
+      setIsCinemaFullscreen(false);
+      return;
+    }
+
+    const fullscreenElement = getFullscreenElement();
+    if (fullscreenElement && immersiveContainerRef.current && fullscreenElement === immersiveContainerRef.current) {
+      await exitElementFullscreen().catch(() => {});
+    }
+    setIsCinemaFullscreen(false);
+  }, [isFullscreenFallback]);
+
+  const enterCinemaFullscreen = useCallback(async () => {
+    if (!immersiveActive) return;
+    if (isCinemaFullscreen || isFullscreenFallback) return;
+
+    setShowFullscreenPreviousSentence(false);
+    const container = immersiveContainerRef.current;
+    if (!container) return;
+
+    try {
+      await requestElementFullscreen(container);
+      setIsFullscreenFallback(false);
+      setIsCinemaFullscreen(true);
+    } catch (_) {
+      setIsCinemaFullscreen(false);
+      setIsFullscreenFallback(true);
+    }
+  }, [immersiveActive, isCinemaFullscreen, isFullscreenFallback]);
 
   const jumpToSentence = useCallback(
     async (targetIndex, source = "manual") => {
@@ -754,6 +833,52 @@ export function ImmersiveLessonPage({
   );
 
   useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+
+    const syncFullscreenState = () => {
+      const fullscreenElement = getFullscreenElement();
+      const nextIsCinemaFullscreen = Boolean(immersiveContainerRef.current && fullscreenElement === immersiveContainerRef.current);
+      setIsCinemaFullscreen(nextIsCinemaFullscreen);
+      if (!nextIsCinemaFullscreen) {
+        setShowFullscreenPreviousSentence(false);
+      }
+    };
+
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    document.addEventListener("webkitfullscreenchange", syncFullscreenState);
+    document.addEventListener("MSFullscreenChange", syncFullscreenState);
+    return () => {
+      document.removeEventListener("fullscreenchange", syncFullscreenState);
+      document.removeEventListener("webkitfullscreenchange", syncFullscreenState);
+      document.removeEventListener("MSFullscreenChange", syncFullscreenState);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!cinemaFullscreenActive) return undefined;
+    if (typeof document === "undefined") return undefined;
+
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousBodyOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.body.style.overflow = previousBodyOverflow;
+    };
+  }, [cinemaFullscreenActive]);
+
+  useEffect(() => {
+    if (immersiveActive || !cinemaFullscreenActive) return;
+    void exitCinemaFullscreen();
+  }, [cinemaFullscreenActive, exitCinemaFullscreen, immersiveActive]);
+
+  useEffect(() => {
+    if (!typingEnabled || !cinemaFullscreenActive) return;
+    focusTypingInput();
+  }, [cinemaFullscreenActive, focusTypingInput, typingEnabled]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return undefined;
 
     const onWindowKeyDown = (event) => {
@@ -766,7 +891,11 @@ export function ImmersiveLessonPage({
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        exitImmersive("shortcut_esc");
+        if (isCinemaFullscreen || isFullscreenFallback) {
+          void exitCinemaFullscreen();
+          return;
+        }
+        void exitImmersive("shortcut_esc");
         return;
       }
       if (isReplayShortcut) {
@@ -792,7 +921,16 @@ export function ImmersiveLessonPage({
     return () => {
       window.removeEventListener("keydown", onWindowKeyDown);
     };
-  }, [exitImmersive, goToNextSentence, immersiveActive, replayCurrentSentence, revealCurrentWord]);
+  }, [
+    exitCinemaFullscreen,
+    exitImmersive,
+    goToNextSentence,
+    immersiveActive,
+    isCinemaFullscreen,
+    isFullscreenFallback,
+    replayCurrentSentence,
+    revealCurrentWord,
+  ]);
 
   const handleKeyDown = useCallback(
     (event) => {
@@ -802,7 +940,11 @@ export function ImmersiveLessonPage({
       if (key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        exitImmersive("shortcut_esc");
+        if (isCinemaFullscreen || isFullscreenFallback) {
+          void exitCinemaFullscreen();
+          return;
+        }
+        void exitImmersive("shortcut_esc");
         return;
       }
       if (event.shiftKey && key.toLowerCase() === "r") {
@@ -893,7 +1035,10 @@ export function ImmersiveLessonPage({
       currentSentence,
       exitImmersive,
       expectedTokens,
+      exitCinemaFullscreen,
       goToNextSentence,
+      isCinemaFullscreen,
+      isFullscreenFallback,
       playKeySound,
       replayCurrentSentence,
       revealCurrentWord,
@@ -917,37 +1062,56 @@ export function ImmersiveLessonPage({
   const canGoNext = currentSentenceIndex < Math.max(0, sentenceCount - 1);
   const canRevealWord = typingEnabled && activeWordIndex < expectedTokens.length && expectedTokens.length > 0;
   const canReplaySentence = Boolean(currentSentence) && !mediaLoading && phase !== "transition" && !needsBinding;
+  const showDefaultImmersiveControls = immersiveActive && !cinemaFullscreenActive;
 
   return (
-    <Card className={`immersive-page ${immersiveActive ? "immersive-page--immersive" : ""}`} onClick={focusTypingInput}>
-      <CardHeader>
-        <div className="immersive-header">
-          <div className="immersive-header-left">
-            {immersiveActive && (typeof onExitImmersive === "function" || typeof onBack === "function") ? (
-              <TooltipProvider delayDuration={120}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="outline" size="sm" onClick={() => exitImmersive("button")}>
-                      <ArrowLeft className="size-4" />
-                      退出沉浸
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>esc</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : null}
-            <div>
-              <CardTitle className="text-base">沉浸式句子拼写学习</CardTitle>
-              <CardDescription>
+    <div
+      ref={immersiveContainerRef}
+      className={`immersive-page-shell ${cinemaFullscreenActive ? "immersive-page-shell--cinema" : ""} ${
+        isFullscreenFallback ? "immersive-page-shell--fallback" : ""
+      }`}
+    >
+      <Card
+        className={`immersive-page ${immersiveActive ? "immersive-page--immersive" : ""} ${
+          cinemaFullscreenActive ? "immersive-page--cinema" : ""
+        }`}
+        onClick={focusTypingInput}
+      >
+        <CardHeader className="immersive-card-header">
+          <div className="immersive-header">
+            <div className="immersive-header-left">
+              {immersiveActive && hasExitHandler ? (
+                <Button variant="outline" size="sm" onClick={() => void exitImmersive("button")}>
+                  <ArrowLeft className="size-4" />
+                  退出
+                </Button>
+              ) : null}
+              {immersiveActive && !cinemaFullscreenActive ? (
+                <Button variant="outline" size="sm" onClick={() => void enterCinemaFullscreen()}>
+                  全屏学习
+                </Button>
+              ) : null}
+              {immersiveActive && cinemaFullscreenActive ? (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => void exitCinemaFullscreen()}>
+                    退出全屏
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setShowFullscreenPreviousSentence((prev) => !prev)}>
+                    {showFullscreenPreviousSentence ? "隐藏上一句" : "显示上一句"}
+                  </Button>
+                </>
+              ) : null}
+            </div>
+            {!cinemaFullscreenActive ? (
+              <CardDescription className="immersive-header-progress">
                 第 {Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 句
               </CardDescription>
-            </div>
+            ) : null}
           </div>
-        </div>
-      </CardHeader>
+        </CardHeader>
 
-      <CardContent className="space-y-4">
-        <div className="immersive-media">
+        <CardContent className={`immersive-card-content ${cinemaFullscreenActive ? "immersive-card-content--cinema" : "space-y-4"}`}>
+          <div className={`immersive-media ${cinemaFullscreenActive ? "immersive-media--cinema" : ""}`}>
           {!needsBinding && mediaMode === "video" ? (
             <video
               ref={mediaElementRef}
@@ -958,6 +1122,7 @@ export function ImmersiveLessonPage({
               onError={handleMainMediaError}
               onTimeUpdate={onMainMediaTimeUpdate}
               controls
+              controlsList="nofullscreen"
               playsInline
             />
           ) : null}
@@ -977,6 +1142,7 @@ export function ImmersiveLessonPage({
                 onError={handleMainMediaError}
                 onTimeUpdate={onMainMediaTimeUpdate}
                 controls
+                controlsList="nofullscreen"
               />
             </div>
           ) : null}
@@ -1000,149 +1166,157 @@ export function ImmersiveLessonPage({
             </div>
           ) : null}
 
-        </div>
+          </div>
 
-        {!immersiveActive ? (
-          <Button className="h-12 w-full bg-black text-base font-semibold text-white hover:bg-black/90" onClick={startImmersive}>
-            开始学习
-          </Button>
-        ) : null}
+          {!immersiveActive ? (
+            <Button className="h-12 w-full bg-black text-base font-semibold text-white hover:bg-black/90" onClick={startImmersive}>
+              开始学习
+            </Button>
+          ) : null}
 
-        {immersiveActive ? (
-          <>
-            <div className="flex flex-wrap items-center gap-2">
-              <TooltipProvider delayDuration={120}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="outline" onClick={() => replayCurrentSentence("button_replay")} disabled={!canReplaySentence}>
-                      <RotateCcw className="size-4" />
-                      重播本句
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>shift+r</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider delayDuration={120}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="outline" onClick={() => revealCurrentWord("button_reveal")} disabled={!canRevealWord}>
-                      <Eye className="size-4" />
-                      揭示单词
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>space</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <Button variant="outline" onClick={() => goToPreviousSentence("button_prev")} disabled={!canGoPrevious || phase === "transition"}>
-                <ArrowLeft className="size-4" />
-                上一句
-              </Button>
-              <TooltipProvider delayDuration={120}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="outline" onClick={() => goToNextSentence("button_next")} disabled={!canGoNext || phase === "transition"}>
-                      下一句
-                      <ArrowRight className="size-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>enter</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <Badge variant="outline">
-                已完成 {completedIndexes.length} / {sentenceCount}
-              </Badge>
-              {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
-              {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
+          {immersiveActive ? (
+            <>
+              {showDefaultImmersiveControls ? (
+                <div className="immersive-controls">
+                  <TooltipProvider delayDuration={120}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="outline" onClick={() => replayCurrentSentence("button_replay")} disabled={!canReplaySentence}>
+                          <RotateCcw className="size-4" />
+                          重播本句
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>shift+r</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <TooltipProvider delayDuration={120}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="outline" onClick={() => revealCurrentWord("button_reveal")} disabled={!canRevealWord}>
+                          <Eye className="size-4" />
+                          揭示单词
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>space</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <Button variant="outline" onClick={() => goToPreviousSentence("button_prev")} disabled={!canGoPrevious || phase === "transition"}>
+                    <ArrowLeft className="size-4" />
+                    上一句
+                  </Button>
+                  <TooltipProvider delayDuration={120}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="outline" onClick={() => goToNextSentence("button_next")} disabled={!canGoNext || phase === "transition"}>
+                          下一句
+                          <ArrowRight className="size-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>enter</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <Badge variant="outline">
+                    已完成 {completedIndexes.length} / {sentenceCount}
+                  </Badge>
+                  {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
+                  {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
 
-              {sentenceTypingDone && !sentencePlaybackDone && sentencePlaybackRequired ? (
-                <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p>
-              ) : null}
-            </div>
-
-            <div className="immersive-typing">
-              <div className="immersive-typing-toolbar">
-
-                <div className="immersive-display-toggle">
-                  <span className="text-xs text-muted-foreground">下划线模式</span>
-                  <Switch
-                    checked={displayMode === "underline"}
-                    onCheckedChange={(checked) => setDisplayMode(checked ? "underline" : "chip")}
-                    aria-label="切换单词显示模式"
-                  />
+                  {sentenceTypingDone && !sentencePlaybackDone && sentencePlaybackRequired ? (
+                    <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p>
+                  ) : null}
                 </div>
-              </div>
+              ) : null}
 
-              <div className="immersive-word-row">
-                {expectedTokens.map((token, index) => {
-                  const status = wordStatuses[index] || "pending";
-                  const slots = buildLetterSlots(token, wordInputs[index] || "");
-                  return (
-                    <div
-                      key={`${token}-${index}`}
-                      className={`immersive-word-slot immersive-word-slot--${status} ${
-                        displayMode === "underline" ? "immersive-word-slot--underline" : "immersive-word-slot--chip"
-                      }`}
-                    >
-                      <div className="immersive-letter-row">
-                        {slots.map((slot) => (
-                          <span
-                            key={slot.key}
-                            className={`immersive-letter-cell immersive-letter-cell--${slot.state} ${
-                              slot.extra ? "immersive-letter-cell--extra" : ""
-                            }`}
-                          >
-                            <span className="immersive-letter-char">{slot.char}</span>
-                          </span>
-                        ))}
-                      </div>
+              <div className={`immersive-typing ${cinemaFullscreenActive ? "immersive-typing--cinema" : ""}`}>
+                {!cinemaFullscreenActive ? (
+                  <div className="immersive-typing-toolbar">
+                    <div className="immersive-display-toggle">
+                      <span className="text-xs text-muted-foreground">下划线模式</span>
+                      <Switch
+                        checked={displayMode === "underline"}
+                        onCheckedChange={(checked) => setDisplayMode(checked ? "underline" : "chip")}
+                        aria-label="切换单词显示模式"
+                      />
                     </div>
-                  );
-                })}
+                  </div>
+                ) : null}
+
+                <div className={`immersive-word-row ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""}`}>
+                  {expectedTokens.map((token, index) => {
+                    const status = wordStatuses[index] || "pending";
+                    const slots = buildLetterSlots(token, wordInputs[index] || "");
+                    return (
+                      <div
+                        key={`${token}-${index}`}
+                        className={`immersive-word-slot immersive-word-slot--${status} ${
+                          displayMode === "underline" ? "immersive-word-slot--underline" : "immersive-word-slot--chip"
+                        }`}
+                      >
+                        <div className="immersive-letter-row">
+                          {slots.map((slot) => (
+                            <span
+                              key={slot.key}
+                              className={`immersive-letter-cell immersive-letter-cell--${slot.state} ${
+                                slot.extra ? "immersive-letter-cell--extra" : ""
+                              }`}
+                            >
+                              <span className="immersive-letter-char">{slot.char}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {!cinemaFullscreenActive || showFullscreenPreviousSentence ? (
+                  <div
+                    className={`immersive-previous-sentence ${cinemaFullscreenActive ? "immersive-previous-sentence--cinema" : ""}`}
+                  >
+                    <p>上一句：{previousSentenceEn}</p>
+                    <p className="pl-[4.5em]">{previousSentenceZh}</p>
+                  </div>
+                ) : null}
+                {!cinemaFullscreenActive && phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
               </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">可先预览视频，准备好后点击“开始学习”进入沉浸模式。</p>
+          )}
 
-              <div className="space-y-1 text-sm text-muted-foreground">
-                <p>上一句：{previousSentenceEn}</p>
-                <p className="pl-[4.5em]">{previousSentenceZh}</p>
-              </div>
-              {phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
-            </div>
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground">可先预览视频，准备好后点击“开始学习”进入沉浸模式。</p>
-        )}
+          <input
+            ref={bindingInputRef}
+            type="file"
+            accept="video/*,audio/*"
+            className="hidden"
+            onChange={(event) => {
+              const nextFile = event.target.files?.[0] ?? null;
+              if (nextFile) {
+                void handleBindLocalFile(nextFile);
+              }
+              event.target.value = "";
+            }}
+          />
 
-        <input
-          ref={bindingInputRef}
-          type="file"
-          accept="video/*,audio/*"
-          className="hidden"
-          onChange={(event) => {
-            const nextFile = event.target.files?.[0] ?? null;
-            if (nextFile) {
-              void handleBindLocalFile(nextFile);
-            }
-            event.target.value = "";
-          }}
-        />
-
-        <input
-          ref={typingInputRef}
-          className="immersive-hidden-input"
-          value={currentWordInput}
-          onChange={() => {}}
-          onKeyDown={handleKeyDown}
-          onBlur={() => {
-            if (typingEnabled) {
-              setTimeout(() => {
-                focusTypingInput();
-              }, 0);
-            }
-          }}
-          autoComplete="off"
-          spellCheck={false}
-          readOnly={!typingEnabled}
-        />
-      </CardContent>
-    </Card>
+          <input
+            ref={typingInputRef}
+            className="immersive-hidden-input"
+            value={currentWordInput}
+            onChange={() => {}}
+            onKeyDown={handleKeyDown}
+            onBlur={() => {
+              if (typingEnabled) {
+                setTimeout(() => {
+                  focusTypingInput();
+                }, 0);
+              }
+            }}
+            autoComplete="off"
+            spellCheck={false}
+            readOnly={!typingEnabled}
+          />
+        </CardContent>
+      </Card>
+    </div>
   );
 }

@@ -57,7 +57,7 @@ function getCoverAssistiveText(lesson) {
   return title ? `${title} 默认封面` : "课程默认封面";
 }
 
-export function LessonList({
+export function LessonListLocalSubtitles({
   lessons,
   currentLessonId,
   currentLessonNeedsBinding = false,
@@ -477,7 +477,9 @@ export function LessonList({
                 </Button>
               </div>
               <p className="text-sm text-muted-foreground">
-                {subtitleMode === "semantic" ? "适合长句重新细分，阅读更轻松。" : "适合回到规则分句，减少过度切分。"}
+                {subtitleMode === "semantic"
+                  ? "适合长句重新细分，阅读更轻松。"
+                  : "适合回到规则分句，减少过度切分。"}
               </p>
             </div>
             <DialogFooter>

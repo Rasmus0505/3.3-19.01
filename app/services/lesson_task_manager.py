@@ -49,6 +49,7 @@ def create_task(owner_user_id: int, source_filename: str) -> str:
                 "translate_total": 0,
             },
             "lesson": None,
+            "subtitle_cache_seed": None,
             "error_code": "",
             "message": "",
             "created_at": _utc_iso(),
@@ -112,7 +113,7 @@ def mark_task_failed(task_id: str, *, error_code: str, message: str) -> None:
         task["updated_at"] = _utc_iso()
 
 
-def mark_task_succeeded(task_id: str, *, lesson_payload: dict) -> None:
+def mark_task_succeeded(task_id: str, *, lesson_payload: dict, subtitle_cache_seed: dict | None = None) -> None:
     with _TASK_LOCK:
         task = _TASKS.get(task_id)
         if not task:
@@ -123,6 +124,6 @@ def mark_task_succeeded(task_id: str, *, lesson_payload: dict) -> None:
         task["status"] = "succeeded"
         task["overall_percent"] = 100
         task["lesson"] = lesson_payload
+        task["subtitle_cache_seed"] = subtitle_cache_seed
         task["current_text"] = "课程生成完成"
         task["updated_at"] = _utc_iso()
-

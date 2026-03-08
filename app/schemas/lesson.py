@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -14,6 +14,14 @@ class LessonSentenceResponse(BaseModel):
     text_zh: str
     tokens: list[str]
     audio_url: str | None
+
+
+class SubtitleCacheSeedResponse(BaseModel):
+    semantic_split_enabled: bool
+    split_mode: str
+    source_word_count: int = 0
+    asr_payload: dict[str, Any]
+    sentences: list[LessonSentenceResponse]
 
 
 class LessonItemResponse(BaseModel):
@@ -30,6 +38,7 @@ class LessonItemResponse(BaseModel):
 
 class LessonDetailResponse(LessonItemResponse):
     sentences: list[LessonSentenceResponse]
+    subtitle_cache_seed: SubtitleCacheSeedResponse | None = None
 
 
 class LessonCreateResponse(BaseModel):
@@ -70,6 +79,7 @@ class LessonTaskResponse(BaseModel):
     stages: list[LessonTaskStageResponse]
     counters: LessonTaskCountersResponse
     lesson: LessonDetailResponse | None = None
+    subtitle_cache_seed: SubtitleCacheSeedResponse | None = None
     error_code: str = ""
     message: str = ""
 
@@ -77,3 +87,17 @@ class LessonTaskResponse(BaseModel):
 class LessonTaskCreateResponse(BaseModel):
     ok: bool = True
     task_id: str
+
+
+class LessonSubtitleVariantRequest(BaseModel):
+    asr_payload: dict[str, Any]
+    semantic_split_enabled: bool
+
+
+class LessonSubtitleVariantResponse(BaseModel):
+    ok: bool = True
+    lesson_id: int
+    semantic_split_enabled: bool
+    split_mode: str
+    source_word_count: int = 0
+    sentences: list[LessonSentenceResponse]

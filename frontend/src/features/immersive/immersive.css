@@ -1,3 +1,19 @@
+.immersive-page-shell {
+  min-width: 0;
+}
+
+.immersive-page-shell--cinema,
+.immersive-page-shell--cinema:fullscreen,
+.immersive-page-shell--cinema:-webkit-full-screen {
+  background: #000;
+}
+
+.immersive-page-shell--fallback {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+}
+
 .immersive-page {
   display: flex;
   flex-direction: column;
@@ -19,7 +35,19 @@
   min-width: 0;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
+}
+
+.immersive-header-progress {
+  white-space: nowrap;
+}
+
+.immersive-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .immersive-media {
@@ -39,6 +67,19 @@
   width: 100%;
   max-height: 56vh;
   background: #000;
+}
+
+.immersive-media video {
+  display: block;
+  object-fit: contain;
+}
+
+.immersive-media video::-webkit-media-controls-fullscreen-button {
+  display: none;
+}
+
+.immersive-media video::-webkit-media-controls-enclosure {
+  overflow: hidden;
 }
 
 .immersive-media-audio-placeholder {
@@ -92,6 +133,10 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px 12px;
+}
+
+.immersive-word-row--cinema {
+  justify-content: center;
 }
 
 .immersive-word-slot {
@@ -200,6 +245,100 @@
   color: var(--color-muted-foreground);
 }
 
+.immersive-previous-sentence {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  color: var(--color-muted-foreground);
+}
+
+.immersive-page--cinema {
+  gap: 0;
+  min-height: 100%;
+  height: 100%;
+  padding: 0;
+  border-radius: 0;
+  background: #000;
+  color: #fff;
+  box-shadow: none;
+}
+
+.immersive-page--cinema .immersive-card-header {
+  position: relative;
+  z-index: 3;
+  padding: max(16px, env(safe-area-inset-top)) 20px 0;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.immersive-page--cinema .immersive-card-content {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  padding: 0;
+}
+
+.immersive-media--cinema {
+  flex: 1;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+  background: #000;
+}
+
+.immersive-page--cinema .immersive-media video {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}
+
+.immersive-page--cinema .immersive-media audio {
+  width: min(960px, calc(100% - 32px));
+  max-height: none;
+}
+
+.immersive-page--cinema .immersive-media-audio-placeholder {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.immersive-typing--cinema {
+  position: absolute;
+  right: 16px;
+  bottom: max(88px, calc(env(safe-area-inset-bottom) + 48px));
+  left: 16px;
+  z-index: 2;
+  width: auto;
+  max-width: 1120px;
+  margin: 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(15, 23, 42, 0.72);
+  color: #fff;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(18px);
+}
+
+.immersive-page--cinema .immersive-word-slot--chip {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.immersive-page--cinema .immersive-word-slot--chip.immersive-word-slot--active {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.immersive-page--cinema .immersive-letter-cell--empty,
+.immersive-page--cinema .immersive-letter-cell--fixed {
+  color: rgba(255, 255, 255, 0.72);
+  border-bottom-color: rgba(255, 255, 255, 0.25);
+}
+
+.immersive-previous-sentence--cinema {
+  color: rgba(255, 255, 255, 0.8);
+}
+
 @media (max-width: 768px) {
   .immersive-header {
     align-items: flex-start;
@@ -215,6 +354,10 @@
     min-height: 210px;
   }
 
+  .immersive-header-progress {
+    width: 100%;
+  }
+
   .immersive-word-row {
     gap: 8px 10px;
   }
@@ -223,5 +366,16 @@
     min-width: 16px;
     height: 28px;
     font-size: 16px;
+  }
+
+  .immersive-page--cinema .immersive-card-header {
+    padding: max(12px, env(safe-area-inset-top)) 12px 0;
+  }
+
+  .immersive-typing--cinema {
+    right: 12px;
+    bottom: max(78px, calc(env(safe-area-inset-bottom) + 32px));
+    left: 12px;
+    padding: 12px;
   }
 }

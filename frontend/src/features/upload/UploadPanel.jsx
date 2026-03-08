@@ -4,13 +4,19 @@ import { toast } from "sonner";
 
 import { cn } from "../../lib/utils";
 import { api, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
-import { requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
+import {
+  extractMediaCoverDataUrl,
+  readMediaDurationSeconds,
+  requestPersistentStorage,
+  saveLessonMedia,
+} from "../../shared/media/localMediaStore";
 import {
   Alert,
   AlertDescription,
   Button,
   Card,
   CardContent,
+  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -28,11 +34,11 @@ import {
 
 const QWEN_MODEL = "qwen3-asr-flash-filetrans";
 
-const DEFAULT_STAGE_ITEMS = [
-  { key: "convert_audio", label: "转换音频格式", status: "pending" },
-  { key: "asr_transcribe", label: "ASR转写字幕", status: "pending" },
-  { key: "translate_zh", label: "翻译中文", status: "pending" },
-  { key: "write_lesson", label: "写入课程", status: "pending" },
+const DISPLAY_STAGES = [
+  { key: "convert_audio", label: "转换" },
+  { key: "asr_transcribe", label: "识别" },
+  { key: "translate_zh", label: "翻译" },
+  { key: "write_lesson", label: "生成" },
 ];
 
 function clampPercent(value) {
@@ -51,72 +57,25 @@ function getRateByModel(rates, modelName) {
   return rates.find((item) => item.model_name === modelName && item.is_active);
 }
 
-function readMediaDurationSeconds(file) {
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const media = document.createElement(file.type.startsWith("video") ? "video" : "audio");
-    media.preload = "metadata";
-    media.onloadedmetadata = () => {
-      const duration = Number(media.duration || 0);
-      URL.revokeObjectURL(objectUrl);
-      resolve(duration > 0 ? duration : 0);
-    };
-    media.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("读取媒体时长失败"));
-    };
-    media.src = objectUrl;
-  });
-}
-
-function extractVideoCoverDataUrl(file) {
-  return new Promise((resolve) => {
-    if (!String(file?.type || "").startsWith("video/")) {
-      resolve("");
-      return;
-    }
-
-    const objectUrl = URL.createObjectURL(file);
-    const video = document.createElement("video");
-    video.preload = "metadata";
-    video.muted = true;
-
-    const cleanup = () => {
-      URL.revokeObjectURL(objectUrl);
-    };
-
-    video.onloadeddata = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, video.videoWidth || 640);
-        canvas.height = Math.max(1, video.videoHeight || 360);
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          cleanup();
-          resolve("");
-          return;
-        }
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-        cleanup();
-        resolve(dataUrl);
-      } catch (_) {
-        cleanup();
-        resolve("");
-      }
-    };
-
-    video.onerror = () => {
-      cleanup();
-      resolve("");
-    };
-
-    video.src = objectUrl;
-  });
-}
-
 function getStageItems(taskSnapshot) {
-  return Array.isArray(taskSnapshot?.stages) && taskSnapshot.stages.length ? taskSnapshot.stages : DEFAULT_STAGE_ITEMS;
+  const stageStatusMap = Object.fromEntries(
+    (Array.isArray(taskSnapshot?.stages) ? taskSnapshot.stages : []).map((item) => [item.key, item.status || "pending"]),
+  );
+  return DISPLAY_STAGES.map((item) => ({ ...item, status: stageStatusMap[item.key] || "pending" }));
+}
+
+function getCurrentTaskStageKey(taskSnapshot) {
+  const stageItems = getStageItems(taskSnapshot);
+  const runningStage = stageItems.find((item) => item.status === "running");
+  if (runningStage) return runningStage.key;
+
+  const failedStage = stageItems.find((item) => item.status === "failed");
+  if (failedStage) return failedStage.key;
+
+  const firstPendingIndex = stageItems.findIndex((item) => item.status === "pending");
+  if (firstPendingIndex > 0) return stageItems[firstPendingIndex - 1].key;
+  if (firstPendingIndex === -1) return "write_lesson";
+  return stageItems[firstPendingIndex].key;
 }
 
 function getStageStatusText(status) {
@@ -126,11 +85,17 @@ function getStageStatusText(status) {
   return "待开始";
 }
 
-function getStageDotClass(status) {
-  if (status === "completed") return "bg-emerald-500";
-  if (status === "running") return "bg-amber-500 ring-4 ring-amber-500/15";
-  if (status === "failed") return "bg-red-500";
-  return "bg-muted-foreground/20";
+function getStageCardClass(status) {
+  if (status === "completed") {
+    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
+  }
+  if (status === "running") {
+    return "border-amber-500/40 bg-amber-500/10 text-amber-700";
+  }
+  if (status === "failed") {
+    return "border-red-500/30 bg-red-500/10 text-red-600";
+  }
+  return "border-border bg-muted/30 text-muted-foreground";
 }
 
 function getProgressBarClass(phase) {
@@ -146,34 +111,79 @@ function getVisualProgress(phase, uploadPercent, taskSnapshot) {
 
   const taskPercent = clampPercent(taskSnapshot?.overall_percent);
   if (phase === "processing" || taskSnapshot) {
-    return Math.round(45 + taskPercent * 0.55);
+    return Math.round(42 + taskPercent * 0.58);
   }
 
   const safeUploadPercent = clampPercent(uploadPercent);
   if (phase === "uploading") {
-    return Math.round(Math.max(3, Math.min(45, safeUploadPercent * 0.45)));
+    return Math.round(Math.max(3, Math.min(42, safeUploadPercent * 0.42)));
   }
 
   if (phase === "error" && safeUploadPercent > 0) {
-    return Math.round(Math.max(3, Math.min(45, safeUploadPercent * 0.45)));
+    return Math.round(Math.max(3, Math.min(42, safeUploadPercent * 0.42)));
   }
 
   return 0;
 }
 
-function getProgressAssistiveText({ phase, uploadPercent, progressPercent, taskSnapshot, status }) {
+function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
   if (phase === "uploading") {
-    return `文件上传 ${clampPercent(uploadPercent)}%，总进度 ${progressPercent}%`;
+    return `上传素材 ${clampPercent(uploadPercent)}%`;
   }
-  if (phase === "processing") {
-    return `${taskSnapshot?.current_text || "课程处理中"}，总进度 ${progressPercent}%`;
+
+  if (!taskSnapshot) {
+    if (phase === "success") return "生成课程完成";
+    if (phase === "error") return "生成课程失败";
+    return "等待上传";
   }
+
+  if (phase === "success") {
+    return "生成课程完成";
+  }
+
+  const counters = taskSnapshot.counters || {};
+  const stageKey = getCurrentTaskStageKey(taskSnapshot);
+
+  if (stageKey === "asr_transcribe") {
+    const done = Math.max(0, Number(counters.asr_done || 0));
+    const total = Math.max(done, Number(counters.asr_estimated || 0));
+    return total > 0 ? `识别字幕 ${done}/${total}` : "识别字幕";
+  }
+
+  if (stageKey === "translate_zh") {
+    const done = Math.max(0, Number(counters.translate_done || 0));
+    const total = Math.max(done, Number(counters.translate_total || 0));
+    return total > 0 ? `翻译字幕 ${done}/${total}` : "翻译字幕";
+  }
+
+  if (stageKey === "convert_audio") {
+    return "转换音频";
+  }
+
+  if (stageKey === "write_lesson") {
+    return "生成课程";
+  }
+
+  return String(taskSnapshot.current_text || "等待处理");
+}
+
+function getProgressAssistiveText({ phase, uploadPercent, progressPercent, taskSnapshot, headline }) {
+  if (phase === "uploading") {
+    return `上传素材 ${clampPercent(uploadPercent)}%，总进度 ${progressPercent}%`;
+  }
+
+  if (taskSnapshot) {
+    return `${headline}，总进度 ${progressPercent}%`;
+  }
+
   if (phase === "success") {
     return "课程生成成功，进度 100%";
   }
+
   if (phase === "error") {
-    return status || taskSnapshot?.current_text || "课程生成失败";
+    return "课程生成失败";
   }
+
   return "等待上传";
 }
 
@@ -200,8 +210,15 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   const likelyInsufficient = Number.isFinite(balancePoints) && estimatedPoints > 0 && balancePoints < estimatedPoints;
   const stageItems = getStageItems(taskSnapshot);
   const progressPercent = getVisualProgress(phase, uploadPercent, taskSnapshot);
+  const progressHeadline = getProgressHeadline(phase, uploadPercent, taskSnapshot);
   const progressBarClass = getProgressBarClass(phase);
-  const progressAssistiveText = getProgressAssistiveText({ phase, uploadPercent, progressPercent, taskSnapshot, status });
+  const progressAssistiveText = getProgressAssistiveText({
+    phase,
+    uploadPercent,
+    progressPercent,
+    taskSnapshot,
+    headline: progressHeadline,
+  });
   const showProgress = loading || phase === "success" || phase === "error" || Boolean(taskSnapshot);
 
   useEffect(() => {
@@ -224,7 +241,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       if (pollingAbortRef.current) return;
       if (!resp.ok) {
         const message = toErrorText(data, "查询任务失败");
-        console.debug("[DEBUG] 上传任务轮询失败", message);
+        console.debug("[DEBUG] upload.task.poll.failed", message);
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -241,7 +258,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
         setLoading(false);
         await onWalletChanged?.();
         if (data.lesson) {
-          onCreated(data.lesson);
+          await onCreated?.(data.lesson);
         }
         toast.success("课程已生成");
         return;
@@ -249,7 +266,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
 
       if (taskStatus === "failed") {
         const message = `${data.error_code || "ERROR"}: ${data.message || "生成失败"}`;
-        console.debug("[DEBUG] 上传任务处理失败", message);
+        console.debug("[DEBUG] upload.task.process.failed", message);
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -264,7 +281,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     } catch (error) {
       if (pollingAbortRef.current || error?.name === "AbortError") return;
       const message = `网络错误: ${String(error)}`;
-      console.debug("[DEBUG] 上传任务轮询网络错误", message);
+      console.debug("[DEBUG] upload.task.poll.network_error", message);
       setStatus(message);
       setPhase("error");
       setLoading(false);
@@ -290,7 +307,10 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     setPhase("probing");
     setProbing(true);
     try {
-      const [seconds, cover] = await Promise.all([readMediaDurationSeconds(nextFile), extractVideoCoverDataUrl(nextFile)]);
+      const [seconds, cover] = await Promise.all([
+        readMediaDurationSeconds(nextFile, nextFile.name || ""),
+        extractMediaCoverDataUrl(nextFile, nextFile.name || ""),
+      ]);
       setDurationSec(seconds);
       setCoverDataUrl(cover);
       setIsVideoSource(String(nextFile.type || "").startsWith("video/"));
@@ -314,7 +334,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       return;
     }
 
-    console.debug("[DEBUG] 开始上传素材并创建任务", { fileName: file.name, semanticSplitEnabled });
+    console.debug("[DEBUG] upload.submit.start", { fileName: file.name, semanticSplitEnabled });
     pollingAbortRef.current = false;
     uploadAbortRef.current?.abort();
 
@@ -348,7 +368,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
 
       if (!ok) {
         const message = toErrorText(data, "创建上传任务失败");
-        console.debug("[DEBUG] 上传任务创建失败", message);
+        console.debug("[DEBUG] upload.submit.create_task_failed", message);
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -360,7 +380,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       const taskId = String(data.task_id || "");
       if (!taskId) {
         const message = "任务创建成功但缺少 task_id";
-        console.debug("[DEBUG] 上传任务缺少 task_id");
+        console.debug("[DEBUG] upload.submit.missing_task_id");
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -368,7 +388,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
         return;
       }
 
-      console.debug("[DEBUG] 上传完成，开始轮询任务", { taskId });
+      console.debug("[DEBUG] upload.submit.task_created", { taskId });
       setUploadPercent(100);
       setPhase("processing");
       void pollTask(taskId);
@@ -376,7 +396,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       uploadAbortRef.current = null;
       if (error?.name === "AbortError") return;
       const message = `网络错误: ${String(error)}`;
-      console.debug("[DEBUG] 上传任务请求网络错误", message);
+      console.debug("[DEBUG] upload.submit.network_error", message);
       setStatus(message);
       setPhase("error");
       setLoading(false);
@@ -402,12 +422,12 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   }, [taskSnapshot?.lesson?.id]);
 
   function openLinkDialog() {
-    console.debug("[DEBUG] 打开链接生成视频提示弹窗");
+    console.debug("[DEBUG] upload.open_link_dialog");
     setLinkDialogOpen(true);
   }
 
   function jumpToRecommendedTool() {
-    console.debug("[DEBUG] 跳转链接转视频工具网站", "https://snapany.com/zh");
+    console.debug("[DEBUG] upload.jump_to_link_tool", "https://snapany.com/zh");
     window.open("https://snapany.com/zh", "_blank", "noopener,noreferrer");
     setLinkDialogOpen(false);
   }
@@ -417,10 +437,11 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <UploadCloud className="size-4" />
-          导入素材并生成练习
+          上传素材
         </CardTitle>
+        <CardDescription>导入视频或音频后，系统会自动识别、翻译并生成可学习课程。</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
         <Alert>
           <AlertDescription>
             <p className="text-muted-foreground">当前余额：{Number(balancePoints || 0)} 点</p>
@@ -445,11 +466,11 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
         </Alert>
 
         {file ? (
-          <div className="overflow-hidden rounded-md border bg-muted/20">
+          <div className="overflow-hidden rounded-2xl border bg-muted/20">
             {coverDataUrl ? (
-              <img src={coverDataUrl} alt="视频封面" className="h-40 w-full object-cover" />
+              <img src={coverDataUrl} alt="视频封面" className="h-52 w-full object-cover" />
             ) : (
-              <div className="flex h-40 w-full items-center justify-center text-sm text-muted-foreground">
+              <div className="flex h-52 w-full items-center justify-center text-sm text-muted-foreground">
                 {isVideoSource ? "封面提取中或失败" : "音频素材（无视频封面）"}
               </div>
             )}
@@ -457,32 +478,41 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
         ) : null}
 
         {showProgress ? (
-          <div className="space-y-2 rounded-xl border bg-muted/20 p-3" title={progressAssistiveText}>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2" aria-hidden="true">
-                {stageItems.map((item) => (
-                  <span
-                    key={item.key}
-                    title={`${item.label}：${getStageStatusText(item.status)}`}
-                    className={cn("size-2.5 rounded-full transition-all", getStageDotClass(item.status))}
-                  />
-                ))}
+          <div className="space-y-3 rounded-2xl border bg-muted/15 p-4" title={progressAssistiveText}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">{progressHeadline}</p>
+                <p className="text-xs text-muted-foreground">总进度</p>
               </div>
-              <span className="text-xs font-medium tabular-nums text-muted-foreground">{progressPercent}%</span>
+              <span className="text-sm font-semibold tabular-nums text-muted-foreground">{progressPercent}%</span>
             </div>
+
             <div
               role="progressbar"
               aria-label={progressAssistiveText}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={progressPercent}
-              className="h-2 w-full overflow-hidden rounded-full bg-muted"
+              className="h-2.5 w-full overflow-hidden rounded-full bg-muted"
             >
               <div
                 className={cn("h-full rounded-full transition-[width,background-color] duration-300", progressBarClass)}
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
+
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {stageItems.map((item) => (
+                <div
+                  key={item.key}
+                  className={cn("rounded-xl border px-3 py-2 text-sm font-medium transition-colors", getStageCardClass(item.status))}
+                  title={`${item.label}：${getStageStatusText(item.status)}`}
+                >
+                  {item.label}
+                </div>
+              ))}
+            </div>
+
             <span className="sr-only">
               {progressAssistiveText}；{stageItems.map((item) => `${item.label}${getStageStatusText(item.status)}`).join("；")}
             </span>
@@ -490,7 +520,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
         ) : null}
 
         <form
-          className="space-y-3"
+          className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
             submit();
@@ -502,19 +532,21 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
               ref={fileInputRef}
               type="file"
               className="hidden"
-              onChange={(e) => onSelectFile(e.target.files?.[0] ?? null)}
+              onChange={(event) => onSelectFile(event.target.files?.[0] ?? null)}
               disabled={loading}
             />
-            <Button type="button" variant="outline" className="h-11" onClick={() => fileInputRef.current?.click()} disabled={loading}>
-              选择文件
-            </Button>
-            <Button type="button" variant="secondary" className="h-11" onClick={openLinkDialog} disabled={loading}>
-              链接生成视频
-            </Button>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Button type="button" variant="outline" className="h-11" onClick={() => fileInputRef.current?.click()} disabled={loading}>
+                选择文件
+              </Button>
+              <Button type="button" variant="secondary" className="h-11" onClick={openLinkDialog} disabled={loading}>
+                链接生成视频
+              </Button>
+            </div>
             {file ? <p className="text-xs text-muted-foreground">{file.name}</p> : null}
           </div>
 
-          <div className="flex items-start justify-between gap-3 rounded-md border p-3">
+          <div className="flex items-start justify-between gap-3 rounded-xl border p-4">
             <div className="space-y-1">
               <p className="text-sm font-medium">开启语义分句</p>
               <p className="text-xs text-muted-foreground">更贴近语义，但会更慢，且可能增加模型调用。</p>
@@ -525,11 +557,11 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
             </div>
           </div>
 
-          <Button type="submit" disabled={loading} className="w-full">
+          <Button type="submit" disabled={loading} className="h-11 w-full">
             {loading ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="size-4 animate-spin" />
-                请稍候
+                生成中
               </span>
             ) : (
               "开始生成课程"
