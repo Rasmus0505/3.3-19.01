@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -41,6 +43,12 @@ READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "semantic_split_model",
         "semantic_split_timeout_seconds",
     ),
+}
+
+HTML_NO_STORE_HEADERS: dict[str, str] = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
 }
 
 
@@ -182,6 +190,26 @@ def _runtime_status_payload(runtime_status: RuntimeStatus) -> dict:
     return asdict(runtime_status)
 
 
+@lru_cache(maxsize=1)
+def _read_frontend_build_marker() -> str:
+    index_path = STATIC_DIR / "index.html"
+    try:
+        html = index_path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+    match = re.search(r'/static/assets/([^"\']+)', html)
+    return str(match.group(1)).strip() if match else ""
+
+
+def _spa_shell_response() -> FileResponse:
+    response = FileResponse(STATIC_DIR / "index.html", headers=HTML_NO_STORE_HEADERS)
+    build_marker = _read_frontend_build_marker()
+    if build_marker:
+        response.headers["X-Frontend-Build"] = build_marker
+    return response
+
+
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
     logger.info("[DEBUG] startup.begin")
@@ -200,14 +228,14 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
 
     @app.get("/", include_in_schema=False)
     def root_page() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+        return _spa_shell_response()
 
     @app.get("/admin", include_in_schema=False)
     @app.get("/admin/{full_path:path}", include_in_schema=False)
     def admin_page(full_path: str = "") -> FileResponse:
         if full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not Found")
-        return FileResponse(STATIC_DIR / "index.html")
+        return _spa_shell_response()
 
     @app.get("/health")
     def health() -> dict:
