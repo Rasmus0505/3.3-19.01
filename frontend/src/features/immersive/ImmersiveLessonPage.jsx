@@ -253,10 +253,10 @@ export function ImmersiveLessonPage({
 
   const currentSentence = lesson?.sentences?.[currentSentenceIndex] || null;
   const previousSentence = currentSentenceIndex > 0 ? lesson?.sentences?.[currentSentenceIndex - 1] || null : null;
-  const previousSentenceEn = previousSentence?.text_en || "(第一句)";
+  const previousSentenceEn = previousSentence?.text_en || "(当前是第一句，无上一句)";
   const previousSentenceZh = previousSentence
     ? previousSentence.text_zh || "(翻译失败，暂缺)"
-    : "(暂无中文)";
+    : "(暂无上一句中文翻译)";
   const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens : []), [currentSentence?.tokens]);
   const sentenceCount = lesson?.sentences?.length || 0;
   const expectedSourceDurationSec = Math.max(0, Number(lesson?.source_duration_ms || 0) / 1000);
@@ -382,8 +382,8 @@ export function ImmersiveLessonPage({
         setPhase("typing");
         setMediaError(
           manual
-            ? "浏览器仍阻止自动播放。你可以继续输入，或稍后点击“重播”。"
-            : "自动播放受限。你可以直接输入，或点击“重播”手动播放。",
+            ? "浏览器仍阻止自动播放。你可以继续输入，或稍后点击“重播本句”。"
+            : "自动播放受限。你可以直接输入，或点击“重播本句”手动播放。",
         );
         return;
       }
@@ -904,7 +904,7 @@ export function ImmersiveLessonPage({
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">开始练习</CardTitle>
+          <CardTitle className="text-base">沉浸学习</CardTitle>
           <CardDescription>当前课程暂无可学习句子。</CardDescription>
         </CardHeader>
       </Card>
@@ -936,12 +936,15 @@ export function ImmersiveLessonPage({
               </TooltipProvider>
             ) : null}
             <div className="space-y-1">
-              <CardTitle className="text-lg tracking-tight">{lesson.title || "开始练习"}</CardTitle>
-              <CardDescription>第 {Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 句</CardDescription>
+              <CardTitle className="text-lg tracking-tight">沉浸式句子拼写学习</CardTitle>
+              <CardDescription>
+                第 {Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 句 · 跟着音频逐句推进
+              </CardDescription>
             </div>
           </div>
           <div className="immersive-header-meta">
             <span className="immersive-meta-pill">已完成 {completedIndexes.length} 句</span>
+            <span className="immersive-meta-pill">{displayMode === "underline" ? "下划线模式" : "卡片模式"}</span>
             {isPlaying ? <span className="immersive-meta-pill immersive-meta-pill--accent">本句播放中</span> : null}
           </div>
         </div>
@@ -1023,7 +1026,7 @@ export function ImmersiveLessonPage({
                         disabled={!canReplaySentence}
                       >
                         <RotateCcw className="size-4" />
-                        重播
+                        重播本句
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>shift+r</TooltipContent>
@@ -1039,7 +1042,7 @@ export function ImmersiveLessonPage({
                         disabled={!canRevealWord}
                       >
                         <Eye className="size-4" />
-                        揭示
+                        揭示单词
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>space</TooltipContent>
@@ -1079,8 +1082,8 @@ export function ImmersiveLessonPage({
             <div className="immersive-typing">
               <div className="immersive-typing-toolbar">
                 <div className="space-y-1">
-                  <p className="text-base font-semibold tracking-tight text-slate-950">听一句，拼一句。</p>
-                  <p className="text-xs leading-5 text-slate-500">空格揭示，Enter 下一句，Shift + R 重播。</p>
+                  <p className="text-base font-semibold tracking-tight text-slate-950">跟着音频逐词拼写，保持节奏。</p>
+                  <p className="text-xs leading-5 text-slate-500">空格揭示单词，Enter 前进，Shift + R 重播当前句。</p>
                 </div>
                 <div className="immersive-display-toggle">
                   <span className="text-xs text-muted-foreground">下划线模式</span>

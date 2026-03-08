@@ -1,5 +1,5 @@
 ﻿import { LogOut, Menu, Search, Shield, Sparkles } from "lucide-react";
-import { ArrowRight, CirclePlay, LibraryBig } from "lucide-react";
+import { ArrowRight, CirclePlay, Command as CommandIcon, LibraryBig, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -35,6 +35,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  Separator,
   Sheet,
   SheetContent,
   SheetDescription,
@@ -379,17 +380,24 @@ export function LearningShell() {
 
   const totalSentenceCount = lessons.reduce((sum, item) => sum + Number(item.sentences?.length || 0), 0);
   const generatedLessonCount = lessons.filter((item) => Number(item.sentences?.length || 0) > 0).length;
-  const hasCurrentLesson = Boolean(currentLesson?.id);
-  const heroTitle = !accessToken ? "开始学英语" : hasCurrentLesson ? "继续学习" : "上传素材开始";
-  const heroCopy = !accessToken
-    ? "登录后上传视频或音频，系统会自动生成练习课程。"
-    : hasCurrentLesson
-      ? "继续你的课程，直接开始听写和拼写练习。"
-      : "先上传视频或音频，系统会自动生成课程。";
-  const heroPrimaryLabel = !accessToken ? "登录开始" : hasCurrentLesson ? "继续学习" : "上传素材";
-  const heroSummary = !accessToken
-    ? ["登录后自动保存进度", "上传后自动生成课程"]
-    : [`${lessons.length} 节课程`, totalSentenceCount > 0 ? `${totalSentenceCount} 句可练` : "上传后生成句子"];
+  const currentLessonSentenceCount = Number(currentLesson?.sentences?.length || 0);
+  const heroStats = [
+    {
+      label: "课程库",
+      value: `${lessons.length} 节`,
+      note: accessToken ? "自动接续你的历史进度" : "登录后自动同步",
+    },
+    {
+      label: "可练句子",
+      value: `${totalSentenceCount} 句`,
+      note: totalSentenceCount > 0 ? "可直接进入逐句训练" : "上传后自动生成",
+    },
+    {
+      label: "账户积分",
+      value: accessToken ? `${walletBalance} 点` : "登录后可见",
+      note: accessToken ? "用于上传与转写" : "可通过兑换码补充",
+    },
+  ];
 
   return (
     <div className="section-soft min-h-screen bg-background">
@@ -401,19 +409,22 @@ export function LearningShell() {
             </Button>
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold tracking-tight text-slate-950">英语学习</p>
-                <p className="hidden text-xs text-slate-500 md:block">上传素材，生成课程，开始练习。</p>
+                <p className="truncate text-sm font-semibold tracking-tight text-slate-950">English Trainer</p>
+                <p className="hidden text-xs text-slate-500 md:block">上传素材、自动生成课程、进入沉浸式学习舞台。</p>
               </div>
+              <Badge variant="outline" className="hidden md:inline-flex">Apple inspired UI</Badge>
             </div>
+            <Separator orientation="vertical" className="mx-1 hidden h-5 border-white/70 md:block" />
             <div className="hidden items-center gap-2 md:flex">
-              {accessToken && lessons.length > 0 ? <Badge variant="outline">{generatedLessonCount} 节课程</Badge> : null}
-              {accessToken ? <WalletBadge accessToken={accessToken} balancePoints={walletBalance} /> : null}
+              <Badge variant="outline">{accessToken ? "已登录" : "未登录"}</Badge>
+              <Badge variant="outline">{generatedLessonCount} 节可学课程</Badge>
+              <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
             </div>
             <div className="ml-auto flex items-center gap-2">
               {accessToken && lessons.length > 0 ? (
                 <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={() => setCommandOpen(true)}>
                   <Search className="size-4" />
-                  切换课程
+                  快速跳转
                 </Button>
               ) : null}
               {accessToken && isAdminUser ? (
@@ -435,11 +446,11 @@ export function LearningShell() {
                     <Menu className="size-4" />
                   </Button>
                 </SheetTrigger>
-                  <SheetContent side="right" className="w-[300px] border-white/70 bg-white/88 sm:w-[340px]">
-                    <SheetHeader>
-                      <SheetTitle>快捷操作</SheetTitle>
-                      <SheetDescription>查看课程、积分和常用操作。</SheetDescription>
-                    </SheetHeader>
+                <SheetContent side="right" className="w-[300px] border-white/70 bg-white/88 sm:w-[340px]">
+                  <SheetHeader>
+                    <SheetTitle>快捷操作</SheetTitle>
+                    <SheetDescription>移动端切换课程、查看积分与进入管理后台。</SheetDescription>
+                  </SheetHeader>
                   <div className="mt-6 space-y-3">
                     <Badge variant="outline" className="w-fit">{lessons.length} 节课程</Badge>
                     <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
@@ -453,7 +464,7 @@ export function LearningShell() {
                         }}
                       >
                         <Search className="size-4" />
-                        切换课程
+                        快速跳转课程
                       </Button>
                     ) : null}
                     {accessToken ? (
@@ -466,7 +477,7 @@ export function LearningShell() {
                         }}
                       >
                         <LibraryBig className="size-4" />
-                        我的课程
+                        查看学习工作台
                       </Button>
                     ) : (
                       <Button
@@ -478,7 +489,7 @@ export function LearningShell() {
                         }}
                       >
                         <Sparkles className="size-4" />
-                        登录开始
+                        前往登录
                       </Button>
                     )}
                     {isAdminUser ? (
@@ -511,77 +522,160 @@ export function LearningShell() {
       <main className={`container-wrapper ${immersiveLayoutActive ? "pb-4" : "pb-8"}`}>
         <div className="container space-y-6">
           <section className={`apple-panel p-6 md:p-8 ${immersiveLayoutActive ? "pt-6" : "pt-7 lg:pt-8"}`}>
-            <div
-              className={`mx-auto flex w-full flex-col gap-5 ${
-                immersiveLayoutActive ? "max-w-full items-start text-left" : "max-w-3xl items-center text-center"
-              }`}
-            >
-              <div className="apple-kicker w-fit">开始学习</div>
-              <div className="space-y-2">
-                <h1 className={immersiveLayoutActive ? "text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl" : "apple-title"}>
-                  {heroTitle}
-                </h1>
-                <p className={`apple-copy ${immersiveLayoutActive ? "" : "mx-auto"}`}>{heroCopy}</p>
-              </div>
+            <div className={`apple-hero-grid ${immersiveLayoutActive ? "" : "apple-hero-grid--main"} items-start`}>
+              <div className="space-y-7">
+                <div className="space-y-5">
+                  <div className="apple-kicker w-fit">
+                    <WandSparkles className="size-3.5" />
+                    Premium Learning Workspace
+                  </div>
+                  <div className="space-y-2.5">
+                    <h1 className={immersiveLayoutActive ? "text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl" : "apple-title"}>
+                      把英语学习做得更像产品，而不是更像后台。
+                    </h1>
+                    <p className="apple-copy">
+                      先把首屏留出呼吸感，再把课程、上传、积分和沉浸学习自然收进一个安静的工作台。
+                    </p>
+                  </div>
+                </div>
 
-              <div className={`flex flex-wrap gap-3 ${immersiveLayoutActive ? "" : "justify-center"}`}>
-                {!accessToken ? (
-                  <>
-                    <Button
-                      size="lg"
-                      onClick={() => document.getElementById("auth-panel")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                    >
-                      {heroPrimaryLabel}
-                      <ArrowRight className="size-4" />
-                    </Button>
-                    <Button
-                      size="lg"
-                      variant="ghost"
-                      className="text-slate-600"
-                      onClick={() => document.getElementById("my-lessons")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                    >
-                      我先看看课程
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      size="lg"
-                      onClick={() => {
-                        if (hasCurrentLesson) {
-                          if (!immersiveLayoutActive) {
-                            handleStartImmersive();
+                <div className="flex flex-wrap gap-3 pt-1">
+                  {!accessToken ? (
+                    <>
+                      <Button
+                        size="lg"
+                        onClick={() => document.getElementById("auth-panel")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                      >
+                        立即开始
+                        <ArrowRight className="size-4" />
+                      </Button>
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        onClick={() => document.getElementById("learning-workbench")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                      >
+                        先看工作台
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        size="lg"
+                        onClick={() => {
+                          if (currentLesson?.id) {
+                            if (!immersiveLayoutActive) {
+                              handleStartImmersive();
+                            }
+                            document.getElementById("learning-workbench")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                            return;
                           }
-                          document.getElementById("learning-workbench")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                          return;
-                        }
-                        document.getElementById("upload-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                      }}
-                    >
-                      {heroPrimaryLabel}
-                      <CirclePlay className="size-4" />
-                    </Button>
-                    <Button
-                      size="lg"
-                      variant="ghost"
-                      className="text-slate-600"
-                      onClick={() => document.getElementById("my-lessons")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                    >
-                      我的课程
-                    </Button>
-                  </>
-                )}
+                          document.getElementById("upload-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                        }}
+                      >
+                        {currentLesson?.id ? (immersiveLayoutActive ? "回到学习舞台" : "开始当前课程") : "上传第一份素材"}
+                        <CirclePlay className="size-4" />
+                      </Button>
+                      {lessons.length > 0 ? (
+                        <Button size="lg" variant="outline" onClick={() => setCommandOpen(true)}>
+                          <CommandIcon className="size-4" />
+                          快速切换课程
+                        </Button>
+                      ) : (
+                        <Button
+                          size="lg"
+                          variant="outline"
+                          onClick={() => document.getElementById("upload-panel")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                        >
+                          前往导入素材
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div className="grid gap-2.5 sm:grid-cols-3">
+                  {heroStats.map((item) => (
+                    <div key={item.label} className="apple-stat-card">
+                      <p className="apple-stat-title">{item.label}</p>
+                      <p className="apple-stat-value">{item.value}</p>
+                      <p className="mt-1.5 text-sm leading-6 text-slate-500">{item.note}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              <div className={`flex flex-wrap gap-2 text-xs text-slate-500 ${immersiveLayoutActive ? "" : "justify-center"}`}>
-                {heroSummary.map((item) => (
-                  <span
-                    key={item}
-                    className="rounded-full border border-white/72 bg-white/75 px-3 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]"
-                  >
-                    {item}
-                  </span>
-                ))}
+              <div className="apple-preview-stack">
+                <div className="apple-preview-tile space-y-4 md:p-6">
+                  <p className="apple-eyebrow">Current Session</p>
+                  <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                    <div className="space-y-2">
+                      <p className="text-[1.35rem] font-semibold tracking-tight text-slate-950">{currentLesson?.title || "尚未选择课程"}</p>
+                      <p className="text-sm leading-6 text-slate-500">
+                        {accessToken
+                          ? currentLesson
+                            ? `${currentLessonSentenceCount} 句内容已就绪，可直接继续本轮训练。`
+                            : "登录后可从历史课程继续，或直接导入第一份素材。"
+                          : "登录后自动同步课程、积分和沉浸学习进度。"}
+                      </p>
+                    </div>
+                    <div className="rounded-[1.25rem] border border-white/70 bg-white/72 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                      <p className="apple-stat-title">当前状态</p>
+                      <p className="mt-1 text-sm font-semibold tracking-tight text-slate-950">
+                        {currentLessonNeedsBinding ? "等待绑定媒体" : currentLesson ? "可直接开始" : "等待导入素材"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                    <span className="rounded-full border border-white/72 bg-white/75 px-3 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                      {subtitleSettings.semantic_split_default_enabled ? "默认语义分句" : "默认规则分句"}
+                    </span>
+                    <span className="rounded-full border border-white/72 bg-white/75 px-3 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                      {accessToken
+                        ? currentLessonSentenceCount > 0
+                          ? `${currentLessonSentenceCount} 句已准备`
+                          : "等待生成句子"
+                        : "登录后自动同步课程与积分"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="apple-preview-tile space-y-3">
+                    <p className="apple-eyebrow">Workflow</p>
+                    <div className="grid gap-3">
+                      {[
+                        "导入视频或音频，自动读取时长与预估积分。",
+                        "转写、分句并生成课程，现有接口逻辑保持不变。",
+                        "进入沉浸学习舞台，逐句播放、跟写并持续推进进度。",
+                      ].map((step, index) => (
+                        <div key={step} className="flex items-start gap-3">
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-white/72 bg-white/78 text-[11px] font-semibold text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                            {String(index + 1).padStart(2, "0")}
+                          </span>
+                          <p className="text-sm leading-6 text-slate-600">{step}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="apple-preview-tile space-y-3">
+                    <p className="apple-eyebrow">Account</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-white/72 bg-white/75 px-3 py-1 text-xs text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                        {accessToken ? "账号已连接" : "游客模式"}
+                      </span>
+                      {isAdminUser ? (
+                        <span className="rounded-full border border-slate-900/10 bg-slate-950 px-3 py-1 text-xs text-white shadow-[0_18px_32px_-28px_rgba(15,23,42,0.5)]">
+                          管理员权限
+                        </span>
+                      ) : null}
+                      <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
+                    </div>
+                    <p className="text-sm leading-6 text-slate-500">
+                      主站与后台继续共用同一套账户、积分和权限，只把入口做得更安静、更像成品。
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
@@ -589,20 +683,27 @@ export function LearningShell() {
           <section id="learning-workbench" className="apple-workbench">
             <div className="apple-toolbar px-2 pb-4 pt-2 md:px-4">
               <div className="space-y-2.5">
-                <div className="apple-eyebrow">开始练习</div>
+                <div className="apple-eyebrow inline-flex items-center gap-2">
+                  <LibraryBig className="size-3.5" />
+                  Workspace
+                </div>
                 <div className="space-y-1.5">
-                  <h2 className="text-[1.75rem] font-semibold tracking-tight text-slate-950 md:text-[2.15rem]">开始练习</h2>
-                  <p className="max-w-xl text-sm leading-6 text-slate-500">左边看课程，中间开始练习，右边登录或上传素材。</p>
+                  <h2 className="text-[1.75rem] font-semibold tracking-tight text-slate-950 md:text-[2.15rem]">学习工作台</h2>
+                  <p className="max-w-xl text-sm leading-6 text-slate-500">
+                    课程在左，学习舞台居中，上传和账户操作在右；先把注意力留给正在练习的内容。
+                  </p>
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                <span className="rounded-full border border-white/72 bg-white/74 px-3 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-                  {currentLesson?.title || "先选课程"}
-                </span>
-                <span className="rounded-full border border-white/72 bg-white/74 px-3 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-                  {immersiveLayoutActive ? "正在练习" : accessToken ? "可以开始" : "登录后开始"}
-                </span>
+              <div className="apple-inline-metrics">
+                <div className="apple-inline-metric">
+                  <p className="apple-inline-metric-label">工作台</p>
+                  <p className="apple-inline-metric-value">{accessToken ? (loadingLessons ? "同步中" : "已准备好") : "等待登录"}</p>
+                </div>
+                <div className="apple-inline-metric">
+                  <p className="apple-inline-metric-label">学习舞台</p>
+                  <p className="apple-inline-metric-value">{immersiveLayoutActive ? "沉浸中" : currentLesson?.id ? "可开始" : "先选课程"}</p>
+                </div>
               </div>
             </div>
 
@@ -612,7 +713,7 @@ export function LearningShell() {
               }`}
             >
               {!immersiveLayoutActive ? (
-                <aside id="my-lessons" className="space-y-4 transition-all duration-500 ease-out">
+                <aside className="space-y-4 transition-all duration-500 ease-out">
                   <LessonList
                     lessons={lessons}
                     currentLessonId={currentLesson?.id}
@@ -624,10 +725,10 @@ export function LearningShell() {
                   />
                   <Card size="sm" className="apple-panel-muted">
                     <CardHeader className="space-y-2 pb-0">
-                      <div className="apple-eyebrow">开始前</div>
+                      <div className="apple-eyebrow">Ready</div>
                       <div>
-                        <CardTitle className="text-sm">现在可以做什么</CardTitle>
-                        <CardDescription>看一眼就知道能不能直接开始。</CardDescription>
+                        <CardTitle className="text-sm">进入学习前</CardTitle>
+                        <CardDescription>只保留真正影响开始学习的几个状态。</CardDescription>
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-3 pt-4 text-sm">
@@ -673,16 +774,16 @@ export function LearningShell() {
                   ) : (
                     <Card className="apple-panel-muted">
                       <CardHeader>
-                        <CardTitle className="text-base">开始练习</CardTitle>
-                        <CardDescription>登录后在这里听音频、拼写、继续课程。</CardDescription>
+                        <CardTitle className="text-base">Preview</CardTitle>
+                        <CardDescription>登录后即可在这里进入沉浸学习舞台，保留现有学习逻辑。</CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-3">
-                        <p className="text-sm leading-6 text-slate-500">先登录，再上传素材生成课程。</p>
+                        <p className="text-sm leading-6 text-slate-500">先在右侧完成登录或注册，再上传素材并生成课程。</p>
                         <Button
                           variant="outline"
                           onClick={() => document.getElementById("auth-panel")?.scrollIntoView({ behavior: "smooth", block: "start" })}
                         >
-                          登录开始
+                          前往登录
                         </Button>
                       </CardContent>
                     </Card>
@@ -705,6 +806,10 @@ export function LearningShell() {
                     </div>
                   ) : (
                     <>
+                      <RedeemCodePanel
+                        apiCall={(path, options = {}) => api(path, options, accessToken)}
+                        onWalletChanged={loadWallet}
+                      />
                       <div id="upload-panel">
                         <UploadPanel
                           accessToken={accessToken}
@@ -715,10 +820,6 @@ export function LearningShell() {
                           onWalletChanged={loadWallet}
                         />
                       </div>
-                      <RedeemCodePanel
-                        apiCall={(path, options = {}) => api(path, options, accessToken)}
-                        onWalletChanged={loadWallet}
-                      />
                     </>
                   )}
                 </aside>
@@ -737,7 +838,7 @@ export function LearningShell() {
           }
         }}
       >
-        <CommandInput placeholder="搜索课程" value={commandQuery} onValueChange={setCommandQuery} />
+        <CommandInput placeholder="搜索课程标题或模型..." value={commandQuery} onValueChange={setCommandQuery} />
         <CommandList>
           <CommandEmpty>没有匹配的课程</CommandEmpty>
           <CommandGroup heading="课程列表">
