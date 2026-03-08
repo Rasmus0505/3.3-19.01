@@ -62,28 +62,43 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
 
   return (
     <Card className="apple-panel">
-      <CardHeader className="space-y-3.5">
+      <CardHeader className="space-y-4">
         <div className="apple-kicker w-fit">
           <Sparkles className="size-3.5" />
           Welcome
         </div>
-        <div className="space-y-1.5">
-          <CardTitle className="text-[1.8rem] tracking-tight">登录后继续你的学习进度</CardTitle>
-          <CardDescription className="max-w-md">保留现有登录 / 注册逻辑，把入口收敛为更直接、更像主操作区的表单体验。</CardDescription>
+        <div className="space-y-2">
+          <CardTitle className="text-2xl">登录后开始你的沉浸式英语训练</CardTitle>
+          <CardDescription>保留现有登录 / 注册逻辑，只把入口重构为更高级的品牌化工作台体验。</CardDescription>
         </div>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-5">
+        <div className="grid gap-3">
+          {benefitItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <div key={item.title} className="rounded-[1.5rem] border border-white/70 bg-white/72 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
+                <div className="flex items-start gap-3">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-[0_18px_40px_-32px_rgba(15,23,42,0.6)]">
+                    <Icon className="size-4" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-slate-950">{item.title}</p>
+                    <p className="text-sm leading-6 text-slate-500">{item.description}</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
         <form
-          className="space-y-4 rounded-[1.85rem] border border-white/72 bg-white/80 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.74),0_18px_42px_-38px_rgba(15,23,42,0.16)] md:p-6"
+          className="space-y-4 rounded-[1.75rem] border border-white/72 bg-white/76 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]"
           onSubmit={(event) => {
             event.preventDefault();
             submit(ENDPOINTS.auth.login);
           }}
         >
-          <div className="space-y-1">
-            <p className="apple-eyebrow">Sign In</p>
-            <p className="text-sm leading-6 text-slate-500">用同一账户继续课程、积分与上传记录。</p>
-          </div>
           <div className="grid gap-2">
             <Label htmlFor="email">邮箱</Label>
             <Input id="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
@@ -115,24 +130,8 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
             </Button>
           </div>
         </form>
-
-        <div className="grid gap-2.5 sm:grid-cols-3">
-          {benefitItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <div
-                key={item.title}
-                className="rounded-[1.35rem] border border-white/72 bg-white/68 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]"
-              >
-                <Icon className="size-4 text-slate-700" />
-                <p className="mt-3 text-sm font-medium text-slate-950">{item.title}</p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">{item.description}</p>
-              </div>
-            );
-          })}
-        </div>
       </CardContent>
-      <CardFooter className="pt-0">
+      <CardFooter>
         {status ? (
           <Alert className="w-full border-white/75 bg-white/76 py-3">
             <AlertDescription>{status}</AlertDescription>

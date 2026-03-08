@@ -102,7 +102,7 @@ export function AdminApp({ apiCall, onLogout }) {
                 </div>
               </div>
 
-              <nav className="mt-5 flex-1 space-y-1.5">
+              <nav className="mt-6 flex-1 space-y-1.5">
                 {navItems.map((item) => {
                   const Icon = item.icon;
                   const isActive = location.pathname.startsWith(item.href);
@@ -122,10 +122,10 @@ export function AdminApp({ apiCall, onLogout }) {
                 })}
               </nav>
 
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 <div className="rounded-[1.5rem] border border-white/70 bg-white/72 p-4">
                   <p className="apple-eyebrow">Environment</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-500">继续沿用当前 Zeabur 部署方式，无需新增复杂运维步骤。</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">保持当前 Zeabur 部署方式，无需新增复杂运维步骤。</p>
                 </div>
                 <Button variant="outline" asChild className="w-full justify-start">
                   <NavLink to="/">返回学习页</NavLink>
@@ -137,17 +137,17 @@ export function AdminApp({ apiCall, onLogout }) {
               </div>
             </aside>
 
-            <div className="min-w-0 space-y-4">
-              <header className="apple-panel p-5 md:p-6 lg:p-7">
+            <div className="min-w-0 space-y-5">
+              <header className="apple-panel p-5 md:p-6">
                 <div className="apple-toolbar">
-                  <div className="space-y-2.5">
+                  <div className="space-y-3">
                     <div className="apple-kicker w-fit">
                       <ActiveIcon className="size-3.5" />
                       {activeItem.eyebrow}
                     </div>
-                    <div className="space-y-1.5">
-                      <h1 className="text-[2rem] font-semibold tracking-tight text-slate-950 md:text-[2.6rem]">{activeItem.title}</h1>
-                      <p className="max-w-2xl text-sm leading-6 text-slate-500">{activeItem.description}</p>
+                    <div className="space-y-2">
+                      <h1 className="text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl">{activeItem.title}</h1>
+                      <p className="max-w-3xl text-sm leading-7 text-slate-500">{activeItem.description}</p>
                     </div>
                   </div>
 

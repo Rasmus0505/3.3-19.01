@@ -13,6 +13,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  Badge,
   Button,
   Card,
   CardContent,
@@ -138,28 +139,35 @@ export function LessonList({
 
   return (
     <Card className="apple-panel">
-      <CardHeader className="space-y-3.5">
+      <CardHeader className="space-y-4">
         <div className="apple-kicker w-fit">
           <Sparkles className="size-3.5" />
           Library
         </div>
-        <div className="space-y-1.5">
-          <CardTitle className="flex items-center gap-2 text-lg">
+        <div className="space-y-2">
+          <CardTitle className="flex items-center gap-2 text-base">
             <Compass className="size-4" />
-            课程库
+            课程 Explorer
           </CardTitle>
-          <CardDescription>从历史课程中继续学习，列表更像内容库，操作菜单保持原有逻辑。</CardDescription>
+          <CardDescription>选择课程进入沉浸学习，历史记录管理被整理成更清晰的产品化导航。</CardDescription>
         </div>
-        <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-          <span className="rounded-full border border-white/72 bg-white/74 px-3 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-            共 {lessons.length} 节
-          </span>
-          <span className="rounded-full border border-white/72 bg-white/74 px-3 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-            {lessons.filter((item) => Number(item.sentences?.length || 0) > 0).length} 节可学
-          </span>
-          <span className="rounded-full border border-white/72 bg-white/74 px-3 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-            当前 {lessons.find((item) => item.id === currentLessonId)?.title || "未选择"}
-          </span>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="rounded-[1.25rem] border border-white/70 bg-white/72 p-3">
+            <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">课程数</p>
+            <p className="mt-2 text-xl font-semibold tracking-tight text-slate-950">{lessons.length}</p>
+          </div>
+          <div className="rounded-[1.25rem] border border-white/70 bg-white/72 p-3">
+            <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">可学课程</p>
+            <p className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
+              {lessons.filter((item) => Number(item.sentences?.length || 0) > 0).length}
+            </p>
+          </div>
+          <div className="rounded-[1.25rem] border border-white/70 bg-white/72 p-3">
+            <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">当前选中</p>
+            <p className="mt-2 truncate text-sm font-semibold tracking-tight text-slate-950">
+              {lessons.find((item) => item.id === currentLessonId)?.title || "未选择"}
+            </p>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -180,37 +188,31 @@ export function LessonList({
           ? lessons.map((lesson, index) => (
               <div
                 key={lesson.id}
-                className={`rounded-[1.6rem] border p-4 transition-all duration-200 ${
+                className={`rounded-[1.75rem] border p-4 transition-all duration-200 ${
                   currentLessonId === lesson.id
-                    ? "border-white/82 bg-white/92 shadow-[0_20px_56px_-42px_rgba(37,99,235,0.22)] ring-1 ring-primary/12"
+                    ? "border-white/80 bg-white/90 shadow-[0_24px_70px_-42px_rgba(37,99,235,0.25)] ring-1 ring-primary/15"
                     : "border-white/70 bg-white/68 hover:bg-white/80"
                 }`}
               >
-                <div className="flex items-start justify-between gap-2.5">
+                <div className="flex items-start justify-between gap-3">
                   <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onSelect(lesson.id)}>
-                    <div className="flex items-start gap-3">
-                      <span
-                        className={`flex size-8 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold ${
-                          currentLessonId === lesson.id
-                            ? "border-slate-950/5 bg-slate-950 text-white"
-                            : "border-white/75 bg-white/82 text-slate-600"
-                        }`}
-                      >
+                    <div className="flex items-center gap-2">
+                      <Badge variant={currentLessonId === lesson.id ? "default" : "outline"} className="shrink-0">
                         {String(index + 1).padStart(2, "0")}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="min-h-[2.75rem] break-words text-[15px] font-semibold leading-6 text-slate-950">{lesson.title}</div>
-                        <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-slate-500">
-                          <span className="inline-flex items-center gap-1 rounded-full border border-white/72 bg-white/75 px-2.5 py-1">
+                      </Badge>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-slate-950">{lesson.title}</div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-50/80 px-2.5 py-1">
                             <Film className="size-3.5" />
                             {lesson.asr_model || "默认模型"}
                           </span>
-                          <span className="inline-flex items-center gap-1 rounded-full border border-white/72 bg-white/75 px-2.5 py-1">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-50/80 px-2.5 py-1">
                             <Clock3 className="size-3.5" />
                             {lesson.sentences?.length || 0} 句
                           </span>
-                          <span className="inline-flex items-center gap-1 rounded-full border border-white/72 bg-white/75 px-2.5 py-1">
-                            {lesson.status || "ready"}
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-50/80 px-2.5 py-1">
+                            {lesson.status}
                           </span>
                         </div>
                       </div>
@@ -220,7 +222,6 @@ export function LessonList({
                     type="button"
                     size="icon-sm"
                     variant="ghost"
-                    className="mt-0.5 shrink-0 text-slate-500 hover:bg-white/80"
                     aria-label="open-lesson-menu"
                     onClick={() => setMenuLessonId((prev) => (prev === lesson.id ? null : lesson.id))}
                     disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
@@ -229,10 +230,10 @@ export function LessonList({
                   </Button>
                 </div>
                 {menuLessonId === lesson.id ? (
-                    <div className="mt-3 rounded-[1.15rem] border border-white/70 bg-white/76 p-1.5">
-                      <div className="flex flex-col gap-1">
-                        <Button
-                          type="button"
+                  <div className="mt-3 rounded-[1.25rem] border border-white/70 bg-white/76 p-2">
+                    <div className="flex flex-col gap-1">
+                      <Button
+                        type="button"
                         size="sm"
                         variant="ghost"
                         className="justify-start"
