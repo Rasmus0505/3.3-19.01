@@ -2,6 +2,7 @@
 
 import io
 import os
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -16,6 +17,13 @@ from app.models import Lesson, LessonProgress, LessonSentence, MediaAsset, Subti
 from app.services.billing_service import ensure_default_billing_rates, get_or_create_wallet_account, get_subtitle_settings, settle_reserved_points
 
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
+
+
+def _frontend_build_marker_from_index() -> str:
+    html = (Path(__file__).resolve().parents[1] / "app" / "static" / "index.html").read_text(encoding="utf-8")
+    match = re.search(r'/static/assets/([^"\']+)', html)
+    assert match
+    return str(match.group(1))
 
 
 def _word_entry(text: str, begin_ms: int, end_ms: int, *, punctuation: str = "", surface: str | None = None) -> dict[str, object]:
@@ -124,6 +132,29 @@ def test_health_ready_returns_503_when_database_unavailable(monkeypatch):
     assert payload["ok"] is False
     assert payload["status"]["db_ready"] is False
     assert payload["status"]["db_error"] == "db offline"
+
+
+def test_spa_shell_pages_disable_html_cache_and_expose_build_marker(test_client):
+    client, _, _ = test_client
+    build_marker = _frontend_build_marker_from_index()
+
+    for path in ("/", "/admin", "/admin/users"):
+        resp = client.get(path)
+        assert resp.status_code == 200
+        assert "no-store" in resp.headers["cache-control"].lower()
+        assert resp.headers["pragma"] == "no-cache"
+        assert resp.headers["expires"] == "0"
+        assert resp.headers["x-frontend-build"] == build_marker
+
+
+def test_static_assets_keep_cache_behavior_unmodified(test_client):
+    client, _, _ = test_client
+    build_marker = _frontend_build_marker_from_index()
+
+    resp = client.get(f"/static/assets/{build_marker}")
+    assert resp.status_code == 200
+    assert "no-store" not in resp.headers.get("cache-control", "").lower()
+    assert "x-frontend-build" not in resp.headers
 
 
 def test_probe_database_ready_reports_missing_critical_columns(monkeypatch):
