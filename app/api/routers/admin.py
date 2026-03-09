@@ -437,6 +437,8 @@ def admin_update_subtitle_settings(
     settings.semantic_split_max_words_threshold = payload.semantic_split_max_words_threshold
     settings.semantic_split_model = payload.semantic_split_model.strip()
     settings.semantic_split_timeout_seconds = payload.semantic_split_timeout_seconds
+    if payload.translation_batch_max_chars is not None:
+        settings.translation_batch_max_chars = payload.translation_batch_max_chars
     settings.updated_by_user_id = current_admin.id
     db.add(settings)
     db.flush()

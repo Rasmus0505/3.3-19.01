@@ -67,6 +67,7 @@ READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "semantic_split_max_words_threshold",
         "semantic_split_model",
         "semantic_split_timeout_seconds",
+        "translation_batch_max_chars",
     ),
 }
 

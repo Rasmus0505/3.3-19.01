@@ -31,6 +31,7 @@ def _default_values() -> dict[str, object]:
         "semantic_split_max_words_threshold": 24,
         "semantic_split_model": "qwen-plus",
         "semantic_split_timeout_seconds": 40,
+        "translation_batch_max_chars": 2600,
         "updated_at": datetime.utcnow(),
     }
 
@@ -50,6 +51,14 @@ def _has_table(table_name: str, schema: str | None) -> bool:
     return inspector.has_table(table_name, schema=schema)
 
 
+def _column_names(table_name: str, schema: str | None) -> set[str]:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if not inspector.has_table(table_name, schema=schema):
+        return set()
+    return {str(item.get("name") or "").strip() for item in inspector.get_columns(table_name, schema=schema)}
+
+
 def _debug(message: str) -> None:
     print(f"[DEBUG] migration.20260307_0007 {message}")
 
@@ -65,19 +74,36 @@ def _ensure_default_row(schema: str | None) -> None:
         _debug("default_row_exists id=1")
         return
 
-    bind.execute(
-        sa.text(
-            f"""
-            INSERT INTO {table_name}
-                (id, semantic_split_default_enabled, subtitle_split_enabled, subtitle_split_target_words, subtitle_split_max_words,
-                 semantic_split_max_words_threshold, semantic_split_model, semantic_split_timeout_seconds, updated_at, updated_by_user_id)
-            VALUES
-                (:id, :semantic_split_default_enabled, :subtitle_split_enabled, :subtitle_split_target_words, :subtitle_split_max_words,
-                 :semantic_split_max_words_threshold, :semantic_split_model, :semantic_split_timeout_seconds, :updated_at, NULL)
-            """
-        ),
-        _default_values(),
-    )
+    columns = _column_names("subtitle_settings", schema)
+    include_translation_batch_chars = "translation_batch_max_chars" in columns
+    if include_translation_batch_chars:
+        bind.execute(
+            sa.text(
+                f"""
+                INSERT INTO {table_name}
+                    (id, semantic_split_default_enabled, subtitle_split_enabled, subtitle_split_target_words, subtitle_split_max_words,
+                     semantic_split_max_words_threshold, semantic_split_model, semantic_split_timeout_seconds, translation_batch_max_chars, updated_at, updated_by_user_id)
+                VALUES
+                    (:id, :semantic_split_default_enabled, :subtitle_split_enabled, :subtitle_split_target_words, :subtitle_split_max_words,
+                     :semantic_split_max_words_threshold, :semantic_split_model, :semantic_split_timeout_seconds, :translation_batch_max_chars, :updated_at, NULL)
+                """
+            ),
+            _default_values(),
+        )
+    else:
+        bind.execute(
+            sa.text(
+                f"""
+                INSERT INTO {table_name}
+                    (id, semantic_split_default_enabled, subtitle_split_enabled, subtitle_split_target_words, subtitle_split_max_words,
+                     semantic_split_max_words_threshold, semantic_split_model, semantic_split_timeout_seconds, updated_at, updated_by_user_id)
+                VALUES
+                    (:id, :semantic_split_default_enabled, :subtitle_split_enabled, :subtitle_split_target_words, :subtitle_split_max_words,
+                     :semantic_split_max_words_threshold, :semantic_split_model, :semantic_split_timeout_seconds, :updated_at, NULL)
+                """
+            ),
+            _default_values(),
+        )
     _debug("default_row_inserted id=1")
 
 

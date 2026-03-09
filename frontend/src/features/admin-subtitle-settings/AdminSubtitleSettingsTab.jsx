@@ -24,6 +24,7 @@ const defaultDraft = {
   semantic_split_max_words_threshold: 24,
   semantic_split_model: "qwen-plus",
   semantic_split_timeout_seconds: 40,
+  translation_batch_max_chars: 2600,
 };
 
 export function AdminSubtitleSettingsTab({ apiCall }) {
@@ -52,6 +53,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
         semantic_split_max_words_threshold: Number(data.settings?.semantic_split_max_words_threshold || 24),
         semantic_split_model: String(data.settings?.semantic_split_model || "qwen-plus"),
         semantic_split_timeout_seconds: Number(data.settings?.semantic_split_timeout_seconds || 40),
+        translation_batch_max_chars: Number(data.settings?.translation_batch_max_chars || 2600),
       });
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
@@ -82,6 +84,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
           semantic_split_max_words_threshold: Number(draft.semantic_split_max_words_threshold),
           semantic_split_model: String(draft.semantic_split_model || "").trim(),
           semantic_split_timeout_seconds: Number(draft.semantic_split_timeout_seconds),
+          translation_batch_max_chars: Number(draft.translation_batch_max_chars),
         }),
       });
       const data = await jsonOrEmpty(resp);
@@ -168,6 +171,20 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
                 }
                 disabled={saving}
               />
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium">翻译批次最大字符数</p>
+              <Input
+                type="number"
+                min={1}
+                max={12000}
+                value={draft.translation_batch_max_chars}
+                onChange={(event) =>
+                  setDraft((prev) => ({ ...prev, translation_batch_max_chars: Number(event.target.value || 1) }))
+                }
+                disabled={saving}
+              />
+              <p className="text-xs text-muted-foreground">翻译时每个批次仅按字符阈值合并，默认 2600。</p>
             </div>
           </div>
 
