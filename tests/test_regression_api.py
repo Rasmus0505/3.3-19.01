@@ -4,6 +4,8 @@ import io
 import json
 import os
 import re
+import subprocess
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -202,6 +204,52 @@ def test_ensure_default_billing_rates_rebuilds_legacy_sqlite_constraint(tmp_path
     assert mt_rate["points_per_minute"] == 0
     assert mt_rate["points_per_1k_tokens"] > 0
     assert mt_rate["billing_unit"] == "1k_tokens"
+
+
+def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    db_file = tmp_path / "subtitle_migration.db"
+    database_url = f"sqlite:///{db_file.as_posix()}"
+
+    env = os.environ.copy()
+    env["DATABASE_URL"] = database_url
+
+    def _upgrade(target: str) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "-c", "alembic.ini", "upgrade", target],
+            cwd=str(repo_root),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"alembic upgrade {target} failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+
+    _upgrade("20260306_0006")
+
+    engine = create_database_engine(database_url)
+    try:
+        SubtitleSetting.__table__.create(bind=engine, checkfirst=True)
+    finally:
+        engine.dispose()
+
+    _upgrade("head")
+
+    verify_engine = create_database_engine(database_url)
+    try:
+        with verify_engine.connect() as conn:
+            version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            subtitle_row = conn.execute(
+                text("SELECT id, subtitle_split_enabled FROM subtitle_settings WHERE id = 1")
+            ).mappings().one_or_none()
+    finally:
+        verify_engine.dispose()
+
+    assert version == "20260309_0008"
+    assert subtitle_row is not None
+    assert int(subtitle_row["id"]) == 1
+    assert bool(subtitle_row["subtitle_split_enabled"]) is True
 
 
 def _register_and_login(client: TestClient, email: str = "admin@example.com", password: str = "123456") -> str:

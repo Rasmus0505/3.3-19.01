@@ -21,17 +21,18 @@ branch_labels = None
 depends_on = None
 
 
-DEFAULT_VALUES = {
-    "id": 1,
-    "semantic_split_default_enabled": False,
-    "subtitle_split_enabled": True,
-    "subtitle_split_target_words": 18,
-    "subtitle_split_max_words": 28,
-    "semantic_split_max_words_threshold": 24,
-    "semantic_split_model": "qwen-plus",
-    "semantic_split_timeout_seconds": 40,
-    "updated_at": datetime.utcnow(),
-}
+def _default_values() -> dict[str, object]:
+    return {
+        "id": 1,
+        "semantic_split_default_enabled": False,
+        "subtitle_split_enabled": True,
+        "subtitle_split_target_words": 18,
+        "subtitle_split_max_words": 28,
+        "semantic_split_max_words_threshold": 24,
+        "semantic_split_model": "qwen-plus",
+        "semantic_split_timeout_seconds": 40,
+        "updated_at": datetime.utcnow(),
+    }
 
 
 def _schema_name() -> str | None:
@@ -43,31 +44,27 @@ def _qualified_table(table_name: str, schema: str | None) -> str:
     return f"{schema}.{table_name}" if schema else table_name
 
 
-def upgrade() -> None:
-    schema = _schema_name()
-    op.create_table(
-        "subtitle_settings",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("semantic_split_default_enabled", sa.Boolean(), nullable=False, server_default=sa.false()),
-        sa.Column("subtitle_split_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column("subtitle_split_target_words", sa.Integer(), nullable=False, server_default="18"),
-        sa.Column("subtitle_split_max_words", sa.Integer(), nullable=False, server_default="28"),
-        sa.Column("semantic_split_max_words_threshold", sa.Integer(), nullable=False, server_default="24"),
-        sa.Column("semantic_split_model", sa.String(length=100), nullable=False, server_default="qwen-plus"),
-        sa.Column("semantic_split_timeout_seconds", sa.Integer(), nullable=False, server_default="40"),
-        sa.Column("updated_at", sa.DateTime(), nullable=False),
-        sa.Column("updated_by_user_id", sa.Integer(), nullable=True),
-        sa.CheckConstraint("subtitle_split_target_words > 0", name="ck_subtitle_split_target_words_positive"),
-        sa.CheckConstraint("subtitle_split_max_words > 0", name="ck_subtitle_split_max_words_positive"),
-        sa.CheckConstraint("semantic_split_max_words_threshold > 0", name="ck_semantic_split_threshold_positive"),
-        sa.CheckConstraint("semantic_split_timeout_seconds > 0", name="ck_semantic_split_timeout_positive"),
-        sa.ForeignKeyConstraint(["updated_by_user_id"], [f"{APP_SCHEMA}.users.id" if schema else "users.id"], ondelete="SET NULL"),
-        sa.PrimaryKeyConstraint("id"),
-        schema=schema,
-    )
+def _has_table(table_name: str, schema: str | None) -> bool:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    return inspector.has_table(table_name, schema=schema)
 
+
+def _debug(message: str) -> None:
+    print(f"[DEBUG] migration.20260307_0007 {message}")
+
+
+def _ensure_default_row(schema: str | None) -> None:
     table_name = _qualified_table("subtitle_settings", schema)
     bind = op.get_bind()
+    exists = bind.execute(
+        sa.text(f"SELECT 1 FROM {table_name} WHERE id = :id LIMIT 1"),
+        {"id": 1},
+    ).scalar()
+    if exists:
+        _debug("default_row_exists id=1")
+        return
+
     bind.execute(
         sa.text(
             f"""
@@ -79,10 +76,46 @@ def upgrade() -> None:
                  :semantic_split_max_words_threshold, :semantic_split_model, :semantic_split_timeout_seconds, :updated_at, NULL)
             """
         ),
-        DEFAULT_VALUES,
+        _default_values(),
     )
+    _debug("default_row_inserted id=1")
+
+
+def upgrade() -> None:
+    schema = _schema_name()
+    if _has_table("subtitle_settings", schema):
+        _debug("table_exists=true skip_create=true")
+    else:
+        _debug("table_exists=false skip_create=false")
+        op.create_table(
+            "subtitle_settings",
+            sa.Column("id", sa.Integer(), nullable=False),
+            sa.Column("semantic_split_default_enabled", sa.Boolean(), nullable=False, server_default=sa.false()),
+            sa.Column("subtitle_split_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
+            sa.Column("subtitle_split_target_words", sa.Integer(), nullable=False, server_default="18"),
+            sa.Column("subtitle_split_max_words", sa.Integer(), nullable=False, server_default="28"),
+            sa.Column("semantic_split_max_words_threshold", sa.Integer(), nullable=False, server_default="24"),
+            sa.Column("semantic_split_model", sa.String(length=100), nullable=False, server_default="qwen-plus"),
+            sa.Column("semantic_split_timeout_seconds", sa.Integer(), nullable=False, server_default="40"),
+            sa.Column("updated_at", sa.DateTime(), nullable=False),
+            sa.Column("updated_by_user_id", sa.Integer(), nullable=True),
+            sa.CheckConstraint("subtitle_split_target_words > 0", name="ck_subtitle_split_target_words_positive"),
+            sa.CheckConstraint("subtitle_split_max_words > 0", name="ck_subtitle_split_max_words_positive"),
+            sa.CheckConstraint("semantic_split_max_words_threshold > 0", name="ck_semantic_split_threshold_positive"),
+            sa.CheckConstraint("semantic_split_timeout_seconds > 0", name="ck_semantic_split_timeout_positive"),
+            sa.ForeignKeyConstraint(["updated_by_user_id"], [f"{APP_SCHEMA}.users.id" if schema else "users.id"], ondelete="SET NULL"),
+            sa.PrimaryKeyConstraint("id"),
+            schema=schema,
+        )
+        _debug("table_created=true")
+
+    _ensure_default_row(schema)
 
 
 def downgrade() -> None:
     schema = _schema_name()
-    op.drop_table("subtitle_settings", schema=schema)
+    if _has_table("subtitle_settings", schema):
+        op.drop_table("subtitle_settings", schema=schema)
+        _debug("table_dropped=true")
+    else:
+        _debug("table_exists=false skip_drop=true")
