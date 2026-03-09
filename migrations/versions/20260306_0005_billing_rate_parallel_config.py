@@ -34,14 +34,42 @@ def _qualified_table(table_name: str, schema: str | None) -> str:
     return f"{schema}.{table_name}" if schema else table_name
 
 
+def _has_table(table_name: str, schema: str | None) -> bool:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    return inspector.has_table(table_name, schema=schema)
+
+
+def _has_column(table_name: str, column_name: str, schema: str | None) -> bool:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if not inspector.has_table(table_name, schema=schema):
+        return False
+    return any(col.get("name") == column_name for col in inspector.get_columns(table_name, schema=schema))
+
+
 def upgrade() -> None:
     schema = _schema_name()
+    if not _has_table("billing_model_rates", schema):
+        return
 
-    with op.batch_alter_table("billing_model_rates", schema=schema) as batch_op:
-        batch_op.add_column(sa.Column("parallel_enabled", sa.Boolean(), nullable=False, server_default=sa.false()))
-        batch_op.add_column(sa.Column("parallel_threshold_seconds", sa.Integer(), nullable=False, server_default="600"))
-        batch_op.add_column(sa.Column("segment_seconds", sa.Integer(), nullable=False, server_default="300"))
-        batch_op.add_column(sa.Column("max_concurrency", sa.Integer(), nullable=False, server_default="4"))
+    existing_columns = {item.get("name") for item in sa.inspect(op.get_bind()).get_columns("billing_model_rates", schema=schema)}
+    missing_columns = {
+        "parallel_enabled",
+        "parallel_threshold_seconds",
+        "segment_seconds",
+        "max_concurrency",
+    } - set(existing_columns)
+    if missing_columns:
+        with op.batch_alter_table("billing_model_rates", schema=schema) as batch_op:
+            if "parallel_enabled" in missing_columns:
+                batch_op.add_column(sa.Column("parallel_enabled", sa.Boolean(), nullable=False, server_default=sa.false()))
+            if "parallel_threshold_seconds" in missing_columns:
+                batch_op.add_column(sa.Column("parallel_threshold_seconds", sa.Integer(), nullable=False, server_default="600"))
+            if "segment_seconds" in missing_columns:
+                batch_op.add_column(sa.Column("segment_seconds", sa.Integer(), nullable=False, server_default="300"))
+            if "max_concurrency" in missing_columns:
+                batch_op.add_column(sa.Column("max_concurrency", sa.Integer(), nullable=False, server_default="4"))
 
     table_name = _qualified_table("billing_model_rates", schema)
     bind = op.get_bind()
@@ -106,6 +134,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     schema = _schema_name()
+    if not _has_table("billing_model_rates", schema):
+        return
     table_name = _qualified_table("billing_model_rates", schema)
     bind = op.get_bind()
 
@@ -135,8 +165,9 @@ def downgrade() -> None:
             },
         )
 
-    with op.batch_alter_table("billing_model_rates", schema=schema) as batch_op:
-        batch_op.drop_column("max_concurrency")
-        batch_op.drop_column("segment_seconds")
-        batch_op.drop_column("parallel_threshold_seconds")
-        batch_op.drop_column("parallel_enabled")
+    existing_columns = {item.get("name") for item in sa.inspect(op.get_bind()).get_columns("billing_model_rates", schema=schema)}
+    removable_columns = [name for name in ("max_concurrency", "segment_seconds", "parallel_threshold_seconds", "parallel_enabled") if name in existing_columns]
+    if removable_columns:
+        with op.batch_alter_table("billing_model_rates", schema=schema) as batch_op:
+            for column_name in removable_columns:
+                batch_op.drop_column(column_name)

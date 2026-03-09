@@ -1,10 +1,12 @@
 ﻿from __future__ import annotations
 
 from datetime import datetime
+import logging
 
-from sqlalchemy import delete, desc, func, select, update
+from sqlalchemy import delete, desc, func, inspect, select, update
 from sqlalchemy.orm import Session
 
+from app.db import APP_SCHEMA
 from app.models import (
     AdminOperationLog,
     BillingModelRate,
@@ -17,6 +19,8 @@ from app.models import (
     WalletAccount,
     WalletLedger,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def list_admin_users(
@@ -106,6 +110,13 @@ def list_translation_logs(
     date_from: datetime | None,
     date_to: datetime | None,
 ) -> tuple[int, list[tuple[TranslationRequestLog, str | None]]]:
+    bind = db.get_bind()
+    inspector = inspect(bind)
+    schema = None if bind.dialect.name == "sqlite" else APP_SCHEMA
+    if not inspector.has_table(TranslationRequestLog.__tablename__, schema=schema):
+        logger.warning("[DEBUG] translation_logs.table_missing table=%s", TranslationRequestLog.__tablename__)
+        return 0, []
+
     base = select(TranslationRequestLog, User.email).outerjoin(User, User.id == TranslationRequestLog.user_id)
     count_stmt = select(func.count(TranslationRequestLog.id)).outerjoin(User, User.id == TranslationRequestLog.user_id)
 

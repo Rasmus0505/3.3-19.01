@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_DEFAULT_VALID_DAYS
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
+from app.repositories.billing_rates import list_billing_rates as query_billing_rates
 from app.models import (
     AdminOperationLog,
     BillingModelRate,
@@ -663,9 +664,7 @@ def get_model_rate(db: Session, model_name: str, *, require_active: bool = True)
 
 
 def list_public_rates(db: Session) -> list[BillingModelRate]:
-    return list(
-        db.scalars(select(BillingModelRate).where(BillingModelRate.is_active.is_(True)).order_by(BillingModelRate.model_name.asc())).all()
-    )
+    return list(query_billing_rates(db, active_only=True))
 
 
 def calculate_points(duration_ms: int, points_per_minute: int) -> int:
