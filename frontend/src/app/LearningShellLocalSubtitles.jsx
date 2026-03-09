@@ -54,6 +54,38 @@ import {
 } from "../shared/ui";
 import { clearAuthStorage, REFRESH_KEY, TOKEN_KEY } from "./authStorage";
 
+function toAsrSentenceOnlyPayload(asrPayload) {
+  if (!asrPayload || typeof asrPayload !== "object") {
+    return null;
+  }
+  const transcripts = Array.isArray(asrPayload.transcripts)
+    ? asrPayload.transcripts.map((transcript) => {
+        if (!transcript || typeof transcript !== "object") {
+          return transcript;
+        }
+        const nextTranscript = { ...transcript };
+        if (Array.isArray(nextTranscript.sentences)) {
+          delete nextTranscript.words;
+          return nextTranscript;
+        }
+        return transcript;
+      })
+    : [];
+  return {
+    ...asrPayload,
+    transcripts,
+  };
+}
+
+function toOriginalSubtitleVariant(data) {
+  return {
+    ...data,
+    semantic_split_enabled: false,
+    split_mode: "asr_sentences",
+    strategy_version: 2,
+  };
+}
+
 export function LearningShellLocalSubtitles() {
   const navigate = useNavigate();
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
@@ -335,6 +367,9 @@ export function LearningShellLocalSubtitles() {
     await persistLessonSubtitleCacheSeed(lesson);
     await loadLessons();
     await loadLessonDetail(lesson.id, { autoEnterImmersive: false });
+    if (lesson?.subtitle_cache_seed?.semantic_split_enabled === false) {
+      await handleRegenerateSubtitles(lesson, false, { silent: true });
+    }
     await loadWallet();
   }
 
@@ -456,7 +491,7 @@ export function LearningShellLocalSubtitles() {
     }
   }
 
-  async function handleRegenerateSubtitles(lesson, semanticSplitEnabled) {
+  async function handleRegenerateSubtitles(lesson, semanticSplitEnabled, options = {}) {
     const lessonId = Number(lesson?.id || 0);
     if (!lessonId || !accessToken) {
       return { ok: false, message: "请先登录" };
@@ -477,13 +512,14 @@ export function LearningShellLocalSubtitles() {
         if (!asrPayload || typeof asrPayload !== "object") {
           return { ok: false, message: "当前浏览器缺少原始 ASR 缓存，仅改造后新上传课程支持重新生成字幕" };
         }
+        const requestPayload = semanticSplitEnabled ? asrPayload : toAsrSentenceOnlyPayload(asrPayload);
         const resp = await api(
           `/api/lessons/${lessonId}/subtitle-variants`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              asr_payload: asrPayload,
+              asr_payload: requestPayload,
               semantic_split_enabled: Boolean(semanticSplitEnabled),
             }),
           },
@@ -495,7 +531,8 @@ export function LearningShellLocalSubtitles() {
           setGlobalStatus(message);
           return { ok: false, message };
         }
-        activeVariant = await saveLessonSubtitleVariant(lessonId, data);
+        const normalizedVariant = semanticSplitEnabled ? data : toOriginalSubtitleVariant(data);
+        activeVariant = await saveLessonSubtitleVariant(lessonId, normalizedVariant);
       }
 
       if (!activeVariant) {
@@ -508,8 +545,10 @@ export function LearningShellLocalSubtitles() {
       });
       await refreshSubtitleCacheMeta([{ id: lessonId }], { merge: true });
       setGlobalStatus("");
-      const message = semanticSplitEnabled ? "已切换为语义分句字幕" : "已切换为普通分句字幕";
-      toast.success(message);
+      const message = semanticSplitEnabled ? "已切换为语义分句" : "已切换为原始字幕";
+      if (!options.silent) {
+        toast.success(message);
+      }
       return { ok: true, message };
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
@@ -562,12 +601,11 @@ export function LearningShellLocalSubtitles() {
             </Button>
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold">English Trainer</span>
-              <Badge variant="outline">shadcn style</Badge>
+              <Badge variant="outline">{accessToken ? "已登录" : "未登录"}</Badge>
             </div>
             <Separator orientation="vertical" className="mx-1 hidden h-4 md:block" />
             <div className="hidden items-center gap-2 md:flex">
-              <Badge variant="outline">{accessToken ? "已登录" : "未登录"}</Badge>
-              {accessToken ? <Badge variant="outline">{lessons.length} lessons</Badge> : null}
+              {accessToken ? <Badge variant="outline">{lessons.length} 门课程</Badge> : null}
               <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
             </div>
             <div className="ml-auto flex items-center gap-2">
@@ -600,10 +638,10 @@ export function LearningShellLocalSubtitles() {
                   <SheetContent side="right" className="w-[280px] sm:w-[320px]">
                     <SheetHeader>
                       <SheetTitle>快捷操作</SheetTitle>
-                      <SheetDescription>移动端导航与课程切换入口。</SheetDescription>
+                      <SheetDescription>移动端导航、课程切换与账号操作。</SheetDescription>
                     </SheetHeader>
                     <div className="mt-4 space-y-2">
-                      <Badge variant="outline">{lessons.length} lessons</Badge>
+                      <Badge variant="outline">{lessons.length} 门课程</Badge>
                       <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
                       {lessons.length > 0 ? (
                         <Button

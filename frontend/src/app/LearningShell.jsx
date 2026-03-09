@@ -106,6 +106,57 @@ function getDefaultMediaPreview(lessonId) {
   };
 }
 
+function parseSseEventBlock(block) {
+  if (!block) return null;
+  const lines = String(block)
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter(Boolean);
+  if (!lines.length) return null;
+  let event = "message";
+  const dataLines = [];
+  for (const line of lines) {
+    if (line.startsWith("event:")) {
+      event = line.slice(6).trim() || "message";
+      continue;
+    }
+    if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5).trim());
+    }
+  }
+  if (!dataLines.length) return null;
+  try {
+    return { event, data: JSON.parse(dataLines.join("\n")) };
+  } catch (_) {
+    return null;
+  }
+}
+
+function buildSubtitleRegenerateState(lessonId, payload = {}, status = "streaming") {
+  return {
+    lessonId,
+    stage: String(payload.stage || "prepare"),
+    message: String(payload.message || "正在重切分句"),
+    done: Number(payload.translate_done || 0),
+    total: Number(payload.translate_total || 0),
+    status,
+    semanticSplitEnabled: Boolean(payload.semantic_split_enabled),
+  };
+}
+
+function buildCreatedLessonMediaPreview(lesson, mediaPreview, mediaPersisted) {
+  const lessonId = Number(lesson?.id || mediaPreview?.lessonId || 0);
+  return {
+    ...getDefaultMediaPreview(lessonId),
+    ...(mediaPreview || {}),
+    lessonId,
+    hasMedia: Boolean(mediaPersisted && (mediaPreview?.hasMedia ?? true)),
+    mediaType: String(mediaPreview?.mediaType || ""),
+    coverDataUrl: String(mediaPreview?.coverDataUrl || ""),
+    fileName: String(mediaPreview?.fileName || lesson?.source_filename || ""),
+  };
+}
+
 export function LearningShell() {
   const navigate = useNavigate();
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
@@ -127,6 +178,7 @@ export function LearningShell() {
   const [lessonCardMetaMap, setLessonCardMetaMap] = useState({});
   const [lessonMediaMetaMap, setLessonMediaMetaMap] = useState({});
   const [subtitleCacheMetaMap, setSubtitleCacheMetaMap] = useState({});
+  const [subtitleRegenerateState, setSubtitleRegenerateState] = useState(null);
 
   const immersiveLayoutActive = Boolean(accessToken && currentLesson?.id && immersiveActive);
 
@@ -239,11 +291,6 @@ export function LearningShell() {
           progress,
         },
       }));
-      console.debug("[DEBUG] lesson.detail.loaded", {
-        lessonId,
-        autoEnterImmersive,
-        keepCurrentImmersiveState,
-      });
       setImmersiveActive((prev) => (keepCurrentImmersiveState ? prev : Boolean(autoEnterImmersive)));
       setGlobalStatus("");
     } catch (error) {
@@ -261,6 +308,7 @@ export function LearningShell() {
       setLessonCardMetaMap({});
       setLessonMediaMetaMap({});
       setSubtitleCacheMetaMap({});
+      setSubtitleRegenerateState(null);
       return;
     }
 
@@ -324,12 +372,8 @@ export function LearningShell() {
       const data = await parseResponse(resp);
       if (resp.ok) {
         setWalletBalance(Number(data.balance_points || 0));
-      } else {
-        console.debug("[DEBUG] wallet.load.failed", toErrorText(data, "加载余额失败"));
       }
-    } catch (error) {
-      console.debug("[DEBUG] wallet.load.network_error", String(error));
-    }
+    } catch (_) {}
   }
 
   async function loadBillingRates() {
@@ -346,12 +390,8 @@ export function LearningShell() {
         setSubtitleSettings({
           semantic_split_default_enabled: Boolean(data.subtitle_settings?.semantic_split_default_enabled),
         });
-      } else {
-        console.debug("[DEBUG] billing.rates.load.failed", toErrorText(data, "加载计费失败"));
       }
-    } catch (error) {
-      console.debug("[DEBUG] billing.rates.load.network_error", String(error));
-    }
+    } catch (_) {}
   }
 
   async function detectAdmin() {
@@ -362,8 +402,7 @@ export function LearningShell() {
     try {
       const resp = await api("/api/admin/billing-rates", {}, accessToken);
       setIsAdminUser(resp.ok);
-    } catch (error) {
-      console.debug("[DEBUG] admin.detect.failed", String(error));
+    } catch (_) {
       setIsAdminUser(false);
     }
   }
@@ -394,7 +433,6 @@ export function LearningShell() {
     }
 
     let canceled = false;
-    console.debug("[DEBUG] history.meta.load.start", { lessonCount: lessons.length });
 
     setLessonCardMetaMap((prev) => {
       const next = {};
@@ -432,22 +470,7 @@ export function LearningShell() {
         ]);
 
         if (detailResult.status === "rejected") {
-          console.debug("[DEBUG] history.meta.detail.failed", { lessonId: lesson.id, error: String(detailResult.reason) });
-        }
-        if (progressResult.status === "rejected") {
-          console.debug("[DEBUG] history.meta.progress.failed", {
-            lessonId: lesson.id,
-            error: String(progressResult.reason),
-          });
-        }
-        if (mediaResult.status === "rejected") {
-          console.debug("[DEBUG] history.meta.cover.failed", { lessonId: lesson.id, error: String(mediaResult.reason) });
-        }
-        if (subtitleVariantResult.status === "rejected") {
-          console.debug("[DEBUG] history.meta.subtitle_variant.failed", {
-            lessonId: lesson.id,
-            error: String(subtitleVariantResult.reason),
-          });
+          // Ignore detail prefetch failures; the card will fall back to existing summary data.
         }
 
         const activeSubtitleVariant = subtitleVariantResult.status === "fulfilled" ? subtitleVariantResult.value : null;
@@ -502,8 +525,6 @@ export function LearningShell() {
         });
         return next;
       });
-
-      console.debug("[DEBUG] history.meta.load.complete", { lessonCount: lessons.length });
     });
 
     return () => {
@@ -548,7 +569,6 @@ export function LearningShell() {
   function handlePanelChange(nextPanel) {
     setActivePanel(nextPanel);
     setMobileNavOpen(false);
-    console.debug("[DEBUG] home.panel.change", { panel: nextPanel });
   }
 
   function handleLogout() {
@@ -568,6 +588,7 @@ export function LearningShell() {
     setLessonCardMetaMap({});
     setLessonMediaMetaMap({});
     setSubtitleCacheMetaMap({});
+    setSubtitleRegenerateState(null);
   }
 
   function handleExitImmersive() {
@@ -575,13 +596,25 @@ export function LearningShell() {
     setActivePanel("history");
   }
 
-  async function handleLessonCreated(lesson) {
+  async function handleLessonCreated(payload) {
+    const lesson = payload?.lesson || null;
     const lessonId = lesson?.id;
-    console.debug("[DEBUG] upload.lesson.created", { lessonId });
+    if (!lessonId) return;
+
+    const mediaPersisted = Boolean(payload?.mediaPersisted);
+    const needsBinding = lesson.media_storage === "client_indexeddb" && !mediaPersisted;
+    const shouldAutoEnterImmersive = lesson.media_storage !== "client_indexeddb" || mediaPersisted;
+    const mediaPreview = buildCreatedLessonMediaPreview(lesson, payload?.mediaPreview, mediaPersisted);
+
     setActivePanel("history");
+    setLessonMediaMetaMap((prev) => ({
+      ...prev,
+      [lessonId]: mediaPreview,
+    }));
     await persistLessonSubtitleCacheSeed(lesson);
-    await loadLessons({ preferredLessonId: lessonId, autoEnterImmersive: true });
+    await loadLessons({ preferredLessonId: lessonId, autoEnterImmersive: shouldAutoEnterImmersive });
     await loadWallet();
+    setCurrentLessonNeedsBinding(needsBinding);
   }
 
   async function refreshCurrentLesson() {
@@ -606,7 +639,6 @@ export function LearningShell() {
 
   async function handleStartLesson(lessonId) {
     if (!lessonId) return;
-    console.debug("[DEBUG] history.lesson.start.request", { lessonId });
     setActivePanel("history");
     await loadLessonDetail(lessonId, { autoEnterImmersive: true });
   }
@@ -718,6 +750,132 @@ export function LearningShell() {
       return { ok: false, message: "请先登录" };
     }
 
+    async function requestSubtitleVariantOnce(asrPayload) {
+      const resp = await api(
+        `/api/lessons/${lessonId}/subtitle-variants`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            asr_payload: asrPayload,
+            semantic_split_enabled: Boolean(semanticSplitEnabled),
+          }),
+        },
+        accessToken,
+      );
+      const data = await parseResponse(resp);
+      if (!resp.ok) {
+        const message = toErrorText(data, "重新生成字幕失败");
+        const error = new Error(message);
+        error.userMessage = message;
+        throw error;
+      }
+      return data;
+    }
+
+    async function requestSubtitleVariantStream(asrPayload) {
+      setSubtitleRegenerateState(
+        buildSubtitleRegenerateState(
+          lessonId,
+          {
+            stage: "prepare",
+            message: "正在连接流式反馈",
+            translate_done: 0,
+            translate_total: 0,
+            semantic_split_enabled: Boolean(semanticSplitEnabled),
+          },
+          "streaming",
+        ),
+      );
+      const resp = await api(
+        `/api/lessons/${lessonId}/subtitle-variants/stream`,
+        {
+          method: "POST",
+          headers: {
+            Accept: "text/event-stream",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            asr_payload: asrPayload,
+            semantic_split_enabled: Boolean(semanticSplitEnabled),
+          }),
+        },
+        accessToken,
+      );
+      if (!resp.ok || !resp.body) {
+        let message = "流式反馈不可用";
+        try {
+          const data = await parseResponse(resp);
+          message = toErrorText(data, message);
+        } catch (_) {
+          // Ignore non-JSON stream failures and fall back below.
+        }
+        const error = new Error(message);
+        error.userMessage = message;
+        throw error;
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+      let resultPayload = null;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        const normalized = buffer.replace(/\r\n/g, "\n");
+        const blocks = normalized.split("\n\n");
+        buffer = blocks.pop() || "";
+
+        for (const block of blocks) {
+          const parsed = parseSseEventBlock(block);
+          if (!parsed) continue;
+          if (parsed.event === "progress") {
+            setSubtitleRegenerateState(buildSubtitleRegenerateState(lessonId, parsed.data, "streaming"));
+            continue;
+          }
+          if (parsed.event === "result") {
+            resultPayload = parsed.data;
+            continue;
+          }
+          if (parsed.event === "error") {
+            const message = toErrorText(parsed.data || {}, "重新生成字幕失败");
+            const error = new Error(message);
+            error.userMessage = message;
+            throw error;
+          }
+        }
+
+        if (done) {
+          break;
+        }
+      }
+
+      if (buffer.trim()) {
+        const parsed = parseSseEventBlock(buffer);
+        if (parsed?.event === "progress") {
+          setSubtitleRegenerateState(buildSubtitleRegenerateState(lessonId, parsed.data, "streaming"));
+        }
+        if (parsed?.event === "result") {
+          resultPayload = parsed.data;
+        }
+        if (parsed?.event === "error") {
+          const message = toErrorText(parsed.data || {}, "重新生成字幕失败");
+          const error = new Error(message);
+          error.userMessage = message;
+          throw error;
+        }
+      }
+
+      if (!resultPayload) {
+        const error = new Error("流式反馈未返回结果，已自动改走普通请求");
+        error.userMessage = error.message;
+        throw error;
+      }
+
+      return resultPayload;
+    }
+
     try {
       const cachedVariant = await getCachedLessonSubtitleVariant(lessonId, semanticSplitEnabled);
       let activeVariant = cachedVariant;
@@ -733,23 +891,24 @@ export function LearningShell() {
         if (!asrPayload || typeof asrPayload !== "object") {
           return { ok: false, message: "当前浏览器缺少原始 ASR 缓存，仅改造后新上传课程支持重新生成字幕" };
         }
-        const resp = await api(
-          `/api/lessons/${lessonId}/subtitle-variants`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              asr_payload: asrPayload,
-              semantic_split_enabled: Boolean(semanticSplitEnabled),
-            }),
-          },
-          accessToken,
-        );
-        const data = await parseResponse(resp);
-        if (!resp.ok) {
-          const message = toErrorText(data, "重新生成字幕失败");
-          setGlobalStatus(message);
-          return { ok: false, message };
+        let data = null;
+        try {
+          data = await requestSubtitleVariantStream(asrPayload);
+        } catch (_) {
+          setSubtitleRegenerateState(
+            buildSubtitleRegenerateState(
+              lessonId,
+              {
+                stage: "fallback",
+                message: "流式反馈中断，正在切回普通请求",
+                translate_done: 0,
+                translate_total: 0,
+                semantic_split_enabled: Boolean(semanticSplitEnabled),
+              },
+              "fallback",
+            ),
+          );
+          data = await requestSubtitleVariantOnce(asrPayload);
         }
         activeVariant = await saveLessonSubtitleVariant(lessonId, data);
       }
@@ -771,13 +930,15 @@ export function LearningShell() {
       }));
       await refreshSubtitleCacheMeta([{ id: lessonId }], { merge: true });
       setGlobalStatus("");
-      const message = semanticSplitEnabled ? "已切换为语义分句字幕" : "已切换为普通分句字幕";
+      const message = semanticSplitEnabled ? "已切换为语义分句" : "已切换为原始字幕";
       toast.success(message);
       return { ok: true, message };
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
+      const message = error?.userMessage || `网络错误: ${String(error)}`;
       setGlobalStatus(message);
       return { ok: false, message };
+    } finally {
+      setSubtitleRegenerateState(null);
     }
   }
 
@@ -785,11 +946,6 @@ export function LearningShell() {
     if (!lesson?.id || !file) {
       return { ok: false, message: "恢复视频参数无效" };
     }
-    console.debug("[DEBUG] lessons.restore_media.start", {
-      lessonId: lesson.id,
-      fileName: file.name,
-      fileSize: file.size,
-    });
     try {
       const expectedSourceDurationSec = Math.max(0, Number(lesson.source_duration_ms || 0) / 1000);
       if (expectedSourceDurationSec > 0) {
@@ -799,7 +955,6 @@ export function LearningShell() {
           const message = `恢复失败：文件时长差 ${delta.toFixed(3)} 秒，超过 0.5 秒阈值（本地 ${localDurationSec.toFixed(
             3,
           )} 秒，课程 ${expectedSourceDurationSec.toFixed(3)} 秒）。`;
-          console.debug("[DEBUG] lessons.restore_media.duration_mismatch", { lessonId: lesson.id, deltaSec: delta });
           return { ok: false, message };
         }
       }
@@ -815,11 +970,9 @@ export function LearningShell() {
         setCurrentLessonNeedsBinding(false);
       }
       setMediaRestoreTick((value) => value + 1);
-      console.debug("[DEBUG] lessons.restore_media.success", { lessonId: lesson.id });
       return { ok: true, message: "恢复视频成功" };
     } catch (error) {
       const message = `恢复失败：${String(error)}`;
-      console.debug("[DEBUG] lessons.restore_media.failed", { lessonId: lesson.id, error: String(error) });
       return { ok: false, message };
     }
   }
@@ -1020,16 +1173,17 @@ export function LearningShell() {
                     <AuthPanel onAuthed={handleAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
                   </div>
                 ) : activePanel === "history" ? (
-                  <LessonList
-                    lessons={lessons}
-                    currentLessonId={currentLesson?.id}
-                    currentLessonNeedsBinding={currentLessonNeedsBinding}
-                    lessonCardMetaMap={lessonCardMetaMap}
-                    lessonMediaMetaMap={lessonMediaMetaMap}
-                    subtitleCacheMetaMap={subtitleCacheMetaMap}
-                    onSelect={(lessonId) => loadLessonDetail(lessonId, { autoEnterImmersive: false })}
-                    onStartLesson={handleStartLesson}
-                    onRename={handleRenameLesson}
+                    <LessonList
+                      lessons={lessons}
+                      currentLessonId={currentLesson?.id}
+                      currentLessonNeedsBinding={currentLessonNeedsBinding}
+                      lessonCardMetaMap={lessonCardMetaMap}
+                      lessonMediaMetaMap={lessonMediaMetaMap}
+                      subtitleCacheMetaMap={subtitleCacheMetaMap}
+                      subtitleRegenerateState={subtitleRegenerateState}
+                      onSelect={(lessonId) => loadLessonDetail(lessonId, { autoEnterImmersive: false })}
+                      onStartLesson={handleStartLesson}
+                      onRename={handleRenameLesson}
                     onDelete={handleDeleteLesson}
                     onRestoreMedia={handleRestoreLessonMedia}
                     onRegenerateSubtitles={handleRegenerateSubtitles}

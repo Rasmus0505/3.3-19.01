@@ -27,6 +27,10 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Progress,
   Skeleton,
 } from "../../shared/ui";
 
@@ -57,6 +61,31 @@ function getCoverAssistiveText(lesson) {
   return title ? `${title} 默认封面` : "课程默认封面";
 }
 
+function getSubtitleProgressValue(progress) {
+  if (!progress) return 0;
+  const done = Number(progress.done || 0);
+  const total = Number(progress.total || 0);
+  if (total > 0) {
+    return Math.max(8, Math.min(100, Math.round((done / total) * 100)));
+  }
+  if (progress.stage === "prepare") return 18;
+  if (progress.stage === "semantic_split") return 42;
+  if (progress.stage === "fallback") return 84;
+  if (progress.stage === "completed") return 100;
+  return 12;
+}
+
+function getSubtitleBusyLabel(progress) {
+  if (!progress) return "处理中...";
+  if (progress.stage === "translate" && Number(progress.total || 0) > 0) {
+    return `正在翻译 ${Number(progress.done || 0)}/${Number(progress.total || 0)}`;
+  }
+  if (progress.stage === "semantic_split") return "正在语义分句...";
+  if (progress.stage === "fallback") return "正在切回普通请求...";
+  if (progress.stage === "completed") return "即将完成...";
+  return "正在重切分句...";
+}
+
 export function LessonList({
   lessons,
   currentLessonId,
@@ -71,6 +100,7 @@ export function LessonList({
   onRestoreMedia,
   onRegenerateSubtitles,
   onSwitchToUpload,
+  subtitleRegenerateState = null,
   loading = false,
 }) {
   const [renamingLesson, setRenamingLesson] = useState(null);
@@ -86,6 +116,8 @@ export function LessonList({
   const [status, setStatus] = useState("");
   const restoreInputRef = useRef(null);
   const restoreTargetRef = useRef(null);
+  const activeSubtitleProgress =
+    subtitleLesson && subtitleRegenerateState?.lessonId === subtitleLesson.id ? subtitleRegenerateState : null;
 
   const cards = useMemo(
     () =>
@@ -259,7 +291,7 @@ export function LessonList({
                 subtitleMeta.currentSemanticSplitEnabled === true
                   ? "语义分句"
                   : subtitleMeta.currentSemanticSplitEnabled === false
-                    ? "普通分句"
+                    ? "原始字幕"
                     : "服务器字幕";
               const subtitleVariantHint = subtitleMeta.canRegenerate
                 ? `已缓存${subtitleMeta.hasPlainVariant && subtitleMeta.hasSemanticVariant ? "双模式字幕" : "当前模式字幕"}`
@@ -324,79 +356,79 @@ export function LessonList({
                         <Play className="size-4" />
                         {actionLabel}
                       </Button>
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="outline"
-                        className="self-end"
-                        aria-label="open-lesson-menu"
-                        onClick={() => setMenuLessonId((prev) => (prev === lesson.id ? null : lesson.id))}
-                        disabled={renameBusy || deleteBusy || subtitleBusy || Boolean(restoringLessonId)}
-                      >
-                        <MoreVertical className="size-4" />
-                      </Button>
+                      <Popover open={menuLessonId === lesson.id} onOpenChange={(open) => setMenuLessonId(open ? lesson.id : null)}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="outline"
+                            className="self-end"
+                            aria-label="open-lesson-menu"
+                            disabled={renameBusy || deleteBusy || subtitleBusy || Boolean(restoringLessonId)}
+                          >
+                            <MoreVertical className="size-4" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="end" sideOffset={8} className="w-56 p-2">
+                          <div className="flex flex-col gap-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="w-full justify-start"
+                              onClick={() => {
+                                openRenameDialog(lesson);
+                                setMenuLessonId(null);
+                              }}
+                              disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                            >
+                              <Pencil className="size-4" />
+                              重命名
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="w-full justify-start"
+                              onClick={() => {
+                                openSubtitleDialog(lesson, subtitleMeta);
+                                setMenuLessonId(null);
+                              }}
+                              disabled={renameBusy || deleteBusy || subtitleBusy || !subtitleMeta.canRegenerate}
+                            >
+                              <Sparkles className="size-4" />
+                              {subtitleMeta.canRegenerate ? "重新生成字幕" : "重新生成字幕（仅新上传）"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="w-full justify-start"
+                              onClick={() => openRestorePicker(lesson)}
+                              disabled={renameBusy || deleteBusy || subtitleBusy || Boolean(restoringLessonId)}
+                            >
+                              <RotateCcw className="size-4" />
+                              恢复视频
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="w-full justify-start text-destructive hover:text-destructive"
+                              onClick={() => {
+                                setDeletingLesson(lesson);
+                                setMenuLessonId(null);
+                              }}
+                              disabled={renameBusy || deleteBusy || subtitleBusy || Boolean(restoringLessonId)}
+                            >
+                              <Trash2 className="size-4" />
+                              删除
+                            </Button>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                   </div>
-
-                  {menuLessonId === lesson.id ? (
-                    <div className="border-t bg-muted/20 px-4 py-3">
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="justify-start"
-                          onClick={() => {
-                            openRenameDialog(lesson);
-                            setMenuLessonId(null);
-                          }}
-                          disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
-                        >
-                          <Pencil className="size-4" />
-                          重命名
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="justify-start"
-                          onClick={() => {
-                            openSubtitleDialog(lesson, subtitleMeta);
-                            setMenuLessonId(null);
-                          }}
-                          disabled={renameBusy || deleteBusy || subtitleBusy || !subtitleMeta.canRegenerate}
-                        >
-                          <Sparkles className="size-4" />
-                          {subtitleMeta.canRegenerate ? "重新生成字幕" : "重新生成字幕（仅新上传）"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="justify-start"
-                          onClick={() => openRestorePicker(lesson)}
-                          disabled={renameBusy || deleteBusy || subtitleBusy || Boolean(restoringLessonId)}
-                        >
-                          <RotateCcw className="size-4" />
-                          恢复视频
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="justify-start text-destructive hover:text-destructive"
-                          onClick={() => {
-                            setDeletingLesson(lesson);
-                            setMenuLessonId(null);
-                          }}
-                          disabled={renameBusy || deleteBusy || subtitleBusy || Boolean(restoringLessonId)}
-                        >
-                          <Trash2 className="size-4" />
-                          删除
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
               );
             })}
@@ -454,7 +486,7 @@ export function LessonList({
             <DialogHeader>
               <DialogTitle>重新生成字幕</DialogTitle>
               <DialogDescription>
-                仅重新切分并重载字幕，不会重新跑 ASR。切到语义分句时会按新的英文分句重翻中文字幕。
+                仅重新加载字幕，不会重新跑 ASR。切到原始字幕会回到 ASR 原句，切到语义分句会按新的英文分句重翻中文字幕。
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
@@ -465,7 +497,7 @@ export function LessonList({
                   onClick={() => setSubtitleMode("plain")}
                   disabled={subtitleBusy}
                 >
-                  普通分句
+                  原始字幕
                 </Button>
                 <Button
                   type="button"
@@ -477,12 +509,26 @@ export function LessonList({
                 </Button>
               </div>
               <p className="text-sm text-muted-foreground">
-                {subtitleMode === "semantic" ? "适合长句重新细分，阅读更轻松。" : "适合回到规则分句，减少过度切分。"}
+                {subtitleMode === "semantic" ? "适合长句重新细分，阅读更轻松。" : "直接回到 ASR 原始分句结果。"}
               </p>
+              {subtitleBusy ? (
+                <div className="rounded-xl border bg-muted/20 p-3">
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="font-medium">{activeSubtitleProgress?.message || "正在处理字幕"}</span>
+                    {Number(activeSubtitleProgress?.total || 0) > 0 ? (
+                      <span className="text-muted-foreground">
+                        {Number(activeSubtitleProgress?.done || 0)}/{Number(activeSubtitleProgress?.total || 0)}
+                      </span>
+                    ) : null}
+                  </div>
+                  <Progress value={getSubtitleProgressValue(activeSubtitleProgress)} className="mt-3 h-2" />
+                </div>
+              ) : null}
             </div>
             <DialogFooter>
               <Button
                 variant="ghost"
+                disabled={subtitleBusy}
                 onClick={() => {
                   if (subtitleBusy) return;
                   setSubtitleLesson(null);
@@ -491,7 +537,7 @@ export function LessonList({
                 取消
               </Button>
               <Button onClick={() => void submitRegenerate()} disabled={subtitleBusy}>
-                {subtitleBusy ? "处理中..." : "确认切换"}
+                {subtitleBusy ? getSubtitleBusyLabel(activeSubtitleProgress) : "确认切换"}
               </Button>
             </DialogFooter>
           </DialogContent>

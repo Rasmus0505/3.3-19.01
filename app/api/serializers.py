@@ -74,6 +74,7 @@ def to_lesson_detail_response(lesson: Lesson, sentences: list[LessonSentence]) -
             semantic_split_enabled=bool(subtitle_cache_seed_payload.get("semantic_split_enabled")),
             split_mode=str(subtitle_cache_seed_payload.get("split_mode") or ""),
             source_word_count=int(subtitle_cache_seed_payload.get("source_word_count", 0)),
+            strategy_version=int(subtitle_cache_seed_payload.get("strategy_version", 1)),
             asr_payload=dict(subtitle_cache_seed_payload.get("asr_payload") or {}),
             sentences=[
                 to_runtime_sentence_response(item)

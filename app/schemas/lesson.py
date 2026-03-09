@@ -20,6 +20,7 @@ class SubtitleCacheSeedResponse(BaseModel):
     semantic_split_enabled: bool
     split_mode: str
     source_word_count: int = 0
+    strategy_version: int = 1
     asr_payload: dict[str, Any]
     sentences: list[LessonSentenceResponse]
 
@@ -117,4 +118,19 @@ class LessonSubtitleVariantResponse(BaseModel):
     semantic_split_enabled: bool
     split_mode: str
     source_word_count: int = 0
+    strategy_version: int = 1
     sentences: list[LessonSentenceResponse]
+
+
+class LessonSubtitleVariantProgressEvent(BaseModel):
+    stage: str
+    message: str
+    translate_done: int = 0
+    translate_total: int = 0
+    semantic_split_enabled: bool = False
+
+
+class LessonSubtitleVariantErrorEvent(BaseModel):
+    error_code: str = ""
+    message: str
+    detail: str = ""
