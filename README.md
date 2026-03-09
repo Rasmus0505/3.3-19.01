@@ -40,11 +40,11 @@
 - `ALEMBIC_CONFIG=alembic.ini`
 - `TMP_WORK_DIR=/tmp/zeabur3.3`
 - `MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
-- `MT_MODEL=qwen-mt-plus`
+- `MT_MODEL=qwen-mt-flash`
 - `APP_TIMEZONE=Asia/Shanghai`
 - `ASR_SEGMENT_TARGET_SECONDS=300`
 - `ASR_SEGMENT_SEARCH_WINDOW_SECONDS=45`
-- 字幕规则分句与语义分句默认值改为后台“字幕/分句设置”维护，不再新增环境变量
+- 字幕规则分句、语义分句、翻译批次最大字符数默认值改为后台“字幕/分句设置”维护，不再新增环境变量
 
 当前英文分句链路已改为：`静音优先切段 -> ASR 词级时间 -> VideoLingo 风格规则分句`。  
 本轮不启用 Qwen 语义切句；若词级结果缺失，会降级为 ASR 原始句子。
@@ -122,7 +122,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - `MT_MODEL`
 - `ASR_SEGMENT_TARGET_SECONDS=300`
 - `ASR_SEGMENT_SEARCH_WINDOW_SECONDS=45`
-- 上传页“开启语义分句”默认状态与分句阈值请到后台“字幕/分句设置”中调整
+- 上传页“开启语义分句”默认状态、分句阈值、翻译批次最大字符数请到后台“字幕/分句设置”中调整
 
 ### 4）部署后如何验证
 
@@ -219,11 +219,18 @@ ALTER TABLE app.billing_model_rates
   DROP CONSTRAINT IF EXISTS ck_billing_rate_positive;
 ALTER TABLE app.billing_model_rates
   DROP CONSTRAINT IF EXISTS ck_billing_rate_token_non_negative;
+ALTER TABLE app.subtitle_settings
+  ADD COLUMN IF NOT EXISTS translation_batch_max_chars INTEGER NOT NULL DEFAULT 2600;
 
 ALTER TABLE app.billing_model_rates
   ADD CONSTRAINT ck_billing_rate_positive CHECK (points_per_minute >= 0);
 ALTER TABLE app.billing_model_rates
   ADD CONSTRAINT ck_billing_rate_token_non_negative CHECK (points_per_1k_tokens >= 0);
+ALTER TABLE app.subtitle_settings
+  DROP CONSTRAINT IF EXISTS ck_translation_batch_chars_range;
+ALTER TABLE app.subtitle_settings
+  ADD CONSTRAINT ck_translation_batch_chars_range
+  CHECK (translation_batch_max_chars > 0 AND translation_batch_max_chars <= 12000);
 
 ALTER TABLE app.wallet_ledger
   DROP CONSTRAINT IF EXISTS ck_wallet_ledger_event_type;
@@ -283,11 +290,11 @@ INSERT INTO app.billing_model_rates
   (model_name, points_per_minute, points_per_1k_tokens, billing_unit, is_active,
    parallel_enabled, parallel_threshold_seconds, segment_seconds, max_concurrency, updated_at, updated_by_user_id)
 VALUES
-  ('qwen-mt-plus', 0, 15, '1k_tokens', TRUE, FALSE, 600, 300, 1, NOW(), NULL),
-  ('qwen-mt-flash', 0, 15, '1k_tokens', TRUE, FALSE, 600, 300, 1, NOW(), NULL),
-  ('qwen-mt-lite', 0, 15, '1k_tokens', TRUE, FALSE, 600, 300, 1, NOW(), NULL),
-  ('qwen-mt-turbo', 0, 15, '1k_tokens', TRUE, FALSE, 600, 300, 1, NOW(), NULL)
+  ('qwen-mt-flash', 0, 15, '1k_tokens', TRUE, FALSE, 600, 300, 1, NOW(), NULL)
 ON CONFLICT (model_name) DO NOTHING;
+
+DELETE FROM app.billing_model_rates
+WHERE model_name IN ('qwen-mt-plus', 'qwen-mt-lite', 'qwen-mt-turbo');
 ```
 
 ### 补库后怎么验证
@@ -299,10 +306,8 @@ ON CONFLICT (model_name) DO NOTHING;
 3. 再看：
    - `GET /health/ready` 返回 `200`
    - 后台登录后，浏览器开发者工具 `Network` 里的 `GET /api/admin/billing-rates` 响应包含：
-     - `qwen-mt-plus`
      - `qwen-mt-flash`
-     - `qwen-mt-lite`
-     - `qwen-mt-turbo`
      - `billing_unit="1k_tokens"`
      - `points_per_1k_tokens=15`
+
 

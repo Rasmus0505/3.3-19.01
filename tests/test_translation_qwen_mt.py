@@ -62,11 +62,14 @@ def _fake_client(scripted: list[object]):
 
 @pytest.fixture(autouse=True)
 def _translation_defaults(monkeypatch):
-    monkeypatch.setattr(translation_qwen_mt, "MT_BATCH_MAX_SENTENCES", 8)
-    monkeypatch.setattr(translation_qwen_mt, "MT_BATCH_MAX_CHARS", 1400)
     monkeypatch.setattr(translation_qwen_mt, "MT_MIN_REQUEST_INTERVAL_MS", 0)
     monkeypatch.setattr(translation_qwen_mt, "MT_RETRY_MAX_ATTEMPTS", 3)
     monkeypatch.setattr(translation_qwen_mt, "_LAST_REQUEST_AT", 0.0)
+    token = translation_qwen_mt._BATCH_MAX_CHARS_CTX.set(2600)
+    try:
+        yield
+    finally:
+        translation_qwen_mt._BATCH_MAX_CHARS_CTX.reset(token)
 
 
 def test_translate_to_zh_returns_content_for_single_success(monkeypatch):
@@ -81,23 +84,23 @@ def test_translate_to_zh_returns_content_for_single_success(monkeypatch):
     assert "Input JSON" in completions.calls[0]["messages"][-1]["content"]
 
 
-def test_translate_sentences_to_zh_batches_by_sentence_limit(monkeypatch):
-    monkeypatch.setattr(translation_qwen_mt, "MT_BATCH_MAX_SENTENCES", 2)
+def test_translate_sentences_to_zh_batches_by_char_limit(monkeypatch):
     client, completions = _fake_client(
         [
             _completion_json(["中1", "中2"], request_id="req_1"),
-            _completion_json(["中3", "中4"], request_id="req_2"),
-            _completion_json(["中5"], request_id="req_3"),
+            _completion_json(["中3"], request_id="req_2"),
+            _completion_json(["中4", "中5"], request_id="req_3"),
         ]
     )
     progress: list[tuple[int, int]] = []
     monkeypatch.setattr(translation_qwen_mt, "_client", lambda api_key: client)
 
-    result = translation_qwen_mt.translate_sentences_to_zh(
-        ["a", "b", "c", "d", "e"],
-        "test-key",
-        progress_callback=lambda done, total: progress.append((done, total)),
-    )
+    with translation_qwen_mt.translation_batch_chars_scope(5):
+        result = translation_qwen_mt.translate_sentences_to_zh(
+            ["aa", "bbb", "cc", "dddd", "e"],
+            "test-key",
+            progress_callback=lambda done, total: progress.append((done, total)),
+        )
 
     assert result.texts == ["中1", "中2", "中3", "中4", "中5"]
     assert result.failed_count == 0
@@ -105,6 +108,36 @@ def test_translate_sentences_to_zh_batches_by_sentence_limit(monkeypatch):
     assert result.success_request_count == 3
     assert progress == [(1, 5), (2, 5), (3, 5), (4, 5), (5, 5)]
     assert len(completions.calls) == 3
+
+
+def test_translate_sentences_to_zh_keeps_single_long_sentence_in_one_batch(monkeypatch):
+    client, completions = _fake_client([_completion_json(["超长句翻译"], request_id="req_long")])
+    monkeypatch.setattr(translation_qwen_mt, "_client", lambda api_key: client)
+
+    with translation_qwen_mt.translation_batch_chars_scope(4):
+        result = translation_qwen_mt.translate_sentences_to_zh(["this sentence is much longer than four chars"], "test-key")
+
+    assert result.texts == ["超长句翻译"]
+    assert result.failed_count == 0
+    assert result.total_requests == 1
+    assert len(completions.calls) == 1
+
+
+def test_translate_sentences_to_zh_uses_runtime_batch_chars_scope(monkeypatch):
+    client, completions = _fake_client(
+        [
+            _completion_json(["中1", "中2"], request_id="req_scope_1"),
+            _completion_json(["中3"], request_id="req_scope_2"),
+        ]
+    )
+    monkeypatch.setattr(translation_qwen_mt, "_client", lambda api_key: client)
+
+    with translation_qwen_mt.translation_batch_chars_scope(4):
+        result = translation_qwen_mt.translate_sentences_to_zh(["aa", "bb", "cc"], "test-key")
+
+    assert result.texts == ["中1", "中2", "中3"]
+    assert result.total_requests == 2
+    assert len(completions.calls) == 2
 
 
 def test_translate_sentences_to_zh_splits_batch_when_output_count_mismatches(monkeypatch):

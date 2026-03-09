@@ -1,4 +1,4 @@
-﻿import { ArrowLeft, ArrowRight, Eye, Loader2, RotateCcw } from "lucide-react";
+﻿import { ArrowLeft, ArrowRight, Eye, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getStorageEstimate, getLessonMedia, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
@@ -22,6 +22,7 @@ import { useTypingFeedbackSounds } from "./useTypingFeedbackSounds";
 import "./immersive.css";
 
 const DISPLAY_MODE_STORAGE_KEY = "immersive_word_display_mode";
+const AUTO_REPLAY_STORAGE_KEY = "immersive_auto_replay_current_sentence";
 const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
 const APOSTROPHE_RE = /[’']/g;
 const CINEMA_CONTROLS_IDLE_MS = 3000;
@@ -44,6 +45,16 @@ function getInitialDisplayMode() {
   if (typeof window === "undefined") return "underline";
   const saved = window.localStorage.getItem(DISPLAY_MODE_STORAGE_KEY);
   return saved === "chip" || saved === "underline" ? saved : "underline";
+}
+
+function getInitialAutoReplayEnabled() {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(AUTO_REPLAY_STORAGE_KEY) === "true";
+}
+
+function debugAutoReplayLog(event, detail = {}) {
+  if (typeof console === "undefined" || typeof console.debug !== "function") return;
+  console.debug("[DEBUG] immersive.auto_replay", event, detail);
 }
 
 function getFullscreenElement() {
@@ -260,9 +271,14 @@ export function ImmersiveLessonPage({
   const [wordInputs, setWordInputs] = useState([]);
   const [wordStatuses, setWordStatuses] = useState([]);
   const [displayMode, setDisplayMode] = useState(() => getInitialDisplayMode());
+  const [autoReplayCurrentSentence, setAutoReplayCurrentSentence] = useState(() => getInitialAutoReplayEnabled());
   const [sentenceTypingDone, setSentenceTypingDone] = useState(false);
   const [sentencePlaybackDone, setSentencePlaybackDone] = useState(false);
   const [sentencePlaybackRequired, setSentencePlaybackRequired] = useState(true);
+  const [sentenceInitialPlaybackDone, setSentenceInitialPlaybackDone] = useState(false);
+  const [sentenceAutoReplayDone, setSentenceAutoReplayDone] = useState(false);
+  const [sentenceAutoReplayAttempted, setSentenceAutoReplayAttempted] = useState(false);
+  const [sentenceAutoReplayBlocked, setSentenceAutoReplayBlocked] = useState(false);
   const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
   const [isFullscreenFallback, setIsFullscreenFallback] = useState(false);
   const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(false);
@@ -276,6 +292,7 @@ export function ImmersiveLessonPage({
   const cinemaControlsIdleTimerRef = useRef(null);
   const currentWordInputRef = useRef("");
   const sentenceAdvanceLockedRef = useRef(false);
+  const playbackKindRef = useRef("initial");
   const cinemaFullscreenActive = isCinemaFullscreen || isFullscreenFallback;
   const hasExitHandler = typeof onExitImmersive === "function" || typeof onBack === "function";
   const typingEnabled =
@@ -327,9 +344,14 @@ export function ImmersiveLessonPage({
 
   const resetSentenceGate = useCallback((playbackRequired = true) => {
     sentenceAdvanceLockedRef.current = false;
+    playbackKindRef.current = "initial";
     setSentenceTypingDone(false);
     setSentencePlaybackDone(false);
     setSentencePlaybackRequired(Boolean(playbackRequired));
+    setSentenceInitialPlaybackDone(false);
+    setSentenceAutoReplayDone(false);
+    setSentenceAutoReplayAttempted(false);
+    setSentenceAutoReplayBlocked(false);
   }, []);
 
   const syncProgress = useCallback(
@@ -375,6 +397,12 @@ export function ImmersiveLessonPage({
     const nextIdx = currentSentenceIndex + 1;
     const lastIdx = Math.max(0, sentenceCount - 1);
     const progressIdx = Math.min(nextIdx, lastIdx);
+    debugAutoReplayLog("sentence_pass", {
+      sentenceIdx: currentSentence.idx,
+      nextSentenceIndex: nextIdx,
+      autoReplayEnabled: autoReplayCurrentSentence,
+      autoReplayDone: sentenceAutoReplayDone,
+    });
     await syncProgress(progressIdx, nextCompleted, currentSentence.end_ms);
     onProgressSynced?.();
 
@@ -386,16 +414,60 @@ export function ImmersiveLessonPage({
     resetWordTyping(lesson?.sentences?.[nextIdx], true);
     setCurrentSentenceIndex(nextIdx);
     setPhase("auto_play_pending");
-  }, [completedIndexes, currentSentence, currentSentenceIndex, lesson, onProgressSynced, resetWordTyping, sentenceCount, syncProgress]);
+  }, [
+    autoReplayCurrentSentence,
+    completedIndexes,
+    currentSentence,
+    currentSentenceIndex,
+    lesson,
+    onProgressSynced,
+    resetWordTyping,
+    sentenceAutoReplayDone,
+    sentenceCount,
+    syncProgress,
+  ]);
 
   const onSentenceFinished = useCallback(() => {
+    const playbackKind = playbackKindRef.current || "initial";
+    debugAutoReplayLog("playback_finished", {
+      playbackKind,
+      sentenceIndex: currentSentenceIndex,
+      typingDone: sentenceTypingDone,
+      autoReplayBlocked: sentenceAutoReplayBlocked,
+    });
     setSentencePlaybackDone(true);
+    if (playbackKind !== "auto_replay" && !sentenceInitialPlaybackDone) {
+      setSentenceInitialPlaybackDone(true);
+    }
+    if (playbackKind === "auto_replay") {
+      setSentenceAutoReplayDone(true);
+      setSentenceAutoReplayBlocked(false);
+      debugAutoReplayLog("auto_replay_finished", { sentenceIndex: currentSentenceIndex });
+    }
+    if (
+      playbackKind === "manual_replay" &&
+      autoReplayCurrentSentence &&
+      !sentenceAutoReplayDone &&
+      (sentenceTypingDone || sentenceAutoReplayBlocked)
+    ) {
+      setSentenceAutoReplayDone(true);
+      setSentenceAutoReplayBlocked(false);
+      debugAutoReplayLog("manual_replay_satisfy_auto", { sentenceIndex: currentSentenceIndex });
+    }
     if (!expectedTokens.length) {
       setSentenceTypingDone(true);
       return;
     }
     setPhase("typing");
-  }, [expectedTokens.length]);
+  }, [
+    autoReplayCurrentSentence,
+    currentSentenceIndex,
+    expectedTokens.length,
+    sentenceAutoReplayBlocked,
+    sentenceAutoReplayDone,
+    sentenceInitialPlaybackDone,
+    sentenceTypingDone,
+  ]);
 
   const { isPlaying, playSentence, stopPlayback, onMainMediaTimeUpdate } = useSentencePlayback({
     mode: mediaMode,
@@ -407,23 +479,33 @@ export function ImmersiveLessonPage({
   });
 
   const tryPlayCurrentSentence = useCallback(
-    async ({ manual = false } = {}) => {
+    async ({ manual = false, playbackKind = "initial", source = "unknown" } = {}) => {
       if (!currentSentence) return;
       if (needsBinding) {
         setMediaError("当前课程缺少可播放媒体，请先在历史记录中恢复视频。");
         setSentencePlaybackRequired(false);
+        if (playbackKind === "auto_replay") {
+          setSentenceAutoReplayBlocked(true);
+          debugAutoReplayLog("auto_replay_blocked", { reason: "needs_binding", sentenceIndex: currentSentenceIndex });
+        }
         if (!expectedTokens.length) {
           setSentenceTypingDone(true);
         }
         setPhase("typing");
         return;
       }
+      debugAutoReplayLog("playback_start", { playbackKind, source, sentenceIndex: currentSentenceIndex });
       const result = await playSentence(currentSentence);
       if (result.ok) {
+        playbackKindRef.current = playbackKind;
         setSentencePlaybackRequired(true);
         setSentencePlaybackDone(false);
+        if (playbackKind === "auto_replay") {
+          setSentenceAutoReplayBlocked(false);
+        }
         setMediaError("");
         setPhase("playing");
+        debugAutoReplayLog("playback_started", { playbackKind, sentenceIndex: currentSentenceIndex });
         return;
       }
       if (result.reason === "clip_unavailable") {
@@ -432,7 +514,13 @@ export function ImmersiveLessonPage({
         if (!expectedTokens.length) {
           setSentenceTypingDone(true);
         }
-        setMediaError("本句服务器音频不可用，请先在历史记录中恢复视频。");
+        if (playbackKind === "auto_replay") {
+          setSentenceAutoReplayBlocked(true);
+          setMediaError("当前句自动重播失败，请按 Shift+R 手动重播后继续。");
+          debugAutoReplayLog("auto_replay_blocked", { reason: "clip_unavailable", sentenceIndex: currentSentenceIndex });
+        } else {
+          setMediaError("本句服务器音频不可用，请先在历史记录中恢复视频。");
+        }
         setPhase("typing");
         return;
       }
@@ -442,21 +530,33 @@ export function ImmersiveLessonPage({
           setSentenceTypingDone(true);
         }
         setPhase("typing");
-        setMediaError(
-          manual
-            ? "浏览器仍阻止自动播放。你可以继续输入，或稍后点击“重播本句”。"
-            : "自动播放受限。你可以直接输入，或点击“重播本句”手动播放。",
-        );
+        if (playbackKind === "auto_replay") {
+          setSentenceAutoReplayBlocked(true);
+          setMediaError("自动重播被浏览器阻止。请按 Shift+R 手动重播后继续。");
+          debugAutoReplayLog("auto_replay_blocked", { reason: "autoplay_blocked", sentenceIndex: currentSentenceIndex });
+        } else {
+          setMediaError(
+            manual
+              ? "浏览器仍阻止自动播放。你可以继续输入，或稍后按 Shift+R 手动重播本句。"
+              : "自动播放受限。你可以直接输入，或按 Shift+R 手动播放本句。",
+          );
+        }
         return;
       }
       setSentencePlaybackRequired(false);
       if (!expectedTokens.length) {
         setSentenceTypingDone(true);
       }
-      setMediaError("当前句播放失败，已切换为输入模式。");
+      if (playbackKind === "auto_replay") {
+        setSentenceAutoReplayBlocked(true);
+        setMediaError("当前句自动重播失败，请按 Shift+R 手动重播后继续。");
+        debugAutoReplayLog("auto_replay_blocked", { reason: String(result.reason || "play_failed"), sentenceIndex: currentSentenceIndex });
+      } else {
+        setMediaError("当前句播放失败，已切换为输入模式。");
+      }
       setPhase("typing");
     },
-    [currentSentence, expectedTokens.length, needsBinding, playSentence],
+    [currentSentence, currentSentenceIndex, expectedTokens.length, needsBinding, playSentence],
   );
 
   useEffect(() => {
@@ -593,7 +693,7 @@ export function ImmersiveLessonPage({
     if (needsBinding) return;
     if (phase !== "auto_play_pending") return;
     if (mediaMode !== "clip" && !mediaReady) return;
-    tryPlayCurrentSentence();
+    tryPlayCurrentSentence({ playbackKind: "initial", source: "auto_play_pending" });
   }, [currentSentence, immersiveActive, mediaMode, mediaReady, needsBinding, phase, tryPlayCurrentSentence]);
 
   useEffect(() => {
@@ -619,15 +719,55 @@ export function ImmersiveLessonPage({
 
   useEffect(() => {
     if (!immersiveActive) return;
+    if (!autoReplayCurrentSentence) return;
+    if (!sentenceTypingDone) return;
+    if (!sentenceInitialPlaybackDone) return;
+    if (sentenceAutoReplayDone) return;
+    if (sentenceAutoReplayAttempted || sentenceAutoReplayBlocked) return;
+    if (isPlaying) return;
+    if (!currentSentence) return;
+    if (mediaLoading || phase === "transition" || needsBinding) return;
+    setSentenceAutoReplayAttempted(true);
+    debugAutoReplayLog("auto_replay_request", { sentenceIndex: currentSentenceIndex });
+    void tryPlayCurrentSentence({ playbackKind: "auto_replay", source: "auto_replay" });
+  }, [
+    autoReplayCurrentSentence,
+    currentSentence,
+    currentSentenceIndex,
+    immersiveActive,
+    isPlaying,
+    mediaLoading,
+    needsBinding,
+    phase,
+    sentenceAutoReplayAttempted,
+    sentenceAutoReplayBlocked,
+    sentenceAutoReplayDone,
+    sentenceInitialPlaybackDone,
+    sentenceTypingDone,
+    tryPlayCurrentSentence,
+  ]);
+
+  useEffect(() => {
+    if (!immersiveActive) return;
     if (!sentenceTypingDone) return;
     if (sentencePlaybackRequired && !sentencePlaybackDone) return;
+    if (autoReplayCurrentSentence && sentenceInitialPlaybackDone && !sentenceAutoReplayDone) return;
     if (sentenceAdvanceLockedRef.current) return;
     sentenceAdvanceLockedRef.current = true;
     setPhase("transition");
     setTimeout(() => {
       void handleSentencePassed();
     }, 120);
-  }, [handleSentencePassed, immersiveActive, sentencePlaybackDone, sentencePlaybackRequired, sentenceTypingDone]);
+  }, [
+    autoReplayCurrentSentence,
+    handleSentencePassed,
+    immersiveActive,
+    sentenceAutoReplayDone,
+    sentenceInitialPlaybackDone,
+    sentencePlaybackDone,
+    sentencePlaybackRequired,
+    sentenceTypingDone,
+  ]);
 
   useEffect(() => {
     if (immersiveActive) return;
@@ -639,6 +779,11 @@ export function ImmersiveLessonPage({
     if (typeof window === "undefined") return;
     window.localStorage.setItem(DISPLAY_MODE_STORAGE_KEY, displayMode);
   }, [displayMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(AUTO_REPLAY_STORAGE_KEY, autoReplayCurrentSentence ? "true" : "false");
+  }, [autoReplayCurrentSentence]);
 
   const handleMainMediaError = useCallback(() => {
     const hasClipFallback = lesson?.media_storage === "server" && Array.isArray(lesson?.sentences) && lesson.sentences.some((item) => item?.audio_url);
@@ -846,9 +991,9 @@ export function ImmersiveLessonPage({
   );
 
   const replayCurrentSentence = useCallback(
-    (source = "button_replay") => {
+    (source = "manual_replay") => {
       if (!currentSentence || mediaLoading || phase === "transition" || needsBinding) return;
-      void tryPlayCurrentSentence({ manual: true });
+      void tryPlayCurrentSentence({ manual: true, playbackKind: "manual_replay", source });
     },
     [currentSentence, mediaLoading, needsBinding, phase, tryPlayCurrentSentence],
   );
@@ -1114,8 +1259,9 @@ export function ImmersiveLessonPage({
   const canGoPrevious = currentSentenceIndex > 0;
   const canGoNext = currentSentenceIndex < Math.max(0, sentenceCount - 1);
   const canRevealWord = typingEnabled && activeWordIndex < expectedTokens.length && expectedTokens.length > 0;
-  const canReplaySentence = Boolean(currentSentence) && !mediaLoading && phase !== "transition" && !needsBinding;
-  const showDefaultImmersiveControls = immersiveActive && !cinemaFullscreenActive;
+  const waitingForInitialPlayback = sentenceTypingDone && !sentencePlaybackDone && sentencePlaybackRequired;
+  const waitingForAutoReplay =
+    autoReplayCurrentSentence && sentenceTypingDone && sentenceInitialPlaybackDone && !sentenceAutoReplayDone;
   const cinemaHeaderControlsClassName = [
     "immersive-header-left",
     cinemaFullscreenActive ? "immersive-header-left--cinema" : "",
@@ -1242,69 +1388,79 @@ export function ImmersiveLessonPage({
 
           {immersiveActive ? (
             <>
-              {showDefaultImmersiveControls ? (
-                <div className="immersive-controls">
-                  <TooltipProvider delayDuration={120}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="outline" onClick={() => replayCurrentSentence("button_replay")} disabled={!canReplaySentence}>
-                          <RotateCcw className="size-4" />
-                          重播本句
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>shift+r</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <TooltipProvider delayDuration={120}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="outline" onClick={() => revealCurrentWord("button_reveal")} disabled={!canRevealWord}>
-                          <Eye className="size-4" />
-                          揭示单词
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>space</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <Button variant="outline" onClick={() => goToPreviousSentence("button_prev")} disabled={!canGoPrevious || phase === "transition"}>
-                    <ArrowLeft className="size-4" />
-                    上一句
-                  </Button>
-                  <TooltipProvider delayDuration={120}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="outline" onClick={() => goToNextSentence("button_next")} disabled={!canGoNext || phase === "transition"}>
-                          下一句
-                          <ArrowRight className="size-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>enter</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <Badge variant="outline">
-                    已完成 {completedIndexes.length} / {sentenceCount}
-                  </Badge>
-                  {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
-                  {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
-
-                  {sentenceTypingDone && !sentencePlaybackDone && sentencePlaybackRequired ? (
-                    <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p>
-                  ) : null}
-                </div>
-              ) : null}
-
               <div className={`immersive-typing ${cinemaFullscreenActive ? "immersive-typing--cinema" : ""}`}>
                 {!cinemaFullscreenActive ? (
                   <div className="immersive-typing-toolbar">
-                    <div className="immersive-display-toggle">
-                      <span className="text-xs text-muted-foreground">下划线模式</span>
-                      <Switch
-                        checked={displayMode === "underline"}
-                        onCheckedChange={(checked) => setDisplayMode(checked ? "underline" : "chip")}
-                        aria-label="切换单词显示模式"
-                      />
+                    <div className="immersive-typing-toolbar-controls">
+                      <div className="immersive-auto-replay-toggle">
+                        <span className="text-xs text-muted-foreground">自动重播本句</span>
+                        <Switch
+                          checked={autoReplayCurrentSentence}
+                          onCheckedChange={(checked) => {
+                            setAutoReplayCurrentSentence(checked);
+                            setSentenceAutoReplayAttempted(false);
+                            setSentenceAutoReplayBlocked(false);
+                            debugAutoReplayLog("toggle_auto_replay", { checked, sentenceIndex: currentSentenceIndex });
+                          }}
+                          aria-label="自动重播本句开关"
+                        />
+                      </div>
+                      <TooltipProvider delayDuration={120}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="outline" onClick={() => revealCurrentWord("button_reveal")} disabled={!canRevealWord}>
+                              <Eye className="size-4" />
+                              揭示单词
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>space</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                      <Button
+                        variant="outline"
+                        onClick={() => goToPreviousSentence("button_prev")}
+                        disabled={!canGoPrevious || phase === "transition"}
+                      >
+                        <ArrowLeft className="size-4" />
+                        上一句
+                      </Button>
+                      <TooltipProvider delayDuration={120}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="outline" onClick={() => goToNextSentence("button_next")} disabled={!canGoNext || phase === "transition"}>
+                              下一句
+                              <ArrowRight className="size-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>enter</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                      <Badge variant="outline">
+                        已完成 {completedIndexes.length} / {sentenceCount}
+                      </Badge>
+                      {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
+                    </div>
+                    <div className="immersive-typing-toolbar-meta">
+                      <span className="immersive-shortcut-hint">手动重播：Shift+R</span>
+                      <div className="immersive-display-toggle">
+                        <span className="text-xs text-muted-foreground">下划线模式</span>
+                        <Switch
+                          checked={displayMode === "underline"}
+                          onCheckedChange={(checked) => setDisplayMode(checked ? "underline" : "chip")}
+                          aria-label="切换单词显示模式"
+                        />
+                      </div>
                     </div>
                   </div>
+                ) : null}
+
+                {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
+                {waitingForInitialPlayback ? <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p> : null}
+                {waitingForAutoReplay && !sentenceAutoReplayBlocked ? (
+                  <p className="text-xs text-muted-foreground">输入已完成，正在自动重播本句。</p>
+                ) : null}
+                {waitingForAutoReplay && sentenceAutoReplayBlocked ? (
+                  <p className="text-xs text-muted-foreground">自动重播受限，请按 Shift+R 手动重播后继续。</p>
                 ) : null}
 
                 <div className={cinemaFullscreenActive ? "immersive-word-row-frame immersive-word-row-frame--cinema" : ""}>
@@ -1388,3 +1544,4 @@ export function ImmersiveLessonPage({
     </div>
   );
 }
+

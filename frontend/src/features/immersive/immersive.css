@@ -78,13 +78,6 @@
   white-space: nowrap;
 }
 
-.immersive-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
 .immersive-media {
   position: relative;
   overflow: hidden;
@@ -151,7 +144,38 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 10px 12px;
+}
+
+.immersive-typing-toolbar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+}
+
+.immersive-typing-toolbar-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.immersive-auto-replay-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: color-mix(in oklch, var(--color-card) 84%, var(--color-muted) 16%);
+}
+
+.immersive-shortcut-hint {
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+  white-space: nowrap;
 }
 
 .immersive-display-toggle {
@@ -392,6 +416,15 @@
 
   .immersive-header-progress {
     width: 100%;
+  }
+
+  .immersive-typing-toolbar {
+    justify-content: flex-start;
+  }
+
+  .immersive-typing-toolbar-meta {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .immersive-word-row {
