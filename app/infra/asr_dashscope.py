@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 import dashscope
 import requests
 from dashscope.audio.qwen_asr import QwenTranscription
 from dashscope.files import Files
+
+from app.core.config import ASR_TASK_POLL_SECONDS
 
 
 DEFAULT_MODEL = "qwen3-asr-flash-filetrans"
@@ -159,13 +162,35 @@ def _create_task(model: str, signed_url: str) -> Any:
     raise AsrError("INVALID_MODEL", "不支持的模型", model)
 
 
-def _wait_task(model: str, task_id: str) -> Any:
+def _fetch_task(model: str, task_id: str) -> Any:
     if model == "qwen3-asr-flash-filetrans":
-        return QwenTranscription.wait(task=task_id)
+        return QwenTranscription.fetch(task=task_id)
     raise AsrError("INVALID_MODEL", "不支持的模型", model)
 
 
-def transcribe_audio_file(audio_path: str, *, model: str = DEFAULT_MODEL, requests_timeout: int = 120) -> dict[str, Any]:
+def _emit_task_progress(progress_callback, *, task_id: str, task_status: str, elapsed_seconds: int, poll_count: int) -> None:
+    if not progress_callback:
+        return
+    try:
+        progress_callback(
+            {
+                "task_id": task_id,
+                "task_status": str(task_status or "").strip().upper(),
+                "elapsed_seconds": max(0, int(elapsed_seconds or 0)),
+                "poll_count": max(0, int(poll_count or 0)),
+            }
+        )
+    except Exception:
+        pass
+
+
+def transcribe_audio_file(
+    audio_path: str,
+    *,
+    model: str = DEFAULT_MODEL,
+    requests_timeout: int = 120,
+    progress_callback=None,
+) -> dict[str, Any]:
     _ensure_dashscope_api_key()
     model_name = (model or "").strip()
     if model_name not in SUPPORTED_MODELS:
@@ -215,31 +240,74 @@ def transcribe_audio_file(audio_path: str, *, model: str = DEFAULT_MODEL, reques
             json.dumps(task_out, ensure_ascii=False)[:1200],
         )
 
-    try:
-        wait_resp = _wait_task(model_name, task_id)
-    except AsrError:
-        raise
-    except Exception as exc:
-        raise AsrError("ASR_TASK_WAIT_FAILED", "轮询 ASR 任务失败", str(exc)[:1200]) from exc
+    poll_interval_seconds = max(1, int(ASR_TASK_POLL_SECONDS))
+    poll_count = 0
+    started_monotonic = time.monotonic()
+    _emit_task_progress(progress_callback, task_id=task_id, task_status="SUBMITTED", elapsed_seconds=0, poll_count=poll_count)
 
-    wait_out = _to_dict(getattr(wait_resp, "output", None))
-    usage_seconds = _extract_usage_seconds(wait_out, wait_resp)
-    task_status = str(wait_out.get("task_status") or "").strip().upper()
+    while True:
+        try:
+            fetch_resp = _fetch_task(model_name, task_id)
+        except AsrError:
+            raise
+        except Exception as exc:
+            raise AsrError("ASR_TASK_WAIT_FAILED", "轮询 ASR 任务失败", str(exc)[:1200]) from exc
+
+        response_status_code = int(getattr(fetch_resp, "status_code", 200) or 200)
+        fetch_out = _to_dict(getattr(fetch_resp, "output", None))
+        if response_status_code != 200:
+            raise AsrError(
+                "ASR_TASK_WAIT_FAILED",
+                "轮询 ASR 任务失败",
+                json.dumps(
+                    {
+                        "status_code": response_status_code,
+                        "code": getattr(fetch_resp, "code", ""),
+                        "message": getattr(fetch_resp, "message", ""),
+                        "output": fetch_out,
+                    },
+                    ensure_ascii=False,
+                )[:1200],
+            )
+
+        poll_count += 1
+        elapsed_seconds = int(max(0, round(time.monotonic() - started_monotonic)))
+        task_status = str(fetch_out.get("task_status") or "").strip().upper()
+        _emit_task_progress(
+            progress_callback,
+            task_id=task_id,
+            task_status=task_status or "RUNNING",
+            elapsed_seconds=elapsed_seconds,
+            poll_count=poll_count,
+        )
+        if task_status == "SUCCEEDED":
+            break
+        if task_status in {"FAILED", "CANCELED", "CANCELLED"}:
+            sub_code = str(fetch_out.get("code") or "").strip()
+            sub_msg = str(fetch_out.get("message") or "").strip()
+            raise AsrError(
+                "ASR_TASK_FAILED",
+                "ASR 任务失败",
+                json.dumps({"task_status": task_status, "subtask_code": sub_code, "subtask_message": sub_msg}, ensure_ascii=False),
+            )
+        time.sleep(poll_interval_seconds)
+
+    usage_seconds = _extract_usage_seconds(fetch_out, fetch_resp)
     if task_status != "SUCCEEDED":
-        sub_code = str(wait_out.get("code") or "").strip()
-        sub_msg = str(wait_out.get("message") or "").strip()
+        sub_code = str(fetch_out.get("code") or "").strip()
+        sub_msg = str(fetch_out.get("message") or "").strip()
         raise AsrError(
             "ASR_TASK_FAILED",
             "ASR 任务失败",
             json.dumps({"task_status": task_status, "subtask_code": sub_code, "subtask_message": sub_msg}, ensure_ascii=False),
         )
 
-    transcription_url = _extract_transcription_url(wait_out)
+    transcription_url = _extract_transcription_url(fetch_out)
     if not transcription_url:
         raise AsrError(
             "ASR_RESULT_URL_MISSING",
             "ASR 任务成功但缺少 transcription_url",
-            json.dumps(wait_out, ensure_ascii=False)[:1200],
+            json.dumps(fetch_out, ensure_ascii=False)[:1200],
         )
 
     try:

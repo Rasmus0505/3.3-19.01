@@ -1,6 +1,7 @@
 ﻿const DB_NAME = "english_trainer_local_subtitles";
 const DB_VERSION = 1;
 const STORE_NAME = "lesson_subtitle_variants";
+const ORIGINAL_SUBTITLE_STRATEGY_VERSION = 2;
 
 function assertIndexedDbAvailable() {
   if (typeof indexedDB === "undefined") {
@@ -96,8 +97,33 @@ function normalizeVariant(rawVariant) {
     split_mode: String(rawVariant.split_mode || ""),
     source_word_count: Math.max(0, Number(rawVariant.source_word_count || 0)),
     sentences: rawVariant.sentences.map((sentence, index) => normalizeSentence(sentence, index)),
+    strategy_version: Math.max(1, Number(rawVariant.strategy_version || 1)),
     updated_at: Date.now(),
   };
+}
+
+function isVariantUsable(variantKey, variant) {
+  if (!variant || typeof variant !== "object" || !Array.isArray(variant.sentences) || variant.sentences.length === 0) {
+    return false;
+  }
+  if (variantKey === "semantic") {
+    return true;
+  }
+  return (
+    Number(variant.strategy_version || 0) >= ORIGINAL_SUBTITLE_STRATEGY_VERSION &&
+    String(variant.split_mode || "") === "asr_sentences"
+  );
+}
+
+function getUsableVariant(record, variantKey) {
+  const variant = record?.variants?.[variantKey];
+  return isVariantUsable(variantKey, variant) ? variant : null;
+}
+
+function getCurrentVariantKey(record) {
+  const currentVariantKey = String(record?.current_variant_key || "");
+  if (!currentVariantKey) return "";
+  return getUsableVariant(record, currentVariantKey) ? currentVariantKey : "";
 }
 
 function emptyAvailability(lessonId) {
@@ -131,16 +157,15 @@ export async function getLessonSubtitleAvailability(lessonId) {
   if (!record) {
     return emptyAvailability(normalizedLessonId);
   }
-  const variants = record.variants || {};
-  const currentVariantKey = String(record.current_variant_key || "");
+  const currentVariantKey = getCurrentVariantKey(record);
   return {
     lessonId: normalizedLessonId,
     hasSource: Boolean(record.asr_payload && typeof record.asr_payload === "object"),
     canRegenerate: Boolean(record.asr_payload && typeof record.asr_payload === "object"),
     currentVariantKey,
     currentSemanticSplitEnabled: currentVariantKey === "semantic" ? true : currentVariantKey === "plain" ? false : null,
-    hasPlainVariant: Boolean(variants.plain),
-    hasSemanticVariant: Boolean(variants.semantic),
+    hasPlainVariant: Boolean(getUsableVariant(record, "plain")),
+    hasSemanticVariant: Boolean(getUsableVariant(record, "semantic")),
   };
 }
 
@@ -149,18 +174,25 @@ export async function saveLessonSubtitleCacheSeed(lessonId, seed) {
   const normalizedVariant = normalizeVariant(seed);
   const variantKey = getVariantKey(normalizedVariant.semantic_split_enabled);
   const current = (await getLessonSubtitleCache(normalizedLessonId)) || { lesson_id: normalizedLessonId, variants: {} };
+  const nextVariants = {
+    ...(current.variants || {}),
+  };
+  if (isVariantUsable(variantKey, normalizedVariant)) {
+    nextVariants[variantKey] = normalizedVariant;
+  }
   const payload = {
     lesson_id: normalizedLessonId,
     asr_payload: cloneJsonSafe(seed?.asr_payload || current.asr_payload || {}),
-    variants: {
-      ...(current.variants || {}),
-      [variantKey]: normalizedVariant,
-    },
-    current_variant_key: variantKey,
+    variants: nextVariants,
+    current_variant_key: isVariantUsable(variantKey, normalizedVariant) ? variantKey : getCurrentVariantKey(current),
     updated_at: Date.now(),
   };
   await withStore("readwrite", (store) => store.put(payload));
-  console.debug("[DEBUG] localSubtitleStore.seed.save", { lessonId: normalizedLessonId, variantKey });
+  console.debug("[DEBUG] localSubtitleStore.seed.save", {
+    lessonId: normalizedLessonId,
+    variantKey,
+    usable: isVariantUsable(variantKey, normalizedVariant),
+  });
   return payload;
 }
 
@@ -169,7 +201,7 @@ export async function getCachedLessonSubtitleVariant(lessonId, semanticSplitEnab
   const record = await getLessonSubtitleCache(normalizedLessonId);
   if (!record) return null;
   const variantKey = getVariantKey(Boolean(semanticSplitEnabled));
-  return record.variants?.[variantKey] || null;
+  return getUsableVariant(record, variantKey);
 }
 
 export async function saveLessonSubtitleVariant(lessonId, variant, options = {}) {
@@ -184,7 +216,7 @@ export async function saveLessonSubtitleVariant(lessonId, variant, options = {})
       ...(current.variants || {}),
       [variantKey]: normalizedVariant,
     },
-    current_variant_key: options.makeActive === false ? String(current.current_variant_key || "") : variantKey,
+    current_variant_key: options.makeActive === false ? getCurrentVariantKey(current) : variantKey,
     updated_at: Date.now(),
   };
   await withStore("readwrite", (store) => store.put(payload));
@@ -196,7 +228,7 @@ export async function setActiveLessonSubtitleVariant(lessonId, semanticSplitEnab
   const normalizedLessonId = normalizeLessonId(lessonId);
   const variantKey = getVariantKey(Boolean(semanticSplitEnabled));
   const current = await getLessonSubtitleCache(normalizedLessonId);
-  const nextVariant = current?.variants?.[variantKey];
+  const nextVariant = getUsableVariant(current, variantKey);
   if (!nextVariant) {
     return null;
   }
@@ -215,9 +247,9 @@ export async function getActiveLessonSubtitleVariant(lessonId) {
   const normalizedLessonId = normalizeLessonId(lessonId);
   const record = await getLessonSubtitleCache(normalizedLessonId);
   if (!record) return null;
-  const currentVariantKey = String(record.current_variant_key || "");
+  const currentVariantKey = getCurrentVariantKey(record);
   if (!currentVariantKey) return null;
-  return record.variants?.[currentVariantKey] || null;
+  return getUsableVariant(record, currentVariantKey);
 }
 
 export async function deleteLessonSubtitleCache(lessonId) {

@@ -259,7 +259,7 @@ export function LessonListLocalSubtitles({
                 subtitleMeta.currentSemanticSplitEnabled === true
                   ? "语义分句"
                   : subtitleMeta.currentSemanticSplitEnabled === false
-                    ? "普通分句"
+                    ? "原始字幕"
                     : "服务器字幕";
               const subtitleVariantHint = subtitleMeta.canRegenerate
                 ? `已缓存${subtitleMeta.hasPlainVariant && subtitleMeta.hasSemanticVariant ? "双模式字幕" : "当前模式字幕"}`
@@ -454,7 +454,7 @@ export function LessonListLocalSubtitles({
             <DialogHeader>
               <DialogTitle>重新生成字幕</DialogTitle>
               <DialogDescription>
-                仅重新切分并重载字幕，不会重新跑 ASR。切到语义分句时会按新的英文分句重翻中文字幕。
+                仅重新加载字幕，不会重新跑 ASR。切到原始字幕会回到 ASR 原句，切到语义分句会按新的英文分句重翻中文字幕。
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
@@ -465,7 +465,7 @@ export function LessonListLocalSubtitles({
                   onClick={() => setSubtitleMode("plain")}
                   disabled={subtitleBusy}
                 >
-                  普通分句
+                  原始字幕
                 </Button>
                 <Button
                   type="button"
@@ -479,7 +479,7 @@ export function LessonListLocalSubtitles({
               <p className="text-sm text-muted-foreground">
                 {subtitleMode === "semantic"
                   ? "适合长句重新细分，阅读更轻松。"
-                  : "适合回到规则分句，减少过度切分。"}
+                  : "直接回到 ASR 原始分句结果。"}
               </p>
             </div>
             <DialogFooter>

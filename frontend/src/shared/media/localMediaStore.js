@@ -1,9 +1,14 @@
 const DB_NAME = "english_trainer_local_media";
 const DB_VERSION = 1;
 const STORE_NAME = "lesson_media";
-const COVER_CAPTURE_VERSION = 2;
+const COVER_CAPTURE_VERSION = 3;
 const HAVE_METADATA = 1;
 const HAVE_CURRENT_DATA = 2;
+const COVER_SAMPLE_TIMES_SECONDS = [0, 0.05, 0.15, 0.3];
+const COVER_BRIGHT_PIXEL_THRESHOLD = 28;
+const COVER_MAX_BLACK_LUMA_THRESHOLD = 26;
+const COVER_AVERAGE_BLACK_LUMA_THRESHOLD = 12;
+const COVER_BRIGHT_PIXEL_RATIO_THRESHOLD = 0.03;
 
 const MEDIA_TYPE_BY_EXT = {
   ".mp4": "video/mp4",
@@ -144,7 +149,7 @@ async function seekVideoTo(video, timeSec) {
   await seekedPromise;
 }
 
-function drawVideoFrameToDataUrl(video) {
+function drawVideoFrameToCanvas(video) {
   if (!video || Number(video.readyState || 0) < HAVE_CURRENT_DATA) {
     throw new Error("视频帧尚未就绪");
   }
@@ -163,7 +168,70 @@ function drawVideoFrameToDataUrl(video) {
   }
 
   ctx.drawImage(video, 0, 0, width, height);
+  return canvas;
+}
+
+function isCanvasNearlyBlack(sourceCanvas) {
+  const sampleCanvas = document.createElement("canvas");
+  sampleCanvas.width = 16;
+  sampleCanvas.height = 16;
+  const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
+  if (!sampleCtx) {
+    return false;
+  }
+
+  sampleCtx.drawImage(sourceCanvas, 0, 0, sampleCanvas.width, sampleCanvas.height);
+  const { data } = sampleCtx.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height);
+
+  let opaquePixels = 0;
+  let brightPixels = 0;
+  let totalLuma = 0;
+  let maxLuma = 0;
+
+  for (let index = 0; index < data.length; index += 4) {
+    const alpha = data[index + 3];
+    if (alpha <= 0) continue;
+
+    const r = data[index];
+    const g = data[index + 1];
+    const b = data[index + 2];
+    const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+    opaquePixels += 1;
+    totalLuma += luma;
+    maxLuma = Math.max(maxLuma, luma);
+    if (luma >= COVER_BRIGHT_PIXEL_THRESHOLD) {
+      brightPixels += 1;
+    }
+  }
+
+  if (!opaquePixels) {
+    return true;
+  }
+
+  const averageLuma = totalLuma / opaquePixels;
+  const brightPixelRatio = brightPixels / opaquePixels;
+
+  return (
+    maxLuma < COVER_MAX_BLACK_LUMA_THRESHOLD ||
+    (averageLuma < COVER_AVERAGE_BLACK_LUMA_THRESHOLD && brightPixelRatio < COVER_BRIGHT_PIXEL_RATIO_THRESHOLD)
+  );
+}
+
+function canvasToDataUrl(canvas) {
   return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+function getCoverSampleTimes(durationSeconds) {
+  const safeDuration = Number.isFinite(durationSeconds) ? Math.max(0, Number(durationSeconds || 0)) : null;
+  const maxSeekTime = safeDuration == null ? null : Math.max(0, safeDuration - 0.001);
+  const sampleTimes = COVER_SAMPLE_TIMES_SECONDS.map((timeSec) => {
+    if (maxSeekTime == null) {
+      return timeSec;
+    }
+    return Math.max(0, Math.min(timeSec, maxSeekTime));
+  });
+  return Array.from(new Set(sampleTimes.map((timeSec) => timeSec.toFixed(3)))).map((value) => Number(value));
 }
 
 async function captureVideoFrame(video, timeSec, { seek = false } = {}) {
@@ -173,7 +241,11 @@ async function captureVideoFrame(video, timeSec, { seek = false } = {}) {
   await waitForReadyState(video, HAVE_CURRENT_DATA, "loadeddata", 1500);
   await waitForRenderedVideoFrame(video);
   await waitForAnimationFrame(1);
-  return drawVideoFrameToDataUrl(video);
+  const canvas = drawVideoFrameToCanvas(video);
+  return {
+    dataUrl: canvasToDataUrl(canvas),
+    nearlyBlack: isCanvasNearlyBlack(canvas),
+  };
 }
 
 function openDatabase() {
@@ -269,25 +341,28 @@ export function extractMediaCoverDataUrl(blob, fallbackFileName = "") {
         video.load();
         await waitForReadyState(video, HAVE_METADATA, "loadedmetadata", 2000);
 
+        const sampleTimes = getCoverSampleTimes(video.duration);
+        let fallbackDataUrl = "";
         let dataUrl = "";
-        try {
-          dataUrl = await captureVideoFrame(video, 0, { seek: false });
-        } catch (_) {
-          dataUrl = "";
+
+        for (const [index, timeSec] of sampleTimes.entries()) {
+          try {
+            const candidate = await captureVideoFrame(video, timeSec, { seek: index > 0 || timeSec > 0 });
+            if (!candidate?.dataUrl) {
+              continue;
+            }
+            fallbackDataUrl = candidate.dataUrl;
+            if (!candidate.nearlyBlack) {
+              dataUrl = candidate.dataUrl;
+              break;
+            }
+          } catch (_) {
+            // Ignore single frame capture failures and continue sampling.
+          }
         }
 
         if (!dataUrl) {
-          const duration = Number.isFinite(video.duration) ? Math.max(0, Number(video.duration || 0)) : 0;
-          const fallbackTimeSec = duration > 0 ? Math.min(0.05, Math.max(0.001, duration / 2)) : 0.05;
-          console.debug("[DEBUG] localMediaStore.cover.capture_fallback", {
-            fileName: String(fallbackFileName || ""),
-            fallbackTimeSec,
-          });
-          try {
-            dataUrl = await captureVideoFrame(video, fallbackTimeSec, { seek: true });
-          } catch (_) {
-            dataUrl = "";
-          }
+          dataUrl = fallbackDataUrl;
         }
 
         cleanup();
@@ -340,7 +415,6 @@ export async function saveLessonMedia(lessonId, file, options = {}) {
   };
 
   await withStore("readwrite", (store) => store.put(payload));
-  console.debug("[DEBUG] localMediaStore.save", { lessonId: normalizedLessonId, sizeBytes: payload.size_bytes });
   return payload;
 }
 
@@ -370,12 +444,6 @@ export async function getLessonMediaPreview(lessonId) {
     try {
       const nextCoverDataUrl = await extractMediaCoverDataUrl(media.blob, media.file_name || "");
       if (nextCoverDataUrl) {
-        if (storedCoverVersion > 0 && storedCoverVersion < COVER_CAPTURE_VERSION) {
-          console.debug("[DEBUG] localMediaStore.cover.refresh_legacy", {
-            lessonId: normalizedLessonId,
-            previousVersion: storedCoverVersion,
-          });
-        }
         coverDataUrl = nextCoverDataUrl;
         await withStore("readwrite", (store) =>
           store.put({
@@ -386,7 +454,6 @@ export async function getLessonMediaPreview(lessonId) {
             updated_at: Date.now(),
           }),
         );
-        console.debug("[DEBUG] localMediaStore.cover.backfill", { lessonId: normalizedLessonId });
       }
     } catch (_) {
       coverDataUrl = String(media.cover_data_url || "");
@@ -410,7 +477,6 @@ export async function hasLessonMedia(lessonId) {
 export async function deleteLessonMedia(lessonId) {
   const normalizedLessonId = normalizeLessonId(lessonId);
   await withStore("readwrite", (store) => store.delete(normalizedLessonId));
-  console.debug("[DEBUG] localMediaStore.delete", { lessonId: normalizedLessonId });
 }
 
 export async function getStorageEstimate() {

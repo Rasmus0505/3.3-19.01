@@ -6,6 +6,7 @@ import { cn } from "../../lib/utils";
 import { api, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
 import {
   extractMediaCoverDataUrl,
+  getLessonMediaPreview,
   readMediaDurationSeconds,
   requestPersistentStorage,
   saveLessonMedia,
@@ -145,15 +146,24 @@ function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
   const stageKey = getCurrentTaskStageKey(taskSnapshot);
 
   if (stageKey === "asr_transcribe") {
+    const segmentDone = Math.max(0, Number(counters.segment_done || 0));
+    const segmentTotal = Math.max(segmentDone, Number(counters.segment_total || 0));
+    if (segmentTotal > 0) {
+      return `识别分段 ${segmentDone}/${segmentTotal}`;
+    }
+
     const done = Math.max(0, Number(counters.asr_done || 0));
     const total = Math.max(done, Number(counters.asr_estimated || 0));
-    return total > 0 ? `识别字幕 ${done}/${total}` : "识别字幕";
+    if (done > 0 && total > 0) {
+      return `识别字幕 ${done}/${total}`;
+    }
+    return String(taskSnapshot.current_text || "识别中");
   }
 
   if (stageKey === "translate_zh") {
     const done = Math.max(0, Number(counters.translate_done || 0));
     const total = Math.max(done, Number(counters.translate_total || 0));
-    return total > 0 ? `翻译字幕 ${done}/${total}` : "翻译字幕";
+    return total > 0 ? `翻译字幕 ${done}/${total}` : String(taskSnapshot.current_text || "翻译字幕");
   }
 
   if (stageKey === "convert_audio") {
@@ -173,7 +183,9 @@ function getProgressAssistiveText({ phase, uploadPercent, progressPercent, taskS
   }
 
   if (taskSnapshot) {
-    return `${headline}，总进度 ${progressPercent}%`;
+    const currentText = String(taskSnapshot.current_text || "").trim();
+    const detail = currentText && currentText !== headline ? `${headline}，${currentText}` : headline;
+    return `${detail}，总进度 ${progressPercent}%`;
   }
 
   if (phase === "success") {
@@ -185,6 +197,16 @@ function getProgressAssistiveText({ phase, uploadPercent, progressPercent, taskS
   }
 
   return "等待上传";
+}
+
+function buildUnpersistedMediaPreview(lessonId, file, previewCoverDataUrl, fallbackFileName = "") {
+  return {
+    lessonId: Number(lessonId) || 0,
+    hasMedia: false,
+    mediaType: String(file?.type || ""),
+    coverDataUrl: String(previewCoverDataUrl || ""),
+    fileName: String(file?.name || fallbackFileName || ""),
+  };
 }
 
 export function UploadPanel({ accessToken, onCreated, balancePoints, billingRates, subtitleSettings, onWalletChanged }) {
@@ -241,7 +263,6 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       if (pollingAbortRef.current) return;
       if (!resp.ok) {
         const message = toErrorText(data, "查询任务失败");
-        console.debug("[DEBUG] upload.task.poll.failed", message);
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -254,19 +275,45 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       const taskStatus = String(data.status || "").toLowerCase();
       if (taskStatus === "succeeded") {
         setPhase("success");
-        setStatus("");
+        let mediaPersisted = false;
+        let mediaPreview = null;
+        let successMessage = "";
+
+        if (data.lesson?.id && file && data.lesson.media_storage === "client_indexeddb") {
+          try {
+            await requestPersistentStorage();
+            await saveLessonMedia(data.lesson.id, file, { coverDataUrl });
+            mediaPreview = await getLessonMediaPreview(data.lesson.id);
+            mediaPersisted = Boolean(mediaPreview?.hasMedia);
+          } catch (_) {
+            mediaPreview = buildUnpersistedMediaPreview(data.lesson.id, file, coverDataUrl, data.lesson.source_filename);
+          }
+        }
+
+        if (data.lesson?.media_storage === "client_indexeddb" && !mediaPersisted) {
+          successMessage = "课程已生成，但当前浏览器未保存本地视频，请在历史记录中恢复视频后再开始学习。";
+        }
+
+        setStatus(successMessage);
         setLoading(false);
         await onWalletChanged?.();
         if (data.lesson) {
-          await onCreated?.(data.lesson);
+          await onCreated?.({
+            lesson: data.lesson,
+            mediaPreview,
+            mediaPersisted,
+          });
         }
-        toast.success("课程已生成");
+        if (successMessage) {
+          toast.warning(successMessage);
+        } else {
+          toast.success("课程已生成");
+        }
         return;
       }
 
       if (taskStatus === "failed") {
         const message = `${data.error_code || "ERROR"}: ${data.message || "生成失败"}`;
-        console.debug("[DEBUG] upload.task.process.failed", message);
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -281,7 +328,6 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     } catch (error) {
       if (pollingAbortRef.current || error?.name === "AbortError") return;
       const message = `网络错误: ${String(error)}`;
-      console.debug("[DEBUG] upload.task.poll.network_error", message);
       setStatus(message);
       setPhase("error");
       setLoading(false);
@@ -334,7 +380,6 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       return;
     }
 
-    console.debug("[DEBUG] upload.submit.start", { fileName: file.name, semanticSplitEnabled });
     pollingAbortRef.current = false;
     uploadAbortRef.current?.abort();
 
@@ -368,7 +413,6 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
 
       if (!ok) {
         const message = toErrorText(data, "创建上传任务失败");
-        console.debug("[DEBUG] upload.submit.create_task_failed", message);
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -380,7 +424,6 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       const taskId = String(data.task_id || "");
       if (!taskId) {
         const message = "任务创建成功但缺少 task_id";
-        console.debug("[DEBUG] upload.submit.missing_task_id");
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -388,7 +431,6 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
         return;
       }
 
-      console.debug("[DEBUG] upload.submit.task_created", { taskId });
       setUploadPercent(100);
       setPhase("processing");
       void pollTask(taskId);
@@ -396,7 +438,6 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       uploadAbortRef.current = null;
       if (error?.name === "AbortError") return;
       const message = `网络错误: ${String(error)}`;
-      console.debug("[DEBUG] upload.submit.network_error", message);
       setStatus(message);
       setPhase("error");
       setLoading(false);
@@ -404,30 +445,11 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     }
   }
 
-  async function saveLocalMediaForLesson(lessonId) {
-    if (!lessonId || !file) return false;
-    try {
-      await requestPersistentStorage();
-      await saveLessonMedia(lessonId, file, { coverDataUrl });
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  useEffect(() => {
-    if (!taskSnapshot?.lesson?.id) return;
-    void saveLocalMediaForLesson(taskSnapshot.lesson.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskSnapshot?.lesson?.id]);
-
   function openLinkDialog() {
-    console.debug("[DEBUG] upload.open_link_dialog");
     setLinkDialogOpen(true);
   }
 
   function jumpToRecommendedTool() {
-    console.debug("[DEBUG] upload.jump_to_link_tool", "https://snapany.com/zh");
     window.open("https://snapany.com/zh", "_blank", "noopener,noreferrer");
     setLinkDialogOpen(false);
   }

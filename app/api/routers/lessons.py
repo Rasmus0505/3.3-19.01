@@ -1,11 +1,14 @@
 ﻿from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import queue
 import shutil
 import threading
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
@@ -24,6 +27,8 @@ from app.schemas import (
     LessonDetailResponse,
     LessonItemResponse,
     LessonRenameRequest,
+    LessonSubtitleVariantErrorEvent,
+    LessonSubtitleVariantProgressEvent,
     LessonSubtitleVariantRequest,
     LessonSubtitleVariantResponse,
     LessonTaskCreateResponse,
@@ -38,6 +43,22 @@ from app.services.media import MediaError, cleanup_dir, create_request_dir, save
 
 router = APIRouter(prefix="/api/lessons", tags=["lessons"])
 logger = logging.getLogger(__name__)
+
+
+def _to_lesson_subtitle_variant_response(lesson_id: int, variant: dict) -> LessonSubtitleVariantResponse:
+    return LessonSubtitleVariantResponse(
+        ok=True,
+        lesson_id=lesson_id,
+        semantic_split_enabled=bool(variant.get("semantic_split_enabled")),
+        split_mode=str(variant.get("split_mode") or ""),
+        source_word_count=int(variant.get("source_word_count", 0)),
+        strategy_version=int(variant.get("strategy_version", 1)),
+        sentences=list(variant.get("sentences") or []),
+    )
+
+
+def _format_sse_event(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 def _to_task_response(task: dict) -> LessonTaskResponse:
@@ -269,18 +290,79 @@ def regenerate_lesson_subtitle_variant(
             bool(variant.get("semantic_split_enabled")),
             str(variant.get("split_mode") or ""),
         )
-        return LessonSubtitleVariantResponse(
-            ok=True,
-            lesson_id=lesson.id,
-            semantic_split_enabled=bool(variant.get("semantic_split_enabled")),
-            split_mode=str(variant.get("split_mode") or ""),
-            source_word_count=int(variant.get("source_word_count", 0)),
-            sentences=list(variant.get("sentences") or []),
-        )
+        return _to_lesson_subtitle_variant_response(lesson.id, variant)
     except MediaError as exc:
         return map_media_error(exc)
     except Exception as exc:
         return error_response(500, "INTERNAL_ERROR", "重新生成字幕失败", str(exc)[:1200])
+
+
+@router.post(
+    "/{lesson_id}/subtitle-variants/stream",
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def regenerate_lesson_subtitle_variant_stream(
+    lesson_id: int,
+    payload: LessonSubtitleVariantRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lesson = require_lesson_owner(db, lesson_id, current_user.id)
+    bind = db.get_bind()
+    event_queue: queue.Queue[tuple[str, dict] | None] = queue.Queue()
+
+    def _worker() -> None:
+        worker_db = Session(bind=bind, future=True)
+        try:
+            def _progress(progress_payload: dict) -> None:
+                event = LessonSubtitleVariantProgressEvent(
+                    stage=str(progress_payload.get("stage") or ""),
+                    message=str(progress_payload.get("message") or ""),
+                    translate_done=int(progress_payload.get("translate_done", 0) or 0),
+                    translate_total=int(progress_payload.get("translate_total", 0) or 0),
+                    semantic_split_enabled=bool(progress_payload.get("semantic_split_enabled")),
+                )
+                event_queue.put(("progress", event.model_dump()))
+
+            variant = LessonService.build_subtitle_variant(
+                asr_payload=payload.asr_payload,
+                db=worker_db,
+                semantic_split_enabled=payload.semantic_split_enabled,
+                progress_callback=_progress,
+            )
+            logger.info(
+                "[DEBUG] lessons.subtitle_variant.stream.success lesson_id=%s user_id=%s semantic_split_enabled=%s split_mode=%s",
+                lesson.id,
+                current_user.id,
+                bool(variant.get("semantic_split_enabled")),
+                str(variant.get("split_mode") or ""),
+            )
+            event_queue.put(("result", _to_lesson_subtitle_variant_response(lesson.id, variant).model_dump()))
+        except MediaError as exc:
+            event = LessonSubtitleVariantErrorEvent(error_code=exc.code, message=exc.message, detail=exc.detail or "")
+            event_queue.put(("error", event.model_dump()))
+        except Exception as exc:
+            logger.exception("[DEBUG] lessons.subtitle_variant.stream.failed lesson_id=%s detail=%s", lesson.id, str(exc)[:400])
+            event = LessonSubtitleVariantErrorEvent(error_code="INTERNAL_ERROR", message="重新生成字幕失败", detail=str(exc)[:1200])
+            event_queue.put(("error", event.model_dump()))
+        finally:
+            worker_db.close()
+            event_queue.put(None)
+
+    def _stream():
+        while True:
+            item = event_queue.get()
+            if item is None:
+                break
+            event_name, event_payload = item
+            yield _format_sse_event(event_name, event_payload)
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.patch(

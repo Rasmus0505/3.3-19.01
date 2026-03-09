@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import io
+import json
 import os
 import re
 from datetime import datetime, timedelta
@@ -53,6 +54,25 @@ def _translation_batch_result(texts: list[str], *, failed_count: int = 0, total_
         success_total_tokens=total_tokens,
         latest_error_summary=latest_error_summary,
     )
+
+
+def _parse_sse_events(raw_text: str) -> list[tuple[str, dict]]:
+    events: list[tuple[str, dict]] = []
+    for block in raw_text.replace("\r\n", "\n").split("\n\n"):
+        chunk = block.strip()
+        if not chunk:
+            continue
+        event_name = "message"
+        data_lines: list[str] = []
+        for line in chunk.split("\n"):
+            if line.startswith("event:"):
+                event_name = line.split(":", 1)[1].strip() or "message"
+            elif line.startswith("data:"):
+                data_lines.append(line.split(":", 1)[1].strip())
+        if not data_lines:
+            continue
+        events.append((event_name, json.loads("\n".join(data_lines))))
+    return events
 
 
 def test_normalize_learning_english_text_spells_usd_amounts():
@@ -460,6 +480,107 @@ def test_transcribe_audio_requires_dashscope_api_key(monkeypatch, tmp_path):
     with pytest.raises(asr_dashscope.AsrError) as exc:
         asr_dashscope.transcribe_audio_file(str(audio_file), model=asr_dashscope.DEFAULT_MODEL)
     assert exc.value.code == "ASR_API_KEY_MISSING"
+
+
+def test_transcribe_audio_file_polls_until_success(monkeypatch, tmp_path):
+    from app.infra import asr_dashscope
+
+    audio_file = tmp_path / "sample.opus"
+    audio_file.write_bytes(b"dummy")
+    monkeypatch.setattr(asr_dashscope.dashscope, "api_key", "test-key", raising=False)
+    monkeypatch.setattr(
+        asr_dashscope.Files,
+        "upload",
+        lambda file_path, purpose: SimpleNamespace(output={"uploaded_files": [{"file_id": "file_001"}]}),
+    )
+    monkeypatch.setattr(asr_dashscope.Files, "get", lambda file_id: SimpleNamespace(output={"url": "https://example.com/file.opus"}))
+    monkeypatch.setattr(asr_dashscope, "_create_task", lambda model, signed_url: SimpleNamespace(output={"task_id": "task_001"}))
+
+    fetch_responses = [
+        SimpleNamespace(status_code=200, output={"task_status": "RUNNING"}),
+        SimpleNamespace(
+            status_code=200,
+            output={"task_status": "SUCCEEDED", "result": {"transcription_url": "https://example.com/result.json"}},
+            usage=SimpleNamespace(seconds=12),
+        ),
+    ]
+    monkeypatch.setattr(asr_dashscope, "_fetch_task", lambda model, task_id: fetch_responses.pop(0))
+
+    class _ResultResponse:
+        status_code = 200
+        text = ""
+
+        @staticmethod
+        def json():
+            return {"transcripts": [{"text": "hello world"}]}
+
+    monkeypatch.setattr(asr_dashscope.requests, "get", lambda url, timeout: _ResultResponse())
+
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(asr_dashscope.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    progress_events: list[dict] = []
+    result = asr_dashscope.transcribe_audio_file(
+        str(audio_file),
+        model=asr_dashscope.DEFAULT_MODEL,
+        progress_callback=lambda payload: progress_events.append(dict(payload)),
+    )
+
+    assert result["task_status"] == "SUCCEEDED"
+    assert result["usage_seconds"] == 12
+    assert result["preview_text"] == "hello world"
+    assert [item["task_status"] for item in progress_events] == ["SUBMITTED", "RUNNING", "SUCCEEDED"]
+    assert sleep_calls == [asr_dashscope.ASR_TASK_POLL_SECONDS]
+
+
+def test_single_asr_progress_emits_waiting_text_without_fake_counts(monkeypatch, tmp_path):
+    from app.services import lesson_service as lesson_service_module
+
+    opus_path = tmp_path / "sample.opus"
+    opus_path.write_bytes(b"opus")
+    req_dir = tmp_path / "req"
+    req_dir.mkdir(parents=True, exist_ok=True)
+
+    def fake_transcribe(audio_path, *, model, progress_callback=None, requests_timeout=120):
+        if progress_callback:
+            progress_callback({"task_status": "RUNNING", "elapsed_seconds": 4, "poll_count": 1})
+        return {
+            "asr_result_json": {
+                "transcripts": [
+                    {
+                        "sentences": [
+                            {"text": "hello world", "begin_time": 0, "end_time": 1000},
+                        ]
+                    }
+                ]
+            },
+            "usage_seconds": 1,
+        }
+
+    monkeypatch.setattr(lesson_service_module, "transcribe_audio_file", fake_transcribe)
+
+    progress_events: list[dict] = []
+    result = lesson_service_module.LessonService._transcribe_with_optional_parallel(
+        opus_path=opus_path,
+        req_dir=req_dir,
+        asr_model=QWEN_ASR_MODEL,
+        source_duration_ms=1000,
+        parallel_enabled=False,
+        parallel_threshold_seconds=600,
+        segment_target_seconds=300,
+        max_concurrency=2,
+        progress_callback=lambda payload: progress_events.append(dict(payload)),
+    )
+
+    assert result["progress_counters"]["asr_done"] == 1
+    assert result["progress_counters"]["segment_total"] == 0
+    assert progress_events[0]["current_text"] == "识别中"
+    assert progress_events[0]["counters"]["asr_done"] == 0
+    assert progress_events[0]["counters"]["asr_estimated"] == 0
+    assert any(item["current_text"] == "识别中，已等待 4 秒" for item in progress_events)
+    assert progress_events[-1]["current_text"] == "识别完成 1/1"
+    assert progress_events[-1]["counters"]["asr_done"] == 1
+    assert progress_events[-1]["counters"]["asr_estimated"] == 1
 
 
 def test_transcribe_file_endpoint_with_stubbed_service(test_client, monkeypatch, tmp_path):
@@ -1510,6 +1631,207 @@ def test_regenerate_lesson_subtitle_variant_endpoint(test_client, monkeypatch):
     assert body["sentences"][0]["text_en"] == "hello world again"
     assert captured["semantic_split_enabled"] is True
     assert captured["asr_payload"]["transcripts"][0]["words"][0]["text"] == "hello"
+
+
+def test_regenerate_lesson_subtitle_variant_returns_asr_sentences_when_semantic_disabled(test_client, monkeypatch):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="variant-plain-user@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "variant-plain-user@example.com").one()
+        lesson = Lesson(
+            user_id=user.id,
+            title="plain variant lesson",
+            source_filename="plain-variant.mp4",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=2200,
+            media_storage="client_indexeddb",
+            source_duration_ms=2200,
+            status="ready",
+        )
+        session.add(lesson)
+        session.commit()
+        lesson_id = lesson.id
+    finally:
+        session.close()
+
+    from app.services import lesson_service as lesson_service_module
+
+    monkeypatch.setattr(
+        lesson_service_module,
+        "translate_sentences_to_zh",
+        lambda texts, api_key, progress_callback=None: _translation_batch_result([f"中:{text}" for text in texts]),
+    )
+
+    resp = client.post(
+        f"/api/lessons/{lesson_id}/subtitle-variants",
+        headers=headers,
+        json={
+            "asr_payload": {
+                "transcripts": [
+                    {
+                        "sentences": [
+                            {"text": "Hello there", "begin_time": 0, "end_time": 900},
+                            {"text": "General Kenobi", "begin_time": 900, "end_time": 1900},
+                        ],
+                        "words": [
+                            _word_entry("Hello", 0, 300),
+                            _word_entry("there", 300, 900),
+                            _word_entry("General", 900, 1400),
+                            _word_entry("Kenobi", 1400, 1900),
+                        ],
+                    }
+                ]
+            },
+            "semantic_split_enabled": False,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["semantic_split_enabled"] is False
+    assert body["split_mode"] == "asr_sentences"
+    assert body["strategy_version"] == 2
+    assert [item["text_en"] for item in body["sentences"]] == ["Hello there", "General Kenobi"]
+    assert [item["text_zh"] for item in body["sentences"]] == ["中:Hello there", "中:General Kenobi"]
+
+
+def test_regenerate_lesson_subtitle_variant_stream_endpoint(test_client, monkeypatch):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="variant-stream-user@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "variant-stream-user@example.com").one()
+        lesson = Lesson(
+            user_id=user.id,
+            title="variant stream lesson",
+            source_filename="variant-stream.mp4",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=1600,
+            media_storage="client_indexeddb",
+            source_duration_ms=1600,
+            status="ready",
+        )
+        session.add(lesson)
+        session.commit()
+        lesson_id = lesson.id
+    finally:
+        session.close()
+
+    from app.api.routers import lessons as lesson_router
+
+    def fake_build_subtitle_variant(*, asr_payload, db, task_id=None, semantic_split_enabled=None, progress_callback=None, before_translate_callback=None, translation_progress_callback=None):
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage": "prepare",
+                    "message": "正在重切分句",
+                    "translate_done": 0,
+                    "translate_total": 0,
+                    "semantic_split_enabled": bool(semantic_split_enabled),
+                }
+            )
+            progress_callback(
+                {
+                    "stage": "translate",
+                    "message": "正在翻译 1/2",
+                    "translate_done": 1,
+                    "translate_total": 2,
+                    "semantic_split_enabled": bool(semantic_split_enabled),
+                }
+            )
+        return {
+            "semantic_split_enabled": True,
+            "split_mode": "word_level_split+semantic",
+            "source_word_count": 3,
+            "sentences": [
+                {
+                    "idx": 0,
+                    "begin_ms": 0,
+                    "end_ms": 1200,
+                    "text_en": "hello world again",
+                    "text_zh": "你好世界再次",
+                    "tokens": ["hello", "world", "again"],
+                    "audio_url": None,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(lesson_router.LessonService, "build_subtitle_variant", fake_build_subtitle_variant)
+
+    with client.stream(
+        "POST",
+        f"/api/lessons/{lesson_id}/subtitle-variants/stream",
+        headers=headers,
+        json={
+            "asr_payload": {"transcripts": [{"words": [_word_entry("hello", 0, 400)]}]},
+            "semantic_split_enabled": True,
+        },
+    ) as resp:
+        assert resp.status_code == 200
+        payload = "".join(resp.iter_text())
+
+    events = _parse_sse_events(payload)
+    assert [event for event, _ in events[:-1]] == ["progress", "progress"]
+    assert events[-1][0] == "result"
+    assert events[-1][1]["ok"] is True
+    assert events[-1][1]["lesson_id"] == lesson_id
+    assert events[-1][1]["semantic_split_enabled"] is True
+    assert events[-1][1]["sentences"][0]["text_en"] == "hello world again"
+
+
+def test_regenerate_lesson_subtitle_variant_stream_endpoint_emits_error(test_client, monkeypatch):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="variant-stream-error@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "variant-stream-error@example.com").one()
+        lesson = Lesson(
+            user_id=user.id,
+            title="variant stream error",
+            source_filename="variant-stream-error.mp4",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=1600,
+            media_storage="client_indexeddb",
+            source_duration_ms=1600,
+            status="ready",
+        )
+        session.add(lesson)
+        session.commit()
+        lesson_id = lesson.id
+    finally:
+        session.close()
+
+    from app.api.routers import lessons as lesson_router
+
+    def fake_build_subtitle_variant(*, asr_payload, db, task_id=None, semantic_split_enabled=None, progress_callback=None, before_translate_callback=None, translation_progress_callback=None):
+        raise RuntimeError("stream explode")
+
+    monkeypatch.setattr(lesson_router.LessonService, "build_subtitle_variant", fake_build_subtitle_variant)
+
+    with client.stream(
+        "POST",
+        f"/api/lessons/{lesson_id}/subtitle-variants/stream",
+        headers=headers,
+        json={
+            "asr_payload": {"transcripts": [{"words": [_word_entry("hello", 0, 400)]}]},
+            "semantic_split_enabled": False,
+        },
+    ) as resp:
+        assert resp.status_code == 200
+        payload = "".join(resp.iter_text())
+
+    events = _parse_sse_events(payload)
+    assert len(events) == 1
+    assert events[0][0] == "error"
+    assert events[0][1]["error_code"] == "INTERNAL_ERROR"
+    assert events[0][1]["message"] == "重新生成字幕失败"
 def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
     from app.services import lesson_service as lesson_service_module
 
@@ -2022,6 +2344,97 @@ def test_generate_lesson_applies_semantic_split_when_enabled(test_client, monkey
         assert [item.text_en for item in stored] == ["alpha beta gamma", "delta epsilon zeta"]
         assert [item.begin_ms for item in stored] == [0, 1500]
         assert [item.end_ms for item in stored] == [1500, 3000]
+    finally:
+        session.close()
+
+
+def test_generate_lesson_uses_asr_sentences_when_semantic_disabled(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    _register_and_login(client, email="semantic-disabled@example.com")
+
+    from app.services import lesson_service as lesson_service_module
+    from app.services.billing_service import get_or_create_wallet_account
+
+    asr_payload = {
+        "transcripts": [
+            {
+                "sentences": [
+                    {"text": "Alpha beta", "begin_time": 0, "end_time": 1200},
+                    {"text": "Gamma delta", "begin_time": 1200, "end_time": 2600},
+                ],
+                "words": [
+                    _word_entry("Alpha", 0, 500),
+                    _word_entry("beta", 500, 1200),
+                    _word_entry("Gamma", 1200, 1800),
+                    _word_entry("delta", 1800, 2600),
+                ],
+            }
+        ]
+    }
+
+    monkeypatch.setattr(
+        lesson_service_module,
+        "extract_audio_for_asr",
+        lambda source_path, opus_path: opus_path.write_bytes(b"opus"),
+    )
+    monkeypatch.setattr(lesson_service_module, "probe_audio_duration_ms", lambda opus_path: 120000)
+    monkeypatch.setattr(
+        lesson_service_module,
+        "translate_sentences_to_zh",
+        lambda texts, api_key, progress_callback=None: _translation_batch_result([f"中:{item}" for item in texts]),
+    )
+    monkeypatch.setattr(lesson_service_module, "estimate_duration_ms", lambda payload, sentences: 2600)
+
+    def _unexpected_rule_split(*args, **kwargs):
+        raise AssertionError("semantic_split_enabled=False should not call build_lesson_sentences")
+
+    monkeypatch.setattr(lesson_service_module, "build_lesson_sentences", _unexpected_rule_split)
+    monkeypatch.setattr(
+        lesson_service_module,
+        "extract_word_items",
+        lambda payload: [
+            _word_entry("Alpha", 0, 500),
+            _word_entry("beta", 500, 1200),
+            _word_entry("Gamma", 1200, 1800),
+            _word_entry("delta", 1800, 2600),
+        ],
+    )
+    monkeypatch.setattr(
+        lesson_service_module.LessonService,
+        "_transcribe_with_optional_parallel",
+        lambda **kwargs: {"asr_payload": asr_payload, "usage_seconds": None},
+    )
+
+    source_path = tmp_path / "semantic_disabled.mp4"
+    req_dir = tmp_path / "req_semantic_disabled"
+    source_path.write_bytes(b"source")
+    req_dir.mkdir(parents=True, exist_ok=True)
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "semantic-disabled@example.com").one()
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 500
+        session.add(account)
+        session.commit()
+
+        lesson = lesson_service_module.LessonService.generate_from_saved_file(
+            source_path=source_path,
+            source_filename="semantic_disabled.mp4",
+            req_dir=req_dir,
+            owner_id=user.id,
+            asr_model=QWEN_ASR_MODEL,
+            db=session,
+            semantic_split_enabled=False,
+        )
+
+        stored = session.query(LessonSentence).filter(LessonSentence.lesson_id == lesson.id).order_by(LessonSentence.idx.asc()).all()
+        assert [item.text_en for item in stored] == ["Alpha beta", "Gamma delta"]
+        assert [item.begin_ms for item in stored] == [0, 1200]
+        assert [item.end_ms for item in stored] == [1200, 2600]
+        assert lesson.subtitle_cache_seed["semantic_split_enabled"] is False
+        assert lesson.subtitle_cache_seed["split_mode"] == "asr_sentences"
+        assert lesson.subtitle_cache_seed["strategy_version"] == 2
     finally:
         session.close()
 

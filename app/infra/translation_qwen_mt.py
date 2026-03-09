@@ -4,11 +4,14 @@ import json
 import logging
 import os
 import re
+import threading
+import time
 from dataclasses import dataclass
 from typing import Callable
 
 from openai import OpenAI
 
+from app.core.config import MT_BATCH_MAX_CHARS, MT_BATCH_MAX_SENTENCES, MT_MIN_REQUEST_INTERVAL_MS, MT_RETRY_MAX_ATTEMPTS
 from app.core.timezone import now_shanghai_naive
 
 
@@ -16,6 +19,9 @@ MT_BASE_URL = os.getenv("MT_BASE_URL", "https://dashscope.aliyuncs.com/compatibl
 MT_MODEL = os.getenv("MT_MODEL", "qwen-mt-plus").strip()
 MT_TIMEOUT_SECONDS = max(5, int((os.getenv("MT_TIMEOUT_SECONDS", "20") or "20").strip() or "20"))
 logger = logging.getLogger(__name__)
+
+_REQUEST_LOCK = threading.Lock()
+_LAST_REQUEST_AT = 0.0
 
 
 class TranslationError(RuntimeError):
@@ -81,8 +87,16 @@ class TranslationBatchResult:
     latest_error_summary: str
 
 
+@dataclass(frozen=True)
+class _RecursiveBatchResult:
+    texts: list[str]
+    failed_count: int
+    attempt_records: list[TranslationAttemptRecord]
+    latest_error_summary: str
+
+
 def _client(api_key: str) -> OpenAI:
-    return OpenAI(api_key=api_key, base_url=MT_BASE_URL)
+    return OpenAI(api_key=api_key, base_url=MT_BASE_URL, max_retries=0)
 
 
 def _preview_text(text: str, *, limit: int = 96) -> str:
@@ -90,6 +104,24 @@ def _preview_text(text: str, *, limit: int = 96) -> str:
     if len(normalized) <= limit:
         return normalized
     return f"{normalized[:limit]}..."
+
+
+def _preview_batch(items: list[tuple[int, str]]) -> str:
+    return _preview_text(" | ".join(text for _, text in items), limit=180)
+
+
+def _respect_min_request_interval() -> None:
+    if MT_MIN_REQUEST_INTERVAL_MS <= 0:
+        return
+    interval_seconds = MT_MIN_REQUEST_INTERVAL_MS / 1000.0
+    global _LAST_REQUEST_AT
+    with _REQUEST_LOCK:
+        now = time.monotonic()
+        wait_seconds = (_LAST_REQUEST_AT + interval_seconds) - now
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+            now = time.monotonic()
+        _LAST_REQUEST_AT = now
 
 
 def _extract_error_context(exc: Exception) -> dict[str, str | int | None]:
@@ -136,6 +168,7 @@ def _build_attempt_record(
     *,
     sentence_idx: int,
     input_text: str,
+    attempt_no: int = 1,
     provider_request_id: str = "",
     status_code: int | None = None,
     finish_reason: str = "",
@@ -150,11 +183,11 @@ def _build_attempt_record(
 ) -> TranslationAttemptRecord:
     return TranslationAttemptRecord(
         sentence_idx=sentence_idx,
-        attempt_no=1,
+        attempt_no=max(1, int(attempt_no or 1)),
         provider="dashscope_compatible",
         model_name=MT_MODEL,
         base_url=MT_BASE_URL,
-        input_text_preview=_preview_text(input_text),
+        input_text_preview=_preview_text(input_text, limit=180),
         provider_request_id=str(provider_request_id or "").strip(),
         status_code=status_code,
         finish_reason=str(finish_reason or "").strip(),
@@ -169,208 +202,7 @@ def _build_attempt_record(
     )
 
 
-def _translate_sentence_to_zh(text: str, api_key: str, *, sentence_idx: int) -> tuple[str, TranslationAttemptRecord]:
-    normalized = (text or "").strip()
-    started_at = now_shanghai_naive()
-    if not normalized:
-        record = _build_attempt_record(
-            sentence_idx=sentence_idx,
-            input_text=normalized,
-            success=False,
-            error_code="EMPTY_INPUT",
-            error_message="empty input",
-            status_code=400,
-            started_at=started_at,
-            finished_at=now_shanghai_naive(),
-        )
-        return "", record
-
-    client = _client(api_key)
-    try:
-        completion = client.chat.completions.create(
-            model=MT_MODEL,
-            messages=[{"role": "user", "content": normalized}],
-            extra_body={"translation_options": {"source_lang": "English", "target_lang": "Chinese"}},
-            timeout=MT_TIMEOUT_SECONDS,
-        )
-    except Exception as exc:
-        context = _extract_error_context(exc)
-        record = _build_attempt_record(
-            sentence_idx=sentence_idx,
-            input_text=normalized,
-            provider_request_id=str(context["request_id"] or ""),
-            status_code=context["status_code"] if isinstance(context["status_code"], int) else None,
-            success=False,
-            error_code=str(context["error_code"] or "") or "REQUEST_FAILED",
-            error_message=str(context["detail"] or "")[:1200],
-            started_at=started_at,
-            finished_at=now_shanghai_naive(),
-        )
-        logger.warning(
-            "[DEBUG] qwen_mt.translate.error status_code=%s request_id=%s model=%s base_url=%s sentence_idx=%s preview=%s detail=%s",
-            record.status_code,
-            record.provider_request_id,
-            MT_MODEL,
-            MT_BASE_URL,
-            sentence_idx,
-            record.input_text_preview,
-            record.error_message,
-        )
-        return "", record
-
-    prompt_tokens, completion_tokens, total_tokens = _usage_values(completion)
-    provider_request_id = str(getattr(completion, "_request_id", "") or getattr(completion, "id", "") or "").strip()
-    if not completion.choices:
-        record = _build_attempt_record(
-            sentence_idx=sentence_idx,
-            input_text=normalized,
-            provider_request_id=provider_request_id,
-            status_code=200,
-            success=False,
-            error_code="EMPTY_CHOICES",
-            error_message="empty choices",
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total_tokens,
-            started_at=started_at,
-            finished_at=now_shanghai_naive(),
-        )
-        logger.warning(
-            "[DEBUG] qwen_mt.translate.empty_choices model=%s base_url=%s sentence_idx=%s preview=%s",
-            MT_MODEL,
-            MT_BASE_URL,
-            sentence_idx,
-            record.input_text_preview,
-        )
-        return "", record
-
-    first_choice = completion.choices[0]
-    finish_reason = str(getattr(first_choice, "finish_reason", None) or "").strip()
-    content = (first_choice.message.content or "").strip()
-    if finish_reason == "length":
-        logger.warning(
-            "[DEBUG] qwen_mt.translate.finish_length model=%s sentence_idx=%s prompt_tokens=%s completion_tokens=%s total_tokens=%s preview=%s",
-            MT_MODEL,
-            sentence_idx,
-            prompt_tokens,
-            completion_tokens,
-            total_tokens,
-            _preview_text(normalized),
-        )
-    if not content:
-        record = _build_attempt_record(
-            sentence_idx=sentence_idx,
-            input_text=normalized,
-            provider_request_id=provider_request_id,
-            status_code=200,
-            finish_reason=finish_reason,
-            success=False,
-            error_code="EMPTY_CONTENT",
-            error_message="empty translated content",
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total_tokens,
-            started_at=started_at,
-            finished_at=now_shanghai_naive(),
-        )
-        logger.warning(
-            "[DEBUG] qwen_mt.translate.empty_content finish_reason=%s sentence_idx=%s prompt_tokens=%s completion_tokens=%s total_tokens=%s preview=%s",
-            finish_reason,
-            sentence_idx,
-            prompt_tokens,
-            completion_tokens,
-            total_tokens,
-            record.input_text_preview,
-        )
-        return "", record
-
-    record = _build_attempt_record(
-        sentence_idx=sentence_idx,
-        input_text=normalized,
-        provider_request_id=provider_request_id,
-        status_code=200,
-        finish_reason=finish_reason,
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens,
-        total_tokens=total_tokens,
-        success=True,
-        started_at=started_at,
-        finished_at=now_shanghai_naive(),
-    )
-    return content, record
-
-
-def translate_to_zh(text: str, api_key: str) -> str:
-    if not str(text or "").strip():
-        return ""
-    translated, record = _translate_sentence_to_zh(text, api_key, sentence_idx=0)
-    if not record.success:
-        raise TranslationError(record.error_message or record.error_code or "translation failed")
-    return translated
-
-
-def translate_sentences_to_zh(
-    sentences: list[str],
-    api_key: str,
-    progress_callback: Callable[[int, int], None] | None = None,
-) -> TranslationBatchResult:
-    texts: list[str] = []
-    records: list[dict[str, object]] = []
-    failed = 0
-    total = len(sentences)
-    prompt_tokens = 0
-    completion_tokens = 0
-    total_tokens = 0
-    success_request_count = 0
-    latest_error_summary = ""
-
-    for index, item in enumerate(sentences, start=1):
-        translated, record = _translate_sentence_to_zh(item, api_key, sentence_idx=index - 1)
-        texts.append(translated)
-        records.append(record.to_dict())
-        if record.success:
-            success_request_count += 1
-            prompt_tokens += record.prompt_tokens
-            completion_tokens += record.completion_tokens
-            total_tokens += record.total_tokens
-        else:
-            failed += 1
-            latest_error_summary = f"第{index}句失败：{record.error_code or 'REQUEST_FAILED'} {record.error_message}".strip()
-            logger.warning(
-                "[DEBUG] qwen_mt.batch.item_failed index=%s/%s preview=%s reason=%s",
-                index,
-                total,
-                record.input_text_preview,
-                record.error_message or record.error_code,
-            )
-        if progress_callback:
-            progress_callback(index, total)
-
-    if failed:
-        logger.warning(
-            "[DEBUG] qwen_mt.batch.partial_failed failed=%s success=%s total=%s model=%s base_url=%s latest_error=%s",
-            failed,
-            total - failed,
-            total,
-            MT_MODEL,
-            MT_BASE_URL,
-            latest_error_summary,
-        )
-
-    return TranslationBatchResult(
-        texts=texts,
-        failed_count=failed,
-        attempt_records=records,
-        total_requests=len(records),
-        success_request_count=success_request_count,
-        success_prompt_tokens=prompt_tokens,
-        success_completion_tokens=completion_tokens,
-        success_total_tokens=total_tokens,
-        latest_error_summary=latest_error_summary,
-    )
-
-
-def _extract_json_array(content: str) -> list[str]:
+def _extract_json_array(content: str, *, preserve_empty: bool) -> list[str]:
     normalized = (content or "").strip()
     if not normalized:
         return []
@@ -386,9 +218,344 @@ def _extract_json_array(content: str) -> list[str]:
     items: list[str] = []
     for item in parsed:
         value = str(item or "").strip()
-        if value:
+        if value or preserve_empty:
             items.append(value)
     return items
+
+
+def _build_batch_prompt(texts: list[str]) -> str:
+    return (
+        "Translate the following English subtitle lines into Simplified Chinese.\n"
+        "Return JSON only as an array of strings.\n"
+        "The output array length must match the input array length exactly.\n"
+        "Translate each item independently.\n"
+        "Do not merge, split, skip, explain, or paraphrase any item.\n"
+        f"Input JSON: {json.dumps(texts, ensure_ascii=False)}"
+    )
+
+
+def _parse_batch_response(content: str, *, expected_count: int) -> tuple[list[str] | None, str, str]:
+    items = _extract_json_array(content, preserve_empty=True)
+    if len(items) != expected_count:
+        return None, "INVALID_BATCH_COUNT", f"expected={expected_count} actual={len(items)}"
+    if any(not item for item in items):
+        return None, "EMPTY_BATCH_ITEM", "batch translation contains empty item"
+    return items, "", ""
+
+
+def _is_retryable_status(status_code: int | None) -> bool:
+    if status_code is None:
+        return True
+    if status_code in {408, 409, 429}:
+        return True
+    return status_code >= 500
+
+
+def _retry_delay_seconds(attempt_no: int) -> float:
+    return min(8.0, 0.8 * (2 ** max(0, attempt_no - 1)))
+
+
+def _build_sentence_batches(items: list[tuple[int, str]]) -> list[list[tuple[int, str]]]:
+    batches: list[list[tuple[int, str]]] = []
+    current_batch: list[tuple[int, str]] = []
+    current_chars = 0
+
+    for item in items:
+        sentence_text = item[1]
+        sentence_chars = max(1, len(sentence_text))
+        should_flush = bool(current_batch) and (
+            len(current_batch) >= MT_BATCH_MAX_SENTENCES or current_chars + sentence_chars > MT_BATCH_MAX_CHARS
+        )
+        if should_flush:
+            batches.append(current_batch)
+            current_batch = []
+            current_chars = 0
+        current_batch.append(item)
+        current_chars += sentence_chars
+
+    if current_batch:
+        batches.append(current_batch)
+    return batches
+
+
+def _request_batch_translation(
+    items: list[tuple[int, str]],
+    *,
+    api_key: str,
+) -> tuple[list[str] | None, list[TranslationAttemptRecord], str, str]:
+    if not items:
+        return [], [], "", ""
+
+    client = _client(api_key)
+    start_idx = int(items[0][0])
+    batch_texts = [text for _, text in items]
+    batch_preview = _preview_batch(items)
+    prompt = _build_batch_prompt(batch_texts)
+    attempt_records: list[TranslationAttemptRecord] = []
+
+    for attempt_no in range(1, MT_RETRY_MAX_ATTEMPTS + 1):
+        _respect_min_request_interval()
+        started_at = now_shanghai_naive()
+        try:
+            completion = client.chat.completions.create(
+                model=MT_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a subtitle translation engine. Return JSON arrays only.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0,
+                timeout=MT_TIMEOUT_SECONDS,
+            )
+        except Exception as exc:
+            context = _extract_error_context(exc)
+            record = _build_attempt_record(
+                sentence_idx=start_idx,
+                input_text=batch_preview,
+                attempt_no=attempt_no,
+                provider_request_id=str(context["request_id"] or ""),
+                status_code=context["status_code"] if isinstance(context["status_code"], int) else None,
+                success=False,
+                error_code=str(context["error_code"] or "") or "REQUEST_FAILED",
+                error_message=str(context["detail"] or "")[:1200],
+                started_at=started_at,
+                finished_at=now_shanghai_naive(),
+            )
+            attempt_records.append(record)
+            logger.warning(
+                "[DEBUG] qwen_mt.batch.request_failed attempt=%s/%s sentence_idx=%s size=%s status_code=%s request_id=%s preview=%s detail=%s",
+                attempt_no,
+                MT_RETRY_MAX_ATTEMPTS,
+                start_idx,
+                len(items),
+                record.status_code,
+                record.provider_request_id,
+                record.input_text_preview,
+                record.error_message,
+            )
+            if _is_retryable_status(record.status_code) and attempt_no < MT_RETRY_MAX_ATTEMPTS:
+                delay_seconds = _retry_delay_seconds(attempt_no)
+                logger.info(
+                    "[DEBUG] qwen_mt.batch.retry delay_seconds=%.3f attempt=%s sentence_idx=%s size=%s",
+                    delay_seconds,
+                    attempt_no + 1,
+                    start_idx,
+                    len(items),
+                )
+                time.sleep(delay_seconds)
+                continue
+            return None, attempt_records, record.error_code or "REQUEST_FAILED", record.error_message
+
+        prompt_tokens, completion_tokens, total_tokens = _usage_values(completion)
+        provider_request_id = str(getattr(completion, "_request_id", "") or getattr(completion, "id", "") or "").strip()
+
+        if not completion.choices:
+            record = _build_attempt_record(
+                sentence_idx=start_idx,
+                input_text=batch_preview,
+                attempt_no=attempt_no,
+                provider_request_id=provider_request_id,
+                status_code=200,
+                success=False,
+                error_code="EMPTY_CHOICES",
+                error_message="empty choices",
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                started_at=started_at,
+                finished_at=now_shanghai_naive(),
+            )
+            attempt_records.append(record)
+            logger.warning(
+                "[DEBUG] qwen_mt.batch.invalid_output attempt=%s sentence_idx=%s size=%s reason=%s preview=%s",
+                attempt_no,
+                start_idx,
+                len(items),
+                record.error_code,
+                record.input_text_preview,
+            )
+            return None, attempt_records, record.error_code, record.error_message
+
+        first_choice = completion.choices[0]
+        finish_reason = str(getattr(first_choice, "finish_reason", None) or "").strip()
+        content = str(getattr(first_choice.message, "content", "") or "").strip()
+        translated_items, error_code, error_message = _parse_batch_response(content, expected_count=len(items))
+        if finish_reason == "length":
+            error_code = "FINISH_REASON_LENGTH"
+            error_message = "finish_reason=length"
+            translated_items = None
+
+        if translated_items is None:
+            record = _build_attempt_record(
+                sentence_idx=start_idx,
+                input_text=batch_preview,
+                attempt_no=attempt_no,
+                provider_request_id=provider_request_id,
+                status_code=200,
+                finish_reason=finish_reason,
+                success=False,
+                error_code=error_code or "INVALID_BATCH_OUTPUT",
+                error_message=error_message or "invalid batch output",
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                started_at=started_at,
+                finished_at=now_shanghai_naive(),
+            )
+            attempt_records.append(record)
+            logger.warning(
+                "[DEBUG] qwen_mt.batch.invalid_output attempt=%s sentence_idx=%s size=%s finish_reason=%s reason=%s preview=%s",
+                attempt_no,
+                start_idx,
+                len(items),
+                finish_reason,
+                record.error_message or record.error_code,
+                record.input_text_preview,
+            )
+            return None, attempt_records, record.error_code, record.error_message
+
+        record = _build_attempt_record(
+            sentence_idx=start_idx,
+            input_text=batch_preview,
+            attempt_no=attempt_no,
+            provider_request_id=provider_request_id,
+            status_code=200,
+            finish_reason=finish_reason,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            success=True,
+            started_at=started_at,
+            finished_at=now_shanghai_naive(),
+        )
+        attempt_records.append(record)
+        return translated_items, attempt_records, "", ""
+
+    return None, attempt_records, "REQUEST_FAILED", "translation failed"
+
+
+def _combine_recursive_results(
+    head_records: list[TranslationAttemptRecord],
+    left: _RecursiveBatchResult,
+    right: _RecursiveBatchResult,
+) -> _RecursiveBatchResult:
+    return _RecursiveBatchResult(
+        texts=[*left.texts, *right.texts],
+        failed_count=left.failed_count + right.failed_count,
+        attempt_records=[*head_records, *left.attempt_records, *right.attempt_records],
+        latest_error_summary=right.latest_error_summary or left.latest_error_summary,
+    )
+
+
+def _translate_batch_recursive(items: list[tuple[int, str]], *, api_key: str) -> _RecursiveBatchResult:
+    translated_items, attempt_records, error_code, error_message = _request_batch_translation(items, api_key=api_key)
+    if translated_items is not None:
+        return _RecursiveBatchResult(
+            texts=translated_items,
+            failed_count=0,
+            attempt_records=attempt_records,
+            latest_error_summary="",
+        )
+
+    if len(items) > 1:
+        split_index = max(1, len(items) // 2)
+        logger.warning(
+            "[DEBUG] qwen_mt.batch.split sentence_idx=%s size=%s split_index=%s reason=%s",
+            items[0][0],
+            len(items),
+            split_index,
+            error_message or error_code,
+        )
+        left = _translate_batch_recursive(items[:split_index], api_key=api_key)
+        right = _translate_batch_recursive(items[split_index:], api_key=api_key)
+        return _combine_recursive_results(attempt_records, left, right)
+
+    sentence_idx, sentence_text = items[0]
+    latest_error_summary = f"第{sentence_idx + 1}句失败：{error_code or 'REQUEST_FAILED'} {error_message}".strip()
+    logger.warning(
+        "[DEBUG] qwen_mt.batch.item_failed index=%s preview=%s reason=%s",
+        sentence_idx + 1,
+        _preview_text(sentence_text),
+        error_message or error_code,
+    )
+    return _RecursiveBatchResult(
+        texts=[""],
+        failed_count=1,
+        attempt_records=attempt_records,
+        latest_error_summary=latest_error_summary,
+    )
+
+
+def translate_to_zh(text: str, api_key: str) -> str:
+    if not str(text or "").strip():
+        return ""
+    result = translate_sentences_to_zh([text], api_key=api_key)
+    if result.failed_count:
+        raise TranslationError(result.latest_error_summary or "translation failed")
+    return result.texts[0]
+
+
+def translate_sentences_to_zh(
+    sentences: list[str],
+    api_key: str,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> TranslationBatchResult:
+    total = len(sentences)
+    translated_texts = [""] * total
+    non_empty_items: list[tuple[int, str]] = []
+    completed_sentences = 0
+
+    for index, item in enumerate(sentences):
+        normalized = str(item or "").strip()
+        if normalized:
+            non_empty_items.append((index, normalized))
+            continue
+        completed_sentences += 1
+        if progress_callback:
+            progress_callback(completed_sentences, total)
+
+    records: list[TranslationAttemptRecord] = []
+    failed = 0
+    latest_error_summary = ""
+
+    for batch in _build_sentence_batches(non_empty_items):
+        batch_result = _translate_batch_recursive(batch, api_key=api_key)
+        records.extend(batch_result.attempt_records)
+        failed += batch_result.failed_count
+        if batch_result.latest_error_summary:
+            latest_error_summary = batch_result.latest_error_summary
+
+        for offset, (sentence_idx, _) in enumerate(batch):
+            translated_texts[sentence_idx] = batch_result.texts[offset]
+            completed_sentences += 1
+            if progress_callback:
+                progress_callback(completed_sentences, total)
+
+    if failed:
+        logger.warning(
+            "[DEBUG] qwen_mt.batch.partial_failed failed=%s success=%s total=%s model=%s base_url=%s latest_error=%s",
+            failed,
+            total - failed,
+            total,
+            MT_MODEL,
+            MT_BASE_URL,
+            latest_error_summary,
+        )
+
+    success_records = [record for record in records if record.success]
+    return TranslationBatchResult(
+        texts=translated_texts,
+        failed_count=failed,
+        attempt_records=[record.to_dict() for record in records],
+        total_requests=len(records),
+        success_request_count=len(success_records),
+        success_prompt_tokens=sum(record.prompt_tokens for record in success_records),
+        success_completion_tokens=sum(record.completion_tokens for record in success_records),
+        success_total_tokens=sum(record.total_tokens for record in success_records),
+        latest_error_summary=latest_error_summary,
+    )
 
 
 def split_sentence_by_semantic(
@@ -425,7 +592,7 @@ def split_sentence_by_semantic(
     if not completion.choices:
         raise SemanticSplitError("empty_choices")
     content = (completion.choices[0].message.content or "").strip()
-    segments = _extract_json_array(content)
+    segments = _extract_json_array(content, preserve_empty=False)
     if len(segments) <= 1:
         raise SemanticSplitError("invalid_segments")
     return segments
