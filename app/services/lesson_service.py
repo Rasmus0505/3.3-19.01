@@ -7,6 +7,7 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable
+from uuid import uuid4
 
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
@@ -21,7 +22,11 @@ from app.models import Lesson, LessonSentence
 from app.repositories.progress import create_progress
 from app.services.asr_dashscope import transcribe_audio_file
 from app.services.billing_service import (
+    EVENT_CONSUME_TRANSLATE,
+    append_translation_request_logs,
     calculate_points,
+    calculate_token_points,
+    consume_points,
     get_model_rate,
     get_subtitle_settings_snapshot,
     record_consume,
@@ -42,7 +47,7 @@ from app.services.lesson_builder import (
     tokenize_sentence,
 )
 from app.services.media import MediaError, extract_audio_for_asr, probe_audio_duration_ms, run_cmd, save_upload_file_stream, validate_suffix
-from app.services.translation_qwen_mt import SemanticSplitError, split_sentence_by_semantic, translate_sentences_to_zh
+from app.services.translation_qwen_mt import MT_MODEL, SemanticSplitError, split_sentence_by_semantic, translate_sentences_to_zh
 
 
 logger = logging.getLogger(__name__)
@@ -368,6 +373,7 @@ class LessonService:
         *,
         asr_payload: dict[str, Any],
         db: Session,
+        task_id: str | None = None,
         semantic_split_enabled: bool | None = None,
         before_translate_callback: Callable[[int], None] | None = None,
         translation_progress_callback: Callable[[int, int], None] | None = None,
@@ -421,18 +427,29 @@ class LessonService:
 
         if before_translate_callback:
             before_translate_callback(len(sentences))
-        zh_list, failed_count = translate_sentences_to_zh(
+        translation_result = translate_sentences_to_zh(
             [x["text"] for x in sentences],
             api_key=DASHSCOPE_API_KEY,
             progress_callback=translation_progress_callback,
         )
-        normalized_sentences = LessonService._normalize_runtime_sentences(sentences, zh_list)
+        normalized_sentences = LessonService._normalize_runtime_sentences(sentences, translation_result.texts)
         return {
             "semantic_split_enabled": bool(effective_semantic_split_enabled),
             "split_mode": split_mode,
             "source_word_count": source_word_count,
             "sentences": normalized_sentences,
-            "translate_failed_count": failed_count,
+            "translate_failed_count": int(translation_result.failed_count),
+            "translation_attempt_records": list(translation_result.attempt_records),
+            "translation_request_count": int(translation_result.total_requests),
+            "translation_success_request_count": int(translation_result.success_request_count),
+            "translation_usage": {
+                "prompt_tokens": int(translation_result.success_prompt_tokens),
+                "completion_tokens": int(translation_result.success_completion_tokens),
+                "total_tokens": int(translation_result.success_total_tokens),
+                "charged_points": 0,
+            },
+            "latest_translate_error_summary": str(translation_result.latest_error_summary or ""),
+            "task_id": task_id,
         }
 
     @staticmethod
@@ -652,6 +669,7 @@ class LessonService:
         asr_model: str,
         db: Session,
         progress_callback: ProgressCallback | None = None,
+        task_id: str | None = None,
         semantic_split_enabled: bool | None = None,
     ) -> Lesson:
         _emit_progress(
@@ -678,6 +696,7 @@ class LessonService:
         reserved_points = 0
         reserved_duration_ms = 0
         reserve_ledger_id: int | None = None
+        translation_trace_id = uuid4().hex
 
         try:
             reserved_duration_ms = probe_audio_duration_ms(opus_path)
@@ -757,12 +776,28 @@ class LessonService:
             variant = LessonService.build_subtitle_variant(
                 asr_payload=asr_payload,
                 db=db,
+                task_id=task_id,
                 semantic_split_enabled=semantic_split_enabled,
                 before_translate_callback=_on_before_translation,
                 translation_progress_callback=_on_translation_progress,
             )
             runtime_sentences = list(variant["sentences"])
             translate_total = len(runtime_sentences)
+            translation_rate = get_model_rate(db, MT_MODEL)
+            translation_usage = dict(variant.get("translation_usage") or {})
+            translation_points = calculate_token_points(
+                int(translation_usage.get("total_tokens", 0) or 0),
+                int(getattr(translation_rate, "points_per_1k_tokens", 0) or 0),
+            )
+            translation_usage["charged_points"] = translation_points
+            translation_debug = {
+                "total_sentences": translate_total,
+                "failed_sentences": int(variant.get("translate_failed_count", 0)),
+                "request_count": int(variant.get("translation_request_count", 0)),
+                "success_request_count": int(variant.get("translation_success_request_count", 0)),
+                "usage": translation_usage,
+                "latest_error_summary": str(variant.get("latest_translate_error_summary") or ""),
+            }
             _emit_progress(
                 progress_callback,
                 stage_key="translate_zh",
@@ -775,6 +810,7 @@ class LessonService:
                     "translate_done": translate_total,
                     "translate_total": translate_total,
                 },
+                translation_debug=translation_debug,
             )
 
             failed_count = int(variant.get("translate_failed_count", 0))
@@ -842,6 +878,14 @@ class LessonService:
                 )
 
             create_progress(db, lesson_id=lesson.id, user_id=owner_id)
+            append_translation_request_logs(
+                db,
+                trace_id=translation_trace_id,
+                user_id=owner_id,
+                task_id=task_id,
+                lesson_id=lesson.id,
+                records=list(variant.get("translation_attempt_records") or []),
+            )
             settle_reserved_points(
                 db,
                 user_id=owner_id,
@@ -852,6 +896,33 @@ class LessonService:
                 note=(
                     f"课程生成结算，预扣流水#{reserve_ledger_id}，预扣={reserved_points}，实耗={actual_points}，差额={points_diff}，"
                     f"usage_seconds={usage_seconds if usage_hit else 'fallback'}"
+                ),
+            )
+            logger.info(
+                "[DEBUG] lesson.generate translate_settle owner_id=%s lesson_id=%s model=%s total_tokens=%s charged_points=%s failed=%s requests=%s",
+                owner_id,
+                lesson.id,
+                MT_MODEL,
+                int(translation_usage.get("total_tokens", 0) or 0),
+                translation_points,
+                failed_count,
+                int(variant.get("translation_request_count", 0) or 0),
+            )
+            consume_points(
+                db,
+                user_id=owner_id,
+                points=translation_points,
+                model_name=MT_MODEL,
+                lesson_id=lesson.id,
+                event_type=EVENT_CONSUME_TRANSLATE,
+                note=(
+                    f"课程翻译扣点，请求={int(variant.get('translation_request_count', 0) or 0)}，"
+                    f"成功请求={int(variant.get('translation_success_request_count', 0) or 0)}，"
+                    f"失败句数={failed_count}，"
+                    f"prompt_tokens={int(translation_usage.get('prompt_tokens', 0) or 0)}，"
+                    f"completion_tokens={int(translation_usage.get('completion_tokens', 0) or 0)}，"
+                    f"total_tokens={int(translation_usage.get('total_tokens', 0) or 0)}，"
+                    f"trace_id={translation_trace_id}"
                 ),
             )
             record_consume(
@@ -881,6 +952,7 @@ class LessonService:
                     "translate_done": translate_total,
                     "translate_total": translate_total,
                 },
+                translation_debug=translation_debug,
             )
             return lesson
         except Exception:

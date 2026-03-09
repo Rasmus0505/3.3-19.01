@@ -183,6 +183,8 @@ def test_e2e_admin_update_rate_visible_in_public_api(e2e_client):
         headers=admin_headers,
         json={
             "points_per_minute": 222,
+            "points_per_1k_tokens": 0,
+            "billing_unit": "minute",
             "is_active": True,
             "parallel_enabled": True,
             "parallel_threshold_seconds": 1200,
@@ -194,6 +196,8 @@ def test_e2e_admin_update_rate_visible_in_public_api(e2e_client):
     rate = update_resp.json()["rates"][0]
     assert rate["model_name"] == "qwen3-asr-flash-filetrans"
     assert rate["points_per_minute"] == 222
+    assert rate["points_per_1k_tokens"] == 0
+    assert rate["billing_unit"] == "minute"
     assert rate["parallel_enabled"] is True
     assert rate["parallel_threshold_seconds"] == 1200
     assert rate["segment_seconds"] == 240
@@ -204,6 +208,8 @@ def test_e2e_admin_update_rate_visible_in_public_api(e2e_client):
     assert public_resp.json()["subtitle_settings"]["semantic_split_default_enabled"] is False
     target = next(item for item in public_resp.json()["rates"] if item["model_name"] == "qwen3-asr-flash-filetrans")
     assert target["points_per_minute"] == 222
+    assert target["points_per_1k_tokens"] == 0
+    assert target["billing_unit"] == "minute"
     assert target["is_active"] is True
 
 

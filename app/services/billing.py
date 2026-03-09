@@ -22,6 +22,7 @@ from app.models import (
     RedeemCodeAttempt,
     RedeemCodeBatch,
     SubtitleSetting,
+    TranslationRequestLog,
     WalletAccount,
     WalletLedger,
 )
@@ -30,6 +31,8 @@ from app.models import (
 EVENT_RESERVE = "reserve"
 EVENT_CONSUME = "consume"
 EVENT_REFUND = "refund"
+EVENT_CONSUME_TRANSLATE = "consume_translate"
+EVENT_REFUND_TRANSLATE = "refund_translate"
 EVENT_MANUAL_ADJUST = "manual_adjust"
 EVENT_REDEEM_CODE = "redeem_code"
 
@@ -53,8 +56,59 @@ _REDEEM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_MODEL_RATES: tuple[tuple[str, int, bool, int, int, int], ...] = (
-    ("qwen3-asr-flash-filetrans", 130, True, 600, 300, 4),
+DEFAULT_MT_POINTS_PER_1K_TOKENS = 15
+
+DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
+    {
+        "model_name": "qwen3-asr-flash-filetrans",
+        "points_per_minute": 130,
+        "points_per_1k_tokens": 0,
+        "billing_unit": "minute",
+        "parallel_enabled": True,
+        "parallel_threshold_seconds": 600,
+        "segment_seconds": 300,
+        "max_concurrency": 4,
+    },
+    {
+        "model_name": "qwen-mt-plus",
+        "points_per_minute": 0,
+        "points_per_1k_tokens": DEFAULT_MT_POINTS_PER_1K_TOKENS,
+        "billing_unit": "1k_tokens",
+        "parallel_enabled": False,
+        "parallel_threshold_seconds": 600,
+        "segment_seconds": 300,
+        "max_concurrency": 1,
+    },
+    {
+        "model_name": "qwen-mt-flash",
+        "points_per_minute": 0,
+        "points_per_1k_tokens": DEFAULT_MT_POINTS_PER_1K_TOKENS,
+        "billing_unit": "1k_tokens",
+        "parallel_enabled": False,
+        "parallel_threshold_seconds": 600,
+        "segment_seconds": 300,
+        "max_concurrency": 1,
+    },
+    {
+        "model_name": "qwen-mt-lite",
+        "points_per_minute": 0,
+        "points_per_1k_tokens": DEFAULT_MT_POINTS_PER_1K_TOKENS,
+        "billing_unit": "1k_tokens",
+        "parallel_enabled": False,
+        "parallel_threshold_seconds": 600,
+        "segment_seconds": 300,
+        "max_concurrency": 1,
+    },
+    {
+        "model_name": "qwen-mt-turbo",
+        "points_per_minute": 0,
+        "points_per_1k_tokens": DEFAULT_MT_POINTS_PER_1K_TOKENS,
+        "billing_unit": "1k_tokens",
+        "parallel_enabled": False,
+        "parallel_threshold_seconds": 600,
+        "segment_seconds": 300,
+        "max_concurrency": 1,
+    },
 )
 
 DEFAULT_SUBTITLE_SETTINGS = {
@@ -105,6 +159,10 @@ def _ensure_legacy_sqlite_billing_columns(db: Session) -> None:
 
     existing_columns = {str(item.get("name") or "").strip() for item in inspector.get_columns(table_name)}
     alter_sql: list[str] = []
+    if "points_per_1k_tokens" not in existing_columns:
+        alter_sql.append("ALTER TABLE billing_model_rates ADD COLUMN points_per_1k_tokens INTEGER NOT NULL DEFAULT 0")
+    if "billing_unit" not in existing_columns:
+        alter_sql.append("ALTER TABLE billing_model_rates ADD COLUMN billing_unit VARCHAR(32) NOT NULL DEFAULT 'minute'")
     if "parallel_enabled" not in existing_columns:
         alter_sql.append("ALTER TABLE billing_model_rates ADD COLUMN parallel_enabled BOOLEAN NOT NULL DEFAULT 0")
     if "parallel_threshold_seconds" not in existing_columns:
@@ -114,12 +172,261 @@ def _ensure_legacy_sqlite_billing_columns(db: Session) -> None:
     if "max_concurrency" not in existing_columns:
         alter_sql.append("ALTER TABLE billing_model_rates ADD COLUMN max_concurrency INTEGER NOT NULL DEFAULT 2")
 
-    if not alter_sql:
+    if alter_sql:
+        for sql in alter_sql:
+            db.execute(text(sql))
+        db.commit()
+    if _sqlite_billing_rates_requires_rebuild(db):
+        _rebuild_legacy_sqlite_billing_rates(db)
+    TranslationRequestLog.__table__.create(bind=bind, checkfirst=True)
+
+
+def _ensure_legacy_sqlite_wallet_ledger_event_types(db: Session) -> None:
+    bind = db.get_bind()
+    if bind is None or bind.dialect.name != "sqlite":
         return
 
-    for sql in alter_sql:
-        db.execute(text(sql))
-    db.commit()
+    inspector = inspect(bind)
+    table_name = WalletLedger.__tablename__
+    if not inspector.has_table(table_name):
+        return
+
+    existing_columns = {str(item.get("name") or "").strip() for item in inspector.get_columns(table_name)}
+    alter_sql: list[str] = []
+    if "redeem_batch_id" not in existing_columns:
+        alter_sql.append("ALTER TABLE wallet_ledger ADD COLUMN redeem_batch_id INTEGER")
+    if "redeem_code_id" not in existing_columns:
+        alter_sql.append("ALTER TABLE wallet_ledger ADD COLUMN redeem_code_id INTEGER")
+    if "redeem_code_mask" not in existing_columns:
+        alter_sql.append("ALTER TABLE wallet_ledger ADD COLUMN redeem_code_mask VARCHAR(32)")
+
+    if alter_sql:
+        for sql in alter_sql:
+            db.execute(text(sql))
+        db.commit()
+
+    ddl = str(
+        db.execute(
+            text("SELECT sql FROM sqlite_master WHERE type='table' AND name=:table_name"),
+            {"table_name": table_name},
+        ).scalar()
+        or ""
+    ).lower()
+    if "consume_translate" in ddl and "refund_translate" in ddl and "redeem_code" in ddl:
+        _cleanup_stale_sqlite_legacy_table(db, f"{table_name}__legacy")
+        return
+    _rebuild_legacy_sqlite_wallet_ledger(db)
+
+
+def _sqlite_billing_rates_requires_rebuild(db: Session) -> bool:
+    ddl = str(
+        db.execute(
+            text("SELECT sql FROM sqlite_master WHERE type='table' AND name=:table_name"),
+            {"table_name": BillingModelRate.__tablename__},
+        ).scalar()
+        or ""
+    ).lower()
+    if not ddl:
+        return False
+    return (
+        "points_per_minute > 0" in ddl
+        or "ck_billing_rate_token_non_negative" not in ddl
+        or "ck_billing_parallel_threshold_positive" not in ddl
+        or "ck_billing_segment_seconds_positive" not in ddl
+        or "ck_billing_max_concurrency_positive" not in ddl
+    )
+
+
+def _rebuild_legacy_sqlite_billing_rates(db: Session) -> None:
+    bind = db.get_bind()
+    if bind is None:
+        raise RuntimeError("billing_model_rates sqlite rebuild missing bind")
+
+    table_name = BillingModelRate.__tablename__
+    legacy_table_name = f"{table_name}__legacy"
+    logger.warning("[DEBUG] billing_rates.sqlite_rebuild_start table=%s", table_name)
+
+    try:
+        db.rollback()
+        db.execute(text("PRAGMA foreign_keys=OFF"))
+        db.commit()
+        db.execute(text(f"ALTER TABLE {table_name} RENAME TO {legacy_table_name}"))
+        db.commit()
+        BillingModelRate.__table__.create(bind=bind, checkfirst=True)
+        db.execute(
+            text(
+                f"""
+                INSERT INTO {table_name} (
+                    model_name,
+                    points_per_minute,
+                    points_per_1k_tokens,
+                    billing_unit,
+                    is_active,
+                    parallel_enabled,
+                    parallel_threshold_seconds,
+                    segment_seconds,
+                    max_concurrency,
+                    updated_at,
+                    updated_by_user_id
+                )
+                SELECT
+                    model_name,
+                    CASE
+                        WHEN COALESCE(points_per_minute, 0) < 0 THEN 0
+                        ELSE COALESCE(points_per_minute, 0)
+                    END AS points_per_minute,
+                    CASE
+                        WHEN COALESCE(points_per_1k_tokens, 0) < 0 THEN 0
+                        ELSE COALESCE(points_per_1k_tokens, 0)
+                    END AS points_per_1k_tokens,
+                    CASE
+                        WHEN TRIM(COALESCE(billing_unit, '')) <> '' THEN TRIM(billing_unit)
+                        WHEN COALESCE(points_per_1k_tokens, 0) > 0 THEN '1k_tokens'
+                        ELSE 'minute'
+                    END AS billing_unit,
+                    COALESCE(is_active, 1) AS is_active,
+                    COALESCE(parallel_enabled, 0) AS parallel_enabled,
+                    CASE
+                        WHEN COALESCE(parallel_threshold_seconds, 0) > 0 THEN parallel_threshold_seconds
+                        ELSE 600
+                    END AS parallel_threshold_seconds,
+                    CASE
+                        WHEN COALESCE(segment_seconds, 0) > 0 THEN segment_seconds
+                        ELSE 300
+                    END AS segment_seconds,
+                    CASE
+                        WHEN COALESCE(max_concurrency, 0) > 0 THEN max_concurrency
+                        ELSE 2
+                    END AS max_concurrency,
+                    COALESCE(updated_at, CURRENT_TIMESTAMP) AS updated_at,
+                    updated_by_user_id
+                FROM {legacy_table_name}
+                """
+            )
+        )
+        db.execute(text(f"DROP TABLE {legacy_table_name}"))
+        db.commit()
+        logger.info("[DEBUG] billing_rates.sqlite_rebuild_success table=%s", table_name)
+    except Exception as exc:
+        db.rollback()
+        logger.exception("[DEBUG] billing_rates.sqlite_rebuild_failed detail=%s", str(exc)[:400])
+        raise
+    finally:
+        db.execute(text("PRAGMA foreign_keys=ON"))
+        db.commit()
+
+
+def _rebuild_legacy_sqlite_wallet_ledger(db: Session) -> None:
+    bind = db.get_bind()
+    if bind is None:
+        raise RuntimeError("wallet_ledger sqlite rebuild missing bind")
+
+    table_name = WalletLedger.__tablename__
+    legacy_table_name = f"{table_name}__legacy"
+    logger.warning("[DEBUG] wallet_ledger.sqlite_rebuild_start table=%s", table_name)
+
+    try:
+        db.rollback()
+        db.execute(text("PRAGMA foreign_keys=OFF"))
+        db.commit()
+        db.execute(text(f"ALTER TABLE {table_name} RENAME TO {legacy_table_name}"))
+        db.commit()
+        _drop_sqlite_indexes_for_table(db, legacy_table_name)
+        db.commit()
+        WalletLedger.__table__.create(bind=bind, checkfirst=True)
+        db.execute(
+            text(
+                f"""
+                INSERT INTO {table_name} (
+                    id,
+                    user_id,
+                    operator_user_id,
+                    event_type,
+                    delta_points,
+                    balance_after,
+                    model_name,
+                    duration_ms,
+                    lesson_id,
+                    redeem_batch_id,
+                    redeem_code_id,
+                    redeem_code_mask,
+                    note,
+                    created_at
+                )
+                SELECT
+                    id,
+                    user_id,
+                    operator_user_id,
+                    event_type,
+                    delta_points,
+                    balance_after,
+                    model_name,
+                    duration_ms,
+                    lesson_id,
+                    redeem_batch_id,
+                    redeem_code_id,
+                    redeem_code_mask,
+                    COALESCE(note, '') AS note,
+                    COALESCE(created_at, CURRENT_TIMESTAMP) AS created_at
+                FROM {legacy_table_name}
+                """
+            )
+        )
+        db.execute(text(f"DROP TABLE {legacy_table_name}"))
+        db.commit()
+        logger.info("[DEBUG] wallet_ledger.sqlite_rebuild_success table=%s", table_name)
+    except Exception as exc:
+        db.rollback()
+        logger.exception("[DEBUG] wallet_ledger.sqlite_rebuild_failed detail=%s", str(exc)[:400])
+        raise
+    finally:
+        db.execute(text("PRAGMA foreign_keys=ON"))
+        db.commit()
+
+
+def _drop_sqlite_indexes_for_table(db: Session, table_name: str) -> None:
+    rows = db.execute(
+        text(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'index'
+              AND tbl_name = :table_name
+              AND sql IS NOT NULL
+            """
+        ),
+        {"table_name": table_name},
+    ).fetchall()
+    for row in rows:
+        index_name = str(row[0] or "").strip()
+        if not index_name:
+            continue
+        db.execute(text(f'DROP INDEX IF EXISTS "{index_name}"'))
+
+
+def _cleanup_stale_sqlite_legacy_table(db: Session, table_name: str) -> None:
+    bind = db.get_bind()
+    if bind is None or bind.dialect.name != "sqlite":
+        return
+    inspector = inspect(bind)
+    if not inspector.has_table(table_name):
+        return
+
+    logger.warning("[DEBUG] sqlite_legacy_cleanup_start table=%s", table_name)
+    try:
+        db.rollback()
+        db.execute(text("PRAGMA foreign_keys=OFF"))
+        db.commit()
+        db.execute(text(f"DROP TABLE IF EXISTS {table_name}"))
+        db.commit()
+        logger.info("[DEBUG] sqlite_legacy_cleanup_success table=%s", table_name)
+    except Exception as exc:
+        db.rollback()
+        logger.exception("[DEBUG] sqlite_legacy_cleanup_failed detail=%s", str(exc)[:400])
+        raise
+    finally:
+        db.execute(text("PRAGMA foreign_keys=ON"))
+        db.commit()
 
 
 def normalize_redeem_code_input(code: str) -> str:
@@ -171,9 +478,10 @@ def append_admin_operation_log(
 
 def ensure_default_billing_rates(
     db: Session,
-    defaults: Iterable[tuple[str, int, bool, int, int, int]] = DEFAULT_MODEL_RATES,
+    defaults: Iterable[dict[str, object]] = DEFAULT_MODEL_RATES,
 ) -> None:
     _ensure_legacy_sqlite_billing_columns(db)
+    _ensure_legacy_sqlite_wallet_ledger_event_types(db)
     ensure_default_subtitle_settings(db)
 
     changed = False
@@ -182,10 +490,24 @@ def ensure_default_billing_rates(
         db.delete(legacy_para)
         changed = True
 
-    for model_name, points_per_minute, parallel_enabled, parallel_threshold_seconds, segment_seconds, max_concurrency in defaults:
+    for item in defaults:
+        model_name = str(item.get("model_name") or "").strip()
+        points_per_minute = int(item.get("points_per_minute") or 0)
+        points_per_1k_tokens = int(item.get("points_per_1k_tokens") or 0)
+        billing_unit = str(item.get("billing_unit") or "minute").strip() or "minute"
+        parallel_enabled = bool(item.get("parallel_enabled"))
+        parallel_threshold_seconds = int(item.get("parallel_threshold_seconds") or 600)
+        segment_seconds = int(item.get("segment_seconds") or 300)
+        max_concurrency = int(item.get("max_concurrency") or 2)
         exists = db.get(BillingModelRate, model_name)
         if exists:
             row_changed = False
+            if int(getattr(exists, "points_per_1k_tokens", 0) or 0) < 0:
+                exists.points_per_1k_tokens = points_per_1k_tokens
+                row_changed = True
+            if not str(getattr(exists, "billing_unit", "") or "").strip():
+                exists.billing_unit = billing_unit
+                row_changed = True
             if exists.parallel_enabled is None:
                 exists.parallel_enabled = bool(parallel_enabled)
                 row_changed = True
@@ -206,6 +528,8 @@ def ensure_default_billing_rates(
             BillingModelRate(
                 model_name=model_name,
                 points_per_minute=points_per_minute,
+                points_per_1k_tokens=points_per_1k_tokens,
+                billing_unit=billing_unit,
                 is_active=True,
                 parallel_enabled=parallel_enabled,
                 parallel_threshold_seconds=parallel_threshold_seconds,
@@ -351,6 +675,12 @@ def calculate_points(duration_ms: int, points_per_minute: int) -> int:
     return ceil((seconds * points_per_minute) / 60)
 
 
+def calculate_token_points(total_tokens: int, points_per_1k_tokens: int) -> int:
+    if total_tokens <= 0 or points_per_1k_tokens <= 0:
+        return 0
+    return ceil((int(total_tokens) * int(points_per_1k_tokens)) / 1000)
+
+
 def _append_ledger(
     db: Session,
     *,
@@ -444,6 +774,39 @@ def record_consume(
     )
 
 
+def consume_points(
+    db: Session,
+    *,
+    user_id: int,
+    points: int,
+    model_name: str | None,
+    lesson_id: int | None,
+    event_type: str = EVENT_CONSUME,
+    duration_ms: int | None = None,
+    note: str = "",
+) -> WalletLedger | None:
+    if points < 0:
+        raise BillingError("INVALID_POINTS", "扣点不能为负数", str(points))
+    if points == 0:
+        return None
+    account = get_or_create_wallet_account(db, user_id, for_update=True)
+    account.balance_points -= points
+    db.add(account)
+    db.flush()
+    return _append_ledger(
+        db,
+        user_id=user_id,
+        operator_user_id=None,
+        event_type=event_type,
+        delta_points=-points,
+        balance_after=account.balance_points,
+        model_name=model_name,
+        duration_ms=duration_ms,
+        lesson_id=lesson_id,
+        note=note,
+    )
+
+
 def refund_points(
     db: Session,
     *,
@@ -468,6 +831,39 @@ def refund_points(
         balance_after=account.balance_points,
         model_name=model_name,
         duration_ms=duration_ms,
+        note=note,
+    )
+
+
+def refund_points_by_event(
+    db: Session,
+    *,
+    user_id: int,
+    points: int,
+    model_name: str | None,
+    lesson_id: int | None,
+    event_type: str = EVENT_REFUND,
+    duration_ms: int | None = None,
+    note: str = "",
+) -> WalletLedger | None:
+    if points < 0:
+        raise BillingError("INVALID_POINTS", "退款点数不能为负数", str(points))
+    if points == 0:
+        return None
+    account = get_or_create_wallet_account(db, user_id, for_update=True)
+    account.balance_points += points
+    db.add(account)
+    db.flush()
+    return _append_ledger(
+        db,
+        user_id=user_id,
+        operator_user_id=None,
+        event_type=event_type,
+        delta_points=points,
+        balance_after=account.balance_points,
+        model_name=model_name,
+        duration_ms=duration_ms,
+        lesson_id=lesson_id,
         note=note,
     )
 
@@ -516,6 +912,48 @@ def settle_reserved_points(
         duration_ms=duration_ms,
         note=note or "结算补扣",
     )
+
+
+def append_translation_request_logs(
+    db: Session,
+    *,
+    trace_id: str,
+    user_id: int | None,
+    task_id: str | None,
+    lesson_id: int | None,
+    records: Iterable[dict[str, object]],
+) -> int:
+    inserted = 0
+    for item in records:
+        row = TranslationRequestLog(
+            trace_id=str(trace_id or "").strip(),
+            task_id=str(item.get("task_id") or task_id or "").strip() or None,
+            lesson_id=int(item["lesson_id"]) if item.get("lesson_id") is not None else lesson_id,
+            user_id=int(item["user_id"]) if item.get("user_id") is not None else user_id,
+            sentence_idx=int(item.get("sentence_idx", 0)),
+            attempt_no=max(1, int(item.get("attempt_no", 1))),
+            provider=str(item.get("provider") or "dashscope_compatible"),
+            model_name=str(item.get("model_name") or ""),
+            base_url=str(item.get("base_url") or ""),
+            input_text_preview=str(item.get("input_text_preview") or ""),
+            provider_request_id=str(item.get("provider_request_id") or "").strip() or None,
+            status_code=int(item["status_code"]) if item.get("status_code") is not None else None,
+            finish_reason=str(item.get("finish_reason") or "").strip() or None,
+            prompt_tokens=max(0, int(item.get("prompt_tokens", 0) or 0)),
+            completion_tokens=max(0, int(item.get("completion_tokens", 0) or 0)),
+            total_tokens=max(0, int(item.get("total_tokens", 0) or 0)),
+            success=bool(item.get("success")),
+            error_code=str(item.get("error_code") or "").strip() or None,
+            error_message=str(item.get("error_message") or ""),
+            started_at=item.get("started_at") or _now(),
+            finished_at=item.get("finished_at") or _now(),
+            created_at=item.get("created_at") or item.get("finished_at") or _now(),
+        )
+        db.add(row)
+        inserted += 1
+    if inserted:
+        db.flush()
+    return inserted
 
 
 def manual_adjust(

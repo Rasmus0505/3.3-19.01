@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class LessonSentenceResponse(BaseModel):
@@ -70,6 +70,22 @@ class LessonTaskCountersResponse(BaseModel):
     segment_total: int = 0
 
 
+class LessonTaskTranslationUsageResponse(BaseModel):
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    charged_points: int = 0
+
+
+class LessonTaskTranslationDebugResponse(BaseModel):
+    total_sentences: int = 0
+    failed_sentences: int = 0
+    request_count: int = 0
+    success_request_count: int = 0
+    usage: LessonTaskTranslationUsageResponse = Field(default_factory=LessonTaskTranslationUsageResponse)
+    latest_error_summary: str = ""
+
+
 class LessonTaskResponse(BaseModel):
     ok: bool = True
     task_id: str
@@ -80,6 +96,7 @@ class LessonTaskResponse(BaseModel):
     counters: LessonTaskCountersResponse
     lesson: LessonDetailResponse | None = None
     subtitle_cache_seed: SubtitleCacheSeedResponse | None = None
+    translation_debug: LessonTaskTranslationDebugResponse | None = None
     error_code: str = ""
     message: str = ""
 

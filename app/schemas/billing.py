@@ -29,6 +29,8 @@ class PublicSubtitleSettings(BaseModel):
 class BillingRateItem(BaseModel):
     model_name: str
     points_per_minute: int
+    points_per_1k_tokens: int
+    billing_unit: str
     is_active: bool
     parallel_enabled: bool
     parallel_threshold_seconds: int

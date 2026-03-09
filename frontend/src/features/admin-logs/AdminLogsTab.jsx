@@ -95,7 +95,7 @@ export function AdminLogsTab({ apiCall }) {
           <ScrollText className="size-4" />
           余额流水
         </CardTitle>
-        <CardDescription>预扣 / 消费 / 退款 / 手工调账 / 兑换码充值明细（筛选与展示均按北京时间）。</CardDescription>
+        <CardDescription>预扣 / ASR 扣点 / 翻译扣点 / 退款 / 手工调账 / 兑换码充值明细（筛选与展示均按北京时间）。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <form
@@ -126,7 +126,9 @@ export function AdminLogsTab({ apiCall }) {
               <SelectItem value="all">全部类型</SelectItem>
               <SelectItem value="reserve">reserve</SelectItem>
               <SelectItem value="consume">consume</SelectItem>
+              <SelectItem value="consume_translate">consume_translate</SelectItem>
               <SelectItem value="refund">refund</SelectItem>
+              <SelectItem value="refund_translate">refund_translate</SelectItem>
               <SelectItem value="manual_adjust">manual_adjust</SelectItem>
               <SelectItem value="redeem_code">redeem_code</SelectItem>
             </SelectContent>
@@ -189,7 +191,7 @@ export function AdminLogsTab({ apiCall }) {
                   <TableCell>
                     <Badge
                       variant={
-                        item.event_type === "refund"
+                        item.event_type === "refund" || item.event_type === "refund_translate"
                           ? "secondary"
                           : item.event_type === "manual_adjust"
                             ? "outline"

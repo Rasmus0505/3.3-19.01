@@ -51,6 +51,7 @@ def _to_task_response(task: dict) -> LessonTaskResponse:
         counters=dict(task.get("counters", {})),
         lesson=task.get("lesson"),
         subtitle_cache_seed=task.get("subtitle_cache_seed"),
+        translation_debug=task.get("translation_debug"),
         error_code=str(task.get("error_code", "")),
         message=str(task.get("message", "")),
     )
@@ -78,6 +79,7 @@ def _run_lesson_generation_task(
                 overall_percent=payload.get("overall_percent"),
                 current_text=payload.get("current_text"),
                 counters=payload.get("counters"),
+                translation_debug=payload.get("translation_debug"),
             )
 
         lesson = LessonService.generate_from_saved_file(
@@ -86,6 +88,7 @@ def _run_lesson_generation_task(
             req_dir=req_dir,
             owner_id=owner_id,
             asr_model=asr_model,
+            task_id=task_id,
             semantic_split_enabled=semantic_split_enabled,
             db=db,
             progress_callback=_progress,

@@ -100,6 +100,8 @@ def to_rate_item(rate: BillingModelRate) -> BillingRateItem:
     return BillingRateItem(
         model_name=rate.model_name,
         points_per_minute=rate.points_per_minute,
+        points_per_1k_tokens=int(getattr(rate, "points_per_1k_tokens", 0) or 0),
+        billing_unit=str(getattr(rate, "billing_unit", "minute") or "minute"),
         is_active=rate.is_active,
         parallel_enabled=bool(rate.parallel_enabled),
         parallel_threshold_seconds=int(rate.parallel_threshold_seconds),

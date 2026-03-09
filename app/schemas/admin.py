@@ -70,7 +70,9 @@ class AdminWalletLogsResponse(BaseModel):
 
 
 class AdminBillingRateUpdateRequest(BaseModel):
-    points_per_minute: int = Field(gt=0)
+    points_per_minute: int = Field(ge=0)
+    points_per_1k_tokens: int = Field(ge=0)
+    billing_unit: str = Field(min_length=1, max_length=32)
     is_active: bool
     parallel_enabled: bool
     parallel_threshold_seconds: int = Field(gt=0, le=24 * 60 * 60)
@@ -81,6 +83,39 @@ class AdminBillingRateUpdateRequest(BaseModel):
 class AdminBillingRatesResponse(BaseModel):
     ok: bool = True
     rates: list[BillingRateItem]
+
+
+class AdminTranslationLogItem(BaseModel):
+    id: int
+    user_email: str
+    task_id: str | None
+    lesson_id: int | None
+    sentence_idx: int
+    attempt_no: int
+    provider: str
+    model_name: str
+    base_url: str
+    input_text_preview: str
+    provider_request_id: str | None
+    status_code: int | None
+    finish_reason: str | None
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    success: bool
+    error_code: str | None
+    error_message: str
+    started_at: datetime
+    finished_at: datetime
+    created_at: datetime
+
+
+class AdminTranslationLogsResponse(BaseModel):
+    ok: bool = True
+    page: int
+    page_size: int
+    total: int
+    items: list[AdminTranslationLogItem]
 
 
 class AdminSubtitleSettingsItem(BaseModel):

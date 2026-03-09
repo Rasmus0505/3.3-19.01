@@ -5,6 +5,7 @@ import os
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,8 +14,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.db import Base, create_database_engine, get_db
 from app.main import create_app
-from app.models import Lesson, LessonProgress, LessonSentence, MediaAsset, SubtitleSetting, User, WalletLedger
+from app.models import BillingModelRate, Lesson, LessonProgress, LessonSentence, MediaAsset, SubtitleSetting, TranslationRequestLog, User, WalletLedger
 from app.services.billing_service import ensure_default_billing_rates, get_or_create_wallet_account, get_subtitle_settings, settle_reserved_points
+from app.services.lesson_service import LessonService
 from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
 
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
@@ -35,6 +37,21 @@ def _word_entry(text: str, begin_ms: int, end_ms: int, *, punctuation: str = "",
         "begin_time": begin_ms,
         "end_time": end_ms,
     }
+
+
+def _translation_batch_result(texts: list[str], *, failed_count: int = 0, total_tokens: int = 0, latest_error_summary: str = ""):
+    success_count = max(0, len(texts) - failed_count)
+    return SimpleNamespace(
+        texts=list(texts),
+        failed_count=failed_count,
+        attempt_records=[],
+        total_requests=len(texts),
+        success_request_count=success_count,
+        success_prompt_tokens=0,
+        success_completion_tokens=0,
+        success_total_tokens=total_tokens,
+        latest_error_summary=latest_error_summary,
+    )
 
 
 def test_normalize_learning_english_text_spells_usd_amounts():
@@ -74,6 +91,96 @@ def test_client(tmp_path, monkeypatch):
 
     with TestClient(app) as client:
         yield client, TestingSessionLocal, monkeypatch
+
+
+def test_ensure_default_billing_rates_rebuilds_legacy_sqlite_constraint(tmp_path):
+    db_file = tmp_path / "legacy_billing.db"
+    engine = create_database_engine(f"sqlite:///{db_file}")
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=Session, future=True)
+    User.__table__.create(bind=engine, checkfirst=True)
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE billing_model_rates (
+                    model_name VARCHAR(100) NOT NULL PRIMARY KEY,
+                    points_per_minute INTEGER NOT NULL,
+                    is_active BOOLEAN NOT NULL DEFAULT 1,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_by_user_id INTEGER,
+                    CONSTRAINT ck_billing_rate_positive CHECK (points_per_minute > 0)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO billing_model_rates (model_name, points_per_minute, is_active, updated_at)
+                VALUES ('qwen3-asr-flash-filetrans', 130, 1, CURRENT_TIMESTAMP)
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE wallet_ledger (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    operator_user_id INTEGER,
+                    event_type VARCHAR(32) NOT NULL,
+                    delta_points BIGINT NOT NULL,
+                    balance_after BIGINT NOT NULL,
+                    model_name VARCHAR(100),
+                    duration_ms INTEGER,
+                    lesson_id INTEGER,
+                    note TEXT NOT NULL DEFAULT '',
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT ck_wallet_ledger_event_type CHECK (event_type IN ('reserve','consume','refund','manual_adjust'))
+                )
+                """
+            )
+        )
+
+    seed = TestingSessionLocal()
+    try:
+        ensure_default_billing_rates(seed)
+    finally:
+        seed.close()
+
+    with engine.connect() as conn:
+        ddl = str(
+            conn.execute(
+                text("SELECT sql FROM sqlite_master WHERE type='table' AND name='billing_model_rates'")
+            ).scalar()
+            or ""
+        ).lower()
+        wallet_ddl = str(
+            conn.execute(
+                text("SELECT sql FROM sqlite_master WHERE type='table' AND name='wallet_ledger'")
+            ).scalar()
+            or ""
+        ).lower()
+        mt_rate = conn.execute(
+            text(
+                """
+                SELECT model_name, points_per_minute, points_per_1k_tokens, billing_unit
+                FROM billing_model_rates
+                WHERE model_name = 'qwen-mt-plus'
+                """
+            )
+        ).mappings().one()
+
+    assert "points_per_minute > 0" not in ddl
+    assert "points_per_minute >= 0" in ddl
+    assert "ck_billing_rate_token_non_negative" in ddl
+    assert "consume_translate" in wallet_ddl
+    assert "refund_translate" in wallet_ddl
+    assert mt_rate["model_name"] == "qwen-mt-plus"
+    assert mt_rate["points_per_minute"] == 0
+    assert mt_rate["points_per_1k_tokens"] > 0
+    assert mt_rate["billing_unit"] == "1k_tokens"
 
 
 def _register_and_login(client: TestClient, email: str = "admin@example.com", password: str = "123456") -> str:
@@ -196,6 +303,7 @@ def test_probe_database_ready_reports_missing_critical_columns(monkeypatch):
             return [
                 {"name": "model_name"},
                 {"name": "points_per_minute"},
+                {"name": "points_per_1k_tokens"},
                 {"name": "is_active"},
                 {"name": "updated_at"},
                 {"name": "updated_by_user_id"},
@@ -210,7 +318,7 @@ def test_probe_database_ready_reports_missing_critical_columns(monkeypatch):
     ready, error = app_main._probe_database_ready()
     assert ready is False
     assert error.startswith("missing critical columns:")
-    assert "billing_model_rates.parallel_enabled" in error
+    assert "billing_model_rates.billing_unit" in error
 
 
 def test_probe_database_ready_reports_missing_subtitle_settings_table(monkeypatch):
@@ -241,6 +349,8 @@ def test_probe_database_ready_reports_missing_subtitle_settings_table(monkeypatc
             return [
                 {"name": "model_name"},
                 {"name": "points_per_minute"},
+                {"name": "points_per_1k_tokens"},
+                {"name": "billing_unit"},
                 {"name": "is_active"},
                 {"name": "parallel_enabled"},
                 {"name": "parallel_threshold_seconds"},
@@ -338,6 +448,7 @@ def test_wallet_and_admin_endpoints(test_client):
     rates = client.get("/api/admin/billing-rates", headers=headers)
     assert rates.status_code == 200
     assert isinstance(rates.json().get("rates"), list)
+    assert any("points_per_1k_tokens" in item and "billing_unit" in item for item in rates.json().get("rates", []))
 
     users = client.get("/api/admin/users", headers=headers)
     assert users.status_code == 200
@@ -347,10 +458,15 @@ def test_wallet_and_admin_endpoints(test_client):
     assert logs.status_code == 200
     assert "items" in logs.json()
 
+    translation_logs = client.get("/api/admin/translation-logs", headers=headers)
+    assert translation_logs.status_code == 200
+    assert "items" in translation_logs.json()
+
     public_rates = client.get("/api/billing/rates", headers=headers)
     assert public_rates.status_code == 200
     assert "subtitle_settings" in public_rates.json()
     assert public_rates.json()["subtitle_settings"]["semantic_split_default_enabled"] is False
+    assert any("points_per_1k_tokens" in item and "billing_unit" in item for item in public_rates.json()["rates"])
 
     subtitle_settings = client.get("/api/admin/subtitle-settings", headers=headers)
     assert subtitle_settings.status_code == 200
@@ -385,6 +501,83 @@ def test_admin_subtitle_settings_roundtrip(test_client):
     fetch_resp = client.get("/api/admin/subtitle-settings", headers=admin_headers)
     assert fetch_resp.status_code == 200
     assert fetch_resp.json()["settings"]["semantic_split_timeout_seconds"] == 35
+
+
+def test_admin_translation_logs_endpoint_filters_by_task_and_success(test_client, monkeypatch):
+    client, session_factory, _ = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "translation-admin@example.com")
+    admin_token = _register_and_login(client, email="translation-admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "translation-admin@example.com").one()
+        session.add_all(
+            [
+                TranslationRequestLog(
+                    trace_id="trace-a",
+                    task_id="task-demo",
+                    lesson_id=None,
+                    user_id=user.id,
+                    sentence_idx=0,
+                    attempt_no=1,
+                    provider="dashscope_compatible",
+                    model_name="qwen-mt-plus",
+                    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    input_text_preview="hello world",
+                    provider_request_id="req_success",
+                    status_code=200,
+                    finish_reason="stop",
+                    prompt_tokens=10,
+                    completion_tokens=4,
+                    total_tokens=14,
+                    success=True,
+                    error_code=None,
+                    error_message="",
+                    started_at=datetime.utcnow(),
+                    finished_at=datetime.utcnow(),
+                    created_at=datetime.utcnow(),
+                ),
+                TranslationRequestLog(
+                    trace_id="trace-b",
+                    task_id="task-other",
+                    lesson_id=None,
+                    user_id=user.id,
+                    sentence_idx=1,
+                    attempt_no=1,
+                    provider="dashscope_compatible",
+                    model_name="qwen-mt-plus",
+                    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    input_text_preview="second line",
+                    provider_request_id="req_failed",
+                    status_code=429,
+                    finish_reason=None,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                    success=False,
+                    error_code="REQUEST_FAILED",
+                    error_message="rate limit",
+                    started_at=datetime.utcnow(),
+                    finished_at=datetime.utcnow(),
+                    created_at=datetime.utcnow(),
+                ),
+            ]
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.get(
+        "/api/admin/translation-logs",
+        params={"task_id": "task-demo", "success": "success"},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["task_id"] == "task-demo"
+    assert payload["items"][0]["success"] is True
 
 
 def test_public_billing_rates_self_heals_missing_subtitle_settings_table(test_client):
@@ -956,13 +1149,31 @@ def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path)
         asr_model,
         db,
         progress_callback=None,
+        task_id=None,
         semantic_split_enabled=None,
     ):
         captured["semantic_split_enabled"] = semantic_split_enabled
+        captured["task_id"] = task_id
         if progress_callback:
             progress_callback({"stage_key": "convert_audio", "stage_status": "completed", "overall_percent": 20, "current_text": "转换音频格式完成"})
             progress_callback({"stage_key": "asr_transcribe", "stage_status": "completed", "overall_percent": 60, "current_text": "转写字幕 3/约3", "counters": {"asr_done": 3, "asr_estimated": 3}})
-            progress_callback({"stage_key": "translate_zh", "stage_status": "completed", "overall_percent": 90, "current_text": "翻译字幕 3/3", "counters": {"translate_done": 3, "translate_total": 3}})
+            progress_callback(
+                {
+                    "stage_key": "translate_zh",
+                    "stage_status": "completed",
+                    "overall_percent": 90,
+                    "current_text": "翻译字幕 3/3",
+                    "counters": {"translate_done": 3, "translate_total": 3},
+                    "translation_debug": {
+                        "total_sentences": 3,
+                        "failed_sentences": 1,
+                        "request_count": 3,
+                        "success_request_count": 2,
+                        "usage": {"prompt_tokens": 30, "completion_tokens": 12, "total_tokens": 42, "charged_points": 1},
+                        "latest_error_summary": "第2句失败：REQUEST_FAILED rate limit",
+                    },
+                }
+            )
             progress_callback({"stage_key": "write_lesson", "stage_status": "completed", "overall_percent": 100, "current_text": "课程生成完成"})
 
         lesson = Lesson(
@@ -1040,8 +1251,113 @@ def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path)
     assert payload["subtitle_cache_seed"]["semantic_split_enabled"] is True
     assert payload["lesson"]["subtitle_cache_seed"]["split_mode"] == "word_level_split+semantic"
     assert payload["counters"]["translate_done"] == 3
+    assert payload["translation_debug"]["failed_sentences"] == 1
+    assert payload["translation_debug"]["request_count"] == 3
+    assert payload["translation_debug"]["usage"]["total_tokens"] == 42
+    assert payload["translation_debug"]["latest_error_summary"] == "第2句失败：REQUEST_FAILED rate limit"
     assert all(item["status"] == "completed" for item in payload["stages"])
 
+
+
+def test_generate_from_saved_file_records_mt_usage_and_consume(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    _register_and_login(client, email="billing-user@example.com")
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "billing-user@example.com").one()
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 500
+        session.add(account)
+        session.commit()
+
+        from app.services import lesson_service as lesson_service_module
+
+        req_dir = tmp_path / "req"
+        req_dir.mkdir(parents=True, exist_ok=True)
+        source_path = tmp_path / "source.mp4"
+        source_path.write_bytes(b"video")
+
+        monkeypatch.setattr(lesson_service_module, "extract_audio_for_asr", lambda _src, dst: dst.write_bytes(b"opus"))
+        monkeypatch.setattr(lesson_service_module, "probe_audio_duration_ms", lambda _path: 60_000)
+        monkeypatch.setattr(
+            lesson_service_module.LessonService,
+            "_transcribe_with_optional_parallel",
+            staticmethod(lambda **kwargs: {"asr_payload": {"transcripts": [{"sentences": []}]}, "usage_seconds": 60}),
+        )
+        monkeypatch.setattr(
+            lesson_service_module.LessonService,
+            "build_subtitle_variant",
+            staticmethod(
+                lambda **kwargs: {
+                    "semantic_split_enabled": False,
+                    "split_mode": "word_level_split",
+                    "source_word_count": 2,
+                    "sentences": [
+                        {
+                            "idx": 0,
+                            "begin_ms": 0,
+                            "end_ms": 900,
+                            "text_en": "hello world",
+                            "text_zh": "你好世界",
+                            "tokens": ["hello", "world"],
+                        }
+                    ],
+                    "translate_failed_count": 0,
+                    "translation_attempt_records": [
+                        {
+                            "sentence_idx": 0,
+                            "attempt_no": 1,
+                            "provider": "dashscope_compatible",
+                            "model_name": "qwen-mt-plus",
+                            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                            "input_text_preview": "hello world",
+                            "provider_request_id": "req_test",
+                            "status_code": 200,
+                            "finish_reason": "stop",
+                            "prompt_tokens": 40,
+                            "completion_tokens": 20,
+                            "total_tokens": 60,
+                            "success": True,
+                            "error_code": "",
+                            "error_message": "",
+                            "started_at": datetime.utcnow(),
+                            "finished_at": datetime.utcnow(),
+                        }
+                    ],
+                    "translation_request_count": 1,
+                    "translation_success_request_count": 1,
+                    "translation_usage": {"prompt_tokens": 40, "completion_tokens": 20, "total_tokens": 60, "charged_points": 0},
+                    "latest_translate_error_summary": "",
+                }
+            ),
+        )
+
+        lesson = LessonService.generate_from_saved_file(
+            source_path=source_path,
+            source_filename="source.mp4",
+            req_dir=req_dir,
+            owner_id=user.id,
+            asr_model=QWEN_ASR_MODEL,
+            db=session,
+            task_id="task_billing_test",
+            semantic_split_enabled=False,
+        )
+
+        mt_ledger = (
+            session.query(WalletLedger)
+            .filter(WalletLedger.lesson_id == lesson.id, WalletLedger.event_type == "consume_translate")
+            .one()
+        )
+        assert mt_ledger.model_name == "qwen-mt-plus"
+        assert mt_ledger.delta_points == -1
+
+        translation_log = session.query(TranslationRequestLog).filter(TranslationRequestLog.task_id == "task_billing_test").one()
+        assert translation_log.lesson_id == lesson.id
+        assert translation_log.success is True
+        assert translation_log.total_tokens == 60
+    finally:
+        session.close()
 
 
 def test_regenerate_lesson_subtitle_variant_endpoint(test_client, monkeypatch):
@@ -1072,9 +1388,10 @@ def test_regenerate_lesson_subtitle_variant_endpoint(test_client, monkeypatch):
 
     captured = {}
 
-    def fake_build_subtitle_variant(*, asr_payload, db, semantic_split_enabled=None, before_translate_callback=None, translation_progress_callback=None):
+    def fake_build_subtitle_variant(*, asr_payload, db, task_id=None, semantic_split_enabled=None, before_translate_callback=None, translation_progress_callback=None):
         captured["asr_payload"] = asr_payload
         captured["semantic_split_enabled"] = semantic_split_enabled
+        captured["task_id"] = task_id
         return {
             "semantic_split_enabled": True,
             "split_mode": "word_level_split+semantic",
@@ -1333,7 +1650,7 @@ def test_generate_lesson_settles_with_usage_seconds(test_client, monkeypatch, tm
     monkeypatch.setattr(
         lesson_service_module,
         "translate_sentences_to_zh",
-        lambda texts, api_key, progress_callback=None: (["你好"] * len(texts), 0),
+        lambda texts, api_key, progress_callback=None: _translation_batch_result(["你好"] * len(texts)),
     )
     monkeypatch.setattr(
         lesson_service_module,
@@ -1412,7 +1729,7 @@ def test_generate_lesson_settles_with_fallback_and_can_go_negative(test_client, 
     monkeypatch.setattr(
         lesson_service_module,
         "translate_sentences_to_zh",
-        lambda texts, api_key, progress_callback=None: (["你好"] * len(texts), 0),
+        lambda texts, api_key, progress_callback=None: _translation_batch_result(["你好"] * len(texts)),
     )
     monkeypatch.setattr(
         lesson_service_module,
@@ -1491,7 +1808,7 @@ def test_generate_lesson_stores_spoken_usd_amounts(test_client, monkeypatch, tmp
     monkeypatch.setattr(
         lesson_service_module,
         "translate_sentences_to_zh",
-        lambda texts, api_key, progress_callback=None: (["40美元？"] * len(texts), 0),
+        lambda texts, api_key, progress_callback=None: _translation_batch_result(["40美元？"] * len(texts)),
     )
     monkeypatch.setattr(lesson_service_module, "estimate_duration_ms", lambda payload, sentences: 1000)
     monkeypatch.setattr(
@@ -1568,7 +1885,7 @@ def test_generate_lesson_applies_semantic_split_when_enabled(test_client, monkey
     monkeypatch.setattr(
         lesson_service_module,
         "translate_sentences_to_zh",
-        lambda texts, api_key, progress_callback=None: ([f"中:{item}" for item in texts], 0),
+        lambda texts, api_key, progress_callback=None: _translation_batch_result([f"中:{item}" for item in texts]),
     )
     monkeypatch.setattr(lesson_service_module, "estimate_duration_ms", lambda payload, sentences: 3000)
     monkeypatch.setattr(
@@ -1653,7 +1970,7 @@ def test_generate_lesson_semantic_split_failure_falls_back_to_rule_split(test_cl
     monkeypatch.setattr(
         lesson_service_module,
         "translate_sentences_to_zh",
-        lambda texts, api_key, progress_callback=None: ([f"中:{item}" for item in texts], 0),
+        lambda texts, api_key, progress_callback=None: _translation_batch_result([f"中:{item}" for item in texts]),
     )
     monkeypatch.setattr(lesson_service_module, "estimate_duration_ms", lambda payload, sentences: 2000)
     monkeypatch.setattr(
