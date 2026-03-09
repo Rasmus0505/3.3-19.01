@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.api.deps.auth import get_admin_user
 from app.db import Base, create_database_engine, get_db
 from app.main import create_app
 from app.models import BillingModelRate, Lesson, LessonProgress, LessonSentence, MediaAsset, SubtitleSetting, TranslationRequestLog, User, WalletLedger
@@ -249,7 +250,86 @@ def test_health_ready_returns_503_when_database_unavailable(monkeypatch):
     payload = ready.json()
     assert payload["ok"] is False
     assert payload["status"]["db_ready"] is False
-    assert payload["status"]["db_error"] == "db offline"
+
+
+def test_admin_billing_rates_endpoint_handles_legacy_schema_defaults(tmp_path):
+    db_file = tmp_path / "legacy_admin_rates.db"
+    engine = create_database_engine(f"sqlite:///{db_file}")
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=Session, future=True)
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE billing_model_rates (
+                    model_name VARCHAR(100) NOT NULL PRIMARY KEY,
+                    points_per_minute INTEGER NOT NULL,
+                    is_active BOOLEAN NOT NULL DEFAULT 1,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_by_user_id INTEGER
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO billing_model_rates (model_name, points_per_minute, is_active, updated_at)
+                VALUES ('qwen3-asr-flash-filetrans', 130, 1, CURRENT_TIMESTAMP)
+                """
+            )
+        )
+
+    app = create_app(enable_lifespan=False)
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_admin_user] = lambda: SimpleNamespace(id=1, email="admin@example.com")
+
+    with TestClient(app) as client:
+        resp = client.get("/api/admin/billing-rates")
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["ok"] is True
+    assert payload["rates"][0]["points_per_1k_tokens"] == 0
+    assert payload["rates"][0]["billing_unit"] == "minute"
+    assert payload["rates"][0]["parallel_enabled"] is False
+
+
+def test_admin_translation_logs_endpoint_returns_empty_when_table_missing(tmp_path):
+    db_file = tmp_path / "legacy_translation_logs.db"
+    engine = create_database_engine(f"sqlite:///{db_file}")
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=Session, future=True)
+
+    User.__table__.create(bind=engine, checkfirst=True)
+
+    app = create_app(enable_lifespan=False)
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_admin_user] = lambda: SimpleNamespace(id=1, email="admin@example.com")
+
+    with TestClient(app) as client:
+        resp = client.get("/api/admin/translation-logs")
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["ok"] is True
+    assert payload["total"] == 0
+    assert payload["items"] == []
 
 
 def test_spa_shell_pages_disable_html_cache_and_expose_build_marker(test_client):

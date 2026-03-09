@@ -408,7 +408,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     if (!lessonId || !file) return false;
     try {
       await requestPersistentStorage();
-      await saveLessonMedia(lessonId, file);
+      await saveLessonMedia(lessonId, file, { coverDataUrl });
       return true;
     } catch (_) {
       return false;

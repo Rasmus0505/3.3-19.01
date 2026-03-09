@@ -25,6 +25,7 @@ from app.repositories.admin import (
     list_redeem_codes,
     list_unredeemed_codes_for_export,
 )
+from app.repositories.billing_rates import list_billing_rates
 from app.repositories.wallet_ledger import list_translation_request_rows, list_wallet_ledger_rows
 from app.schemas import (
     AdminBillingRateUpdateRequest,
@@ -369,7 +370,7 @@ def admin_translation_logs(
     responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
 )
 def admin_billing_rates(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
-    rates = list(db.query(BillingModelRate).order_by(BillingModelRate.model_name.asc()).all())
+    rates = list_billing_rates(db)
     return AdminBillingRatesResponse(ok=True, rates=[to_rate_item(item) for item in rates])
 
 

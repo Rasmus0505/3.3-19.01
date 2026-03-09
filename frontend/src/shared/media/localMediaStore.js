@@ -1,6 +1,9 @@
-﻿const DB_NAME = "english_trainer_local_media";
+const DB_NAME = "english_trainer_local_media";
 const DB_VERSION = 1;
 const STORE_NAME = "lesson_media";
+const COVER_CAPTURE_VERSION = 2;
+const HAVE_METADATA = 1;
+const HAVE_CURRENT_DATA = 2;
 
 const MEDIA_TYPE_BY_EXT = {
   ".mp4": "video/mp4",
@@ -39,6 +42,138 @@ function inferMediaTypeFromFileName(fileName) {
 
 function isVideoMediaType(mediaType) {
   return String(mediaType || "").toLowerCase().startsWith("video/");
+}
+
+function waitForAnimationFrame(frameCount = 1) {
+  return new Promise((resolve) => {
+    const raf =
+      typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame
+        : (callback) => setTimeout(callback, 16);
+
+    let remaining = Math.max(1, Number(frameCount) || 1);
+    const tick = () => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        resolve();
+        return;
+      }
+      raf(tick);
+    };
+
+    raf(tick);
+  });
+}
+
+function waitForMediaEvent(media, eventName, timeoutMs = 2000) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer = null;
+
+    const cleanup = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      media.removeEventListener(eventName, handleSuccess);
+      media.removeEventListener("error", handleError);
+    };
+
+    const handleSuccess = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+
+    const handleError = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error(`媒体事件 ${eventName} 失败`));
+    };
+
+    timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error(`媒体事件 ${eventName} 超时`));
+    }, timeoutMs);
+
+    media.addEventListener(eventName, handleSuccess, { once: true });
+    media.addEventListener("error", handleError, { once: true });
+  });
+}
+
+function waitForReadyState(media, minReadyState, eventName, timeoutMs = 2000) {
+  if (Number(media?.readyState || 0) >= minReadyState) {
+    return Promise.resolve();
+  }
+  return waitForMediaEvent(media, eventName, timeoutMs);
+}
+
+function waitForRenderedVideoFrame(video) {
+  if (typeof video?.requestVideoFrameCallback === "function") {
+    return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      }, 250);
+
+      video.requestVideoFrameCallback(() => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  }
+  return waitForAnimationFrame(2);
+}
+
+async function seekVideoTo(video, timeSec) {
+  const safeTime = Math.max(0, Number(timeSec) || 0);
+  if (Math.abs(Number(video.currentTime || 0) - safeTime) <= 0.001) {
+    return;
+  }
+
+  const seekedPromise = waitForMediaEvent(video, "seeked", 1500);
+  video.currentTime = safeTime;
+  await seekedPromise;
+}
+
+function drawVideoFrameToDataUrl(video) {
+  if (!video || Number(video.readyState || 0) < HAVE_CURRENT_DATA) {
+    throw new Error("视频帧尚未就绪");
+  }
+  const width = Math.max(1, Number(video.videoWidth || 0));
+  const height = Math.max(1, Number(video.videoHeight || 0));
+  if (!width || !height) {
+    throw new Error("视频尺寸无效");
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("无法创建封面画布");
+  }
+
+  ctx.drawImage(video, 0, 0, width, height);
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+async function captureVideoFrame(video, timeSec, { seek = false } = {}) {
+  if (seek) {
+    await seekVideoTo(video, timeSec);
+  }
+  await waitForReadyState(video, HAVE_CURRENT_DATA, "loadeddata", 1500);
+  await waitForRenderedVideoFrame(video);
+  await waitForAnimationFrame(1);
+  return drawVideoFrameToDataUrl(video);
 }
 
 function openDatabase() {
@@ -113,45 +248,59 @@ export function extractMediaCoverDataUrl(blob, fallbackFileName = "") {
 
     const objectUrl = URL.createObjectURL(blob);
     const video = document.createElement("video");
-    video.preload = "metadata";
+    video.preload = "auto";
     video.muted = true;
     video.playsInline = true;
 
     const cleanup = () => {
+      try {
+        video.pause();
+      } catch (_) {
+        // Ignore cleanup failures.
+      }
+      video.removeAttribute("src");
+      video.load();
       URL.revokeObjectURL(objectUrl);
     };
 
-    video.onloadeddata = () => {
+    void (async () => {
       try {
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, video.videoWidth || 640);
-        canvas.height = Math.max(1, video.videoHeight || 360);
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          cleanup();
-          resolve("");
-          return;
+        video.src = objectUrl;
+        video.load();
+        await waitForReadyState(video, HAVE_METADATA, "loadedmetadata", 2000);
+
+        let dataUrl = "";
+        try {
+          dataUrl = await captureVideoFrame(video, 0, { seek: false });
+        } catch (_) {
+          dataUrl = "";
         }
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+
+        if (!dataUrl) {
+          const duration = Number.isFinite(video.duration) ? Math.max(0, Number(video.duration || 0)) : 0;
+          const fallbackTimeSec = duration > 0 ? Math.min(0.05, Math.max(0.001, duration / 2)) : 0.05;
+          console.debug("[DEBUG] localMediaStore.cover.capture_fallback", {
+            fileName: String(fallbackFileName || ""),
+            fallbackTimeSec,
+          });
+          try {
+            dataUrl = await captureVideoFrame(video, fallbackTimeSec, { seek: true });
+          } catch (_) {
+            dataUrl = "";
+          }
+        }
+
         cleanup();
         resolve(dataUrl);
       } catch (_) {
         cleanup();
         resolve("");
       }
-    };
-
-    video.onerror = () => {
-      cleanup();
-      resolve("");
-    };
-
-    video.src = objectUrl;
+    })();
   });
 }
 
-export async function saveLessonMedia(lessonId, file) {
+export async function saveLessonMedia(lessonId, file, options = {}) {
   const normalizedLessonId = normalizeLessonId(lessonId);
   if (!(file instanceof Blob)) {
     throw new Error("需要有效的媒体文件");
@@ -159,19 +308,25 @@ export async function saveLessonMedia(lessonId, file) {
 
   let durationSeconds = 0;
   let coverDataUrl = "";
+  const mediaType = String(file.type || inferMediaTypeFromFileName(file.name || ""));
+  const providedCoverDataUrl = isVideoMediaType(mediaType) ? String(options?.coverDataUrl || "") : "";
+
   try {
     durationSeconds = await readMediaDurationSeconds(file, file.name || "");
   } catch (_) {
     durationSeconds = 0;
   }
 
-  try {
-    coverDataUrl = await extractMediaCoverDataUrl(file, file.name || "");
-  } catch (_) {
-    coverDataUrl = "";
+  if (providedCoverDataUrl) {
+    coverDataUrl = providedCoverDataUrl;
+  } else {
+    try {
+      coverDataUrl = await extractMediaCoverDataUrl(file, file.name || "");
+    } catch (_) {
+      coverDataUrl = "";
+    }
   }
 
-  const mediaType = String(file.type || inferMediaTypeFromFileName(file.name || ""));
   const payload = {
     lesson_id: normalizedLessonId,
     file_name: String(file.name || `lesson_${normalizedLessonId}`),
@@ -179,6 +334,7 @@ export async function saveLessonMedia(lessonId, file) {
     size_bytes: Number(file.size || 0),
     duration_seconds: durationSeconds,
     cover_data_url: coverDataUrl,
+    cover_capture_version: coverDataUrl && isVideoMediaType(mediaType) ? COVER_CAPTURE_VERSION : 0,
     updated_at: Date.now(),
     blob: file,
   };
@@ -206,23 +362,34 @@ export async function getLessonMediaPreview(lessonId) {
 
   const mediaType = String(media.media_type || inferMediaTypeFromFileName(media.file_name || ""));
   let coverDataUrl = String(media.cover_data_url || "");
+  const storedCoverVersion = Number(media.cover_capture_version || 0);
+  const needsVideoCoverRefresh =
+    media.blob instanceof Blob && isVideoMediaType(mediaType) && (!coverDataUrl || storedCoverVersion < COVER_CAPTURE_VERSION);
 
-  if (!coverDataUrl && media.blob instanceof Blob && isVideoMediaType(mediaType)) {
+  if (needsVideoCoverRefresh) {
     try {
-      coverDataUrl = await extractMediaCoverDataUrl(media.blob, media.file_name || "");
-      if (coverDataUrl) {
+      const nextCoverDataUrl = await extractMediaCoverDataUrl(media.blob, media.file_name || "");
+      if (nextCoverDataUrl) {
+        if (storedCoverVersion > 0 && storedCoverVersion < COVER_CAPTURE_VERSION) {
+          console.debug("[DEBUG] localMediaStore.cover.refresh_legacy", {
+            lessonId: normalizedLessonId,
+            previousVersion: storedCoverVersion,
+          });
+        }
+        coverDataUrl = nextCoverDataUrl;
         await withStore("readwrite", (store) =>
           store.put({
             ...media,
             media_type: mediaType,
             cover_data_url: coverDataUrl,
+            cover_capture_version: COVER_CAPTURE_VERSION,
             updated_at: Date.now(),
           }),
         );
         console.debug("[DEBUG] localMediaStore.cover.backfill", { lessonId: normalizedLessonId });
       }
     } catch (_) {
-      coverDataUrl = "";
+      coverDataUrl = String(media.cover_data_url || "");
     }
   }
 
