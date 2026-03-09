@@ -12,6 +12,7 @@ from app.models import (
     RedeemCode,
     RedeemCodeAttempt,
     RedeemCodeBatch,
+    TranslationRequestLog,
     User,
     WalletAccount,
     WalletLedger,
@@ -89,6 +90,58 @@ def list_wallet_logs(
     total = int(db.scalar(count_stmt) or 0)
     rows = db.execute(
         base.order_by(WalletLedger.created_at.desc(), WalletLedger.id.desc()).offset((page - 1) * page_size).limit(page_size)
+    ).all()
+    return total, rows
+
+
+def list_translation_logs(
+    db: Session,
+    *,
+    user_email: str,
+    task_id: str,
+    lesson_id: int | None,
+    success: str,
+    page: int,
+    page_size: int,
+    date_from: datetime | None,
+    date_to: datetime | None,
+) -> tuple[int, list[tuple[TranslationRequestLog, str | None]]]:
+    base = select(TranslationRequestLog, User.email).outerjoin(User, User.id == TranslationRequestLog.user_id)
+    count_stmt = select(func.count(TranslationRequestLog.id)).outerjoin(User, User.id == TranslationRequestLog.user_id)
+
+    if user_email.strip():
+        pattern = f"%{user_email.strip().lower()}%"
+        base = base.where(func.lower(User.email).like(pattern))
+        count_stmt = count_stmt.where(func.lower(User.email).like(pattern))
+
+    if task_id.strip():
+        base = base.where(TranslationRequestLog.task_id == task_id.strip())
+        count_stmt = count_stmt.where(TranslationRequestLog.task_id == task_id.strip())
+
+    if lesson_id is not None:
+        base = base.where(TranslationRequestLog.lesson_id == lesson_id)
+        count_stmt = count_stmt.where(TranslationRequestLog.lesson_id == lesson_id)
+
+    normalized_success = success.strip().lower()
+    if normalized_success in {"success", "true", "1"}:
+        base = base.where(TranslationRequestLog.success.is_(True))
+        count_stmt = count_stmt.where(TranslationRequestLog.success.is_(True))
+    elif normalized_success in {"failed", "false", "0"}:
+        base = base.where(TranslationRequestLog.success.is_(False))
+        count_stmt = count_stmt.where(TranslationRequestLog.success.is_(False))
+
+    if date_from:
+        base = base.where(TranslationRequestLog.created_at >= date_from)
+        count_stmt = count_stmt.where(TranslationRequestLog.created_at >= date_from)
+    if date_to:
+        base = base.where(TranslationRequestLog.created_at <= date_to)
+        count_stmt = count_stmt.where(TranslationRequestLog.created_at <= date_to)
+
+    total = int(db.scalar(count_stmt) or 0)
+    rows = db.execute(
+        base.order_by(TranslationRequestLog.created_at.desc(), TranslationRequestLog.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     ).all()
     return total, rows
 

@@ -50,6 +50,7 @@ def create_task(owner_user_id: int, source_filename: str) -> str:
             },
             "lesson": None,
             "subtitle_cache_seed": None,
+            "translation_debug": None,
             "error_code": "",
             "message": "",
             "created_at": _utc_iso(),
@@ -67,6 +68,7 @@ def get_task(task_id: str) -> dict | None:
             **task,
             "stages": [dict(item) for item in task.get("stages", [])],
             "counters": dict(task.get("counters", {})),
+            "translation_debug": dict(task.get("translation_debug", {})) if isinstance(task.get("translation_debug"), dict) else None,
         }
 
 
@@ -78,6 +80,7 @@ def update_task_progress(
     overall_percent: int | None = None,
     current_text: str | None = None,
     counters: dict | None = None,
+    translation_debug: dict | None = None,
 ) -> None:
     with _TASK_LOCK:
         task = _TASKS.get(task_id)
@@ -97,6 +100,8 @@ def update_task_progress(
             task["current_text"] = str(current_text)
         if counters:
             task["counters"] = {**task.get("counters", {}), **counters}
+        if translation_debug is not None:
+            task["translation_debug"] = dict(translation_debug)
 
         task["updated_at"] = _utc_iso()
 

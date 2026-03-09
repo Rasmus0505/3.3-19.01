@@ -3,7 +3,31 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { formatDateTimeBeijing } from "../../shared/lib/datetime";
-import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, ScrollArea, Skeleton, Switch, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Input,
+  ScrollArea,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Skeleton,
+  Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../shared/ui";
 
 function parseError(data, fallback) {
   return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
@@ -41,12 +65,14 @@ export function AdminRatesTab({ apiCall }) {
       const draftMap = {};
       list.forEach((item) => {
         draftMap[item.model_name] = {
-          points_per_minute: item.points_per_minute,
-          is_active: item.is_active,
+          points_per_minute: Number(item.points_per_minute || 0),
+          points_per_1k_tokens: Number(item.points_per_1k_tokens || 0),
+          billing_unit: String(item.billing_unit || "minute"),
+          is_active: Boolean(item.is_active),
           parallel_enabled: Boolean(item.parallel_enabled),
           parallel_threshold_seconds: Number(item.parallel_threshold_seconds || 600),
           segment_seconds: Number(item.segment_seconds || 300),
-          max_concurrency: Number(item.max_concurrency || 4),
+          max_concurrency: Number(item.max_concurrency || 1),
         };
       });
       setDrafts(draftMap);
@@ -61,7 +87,6 @@ export function AdminRatesTab({ apiCall }) {
 
   useEffect(() => {
     loadRates();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function saveRate(modelName) {
@@ -74,17 +99,19 @@ export function AdminRatesTab({ apiCall }) {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          points_per_minute: Number(draft.points_per_minute),
+          points_per_minute: Number(draft.points_per_minute || 0),
+          points_per_1k_tokens: Number(draft.points_per_1k_tokens || 0),
+          billing_unit: String(draft.billing_unit || "minute"),
           is_active: Boolean(draft.is_active),
           parallel_enabled: Boolean(draft.parallel_enabled),
-          parallel_threshold_seconds: Number(draft.parallel_threshold_seconds),
-          segment_seconds: Number(draft.segment_seconds),
-          max_concurrency: Number(draft.max_concurrency),
+          parallel_threshold_seconds: Number(draft.parallel_threshold_seconds || 1),
+          segment_seconds: Number(draft.segment_seconds || 1),
+          max_concurrency: Number(draft.max_concurrency || 1),
         }),
       });
       const data = await jsonOrEmpty(resp);
       if (!resp.ok) {
-        const message = parseError(data, "保存失败");
+        const message = parseError(data, "保存计费配置失败");
         setStatus(message);
         toast.error(message);
         return;
@@ -102,6 +129,16 @@ export function AdminRatesTab({ apiCall }) {
     }
   }
 
+  function updateDraft(modelName, patch) {
+    setDrafts((prev) => ({
+      ...prev,
+      [modelName]: {
+        ...prev[modelName],
+        ...patch,
+      },
+    }));
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -109,16 +146,18 @@ export function AdminRatesTab({ apiCall }) {
           <Settings2 className="size-4" />
           计费配置
         </CardTitle>
-        <CardDescription>按模型维护每分钟点数与启用状态（时间为北京时间）。</CardDescription>
+        <CardDescription>同一张表同时维护按分钟计费的 ASR 模型和按 1k Tokens 计费的翻译模型。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {loading ? <Skeleton className="h-10 w-full" /> : null}
         <ScrollArea className="w-full rounded-md border">
-          <Table className="min-w-[1080px]">
+          <Table className="min-w-[1460px]">
             <TableHeader>
               <TableRow>
                 <TableHead>模型</TableHead>
+                <TableHead>计费单位</TableHead>
                 <TableHead>点数/分钟</TableHead>
+                <TableHead>点数/1k Tokens</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead>并发开关</TableHead>
                 <TableHead>并发阈值(秒)</TableHead>
@@ -133,61 +172,49 @@ export function AdminRatesTab({ apiCall }) {
                 const draft = drafts[item.model_name] || item;
                 return (
                   <TableRow key={item.model_name}>
-                    <TableCell>{item.model_name}</TableCell>
+                    <TableCell className="font-medium">{item.model_name}</TableCell>
+                    <TableCell>
+                      <Select value={draft.billing_unit} onValueChange={(value) => updateDraft(item.model_name, { billing_unit: value })}>
+                        <SelectTrigger className="w-[140px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="minute">minute</SelectItem>
+                          <SelectItem value="1k_tokens">1k_tokens</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
                     <TableCell>
                       <Input
                         type="number"
-                        min={1}
+                        min={0}
                         value={draft.points_per_minute}
-                        onChange={(e) => {
-                          const nextValue = Number(e.target.value || 1);
-                          setDrafts((prev) => ({
-                            ...prev,
-                            [item.model_name]: {
-                              ...prev[item.model_name],
-                              points_per_minute: nextValue,
-                            },
-                          }));
-                        }}
-                        className="max-w-[160px]"
+                        onChange={(e) => updateDraft(item.model_name, { points_per_minute: Number(e.target.value || 0) })}
+                        className="max-w-[150px]"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={draft.points_per_1k_tokens}
+                        onChange={(e) => updateDraft(item.model_name, { points_per_1k_tokens: Number(e.target.value || 0) })}
+                        className="max-w-[170px]"
                       />
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Switch
-                          checked={Boolean(draft.is_active)}
-                          onCheckedChange={(checked) => {
-                            setDrafts((prev) => ({
-                              ...prev,
-                              [item.model_name]: {
-                                ...prev[item.model_name],
-                                is_active: checked,
-                              },
-                            }));
-                          }}
-                        />
-                        <span className="text-xs text-muted-foreground">
-                          {draft.is_active ? "启用" : "停用"}
-                        </span>
+                        <Switch checked={Boolean(draft.is_active)} onCheckedChange={(checked) => updateDraft(item.model_name, { is_active: checked })} />
+                        <span className="text-xs text-muted-foreground">{draft.is_active ? "启用" : "停用"}</span>
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Switch
                           checked={Boolean(draft.parallel_enabled)}
-                          onCheckedChange={(checked) => {
-                            setDrafts((prev) => ({
-                              ...prev,
-                              [item.model_name]: {
-                                ...prev[item.model_name],
-                                parallel_enabled: checked,
-                              },
-                            }));
-                          }}
+                          onCheckedChange={(checked) => updateDraft(item.model_name, { parallel_enabled: checked })}
                         />
-                        <span className="text-xs text-muted-foreground">
-                          {draft.parallel_enabled ? "启用" : "关闭"}
-                        </span>
+                        <span className="text-xs text-muted-foreground">{draft.parallel_enabled ? "启用" : "关闭"}</span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -195,17 +222,8 @@ export function AdminRatesTab({ apiCall }) {
                         type="number"
                         min={1}
                         value={draft.parallel_threshold_seconds}
-                        onChange={(e) => {
-                          const nextValue = Number(e.target.value || 1);
-                          setDrafts((prev) => ({
-                            ...prev,
-                            [item.model_name]: {
-                              ...prev[item.model_name],
-                              parallel_threshold_seconds: nextValue,
-                            },
-                          }));
-                        }}
-                        className="max-w-[160px]"
+                        onChange={(e) => updateDraft(item.model_name, { parallel_threshold_seconds: Number(e.target.value || 1) })}
+                        className="max-w-[150px]"
                       />
                     </TableCell>
                     <TableCell>
@@ -213,17 +231,8 @@ export function AdminRatesTab({ apiCall }) {
                         type="number"
                         min={1}
                         value={draft.segment_seconds}
-                        onChange={(e) => {
-                          const nextValue = Number(e.target.value || 1);
-                          setDrafts((prev) => ({
-                            ...prev,
-                            [item.model_name]: {
-                              ...prev[item.model_name],
-                              segment_seconds: nextValue,
-                            },
-                          }));
-                        }}
-                        className="max-w-[160px]"
+                        onChange={(e) => updateDraft(item.model_name, { segment_seconds: Number(e.target.value || 1) })}
+                        className="max-w-[150px]"
                       />
                     </TableCell>
                     <TableCell>
@@ -231,42 +240,30 @@ export function AdminRatesTab({ apiCall }) {
                         type="number"
                         min={1}
                         value={draft.max_concurrency}
-                        onChange={(e) => {
-                          const nextValue = Number(e.target.value || 1);
-                          setDrafts((prev) => ({
-                            ...prev,
-                            [item.model_name]: {
-                              ...prev[item.model_name],
-                              max_concurrency: nextValue,
-                            },
-                          }));
-                        }}
+                        onChange={(e) => updateDraft(item.model_name, { max_concurrency: Number(e.target.value || 1) })}
                         className="max-w-[140px]"
                       />
                     </TableCell>
                     <TableCell>{formatDateTimeBeijing(item.updated_at)}</TableCell>
                     <TableCell>
-                      <Button
-                        size="sm"
-                        onClick={() => saveRate(item.model_name)}
-                        disabled={savingModel === item.model_name}
-                      >
+                      <Button size="sm" onClick={() => saveRate(item.model_name)} disabled={savingModel === item.model_name}>
                         {savingModel === item.model_name ? "保存中..." : "保存"}
                       </Button>
                     </TableCell>
                   </TableRow>
                 );
               })}
-              {rates.length === 0 ? (
+              {rates.length === 0 && !loading ? (
                 <TableRow>
-                  <TableCell className="text-muted-foreground" colSpan={9}>
-                    {loading ? "加载中..." : "暂无配置"}
+                  <TableCell colSpan={11} className="text-muted-foreground">
+                    暂无计费配置
                   </TableCell>
                 </TableRow>
               ) : null}
             </TableBody>
           </Table>
         </ScrollArea>
+
         {status ? (
           <Alert>
             <AlertDescription>{status}</AlertDescription>

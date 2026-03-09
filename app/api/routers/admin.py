@@ -25,12 +25,14 @@ from app.repositories.admin import (
     list_redeem_codes,
     list_unredeemed_codes_for_export,
 )
-from app.repositories.wallet_ledger import list_wallet_ledger_rows
+from app.repositories.wallet_ledger import list_translation_request_rows, list_wallet_ledger_rows
 from app.schemas import (
     AdminBillingRateUpdateRequest,
     AdminBillingRatesResponse,
     AdminSubtitleSettingsResponse,
     AdminSubtitleSettingsUpdateRequest,
+    AdminTranslationLogItem,
+    AdminTranslationLogsResponse,
     AdminRedeemAuditExportRequest,
     AdminRedeemAuditItem,
     AdminRedeemAuditListResponse,
@@ -291,6 +293,77 @@ def admin_wallet_logs(
 
 
 @router.get(
+    "/translation-logs",
+    response_model=AdminTranslationLogsResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_translation_logs(
+    user_email: str = "",
+    task_id: str = "",
+    lesson_id: int | None = None,
+    success: str = "",
+    page: int = 1,
+    page_size: int = 20,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    page = max(page, 1)
+    page_size = max(1, min(page_size, 100))
+    normalized_date_from = to_shanghai_naive(date_from)
+    normalized_date_to = to_shanghai_naive(date_to)
+    logger.debug(
+        "[DEBUG] /api/admin/translation-logs normalized filters date_from=%s date_to=%s task_id=%s lesson_id=%s success=%s",
+        normalized_date_from.isoformat() if normalized_date_from else "",
+        normalized_date_to.isoformat() if normalized_date_to else "",
+        task_id,
+        lesson_id,
+        success,
+    )
+
+    total, rows = list_translation_request_rows(
+        db,
+        user_email=user_email,
+        task_id=task_id,
+        lesson_id=lesson_id,
+        success=success,
+        page=page,
+        page_size=page_size,
+        date_from=normalized_date_from,
+        date_to=normalized_date_to,
+    )
+    items = [
+        AdminTranslationLogItem(
+            id=row.id,
+            user_email=email or "-",
+            task_id=row.task_id,
+            lesson_id=row.lesson_id,
+            sentence_idx=int(row.sentence_idx),
+            attempt_no=int(row.attempt_no),
+            provider=row.provider,
+            model_name=row.model_name,
+            base_url=row.base_url,
+            input_text_preview=row.input_text_preview,
+            provider_request_id=row.provider_request_id,
+            status_code=row.status_code,
+            finish_reason=row.finish_reason,
+            prompt_tokens=int(row.prompt_tokens),
+            completion_tokens=int(row.completion_tokens),
+            total_tokens=int(row.total_tokens),
+            success=bool(row.success),
+            error_code=row.error_code,
+            error_message=row.error_message,
+            started_at=to_shanghai_aware(row.started_at),
+            finished_at=to_shanghai_aware(row.finished_at),
+            created_at=to_shanghai_aware(row.created_at),
+        )
+        for row, email in rows
+    ]
+    return AdminTranslationLogsResponse(ok=True, page=page, page_size=page_size, total=total, items=items)
+
+
+@router.get(
     "/billing-rates",
     response_model=AdminBillingRatesResponse,
     responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
@@ -314,7 +387,14 @@ def admin_update_billing_rate(
     rate = db.get(BillingModelRate, model_name)
     if not rate:
         return error_response(404, "BILLING_RATE_NOT_FOUND", "计费模型不存在", model_name)
+    if payload.points_per_minute <= 0 and payload.points_per_1k_tokens <= 0:
+        return error_response(400, "INVALID_BILLING_RATE", "分钟费率和 Token 费率不能同时为 0")
+    normalized_unit = payload.billing_unit.strip().lower()
+    if normalized_unit not in {"minute", "1k_tokens"}:
+        return error_response(400, "INVALID_BILLING_UNIT", "计费单位仅支持 minute 或 1k_tokens", payload.billing_unit)
     rate.points_per_minute = payload.points_per_minute
+    rate.points_per_1k_tokens = payload.points_per_1k_tokens
+    rate.billing_unit = normalized_unit
     rate.is_active = payload.is_active
     rate.parallel_enabled = payload.parallel_enabled
     rate.parallel_threshold_seconds = payload.parallel_threshold_seconds

@@ -1,10 +1,11 @@
-﻿from app.models.billing import (
+from app.models.billing import (
     AdminOperationLog,
     BillingModelRate,
     RedeemCode,
     RedeemCodeAttempt,
     RedeemCodeBatch,
     SubtitleSetting,
+    TranslationRequestLog,
     WalletAccount,
     WalletLedger,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "WalletLedger",
     "BillingModelRate",
     "SubtitleSetting",
+    "TranslationRequestLog",
     "RedeemCodeBatch",
     "RedeemCode",
     "RedeemCodeAttempt",

@@ -25,7 +25,7 @@ class WalletLedger(Base):
     __tablename__ = "wallet_ledger"
     __table_args__ = table_args(
         CheckConstraint(
-            "event_type IN ('reserve','consume','refund','manual_adjust','redeem_code')",
+            "event_type IN ('reserve','consume','refund','manual_adjust','redeem_code','consume_translate','refund_translate')",
             name="ck_wallet_ledger_event_type",
         )
     )
@@ -61,7 +61,8 @@ class WalletLedger(Base):
 class BillingModelRate(Base):
     __tablename__ = "billing_model_rates"
     __table_args__ = table_args(
-        CheckConstraint("points_per_minute > 0", name="ck_billing_rate_positive"),
+        CheckConstraint("points_per_minute >= 0", name="ck_billing_rate_positive"),
+        CheckConstraint("points_per_1k_tokens >= 0", name="ck_billing_rate_token_non_negative"),
         CheckConstraint("parallel_threshold_seconds > 0", name="ck_billing_parallel_threshold_positive"),
         CheckConstraint("segment_seconds > 0", name="ck_billing_segment_seconds_positive"),
         CheckConstraint("max_concurrency > 0", name="ck_billing_max_concurrency_positive"),
@@ -69,6 +70,8 @@ class BillingModelRate(Base):
 
     model_name: Mapped[str] = mapped_column(String(100), primary_key=True)
     points_per_minute: Mapped[int] = mapped_column(Integer, nullable=False)
+    points_per_1k_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    billing_unit: Mapped[str] = mapped_column(String(32), default="minute", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     parallel_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     parallel_threshold_seconds: Mapped[int] = mapped_column(Integer, default=900, nullable=False)
@@ -103,6 +106,37 @@ class SubtitleSetting(Base):
         ForeignKey(schema_fk("users.id"), ondelete="SET NULL"),
         nullable=True,
     )
+
+
+class TranslationRequestLog(Base):
+    __tablename__ = "translation_request_logs"
+    __table_args__ = table_args(
+        CheckConstraint("attempt_no > 0", name="ck_translation_request_attempt_positive"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    trace_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    task_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    lesson_id: Mapped[int | None] = mapped_column(ForeignKey(schema_fk("lessons.id"), ondelete="SET NULL"), nullable=True, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey(schema_fk("users.id"), ondelete="SET NULL"), nullable=True, index=True)
+    sentence_idx: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    attempt_no: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False, default="dashscope_compatible")
+    model_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    base_url: Mapped[str] = mapped_column(String(255), nullable=False)
+    input_text_preview: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    provider_request_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    finish_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    success: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    error_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
+    finished_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False, index=True)
 
 
 class RedeemCodeBatch(Base):
