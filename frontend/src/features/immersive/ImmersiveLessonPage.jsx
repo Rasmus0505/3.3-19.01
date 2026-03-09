@@ -24,6 +24,7 @@ import "./immersive.css";
 const DISPLAY_MODE_STORAGE_KEY = "immersive_word_display_mode";
 const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
 const APOSTROPHE_RE = /[’']/g;
+const CINEMA_CONTROLS_IDLE_MS = 3000;
 const MEDIA_TYPE_BY_EXTENSION = {
   ".mp4": "video/mp4",
   ".mov": "video/quicktime",
@@ -265,18 +266,28 @@ export function ImmersiveLessonPage({
   const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
   const [isFullscreenFallback, setIsFullscreenFallback] = useState(false);
   const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(false);
+  const [cinemaControlsIdle, setCinemaControlsIdle] = useState(false);
 
   const immersiveContainerRef = useRef(null);
   const mediaElementRef = useRef(null);
   const clipAudioRef = useRef(null);
   const typingInputRef = useRef(null);
   const bindingInputRef = useRef(null);
+  const cinemaControlsIdleTimerRef = useRef(null);
   const currentWordInputRef = useRef("");
   const sentenceAdvanceLockedRef = useRef(false);
   const cinemaFullscreenActive = isCinemaFullscreen || isFullscreenFallback;
   const hasExitHandler = typeof onExitImmersive === "function" || typeof onBack === "function";
   const typingEnabled =
     immersiveActive && Boolean(lesson?.sentences?.[currentSentenceIndex]) && phase !== "transition" && phase !== "lesson_completed";
+
+  const clearCinemaControlsIdleTimer = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (cinemaControlsIdleTimerRef.current === null) return;
+    window.clearTimeout(cinemaControlsIdleTimerRef.current);
+    cinemaControlsIdleTimerRef.current = null;
+  }, []);
+
   const focusTypingInput = useCallback(() => {
     if (!typingEnabled) return;
     requestAnimationFrame(() => {
@@ -291,6 +302,16 @@ export function ImmersiveLessonPage({
       }
     });
   }, [typingEnabled]);
+
+  const wakeCinemaControls = useCallback(() => {
+    if (!cinemaFullscreenActive || typeof window === "undefined") return;
+    setCinemaControlsIdle((current) => (current ? false : current));
+    clearCinemaControlsIdleTimer();
+    cinemaControlsIdleTimerRef.current = window.setTimeout(() => {
+      cinemaControlsIdleTimerRef.current = null;
+      setCinemaControlsIdle(true);
+    }, CINEMA_CONTROLS_IDLE_MS);
+  }, [cinemaFullscreenActive, clearCinemaControlsIdleTimer]);
 
   const currentSentence = lesson?.sentences?.[currentSentenceIndex] || null;
   const previousSentence = currentSentenceIndex > 0 ? lesson?.sentences?.[currentSentenceIndex - 1] || null : null;
@@ -869,6 +890,38 @@ export function ImmersiveLessonPage({
   }, [cinemaFullscreenActive]);
 
   useEffect(() => {
+    return () => {
+      clearCinemaControlsIdleTimer();
+    };
+  }, [clearCinemaControlsIdleTimer]);
+
+  useEffect(() => {
+    if (!cinemaFullscreenActive || typeof window === "undefined") {
+      clearCinemaControlsIdleTimer();
+      setCinemaControlsIdle(false);
+      return undefined;
+    }
+
+    wakeCinemaControls();
+    const markControlsActive = () => {
+      wakeCinemaControls();
+    };
+
+    window.addEventListener("pointermove", markControlsActive);
+    window.addEventListener("pointerdown", markControlsActive);
+    window.addEventListener("touchstart", markControlsActive);
+    window.addEventListener("keydown", markControlsActive);
+
+    return () => {
+      window.removeEventListener("pointermove", markControlsActive);
+      window.removeEventListener("pointerdown", markControlsActive);
+      window.removeEventListener("touchstart", markControlsActive);
+      window.removeEventListener("keydown", markControlsActive);
+      clearCinemaControlsIdleTimer();
+    };
+  }, [cinemaFullscreenActive, clearCinemaControlsIdleTimer, wakeCinemaControls]);
+
+  useEffect(() => {
     if (immersiveActive || !cinemaFullscreenActive) return;
     void exitCinemaFullscreen();
   }, [cinemaFullscreenActive, exitCinemaFullscreen, immersiveActive]);
@@ -1063,6 +1116,14 @@ export function ImmersiveLessonPage({
   const canRevealWord = typingEnabled && activeWordIndex < expectedTokens.length && expectedTokens.length > 0;
   const canReplaySentence = Boolean(currentSentence) && !mediaLoading && phase !== "transition" && !needsBinding;
   const showDefaultImmersiveControls = immersiveActive && !cinemaFullscreenActive;
+  const cinemaHeaderControlsClassName = [
+    "immersive-header-left",
+    cinemaFullscreenActive ? "immersive-header-left--cinema" : "",
+    cinemaFullscreenActive && cinemaControlsIdle ? "immersive-header-left--cinema-idle" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const cinemaButtonClassName = cinemaFullscreenActive ? "immersive-cinema-button" : undefined;
 
   return (
     <div
@@ -1079,9 +1140,9 @@ export function ImmersiveLessonPage({
       >
         <CardHeader className="immersive-card-header">
           <div className="immersive-header">
-            <div className="immersive-header-left">
+            <div className={cinemaHeaderControlsClassName} onMouseEnter={wakeCinemaControls} onFocusCapture={wakeCinemaControls}>
               {immersiveActive && hasExitHandler ? (
-                <Button variant="outline" size="sm" onClick={() => void exitImmersive("button")}>
+                <Button variant="outline" size="sm" className={cinemaButtonClassName} onClick={() => void exitImmersive("button")}>
                   <ArrowLeft className="size-4" />
                   退出
                 </Button>
@@ -1093,10 +1154,15 @@ export function ImmersiveLessonPage({
               ) : null}
               {immersiveActive && cinemaFullscreenActive ? (
                 <>
-                  <Button variant="outline" size="sm" onClick={() => void exitCinemaFullscreen()}>
+                  <Button variant="outline" size="sm" className={cinemaButtonClassName} onClick={() => void exitCinemaFullscreen()}>
                     退出全屏
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => setShowFullscreenPreviousSentence((prev) => !prev)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cinemaButtonClassName}
+                    onClick={() => setShowFullscreenPreviousSentence((prev) => !prev)}
+                  >
                     {showFullscreenPreviousSentence ? "隐藏上一句" : "显示上一句"}
                   </Button>
                 </>
@@ -1241,32 +1307,34 @@ export function ImmersiveLessonPage({
                   </div>
                 ) : null}
 
-                <div className={`immersive-word-row ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""}`}>
-                  {expectedTokens.map((token, index) => {
-                    const status = wordStatuses[index] || "pending";
-                    const slots = buildLetterSlots(token, wordInputs[index] || "");
-                    return (
-                      <div
-                        key={`${token}-${index}`}
-                        className={`immersive-word-slot immersive-word-slot--${status} ${
-                          displayMode === "underline" ? "immersive-word-slot--underline" : "immersive-word-slot--chip"
-                        }`}
-                      >
-                        <div className="immersive-letter-row">
-                          {slots.map((slot) => (
-                            <span
-                              key={slot.key}
-                              className={`immersive-letter-cell immersive-letter-cell--${slot.state} ${
-                                slot.extra ? "immersive-letter-cell--extra" : ""
-                              }`}
-                            >
-                              <span className="immersive-letter-char">{slot.char}</span>
-                            </span>
-                          ))}
+                <div className={cinemaFullscreenActive ? "immersive-word-row-frame immersive-word-row-frame--cinema" : ""}>
+                  <div className={`immersive-word-row ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""}`}>
+                    {expectedTokens.map((token, index) => {
+                      const status = wordStatuses[index] || "pending";
+                      const slots = buildLetterSlots(token, wordInputs[index] || "");
+                      return (
+                        <div
+                          key={`${token}-${index}`}
+                          className={`immersive-word-slot immersive-word-slot--${status} ${
+                            displayMode === "underline" ? "immersive-word-slot--underline" : "immersive-word-slot--chip"
+                          }`}
+                        >
+                          <div className="immersive-letter-row">
+                            {slots.map((slot) => (
+                              <span
+                                key={slot.key}
+                                className={`immersive-letter-cell immersive-letter-cell--${slot.state} ${
+                                  slot.extra ? "immersive-letter-cell--extra" : ""
+                                }`}
+                              >
+                                <span className="immersive-letter-char">{slot.char}</span>
+                              </span>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {!cinemaFullscreenActive || showFullscreenPreviousSentence ? (
