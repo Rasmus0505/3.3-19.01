@@ -4,6 +4,8 @@ import io
 import json
 import os
 import re
+import subprocess
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -188,7 +190,7 @@ def test_ensure_default_billing_rates_rebuilds_legacy_sqlite_constraint(tmp_path
                 """
                 SELECT model_name, points_per_minute, points_per_1k_tokens, billing_unit
                 FROM billing_model_rates
-                WHERE model_name = 'qwen-mt-plus'
+                WHERE model_name = 'qwen-mt-flash'
                 """
             )
         ).mappings().one()
@@ -198,10 +200,57 @@ def test_ensure_default_billing_rates_rebuilds_legacy_sqlite_constraint(tmp_path
     assert "ck_billing_rate_token_non_negative" in ddl
     assert "consume_translate" in wallet_ddl
     assert "refund_translate" in wallet_ddl
-    assert mt_rate["model_name"] == "qwen-mt-plus"
+    assert mt_rate["model_name"] == "qwen-mt-flash"
     assert mt_rate["points_per_minute"] == 0
     assert mt_rate["points_per_1k_tokens"] > 0
     assert mt_rate["billing_unit"] == "1k_tokens"
+
+
+def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    db_file = tmp_path / "subtitle_migration.db"
+    database_url = f"sqlite:///{db_file.as_posix()}"
+
+    env = os.environ.copy()
+    env["DATABASE_URL"] = database_url
+
+    def _upgrade(target: str) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "-c", "alembic.ini", "upgrade", target],
+            cwd=str(repo_root),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"alembic upgrade {target} failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+
+    _upgrade("20260306_0006")
+
+    engine = create_database_engine(database_url)
+    try:
+        SubtitleSetting.__table__.create(bind=engine, checkfirst=True)
+    finally:
+        engine.dispose()
+
+    _upgrade("head")
+
+    verify_engine = create_database_engine(database_url)
+    try:
+        with verify_engine.connect() as conn:
+            version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            subtitle_row = conn.execute(
+                text("SELECT id, subtitle_split_enabled, translation_batch_max_chars FROM subtitle_settings WHERE id = 1")
+            ).mappings().one_or_none()
+    finally:
+        verify_engine.dispose()
+
+    assert version == "20260309_0009"
+    assert subtitle_row is not None
+    assert int(subtitle_row["id"]) == 1
+    assert bool(subtitle_row["subtitle_split_enabled"]) is True
+    assert int(subtitle_row["translation_batch_max_chars"]) == 2600
 
 
 def _register_and_login(client: TestClient, email: str = "admin@example.com", password: str = "123456") -> str:
@@ -672,6 +721,7 @@ def test_wallet_and_admin_endpoints(test_client):
     subtitle_settings = client.get("/api/admin/subtitle-settings", headers=headers)
     assert subtitle_settings.status_code == 200
     assert subtitle_settings.json()["settings"]["subtitle_split_enabled"] is True
+    assert subtitle_settings.json()["settings"]["translation_batch_max_chars"] == 2600
 
 
 def test_admin_subtitle_settings_roundtrip(test_client):
@@ -691,6 +741,7 @@ def test_admin_subtitle_settings_roundtrip(test_client):
             "semantic_split_max_words_threshold": 20,
             "semantic_split_model": "qwen-plus",
             "semantic_split_timeout_seconds": 35,
+            "translation_batch_max_chars": 3200,
         },
     )
     assert update_resp.status_code == 200
@@ -698,10 +749,12 @@ def test_admin_subtitle_settings_roundtrip(test_client):
     assert payload["semantic_split_default_enabled"] is True
     assert payload["subtitle_split_target_words"] == 16
     assert payload["semantic_split_max_words_threshold"] == 20
+    assert payload["translation_batch_max_chars"] == 3200
 
     fetch_resp = client.get("/api/admin/subtitle-settings", headers=admin_headers)
     assert fetch_resp.status_code == 200
     assert fetch_resp.json()["settings"]["semantic_split_timeout_seconds"] == 35
+    assert fetch_resp.json()["settings"]["translation_batch_max_chars"] == 3200
 
 
 def test_admin_translation_logs_endpoint_filters_by_task_and_success(test_client, monkeypatch):
@@ -723,7 +776,7 @@ def test_admin_translation_logs_endpoint_filters_by_task_and_success(test_client
                     sentence_idx=0,
                     attempt_no=1,
                     provider="dashscope_compatible",
-                    model_name="qwen-mt-plus",
+                    model_name="qwen-mt-flash",
                     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
                     input_text_preview="hello world",
                     provider_request_id="req_success",
@@ -747,7 +800,7 @@ def test_admin_translation_logs_endpoint_filters_by_task_and_success(test_client
                     sentence_idx=1,
                     attempt_no=1,
                     provider="dashscope_compatible",
-                    model_name="qwen-mt-plus",
+                    model_name="qwen-mt-flash",
                     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
                     input_text_preview="second line",
                     provider_request_id="req_failed",
@@ -835,6 +888,7 @@ def test_admin_subtitle_settings_update_self_heals_missing_table(test_client):
     body = resp.json()
     assert body["settings"]["semantic_split_default_enabled"] is True
     assert body["settings"]["semantic_split_timeout_seconds"] == 50
+    assert body["settings"]["translation_batch_max_chars"] == 2600
 
 
 def test_redeem_code_admin_and_wallet_flow(test_client):
@@ -1510,7 +1564,7 @@ def test_generate_from_saved_file_records_mt_usage_and_consume(test_client, monk
                             "sentence_idx": 0,
                             "attempt_no": 1,
                             "provider": "dashscope_compatible",
-                            "model_name": "qwen-mt-plus",
+                            "model_name": "qwen-mt-flash",
                             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
                             "input_text_preview": "hello world",
                             "provider_request_id": "req_test",
@@ -1550,7 +1604,7 @@ def test_generate_from_saved_file_records_mt_usage_and_consume(test_client, monk
             .filter(WalletLedger.lesson_id == lesson.id, WalletLedger.event_type == "consume_translate")
             .one()
         )
-        assert mt_ledger.model_name == "qwen-mt-plus"
+        assert mt_ledger.model_name == "qwen-mt-flash"
         assert mt_ledger.delta_points == -1
 
         translation_log = session.query(TranslationRequestLog).filter(TranslationRequestLog.task_id == "task_billing_test").one()
@@ -2577,6 +2631,7 @@ def test_generate_lesson_failure_still_refunds_reserved_points(test_client, monk
         assert ledgers[-1].delta_points == 260
     finally:
         session.close()
+
 
 
 

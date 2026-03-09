@@ -125,5 +125,6 @@ def to_admin_subtitle_settings_item(item: SubtitleSetting) -> AdminSubtitleSetti
         semantic_split_max_words_threshold=int(item.semantic_split_max_words_threshold),
         semantic_split_model=str(item.semantic_split_model),
         semantic_split_timeout_seconds=int(item.semantic_split_timeout_seconds),
+        translation_batch_max_chars=max(1, min(12000, int(getattr(item, "translation_batch_max_chars", 2600) or 2600))),
         updated_at=to_shanghai_aware(item.updated_at),
     )

@@ -1,4 +1,4 @@
-# Zeabur 最小部署指南（GitHub 直构）
+﻿# Zeabur 最小部署指南（GitHub 直构）
 
 这个项目默认走：
 
@@ -44,7 +44,8 @@
 - `DB_INIT_MODE=auto`
 - `TMP_WORK_DIR=/tmp/zeabur3.3`
 - `MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
-- `MT_MODEL=qwen-mt-plus`
+- `MT_MODEL=qwen-mt-flash`
+- 翻译批次最大字符数请在后台“字幕/分句设置”中调整（默认 2600）
 
 ## 为什么现在不用 `search_path`
 
@@ -124,3 +125,4 @@
 - `metabase`
 
 接回后只同步 `app` schema。
+

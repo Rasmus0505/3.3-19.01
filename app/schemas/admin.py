@@ -126,6 +126,7 @@ class AdminSubtitleSettingsItem(BaseModel):
     semantic_split_max_words_threshold: int
     semantic_split_model: str
     semantic_split_timeout_seconds: int
+    translation_batch_max_chars: int
     updated_at: datetime
 
 
@@ -137,6 +138,7 @@ class AdminSubtitleSettingsUpdateRequest(BaseModel):
     semantic_split_max_words_threshold: int = Field(gt=0, le=300)
     semantic_split_model: str = Field(min_length=1, max_length=100)
     semantic_split_timeout_seconds: int = Field(gt=0, le=300)
+    translation_batch_max_chars: int | None = Field(default=None, gt=0, le=12000)
 
 
 class AdminSubtitleSettingsResponse(BaseModel):
