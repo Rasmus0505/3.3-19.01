@@ -58,6 +58,8 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_MT_POINTS_PER_1K_TOKENS = 15
+MT_FLASH_MODEL = "qwen-mt-flash"
+LEGACY_MT_MODELS = ("qwen-mt-plus", "qwen-mt-lite", "qwen-mt-turbo")
 
 DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
     {
@@ -71,37 +73,7 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
         "max_concurrency": 4,
     },
     {
-        "model_name": "qwen-mt-plus",
-        "points_per_minute": 0,
-        "points_per_1k_tokens": DEFAULT_MT_POINTS_PER_1K_TOKENS,
-        "billing_unit": "1k_tokens",
-        "parallel_enabled": False,
-        "parallel_threshold_seconds": 600,
-        "segment_seconds": 300,
-        "max_concurrency": 1,
-    },
-    {
-        "model_name": "qwen-mt-flash",
-        "points_per_minute": 0,
-        "points_per_1k_tokens": DEFAULT_MT_POINTS_PER_1K_TOKENS,
-        "billing_unit": "1k_tokens",
-        "parallel_enabled": False,
-        "parallel_threshold_seconds": 600,
-        "segment_seconds": 300,
-        "max_concurrency": 1,
-    },
-    {
-        "model_name": "qwen-mt-lite",
-        "points_per_minute": 0,
-        "points_per_1k_tokens": DEFAULT_MT_POINTS_PER_1K_TOKENS,
-        "billing_unit": "1k_tokens",
-        "parallel_enabled": False,
-        "parallel_threshold_seconds": 600,
-        "segment_seconds": 300,
-        "max_concurrency": 1,
-    },
-    {
-        "model_name": "qwen-mt-turbo",
+        "model_name": MT_FLASH_MODEL,
         "points_per_minute": 0,
         "points_per_1k_tokens": DEFAULT_MT_POINTS_PER_1K_TOKENS,
         "billing_unit": "1k_tokens",
@@ -120,6 +92,7 @@ DEFAULT_SUBTITLE_SETTINGS = {
     "semantic_split_max_words_threshold": 24,
     "semantic_split_model": "qwen-plus",
     "semantic_split_timeout_seconds": 40,
+    "translation_batch_max_chars": 2600,
 }
 
 
@@ -142,6 +115,7 @@ class SubtitleSettingsSnapshot:
     semantic_split_max_words_threshold: int
     semantic_split_model: str
     semantic_split_timeout_seconds: int
+    translation_batch_max_chars: int
 
 
 def _now() -> datetime:
@@ -490,6 +464,12 @@ def ensure_default_billing_rates(
     if legacy_para is not None:
         db.delete(legacy_para)
         changed = True
+    for legacy_mt_model in LEGACY_MT_MODELS:
+        legacy_row = db.get(BillingModelRate, legacy_mt_model)
+        if legacy_row is None:
+            continue
+        db.delete(legacy_row)
+        changed = True
 
     for item in defaults:
         model_name = str(item.get("model_name") or "").strip()
@@ -594,6 +574,7 @@ def get_subtitle_settings_snapshot(db: Session) -> SubtitleSettingsSnapshot:
         semantic_split_max_words_threshold=int(row.semantic_split_max_words_threshold),
         semantic_split_model=str(row.semantic_split_model),
         semantic_split_timeout_seconds=int(row.semantic_split_timeout_seconds),
+        translation_batch_max_chars=max(1, min(12000, int(getattr(row, "translation_batch_max_chars", 2600) or 2600))),
     )
 
 

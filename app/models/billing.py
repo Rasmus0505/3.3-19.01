@@ -91,6 +91,10 @@ class SubtitleSetting(Base):
         CheckConstraint("subtitle_split_max_words > 0", name="ck_subtitle_split_max_words_positive"),
         CheckConstraint("semantic_split_max_words_threshold > 0", name="ck_semantic_split_threshold_positive"),
         CheckConstraint("semantic_split_timeout_seconds > 0", name="ck_semantic_split_timeout_positive"),
+        CheckConstraint(
+            "translation_batch_max_chars > 0 AND translation_batch_max_chars <= 12000",
+            name="ck_translation_batch_chars_range",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
@@ -101,6 +105,7 @@ class SubtitleSetting(Base):
     semantic_split_max_words_threshold: Mapped[int] = mapped_column(Integer, default=24, nullable=False)
     semantic_split_model: Mapped[str] = mapped_column(String(100), default="qwen-plus", nullable=False)
     semantic_split_timeout_seconds: Mapped[int] = mapped_column(Integer, default=40, nullable=False)
+    translation_batch_max_chars: Mapped[int] = mapped_column(Integer, default=2600, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
     updated_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey(schema_fk("users.id"), ondelete="SET NULL"),

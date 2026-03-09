@@ -47,7 +47,13 @@ from app.services.lesson_builder import (
     tokenize_sentence,
 )
 from app.services.media import MediaError, extract_audio_for_asr, probe_audio_duration_ms, run_cmd, save_upload_file_stream, validate_suffix
-from app.services.translation_qwen_mt import MT_MODEL, SemanticSplitError, split_sentence_by_semantic, translate_sentences_to_zh
+from app.services.translation_qwen_mt import (
+    MT_MODEL,
+    SemanticSplitError,
+    split_sentence_by_semantic,
+    translate_sentences_to_zh,
+    translation_batch_chars_scope,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -507,11 +513,24 @@ class LessonService:
                 translate_total=total,
             )
 
-        translation_result = translate_sentences_to_zh(
-            [x["text"] for x in sentences],
-            api_key=DASHSCOPE_API_KEY,
-            progress_callback=_on_translation_progress,
+        translation_batch_max_chars = max(
+            1,
+            min(
+                12000,
+                int(getattr(subtitle_settings, "translation_batch_max_chars", 2600) or 2600),
+            ),
         )
+        logger.info(
+            "[DEBUG] lesson.subtitle_variant translation_batch_chars=%s sentence_total=%s",
+            translation_batch_max_chars,
+            len(sentences),
+        )
+        with translation_batch_chars_scope(translation_batch_max_chars):
+            translation_result = translate_sentences_to_zh(
+                [x["text"] for x in sentences],
+                api_key=DASHSCOPE_API_KEY,
+                progress_callback=_on_translation_progress,
+            )
         normalized_sentences = LessonService._normalize_runtime_sentences(sentences, translation_result.texts)
         _emit_subtitle_variant_progress(
             progress_callback,

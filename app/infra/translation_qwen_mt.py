@@ -1,27 +1,40 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
 import re
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Iterator
 
 from openai import OpenAI
 
-from app.core.config import MT_BATCH_MAX_CHARS, MT_BATCH_MAX_SENTENCES, MT_MIN_REQUEST_INTERVAL_MS, MT_RETRY_MAX_ATTEMPTS
+from app.core.config import MT_BATCH_MAX_CHARS, MT_MIN_REQUEST_INTERVAL_MS, MT_RETRY_MAX_ATTEMPTS
 from app.core.timezone import now_shanghai_naive
 
 
 MT_BASE_URL = os.getenv("MT_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1").strip()
-MT_MODEL = os.getenv("MT_MODEL", "qwen-mt-plus").strip()
+FORCED_MT_MODEL = "qwen-mt-flash"
+_REQUESTED_MT_MODEL = (os.getenv("MT_MODEL", FORCED_MT_MODEL) or "").strip() or FORCED_MT_MODEL
+MT_MODEL = FORCED_MT_MODEL
 MT_TIMEOUT_SECONDS = max(5, int((os.getenv("MT_TIMEOUT_SECONDS", "20") or "20").strip() or "20"))
+MAX_TRANSLATION_BATCH_CHARS = 12000
+DEFAULT_TRANSLATION_BATCH_CHARS = max(1, min(MAX_TRANSLATION_BATCH_CHARS, int(MT_BATCH_MAX_CHARS)))
 logger = logging.getLogger(__name__)
+
+if _REQUESTED_MT_MODEL.lower() != FORCED_MT_MODEL:
+    logger.warning("[DEBUG] qwen_mt.model_forced requested=%s forced=%s", _REQUESTED_MT_MODEL, FORCED_MT_MODEL)
 
 _REQUEST_LOCK = threading.Lock()
 _LAST_REQUEST_AT = 0.0
+_BATCH_MAX_CHARS_CTX: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "translation_batch_max_chars",
+    default=DEFAULT_TRANSLATION_BATCH_CHARS,
+)
 
 
 class TranslationError(RuntimeError):
@@ -108,6 +121,33 @@ def _preview_text(text: str, *, limit: int = 96) -> str:
 
 def _preview_batch(items: list[tuple[int, str]]) -> str:
     return _preview_text(" | ".join(text for _, text in items), limit=180)
+
+
+def _normalize_batch_max_chars(value: int | None) -> int:
+    if value is None:
+        candidate = _BATCH_MAX_CHARS_CTX.get()
+    else:
+        candidate = value
+    try:
+        normalized = int(candidate)
+    except Exception:
+        normalized = DEFAULT_TRANSLATION_BATCH_CHARS
+    if normalized <= 0:
+        normalized = DEFAULT_TRANSLATION_BATCH_CHARS
+    return max(1, min(MAX_TRANSLATION_BATCH_CHARS, normalized))
+
+
+def current_translation_batch_max_chars() -> int:
+    return _normalize_batch_max_chars(None)
+
+
+@contextmanager
+def translation_batch_chars_scope(max_chars: int | None) -> Iterator[int]:
+    token = _BATCH_MAX_CHARS_CTX.set(_normalize_batch_max_chars(max_chars))
+    try:
+        yield current_translation_batch_max_chars()
+    finally:
+        _BATCH_MAX_CHARS_CTX.reset(token)
 
 
 def _respect_min_request_interval() -> None:
@@ -259,13 +299,12 @@ def _build_sentence_batches(items: list[tuple[int, str]]) -> list[list[tuple[int
     batches: list[list[tuple[int, str]]] = []
     current_batch: list[tuple[int, str]] = []
     current_chars = 0
+    max_chars = current_translation_batch_max_chars()
 
     for item in items:
         sentence_text = item[1]
         sentence_chars = max(1, len(sentence_text))
-        should_flush = bool(current_batch) and (
-            len(current_batch) >= MT_BATCH_MAX_SENTENCES or current_chars + sentence_chars > MT_BATCH_MAX_CHARS
-        )
+        should_flush = bool(current_batch) and (current_chars + sentence_chars > max_chars)
         if should_flush:
             batches.append(current_batch)
             current_batch = []
@@ -299,13 +338,7 @@ def _request_batch_translation(
         try:
             completion = client.chat.completions.create(
                 model=MT_MODEL,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a subtitle translation engine. Return JSON arrays only.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
+                messages=[{"role": "user", "content": prompt}],
                 temperature=0,
                 timeout=MT_TIMEOUT_SECONDS,
             )
@@ -519,8 +552,27 @@ def translate_sentences_to_zh(
     records: list[TranslationAttemptRecord] = []
     failed = 0
     latest_error_summary = ""
+    batch_max_chars = current_translation_batch_max_chars()
+    logger.info(
+        "[DEBUG] qwen_mt.batch.config model=%s batch_max_chars=%s total_sentences=%s non_empty=%s",
+        MT_MODEL,
+        batch_max_chars,
+        total,
+        len(non_empty_items),
+    )
 
-    for batch in _build_sentence_batches(non_empty_items):
+    batches = _build_sentence_batches(non_empty_items)
+    for batch_no, batch in enumerate(batches, start=1):
+        batch_chars = sum(max(1, len(text)) for _, text in batch)
+        logger.info(
+            "[DEBUG] qwen_mt.batch.dispatch batch_no=%s sentence_idx=%s size=%s chars=%s limit=%s",
+            batch_no,
+            batch[0][0] if batch else -1,
+            len(batch),
+            batch_chars,
+            batch_max_chars,
+        )
+
         batch_result = _translate_batch_recursive(batch, api_key=api_key)
         records.extend(batch_result.attempt_records)
         failed += batch_result.failed_count
