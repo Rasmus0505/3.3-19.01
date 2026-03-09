@@ -356,7 +356,13 @@ export function LessonList({
                         <Play className="size-4" />
                         {actionLabel}
                       </Button>
-                      <Popover open={menuLessonId === lesson.id} onOpenChange={(open) => setMenuLessonId(open ? lesson.id : null)}>
+                      <Popover
+                        open={menuLessonId === lesson.id}
+                        onOpenChange={(open) => {
+                          console.debug("[DEBUG] history.lesson.menu.toggle", { lessonId: lesson.id, open });
+                          setMenuLessonId(open ? lesson.id : null);
+                        }}
+                      >
                         <PopoverTrigger asChild>
                           <Button
                             type="button"
@@ -364,6 +370,9 @@ export function LessonList({
                             variant="outline"
                             className="self-end"
                             aria-label="open-lesson-menu"
+                            onClick={() => {
+                              console.debug("[DEBUG] history.lesson.menu.click", { lessonId: lesson.id });
+                            }}
                             disabled={renameBusy || deleteBusy || subtitleBusy || Boolean(restoringLessonId)}
                           >
                             <MoreVertical className="size-4" />
