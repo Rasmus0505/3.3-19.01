@@ -1,0 +1,138 @@
+import { Suspense, lazy } from "react";
+
+import { AuthPanel } from "../../features/auth/AuthPanel";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui";
+import { REFRESH_KEY, TOKEN_KEY } from "../authStorage";
+
+const ImmersiveLessonPage = lazy(() =>
+  import("../../features/immersive/ImmersiveLessonPage").then((module) => ({ default: module.ImmersiveLessonPage })),
+);
+const LessonList = lazy(() => import("../../features/lessons/LessonList").then((module) => ({ default: module.LessonList })));
+const UploadPanel = lazy(() => import("../../features/upload/UploadPanel").then((module) => ({ default: module.UploadPanel })));
+const RedeemCodePanel = lazy(() => import("../../features/wallet/RedeemCodePanel").then((module) => ({ default: module.RedeemCodePanel })));
+
+function PanelFallback() {
+  return <div className="rounded-2xl border bg-card p-4 text-sm text-muted-foreground">内容加载中...</div>;
+}
+
+export function LearningShellPanelContent({
+  activePanel,
+  accessToken,
+  currentLesson,
+  immersiveLayoutActive,
+  mediaRestoreTick,
+  globalStatus,
+  onAuthed,
+  onProgressSynced,
+  onExitImmersive,
+  onStartImmersive,
+  lessons,
+  currentLessonNeedsBinding,
+  lessonCardMetaMap,
+  lessonMediaMetaMap,
+  subtitleCacheMetaMap,
+  subtitleRegenerateState,
+  loadingLessons,
+  hasMoreLessons,
+  loadingMoreLessons,
+  onLoadMoreLessons,
+  onSelectLesson,
+  onStartLesson,
+  onRenameLesson,
+  onDeleteLesson,
+  onRestoreLessonMedia,
+  onRegenerateSubtitles,
+  onSwitchToUpload,
+  walletBalance,
+  billingRates,
+  subtitleSettings,
+  onCreatedLesson,
+  onWalletChanged,
+  onTaskStateChange,
+  onNavigateToGeneratedLesson,
+  apiCall,
+}) {
+  const contentAlert = globalStatus ? (
+    <Alert variant="destructive">
+      <AlertTitle>系统消息</AlertTitle>
+      <AlertDescription>{globalStatus}</AlertDescription>
+    </Alert>
+  ) : null;
+
+  if (immersiveLayoutActive) {
+    return (
+      <section className="min-w-0 space-y-4">
+        {contentAlert}
+        <Suspense fallback={<PanelFallback />}>
+          <ImmersiveLessonPage
+            lesson={currentLesson}
+            accessToken={accessToken}
+            apiClient={apiCall}
+            onProgressSynced={onProgressSynced}
+            immersiveActive={immersiveLayoutActive}
+            onExitImmersive={onExitImmersive}
+            onStartImmersive={onStartImmersive}
+            externalMediaReloadToken={mediaRestoreTick}
+          />
+        </Suspense>
+      </section>
+    );
+  }
+
+  return (
+    <section className="min-w-0 space-y-4">
+      {contentAlert}
+      {!accessToken ? (
+        <div className="mx-auto max-w-md">
+          <AuthPanel onAuthed={onAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
+        </div>
+      ) : (
+        <>
+          <div className={activePanel === "history" ? "block" : "hidden"}>
+            <Suspense fallback={<PanelFallback />}>
+              <LessonList
+                lessons={lessons}
+                currentLessonId={currentLesson?.id}
+                currentLessonNeedsBinding={currentLessonNeedsBinding}
+                lessonCardMetaMap={lessonCardMetaMap}
+                lessonMediaMetaMap={lessonMediaMetaMap}
+                subtitleCacheMetaMap={subtitleCacheMetaMap}
+                subtitleRegenerateState={subtitleRegenerateState}
+                onSelect={onSelectLesson}
+                onStartLesson={onStartLesson}
+                onRename={onRenameLesson}
+                onDelete={onDeleteLesson}
+                onRestoreMedia={onRestoreLessonMedia}
+                onRegenerateSubtitles={onRegenerateSubtitles}
+                onSwitchToUpload={onSwitchToUpload}
+                loading={loadingLessons}
+                hasMore={hasMoreLessons}
+                loadingMore={loadingMoreLessons}
+                onLoadMore={onLoadMoreLessons}
+              />
+            </Suspense>
+          </div>
+          <div className={activePanel === "upload" ? "block" : "hidden"}>
+            <Suspense fallback={<PanelFallback />}>
+              <UploadPanel
+                accessToken={accessToken}
+                onCreated={onCreatedLesson}
+                balancePoints={walletBalance}
+                billingRates={billingRates}
+                subtitleSettings={subtitleSettings}
+                onWalletChanged={onWalletChanged}
+                onTaskStateChange={onTaskStateChange}
+                onNavigateToLesson={onNavigateToGeneratedLesson}
+              />
+            </Suspense>
+          </div>
+          <div className={activePanel === "redeem" ? "block" : "hidden"}>
+            <Suspense fallback={<PanelFallback />}>
+              <RedeemCodePanel apiCall={apiCall} onWalletChanged={onWalletChanged} />
+            </Suspense>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
