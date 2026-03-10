@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from datetime import timedelta
 from pathlib import Path
+from typing import Callable
 from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.timezone import now_shanghai_naive
 from app.db import SessionLocal
@@ -62,6 +64,20 @@ def _infer_resume_stage(stages: list[dict]) -> str:
     return ""
 
 
+SessionFactory = Callable[[], Session]
+
+
+def _session_scope(
+    *,
+    db: Session | None = None,
+    session_factory: SessionFactory | None = None,
+) -> tuple[Session, bool]:
+    if db is not None:
+        return db, False
+    factory = session_factory or SessionLocal
+    return factory(), True
+
+
 def _task_to_dict(task: LessonGenerationTask) -> dict:
     return {
         "task_id": task.task_id,
@@ -92,8 +108,8 @@ def build_task_id() -> str:
     return f"lesson_task_{uuid4().hex}"
 
 
-def cleanup_expired_tasks() -> None:
-    session = SessionLocal()
+def cleanup_expired_tasks(*, db: Session | None = None, session_factory: SessionFactory | None = None) -> None:
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
         now = now_shanghai_naive()
         items = session.scalars(
@@ -116,7 +132,8 @@ def cleanup_expired_tasks() -> None:
         if changed:
             session.commit()
     finally:
-        session.close()
+        if owns_session:
+            session.close()
 
 
 def create_task(
@@ -128,9 +145,11 @@ def create_task(
     semantic_split_enabled: bool | None,
     work_dir: str,
     source_path: str,
+    db: Session | None = None,
+    session_factory: SessionFactory | None = None,
 ) -> str:
-    cleanup_expired_tasks()
-    session = SessionLocal()
+    cleanup_expired_tasks(db=db, session_factory=session_factory)
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
         task = LessonGenerationTask(
             task_id=task_id,
@@ -160,17 +179,19 @@ def create_task(
         session.commit()
         return task_id
     finally:
-        session.close()
+        if owns_session:
+            session.close()
 
 
-def get_task(task_id: str) -> dict | None:
-    cleanup_expired_tasks()
-    session = SessionLocal()
+def get_task(task_id: str, *, db: Session | None = None, session_factory: SessionFactory | None = None) -> dict | None:
+    cleanup_expired_tasks(db=db, session_factory=session_factory)
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         return _task_to_dict(task) if task else None
     finally:
-        session.close()
+        if owns_session:
+            session.close()
 
 
 def update_task_progress(
@@ -183,8 +204,10 @@ def update_task_progress(
     counters: dict | None = None,
     translation_debug: dict | None = None,
     artifacts_patch: dict | None = None,
+    db: Session | None = None,
+    session_factory: SessionFactory | None = None,
 ) -> None:
-    session = SessionLocal()
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         if not task:
@@ -218,13 +241,20 @@ def update_task_progress(
         task.artifact_expires_at = None
         session.commit()
     finally:
-        session.close()
+        if owns_session:
+            session.close()
 
 
-def patch_task_artifacts(task_id: str, artifacts_patch: dict) -> None:
+def patch_task_artifacts(
+    task_id: str,
+    artifacts_patch: dict,
+    *,
+    db: Session | None = None,
+    session_factory: SessionFactory | None = None,
+) -> None:
     if not artifacts_patch:
         return
-    session = SessionLocal()
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         if not task:
@@ -234,11 +264,19 @@ def patch_task_artifacts(task_id: str, artifacts_patch: dict) -> None:
         task.artifacts_json = merged_artifacts
         session.commit()
     finally:
-        session.close()
+        if owns_session:
+            session.close()
 
 
-def mark_task_failed(task_id: str, *, error_code: str, message: str) -> None:
-    session = SessionLocal()
+def mark_task_failed(
+    task_id: str,
+    *,
+    error_code: str,
+    message: str,
+    db: Session | None = None,
+    session_factory: SessionFactory | None = None,
+) -> None:
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         if not task:
@@ -247,7 +285,7 @@ def mark_task_failed(task_id: str, *, error_code: str, message: str) -> None:
         running_stage = next((item for item in stages if item.get("status") == "running"), None)
         if running_stage:
             running_stage["status"] = "failed"
-        resume_stage = _infer_resume_stage(stages)
+        resume_stage = str(running_stage.get("key") or "") if running_stage else _infer_resume_stage(stages)
         task.stages_json = stages
         task.status = "failed"
         task.error_code = error_code
@@ -258,7 +296,8 @@ def mark_task_failed(task_id: str, *, error_code: str, message: str) -> None:
         task.artifact_expires_at = now_shanghai_naive() + timedelta(hours=FAILURE_RETENTION_HOURS)
         session.commit()
     finally:
-        session.close()
+        if owns_session:
+            session.close()
 
 
 def mark_task_succeeded(
@@ -266,8 +305,10 @@ def mark_task_succeeded(
     *,
     lesson_id: int,
     subtitle_cache_seed: dict | None = None,
+    db: Session | None = None,
+    session_factory: SessionFactory | None = None,
 ) -> None:
-    session = SessionLocal()
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         if not task:
@@ -286,12 +327,18 @@ def mark_task_succeeded(
         task.artifact_expires_at = now_shanghai_naive()
         session.commit()
     finally:
-        session.close()
+        if owns_session:
+            session.close()
 
 
-def reset_task_for_resume(task_id: str) -> dict | None:
-    cleanup_expired_tasks()
-    session = SessionLocal()
+def reset_task_for_resume(
+    task_id: str,
+    *,
+    db: Session | None = None,
+    session_factory: SessionFactory | None = None,
+) -> dict | None:
+    cleanup_expired_tasks(db=db, session_factory=session_factory)
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         if not task or not task.resume_available:
@@ -317,4 +364,5 @@ def reset_task_for_resume(task_id: str) -> dict | None:
         session.refresh(task)
         return _task_to_dict(task)
     finally:
-        session.close()
+        if owns_session:
+            session.close()

@@ -22,3 +22,4 @@ export { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/ta
 export { Textarea } from "../../components/ui/textarea";
 export { Toaster } from "../../components/ui/sonner";
 export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
+export { MediaCover } from "./MediaCover";

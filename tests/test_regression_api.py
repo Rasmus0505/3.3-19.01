@@ -383,7 +383,7 @@ def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
     finally:
         verify_engine.dispose()
 
-    assert version == "20260310_0011"
+    assert version == "20260310_0012"
     assert subtitle_row is not None
     assert int(subtitle_row["id"]) == 1
     assert bool(subtitle_row["subtitle_split_enabled"]) is True
@@ -419,6 +419,106 @@ def test_health_ready_endpoint(test_client):
     data = resp.json()
     assert data["ok"] is True
     assert data["status"]["db_ready"] is True
+
+
+def test_lesson_task_resume_reuses_failed_task_artifacts(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="resume-task@example.com")
+
+    from app.api.routers import lessons as lessons_router
+
+    import threading as py_threading
+
+    class ImmediateThread(py_threading.Thread):
+        def start(self):
+            if getattr(self, "_target", None) is lessons_router._run_lesson_generation_task:
+                self.run()
+                return
+            super().start()
+
+    attempts = {"count": 0}
+
+    def fake_generate_from_saved_file(*, source_path, source_filename, req_dir, owner_id, asr_model, db, progress_callback=None, task_id=None, semantic_split_enabled=None):
+        attempts["count"] += 1
+        progress_callback(
+            {
+                "stage_key": "convert_audio",
+                "stage_status": "completed",
+                "overall_percent": 20,
+                "current_text": "转换音频格式完成",
+                "counters": {"asr_done": 0, "asr_estimated": 0, "translate_done": 0, "translate_total": 0, "segment_done": 0, "segment_total": 0},
+            }
+        )
+        if attempts["count"] == 1:
+            (req_dir / "lesson_input.opus").write_bytes(b"opus")
+            (req_dir / "asr_result.json").write_text(json.dumps({"asr_payload": {"transcripts": []}, "usage_seconds": 1, "progress_counters": {"asr_done": 2, "asr_estimated": 2, "segment_done": 2, "segment_total": 2}}, ensure_ascii=False), encoding="utf-8")
+            progress_callback(
+                {
+                    "stage_key": "translate_zh",
+                    "stage_status": "running",
+                    "overall_percent": 72,
+                    "current_text": "翻译字幕 1/2",
+                    "counters": {"asr_done": 2, "asr_estimated": 2, "translate_done": 1, "translate_total": 2, "segment_done": 2, "segment_total": 2},
+                }
+            )
+            raise RuntimeError("translate failed")
+
+        lesson = Lesson(
+            user_id=owner_id,
+            title=Path(source_filename).stem,
+            source_filename=source_filename,
+            asr_model=asr_model,
+            duration_ms=1000,
+            media_storage="client_indexeddb",
+            source_duration_ms=1000,
+            status="ready",
+        )
+        db.add(lesson)
+        db.flush()
+        db.add(LessonSentence(lesson_id=lesson.id, idx=0, begin_ms=0, end_ms=1000, text_en="hello", text_zh="你好", tokens_json=["hello"], audio_clip_path=None))
+        db.add(LessonProgress(lesson_id=lesson.id, user_id=owner_id, current_sentence_idx=0, completed_indexes_json=[], last_played_at_ms=0))
+        db.commit()
+        lesson.subtitle_cache_seed = {
+            "semantic_split_enabled": False,
+            "split_mode": "asr_sentences",
+            "source_word_count": 1,
+            "strategy_version": 2,
+            "asr_payload": {"transcripts": []},
+            "sentences": [{"idx": 0, "begin_ms": 0, "end_ms": 1000, "text_en": "hello", "text_zh": "你好", "tokens": ["hello"], "audio_url": None}],
+        }
+        return lesson
+
+    monkeypatch.setattr(lessons_router.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(lessons_router.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+
+    create_resp = client.post(
+        "/api/lessons/tasks",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"video_file": ("resume.mp4", io.BytesIO(b"video"), "video/mp4")},
+        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+    )
+    assert create_resp.status_code == 200
+    task_id = create_resp.json()["task_id"]
+
+    failed_task = client.get(f"/api/lessons/tasks/{task_id}", headers={"Authorization": f"Bearer {token}"})
+    assert failed_task.status_code == 200
+    failed_payload = failed_task.json()
+    assert failed_payload["status"] == "failed"
+    assert failed_payload["resume_available"] is True
+    assert failed_payload["resume_stage"] == "translate_zh"
+    assert failed_payload["artifact_expires_at"]
+
+    resume_resp = client.post(f"/api/lessons/tasks/{task_id}/resume", headers={"Authorization": f"Bearer {token}"})
+    assert resume_resp.status_code == 200
+    assert resume_resp.json()["ok"] is True
+
+    succeeded_task = client.get(f"/api/lessons/tasks/{task_id}", headers={"Authorization": f"Bearer {token}"})
+    assert succeeded_task.status_code == 200
+    success_payload = succeeded_task.json()
+    assert success_payload["status"] == "succeeded"
+    assert success_payload["resume_available"] is False
+    assert success_payload["lesson"]["title"] == "resume"
+    assert attempts["count"] == 2
 
 
 def test_startup_without_dashscope_key_keeps_health_alive(monkeypatch, tmp_path):

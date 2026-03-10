@@ -102,6 +102,7 @@ function getDefaultMediaPreview(lessonId) {
     hasMedia: false,
     mediaType: "",
     coverDataUrl: "",
+    aspectRatio: 0,
     fileName: "",
   };
 }
@@ -153,6 +154,7 @@ function buildCreatedLessonMediaPreview(lesson, mediaPreview, mediaPersisted) {
     hasMedia: Boolean(mediaPersisted && (mediaPreview?.hasMedia ?? true)),
     mediaType: String(mediaPreview?.mediaType || ""),
     coverDataUrl: String(mediaPreview?.coverDataUrl || ""),
+    aspectRatio: Number(mediaPreview?.aspectRatio || 0),
     fileName: String(mediaPreview?.fileName || lesson?.source_filename || ""),
   };
 }
@@ -179,6 +181,7 @@ export function LearningShell() {
   const [lessonMediaMetaMap, setLessonMediaMetaMap] = useState({});
   const [subtitleCacheMetaMap, setSubtitleCacheMetaMap] = useState({});
   const [subtitleRegenerateState, setSubtitleRegenerateState] = useState(null);
+  const [uploadTaskState, setUploadTaskState] = useState(null);
 
   const immersiveLayoutActive = Boolean(accessToken && currentLesson?.id && immersiveActive);
 
@@ -564,6 +567,7 @@ export function LearningShell() {
     setAccessToken(localStorage.getItem(TOKEN_KEY) || "");
     setGlobalStatus("");
     setActivePanel("history");
+    setUploadTaskState(null);
   }
 
   function handlePanelChange(nextPanel) {
@@ -589,6 +593,7 @@ export function LearningShell() {
     setLessonMediaMetaMap({});
     setSubtitleCacheMetaMap({});
     setSubtitleRegenerateState(null);
+    setUploadTaskState(null);
   }
 
   function handleExitImmersive() {
@@ -606,7 +611,6 @@ export function LearningShell() {
     const shouldAutoEnterImmersive = lesson.media_storage !== "client_indexeddb" || mediaPersisted;
     const mediaPreview = buildCreatedLessonMediaPreview(lesson, payload?.mediaPreview, mediaPersisted);
 
-    setActivePanel("history");
     setLessonMediaMetaMap((prev) => ({
       ...prev,
       [lessonId]: mediaPreview,
@@ -638,6 +642,12 @@ export function LearningShell() {
   }
 
   async function handleStartLesson(lessonId) {
+    if (!lessonId) return;
+    setActivePanel("history");
+    await loadLessonDetail(lessonId, { autoEnterImmersive: true });
+  }
+
+  async function handleNavigateToGeneratedLesson(lessonId) {
     if (!lessonId) return;
     setActivePanel("history");
     await loadLessonDetail(lessonId, { autoEnterImmersive: true });
@@ -1172,44 +1182,81 @@ export function LearningShell() {
                   <div className="mx-auto max-w-md">
                     <AuthPanel onAuthed={handleAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
                   </div>
-                ) : activePanel === "history" ? (
-                    <LessonList
-                      lessons={lessons}
-                      currentLessonId={currentLesson?.id}
-                      currentLessonNeedsBinding={currentLessonNeedsBinding}
-                      lessonCardMetaMap={lessonCardMetaMap}
-                      lessonMediaMetaMap={lessonMediaMetaMap}
-                      subtitleCacheMetaMap={subtitleCacheMetaMap}
-                      subtitleRegenerateState={subtitleRegenerateState}
-                      onSelect={(lessonId) => loadLessonDetail(lessonId, { autoEnterImmersive: false })}
-                      onStartLesson={handleStartLesson}
-                      onRename={handleRenameLesson}
-                    onDelete={handleDeleteLesson}
-                    onRestoreMedia={handleRestoreLessonMedia}
-                    onRegenerateSubtitles={handleRegenerateSubtitles}
-                    onSwitchToUpload={() => handlePanelChange("upload")}
-                    loading={loadingLessons}
-                  />
-                ) : activePanel === "upload" ? (
-                  <UploadPanel
-                    accessToken={accessToken}
-                    onCreated={handleLessonCreated}
-                    balancePoints={walletBalance}
-                    billingRates={billingRates}
-                    subtitleSettings={subtitleSettings}
-                    onWalletChanged={loadWallet}
-                  />
                 ) : (
-                  <RedeemCodePanel
-                    apiCall={(path, options = {}) => api(path, options, accessToken)}
-                    onWalletChanged={loadWallet}
-                  />
+                  <>
+                    <div className={activePanel === "history" ? "block" : "hidden"}>
+                      <LessonList
+                        lessons={lessons}
+                        currentLessonId={currentLesson?.id}
+                        currentLessonNeedsBinding={currentLessonNeedsBinding}
+                        lessonCardMetaMap={lessonCardMetaMap}
+                        lessonMediaMetaMap={lessonMediaMetaMap}
+                        subtitleCacheMetaMap={subtitleCacheMetaMap}
+                        subtitleRegenerateState={subtitleRegenerateState}
+                        onSelect={(lessonId) => loadLessonDetail(lessonId, { autoEnterImmersive: false })}
+                        onStartLesson={handleStartLesson}
+                        onRename={handleRenameLesson}
+                        onDelete={handleDeleteLesson}
+                        onRestoreMedia={handleRestoreLessonMedia}
+                        onRegenerateSubtitles={handleRegenerateSubtitles}
+                        onSwitchToUpload={() => handlePanelChange("upload")}
+                        loading={loadingLessons}
+                      />
+                    </div>
+                    <div className={activePanel === "upload" ? "block" : "hidden"}>
+                      <UploadPanel
+                        accessToken={accessToken}
+                        onCreated={handleLessonCreated}
+                        balancePoints={walletBalance}
+                        billingRates={billingRates}
+                        subtitleSettings={subtitleSettings}
+                        onWalletChanged={loadWallet}
+                        onTaskStateChange={setUploadTaskState}
+                        onNavigateToLesson={handleNavigateToGeneratedLesson}
+                      />
+                    </div>
+                    <div className={activePanel === "redeem" ? "block" : "hidden"}>
+                      <RedeemCodePanel
+                        apiCall={(path, options = {}) => api(path, options, accessToken)}
+                        onWalletChanged={loadWallet}
+                      />
+                    </div>
+                  </>
                 )}
               </section>
             </div>
           )}
         </div>
       </main>
+
+      {accessToken && activePanel !== "upload" && uploadTaskState ? (
+        <div className="fixed bottom-5 right-5 z-50 w-[min(360px,calc(100vw-24px))]">
+          <button
+            type="button"
+            className="w-full rounded-3xl border bg-background/95 p-4 text-left shadow-lg backdrop-blur transition hover:border-primary/40"
+            onClick={() => handlePanelChange("upload")}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold">{uploadTaskState.headline}</p>
+                <p className="text-xs text-muted-foreground">
+                  {uploadTaskState.phase === "success"
+                    ? "生成完成，点此回到生成页"
+                    : uploadTaskState.phase === "error"
+                      ? uploadTaskState.resumeAvailable
+                        ? "生成失败，可继续生成"
+                        : "生成失败，点此查看详情"
+                      : "生成中，点此回到生成页"}
+                </p>
+              </div>
+              <span className="text-sm font-semibold tabular-nums text-muted-foreground">{uploadTaskState.progressPercent}%</span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${uploadTaskState.progressPercent}%` }} />
+            </div>
+          </button>
+        </div>
+      ) : null}
 
       <CommandDialog
         open={commandOpen}

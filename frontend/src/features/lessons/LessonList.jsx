@@ -1,4 +1,4 @@
-import { Clock3, History, ImageIcon, MoreVertical, Pencil, Play, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { Clock3, History, MoreVertical, Pencil, Play, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "../../lib/utils";
@@ -30,6 +30,7 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  MediaCover,
   Progress,
   Skeleton,
 } from "../../shared/ui";
@@ -310,16 +311,12 @@ export function LessonList({
                       className="flex min-w-0 flex-1 items-stretch gap-4 text-left"
                       onClick={() => onSelect?.(lesson.id)}
                     >
-                      <div className="flex h-28 w-full shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-700 text-2xl font-semibold text-white md:w-44">
-                        {mediaMeta.coverDataUrl ? (
-                          <img src={mediaMeta.coverDataUrl} alt={`${lesson.title} 封面`} className="h-full w-full object-cover" />
-                        ) : (
-                          <>
-                            <ImageIcon className="size-9 text-white/90" aria-hidden="true" />
-                            <span className="sr-only">{getCoverAssistiveText(lesson)}</span>
-                          </>
-                        )}
-                      </div>
+                      <MediaCover
+                        coverDataUrl={mediaMeta.coverDataUrl}
+                        alt={getCoverAssistiveText(lesson)}
+                        aspectRatio={mediaMeta.aspectRatio}
+                        className="shrink-0 md:w-44"
+                      />
 
                       <div className="flex min-w-0 flex-1 flex-col justify-between gap-3">
                         <div className="space-y-2">
