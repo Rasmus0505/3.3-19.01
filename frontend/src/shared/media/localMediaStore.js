@@ -49,6 +49,15 @@ function isVideoMediaType(mediaType) {
   return String(mediaType || "").toLowerCase().startsWith("video/");
 }
 
+function normalizeAspectRatio(width, height) {
+  const safeWidth = Number(width || 0);
+  const safeHeight = Number(height || 0);
+  if (safeWidth <= 0 || safeHeight <= 0) {
+    return 0;
+  }
+  return Number((safeWidth / safeHeight).toFixed(4));
+}
+
 function waitForAnimationFrame(frameCount = 1) {
   return new Promise((resolve) => {
     const raf =
@@ -245,6 +254,8 @@ async function captureVideoFrame(video, timeSec, { seek = false } = {}) {
   return {
     dataUrl: canvasToDataUrl(canvas),
     nearlyBlack: isCanvasNearlyBlack(canvas),
+    width: Math.max(1, Number(video.videoWidth || 0)),
+    height: Math.max(1, Number(video.videoHeight || 0)),
   };
 }
 
@@ -310,11 +321,11 @@ export function readMediaDurationSeconds(blob, fallbackFileName = "") {
   });
 }
 
-export function extractMediaCoverDataUrl(blob, fallbackFileName = "") {
+export function extractMediaCoverPreview(blob, fallbackFileName = "") {
   return new Promise((resolve) => {
     const mediaType = String(blob?.type || inferMediaTypeFromFileName(fallbackFileName));
     if (!isVideoMediaType(mediaType)) {
-      resolve("");
+      resolve({ coverDataUrl: "", width: 0, height: 0, aspectRatio: 0 });
       return;
     }
 
@@ -344,6 +355,8 @@ export function extractMediaCoverDataUrl(blob, fallbackFileName = "") {
         const sampleTimes = getCoverSampleTimes(video.duration);
         let fallbackDataUrl = "";
         let dataUrl = "";
+        let width = Math.max(0, Number(video.videoWidth || 0));
+        let height = Math.max(0, Number(video.videoHeight || 0));
 
         for (const [index, timeSec] of sampleTimes.entries()) {
           try {
@@ -352,6 +365,8 @@ export function extractMediaCoverDataUrl(blob, fallbackFileName = "") {
               continue;
             }
             fallbackDataUrl = candidate.dataUrl;
+            width = Math.max(width, Number(candidate.width || 0));
+            height = Math.max(height, Number(candidate.height || 0));
             if (!candidate.nearlyBlack) {
               dataUrl = candidate.dataUrl;
               break;
@@ -366,13 +381,22 @@ export function extractMediaCoverDataUrl(blob, fallbackFileName = "") {
         }
 
         cleanup();
-        resolve(dataUrl);
+        resolve({
+          coverDataUrl: dataUrl,
+          width,
+          height,
+          aspectRatio: normalizeAspectRatio(width, height),
+        });
       } catch (_) {
         cleanup();
-        resolve("");
+        resolve({ coverDataUrl: "", width: 0, height: 0, aspectRatio: 0 });
       }
     })();
   });
+}
+
+export function extractMediaCoverDataUrl(blob, fallbackFileName = "") {
+  return extractMediaCoverPreview(blob, fallbackFileName).then((payload) => String(payload?.coverDataUrl || ""));
 }
 
 export async function saveLessonMedia(lessonId, file, options = {}) {
@@ -383,8 +407,14 @@ export async function saveLessonMedia(lessonId, file, options = {}) {
 
   let durationSeconds = 0;
   let coverDataUrl = "";
+  let coverWidth = 0;
+  let coverHeight = 0;
+  let coverAspectRatio = 0;
   const mediaType = String(file.type || inferMediaTypeFromFileName(file.name || ""));
   const providedCoverDataUrl = isVideoMediaType(mediaType) ? String(options?.coverDataUrl || "") : "";
+  const providedCoverWidth = Number(options?.coverWidth || 0);
+  const providedCoverHeight = Number(options?.coverHeight || 0);
+  const providedAspectRatio = Number(options?.aspectRatio || 0);
 
   try {
     durationSeconds = await readMediaDurationSeconds(file, file.name || "");
@@ -394,11 +424,21 @@ export async function saveLessonMedia(lessonId, file, options = {}) {
 
   if (providedCoverDataUrl) {
     coverDataUrl = providedCoverDataUrl;
+    coverWidth = providedCoverWidth;
+    coverHeight = providedCoverHeight;
+    coverAspectRatio = providedAspectRatio || normalizeAspectRatio(providedCoverWidth, providedCoverHeight);
   } else {
     try {
-      coverDataUrl = await extractMediaCoverDataUrl(file, file.name || "");
+      const preview = await extractMediaCoverPreview(file, file.name || "");
+      coverDataUrl = preview.coverDataUrl;
+      coverWidth = preview.width;
+      coverHeight = preview.height;
+      coverAspectRatio = preview.aspectRatio;
     } catch (_) {
       coverDataUrl = "";
+      coverWidth = 0;
+      coverHeight = 0;
+      coverAspectRatio = 0;
     }
   }
 
@@ -409,6 +449,9 @@ export async function saveLessonMedia(lessonId, file, options = {}) {
     size_bytes: Number(file.size || 0),
     duration_seconds: durationSeconds,
     cover_data_url: coverDataUrl,
+    cover_width: coverWidth,
+    cover_height: coverHeight,
+    cover_aspect_ratio: coverAspectRatio,
     cover_capture_version: coverDataUrl && isVideoMediaType(mediaType) ? COVER_CAPTURE_VERSION : 0,
     updated_at: Date.now(),
     blob: file,
@@ -431,7 +474,7 @@ export async function getLessonMediaPreview(lessonId) {
   const normalizedLessonId = normalizeLessonId(lessonId);
   const media = await getLessonMedia(normalizedLessonId);
   if (!media) {
-    return { lessonId: normalizedLessonId, hasMedia: false, mediaType: "", coverDataUrl: "", fileName: "" };
+    return { lessonId: normalizedLessonId, hasMedia: false, mediaType: "", coverDataUrl: "", aspectRatio: 0, fileName: "" };
   }
 
   const mediaType = String(media.media_type || inferMediaTypeFromFileName(media.file_name || ""));
@@ -465,6 +508,7 @@ export async function getLessonMediaPreview(lessonId) {
     hasMedia: true,
     mediaType,
     coverDataUrl,
+    aspectRatio: Number(media.cover_aspect_ratio || 0) || normalizeAspectRatio(media.cover_width, media.cover_height),
     fileName: String(media.file_name || ""),
   };
 }
