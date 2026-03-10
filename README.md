@@ -294,7 +294,8 @@ VALUES
 ON CONFLICT (model_name) DO NOTHING;
 
 DELETE FROM app.billing_model_rates
-WHERE model_name IN ('qwen-mt-plus', 'qwen-mt-lite', 'qwen-mt-turbo');
+WHERE model_name LIKE 'qwen-mt-%'
+  AND model_name <> 'qwen-mt-flash';
 ```
 
 ### 补库后怎么验证

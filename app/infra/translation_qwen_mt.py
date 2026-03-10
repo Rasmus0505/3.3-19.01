@@ -614,7 +614,7 @@ def split_sentence_by_semantic(
     text: str,
     *,
     api_key: str,
-    model: str,
+    model: str | None = None,
     timeout_seconds: int,
 ) -> list[str]:
     normalized = (text or "").strip()
@@ -632,8 +632,9 @@ def split_sentence_by_semantic(
         f"Sentence: {normalized}"
     )
     try:
+        requested_model = (model or "").strip() or MT_MODEL
         completion = client.chat.completions.create(
-            model=(model or "").strip() or MT_MODEL,
+            model=requested_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
             timeout=max(1, int(timeout_seconds)),

@@ -138,7 +138,6 @@ def _subtitle_settings_item_from_dict(
         subtitle_split_target_words=int(payload.get("subtitle_split_target_words", 18) or 18),
         subtitle_split_max_words=int(payload.get("subtitle_split_max_words", 28) or 28),
         semantic_split_max_words_threshold=int(payload.get("semantic_split_max_words_threshold", 24) or 24),
-        semantic_split_model=str(payload.get("semantic_split_model", "qwen-plus") or "qwen-plus"),
         semantic_split_timeout_seconds=int(payload.get("semantic_split_timeout_seconds", 40) or 40),
         translation_batch_max_chars=max(1, min(12000, int(payload.get("translation_batch_max_chars", 2600) or 2600))),
         updated_at=to_shanghai_aware(updated_at),
@@ -539,7 +538,6 @@ def admin_update_subtitle_settings(
     settings.subtitle_split_target_words = payload.subtitle_split_target_words
     settings.subtitle_split_max_words = payload.subtitle_split_max_words
     settings.semantic_split_max_words_threshold = payload.semantic_split_max_words_threshold
-    settings.semantic_split_model = payload.semantic_split_model.strip()
     settings.semantic_split_timeout_seconds = payload.semantic_split_timeout_seconds
     if payload.translation_batch_max_chars is not None:
         settings.translation_batch_max_chars = payload.translation_batch_max_chars
@@ -582,7 +580,6 @@ def admin_rollback_subtitle_settings_last(
     settings.subtitle_split_target_words = previous.subtitle_split_target_words
     settings.subtitle_split_max_words = previous.subtitle_split_max_words
     settings.semantic_split_max_words_threshold = previous.semantic_split_max_words_threshold
-    settings.semantic_split_model = previous.semantic_split_model.strip()
     settings.semantic_split_timeout_seconds = previous.semantic_split_timeout_seconds
     settings.translation_batch_max_chars = previous.translation_batch_max_chars
     settings.updated_by_user_id = current_admin.id

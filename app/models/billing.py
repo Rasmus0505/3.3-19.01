@@ -103,7 +103,6 @@ class SubtitleSetting(Base):
     subtitle_split_target_words: Mapped[int] = mapped_column(Integer, default=18, nullable=False)
     subtitle_split_max_words: Mapped[int] = mapped_column(Integer, default=28, nullable=False)
     semantic_split_max_words_threshold: Mapped[int] = mapped_column(Integer, default=24, nullable=False)
-    semantic_split_model: Mapped[str] = mapped_column(String(100), default="qwen-plus", nullable=False)
     semantic_split_timeout_seconds: Mapped[int] = mapped_column(Integer, default=40, nullable=False)
     translation_batch_max_chars: Mapped[int] = mapped_column(Integer, default=2600, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)

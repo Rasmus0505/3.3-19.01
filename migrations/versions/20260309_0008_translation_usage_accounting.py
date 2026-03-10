@@ -21,7 +21,7 @@ branch_labels = None
 depends_on = None
 
 
-MT_MODELS = ("qwen-mt-plus", "qwen-mt-flash", "qwen-mt-lite", "qwen-mt-turbo")
+MT_MODELS = ("qwen-mt-flash",)
 DEFAULT_MT_POINTS_PER_1K_TOKENS = 15
 
 TRANSLATION_LOG_INDEXES = (

@@ -29,7 +29,6 @@ def _default_values() -> dict[str, object]:
         "subtitle_split_target_words": 18,
         "subtitle_split_max_words": 28,
         "semantic_split_max_words_threshold": 24,
-        "semantic_split_model": "qwen-plus",
         "semantic_split_timeout_seconds": 40,
         "translation_batch_max_chars": 2600,
         "updated_at": datetime.utcnow(),
@@ -82,10 +81,10 @@ def _ensure_default_row(schema: str | None) -> None:
                 f"""
                 INSERT INTO {table_name}
                     (id, semantic_split_default_enabled, subtitle_split_enabled, subtitle_split_target_words, subtitle_split_max_words,
-                     semantic_split_max_words_threshold, semantic_split_model, semantic_split_timeout_seconds, translation_batch_max_chars, updated_at, updated_by_user_id)
+                     semantic_split_max_words_threshold, semantic_split_timeout_seconds, translation_batch_max_chars, updated_at, updated_by_user_id)
                 VALUES
                     (:id, :semantic_split_default_enabled, :subtitle_split_enabled, :subtitle_split_target_words, :subtitle_split_max_words,
-                     :semantic_split_max_words_threshold, :semantic_split_model, :semantic_split_timeout_seconds, :translation_batch_max_chars, :updated_at, NULL)
+                     :semantic_split_max_words_threshold, :semantic_split_timeout_seconds, :translation_batch_max_chars, :updated_at, NULL)
                 """
             ),
             _default_values(),
@@ -96,10 +95,10 @@ def _ensure_default_row(schema: str | None) -> None:
                 f"""
                 INSERT INTO {table_name}
                     (id, semantic_split_default_enabled, subtitle_split_enabled, subtitle_split_target_words, subtitle_split_max_words,
-                     semantic_split_max_words_threshold, semantic_split_model, semantic_split_timeout_seconds, updated_at, updated_by_user_id)
+                     semantic_split_max_words_threshold, semantic_split_timeout_seconds, updated_at, updated_by_user_id)
                 VALUES
                     (:id, :semantic_split_default_enabled, :subtitle_split_enabled, :subtitle_split_target_words, :subtitle_split_max_words,
-                     :semantic_split_max_words_threshold, :semantic_split_model, :semantic_split_timeout_seconds, :updated_at, NULL)
+                     :semantic_split_max_words_threshold, :semantic_split_timeout_seconds, :updated_at, NULL)
                 """
             ),
             _default_values(),
@@ -121,7 +120,6 @@ def upgrade() -> None:
             sa.Column("subtitle_split_target_words", sa.Integer(), nullable=False, server_default="18"),
             sa.Column("subtitle_split_max_words", sa.Integer(), nullable=False, server_default="28"),
             sa.Column("semantic_split_max_words_threshold", sa.Integer(), nullable=False, server_default="24"),
-            sa.Column("semantic_split_model", sa.String(length=100), nullable=False, server_default="qwen-plus"),
             sa.Column("semantic_split_timeout_seconds", sa.Integer(), nullable=False, server_default="40"),
             sa.Column("updated_at", sa.DateTime(), nullable=False),
             sa.Column("updated_by_user_id", sa.Integer(), nullable=True),

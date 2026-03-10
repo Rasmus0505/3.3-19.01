@@ -20,6 +20,7 @@ from app.core.logging import setup_logging
 from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, init_db, schema_name_for_url
 from app.services.admin_bootstrap import ensure_admin_users
 from app.services.asr_dashscope import setup_dashscope
+from app.services.billing_service import ensure_default_subtitle_settings
 from app.services.media import get_media_runtime_status
 
 
@@ -65,7 +66,6 @@ READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "subtitle_split_target_words",
         "subtitle_split_max_words",
         "semantic_split_max_words_threshold",
-        "semantic_split_model",
         "semantic_split_timeout_seconds",
         "translation_batch_max_chars",
     ),
@@ -124,6 +124,8 @@ def _ensure_runtime_status(app: FastAPI) -> RuntimeStatus:
 def _probe_database_ready() -> tuple[bool, str]:
     try:
         init_db()
+        with SessionLocal() as db:
+            ensure_default_subtitle_settings(db)
         schema = schema_name_for_url(DATABASE_URL)
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))

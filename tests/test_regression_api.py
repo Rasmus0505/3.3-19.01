@@ -77,6 +77,67 @@ def _parse_sse_events(raw_text: str) -> list[tuple[str, dict]]:
     return events
 
 
+def _recreate_legacy_subtitle_settings(
+    session_factory,
+    *,
+    include_timeout: bool = False,
+    include_batch_chars: bool = False,
+) -> None:
+    extra_columns: list[str] = []
+    insert_columns: list[str] = [
+        "id",
+        "semantic_split_default_enabled",
+        "subtitle_split_enabled",
+        "subtitle_split_target_words",
+        "subtitle_split_max_words",
+        "semantic_split_max_words_threshold",
+        "updated_at",
+        "updated_by_user_id",
+    ]
+    insert_values: list[str] = ["1", "0", "1", "18", "28", "24", "CURRENT_TIMESTAMP", "NULL"]
+
+    if include_timeout:
+        extra_columns.append("semantic_split_timeout_seconds INTEGER NOT NULL DEFAULT 40")
+        insert_columns.insert(6, "semantic_split_timeout_seconds")
+        insert_values.insert(6, "40")
+    if include_batch_chars:
+        extra_columns.append("translation_batch_max_chars INTEGER NOT NULL DEFAULT 2600")
+        insert_columns.insert(7 if include_timeout else 6, "translation_batch_max_chars")
+        insert_values.insert(7 if include_timeout else 6, "2600")
+
+    session = session_factory()
+    try:
+        session.execute(text("DROP TABLE subtitle_settings"))
+        create_sql = """
+            CREATE TABLE subtitle_settings (
+                id INTEGER NOT NULL PRIMARY KEY,
+                semantic_split_default_enabled BOOLEAN NOT NULL DEFAULT 0,
+                subtitle_split_enabled BOOLEAN NOT NULL DEFAULT 1,
+                subtitle_split_target_words INTEGER NOT NULL DEFAULT 18,
+                subtitle_split_max_words INTEGER NOT NULL DEFAULT 28,
+                semantic_split_max_words_threshold INTEGER NOT NULL DEFAULT 24,
+        """
+        if extra_columns:
+            create_sql += "                " + ",\n                ".join(extra_columns) + ",\n"
+        create_sql += """
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_by_user_id INTEGER
+            )
+        """
+        session.execute(text(create_sql))
+        session.execute(
+            text(
+                f"""
+                INSERT INTO subtitle_settings ({", ".join(insert_columns)})
+                VALUES ({", ".join(insert_values)})
+                """
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+
 def test_normalize_learning_english_text_spells_usd_amounts():
     assert normalize_learning_english_text("$40?") == "forty dollars?"
     assert normalize_learning_english_text("It is $1.") == "It is one dollar."
@@ -252,10 +313,44 @@ def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
 
     engine = create_database_engine(database_url)
     try:
-        SubtitleSetting.__table__.create(bind=engine, checkfirst=True)
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE subtitle_settings (
+                        id INTEGER NOT NULL PRIMARY KEY,
+                        semantic_split_default_enabled BOOLEAN NOT NULL DEFAULT 0,
+                        subtitle_split_enabled BOOLEAN NOT NULL DEFAULT 1,
+                        subtitle_split_target_words INTEGER NOT NULL DEFAULT 18,
+                        subtitle_split_max_words INTEGER NOT NULL DEFAULT 28,
+                        semantic_split_max_words_threshold INTEGER NOT NULL DEFAULT 24,
+                        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_by_user_id INTEGER
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO subtitle_settings (
+                        id,
+                        semantic_split_default_enabled,
+                        subtitle_split_enabled,
+                        subtitle_split_target_words,
+                        subtitle_split_max_words,
+                        semantic_split_max_words_threshold,
+                        updated_at,
+                        updated_by_user_id
+                    )
+                    VALUES (1, 0, 1, 18, 28, 24, CURRENT_TIMESTAMP, NULL)
+                    """
+                )
+            )
     finally:
         engine.dispose()
 
+    _upgrade("head")
     _upgrade("head")
 
     verify_engine = create_database_engine(database_url)
@@ -263,8 +358,18 @@ def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
         with verify_engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
             subtitle_row = conn.execute(
-                text("SELECT id, subtitle_split_enabled, translation_batch_max_chars FROM subtitle_settings WHERE id = 1")
+                text(
+                    """
+                    SELECT id, subtitle_split_enabled, semantic_split_timeout_seconds, translation_batch_max_chars
+                    FROM subtitle_settings
+                    WHERE id = 1
+                    """
+                )
             ).mappings().one_or_none()
+            subtitle_columns = {
+                str(row["name"])
+                for row in conn.execute(text("PRAGMA table_info(subtitle_settings)")).mappings().all()
+            }
             mt_models = conn.execute(
                 text(
                     """
@@ -278,11 +383,15 @@ def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
     finally:
         verify_engine.dispose()
 
-    assert version == "20260309_0009"
+    assert version == "20260310_0011"
     assert subtitle_row is not None
     assert int(subtitle_row["id"]) == 1
     assert bool(subtitle_row["subtitle_split_enabled"]) is True
+    assert int(subtitle_row["semantic_split_timeout_seconds"]) == 40
     assert int(subtitle_row["translation_batch_max_chars"]) == 2600
+    assert "semantic_split_timeout_seconds" in subtitle_columns
+    assert "translation_batch_max_chars" in subtitle_columns
+    assert "semantic_split_model" not in subtitle_columns
     assert mt_models == ["qwen-mt-flash"]
 
 
@@ -828,7 +937,6 @@ def test_admin_subtitle_settings_roundtrip(test_client):
             "subtitle_split_target_words": 16,
             "subtitle_split_max_words": 26,
             "semantic_split_max_words_threshold": 20,
-            "semantic_split_model": "qwen-plus",
             "semantic_split_timeout_seconds": 35,
             "translation_batch_max_chars": 3200,
         },
@@ -969,7 +1077,6 @@ def test_admin_subtitle_settings_update_self_heals_missing_table(test_client):
             "subtitle_split_target_words": 17,
             "subtitle_split_max_words": 29,
             "semantic_split_max_words_threshold": 21,
-            "semantic_split_model": "qwen-plus",
             "semantic_split_timeout_seconds": 50,
         },
     )
@@ -978,6 +1085,53 @@ def test_admin_subtitle_settings_update_self_heals_missing_table(test_client):
     assert body["settings"]["semantic_split_default_enabled"] is True
     assert body["settings"]["semantic_split_timeout_seconds"] == 50
     assert body["settings"]["translation_batch_max_chars"] == 2600
+
+
+def test_subtitle_settings_endpoints_self_heal_missing_columns(test_client):
+    client, session_factory, monkeypatch = test_client
+    from app import main as app_main
+
+    _recreate_legacy_subtitle_settings(session_factory)
+
+    probe_session = session_factory()
+    try:
+        probe_engine = probe_session.get_bind()
+    finally:
+        probe_session.close()
+
+    monkeypatch.setattr(app_main, "engine", probe_engine)
+    monkeypatch.setattr(app_main, "DATABASE_URL", str(probe_engine.url))
+    monkeypatch.setattr(app_main, "SessionLocal", session_factory)
+    monkeypatch.setattr(app_main, "init_db", lambda: None)
+
+    ready_resp = client.get("/health/ready")
+    assert ready_resp.status_code == 200
+    assert ready_resp.json()["ok"] is True
+
+    public_resp = client.get("/api/billing/rates")
+    assert public_resp.status_code == 200
+    assert public_resp.json()["subtitle_settings"]["semantic_split_default_enabled"] is False
+
+    from app.api.deps.auth import get_admin_user as admin_dep
+
+    client.app.dependency_overrides[admin_dep] = lambda: SimpleNamespace(id=1, email="admin@example.com")
+    history_resp = client.get("/api/admin/subtitle-settings/history")
+    assert history_resp.status_code == 200
+    assert history_resp.json()["ok"] is True
+
+    verify = session_factory()
+    try:
+        row = get_subtitle_settings(verify)
+        assert int(row.semantic_split_timeout_seconds) == 40
+        assert int(row.translation_batch_max_chars) == 2600
+        column_names = {
+            str(item["name"])
+            for item in verify.execute(text("PRAGMA table_info(subtitle_settings)")).mappings().all()
+        }
+        assert "semantic_split_timeout_seconds" in column_names
+        assert "translation_batch_max_chars" in column_names
+    finally:
+        verify.close()
 
 
 def test_redeem_code_admin_and_wallet_flow(test_client):
@@ -2334,6 +2488,76 @@ def test_generate_lesson_settles_with_fallback_and_can_go_negative(test_client, 
         assert [item.event_type for item in ledgers[-3:]] == ["reserve", "consume", "consume"]
         assert ledgers[-2].delta_points == -390
         assert ledgers[-1].delta_points == 0
+    finally:
+        session.close()
+
+
+def test_generate_lesson_self_heals_legacy_subtitle_settings_columns(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    _register_and_login(client, email="legacy-subtitle@example.com")
+
+    _recreate_legacy_subtitle_settings(session_factory)
+
+    from app.services import lesson_service as lesson_service_module
+
+    asr_payload = {
+        "transcripts": [
+            {
+                "sentences": [{"text": "Hello world", "begin_time": 0, "end_time": 1000}],
+                "words": [_word_entry("Hello", 0, 500), _word_entry("world", 500, 1000)],
+            }
+        ]
+    }
+
+    monkeypatch.setattr(
+        lesson_service_module,
+        "extract_audio_for_asr",
+        lambda source_path, opus_path: opus_path.write_bytes(b"opus"),
+    )
+    monkeypatch.setattr(lesson_service_module, "probe_audio_duration_ms", lambda opus_path: 1000)
+    monkeypatch.setattr(
+        lesson_service_module,
+        "translate_sentences_to_zh",
+        lambda texts, api_key, progress_callback=None: _translation_batch_result(["你好"] * len(texts), total_tokens=12),
+    )
+    monkeypatch.setattr(lesson_service_module, "estimate_duration_ms", lambda payload, sentences: 1000)
+    monkeypatch.setattr(
+        lesson_service_module.LessonService,
+        "_transcribe_with_optional_parallel",
+        lambda **kwargs: {"asr_payload": asr_payload, "usage_seconds": 1},
+    )
+
+    source_path = tmp_path / "legacy_subtitle.mp4"
+    req_dir = tmp_path / "req_legacy_subtitle"
+    source_path.write_bytes(b"source")
+    req_dir.mkdir(parents=True, exist_ok=True)
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "legacy-subtitle@example.com").one()
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 500
+        session.add(account)
+        session.commit()
+
+        lesson = lesson_service_module.LessonService.generate_from_saved_file(
+            source_path=source_path,
+            source_filename="legacy_subtitle.mp4",
+            req_dir=req_dir,
+            owner_id=user.id,
+            asr_model=QWEN_ASR_MODEL,
+            db=session,
+        )
+
+        session.refresh(account)
+        repaired_settings = get_subtitle_settings(session)
+        stored = session.query(LessonSentence).filter(LessonSentence.lesson_id == lesson.id).order_by(LessonSentence.idx.asc()).all()
+
+        assert lesson.id > 0
+        assert stored[0].text_en == "Hello world"
+        assert stored[0].text_zh == "你好"
+        assert int(repaired_settings.semantic_split_timeout_seconds) == 40
+        assert int(repaired_settings.translation_batch_max_chars) == 2600
     finally:
         session.close()
 

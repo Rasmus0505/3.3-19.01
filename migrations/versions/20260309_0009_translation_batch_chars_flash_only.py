@@ -22,7 +22,7 @@ depends_on = None
 
 
 FLASH_MT_MODEL = "qwen-mt-flash"
-LEGACY_MT_MODELS = ("qwen-mt-plus", "qwen-mt-lite", "qwen-mt-turbo")
+LEGACY_MT_MODELS: tuple[str, ...] = ()
 DEFAULT_MT_POINTS_PER_1K_TOKENS = 15
 MT_MODEL_LIKE_PATTERN = "qwen-mt-%"
 
