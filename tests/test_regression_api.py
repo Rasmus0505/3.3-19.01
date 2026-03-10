@@ -383,7 +383,7 @@ def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
     finally:
         verify_engine.dispose()
 
-    assert version == "20260310_0012"
+    assert version == "20260310_0013"
     assert subtitle_row is not None
     assert int(subtitle_row["id"]) == 1
     assert bool(subtitle_row["subtitle_split_enabled"]) is True
@@ -412,7 +412,10 @@ def test_health_endpoint(test_client):
     assert data["service"]
 
 
-def test_health_ready_endpoint(test_client):
+def test_health_ready_endpoint(test_client, monkeypatch):
+    from app import main as app_main
+
+    monkeypatch.setattr(app_main, "_probe_database_ready", lambda: (True, ""))
     client, _, _ = test_client
     resp = client.get("/health/ready")
     assert resp.status_code == 200
@@ -829,6 +832,21 @@ def test_admin_translation_logs_endpoint_returns_empty_when_table_missing(tmp_pa
     assert payload["items"] == []
 
 
+def test_admin_translation_logs_accepts_empty_lesson_id_and_rejects_invalid(test_client, monkeypatch):
+    client, _, _ = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "translation-lesson-id-admin@example.com")
+    token = _register_and_login(client, email="translation-lesson-id-admin@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    empty_resp = client.get("/api/admin/translation-logs", headers=headers, params={"lesson_id": ""})
+    assert empty_resp.status_code == 200
+    assert empty_resp.json()["ok"] is True
+
+    invalid_resp = client.get("/api/admin/translation-logs", headers=headers, params={"lesson_id": "abc"})
+    assert invalid_resp.status_code == 400
+    assert invalid_resp.json()["error_code"] == "INVALID_LESSON_ID"
+
+
 def test_spa_shell_pages_disable_html_cache_and_expose_build_marker(test_client):
     client, _, _ = test_client
     build_marker = _frontend_build_marker_from_index()
@@ -850,6 +868,12 @@ def test_static_assets_keep_cache_behavior_unmodified(test_client):
     assert resp.status_code == 200
     assert "no-store" not in resp.headers.get("cache-control", "").lower()
     assert "x-frontend-build" not in resp.headers
+
+
+def test_favicon_request_no_longer_returns_404(test_client):
+    client, _, _ = test_client
+    resp = client.get("/favicon.ico")
+    assert resp.status_code in {200, 204}
 
 
 def test_probe_database_ready_reports_missing_critical_columns(monkeypatch):
@@ -1315,6 +1339,46 @@ def test_admin_translation_logs_endpoint_filters_by_task_and_success(test_client
     assert payload["total"] == 1
     assert payload["items"][0]["task_id"] == "task-demo"
     assert payload["items"][0]["success"] is True
+
+
+def test_subtitle_settings_backfill_uses_bool_binding_for_postgres(monkeypatch):
+    from app.services import billing as billing_runtime
+
+    class DummyBind:
+        dialect = SimpleNamespace(name="postgresql")
+
+    class DummySession:
+        def __init__(self):
+            self.executed: list[tuple[str, dict]] = []
+            self.commit_count = 0
+
+        def get_bind(self):
+            return DummyBind()
+
+        def execute(self, stmt, params=None):
+            self.executed.append((str(stmt), dict(params or {})))
+            return SimpleNamespace(rowcount=1)
+
+        def commit(self):
+            self.commit_count += 1
+
+    dummy = DummySession()
+    monkeypatch.setattr(billing_runtime, "_qualified_subtitle_settings_table", lambda _db: "app.subtitle_settings")
+    monkeypatch.setattr(
+        billing_runtime,
+        "_subtitle_settings_column_names",
+        lambda _db: {"semantic_split_default_enabled", "subtitle_split_enabled", "updated_at"},
+    )
+
+    changed = billing_runtime._backfill_subtitle_settings_values(dummy)
+    assert changed is True
+    assert dummy.commit_count >= 1
+
+    bool_updates = [(sql, params) for sql, params in dummy.executed if "semantic_split_default_enabled" in sql or "subtitle_split_enabled" in sql]
+    assert bool_updates
+    assert all("default_value" in params for _, params in bool_updates)
+    assert all(isinstance(params["default_value"], bool) for _, params in bool_updates)
+    assert all("= 0" not in sql and "= 1" not in sql for sql, _ in bool_updates)
 
 
 def test_public_billing_rates_self_heals_missing_subtitle_settings_table(test_client):

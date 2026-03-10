@@ -67,9 +67,10 @@ export function AdminTranslationLogsTab({ apiCall }) {
         page_size: String(pageSize),
         user_email: userEmail.trim(),
         task_id: taskId.trim(),
-        lesson_id: lessonId.trim(),
         success,
       });
+      const normalizedLessonId = lessonId.trim();
+      if (normalizedLessonId) query.set("lesson_id", normalizedLessonId);
       const normalizedDateFrom = datetimeLocalToBeijingOffset(dateFrom);
       const normalizedDateTo = datetimeLocalToBeijingOffset(dateTo);
       if (normalizedDateFrom) query.set("date_from", normalizedDateFrom);

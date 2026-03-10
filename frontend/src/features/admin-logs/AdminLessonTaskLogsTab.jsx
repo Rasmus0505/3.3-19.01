@@ -127,9 +127,10 @@ export function AdminLessonTaskLogsTab({ apiCall }) {
         status: taskStatus,
         user_email: userEmail.trim(),
         task_id: taskId.trim(),
-        lesson_id: lessonId.trim(),
         source_filename: sourceFilename.trim(),
       });
+      const normalizedLessonId = lessonId.trim();
+      if (normalizedLessonId) query.set("lesson_id", normalizedLessonId);
       const normalizedDateFrom = datetimeLocalToBeijingOffset(dateFrom);
       const normalizedDateTo = datetimeLocalToBeijingOffset(dateTo);
       if (normalizedDateFrom) query.set("date_from", normalizedDateFrom);
