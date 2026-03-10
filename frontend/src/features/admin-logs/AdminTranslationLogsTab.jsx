@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
-import { buildSearchParams, copyCurrentUrl, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
+import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
@@ -44,7 +44,7 @@ export function AdminTranslationLogsTab({ apiCall }) {
 
   useEffect(() => {
     setSearchParams(
-      buildSearchParams({
+      mergeSearchParams(searchParams, {
         page,
         page_size: pageSize,
         user_email: userEmail,
@@ -67,9 +67,10 @@ export function AdminTranslationLogsTab({ apiCall }) {
         page_size: String(pageSize),
         user_email: userEmail.trim(),
         task_id: taskId.trim(),
-        lesson_id: lessonId.trim(),
         success,
       });
+      const normalizedLessonId = lessonId.trim();
+      if (normalizedLessonId) query.set("lesson_id", normalizedLessonId);
       const normalizedDateFrom = datetimeLocalToBeijingOffset(dateFrom);
       const normalizedDateTo = datetimeLocalToBeijingOffset(dateTo);
       if (normalizedDateFrom) query.set("date_from", normalizedDateFrom);

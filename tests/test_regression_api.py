@@ -383,7 +383,7 @@ def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
     finally:
         verify_engine.dispose()
 
-    assert version == "20260310_0012"
+    assert version == "20260310_0014"
     assert subtitle_row is not None
     assert int(subtitle_row["id"]) == 1
     assert bool(subtitle_row["subtitle_split_enabled"]) is True
@@ -393,6 +393,74 @@ def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
     assert "translation_batch_max_chars" in subtitle_columns
     assert "semantic_split_model" not in subtitle_columns
     assert mt_models == ["qwen-mt-flash"]
+
+
+def test_lesson_generation_tasks_repair_migration_recreates_missing_table(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    db_file = tmp_path / "lesson_task_repair.db"
+    database_url = f"sqlite:///{db_file.as_posix()}"
+
+    env = os.environ.copy()
+    env["DATABASE_URL"] = database_url
+
+    def _upgrade(target: str) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "-c", "alembic.ini", "upgrade", target],
+            cwd=str(repo_root),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"alembic upgrade {target} failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+
+    _upgrade("20260310_0013")
+
+    mutate_engine = create_database_engine(database_url)
+    try:
+        with mutate_engine.begin() as conn:
+            conn.execute(text("DROP TABLE lesson_generation_tasks"))
+    finally:
+        mutate_engine.dispose()
+
+    _upgrade("head")
+
+    verify_engine = create_database_engine(database_url)
+    try:
+        with verify_engine.connect() as conn:
+            version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            table_count = int(
+                conn.execute(
+                    text(
+                        """
+                        SELECT COUNT(1)
+                        FROM sqlite_master
+                        WHERE type = 'table' AND name = 'lesson_generation_tasks'
+                        """
+                    )
+                ).scalar()
+                or 0
+            )
+            column_names = {
+                str(item["name"])
+                for item in conn.execute(text("PRAGMA table_info(lesson_generation_tasks)")).mappings().all()
+            }
+            index_names = {
+                str(item["name"])
+                for item in conn.execute(text("PRAGMA index_list(lesson_generation_tasks)")).mappings().all()
+            }
+    finally:
+        verify_engine.dispose()
+
+    assert version == "20260310_0014"
+    assert table_count == 1
+    assert {"task_id", "owner_user_id", "failure_debug_json", "failed_at"}.issubset(column_names)
+    assert {
+        "ix_lesson_generation_tasks_task_id",
+        "ix_lesson_generation_tasks_owner_user_id",
+        "ix_lesson_generation_tasks_lesson_id",
+    }.issubset(index_names)
 
 
 def _register_and_login(client: TestClient, email: str = "admin@example.com", password: str = "123456") -> str:
@@ -412,7 +480,10 @@ def test_health_endpoint(test_client):
     assert data["service"]
 
 
-def test_health_ready_endpoint(test_client):
+def test_health_ready_endpoint(test_client, monkeypatch):
+    from app import main as app_main
+
+    monkeypatch.setattr(app_main, "_probe_database_ready", lambda: (True, ""))
     client, _, _ = test_client
     resp = client.get("/health/ready")
     assert resp.status_code == 200
@@ -510,6 +581,7 @@ def test_lesson_task_resume_reuses_failed_task_artifacts(test_client, monkeypatc
     assert failed_payload["failure_debug"]["failed_stage"] == "translate_zh"
     assert failed_payload["failure_debug"]["exception_type"] == "RuntimeError"
     assert "translate failed" in failed_payload["failure_debug"]["detail_excerpt"]
+    assert "RuntimeError: translate failed" in failed_payload["failure_debug"]["traceback_excerpt"]
     assert failed_payload["failure_debug"]["last_progress_text"] == "翻译字幕 1/2"
 
     resume_resp = client.post(f"/api/lessons/tasks/{task_id}/resume", headers={"Authorization": f"Bearer {token}"})
@@ -592,6 +664,118 @@ def test_lesson_task_resume_marks_missing_artifacts_as_non_resumable(test_client
     assert failed_payload["resume_available"] is False
     assert failed_payload["failure_debug"]["exception_type"] == "FileNotFoundError"
     assert "resume artifacts missing" in failed_payload["failure_debug"]["detail_excerpt"]
+
+
+def test_lesson_task_resume_restarts_failed_task_when_resume_unavailable(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="restart-task@example.com")
+
+    from app.api.routers import lessons as lessons_router
+
+    import threading as py_threading
+
+    class ImmediateThread(py_threading.Thread):
+        def start(self):
+            if getattr(self, "_target", None) is lessons_router._run_lesson_generation_task:
+                self.run()
+                return
+            super().start()
+
+    attempts = {"count": 0}
+
+    def fake_generate_from_saved_file(*, source_filename, req_dir, owner_id, asr_model, db, progress_callback=None, **kwargs):
+        attempts["count"] += 1
+        progress_callback(
+            {
+                "stage_key": "convert_audio",
+                "stage_status": "completed",
+                "overall_percent": 20,
+                "current_text": "转换音频格式完成",
+                "counters": {"asr_done": 0, "asr_estimated": 0, "translate_done": 0, "translate_total": 0, "segment_done": 0, "segment_total": 0},
+            }
+        )
+        if attempts["count"] == 1:
+            (req_dir / "lesson_input.opus").write_bytes(b"opus")
+            (req_dir / "asr_result.json").write_text(
+                json.dumps(
+                    {"asr_payload": {"transcripts": []}, "usage_seconds": 1, "progress_counters": {"asr_done": 2, "asr_estimated": 2, "segment_done": 2, "segment_total": 2}},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            progress_callback(
+                {
+                    "stage_key": "translate_zh",
+                    "stage_status": "running",
+                    "overall_percent": 72,
+                    "current_text": "翻译字幕 1/2",
+                    "counters": {"asr_done": 2, "asr_estimated": 2, "translate_done": 1, "translate_total": 2, "segment_done": 2, "segment_total": 2},
+                }
+            )
+            raise RuntimeError("restart failure")
+
+        lesson = Lesson(
+            user_id=owner_id,
+            title=Path(source_filename).stem,
+            source_filename=source_filename,
+            asr_model=asr_model,
+            duration_ms=1000,
+            media_storage="client_indexeddb",
+            source_duration_ms=1000,
+            status="ready",
+        )
+        db.add(lesson)
+        db.flush()
+        db.add(LessonSentence(lesson_id=lesson.id, idx=0, begin_ms=0, end_ms=1000, text_en="hello", text_zh="你好", tokens_json=["hello"], audio_clip_path=None))
+        db.add(LessonProgress(lesson_id=lesson.id, user_id=owner_id, current_sentence_idx=0, completed_indexes_json=[], last_played_at_ms=0))
+        db.commit()
+        lesson.subtitle_cache_seed = {
+            "semantic_split_enabled": False,
+            "split_mode": "asr_sentences",
+            "source_word_count": 1,
+            "strategy_version": 2,
+            "asr_payload": {"transcripts": []},
+            "sentences": [{"idx": 0, "begin_ms": 0, "end_ms": 1000, "text_en": "hello", "text_zh": "你好", "tokens": ["hello"], "audio_url": None}],
+        }
+        return lesson
+
+    monkeypatch.setattr(lessons_router.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(lessons_router.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+
+    create_resp = client.post(
+        "/api/lessons/tasks",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"video_file": ("restart.mp4", io.BytesIO(b"video"), "video/mp4")},
+        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+    )
+    assert create_resp.status_code == 200
+    task_id = create_resp.json()["task_id"]
+
+    first_failed_task = client.get(f"/api/lessons/tasks/{task_id}", headers={"Authorization": f"Bearer {token}"})
+    assert first_failed_task.status_code == 200
+    first_failed_payload = first_failed_task.json()
+    assert first_failed_payload["status"] == "failed"
+    assert first_failed_payload["resume_available"] is True
+
+    session = session_factory()
+    try:
+        task = session.query(LessonGenerationTask).filter(LessonGenerationTask.task_id == task_id).one()
+        task.resume_available = False
+        task.resume_stage = ""
+        session.commit()
+    finally:
+        session.close()
+
+    restart_resp = client.post(f"/api/lessons/tasks/{task_id}/resume", headers={"Authorization": f"Bearer {token}"})
+    assert restart_resp.status_code == 200
+    assert restart_resp.json()["ok"] is True
+
+    succeeded_task = client.get(f"/api/lessons/tasks/{task_id}", headers={"Authorization": f"Bearer {token}"})
+    assert succeeded_task.status_code == 200
+    success_payload = succeeded_task.json()
+    assert success_payload["status"] == "succeeded"
+    assert success_payload["lesson"]["title"] == "restart"
+    assert attempts["count"] == 2
 
 
 def test_startup_without_dashscope_key_keeps_health_alive(monkeypatch, tmp_path):
@@ -716,6 +900,21 @@ def test_admin_translation_logs_endpoint_returns_empty_when_table_missing(tmp_pa
     assert payload["items"] == []
 
 
+def test_admin_translation_logs_accepts_empty_lesson_id_and_rejects_invalid(test_client, monkeypatch):
+    client, _, _ = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "translation-lesson-id-admin@example.com")
+    token = _register_and_login(client, email="translation-lesson-id-admin@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    empty_resp = client.get("/api/admin/translation-logs", headers=headers, params={"lesson_id": ""})
+    assert empty_resp.status_code == 200
+    assert empty_resp.json()["ok"] is True
+
+    invalid_resp = client.get("/api/admin/translation-logs", headers=headers, params={"lesson_id": "abc"})
+    assert invalid_resp.status_code == 400
+    assert invalid_resp.json()["error_code"] == "INVALID_LESSON_ID"
+
+
 def test_spa_shell_pages_disable_html_cache_and_expose_build_marker(test_client):
     client, _, _ = test_client
     build_marker = _frontend_build_marker_from_index()
@@ -737,6 +936,12 @@ def test_static_assets_keep_cache_behavior_unmodified(test_client):
     assert resp.status_code == 200
     assert "no-store" not in resp.headers.get("cache-control", "").lower()
     assert "x-frontend-build" not in resp.headers
+
+
+def test_favicon_request_no_longer_returns_404(test_client):
+    client, _, _ = test_client
+    resp = client.get("/favicon.ico")
+    assert resp.status_code in {200, 204}
 
 
 def test_probe_database_ready_reports_missing_critical_columns(monkeypatch):
@@ -1202,6 +1407,46 @@ def test_admin_translation_logs_endpoint_filters_by_task_and_success(test_client
     assert payload["total"] == 1
     assert payload["items"][0]["task_id"] == "task-demo"
     assert payload["items"][0]["success"] is True
+
+
+def test_subtitle_settings_backfill_uses_bool_binding_for_postgres(monkeypatch):
+    from app.services import billing as billing_runtime
+
+    class DummyBind:
+        dialect = SimpleNamespace(name="postgresql")
+
+    class DummySession:
+        def __init__(self):
+            self.executed: list[tuple[str, dict]] = []
+            self.commit_count = 0
+
+        def get_bind(self):
+            return DummyBind()
+
+        def execute(self, stmt, params=None):
+            self.executed.append((str(stmt), dict(params or {})))
+            return SimpleNamespace(rowcount=1)
+
+        def commit(self):
+            self.commit_count += 1
+
+    dummy = DummySession()
+    monkeypatch.setattr(billing_runtime, "_qualified_subtitle_settings_table", lambda _db: "app.subtitle_settings")
+    monkeypatch.setattr(
+        billing_runtime,
+        "_subtitle_settings_column_names",
+        lambda _db: {"semantic_split_default_enabled", "subtitle_split_enabled", "updated_at"},
+    )
+
+    changed = billing_runtime._backfill_subtitle_settings_values(dummy)
+    assert changed is True
+    assert dummy.commit_count >= 1
+
+    bool_updates = [(sql, params) for sql, params in dummy.executed if "semantic_split_default_enabled" in sql or "subtitle_split_enabled" in sql]
+    assert bool_updates
+    assert all("default_value" in params for _, params in bool_updates)
+    assert all(isinstance(params["default_value"], bool) for _, params in bool_updates)
+    assert all("= 0" not in sql and "= 1" not in sql for sql, _ in bool_updates)
 
 
 def test_public_billing_rates_self_heals_missing_subtitle_settings_table(test_client):

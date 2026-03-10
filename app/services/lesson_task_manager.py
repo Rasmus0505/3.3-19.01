@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from pathlib import Path
 from typing import Callable
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
 
 from app.core.timezone import now_shanghai_naive
-from app.db import SessionLocal
+from app.db import APP_SCHEMA, SessionLocal
 from app.models import LessonGenerationTask
 from app.services.media import cleanup_dir
 
@@ -17,6 +18,7 @@ from app.services.media import cleanup_dir
 FAILURE_RETENTION_HOURS = 24
 FAILURE_EXCEPTION_TYPE_LIMIT = 120
 FAILURE_DETAIL_EXCERPT_LIMIT = 2000
+FAILURE_TRACEBACK_EXCERPT_LIMIT = 4000
 
 _STAGE_LABELS: tuple[tuple[str, str], ...] = (
     ("convert_audio", "转换音频格式"),
@@ -25,9 +27,59 @@ _STAGE_LABELS: tuple[tuple[str, str], ...] = (
     ("write_lesson", "写入课程"),
 )
 
+logger = logging.getLogger(__name__)
+LESSON_TASK_REQUIRED_COLUMNS: tuple[str, ...] = tuple(str(column.name) for column in LessonGenerationTask.__table__.columns)
+
+
+class LessonTaskStorageNotReadyError(Exception):
+    code = "DB_MIGRATION_REQUIRED"
+    message = "数据库迁移未完成，请先执行 Alembic upgrade head"
+
+    def __init__(self, detail: str):
+        self.detail = str(detail or "")
+        super().__init__(self.detail or self.message)
+
+
+def ensure_lesson_task_storage_ready(db: Session) -> None:
+    bind = db.get_bind()
+    table_name = LessonGenerationTask.__tablename__
+    if bind is None:
+        detail = "missing database bind for lesson task storage guard"
+        logger.warning("[DEBUG] lesson_task_storage.not_ready reason=missing_bind detail=%s", detail)
+        raise LessonTaskStorageNotReadyError(detail)
+
+    schema = None if bind.dialect.name == "sqlite" else APP_SCHEMA
+    qualified_table = f"{schema}.{table_name}" if schema else table_name
+    inspector = inspect(bind)
+    if not inspector.has_table(table_name, schema=schema):
+        detail = f"missing business table: {qualified_table}"
+        logger.warning("[DEBUG] lesson_task_storage.not_ready reason=missing_table detail=%s", detail)
+        raise LessonTaskStorageNotReadyError(detail)
+
+    existing_columns = {
+        str(item.get("name") or "").strip()
+        for item in inspector.get_columns(table_name, schema=schema)
+    }
+    missing_columns = [name for name in LESSON_TASK_REQUIRED_COLUMNS if name not in existing_columns]
+    if missing_columns:
+        detail = "missing critical columns: " + ", ".join(f"{table_name}.{name}" for name in missing_columns)
+        logger.warning("[DEBUG] lesson_task_storage.not_ready reason=missing_columns detail=%s", detail)
+        raise LessonTaskStorageNotReadyError(detail)
+
 
 def _empty_stages() -> list[dict]:
     return [{"key": key, "label": label, "status": "pending"} for key, label in _STAGE_LABELS]
+
+
+def _empty_counters() -> dict:
+    return {
+        "asr_done": 0,
+        "asr_estimated": 0,
+        "translate_done": 0,
+        "translate_total": 0,
+        "segment_done": 0,
+        "segment_total": 0,
+    }
 
 
 def _default_artifacts(work_dir: str, source_path: str) -> dict:
@@ -125,6 +177,7 @@ def build_task_id() -> str:
 def cleanup_expired_tasks(*, db: Session | None = None, session_factory: SessionFactory | None = None) -> None:
     session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
+        ensure_lesson_task_storage_ready(session)
         now = now_shanghai_naive()
         items = session.scalars(
             select(LessonGenerationTask).where(
@@ -165,6 +218,7 @@ def create_task(
     cleanup_expired_tasks(db=db, session_factory=session_factory)
     session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
+        ensure_lesson_task_storage_ready(session)
         task = LessonGenerationTask(
             task_id=task_id,
             owner_user_id=int(owner_user_id),
@@ -175,14 +229,7 @@ def create_task(
             overall_percent=0,
             current_text="等待处理",
             stages_json=_empty_stages(),
-            counters_json={
-                "asr_done": 0,
-                "asr_estimated": 0,
-                "translate_done": 0,
-                "translate_total": 0,
-                "segment_done": 0,
-                "segment_total": 0,
-            },
+            counters_json=_empty_counters(),
             work_dir=work_dir,
             source_path=source_path,
             artifacts_json=_default_artifacts(work_dir, source_path),
@@ -203,6 +250,7 @@ def get_task(task_id: str, *, db: Session | None = None, session_factory: Sessio
     cleanup_expired_tasks(db=db, session_factory=session_factory)
     session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
+        ensure_lesson_task_storage_ready(session)
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         return _task_to_dict(task) if task else None
     finally:
@@ -225,6 +273,7 @@ def update_task_progress(
 ) -> None:
     session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
+        ensure_lesson_task_storage_ready(session)
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         if not task:
             return
@@ -274,6 +323,7 @@ def patch_task_artifacts(
         return
     session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
+        ensure_lesson_task_storage_ready(session)
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         if not task:
             return
@@ -293,6 +343,7 @@ def mark_task_failed(
     message: str,
     exception_type: str = "",
     detail_excerpt: str = "",
+    traceback_excerpt: str = "",
     failed_stage: str | None = None,
     translation_debug: dict | None = None,
     resume_available: bool | None = None,
@@ -301,6 +352,7 @@ def mark_task_failed(
 ) -> None:
     session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
+        ensure_lesson_task_storage_ready(session)
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         if not task:
             return
@@ -319,6 +371,7 @@ def mark_task_failed(
             "failed_stage": resume_stage,
             "exception_type": _trim_text(exception_type, FAILURE_EXCEPTION_TYPE_LIMIT),
             "detail_excerpt": _trim_text(detail_excerpt, FAILURE_DETAIL_EXCERPT_LIMIT),
+            "traceback_excerpt": _trim_text(traceback_excerpt, FAILURE_TRACEBACK_EXCERPT_LIMIT),
             "last_progress_text": _trim_text(last_progress_text, 255),
             "stages": _copy_list(stages),
             "counters": _copy_dict(task.counters_json),
@@ -348,6 +401,7 @@ def mark_task_succeeded(
 ) -> None:
     session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
+        ensure_lesson_task_storage_ready(session)
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         if not task:
             return
@@ -371,6 +425,40 @@ def mark_task_succeeded(
             session.close()
 
 
+def reset_failed_task_for_restart(
+    task_id: str,
+    *,
+    db: Session | None = None,
+    session_factory: SessionFactory | None = None,
+) -> dict | None:
+    cleanup_expired_tasks(db=db, session_factory=session_factory)
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
+    try:
+        ensure_lesson_task_storage_ready(session)
+        task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        if not task or str(task.status or "") != "failed":
+            return None
+        task.stages_json = _empty_stages()
+        task.counters_json = _empty_counters()
+        task.translation_debug_json = None
+        task.failure_debug_json = None
+        task.status = "pending"
+        task.overall_percent = 0
+        task.current_text = "准备重新生成"
+        task.error_code = ""
+        task.message = ""
+        task.resume_available = False
+        task.resume_stage = "convert_audio"
+        task.artifact_expires_at = None
+        task.failed_at = None
+        session.commit()
+        session.refresh(task)
+        return _task_to_dict(task)
+    finally:
+        if owns_session:
+            session.close()
+
+
 def reset_task_for_resume(
     task_id: str,
     *,
@@ -380,6 +468,7 @@ def reset_task_for_resume(
     cleanup_expired_tasks(db=db, session_factory=session_factory)
     session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
+        ensure_lesson_task_storage_ready(session)
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         if not task or not task.resume_available:
             return None

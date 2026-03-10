@@ -1,9 +1,9 @@
 import { Gift, PauseCircle, PlayCircle, RefreshCcw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
-import { buildSearchParams, copyCurrentUrl, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
+import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Label, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea } from "../../shared/ui";
 
@@ -53,7 +53,7 @@ export function AdminRedeemBatchesTab({ apiCall }) {
 
   useEffect(() => {
     setSearchParams(
-      buildSearchParams({
+      mergeSearchParams(searchParams, {
         page,
         page_size: pageSize,
         keyword,
@@ -347,6 +347,12 @@ export function AdminRedeemBatchesTab({ apiCall }) {
                     <TableCell>{item.effective_daily_limit}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
+                        <Button size="sm" variant="outline" asChild>
+                          <Link to={`/admin/redeem?tab=codes&batch_id=${item.id}`}>兑换码</Link>
+                        </Button>
+                        <Button size="sm" variant="outline" asChild>
+                          <Link to={`/admin/redeem?tab=audit&batch_id=${item.id}`}>审计</Link>
+                        </Button>
                         <Button size="sm" variant="outline" onClick={() => setActionDialog({ batchId: item.id, actionPath: "activate", actionLabel: "激活", batchName: item.batch_name })}>
                           <PlayCircle className="size-4" />
                           激活

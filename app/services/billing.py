@@ -820,24 +820,27 @@ def _backfill_subtitle_settings_values(db: Session) -> bool:
     if not column_names:
         return False
 
+    dialect_name = str((db.get_bind().dialect.name if db.get_bind() is not None else "") or "").lower()
     changed = False
     for column_name, default_value in DEFAULT_SUBTITLE_SETTINGS.items():
         if column_name not in column_names:
             continue
         if isinstance(default_value, bool):
-            default_sql = "1" if default_value else "0"
-            update_sql = f"UPDATE {table_name} SET {column_name} = {default_sql} WHERE {column_name} IS NULL"
+            update_sql = text(f"UPDATE {table_name} SET {column_name} = :default_value WHERE {column_name} IS NULL")
+            params = {"default_value": int(default_value) if dialect_name == "sqlite" else bool(default_value)}
         elif column_name == "translation_batch_max_chars":
-            update_sql = (
+            update_sql = text(
                 f"UPDATE {table_name} SET {column_name} = {int(default_value)} "
                 f"WHERE {column_name} IS NULL OR {column_name} <= 0 OR {column_name} > 12000"
             )
+            params = None
         else:
-            update_sql = (
+            update_sql = text(
                 f"UPDATE {table_name} SET {column_name} = {int(default_value)} "
                 f"WHERE {column_name} IS NULL OR {column_name} <= 0"
             )
-        result = db.execute(text(update_sql))
+            params = None
+        result = db.execute(update_sql, params or {})
         changed = changed or bool(getattr(result, "rowcount", 0))
 
     if "updated_at" in column_names:

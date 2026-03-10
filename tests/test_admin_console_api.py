@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.models import Lesson, User
+from app.services.lesson_task_manager import create_task, mark_task_failed
 from test_regression_api import _register_and_login, test_client
 
 
@@ -115,6 +117,119 @@ def test_admin_operation_logs_and_user_summary(test_client):
     assert summary_data["lesson_count"] == 1
     assert summary_data["latest_lesson_created_at"] is not None
     assert summary_data["latest_wallet_event_at"] is None or isinstance(summary_data["latest_wallet_event_at"], str)
+
+
+def test_admin_lesson_task_logs_exposes_traceback_excerpt(test_client, tmp_path):
+    client, session_factory, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "admin-task-log@example.com")
+
+    admin_token = _register_and_login(client, email="admin-task-log@example.com")
+    _register_and_login(client, email="task-log-user@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    task_id = "lesson_task_admin_traceback_case"
+    work_dir = tmp_path / "task-log-artifacts"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    source_path = work_dir / "source.mp4"
+    source_path.write_bytes(b"video")
+
+    session = session_factory()
+    try:
+        learner = session.scalar(select(User).where(User.email == "task-log-user@example.com"))
+        assert learner is not None
+        create_task(
+            task_id=task_id,
+            owner_user_id=learner.id,
+            source_filename="traceback.mp4",
+            asr_model="qwen3-asr-flash-filetrans",
+            semantic_split_enabled=False,
+            work_dir=str(work_dir),
+            source_path=str(source_path),
+            db=session,
+        )
+        mark_task_failed(
+            task_id,
+            error_code="INTERNAL_ERROR",
+            message="课程生成失败",
+            exception_type="RuntimeError",
+            detail_excerpt="unit failure detail",
+            traceback_excerpt="Traceback (most recent call last):\n  File \"x.py\", line 1, in <module>\nRuntimeError: unit failure",
+            resume_available=False,
+            db=session,
+        )
+    finally:
+        session.close()
+
+    logs = client.get("/api/admin/lesson-task-logs", headers=admin_headers, params={"task_id": task_id})
+    assert logs.status_code == 200
+    payload = logs.json()
+    assert payload["total"] >= 1
+    item = next((row for row in payload["items"] if row["task_id"] == task_id), None)
+    assert item is not None
+    assert item["exception_type"] == "RuntimeError"
+    assert "unit failure detail" in item["detail_excerpt"]
+    assert "Traceback" in item["traceback_excerpt"]
+    assert "traceback_excerpt" in item["failure_debug"]
+    assert "RuntimeError: unit failure" in item["failure_debug"]["traceback_excerpt"]
+
+
+def test_admin_lesson_task_logs_accepts_empty_lesson_id_and_rejects_invalid(test_client):
+    client, _, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "admin-lesson-id@example.com")
+    admin_token = _register_and_login(client, email="admin-lesson-id@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    empty_resp = client.get("/api/admin/lesson-task-logs", headers=admin_headers, params={"lesson_id": ""})
+    assert empty_resp.status_code == 200
+    assert empty_resp.json()["ok"] is True
+
+    invalid_resp = client.get("/api/admin/lesson-task-logs", headers=admin_headers, params={"lesson_id": "abc"})
+    assert invalid_resp.status_code == 400
+    assert invalid_resp.json()["error_code"] == "INVALID_LESSON_ID"
+
+
+def test_admin_lesson_task_logs_returns_503_when_task_table_missing(test_client):
+    client, session_factory, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "admin-lesson-task-migration@example.com")
+    admin_token = _register_and_login(client, email="admin-lesson-task-migration@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    session = session_factory()
+    try:
+        session.execute(text("DROP TABLE lesson_generation_tasks"))
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.get("/api/admin/lesson-task-logs", headers=admin_headers)
+    assert resp.status_code == 503
+    payload = resp.json()
+    assert payload["error_code"] == "DB_MIGRATION_REQUIRED"
+    assert "lesson_generation_tasks" in str(payload.get("detail", ""))
+
+
+def test_create_lesson_task_returns_503_when_task_table_missing(test_client):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="lesson-task-migration-user@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session = session_factory()
+    try:
+        session.execute(text("DROP TABLE lesson_generation_tasks"))
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.post(
+        "/api/lessons/tasks",
+        headers=headers,
+        files={"video_file": ("migration.mp4", b"video", "video/mp4")},
+        data={"asr_model": "qwen3-asr-flash-filetrans", "semantic_split_enabled": "false"},
+    )
+    assert resp.status_code == 503
+    payload = resp.json()
+    assert payload["error_code"] == "DB_MIGRATION_REQUIRED"
+    assert "lesson_generation_tasks" in str(payload.get("detail", ""))
 
 
 def test_admin_subtitle_settings_history_and_rollback(test_client):

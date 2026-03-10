@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models import AdminOperationLog, Lesson, LessonGenerationTask, RedeemCodeAttempt, RedeemCodeBatch, TranslationRequestLog, User, WalletLedger
 from app.repositories.admin import list_redeem_batches
+from app.services.lesson_task_manager import ensure_lesson_task_storage_ready
 
 
 def _start_of_day(now: datetime) -> datetime:
@@ -163,6 +164,7 @@ def list_admin_lesson_task_logs(
     page: int,
     page_size: int,
 ) -> tuple[int, list[tuple[LessonGenerationTask, str | None]]]:
+    ensure_lesson_task_storage_ready(db)
     owner_user = User.__table__.alias("lesson_task_owner")
     sort_column = func.coalesce(LessonGenerationTask.failed_at, LessonGenerationTask.updated_at, LessonGenerationTask.created_at)
     base = (

@@ -109,6 +109,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [bindingCompleted, setBindingCompleted] = useState(false);
   const pollingAbortRef = useRef(false);
+  const pollTokenRef = useRef(0);
   const uploadAbortRef = useRef(null);
   const fileInputRef = useRef(null);
   const restoredRef = useRef(false);
@@ -119,15 +120,26 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   const stageItems = getStageItems(taskSnapshot);
   const progressPercent = getVisualProgress(phase, uploadPercent, taskSnapshot);
   const showProgress = loading || phase === "success" || phase === "error" || Boolean(taskSnapshot);
-  const canResume = Boolean(taskSnapshot?.resume_available && taskId);
+  const canRetryWithoutUpload = Boolean(taskId);
   const hasLocalFile = Boolean(file);
+
+  function stopPollingSession() {
+    pollingAbortRef.current = true;
+    pollTokenRef.current += 1;
+  }
+
+  function startPollingSession() {
+    pollingAbortRef.current = false;
+    pollTokenRef.current += 1;
+    return pollTokenRef.current;
+  }
 
   useEffect(() => {
     onTaskStateChange?.(buildTaskState({ phase, taskId, taskSnapshot, uploadPercent, status }));
   }, [onTaskStateChange, phase, taskId, taskSnapshot, uploadPercent, status]);
 
   useEffect(() => () => {
-    pollingAbortRef.current = true;
+    stopPollingSession();
     uploadAbortRef.current?.abort();
   }, []);
 
@@ -164,7 +176,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   }
 
   async function resetSession() {
-    pollingAbortRef.current = true;
+    stopPollingSession();
     uploadAbortRef.current?.abort();
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -187,7 +199,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   }
 
   async function clearTaskRuntime(nextStatus = "") {
-    pollingAbortRef.current = true;
+    stopPollingSession();
     uploadAbortRef.current?.abort();
     setTaskId("");
     setLoading(false);
@@ -232,12 +244,12 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     if (!silentToast) (successMessage ? toast.warning(successMessage) : toast.success("课程已生成"));
   }
 
-  async function pollTask(nextTaskId, silentToast = false) {
-    if (!nextTaskId || pollingAbortRef.current) return;
+  async function pollTask(nextTaskId, silentToast = false, pollToken = pollTokenRef.current) {
+    if (!nextTaskId || pollingAbortRef.current || pollToken !== pollTokenRef.current) return;
     try {
       const resp = await api(`/api/lessons/tasks/${nextTaskId}`, {}, accessToken);
       const data = await parseResponse(resp);
-      if (pollingAbortRef.current) return;
+      if (pollingAbortRef.current || pollToken !== pollTokenRef.current) return;
       if (!resp.ok) {
         const message = toErrorText(data, "查询任务失败");
         setStatus(message);
@@ -267,9 +279,9 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       setPhase("processing");
       setLoading(true);
       await persistSession({ phase: "processing", taskSnapshot: data, uploadPercent: 100 });
-      setTimeout(() => void pollTask(nextTaskId, silentToast), 1000);
+      setTimeout(() => void pollTask(nextTaskId, silentToast, pollToken), 1000);
     } catch (error) {
-      if (pollingAbortRef.current || error?.name === "AbortError") return;
+      if (pollingAbortRef.current || pollToken !== pollTokenRef.current || error?.name === "AbortError") return;
       const message = `网络错误: ${String(error)}`;
       setStatus(message);
       setPhase("error");
@@ -306,8 +318,8 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
         (["pending", "running"].includes(String(saved.task_snapshot?.status || "").toLowerCase()) ||
           ["processing", "uploading"].includes(String(saved.phase || "").toLowerCase()))
       ) {
-        pollingAbortRef.current = false;
-        void pollTask(String(saved.task_id), true);
+        const pollToken = startPollingSession();
+        void pollTask(String(saved.task_id), true, pollToken);
       } else if (saved.task_id && String(saved.task_snapshot?.status || "").toLowerCase() === "succeeded" && !saved.binding_completed) {
         await finalizeSuccess(saved.task_snapshot, restoredFile, true);
       }
@@ -319,9 +331,11 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   }, []);
 
   async function onSelectFile(nextFile) {
+    stopPollingSession();
     uploadAbortRef.current?.abort();
     setFile(nextFile);
     setTaskId("");
+    setLoading(false);
     setStatus("");
     setDurationSec(null);
     setTaskSnapshot(null);
@@ -363,9 +377,11 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       toast.error(message);
       return;
     }
-    pollingAbortRef.current = false;
+    stopPollingSession();
+    const pollToken = startPollingSession();
     uploadAbortRef.current?.abort();
     setLoading(true);
+    setTaskId("");
     setStatus("");
     setTaskSnapshot(null);
     setUploadPercent(0);
@@ -403,7 +419,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       setUploadPercent(100);
       setPhase("processing");
       await persistSession({ taskId: nextTaskId, phase: "processing", uploadPercent: 100 });
-      void pollTask(nextTaskId);
+      void pollTask(nextTaskId, false, pollToken);
     } catch (error) {
       uploadAbortRef.current = null;
       if (error?.name === "AbortError") return;
@@ -418,14 +434,17 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
 
   async function resumeTask() {
     if (!taskId) return;
+    stopPollingSession();
+    const pollToken = startPollingSession();
     setLoading(true);
     setStatus("");
     try {
       const resp = await api(`/api/lessons/tasks/${taskId}/resume`, { method: "POST" }, accessToken);
       const data = await parseResponse(resp);
       if (!resp.ok) {
-        const message = toErrorText(data, "继续生成失败");
         const errorCode = String(data?.error_code || "");
+        const baseMessage = toErrorText(data, "继续生成失败");
+        const message = errorCode === "TASK_ARTIFACT_MISSING" ? `${baseMessage}；素材已过期，请更换素材或重新上传当前文件。` : baseMessage;
         const nextTaskSnapshot =
           errorCode === "TASK_ARTIFACT_MISSING" || errorCode === "TASK_RESUME_UNAVAILABLE"
             ? {
@@ -448,8 +467,20 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
         return;
       }
       setPhase("processing");
+      setTaskSnapshot((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: "pending",
+              error_code: "",
+              message: "",
+              current_text: "准备重新生成",
+              resume_available: false,
+            }
+          : prev,
+      );
       await persistSession({ phase: "processing", uploadPercent: 100, status: "" });
-      void pollTask(taskId);
+      void pollTask(taskId, false, pollToken);
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
       setStatus(message);
@@ -505,8 +536,8 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
           <div className="space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
             <p className="text-sm text-destructive">{status}</p>
             <div className="flex flex-wrap gap-2">
-              {canResume ? <Button type="button" onClick={() => void resumeTask()}><RefreshCcw className="size-4" />继续生成</Button> : null}
-              {hasLocalFile ? <Button type="button" variant="secondary" onClick={() => void submit()}><RefreshCcw className="size-4" />重新生成当前素材</Button> : null}
+              {canRetryWithoutUpload ? <Button type="button" onClick={() => void resumeTask()}><RefreshCcw className="size-4" />{taskSnapshot?.resume_available ? "免上传继续生成" : "免上传重新生成"}</Button> : null}
+              {hasLocalFile ? <Button type="button" variant="secondary" onClick={() => void submit()}><RefreshCcw className="size-4" />重新上传当前素材</Button> : null}
               {hasLocalFile ? <Button type="button" variant="ghost" onClick={() => void clearTaskRuntime()}>保留素材并清空错误</Button> : null}
               <Button type="button" variant="outline" onClick={() => void resetSession()}>更换素材</Button>
             </div>
