@@ -24,6 +24,7 @@ depends_on = None
 FLASH_MT_MODEL = "qwen-mt-flash"
 LEGACY_MT_MODELS = ("qwen-mt-plus", "qwen-mt-lite", "qwen-mt-turbo")
 DEFAULT_MT_POINTS_PER_1K_TOKENS = 15
+MT_MODEL_LIKE_PATTERN = "qwen-mt-%"
 
 
 def _schema_name() -> str | None:
@@ -120,10 +121,14 @@ def _upgrade_billing_model_rates(schema: str | None) -> None:
     table_name = _qualified_table("billing_model_rates", schema)
 
     bind.execute(
-        sa.text(f"DELETE FROM {table_name} WHERE model_name IN :model_names").bindparams(
-            sa.bindparam("model_names", expanding=True)
+        sa.text(
+            f"""
+            DELETE FROM {table_name}
+            WHERE model_name LIKE :mt_model_like
+              AND model_name <> :flash_model
+            """
         ),
-        {"model_names": list(LEGACY_MT_MODELS)},
+        {"mt_model_like": MT_MODEL_LIKE_PATTERN, "flash_model": FLASH_MT_MODEL},
     )
 
     exists = bind.execute(

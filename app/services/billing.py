@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MT_POINTS_PER_1K_TOKENS = 15
 MT_FLASH_MODEL = "qwen-mt-flash"
-LEGACY_MT_MODELS = ("qwen-mt-plus", "qwen-mt-lite", "qwen-mt-turbo")
+MT_MODEL_PREFIX = "qwen-mt-"
 
 DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
     {
@@ -451,6 +451,109 @@ def append_admin_operation_log(
     return row
 
 
+def _flash_mt_default_payload() -> dict[str, object]:
+    for item in DEFAULT_MODEL_RATES:
+        if str(item.get("model_name") or "").strip() == MT_FLASH_MODEL:
+            return dict(item)
+    return {
+        "model_name": MT_FLASH_MODEL,
+        "points_per_minute": 0,
+        "points_per_1k_tokens": DEFAULT_MT_POINTS_PER_1K_TOKENS,
+        "billing_unit": "1k_tokens",
+        "parallel_enabled": False,
+        "parallel_threshold_seconds": 600,
+        "segment_seconds": 300,
+        "max_concurrency": 1,
+    }
+
+
+def _billing_model_rates_columns(db: Session) -> set[str]:
+    bind = db.get_bind()
+    if bind is None:
+        return set()
+    schema = None if bind.dialect.name == "sqlite" else BillingModelRate.__table__.schema
+    inspector = inspect(bind)
+    if not inspector.has_table(BillingModelRate.__tablename__, schema=schema):
+        return set()
+    return {str(item.get("name") or "").strip() for item in inspector.get_columns(BillingModelRate.__tablename__, schema=schema)}
+
+
+def _cleanup_non_flash_mt_rates(db: Session, *, ensure_flash: bool) -> tuple[int, bool]:
+    required_columns = {
+        "model_name",
+        "points_per_minute",
+        "points_per_1k_tokens",
+        "billing_unit",
+        "is_active",
+        "parallel_enabled",
+        "parallel_threshold_seconds",
+        "segment_seconds",
+        "max_concurrency",
+    }
+    column_names = _billing_model_rates_columns(db)
+    if not column_names:
+        return 0, False
+    missing_columns = sorted(required_columns - column_names)
+    if missing_columns:
+        logger.warning(
+            "[DEBUG] billing_rates.mt_flash_only_skip_partial_schema missing=%s",
+            ",".join(missing_columns),
+        )
+        return 0, False
+
+    legacy_rows = list(
+        db.scalars(
+            select(BillingModelRate).where(
+                BillingModelRate.model_name.like(f"{MT_MODEL_PREFIX}%"),
+                BillingModelRate.model_name != MT_FLASH_MODEL,
+            )
+        ).all()
+    )
+    removed_count = len(legacy_rows)
+    for row in legacy_rows:
+        db.delete(row)
+
+    seeded_flash = False
+    flash_row = db.get(BillingModelRate, MT_FLASH_MODEL) if ensure_flash else object()
+    if flash_row is None:
+        seed = _flash_mt_default_payload()
+        db.add(
+            BillingModelRate(
+                model_name=MT_FLASH_MODEL,
+                points_per_minute=int(seed.get("points_per_minute") or 0),
+                points_per_1k_tokens=int(seed.get("points_per_1k_tokens") or 0),
+                billing_unit=str(seed.get("billing_unit") or "1k_tokens"),
+                is_active=True,
+                parallel_enabled=bool(seed.get("parallel_enabled")),
+                parallel_threshold_seconds=int(seed.get("parallel_threshold_seconds") or 600),
+                segment_seconds=int(seed.get("segment_seconds") or 300),
+                max_concurrency=int(seed.get("max_concurrency") or 1),
+            )
+        )
+        seeded_flash = True
+
+    if removed_count > 0 or seeded_flash:
+        logger.warning(
+            "[DEBUG] billing_rates.mt_flash_only_cleanup removed=%s seeded_flash=%s",
+            removed_count,
+            seeded_flash,
+        )
+    return removed_count, seeded_flash
+
+
+def enforce_mt_flash_only_rates(db: Session) -> bool:
+    removed_count, seeded_flash = _cleanup_non_flash_mt_rates(db, ensure_flash=True)
+    changed = removed_count > 0 or seeded_flash
+    if changed:
+        db.commit()
+        logger.warning(
+            "[DEBUG] billing_rates.mt_flash_only_self_heal removed=%s seeded_flash=%s",
+            removed_count,
+            seeded_flash,
+        )
+    return changed
+
+
 def ensure_default_billing_rates(
     db: Session,
     defaults: Iterable[dict[str, object]] = DEFAULT_MODEL_RATES,
@@ -464,11 +567,8 @@ def ensure_default_billing_rates(
     if legacy_para is not None:
         db.delete(legacy_para)
         changed = True
-    for legacy_mt_model in LEGACY_MT_MODELS:
-        legacy_row = db.get(BillingModelRate, legacy_mt_model)
-        if legacy_row is None:
-            continue
-        db.delete(legacy_row)
+    removed_count, seeded_flash = _cleanup_non_flash_mt_rates(db, ensure_flash=False)
+    if removed_count > 0 or seeded_flash:
         changed = True
 
     for item in defaults:

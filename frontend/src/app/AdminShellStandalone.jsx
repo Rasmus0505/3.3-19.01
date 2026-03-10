@@ -99,7 +99,7 @@ export function AdminShellStandalone() {
               </CardHeader>
               <CardContent className="flex gap-2">
                 <Button variant="outline" asChild>
-                  <NavLink to="/admin/users">刷新重试</NavLink>
+                  <NavLink to="/admin/overview">刷新重试</NavLink>
                 </Button>
                 <Button onClick={handleLogout}>退出登录</Button>
               </CardContent>

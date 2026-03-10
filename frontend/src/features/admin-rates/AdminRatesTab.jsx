@@ -6,6 +6,7 @@ import { formatDateTimeBeijing } from "../../shared/lib/datetime";
 import {
   Alert,
   AlertDescription,
+  Badge,
   Button,
   Card,
   CardContent,
@@ -39,6 +40,19 @@ async function jsonOrEmpty(resp) {
   } catch (_) {
     return {};
   }
+}
+
+function isDraftChanged(item, draft) {
+  return (
+    Number(item.points_per_minute || 0) !== Number(draft.points_per_minute || 0) ||
+    Number(item.points_per_1k_tokens || 0) !== Number(draft.points_per_1k_tokens || 0) ||
+    String(item.billing_unit || "minute") !== String(draft.billing_unit || "minute") ||
+    Boolean(item.is_active) !== Boolean(draft.is_active) ||
+    Boolean(item.parallel_enabled) !== Boolean(draft.parallel_enabled) ||
+    Number(item.parallel_threshold_seconds || 0) !== Number(draft.parallel_threshold_seconds || 0) ||
+    Number(item.segment_seconds || 0) !== Number(draft.segment_seconds || 0) ||
+    Number(item.max_concurrency || 0) !== Number(draft.max_concurrency || 0)
+  );
 }
 
 export function AdminRatesTab({ apiCall }) {
@@ -139,6 +153,10 @@ export function AdminRatesTab({ apiCall }) {
     }));
   }
 
+  const dirtyModels = rates
+    .map((item) => ({ item, draft: drafts[item.model_name] || item }))
+    .filter(({ item, draft }) => isDraftChanged(item, draft));
+
   return (
     <Card>
       <CardHeader>
@@ -149,6 +167,22 @@ export function AdminRatesTab({ apiCall }) {
         <CardDescription>同一张表同时维护按分钟计费的 ASR 模型和按 1k Tokens 计费的翻译模型。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        {dirtyModels.length > 0 ? (
+          <Alert>
+            <AlertDescription className="space-y-2">
+              <p>当前有 {dirtyModels.length} 个模型存在未保存变更：</p>
+              <div className="flex flex-wrap gap-2">
+                {dirtyModels.map(({ item, draft }) => (
+                  <Badge key={item.model_name} variant="outline">
+                    {item.model_name}: {item.billing_unit}/{item.points_per_minute}/{item.points_per_1k_tokens}
+                    {" -> "}
+                    {draft.billing_unit}/{draft.points_per_minute}/{draft.points_per_1k_tokens}
+                  </Badge>
+                ))}
+              </div>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {loading ? <Skeleton className="h-10 w-full" /> : null}
         <ScrollArea className="w-full rounded-md border">
           <Table className="min-w-[1460px]">

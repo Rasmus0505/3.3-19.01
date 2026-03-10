@@ -2,6 +2,7 @@
 
 import csv
 import io
+import json
 from datetime import datetime
 import logging
 
@@ -16,7 +17,7 @@ from app.core.config import REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_EXPORT_
 from app.core.errors import error_response, map_billing_error
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
 from app.db import get_db
-from app.models import BillingModelRate, RedeemCode, RedeemCodeBatch, SubtitleSetting, User
+from app.models import AdminOperationLog, BillingModelRate, RedeemCode, RedeemCodeBatch, SubtitleSetting, User
 from app.repositories.admin import (
     list_admin_users,
     list_all_redeem_audit_rows,
@@ -30,6 +31,9 @@ from app.repositories.wallet_ledger import list_translation_request_rows, list_w
 from app.schemas import (
     AdminBillingRateUpdateRequest,
     AdminBillingRatesResponse,
+    AdminSubtitleSettingsItem,
+    AdminSubtitleSettingsHistoryItem,
+    AdminSubtitleSettingsHistoryResponse,
     AdminSubtitleSettingsResponse,
     AdminSubtitleSettingsUpdateRequest,
     AdminTranslationLogItem,
@@ -71,6 +75,7 @@ from app.services.billing_service import (
     bulk_disable_redeem_codes,
     copy_redeem_batch_and_codes,
     create_redeem_batch_and_codes,
+    enforce_mt_flash_only_rates,
     get_subtitle_settings,
     manual_adjust,
     set_redeem_batch_status,
@@ -104,6 +109,79 @@ def _effective_code_status(*, code_status: str, batch_status: str, expire_at: da
     if batch_status == REDEEM_BATCH_STATUS_EXPIRED or now >= expire_at_naive:
         return "expired"
     return "unredeemed"
+
+
+def _subtitle_settings_item_with_meta(
+    settings: SubtitleSetting,
+    *,
+    updated_by_user_email: str | None = None,
+) -> AdminSubtitleSettingsItem:
+    item = to_admin_subtitle_settings_item(settings)
+    return item.model_copy(
+        update={
+            "updated_by_user_id": settings.updated_by_user_id,
+            "updated_by_user_email": updated_by_user_email,
+        }
+    )
+
+
+def _subtitle_settings_item_from_dict(
+    payload: dict[str, object],
+    *,
+    updated_at: datetime,
+    updated_by_user_id: int | None = None,
+    updated_by_user_email: str | None = None,
+) -> AdminSubtitleSettingsItem:
+    return AdminSubtitleSettingsItem(
+        semantic_split_default_enabled=bool(payload.get("semantic_split_default_enabled")),
+        subtitle_split_enabled=bool(payload.get("subtitle_split_enabled", True)),
+        subtitle_split_target_words=int(payload.get("subtitle_split_target_words", 18) or 18),
+        subtitle_split_max_words=int(payload.get("subtitle_split_max_words", 28) or 28),
+        semantic_split_max_words_threshold=int(payload.get("semantic_split_max_words_threshold", 24) or 24),
+        semantic_split_model=str(payload.get("semantic_split_model", "qwen-plus") or "qwen-plus"),
+        semantic_split_timeout_seconds=int(payload.get("semantic_split_timeout_seconds", 40) or 40),
+        translation_batch_max_chars=max(1, min(12000, int(payload.get("translation_batch_max_chars", 2600) or 2600))),
+        updated_at=to_shanghai_aware(updated_at),
+        updated_by_user_id=updated_by_user_id,
+        updated_by_user_email=updated_by_user_email,
+    )
+
+
+def _load_subtitle_settings_rollback_candidate(db: Session) -> AdminSubtitleSettingsHistoryItem | None:
+    operator_user = User.__table__.alias("subtitle_settings_operator")
+    row = db.execute(
+        select(AdminOperationLog, operator_user.c.email.label("operator_email"))
+        .outerjoin(operator_user, operator_user.c.id == AdminOperationLog.operator_user_id)
+        .where(
+            AdminOperationLog.target_type == "subtitle_settings",
+            AdminOperationLog.action_type.in_(["subtitle_settings_update", "subtitle_settings_rollback"]),
+        )
+        .order_by(AdminOperationLog.created_at.desc(), AdminOperationLog.id.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+
+    raw_before = getattr(row[0], "before_value", "") or ""
+    try:
+        payload = json.loads(raw_before)
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict) or not payload:
+        return None
+
+    return AdminSubtitleSettingsHistoryItem(
+        action_id=int(row[0].id),
+        created_at=to_shanghai_aware(row[0].created_at),
+        operator_user_id=row[0].operator_user_id,
+        operator_user_email=row.operator_email,
+        settings=_subtitle_settings_item_from_dict(
+            payload,
+            updated_at=row[0].created_at,
+            updated_by_user_id=row[0].operator_user_id,
+            updated_by_user_email=row.operator_email,
+        ),
+    )
 
 
 def _to_batch_item(batch: RedeemCodeBatch, redeemed_count: int, *, now: datetime) -> AdminRedeemBatchItem:
@@ -370,6 +448,7 @@ def admin_translation_logs(
     responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
 )
 def admin_billing_rates(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
+    enforce_mt_flash_only_rates(db)
     rates = list_billing_rates(db)
     return AdminBillingRatesResponse(ok=True, rates=[to_rate_item(item) for item in rates])
 
@@ -385,6 +464,9 @@ def admin_update_billing_rate(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_admin_user),
 ):
+    normalized_model_name = (model_name or "").strip().lower()
+    if normalized_model_name.startswith("qwen-mt-") and normalized_model_name != "qwen-mt-flash":
+        return error_response(400, "MT_MODEL_DEPRECATED", "翻译模型仅支持 qwen-mt-flash", model_name)
     rate = db.get(BillingModelRate, model_name)
     if not rate:
         return error_response(404, "BILLING_RATE_NOT_FOUND", "计费模型不存在", model_name)
@@ -415,7 +497,29 @@ def admin_update_billing_rate(
 )
 def admin_get_subtitle_settings(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
     settings = get_subtitle_settings(db)
-    return AdminSubtitleSettingsResponse(ok=True, settings=to_admin_subtitle_settings_item(settings))
+    updated_by_user_email = None
+    if settings.updated_by_user_id:
+        updated_by_user = db.get(User, settings.updated_by_user_id)
+        updated_by_user_email = updated_by_user.email if updated_by_user is not None else None
+    return AdminSubtitleSettingsResponse(ok=True, settings=_subtitle_settings_item_with_meta(settings, updated_by_user_email=updated_by_user_email))
+
+
+@router.get(
+    "/subtitle-settings/history",
+    response_model=AdminSubtitleSettingsHistoryResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_get_subtitle_settings_history(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
+    settings = get_subtitle_settings(db)
+    updated_by_user_email = None
+    if settings.updated_by_user_id:
+        updated_by_user = db.get(User, settings.updated_by_user_id)
+        updated_by_user_email = updated_by_user.email if updated_by_user is not None else None
+    return AdminSubtitleSettingsHistoryResponse(
+        ok=True,
+        current=_subtitle_settings_item_with_meta(settings, updated_by_user_email=updated_by_user_email),
+        rollback_candidate=_load_subtitle_settings_rollback_candidate(db),
+    )
 
 
 @router.put(
@@ -454,7 +558,49 @@ def admin_update_subtitle_settings(
     )
     db.commit()
     db.refresh(settings)
-    return AdminSubtitleSettingsResponse(ok=True, settings=to_admin_subtitle_settings_item(settings))
+    return AdminSubtitleSettingsResponse(ok=True, settings=_subtitle_settings_item_with_meta(settings, updated_by_user_email=current_admin.email))
+
+
+@router.post(
+    "/subtitle-settings/rollback-last",
+    response_model=AdminSubtitleSettingsResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_rollback_subtitle_settings_last(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    rollback_candidate = _load_subtitle_settings_rollback_candidate(db)
+    if rollback_candidate is None:
+        return error_response(400, "SUBTITLE_SETTINGS_ROLLBACK_EMPTY", "暂无可回滚的上一版本")
+
+    settings = get_subtitle_settings(db)
+    before = _subtitle_settings_item_with_meta(settings).model_dump(mode="json")
+    previous = rollback_candidate.settings
+    settings.semantic_split_default_enabled = previous.semantic_split_default_enabled
+    settings.subtitle_split_enabled = previous.subtitle_split_enabled
+    settings.subtitle_split_target_words = previous.subtitle_split_target_words
+    settings.subtitle_split_max_words = previous.subtitle_split_max_words
+    settings.semantic_split_max_words_threshold = previous.semantic_split_max_words_threshold
+    settings.semantic_split_model = previous.semantic_split_model.strip()
+    settings.semantic_split_timeout_seconds = previous.semantic_split_timeout_seconds
+    settings.translation_batch_max_chars = previous.translation_batch_max_chars
+    settings.updated_by_user_id = current_admin.id
+    db.add(settings)
+    db.flush()
+    append_admin_operation_log(
+        db,
+        operator_user_id=current_admin.id,
+        action_type="subtitle_settings_rollback",
+        target_type="subtitle_settings",
+        target_id=str(getattr(settings, "id", 1)),
+        before_value=before,
+        after_value=_subtitle_settings_item_with_meta(settings, updated_by_user_email=current_admin.email).model_dump(mode="json"),
+        note=f"subtitle_settings_rollback_from:{rollback_candidate.action_id}",
+    )
+    db.commit()
+    db.refresh(settings)
+    return AdminSubtitleSettingsResponse(ok=True, settings=_subtitle_settings_item_with_meta(settings, updated_by_user_email=current_admin.email))
 
 
 @router.post(

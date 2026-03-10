@@ -148,6 +148,14 @@ def test_ensure_default_billing_rates_rebuilds_legacy_sqlite_constraint(tmp_path
         conn.execute(
             text(
                 """
+                INSERT INTO billing_model_rates (model_name, points_per_minute, is_active, updated_at)
+                VALUES ('qwen-mt-custom', 1, 1, CURRENT_TIMESTAMP)
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
                 CREATE TABLE wallet_ledger (
                     id INTEGER NOT NULL PRIMARY KEY,
                     user_id INTEGER NOT NULL,
@@ -194,6 +202,19 @@ def test_ensure_default_billing_rates_rebuilds_legacy_sqlite_constraint(tmp_path
                 """
             )
         ).mappings().one()
+        non_flash_mt_count = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT COUNT(1)
+                    FROM billing_model_rates
+                    WHERE model_name LIKE 'qwen-mt-%'
+                      AND model_name <> 'qwen-mt-flash'
+                    """
+                )
+            ).scalar()
+            or 0
+        )
 
     assert "points_per_minute > 0" not in ddl
     assert "points_per_minute >= 0" in ddl
@@ -204,6 +225,7 @@ def test_ensure_default_billing_rates_rebuilds_legacy_sqlite_constraint(tmp_path
     assert mt_rate["points_per_minute"] == 0
     assert mt_rate["points_per_1k_tokens"] > 0
     assert mt_rate["billing_unit"] == "1k_tokens"
+    assert non_flash_mt_count == 0
 
 
 def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
@@ -243,6 +265,16 @@ def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
             subtitle_row = conn.execute(
                 text("SELECT id, subtitle_split_enabled, translation_batch_max_chars FROM subtitle_settings WHERE id = 1")
             ).mappings().one_or_none()
+            mt_models = conn.execute(
+                text(
+                    """
+                    SELECT model_name
+                    FROM billing_model_rates
+                    WHERE model_name LIKE 'qwen-mt-%'
+                    ORDER BY model_name
+                    """
+                )
+            ).scalars().all()
     finally:
         verify_engine.dispose()
 
@@ -251,6 +283,7 @@ def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
     assert int(subtitle_row["id"]) == 1
     assert bool(subtitle_row["subtitle_split_enabled"]) is True
     assert int(subtitle_row["translation_batch_max_chars"]) == 2600
+    assert mt_models == ["qwen-mt-flash"]
 
 
 def _register_and_login(client: TestClient, email: str = "admin@example.com", password: str = "123456") -> str:
@@ -685,7 +718,7 @@ def test_auth_register_and_login(test_client):
 
 
 def test_wallet_and_admin_endpoints(test_client):
-    client, _, monkeypatch = test_client
+    client, session_factory, monkeypatch = test_client
     token = _register_and_login(client, email="admin@example.com")
     monkeypatch.setenv("ADMIN_EMAILS", "admin@example.com")
 
@@ -695,10 +728,32 @@ def test_wallet_and_admin_endpoints(test_client):
     assert wallet.status_code == 200
     assert "balance_points" in wallet.json()
 
+    seed_dirty = session_factory()
+    try:
+        seed_dirty.merge(
+            BillingModelRate(
+                model_name="qwen-mt-custom",
+                points_per_minute=0,
+                points_per_1k_tokens=21,
+                billing_unit="1k_tokens",
+                is_active=True,
+                parallel_enabled=False,
+                parallel_threshold_seconds=600,
+                segment_seconds=300,
+                max_concurrency=1,
+            )
+        )
+        seed_dirty.commit()
+    finally:
+        seed_dirty.close()
+
     rates = client.get("/api/admin/billing-rates", headers=headers)
     assert rates.status_code == 200
     assert isinstance(rates.json().get("rates"), list)
     assert any("points_per_1k_tokens" in item and "billing_unit" in item for item in rates.json().get("rates", []))
+    admin_model_names = [str(item.get("model_name") or "") for item in rates.json().get("rates", [])]
+    admin_mt_models = [name for name in admin_model_names if name.startswith("qwen-mt-")]
+    assert admin_mt_models == ["qwen-mt-flash"]
 
     users = client.get("/api/admin/users", headers=headers)
     assert users.status_code == 200
@@ -717,11 +772,45 @@ def test_wallet_and_admin_endpoints(test_client):
     assert "subtitle_settings" in public_rates.json()
     assert public_rates.json()["subtitle_settings"]["semantic_split_default_enabled"] is False
     assert any("points_per_1k_tokens" in item and "billing_unit" in item for item in public_rates.json()["rates"])
+    public_model_names = [str(item.get("model_name") or "") for item in public_rates.json().get("rates", [])]
+    public_mt_models = [name for name in public_model_names if name.startswith("qwen-mt-")]
+    assert public_mt_models == ["qwen-mt-flash"]
+
+    verify_clean = session_factory()
+    try:
+        assert verify_clean.get(BillingModelRate, "qwen-mt-custom") is None
+    finally:
+        verify_clean.close()
 
     subtitle_settings = client.get("/api/admin/subtitle-settings", headers=headers)
     assert subtitle_settings.status_code == 200
     assert subtitle_settings.json()["settings"]["subtitle_split_enabled"] is True
     assert subtitle_settings.json()["settings"]["translation_batch_max_chars"] == 2600
+
+
+def test_admin_update_billing_rate_rejects_non_flash_mt_model(test_client):
+    client, _, monkeypatch = test_client
+    token = _register_and_login(client, email="billing-admin@example.com")
+    monkeypatch.setenv("ADMIN_EMAILS", "billing-admin@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.put(
+        "/api/admin/billing-rates/qwen-mt-custom",
+        headers=headers,
+        json={
+            "points_per_minute": 0,
+            "points_per_1k_tokens": 15,
+            "billing_unit": "1k_tokens",
+            "is_active": True,
+            "parallel_enabled": False,
+            "parallel_threshold_seconds": 600,
+            "segment_seconds": 300,
+            "max_concurrency": 1,
+        },
+    )
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["error_code"] == "MT_MODEL_DEPRECATED"
 
 
 def test_admin_subtitle_settings_roundtrip(test_client):
