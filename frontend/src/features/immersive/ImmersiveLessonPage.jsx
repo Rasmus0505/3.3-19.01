@@ -10,7 +10,13 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Switch,
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -21,11 +27,51 @@ import { useSentencePlayback } from "./useSentencePlayback";
 import { useTypingFeedbackSounds } from "./useTypingFeedbackSounds";
 import "./immersive.css";
 
-const DISPLAY_MODE_STORAGE_KEY = "immersive_word_display_mode";
-const AUTO_REPLAY_STORAGE_KEY = "immersive_auto_replay_current_sentence";
+const LEARNING_SETTINGS_STORAGE_KEY = "immersive_learning_settings_v1";
 const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
 const APOSTROPHE_RE = /[’']/g;
 const CINEMA_CONTROLS_IDLE_MS = 3000;
+const WORD_TIMING_TOLERANCE_MS = 140;
+const SHORTCUT_OPTIONS = [
+  { value: "space", label: "Space" },
+  { value: "shift+space", label: "Shift+Space" },
+  { value: "enter", label: "Enter" },
+  { value: "shift+enter", label: "Shift+Enter" },
+  { value: "arrowleft", label: "ArrowLeft" },
+  { value: "arrowright", label: "ArrowRight" },
+  { value: "shift+arrowleft", label: "Shift+ArrowLeft" },
+  { value: "shift+arrowright", label: "Shift+ArrowRight" },
+  { value: "shift+r", label: "Shift+R" },
+  { value: "shift+n", label: "Shift+N" },
+  { value: "shift+p", label: "Shift+P" },
+];
+const SHORTCUT_ACTIONS = [
+  { id: "reveal_letter", label: "揭示字母" },
+  { id: "reveal_word", label: "揭示单词" },
+  { id: "previous_sentence", label: "上一句" },
+  { id: "next_sentence", label: "下一句" },
+  { id: "replay_sentence", label: "重播" },
+];
+const DEFAULT_SHORTCUTS = {
+  reveal_letter: "space",
+  reveal_word: "shift+space",
+  previous_sentence: "arrowleft",
+  next_sentence: "enter",
+  replay_sentence: "shift+r",
+};
+const REPLAY_PRESET_OPTIONS = [
+  { id: "standard", label: "标准渐进" },
+  { id: "recall", label: "更强回忆" },
+  { id: "assist", label: "更强扶助" },
+  { id: "custom", label: "自定义" },
+];
+const DEFAULT_CUSTOM_REPLAY_CONFIG = {
+  tailSpeedStep: 0.1,
+  minimumTailSpeed: 0.75,
+  revealLetterAt: 2,
+  revealWordAt: 3,
+  extraRevealWordsPerReplay: 1,
+};
 const MEDIA_TYPE_BY_EXTENSION = {
   ".mp4": "video/mp4",
   ".mov": "video/quicktime",
@@ -41,20 +87,84 @@ const MEDIA_TYPE_BY_EXTENSION = {
   ".opus": "audio/ogg; codecs=opus",
 };
 
-function getInitialDisplayMode() {
-  if (typeof window === "undefined") return "underline";
-  const saved = window.localStorage.getItem(DISPLAY_MODE_STORAGE_KEY);
-  return saved === "chip" || saved === "underline" ? saved : "underline";
-}
-
-function getInitialAutoReplayEnabled() {
-  if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(AUTO_REPLAY_STORAGE_KEY) === "true";
-}
-
-function debugAutoReplayLog(event, detail = {}) {
+function debugImmersiveLog(event, detail = {}) {
   if (typeof console === "undefined" || typeof console.debug !== "function") return;
-  console.debug("[DEBUG] immersive.auto_replay", event, detail);
+  console.debug("[DEBUG] immersive.learning", event, detail);
+}
+
+function clampNumber(value, min, max, fallback, { integer = false } = {}) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  const clamped = Math.min(max, Math.max(min, parsed));
+  return integer ? Math.round(clamped) : Number(clamped.toFixed(2));
+}
+
+function normalizeShortcutValue(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return SHORTCUT_OPTIONS.some((item) => item.value === normalized) ? normalized : "";
+}
+
+function getShortcutLabel(shortcutValue) {
+  return SHORTCUT_OPTIONS.find((item) => item.value === shortcutValue)?.label || shortcutValue;
+}
+
+function getFirstAvailableShortcut(excluded = new Set(), preferred = "") {
+  const normalizedPreferred = normalizeShortcutValue(preferred);
+  if (normalizedPreferred && !excluded.has(normalizedPreferred)) {
+    return normalizedPreferred;
+  }
+  return SHORTCUT_OPTIONS.find((item) => !excluded.has(item.value))?.value || SHORTCUT_OPTIONS[0].value;
+}
+
+function sanitizeShortcutMap(rawShortcutMap = {}) {
+  const nextShortcutMap = {};
+  const occupied = new Set();
+  for (const action of SHORTCUT_ACTIONS) {
+    const requested = normalizeShortcutValue(rawShortcutMap?.[action.id]) || DEFAULT_SHORTCUTS[action.id];
+    const resolved = occupied.has(requested) ? getFirstAvailableShortcut(occupied, DEFAULT_SHORTCUTS[action.id]) : requested;
+    nextShortcutMap[action.id] = resolved;
+    occupied.add(resolved);
+  }
+  return nextShortcutMap;
+}
+
+function sanitizeCustomReplayConfig(rawConfig = {}) {
+  return {
+    tailSpeedStep: clampNumber(rawConfig?.tailSpeedStep, 0.01, 0.5, DEFAULT_CUSTOM_REPLAY_CONFIG.tailSpeedStep),
+    minimumTailSpeed: clampNumber(rawConfig?.minimumTailSpeed, 0.4, 0.98, DEFAULT_CUSTOM_REPLAY_CONFIG.minimumTailSpeed),
+    revealLetterAt: clampNumber(rawConfig?.revealLetterAt, 0, 8, DEFAULT_CUSTOM_REPLAY_CONFIG.revealLetterAt, { integer: true }),
+    revealWordAt: clampNumber(rawConfig?.revealWordAt, 0, 8, DEFAULT_CUSTOM_REPLAY_CONFIG.revealWordAt, { integer: true }),
+    extraRevealWordsPerReplay: clampNumber(
+      rawConfig?.extraRevealWordsPerReplay,
+      0,
+      4,
+      DEFAULT_CUSTOM_REPLAY_CONFIG.extraRevealWordsPerReplay,
+      { integer: true },
+    ),
+  };
+}
+
+function sanitizeLearningSettings(rawSettings = {}) {
+  const presetId = REPLAY_PRESET_OPTIONS.some((item) => item.id === rawSettings?.presetId) ? rawSettings.presetId : "standard";
+  return {
+    presetId,
+    shortcuts: sanitizeShortcutMap(rawSettings?.shortcuts),
+    customConfig: sanitizeCustomReplayConfig(rawSettings?.customConfig),
+  };
+}
+
+function getInitialLearningSettings() {
+  if (typeof window === "undefined") {
+    return sanitizeLearningSettings();
+  }
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(LEARNING_SETTINGS_STORAGE_KEY) || "{}");
+    return sanitizeLearningSettings(parsed);
+  } catch (_) {
+    return sanitizeLearningSettings();
+  }
 }
 
 function getFullscreenElement() {
@@ -174,6 +284,381 @@ function createWordState(tokens) {
   };
 }
 
+function cloneWordSnapshot(activeWordIndex, currentWordInput, wordInputs, wordStatuses) {
+  return {
+    activeWordIndex: Math.max(0, Number(activeWordIndex || 0)),
+    currentWordInput: String(currentWordInput || ""),
+    wordInputs: Array.isArray(wordInputs) ? [...wordInputs] : [],
+    wordStatuses: Array.isArray(wordStatuses) ? [...wordStatuses] : [],
+  };
+}
+
+function completeActiveWordInSnapshot(snapshot, tokens) {
+  const nextSnapshot = cloneWordSnapshot(
+    snapshot.activeWordIndex,
+    snapshot.currentWordInput,
+    snapshot.wordInputs,
+    snapshot.wordStatuses,
+  );
+  const activeIndex = nextSnapshot.activeWordIndex;
+  if (activeIndex < 0 || activeIndex >= tokens.length) {
+    return { snapshot: nextSnapshot, completedSentence: activeIndex >= tokens.length };
+  }
+  nextSnapshot.wordInputs[activeIndex] = String(tokens[activeIndex] || "");
+  nextSnapshot.wordStatuses[activeIndex] = "correct";
+  nextSnapshot.currentWordInput = "";
+  const nextIndex = activeIndex + 1;
+  if (nextIndex < tokens.length) {
+    nextSnapshot.wordStatuses[nextIndex] = "active";
+    nextSnapshot.activeWordIndex = nextIndex;
+    return { snapshot: nextSnapshot, completedSentence: false };
+  }
+  nextSnapshot.activeWordIndex = tokens.length;
+  return { snapshot: nextSnapshot, completedSentence: true };
+}
+
+function revealLetterInSnapshot(snapshot, tokens) {
+  const nextSnapshot = cloneWordSnapshot(
+    snapshot.activeWordIndex,
+    snapshot.currentWordInput,
+    snapshot.wordInputs,
+    snapshot.wordStatuses,
+  );
+  const activeIndex = nextSnapshot.activeWordIndex;
+  if (activeIndex < 0 || activeIndex >= tokens.length) {
+    return { snapshot: nextSnapshot, completedSentence: activeIndex >= tokens.length };
+  }
+  const normalizedExpected = normalizeComparableToken(tokens[activeIndex] || "");
+  if (!normalizedExpected) {
+    return completeActiveWordInSnapshot(nextSnapshot, tokens);
+  }
+  const currentLength = normalizeComparableToken(nextSnapshot.currentWordInput).length;
+  const nextInput = normalizedExpected.slice(0, Math.min(normalizedExpected.length, currentLength + 1));
+  nextSnapshot.currentWordInput = nextInput;
+  nextSnapshot.wordInputs[activeIndex] = nextInput;
+  nextSnapshot.wordStatuses[activeIndex] = "active";
+  if (nextInput.length >= normalizedExpected.length) {
+    return completeActiveWordInSnapshot(nextSnapshot, tokens);
+  }
+  return { snapshot: nextSnapshot, completedSentence: false };
+}
+
+function applyReplayAssistanceToSnapshot(snapshot, tokens, assistance) {
+  let nextSnapshot = cloneWordSnapshot(snapshot.activeWordIndex, snapshot.currentWordInput, snapshot.wordInputs, snapshot.wordStatuses);
+  let completedSentence = nextSnapshot.activeWordIndex >= tokens.length;
+
+  if (Number(assistance?.revealWordCount || 0) > 0) {
+    for (let count = 0; count < assistance.revealWordCount; count += 1) {
+      const result = completeActiveWordInSnapshot(nextSnapshot, tokens);
+      nextSnapshot = result.snapshot;
+      completedSentence = result.completedSentence;
+      if (completedSentence) break;
+    }
+    return { snapshot: nextSnapshot, completedSentence };
+  }
+
+  if (Number(assistance?.revealLetterCount || 0) > 0) {
+    for (let count = 0; count < assistance.revealLetterCount; count += 1) {
+      const result = revealLetterInSnapshot(nextSnapshot, tokens);
+      nextSnapshot = result.snapshot;
+      completedSentence = result.completedSentence;
+      if (completedSentence) break;
+    }
+  }
+
+  return { snapshot: nextSnapshot, completedSentence };
+}
+
+function getPresetSummaryLines(learningSettings) {
+  const presetId = learningSettings?.presetId || "standard";
+  if (presetId === "standard") {
+    return [
+      "第1次：未答尾段 0.95x",
+      "第2次：未答尾段 0.85x，揭示当前词 1 个字母",
+      "第3次：未答尾段 0.75x，揭示当前词 1 个完整单词",
+      "第4次起：保持 0.75x，每次额外多揭示 1 个单词",
+    ];
+  }
+  if (presetId === "recall") {
+    return [
+      "第1次：未答尾段 0.95x",
+      "第2次：未答尾段 0.85x",
+      "第3次：未答尾段 0.75x，揭示当前词 1 个字母",
+      "第4次起：保持 0.75x，每次揭示 1 个单词",
+    ];
+  }
+  if (presetId === "assist") {
+    return [
+      "第1次：未答尾段 0.90x，揭示当前词 1 个字母",
+      "第2次：未答尾段 0.80x，揭示当前词 1 个单词",
+      "第3次起：保持 0.75x，每次揭示 1 个单词",
+    ];
+  }
+  const customConfig = sanitizeCustomReplayConfig(learningSettings?.customConfig);
+  return [
+    `每次手动重播尾段额外降速 ${(customConfig.tailSpeedStep * 100).toFixed(0)}%，最低 ${customConfig.minimumTailSpeed.toFixed(2)}x`,
+    customConfig.revealLetterAt > 0 ? `第 ${customConfig.revealLetterAt} 次重播开始揭示 1 个字母` : "不自动揭示字母",
+    customConfig.revealWordAt > 0
+      ? `第 ${customConfig.revealWordAt} 次重播开始揭示单词，之后每次额外 +${customConfig.extraRevealWordsPerReplay} 个单词`
+      : "不自动揭示单词",
+  ];
+}
+
+function resolveReplayAssistance(learningSettings, stage) {
+  const safeStage = Math.max(1, Number(stage || 1));
+  const presetId = learningSettings?.presetId || "standard";
+  if (presetId === "standard") {
+    return {
+      tailRate: safeStage === 1 ? 0.95 : safeStage === 2 ? 0.85 : 0.75,
+      revealLetterCount: safeStage === 2 ? 1 : 0,
+      revealWordCount: safeStage >= 3 ? 1 + Math.max(0, safeStage - 3) : 0,
+    };
+  }
+  if (presetId === "recall") {
+    return {
+      tailRate: safeStage === 1 ? 0.95 : safeStage === 2 ? 0.85 : 0.75,
+      revealLetterCount: safeStage === 3 ? 1 : 0,
+      revealWordCount: safeStage >= 4 ? 1 : 0,
+    };
+  }
+  if (presetId === "assist") {
+    return {
+      tailRate: safeStage === 1 ? 0.9 : safeStage === 2 ? 0.8 : 0.75,
+      revealLetterCount: safeStage === 1 ? 1 : 0,
+      revealWordCount: safeStage >= 2 ? 1 : 0,
+    };
+  }
+  const customConfig = sanitizeCustomReplayConfig(learningSettings?.customConfig);
+  const tailRate = Math.max(customConfig.minimumTailSpeed, Number((1 - safeStage * customConfig.tailSpeedStep).toFixed(2)));
+  const revealWordCount =
+    customConfig.revealWordAt > 0 && safeStage >= customConfig.revealWordAt
+      ? 1 + Math.max(0, safeStage - customConfig.revealWordAt) * customConfig.extraRevealWordsPerReplay
+      : 0;
+  return {
+    tailRate,
+    revealLetterCount: revealWordCount > 0 ? 0 : customConfig.revealLetterAt > 0 && safeStage === customConfig.revealLetterAt ? 1 : 0,
+    revealWordCount,
+  };
+}
+
+function readTimeMs(value, { seconds = false } = {}) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return 0;
+  return Math.max(0, Math.round(seconds ? raw * 1000 : raw));
+}
+
+function getWordBeginMs(item = {}) {
+  if (item.begin_ms != null) return readTimeMs(item.begin_ms);
+  if (item.begin_time != null) return readTimeMs(item.begin_time);
+  if (item.start_ms != null) return readTimeMs(item.start_ms);
+  if (item.start_time != null) return readTimeMs(item.start_time);
+  if (item.start != null) return readTimeMs(item.start, { seconds: true });
+  return 0;
+}
+
+function getWordEndMs(item = {}) {
+  if (item.end_ms != null) return readTimeMs(item.end_ms);
+  if (item.end_time != null) return readTimeMs(item.end_time);
+  if (item.stop_ms != null) return readTimeMs(item.stop_ms);
+  if (item.stop_time != null) return readTimeMs(item.stop_time);
+  if (item.end != null) return readTimeMs(item.end, { seconds: true });
+  if (item.stop != null) return readTimeMs(item.stop, { seconds: true });
+  return 0;
+}
+
+function toReplayWordItem(item) {
+  const surface = String(item?.surface || item?.text || item?.word || "").trim();
+  const beginMs = getWordBeginMs(item);
+  const endMs = getWordEndMs(item);
+  if (!surface || endMs <= beginMs) {
+    return null;
+  }
+  return {
+    surface,
+    normalized: normalizeComparableToken(surface),
+    beginMs,
+    endMs,
+  };
+}
+
+function collectReplayWords(asrPayload = {}) {
+  const output = [];
+  const transcripts = Array.isArray(asrPayload?.transcripts) ? asrPayload.transcripts : [];
+  const directSentences = Array.isArray(asrPayload?.sentences) ? asrPayload.sentences : [];
+
+  function pushWords(wordItems) {
+    for (const item of Array.isArray(wordItems) ? wordItems : []) {
+      const replayWord = toReplayWordItem(item);
+      if (replayWord) {
+        output.push(replayWord);
+      }
+    }
+  }
+
+  pushWords(asrPayload?.words);
+  for (const transcript of transcripts) {
+    pushWords(transcript?.words);
+    for (const sentence of Array.isArray(transcript?.sentences) ? transcript.sentences : []) {
+      pushWords(sentence?.words);
+    }
+  }
+  for (const sentence of directSentences) {
+    pushWords(sentence?.words);
+  }
+
+  const deduped = [];
+  const seen = new Set();
+  for (const item of output.sort((left, right) => left.beginMs - right.beginMs || left.endMs - right.endMs || left.surface.localeCompare(right.surface))) {
+    const dedupeKey = `${item.beginMs}:${item.endMs}:${item.surface}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    deduped.push(item);
+  }
+  return deduped;
+}
+
+function alignSentenceTokenTimings(tokens, candidateWords) {
+  const safeTokens = Array.isArray(tokens) ? tokens : [];
+  const timings = safeTokens.map(() => null);
+  let cursor = 0;
+  for (let tokenIndex = 0; tokenIndex < safeTokens.length; tokenIndex += 1) {
+    const expected = normalizeComparableToken(safeTokens[tokenIndex]);
+    if (!expected) continue;
+    while (cursor < candidateWords.length) {
+      const candidate = candidateWords[cursor];
+      cursor += 1;
+      if (!candidate?.normalized) continue;
+      if (candidate.normalized === expected) {
+        timings[tokenIndex] = {
+          beginMs: candidate.beginMs,
+          endMs: candidate.endMs,
+          surface: candidate.surface,
+        };
+        break;
+      }
+    }
+  }
+  return timings;
+}
+
+function buildSentenceWordTimingMap(sentences, asrPayload) {
+  if (!Array.isArray(sentences) || !sentences.length) {
+    return [];
+  }
+  const replayWords = collectReplayWords(asrPayload);
+  if (!replayWords.length) {
+    return sentences.map(() => ({ tokenTimings: [], matchedCount: 0 }));
+  }
+
+  return sentences.map((sentence) => {
+    const sentenceStartMs = Math.max(0, Number(sentence?.begin_ms || 0));
+    const sentenceEndMs = Math.max(sentenceStartMs + 1, Number(sentence?.end_ms || 0));
+    const candidateWords = replayWords.filter(
+      (item) => item.endMs >= sentenceStartMs - WORD_TIMING_TOLERANCE_MS && item.beginMs <= sentenceEndMs + WORD_TIMING_TOLERANCE_MS,
+    );
+    const tokenTimings = alignSentenceTokenTimings(sentence?.tokens || [], candidateWords);
+    return {
+      tokenTimings,
+      matchedCount: tokenTimings.filter(Boolean).length,
+    };
+  });
+}
+
+function resolveReplayBoundaryMs(sentence, sentenceTiming, activeWordIndex) {
+  const sentenceStartMs = Math.max(0, Number(sentence?.begin_ms || 0));
+  if (activeWordIndex <= 0) {
+    return sentenceStartMs;
+  }
+  const tokenTimings = Array.isArray(sentenceTiming?.tokenTimings) ? sentenceTiming.tokenTimings : [];
+  for (let idx = activeWordIndex - 1; idx >= 0; idx -= 1) {
+    if (tokenTimings[idx]?.endMs) {
+      return tokenTimings[idx].endMs;
+    }
+  }
+  for (let idx = activeWordIndex; idx < tokenTimings.length; idx += 1) {
+    if (tokenTimings[idx]?.beginMs) {
+      return tokenTimings[idx].beginMs;
+    }
+  }
+  return null;
+}
+
+function buildReplayPlaybackPlan(sentence, sentenceTiming, activeWordIndex, tailRate) {
+  const sentenceStartMs = Math.max(0, Number(sentence?.begin_ms || 0));
+  const sentenceEndMs = Math.max(sentenceStartMs + 1, Number(sentence?.end_ms || 0));
+  const resolvedBoundaryMs = resolveReplayBoundaryMs(sentence, sentenceTiming, activeWordIndex);
+  const safeTailRate = Math.max(0.4, Math.min(1, Number(tailRate || 1)));
+
+  if (!resolvedBoundaryMs) {
+    return {
+      initialRate: safeTailRate,
+      rateSteps: [],
+      preciseBoundary: false,
+      tailBoundaryMs: sentenceStartMs,
+    };
+  }
+
+  if (resolvedBoundaryMs <= sentenceStartMs + 30) {
+    return {
+      initialRate: safeTailRate,
+      rateSteps: [],
+      preciseBoundary: true,
+      tailBoundaryMs: resolvedBoundaryMs,
+    };
+  }
+
+  if (resolvedBoundaryMs >= sentenceEndMs - 30) {
+    return {
+      initialRate: 1,
+      rateSteps: [],
+      preciseBoundary: true,
+      tailBoundaryMs: resolvedBoundaryMs,
+    };
+  }
+
+  return {
+    initialRate: 1,
+    rateSteps: [
+      {
+        atSec: (resolvedBoundaryMs - sentenceStartMs) / 1000,
+        rate: safeTailRate,
+      },
+    ],
+    preciseBoundary: true,
+    tailBoundaryMs: resolvedBoundaryMs,
+  };
+}
+
+function isShortcutPressed(event, shortcutValue) {
+  const key = String(event.key || "").toLowerCase();
+  switch (shortcutValue) {
+    case "space":
+      return !event.shiftKey && event.key === " ";
+    case "shift+space":
+      return event.shiftKey && event.key === " ";
+    case "enter":
+      return !event.shiftKey && key === "enter";
+    case "shift+enter":
+      return event.shiftKey && key === "enter";
+    case "arrowleft":
+      return !event.shiftKey && key === "arrowleft";
+    case "arrowright":
+      return !event.shiftKey && key === "arrowright";
+    case "shift+arrowleft":
+      return event.shiftKey && key === "arrowleft";
+    case "shift+arrowright":
+      return event.shiftKey && key === "arrowright";
+    case "shift+r":
+      return event.shiftKey && key === "r";
+    case "shift+n":
+      return event.shiftKey && key === "n";
+    case "shift+p":
+      return event.shiftKey && key === "p";
+    default:
+      return false;
+  }
+}
+
 function isEditableShortcutTarget(target) {
   if (!target) return false;
   if (target?.isContentEditable) return true;
@@ -270,15 +755,11 @@ export function ImmersiveLessonPage({
   const [currentWordInput, setCurrentWordInput] = useState("");
   const [wordInputs, setWordInputs] = useState([]);
   const [wordStatuses, setWordStatuses] = useState([]);
-  const [displayMode, setDisplayMode] = useState(() => getInitialDisplayMode());
-  const [autoReplayCurrentSentence, setAutoReplayCurrentSentence] = useState(() => getInitialAutoReplayEnabled());
+  const [learningSettings, setLearningSettings] = useState(() => getInitialLearningSettings());
+  const [settingsError, setSettingsError] = useState("");
   const [sentenceTypingDone, setSentenceTypingDone] = useState(false);
   const [sentencePlaybackDone, setSentencePlaybackDone] = useState(false);
   const [sentencePlaybackRequired, setSentencePlaybackRequired] = useState(true);
-  const [sentenceInitialPlaybackDone, setSentenceInitialPlaybackDone] = useState(false);
-  const [sentenceAutoReplayDone, setSentenceAutoReplayDone] = useState(false);
-  const [sentenceAutoReplayAttempted, setSentenceAutoReplayAttempted] = useState(false);
-  const [sentenceAutoReplayBlocked, setSentenceAutoReplayBlocked] = useState(false);
   const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
   const [isFullscreenFallback, setIsFullscreenFallback] = useState(false);
   const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(false);
@@ -291,8 +772,14 @@ export function ImmersiveLessonPage({
   const bindingInputRef = useRef(null);
   const cinemaControlsIdleTimerRef = useRef(null);
   const currentWordInputRef = useRef("");
+  const activeWordIndexRef = useRef(0);
+  const wordInputsRef = useRef([]);
+  const wordStatusesRef = useRef([]);
   const sentenceAdvanceLockedRef = useRef(false);
   const playbackKindRef = useRef("initial");
+  const replayAssistStageRef = useRef(0);
+  const replayProgressAnchorRef = useRef(0);
+  const pendingAutoFullscreenRef = useRef(false);
   const cinemaFullscreenActive = isCinemaFullscreen || isFullscreenFallback;
   const hasExitHandler = typeof onExitImmersive === "function" || typeof onBack === "function";
   const typingEnabled =
@@ -337,6 +824,11 @@ export function ImmersiveLessonPage({
     ? previousSentence.text_zh || "(翻译失败，暂缺)"
     : "(暂无上一句中文翻译)";
   const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens : []), [currentSentence?.tokens]);
+  const sentenceWordTimingMap = useMemo(
+    () => buildSentenceWordTimingMap(lesson?.sentences || [], lesson?.subtitle_cache_seed?.asr_payload || null),
+    [lesson?.sentences, lesson?.subtitle_cache_seed?.asr_payload],
+  );
+  const currentSentenceTiming = sentenceWordTimingMap[currentSentenceIndex] || null;
   const sentenceCount = lesson?.sentences?.length || 0;
   const expectedSourceDurationSec = Math.max(0, Number(lesson?.source_duration_ms || 0) / 1000);
 
@@ -348,10 +840,8 @@ export function ImmersiveLessonPage({
     setSentenceTypingDone(false);
     setSentencePlaybackDone(false);
     setSentencePlaybackRequired(Boolean(playbackRequired));
-    setSentenceInitialPlaybackDone(false);
-    setSentenceAutoReplayDone(false);
-    setSentenceAutoReplayAttempted(false);
-    setSentenceAutoReplayBlocked(false);
+    replayAssistStageRef.current = 0;
+    replayProgressAnchorRef.current = 0;
   }, []);
 
   const syncProgress = useCallback(
@@ -378,15 +868,48 @@ export function ImmersiveLessonPage({
     [accessToken, apiClient, lesson],
   );
 
-  const resetWordTyping = useCallback((sentence, playbackRequired = true) => {
-    const next = createWordState(sentence?.tokens || []);
-    setActiveWordIndex(next.activeWordIndex);
-    setCurrentWordInput(next.currentWordInput);
-    setWordInputs(next.wordInputs);
-    setWordStatuses(next.wordStatuses);
-    currentWordInputRef.current = "";
-    resetSentenceGate(playbackRequired);
-  }, [resetSentenceGate]);
+  const applyWordSnapshot = useCallback((snapshot) => {
+    activeWordIndexRef.current = snapshot.activeWordIndex;
+    currentWordInputRef.current = snapshot.currentWordInput;
+    wordInputsRef.current = snapshot.wordInputs;
+    wordStatusesRef.current = snapshot.wordStatuses;
+    setActiveWordIndex(snapshot.activeWordIndex);
+    setCurrentWordInput(snapshot.currentWordInput);
+    setWordInputs(snapshot.wordInputs);
+    setWordStatuses(snapshot.wordStatuses);
+  }, []);
+
+  const resetWordTyping = useCallback(
+    (sentence, playbackRequired = true) => {
+      const next = createWordState(sentence?.tokens || []);
+      applyWordSnapshot(next);
+      resetSentenceGate(playbackRequired);
+    },
+    [applyWordSnapshot, resetSentenceGate],
+  );
+
+  useEffect(() => {
+    activeWordIndexRef.current = activeWordIndex;
+  }, [activeWordIndex]);
+
+  useEffect(() => {
+    wordInputsRef.current = wordInputs;
+  }, [wordInputs]);
+
+  useEffect(() => {
+    wordStatusesRef.current = wordStatuses;
+  }, [wordStatuses]);
+
+  useEffect(() => {
+    if (activeWordIndex > replayProgressAnchorRef.current) {
+      replayProgressAnchorRef.current = activeWordIndex;
+      replayAssistStageRef.current = 0;
+      debugImmersiveLog("replay_stage_reset.progress", {
+        sentenceIndex: currentSentenceIndex,
+        activeWordIndex,
+      });
+    }
+  }, [activeWordIndex, currentSentenceIndex]);
 
   const handleSentencePassed = useCallback(async () => {
     if (!lesson || !currentSentence) return;
@@ -397,11 +920,9 @@ export function ImmersiveLessonPage({
     const nextIdx = currentSentenceIndex + 1;
     const lastIdx = Math.max(0, sentenceCount - 1);
     const progressIdx = Math.min(nextIdx, lastIdx);
-    debugAutoReplayLog("sentence_pass", {
+    debugImmersiveLog("sentence_pass", {
       sentenceIdx: currentSentence.idx,
       nextSentenceIndex: nextIdx,
-      autoReplayEnabled: autoReplayCurrentSentence,
-      autoReplayDone: sentenceAutoReplayDone,
     });
     await syncProgress(progressIdx, nextCompleted, currentSentence.end_ms);
     onProgressSynced?.();
@@ -415,59 +936,30 @@ export function ImmersiveLessonPage({
     setCurrentSentenceIndex(nextIdx);
     setPhase("auto_play_pending");
   }, [
-    autoReplayCurrentSentence,
     completedIndexes,
     currentSentence,
     currentSentenceIndex,
     lesson,
     onProgressSynced,
     resetWordTyping,
-    sentenceAutoReplayDone,
     sentenceCount,
     syncProgress,
   ]);
 
   const onSentenceFinished = useCallback(() => {
     const playbackKind = playbackKindRef.current || "initial";
-    debugAutoReplayLog("playback_finished", {
+    debugImmersiveLog("playback_finished", {
       playbackKind,
       sentenceIndex: currentSentenceIndex,
       typingDone: sentenceTypingDone,
-      autoReplayBlocked: sentenceAutoReplayBlocked,
     });
     setSentencePlaybackDone(true);
-    if (playbackKind !== "auto_replay" && !sentenceInitialPlaybackDone) {
-      setSentenceInitialPlaybackDone(true);
-    }
-    if (playbackKind === "auto_replay") {
-      setSentenceAutoReplayDone(true);
-      setSentenceAutoReplayBlocked(false);
-      debugAutoReplayLog("auto_replay_finished", { sentenceIndex: currentSentenceIndex });
-    }
-    if (
-      playbackKind === "manual_replay" &&
-      autoReplayCurrentSentence &&
-      !sentenceAutoReplayDone &&
-      (sentenceTypingDone || sentenceAutoReplayBlocked)
-    ) {
-      setSentenceAutoReplayDone(true);
-      setSentenceAutoReplayBlocked(false);
-      debugAutoReplayLog("manual_replay_satisfy_auto", { sentenceIndex: currentSentenceIndex });
-    }
     if (!expectedTokens.length) {
       setSentenceTypingDone(true);
       return;
     }
     setPhase("typing");
-  }, [
-    autoReplayCurrentSentence,
-    currentSentenceIndex,
-    expectedTokens.length,
-    sentenceAutoReplayBlocked,
-    sentenceAutoReplayDone,
-    sentenceInitialPlaybackDone,
-    sentenceTypingDone,
-  ]);
+  }, [currentSentenceIndex, expectedTokens.length, sentenceTypingDone]);
 
   const { isPlaying, playSentence, stopPlayback, onMainMediaTimeUpdate } = useSentencePlayback({
     mode: mediaMode,
@@ -479,33 +971,32 @@ export function ImmersiveLessonPage({
   });
 
   const tryPlayCurrentSentence = useCallback(
-    async ({ manual = false, playbackKind = "initial", source = "unknown" } = {}) => {
+    async ({ manual = false, playbackKind = "initial", playbackPlan = null, source = "unknown" } = {}) => {
       if (!currentSentence) return;
+      const replayShortcutLabel = getShortcutLabel(learningSettings.shortcuts.replay_sentence);
       if (needsBinding) {
         setMediaError("当前课程缺少可播放媒体，请先在历史记录中恢复视频。");
         setSentencePlaybackRequired(false);
-        if (playbackKind === "auto_replay") {
-          setSentenceAutoReplayBlocked(true);
-          debugAutoReplayLog("auto_replay_blocked", { reason: "needs_binding", sentenceIndex: currentSentenceIndex });
-        }
         if (!expectedTokens.length) {
           setSentenceTypingDone(true);
         }
         setPhase("typing");
         return;
       }
-      debugAutoReplayLog("playback_start", { playbackKind, source, sentenceIndex: currentSentenceIndex });
-      const result = await playSentence(currentSentence);
+      debugImmersiveLog("playback_start", {
+        playbackKind,
+        source,
+        sentenceIndex: currentSentenceIndex,
+        playbackPlan,
+      });
+      const result = await playSentence(currentSentence, playbackPlan);
       if (result.ok) {
         playbackKindRef.current = playbackKind;
         setSentencePlaybackRequired(true);
         setSentencePlaybackDone(false);
-        if (playbackKind === "auto_replay") {
-          setSentenceAutoReplayBlocked(false);
-        }
         setMediaError("");
         setPhase("playing");
-        debugAutoReplayLog("playback_started", { playbackKind, sentenceIndex: currentSentenceIndex });
+        debugImmersiveLog("playback_started", { playbackKind, sentenceIndex: currentSentenceIndex });
         return;
       }
       if (result.reason === "clip_unavailable") {
@@ -514,13 +1005,7 @@ export function ImmersiveLessonPage({
         if (!expectedTokens.length) {
           setSentenceTypingDone(true);
         }
-        if (playbackKind === "auto_replay") {
-          setSentenceAutoReplayBlocked(true);
-          setMediaError("当前句自动重播失败，请按 Shift+R 手动重播后继续。");
-          debugAutoReplayLog("auto_replay_blocked", { reason: "clip_unavailable", sentenceIndex: currentSentenceIndex });
-        } else {
-          setMediaError("本句服务器音频不可用，请先在历史记录中恢复视频。");
-        }
+        setMediaError("本句服务器音频不可用，请先在历史记录中恢复视频。");
         setPhase("typing");
         return;
       }
@@ -530,33 +1015,21 @@ export function ImmersiveLessonPage({
           setSentenceTypingDone(true);
         }
         setPhase("typing");
-        if (playbackKind === "auto_replay") {
-          setSentenceAutoReplayBlocked(true);
-          setMediaError("自动重播被浏览器阻止。请按 Shift+R 手动重播后继续。");
-          debugAutoReplayLog("auto_replay_blocked", { reason: "autoplay_blocked", sentenceIndex: currentSentenceIndex });
-        } else {
-          setMediaError(
-            manual
-              ? "浏览器仍阻止自动播放。你可以继续输入，或稍后按 Shift+R 手动重播本句。"
-              : "自动播放受限。你可以直接输入，或按 Shift+R 手动播放本句。",
-          );
-        }
+        setMediaError(
+          manual
+            ? `浏览器仍阻止自动播放。你可以继续输入，或稍后按 ${replayShortcutLabel} 手动重播本句。`
+            : `自动播放受限。你可以直接输入，或按 ${replayShortcutLabel} 手动播放本句。`,
+        );
         return;
       }
       setSentencePlaybackRequired(false);
       if (!expectedTokens.length) {
         setSentenceTypingDone(true);
       }
-      if (playbackKind === "auto_replay") {
-        setSentenceAutoReplayBlocked(true);
-        setMediaError("当前句自动重播失败，请按 Shift+R 手动重播后继续。");
-        debugAutoReplayLog("auto_replay_blocked", { reason: String(result.reason || "play_failed"), sentenceIndex: currentSentenceIndex });
-      } else {
-        setMediaError("当前句播放失败，已切换为输入模式。");
-      }
+      setMediaError("当前句播放失败，已切换为输入模式。");
       setPhase("typing");
     },
-    [currentSentence, currentSentenceIndex, expectedTokens.length, needsBinding, playSentence],
+    [currentSentence, currentSentenceIndex, expectedTokens.length, learningSettings.shortcuts.replay_sentence, needsBinding, playSentence],
   );
 
   useEffect(() => {
@@ -719,55 +1192,15 @@ export function ImmersiveLessonPage({
 
   useEffect(() => {
     if (!immersiveActive) return;
-    if (!autoReplayCurrentSentence) return;
-    if (!sentenceTypingDone) return;
-    if (!sentenceInitialPlaybackDone) return;
-    if (sentenceAutoReplayDone) return;
-    if (sentenceAutoReplayAttempted || sentenceAutoReplayBlocked) return;
-    if (isPlaying) return;
-    if (!currentSentence) return;
-    if (mediaLoading || phase === "transition" || needsBinding) return;
-    setSentenceAutoReplayAttempted(true);
-    debugAutoReplayLog("auto_replay_request", { sentenceIndex: currentSentenceIndex });
-    void tryPlayCurrentSentence({ playbackKind: "auto_replay", source: "auto_replay" });
-  }, [
-    autoReplayCurrentSentence,
-    currentSentence,
-    currentSentenceIndex,
-    immersiveActive,
-    isPlaying,
-    mediaLoading,
-    needsBinding,
-    phase,
-    sentenceAutoReplayAttempted,
-    sentenceAutoReplayBlocked,
-    sentenceAutoReplayDone,
-    sentenceInitialPlaybackDone,
-    sentenceTypingDone,
-    tryPlayCurrentSentence,
-  ]);
-
-  useEffect(() => {
-    if (!immersiveActive) return;
     if (!sentenceTypingDone) return;
     if (sentencePlaybackRequired && !sentencePlaybackDone) return;
-    if (autoReplayCurrentSentence && sentenceInitialPlaybackDone && !sentenceAutoReplayDone) return;
     if (sentenceAdvanceLockedRef.current) return;
     sentenceAdvanceLockedRef.current = true;
     setPhase("transition");
     setTimeout(() => {
       void handleSentencePassed();
     }, 120);
-  }, [
-    autoReplayCurrentSentence,
-    handleSentencePassed,
-    immersiveActive,
-    sentenceAutoReplayDone,
-    sentenceInitialPlaybackDone,
-    sentencePlaybackDone,
-    sentencePlaybackRequired,
-    sentenceTypingDone,
-  ]);
+  }, [handleSentencePassed, immersiveActive, sentencePlaybackDone, sentencePlaybackRequired, sentenceTypingDone]);
 
   useEffect(() => {
     if (immersiveActive) return;
@@ -777,13 +1210,8 @@ export function ImmersiveLessonPage({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    window.localStorage.setItem(DISPLAY_MODE_STORAGE_KEY, displayMode);
-  }, [displayMode]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(AUTO_REPLAY_STORAGE_KEY, autoReplayCurrentSentence ? "true" : "false");
-  }, [autoReplayCurrentSentence]);
+    window.localStorage.setItem(LEARNING_SETTINGS_STORAGE_KEY, JSON.stringify(sanitizeLearningSettings(learningSettings)));
+  }, [learningSettings]);
 
   const handleMainMediaError = useCallback(() => {
     const hasClipFallback = lesson?.media_storage === "server" && Array.isArray(lesson?.sentences) && lesson.sentences.some((item) => item?.audio_url);
@@ -843,51 +1271,39 @@ export function ImmersiveLessonPage({
   );
 
   const clearActiveWordInput = useCallback(() => {
-    currentWordInputRef.current = "";
-    setCurrentWordInput("");
-    setWordInputs((prev) => {
-      const next = [...prev];
-      if (activeWordIndex < next.length) {
-        next[activeWordIndex] = "";
-      }
-      return next;
-    });
-    setWordStatuses((prev) => {
-      const next = [...prev];
-      if (activeWordIndex < next.length) {
-        next[activeWordIndex] = "active";
-      }
-      return next;
-    });
-  }, [activeWordIndex]);
+    const snapshot = cloneWordSnapshot(activeWordIndexRef.current, currentWordInputRef.current, wordInputsRef.current, wordStatusesRef.current);
+    if (snapshot.activeWordIndex < snapshot.wordInputs.length) {
+      snapshot.wordInputs[snapshot.activeWordIndex] = "";
+      snapshot.wordStatuses[snapshot.activeWordIndex] = "active";
+    }
+    snapshot.currentWordInput = "";
+    applyWordSnapshot(snapshot);
+  }, [applyWordSnapshot]);
 
   const commitCorrectWord = useCallback(
     (typedWord) => {
       playCorrectSound();
-      const canonicalWord = expectedTokens[activeWordIndex] || typedWord.trim();
-      setWordStatuses((prev) => {
-        const next = [...prev];
-        next[activeWordIndex] = "correct";
-        if (activeWordIndex + 1 < expectedTokens.length) {
-          next[activeWordIndex + 1] = "active";
-        }
-        return next;
-      });
-      setWordInputs((prev) => {
-        const next = [...prev];
-        next[activeWordIndex] = canonicalWord;
-        return next;
-      });
-      currentWordInputRef.current = "";
-      setCurrentWordInput("");
-
-      if (activeWordIndex + 1 >= expectedTokens.length) {
-        setSentenceTypingDone(true);
-        return;
+      const snapshot = cloneWordSnapshot(activeWordIndexRef.current, currentWordInputRef.current, wordInputsRef.current, wordStatusesRef.current);
+      const activeIndex = snapshot.activeWordIndex;
+      const canonicalWord = expectedTokens[activeIndex] || typedWord.trim();
+      if (activeIndex >= expectedTokens.length) {
+        return activeIndex;
       }
-      setActiveWordIndex((prev) => prev + 1);
+      snapshot.wordInputs[activeIndex] = canonicalWord;
+      snapshot.wordStatuses[activeIndex] = "correct";
+      snapshot.currentWordInput = "";
+      const nextActiveIndex = activeIndex + 1;
+      if (nextActiveIndex < expectedTokens.length) {
+        snapshot.wordStatuses[nextActiveIndex] = "active";
+        snapshot.activeWordIndex = nextActiveIndex;
+      } else {
+        snapshot.activeWordIndex = expectedTokens.length;
+        setSentenceTypingDone(true);
+      }
+      applyWordSnapshot(snapshot);
+      return snapshot.activeWordIndex;
     },
-    [activeWordIndex, expectedTokens, playCorrectSound],
+    [applyWordSnapshot, expectedTokens, playCorrectSound],
   );
 
   const commitWrongWord = useCallback(() => {
@@ -912,6 +1328,7 @@ export function ImmersiveLessonPage({
 
   const startImmersive = useCallback(() => {
     if (typeof onStartImmersive !== "function") return;
+    pendingAutoFullscreenRef.current = true;
     onStartImmersive();
   }, [onStartImmersive]);
 
@@ -980,22 +1397,137 @@ export function ImmersiveLessonPage({
     [currentSentenceIndex, jumpToSentence, sentenceCount],
   );
 
+  const updateLearningSettings = useCallback((updater) => {
+    setLearningSettings((current) => {
+      const nextValue = typeof updater === "function" ? updater(current) : updater;
+      return sanitizeLearningSettings(nextValue);
+    });
+  }, []);
+
+  const handleShortcutChange = useCallback(
+    (actionId, nextShortcutValue) => {
+      const normalized = normalizeShortcutValue(nextShortcutValue);
+      if (!normalized) return;
+      const alreadyUsedBy = SHORTCUT_ACTIONS.find(
+        (item) => item.id !== actionId && learningSettings.shortcuts[item.id] === normalized,
+      );
+      if (alreadyUsedBy) {
+        setSettingsError(`${getShortcutLabel(normalized)} 已分配给“${alreadyUsedBy.label}”，请换一个快捷键。`);
+        return;
+      }
+      setSettingsError("");
+      updateLearningSettings((current) => ({
+        ...current,
+        shortcuts: {
+          ...current.shortcuts,
+          [actionId]: normalized,
+        },
+      }));
+    },
+    [learningSettings.shortcuts, updateLearningSettings],
+  );
+
+  const handleCustomConfigChange = useCallback(
+    (field, value) => {
+      setSettingsError("");
+      updateLearningSettings((current) => ({
+        ...current,
+        presetId: "custom",
+        customConfig: {
+          ...current.customConfig,
+          [field]: value,
+        },
+      }));
+    },
+    [updateLearningSettings],
+  );
+
+  const revealCurrentLetter = useCallback(
+    (source = "button_reveal_letter") => {
+      if (!typingEnabled) return activeWordIndexRef.current;
+      const result = applyReplayAssistanceToSnapshot(
+        cloneWordSnapshot(activeWordIndexRef.current, currentWordInputRef.current, wordInputsRef.current, wordStatusesRef.current),
+        expectedTokens,
+        { revealLetterCount: 1, revealWordCount: 0 },
+      );
+      applyWordSnapshot(result.snapshot);
+      if (result.completedSentence) {
+        setSentenceTypingDone(true);
+      }
+      debugImmersiveLog("reveal_letter", {
+        source,
+        sentenceIndex: currentSentenceIndex,
+        activeWordIndex: result.snapshot.activeWordIndex,
+      });
+      return result.snapshot.activeWordIndex;
+    },
+    [applyWordSnapshot, currentSentenceIndex, expectedTokens, typingEnabled],
+  );
+
   const revealCurrentWord = useCallback(
     (source = "button_reveal") => {
-      if (!typingEnabled) return;
-      const expected = expectedTokens[activeWordIndex] || "";
-      if (!expected) return;
-      commitCorrectWord(expected);
+      if (!typingEnabled) return activeWordIndexRef.current;
+      const expected = expectedTokens[activeWordIndexRef.current] || "";
+      if (!expected) return activeWordIndexRef.current;
+      const nextActiveWordIndex = commitCorrectWord(expected);
+      debugImmersiveLog("reveal_word", {
+        source,
+        sentenceIndex: currentSentenceIndex,
+        nextActiveWordIndex,
+      });
+      return nextActiveWordIndex;
     },
-    [activeWordIndex, commitCorrectWord, expectedTokens, typingEnabled],
+    [commitCorrectWord, currentSentenceIndex, expectedTokens, typingEnabled],
   );
 
   const replayCurrentSentence = useCallback(
     (source = "manual_replay") => {
       if (!currentSentence || mediaLoading || phase === "transition" || needsBinding) return;
-      void tryPlayCurrentSentence({ manual: true, playbackKind: "manual_replay", source });
+      const nextStage = replayAssistStageRef.current + 1;
+      const assistance = resolveReplayAssistance(learningSettings, nextStage);
+      const assistedSnapshot = applyReplayAssistanceToSnapshot(
+        cloneWordSnapshot(activeWordIndexRef.current, currentWordInputRef.current, wordInputsRef.current, wordStatusesRef.current),
+        expectedTokens,
+        assistance,
+      );
+      applyWordSnapshot(assistedSnapshot.snapshot);
+      if (assistedSnapshot.completedSentence) {
+        setSentenceTypingDone(true);
+      }
+      replayAssistStageRef.current = nextStage;
+      const playbackPlan = buildReplayPlaybackPlan(
+        currentSentence,
+        currentSentenceTiming,
+        assistedSnapshot.snapshot.activeWordIndex,
+        assistance.tailRate,
+      );
+      debugImmersiveLog("manual_replay", {
+        source,
+        sentenceIndex: currentSentenceIndex,
+        stage: nextStage,
+        assistance,
+        preciseBoundary: playbackPlan.preciseBoundary,
+        tailBoundaryMs: playbackPlan.tailBoundaryMs,
+      });
+      void tryPlayCurrentSentence({
+        manual: true,
+        playbackKind: "manual_replay",
+        playbackPlan,
+        source,
+      });
     },
-    [currentSentence, mediaLoading, needsBinding, phase, tryPlayCurrentSentence],
+    [
+      applyWordSnapshot,
+      currentSentence,
+      currentSentenceIndex,
+      currentSentenceTiming,
+      expectedTokens,
+      learningSettings,
+      mediaLoading,
+      needsBinding,
+      phase,
+      tryPlayCurrentSentence,
+    ],
   );
 
   useEffect(() => {
@@ -1077,6 +1609,17 @@ export function ImmersiveLessonPage({
   }, [cinemaFullscreenActive, focusTypingInput, typingEnabled]);
 
   useEffect(() => {
+    if (!immersiveActive) return;
+    if (!pendingAutoFullscreenRef.current) return;
+    if (cinemaFullscreenActive) {
+      pendingAutoFullscreenRef.current = false;
+      return;
+    }
+    pendingAutoFullscreenRef.current = false;
+    void enterCinemaFullscreen();
+  }, [cinemaFullscreenActive, enterCinemaFullscreen, immersiveActive]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return undefined;
 
     const onWindowKeyDown = (event) => {
@@ -1084,7 +1627,6 @@ export function ImmersiveLessonPage({
       const fromTypingInput = event.target === typingInputRef.current;
       if (isEditableShortcutTarget(event.target) && !fromTypingInput) return;
       if (!immersiveActive) return;
-      const isReplayShortcut = event.shiftKey && event.key.toLowerCase() === "r";
 
       if (event.key === "Escape") {
         event.preventDefault();
@@ -1096,22 +1638,34 @@ export function ImmersiveLessonPage({
         void exitImmersive("shortcut_esc");
         return;
       }
-      if (isReplayShortcut) {
+      if (isShortcutPressed(event, learningSettings.shortcuts.replay_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        replayCurrentSentence("shortcut_shift_r");
+        replayCurrentSentence(`shortcut_${learningSettings.shortcuts.replay_sentence}`);
         return;
       }
-      if (event.key === "Enter") {
+      if (isShortcutPressed(event, learningSettings.shortcuts.previous_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        goToNextSentence("shortcut_enter");
+        goToPreviousSentence(`shortcut_${learningSettings.shortcuts.previous_sentence}`);
         return;
       }
-      if (event.key === " ") {
+      if (isShortcutPressed(event, learningSettings.shortcuts.next_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        revealCurrentWord("shortcut_space");
+        goToNextSentence(`shortcut_${learningSettings.shortcuts.next_sentence}`);
+        return;
+      }
+      if (isShortcutPressed(event, learningSettings.shortcuts.reveal_letter)) {
+        event.preventDefault();
+        event.stopPropagation();
+        revealCurrentLetter(`shortcut_${learningSettings.shortcuts.reveal_letter}`);
+        return;
+      }
+      if (isShortcutPressed(event, learningSettings.shortcuts.reveal_word)) {
+        event.preventDefault();
+        event.stopPropagation();
+        revealCurrentWord(`shortcut_${learningSettings.shortcuts.reveal_word}`);
       }
     };
 
@@ -1122,11 +1676,14 @@ export function ImmersiveLessonPage({
   }, [
     exitCinemaFullscreen,
     exitImmersive,
+    goToPreviousSentence,
     goToNextSentence,
     immersiveActive,
     isCinemaFullscreen,
     isFullscreenFallback,
+    learningSettings.shortcuts,
     replayCurrentSentence,
+    revealCurrentLetter,
     revealCurrentWord,
   ]);
 
@@ -1145,22 +1702,34 @@ export function ImmersiveLessonPage({
         void exitImmersive("shortcut_esc");
         return;
       }
-      if (event.shiftKey && key.toLowerCase() === "r") {
+      if (isShortcutPressed(event, learningSettings.shortcuts.replay_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        replayCurrentSentence("shortcut_shift_r");
+        replayCurrentSentence(`shortcut_${learningSettings.shortcuts.replay_sentence}`);
         return;
       }
-      if (key === "Enter") {
+      if (isShortcutPressed(event, learningSettings.shortcuts.previous_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        goToNextSentence("shortcut_enter");
+        goToPreviousSentence(`shortcut_${learningSettings.shortcuts.previous_sentence}`);
         return;
       }
-      if (key === " ") {
+      if (isShortcutPressed(event, learningSettings.shortcuts.next_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        revealCurrentWord("shortcut_space");
+        goToNextSentence(`shortcut_${learningSettings.shortcuts.next_sentence}`);
+        return;
+      }
+      if (isShortcutPressed(event, learningSettings.shortcuts.reveal_letter)) {
+        event.preventDefault();
+        event.stopPropagation();
+        revealCurrentLetter(`shortcut_${learningSettings.shortcuts.reveal_letter}`);
+        return;
+      }
+      if (isShortcutPressed(event, learningSettings.shortcuts.reveal_word)) {
+        event.preventDefault();
+        event.stopPropagation();
+        revealCurrentWord(`shortcut_${learningSettings.shortcuts.reveal_word}`);
         return;
       }
 
@@ -1173,17 +1742,20 @@ export function ImmersiveLessonPage({
       if (key === "Backspace") {
         event.preventDefault();
         playKeySound();
+        const currentActiveIndex = activeWordIndexRef.current;
         const nextInput = currentWordInputRef.current.slice(0, -1);
         currentWordInputRef.current = nextInput;
         setCurrentWordInput(nextInput);
         setWordInputs((prev) => {
           const next = [...prev];
-          next[activeWordIndex] = nextInput;
+          next[currentActiveIndex] = nextInput;
+          wordInputsRef.current = next;
           return next;
         });
         setWordStatuses((prev) => {
           const next = [...prev];
-          next[activeWordIndex] = "active";
+          next[currentActiveIndex] = "active";
+          wordStatusesRef.current = next;
           return next;
         });
         return;
@@ -1192,7 +1764,8 @@ export function ImmersiveLessonPage({
       if (key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
         event.preventDefault();
         playKeySound();
-        const expected = expectedTokens[activeWordIndex] || "";
+        const currentActiveIndex = activeWordIndexRef.current;
+        const expected = expectedTokens[currentActiveIndex] || "";
         if (!expected) return;
 
         const nextInput = `${currentWordInputRef.current}${key}`;
@@ -1200,12 +1773,14 @@ export function ImmersiveLessonPage({
         setCurrentWordInput(nextInput);
         setWordInputs((prev) => {
           const next = [...prev];
-          next[activeWordIndex] = nextInput;
+          next[currentActiveIndex] = nextInput;
+          wordInputsRef.current = next;
           return next;
         });
         setWordStatuses((prev) => {
           const next = [...prev];
-          next[activeWordIndex] = "active";
+          next[currentActiveIndex] = "active";
+          wordStatusesRef.current = next;
           return next;
         });
 
@@ -1227,18 +1802,20 @@ export function ImmersiveLessonPage({
       }
     },
     [
-      activeWordIndex,
       commitCorrectWord,
       commitWrongWord,
       currentSentence,
       exitImmersive,
       expectedTokens,
       exitCinemaFullscreen,
+      goToPreviousSentence,
       goToNextSentence,
       isCinemaFullscreen,
       isFullscreenFallback,
+      learningSettings.shortcuts,
       playKeySound,
       replayCurrentSentence,
+      revealCurrentLetter,
       revealCurrentWord,
       typingEnabled,
     ],
@@ -1258,10 +1835,10 @@ export function ImmersiveLessonPage({
   const showMediaLoadingOverlay = mediaLoading && !needsBinding && !mediaReady;
   const canGoPrevious = currentSentenceIndex > 0;
   const canGoNext = currentSentenceIndex < Math.max(0, sentenceCount - 1);
+  const canRevealLetter = typingEnabled && activeWordIndex < expectedTokens.length && expectedTokens.length > 0;
   const canRevealWord = typingEnabled && activeWordIndex < expectedTokens.length && expectedTokens.length > 0;
   const waitingForInitialPlayback = sentenceTypingDone && !sentencePlaybackDone && sentencePlaybackRequired;
-  const waitingForAutoReplay =
-    autoReplayCurrentSentence && sentenceTypingDone && sentenceInitialPlaybackDone && !sentenceAutoReplayDone;
+  const presetSummaryLines = getPresetSummaryLines(learningSettings);
   const cinemaHeaderControlsClassName = [
     "immersive-header-left",
     cinemaFullscreenActive ? "immersive-header-left--cinema" : "",
@@ -1270,6 +1847,7 @@ export function ImmersiveLessonPage({
     .filter(Boolean)
     .join(" ");
   const cinemaButtonClassName = cinemaFullscreenActive ? "immersive-cinema-button" : undefined;
+  const toolbarButtonClassName = cinemaFullscreenActive ? "immersive-toolbar-button immersive-toolbar-button--cinema" : "immersive-toolbar-button";
 
   return (
     <div
@@ -1381,131 +1959,284 @@ export function ImmersiveLessonPage({
           </div>
 
           {!immersiveActive ? (
-            <Button className="h-12 w-full bg-black text-base font-semibold text-white hover:bg-black/90" onClick={startImmersive}>
-              开始学习
-            </Button>
-          ) : null}
-
-          {immersiveActive ? (
-            <>
-              <div className={`immersive-typing ${cinemaFullscreenActive ? "immersive-typing--cinema" : ""}`}>
-                {!cinemaFullscreenActive ? (
-                  <div className="immersive-typing-toolbar">
-                    <div className="immersive-typing-toolbar-controls">
-                      <div className="immersive-auto-replay-toggle">
-                        <span className="text-xs text-muted-foreground">自动重播本句</span>
-                        <Switch
-                          checked={autoReplayCurrentSentence}
-                          onCheckedChange={(checked) => {
-                            setAutoReplayCurrentSentence(checked);
-                            setSentenceAutoReplayAttempted(false);
-                            setSentenceAutoReplayBlocked(false);
-                            debugAutoReplayLog("toggle_auto_replay", { checked, sentenceIndex: currentSentenceIndex });
-                          }}
-                          aria-label="自动重播本句开关"
-                        />
-                      </div>
-                      <TooltipProvider delayDuration={120}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="outline" onClick={() => revealCurrentWord("button_reveal")} disabled={!canRevealWord}>
-                              <Eye className="size-4" />
-                              揭示单词
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>space</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                      <Button
-                        variant="outline"
-                        onClick={() => goToPreviousSentence("button_prev")}
-                        disabled={!canGoPrevious || phase === "transition"}
-                      >
-                        <ArrowLeft className="size-4" />
-                        上一句
-                      </Button>
-                      <TooltipProvider delayDuration={120}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="outline" onClick={() => goToNextSentence("button_next")} disabled={!canGoNext || phase === "transition"}>
-                              下一句
-                              <ArrowRight className="size-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>enter</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                      <Badge variant="outline">
-                        已完成 {completedIndexes.length} / {sentenceCount}
-                      </Badge>
-                      {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
-                    </div>
-                    <div className="immersive-typing-toolbar-meta">
-                      <span className="immersive-shortcut-hint">手动重播：Shift+R</span>
-                      <div className="immersive-display-toggle">
-                        <span className="text-xs text-muted-foreground">下划线模式</span>
-                        <Switch
-                          checked={displayMode === "underline"}
-                          onCheckedChange={(checked) => setDisplayMode(checked ? "underline" : "chip")}
-                          aria-label="切换单词显示模式"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-
-                {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
-                {waitingForInitialPlayback ? <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p> : null}
-                {waitingForAutoReplay && !sentenceAutoReplayBlocked ? (
-                  <p className="text-xs text-muted-foreground">输入已完成，正在自动重播本句。</p>
-                ) : null}
-                {waitingForAutoReplay && sentenceAutoReplayBlocked ? (
-                  <p className="text-xs text-muted-foreground">自动重播受限，请按 Shift+R 手动重播后继续。</p>
-                ) : null}
-
-                <div className={cinemaFullscreenActive ? "immersive-word-row-frame immersive-word-row-frame--cinema" : ""}>
-                  <div className={`immersive-word-row ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""}`}>
-                    {expectedTokens.map((token, index) => {
-                      const status = wordStatuses[index] || "pending";
-                      const slots = buildLetterSlots(token, wordInputs[index] || "");
-                      return (
-                        <div
-                          key={`${token}-${index}`}
-                          className={`immersive-word-slot immersive-word-slot--${status} ${
-                            displayMode === "underline" ? "immersive-word-slot--underline" : "immersive-word-slot--chip"
-                          }`}
-                        >
-                          <div className="immersive-letter-row">
-                            {slots.map((slot) => (
-                              <span
-                                key={slot.key}
-                                className={`immersive-letter-cell immersive-letter-cell--${slot.state} ${
-                                  slot.extra ? "immersive-letter-cell--extra" : ""
-                                }`}
-                              >
-                                <span className="immersive-letter-char">{slot.char}</span>
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+            <div className="immersive-settings-panel">
+              <div className="immersive-settings-card">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-foreground">开始前配置</p>
+                  <p className="text-sm text-muted-foreground">先定好扶助策略和快捷键，点击“开始学习”后直接进入全屏沉浸学习。</p>
                 </div>
 
-                {!cinemaFullscreenActive || showFullscreenPreviousSentence ? (
-                  <div
-                    className={`immersive-previous-sentence ${cinemaFullscreenActive ? "immersive-previous-sentence--cinema" : ""}`}
-                  >
-                    <p>上一句：{previousSentenceEn}</p>
-                    <p className="pl-[4.5em]">{previousSentenceZh}</p>
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">学习预设</Label>
+                    <div className="immersive-preset-grid">
+                      {REPLAY_PRESET_OPTIONS.map((item) => {
+                        const active = learningSettings.presetId === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className={`immersive-preset-chip ${active ? "immersive-preset-chip--active" : ""}`}
+                            onClick={() => {
+                              setSettingsError("");
+                              updateLearningSettings((current) => ({ ...current, presetId: item.id }));
+                            }}
+                          >
+                            {item.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                ) : null}
-                {!cinemaFullscreenActive && phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
+
+                  <div className="immersive-settings-summary">
+                    {presetSummaryLines.map((line) => (
+                      <p key={line}>{line}</p>
+                    ))}
+                  </div>
+
+                  {learningSettings.presetId === "custom" ? (
+                    <div className="immersive-custom-grid">
+                      <div className="space-y-2">
+                        <Label htmlFor="tail-speed-step">尾段降速步长</Label>
+                        <Input
+                          id="tail-speed-step"
+                          type="number"
+                          min="0.01"
+                          max="0.5"
+                          step="0.01"
+                          value={learningSettings.customConfig.tailSpeedStep}
+                          onChange={(event) => handleCustomConfigChange("tailSpeedStep", event.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="minimum-tail-speed">最低尾段倍速</Label>
+                        <Input
+                          id="minimum-tail-speed"
+                          type="number"
+                          min="0.4"
+                          max="0.98"
+                          step="0.01"
+                          value={learningSettings.customConfig.minimumTailSpeed}
+                          onChange={(event) => handleCustomConfigChange("minimumTailSpeed", event.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="reveal-letter-at">第几次开始揭示字母</Label>
+                        <Input
+                          id="reveal-letter-at"
+                          type="number"
+                          min="0"
+                          max="8"
+                          step="1"
+                          value={learningSettings.customConfig.revealLetterAt}
+                          onChange={(event) => handleCustomConfigChange("revealLetterAt", event.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="reveal-word-at">第几次开始揭示单词</Label>
+                        <Input
+                          id="reveal-word-at"
+                          type="number"
+                          min="0"
+                          max="8"
+                          step="1"
+                          value={learningSettings.customConfig.revealWordAt}
+                          onChange={(event) => handleCustomConfigChange("revealWordAt", event.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="extra-word-count">阈值后每次额外揭示单词数</Label>
+                        <Input
+                          id="extra-word-count"
+                          type="number"
+                          min="0"
+                          max="4"
+                          step="1"
+                          value={learningSettings.customConfig.extraRevealWordsPerReplay}
+                          onChange={(event) => handleCustomConfigChange("extraRevealWordsPerReplay", event.target.value)}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">快捷键</Label>
+                      <p className="text-sm text-muted-foreground">仅支持安全白名单，所有设置按当前浏览器全局记忆。</p>
+                    </div>
+                    <div className="immersive-shortcut-grid">
+                      {SHORTCUT_ACTIONS.map((action) => (
+                        <div key={action.id} className="space-y-2">
+                          <Label htmlFor={`shortcut-${action.id}`}>{action.label}</Label>
+                          <Select value={learningSettings.shortcuts[action.id]} onValueChange={(value) => handleShortcutChange(action.id, value)}>
+                            <SelectTrigger id={`shortcut-${action.id}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {SHORTCUT_OPTIONS.map((option) => {
+                                const occupiedByOther = SHORTCUT_ACTIONS.some(
+                                  (item) => item.id !== action.id && learningSettings.shortcuts[item.id] === option.value,
+                                );
+                                return (
+                                  <SelectItem key={option.value} value={option.value} disabled={occupiedByOther}>
+                                    {option.label}
+                                  </SelectItem>
+                                );
+                              })}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {settingsError ? (
+                    <p className="text-xs text-destructive">{settingsError}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">默认推荐：Space 揭示字母，Shift+Space 揭示单词，ArrowLeft 上一句，Enter 下一句，Shift+R 重播。</p>
+                  )}
+                </div>
+
+                <Button className="h-12 w-full bg-black text-base font-semibold text-white hover:bg-black/90" onClick={startImmersive}>
+                  开始学习
+                </Button>
               </div>
-            </>
+            </div>
           ) : (
-            <p className="text-sm text-muted-foreground">可先预览视频，准备好后点击“开始学习”进入沉浸模式。</p>
+            <div className={`immersive-typing ${cinemaFullscreenActive ? "immersive-typing--cinema" : ""}`}>
+              <div className="immersive-typing-toolbar">
+                <div className="immersive-typing-toolbar-controls">
+                  <TooltipProvider delayDuration={120}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={toolbarButtonClassName}
+                          onClick={() => revealCurrentLetter("button_reveal_letter")}
+                          disabled={!canRevealLetter}
+                        >
+                          揭示字母
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{getShortcutLabel(learningSettings.shortcuts.reveal_letter)}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <TooltipProvider delayDuration={120}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={toolbarButtonClassName}
+                          onClick={() => revealCurrentWord("button_reveal_word")}
+                          disabled={!canRevealWord}
+                        >
+                          <Eye className="size-4" />
+                          揭示单词
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{getShortcutLabel(learningSettings.shortcuts.reveal_word)}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <TooltipProvider delayDuration={120}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={toolbarButtonClassName}
+                          onClick={() => replayCurrentSentence("button_replay")}
+                          disabled={phase === "transition" || needsBinding}
+                        >
+                          重播
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{getShortcutLabel(learningSettings.shortcuts.replay_sentence)}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <TooltipProvider delayDuration={120}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={toolbarButtonClassName}
+                          onClick={() => goToPreviousSentence("button_prev")}
+                          disabled={!canGoPrevious || phase === "transition"}
+                        >
+                          <ArrowLeft className="size-4" />
+                          上一句
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{getShortcutLabel(learningSettings.shortcuts.previous_sentence)}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <TooltipProvider delayDuration={120}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={toolbarButtonClassName}
+                          onClick={() => goToNextSentence("button_next")}
+                          disabled={!canGoNext || phase === "transition"}
+                        >
+                          下一句
+                          <ArrowRight className="size-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{getShortcutLabel(learningSettings.shortcuts.next_sentence)}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <Badge variant="outline">
+                    已完成 {completedIndexes.length} / {sentenceCount}
+                  </Badge>
+                  {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
+                </div>
+                <div className="immersive-typing-toolbar-meta">
+                  <span className="immersive-shortcut-hint">
+                    预设：{REPLAY_PRESET_OPTIONS.find((item) => item.id === learningSettings.presetId)?.label || "标准渐进"}
+                  </span>
+                  <span className="immersive-shortcut-hint">重播后会对未答尾段降速，并按阶梯逐步揭示提示。</span>
+                </div>
+              </div>
+
+              {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
+              {waitingForInitialPlayback ? <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p> : null}
+
+              <div className={cinemaFullscreenActive ? "immersive-word-row-frame immersive-word-row-frame--cinema" : ""}>
+                <div className={`immersive-word-row ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""}`}>
+                  {expectedTokens.map((token, index) => {
+                    const status = wordStatuses[index] || "pending";
+                    const slots = buildLetterSlots(token, wordInputs[index] || "");
+                    return (
+                      <div
+                        key={`${token}-${index}`}
+                        className={`immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`}
+                      >
+                        <div className="immersive-letter-row">
+                          {slots.map((slot) => (
+                            <span
+                              key={slot.key}
+                              className={`immersive-letter-cell immersive-letter-cell--${slot.state} ${
+                                slot.extra ? "immersive-letter-cell--extra" : ""
+                              }`}
+                            >
+                              <span className="immersive-letter-char">{slot.char}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {!cinemaFullscreenActive || showFullscreenPreviousSentence ? (
+                <div className={`immersive-previous-sentence ${cinemaFullscreenActive ? "immersive-previous-sentence--cinema" : ""}`}>
+                  <p>上一句：{previousSentenceEn}</p>
+                  <p className="pl-[4.5em]">{previousSentenceZh}</p>
+                </div>
+              ) : null}
+              {!cinemaFullscreenActive && phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
+            </div>
           )}
 
           <input
