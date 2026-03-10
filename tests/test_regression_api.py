@@ -383,7 +383,7 @@ def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
     finally:
         verify_engine.dispose()
 
-    assert version == "20260310_0013"
+    assert version == "20260310_0014"
     assert subtitle_row is not None
     assert int(subtitle_row["id"]) == 1
     assert bool(subtitle_row["subtitle_split_enabled"]) is True
@@ -393,6 +393,74 @@ def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
     assert "translation_batch_max_chars" in subtitle_columns
     assert "semantic_split_model" not in subtitle_columns
     assert mt_models == ["qwen-mt-flash"]
+
+
+def test_lesson_generation_tasks_repair_migration_recreates_missing_table(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    db_file = tmp_path / "lesson_task_repair.db"
+    database_url = f"sqlite:///{db_file.as_posix()}"
+
+    env = os.environ.copy()
+    env["DATABASE_URL"] = database_url
+
+    def _upgrade(target: str) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "-c", "alembic.ini", "upgrade", target],
+            cwd=str(repo_root),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"alembic upgrade {target} failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+
+    _upgrade("20260310_0013")
+
+    mutate_engine = create_database_engine(database_url)
+    try:
+        with mutate_engine.begin() as conn:
+            conn.execute(text("DROP TABLE lesson_generation_tasks"))
+    finally:
+        mutate_engine.dispose()
+
+    _upgrade("head")
+
+    verify_engine = create_database_engine(database_url)
+    try:
+        with verify_engine.connect() as conn:
+            version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            table_count = int(
+                conn.execute(
+                    text(
+                        """
+                        SELECT COUNT(1)
+                        FROM sqlite_master
+                        WHERE type = 'table' AND name = 'lesson_generation_tasks'
+                        """
+                    )
+                ).scalar()
+                or 0
+            )
+            column_names = {
+                str(item["name"])
+                for item in conn.execute(text("PRAGMA table_info(lesson_generation_tasks)")).mappings().all()
+            }
+            index_names = {
+                str(item["name"])
+                for item in conn.execute(text("PRAGMA index_list(lesson_generation_tasks)")).mappings().all()
+            }
+    finally:
+        verify_engine.dispose()
+
+    assert version == "20260310_0014"
+    assert table_count == 1
+    assert {"task_id", "owner_user_id", "failure_debug_json", "failed_at"}.issubset(column_names)
+    assert {
+        "ix_lesson_generation_tasks_task_id",
+        "ix_lesson_generation_tasks_owner_user_id",
+        "ix_lesson_generation_tasks_lesson_id",
+    }.issubset(index_names)
 
 
 def _register_and_login(client: TestClient, email: str = "admin@example.com", password: str = "123456") -> str:

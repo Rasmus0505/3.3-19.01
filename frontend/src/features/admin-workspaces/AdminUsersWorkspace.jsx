@@ -8,13 +8,13 @@ import { AdminUsersTab } from "../admin-users/AdminUsersTab";
 import { mergeSearchParams, readStringParam } from "../../shared/lib/adminSearchParams";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Tabs, TabsContent, TabsList, TabsTrigger } from "../../shared/ui";
 
-const USERS_TABS = [
+export const USERS_TABS = [
   { value: "list", label: "用户列表", description: "搜索用户、调账、查看最近行为。", component: AdminUsersTab },
   { value: "wallet", label: "余额流水", description: "按用户追扣点、退款、手工调账和兑换入账。", component: AdminLogsTab },
   { value: "rates", label: "计费配置", description: "统一维护 ASR 与翻译计费参数。", component: AdminRatesTab },
 ];
 
-export function AdminUsersWorkspace({ apiCall }) {
+export function AdminUsersWorkspace({ apiCall, showTabsNavigation = true }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = readStringParam(searchParams, "tab");
   const activeTab = USERS_TABS.some((item) => item.value === requestedTab) ? requestedTab : "list";
@@ -87,13 +87,15 @@ export function AdminUsersWorkspace({ apiCall }) {
       </Card>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
-        <TabsList className="h-auto flex-wrap justify-start">
-          {USERS_TABS.map((item) => (
-            <TabsTrigger key={item.value} value={item.value}>
-              {item.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        {showTabsNavigation ? (
+          <TabsList className="h-auto flex-wrap justify-start">
+            {USERS_TABS.map((item) => (
+              <TabsTrigger key={item.value} value={item.value}>
+                {item.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        ) : null}
         {USERS_TABS.map((item) => {
           const Component = item.component;
           return (

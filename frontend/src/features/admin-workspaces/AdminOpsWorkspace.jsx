@@ -8,13 +8,13 @@ import { AdminSystemTab } from "../admin-system/AdminSystemTab";
 import { mergeSearchParams, readStringParam } from "../../shared/lib/adminSearchParams";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Tabs, TabsContent, TabsList, TabsTrigger } from "../../shared/ui";
 
-const OPS_TABS = [
+export const OPS_TABS = [
   { value: "overview", label: "处置总览", description: "先看健康、关键指标和快捷入口。", component: AdminOverviewTab },
   { value: "system", label: "系统状态", description: "确认服务、数据库和后台接口是否就绪。", component: AdminSystemTab },
   { value: "operations", label: "操作记录", description: "追最近的敏感后台动作。", component: AdminOperationLogsTab },
 ];
 
-export function AdminOpsWorkspace({ apiCall }) {
+export function AdminOpsWorkspace({ apiCall, showTabsNavigation = true }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = readStringParam(searchParams, "tab");
   const activeTab = OPS_TABS.some((item) => item.value === requestedTab) ? requestedTab : "overview";
@@ -96,13 +96,15 @@ export function AdminOpsWorkspace({ apiCall }) {
       </Card>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
-        <TabsList className="h-auto flex-wrap justify-start">
-          {OPS_TABS.map((item) => (
-            <TabsTrigger key={item.value} value={item.value}>
-              {item.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        {showTabsNavigation ? (
+          <TabsList className="h-auto flex-wrap justify-start">
+            {OPS_TABS.map((item) => (
+              <TabsTrigger key={item.value} value={item.value}>
+                {item.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        ) : null}
         {OPS_TABS.map((item) => {
           const Component = item.component;
           return (
