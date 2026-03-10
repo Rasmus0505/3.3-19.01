@@ -8,13 +8,13 @@ import { AdminSubtitleSettingsTab } from "../admin-subtitle-settings/AdminSubtit
 import { mergeSearchParams, readStringParam } from "../../shared/lib/adminSearchParams";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Tabs, TabsContent, TabsList, TabsTrigger } from "../../shared/ui";
 
-const PIPELINE_TABS = [
+export const PIPELINE_TABS = [
   { value: "task-failures", label: "生成失败", description: "按任务、课程和错误阶段定位生成问题。", component: AdminLessonTaskLogsTab },
   { value: "translations", label: "翻译记录", description: "接着查翻译请求是否失败、失败在哪一段。", component: AdminTranslationLogsTab },
   { value: "subtitle-policy", label: "字幕策略", description: "确认分句与翻译批次默认策略，再决定是否调整。", component: AdminSubtitleSettingsTab },
 ];
 
-export function AdminPipelineWorkspace({ apiCall }) {
+export function AdminPipelineWorkspace({ apiCall, showTabsNavigation = true }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = readStringParam(searchParams, "tab");
   const activeTab = PIPELINE_TABS.some((item) => item.value === requestedTab) ? requestedTab : "task-failures";
@@ -87,13 +87,15 @@ export function AdminPipelineWorkspace({ apiCall }) {
       </Card>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
-        <TabsList className="h-auto flex-wrap justify-start">
-          {PIPELINE_TABS.map((item) => (
-            <TabsTrigger key={item.value} value={item.value}>
-              {item.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        {showTabsNavigation ? (
+          <TabsList className="h-auto flex-wrap justify-start">
+            {PIPELINE_TABS.map((item) => (
+              <TabsTrigger key={item.value} value={item.value}>
+                {item.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        ) : null}
         {PIPELINE_TABS.map((item) => {
           const Component = item.component;
           return (

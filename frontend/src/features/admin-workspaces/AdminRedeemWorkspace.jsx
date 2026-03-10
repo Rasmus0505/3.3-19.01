@@ -8,13 +8,13 @@ import { AdminRedeemCodesTab } from "../admin-redeem/AdminRedeemCodesTab";
 import { mergeSearchParams, readStringParam } from "../../shared/lib/adminSearchParams";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Tabs, TabsContent, TabsList, TabsTrigger } from "../../shared/ui";
 
-const REDEEM_TABS = [
+export const REDEEM_TABS = [
   { value: "batches", label: "兑换批次", description: "创建活动批次并判断当前批次是否健康。", component: AdminRedeemBatchesTab },
   { value: "codes", label: "兑换码列表", description: "按批次或用户追具体兑换码状态。", component: AdminRedeemCodesTab },
   { value: "audit", label: "兑换审计", description: "查看成功/失败兑换记录并安全导出。", component: AdminRedeemAuditTab },
 ];
 
-export function AdminRedeemWorkspace({ apiCall }) {
+export function AdminRedeemWorkspace({ apiCall, showTabsNavigation = true }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = readStringParam(searchParams, "tab");
   const activeTab = REDEEM_TABS.some((item) => item.value === requestedTab) ? requestedTab : "batches";
@@ -87,13 +87,15 @@ export function AdminRedeemWorkspace({ apiCall }) {
       </Card>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
-        <TabsList className="h-auto flex-wrap justify-start">
-          {REDEEM_TABS.map((item) => (
-            <TabsTrigger key={item.value} value={item.value}>
-              {item.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        {showTabsNavigation ? (
+          <TabsList className="h-auto flex-wrap justify-start">
+            {REDEEM_TABS.map((item) => (
+              <TabsTrigger key={item.value} value={item.value}>
+                {item.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        ) : null}
         {REDEEM_TABS.map((item) => {
           const Component = item.component;
           return (

@@ -18,6 +18,7 @@ from app.api.routers import admin, admin_console, auth, billing, lessons, media,
 from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, DASHSCOPE_API_KEY, SERVICE_NAME, STATIC_DIR
 from app.core.logging import setup_logging
 from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, init_db, schema_name_for_url
+from app.models import LessonGenerationTask
 from app.services.admin_bootstrap import ensure_admin_users
 from app.services.asr_dashscope import setup_dashscope
 from app.services.billing_service import ensure_default_subtitle_settings
@@ -26,6 +27,9 @@ from app.services.media import get_media_runtime_status
 
 setup_logging()
 logger = logging.getLogger(__name__)
+
+
+LESSON_TASK_REQUIRED_COLUMNS: tuple[str, ...] = tuple(str(column.name) for column in LessonGenerationTask.__table__.columns)
 
 
 READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
@@ -69,10 +73,7 @@ READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "semantic_split_timeout_seconds",
         "translation_batch_max_chars",
     ),
-    "lesson_generation_tasks": (
-        "failure_debug_json",
-        "failed_at",
-    ),
+    "lesson_generation_tasks": LESSON_TASK_REQUIRED_COLUMNS,
 }
 
 HTML_NO_STORE_HEADERS: dict[str, str] = {

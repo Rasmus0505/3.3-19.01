@@ -1,12 +1,38 @@
 import { Bug, Gift, LogOut, Menu, Shield, Users } from "lucide-react";
-import { useMemo, useState } from "react";
-import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
-import { AdminOpsWorkspace } from "./features/admin-workspaces/AdminOpsWorkspace";
-import { AdminPipelineWorkspace } from "./features/admin-workspaces/AdminPipelineWorkspace";
-import { AdminRedeemWorkspace } from "./features/admin-workspaces/AdminRedeemWorkspace";
-import { AdminUsersWorkspace } from "./features/admin-workspaces/AdminUsersWorkspace";
-import { Badge, Button, Separator, Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "./shared/ui";
+import { AdminOpsWorkspace, OPS_TABS } from "./features/admin-workspaces/AdminOpsWorkspace";
+import { AdminPipelineWorkspace, PIPELINE_TABS } from "./features/admin-workspaces/AdminPipelineWorkspace";
+import { AdminRedeemWorkspace, REDEEM_TABS } from "./features/admin-workspaces/AdminRedeemWorkspace";
+import { AdminUsersWorkspace, USERS_TABS } from "./features/admin-workspaces/AdminUsersWorkspace";
+import {
+  Badge,
+  Button,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarSeparator,
+  SidebarTrigger,
+  useSidebar,
+} from "./shared/ui";
+
+const SIDEBAR_STORAGE_KEY = "app-shell-sidebar-open";
 
 function LegacyAdminRedirect({ to, tab }) {
   const location = useLocation();
@@ -16,131 +42,287 @@ function LegacyAdminRedirect({ to, tab }) {
   return <Navigate to={`${to}${nextSearch ? `?${nextSearch}` : ""}`} replace />;
 }
 
+function buildAdminHref(basePath, tabValue) {
+  return `${basePath}?tab=${tabValue}`;
+}
+
+function AdminSidebarNavigation({
+  workspaceItems,
+  activeWorkspace,
+  activeTabItem,
+  onWorkspaceSelect,
+  onTabSelect,
+  onBackToLearning,
+  onLogout,
+  mobile = false,
+}) {
+  const { open } = useSidebar();
+  const expanded = mobile || open;
+
+  return (
+    <>
+      <SidebarHeader className="justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl border bg-primary/10 text-primary">
+            <Shield className="size-5" />
+          </div>
+          {expanded ? (
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">Admin Console</p>
+              <p className="truncate text-xs text-muted-foreground">4 个工作台统一入口</p>
+            </div>
+          ) : null}
+        </div>
+        {expanded && !mobile ? <Badge variant="outline">sidebar-09</Badge> : null}
+      </SidebarHeader>
+
+      <SidebarContent>
+        <SidebarGroup>
+          {expanded ? <SidebarGroupLabel>工作台</SidebarGroupLabel> : null}
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {workspaceItems.map((item) => {
+                const Icon = item.icon;
+                const selected = activeWorkspace.key === item.key;
+                return (
+                  <SidebarMenuItem key={item.key}>
+                    <SidebarMenuButton active={selected} collapsed={!expanded} onClick={() => onWorkspaceSelect(item)}>
+                      <Icon className="size-5 shrink-0" />
+                      {expanded ? (
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium text-foreground">{item.label}</span>
+                          <span className="block truncate text-xs text-muted-foreground">{item.caption}</span>
+                        </span>
+                      ) : null}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarSeparator />
+
+        <SidebarGroup>
+          {expanded ? <SidebarGroupLabel>{activeWorkspace.label}</SidebarGroupLabel> : null}
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {activeWorkspace.tabs.map((item) => {
+                const selected = activeTabItem.value === item.value;
+                return (
+                  <SidebarMenuItem key={item.value}>
+                    <SidebarMenuButton active={selected} collapsed={!expanded} onClick={() => onTabSelect(item.value)}>
+                      <span className="flex size-7 shrink-0 items-center justify-center rounded-xl border bg-muted/40 text-[11px] font-semibold text-muted-foreground">
+                        {item.label.slice(0, 1)}
+                      </span>
+                      {expanded ? (
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium text-foreground">{item.label}</span>
+                          <span className="block truncate text-xs text-muted-foreground">{item.description}</span>
+                        </span>
+                      ) : null}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+
+      <SidebarFooter className="space-y-2">
+        {expanded ? (
+          <p className="text-xs text-muted-foreground">旧 `/admin/*?tab=` 深链保持兼容，侧边栏点击会自动同步 URL。</p>
+        ) : null}
+        {mobile ? (
+          <div className="grid gap-2">
+            <Button variant="outline" className="justify-start" onClick={onBackToLearning}>
+              返回学习页
+            </Button>
+            <Button className="justify-start" onClick={onLogout}>
+              <LogOut className="size-4" />
+              退出登录
+            </Button>
+          </div>
+        ) : null}
+      </SidebarFooter>
+    </>
+  );
+}
+
 export function AdminApp({ apiCall, onLogout }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  const navItems = useMemo(
+  const workspaceItems = useMemo(
     () => [
-      { to: "/admin/ops?tab=overview", label: "异常处置", icon: Shield, match: "/admin/ops" },
-      { to: "/admin/pipeline?tab=task-failures", label: "生成链路", icon: Bug, match: "/admin/pipeline" },
-      { to: "/admin/users?tab=list", label: "用户计费", icon: Users, match: "/admin/users" },
-      { to: "/admin/redeem?tab=batches", label: "活动兑换", icon: Gift, match: "/admin/redeem" },
+      {
+        key: "ops",
+        label: "异常处置",
+        caption: "健康、系统、留痕",
+        icon: Shield,
+        path: "/admin/ops",
+        tabs: OPS_TABS,
+      },
+      {
+        key: "pipeline",
+        label: "生成链路",
+        caption: "任务、翻译、字幕策略",
+        icon: Bug,
+        path: "/admin/pipeline",
+        tabs: PIPELINE_TABS,
+      },
+      {
+        key: "users",
+        label: "用户计费",
+        caption: "用户、流水、计费参数",
+        icon: Users,
+        path: "/admin/users",
+        tabs: USERS_TABS,
+      },
+      {
+        key: "redeem",
+        label: "活动兑换",
+        caption: "批次、兑换码、审计",
+        icon: Gift,
+        path: "/admin/redeem",
+        tabs: REDEEM_TABS,
+      },
     ],
-    []
+    [],
   );
 
-  function isActive(match) {
-    return location.pathname.startsWith(match);
+  const activeWorkspace = useMemo(
+    () => workspaceItems.find((item) => location.pathname.startsWith(item.path)) || workspaceItems[0],
+    [location.pathname, workspaceItems],
+  );
+  const requestedTab = useMemo(() => new URLSearchParams(location.search).get("tab") || "", [location.search]);
+  const activeTabItem = useMemo(
+    () => activeWorkspace.tabs.find((item) => item.value === requestedTab) || activeWorkspace.tabs[0],
+    [activeWorkspace, requestedTab],
+  );
+
+  useEffect(() => {
+    console.debug("[DEBUG] admin sidebar route synced", {
+      pathname: location.pathname,
+      tab: activeTabItem.value,
+      workspace: activeWorkspace.key,
+    });
+  }, [activeTabItem.value, activeWorkspace.key, location.pathname]);
+
+  function handleWorkspaceSelect(item) {
+    setMobileNavOpen(false);
+    navigate(buildAdminHref(item.path, item.tabs[0]?.value || ""));
+  }
+
+  function handleTabSelect(tabValue) {
+    const nextSearchParams = new URLSearchParams(location.search);
+    nextSearchParams.set("tab", tabValue);
+    nextSearchParams.delete("page");
+    setMobileNavOpen(false);
+    navigate({ pathname: activeWorkspace.path, search: `?${nextSearchParams.toString()}` });
+  }
+
+  function handleBackToLearning() {
+    setMobileNavOpen(false);
+    navigate("/");
   }
 
   return (
-    <div className="section-soft min-h-screen bg-background">
-      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="container-wrapper">
-          <div className="container flex h-14 items-center gap-2">
-            <Button size="icon-sm" variant="ghost" aria-label="logo">
-              <Shield className="size-4" />
-            </Button>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold">Admin</span>
-              <Badge variant="outline">4 个工作台</Badge>
-            </div>
-            <Separator orientation="vertical" className="mx-1 hidden h-4 md:block" />
-            <div className="hidden items-center gap-2 md:flex">
-              {navItems.map((item) => (
-                <Badge key={item.to} variant={isActive(item.match) ? "default" : "outline"}>
-                  {item.label}
-                </Badge>
-              ))}
-            </div>
-            <div className="ml-auto flex items-center gap-2">
-              <Button variant="outline" size="sm" asChild className="hidden md:inline-flex">
-                <NavLink to="/">返回学习页</NavLink>
-              </Button>
-              <Button variant="outline" size="sm" onClick={onLogout} className="hidden md:inline-flex">
-                <LogOut className="size-4" />
-                退出
-              </Button>
+    <SidebarProvider storageKey={SIDEBAR_STORAGE_KEY}>
+      <div className="section-soft min-h-screen bg-background md:flex">
+        <Sidebar className="bg-background/95">
+          <AdminSidebarNavigation
+            workspaceItems={workspaceItems}
+            activeWorkspace={activeWorkspace}
+            activeTabItem={activeTabItem}
+            onWorkspaceSelect={handleWorkspaceSelect}
+            onTabSelect={handleTabSelect}
+            onBackToLearning={handleBackToLearning}
+            onLogout={onLogout}
+          />
+        </Sidebar>
 
-              <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-                <SheetTrigger asChild>
-                  <Button variant="outline" size="icon-sm" className="md:hidden" aria-label="open-admin-menu">
-                    <Menu className="size-4" />
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className="w-[280px]">
-                  <SheetHeader>
-                    <SheetTitle>后台导航</SheetTitle>
-                    <SheetDescription>在移动端快速切换管理页面。</SheetDescription>
-                  </SheetHeader>
-                  <div className="mt-4 grid gap-2">
-                    {navItems.map((item) => {
-                      const Icon = item.icon;
-                      return (
-                        <Button key={item.to} asChild variant={isActive(item.match) ? "default" : "outline"}>
-                          <NavLink to={item.to} onClick={() => setMobileNavOpen(false)}>
-                            <Icon className="size-4" />
-                            {item.label}
-                          </NavLink>
-                        </Button>
-                      );
-                    })}
-                    <Button asChild variant="outline">
-                      <NavLink to="/" onClick={() => setMobileNavOpen(false)}>
-                        返回学习页
-                      </NavLink>
+        <SidebarInset>
+          <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <div className="container-wrapper">
+              <div className="container flex min-h-16 items-center gap-3 py-3">
+                <SidebarTrigger />
+                <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+                  <SheetTrigger asChild>
+                    <Button variant="outline" size="icon-sm" className="md:hidden" aria-label="open-admin-sidebar">
+                      <Menu className="size-4" />
                     </Button>
-                    <Button onClick={onLogout}>
-                      <LogOut className="size-4" />
-                      退出登录
-                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="left" className="w-[320px] p-0">
+                    <SheetHeader className="sr-only">
+                      <SheetTitle>后台导航</SheetTitle>
+                      <SheetDescription>切换工作台与子页面。</SheetDescription>
+                    </SheetHeader>
+                    <div className="flex h-full flex-col">
+                      <AdminSidebarNavigation
+                        workspaceItems={workspaceItems}
+                        activeWorkspace={activeWorkspace}
+                        activeTabItem={activeTabItem}
+                        onWorkspaceSelect={handleWorkspaceSelect}
+                        onTabSelect={handleTabSelect}
+                        onBackToLearning={handleBackToLearning}
+                        onLogout={onLogout}
+                        mobile
+                      />
+                    </div>
+                  </SheetContent>
+                </Sheet>
+
+                <div className="min-w-0">
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">后台管理</p>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <h1 className="truncate text-sm font-semibold">{activeWorkspace.label}</h1>
+                    <Badge variant="outline">{activeTabItem.label}</Badge>
                   </div>
-                </SheetContent>
-              </Sheet>
+                </div>
+
+                <div className="ml-auto hidden items-center gap-2 md:flex">
+                  <Button variant="outline" size="sm" asChild>
+                    <NavLink to="/">返回学习页</NavLink>
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={onLogout}>
+                    <LogOut className="size-4" />
+                    退出
+                  </Button>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      </header>
+          </header>
 
-      <main className="container-wrapper pb-6">
-        <div className="container space-y-4 pt-4">
-          <div className="hidden flex-wrap gap-2 md:flex">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Button key={item.to} asChild variant={isActive(item.match) ? "default" : "outline"}>
-                  <NavLink to={item.to}>
-                    <Icon className="size-4" />
-                    {item.label}
-                  </NavLink>
-                </Button>
-              );
-            })}
-          </div>
+          <main className="container-wrapper pb-6">
+            <div className="container space-y-4 pt-4">
+              <Routes>
+                <Route index element={<Navigate to="ops" replace />} />
+                <Route path="ops" element={<AdminOpsWorkspace apiCall={apiCall} showTabsNavigation={false} />} />
+                <Route path="pipeline" element={<AdminPipelineWorkspace apiCall={apiCall} showTabsNavigation={false} />} />
+                <Route path="users" element={<AdminUsersWorkspace apiCall={apiCall} showTabsNavigation={false} />} />
+                <Route path="redeem" element={<AdminRedeemWorkspace apiCall={apiCall} showTabsNavigation={false} />} />
 
-          <Routes>
-            <Route index element={<Navigate to="ops" replace />} />
-            <Route path="ops" element={<AdminOpsWorkspace apiCall={apiCall} />} />
-            <Route path="pipeline" element={<AdminPipelineWorkspace apiCall={apiCall} />} />
-            <Route path="users" element={<AdminUsersWorkspace apiCall={apiCall} />} />
-            <Route path="redeem" element={<AdminRedeemWorkspace apiCall={apiCall} />} />
-
-            <Route path="overview" element={<LegacyAdminRedirect to="/admin/ops" tab="overview" />} />
-            <Route path="system" element={<LegacyAdminRedirect to="/admin/ops" tab="system" />} />
-            <Route path="operation-logs" element={<LegacyAdminRedirect to="/admin/ops" tab="operations" />} />
-            <Route path="lesson-task-logs" element={<LegacyAdminRedirect to="/admin/pipeline" tab="task-failures" />} />
-            <Route path="translation-logs" element={<LegacyAdminRedirect to="/admin/pipeline" tab="translations" />} />
-            <Route path="subtitle-settings" element={<LegacyAdminRedirect to="/admin/pipeline" tab="subtitle-policy" />} />
-            <Route path="logs" element={<LegacyAdminRedirect to="/admin/users" tab="wallet" />} />
-            <Route path="rates" element={<LegacyAdminRedirect to="/admin/users" tab="rates" />} />
-            <Route path="redeem-batches" element={<LegacyAdminRedirect to="/admin/redeem" tab="batches" />} />
-            <Route path="redeem-codes" element={<LegacyAdminRedirect to="/admin/redeem" tab="codes" />} />
-            <Route path="redeem-audit" element={<LegacyAdminRedirect to="/admin/redeem" tab="audit" />} />
-            <Route path="*" element={<Navigate to="ops" replace />} />
-          </Routes>
-        </div>
-      </main>
-    </div>
+                <Route path="overview" element={<LegacyAdminRedirect to="/admin/ops" tab="overview" />} />
+                <Route path="system" element={<LegacyAdminRedirect to="/admin/ops" tab="system" />} />
+                <Route path="operation-logs" element={<LegacyAdminRedirect to="/admin/ops" tab="operations" />} />
+                <Route path="lesson-task-logs" element={<LegacyAdminRedirect to="/admin/pipeline" tab="task-failures" />} />
+                <Route path="translation-logs" element={<LegacyAdminRedirect to="/admin/pipeline" tab="translations" />} />
+                <Route path="subtitle-settings" element={<LegacyAdminRedirect to="/admin/pipeline" tab="subtitle-policy" />} />
+                <Route path="logs" element={<LegacyAdminRedirect to="/admin/users" tab="wallet" />} />
+                <Route path="rates" element={<LegacyAdminRedirect to="/admin/users" tab="rates" />} />
+                <Route path="redeem-batches" element={<LegacyAdminRedirect to="/admin/redeem" tab="batches" />} />
+                <Route path="redeem-codes" element={<LegacyAdminRedirect to="/admin/redeem" tab="codes" />} />
+                <Route path="redeem-audit" element={<LegacyAdminRedirect to="/admin/redeem" tab="audit" />} />
+                <Route path="*" element={<Navigate to="ops" replace />} />
+              </Routes>
+            </div>
+          </main>
+        </SidebarInset>
+      </div>
+    </SidebarProvider>
   );
 }
