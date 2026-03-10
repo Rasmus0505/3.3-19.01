@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
-import { buildSearchParams, copyCurrentUrl, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
+import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import { formatDateTimeBeijing } from "../../shared/lib/datetime";
 import { Alert, AlertDescription, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Label, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
@@ -51,7 +51,7 @@ export function AdminUsersTab({ apiCall }) {
 
   useEffect(() => {
     setSearchParams(
-      buildSearchParams({
+      mergeSearchParams(searchParams, {
         keyword,
         page,
         page_size: pageSize,
@@ -460,10 +460,10 @@ export function AdminUsersTab({ apiCall }) {
             )}
             <DialogFooter>
               <Button variant="outline" asChild>
-                <Link to={`/admin/logs?user_email=${encodeURIComponent(summaryUser?.email || "")}`}>查看余额流水</Link>
+                <Link to={`/admin/users?tab=wallet&user_email=${encodeURIComponent(summaryUser?.email || "")}`}>查看余额流水</Link>
               </Button>
               <Button variant="outline" asChild>
-                <Link to={`/admin/redeem-audit?user_email=${encodeURIComponent(summaryUser?.email || "")}`}>查看兑换审计</Link>
+                <Link to={`/admin/redeem?tab=audit&user_email=${encodeURIComponent(summaryUser?.email || "")}`}>查看兑换审计</Link>
               </Button>
             </DialogFooter>
           </DialogContent>

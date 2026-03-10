@@ -85,6 +85,7 @@ class AdminLessonTaskFailureDebug(BaseModel):
     failed_stage: str = ""
     exception_type: str = ""
     detail_excerpt: str = ""
+    traceback_excerpt: str = ""
     last_progress_text: str = ""
     stages: list[dict[str, Any]] = Field(default_factory=list)
     counters: dict[str, Any] = Field(default_factory=dict)
@@ -105,6 +106,7 @@ class AdminLessonTaskLogItem(BaseModel):
     error_code: str = ""
     message: str = ""
     detail_excerpt: str = ""
+    traceback_excerpt: str = ""
     last_progress_text: str = ""
     exception_type: str = ""
     resume_available: bool = False

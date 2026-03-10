@@ -6,6 +6,7 @@ import logging
 import queue
 import shutil
 import threading
+import traceback
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
@@ -40,11 +41,14 @@ from app.services.asr_dashscope import AsrError, SUPPORTED_MODELS
 from app.services.billing_service import BillingError
 from app.services.lesson_service import LessonService
 from app.services.lesson_task_manager import (
+    LessonTaskStorageNotReadyError,
     build_task_id,
     create_task,
+    ensure_lesson_task_storage_ready,
     get_task,
     mark_task_failed,
     mark_task_succeeded,
+    reset_failed_task_for_restart,
     reset_task_for_resume,
     update_task_progress,
 )
@@ -161,6 +165,7 @@ def _run_lesson_generation_task(
             message=exc.message,
             exception_type=exc.__class__.__name__,
             detail_excerpt=str(getattr(exc, "detail", "") or exc.message or exc),
+            traceback_excerpt=traceback.format_exc(),
             session_factory=session_factory,
         )
         logger.warning("[DEBUG] lessons.task.billing_failed task_id=%s code=%s", task_id, exc.code)
@@ -172,6 +177,7 @@ def _run_lesson_generation_task(
             message=exc.message,
             exception_type=exc.__class__.__name__,
             detail_excerpt=str(getattr(exc, "detail", "") or exc.message or exc),
+            traceback_excerpt=traceback.format_exc(),
             session_factory=session_factory,
         )
         logger.warning("[DEBUG] lessons.task.asr_failed task_id=%s code=%s", task_id, exc.code)
@@ -183,9 +189,13 @@ def _run_lesson_generation_task(
             message=exc.message,
             exception_type=exc.__class__.__name__,
             detail_excerpt=str(getattr(exc, "detail", "") or exc.message or exc),
+            traceback_excerpt=traceback.format_exc(),
             session_factory=session_factory,
         )
         logger.warning("[DEBUG] lessons.task.media_failed task_id=%s code=%s", task_id, exc.code)
+    except LessonTaskStorageNotReadyError as exc:
+        db.rollback()
+        logger.exception("[DEBUG] lessons.task.storage_not_ready task_id=%s detail=%s", task_id, exc.detail)
     except Exception as exc:
         db.rollback()
         mark_task_failed(
@@ -194,6 +204,7 @@ def _run_lesson_generation_task(
             message="课程生成失败",
             exception_type=exc.__class__.__name__,
             detail_excerpt=str(exc)[:1200],
+            traceback_excerpt=traceback.format_exc(),
             session_factory=session_factory,
         )
         logger.exception("[DEBUG] lessons.task.failed task_id=%s detail=%s", task_id, str(exc)[:400])
@@ -253,7 +264,7 @@ async def create_lesson(
 @router.post(
     "/tasks",
     response_model=LessonTaskCreateResponse,
-    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
 async def create_lesson_task(
     video_file: UploadFile = File(...),
@@ -271,6 +282,7 @@ async def create_lesson_task(
     req_dir.mkdir(parents=True, exist_ok=True)
     task_session_factory = _build_session_factory(db.get_bind())
     try:
+        ensure_lesson_task_storage_ready(db)
         source_filename = (video_file.filename or "unknown")[:255]
         suffix = validate_suffix(source_filename)
         source_path = req_dir / f"source{suffix}"
@@ -305,6 +317,9 @@ async def create_lesson_task(
     except MediaError as exc:
         cleanup_dir(req_dir)
         return map_media_error(exc)
+    except LessonTaskStorageNotReadyError as exc:
+        cleanup_dir(req_dir)
+        return error_response(503, exc.code, exc.message, exc.detail)
     except Exception as exc:
         cleanup_dir(req_dir)
         return error_response(500, "INTERNAL_ERROR", "任务创建失败", str(exc)[:1200])
@@ -315,9 +330,13 @@ async def create_lesson_task(
 @router.get(
     "/tasks/{task_id}",
     response_model=LessonTaskResponse,
-    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
 def get_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        ensure_lesson_task_storage_ready(db)
+    except LessonTaskStorageNotReadyError as exc:
+        return error_response(503, exc.code, exc.message, exc.detail)
     task = get_task(task_id, db=db)
     if not task or int(task.get("owner_user_id", 0)) != current_user.id:
         return error_response(404, "TASK_NOT_FOUND", "任务不存在")
@@ -327,34 +346,70 @@ def get_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: U
 @router.post(
     "/tasks/{task_id}/resume",
     response_model=LessonTaskResumeResponse,
-    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
 def resume_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        ensure_lesson_task_storage_ready(db)
+    except LessonTaskStorageNotReadyError as exc:
+        return error_response(503, exc.code, exc.message, exc.detail)
     task = get_task(task_id, db=db)
     if not task or int(task.get("owner_user_id", 0)) != current_user.id:
         return error_response(404, "TASK_NOT_FOUND", "任务不存在")
-    if not bool(task.get("resume_available")):
-        return error_response(400, "TASK_RESUME_UNAVAILABLE", "当前任务不可继续生成")
 
-    resumed = reset_task_for_resume(task_id, db=db)
+    task_status = str(task.get("status") or "").strip().lower()
+    retry_mode = ""
+    resumed = None
+    if bool(task.get("resume_available")):
+        resumed = reset_task_for_resume(task_id, db=db)
+        retry_mode = "resume"
+
+    if not resumed and task_status == "failed":
+        resumed = reset_failed_task_for_restart(task_id, db=db)
+        retry_mode = "restart"
+
     if not resumed:
+        logger.info(
+            "[DEBUG] lessons.task.retry.unavailable task_id=%s user_id=%s status=%s resume_available=%s",
+            task_id,
+            current_user.id,
+            task_status,
+            bool(task.get("resume_available")),
+        )
         return error_response(400, "TASK_RESUME_UNAVAILABLE", "当前任务不可继续生成")
 
     artifacts = dict(resumed.get("artifacts") or {})
     req_dir = Path(str(artifacts.get("work_dir") or "").strip())
     source_path = Path(str(artifacts.get("source_path") or resumed.get("source_path") or "").strip())
+    logger.info(
+        "[DEBUG] lessons.task.retry.prepare task_id=%s user_id=%s mode=%s req_dir_exists=%s source_exists=%s",
+        task_id,
+        current_user.id,
+        retry_mode or "unknown",
+        req_dir.exists(),
+        source_path.exists(),
+    )
     if not req_dir.exists() or not source_path.exists():
         mark_task_failed(
             task_id,
             error_code="TASK_ARTIFACT_MISSING",
-            message="断点文件已过期，请重新上传素材",
+            message="素材已过期，请重新上传素材",
             exception_type="FileNotFoundError",
             detail_excerpt=f"resume artifacts missing work_dir={req_dir} source_path={source_path}",
+            traceback_excerpt="",
             failed_stage=str(resumed.get("resume_stage") or ""),
             resume_available=False,
             db=db,
         )
-        return error_response(400, "TASK_ARTIFACT_MISSING", "断点文件已过期，请重新上传素材")
+        logger.warning(
+            "[DEBUG] lessons.task.retry.artifact_missing task_id=%s user_id=%s mode=%s work_dir=%s source_path=%s",
+            task_id,
+            current_user.id,
+            retry_mode or "unknown",
+            req_dir,
+            source_path,
+        )
+        return error_response(400, "TASK_ARTIFACT_MISSING", "素材已过期，请重新上传素材")
 
     task_session_factory = _build_session_factory(db.get_bind())
     thread = threading.Thread(
@@ -372,6 +427,12 @@ def resume_lesson_task(task_id: str, db: Session = Depends(get_db), current_user
         daemon=True,
     )
     thread.start()
+    logger.info(
+        "[DEBUG] lessons.task.retry.started task_id=%s user_id=%s mode=%s",
+        task_id,
+        current_user.id,
+        retry_mode or "unknown",
+    )
     return LessonTaskResumeResponse(ok=True, task_id=task_id)
 
 

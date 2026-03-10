@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
-import { buildSearchParams, copyCurrentUrl, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
+import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import {
   Alert,
   AlertDescription,
@@ -74,6 +74,13 @@ function formatTranslationSummary(summary) {
   return [headline, usage, latest].filter(Boolean).join("\n");
 }
 
+function formatTracebackPreview(tracebackExcerpt) {
+  const text = String(tracebackExcerpt || "").trim();
+  if (!text) return "";
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  return lines.slice(0, 4).join("\n");
+}
+
 export function AdminLessonTaskLogsTab({ apiCall }) {
   const now = getBeijingNowForPicker();
   const defaultFrom = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -95,7 +102,7 @@ export function AdminLessonTaskLogsTab({ apiCall }) {
 
   useEffect(() => {
     setSearchParams(
-      buildSearchParams({
+      mergeSearchParams(searchParams, {
         page,
         page_size: pageSize,
         status: taskStatus,
@@ -120,9 +127,10 @@ export function AdminLessonTaskLogsTab({ apiCall }) {
         status: taskStatus,
         user_email: userEmail.trim(),
         task_id: taskId.trim(),
-        lesson_id: lessonId.trim(),
         source_filename: sourceFilename.trim(),
       });
+      const normalizedLessonId = lessonId.trim();
+      if (normalizedLessonId) query.set("lesson_id", normalizedLessonId);
       const normalizedDateFrom = datetimeLocalToBeijingOffset(dateFrom);
       const normalizedDateTo = datetimeLocalToBeijingOffset(dateTo);
       if (normalizedDateFrom) query.set("date_from", normalizedDateFrom);
@@ -253,7 +261,14 @@ export function AdminLessonTaskLogsTab({ apiCall }) {
                   <TableCell>{item.error_code || "-"}</TableCell>
                   <TableCell className="max-w-[260px] whitespace-normal break-words">{item.message || "-"}</TableCell>
                   <TableCell className="max-w-[320px] whitespace-pre-wrap break-words">
-                    {[item.exception_type, item.detail_excerpt, item.last_progress_text ? `上一步：${item.last_progress_text}` : ""].filter(Boolean).join("\n") || "-"}
+                    {[
+                      item.exception_type,
+                      item.detail_excerpt,
+                      item.last_progress_text ? `上一步：${item.last_progress_text}` : "",
+                      formatTracebackPreview(item.traceback_excerpt) ? `堆栈：\n${formatTracebackPreview(item.traceback_excerpt)}` : "",
+                    ]
+                      .filter(Boolean)
+                      .join("\n") || "-"}
                   </TableCell>
                   <TableCell className="max-w-[320px] whitespace-pre-wrap break-words">{formatTranslationSummary(item.translation_debug_summary)}</TableCell>
                   <TableCell>{item.resume_available ? "可继续生成" : "不可继续"}</TableCell>
@@ -339,8 +354,13 @@ export function AdminLessonTaskLogsTab({ apiCall }) {
                     <p>错误码：{detailItem.error_code || "-"}</p>
                     <p>失败时间：{formatDateTimeBeijing(detailItem.failed_at || detailItem.updated_at || detailItem.created_at)}</p>
                   </div>
-                  <div className="rounded-xl border p-3 text-sm whitespace-pre-wrap break-words">
-                    {detailItem.detail_excerpt || detailItem.message || "-"}
+                  <div className="rounded-xl border p-3 text-sm whitespace-pre-wrap break-words space-y-2">
+                    <p>{detailItem.detail_excerpt || detailItem.message || "-"}</p>
+                    {detailItem.traceback_excerpt ? (
+                      <pre className="max-h-[180px] overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/30 p-2 text-xs">
+                        {detailItem.traceback_excerpt}
+                      </pre>
+                    ) : null}
                   </div>
                 </div>
                 <div className="rounded-xl border p-3">

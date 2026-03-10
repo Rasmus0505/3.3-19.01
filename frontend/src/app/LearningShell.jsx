@@ -1,6 +1,6 @@
 import { Gift, History, LogOut, Menu, Search, Shield, Sparkles, UploadCloud } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { AuthPanel } from "../features/auth/AuthPanel";
@@ -41,13 +41,26 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-  Separator,
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
 } from "../shared/ui";
 import { clearAuthStorage, REFRESH_KEY, TOKEN_KEY } from "./authStorage";
 
@@ -55,22 +68,122 @@ const PANEL_ITEMS = [
   {
     key: "history",
     title: "历史记录",
-    description: "查看课程、继续学习，或整理历史素材。",
+    description: "查看课程、继续学习与管理历史素材。",
     icon: History,
+    path: "/",
   },
   {
     key: "upload",
     title: "上传素材",
-    description: "上传音视频，生成新课程。",
+    description: "导入音视频并查看实时生成进度。",
     icon: UploadCloud,
+    path: "/upload",
   },
   {
     key: "redeem",
     title: "兑换码充值",
-    description: "输入兑换码，给账号补充点数。",
+    description: "输入兑换码，给当前账号补充点数。",
     icon: Gift,
+    path: "/redeem",
   },
 ];
+
+const SIDEBAR_STORAGE_KEY = "app-shell-sidebar-open";
+
+function getPanelItemByPathname(pathname) {
+  return PANEL_ITEMS.find((item) => item.path === pathname) || PANEL_ITEMS[0];
+}
+
+function getPanelPath(panelKey) {
+  return PANEL_ITEMS.find((item) => item.key === panelKey)?.path || "/";
+}
+
+function LearningSidebarNavigation({
+  activePanel,
+  onPanelSelect,
+  accessToken,
+  hasLessons,
+  onOpenSearch,
+  onLogout,
+  isAdminUser,
+  onAdminNavigate,
+  mobile = false,
+}) {
+  const { open } = useSidebar();
+  const expanded = mobile || open;
+
+  return (
+    <>
+      <SidebarHeader className="justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl border bg-primary/10 text-primary">
+            <Sparkles className="size-5" />
+          </div>
+          {expanded ? (
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">English Trainer</p>
+              <p className="truncate text-xs text-muted-foreground">学习、上传、充值统一入口</p>
+            </div>
+          ) : null}
+        </div>
+        {expanded ? <Badge variant="outline">{accessToken ? "已登录" : "未登录"}</Badge> : null}
+      </SidebarHeader>
+
+      <SidebarContent>
+        <SidebarGroup>
+          {expanded ? <SidebarGroupLabel>学习导航</SidebarGroupLabel> : null}
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {PANEL_ITEMS.map((item) => {
+                const Icon = item.icon;
+                const selected = activePanel === item.key;
+                return (
+                  <SidebarMenuItem key={item.key}>
+                    <SidebarMenuButton active={selected} collapsed={!expanded} onClick={() => onPanelSelect(item.key)}>
+                      <Icon className="size-5 shrink-0" />
+                      {expanded ? (
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium text-foreground">{item.title}</span>
+                          <span className="block truncate text-xs text-muted-foreground">{item.description}</span>
+                        </span>
+                      ) : null}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+
+      <SidebarFooter className="space-y-2">
+        {expanded ? <p className="text-xs text-muted-foreground">桌面端支持折叠记忆，手机端通过左侧抽屉切换面板。</p> : null}
+        {mobile ? (
+          <div className="grid gap-2">
+            {hasLessons ? (
+              <Button variant="outline" className="justify-start" onClick={onOpenSearch}>
+                <Search className="size-4" />
+                查找课程
+              </Button>
+            ) : null}
+            {isAdminUser ? (
+              <Button variant="outline" className="justify-start" onClick={onAdminNavigate}>
+                <Shield className="size-4" />
+                管理后台
+              </Button>
+            ) : null}
+            {accessToken ? (
+              <Button className="justify-start" onClick={onLogout}>
+                <LogOut className="size-4" />
+                退出登录
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </SidebarFooter>
+    </>
+  );
+}
 
 function buildProgressSnapshot(progressData = {}) {
   return {
@@ -160,6 +273,7 @@ function buildCreatedLessonMediaPreview(lesson, mediaPreview, mediaPersisted) {
 }
 
 export function LearningShell() {
+  const location = useLocation();
   const navigate = useNavigate();
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
   const [lessons, setLessons] = useState([]);
@@ -176,12 +290,14 @@ export function LearningShell() {
   const [currentLessonNeedsBinding, setCurrentLessonNeedsBinding] = useState(false);
   const [immersiveActive, setImmersiveActive] = useState(false);
   const [mediaRestoreTick, setMediaRestoreTick] = useState(0);
-  const [activePanel, setActivePanel] = useState("history");
   const [lessonCardMetaMap, setLessonCardMetaMap] = useState({});
   const [lessonMediaMetaMap, setLessonMediaMetaMap] = useState({});
   const [subtitleCacheMetaMap, setSubtitleCacheMetaMap] = useState({});
   const [subtitleRegenerateState, setSubtitleRegenerateState] = useState(null);
   const [uploadTaskState, setUploadTaskState] = useState(null);
+  const lastNonImmersivePanelRef = useRef(getPanelItemByPathname(location.pathname).key);
+
+  const activePanel = getPanelItemByPathname(location.pathname).key;
 
   const immersiveLayoutActive = Boolean(accessToken && currentLesson?.id && immersiveActive);
 
@@ -190,6 +306,17 @@ export function LearningShell() {
     if (!keyword) return lessons;
     return lessons.filter((item) => `${item.title || ""} ${item.asr_model || ""}`.toLowerCase().includes(keyword));
   }, [commandQuery, lessons]);
+
+  useEffect(() => {
+    if (!immersiveLayoutActive) {
+      lastNonImmersivePanelRef.current = activePanel;
+    }
+    console.debug("[DEBUG] learning sidebar route synced", {
+      pathname: location.pathname,
+      panel: activePanel,
+      immersiveLayoutActive,
+    });
+  }, [activePanel, immersiveLayoutActive, location.pathname]);
 
   function mergeLessonWithSubtitleVariant(lesson, variant) {
     if (!lesson || !variant || !Array.isArray(variant.sentences) || variant.sentences.length === 0) {
@@ -563,15 +690,18 @@ export function LearningShell() {
     };
   }, [currentLesson?.id, currentLesson?.media_storage]);
 
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
+
   function handleAuthed() {
     setAccessToken(localStorage.getItem(TOKEN_KEY) || "");
     setGlobalStatus("");
-    setActivePanel("history");
     setUploadTaskState(null);
   }
 
   function handlePanelChange(nextPanel) {
-    setActivePanel(nextPanel);
+    navigate(getPanelPath(nextPanel));
     setMobileNavOpen(false);
   }
 
@@ -588,17 +718,17 @@ export function LearningShell() {
     setCommandQuery("");
     setCurrentLessonNeedsBinding(false);
     setImmersiveActive(false);
-    setActivePanel("history");
     setLessonCardMetaMap({});
     setLessonMediaMetaMap({});
     setSubtitleCacheMetaMap({});
     setSubtitleRegenerateState(null);
     setUploadTaskState(null);
+    navigate("/");
   }
 
   function handleExitImmersive() {
     setImmersiveActive(false);
-    setActivePanel("history");
+    navigate(getPanelPath(lastNonImmersivePanelRef.current));
   }
 
   async function handleLessonCreated(payload) {
@@ -630,7 +760,7 @@ export function LearningShell() {
     if (!lessonId) return;
     setCommandOpen(false);
     setCommandQuery("");
-    setActivePanel("history");
+    navigate("/");
     if (lessonId !== currentLesson?.id) {
       await loadLessonDetail(lessonId, { autoEnterImmersive: false });
     }
@@ -638,18 +768,19 @@ export function LearningShell() {
 
   function handleStartImmersive() {
     if (!currentLesson?.id) return;
+    lastNonImmersivePanelRef.current = activePanel;
     setImmersiveActive(true);
   }
 
   async function handleStartLesson(lessonId) {
     if (!lessonId) return;
-    setActivePanel("history");
+    lastNonImmersivePanelRef.current = activePanel;
     await loadLessonDetail(lessonId, { autoEnterImmersive: true });
   }
 
   async function handleNavigateToGeneratedLesson(lessonId) {
     if (!lessonId) return;
-    setActivePanel("history");
+    lastNonImmersivePanelRef.current = activePanel;
     await loadLessonDetail(lessonId, { autoEnterImmersive: true });
   }
 
@@ -990,306 +1121,245 @@ export function LearningShell() {
   const currentPanel = PANEL_ITEMS.find((item) => item.key === activePanel) || PANEL_ITEMS[0];
 
   return (
-    <div className="section-soft min-h-screen bg-background">
-      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="container-wrapper">
-          <div className="container flex h-14 items-center gap-2">
-            <Button size="icon-sm" variant="ghost" aria-label="logo">
-              <Sparkles className="size-4" />
-            </Button>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold">English Trainer</span>
-              <Badge variant="outline">{accessToken ? "已登录" : "未登录"}</Badge>
-            </div>
-            <Separator orientation="vertical" className="mx-1 hidden h-4 md:block" />
-            <div className="hidden items-center gap-2 md:flex">
-              {accessToken ? <Badge variant="outline">{lessons.length} 节课程</Badge> : null}
-              <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
-            </div>
+    <SidebarProvider storageKey={SIDEBAR_STORAGE_KEY}>
+      <div className="section-soft min-h-screen bg-background md:flex">
+        {!immersiveLayoutActive ? (
+          <Sidebar className="bg-background/95">
+            <LearningSidebarNavigation
+              activePanel={activePanel}
+              onPanelSelect={handlePanelChange}
+              accessToken={accessToken}
+              hasLessons={lessons.length > 0}
+              onOpenSearch={() => setCommandOpen(true)}
+              onLogout={handleLogout}
+              isAdminUser={isAdminUser}
+              onAdminNavigate={() => navigate("/admin/ops")}
+            />
+          </Sidebar>
+        ) : null}
 
-            <div className="ml-auto flex items-center gap-2">
-              {accessToken && lessons.length > 0 ? (
-                <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={() => setCommandOpen(true)}>
-                  <Search className="size-4" />
-                  找课程
-                </Button>
-              ) : null}
-              {accessToken && isAdminUser ? (
-                <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={() => navigate("/admin/overview")}>
-                  <Shield className="size-4" />
-                  管理后台
-                </Button>
-              ) : null}
-              {accessToken ? (
-                <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={handleLogout}>
-                  <LogOut className="size-4" />
-                  退出登录
-                </Button>
-              ) : null}
-
-              {accessToken ? (
-                <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-                  <SheetTrigger asChild>
-                    <Button variant="outline" size="icon-sm" className="md:hidden" aria-label="open-menu">
-                      <Menu className="size-4" />
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent side="right" className="w-[300px] sm:w-[340px]">
-                    <SheetHeader>
-                      <SheetTitle>{currentPanel.title}</SheetTitle>
-                      <SheetDescription>在手机上切换页面、查找课程和处理账号操作。</SheetDescription>
-                    </SheetHeader>
-                    <div className="mt-4 space-y-3">
-                      <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
-                      <div className="space-y-2">
-                        {PANEL_ITEMS.map((item) => {
-                          const Icon = item.icon;
-                          const selected = activePanel === item.key;
-                          return (
-                            <button
-                              key={item.key}
-                              type="button"
-                              className={cn(
-                                "flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-colors",
-                                selected ? "border-primary bg-primary/8" : "border-border bg-background hover:bg-muted/30",
-                              )}
-                              onClick={() => handlePanelChange(item.key)}
-                            >
-                              <span
-                                className={cn(
-                                  "flex size-9 shrink-0 items-center justify-center rounded-xl border",
-                                  selected ? "border-primary/30 bg-primary/12 text-primary" : "border-border bg-muted/30 text-muted-foreground",
-                                )}
-                              >
-                                <Icon className="size-4" />
-                              </span>
-                              <span className="space-y-1">
-                                <span className="block text-sm font-medium">{item.title}</span>
-                                <span className="block text-xs text-muted-foreground">{item.description}</span>
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {lessons.length > 0 ? (
-                        <Button
-                          variant="outline"
-                          className="w-full justify-start"
-                          onClick={() => {
-                            setMobileNavOpen(false);
+        <SidebarInset>
+          {!immersiveLayoutActive ? (
+            <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+              <div className="container-wrapper">
+                <div className="container flex min-h-16 items-center gap-3 py-3">
+                  <SidebarTrigger />
+                  <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+                    <SheetTrigger asChild>
+                      <Button variant="outline" size="icon-sm" className="md:hidden" aria-label="open-learning-sidebar">
+                        <Menu className="size-4" />
+                      </Button>
+                    </SheetTrigger>
+                    <SheetContent side="left" className="w-[320px] p-0">
+                      <SheetHeader className="sr-only">
+                        <SheetTitle>{currentPanel.title}</SheetTitle>
+                        <SheetDescription>在移动端切换学习面板、课程跳转与账号操作。</SheetDescription>
+                      </SheetHeader>
+                      <div className="flex h-full flex-col">
+                        <LearningSidebarNavigation
+                          activePanel={activePanel}
+                          onPanelSelect={handlePanelChange}
+                          accessToken={accessToken}
+                          hasLessons={lessons.length > 0}
+                          onOpenSearch={() => {
                             setCommandOpen(true);
-                          }}
-                        >
-                          <Search className="size-4" />
-                          查找课程
-                        </Button>
-                      ) : null}
-                      {isAdminUser ? (
-                        <Button
-                          variant="outline"
-                          className="w-full justify-start"
-                          onClick={() => {
                             setMobileNavOpen(false);
-                            navigate("/admin/overview");
                           }}
-                        >
-                          <Shield className="size-4" />
-                          管理后台
-                        </Button>
-                      ) : null}
-                      <Button className="w-full justify-start" onClick={handleLogout}>
+                          onLogout={handleLogout}
+                          isAdminUser={isAdminUser}
+                          onAdminNavigate={() => {
+                            setMobileNavOpen(false);
+                            navigate("/admin/ops");
+                          }}
+                          mobile
+                        />
+                      </div>
+                    </SheetContent>
+                  </Sheet>
+
+                  <div className="min-w-0">
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">学习中心</p>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <h1 className="truncate text-sm font-semibold">{currentPanel.title}</h1>
+                      <Badge variant="outline">{accessToken ? "已登录" : "未登录"}</Badge>
+                      {accessToken ? <Badge variant="outline">{lessons.length} 门课程</Badge> : null}
+                    </div>
+                    <p className="hidden text-xs text-muted-foreground md:block">{currentPanel.description}</p>
+                  </div>
+
+                  <div className="ml-auto flex items-center gap-2">
+                    {accessToken ? (
+                      <div className="hidden md:block">
+                        <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
+                      </div>
+                    ) : null}
+                    {accessToken && lessons.length > 0 ? (
+                      <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={() => setCommandOpen(true)}>
+                        <Search className="size-4" />
+                        找课程
+                      </Button>
+                    ) : null}
+                    {accessToken && isAdminUser ? (
+                      <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={() => navigate("/admin/ops")}>
+                        <Shield className="size-4" />
+                        管理后台
+                      </Button>
+                    ) : null}
+                    {accessToken ? (
+                      <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={handleLogout}>
                         <LogOut className="size-4" />
                         退出登录
                       </Button>
-                    </div>
-                  </SheetContent>
-                </Sheet>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className={cn("container-wrapper transition-all duration-300", immersiveLayoutActive ? "pb-0" : "pb-6")}>
-        <div className={cn("container transition-all duration-300", immersiveLayoutActive ? "pt-2" : "pt-4")}>
-          {immersiveLayoutActive ? (
-            <section className="min-w-0 space-y-4">
-              {globalStatus ? (
-                <Alert variant="destructive">
-                  <AlertTitle>系统消息</AlertTitle>
-                  <AlertDescription>{globalStatus}</AlertDescription>
-                </Alert>
-              ) : null}
-              <ImmersiveLessonPage
-                lesson={currentLesson}
-                accessToken={accessToken}
-                apiClient={api}
-                onProgressSynced={refreshCurrentLesson}
-                immersiveActive={immersiveLayoutActive}
-                onExitImmersive={handleExitImmersive}
-                onStartImmersive={handleStartImmersive}
-                externalMediaReloadToken={mediaRestoreTick}
-              />
-            </section>
-          ) : (
-            <div className={cn("grid gap-4", accessToken ? "xl:grid-cols-[280px_minmax(0,1fr)]" : "xl:grid-cols-1")}>
-              {accessToken ? (
-                <aside className="hidden xl:block">
-                  <nav className="sticky top-20 space-y-3">
-                    {PANEL_ITEMS.map((item) => {
-                      const Icon = item.icon;
-                      const selected = activePanel === item.key;
-                      return (
-                        <button
-                          key={item.key}
-                          type="button"
-                          className={cn(
-                            "flex w-full items-start gap-4 rounded-3xl border px-4 py-4 text-left transition-all",
-                            selected
-                              ? "border-primary bg-primary/8 shadow-sm"
-                              : "border-border bg-background hover:border-primary/30 hover:bg-muted/20",
-                          )}
-                          onClick={() => handlePanelChange(item.key)}
-                        >
-                          <span
-                            className={cn(
-                              "flex size-11 shrink-0 items-center justify-center rounded-2xl border",
-                              selected ? "border-primary/30 bg-primary/12 text-primary" : "border-border bg-muted/30 text-muted-foreground",
-                            )}
-                          >
-                            <Icon className="size-5" />
-                          </span>
-                          <span className="min-w-0 space-y-1">
-                            <span className="block text-sm font-semibold">{item.title}</span>
-                            <span className="block text-sm text-muted-foreground">{item.description}</span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </nav>
-                </aside>
-              ) : null}
-
-              <section className="min-w-0 space-y-4">
-                {globalStatus ? (
-                  <Alert variant="destructive">
-                    <AlertTitle>系统消息</AlertTitle>
-                    <AlertDescription>{globalStatus}</AlertDescription>
-                  </Alert>
-                ) : null}
-
-                {!accessToken ? (
-                  <div className="mx-auto max-w-md">
-                    <AuthPanel onAuthed={handleAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
+                    ) : null}
                   </div>
-                ) : (
-                  <>
-                    <div className={activePanel === "history" ? "block" : "hidden"}>
-                      <LessonList
-                        lessons={lessons}
-                        currentLessonId={currentLesson?.id}
-                        currentLessonNeedsBinding={currentLessonNeedsBinding}
-                        lessonCardMetaMap={lessonCardMetaMap}
-                        lessonMediaMetaMap={lessonMediaMetaMap}
-                        subtitleCacheMetaMap={subtitleCacheMetaMap}
-                        subtitleRegenerateState={subtitleRegenerateState}
-                        onSelect={(lessonId) => loadLessonDetail(lessonId, { autoEnterImmersive: false })}
-                        onStartLesson={handleStartLesson}
-                        onRename={handleRenameLesson}
-                        onDelete={handleDeleteLesson}
-                        onRestoreMedia={handleRestoreLessonMedia}
-                        onRegenerateSubtitles={handleRegenerateSubtitles}
-                        onSwitchToUpload={() => handlePanelChange("upload")}
-                        loading={loadingLessons}
-                      />
-                    </div>
-                    <div className={activePanel === "upload" ? "block" : "hidden"}>
-                      <UploadPanel
-                        accessToken={accessToken}
-                        onCreated={handleLessonCreated}
-                        balancePoints={walletBalance}
-                        billingRates={billingRates}
-                        subtitleSettings={subtitleSettings}
-                        onWalletChanged={loadWallet}
-                        onTaskStateChange={setUploadTaskState}
-                        onNavigateToLesson={handleNavigateToGeneratedLesson}
-                      />
-                    </div>
-                    <div className={activePanel === "redeem" ? "block" : "hidden"}>
-                      <RedeemCodePanel
-                        apiCall={(path, options = {}) => api(path, options, accessToken)}
-                        onWalletChanged={loadWallet}
-                      />
-                    </div>
-                  </>
-                )}
-              </section>
-            </div>
-          )}
-        </div>
-      </main>
-
-      {accessToken && activePanel !== "upload" && uploadTaskState ? (
-        <div className="fixed bottom-5 right-5 z-50 w-[min(360px,calc(100vw-24px))]">
-          <button
-            type="button"
-            className="w-full rounded-3xl border bg-background/95 p-4 text-left shadow-lg backdrop-blur transition hover:border-primary/40"
-            onClick={() => handlePanelChange("upload")}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="space-y-1">
-                <p className="text-sm font-semibold">{uploadTaskState.headline}</p>
-                <p className="text-xs text-muted-foreground">
-                  {uploadTaskState.phase === "success"
-                    ? "已生成完成，点此回到上传页"
-                    : uploadTaskState.phase === "error"
-                      ? uploadTaskState.resumeAvailable
-                        ? "生成中断，可继续处理"
-                        : "生成失败，点此查看原因"
-                      : "正在生成，点此回到上传页"}
-                </p>
-              </div>
-              <span className="text-sm font-semibold tabular-nums text-muted-foreground">{uploadTaskState.progressPercent}%</span>
-            </div>
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
-              <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${uploadTaskState.progressPercent}%` }} />
-            </div>
-          </button>
-        </div>
-      ) : null}
-
-      <CommandDialog
-        open={commandOpen}
-        onOpenChange={(open) => {
-          setCommandOpen(open);
-          if (!open) {
-            setCommandQuery("");
-          }
-        }}
-      >
-        <CommandInput placeholder="搜索课程名或模型..." value={commandQuery} onValueChange={setCommandQuery} />
-        <CommandList>
-          <CommandEmpty>没有找到匹配的课程</CommandEmpty>
-          <CommandGroup heading="课程">
-            {filteredLessons.map((lesson) => (
-              <CommandItem
-                key={lesson.id}
-                value={`${lesson.title || ""} ${lesson.asr_model || ""} ${lesson.id}`}
-                onSelect={() => {
-                  void handleCommandSelect(lesson.id);
-                }}
-              >
-                <div className="flex w-full flex-col">
-                  <span>{lesson.title}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {lesson.asr_model || "-"} · {Number(lessonCardMetaMap[lesson.id]?.sentenceCount || lesson.sentences?.length || 0)} 句
-                  </span>
                 </div>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        </CommandList>
-      </CommandDialog>
-    </div>
+              </div>
+            </header>
+          ) : null}
+
+          <main className={cn("container-wrapper transition-all duration-300", immersiveLayoutActive ? "pb-0" : "pb-6")}>
+            <div className={cn("container transition-all duration-300", immersiveLayoutActive ? "pt-2" : "pt-4")}>
+              {immersiveLayoutActive ? (
+                <section className="min-w-0 space-y-4">
+                  {globalStatus ? (
+                    <Alert variant="destructive">
+                      <AlertTitle>系统消息</AlertTitle>
+                      <AlertDescription>{globalStatus}</AlertDescription>
+                    </Alert>
+                  ) : null}
+                  <ImmersiveLessonPage
+                    lesson={currentLesson}
+                    accessToken={accessToken}
+                    apiClient={api}
+                    onProgressSynced={refreshCurrentLesson}
+                    immersiveActive={immersiveLayoutActive}
+                    onExitImmersive={handleExitImmersive}
+                    onStartImmersive={handleStartImmersive}
+                    externalMediaReloadToken={mediaRestoreTick}
+                  />
+                </section>
+              ) : (
+                <section className="min-w-0 space-y-4">
+                  {globalStatus ? (
+                    <Alert variant="destructive">
+                      <AlertTitle>系统消息</AlertTitle>
+                      <AlertDescription>{globalStatus}</AlertDescription>
+                    </Alert>
+                  ) : null}
+
+                  {!accessToken ? (
+                    <div className="mx-auto max-w-md">
+                      <AuthPanel onAuthed={handleAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
+                    </div>
+                  ) : (
+                    <>
+                      <div className={activePanel === "history" ? "block" : "hidden"}>
+                        <LessonList
+                          lessons={lessons}
+                          currentLessonId={currentLesson?.id}
+                          currentLessonNeedsBinding={currentLessonNeedsBinding}
+                          lessonCardMetaMap={lessonCardMetaMap}
+                          lessonMediaMetaMap={lessonMediaMetaMap}
+                          subtitleCacheMetaMap={subtitleCacheMetaMap}
+                          subtitleRegenerateState={subtitleRegenerateState}
+                          onSelect={(lessonId) => loadLessonDetail(lessonId, { autoEnterImmersive: false })}
+                          onStartLesson={handleStartLesson}
+                          onRename={handleRenameLesson}
+                          onDelete={handleDeleteLesson}
+                          onRestoreMedia={handleRestoreLessonMedia}
+                          onRegenerateSubtitles={handleRegenerateSubtitles}
+                          onSwitchToUpload={() => handlePanelChange("upload")}
+                          loading={loadingLessons}
+                        />
+                      </div>
+                      <div className={activePanel === "upload" ? "block" : "hidden"}>
+                        <UploadPanel
+                          accessToken={accessToken}
+                          onCreated={handleLessonCreated}
+                          balancePoints={walletBalance}
+                          billingRates={billingRates}
+                          subtitleSettings={subtitleSettings}
+                          onWalletChanged={loadWallet}
+                          onTaskStateChange={setUploadTaskState}
+                          onNavigateToLesson={handleNavigateToGeneratedLesson}
+                        />
+                      </div>
+                      <div className={activePanel === "redeem" ? "block" : "hidden"}>
+                        <RedeemCodePanel
+                          apiCall={(path, options = {}) => api(path, options, accessToken)}
+                          onWalletChanged={loadWallet}
+                        />
+                      </div>
+                    </>
+                  )}
+                </section>
+              )}
+            </div>
+          </main>
+
+          {accessToken && activePanel !== "upload" && uploadTaskState ? (
+            <div className="fixed bottom-5 right-5 z-50 w-[min(360px,calc(100vw-24px))]">
+              <button
+                type="button"
+                className="w-full rounded-3xl border bg-background/95 p-4 text-left shadow-lg backdrop-blur transition hover:border-primary/40"
+                onClick={() => handlePanelChange("upload")}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold">{uploadTaskState.headline}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {uploadTaskState.phase === "success"
+                        ? "已生成完成，点此回到上传页"
+                        : uploadTaskState.phase === "error"
+                          ? uploadTaskState.resumeAvailable
+                            ? "生成中断，可继续处理"
+                            : "生成失败，点此查看原因"
+                          : "正在生成，点此回到上传页"}
+                    </p>
+                  </div>
+                  <span className="text-sm font-semibold tabular-nums text-muted-foreground">{uploadTaskState.progressPercent}%</span>
+                </div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${uploadTaskState.progressPercent}%` }} />
+                </div>
+              </button>
+            </div>
+          ) : null}
+
+          <CommandDialog
+            open={commandOpen}
+            onOpenChange={(open) => {
+              setCommandOpen(open);
+              if (!open) {
+                setCommandQuery("");
+              }
+            }}
+          >
+            <CommandInput placeholder="搜索课程名或模型..." value={commandQuery} onValueChange={setCommandQuery} />
+            <CommandList>
+              <CommandEmpty>没有找到匹配的课程</CommandEmpty>
+              <CommandGroup heading="课程">
+                {filteredLessons.map((lesson) => (
+                  <CommandItem
+                    key={lesson.id}
+                    value={`${lesson.title || ""} ${lesson.asr_model || ""} ${lesson.id}`}
+                    onSelect={() => {
+                      void handleCommandSelect(lesson.id);
+                    }}
+                  >
+                    <div className="flex w-full flex-col">
+                      <span>{lesson.title}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {lesson.asr_model || "-"} · {Number(lessonCardMetaMap[lesson.id]?.sentenceCount || lesson.sentences?.length || 0)} 句
+                      </span>
+                    </div>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </CommandDialog>
+        </SidebarInset>
+      </div>
+    </SidebarProvider>
   );
 }

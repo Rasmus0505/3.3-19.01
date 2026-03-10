@@ -91,6 +91,18 @@ def _now() -> datetime:
     return now_shanghai_naive()
 
 
+def _parse_optional_lesson_id(raw_value: str | int | None):
+    text_value = str(raw_value or "").strip()
+    if not text_value:
+        return None, None
+    if not text_value.isdigit():
+        return None, error_response(400, "INVALID_LESSON_ID", "lesson_id 必须是正整数")
+    lesson_id = int(text_value)
+    if lesson_id <= 0:
+        return None, error_response(400, "INVALID_LESSON_ID", "lesson_id 必须是正整数")
+    return lesson_id, None
+
+
 def _effective_batch_status(*, status: str, expire_at: datetime, now: datetime) -> str:
     expire_at_naive = to_shanghai_naive(expire_at) or expire_at
     if status == REDEEM_BATCH_STATUS_EXPIRED or now >= expire_at_naive:
@@ -373,12 +385,12 @@ def admin_wallet_logs(
 @router.get(
     "/translation-logs",
     response_model=AdminTranslationLogsResponse,
-    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
 )
 def admin_translation_logs(
     user_email: str = "",
     task_id: str = "",
-    lesson_id: int | None = None,
+    lesson_id: str = "",
     success: str = "",
     page: int = 1,
     page_size: int = 20,
@@ -389,6 +401,9 @@ def admin_translation_logs(
 ):
     page = max(page, 1)
     page_size = max(1, min(page_size, 100))
+    normalized_lesson_id, parse_error = _parse_optional_lesson_id(lesson_id)
+    if parse_error is not None:
+        return parse_error
     normalized_date_from = to_shanghai_naive(date_from)
     normalized_date_to = to_shanghai_naive(date_to)
     logger.debug(
@@ -404,7 +419,7 @@ def admin_translation_logs(
         db,
         user_email=user_email,
         task_id=task_id,
-        lesson_id=lesson_id,
+        lesson_id=normalized_lesson_id,
         success=success,
         page=page,
         page_size=page_size,

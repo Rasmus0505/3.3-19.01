@@ -6,11 +6,13 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_admin_user
+from app.core.errors import error_response
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
 from app.db import get_db
 from app.models import User
 from app.repositories.admin_console import get_admin_overview_data, get_admin_user_activity_summary, list_admin_lesson_task_logs, list_admin_operation_logs
 from app.schemas import ErrorResponse
+from app.services.lesson_task_manager import LessonTaskStorageNotReadyError
 from app.schemas.admin_console import (
     AdminLessonTaskFailureDebug,
     AdminLessonTaskLogItem,
@@ -78,6 +80,18 @@ def _to_failure_debug(payload: dict | None, failed_at: datetime | None) -> Admin
     normalized = dict(payload)
     normalized["failed_at"] = to_shanghai_aware(failed_at) if failed_at else normalized.get("failed_at")
     return AdminLessonTaskFailureDebug(**normalized)
+
+
+def _parse_optional_lesson_id(raw_value: str | int | None):
+    text_value = str(raw_value or "").strip()
+    if not text_value:
+        return None, None
+    if not text_value.isdigit():
+        return None, error_response(400, "INVALID_LESSON_ID", "lesson_id 必须是正整数")
+    lesson_id = int(text_value)
+    if lesson_id <= 0:
+        return None, error_response(400, "INVALID_LESSON_ID", "lesson_id 必须是正整数")
+    return lesson_id, None
 
 
 @router.get("/overview", response_model=AdminOverviewResponse, responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}})
@@ -151,13 +165,13 @@ def admin_operation_logs(
 @router.get(
     "/lesson-task-logs",
     response_model=AdminLessonTaskLogsResponse,
-    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
 def admin_lesson_task_logs(
     status: str = "all",
     user_email: str = "",
     task_id: str = "",
-    lesson_id: int | None = None,
+    lesson_id: str = "",
     source_filename: str = "",
     page: int = 1,
     page_size: int = 20,
@@ -168,20 +182,26 @@ def admin_lesson_task_logs(
 ):
     page = max(page, 1)
     page_size = max(1, min(page_size, 100))
+    normalized_lesson_id, parse_error = _parse_optional_lesson_id(lesson_id)
+    if parse_error is not None:
+        return parse_error
     normalized_date_from = to_shanghai_naive(date_from)
     normalized_date_to = to_shanghai_naive(date_to)
-    total, rows = list_admin_lesson_task_logs(
-        db,
-        status=status,
-        user_email=user_email,
-        task_id=task_id,
-        lesson_id=lesson_id,
-        source_filename=source_filename,
-        date_from=normalized_date_from,
-        date_to=normalized_date_to,
-        page=page,
-        page_size=page_size,
-    )
+    try:
+        total, rows = list_admin_lesson_task_logs(
+            db,
+            status=status,
+            user_email=user_email,
+            task_id=task_id,
+            lesson_id=normalized_lesson_id,
+            source_filename=source_filename,
+            date_from=normalized_date_from,
+            date_to=normalized_date_to,
+            page=page,
+            page_size=page_size,
+        )
+    except LessonTaskStorageNotReadyError as exc:
+        return error_response(503, exc.code, exc.message, exc.detail)
     items: list[AdminLessonTaskLogItem] = []
     for row, owner_email in rows:
         failure_debug_payload = dict(row.failure_debug_json or {}) if isinstance(row.failure_debug_json, dict) else None
@@ -200,6 +220,7 @@ def admin_lesson_task_logs(
                 error_code=str(row.error_code or ""),
                 message=str(row.message or ""),
                 detail_excerpt=str((failure_debug_payload or {}).get("detail_excerpt") or ""),
+                traceback_excerpt=str((failure_debug_payload or {}).get("traceback_excerpt") or ""),
                 last_progress_text=str((failure_debug_payload or {}).get("last_progress_text") or ""),
                 exception_type=str((failure_debug_payload or {}).get("exception_type") or ""),
                 resume_available=bool(row.resume_available),

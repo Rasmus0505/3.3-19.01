@@ -24,6 +24,23 @@ export function buildSearchParams(entries) {
   return searchParams;
 }
 
+export function mergeSearchParams(currentSearchParams, entries) {
+  const searchParams = new URLSearchParams(currentSearchParams);
+  Object.entries(entries).forEach(([key, value]) => {
+    if (value == null) {
+      searchParams.delete(key);
+      return;
+    }
+    const normalized = typeof value === "string" ? value.trim() : String(value);
+    if (!normalized || normalized === "all") {
+      searchParams.delete(key);
+      return;
+    }
+    searchParams.set(key, normalized);
+  });
+  return searchParams;
+}
+
 export async function copyCurrentUrl() {
   const href = window.location.href;
   if (navigator?.clipboard?.writeText) {
