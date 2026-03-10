@@ -11,6 +11,7 @@ BUSINESS_TABLES = (
     "lessons",
     "lesson_sentences",
     "lesson_progress",
+    "lesson_generation_tasks",
     "media_assets",
     "wallet_accounts",
     "wallet_ledger",

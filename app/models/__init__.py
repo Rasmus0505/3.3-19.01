@@ -9,7 +9,7 @@ from app.models.billing import (
     WalletAccount,
     WalletLedger,
 )
-from app.models.lesson import Lesson, LessonProgress, LessonSentence, MediaAsset
+from app.models.lesson import Lesson, LessonGenerationTask, LessonProgress, LessonSentence, MediaAsset
 from app.models.user import User
 
 __all__ = [
@@ -17,6 +17,7 @@ __all__ = [
     "Lesson",
     "LessonSentence",
     "LessonProgress",
+    "LessonGenerationTask",
     "MediaAsset",
     "WalletAccount",
     "WalletLedger",

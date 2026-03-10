@@ -100,9 +100,17 @@ class LessonTaskResponse(BaseModel):
     translation_debug: LessonTaskTranslationDebugResponse | None = None
     error_code: str = ""
     message: str = ""
+    resume_available: bool = False
+    resume_stage: str = ""
+    artifact_expires_at: datetime | None = None
 
 
 class LessonTaskCreateResponse(BaseModel):
+    ok: bool = True
+    task_id: str
+
+
+class LessonTaskResumeResponse(BaseModel):
     ok: bool = True
     task_id: str
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.timezone import now_shanghai_naive
@@ -60,6 +60,38 @@ class LessonProgress(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
 
     lesson: Mapped[Lesson] = relationship(back_populates="progress_records")
+
+
+class LessonGenerationTask(Base):
+    __tablename__ = "lesson_generation_tasks"
+    __table_args__ = table_args()
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task_id: Mapped[str] = mapped_column(String(80), nullable=False, unique=True, index=True)
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey(schema_fk("users.id")), nullable=False, index=True)
+    lesson_id: Mapped[int | None] = mapped_column(ForeignKey(schema_fk("lessons.id")), nullable=True, index=True)
+    source_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    asr_model: Mapped[str] = mapped_column(String(100), nullable=False)
+    semantic_split_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    overall_percent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    current_text: Mapped[str] = mapped_column(String(255), default="等待处理", nullable=False)
+    stages_json: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
+    counters_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    translation_debug_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    subtitle_cache_seed_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_code: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    message: Mapped[str] = mapped_column(String(1200), default="", nullable=False)
+    resume_available: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    resume_stage: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    work_dir: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    artifacts_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    artifact_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
+
+    lesson: Mapped[Lesson | None] = relationship()
 
 
 class MediaAsset(Base):

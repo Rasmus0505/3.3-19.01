@@ -534,24 +534,42 @@ def translate_sentences_to_zh(
     sentences: list[str],
     api_key: str,
     progress_callback: Callable[[int, int], None] | None = None,
+    resume_state: dict[str, object] | None = None,
+    checkpoint_callback: Callable[[dict[str, object]], None] | None = None,
 ) -> TranslationBatchResult:
     total = len(sentences)
     translated_texts = [""] * total
+    resume_payload = dict(resume_state or {})
+    resume_texts = list(resume_payload.get("translated_texts") or [])
+    resume_completed_indexes = {
+        int(item)
+        for item in list(resume_payload.get("completed_indexes") or [])
+        if isinstance(item, int) or str(item).isdigit()
+    }
+    existing_records = [dict(item) for item in list(resume_payload.get("attempt_records") or []) if isinstance(item, dict)]
+    if len(resume_texts) == total:
+        translated_texts = [str(item or "") for item in resume_texts]
     non_empty_items: list[tuple[int, str]] = []
     completed_sentences = 0
 
     for index, item in enumerate(sentences):
         normalized = str(item or "").strip()
+        if index in resume_completed_indexes:
+            completed_sentences += 1
+            if progress_callback:
+                progress_callback(completed_sentences, total)
+            continue
         if normalized:
             non_empty_items.append((index, normalized))
             continue
+        resume_completed_indexes.add(index)
         completed_sentences += 1
         if progress_callback:
             progress_callback(completed_sentences, total)
 
     records: list[TranslationAttemptRecord] = []
     failed = 0
-    latest_error_summary = ""
+    latest_error_summary = str(resume_payload.get("latest_error_summary") or "")
     batch_max_chars = current_translation_batch_max_chars()
     logger.info(
         "[DEBUG] qwen_mt.batch.config model=%s batch_max_chars=%s total_sentences=%s non_empty=%s",
@@ -575,15 +593,25 @@ def translate_sentences_to_zh(
 
         batch_result = _translate_batch_recursive(batch, api_key=api_key)
         records.extend(batch_result.attempt_records)
-        failed += batch_result.failed_count
         if batch_result.latest_error_summary:
             latest_error_summary = batch_result.latest_error_summary
 
         for offset, (sentence_idx, _) in enumerate(batch):
             translated_texts[sentence_idx] = batch_result.texts[offset]
+            resume_completed_indexes.add(sentence_idx)
             completed_sentences += 1
             if progress_callback:
                 progress_callback(completed_sentences, total)
+        failed = sum(1 for sentence_idx, sentence_text in non_empty_items if sentence_idx in resume_completed_indexes and not translated_texts[sentence_idx])
+        if checkpoint_callback:
+            checkpoint_callback(
+                {
+                    "translated_texts": list(translated_texts),
+                    "completed_indexes": sorted(resume_completed_indexes),
+                    "attempt_records": [*existing_records, *[record.to_dict() for record in records]],
+                    "latest_error_summary": latest_error_summary,
+                }
+            )
 
     if failed:
         logger.warning(
@@ -596,16 +624,21 @@ def translate_sentences_to_zh(
             latest_error_summary,
         )
 
-    success_records = [record for record in records if record.success]
+    all_records = [*existing_records, *[record.to_dict() for record in records]]
+    success_records = [
+        record
+        for record in [*existing_records, *[record.to_dict() for record in records]]
+        if bool(record.get("success"))
+    ]
     return TranslationBatchResult(
         texts=translated_texts,
-        failed_count=failed,
-        attempt_records=[record.to_dict() for record in records],
-        total_requests=len(records),
+        failed_count=sum(1 for index, sentence in enumerate(sentences) if str(sentence or "").strip() and index in resume_completed_indexes and not translated_texts[index]),
+        attempt_records=all_records,
+        total_requests=len(all_records),
         success_request_count=len(success_records),
-        success_prompt_tokens=sum(record.prompt_tokens for record in success_records),
-        success_completion_tokens=sum(record.completion_tokens for record in success_records),
-        success_total_tokens=sum(record.total_tokens for record in success_records),
+        success_prompt_tokens=sum(int(record.get("prompt_tokens", 0) or 0) for record in success_records),
+        success_completion_tokens=sum(int(record.get("completion_tokens", 0) or 0) for record in success_records),
+        success_total_tokens=sum(int(record.get("total_tokens", 0) or 0) for record in success_records),
         latest_error_summary=latest_error_summary,
     )
 
