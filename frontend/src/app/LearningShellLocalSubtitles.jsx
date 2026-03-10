@@ -616,7 +616,7 @@ export function LearningShellLocalSubtitles() {
                 </Button>
               ) : null}
               {accessToken && isAdminUser ? (
-                <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={() => navigate("/admin/overview")}>
+                <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={() => navigate("/admin/ops")}>
                   <Shield className="size-4" />
                   管理后台
                 </Button>
@@ -662,7 +662,7 @@ export function LearningShellLocalSubtitles() {
                           className="w-full justify-start"
                           onClick={() => {
                             setMobileNavOpen(false);
-                            navigate("/admin/overview");
+                            navigate("/admin/ops");
                           }}
                         >
                           <Shield className="size-4" />

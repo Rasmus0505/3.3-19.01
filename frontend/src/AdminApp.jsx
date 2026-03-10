@@ -1,20 +1,20 @@
-import { Bug, Gift, LayoutDashboard, LogOut, Menu, ScrollText, Settings2, Shield, Sparkles, Ticket, Users } from "lucide-react";
+import { Bug, Gift, LogOut, Menu, Shield, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
-import { AdminLessonTaskLogsTab } from "./features/admin-logs/AdminLessonTaskLogsTab";
-import { AdminLogsTab } from "./features/admin-logs/AdminLogsTab";
-import { AdminTranslationLogsTab } from "./features/admin-logs/AdminTranslationLogsTab";
-import { AdminOperationLogsTab } from "./features/admin-operation-logs/AdminOperationLogsTab";
-import { AdminOverviewTab } from "./features/admin-overview/AdminOverviewTab";
-import { AdminRatesTab } from "./features/admin-rates/AdminRatesTab";
-import { AdminRedeemAuditTab } from "./features/admin-redeem/AdminRedeemAuditTab";
-import { AdminRedeemBatchesTab } from "./features/admin-redeem/AdminRedeemBatchesTab";
-import { AdminRedeemCodesTab } from "./features/admin-redeem/AdminRedeemCodesTab";
-import { AdminSubtitleSettingsTab } from "./features/admin-subtitle-settings/AdminSubtitleSettingsTab";
-import { AdminSystemTab } from "./features/admin-system/AdminSystemTab";
-import { AdminUsersTab } from "./features/admin-users/AdminUsersTab";
+import { AdminOpsWorkspace } from "./features/admin-workspaces/AdminOpsWorkspace";
+import { AdminPipelineWorkspace } from "./features/admin-workspaces/AdminPipelineWorkspace";
+import { AdminRedeemWorkspace } from "./features/admin-workspaces/AdminRedeemWorkspace";
+import { AdminUsersWorkspace } from "./features/admin-workspaces/AdminUsersWorkspace";
 import { Badge, Button, Separator, Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "./shared/ui";
+
+function LegacyAdminRedirect({ to, tab }) {
+  const location = useLocation();
+  const nextSearchParams = new URLSearchParams(location.search);
+  if (tab) nextSearchParams.set("tab", tab);
+  const nextSearch = nextSearchParams.toString();
+  return <Navigate to={`${to}${nextSearch ? `?${nextSearch}` : ""}`} replace />;
+}
 
 export function AdminApp({ apiCall, onLogout }) {
   const location = useLocation();
@@ -22,18 +22,10 @@ export function AdminApp({ apiCall, onLogout }) {
 
   const navItems = useMemo(
     () => [
-      { to: "/admin/overview", label: "总览", icon: LayoutDashboard, match: "/admin/overview" },
-      { to: "/admin/users", label: "用户", icon: Users, match: "/admin/users" },
-      { to: "/admin/logs", label: "余额流水", icon: ScrollText, match: "/admin/logs" },
-      { to: "/admin/translation-logs", label: "翻译日志", icon: Sparkles, match: "/admin/translation-logs" },
-      { to: "/admin/lesson-task-logs", label: "生成日志", icon: Bug, match: "/admin/lesson-task-logs" },
-      { to: "/admin/operation-logs", label: "操作日志", icon: Shield, match: "/admin/operation-logs" },
-      { to: "/admin/rates", label: "计费配置", icon: Settings2, match: "/admin/rates" },
-      { to: "/admin/system", label: "系统状态", icon: Settings2, match: "/admin/system" },
-      { to: "/admin/subtitle-settings", label: "字幕配置", icon: Sparkles, match: "/admin/subtitle-settings" },
-      { to: "/admin/redeem-batches", label: "兑换批次", icon: Gift, match: "/admin/redeem-batches" },
-      { to: "/admin/redeem-codes", label: "兑换码列表", icon: Ticket, match: "/admin/redeem-codes" },
-      { to: "/admin/redeem-audit", label: "兑换审计", icon: ScrollText, match: "/admin/redeem-audit" },
+      { to: "/admin/ops?tab=overview", label: "异常处置", icon: Shield, match: "/admin/ops" },
+      { to: "/admin/pipeline?tab=task-failures", label: "生成链路", icon: Bug, match: "/admin/pipeline" },
+      { to: "/admin/users?tab=list", label: "用户计费", icon: Users, match: "/admin/users" },
+      { to: "/admin/redeem?tab=batches", label: "活动兑换", icon: Gift, match: "/admin/redeem" },
     ],
     []
   );
@@ -52,11 +44,11 @@ export function AdminApp({ apiCall, onLogout }) {
             </Button>
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold">Admin</span>
-              <Badge variant="outline">P0 已升级</Badge>
+              <Badge variant="outline">4 个工作台</Badge>
             </div>
             <Separator orientation="vertical" className="mx-1 hidden h-4 md:block" />
             <div className="hidden items-center gap-2 md:flex">
-              {navItems.slice(0, 7).map((item) => (
+              {navItems.map((item) => (
                 <Badge key={item.to} variant={isActive(item.match) ? "default" : "outline"}>
                   {item.label}
                 </Badge>
@@ -128,20 +120,24 @@ export function AdminApp({ apiCall, onLogout }) {
           </div>
 
           <Routes>
-            <Route index element={<Navigate to="overview" replace />} />
-            <Route path="overview" element={<AdminOverviewTab apiCall={apiCall} />} />
-            <Route path="users" element={<AdminUsersTab apiCall={apiCall} />} />
-            <Route path="logs" element={<AdminLogsTab apiCall={apiCall} />} />
-            <Route path="translation-logs" element={<AdminTranslationLogsTab apiCall={apiCall} />} />
-            <Route path="lesson-task-logs" element={<AdminLessonTaskLogsTab apiCall={apiCall} />} />
-            <Route path="operation-logs" element={<AdminOperationLogsTab apiCall={apiCall} />} />
-            <Route path="rates" element={<AdminRatesTab apiCall={apiCall} />} />
-            <Route path="system" element={<AdminSystemTab apiCall={apiCall} />} />
-            <Route path="subtitle-settings" element={<AdminSubtitleSettingsTab apiCall={apiCall} />} />
-            <Route path="redeem-batches" element={<AdminRedeemBatchesTab apiCall={apiCall} />} />
-            <Route path="redeem-codes" element={<AdminRedeemCodesTab apiCall={apiCall} />} />
-            <Route path="redeem-audit" element={<AdminRedeemAuditTab apiCall={apiCall} />} />
-            <Route path="*" element={<Navigate to="overview" replace />} />
+            <Route index element={<Navigate to="ops" replace />} />
+            <Route path="ops" element={<AdminOpsWorkspace apiCall={apiCall} />} />
+            <Route path="pipeline" element={<AdminPipelineWorkspace apiCall={apiCall} />} />
+            <Route path="users" element={<AdminUsersWorkspace apiCall={apiCall} />} />
+            <Route path="redeem" element={<AdminRedeemWorkspace apiCall={apiCall} />} />
+
+            <Route path="overview" element={<LegacyAdminRedirect to="/admin/ops" tab="overview" />} />
+            <Route path="system" element={<LegacyAdminRedirect to="/admin/ops" tab="system" />} />
+            <Route path="operation-logs" element={<LegacyAdminRedirect to="/admin/ops" tab="operations" />} />
+            <Route path="lesson-task-logs" element={<LegacyAdminRedirect to="/admin/pipeline" tab="task-failures" />} />
+            <Route path="translation-logs" element={<LegacyAdminRedirect to="/admin/pipeline" tab="translations" />} />
+            <Route path="subtitle-settings" element={<LegacyAdminRedirect to="/admin/pipeline" tab="subtitle-policy" />} />
+            <Route path="logs" element={<LegacyAdminRedirect to="/admin/users" tab="wallet" />} />
+            <Route path="rates" element={<LegacyAdminRedirect to="/admin/users" tab="rates" />} />
+            <Route path="redeem-batches" element={<LegacyAdminRedirect to="/admin/redeem" tab="batches" />} />
+            <Route path="redeem-codes" element={<LegacyAdminRedirect to="/admin/redeem" tab="codes" />} />
+            <Route path="redeem-audit" element={<LegacyAdminRedirect to="/admin/redeem" tab="audit" />} />
+            <Route path="*" element={<Navigate to="ops" replace />} />
           </Routes>
         </div>
       </main>

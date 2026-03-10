@@ -41,8 +41,10 @@ from app.services.asr_dashscope import AsrError, SUPPORTED_MODELS
 from app.services.billing_service import BillingError
 from app.services.lesson_service import LessonService
 from app.services.lesson_task_manager import (
+    LessonTaskStorageNotReadyError,
     build_task_id,
     create_task,
+    ensure_lesson_task_storage_ready,
     get_task,
     mark_task_failed,
     mark_task_succeeded,
@@ -191,6 +193,9 @@ def _run_lesson_generation_task(
             session_factory=session_factory,
         )
         logger.warning("[DEBUG] lessons.task.media_failed task_id=%s code=%s", task_id, exc.code)
+    except LessonTaskStorageNotReadyError as exc:
+        db.rollback()
+        logger.exception("[DEBUG] lessons.task.storage_not_ready task_id=%s detail=%s", task_id, exc.detail)
     except Exception as exc:
         db.rollback()
         mark_task_failed(
@@ -259,7 +264,7 @@ async def create_lesson(
 @router.post(
     "/tasks",
     response_model=LessonTaskCreateResponse,
-    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
 async def create_lesson_task(
     video_file: UploadFile = File(...),
@@ -277,6 +282,7 @@ async def create_lesson_task(
     req_dir.mkdir(parents=True, exist_ok=True)
     task_session_factory = _build_session_factory(db.get_bind())
     try:
+        ensure_lesson_task_storage_ready(db)
         source_filename = (video_file.filename or "unknown")[:255]
         suffix = validate_suffix(source_filename)
         source_path = req_dir / f"source{suffix}"
@@ -311,6 +317,9 @@ async def create_lesson_task(
     except MediaError as exc:
         cleanup_dir(req_dir)
         return map_media_error(exc)
+    except LessonTaskStorageNotReadyError as exc:
+        cleanup_dir(req_dir)
+        return error_response(503, exc.code, exc.message, exc.detail)
     except Exception as exc:
         cleanup_dir(req_dir)
         return error_response(500, "INTERNAL_ERROR", "任务创建失败", str(exc)[:1200])
@@ -321,9 +330,13 @@ async def create_lesson_task(
 @router.get(
     "/tasks/{task_id}",
     response_model=LessonTaskResponse,
-    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
 def get_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        ensure_lesson_task_storage_ready(db)
+    except LessonTaskStorageNotReadyError as exc:
+        return error_response(503, exc.code, exc.message, exc.detail)
     task = get_task(task_id, db=db)
     if not task or int(task.get("owner_user_id", 0)) != current_user.id:
         return error_response(404, "TASK_NOT_FOUND", "任务不存在")
@@ -333,9 +346,13 @@ def get_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: U
 @router.post(
     "/tasks/{task_id}/resume",
     response_model=LessonTaskResumeResponse,
-    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
 def resume_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        ensure_lesson_task_storage_ready(db)
+    except LessonTaskStorageNotReadyError as exc:
+        return error_response(503, exc.code, exc.message, exc.detail)
     task = get_task(task_id, db=db)
     if not task or int(task.get("owner_user_id", 0)) != current_user.id:
         return error_response(404, "TASK_NOT_FOUND", "任务不存在")

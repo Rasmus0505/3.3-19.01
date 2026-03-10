@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.models import Lesson, User
 from app.services.lesson_task_manager import create_task, mark_task_failed
@@ -186,6 +186,50 @@ def test_admin_lesson_task_logs_accepts_empty_lesson_id_and_rejects_invalid(test
     invalid_resp = client.get("/api/admin/lesson-task-logs", headers=admin_headers, params={"lesson_id": "abc"})
     assert invalid_resp.status_code == 400
     assert invalid_resp.json()["error_code"] == "INVALID_LESSON_ID"
+
+
+def test_admin_lesson_task_logs_returns_503_when_task_table_missing(test_client):
+    client, session_factory, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "admin-lesson-task-migration@example.com")
+    admin_token = _register_and_login(client, email="admin-lesson-task-migration@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    session = session_factory()
+    try:
+        session.execute(text("DROP TABLE lesson_generation_tasks"))
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.get("/api/admin/lesson-task-logs", headers=admin_headers)
+    assert resp.status_code == 503
+    payload = resp.json()
+    assert payload["error_code"] == "DB_MIGRATION_REQUIRED"
+    assert "lesson_generation_tasks" in str(payload.get("detail", ""))
+
+
+def test_create_lesson_task_returns_503_when_task_table_missing(test_client):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="lesson-task-migration-user@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session = session_factory()
+    try:
+        session.execute(text("DROP TABLE lesson_generation_tasks"))
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.post(
+        "/api/lessons/tasks",
+        headers=headers,
+        files={"video_file": ("migration.mp4", b"video", "video/mp4")},
+        data={"asr_model": "qwen3-asr-flash-filetrans", "semantic_split_enabled": "false"},
+    )
+    assert resp.status_code == 503
+    payload = resp.json()
+    assert payload["error_code"] == "DB_MIGRATION_REQUIRED"
+    assert "lesson_generation_tasks" in str(payload.get("detail", ""))
 
 
 def test_admin_subtitle_settings_history_and_rollback(test_client):
