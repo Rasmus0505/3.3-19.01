@@ -81,10 +81,10 @@ function getSubtitleBusyLabel(progress) {
   if (progress.stage === "translate" && Number(progress.total || 0) > 0) {
     return `正在翻译 ${Number(progress.done || 0)}/${Number(progress.total || 0)}`;
   }
-  if (progress.stage === "semantic_split") return "正在语义分句...";
-  if (progress.stage === "fallback") return "正在切回普通请求...";
+  if (progress.stage === "semantic_split") return "正在细分长句...";
+  if (progress.stage === "fallback") return "正在切回稳定模式...";
   if (progress.stage === "completed") return "即将完成...";
-  return "正在重切分句...";
+  return "正在更新字幕...";
 }
 
 export function LessonList({
@@ -262,7 +262,7 @@ export function LessonList({
           <History className="size-4" />
           历史记录
         </CardTitle>
-        <CardDescription>继续学习已有课程，或管理历史记录中的标题、视频与删除操作。</CardDescription>
+        <CardDescription>继续学习已有课程，或整理标题、字幕和本地视频。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {loading ? (
@@ -274,11 +274,11 @@ export function LessonList({
 
         {!loading && cards.length === 0 ? (
           <div className="rounded-2xl border border-dashed bg-muted/15 px-6 py-10 text-center">
-            <p className="text-base font-medium">还没有历史记录</p>
-            <p className="mt-2 text-sm text-muted-foreground">先去上传素材，生成第一节课程后再回来继续学习。</p>
+            <p className="text-base font-medium">还没有课程记录</p>
+            <p className="mt-2 text-sm text-muted-foreground">先上传一份素材，生成第一节课程后再回来继续学习。</p>
             {onSwitchToUpload ? (
               <Button className="mt-4" onClick={onSwitchToUpload}>
-                去上传素材
+                去生成课程
               </Button>
             ) : null}
           </div>
@@ -296,7 +296,7 @@ export function LessonList({
                     : "服务器字幕";
               const subtitleVariantHint = subtitleMeta.canRegenerate
                 ? `已缓存${subtitleMeta.hasPlainVariant && subtitleMeta.hasSemanticVariant ? "双模式字幕" : "当前模式字幕"}`
-                : "仅改造后新上传课程支持";
+                : "仅新上传的课程支持";
               return (
                 <div
                   key={lesson.id}
@@ -324,7 +324,7 @@ export function LessonList({
                             <div className="truncate text-lg font-semibold">{lesson.title}</div>
                             {selected ? <Badge variant="outline">当前课程</Badge> : null}
                             {needsBinding ? <Badge variant="secondary">待恢复视频</Badge> : null}
-                            {selected && currentLessonNeedsBinding ? <Badge variant="secondary">播放受限</Badge> : null}
+                            {selected && currentLessonNeedsBinding ? <Badge variant="secondary">需绑定本地视频</Badge> : null}
                             <Badge variant="outline">{currentVariantLabel}</Badge>
                           </div>
                           <p className="line-clamp-2 text-sm text-muted-foreground">{lesson.source_filename || "未命名素材"}</p>
@@ -389,7 +389,7 @@ export function LessonList({
                               disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
                             >
                               <Pencil className="size-4" />
-                              重命名
+                              修改标题
                             </Button>
                             <Button
                               type="button"
@@ -403,7 +403,7 @@ export function LessonList({
                               disabled={renameBusy || deleteBusy || subtitleBusy || !subtitleMeta.canRegenerate}
                             >
                               <Sparkles className="size-4" />
-                              {subtitleMeta.canRegenerate ? "重新生成字幕" : "重新生成字幕（仅新上传）"}
+                              {subtitleMeta.canRegenerate ? "切换字幕版本" : "切换字幕版本（仅新上传）"}
                             </Button>
                             <Button
                               type="button"
@@ -414,7 +414,7 @@ export function LessonList({
                               disabled={renameBusy || deleteBusy || subtitleBusy || Boolean(restoringLessonId)}
                             >
                               <RotateCcw className="size-4" />
-                              恢复视频
+                              恢复本地视频
                             </Button>
                             <Button
                               type="button"
@@ -452,13 +452,13 @@ export function LessonList({
         >
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>重命名历史记录</DialogTitle>
-              <DialogDescription>修改后将立即生效并同步到课程列表。</DialogDescription>
+              <DialogTitle>修改课程标题</DialogTitle>
+              <DialogDescription>保存后会立即显示在课程列表里。</DialogDescription>
             </DialogHeader>
             <Input
               value={renameTitle}
               onChange={(event) => setRenameTitle(event.target.value)}
-              placeholder="请输入课程标题"
+              placeholder="输入新的课程标题"
               maxLength={255}
               disabled={renameBusy}
             />
@@ -490,9 +490,9 @@ export function LessonList({
         >
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>重新生成字幕</DialogTitle>
+              <DialogTitle>切换字幕版本</DialogTitle>
               <DialogDescription>
-                仅重新加载字幕，不会重新跑 ASR。切到原始字幕会回到 ASR 原句，切到语义分句会按新的英文分句重翻中文字幕。
+                这里不会重新识别音频。切到“原始字幕”会回到 ASR 原句，切到“语义分句”会重新整理长句并更新中文字幕。
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
@@ -515,12 +515,12 @@ export function LessonList({
                 </Button>
               </div>
               <p className="text-sm text-muted-foreground">
-                {subtitleMode === "semantic" ? "适合长句重新细分，阅读更轻松。" : "直接回到 ASR 原始分句结果。"}
+                {subtitleMode === "semantic" ? "适合长句较多的课程，阅读会更轻松。" : "直接回到识别后的原始分句结果。"}
               </p>
               {subtitleBusy ? (
                 <div className="rounded-xl border bg-muted/20 p-3">
                   <div className="flex items-center justify-between gap-3 text-sm">
-                    <span className="font-medium">{activeSubtitleProgress?.message || "正在处理字幕"}</span>
+                    <span className="font-medium">{activeSubtitleProgress?.message || "正在更新字幕"}</span>
                     {Number(activeSubtitleProgress?.total || 0) > 0 ? (
                       <span className="text-muted-foreground">
                         {Number(activeSubtitleProgress?.done || 0)}/{Number(activeSubtitleProgress?.total || 0)}
@@ -559,8 +559,8 @@ export function LessonList({
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>确认删除历史记录？</AlertDialogTitle>
-              <AlertDialogDescription>课程与学习进度会被彻底删除，不可恢复。</AlertDialogDescription>
+              <AlertDialogTitle>确认删除这节课程？</AlertDialogTitle>
+              <AlertDialogDescription>课程、学习进度和相关记录都会被删除，删除后不可恢复。</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={deleteBusy}>取消</AlertDialogCancel>

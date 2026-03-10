@@ -13,7 +13,7 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
 
   async function submit(path) {
     setLoading(true);
-    setStatus("提交中...");
+    setStatus("正在提交...");
     try {
       const resp = await api(path, {
         method: "POST",
@@ -29,7 +29,7 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
       }
       localStorage.setItem(tokenKey, data.access_token);
       localStorage.setItem(refreshKey, data.refresh_token);
-      setStatus("登录成功");
+      setStatus("登录成功，正在进入首页");
       toast.success("登录成功");
       onAuthed(data);
     } catch (error) {
@@ -44,8 +44,8 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>登录 / 注册</CardTitle>
-        <CardDescription>先登录后再上传素材并开始句级练习。</CardDescription>
+        <CardTitle>登录后开始学习</CardTitle>
+        <CardDescription>登录后可上传素材、同步进度，并继续之前的课程。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <form
@@ -92,7 +92,7 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
             <AlertDescription>{status}</AlertDescription>
           </Alert>
         ) : (
-          <p className="text-sm text-muted-foreground">未登录状态</p>
+          <p className="text-sm text-muted-foreground">登录后即可开始上传和学习。</p>
         )}
       </CardFooter>
     </Card>

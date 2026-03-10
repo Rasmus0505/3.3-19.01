@@ -30,8 +30,8 @@ const defaultDraft = {
 const presetOptions = [
   {
     key: "balanced",
-    label: "稳妥默认",
-    description: "适合大多数课程，优先稳定和可读性。",
+    label: "默认稳妥",
+    description: "适合大多数课程，优先稳定和阅读体验。",
     settings: {
       semantic_split_default_enabled: false,
       subtitle_split_enabled: true,
@@ -44,8 +44,8 @@ const presetOptions = [
   },
   {
     key: "aggressive_split",
-    label: "长句更积极",
-    description: "长句更早触发语义分句，适合字幕很长、节奏偏快的素材。",
+    label: "长句优先",
+    description: "更早细分长句，适合字幕很长、语速偏快的素材。",
     settings: {
       semantic_split_default_enabled: true,
       subtitle_split_enabled: true,
@@ -58,8 +58,8 @@ const presetOptions = [
   },
   {
     key: "cost_saving",
-    label: "节省模型调用",
-    description: "尽量先走规则分句，减少语义分句和翻译批次拆分频率。",
+    label: "节省调用",
+    description: "尽量先走规则分句，减少模型调用次数。",
     settings: {
       semantic_split_default_enabled: false,
       subtitle_split_enabled: true,
@@ -151,8 +151,8 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
         toast.error(message);
         return;
       }
-      setStatus("字幕配置已保存");
-      toast.success("字幕配置已保存");
+      setStatus("设置已保存");
+      toast.success("设置已保存");
       await loadSettings();
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
@@ -177,8 +177,8 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
         toast.error(message);
         return;
       }
-      setStatus("已回滚到上一版本");
-      toast.success("已回滚到上一版本");
+      setStatus("已回滚到上一版");
+      toast.success("已回滚到上一版");
       await loadSettings();
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
@@ -196,7 +196,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
           <Sparkles className="size-4" />
           字幕/分句设置
         </CardTitle>
-        <CardDescription>按“运营可理解”的方式维护默认分句策略、翻译批次与回滚入口，避免直接改抽象参数。</CardDescription>
+        <CardDescription>统一管理默认分句和翻译批次。改完后，新任务会按这里的设置执行。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {loading ? <Skeleton className="h-10 w-full" /> : null}
@@ -215,7 +215,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
                   <p className="text-xs text-muted-foreground">{preset.description}</p>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => applyPreset(preset.settings)}>
-                  应用模板
+                  直接套用
                 </Button>
               </CardContent>
             </Card>
@@ -227,7 +227,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-medium">上传页默认开启语义分句</p>
-                <p className="text-xs text-muted-foreground">适合句子偏长、规则分句后仍不自然的课程；用户本次手动选择优先。</p>
+                <p className="text-xs text-muted-foreground">适合长句较多的课程；如果用户本次手动改了，以用户选择为准。</p>
               </div>
               <Switch
                 checked={Boolean(draft.semantic_split_default_enabled)}
@@ -239,7 +239,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-medium">启用规则分句</p>
-                <p className="text-xs text-muted-foreground">通常建议保持开启，让大部分句子先走低成本规则分句。</p>
+                <p className="text-xs text-muted-foreground">建议保持开启，让大部分句子先走更省调用的规则分句。</p>
               </div>
               <Switch
                 checked={Boolean(draft.subtitle_split_enabled)}
@@ -251,7 +251,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
 
           <div className="space-y-3 rounded-md border p-4">
             <div className="space-y-2">
-              <p className="text-sm font-medium">当前线上版本</p>
+              <p className="text-sm font-medium">当前生效版本</p>
               <p className="text-xs text-muted-foreground">
                 最近更新时间：{formatDateTimeBeijing(currentMeta?.updated_at)}
               </p>
@@ -259,18 +259,18 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
                 最近修改人：{currentMeta?.updated_by_user_email || "未知 / 尚无记录"}
               </p>
               <p className="text-xs text-muted-foreground">
-                可回滚上一版本：
+                可回滚版本：
                 {rollbackCandidate ? ` ${rollbackCandidate.operator_user_email || "未知操作员"} / ${formatDateTimeBeijing(rollbackCandidate.created_at)}` : " 暂无"}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => setDraft(normalizeDraft(loadedSettings))} disabled={!dirty || saving || rollbacking}>
                 <RefreshCcw className="size-4" />
-                恢复当前线上值
+                恢复当前生效值
               </Button>
               <Button variant="outline" size="sm" onClick={rollbackLast} disabled={!rollbackCandidate || saving || rollbacking}>
                 <RotateCcw className="size-4" />
-                {rollbacking ? "回滚中..." : "回滚上一版本"}
+                {rollbacking ? "回滚中..." : "回滚到上一版"}
               </Button>
             </div>
           </div>
@@ -279,7 +279,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-3 rounded-md border p-4">
             <div className="space-y-2">
-              <p className="text-sm font-medium">语义分句超时秒数</p>
+              <p className="text-sm font-medium">语义分句等待秒数</p>
               <Input
                 type="number"
                 min={1}
@@ -290,10 +290,10 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
                 }
                 disabled={saving || rollbacking}
               />
-              <p className="text-xs text-muted-foreground">语义分句固定复用 `qwen-mt-flash`，这里仅控制等待时长，不再单独配置模型。</p>
+              <p className="text-xs text-muted-foreground">这里只控制等待时长，不需要单独配置模型。</p>
             </div>
             <div className="space-y-2">
-              <p className="text-sm font-medium">翻译批次最大字符数</p>
+              <p className="text-sm font-medium">翻译每批最大字符数</p>
               <Input
                 type="number"
                 min={1}
@@ -324,7 +324,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
               <p className="text-xs text-muted-foreground">一句理想长度，适合大多数字幕阅读节奏。</p>
             </div>
             <div className="space-y-2">
-              <p className="text-sm font-medium">规则分句最大词数</p>
+              <p className="text-sm font-medium">规则分句上限词数</p>
               <Input
                 type="number"
                 min={1}
@@ -337,7 +337,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
               />
             </div>
             <div className="space-y-2">
-              <p className="text-sm font-medium">触发语义分句阈值</p>
+              <p className="text-sm font-medium">超过多少词再走语义分句</p>
               <Input
                 type="number"
                 min={1}
@@ -354,12 +354,12 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={dirty ? "default" : "outline"}>{dirty ? "存在未保存改动" : "当前与线上一致"}</Badge>
+          <Badge variant={dirty ? "default" : "outline"}>{dirty ? "有未保存修改" : "当前与线上一致"}</Badge>
           <Button onClick={saveSettings} disabled={saving || loading || rollbacking || !dirty}>
-            {saving ? "保存中..." : "保存字幕配置"}
+            {saving ? "保存中..." : "保存设置"}
           </Button>
           <Button variant="outline" onClick={loadSettings} disabled={saving || rollbacking}>
-            刷新线上版本
+            重新加载
           </Button>
         </div>
       </CardContent>
