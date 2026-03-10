@@ -100,7 +100,7 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
       if (lesson.media_storage !== "server") {
         if (canceled) return;
         setMediaBindingRequired(true);
-        setMediaNotice("当前课程媒体仅保存在浏览器本地，请先在沉浸模式绑定本地文件。");
+        setMediaNotice("这节课程的媒体只保存在当前浏览器，请先到沉浸学习里绑定本地文件。");
         return;
       }
 
@@ -112,11 +112,11 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
           if (canceled) return;
           if (Number(resp.status) === 404 || String(payload?.error_code || "") === LOCAL_MEDIA_REQUIRED_CODE) {
             setMediaBindingRequired(true);
-            setMediaNotice("服务器媒体不可用，请先在沉浸模式绑定本地文件。");
+            setMediaNotice("服务器上的媒体暂时不可用，请先到沉浸学习里绑定本地文件。");
             return;
           }
           setMediaBindingRequired(true);
-          setMediaNotice(`媒体加载失败（${resp.status} ${payload?.error_code || ""}）。请先在沉浸模式绑定本地文件。`);
+          setMediaNotice(`媒体加载失败（${resp.status} ${payload?.error_code || ""}）。请先到沉浸学习里绑定本地文件。`);
           return;
         }
 
@@ -135,7 +135,7 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
       } catch (error) {
         if (canceled) return;
         setMediaBindingRequired(true);
-        setMediaNotice(`媒体加载异常（${String(error)}），请先在沉浸模式绑定本地文件。`);
+        setMediaNotice(`媒体加载异常（${String(error)}），请先到沉浸学习里绑定本地文件。`);
       }
     }
 
@@ -233,7 +233,7 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
       const payload = await readErrorPayload(audioResp);
       if (Number(audioResp.status) === 404 || String(payload?.error_code || "") === LOCAL_MEDIA_REQUIRED_CODE) {
         setMediaBindingRequired(true);
-        setMediaNotice("句级音频不可用，请先在沉浸模式绑定本地文件。");
+        setMediaNotice("这一句的音频暂时不可用，请先到沉浸学习里绑定本地文件。");
       }
       return false;
     }
@@ -279,12 +279,12 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
 
       const fallbackPlayed = await playBySentenceAudioFallback();
       if (fallbackPlayed) {
-        setMediaNotice("已回退到服务端句级音频播放。");
+        setMediaNotice("已改用服务端音频播放。");
         return;
       }
 
       setMediaBindingRequired(true);
-      setMediaNotice("当前课程无可播放媒体，请先在沉浸模式绑定本地文件。");
+      setMediaNotice("当前课程没有可播放的媒体，请先到沉浸学习里绑定本地文件。");
     } catch (error) {
       setMediaNotice(`播放失败：${String(error)}`);
     } finally {
@@ -321,11 +321,11 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Preview</CardTitle>
-          <CardDescription>请先从左侧选择课程。</CardDescription>
+          <CardTitle className="text-base">开始练习</CardTitle>
+          <CardDescription>请先从左侧选择一节课程。</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">暂无可练习内容。</p>
+          <p className="text-sm text-muted-foreground">当前还没有可练习的内容。</p>
         </CardContent>
       </Card>
     );
@@ -336,7 +336,7 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <BookOpen className="size-4" />
-          句级拼写练习
+          拼写练习
         </CardTitle>
         <CardDescription>
           第 {idx + 1} / {lesson.sentences.length} 句
@@ -345,17 +345,17 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
       <CardContent className="space-y-4">
         {mediaBindingRequired ? (
           <Alert>
-            <AlertTitle>待绑定本地媒体</AlertTitle>
-            <AlertDescription>{mediaNotice || "当前课程可见，但播放受限。请先在沉浸模式绑定本地文件。"}</AlertDescription>
+            <AlertTitle>需要绑定本地媒体</AlertTitle>
+            <AlertDescription>{mediaNotice || "当前课程可以查看，但暂时无法播放。请先到沉浸学习里绑定本地文件。"}</AlertDescription>
           </Alert>
         ) : null}
 
         <Alert>
-          <AlertTitle>句子内容</AlertTitle>
+          <AlertTitle>本句内容</AlertTitle>
           <AlertDescription>
             <p className="text-sm leading-relaxed">{current.text_en}</p>
             {showChinese ? (
-              <p className="mt-2 text-sm text-muted-foreground">{current.text_zh || "(翻译失败，暂缺)"}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{current.text_zh || "（译文暂时不可用）"}</p>
             ) : null}
           </AlertDescription>
         </Alert>
@@ -389,7 +389,7 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
           </Button>
           <Button variant="secondary" onClick={playCurrent} disabled={audioLoading}>
             {audioLoading ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
-            播放本句
+            播放这一句
           </Button>
           <Badge variant="outline">已通过 {completedIndexes.length} 句</Badge>
           {mediaNotice ? <p className="text-xs text-muted-foreground">{mediaNotice}</p> : null}
@@ -397,16 +397,16 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
 
         <Textarea
           className="min-h-[120px]"
-          placeholder="按空格分词输入，例如: hello world this is ..."
+          placeholder="按空格输入你听到的英文，例如：hello world this is ..."
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
         />
 
-        <Button onClick={checkAnswer}>检查拼写</Button>
+        <Button onClick={checkAnswer}>提交答案</Button>
 
         {checkResult?.token_results ? (
           <Alert variant={checkResult.passed ? "success" : "destructive"}>
-            <AlertTitle>{checkResult.passed ? "通过" : "未通过"}</AlertTitle>
+            <AlertTitle>{checkResult.passed ? "这一句通过了" : "这一句还没通过"}</AlertTitle>
             <AlertDescription>
               <div className="mt-1 flex flex-wrap gap-2">
                 {checkResult.token_results.map((item, i) => (

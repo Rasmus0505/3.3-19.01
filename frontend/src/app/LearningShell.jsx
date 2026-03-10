@@ -55,19 +55,19 @@ const PANEL_ITEMS = [
   {
     key: "history",
     title: "历史记录",
-    description: "查看课程、继续学习与管理历史素材。",
+    description: "查看课程、继续学习，或整理历史素材。",
     icon: History,
   },
   {
     key: "upload",
     title: "上传素材",
-    description: "导入音视频并查看实时生成进度。",
+    description: "上传音视频，生成新课程。",
     icon: UploadCloud,
   },
   {
     key: "redeem",
     title: "兑换码充值",
-    description: "输入兑换码，给当前账号补充点数。",
+    description: "输入兑换码，给账号补充点数。",
     icon: Gift,
   },
 ];
@@ -1003,7 +1003,7 @@ export function LearningShell() {
             </div>
             <Separator orientation="vertical" className="mx-1 hidden h-4 md:block" />
             <div className="hidden items-center gap-2 md:flex">
-              {accessToken ? <Badge variant="outline">{lessons.length} 门课程</Badge> : null}
+              {accessToken ? <Badge variant="outline">{lessons.length} 节课程</Badge> : null}
               <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
             </div>
 
@@ -1011,7 +1011,7 @@ export function LearningShell() {
               {accessToken && lessons.length > 0 ? (
                 <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={() => setCommandOpen(true)}>
                   <Search className="size-4" />
-                  快速跳转
+                  找课程
                 </Button>
               ) : null}
               {accessToken && isAdminUser ? (
@@ -1023,7 +1023,7 @@ export function LearningShell() {
               {accessToken ? (
                 <Button variant="outline" size="sm" className="hidden md:inline-flex" onClick={handleLogout}>
                   <LogOut className="size-4" />
-                  退出
+                  退出登录
                 </Button>
               ) : null}
 
@@ -1037,7 +1037,7 @@ export function LearningShell() {
                   <SheetContent side="right" className="w-[300px] sm:w-[340px]">
                     <SheetHeader>
                       <SheetTitle>{currentPanel.title}</SheetTitle>
-                      <SheetDescription>在移动端切换首页面板、课程跳转与账号操作。</SheetDescription>
+                      <SheetDescription>在手机上切换页面、查找课程和处理账号操作。</SheetDescription>
                     </SheetHeader>
                     <div className="mt-4 space-y-3">
                       <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
@@ -1081,7 +1081,7 @@ export function LearningShell() {
                           }}
                         >
                           <Search className="size-4" />
-                          快速跳转课程
+                          查找课程
                         </Button>
                       ) : null}
                       {isAdminUser ? (
@@ -1241,12 +1241,12 @@ export function LearningShell() {
                 <p className="text-sm font-semibold">{uploadTaskState.headline}</p>
                 <p className="text-xs text-muted-foreground">
                   {uploadTaskState.phase === "success"
-                    ? "生成完成，点此回到生成页"
+                    ? "已生成完成，点此回到上传页"
                     : uploadTaskState.phase === "error"
                       ? uploadTaskState.resumeAvailable
-                        ? "生成失败，可继续生成"
-                        : "生成失败，点此查看详情"
-                      : "生成中，点此回到生成页"}
+                        ? "生成中断，可继续处理"
+                        : "生成失败，点此查看原因"
+                      : "正在生成，点此回到上传页"}
                 </p>
               </div>
               <span className="text-sm font-semibold tabular-nums text-muted-foreground">{uploadTaskState.progressPercent}%</span>
@@ -1267,10 +1267,10 @@ export function LearningShell() {
           }
         }}
       >
-        <CommandInput placeholder="搜索课程标题或模型..." value={commandQuery} onValueChange={setCommandQuery} />
+        <CommandInput placeholder="搜索课程名或模型..." value={commandQuery} onValueChange={setCommandQuery} />
         <CommandList>
-          <CommandEmpty>没有匹配的课程</CommandEmpty>
-          <CommandGroup heading="课程列表">
+          <CommandEmpty>没有找到匹配的课程</CommandEmpty>
+          <CommandGroup heading="课程">
             {filteredLessons.map((lesson) => (
               <CommandItem
                 key={lesson.id}

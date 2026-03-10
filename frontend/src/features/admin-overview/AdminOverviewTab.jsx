@@ -80,11 +80,11 @@ export function AdminOverviewTab({ apiCall }) {
               <Activity className="size-4" />
               管理台总览
             </CardTitle>
-            <CardDescription>先看用户、扣点、异常和兑换批次，再决定去哪一页继续处理。</CardDescription>
+            <CardDescription>先看用户、点数、异常和兑换批次，再决定下一步处理哪一页。</CardDescription>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/system">查看系统状态</Link>
+              <Link to="/admin/system">去系统检查</Link>
             </Button>
             <Button variant="outline" size="sm" onClick={loadOverview} disabled={loading}>
               <RefreshCcw className="size-4" />
@@ -98,12 +98,12 @@ export function AdminOverviewTab({ apiCall }) {
         {loading && !metrics
           ? Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-[116px] w-full" />)
           : [
-              { icon: Users, label: "今日新增用户", value: metrics?.today_new_users ?? 0, hint: "按北京时间 00:00 起计算" },
-              { icon: Gift, label: "今日兑换入账", value: `${metrics?.today_redeem_points ?? 0} 点`, hint: "仅统计 redeem_code 充值" },
-              { icon: ScrollText, label: "今日扣点总额", value: `${metrics?.today_spent_points ?? 0} 点`, hint: "ASR + 翻译扣点合计" },
-              { icon: Sparkles, label: "近 24 小时翻译失败", value: metrics?.translation_failures_24h ?? 0, hint: "来自 translation_request_logs" },
-              { icon: Activity, label: "近 24 小时异常总数", value: metrics?.incidents_24h ?? 0, hint: "翻译失败 + 兑换失败" },
-              { icon: Gift, label: "当前有效批次", value: metrics?.active_batches ?? 0, hint: "状态 active 且未过期" },
+              { icon: Users, label: "今日新增账号", value: metrics?.today_new_users ?? 0, hint: "按北京时间今天统计" },
+              { icon: Gift, label: "今日充值点数", value: `${metrics?.today_redeem_points ?? 0} 点`, hint: "只统计兑换码充值" },
+              { icon: ScrollText, label: "今日消耗点数", value: `${metrics?.today_spent_points ?? 0} 点`, hint: "转写和翻译合计" },
+              { icon: Sparkles, label: "近 24 小时翻译失败", value: metrics?.translation_failures_24h ?? 0, hint: "越高越需要排查翻译链路" },
+              { icon: Activity, label: "近 24 小时异常", value: metrics?.incidents_24h ?? 0, hint: "包含翻译失败和兑换失败" },
+              { icon: Gift, label: "当前有效批次", value: metrics?.active_batches ?? 0, hint: "仍可继续兑换的批次" },
             ].map((item) => <MetricCard key={item.label} {...item} />)}
       </div>
 
@@ -112,10 +112,10 @@ export function AdminOverviewTab({ apiCall }) {
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-base">最近批次活动</CardTitle>
-              <CardDescription>最近创建的兑换批次，方便快速判断活动是否健康。</CardDescription>
+              <CardDescription>快速看最近的兑换批次是否还在正常发放和过期。</CardDescription>
             </div>
             <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/redeem-batches">进入批次页</Link>
+              <Link to="/admin/redeem-batches">查看批次</Link>
             </Button>
           </CardHeader>
           <CardContent>
@@ -165,10 +165,10 @@ export function AdminOverviewTab({ apiCall }) {
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-base">最近管理员操作</CardTitle>
-              <CardDescription>重点看计费、调账、兑换码状态调整等敏感动作。</CardDescription>
+              <CardDescription>重点看计费、调账和兑换码状态变更等关键操作。</CardDescription>
             </div>
             <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/operation-logs">查看全部操作日志</Link>
+              <Link to="/admin/operation-logs">查看操作日志</Link>
             </Button>
           </CardHeader>
           <CardContent>

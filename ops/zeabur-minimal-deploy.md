@@ -1,12 +1,12 @@
-﻿# Zeabur 最小部署指南（GitHub 直构）
+# Zeabur 最小部署指南
 
 这个项目默认走：
 
-- GitHub 仓库
-- Zeabur 读取仓库
+- 代码放在 GitHub
+- Zeabur 直接读取仓库
 - Zeabur 按根目录 `Dockerfile` 构建并启动
 
-不需要你自己处理 Nginx、PM2 或 Linux 运维。
+不需要你自己处理 `Nginx`、`PM2` 或 Linux 运维。
 
 ## 首轮上线只做两件事
 
@@ -21,14 +21,16 @@
 
 - 在 Zeabur 新建服务
 - 选择当前 GitHub 仓库
-- 构建入口用仓库根目录 `Dockerfile`
+- 构建入口使用仓库根目录 `Dockerfile`
+- 启动命令使用镜像默认入口 `scripts/start.sh`
 
 ### 第二步：新建 Postgres
 
-- 直接选 Zeabur 的 Postgres 服务
-- 用一个全新的空数据库
+- 直接选 Zeabur 的 Postgres 模板
+- 用一个新的空数据库
+- 把连接串填到 `web` 服务的 `DATABASE_URL`
 
-### 第三步：给 web 填环境变量
+### 第三步：给 `web` 填环境变量
 
 至少填这 4 个：
 
@@ -37,33 +39,26 @@
 - `JWT_SECRET`
 - `ADMIN_EMAILS`
 
-建议一并保留：
+建议同时保留：
 
+- `PORT=8080`
 - `AUTO_MIGRATE_ON_START=true`
 - `ALEMBIC_CONFIG=alembic.ini`
 - `DB_INIT_MODE=auto`
 - `TMP_WORK_DIR=/tmp/zeabur3.3`
 - `MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 - `MT_MODEL=qwen-mt-flash`
-- 翻译批次最大字符数请在后台“字幕/分句设置”中调整（默认 2600）
 
-## 为什么现在不用 `search_path`
-
-这次重构后：
-
-- ORM 已经显式绑定 `app` schema
-- Alembic 也显式迁移到 `app` schema
-
-所以 `DATABASE_URL` 直接用普通 Postgres 连接串即可，不需要额外拼 `search_path=app,public`。
+分句和翻译批次默认值，请到后台“字幕/分句设置”里调整。
 
 ## 部署后怎么验证
 
-### 先验证服务活着
+### 先看服务是否活着
 
 - `GET /health`
 - 预期：`200`
 
-### 再验证数据库就绪
+### 再看数据库是否就绪
 
 - `GET /health/ready`
 - 预期：`200`
@@ -72,50 +67,51 @@
 
 1. `DATABASE_URL`
 2. Alembic 迁移日志
-3. Postgres 是否已经 ready
+3. Postgres 是否已 ready
 
-### 迁移链路专项检查（管理员页面 500 必做）
-
-如果你在浏览器控制台调用：
-
-- `GET /api/admin/billing-rates`
-
-出现 `500`，优先判定为“迁移未成功”而不是“权限问题”。按下面做：
-
-1. 确认 `web` 服务环境变量已设置：
-   - `AUTO_MIGRATE_ON_START=true`
-   - `ALEMBIC_CONFIG=alembic.ini`
-   - `DB_INIT_MODE=auto`
-2. 在 Zeabur 点 `Redeploy`（同一个 `web` 服务）。
-3. 打开部署日志，确认出现两行关键日志：
-   - `[boot] running alembic upgrade head`
-   - `[DEBUG] boot.migrate success`
-4. 如果没有出现第二行，先检查 `DATABASE_URL` 可达性和数据库权限，再次 `Redeploy`。
-
-### 最后验证业务
+### 最后验证业务是否跑通
 
 1. 登录成功
 2. `GET /api/wallet/me` 返回 `200`
-3. `GET /api/admin/billing-rates`（带管理员 token）返回 `200`
+3. `GET /api/admin/billing-rates` 返回 `200`
 4. 上传文件到 `POST /api/transcribe/file` 成功
+
+## 常见问题先怎么查
+
+### 管理后台接口返回 `500`
+
+优先判断为“迁移没跑好”，不要先怀疑权限。
+
+按这个顺序查：
+
+1. 确认 `web` 环境变量里有：
+   - `AUTO_MIGRATE_ON_START=true`
+   - `ALEMBIC_CONFIG=alembic.ini`
+   - `DB_INIT_MODE=auto`
+2. 在 Zeabur 对 `web` 点一次 `Redeploy`
+3. 打开部署日志，确认出现迁移成功相关日志
+4. 如果迁移没成功，再检查 `DATABASE_URL` 和数据库权限
+
+### `/health` 正常，但 `/health/ready` 不正常
+
+- 先看数据库连通性
+- 再看迁移是否执行
+- 最后看业务表是否创建完成
 
 ## 可直接发给 Zeabur AI 的提示词
 
 ```text
 请帮我把这个 GitHub 仓库部署到 Zeabur。
-部署方式使用仓库根目录 Dockerfile，不要用 GHCR 镜像。
+部署方式使用仓库根目录 Dockerfile。
 这次先只创建两个服务：web 和 postgresql，不要先创建 metabase。
-请提醒我填写环境变量：DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS。
+请提醒我填写这些环境变量：PORT=8080、DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS。
 并确认 AUTO_MIGRATE_ON_START=true、ALEMBIC_CONFIG=alembic.ini、DB_INIT_MODE=auto。
-请在 redeploy 后检查启动日志里是否成功执行：
-1. [boot] running alembic upgrade head
-2. [DEBUG] boot.migrate success
 部署完成后，请按顺序帮我验证：
 1. GET /health 返回 200
 2. GET /health/ready 返回 200
-3. GET /api/admin/billing-rates（带管理员 token）返回 200
+3. GET /api/admin/billing-rates 返回 200
 4. POST /api/transcribe/file 上传媒体文件成功
-如果 /api/admin/billing-rates 返回 500，请优先排查 Alembic 迁移是否真的成功，再排查数据库连接与权限。
+如果 /health 正常但 /health/ready 不正常，请优先排查数据库连接和迁移日志。
 ```
 
 ## 第二阶段再做什么
@@ -125,4 +121,3 @@
 - `metabase`
 
 接回后只同步 `app` schema。
-

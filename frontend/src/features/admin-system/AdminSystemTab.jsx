@@ -38,7 +38,7 @@ export function AdminSystemTab({ apiCall }) {
       const healthData = await jsonOrEmpty(healthResp);
       const healthReadyData = await jsonOrEmpty(healthReadyResp);
       if (!healthResp.ok || !healthReadyResp.ok) {
-        const message = `健康检查失败：/health=${healthResp.status} /health/ready=${healthReadyResp.status}`;
+        const message = `系统检查失败：/health=${healthResp.status} /health/ready=${healthReadyResp.status}`;
         setStatus(message);
         toast.error(message);
       }
@@ -69,13 +69,13 @@ export function AdminSystemTab({ apiCall }) {
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <Settings2 className="size-4" />
-              系统状态
+              系统检查
             </CardTitle>
-            <CardDescription>把“服务活着”“数据库就绪”“后台接口可达”拆开看，定位问题更快。</CardDescription>
+            <CardDescription>把服务、数据库和后台接口拆开看，能更快判断问题卡在哪一层。</CardDescription>
           </div>
           <Button variant="outline" size="sm" onClick={loadSystem} disabled={loading}>
             <RefreshCcw className="size-4" />
-            刷新
+            重新检查
           </Button>
         </CardHeader>
       </Card>
@@ -84,10 +84,10 @@ export function AdminSystemTab({ apiCall }) {
         {loading && !health
           ? Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-[124px] w-full" />)
           : [
-              { label: "/health", ok: Boolean(health?.ok), hint: `service=${health?.service || "-"}` },
-              { label: "/health/ready", ok: Boolean(healthReady?.ok), hint: runtimeStatus.db_error || "数据库已就绪" },
-              { label: "后台计费接口", ok: billingRatesOk, hint: billingRatesOk ? "GET /api/admin/billing-rates 可达" : "后台 API 不可达" },
-              { label: "后台总览接口", ok: overviewOk, hint: overviewOk ? "GET /api/admin/overview 可达" : "总览 API 不可达" },
+              { label: "服务存活", ok: Boolean(health?.ok), hint: `service=${health?.service || "-"}` },
+              { label: "数据库就绪", ok: Boolean(healthReady?.ok), hint: runtimeStatus.db_error || "数据库已准备好" },
+              { label: "计费接口", ok: billingRatesOk, hint: billingRatesOk ? "后台计费接口可访问" : "后台计费接口不可访问" },
+              { label: "总览接口", ok: overviewOk, hint: overviewOk ? "后台总览接口可访问" : "后台总览接口不可访问" },
             ].map((item) => (
               <Card key={item.label}>
                 <CardContent className="space-y-2 p-5">
@@ -101,8 +101,8 @@ export function AdminSystemTab({ apiCall }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">运行时详情</CardTitle>
-          <CardDescription>来自 `/health/ready` 的运行状态，方便在 Zeabur 上直接判断缺哪一环。</CardDescription>
+          <CardTitle className="text-base">检查明细</CardTitle>
+          <CardDescription>下面这张表会直接告诉你缺哪一项，方便在 Zeabur 里继续排查。</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -117,12 +117,12 @@ export function AdminSystemTab({ apiCall }) {
               <TableRow>
                 <TableCell>数据库</TableCell>
                 <TableCell><StatusBadge ok={Boolean(runtimeStatus.db_ready)} readyLabel="已就绪" failLabel="未就绪" /></TableCell>
-                <TableCell>{runtimeStatus.db_error || "业务表与关键字段齐全"}</TableCell>
+                <TableCell>{runtimeStatus.db_error || "业务表和关键字段都已就绪"}</TableCell>
               </TableRow>
               <TableRow>
-                <TableCell>DashScope Key</TableCell>
+                <TableCell>转写 Key</TableCell>
                 <TableCell><StatusBadge ok={Boolean(runtimeStatus.dashscope_configured)} readyLabel="已配置" failLabel="缺失" /></TableCell>
-                <TableCell>DASHSCOPE_API_KEY {runtimeStatus.dashscope_configured ? "已可用" : "缺失会影响转写/翻译能力"}</TableCell>
+                <TableCell>DASHSCOPE_API_KEY {runtimeStatus.dashscope_configured ? "已可用" : "缺失会影响转写和翻译"}</TableCell>
               </TableRow>
               <TableRow>
                 <TableCell>ffmpeg</TableCell>
@@ -135,9 +135,9 @@ export function AdminSystemTab({ apiCall }) {
                 <TableCell>{runtimeStatus.media_detail || "-"}</TableCell>
               </TableRow>
               <TableRow>
-                <TableCell>管理员引导</TableCell>
+                <TableCell>管理员初始化</TableCell>
                 <TableCell><StatusBadge ok={Boolean(runtimeStatus.admin_bootstrap_ok)} readyLabel="成功" failLabel="失败" /></TableCell>
-                <TableCell>{runtimeStatus.admin_bootstrap_error || "管理员初始账号引导成功"}</TableCell>
+                <TableCell>{runtimeStatus.admin_bootstrap_error || "管理员初始账号已准备好"}</TableCell>
               </TableRow>
               <TableRow>
                 <TableCell>最近检查时间</TableCell>
