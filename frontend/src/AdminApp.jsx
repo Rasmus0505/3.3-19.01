@@ -1,7 +1,8 @@
-import { Gift, LayoutDashboard, LogOut, Menu, ScrollText, Settings2, Shield, Sparkles, Ticket, Users } from "lucide-react";
+import { Bug, Gift, LayoutDashboard, LogOut, Menu, ScrollText, Settings2, Shield, Sparkles, Ticket, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
+import { AdminLessonTaskLogsTab } from "./features/admin-logs/AdminLessonTaskLogsTab";
 import { AdminLogsTab } from "./features/admin-logs/AdminLogsTab";
 import { AdminTranslationLogsTab } from "./features/admin-logs/AdminTranslationLogsTab";
 import { AdminOperationLogsTab } from "./features/admin-operation-logs/AdminOperationLogsTab";
@@ -25,6 +26,7 @@ export function AdminApp({ apiCall, onLogout }) {
       { to: "/admin/users", label: "用户", icon: Users, match: "/admin/users" },
       { to: "/admin/logs", label: "余额流水", icon: ScrollText, match: "/admin/logs" },
       { to: "/admin/translation-logs", label: "翻译日志", icon: Sparkles, match: "/admin/translation-logs" },
+      { to: "/admin/lesson-task-logs", label: "生成日志", icon: Bug, match: "/admin/lesson-task-logs" },
       { to: "/admin/operation-logs", label: "操作日志", icon: Shield, match: "/admin/operation-logs" },
       { to: "/admin/rates", label: "计费配置", icon: Settings2, match: "/admin/rates" },
       { to: "/admin/system", label: "系统状态", icon: Settings2, match: "/admin/system" },
@@ -131,6 +133,7 @@ export function AdminApp({ apiCall, onLogout }) {
             <Route path="users" element={<AdminUsersTab apiCall={apiCall} />} />
             <Route path="logs" element={<AdminLogsTab apiCall={apiCall} />} />
             <Route path="translation-logs" element={<AdminTranslationLogsTab apiCall={apiCall} />} />
+            <Route path="lesson-task-logs" element={<AdminLessonTaskLogsTab apiCall={apiCall} />} />
             <Route path="operation-logs" element={<AdminOperationLogsTab apiCall={apiCall} />} />
             <Route path="rates" element={<AdminRatesTab apiCall={apiCall} />} />
             <Route path="system" element={<AdminSystemTab apiCall={apiCall} />} />

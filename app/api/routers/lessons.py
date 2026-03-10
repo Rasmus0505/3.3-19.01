@@ -99,6 +99,7 @@ def _to_task_response(task: dict, db: Session) -> LessonTaskResponse:
         lesson=_build_task_lesson_response(task, db),
         subtitle_cache_seed=task.get("subtitle_cache_seed"),
         translation_debug=task.get("translation_debug"),
+        failure_debug=task.get("failure_debug"),
         error_code=str(task.get("error_code", "")),
         message=str(task.get("message", "")),
         resume_available=bool(task.get("resume_available")),
@@ -154,19 +155,47 @@ def _run_lesson_generation_task(
         logger.info("[DEBUG] lessons.task.succeeded task_id=%s lesson_id=%s", task_id, lesson.id)
     except BillingError as exc:
         db.rollback()
-        mark_task_failed(task_id, error_code=exc.code, message=exc.message, session_factory=session_factory)
+        mark_task_failed(
+            task_id,
+            error_code=exc.code,
+            message=exc.message,
+            exception_type=exc.__class__.__name__,
+            detail_excerpt=str(getattr(exc, "detail", "") or exc.message or exc),
+            session_factory=session_factory,
+        )
         logger.warning("[DEBUG] lessons.task.billing_failed task_id=%s code=%s", task_id, exc.code)
     except AsrError as exc:
         db.rollback()
-        mark_task_failed(task_id, error_code=exc.code, message=exc.message, session_factory=session_factory)
+        mark_task_failed(
+            task_id,
+            error_code=exc.code,
+            message=exc.message,
+            exception_type=exc.__class__.__name__,
+            detail_excerpt=str(getattr(exc, "detail", "") or exc.message or exc),
+            session_factory=session_factory,
+        )
         logger.warning("[DEBUG] lessons.task.asr_failed task_id=%s code=%s", task_id, exc.code)
     except MediaError as exc:
         db.rollback()
-        mark_task_failed(task_id, error_code=exc.code, message=exc.message, session_factory=session_factory)
+        mark_task_failed(
+            task_id,
+            error_code=exc.code,
+            message=exc.message,
+            exception_type=exc.__class__.__name__,
+            detail_excerpt=str(getattr(exc, "detail", "") or exc.message or exc),
+            session_factory=session_factory,
+        )
         logger.warning("[DEBUG] lessons.task.media_failed task_id=%s code=%s", task_id, exc.code)
     except Exception as exc:
         db.rollback()
-        mark_task_failed(task_id, error_code="INTERNAL_ERROR", message="课程生成失败", session_factory=session_factory)
+        mark_task_failed(
+            task_id,
+            error_code="INTERNAL_ERROR",
+            message="课程生成失败",
+            exception_type=exc.__class__.__name__,
+            detail_excerpt=str(exc)[:1200],
+            session_factory=session_factory,
+        )
         logger.exception("[DEBUG] lessons.task.failed task_id=%s detail=%s", task_id, str(exc)[:400])
     finally:
         db.close()
@@ -315,7 +344,16 @@ def resume_lesson_task(task_id: str, db: Session = Depends(get_db), current_user
     req_dir = Path(str(artifacts.get("work_dir") or "").strip())
     source_path = Path(str(artifacts.get("source_path") or resumed.get("source_path") or "").strip())
     if not req_dir.exists() or not source_path.exists():
-        mark_task_failed(task_id, error_code="TASK_ARTIFACT_MISSING", message="断点文件已过期，请重新上传素材", db=db)
+        mark_task_failed(
+            task_id,
+            error_code="TASK_ARTIFACT_MISSING",
+            message="断点文件已过期，请重新上传素材",
+            exception_type="FileNotFoundError",
+            detail_excerpt=f"resume artifacts missing work_dir={req_dir} source_path={source_path}",
+            failed_stage=str(resumed.get("resume_stage") or ""),
+            resume_available=False,
+            db=db,
+        )
         return error_response(400, "TASK_ARTIFACT_MISSING", "断点文件已过期，请重新上传素材")
 
     task_session_factory = _build_session_factory(db.get_bind())

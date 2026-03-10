@@ -87,6 +87,17 @@ class LessonTaskTranslationDebugResponse(BaseModel):
     latest_error_summary: str = ""
 
 
+class LessonTaskFailureDebugResponse(BaseModel):
+    failed_stage: str = ""
+    exception_type: str = ""
+    detail_excerpt: str = ""
+    last_progress_text: str = ""
+    stages: list[LessonTaskStageResponse] = Field(default_factory=list)
+    counters: LessonTaskCountersResponse = Field(default_factory=LessonTaskCountersResponse)
+    translation_debug: LessonTaskTranslationDebugResponse | None = None
+    failed_at: datetime | None = None
+
+
 class LessonTaskResponse(BaseModel):
     ok: bool = True
     task_id: str
@@ -98,6 +109,7 @@ class LessonTaskResponse(BaseModel):
     lesson: LessonDetailResponse | None = None
     subtitle_cache_seed: SubtitleCacheSeedResponse | None = None
     translation_debug: LessonTaskTranslationDebugResponse | None = None
+    failure_debug: LessonTaskFailureDebugResponse | None = None
     error_code: str = ""
     message: str = ""
     resume_available: bool = False

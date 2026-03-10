@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.api.deps.auth import get_admin_user
 from app.db import Base, create_database_engine, get_db
 from app.main import create_app
-from app.models import BillingModelRate, Lesson, LessonProgress, LessonSentence, MediaAsset, SubtitleSetting, TranslationRequestLog, User, WalletLedger
+from app.models import BillingModelRate, Lesson, LessonGenerationTask, LessonProgress, LessonSentence, MediaAsset, SubtitleSetting, TranslationRequestLog, User, WalletLedger
 from app.services.billing_service import ensure_default_billing_rates, get_or_create_wallet_account, get_subtitle_settings, settle_reserved_points
 from app.services.lesson_service import LessonService
 from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
@@ -507,6 +507,10 @@ def test_lesson_task_resume_reuses_failed_task_artifacts(test_client, monkeypatc
     assert failed_payload["resume_available"] is True
     assert failed_payload["resume_stage"] == "translate_zh"
     assert failed_payload["artifact_expires_at"]
+    assert failed_payload["failure_debug"]["failed_stage"] == "translate_zh"
+    assert failed_payload["failure_debug"]["exception_type"] == "RuntimeError"
+    assert "translate failed" in failed_payload["failure_debug"]["detail_excerpt"]
+    assert failed_payload["failure_debug"]["last_progress_text"] == "翻译字幕 1/2"
 
     resume_resp = client.post(f"/api/lessons/tasks/{task_id}/resume", headers={"Authorization": f"Bearer {token}"})
     assert resume_resp.status_code == 200
@@ -519,6 +523,75 @@ def test_lesson_task_resume_reuses_failed_task_artifacts(test_client, monkeypatc
     assert success_payload["resume_available"] is False
     assert success_payload["lesson"]["title"] == "resume"
     assert attempts["count"] == 2
+
+
+def test_lesson_task_resume_marks_missing_artifacts_as_non_resumable(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="resume-missing@example.com")
+
+    from app.api.routers import lessons as lessons_router
+
+    import threading as py_threading
+
+    class ImmediateThread(py_threading.Thread):
+        def start(self):
+            if getattr(self, "_target", None) is lessons_router._run_lesson_generation_task:
+                self.run()
+                return
+            super().start()
+
+    def fake_generate_from_saved_file(*, req_dir, progress_callback=None, **kwargs):
+        progress_callback(
+            {
+                "stage_key": "convert_audio",
+                "stage_status": "completed",
+                "overall_percent": 20,
+                "current_text": "转换音频格式完成",
+                "counters": {"asr_done": 0, "asr_estimated": 0, "translate_done": 0, "translate_total": 0, "segment_done": 0, "segment_total": 0},
+            }
+        )
+        (req_dir / "lesson_input.opus").write_bytes(b"opus")
+        (req_dir / "asr_result.json").write_text(json.dumps({"asr_payload": {"transcripts": []}}, ensure_ascii=False), encoding="utf-8")
+        progress_callback(
+            {
+                "stage_key": "translate_zh",
+                "stage_status": "running",
+                "overall_percent": 72,
+                "current_text": "翻译字幕 1/2",
+                "counters": {"asr_done": 2, "asr_estimated": 2, "translate_done": 1, "translate_total": 2, "segment_done": 2, "segment_total": 2},
+            }
+        )
+        raise RuntimeError("temporary failure")
+
+    monkeypatch.setattr(lessons_router.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(lessons_router.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+
+    create_resp = client.post(
+        "/api/lessons/tasks",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"video_file": ("resume-missing.mp4", io.BytesIO(b"video"), "video/mp4")},
+        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+    )
+    assert create_resp.status_code == 200
+    task_id = create_resp.json()["task_id"]
+
+    session = session_factory()
+    try:
+        task = session.query(LessonGenerationTask).filter(LessonGenerationTask.task_id == task_id).one()
+        Path(task.source_path).unlink()
+    finally:
+        session.close()
+
+    resume_resp = client.post(f"/api/lessons/tasks/{task_id}/resume", headers={"Authorization": f"Bearer {token}"})
+    assert resume_resp.status_code == 400
+    assert resume_resp.json()["error_code"] == "TASK_ARTIFACT_MISSING"
+
+    failed_task = client.get(f"/api/lessons/tasks/{task_id}", headers={"Authorization": f"Bearer {token}"})
+    assert failed_task.status_code == 200
+    failed_payload = failed_task.json()
+    assert failed_payload["resume_available"] is False
+    assert failed_payload["failure_debug"]["exception_type"] == "FileNotFoundError"
+    assert "resume artifacts missing" in failed_payload["failure_debug"]["detail_excerpt"]
 
 
 def test_startup_without_dashscope_key_keeps_health_alive(monkeypatch, tmp_path):

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from app.models import AdminOperationLog, Lesson, RedeemCodeAttempt, RedeemCodeBatch, TranslationRequestLog, User, WalletLedger
+from app.models import AdminOperationLog, Lesson, LessonGenerationTask, RedeemCodeAttempt, RedeemCodeBatch, TranslationRequestLog, User, WalletLedger
 from app.repositories.admin import list_redeem_batches
 
 
@@ -148,6 +148,72 @@ def list_admin_operation_logs(
         .limit(page_size)
     ).all()
     return total, [(row[0], row.operator_email) for row in rows]
+
+
+def list_admin_lesson_task_logs(
+    db: Session,
+    *,
+    status: str,
+    user_email: str,
+    task_id: str,
+    lesson_id: int | None,
+    source_filename: str,
+    date_from: datetime | None,
+    date_to: datetime | None,
+    page: int,
+    page_size: int,
+) -> tuple[int, list[tuple[LessonGenerationTask, str | None]]]:
+    owner_user = User.__table__.alias("lesson_task_owner")
+    sort_column = func.coalesce(LessonGenerationTask.failed_at, LessonGenerationTask.updated_at, LessonGenerationTask.created_at)
+    base = (
+        select(LessonGenerationTask, owner_user.c.email.label("user_email"))
+        .outerjoin(owner_user, owner_user.c.id == LessonGenerationTask.owner_user_id)
+    )
+    count_stmt = select(func.count(LessonGenerationTask.id)).outerjoin(
+        owner_user, owner_user.c.id == LessonGenerationTask.owner_user_id
+    )
+
+    normalized_status = status.strip().lower()
+    if normalized_status and normalized_status != "all":
+        base = base.where(func.lower(LessonGenerationTask.status) == normalized_status)
+        count_stmt = count_stmt.where(func.lower(LessonGenerationTask.status) == normalized_status)
+
+    normalized_user_email = user_email.strip().lower()
+    if normalized_user_email:
+        pattern = f"%{normalized_user_email}%"
+        base = base.where(func.lower(owner_user.c.email).like(pattern))
+        count_stmt = count_stmt.where(func.lower(owner_user.c.email).like(pattern))
+
+    normalized_task_id = task_id.strip().lower()
+    if normalized_task_id:
+        pattern = f"%{normalized_task_id}%"
+        base = base.where(func.lower(LessonGenerationTask.task_id).like(pattern))
+        count_stmt = count_stmt.where(func.lower(LessonGenerationTask.task_id).like(pattern))
+
+    if lesson_id is not None and int(lesson_id) > 0:
+        base = base.where(LessonGenerationTask.lesson_id == int(lesson_id))
+        count_stmt = count_stmt.where(LessonGenerationTask.lesson_id == int(lesson_id))
+
+    normalized_source_filename = source_filename.strip().lower()
+    if normalized_source_filename:
+        pattern = f"%{normalized_source_filename}%"
+        base = base.where(func.lower(LessonGenerationTask.source_filename).like(pattern))
+        count_stmt = count_stmt.where(func.lower(LessonGenerationTask.source_filename).like(pattern))
+
+    if date_from:
+        base = base.where(sort_column >= date_from)
+        count_stmt = count_stmt.where(sort_column >= date_from)
+    if date_to:
+        base = base.where(sort_column <= date_to)
+        count_stmt = count_stmt.where(sort_column <= date_to)
+
+    total = int(db.scalar(count_stmt) or 0)
+    rows = db.execute(
+        base.order_by(sort_column.desc(), LessonGenerationTask.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return total, [(row[0], row.user_email) for row in rows]
 
 
 def get_admin_user_activity_summary(db: Session, *, user_id: int, now: datetime) -> dict[str, object]:

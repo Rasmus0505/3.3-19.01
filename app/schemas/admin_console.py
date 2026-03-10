@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AdminOverviewMetrics(BaseModel):
@@ -68,3 +69,56 @@ class AdminUserActivitySummary(BaseModel):
 class AdminUserActivitySummaryResponse(BaseModel):
     ok: bool = True
     summary: AdminUserActivitySummary
+
+
+class AdminLessonTaskLogTranslationSummary(BaseModel):
+    total_sentences: int = 0
+    failed_sentences: int = 0
+    request_count: int = 0
+    success_request_count: int = 0
+    total_tokens: int = 0
+    charged_points: int = 0
+    latest_error_summary: str = ""
+
+
+class AdminLessonTaskFailureDebug(BaseModel):
+    failed_stage: str = ""
+    exception_type: str = ""
+    detail_excerpt: str = ""
+    last_progress_text: str = ""
+    stages: list[dict[str, Any]] = Field(default_factory=list)
+    counters: dict[str, Any] = Field(default_factory=dict)
+    translation_debug: dict[str, Any] | None = None
+    failed_at: datetime | None = None
+
+
+class AdminLessonTaskLogItem(BaseModel):
+    id: int
+    task_id: str
+    owner_user_id: int
+    user_email: str | None
+    lesson_id: int | None
+    source_filename: str
+    asr_model: str
+    status: str
+    current_stage: str = ""
+    error_code: str = ""
+    message: str = ""
+    detail_excerpt: str = ""
+    last_progress_text: str = ""
+    exception_type: str = ""
+    resume_available: bool = False
+    translation_debug_summary: AdminLessonTaskLogTranslationSummary | None = None
+    failure_debug: AdminLessonTaskFailureDebug | None = None
+    artifact_expires_at: datetime | None = None
+    failed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminLessonTaskLogsResponse(BaseModel):
+    ok: bool = True
+    page: int
+    page_size: int
+    total: int
+    items: list[AdminLessonTaskLogItem]
