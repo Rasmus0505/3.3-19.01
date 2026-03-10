@@ -128,6 +128,8 @@ class AdminSubtitleSettingsItem(BaseModel):
     semantic_split_timeout_seconds: int
     translation_batch_max_chars: int
     updated_at: datetime
+    updated_by_user_id: int | None = None
+    updated_by_user_email: str | None = None
 
 
 class AdminSubtitleSettingsUpdateRequest(BaseModel):
@@ -144,6 +146,20 @@ class AdminSubtitleSettingsUpdateRequest(BaseModel):
 class AdminSubtitleSettingsResponse(BaseModel):
     ok: bool = True
     settings: AdminSubtitleSettingsItem
+
+
+class AdminSubtitleSettingsHistoryItem(BaseModel):
+    action_id: int
+    created_at: datetime
+    operator_user_id: int | None = None
+    operator_user_email: str | None = None
+    settings: AdminSubtitleSettingsItem
+
+
+class AdminSubtitleSettingsHistoryResponse(BaseModel):
+    ok: bool = True
+    current: AdminSubtitleSettingsItem
+    rollback_candidate: AdminSubtitleSettingsHistoryItem | None = None
 
 
 class AdminRedeemBatchCreateRequest(BaseModel):

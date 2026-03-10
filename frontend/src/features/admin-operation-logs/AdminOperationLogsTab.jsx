@@ -1,11 +1,11 @@
-import { Download, RefreshCcw, ScrollText } from "lucide-react";
+import { RefreshCcw, Shield } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
-import { buildSearchParams, copyCurrentUrl, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
-import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
+import { buildSearchParams, copyCurrentUrl, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
+import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
   return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
@@ -25,13 +25,7 @@ function toLocalDatetimeValue(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function fileNameFromDisposition(disposition, fallback) {
-  const match = String(disposition || "").match(/filename\*=UTF-8''([^;]+)|filename=\"?([^\";]+)\"?/i);
-  const raw = match?.[1] || match?.[2];
-  return raw ? decodeURIComponent(raw) : fallback;
-}
-
-export function AdminRedeemAuditTab({ apiCall }) {
+export function AdminOperationLogsTab({ apiCall }) {
   const now = getBeijingNowForPicker();
   const defaultFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -41,46 +35,46 @@ export function AdminRedeemAuditTab({ apiCall }) {
   const [pageSize, setPageSize] = useState(() => readIntParam(searchParams, "page_size", 20, { min: 1, max: 100 }));
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [userEmail, setUserEmail] = useState(() => readStringParam(searchParams, "user_email"));
-  const [batchId, setBatchId] = useState(() => readStringParam(searchParams, "batch_id"));
+  const [operatorEmail, setOperatorEmail] = useState(() => readStringParam(searchParams, "operator_email"));
+  const [actionType, setActionType] = useState(() => readStringParam(searchParams, "action_type", "all") || "all");
+  const [targetType, setTargetType] = useState(() => readStringParam(searchParams, "target_type", "all") || "all");
   const [dateFrom, setDateFrom] = useState(() => readStringParam(searchParams, "date_from", toLocalDatetimeValue(defaultFrom)));
   const [dateTo, setDateTo] = useState(() => readStringParam(searchParams, "date_to", toLocalDatetimeValue(now)));
-  const [exportDialogOpen, setExportDialogOpen] = useState(false);
-  const [exportConfirmText, setExportConfirmText] = useState("");
 
   useEffect(() => {
     setSearchParams(
       buildSearchParams({
         page,
         page_size: pageSize,
-        user_email: userEmail,
-        batch_id: batchId,
+        operator_email: operatorEmail,
+        action_type: actionType,
+        target_type: targetType,
         date_from: dateFrom,
         date_to: dateTo,
       }),
       { replace: true }
     );
-  }, [batchId, dateFrom, dateTo, page, pageSize, setSearchParams, userEmail]);
+  }, [actionType, dateFrom, dateTo, operatorEmail, page, pageSize, setSearchParams, targetType]);
 
-  async function loadAudit(nextPage = page) {
+  async function loadLogs(nextPage = page) {
     setLoading(true);
     setStatus("");
     try {
       const query = new URLSearchParams({
         page: String(nextPage),
         page_size: String(pageSize),
-        user_email: userEmail.trim(),
-        batch_id: batchId.trim(),
+        operator_email: operatorEmail.trim(),
+        action_type: actionType,
+        target_type: targetType,
       });
       const normalizedDateFrom = datetimeLocalToBeijingOffset(dateFrom);
       const normalizedDateTo = datetimeLocalToBeijingOffset(dateTo);
       if (normalizedDateFrom) query.set("date_from", normalizedDateFrom);
       if (normalizedDateTo) query.set("date_to", normalizedDateTo);
-      const resp = await apiCall(`/api/admin/redeem-audit?${query.toString()}`);
+      const resp = await apiCall(`/api/admin/operation-logs?${query.toString()}`);
       const data = await jsonOrEmpty(resp);
       if (!resp.ok) {
-        const message = parseError(data, "加载审计日志失败");
+        const message = parseError(data, "加载操作日志失败");
         setStatus(message);
         toast.error(message);
         return;
@@ -97,7 +91,7 @@ export function AdminRedeemAuditTab({ apiCall }) {
   }
 
   useEffect(() => {
-    loadAudit(page);
+    loadLogs(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize]);
 
@@ -110,50 +104,6 @@ export function AdminRedeemAuditTab({ apiCall }) {
     }
   }
 
-  async function exportCsv() {
-    setExporting(true);
-    setStatus("");
-    try {
-      const resp = await apiCall("/api/admin/redeem-audit/export", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          confirm_text: exportConfirmText.trim(),
-          batch_id: batchId.trim() ? Number(batchId.trim()) : null,
-          user_email: userEmail.trim(),
-          date_from: datetimeLocalToBeijingOffset(dateFrom) || null,
-          date_to: datetimeLocalToBeijingOffset(dateTo) || null,
-        }),
-      });
-      if (!resp.ok) {
-        const data = await jsonOrEmpty(resp);
-        const message = parseError(data, "导出失败");
-        setStatus(message);
-        toast.error(message);
-        return;
-      }
-
-      const blob = await resp.blob();
-      const link = document.createElement("a");
-      const href = URL.createObjectURL(blob);
-      link.href = href;
-      link.download = fileNameFromDisposition(resp.headers.get("content-disposition"), "redeem_audit.csv");
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(href);
-      setExportDialogOpen(false);
-      setExportConfirmText("");
-      toast.success("导出成功");
-    } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
-    } finally {
-      setExporting(false);
-    }
-  }
-
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   return (
@@ -161,16 +111,16 @@ export function AdminRedeemAuditTab({ apiCall }) {
       <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
-            <ScrollText className="size-4" />
-            兑换记录 / 审计
+            <Shield className="size-4" />
+            管理员操作日志
           </CardTitle>
-          <CardDescription>记录成功和失败兑换，支持筛选、链接分享和安全导出（时间按北京时间）。</CardDescription>
+          <CardDescription>记录费率修改、调账、兑换码状态调整等后台敏感动作，支持筛选和链接分享。</CardDescription>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={copyFilters}>
             复制筛选链接
           </Button>
-          <Button variant="outline" size="sm" onClick={() => loadAudit(page)} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={() => loadLogs(page)} disabled={loading}>
             <RefreshCcw className="size-4" />
             刷新
           </Button>
@@ -182,52 +132,51 @@ export function AdminRedeemAuditTab({ apiCall }) {
           onSubmit={(event) => {
             event.preventDefault();
             setPage(1);
-            loadAudit(1);
+            loadLogs(1);
           }}
         >
-          <Input value={userEmail} onChange={(event) => setUserEmail(event.target.value)} placeholder="用户邮箱" />
-          <Input value={batchId} onChange={(event) => setBatchId(event.target.value)} placeholder="批次ID" />
+          <Input value={operatorEmail} onChange={(event) => setOperatorEmail(event.target.value)} placeholder="操作员邮箱" />
+          <Input value={actionType === "all" ? "" : actionType} onChange={(event) => setActionType(event.target.value || "all")} placeholder="动作类型，如 manual_adjust" />
+          <Input value={targetType === "all" ? "" : targetType} onChange={(event) => setTargetType(event.target.value || "all")} placeholder="对象类型，如 billing_rate" />
           <Input type="datetime-local" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
           <Input type="datetime-local" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-          <Button type="submit" variant="outline">查询</Button>
-          <Button type="button" onClick={() => setExportDialogOpen(true)} disabled={exporting}>
-            <Download className="size-4" />
-            {exporting ? "导出中..." : "导出 CSV"}
+          <Button type="submit" variant="outline" disabled={loading}>
+            查询
           </Button>
         </form>
 
         {loading ? <Skeleton className="h-10 w-full" /> : null}
 
         <ScrollArea className="w-full rounded-md border">
-          <Table className="min-w-[980px]">
+          <Table className="min-w-[1560px]">
             <TableHeader>
               <TableRow>
-                <TableHead>ID</TableHead>
                 <TableHead>时间</TableHead>
-                <TableHead>用户</TableHead>
-                <TableHead>批次</TableHead>
-                <TableHead>兑换码</TableHead>
-                <TableHead>结果</TableHead>
-                <TableHead>失败原因</TableHead>
+                <TableHead>操作员</TableHead>
+                <TableHead>动作</TableHead>
+                <TableHead>对象</TableHead>
+                <TableHead>对象 ID</TableHead>
+                <TableHead>变更前</TableHead>
+                <TableHead>变更后</TableHead>
+                <TableHead>备注</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {items.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell>{item.id}</TableCell>
                   <TableCell>{formatDateTimeBeijing(item.created_at)}</TableCell>
-                  <TableCell>{item.user_email || "-"}</TableCell>
-                  <TableCell>{item.batch_name ? `${item.batch_name} (#${item.batch_id})` : "-"}</TableCell>
-                  <TableCell>{item.code_mask || "-"}</TableCell>
-                  <TableCell>
-                    <Badge variant={item.success ? "default" : "destructive"}>{item.success ? "成功" : "失败"}</Badge>
-                  </TableCell>
-                  <TableCell>{item.failure_reason || "-"}</TableCell>
+                  <TableCell>{item.operator_user_email || "-"}</TableCell>
+                  <TableCell><Badge variant="outline">{item.action_type}</Badge></TableCell>
+                  <TableCell>{item.target_type}</TableCell>
+                  <TableCell>{item.target_id || "-"}</TableCell>
+                  <TableCell className="max-w-[260px] whitespace-normal break-words">{item.before_value || "-"}</TableCell>
+                  <TableCell className="max-w-[260px] whitespace-normal break-words">{item.after_value || "-"}</TableCell>
+                  <TableCell className="max-w-[260px] whitespace-normal break-words">{item.note || "-"}</TableCell>
                 </TableRow>
               ))}
               {items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-muted-foreground">
+                  <TableCell colSpan={8} className="text-muted-foreground">
                     暂无数据
                   </TableCell>
                 </TableRow>
@@ -261,7 +210,9 @@ export function AdminRedeemAuditTab({ apiCall }) {
                   <PaginationPrevious disabled={page <= 1} onClick={() => setPage(page - 1)} />
                 </PaginationItem>
                 <PaginationItem>
-                  <PaginationLink isActive>{page} / {pageCount}</PaginationLink>
+                  <PaginationLink isActive className="px-2.5">
+                    {page} / {pageCount}
+                  </PaginationLink>
                 </PaginationItem>
                 <PaginationItem>
                   <PaginationNext disabled={page >= pageCount} onClick={() => setPage(page + 1)} />
@@ -271,23 +222,11 @@ export function AdminRedeemAuditTab({ apiCall }) {
           </div>
         </div>
 
-        {status ? <Alert><AlertDescription>{status}</AlertDescription></Alert> : null}
-
-        <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>确认导出审计 CSV</DialogTitle>
-              <DialogDescription>请输入 `EXPORT` 以确认导出当前筛选结果。</DialogDescription>
-            </DialogHeader>
-            <Input value={exportConfirmText} onChange={(event) => setExportConfirmText(event.target.value)} placeholder="输入 EXPORT" />
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setExportDialogOpen(false)}>取消</Button>
-              <Button onClick={exportCsv} disabled={exporting || exportConfirmText.trim() !== "EXPORT"}>
-                {exporting ? "导出中..." : "确认导出"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {status ? (
+          <Alert>
+            <AlertDescription>{status}</AlertDescription>
+          </Alert>
+        ) : null}
       </CardContent>
     </Card>
   );

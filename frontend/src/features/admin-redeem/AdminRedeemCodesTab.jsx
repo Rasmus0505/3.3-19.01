@@ -1,9 +1,11 @@
-﻿import { Download, ShieldBan, Ticket } from "lucide-react";
+import { Download, RefreshCcw, ShieldBan, Ticket } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
+import { buildSearchParams, copyCurrentUrl, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing } from "../../shared/lib/datetime";
-import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
+import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
   return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
@@ -18,30 +20,51 @@ async function jsonOrEmpty(resp) {
 }
 
 function fileNameFromDisposition(disposition, fallback) {
-  if (!disposition) return fallback;
-  const match = disposition.match(/filename=([^;]+)/i);
-  if (!match?.[1]) return fallback;
-  return match[1].trim().replace(/^"|"$/g, "");
+  const match = String(disposition || "").match(/filename\*=UTF-8''([^;]+)|filename=\"?([^\";]+)\"?/i);
+  const raw = match?.[1] || match?.[2];
+  return raw ? decodeURIComponent(raw) : fallback;
 }
 
 export function AdminRedeemCodesTab({ apiCall }) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [page, setPage] = useState(() => readIntParam(searchParams, "page", 1, { min: 1 }));
+  const [pageSize, setPageSize] = useState(() => readIntParam(searchParams, "page_size", 20, { min: 1, max: 100 }));
 
-  const [batchId, setBatchId] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [redeemUserEmail, setRedeemUserEmail] = useState("");
-  const [createdFrom, setCreatedFrom] = useState("");
-  const [createdTo, setCreatedTo] = useState("");
-  const [redeemedFrom, setRedeemedFrom] = useState("");
-  const [redeemedTo, setRedeemedTo] = useState("");
+  const [batchId, setBatchId] = useState(() => readStringParam(searchParams, "batch_id"));
+  const [statusFilter, setStatusFilter] = useState(() => readStringParam(searchParams, "status", "all") || "all");
+  const [redeemUserEmail, setRedeemUserEmail] = useState(() => readStringParam(searchParams, "redeem_user_email"));
+  const [createdFrom, setCreatedFrom] = useState(() => readStringParam(searchParams, "created_from"));
+  const [createdTo, setCreatedTo] = useState(() => readStringParam(searchParams, "created_to"));
+  const [redeemedFrom, setRedeemedFrom] = useState(() => readStringParam(searchParams, "redeemed_from"));
+  const [redeemedTo, setRedeemedTo] = useState(() => readStringParam(searchParams, "redeemed_to"));
 
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [exporting, setExporting] = useState(false);
+  const [confirmBulkOpen, setConfirmBulkOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportConfirmText, setExportConfirmText] = useState("");
+  const [actionDialog, setActionDialog] = useState(null);
+
+  useEffect(() => {
+    setSearchParams(
+      buildSearchParams({
+        page,
+        page_size: pageSize,
+        batch_id: batchId,
+        status: statusFilter,
+        redeem_user_email: redeemUserEmail,
+        created_from: createdFrom,
+        created_to: createdTo,
+        redeemed_from: redeemedFrom,
+        redeemed_to: redeemedTo,
+      }),
+      { replace: true }
+    );
+  }, [batchId, createdFrom, createdTo, page, pageSize, redeemUserEmail, redeemedFrom, redeemedTo, setSearchParams, statusFilter]);
 
   const pageCount = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
 
@@ -98,6 +121,15 @@ export function AdminRedeemCodesTab({ apiCall }) {
     });
   }
 
+  async function copyFilters() {
+    try {
+      await copyCurrentUrl();
+      toast.success("已复制筛选链接");
+    } catch (error) {
+      toast.error(`复制失败: ${String(error)}`);
+    }
+  }
+
   async function applyCodeAction(codeId, actionPath, actionLabel) {
     setStatus("");
     try {
@@ -110,6 +142,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
         return;
       }
       toast.success(`${actionLabel}成功`);
+      setActionDialog(null);
       await loadCodes(page);
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
@@ -125,7 +158,6 @@ export function AdminRedeemCodesTab({ apiCall }) {
       toast.error(message);
       return;
     }
-    if (!window.confirm(`确认批量停用 ${selectedIds.size} 个兑换码？`)) return;
 
     setStatus("");
     try {
@@ -141,6 +173,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
         toast.error(message);
         return;
       }
+      setConfirmBulkOpen(false);
       toast.success(`已停用 ${Number(data.changed_count || 0)} 个兑换码`);
       await loadCodes(page);
     } catch (error) {
@@ -151,14 +184,11 @@ export function AdminRedeemCodesTab({ apiCall }) {
   }
 
   async function exportUnredeemedCsv() {
-    const confirmText = window.prompt("请输入 EXPORT 确认导出未兑换码");
-    if (!confirmText) return;
-
     setExporting(true);
     setStatus("");
     try {
       const payload = {
-        confirm_text: confirmText,
+        confirm_text: exportConfirmText.trim(),
       };
       if (batchId.trim()) payload.batch_id = Number(batchId.trim());
 
@@ -185,6 +215,8 @@ export function AdminRedeemCodesTab({ apiCall }) {
       link.click();
       link.remove();
       URL.revokeObjectURL(href);
+      setExportDialogOpen(false);
+      setExportConfirmText("");
       toast.success("导出成功");
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
@@ -197,23 +229,34 @@ export function AdminRedeemCodesTab({ apiCall }) {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Ticket className="size-4" />
-          兑换码列表
-        </CardTitle>
-        <CardDescription>支持筛选、停用/启用、废弃、批量停用与 CSV 导出（时间按北京时间）。</CardDescription>
+      <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Ticket className="size-4" />
+            兑换码列表
+          </CardTitle>
+          <CardDescription>支持筛选、停用/启用、废弃、批量停用与 CSV 导出（时间按北京时间）。</CardDescription>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={copyFilters}>
+            复制筛选链接
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => loadCodes(page)} disabled={loading}>
+            <RefreshCcw className="size-4" />
+            刷新
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <form
-          className="grid gap-2 md:grid-cols-8"
+          className="grid gap-2 md:grid-cols-4 xl:grid-cols-8"
           onSubmit={(event) => {
             event.preventDefault();
             setPage(1);
             loadCodes(1);
           }}
         >
-          <Input value={batchId} onChange={(e) => setBatchId(e.target.value)} placeholder="批次ID" />
+          <Input value={batchId} onChange={(event) => setBatchId(event.target.value)} placeholder="批次ID" />
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -225,21 +268,20 @@ export function AdminRedeemCodesTab({ apiCall }) {
               <SelectItem value="abandoned">废弃</SelectItem>
             </SelectContent>
           </Select>
-          <Input value={redeemUserEmail} onChange={(e) => setRedeemUserEmail(e.target.value)} placeholder="兑换用户邮箱" />
-          <Input type="datetime-local" value={createdFrom} onChange={(e) => setCreatedFrom(e.target.value)} placeholder="创建开始" />
-          <Input type="datetime-local" value={createdTo} onChange={(e) => setCreatedTo(e.target.value)} placeholder="创建结束" />
-          <Input type="datetime-local" value={redeemedFrom} onChange={(e) => setRedeemedFrom(e.target.value)} placeholder="兑换开始" />
-          <Input type="datetime-local" value={redeemedTo} onChange={(e) => setRedeemedTo(e.target.value)} placeholder="兑换结束" />
+          <Input value={redeemUserEmail} onChange={(event) => setRedeemUserEmail(event.target.value)} placeholder="兑换用户邮箱" />
+          <Input type="datetime-local" value={createdFrom} onChange={(event) => setCreatedFrom(event.target.value)} placeholder="创建开始" />
+          <Input type="datetime-local" value={createdTo} onChange={(event) => setCreatedTo(event.target.value)} placeholder="创建结束" />
+          <Input type="datetime-local" value={redeemedFrom} onChange={(event) => setRedeemedFrom(event.target.value)} placeholder="兑换开始" />
+          <Input type="datetime-local" value={redeemedTo} onChange={(event) => setRedeemedTo(event.target.value)} placeholder="兑换结束" />
           <Button type="submit" variant="outline">查询</Button>
         </form>
 
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => loadCodes(page)} disabled={loading}>刷新</Button>
-          <Button variant="outline" onClick={bulkDisable} disabled={selectedIds.size === 0}>
+          <Button variant="outline" onClick={() => setConfirmBulkOpen(true)} disabled={selectedIds.size === 0}>
             <ShieldBan className="size-4" />
             批量停用
           </Button>
-          <Button onClick={exportUnredeemedCsv} disabled={exporting}>
+          <Button onClick={() => setExportDialogOpen(true)} disabled={exporting}>
             <Download className="size-4" />
             {exporting ? "导出中..." : "导出未兑换 CSV"}
           </Button>
@@ -271,7 +313,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
                       <input
                         type="checkbox"
                         checked={checked}
-                        onChange={(e) => toggleSelect(item.id, e.target.checked)}
+                        onChange={(event) => toggleSelect(item.id, event.target.checked)}
                         disabled={item.effective_status === "redeemed"}
                       />
                     </TableCell>
@@ -286,13 +328,9 @@ export function AdminRedeemCodesTab({ apiCall }) {
                     <TableCell>{formatDateTimeBeijing(item.created_at)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Button size="sm" variant="outline" onClick={() => applyCodeAction(item.id, "enable", "启用")}>
-                          启用
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => applyCodeAction(item.id, "disable", "停用")}>
-                          停用
-                        </Button>
-                        <Button size="sm" onClick={() => applyCodeAction(item.id, "abandon", "废弃")}>废弃</Button>
+                        <Button size="sm" variant="outline" onClick={() => setActionDialog({ codeId: item.id, actionPath: "enable", actionLabel: "启用", codeMask: item.code_mask })}>启用</Button>
+                        <Button size="sm" variant="outline" onClick={() => setActionDialog({ codeId: item.id, actionPath: "disable", actionLabel: "停用", codeMask: item.code_mask })}>停用</Button>
+                        <Button size="sm" onClick={() => setActionDialog({ codeId: item.id, actionPath: "abandon", actionLabel: "废弃", codeMask: item.code_mask })}>废弃</Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -329,6 +367,52 @@ export function AdminRedeemCodesTab({ apiCall }) {
         </div>
 
         {status ? <Alert><AlertDescription>{status}</AlertDescription></Alert> : null}
+
+        <Dialog open={confirmBulkOpen} onOpenChange={setConfirmBulkOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>确认批量停用兑换码</DialogTitle>
+              <DialogDescription>本次将停用 {selectedIds.size} 个兑换码，已兑换码不会被选中。</DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setConfirmBulkOpen(false)}>取消</Button>
+              <Button onClick={bulkDisable}>确认停用</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>确认导出未兑换码 CSV</DialogTitle>
+              <DialogDescription>请输入 `EXPORT` 以确认导出当前批次下的未兑换码。</DialogDescription>
+            </DialogHeader>
+            <Input value={exportConfirmText} onChange={(event) => setExportConfirmText(event.target.value)} placeholder="输入 EXPORT" />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setExportDialogOpen(false)}>取消</Button>
+              <Button onClick={exportUnredeemedCsv} disabled={exporting || exportConfirmText.trim() !== "EXPORT"}>
+                {exporting ? "导出中..." : "确认导出"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={Boolean(actionDialog)} onOpenChange={(open) => { if (!open) setActionDialog(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>确认兑换码操作</DialogTitle>
+              <DialogDescription>
+                将对兑换码 `{actionDialog?.codeMask || "-"}` 执行“{actionDialog?.actionLabel || "-"}”。
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setActionDialog(null)}>取消</Button>
+              <Button onClick={() => actionDialog && applyCodeAction(actionDialog.codeId, actionDialog.actionPath, actionDialog.actionLabel)}>
+                确认执行
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

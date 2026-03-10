@@ -1,10 +1,11 @@
-﻿import { CalendarDays, ScrollText } from "lucide-react";
+import { RefreshCcw, ScrollText } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
-import { cn } from "../../lib/utils";
-import { buildBeijingOffsetDateTime, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
-import { Alert, AlertDescription, Badge, Button, Calendar, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, Popover, PopoverContent, PopoverTrigger, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
+import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
+import { buildSearchParams, copyCurrentUrl, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
+import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
 function parseError(data, fallback) {
   return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
@@ -18,50 +19,55 @@ async function jsonOrEmpty(resp) {
   }
 }
 
-function pad2(value) {
-  return String(value).padStart(2, "0");
-}
-
-function toDateOnlyString(date) {
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-}
-
-function toTimeOnlyString(date) {
-  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+function toLocalDatetimeValue(date) {
+  if (!date) return "";
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 export function AdminLogsTab({ apiCall }) {
   const now = getBeijingNowForPicker();
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-
+  const defaultFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [page, setPage] = useState(() => readIntParam(searchParams, "page", 1, { min: 1 }));
+  const [pageSize, setPageSize] = useState(() => readIntParam(searchParams, "page_size", 20, { min: 1, max: 100 }));
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [userEmail, setUserEmail] = useState("");
-  const [eventType, setEventType] = useState("all");
-  const [dateFromDate, setDateFromDate] = useState(sevenDaysAgo);
-  const [dateToDate, setDateToDate] = useState(now);
-  const [dateFromTime, setDateFromTime] = useState(toTimeOnlyString(sevenDaysAgo));
-  const [dateToTime, setDateToTime] = useState(toTimeOnlyString(now));
+  const [userEmail, setUserEmail] = useState(() => readStringParam(searchParams, "user_email"));
+  const [eventType, setEventType] = useState(() => readStringParam(searchParams, "event_type", "all") || "all");
+  const [dateFrom, setDateFrom] = useState(() => readStringParam(searchParams, "date_from", toLocalDatetimeValue(defaultFrom)));
+  const [dateTo, setDateTo] = useState(() => readStringParam(searchParams, "date_to", toLocalDatetimeValue(now)));
+
+  useEffect(() => {
+    setSearchParams(
+      buildSearchParams({
+        page,
+        page_size: pageSize,
+        user_email: userEmail,
+        event_type: eventType,
+        date_from: dateFrom,
+        date_to: dateTo,
+      }),
+      { replace: true }
+    );
+  }, [dateFrom, dateTo, eventType, page, pageSize, setSearchParams, userEmail]);
 
   async function loadLogs(nextPage = page) {
     setLoading(true);
     setStatus("");
     try {
-      const dateFrom = buildBeijingOffsetDateTime(dateFromDate, dateFromTime);
-      const dateTo = buildBeijingOffsetDateTime(dateToDate, dateToTime);
-
       const query = new URLSearchParams({
         page: String(nextPage),
         page_size: String(pageSize),
         user_email: userEmail.trim(),
         event_type: eventType,
       });
-      if (dateFrom) query.set("date_from", dateFrom);
-      if (dateTo) query.set("date_to", dateTo);
+      const normalizedDateFrom = datetimeLocalToBeijingOffset(dateFrom);
+      const normalizedDateTo = datetimeLocalToBeijingOffset(dateTo);
+      if (normalizedDateFrom) query.set("date_from", normalizedDateFrom);
+      if (normalizedDateTo) query.set("date_to", normalizedDateTo);
       const resp = await apiCall(`/api/admin/wallet-logs?${query.toString()}`);
       const data = await jsonOrEmpty(resp);
       if (!resp.ok) {
@@ -86,38 +92,47 @@ export function AdminLogsTab({ apiCall }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize]);
 
+  async function copyFilters() {
+    try {
+      await copyCurrentUrl();
+      toast.success("已复制筛选链接");
+    } catch (error) {
+      toast.error(`复制失败: ${String(error)}`);
+    }
+  }
+
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <ScrollText className="size-4" />
-          余额流水
-        </CardTitle>
-        <CardDescription>预扣 / ASR 扣点 / 翻译扣点 / 退款 / 手工调账 / 兑换码充值明细（筛选与展示均按北京时间）。</CardDescription>
+      <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ScrollText className="size-4" />
+            余额流水
+          </CardTitle>
+          <CardDescription>预扣 / ASR 扣点 / 翻译扣点 / 退款 / 手工调账 / 兑换码充值明细（筛选与展示均按北京时间）。</CardDescription>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={copyFilters}>
+            复制筛选链接
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => loadLogs(page)} disabled={loading}>
+            <RefreshCcw className="size-4" />
+            刷新
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <form
-          className="grid gap-2 md:grid-cols-7"
+          className="grid gap-2 md:grid-cols-4 xl:grid-cols-5"
           onSubmit={(event) => {
             event.preventDefault();
-            const fromValue = buildBeijingOffsetDateTime(dateFromDate, dateFromTime);
-            const toValue = buildBeijingOffsetDateTime(dateToDate, dateToTime);
-            if (fromValue && toValue && new Date(fromValue).getTime() > new Date(toValue).getTime()) {
-              const message = "开始时间不能晚于结束时间";
-              setStatus(message);
-              toast.error(message);
-              return;
-            }
-            if (page !== 1) {
-              setPage(1);
-              return;
-            }
+            setPage(1);
             loadLogs(1);
           }}
         >
-          <Input value={userEmail} onChange={(e) => setUserEmail(e.target.value)} placeholder="用户邮箱" />
+          <Input value={userEmail} onChange={(event) => setUserEmail(event.target.value)} placeholder="用户邮箱" />
           <Select value={eventType} onValueChange={setEventType}>
             <SelectTrigger>
               <SelectValue />
@@ -133,39 +148,15 @@ export function AdminLogsTab({ apiCall }) {
               <SelectItem value="redeem_code">redeem_code</SelectItem>
             </SelectContent>
           </Select>
-
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" className={cn("justify-start text-left font-normal", !dateFromDate && "text-muted-foreground")}>
-                <CalendarDays className="size-4" />
-                {dateFromDate ? toDateOnlyString(dateFromDate) : "开始日期"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={dateFromDate} onSelect={(value) => value && setDateFromDate(value)} />
-            </PopoverContent>
-          </Popover>
-          <Input type="time" step="60" value={dateFromTime} onChange={(e) => setDateFromTime(e.target.value)} />
-
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" className={cn("justify-start text-left font-normal", !dateToDate && "text-muted-foreground")}>
-                <CalendarDays className="size-4" />
-                {dateToDate ? toDateOnlyString(dateToDate) : "结束日期"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={dateToDate} onSelect={(value) => value && setDateToDate(value)} />
-            </PopoverContent>
-          </Popover>
-          <Input type="time" step="60" value={dateToTime} onChange={(e) => setDateToTime(e.target.value)} />
-
+          <Input type="datetime-local" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+          <Input type="datetime-local" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
           <Button type="submit" variant="outline" disabled={loading}>
             查询
           </Button>
         </form>
 
         {loading ? <Skeleton className="h-10 w-full" /> : null}
+
         <ScrollArea className="w-full rounded-md border">
           <Table className="min-w-[1160px]">
             <TableHeader>
