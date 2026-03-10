@@ -6,6 +6,28 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+class AdminVisualStat(BaseModel):
+    label: str
+    value: int | float | str
+    hint: str = ""
+    tone: str = "default"
+
+
+class AdminVisualChartSeries(BaseModel):
+    key: str
+    name: str
+    color: str = ""
+
+
+class AdminVisualChart(BaseModel):
+    title: str
+    description: str = ""
+    type: str = "line"
+    x_key: str = "label"
+    series: list[AdminVisualChartSeries] = Field(default_factory=list)
+    data: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class AdminOverviewMetrics(BaseModel):
     today_new_users: int
     today_redeem_points: int
@@ -46,6 +68,8 @@ class AdminOverviewResponse(BaseModel):
     metrics: AdminOverviewMetrics
     recent_batches: list[AdminOverviewBatchItem]
     recent_operations: list[AdminOperationLogItem]
+    summary_cards: list[AdminVisualStat] = Field(default_factory=list)
+    charts: list[AdminVisualChart] = Field(default_factory=list)
 
 
 class AdminOperationLogsResponse(BaseModel):
@@ -54,6 +78,8 @@ class AdminOperationLogsResponse(BaseModel):
     page_size: int
     total: int
     items: list[AdminOperationLogItem]
+    summary_cards: list[AdminVisualStat] = Field(default_factory=list)
+    charts: list[AdminVisualChart] = Field(default_factory=list)
 
 
 class AdminUserActivitySummary(BaseModel):
@@ -124,3 +150,5 @@ class AdminLessonTaskLogsResponse(BaseModel):
     page_size: int
     total: int
     items: list[AdminLessonTaskLogItem]
+    summary_cards: list[AdminVisualStat] = Field(default_factory=list)
+    charts: list[AdminVisualChart] = Field(default_factory=list)

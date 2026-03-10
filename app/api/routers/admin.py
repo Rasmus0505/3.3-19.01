@@ -259,7 +259,19 @@ def admin_list_users(
         )
         for user_id, email, created_at, balance_points in rows
     ]
-    return AdminUsersResponse(ok=True, page=page, page_size=page_size, total=total, items=items)
+    visible_balance_points = sum(int(item.balance_points or 0) for item in items)
+    return AdminUsersResponse(
+        ok=True,
+        page=page,
+        page_size=page_size,
+        total=total,
+        items=items,
+        summary_cards=[
+            {"label": "匹配用户", "value": total, "hint": "当前关键词筛中的总用户数", "tone": "info"},
+            {"label": "本页余额合计", "value": visible_balance_points, "hint": "仅统计当前页，避免误读为全量", "tone": "success"},
+            {"label": "当前排序", "value": f"{sort_by}/{sort_dir}", "hint": "方便确认列表视角", "tone": "default"},
+        ],
+    )
 
 
 @router.delete(
@@ -349,7 +361,7 @@ def admin_wallet_logs(
         normalized_date_to.isoformat() if normalized_date_to else "",
     )
 
-    total, rows = list_wallet_ledger_rows(
+    payload = list_wallet_ledger_rows(
         db,
         user_email=user_email,
         event_type=event_type,
@@ -358,6 +370,8 @@ def admin_wallet_logs(
         date_from=normalized_date_from,
         date_to=normalized_date_to,
     )
+    total = int(payload["total"])
+    rows = payload["rows"]
 
     items = [
         WalletLedgerItem(
@@ -379,7 +393,15 @@ def admin_wallet_logs(
         )
         for ledger, email in rows
     ]
-    return AdminWalletLogsResponse(ok=True, page=page, page_size=page_size, total=total, items=items)
+    return AdminWalletLogsResponse(
+        ok=True,
+        page=page,
+        page_size=page_size,
+        total=total,
+        items=items,
+        summary_cards=payload.get("summary_cards", []),
+        charts=payload.get("charts", []),
+    )
 
 
 @router.get(
@@ -415,7 +437,7 @@ def admin_translation_logs(
         success,
     )
 
-    total, rows = list_translation_request_rows(
+    payload = list_translation_request_rows(
         db,
         user_email=user_email,
         task_id=task_id,
@@ -426,6 +448,8 @@ def admin_translation_logs(
         date_from=normalized_date_from,
         date_to=normalized_date_to,
     )
+    total = int(payload["total"])
+    rows = payload["rows"]
     items = [
         AdminTranslationLogItem(
             id=row.id,
@@ -453,7 +477,15 @@ def admin_translation_logs(
         )
         for row, email in rows
     ]
-    return AdminTranslationLogsResponse(ok=True, page=page, page_size=page_size, total=total, items=items)
+    return AdminTranslationLogsResponse(
+        ok=True,
+        page=page,
+        page_size=page_size,
+        total=total,
+        items=items,
+        summary_cards=payload.get("summary_cards", []),
+        charts=payload.get("charts", []),
+    )
 
 
 @router.get(
@@ -679,7 +711,18 @@ def admin_list_redeem_batches(
     )
 
     items = [_to_batch_item(batch, redeemed_count, now=now) for batch, redeemed_count, _ in rows]
-    return AdminRedeemBatchListResponse(ok=True, page=page, page_size=page_size, total=total, items=items)
+    return AdminRedeemBatchListResponse(
+        ok=True,
+        page=page,
+        page_size=page_size,
+        total=total,
+        items=items,
+        summary_cards=[
+            {"label": "匹配批次", "value": total, "hint": "当前筛选条件下的批次数", "tone": "info"},
+            {"label": "本页进行中", "value": sum(1 for item in items if item.status == "active"), "hint": "仅统计当前页", "tone": "success"},
+            {"label": "本页已兑码数", "value": sum(int(item.redeemed_count or 0) for item in items), "hint": "当前页合计", "tone": "default"},
+        ],
+    )
 
 
 @router.post(
@@ -848,7 +891,18 @@ def admin_list_redeem_codes(
         )
         for code, batch, redeemed_user_email_item in rows
     ]
-    return AdminRedeemCodeListResponse(ok=True, page=page, page_size=page_size, total=total, items=items)
+    return AdminRedeemCodeListResponse(
+        ok=True,
+        page=page,
+        page_size=page_size,
+        total=total,
+        items=items,
+        summary_cards=[
+            {"label": "匹配兑换码", "value": total, "hint": "当前筛选条件下的兑换码总数", "tone": "info"},
+            {"label": "本页未兑换", "value": sum(1 for item in items if item.effective_status == "unredeemed"), "hint": "仅统计当前页", "tone": "success"},
+            {"label": "本页已失效", "value": sum(1 for item in items if item.effective_status in {'disabled', 'expired', 'abandoned'}), "hint": "当前页需要关注的失效码", "tone": "warning"},
+        ],
+    )
 
 
 @router.post(
@@ -1069,7 +1123,18 @@ def admin_list_redeem_audit(
         )
         for row, user_email_item, batch_name_item in rows
     ]
-    return AdminRedeemAuditListResponse(ok=True, page=page, page_size=page_size, total=total, items=items)
+    return AdminRedeemAuditListResponse(
+        ok=True,
+        page=page,
+        page_size=page_size,
+        total=total,
+        items=items,
+        summary_cards=[
+            {"label": "匹配审计记录", "value": total, "hint": "当前时间与批次筛选范围", "tone": "info"},
+            {"label": "本页成功", "value": sum(1 for item in items if item.success), "hint": "仅统计当前页", "tone": "success"},
+            {"label": "本页失败", "value": sum(1 for item in items if not item.success), "hint": "可继续按失败原因排查", "tone": "danger"},
+        ],
+    )
 
 
 @router.post(

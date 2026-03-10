@@ -1,11 +1,32 @@
 import { RefreshCcw, Shield } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
-import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
 import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
-import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
+import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  FilterPanel,
+  Input,
+  MetricCard,
+  MetricChart,
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+  ResponsiveTable,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../shared/ui";
 
 function parseError(data, fallback) {
   return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
@@ -40,6 +61,8 @@ export function AdminOperationLogsTab({ apiCall }) {
   const [targetType, setTargetType] = useState(() => readStringParam(searchParams, "target_type", "all") || "all");
   const [dateFrom, setDateFrom] = useState(() => readStringParam(searchParams, "date_from", toLocalDatetimeValue(defaultFrom)));
   const [dateTo, setDateTo] = useState(() => readStringParam(searchParams, "date_to", toLocalDatetimeValue(now)));
+  const [summaryCards, setSummaryCards] = useState([]);
+  const [charts, setCharts] = useState([]);
 
   useEffect(() => {
     setSearchParams(
@@ -52,9 +75,9 @@ export function AdminOperationLogsTab({ apiCall }) {
         date_from: dateFrom,
         date_to: dateTo,
       }),
-      { replace: true }
+      { replace: true },
     );
-  }, [actionType, dateFrom, dateTo, operatorEmail, page, pageSize, setSearchParams, targetType]);
+  }, [actionType, dateFrom, dateTo, operatorEmail, page, pageSize, searchParams, setSearchParams, targetType]);
 
   async function loadLogs(nextPage = page) {
     setLoading(true);
@@ -81,6 +104,8 @@ export function AdminOperationLogsTab({ apiCall }) {
       }
       setItems(Array.isArray(data.items) ? data.items : []);
       setTotal(Number(data.total || 0));
+      setSummaryCards(Array.isArray(data.summary_cards) ? data.summary_cards : []);
+      setCharts(Array.isArray(data.charts) ? data.charts : []);
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
       setStatus(message);
@@ -104,90 +129,60 @@ export function AdminOperationLogsTab({ apiCall }) {
     }
   }
 
+  function resetFilters() {
+    setPage(1);
+    setPageSize(20);
+    setOperatorEmail("");
+    setActionType("all");
+    setTargetType("all");
+    setDateFrom(toLocalDatetimeValue(defaultFrom));
+    setDateTo(toLocalDatetimeValue(now));
+  }
+
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const columns = useMemo(
+    () => [
+      { key: "time", header: "时间", mobileLabel: "时间", render: (item) => formatDateTimeBeijing(item.created_at) },
+      { key: "operator", header: "操作员", mobileLabel: "操作员", render: (item) => item.operator_user_email || "-" },
+      { key: "action", header: "动作", mobileLabel: "动作", render: (item) => <Badge variant="outline">{item.action_type}</Badge> },
+      { key: "target", header: "对象", mobileLabel: "对象", render: (item) => item.target_type },
+      { key: "targetId", header: "对象 ID", mobileLabel: "对象 ID", render: (item) => item.target_id || "-" },
+      { key: "note", header: "备注", mobileLabel: "备注", render: (item) => item.note || "-" },
+    ],
+    [],
+  );
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Shield className="size-4" />
-            管理员操作日志
-          </CardTitle>
-          <CardDescription>记录费率修改、调账、兑换码状态调整等后台敏感动作，支持筛选和链接分享。</CardDescription>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={copyFilters}>
-            复制筛选链接
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => loadLogs(page)} disabled={loading}>
-            <RefreshCcw className="size-4" />
-            刷新
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <form
-          className="grid gap-2 md:grid-cols-3 xl:grid-cols-6"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setPage(1);
-            loadLogs(1);
-          }}
-        >
-          <Input value={operatorEmail} onChange={(event) => setOperatorEmail(event.target.value)} placeholder="操作员邮箱" />
-          <Input value={actionType === "all" ? "" : actionType} onChange={(event) => setActionType(event.target.value || "all")} placeholder="动作类型，如 manual_adjust" />
-          <Input value={targetType === "all" ? "" : targetType} onChange={(event) => setTargetType(event.target.value || "all")} placeholder="对象类型，如 billing_rate" />
-          <Input type="datetime-local" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-          <Input type="datetime-local" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-          <Button type="submit" variant="outline" disabled={loading}>
-            查询
-          </Button>
-        </form>
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {(summaryCards.length ? summaryCards : [{ label: "匹配日志", value: total, hint: "当前筛选结果", tone: "info" }]).map((item) => (
+          <MetricCard key={item.label} icon={Shield} label={item.label} value={item.value} hint={item.hint} tone={item.tone || "default"} loading={loading && items.length === 0} />
+        ))}
+      </div>
 
-        {loading ? <Skeleton className="h-10 w-full" /> : null}
+      <div className="grid gap-4 xl:grid-cols-2">
+        {charts.map((chart) => (
+          <MetricChart key={chart.title} title={chart.title} description={chart.description} data={chart.data} series={chart.series} type={chart.type} xKey={chart.x_key} loading={loading && charts.length === 0} />
+        ))}
+      </div>
 
-        <ScrollArea className="w-full rounded-md border">
-          <Table className="min-w-[1560px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>时间</TableHead>
-                <TableHead>操作员</TableHead>
-                <TableHead>动作</TableHead>
-                <TableHead>对象</TableHead>
-                <TableHead>对象 ID</TableHead>
-                <TableHead>变更前</TableHead>
-                <TableHead>变更后</TableHead>
-                <TableHead>备注</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>{formatDateTimeBeijing(item.created_at)}</TableCell>
-                  <TableCell>{item.operator_user_email || "-"}</TableCell>
-                  <TableCell><Badge variant="outline">{item.action_type}</Badge></TableCell>
-                  <TableCell>{item.target_type}</TableCell>
-                  <TableCell>{item.target_id || "-"}</TableCell>
-                  <TableCell className="max-w-[260px] whitespace-normal break-words">{item.before_value || "-"}</TableCell>
-                  <TableCell className="max-w-[260px] whitespace-normal break-words">{item.after_value || "-"}</TableCell>
-                  <TableCell className="max-w-[260px] whitespace-normal break-words">{item.note || "-"}</TableCell>
-                </TableRow>
-              ))}
-              {items.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-muted-foreground">
-                    暂无数据
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
-        </ScrollArea>
-
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">总计 {total} 条</p>
-          <div className="flex items-center gap-2">
+      <FilterPanel
+        title="操作日志筛选"
+        description="按操作员、动作、对象和时间范围追后台留痕，适合做敏感动作复盘。"
+        onSubmit={() => {
+          setPage(1);
+          loadLogs(1);
+        }}
+        onReset={resetFilters}
+        actions={
+          <>
+            <Button variant="outline" type="button" onClick={copyFilters}>
+              复制筛选链接
+            </Button>
+            <Button variant="outline" type="button" onClick={() => loadLogs(page)} disabled={loading}>
+              <RefreshCcw className="size-4" />
+              刷新
+            </Button>
             <Select
               value={String(pageSize)}
               onValueChange={(value) => {
@@ -195,7 +190,7 @@ export function AdminOperationLogsTab({ apiCall }) {
                 setPageSize(Number(value));
               }}
             >
-              <SelectTrigger className="w-[120px]">
+              <SelectTrigger className="w-[120px] rounded-xl">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -204,30 +199,52 @@ export function AdminOperationLogsTab({ apiCall }) {
                 <SelectItem value="50">50 / 页</SelectItem>
               </SelectContent>
             </Select>
-            <Pagination className="mx-0 w-auto justify-end">
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious disabled={page <= 1} onClick={() => setPage(page - 1)} />
-                </PaginationItem>
-                <PaginationItem>
-                  <PaginationLink isActive className="px-2.5">
-                    {page} / {pageCount}
-                  </PaginationLink>
-                </PaginationItem>
-                <PaginationItem>
-                  <PaginationNext disabled={page >= pageCount} onClick={() => setPage(page + 1)} />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          </div>
-        </div>
+          </>
+        }
+      >
+        <Input value={operatorEmail} onChange={(event) => setOperatorEmail(event.target.value)} placeholder="操作员邮箱" className="rounded-xl" />
+        <Input value={actionType === "all" ? "" : actionType} onChange={(event) => setActionType(event.target.value || "all")} placeholder="动作类型，如 manual_adjust" className="rounded-xl" />
+        <Input value={targetType === "all" ? "" : targetType} onChange={(event) => setTargetType(event.target.value || "all")} placeholder="对象类型，如 billing_rate" className="rounded-xl" />
+        <Input type="datetime-local" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="rounded-xl" />
+        <Input type="datetime-local" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="rounded-xl" />
+      </FilterPanel>
 
-        {status ? (
-          <Alert>
-            <AlertDescription>{status}</AlertDescription>
-          </Alert>
-        ) : null}
-      </CardContent>
-    </Card>
+      <ResponsiveTable
+        columns={columns}
+        data={items}
+        getRowKey={(item) => item.id}
+        mobileTitle={(item) => item.action_type}
+        mobileDescription={(item) => `${item.operator_user_email || "未知操作员"} · ${formatDateTimeBeijing(item.created_at)}`}
+        mobileFooter={(item) => `${item.target_type} / ${item.target_id || "-"}`}
+        emptyText="暂无操作日志"
+        loading={loading}
+        minWidth={1280}
+      />
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">总计 {total} 条</p>
+        <Pagination className="mx-0 w-auto justify-end">
+          <PaginationContent>
+            <PaginationItem>
+              <PaginationPrevious disabled={page <= 1} onClick={() => setPage(page - 1)} />
+            </PaginationItem>
+            <PaginationItem>
+              <PaginationLink isActive className="px-2.5">
+                {page} / {pageCount}
+              </PaginationLink>
+            </PaginationItem>
+            <PaginationItem>
+              <PaginationNext disabled={page >= pageCount} onClick={() => setPage(page + 1)} />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      </div>
+
+      {status ? (
+        <Alert>
+          <AlertDescription>{status}</AlertDescription>
+        </Alert>
+      ) : null}
+    </div>
   );
 }

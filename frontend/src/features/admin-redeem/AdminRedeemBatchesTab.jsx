@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
-import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Label, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea } from "../../shared/ui";
+import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Label, MetricCard, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea } from "../../shared/ui";
 
 function parseError(data, fallback) {
   return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
@@ -31,6 +31,7 @@ export function AdminRedeemBatchesTab({ apiCall }) {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState([]);
+  const [summaryCards, setSummaryCards] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(() => readIntParam(searchParams, "page", 1, { min: 1 }));
   const [pageSize, setPageSize] = useState(() => readIntParam(searchParams, "page_size", 20, { min: 1, max: 100 }));
@@ -83,6 +84,7 @@ export function AdminRedeemBatchesTab({ apiCall }) {
       }
       setItems(Array.isArray(data.items) ? data.items : []);
       setTotal(Number(data.total || 0));
+      setSummaryCards(Array.isArray(data.summary_cards) ? data.summary_cards : []);
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
       setStatus(message);
@@ -295,6 +297,14 @@ export function AdminRedeemBatchesTab({ apiCall }) {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
+          {summaryCards.length ? (
+            <div className="grid gap-3 md:grid-cols-3">
+              {summaryCards.map((item) => (
+                <MetricCard key={item.label} icon={Ticket} label={item.label} value={item.value} hint={item.hint} tone={item.tone || "default"} />
+              ))}
+            </div>
+          ) : null}
+
           <form className="flex flex-wrap gap-2" onSubmit={(event) => { event.preventDefault(); setPage(1); loadBatches(1); }}>
             <Input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="按批次名搜索" className="max-w-xs" />
             <Select value={statusFilter} onValueChange={setStatusFilter}>

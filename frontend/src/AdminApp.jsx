@@ -1,5 +1,5 @@
 import { Bug, Gift, LogOut, Menu, Shield, Users } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { AdminOpsWorkspace, OPS_TABS } from "./features/admin-workspaces/AdminOpsWorkspace";
@@ -73,7 +73,7 @@ function AdminSidebarNavigation({
             </div>
           ) : null}
         </div>
-        {expanded && !mobile ? <Badge variant="outline">sidebar-09</Badge> : null}
+        {expanded && !mobile ? <Badge variant="outline">运营台</Badge> : null}
       </SidebarHeader>
 
       <SidebarContent>
@@ -204,14 +204,6 @@ export function AdminApp({ apiCall, onLogout }) {
     [activeWorkspace, requestedTab],
   );
 
-  useEffect(() => {
-    console.debug("[DEBUG] admin sidebar route synced", {
-      pathname: location.pathname,
-      tab: activeTabItem.value,
-      workspace: activeWorkspace.key,
-    });
-  }, [activeTabItem.value, activeWorkspace.key, location.pathname]);
-
   function handleWorkspaceSelect(item) {
     setMobileNavOpen(false);
     navigate(buildAdminHref(item.path, item.tabs[0]?.value || ""));
@@ -246,9 +238,9 @@ export function AdminApp({ apiCall, onLogout }) {
         </Sidebar>
 
         <SidebarInset>
-          <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85">
             <div className="container-wrapper">
-              <div className="container flex min-h-16 items-center gap-3 py-3">
+              <div className="container flex min-h-16 flex-wrap items-center gap-3 py-3">
                 <SidebarTrigger />
                 <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
                   <SheetTrigger asChild>
@@ -276,12 +268,16 @@ export function AdminApp({ apiCall, onLogout }) {
                   </SheetContent>
                 </Sheet>
 
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">后台管理</p>
-                  <div className="flex min-w-0 items-center gap-2">
-                    <h1 className="truncate text-sm font-semibold">{activeWorkspace.label}</h1>
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <h1 className="truncate text-base font-semibold">{activeWorkspace.label}</h1>
                     <Badge variant="outline">{activeTabItem.label}</Badge>
+                    <Badge variant="secondary" className="hidden md:inline-flex">
+                      4 个工作台
+                    </Badge>
                   </div>
+                  <p className="truncate text-xs text-muted-foreground">{activeTabItem.description}</p>
                 </div>
 
                 <div className="ml-auto hidden items-center gap-2 md:flex">

@@ -7,6 +7,28 @@ from pydantic import BaseModel, Field
 from app.schemas.billing import BillingRateItem
 
 
+class AdminVisualStat(BaseModel):
+    label: str
+    value: int | float | str
+    hint: str = ""
+    tone: str = "default"
+
+
+class AdminVisualChartSeries(BaseModel):
+    key: str
+    name: str
+    color: str = ""
+
+
+class AdminVisualChart(BaseModel):
+    title: str
+    description: str = ""
+    type: str = "line"
+    x_key: str = "label"
+    series: list[AdminVisualChartSeries] = Field(default_factory=list)
+    data: list[dict[str, int | float | str]] = Field(default_factory=list)
+
+
 class AdminUserItem(BaseModel):
     id: int
     email: str
@@ -20,6 +42,7 @@ class AdminUsersResponse(BaseModel):
     page_size: int
     total: int
     items: list[AdminUserItem]
+    summary_cards: list[AdminVisualStat] = Field(default_factory=list)
 
 
 class AdminUserDeleteResponse(BaseModel):
@@ -67,6 +90,8 @@ class AdminWalletLogsResponse(BaseModel):
     page_size: int
     total: int
     items: list[WalletLedgerItem]
+    summary_cards: list[AdminVisualStat] = Field(default_factory=list)
+    charts: list[AdminVisualChart] = Field(default_factory=list)
 
 
 class AdminBillingRateUpdateRequest(BaseModel):
@@ -116,6 +141,8 @@ class AdminTranslationLogsResponse(BaseModel):
     page_size: int
     total: int
     items: list[AdminTranslationLogItem]
+    summary_cards: list[AdminVisualStat] = Field(default_factory=list)
+    charts: list[AdminVisualChart] = Field(default_factory=list)
 
 
 class AdminSubtitleSettingsItem(BaseModel):
@@ -201,6 +228,7 @@ class AdminRedeemBatchListResponse(BaseModel):
     page_size: int
     total: int
     items: list[AdminRedeemBatchItem]
+    summary_cards: list[AdminVisualStat] = Field(default_factory=list)
 
 
 class AdminRedeemBatchCreateResponse(BaseModel):
@@ -234,6 +262,7 @@ class AdminRedeemCodeListResponse(BaseModel):
     page_size: int
     total: int
     items: list[AdminRedeemCodeItem]
+    summary_cards: list[AdminVisualStat] = Field(default_factory=list)
 
 
 class AdminRedeemCodeStatusActionResponse(BaseModel):
@@ -277,6 +306,7 @@ class AdminRedeemAuditListResponse(BaseModel):
     page_size: int
     total: int
     items: list[AdminRedeemAuditItem]
+    summary_cards: list[AdminVisualStat] = Field(default_factory=list)
 
 
 class AdminRedeemAuditExportRequest(BaseModel):
