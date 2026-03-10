@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import math
 import re
@@ -10,6 +11,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from fastapi import UploadFile
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import (
@@ -18,7 +20,7 @@ from app.core.config import (
     DASHSCOPE_API_KEY,
     UPLOAD_MAX_BYTES,
 )
-from app.models import Lesson, LessonSentence
+from app.models import Lesson, LessonSentence, TranslationRequestLog
 from app.repositories.progress import create_progress
 from app.services.asr_dashscope import transcribe_audio_file
 from app.services.billing_service import (
@@ -61,6 +63,27 @@ logger = logging.getLogger(__name__)
 ProgressCallback = Callable[[dict[str, Any]], None]
 _SILENCE_START_RE = re.compile(r"silence_start:\s*(?P<value>-?\d+(?:\.\d+)?)")
 _SILENCE_END_RE = re.compile(r"silence_end:\s*(?P<value>-?\d+(?:\.\d+)?)\s*\|\s*silence_duration:\s*(?P<duration>-?\d+(?:\.\d+)?)")
+_ASR_RESULT_FILE = "asr_result.json"
+_VARIANT_RESULT_FILE = "variant_result.json"
+_TRANSLATION_CHECKPOINT_FILE = "translation_checkpoint.json"
+_LESSON_RESULT_FILE = "lesson_result.json"
+_SEGMENT_RESULT_DIR = "asr_segment_results"
+
+
+def _read_json_file(path: Path) -> dict[str, Any] | None:
+    try:
+        if not path.exists():
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else None
+    except Exception:
+        logger.warning("[DEBUG] lesson.checkpoint.read_failed path=%s", path)
+        return None
+
+
+def _write_json_file(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _emit_progress(callback: ProgressCallback | None, **payload: Any) -> None:
@@ -298,23 +321,57 @@ def _shift_sentences(sentence_items: list[dict[str, Any]], offset_ms: int) -> li
     return shifted
 
 
+def _segment_result_to_payload(
+    segment_index: int,
+    segment_words: list[dict[str, Any]],
+    segment_sentences: list[dict[str, Any]],
+    usage_seconds: int | None,
+) -> dict[str, Any]:
+    return {
+        "segment_index": int(segment_index),
+        "segment_words": list(segment_words),
+        "segment_sentences": list(segment_sentences),
+        "usage_seconds": int(usage_seconds) if isinstance(usage_seconds, int) and usage_seconds > 0 else None,
+    }
+
+
+def _load_segment_result(result_path: Path) -> tuple[int, list[dict[str, Any]], list[dict[str, Any]], int | None] | None:
+    payload = _read_json_file(result_path)
+    if not payload:
+        return None
+    return (
+        int(payload.get("segment_index", 0)),
+        [dict(item) for item in list(payload.get("segment_words") or []) if isinstance(item, dict)],
+        [dict(item) for item in list(payload.get("segment_sentences") or []) if isinstance(item, dict)],
+        int(payload["usage_seconds"]) if isinstance(payload.get("usage_seconds"), int) and int(payload.get("usage_seconds")) > 0 else None,
+    )
+
+
 def _transcribe_segment(
     segment_index: int,
     segment_start_ms: int,
     segment_path: Path,
     asr_model: str,
+    result_path: Path | None = None,
 ) -> tuple[int, list[dict[str, Any]], list[dict[str, Any]], int | None]:
+    if result_path:
+        cached = _load_segment_result(result_path)
+        if cached:
+            return cached
     asr_result = transcribe_audio_file(str(segment_path), model=asr_model)
     segment_payload = asr_result["asr_result_json"]
     usage_seconds = asr_result.get("usage_seconds")
     segment_words = _shift_words(extract_word_items(segment_payload), segment_start_ms)
     segment_sentences = _shift_sentences(extract_sentences(segment_payload), segment_start_ms)
-    return (
+    payload = (
         segment_index,
         segment_words,
         segment_sentences,
         int(usage_seconds) if isinstance(usage_seconds, int) and usage_seconds > 0 else None,
     )
+    if result_path:
+        _write_json_file(result_path, _segment_result_to_payload(*payload))
+    return payload
 
 
 def _apply_semantic_split(
@@ -415,6 +472,7 @@ class LessonService:
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
         before_translate_callback: Callable[[int], None] | None = None,
         translation_progress_callback: Callable[[int, int], None] | None = None,
+        translation_checkpoint_path: Path | None = None,
     ) -> dict[str, Any]:
         if not isinstance(asr_payload, dict):
             raise MediaError("ASR_PAYLOAD_INVALID", "字幕源数据无效", "asr_payload 必须是对象")
@@ -500,6 +558,13 @@ class LessonService:
             translate_done=0,
             translate_total=len(sentences),
         )
+        translation_source_texts = [str(x["text"]) for x in sentences]
+        translation_resume_state = _read_json_file(translation_checkpoint_path) if translation_checkpoint_path else None
+        if (
+            not isinstance(translation_resume_state, dict)
+            or list(translation_resume_state.get("source_texts") or []) != translation_source_texts
+        ):
+            translation_resume_state = None
 
         def _on_translation_progress(done: int, total: int) -> None:
             if translation_progress_callback:
@@ -511,6 +576,20 @@ class LessonService:
                 semantic_split_enabled=effective_semantic_split_enabled,
                 translate_done=done,
                 translate_total=total,
+                )
+
+        def _on_translation_checkpoint(checkpoint_payload: dict[str, Any]) -> None:
+            if not translation_checkpoint_path:
+                return
+            _write_json_file(
+                translation_checkpoint_path,
+                {
+                    "source_texts": translation_source_texts,
+                    "translated_texts": list(checkpoint_payload.get("translated_texts") or []),
+                    "completed_indexes": list(checkpoint_payload.get("completed_indexes") or []),
+                    "attempt_records": list(checkpoint_payload.get("attempt_records") or []),
+                    "latest_error_summary": str(checkpoint_payload.get("latest_error_summary") or ""),
+                },
             )
 
         translation_batch_max_chars = max(
@@ -530,6 +609,8 @@ class LessonService:
                 [x["text"] for x in sentences],
                 api_key=DASHSCOPE_API_KEY,
                 progress_callback=_on_translation_progress,
+                resume_state=translation_resume_state,
+                checkpoint_callback=_on_translation_checkpoint,
             )
         normalized_sentences = LessonService._normalize_runtime_sentences(sentences, translation_result.texts)
         _emit_subtitle_variant_progress(
@@ -610,6 +691,17 @@ class LessonService:
         max_concurrency: int,
         progress_callback: ProgressCallback | None,
     ) -> dict[str, Any]:
+        asr_result_path = req_dir / _ASR_RESULT_FILE
+        cached_result = _read_json_file(asr_result_path)
+        if cached_result:
+            return {
+                "asr_payload": dict(cached_result.get("asr_payload") or {}),
+                "usage_seconds": int(cached_result["usage_seconds"])
+                if isinstance(cached_result.get("usage_seconds"), int) and int(cached_result.get("usage_seconds")) > 0
+                else None,
+                "progress_counters": dict(cached_result.get("progress_counters") or {}),
+            }
+
         duration_seconds = max(1, math.ceil(source_duration_ms / 1000))
 
         should_parallel = (
@@ -672,7 +764,7 @@ class LessonService:
                     "segment_total": 0,
                 },
             )
-            return {
+            payload = {
                 "asr_payload": asr_payload,
                 "usage_seconds": int(asr_result.get("usage_seconds"))
                 if isinstance(asr_result.get("usage_seconds"), int) and int(asr_result.get("usage_seconds")) > 0
@@ -684,6 +776,8 @@ class LessonService:
                     "segment_total": 0,
                 },
             }
+            _write_json_file(asr_result_path, payload)
+            return payload
 
         segments = _split_audio_segments(
             opus_path,
@@ -724,11 +818,40 @@ class LessonService:
 
         merged: list[tuple[int, list[dict[str, Any]], list[dict[str, Any]], int | None]] = []
         completed_segments = 0
+        segment_results_dir = req_dir / _SEGMENT_RESULT_DIR
+        segment_results_dir.mkdir(parents=True, exist_ok=True)
+        pending_segments: list[tuple[int, int, Path, Path]] = []
+        for segment_index, segment_start_ms, segment_path in segments:
+            result_path = segment_results_dir / f"segment_{segment_index:04d}.json"
+            cached_segment = _load_segment_result(result_path)
+            if cached_segment:
+                merged.append(cached_segment)
+                completed_segments += 1
+                continue
+            pending_segments.append((segment_index, segment_start_ms, segment_path, result_path))
 
-        with ThreadPoolExecutor(max_workers=max(1, min(max_concurrency, total_segments))) as executor:
+        if completed_segments:
+            ratio = completed_segments / total_segments
+            _emit_progress(
+                progress_callback,
+                stage_key="asr_transcribe",
+                stage_status="running",
+                overall_percent=_progress_percent_by_stage("asr_transcribe", ratio),
+                current_text=f"识别分段 {completed_segments}/{total_segments}",
+                counters={
+                    "asr_done": completed_segments,
+                    "asr_estimated": total_segments,
+                    "translate_done": 0,
+                    "translate_total": 0,
+                    "segment_done": completed_segments,
+                    "segment_total": total_segments,
+                },
+            )
+
+        with ThreadPoolExecutor(max_workers=max(1, min(max_concurrency, max(1, len(pending_segments))))) as executor:
             future_map = {
-                executor.submit(_transcribe_segment, segment_index, segment_start_ms, segment_path, asr_model): segment_index
-                for segment_index, segment_start_ms, segment_path in segments
+                executor.submit(_transcribe_segment, segment_index, segment_start_ms, segment_path, asr_model, result_path): segment_index
+                for segment_index, segment_start_ms, segment_path, result_path in pending_segments
             }
             for future in as_completed(future_map):
                 segment_index, segment_words, segment_sentences, usage_seconds = future.result()
@@ -792,7 +915,7 @@ class LessonService:
         )
 
         usage_total_seconds = sum(usage_values) if len(usage_values) == total_segments else None
-        return {
+        payload = {
             "asr_payload": _build_parallel_payload(source_duration_ms, ordered_words, fallback_sentences),
             "usage_seconds": usage_total_seconds,
             "progress_counters": {
@@ -802,6 +925,8 @@ class LessonService:
                 "segment_total": total_segments,
             },
         }
+        _write_json_file(asr_result_path, payload)
+        return payload
 
     @staticmethod
     def generate_from_saved_file(

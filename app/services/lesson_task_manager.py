@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-import threading
-from datetime import datetime, timezone
+from datetime import timedelta
+from pathlib import Path
 from uuid import uuid4
 
+from sqlalchemy import select
 
-_TASK_LOCK = threading.RLock()
-_TASKS: dict[str, dict] = {}
+from app.core.timezone import now_shanghai_naive
+from app.db import SessionLocal
+from app.models import LessonGenerationTask
+from app.services.media import cleanup_dir
+
+
+FAILURE_RETENTION_HOURS = 24
 
 _STAGE_LABELS: tuple[tuple[str, str], ...] = (
     ("convert_audio", "转换音频格式"),
@@ -16,60 +22,155 @@ _STAGE_LABELS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _utc_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 def _empty_stages() -> list[dict]:
     return [{"key": key, "label": label, "status": "pending"} for key, label in _STAGE_LABELS]
 
 
-def _find_stage(task: dict, stage_key: str) -> dict | None:
-    for item in task["stages"]:
-        if item["key"] == stage_key:
+def _default_artifacts(work_dir: str, source_path: str) -> dict:
+    base = Path(work_dir)
+    return {
+        "work_dir": work_dir,
+        "source_path": source_path,
+        "opus_path": str(base / "lesson_input.opus"),
+        "asr_result_path": str(base / "asr_result.json"),
+        "variant_result_path": str(base / "variant_result.json"),
+        "translation_checkpoint_path": str(base / "translation_checkpoint.json"),
+        "segment_results_dir": str(base / "asr_segment_results"),
+        "lesson_result_path": str(base / "lesson_result.json"),
+    }
+
+
+def _copy_dict(value: dict | None) -> dict:
+    return dict(value or {})
+
+
+def _copy_list(value: list | None) -> list:
+    return [dict(item) if isinstance(item, dict) else item for item in list(value or [])]
+
+
+def _find_stage(stages: list[dict], stage_key: str) -> dict | None:
+    for item in stages:
+        if item.get("key") == stage_key:
             return item
     return None
 
 
-def create_task(owner_user_id: int, source_filename: str) -> str:
-    task_id = f"lesson_task_{uuid4().hex}"
-    with _TASK_LOCK:
-        _TASKS[task_id] = {
-            "task_id": task_id,
-            "owner_user_id": int(owner_user_id),
-            "source_filename": source_filename,
-            "status": "pending",
-            "overall_percent": 0,
-            "current_text": "等待处理",
-            "stages": _empty_stages(),
-            "counters": {
+def _infer_resume_stage(stages: list[dict]) -> str:
+    for item in stages:
+        if str(item.get("status") or "") != "completed":
+            return str(item.get("key") or "")
+    return ""
+
+
+def _task_to_dict(task: LessonGenerationTask) -> dict:
+    return {
+        "task_id": task.task_id,
+        "owner_user_id": int(task.owner_user_id),
+        "lesson_id": int(task.lesson_id) if task.lesson_id else None,
+        "source_filename": task.source_filename,
+        "asr_model": task.asr_model,
+        "semantic_split_enabled": bool(task.semantic_split_enabled),
+        "status": task.status,
+        "overall_percent": int(task.overall_percent or 0),
+        "current_text": str(task.current_text or ""),
+        "stages": _copy_list(task.stages_json),
+        "counters": _copy_dict(task.counters_json),
+        "translation_debug": _copy_dict(task.translation_debug_json) if isinstance(task.translation_debug_json, dict) else None,
+        "subtitle_cache_seed": _copy_dict(task.subtitle_cache_seed_json) if isinstance(task.subtitle_cache_seed_json, dict) else None,
+        "error_code": str(task.error_code or ""),
+        "message": str(task.message or ""),
+        "resume_available": bool(task.resume_available),
+        "resume_stage": str(task.resume_stage or ""),
+        "artifacts": _copy_dict(task.artifacts_json),
+        "artifact_expires_at": task.artifact_expires_at,
+        "created_at": task.created_at,
+        "updated_at": task.updated_at,
+    }
+
+
+def build_task_id() -> str:
+    return f"lesson_task_{uuid4().hex}"
+
+
+def cleanup_expired_tasks() -> None:
+    session = SessionLocal()
+    try:
+        now = now_shanghai_naive()
+        items = session.scalars(
+            select(LessonGenerationTask).where(
+                LessonGenerationTask.artifact_expires_at.is_not(None),
+                LessonGenerationTask.artifact_expires_at <= now,
+            )
+        ).all()
+        changed = False
+        for task in items:
+            work_dir = str(task.work_dir or "").strip()
+            if work_dir:
+                cleanup_dir(Path(work_dir))
+            artifacts = _copy_dict(task.artifacts_json)
+            artifacts["cleanup_completed_at"] = now.isoformat()
+            task.artifacts_json = artifacts
+            task.resume_available = False
+            task.artifact_expires_at = None
+            changed = True
+        if changed:
+            session.commit()
+    finally:
+        session.close()
+
+
+def create_task(
+    *,
+    task_id: str,
+    owner_user_id: int,
+    source_filename: str,
+    asr_model: str,
+    semantic_split_enabled: bool | None,
+    work_dir: str,
+    source_path: str,
+) -> str:
+    cleanup_expired_tasks()
+    session = SessionLocal()
+    try:
+        task = LessonGenerationTask(
+            task_id=task_id,
+            owner_user_id=int(owner_user_id),
+            source_filename=source_filename,
+            asr_model=asr_model,
+            semantic_split_enabled=bool(semantic_split_enabled),
+            status="pending",
+            overall_percent=0,
+            current_text="等待处理",
+            stages_json=_empty_stages(),
+            counters_json={
                 "asr_done": 0,
                 "asr_estimated": 0,
                 "translate_done": 0,
                 "translate_total": 0,
+                "segment_done": 0,
+                "segment_total": 0,
             },
-            "lesson": None,
-            "subtitle_cache_seed": None,
-            "translation_debug": None,
-            "error_code": "",
-            "message": "",
-            "created_at": _utc_iso(),
-            "updated_at": _utc_iso(),
-        }
-    return task_id
+            work_dir=work_dir,
+            source_path=source_path,
+            artifacts_json=_default_artifacts(work_dir, source_path),
+            resume_available=False,
+            resume_stage="convert_audio",
+        )
+        session.add(task)
+        session.commit()
+        return task_id
+    finally:
+        session.close()
 
 
 def get_task(task_id: str) -> dict | None:
-    with _TASK_LOCK:
-        task = _TASKS.get(task_id)
-        if not task:
-            return None
-        return {
-            **task,
-            "stages": [dict(item) for item in task.get("stages", [])],
-            "counters": dict(task.get("counters", {})),
-            "translation_debug": dict(task.get("translation_debug", {})) if isinstance(task.get("translation_debug"), dict) else None,
-        }
+    cleanup_expired_tasks()
+    session = SessionLocal()
+    try:
+        task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        return _task_to_dict(task) if task else None
+    finally:
+        session.close()
 
 
 def update_task_progress(
@@ -81,54 +182,139 @@ def update_task_progress(
     current_text: str | None = None,
     counters: dict | None = None,
     translation_debug: dict | None = None,
+    artifacts_patch: dict | None = None,
 ) -> None:
-    with _TASK_LOCK:
-        task = _TASKS.get(task_id)
+    session = SessionLocal()
+    try:
+        task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         if not task:
             return
-        if task["status"] == "pending":
-            task["status"] = "running"
-
+        if task.status in {"pending", "failed"}:
+            task.status = "running"
+        stages = _copy_list(task.stages_json)
         if stage_key:
-            stage = _find_stage(task, stage_key)
+            stage = _find_stage(stages, stage_key)
             if stage:
-                stage["status"] = stage_status or stage["status"]
-
+                stage["status"] = stage_status or stage.get("status") or "pending"
+            task.resume_stage = stage_key
+        task.stages_json = stages
         if isinstance(overall_percent, int):
-            task["overall_percent"] = max(0, min(100, overall_percent))
+            task.overall_percent = max(0, min(100, overall_percent))
         if current_text is not None:
-            task["current_text"] = str(current_text)
+            task.current_text = str(current_text)
         if counters:
-            task["counters"] = {**task.get("counters", {}), **counters}
+            merged = _copy_dict(task.counters_json)
+            merged.update(counters)
+            task.counters_json = merged
         if translation_debug is not None:
-            task["translation_debug"] = dict(translation_debug)
+            task.translation_debug_json = dict(translation_debug)
+        if artifacts_patch:
+            merged_artifacts = _copy_dict(task.artifacts_json)
+            merged_artifacts.update(artifacts_patch)
+            task.artifacts_json = merged_artifacts
+        task.error_code = ""
+        task.message = ""
+        task.resume_available = False
+        task.artifact_expires_at = None
+        session.commit()
+    finally:
+        session.close()
 
-        task["updated_at"] = _utc_iso()
+
+def patch_task_artifacts(task_id: str, artifacts_patch: dict) -> None:
+    if not artifacts_patch:
+        return
+    session = SessionLocal()
+    try:
+        task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        if not task:
+            return
+        merged_artifacts = _copy_dict(task.artifacts_json)
+        merged_artifacts.update(artifacts_patch)
+        task.artifacts_json = merged_artifacts
+        session.commit()
+    finally:
+        session.close()
 
 
 def mark_task_failed(task_id: str, *, error_code: str, message: str) -> None:
-    with _TASK_LOCK:
-        task = _TASKS.get(task_id)
+    session = SessionLocal()
+    try:
+        task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         if not task:
             return
-        task["status"] = "failed"
-        task["error_code"] = error_code
-        task["message"] = message
-        task["current_text"] = message
-        task["updated_at"] = _utc_iso()
+        stages = _copy_list(task.stages_json)
+        running_stage = next((item for item in stages if item.get("status") == "running"), None)
+        if running_stage:
+            running_stage["status"] = "failed"
+        resume_stage = _infer_resume_stage(stages)
+        task.stages_json = stages
+        task.status = "failed"
+        task.error_code = error_code
+        task.message = message
+        task.current_text = message
+        task.resume_stage = resume_stage
+        task.resume_available = bool(resume_stage)
+        task.artifact_expires_at = now_shanghai_naive() + timedelta(hours=FAILURE_RETENTION_HOURS)
+        session.commit()
+    finally:
+        session.close()
 
 
-def mark_task_succeeded(task_id: str, *, lesson_payload: dict, subtitle_cache_seed: dict | None = None) -> None:
-    with _TASK_LOCK:
-        task = _TASKS.get(task_id)
+def mark_task_succeeded(
+    task_id: str,
+    *,
+    lesson_id: int,
+    subtitle_cache_seed: dict | None = None,
+) -> None:
+    session = SessionLocal()
+    try:
+        task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         if not task:
             return
-        for stage in task["stages"]:
-            if stage["status"] == "pending":
-                stage["status"] = "completed"
-        task["status"] = "succeeded"
-        task["overall_percent"] = 100
-        task["lesson"] = lesson_payload
-        task["subtitle_cache_seed"] = subtitle_cache_seed
-        task["current_text"] = "课程生成完成"
-        task["updated_at"] = _utc_iso()
+        stages = _copy_list(task.stages_json)
+        for stage in stages:
+            stage["status"] = "completed"
+        task.stages_json = stages
+        task.status = "succeeded"
+        task.lesson_id = int(lesson_id)
+        task.overall_percent = 100
+        task.current_text = "课程生成完成"
+        task.subtitle_cache_seed_json = dict(subtitle_cache_seed) if isinstance(subtitle_cache_seed, dict) else None
+        task.resume_available = False
+        task.resume_stage = ""
+        task.artifact_expires_at = now_shanghai_naive()
+        session.commit()
+    finally:
+        session.close()
+
+
+def reset_task_for_resume(task_id: str) -> dict | None:
+    cleanup_expired_tasks()
+    session = SessionLocal()
+    try:
+        task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        if not task or not task.resume_available:
+            return None
+        stages = _copy_list(task.stages_json)
+        resume_stage = str(task.resume_stage or _infer_resume_stage(stages))
+        reset_from_here = False
+        for stage in stages:
+            if stage.get("key") == resume_stage:
+                reset_from_here = True
+            if reset_from_here:
+                stage["status"] = "pending"
+            elif stage.get("status") != "completed":
+                stage["status"] = "pending"
+        task.stages_json = stages
+        task.status = "pending"
+        task.current_text = "准备继续生成"
+        task.error_code = ""
+        task.message = ""
+        task.resume_available = False
+        task.artifact_expires_at = None
+        session.commit()
+        session.refresh(task)
+        return _task_to_dict(task)
+    finally:
+        session.close()
