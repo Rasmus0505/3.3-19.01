@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -206,6 +207,80 @@ def test_admin_lesson_task_logs_returns_503_when_task_table_missing(test_client)
     payload = resp.json()
     assert payload["error_code"] == "DB_MIGRATION_REQUIRED"
     assert "lesson_generation_tasks" in str(payload.get("detail", ""))
+
+
+def test_admin_overview_and_user_summary_cache_hit_and_ttl_expire(test_client):
+    client, session_factory, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "cache-admin@example.com")
+
+    admin_token = _register_and_login(client, email="cache-admin@example.com")
+    user_token = _register_and_login(client, email="cache-user@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+
+    session = session_factory()
+    try:
+        user = session.scalar(select(User).where(User.email == "cache-user@example.com"))
+        assert user is not None
+        lesson = Lesson(
+            user_id=user.id,
+            title="Cache Lesson",
+            source_filename="cache.mp3",
+            asr_model="qwen3-asr-flash-filetrans",
+            duration_ms=1000,
+            source_duration_ms=1000,
+            status="ready",
+            created_at=datetime(2026, 3, 11, 10, 0, 0),
+        )
+        session.add(lesson)
+        session.commit()
+        learner_id = user.id
+    finally:
+        session.close()
+
+    import app.repositories.admin_console as admin_console_repo
+
+    monkeypatch.setattr(admin_console_repo, "ADMIN_OVERVIEW_TTL_SECONDS", 1)
+    monkeypatch.setattr(admin_console_repo, "ADMIN_USER_SUMMARY_TTL_SECONDS", 1)
+
+    overview_calls = 0
+    summary_calls = 0
+    original_overview = admin_console_repo._get_admin_overview_data_uncached
+    original_summary = admin_console_repo._get_admin_user_activity_summary_uncached
+
+    def counted_overview(*args, **kwargs):
+        nonlocal overview_calls
+        overview_calls += 1
+        return original_overview(*args, **kwargs)
+
+    def counted_summary(*args, **kwargs):
+        nonlocal summary_calls
+        summary_calls += 1
+        return original_summary(*args, **kwargs)
+
+    monkeypatch.setattr(admin_console_repo, "_get_admin_overview_data_uncached", counted_overview)
+    monkeypatch.setattr(admin_console_repo, "_get_admin_user_activity_summary_uncached", counted_summary)
+
+    first_overview = client.get("/api/admin/overview", headers=admin_headers)
+    second_overview = client.get("/api/admin/overview", headers=admin_headers)
+    assert first_overview.status_code == 200
+    assert second_overview.status_code == 200
+    assert overview_calls == 1
+
+    first_summary = client.get(f"/api/admin/users/{learner_id}/summary", headers=admin_headers)
+    second_summary = client.get(f"/api/admin/users/{learner_id}/summary", headers=admin_headers)
+    assert first_summary.status_code == 200
+    assert second_summary.status_code == 200
+    assert summary_calls == 1
+
+    time.sleep(1.1)
+
+    third_overview = client.get("/api/admin/overview", headers=admin_headers)
+    third_summary = client.get(f"/api/admin/users/{learner_id}/summary", headers=admin_headers)
+    assert third_overview.status_code == 200
+    assert third_summary.status_code == 200
+    assert overview_calls == 2
+    assert summary_calls == 2
 
 
 def test_create_lesson_task_returns_503_when_task_table_missing(test_client):

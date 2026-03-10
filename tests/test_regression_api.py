@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps.auth import get_admin_user
@@ -22,6 +22,7 @@ from app.models import BillingModelRate, Lesson, LessonGenerationTask, LessonPro
 from app.services.billing_service import ensure_default_billing_rates, get_or_create_wallet_account, get_subtitle_settings, settle_reserved_points
 from app.services.lesson_service import LessonService
 from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
+from app.services.query_cache import clear_query_caches
 
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
 
@@ -138,6 +139,120 @@ def _recreate_legacy_subtitle_settings(
         session.close()
 
 
+def test_lesson_catalog_returns_paginated_items_search_and_cache(test_client, monkeypatch):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="lesson-catalog-user@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session = session_factory()
+    try:
+        user = session.scalar(select(User).where(User.email == "lesson-catalog-user@example.com"))
+        assert user is not None
+
+        lesson_alpha = Lesson(
+            user_id=user.id,
+            title="Alpha Lesson",
+            source_filename="alpha.mp3",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=3100,
+            source_duration_ms=3100,
+            status="ready",
+            created_at=datetime(2026, 3, 9, 9, 0, 0),
+        )
+        lesson_beta = Lesson(
+            user_id=user.id,
+            title="Beta Lesson",
+            source_filename="beta.mp3",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=4200,
+            source_duration_ms=4200,
+            status="ready",
+            created_at=datetime(2026, 3, 10, 9, 0, 0),
+        )
+        lesson_gamma = Lesson(
+            user_id=user.id,
+            title="Gamma Lesson",
+            source_filename="gamma.mp3",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=5300,
+            source_duration_ms=5300,
+            status="ready",
+            created_at=datetime(2026, 3, 11, 9, 0, 0),
+        )
+        session.add_all([lesson_alpha, lesson_beta, lesson_gamma])
+        session.flush()
+
+        session.add_all(
+            [
+                LessonSentence(lesson_id=lesson_alpha.id, idx=0, begin_ms=0, end_ms=1000, text_en="alpha one", text_zh="", tokens_json=[]),
+                LessonSentence(lesson_id=lesson_alpha.id, idx=1, begin_ms=1000, end_ms=2000, text_en="alpha two", text_zh="", tokens_json=[]),
+                LessonSentence(lesson_id=lesson_beta.id, idx=0, begin_ms=0, end_ms=1000, text_en="beta one", text_zh="", tokens_json=[]),
+                LessonSentence(lesson_id=lesson_gamma.id, idx=0, begin_ms=0, end_ms=1000, text_en="gamma one", text_zh="", tokens_json=[]),
+                LessonSentence(lesson_id=lesson_gamma.id, idx=1, begin_ms=1000, end_ms=2000, text_en="gamma two", text_zh="", tokens_json=[]),
+                LessonSentence(lesson_id=lesson_gamma.id, idx=2, begin_ms=2000, end_ms=3000, text_en="gamma three", text_zh="", tokens_json=[]),
+            ]
+        )
+        session.add(
+            LessonProgress(
+                lesson_id=lesson_gamma.id,
+                user_id=user.id,
+                current_sentence_idx=1,
+                completed_indexes_json=[0],
+                last_played_at_ms=1800,
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    import app.services.lesson_query_service as lesson_query_service
+
+    call_count = 0
+    original = lesson_query_service.list_lesson_catalog_for_user
+
+    def counted(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(lesson_query_service, "list_lesson_catalog_for_user", counted)
+
+    first = client.get("/api/lessons/catalog", headers=headers, params={"page": 1, "page_size": 2})
+    assert first.status_code == 200
+    first_data = first.json()
+    assert first_data["ok"] is True
+    assert first_data["total"] == 3
+    assert first_data["has_more"] is True
+    assert len(first_data["items"]) == 2
+    assert first_data["items"][0]["title"] == "Gamma Lesson"
+    assert first_data["items"][0]["sentence_count"] == 3
+    assert first_data["items"][0]["progress_summary"]["current_sentence_index"] == 1
+    assert first_data["items"][0]["progress_summary"]["completed_sentence_count"] == 1
+
+    second = client.get("/api/lessons/catalog", headers=headers, params={"page": 1, "page_size": 2})
+    assert second.status_code == 200
+    assert call_count == 1
+
+    search = client.get("/api/lessons/catalog", headers=headers, params={"page": 1, "page_size": 20, "q": "beta"})
+    assert search.status_code == 200
+    search_data = search.json()
+    assert search_data["total"] == 1
+    assert search_data["items"][0]["title"] == "Beta Lesson"
+    assert call_count == 2
+
+    rename = client.patch(
+        f"/api/lessons/{first_data['items'][0]['id']}",
+        headers=headers,
+        json={"title": "Gamma Lesson Renamed"},
+    )
+    assert rename.status_code == 200
+
+    third = client.get("/api/lessons/catalog", headers=headers, params={"page": 1, "page_size": 2})
+    assert third.status_code == 200
+    assert call_count == 3
+    assert third.json()["items"][0]["title"] == "Gamma Lesson Renamed"
+
+
 def test_normalize_learning_english_text_spells_usd_amounts():
     assert normalize_learning_english_text("$40?") == "forty dollars?"
     assert normalize_learning_english_text("It is $1.") == "It is one dollar."
@@ -150,6 +265,7 @@ def test_normalize_learning_english_text_spells_usd_amounts():
 
 @pytest.fixture()
 def test_client(tmp_path, monkeypatch):
+    clear_query_caches()
     db_file = tmp_path / "test_app.db"
     engine = create_database_engine(f"sqlite:///{db_file}")
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=Session, future=True)
@@ -175,6 +291,7 @@ def test_client(tmp_path, monkeypatch):
 
     with TestClient(app) as client:
         yield client, TestingSessionLocal, monkeypatch
+    clear_query_caches()
 
 
 def test_ensure_default_billing_rates_rebuilds_legacy_sqlite_constraint(tmp_path):

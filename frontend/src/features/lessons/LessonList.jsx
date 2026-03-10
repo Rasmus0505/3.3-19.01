@@ -103,6 +103,9 @@ export function LessonList({
   onSwitchToUpload,
   subtitleRegenerateState = null,
   loading = false,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore = null,
 }) {
   const [renamingLesson, setRenamingLesson] = useState(null);
   const [renameTitle, setRenameTitle] = useState("");
@@ -438,6 +441,13 @@ export function LessonList({
                 </div>
               );
             })}
+            {hasMore ? (
+              <div className="flex justify-center pt-2">
+                <Button variant="outline" onClick={() => onLoadMore?.()} disabled={loadingMore}>
+                  {loadingMore ? "正在加载更多..." : "加载更多课程"}
+                </Button>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
