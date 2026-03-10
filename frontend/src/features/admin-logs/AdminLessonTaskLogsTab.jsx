@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
-import { buildSearchParams, copyCurrentUrl, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
+import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import {
   Alert,
   AlertDescription,
@@ -102,7 +102,7 @@ export function AdminLessonTaskLogsTab({ apiCall }) {
 
   useEffect(() => {
     setSearchParams(
-      buildSearchParams({
+      mergeSearchParams(searchParams, {
         page,
         page_size: pageSize,
         status: taskStatus,

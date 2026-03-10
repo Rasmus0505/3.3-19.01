@@ -12,6 +12,7 @@ from app.db import get_db
 from app.models import User
 from app.repositories.admin_console import get_admin_overview_data, get_admin_user_activity_summary, list_admin_lesson_task_logs, list_admin_operation_logs
 from app.schemas import ErrorResponse
+from app.services.lesson_task_manager import LessonTaskStorageNotReadyError
 from app.schemas.admin_console import (
     AdminLessonTaskFailureDebug,
     AdminLessonTaskLogItem,
@@ -164,7 +165,7 @@ def admin_operation_logs(
 @router.get(
     "/lesson-task-logs",
     response_model=AdminLessonTaskLogsResponse,
-    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
 def admin_lesson_task_logs(
     status: str = "all",
@@ -186,18 +187,21 @@ def admin_lesson_task_logs(
         return parse_error
     normalized_date_from = to_shanghai_naive(date_from)
     normalized_date_to = to_shanghai_naive(date_to)
-    total, rows = list_admin_lesson_task_logs(
-        db,
-        status=status,
-        user_email=user_email,
-        task_id=task_id,
-        lesson_id=normalized_lesson_id,
-        source_filename=source_filename,
-        date_from=normalized_date_from,
-        date_to=normalized_date_to,
-        page=page,
-        page_size=page_size,
-    )
+    try:
+        total, rows = list_admin_lesson_task_logs(
+            db,
+            status=status,
+            user_email=user_email,
+            task_id=task_id,
+            lesson_id=normalized_lesson_id,
+            source_filename=source_filename,
+            date_from=normalized_date_from,
+            date_to=normalized_date_to,
+            page=page,
+            page_size=page_size,
+        )
+    except LessonTaskStorageNotReadyError as exc:
+        return error_response(503, exc.code, exc.message, exc.detail)
     items: list[AdminLessonTaskLogItem] = []
     for row, owner_email in rows:
         failure_debug_payload = dict(row.failure_debug_json or {}) if isinstance(row.failure_debug_json, dict) else None

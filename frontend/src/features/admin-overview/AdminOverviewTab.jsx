@@ -84,7 +84,7 @@ export function AdminOverviewTab({ apiCall }) {
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/system">查看系统状态</Link>
+              <Link to="/admin/ops?tab=system">查看系统状态</Link>
             </Button>
             <Button variant="outline" size="sm" onClick={loadOverview} disabled={loading}>
               <RefreshCcw className="size-4" />
@@ -115,7 +115,7 @@ export function AdminOverviewTab({ apiCall }) {
               <CardDescription>最近创建的兑换批次，方便快速判断活动是否健康。</CardDescription>
             </div>
             <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/redeem-batches">进入批次页</Link>
+              <Link to="/admin/redeem?tab=batches">进入批次页</Link>
             </Button>
           </CardHeader>
           <CardContent>
@@ -168,7 +168,7 @@ export function AdminOverviewTab({ apiCall }) {
               <CardDescription>重点看计费、调账、兑换码状态调整等敏感动作。</CardDescription>
             </div>
             <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/operation-logs">查看全部操作日志</Link>
+              <Link to="/admin/ops?tab=operations">查看全部操作日志</Link>
             </Button>
           </CardHeader>
           <CardContent>
