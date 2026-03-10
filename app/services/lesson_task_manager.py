@@ -15,6 +15,8 @@ from app.services.media import cleanup_dir
 
 
 FAILURE_RETENTION_HOURS = 24
+FAILURE_EXCEPTION_TYPE_LIMIT = 120
+FAILURE_DETAIL_EXCERPT_LIMIT = 2000
 
 _STAGE_LABELS: tuple[tuple[str, str], ...] = (
     ("convert_audio", "转换音频格式"),
@@ -50,6 +52,13 @@ def _copy_list(value: list | None) -> list:
     return [dict(item) if isinstance(item, dict) else item for item in list(value or [])]
 
 
+def _trim_text(value: str | None, limit: int) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)] + "…"
+
+
 def _find_stage(stages: list[dict], stage_key: str) -> dict | None:
     for item in stages:
         if item.get("key") == stage_key:
@@ -79,6 +88,9 @@ def _session_scope(
 
 
 def _task_to_dict(task: LessonGenerationTask) -> dict:
+    failure_debug = _copy_dict(task.failure_debug_json) if isinstance(task.failure_debug_json, dict) else None
+    if failure_debug is not None and task.failed_at is not None and not failure_debug.get("failed_at"):
+        failure_debug["failed_at"] = task.failed_at
     return {
         "task_id": task.task_id,
         "owner_user_id": int(task.owner_user_id),
@@ -92,6 +104,7 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
         "stages": _copy_list(task.stages_json),
         "counters": _copy_dict(task.counters_json),
         "translation_debug": _copy_dict(task.translation_debug_json) if isinstance(task.translation_debug_json, dict) else None,
+        "failure_debug": failure_debug,
         "subtitle_cache_seed": _copy_dict(task.subtitle_cache_seed_json) if isinstance(task.subtitle_cache_seed_json, dict) else None,
         "error_code": str(task.error_code or ""),
         "message": str(task.message or ""),
@@ -99,6 +112,7 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
         "resume_stage": str(task.resume_stage or ""),
         "artifacts": _copy_dict(task.artifacts_json),
         "artifact_expires_at": task.artifact_expires_at,
+        "failed_at": task.failed_at,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
     }
@@ -172,8 +186,10 @@ def create_task(
             work_dir=work_dir,
             source_path=source_path,
             artifacts_json=_default_artifacts(work_dir, source_path),
+            failure_debug_json=None,
             resume_available=False,
             resume_stage="convert_audio",
+            failed_at=None,
         )
         session.add(task)
         session.commit()
@@ -235,6 +251,8 @@ def update_task_progress(
             merged_artifacts = _copy_dict(task.artifacts_json)
             merged_artifacts.update(artifacts_patch)
             task.artifacts_json = merged_artifacts
+        task.failure_debug_json = None
+        task.failed_at = None
         task.error_code = ""
         task.message = ""
         task.resume_available = False
@@ -273,6 +291,11 @@ def mark_task_failed(
     *,
     error_code: str,
     message: str,
+    exception_type: str = "",
+    detail_excerpt: str = "",
+    failed_stage: str | None = None,
+    translation_debug: dict | None = None,
+    resume_available: bool | None = None,
     db: Session | None = None,
     session_factory: SessionFactory | None = None,
 ) -> None:
@@ -281,18 +304,33 @@ def mark_task_failed(
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         if not task:
             return
+        failed_at = now_shanghai_naive()
+        last_progress_text = str(task.current_text or "")
         stages = _copy_list(task.stages_json)
         running_stage = next((item for item in stages if item.get("status") == "running"), None)
         if running_stage:
             running_stage["status"] = "failed"
-        resume_stage = str(running_stage.get("key") or "") if running_stage else _infer_resume_stage(stages)
+        resume_stage = str(failed_stage or running_stage.get("key") or "") if running_stage else str(failed_stage or _infer_resume_stage(stages))
+        next_translation_debug = dict(translation_debug) if isinstance(translation_debug, dict) else _copy_dict(task.translation_debug_json)
         task.stages_json = stages
         task.status = "failed"
+        task.translation_debug_json = next_translation_debug or None
+        task.failure_debug_json = {
+            "failed_stage": resume_stage,
+            "exception_type": _trim_text(exception_type, FAILURE_EXCEPTION_TYPE_LIMIT),
+            "detail_excerpt": _trim_text(detail_excerpt, FAILURE_DETAIL_EXCERPT_LIMIT),
+            "last_progress_text": _trim_text(last_progress_text, 255),
+            "stages": _copy_list(stages),
+            "counters": _copy_dict(task.counters_json),
+            "translation_debug": next_translation_debug or None,
+            "failed_at": failed_at.isoformat(),
+        }
         task.error_code = error_code
         task.message = message
         task.current_text = message
         task.resume_stage = resume_stage
-        task.resume_available = bool(resume_stage)
+        task.resume_available = bool(resume_stage) if resume_available is None else bool(resume_available)
+        task.failed_at = failed_at
         task.artifact_expires_at = now_shanghai_naive() + timedelta(hours=FAILURE_RETENTION_HOURS)
         session.commit()
     finally:
@@ -321,10 +359,12 @@ def mark_task_succeeded(
         task.lesson_id = int(lesson_id)
         task.overall_percent = 100
         task.current_text = "课程生成完成"
+        task.failure_debug_json = None
         task.subtitle_cache_seed_json = dict(subtitle_cache_seed) if isinstance(subtitle_cache_seed, dict) else None
         task.resume_available = False
         task.resume_stage = ""
         task.artifact_expires_at = now_shanghai_naive()
+        task.failed_at = None
         session.commit()
     finally:
         if owns_session:
@@ -356,10 +396,12 @@ def reset_task_for_resume(
         task.stages_json = stages
         task.status = "pending"
         task.current_text = "准备继续生成"
+        task.failure_debug_json = None
         task.error_code = ""
         task.message = ""
         task.resume_available = False
         task.artifact_expires_at = None
+        task.failed_at = None
         session.commit()
         session.refresh(task)
         return _task_to_dict(task)

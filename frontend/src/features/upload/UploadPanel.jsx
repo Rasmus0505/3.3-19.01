@@ -120,6 +120,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   const progressPercent = getVisualProgress(phase, uploadPercent, taskSnapshot);
   const showProgress = loading || phase === "success" || phase === "error" || Boolean(taskSnapshot);
   const canResume = Boolean(taskSnapshot?.resume_available && taskId);
+  const hasLocalFile = Boolean(file);
 
   useEffect(() => {
     onTaskStateChange?.(buildTaskState({ phase, taskId, taskSnapshot, uploadPercent, status }));
@@ -165,6 +166,9 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   async function resetSession() {
     pollingAbortRef.current = true;
     uploadAbortRef.current?.abort();
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
     setFile(null);
     setTaskId("");
     setLoading(false);
@@ -180,6 +184,26 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     setUploadPercent(0);
     setBindingCompleted(false);
     await clearActiveGenerationTask();
+  }
+
+  async function clearTaskRuntime(nextStatus = "") {
+    pollingAbortRef.current = true;
+    uploadAbortRef.current?.abort();
+    setTaskId("");
+    setLoading(false);
+    setStatus(nextStatus);
+    setPhase(file ? "ready" : "idle");
+    setTaskSnapshot(null);
+    setUploadPercent(0);
+    setBindingCompleted(false);
+    await persistSession({
+      taskId: "",
+      phase: file ? "ready" : "idle",
+      taskSnapshot: null,
+      uploadPercent: 0,
+      status: nextStatus,
+      bindingCompleted: false,
+    });
   }
 
   async function finalizeSuccess(data, sourceFile = file, silentToast = false) {
@@ -401,11 +425,26 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       const data = await parseResponse(resp);
       if (!resp.ok) {
         const message = toErrorText(data, "继续生成失败");
+        const errorCode = String(data?.error_code || "");
+        const nextTaskSnapshot =
+          errorCode === "TASK_ARTIFACT_MISSING" || errorCode === "TASK_RESUME_UNAVAILABLE"
+            ? {
+                ...(taskSnapshot || {}),
+                status: "failed",
+                error_code: errorCode,
+                message: String(data?.message || message),
+                current_text: String(data?.message || message),
+                resume_available: false,
+              }
+            : taskSnapshot;
         setStatus(message);
         setPhase("error");
         setLoading(false);
         toast.error(message);
-        await persistSession({ phase: "error", status: message });
+        if (nextTaskSnapshot) {
+          setTaskSnapshot(nextTaskSnapshot);
+        }
+        await persistSession({ phase: "error", status: message, taskSnapshot: nextTaskSnapshot });
         return;
       }
       setPhase("processing");
@@ -467,7 +506,9 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
             <p className="text-sm text-destructive">{status}</p>
             <div className="flex flex-wrap gap-2">
               {canResume ? <Button type="button" onClick={() => void resumeTask()}><RefreshCcw className="size-4" />继续生成</Button> : null}
-              <Button type="button" variant="outline" onClick={() => void resetSession()}>重新开始</Button>
+              {hasLocalFile ? <Button type="button" variant="secondary" onClick={() => void submit()}><RefreshCcw className="size-4" />重新生成当前素材</Button> : null}
+              {hasLocalFile ? <Button type="button" variant="ghost" onClick={() => void clearTaskRuntime()}>保留素材并清空错误</Button> : null}
+              <Button type="button" variant="outline" onClick={() => void resetSession()}>更换素材</Button>
             </div>
           </div>
         ) : null}
@@ -476,7 +517,20 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
           <div className="grid gap-2">
             <input id="asr-file" ref={fileInputRef} type="file" className="hidden" onChange={(event) => { void onSelectFile(event.target.files?.[0] ?? null); }} disabled={loading} />
             <div className="grid gap-2 md:grid-cols-2">
-              <Button type="button" variant="outline" className="h-11" onClick={() => fileInputRef.current?.click()} disabled={loading}>选择文件</Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11"
+                onClick={() => {
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = "";
+                    fileInputRef.current.click();
+                  }
+                }}
+                disabled={loading}
+              >
+                选择文件
+              </Button>
               <Button type="button" variant="secondary" className="h-11" onClick={() => setLinkDialogOpen(true)} disabled={loading}>链接生成视频</Button>
             </div>
             {file ? <p className="text-xs text-muted-foreground">{file.name}</p> : null}

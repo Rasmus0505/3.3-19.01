@@ -69,6 +69,10 @@ READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "semantic_split_timeout_seconds",
         "translation_batch_max_chars",
     ),
+    "lesson_generation_tasks": (
+        "failure_debug_json",
+        "failed_at",
+    ),
 }
 
 HTML_NO_STORE_HEADERS: dict[str, str] = {
