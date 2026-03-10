@@ -1,10 +1,10 @@
-import { Activity, Gift, RefreshCcw, ScrollText, Sparkles, Users } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Activity, ArrowRight, Gift, RefreshCcw, ScrollText, Shield, Sparkles, Users } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
 import { formatDateTimeBeijing } from "../../shared/lib/datetime";
-import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, ScrollArea, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, MetricCard, MetricChart, ResponsiveTable } from "../../shared/ui";
 
 function parseError(data, fallback) {
   return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
@@ -18,21 +18,22 @@ async function jsonOrEmpty(resp) {
   }
 }
 
-function MetricCard({ icon: Icon, label, value, hint }) {
-  return (
-    <Card>
-      <CardContent className="flex items-start justify-between gap-4 p-5">
-        <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold">{value}</p>
-          <p className="text-xs text-muted-foreground">{hint}</p>
-        </div>
-        <div className="rounded-full border p-2 text-muted-foreground">
-          <Icon className="size-5" />
-        </div>
-      </CardContent>
-    </Card>
-  );
+function toneForCard(label) {
+  if (label.includes("异常")) return "danger";
+  if (label.includes("充值")) return "success";
+  if (label.includes("消耗")) return "warning";
+  if (label.includes("新增")) return "info";
+  return "default";
+}
+
+function trendFromChart(charts, key, fallbackValue) {
+  const trendChart = charts.find((item) => item.title?.includes("核心趋势"));
+  const points = Array.isArray(trendChart?.data) ? trendChart.data : [];
+  if (points.length < 2) return { value: fallbackValue, direction: "flat" };
+  const latest = Number(points.at(-1)?.[key] || 0);
+  const previous = Number(points.at(-2)?.[key] || 0);
+  const diff = latest - previous;
+  return { value: `${diff >= 0 ? "+" : ""}${diff}`, direction: diff === 0 ? "flat" : diff > 0 ? "up" : "down" };
 }
 
 export function AdminOverviewTab({ apiCall }) {
@@ -41,6 +42,8 @@ export function AdminOverviewTab({ apiCall }) {
   const [metrics, setMetrics] = useState(null);
   const [recentBatches, setRecentBatches] = useState([]);
   const [recentOperations, setRecentOperations] = useState([]);
+  const [summaryCards, setSummaryCards] = useState([]);
+  const [charts, setCharts] = useState([]);
 
   async function loadOverview() {
     setLoading(true);
@@ -57,6 +60,8 @@ export function AdminOverviewTab({ apiCall }) {
       setMetrics(data.metrics || null);
       setRecentBatches(Array.isArray(data.recent_batches) ? data.recent_batches : []);
       setRecentOperations(Array.isArray(data.recent_operations) ? data.recent_operations : []);
+      setSummaryCards(Array.isArray(data.summary_cards) ? data.summary_cards : []);
+      setCharts(Array.isArray(data.charts) ? data.charts : []);
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
       setStatus(message);
@@ -71,22 +76,77 @@ export function AdminOverviewTab({ apiCall }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const metricCards = useMemo(() => {
+    const list = [
+      { icon: Users, label: "今日新增账号", value: metrics?.today_new_users ?? 0, hint: "按北京时间今天统计", key: "新增账号" },
+      { icon: Gift, label: "今日充值点数", value: `${metrics?.today_redeem_points ?? 0} 点`, hint: "只统计兑换码充值", key: "充值点数" },
+      { icon: ScrollText, label: "今日消耗点数", value: `${metrics?.today_spent_points ?? 0} 点`, hint: "转写和翻译合计", key: "消耗点数" },
+      { icon: Sparkles, label: "近 24 小时翻译失败", value: metrics?.translation_failures_24h ?? 0, hint: "越高越需要排查翻译链路", key: "异常数" },
+      { icon: Activity, label: "近 24 小时异常", value: metrics?.incidents_24h ?? 0, hint: "包含翻译失败和兑换失败", key: "异常数" },
+      { icon: Gift, label: "当前有效批次", value: metrics?.active_batches ?? 0, hint: "仍可继续兑换的批次", key: "新增账号" },
+    ];
+    return list.map((item) => ({
+      ...item,
+      tone: toneForCard(item.label),
+      trend: trendFromChart(charts, item.key, "0"),
+    }));
+  }, [charts, metrics]);
+
+  const batchColumns = useMemo(
+    () => [
+      { key: "batch", header: "批次", mobileLabel: "批次", render: (item) => item.batch_name },
+      {
+        key: "status",
+        header: "状态",
+        mobileLabel: "状态",
+        render: (item) => (
+          <Badge variant={item.status === "active" ? "default" : item.status === "expired" ? "secondary" : "outline"}>{item.status}</Badge>
+        ),
+      },
+      { key: "points", header: "面额", mobileLabel: "面额", render: (item) => `${item.face_value_points} 点` },
+      { key: "redeemed", header: "已兑 / 剩余", mobileLabel: "已兑 / 剩余", render: (item) => `${item.redeemed_count} / ${item.remaining_count}` },
+      { key: "rate", header: "兑换率", mobileLabel: "兑换率", render: (item) => `${(Number(item.redeem_rate || 0) * 100).toFixed(1)}%` },
+      { key: "expire", header: "过期时间", mobileLabel: "过期", render: (item) => formatDateTimeBeijing(item.expire_at) },
+    ],
+    [],
+  );
+
+  const operationColumns = useMemo(
+    () => [
+      { key: "time", header: "时间", mobileLabel: "时间", render: (item) => formatDateTimeBeijing(item.created_at) },
+      { key: "operator", header: "操作员", mobileLabel: "操作员", render: (item) => item.operator_user_email || "-" },
+      { key: "action", header: "动作", mobileLabel: "动作", render: (item) => <Badge variant="outline">{item.action_type}</Badge> },
+      { key: "target", header: "对象", mobileLabel: "对象", render: (item) => `${item.target_type} / ${item.target_id || "-"}` },
+      { key: "note", header: "备注", mobileLabel: "备注", render: (item) => item.note || "-" },
+    ],
+    [],
+  );
+
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Activity className="size-4" />
-              管理台总览
-            </CardTitle>
-            <CardDescription>先看用户、点数、异常和兑换批次，再决定下一步处理哪一页。</CardDescription>
+      <Card className="rounded-3xl border shadow-sm">
+        <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 rounded-full border bg-muted/40 px-3 py-1 text-xs text-muted-foreground">
+              <Shield className="size-3.5" />
+              运营总览
+            </div>
+            <div>
+              <CardTitle className="text-lg">先看健康、趋势和快捷入口，再决定下一步处理哪条链路</CardTitle>
+              <CardDescription>本页把新增、点数、异常、批次和后台关键动作聚在一起，适合做每日巡检和异常分派。</CardDescription>
+            </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/ops?tab=system">去系统检查</Link>
+              <Link to="/admin/ops?tab=system">
+                去系统检查
+                <ArrowRight className="size-4" />
+              </Link>
             </Button>
-            <Button variant="outline" size="sm" onClick={loadOverview} disabled={loading}>
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/admin/pipeline?tab=task-failures">去生成失败</Link>
+            </Button>
+            <Button size="sm" onClick={loadOverview} disabled={loading}>
               <RefreshCcw className="size-4" />
               刷新
             </Button>
@@ -94,21 +154,44 @@ export function AdminOverviewTab({ apiCall }) {
         </CardHeader>
       </Card>
 
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {(summaryCards.length > 0 ? summaryCards : metricCards.slice(0, 4)).map((item) => (
+          <MetricCard
+            key={item.label}
+            icon={item.label.includes("账号") ? Users : item.label.includes("充值") ? Gift : item.label.includes("消耗") ? ScrollText : Activity}
+            label={item.label}
+            value={item.value}
+            hint={item.hint}
+            tone={item.tone || toneForCard(item.label)}
+            loading={loading && !metrics}
+          />
+        ))}
+      </div>
+
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {loading && !metrics
-          ? Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-[116px] w-full" />)
-          : [
-              { icon: Users, label: "今日新增账号", value: metrics?.today_new_users ?? 0, hint: "按北京时间今天统计" },
-              { icon: Gift, label: "今日充值点数", value: `${metrics?.today_redeem_points ?? 0} 点`, hint: "只统计兑换码充值" },
-              { icon: ScrollText, label: "今日消耗点数", value: `${metrics?.today_spent_points ?? 0} 点`, hint: "转写和翻译合计" },
-              { icon: Sparkles, label: "近 24 小时翻译失败", value: metrics?.translation_failures_24h ?? 0, hint: "越高越需要排查翻译链路" },
-              { icon: Activity, label: "近 24 小时异常", value: metrics?.incidents_24h ?? 0, hint: "包含翻译失败和兑换失败" },
-              { icon: Gift, label: "当前有效批次", value: metrics?.active_batches ?? 0, hint: "仍可继续兑换的批次" },
-            ].map((item) => <MetricCard key={item.label} {...item} />)}
+        {metricCards.map((item) => (
+          <MetricCard key={item.label} {...item} loading={loading && !metrics} />
+        ))}
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        {(charts.length > 0 ? charts : []).map((chart) => (
+          <MetricChart
+            key={chart.title}
+            title={chart.title}
+            description={chart.description}
+            data={chart.data}
+            series={chart.series}
+            type={chart.type}
+            xKey={chart.x_key}
+            loading={loading && charts.length === 0}
+            className={chart.title?.includes("核心趋势") ? "xl:col-span-2" : ""}
+          />
+        ))}
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
+        <Card className="rounded-3xl border shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-base">最近批次活动</CardTitle>
@@ -119,49 +202,21 @@ export function AdminOverviewTab({ apiCall }) {
             </Button>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="w-full rounded-md border">
-              <Table className="min-w-[720px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>批次</TableHead>
-                    <TableHead>状态</TableHead>
-                    <TableHead>面额</TableHead>
-                    <TableHead>已兑 / 剩余</TableHead>
-                    <TableHead>兑换率</TableHead>
-                    <TableHead>过期时间</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentBatches.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>{item.batch_name}</TableCell>
-                      <TableCell>
-                        <Badge variant={item.status === "active" ? "default" : item.status === "expired" ? "secondary" : "outline"}>
-                          {item.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{item.face_value_points} 点</TableCell>
-                      <TableCell>
-                        {item.redeemed_count} / {item.remaining_count}
-                      </TableCell>
-                      <TableCell>{(Number(item.redeem_rate || 0) * 100).toFixed(1)}%</TableCell>
-                      <TableCell>{formatDateTimeBeijing(item.expire_at)}</TableCell>
-                    </TableRow>
-                  ))}
-                  {recentBatches.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-muted-foreground">
-                        暂无批次数据
-                      </TableCell>
-                    </TableRow>
-                  ) : null}
-                </TableBody>
-              </Table>
-            </ScrollArea>
+            <ResponsiveTable
+              columns={batchColumns}
+              data={recentBatches}
+              getRowKey={(item) => item.id}
+              mobileTitle={(item) => item.batch_name}
+              mobileDescription={(item) => `${item.face_value_points} 点 · ${item.status}`}
+              mobileFooter={(item) => `过期：${formatDateTimeBeijing(item.expire_at)}`}
+              emptyText="暂无批次数据"
+              minWidth={720}
+              loading={loading && recentBatches.length === 0}
+            />
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-3xl border shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-base">最近管理员操作</CardTitle>
@@ -172,45 +227,25 @@ export function AdminOverviewTab({ apiCall }) {
             </Button>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="w-full rounded-md border">
-              <Table className="min-w-[760px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>时间</TableHead>
-                    <TableHead>操作员</TableHead>
-                    <TableHead>动作</TableHead>
-                    <TableHead>对象</TableHead>
-                    <TableHead>备注</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentOperations.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>{formatDateTimeBeijing(item.created_at)}</TableCell>
-                      <TableCell>{item.operator_user_email || "-"}</TableCell>
-                      <TableCell>{item.action_type}</TableCell>
-                      <TableCell>{item.target_type} / {item.target_id || "-"}</TableCell>
-                      <TableCell>{item.note || "-"}</TableCell>
-                    </TableRow>
-                  ))}
-                  {recentOperations.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-muted-foreground">
-                        暂无管理员操作记录
-                      </TableCell>
-                    </TableRow>
-                  ) : null}
-                </TableBody>
-              </Table>
-            </ScrollArea>
+            <ResponsiveTable
+              columns={operationColumns}
+              data={recentOperations}
+              getRowKey={(item) => item.id}
+              mobileTitle={(item) => item.action_type}
+              mobileDescription={(item) => item.operator_user_email || "未知操作员"}
+              mobileFooter={(item) => item.note || "暂无备注"}
+              emptyText="暂无管理员操作记录"
+              minWidth={760}
+              loading={loading && recentOperations.length === 0}
+            />
           </CardContent>
         </Card>
       </div>
 
       {status ? (
-        <Alert>
-          <AlertDescription>{status}</AlertDescription>
-        </Alert>
+        <Card className="rounded-3xl border border-destructive/30 bg-destructive/5 shadow-sm">
+          <CardContent className="p-4 text-sm text-destructive">{status}</CardContent>
+        </Card>
       ) : null}
     </div>
   );

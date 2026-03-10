@@ -70,7 +70,7 @@ def list_wallet_logs(
     page_size: int,
     date_from: datetime | None,
     date_to: datetime | None,
-) -> tuple[int, list[tuple[WalletLedger, str]]]:
+) -> dict[str, object]:
     base = select(WalletLedger, User.email).join(User, User.id == WalletLedger.user_id)
     count_stmt = select(func.count(WalletLedger.id)).join(User, User.id == WalletLedger.user_id)
 
@@ -95,7 +95,66 @@ def list_wallet_logs(
     rows = db.execute(
         base.order_by(WalletLedger.created_at.desc(), WalletLedger.id.desc()).offset((page - 1) * page_size).limit(page_size)
     ).all()
-    return total, rows
+    inflow_points = int(
+        db.scalar(
+            base.with_only_columns(func.coalesce(func.sum(case((WalletLedger.delta_points > 0, WalletLedger.delta_points), else_=0)), 0))
+        )
+        or 0
+    )
+    outflow_points = int(
+        db.scalar(
+            base.with_only_columns(func.coalesce(func.sum(case((WalletLedger.delta_points < 0, -WalletLedger.delta_points), else_=0)), 0))
+        )
+        or 0
+    )
+    event_breakdown = db.execute(
+        base.with_only_columns(WalletLedger.event_type, func.count(WalletLedger.id))
+        .group_by(WalletLedger.event_type)
+        .order_by(desc(func.count(WalletLedger.id)))
+        .limit(6)
+    ).all()
+    timeline = db.execute(
+        base.with_only_columns(
+            func.date(WalletLedger.created_at),
+            func.coalesce(func.sum(case((WalletLedger.delta_points > 0, WalletLedger.delta_points), else_=0)), 0).label("inflow_points"),
+            func.coalesce(func.sum(case((WalletLedger.delta_points < 0, -WalletLedger.delta_points), else_=0)), 0).label("outflow_points"),
+        )
+        .group_by(func.date(WalletLedger.created_at))
+        .order_by(func.date(WalletLedger.created_at))
+    ).all()
+    return {
+        "total": total,
+        "rows": rows,
+        "summary_cards": [
+            {"label": "匹配流水", "value": total, "hint": "当前筛选条件下的流水总数", "tone": "info"},
+            {"label": "累计入账点数", "value": inflow_points, "hint": "筛选范围内所有正向入账", "tone": "success"},
+            {"label": "累计扣减点数", "value": outflow_points, "hint": "筛选范围内所有消耗与扣减", "tone": "warning"},
+        ],
+        "charts": [
+            {
+                "title": "流水点数趋势",
+                "description": "把入账和扣减放在同一张图里，方便看异常波动。",
+                "type": "line",
+                "x_key": "label",
+                "series": [
+                    {"key": "入账点数", "name": "入账点数", "color": "#10b981"},
+                    {"key": "扣减点数", "name": "扣减点数", "color": "#f59e0b"},
+                ],
+                "data": [
+                    {"label": str(bucket)[5:] if bucket else "-", "入账点数": int(inflow or 0), "扣减点数": int(outflow or 0)}
+                    for bucket, inflow, outflow in timeline
+                ],
+            },
+            {
+                "title": "事件类型分布",
+                "description": "看哪类流水最活跃，方便继续定位到业务链路。",
+                "type": "bar",
+                "x_key": "label",
+                "series": [{"key": "value", "name": "记录数", "color": "#2563eb"}],
+                "data": [{"label": event_type_item or "-", "value": int(count or 0)} for event_type_item, count in event_breakdown],
+            },
+        ],
+    }
 
 
 def list_translation_logs(
@@ -109,13 +168,13 @@ def list_translation_logs(
     page_size: int,
     date_from: datetime | None,
     date_to: datetime | None,
-) -> tuple[int, list[tuple[TranslationRequestLog, str | None]]]:
+) -> dict[str, object]:
     bind = db.get_bind()
     inspector = inspect(bind)
     schema = None if bind.dialect.name == "sqlite" else APP_SCHEMA
     if not inspector.has_table(TranslationRequestLog.__tablename__, schema=schema):
         logger.warning("[DEBUG] translation_logs.table_missing table=%s", TranslationRequestLog.__tablename__)
-        return 0, []
+        return {"total": 0, "rows": [], "summary_cards": [], "charts": []}
 
     base = select(TranslationRequestLog, User.email).outerjoin(User, User.id == TranslationRequestLog.user_id)
     count_stmt = select(func.count(TranslationRequestLog.id)).outerjoin(User, User.id == TranslationRequestLog.user_id)
@@ -154,7 +213,58 @@ def list_translation_logs(
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
-    return total, rows
+    success_count = int(db.scalar(base.with_only_columns(func.count(TranslationRequestLog.id)).where(TranslationRequestLog.success.is_(True))) or 0)
+    failed_count = int(db.scalar(base.with_only_columns(func.count(TranslationRequestLog.id)).where(TranslationRequestLog.success.is_(False))) or 0)
+    total_tokens = int(db.scalar(base.with_only_columns(func.coalesce(func.sum(TranslationRequestLog.total_tokens), 0))) or 0)
+    provider_breakdown = db.execute(
+        base.with_only_columns(TranslationRequestLog.provider, func.count(TranslationRequestLog.id), func.coalesce(func.sum(TranslationRequestLog.total_tokens), 0))
+        .group_by(TranslationRequestLog.provider)
+        .order_by(desc(func.count(TranslationRequestLog.id)))
+        .limit(6)
+    ).all()
+    timeline = db.execute(
+        base.with_only_columns(
+            func.date(TranslationRequestLog.created_at),
+            func.count(TranslationRequestLog.id),
+            func.sum(case((TranslationRequestLog.success.is_(False), 1), else_=0)),
+        )
+        .group_by(func.date(TranslationRequestLog.created_at))
+        .order_by(func.date(TranslationRequestLog.created_at))
+    ).all()
+    success_rate = round((success_count / total) * 100, 1) if total else 0.0
+    return {
+        "total": total,
+        "rows": rows,
+        "summary_cards": [
+            {"label": "匹配请求", "value": total, "hint": "当前筛选条件下的翻译请求总数", "tone": "info"},
+            {"label": "成功率", "value": f"{success_rate}%", "hint": f"成功 {success_count} / 失败 {failed_count}", "tone": "success" if failed_count == 0 else "warning"},
+            {"label": "累计 Tokens", "value": total_tokens, "hint": "方便和计费日志一起对账", "tone": "default"},
+        ],
+        "charts": [
+            {
+                "title": "翻译请求趋势",
+                "description": "同时看请求量和失败量，定位是量峰值还是链路异常。",
+                "type": "line",
+                "x_key": "label",
+                "series": [
+                    {"key": "请求数", "name": "请求数", "color": "#2563eb"},
+                    {"key": "失败数", "name": "失败数", "color": "#ef4444"},
+                ],
+                "data": [{"label": str(bucket)[5:] if bucket else "-", "请求数": int(count or 0), "失败数": int(failed or 0)} for bucket, count, failed in timeline],
+            },
+            {
+                "title": "Provider 分布",
+                "description": "对比各 Provider 的请求量和 Tokens 消耗。",
+                "type": "bar",
+                "x_key": "label",
+                "series": [
+                    {"key": "请求数", "name": "请求数", "color": "#8b5cf6"},
+                    {"key": "Tokens", "name": "Tokens", "color": "#06b6d4"},
+                ],
+                "data": [{"label": provider or "-", "请求数": int(count or 0), "Tokens": int(tokens or 0)} for provider, count, tokens in provider_breakdown],
+            },
+        ],
+    }
 
 
 def _effective_batch_status(batch: RedeemCodeBatch, now: datetime) -> str:

@@ -10,9 +10,13 @@ from app.core.errors import error_response
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
 from app.db import get_db
 from app.models import User
-from app.repositories.admin_console import get_admin_overview_data, get_admin_user_activity_summary, list_admin_lesson_task_logs, list_admin_operation_logs
+from app.repositories.admin_console import (
+    get_admin_overview_data,
+    get_admin_user_activity_summary,
+    list_admin_lesson_task_logs,
+    list_admin_operation_logs,
+)
 from app.schemas import ErrorResponse
-from app.services.lesson_task_manager import LessonTaskStorageNotReadyError
 from app.schemas.admin_console import (
     AdminLessonTaskFailureDebug,
     AdminLessonTaskLogItem,
@@ -26,6 +30,8 @@ from app.schemas.admin_console import (
     AdminUserActivitySummary,
     AdminUserActivitySummaryResponse,
 )
+from app.services.lesson_task_manager import LessonTaskStorageNotReadyError
+
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
@@ -120,6 +126,8 @@ def admin_overview(
             for batch, redeemed_count, effective_status in payload["recent_batches"]
         ],
         recent_operations=[_to_operation_item(row, operator_email) for row, operator_email in payload["recent_operations"]],
+        summary_cards=payload.get("summary_cards", []),
+        charts=payload.get("charts", []),
     )
 
 
@@ -143,7 +151,7 @@ def admin_operation_logs(
     page_size = max(1, min(page_size, 100))
     normalized_date_from = to_shanghai_naive(date_from)
     normalized_date_to = to_shanghai_naive(date_to)
-    total, rows = list_admin_operation_logs(
+    payload = list_admin_operation_logs(
         db,
         operator_email=operator_email,
         action_type=action_type,
@@ -157,8 +165,10 @@ def admin_operation_logs(
         ok=True,
         page=page,
         page_size=page_size,
-        total=total,
-        items=[_to_operation_item(row, operator_email_value) for row, operator_email_value in rows],
+        total=int(payload["total"]),
+        items=[_to_operation_item(row, operator_email_value) for row, operator_email_value in payload["rows"]],
+        summary_cards=payload.get("summary_cards", []),
+        charts=payload.get("charts", []),
     )
 
 
@@ -188,7 +198,7 @@ def admin_lesson_task_logs(
     normalized_date_from = to_shanghai_naive(date_from)
     normalized_date_to = to_shanghai_naive(date_to)
     try:
-        total, rows = list_admin_lesson_task_logs(
+        payload = list_admin_lesson_task_logs(
             db,
             status=status,
             user_email=user_email,
@@ -203,7 +213,7 @@ def admin_lesson_task_logs(
     except LessonTaskStorageNotReadyError as exc:
         return error_response(503, exc.code, exc.message, exc.detail)
     items: list[AdminLessonTaskLogItem] = []
-    for row, owner_email in rows:
+    for row, owner_email in payload["rows"]:
         failure_debug_payload = dict(row.failure_debug_json or {}) if isinstance(row.failure_debug_json, dict) else None
         translation_debug_payload = dict(row.translation_debug_json or {}) if isinstance(row.translation_debug_json, dict) else None
         items.append(
@@ -232,7 +242,15 @@ def admin_lesson_task_logs(
                 updated_at=to_shanghai_aware(row.updated_at),
             )
         )
-    return AdminLessonTaskLogsResponse(ok=True, page=page, page_size=page_size, total=total, items=items)
+    return AdminLessonTaskLogsResponse(
+        ok=True,
+        page=page,
+        page_size=page_size,
+        total=int(payload["total"]),
+        items=items,
+        summary_cards=payload.get("summary_cards", []),
+        charts=payload.get("charts", []),
+    )
 
 
 @router.get(

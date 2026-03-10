@@ -1,11 +1,32 @@
-import { RefreshCcw, ScrollText } from "lucide-react";
-import { useEffect, useState } from "react";
+import { RefreshCcw, ScrollText, Wallet } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
-import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
 import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
-import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
+import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  FilterPanel,
+  Input,
+  MetricCard,
+  MetricChart,
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+  ResponsiveTable,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../shared/ui";
 
 function parseError(data, fallback) {
   return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
@@ -25,6 +46,11 @@ function toLocalDatetimeValue(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function formatPoints(points) {
+  const value = Number(points || 0);
+  return `${value >= 0 ? "+" : "-"}${Math.abs(value)} 点`;
+}
+
 export function AdminLogsTab({ apiCall }) {
   const now = getBeijingNowForPicker();
   const defaultFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -39,6 +65,8 @@ export function AdminLogsTab({ apiCall }) {
   const [eventType, setEventType] = useState(() => readStringParam(searchParams, "event_type", "all") || "all");
   const [dateFrom, setDateFrom] = useState(() => readStringParam(searchParams, "date_from", toLocalDatetimeValue(defaultFrom)));
   const [dateTo, setDateTo] = useState(() => readStringParam(searchParams, "date_to", toLocalDatetimeValue(now)));
+  const [summaryCards, setSummaryCards] = useState([]);
+  const [charts, setCharts] = useState([]);
 
   useEffect(() => {
     setSearchParams(
@@ -50,9 +78,9 @@ export function AdminLogsTab({ apiCall }) {
         date_from: dateFrom,
         date_to: dateTo,
       }),
-      { replace: true }
+      { replace: true },
     );
-  }, [dateFrom, dateTo, eventType, page, pageSize, setSearchParams, userEmail]);
+  }, [dateFrom, dateTo, eventType, page, pageSize, searchParams, setSearchParams, userEmail]);
 
   async function loadLogs(nextPage = page) {
     setLoading(true);
@@ -78,6 +106,8 @@ export function AdminLogsTab({ apiCall }) {
       }
       setItems(Array.isArray(data.items) ? data.items : []);
       setTotal(Number(data.total || 0));
+      setSummaryCards(Array.isArray(data.summary_cards) ? data.summary_cards : []);
+      setCharts(Array.isArray(data.charts) ? data.charts : []);
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
       setStatus(message);
@@ -101,121 +131,59 @@ export function AdminLogsTab({ apiCall }) {
     }
   }
 
+  function resetFilters() {
+    setPage(1);
+    setPageSize(20);
+    setUserEmail("");
+    setEventType("all");
+    setDateFrom(toLocalDatetimeValue(defaultFrom));
+    setDateTo(toLocalDatetimeValue(now));
+  }
+
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const columns = useMemo(
+    () => [
+      { key: "time", header: "时间", mobileLabel: "时间", render: (item) => formatDateTimeBeijing(item.created_at) },
+      { key: "user", header: "用户", mobileLabel: "用户", render: (item) => item.user_email || "-" },
+      { key: "event", header: "类型", mobileLabel: "类型", render: (item) => <Badge variant="outline">{item.event_type}</Badge> },
+      { key: "delta", header: "变动", mobileLabel: "变动", render: (item) => <span className={Number(item.delta_points) >= 0 ? "text-emerald-600" : "text-amber-600"}>{formatPoints(item.delta_points)}</span> },
+      { key: "balance", header: "变动后余额", mobileLabel: "变动后余额", render: (item) => `${item.balance_after} 点` },
+      { key: "note", header: "备注", mobileLabel: "备注", render: (item) => item.note || "-" },
+    ],
+    [],
+  );
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ScrollText className="size-4" />
-            余额流水
-          </CardTitle>
-          <CardDescription>预扣 / ASR 扣点 / 翻译扣点 / 退款 / 手工调账 / 兑换码充值明细（筛选与展示均按北京时间）。</CardDescription>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={copyFilters}>
-            复制筛选链接
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => loadLogs(page)} disabled={loading}>
-            <RefreshCcw className="size-4" />
-            刷新
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <form
-          className="grid gap-2 md:grid-cols-4 xl:grid-cols-5"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setPage(1);
-            loadLogs(1);
-          }}
-        >
-          <Input value={userEmail} onChange={(event) => setUserEmail(event.target.value)} placeholder="用户邮箱" />
-          <Select value={eventType} onValueChange={setEventType}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部类型</SelectItem>
-              <SelectItem value="reserve">reserve</SelectItem>
-              <SelectItem value="consume">consume</SelectItem>
-              <SelectItem value="consume_translate">consume_translate</SelectItem>
-              <SelectItem value="refund">refund</SelectItem>
-              <SelectItem value="refund_translate">refund_translate</SelectItem>
-              <SelectItem value="manual_adjust">manual_adjust</SelectItem>
-              <SelectItem value="redeem_code">redeem_code</SelectItem>
-            </SelectContent>
-          </Select>
-          <Input type="datetime-local" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-          <Input type="datetime-local" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-          <Button type="submit" variant="outline" disabled={loading}>
-            查询
-          </Button>
-        </form>
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {(summaryCards.length ? summaryCards : [{ label: "匹配流水", value: total, hint: "当前筛选结果", tone: "info" }]).map((item) => (
+          <MetricCard key={item.label} icon={Wallet} label={item.label} value={item.value} hint={item.hint} tone={item.tone || "default"} loading={loading && items.length === 0} />
+        ))}
+      </div>
 
-        {loading ? <Skeleton className="h-10 w-full" /> : null}
+      <div className="grid gap-4 xl:grid-cols-2">
+        {charts.map((chart) => (
+          <MetricChart key={chart.title} title={chart.title} description={chart.description} data={chart.data} series={chart.series} type={chart.type} xKey={chart.x_key} loading={loading && charts.length === 0} />
+        ))}
+      </div>
 
-        <ScrollArea className="w-full rounded-md border">
-          <Table className="min-w-[1160px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>时间（北京时间）</TableHead>
-                <TableHead>用户</TableHead>
-                <TableHead>类型</TableHead>
-                <TableHead>变动</TableHead>
-                <TableHead>余额</TableHead>
-                <TableHead>模型</TableHead>
-                <TableHead>时长(ms)</TableHead>
-                <TableHead>课程ID</TableHead>
-                <TableHead>兑换批次ID</TableHead>
-                <TableHead>兑换码</TableHead>
-                <TableHead>备注</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>{formatDateTimeBeijing(item.created_at)}</TableCell>
-                  <TableCell>{item.user_email}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        item.event_type === "refund" || item.event_type === "refund_translate"
-                          ? "secondary"
-                          : item.event_type === "manual_adjust"
-                            ? "outline"
-                            : "default"
-                      }
-                    >
-                      {item.event_type}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{item.delta_points}</TableCell>
-                  <TableCell>{item.balance_after}</TableCell>
-                  <TableCell>{item.model_name || "-"}</TableCell>
-                  <TableCell>{item.duration_ms ?? "-"}</TableCell>
-                  <TableCell>{item.lesson_id ?? "-"}</TableCell>
-                  <TableCell>{item.redeem_batch_id ?? "-"}</TableCell>
-                  <TableCell>{item.redeem_code_mask || "-"}</TableCell>
-                  <TableCell>{item.note || "-"}</TableCell>
-                </TableRow>
-              ))}
-              {items.length === 0 ? (
-                <TableRow>
-                  <TableCell className="text-muted-foreground" colSpan={11}>
-                    暂无数据
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
-        </ScrollArea>
-
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">总计 {total} 条</p>
-          <div className="flex items-center gap-2">
+      <FilterPanel
+        title="余额流水筛选"
+        description="同一套筛选面板支持关键词、类型、时间范围和页大小，便于复制链接给同事复盘。"
+        onSubmit={() => {
+          setPage(1);
+          loadLogs(1);
+        }}
+        onReset={resetFilters}
+        actions={
+          <>
+            <Button variant="outline" type="button" onClick={copyFilters}>
+              复制筛选链接
+            </Button>
+            <Button variant="outline" type="button" onClick={() => loadLogs(page)} disabled={loading}>
+              <RefreshCcw className="size-4" />
+              刷新
+            </Button>
             <Select
               value={String(pageSize)}
               onValueChange={(value) => {
@@ -223,7 +191,7 @@ export function AdminLogsTab({ apiCall }) {
                 setPageSize(Number(value));
               }}
             >
-              <SelectTrigger className="w-[120px]">
+              <SelectTrigger className="w-[120px] rounded-xl">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -232,30 +200,62 @@ export function AdminLogsTab({ apiCall }) {
                 <SelectItem value="50">50 / 页</SelectItem>
               </SelectContent>
             </Select>
-            <Pagination className="mx-0 w-auto justify-end">
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious disabled={page <= 1} onClick={() => setPage(page - 1)} />
-                </PaginationItem>
-                <PaginationItem>
-                  <PaginationLink isActive className="px-2.5">
-                    {page} / {pageCount}
-                  </PaginationLink>
-                </PaginationItem>
-                <PaginationItem>
-                  <PaginationNext disabled={page >= pageCount} onClick={() => setPage(page + 1)} />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          </div>
-        </div>
+          </>
+        }
+      >
+        <Input value={userEmail} onChange={(event) => setUserEmail(event.target.value)} placeholder="用户邮箱" className="rounded-xl" />
+        <Select value={eventType} onValueChange={setEventType}>
+          <SelectTrigger className="rounded-xl">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部类型</SelectItem>
+            <SelectItem value="redeem_code">兑换入账</SelectItem>
+            <SelectItem value="consume">转写扣点</SelectItem>
+            <SelectItem value="consume_translate">翻译扣点</SelectItem>
+            <SelectItem value="manual_adjust">手工调账</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input type="datetime-local" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="rounded-xl" />
+        <Input type="datetime-local" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="rounded-xl" />
+      </FilterPanel>
 
-        {status ? (
-          <Alert>
-            <AlertDescription>{status}</AlertDescription>
-          </Alert>
-        ) : null}
-      </CardContent>
-    </Card>
+      <ResponsiveTable
+        columns={columns}
+        data={items}
+        getRowKey={(item) => item.id}
+        mobileTitle={(item) => item.user_email || "未知用户"}
+        mobileDescription={(item) => `${item.event_type} · ${formatDateTimeBeijing(item.created_at)}`}
+        mobileFooter={(item) => `${formatPoints(item.delta_points)}，变动后 ${item.balance_after} 点`}
+        emptyText="暂无流水数据"
+        loading={loading}
+        minWidth={1120}
+      />
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">总计 {total} 条</p>
+        <Pagination className="mx-0 w-auto justify-end">
+          <PaginationContent>
+            <PaginationItem>
+              <PaginationPrevious disabled={page <= 1} onClick={() => setPage(page - 1)} />
+            </PaginationItem>
+            <PaginationItem>
+              <PaginationLink isActive className="px-2.5">
+                {page} / {pageCount}
+              </PaginationLink>
+            </PaginationItem>
+            <PaginationItem>
+              <PaginationNext disabled={page >= pageCount} onClick={() => setPage(page + 1)} />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      </div>
+
+      {status ? (
+        <Alert>
+          <AlertDescription>{status}</AlertDescription>
+        </Alert>
+      ) : null}
+    </div>
   );
 }
