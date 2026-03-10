@@ -137,7 +137,6 @@ def test_admin_subtitle_settings_history_and_rollback(test_client):
             "subtitle_split_target_words": 15,
             "subtitle_split_max_words": 24,
             "semantic_split_max_words_threshold": 20,
-            "semantic_split_model": "qwen-plus",
             "semantic_split_timeout_seconds": 55,
             "translation_batch_max_chars": 2100,
         },

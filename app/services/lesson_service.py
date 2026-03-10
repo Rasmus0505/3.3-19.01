@@ -458,7 +458,7 @@ class LessonService:
                 chunks,
                 enabled=True,
                 threshold_words=subtitle_settings.semantic_split_max_words_threshold,
-                model=subtitle_settings.semantic_split_model,
+                model=MT_MODEL,
                 timeout_seconds=subtitle_settings.semantic_split_timeout_seconds,
             )
             if semantic_split_applied:

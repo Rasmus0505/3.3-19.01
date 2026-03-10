@@ -23,7 +23,6 @@ const defaultDraft = {
   subtitle_split_target_words: 18,
   subtitle_split_max_words: 28,
   semantic_split_max_words_threshold: 24,
-  semantic_split_model: "qwen-plus",
   semantic_split_timeout_seconds: 40,
   translation_batch_max_chars: 2600,
 };
@@ -39,7 +38,6 @@ const presetOptions = [
       subtitle_split_target_words: 18,
       subtitle_split_max_words: 28,
       semantic_split_max_words_threshold: 24,
-      semantic_split_model: "qwen-plus",
       semantic_split_timeout_seconds: 40,
       translation_batch_max_chars: 2600,
     },
@@ -54,7 +52,6 @@ const presetOptions = [
       subtitle_split_target_words: 14,
       subtitle_split_max_words: 22,
       semantic_split_max_words_threshold: 18,
-      semantic_split_model: "qwen-plus",
       semantic_split_timeout_seconds: 50,
       translation_batch_max_chars: 2200,
     },
@@ -69,7 +66,6 @@ const presetOptions = [
       subtitle_split_target_words: 22,
       subtitle_split_max_words: 34,
       semantic_split_max_words_threshold: 30,
-      semantic_split_model: "qwen-plus",
       semantic_split_timeout_seconds: 30,
       translation_batch_max_chars: 3200,
     },
@@ -83,7 +79,6 @@ function normalizeDraft(source) {
     subtitle_split_target_words: Number(source?.subtitle_split_target_words || 18),
     subtitle_split_max_words: Number(source?.subtitle_split_max_words || 28),
     semantic_split_max_words_threshold: Number(source?.semantic_split_max_words_threshold || 24),
-    semantic_split_model: String(source?.semantic_split_model || "qwen-plus"),
     semantic_split_timeout_seconds: Number(source?.semantic_split_timeout_seconds || 40),
     translation_batch_max_chars: Number(source?.translation_batch_max_chars || 2600),
   };
@@ -284,15 +279,6 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-3 rounded-md border p-4">
             <div className="space-y-2">
-              <p className="text-sm font-medium">语义分句模型</p>
-              <Input
-                value={draft.semantic_split_model}
-                onChange={(event) => setDraft((prev) => ({ ...prev, semantic_split_model: event.target.value }))}
-                disabled={saving || rollbacking}
-              />
-              <p className="text-xs text-muted-foreground">只在“句子过长且开启语义分句”时调用，用于把特别长的句子拆得更自然。</p>
-            </div>
-            <div className="space-y-2">
               <p className="text-sm font-medium">语义分句超时秒数</p>
               <Input
                 type="number"
@@ -304,6 +290,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
                 }
                 disabled={saving || rollbacking}
               />
+              <p className="text-xs text-muted-foreground">语义分句固定复用 `qwen-mt-flash`，这里仅控制等待时长，不再单独配置模型。</p>
             </div>
             <div className="space-y-2">
               <p className="text-sm font-medium">翻译批次最大字符数</p>
