@@ -1,12 +1,78 @@
-export function api(path, options = {}, accessToken = "") {
+const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+function withBase(path, baseUrl = "") {
+  const safeBase = String(baseUrl || "").trim();
+  if (!safeBase) return path;
+  if (String(path).startsWith("http://") || String(path).startsWith("https://")) return path;
+  if (!String(path).startsWith("/")) return `${safeBase}/${path}`;
+  return `${safeBase}${path}`;
+}
+
+function normalizeMethod(options = {}) {
+  return String(options.method || "GET").toUpperCase();
+}
+
+function shouldRetry(method, options = {}, attempt = 0, response = null, error = null) {
+  const maxRetries =
+    typeof options.retries === "number"
+      ? Math.max(0, Number(options.retries))
+      : IDEMPOTENT_METHODS.has(method)
+        ? 2
+        : 0;
+  if (attempt >= maxRetries) return false;
+  if (error) return IDEMPOTENT_METHODS.has(method);
+  if (!response) return false;
+  return response.status >= 500 && response.status < 600 && IDEMPOTENT_METHODS.has(method);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function buildHeaders(options = {}, accessToken = "") {
   const headers = new Headers(options.headers || {});
   if (accessToken) {
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
-  return fetch(path, { ...options, headers });
+  return headers;
 }
 
-export function uploadWithProgress(path, options = {}, accessToken = "") {
+async function runFetch(path, options = {}, accessToken = "", baseUrl = "") {
+  const method = normalizeMethod(options);
+  const { retries, retryDelayMs = 250, onAuthError, ...fetchOptions } = options;
+  let attempt = 0;
+  while (true) {
+    try {
+      const response = await fetch(withBase(path, baseUrl), {
+        ...fetchOptions,
+        method,
+        headers: buildHeaders(fetchOptions, accessToken),
+      });
+      if ((response.status === 401 || response.status === 403) && typeof onAuthError === "function") {
+        onAuthError(response);
+      }
+      if (!shouldRetry(method, { retries }, attempt, response)) {
+        return response;
+      }
+    } catch (error) {
+      if (!shouldRetry(method, { retries }, attempt, null, error)) {
+        throw error;
+      }
+    }
+    attempt += 1;
+    await sleep(Number(retryDelayMs || 250) * 2 ** (attempt - 1));
+  }
+}
+
+export function createApiClient({ baseUrl = "" } = {}) {
+  return function apiClient(path, options = {}, accessToken = "") {
+    return runFetch(path, options, accessToken, baseUrl);
+  };
+}
+
+export const api = createApiClient();
+
+export function uploadWithProgress(path, options = {}, accessToken = "", baseUrl = "") {
   const { body, headers: rawHeaders, method = "POST", onUploadProgress, signal } = options;
 
   return new Promise((resolve, reject) => {
@@ -53,7 +119,7 @@ export function uploadWithProgress(path, options = {}, accessToken = "") {
       signal.addEventListener("abort", abortHandler, { once: true });
     }
 
-    xhr.open(method, path, true);
+    xhr.open(method, withBase(path, baseUrl), true);
     headers.forEach((value, key) => {
       if (value != null) {
         xhr.setRequestHeader(key, value);
@@ -103,5 +169,8 @@ export async function parseResponse(resp) {
 }
 
 export function toErrorText(data, fallback) {
-  return `${data.error_code || "ERROR"}: ${data.message || fallback}`;
+  if (typeof data === "string" && data.trim()) {
+    return data.trim();
+  }
+  return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
 }

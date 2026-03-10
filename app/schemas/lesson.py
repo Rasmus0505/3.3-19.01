@@ -37,6 +37,27 @@ class LessonItemResponse(BaseModel):
     created_at: datetime
 
 
+class LessonCatalogProgressSummaryResponse(BaseModel):
+    current_sentence_index: int = 0
+    completed_sentence_count: int = 0
+    last_played_at_ms: int = 0
+    updated_at: datetime | None = None
+
+
+class LessonCatalogItemResponse(LessonItemResponse):
+    sentence_count: int = 0
+    progress_summary: LessonCatalogProgressSummaryResponse | None = None
+
+
+class LessonCatalogResponse(BaseModel):
+    ok: bool = True
+    page: int
+    page_size: int
+    total: int
+    has_more: bool
+    items: list[LessonCatalogItemResponse]
+
+
 class LessonDetailResponse(LessonItemResponse):
     sentences: list[LessonSentenceResponse]
     subtitle_cache_seed: SubtitleCacheSeedResponse | None = None

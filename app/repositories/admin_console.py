@@ -17,6 +17,7 @@ from app.models import (
     WalletLedger,
 )
 from app.repositories.admin import list_redeem_batches
+from app.services.query_cache import query_cache
 from app.services.lesson_task_manager import ensure_lesson_task_storage_ready
 
 CHART_COLORS = {
@@ -27,6 +28,8 @@ CHART_COLORS = {
     "violet": "#8b5cf6",
     "cyan": "#06b6d4",
 }
+ADMIN_OVERVIEW_TTL_SECONDS = 600
+ADMIN_USER_SUMMARY_TTL_SECONDS = 600
 
 
 def _start_of_day(now: datetime) -> datetime:
@@ -168,7 +171,15 @@ def _lesson_task_base(
     return base, count_stmt, sort_column, owner_user
 
 
-def get_admin_overview_data(db: Session, *, now: datetime) -> dict[str, object]:
+def invalidate_admin_overview_cache() -> None:
+    query_cache.invalidate_namespace("admin_overview")
+
+
+def invalidate_admin_user_activity_summary_cache(user_id: int) -> None:
+    query_cache.invalidate_namespace(f"admin_user_summary:{int(user_id)}")
+
+
+def _get_admin_overview_data_uncached(db: Session, *, now: datetime) -> dict[str, object]:
     today_start = _start_of_day(now)
     last_24_hours = now - timedelta(hours=24)
     seven_days_start = _start_of_day(now) - timedelta(days=6)
@@ -498,7 +509,16 @@ def list_admin_lesson_task_logs(
     }
 
 
-def get_admin_user_activity_summary(db: Session, *, user_id: int, now: datetime) -> dict[str, object]:
+def get_admin_overview_data(db: Session, *, now: datetime) -> dict[str, object]:
+    return query_cache.get_or_set(
+        "admin_overview",
+        {"bucket": now.replace(second=0, microsecond=0).isoformat()},
+        ADMIN_OVERVIEW_TTL_SECONDS,
+        lambda: _get_admin_overview_data_uncached(db, now=now),
+    )
+
+
+def _get_admin_user_activity_summary_uncached(db: Session, *, user_id: int, now: datetime) -> dict[str, object]:
     since_30_days = now - timedelta(days=30)
     latest_lesson_created_at = db.scalar(select(func.max(Lesson.created_at)).where(Lesson.user_id == user_id))
     latest_wallet_event_at = db.scalar(select(func.max(WalletLedger.created_at)).where(WalletLedger.user_id == user_id))
@@ -538,3 +558,12 @@ def get_admin_user_activity_summary(db: Session, *, user_id: int, now: datetime)
         "consumed_points_30d": consumed_points_30d,
         "redeemed_points_30d": redeemed_points_30d,
     }
+
+
+def get_admin_user_activity_summary(db: Session, *, user_id: int, now: datetime) -> dict[str, object]:
+    return query_cache.get_or_set(
+        f"admin_user_summary:{int(user_id)}",
+        {"bucket": now.replace(second=0, microsecond=0).isoformat()},
+        ADMIN_USER_SUMMARY_TTL_SECONDS,
+        lambda: _get_admin_user_activity_summary_uncached(db, user_id=user_id, now=now),
+    )

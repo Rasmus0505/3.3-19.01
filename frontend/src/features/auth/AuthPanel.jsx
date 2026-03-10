@@ -4,8 +4,11 @@ import { toast } from "sonner";
 import { ENDPOINTS } from "../../shared/api/endpoints";
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, Input, Label } from "../../shared/ui";
+import { useAppStore } from "../../store";
 
 export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
+  const setAccessToken = useAppStore((state) => state.setAccessToken);
+  const setGlobalStatus = useAppStore((state) => state.setGlobalStatus);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -29,7 +32,9 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
       }
       localStorage.setItem(tokenKey, data.access_token);
       localStorage.setItem(refreshKey, data.refresh_token);
+      setAccessToken(data.access_token);
       setStatus("登录成功，正在进入首页");
+      setGlobalStatus("");
       toast.success("登录成功");
       onAuthed(data);
     } catch (error) {

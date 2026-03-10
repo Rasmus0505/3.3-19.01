@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.timezone import now_shanghai_naive
@@ -11,7 +11,7 @@ from app.db import Base, schema_fk, table_args
 
 class Lesson(Base):
     __tablename__ = "lessons"
-    __table_args__ = table_args()
+    __table_args__ = table_args(Index("ix_lessons_user_id_created_at", "user_id", "created_at"))
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey(schema_fk("users.id")), nullable=False, index=True)
