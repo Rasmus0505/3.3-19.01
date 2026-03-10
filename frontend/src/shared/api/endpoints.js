@@ -4,6 +4,7 @@
     register: "/api/auth/register",
   },
   lessons: "/api/lessons",
+  lessonCatalog: "/api/lessons/catalog",
   walletMe: "/api/wallet/me",
   walletRedeemCode: "/api/wallet/redeem-code",
   billingRates: "/api/billing/rates",

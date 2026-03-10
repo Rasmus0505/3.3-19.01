@@ -1,54 +1,29 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { NavLink } from "react-router-dom";
 
 import { AdminApp } from "../AdminApp";
 import { AuthPanel } from "../features/auth/AuthPanel";
 import { adminApi } from "../shared/api/adminClient";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton } from "../shared/ui";
-import { clearAuthStorage, REFRESH_KEY, TOKEN_KEY } from "./authStorage";
+import { useAppStore } from "../store";
+import { REFRESH_KEY, TOKEN_KEY } from "./authStorage";
 
 export function AdminShellStandalone() {
-  const [accessToken, setAccessToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
-  const [isAdminUser, setIsAdminUser] = useState(false);
-  const [adminAuthState, setAdminAuthState] = useState("idle");
-
-  async function detectAdmin() {
-    if (!accessToken) {
-      setAdminAuthState("idle");
-      setIsAdminUser(false);
-      return;
-    }
-    setAdminAuthState("checking");
-    const resp = await adminApi("/api/admin/billing-rates", {}, accessToken);
-    if (resp.ok) {
-      setIsAdminUser(true);
-      setAdminAuthState("ready");
-      return;
-    }
-    if (resp.status === 403) {
-      setIsAdminUser(false);
-      setAdminAuthState("forbidden");
-      return;
-    }
-    setIsAdminUser(false);
-    setAdminAuthState("forbidden");
-  }
+  const accessToken = useAppStore((state) => state.accessToken);
+  const isAdminUser = useAppStore((state) => state.isAdminUser);
+  const adminAuthState = useAppStore((state) => state.adminAuthState);
+  const detectAdmin = useAppStore((state) => state.detectAdmin);
+  const hydrateAccessToken = useAppStore((state) => state.hydrateAccessToken);
+  const logout = useAppStore((state) => state.logout);
 
   useEffect(() => {
-    detectAdmin();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken]);
+    hydrateAccessToken();
+  }, [hydrateAccessToken]);
 
-  function handleLogout() {
-    clearAuthStorage();
-    setAccessToken("");
-    setIsAdminUser(false);
-    setAdminAuthState("idle");
-  }
-
-  function handleAuthed() {
-    setAccessToken(localStorage.getItem(TOKEN_KEY) || "");
-  }
+  useEffect(() => {
+    if (!accessToken) return;
+    void detectAdmin(adminApi);
+  }, [accessToken, detectAdmin]);
 
   if (!accessToken) {
     return (
@@ -61,7 +36,7 @@ export function AdminShellStandalone() {
                 <CardDescription>请使用管理员账号登录后访问独立管理后台。</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <AuthPanel onAuthed={handleAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
+                <AuthPanel onAuthed={hydrateAccessToken} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
               </CardContent>
             </Card>
           </div>
@@ -101,7 +76,7 @@ export function AdminShellStandalone() {
                 <Button variant="outline" asChild>
                   <NavLink to="/admin/ops">刷新重试</NavLink>
                 </Button>
-                <Button onClick={handleLogout}>退出登录</Button>
+                <Button onClick={logout}>退出登录</Button>
               </CardContent>
             </Card>
           </div>
@@ -110,5 +85,5 @@ export function AdminShellStandalone() {
     );
   }
 
-  return <AdminApp apiCall={(path, options = {}) => adminApi(path, options, accessToken)} onLogout={handleLogout} />;
+  return <AdminApp apiCall={(path, options = {}) => adminApi(path, options, accessToken)} onLogout={logout} />;
 }

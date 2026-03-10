@@ -5,6 +5,8 @@ from app.models import BillingModelRate, Lesson, LessonSentence, SubtitleSetting
 from app.schemas import (
     AdminSubtitleSettingsItem,
     BillingRateItem,
+    LessonCatalogItemResponse,
+    LessonCatalogProgressSummaryResponse,
     LessonDetailResponse,
     LessonItemResponse,
     LessonSentenceResponse,
@@ -62,6 +64,36 @@ def to_lesson_item_response(lesson: Lesson) -> LessonItemResponse:
         source_duration_ms=lesson.source_duration_ms,
         status=lesson.status,
         created_at=to_shanghai_aware(lesson.created_at),
+    )
+
+
+def to_lesson_catalog_item_response(
+    lesson: Lesson,
+    *,
+    sentence_count: int = 0,
+    progress_summary: dict | None = None,
+) -> LessonCatalogItemResponse:
+    base = to_lesson_item_response(lesson)
+    payload = None
+    if isinstance(progress_summary, dict):
+        payload = LessonCatalogProgressSummaryResponse(
+            current_sentence_index=int(progress_summary.get("current_sentence_index", 0) or 0),
+            completed_sentence_count=int(progress_summary.get("completed_sentence_count", 0) or 0),
+            last_played_at_ms=int(progress_summary.get("last_played_at_ms", 0) or 0),
+            updated_at=to_shanghai_aware(progress_summary.get("updated_at")) if progress_summary.get("updated_at") else None,
+        )
+    return LessonCatalogItemResponse(
+        id=base.id,
+        title=base.title,
+        source_filename=base.source_filename,
+        asr_model=base.asr_model,
+        duration_ms=base.duration_ms,
+        media_storage=base.media_storage,
+        source_duration_ms=base.source_duration_ms,
+        status=base.status,
+        created_at=base.created_at,
+        sentence_count=max(0, int(sentence_count or 0)),
+        progress_summary=payload,
     )
 
 

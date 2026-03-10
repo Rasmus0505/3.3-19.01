@@ -1,49 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { NavLink } from "react-router-dom";
 
 import { AdminApp } from "../AdminApp";
 import { api } from "../shared/api/client";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton } from "../shared/ui";
-import { clearAuthStorage, TOKEN_KEY } from "./authStorage";
+import { useAppStore } from "../store";
 
 export function AdminShell() {
-  const [accessToken, setAccessToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
-  const [isAdminUser, setIsAdminUser] = useState(false);
-  const [adminAuthState, setAdminAuthState] = useState("idle");
-
-  async function detectAdmin() {
-    if (!accessToken) {
-      setAdminAuthState("idle");
-      setIsAdminUser(false);
-      return;
-    }
-    setAdminAuthState("checking");
-    const resp = await api("/api/admin/billing-rates", {}, accessToken);
-    if (resp.ok) {
-      setIsAdminUser(true);
-      setAdminAuthState("ready");
-      return;
-    }
-    if (resp.status === 403) {
-      setIsAdminUser(false);
-      setAdminAuthState("forbidden");
-      return;
-    }
-    setIsAdminUser(false);
-    setAdminAuthState("forbidden");
-  }
+  const accessToken = useAppStore((state) => state.accessToken);
+  const isAdminUser = useAppStore((state) => state.isAdminUser);
+  const adminAuthState = useAppStore((state) => state.adminAuthState);
+  const detectAdmin = useAppStore((state) => state.detectAdmin);
+  const logout = useAppStore((state) => state.logout);
 
   useEffect(() => {
-    detectAdmin();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken]);
-
-  function handleLogout() {
-    clearAuthStorage();
-    setAccessToken("");
-    setIsAdminUser(false);
-    setAdminAuthState("idle");
-  }
+    if (!accessToken) return;
+    void detectAdmin(api);
+  }, [accessToken, detectAdmin]);
 
   if (!accessToken) {
     return (
@@ -98,7 +71,7 @@ export function AdminShell() {
                 <Button variant="outline" asChild>
                   <NavLink to="/">返回学习页</NavLink>
                 </Button>
-                <Button onClick={handleLogout}>退出登录</Button>
+                <Button onClick={logout}>退出登录</Button>
               </CardContent>
             </Card>
           </div>
@@ -107,10 +80,5 @@ export function AdminShell() {
     );
   }
 
-  return (
-    <AdminApp
-      apiCall={(path, options = {}) => api(path, options, accessToken)}
-      onLogout={handleLogout}
-    />
-  );
+  return <AdminApp apiCall={(path, options = {}) => api(path, options, accessToken)} onLogout={logout} />;
 }

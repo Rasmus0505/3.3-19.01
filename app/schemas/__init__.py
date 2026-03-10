@@ -42,6 +42,9 @@ from app.schemas.billing import (
 )
 from app.schemas.common import ErrorResponse, SuccessResponse
 from app.schemas.lesson import (
+    LessonCatalogItemResponse,
+    LessonCatalogProgressSummaryResponse,
+    LessonCatalogResponse,
     LessonCreateResponse,
     LessonDeleteResponse,
     LessonDetailResponse,
@@ -74,6 +77,9 @@ __all__ = [
     "LessonSentenceResponse",
     "SubtitleCacheSeedResponse",
     "LessonItemResponse",
+    "LessonCatalogProgressSummaryResponse",
+    "LessonCatalogItemResponse",
+    "LessonCatalogResponse",
     "LessonDetailResponse",
     "LessonCreateResponse",
     "LessonRenameRequest",
