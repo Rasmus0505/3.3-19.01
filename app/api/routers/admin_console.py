@@ -200,6 +200,7 @@ def admin_lesson_task_logs(
                 error_code=str(row.error_code or ""),
                 message=str(row.message or ""),
                 detail_excerpt=str((failure_debug_payload or {}).get("detail_excerpt") or ""),
+                traceback_excerpt=str((failure_debug_payload or {}).get("traceback_excerpt") or ""),
                 last_progress_text=str((failure_debug_payload or {}).get("last_progress_text") or ""),
                 exception_type=str((failure_debug_payload or {}).get("exception_type") or ""),
                 resume_available=bool(row.resume_available),

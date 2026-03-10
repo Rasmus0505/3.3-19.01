@@ -91,6 +91,7 @@ class LessonTaskFailureDebugResponse(BaseModel):
     failed_stage: str = ""
     exception_type: str = ""
     detail_excerpt: str = ""
+    traceback_excerpt: str = ""
     last_progress_text: str = ""
     stages: list[LessonTaskStageResponse] = Field(default_factory=list)
     counters: LessonTaskCountersResponse = Field(default_factory=LessonTaskCountersResponse)

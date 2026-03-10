@@ -17,6 +17,7 @@ from app.services.media import cleanup_dir
 FAILURE_RETENTION_HOURS = 24
 FAILURE_EXCEPTION_TYPE_LIMIT = 120
 FAILURE_DETAIL_EXCERPT_LIMIT = 2000
+FAILURE_TRACEBACK_EXCERPT_LIMIT = 4000
 
 _STAGE_LABELS: tuple[tuple[str, str], ...] = (
     ("convert_audio", "转换音频格式"),
@@ -28,6 +29,17 @@ _STAGE_LABELS: tuple[tuple[str, str], ...] = (
 
 def _empty_stages() -> list[dict]:
     return [{"key": key, "label": label, "status": "pending"} for key, label in _STAGE_LABELS]
+
+
+def _empty_counters() -> dict:
+    return {
+        "asr_done": 0,
+        "asr_estimated": 0,
+        "translate_done": 0,
+        "translate_total": 0,
+        "segment_done": 0,
+        "segment_total": 0,
+    }
 
 
 def _default_artifacts(work_dir: str, source_path: str) -> dict:
@@ -175,14 +187,7 @@ def create_task(
             overall_percent=0,
             current_text="等待处理",
             stages_json=_empty_stages(),
-            counters_json={
-                "asr_done": 0,
-                "asr_estimated": 0,
-                "translate_done": 0,
-                "translate_total": 0,
-                "segment_done": 0,
-                "segment_total": 0,
-            },
+            counters_json=_empty_counters(),
             work_dir=work_dir,
             source_path=source_path,
             artifacts_json=_default_artifacts(work_dir, source_path),
@@ -293,6 +298,7 @@ def mark_task_failed(
     message: str,
     exception_type: str = "",
     detail_excerpt: str = "",
+    traceback_excerpt: str = "",
     failed_stage: str | None = None,
     translation_debug: dict | None = None,
     resume_available: bool | None = None,
@@ -319,6 +325,7 @@ def mark_task_failed(
             "failed_stage": resume_stage,
             "exception_type": _trim_text(exception_type, FAILURE_EXCEPTION_TYPE_LIMIT),
             "detail_excerpt": _trim_text(detail_excerpt, FAILURE_DETAIL_EXCERPT_LIMIT),
+            "traceback_excerpt": _trim_text(traceback_excerpt, FAILURE_TRACEBACK_EXCERPT_LIMIT),
             "last_progress_text": _trim_text(last_progress_text, 255),
             "stages": _copy_list(stages),
             "counters": _copy_dict(task.counters_json),
@@ -366,6 +373,39 @@ def mark_task_succeeded(
         task.artifact_expires_at = now_shanghai_naive()
         task.failed_at = None
         session.commit()
+    finally:
+        if owns_session:
+            session.close()
+
+
+def reset_failed_task_for_restart(
+    task_id: str,
+    *,
+    db: Session | None = None,
+    session_factory: SessionFactory | None = None,
+) -> dict | None:
+    cleanup_expired_tasks(db=db, session_factory=session_factory)
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
+    try:
+        task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        if not task or str(task.status or "") != "failed":
+            return None
+        task.stages_json = _empty_stages()
+        task.counters_json = _empty_counters()
+        task.translation_debug_json = None
+        task.failure_debug_json = None
+        task.status = "pending"
+        task.overall_percent = 0
+        task.current_text = "准备重新生成"
+        task.error_code = ""
+        task.message = ""
+        task.resume_available = False
+        task.resume_stage = "convert_audio"
+        task.artifact_expires_at = None
+        task.failed_at = None
+        session.commit()
+        session.refresh(task)
+        return _task_to_dict(task)
     finally:
         if owns_session:
             session.close()
