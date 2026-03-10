@@ -173,6 +173,21 @@ def test_admin_lesson_task_logs_exposes_traceback_excerpt(test_client, tmp_path)
     assert "RuntimeError: unit failure" in item["failure_debug"]["traceback_excerpt"]
 
 
+def test_admin_lesson_task_logs_accepts_empty_lesson_id_and_rejects_invalid(test_client):
+    client, _, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "admin-lesson-id@example.com")
+    admin_token = _register_and_login(client, email="admin-lesson-id@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    empty_resp = client.get("/api/admin/lesson-task-logs", headers=admin_headers, params={"lesson_id": ""})
+    assert empty_resp.status_code == 200
+    assert empty_resp.json()["ok"] is True
+
+    invalid_resp = client.get("/api/admin/lesson-task-logs", headers=admin_headers, params={"lesson_id": "abc"})
+    assert invalid_resp.status_code == 400
+    assert invalid_resp.json()["error_code"] == "INVALID_LESSON_ID"
+
+
 def test_admin_subtitle_settings_history_and_rollback(test_client):
     client, _, monkeypatch = test_client
     monkeypatch.setenv("ADMIN_EMAILS", "subtitle-history-admin@example.com")

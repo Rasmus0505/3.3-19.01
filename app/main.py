@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
@@ -268,6 +268,13 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
         if full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not Found")
         return _spa_shell_response()
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        icon_path = STATIC_DIR / "favicon.ico"
+        if icon_path.exists():
+            return FileResponse(icon_path)
+        return Response(status_code=204)
 
     @app.get("/health")
     def health() -> dict:
