@@ -12,7 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "../../shared/ui";
-import { getShortcutLabel, isShortcutPressed, readLearningSettings, resolveReplayAssistance } from "./learningSettings";
+import { getShortcutLabel, isShortcutPressed, readLearningSettings, resolveReplayAssistance, writeLearningSettings } from "./learningSettings";
 import { getMediaExt, isAudioFilename, isVideoFilename, normalizeToken } from "./tokenNormalize";
 import { useSentencePlayback } from "./useSentencePlayback";
 import { useTypingFeedbackSounds } from "./useTypingFeedbackSounds";
@@ -21,6 +21,7 @@ import "./immersive.css";
 const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
 const APOSTROPHE_RE = /[’']/g;
 const CINEMA_CONTROLS_IDLE_MS = 3000;
+const MIN_PERCEPTIBLE_SLOWDOWN_WINDOW_MS = 900;
 const WORD_TIMING_TOLERANCE_MS = 140;
 const MEDIA_TYPE_BY_EXTENSION = {
   ".mp4": "video/mp4",
@@ -391,6 +392,7 @@ function buildReplayPlaybackPlan(sentence, sentenceTiming, activeWordIndex, tail
   const sentenceEndMs = Math.max(sentenceStartMs + 1, Number(sentence?.end_ms || 0));
   const resolvedBoundaryMs = resolveReplayBoundaryMs(sentence, sentenceTiming, activeWordIndex);
   const safeTailRate = Math.max(0.4, Math.min(1, Number(tailRate || 1)));
+  const tailWindowMs = resolvedBoundaryMs ? Math.max(0, sentenceEndMs - resolvedBoundaryMs) : sentenceEndMs - sentenceStartMs;
 
   if (!resolvedBoundaryMs) {
     return {
@@ -398,6 +400,9 @@ function buildReplayPlaybackPlan(sentence, sentenceTiming, activeWordIndex, tail
       rateSteps: [],
       preciseBoundary: false,
       tailBoundaryMs: sentenceStartMs,
+      tailWindowMs,
+      speedMode: safeTailRate < 1 ? "full_sentence_fallback" : "normal",
+      fallbackReason: "boundary_missing",
     };
   }
 
@@ -407,15 +412,21 @@ function buildReplayPlaybackPlan(sentence, sentenceTiming, activeWordIndex, tail
       rateSteps: [],
       preciseBoundary: true,
       tailBoundaryMs: resolvedBoundaryMs,
+      tailWindowMs,
+      speedMode: safeTailRate < 1 ? "full_sentence_fallback" : "normal",
+      fallbackReason: "boundary_near_start",
     };
   }
 
-  if (resolvedBoundaryMs >= sentenceEndMs - 30) {
+  if (safeTailRate < 1 && tailWindowMs < MIN_PERCEPTIBLE_SLOWDOWN_WINDOW_MS) {
     return {
-      initialRate: 1,
+      initialRate: safeTailRate,
       rateSteps: [],
       preciseBoundary: true,
       tailBoundaryMs: resolvedBoundaryMs,
+      tailWindowMs,
+      speedMode: "full_sentence_fallback",
+      fallbackReason: "tail_window_too_short",
     };
   }
 
@@ -429,6 +440,9 @@ function buildReplayPlaybackPlan(sentence, sentenceTiming, activeWordIndex, tail
     ],
     preciseBoundary: true,
     tailBoundaryMs: resolvedBoundaryMs,
+    tailWindowMs,
+    speedMode: safeTailRate < 1 ? "tail_only" : "normal",
+    fallbackReason: "",
   };
 }
 
@@ -534,7 +548,9 @@ export function ImmersiveLessonPage({
   const [sentencePlaybackRequired, setSentencePlaybackRequired] = useState(true);
   const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
   const [isFullscreenFallback, setIsFullscreenFallback] = useState(false);
-  const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(false);
+  const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(
+    () => readLearningSettings().uiPreferences?.showFullscreenPreviousSentence ?? false,
+  );
   const [cinemaControlsIdle, setCinemaControlsIdle] = useState(false);
 
   const immersiveContainerRef = useRef(null);
@@ -605,6 +621,19 @@ export function ImmersiveLessonPage({
   const expectedSourceDurationSec = Math.max(0, Number(lesson?.source_duration_ms || 0) / 1000);
 
   const { playKeySound, playWrongSound, playCorrectSound } = useTypingFeedbackSounds();
+
+  const persistFullscreenPreviousSentencePreference = useCallback((nextVisible) => {
+    const safeVisible = Boolean(nextVisible);
+    setShowFullscreenPreviousSentence(safeVisible);
+    const currentSettings = readLearningSettings();
+    writeLearningSettings({
+      ...currentSettings,
+      uiPreferences: {
+        ...currentSettings.uiPreferences,
+        showFullscreenPreviousSentence: safeVisible,
+      },
+    });
+  }, []);
 
   const resetSentenceGate = useCallback((playbackRequired = true) => {
     sentenceAdvanceLockedRef.current = false;
@@ -1235,8 +1264,14 @@ export function ImmersiveLessonPage({
         sentenceIndex: currentSentenceIndex,
         stage: nextStage,
         assistance,
+        tailRate: assistance.tailRate,
+        initialRate: playbackPlan.initialRate,
+        rateSteps: playbackPlan.rateSteps,
+        speedMode: playbackPlan.speedMode,
+        fallbackReason: playbackPlan.fallbackReason,
         preciseBoundary: playbackPlan.preciseBoundary,
         tailBoundaryMs: playbackPlan.tailBoundaryMs,
+        tailWindowMs: playbackPlan.tailWindowMs,
       });
       void tryPlayCurrentSentence({
         manual: true,
@@ -1290,9 +1325,6 @@ export function ImmersiveLessonPage({
       const fullscreenElement = getFullscreenElement();
       const nextIsCinemaFullscreen = Boolean(immersiveContainerRef.current && fullscreenElement === immersiveContainerRef.current);
       setIsCinemaFullscreen(nextIsCinemaFullscreen);
-      if (!nextIsCinemaFullscreen) {
-        setShowFullscreenPreviousSentence(false);
-      }
     };
 
     document.addEventListener("fullscreenchange", syncFullscreenState);
@@ -1644,7 +1676,7 @@ export function ImmersiveLessonPage({
                     variant="outline"
                     size="sm"
                     className={cinemaButtonClassName}
-                    onClick={() => setShowFullscreenPreviousSentence((prev) => !prev)}
+                    onClick={() => persistFullscreenPreviousSentencePreference(!showFullscreenPreviousSentence)}
                   >
                     {showFullscreenPreviousSentence ? "隐藏上一句" : "显示上一句"}
                   </Button>
