@@ -1,5 +1,6 @@
 ﻿import { ArrowLeft, ArrowRight, Eye, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { getStorageEstimate, getLessonMedia, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import {
@@ -550,6 +551,7 @@ export function ImmersiveLessonPage({
   const playbackKindRef = useRef("initial");
   const replayAssistStageRef = useRef(0);
   const replayProgressAnchorRef = useRef(0);
+  const autoFullscreenAttemptKeyRef = useRef("");
   const cinemaFullscreenActive = isCinemaFullscreen || isFullscreenFallback;
   const hasExitHandler = typeof onExitImmersive === "function" || typeof onBack === "function";
   const typingEnabled =
@@ -1106,23 +1108,36 @@ export function ImmersiveLessonPage({
     setIsCinemaFullscreen(false);
   }, [isFullscreenFallback]);
 
-  const enterCinemaFullscreen = useCallback(async () => {
-    if (!immersiveActive) return;
-    if (isCinemaFullscreen || isFullscreenFallback) return;
+  const enterCinemaFullscreen = useCallback(async ({ source = "manual", showFailureToast = false } = {}) => {
+    if (!immersiveActive) return { ok: false, reason: "immersive_inactive" };
+    if (isCinemaFullscreen || isFullscreenFallback) return { ok: true, reason: "already_active" };
 
     setShowFullscreenPreviousSentence(false);
     const container = immersiveContainerRef.current;
-    if (!container) return;
+    if (!container) return { ok: false, reason: "fullscreen_target_missing" };
 
+    debugImmersiveLog("cinema_fullscreen.request", { source, lessonId: lesson?.id });
+    setIsFullscreenFallback(true);
     try {
       await requestElementFullscreen(container);
       setIsFullscreenFallback(false);
       setIsCinemaFullscreen(true);
-    } catch (_) {
+      debugImmersiveLog("cinema_fullscreen.success", { source, lessonId: lesson?.id });
+      return { ok: true, reason: "system_fullscreen" };
+    } catch (error) {
       setIsCinemaFullscreen(false);
       setIsFullscreenFallback(true);
+      debugImmersiveLog("cinema_fullscreen.fallback", {
+        source,
+        lessonId: lesson?.id,
+        error: String(error),
+      });
+      if (showFailureToast) {
+        toast.warning("浏览器拦截了全屏，请再点一次并允许全屏；本次已先进入铺满学习模式。");
+      }
+      return { ok: false, reason: "fallback_active", error };
     }
-  }, [immersiveActive, isCinemaFullscreen, isFullscreenFallback]);
+  }, [immersiveActive, isCinemaFullscreen, isFullscreenFallback, lesson?.id]);
 
   const jumpToSentence = useCallback(
     async (targetIndex, source = "manual") => {
@@ -1265,6 +1280,21 @@ export function ImmersiveLessonPage({
       document.removeEventListener("MSFullscreenChange", syncFullscreenState);
     };
   }, []);
+
+  useEffect(() => {
+    if (!immersiveActive) {
+      autoFullscreenAttemptKeyRef.current = "";
+      return;
+    }
+    if (!lesson?.id || sentenceCount <= 0) return;
+
+    const attemptKey = `${lesson.id}`;
+    if (autoFullscreenAttemptKeyRef.current === attemptKey) return;
+
+    autoFullscreenAttemptKeyRef.current = attemptKey;
+    console.debug("[DEBUG] immersive.auto_fullscreen.start", { lessonId: lesson.id });
+    void enterCinemaFullscreen({ source: "auto", showFailureToast: true });
+  }, [enterCinemaFullscreen, immersiveActive, lesson?.id, sentenceCount]);
 
   useEffect(() => {
     if (!cinemaFullscreenActive) return undefined;
@@ -1566,11 +1596,6 @@ export function ImmersiveLessonPage({
                 <Button variant="outline" size="sm" className={cinemaButtonClassName} onClick={() => void exitImmersive("button")}>
                   <ArrowLeft className="size-4" />
                   退出
-                </Button>
-              ) : null}
-              {immersiveActive && !cinemaFullscreenActive ? (
-                <Button variant="outline" size="sm" onClick={() => void enterCinemaFullscreen()}>
-                  全屏学习
                 </Button>
               ) : null}
               {immersiveActive && cinemaFullscreenActive ? (
