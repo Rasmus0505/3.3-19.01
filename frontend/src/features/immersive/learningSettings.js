@@ -1,18 +1,57 @@
-const LEARNING_SETTINGS_STORAGE_KEY = "immersive_learning_settings_v1";
+const LEARNING_SETTINGS_STORAGE_KEY = "immersive_learning_settings_v2";
+const LEGACY_LEARNING_SETTINGS_STORAGE_KEY = "immersive_learning_settings_v1";
 
-export const SHORTCUT_OPTIONS = [
-  { value: "space", label: "Space" },
-  { value: "shift+space", label: "Shift+Space" },
-  { value: "enter", label: "Enter" },
-  { value: "shift+enter", label: "Shift+Enter" },
-  { value: "arrowleft", label: "ArrowLeft" },
-  { value: "arrowright", label: "ArrowRight" },
-  { value: "shift+arrowleft", label: "Shift+ArrowLeft" },
-  { value: "shift+arrowright", label: "Shift+ArrowRight" },
-  { value: "shift+r", label: "Shift+R" },
-  { value: "shift+n", label: "Shift+N" },
-  { value: "shift+p", label: "Shift+P" },
-];
+const RESERVED_SHORTCUT_KEYS = new Set(["escape", "tab", "backspace", "delete"]);
+const MODIFIER_ONLY_KEYS = new Set(["shift", "control", "ctrl", "alt", "meta", "os"]);
+const BARE_ALLOWED_SHORTCUT_KEYS = new Set([
+  "space",
+  "enter",
+  "arrowleft",
+  "arrowright",
+  "arrowup",
+  "arrowdown",
+  "home",
+  "end",
+  "pageup",
+  "pagedown",
+  "mediaplaypause",
+  "mediastop",
+  "mediatracknext",
+  "mediatrackprevious",
+]);
+
+const SHORT_KEY_LABELS = {
+  " ": "Space",
+  space: "Space",
+  enter: "Enter",
+  arrowleft: "ArrowLeft",
+  arrowright: "ArrowRight",
+  arrowup: "ArrowUp",
+  arrowdown: "ArrowDown",
+  home: "Home",
+  end: "End",
+  pageup: "PageUp",
+  pagedown: "PageDown",
+  mediaplaypause: "MediaPlayPause",
+  mediastop: "MediaStop",
+  mediatracknext: "MediaTrackNext",
+  mediatrackprevious: "MediaTrackPrevious",
+};
+
+const LEGACY_SHORTCUT_BINDINGS = {
+  space: { code: "Space", key: "space", shift: false, ctrl: false, alt: false, meta: false },
+  "shift+space": { code: "Space", key: "space", shift: true, ctrl: false, alt: false, meta: false },
+  enter: { code: "Enter", key: "enter", shift: false, ctrl: false, alt: false, meta: false },
+  "shift+enter": { code: "Enter", key: "enter", shift: true, ctrl: false, alt: false, meta: false },
+  arrowleft: { code: "ArrowLeft", key: "arrowleft", shift: false, ctrl: false, alt: false, meta: false },
+  arrowright: { code: "ArrowRight", key: "arrowright", shift: false, ctrl: false, alt: false, meta: false },
+  "shift+arrowleft": { code: "ArrowLeft", key: "arrowleft", shift: true, ctrl: false, alt: false, meta: false },
+  "shift+arrowright": { code: "ArrowRight", key: "arrowright", shift: true, ctrl: false, alt: false, meta: false },
+  "shift+r": { code: "KeyR", key: "r", shift: true, ctrl: false, alt: false, meta: false },
+  "shift+n": { code: "KeyN", key: "n", shift: true, ctrl: false, alt: false, meta: false },
+  "shift+p": { code: "KeyP", key: "p", shift: true, ctrl: false, alt: false, meta: false },
+  "shift+k": { code: "KeyK", key: "k", shift: true, ctrl: false, alt: false, meta: false },
+};
 
 export const SHORTCUT_ACTIONS = [
   { id: "reveal_letter", label: "揭示字母" },
@@ -20,14 +59,16 @@ export const SHORTCUT_ACTIONS = [
   { id: "previous_sentence", label: "上一句" },
   { id: "next_sentence", label: "下一句" },
   { id: "replay_sentence", label: "重播" },
+  { id: "toggle_pause_playback", label: "暂停/继续播放" },
 ];
 
 export const DEFAULT_SHORTCUTS = {
-  reveal_letter: "space",
-  reveal_word: "shift+space",
-  previous_sentence: "arrowleft",
-  next_sentence: "enter",
-  replay_sentence: "shift+r",
+  reveal_letter: LEGACY_SHORTCUT_BINDINGS.space,
+  reveal_word: LEGACY_SHORTCUT_BINDINGS["shift+space"],
+  previous_sentence: LEGACY_SHORTCUT_BINDINGS.arrowleft,
+  next_sentence: LEGACY_SHORTCUT_BINDINGS.enter,
+  replay_sentence: LEGACY_SHORTCUT_BINDINGS["shift+r"],
+  toggle_pause_playback: LEGACY_SHORTCUT_BINDINGS["shift+k"],
 };
 
 export const REPLAY_PRESET_OPTIONS = [
@@ -54,31 +95,191 @@ function clampNumber(value, min, max, fallback, { integer = false } = {}) {
   return integer ? Math.round(clamped) : Number(clamped.toFixed(2));
 }
 
-export function normalizeShortcutValue(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  return SHORTCUT_OPTIONS.some((item) => item.value === normalized) ? normalized : "";
+function normalizeShortcutKeyValue(value) {
+  if (value == null) return "";
+  if (value === " ") return "space";
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return "";
+  if (normalized === "spacebar") return "space";
+  return normalized;
 }
 
-export function getShortcutLabel(shortcutValue) {
-  return SHORTCUT_OPTIONS.find((item) => item.value === shortcutValue)?.label || shortcutValue;
+function normalizeShortcutCodeValue(value) {
+  return String(value || "").trim();
 }
 
-function getFirstAvailableShortcut(excluded = new Set(), preferred = "") {
-  const normalizedPreferred = normalizeShortcutValue(preferred);
-  if (normalizedPreferred && !excluded.has(normalizedPreferred)) {
-    return normalizedPreferred;
+function cloneShortcutBinding(binding) {
+  return {
+    code: binding?.code || "",
+    key: binding?.key || "",
+    shift: Boolean(binding?.shift),
+    ctrl: Boolean(binding?.ctrl),
+    alt: Boolean(binding?.alt),
+    meta: Boolean(binding?.meta),
+  };
+}
+
+function isPrintableShortcutKey(key) {
+  return Boolean(key) && key.length === 1;
+}
+
+function isFunctionShortcutKey(key) {
+  return /^f\d{1,2}$/i.test(String(key || ""));
+}
+
+function isAllowedBareShortcut(binding) {
+  const key = normalizeShortcutKeyValue(binding?.key);
+  return BARE_ALLOWED_SHORTCUT_KEYS.has(key) || isFunctionShortcutKey(key);
+}
+
+function isShortcutBindingAllowed(bindingValue) {
+  const binding = normalizeShortcutBindingValue(bindingValue);
+  if (!binding) return false;
+  const key = normalizeShortcutKeyValue(binding.key);
+  const hasModifier = Boolean(binding.shift || binding.ctrl || binding.alt || binding.meta);
+  if (!key || MODIFIER_ONLY_KEYS.has(key) || RESERVED_SHORTCUT_KEYS.has(key)) {
+    return false;
   }
-  return SHORTCUT_OPTIONS.find((item) => !excluded.has(item.value))?.value || SHORTCUT_OPTIONS[0].value;
+  if (!hasModifier && isPrintableShortcutKey(key)) {
+    return false;
+  }
+  if (!hasModifier && !isAllowedBareShortcut(binding)) {
+    return false;
+  }
+  return true;
+}
+
+function inferShortcutCodeFromKey(key) {
+  const normalizedKey = normalizeShortcutKeyValue(key);
+  if (normalizedKey === "space") return "Space";
+  if (normalizedKey === "enter") return "Enter";
+  if (normalizedKey === "arrowleft") return "ArrowLeft";
+  if (normalizedKey === "arrowright") return "ArrowRight";
+  if (normalizedKey === "arrowup") return "ArrowUp";
+  if (normalizedKey === "arrowdown") return "ArrowDown";
+  if (normalizedKey === "home") return "Home";
+  if (normalizedKey === "end") return "End";
+  if (normalizedKey === "pageup") return "PageUp";
+  if (normalizedKey === "pagedown") return "PageDown";
+  if (isFunctionShortcutKey(normalizedKey)) return normalizedKey.toUpperCase();
+  if (/^[a-z]$/.test(normalizedKey)) return `Key${normalizedKey.toUpperCase()}`;
+  if (/^\d$/.test(normalizedKey)) return `Digit${normalizedKey}`;
+  return SHORT_KEY_LABELS[normalizedKey] || "";
+}
+
+export function normalizeShortcutBindingValue(value) {
+  if (!value) return null;
+  if (typeof value === "string") {
+    const legacyBinding = LEGACY_SHORTCUT_BINDINGS[String(value).trim().toLowerCase()];
+    return legacyBinding ? cloneShortcutBinding(legacyBinding) : null;
+  }
+  if (typeof value !== "object") {
+    return null;
+  }
+  const normalizedKey = normalizeShortcutKeyValue(value.key);
+  const normalizedCode = normalizeShortcutCodeValue(value.code) || inferShortcutCodeFromKey(normalizedKey);
+  if (!normalizedKey && !normalizedCode) {
+    return null;
+  }
+  return {
+    code: normalizedCode,
+    key: normalizedKey,
+    shift: Boolean(value.shift),
+    ctrl: Boolean(value.ctrl),
+    alt: Boolean(value.alt),
+    meta: Boolean(value.meta),
+  };
+}
+
+export function getShortcutSignature(bindingValue) {
+  const binding = normalizeShortcutBindingValue(bindingValue);
+  if (!binding) return "";
+  const keyPart = binding.code || binding.key;
+  return [
+    binding.ctrl ? "ctrl" : "",
+    binding.alt ? "alt" : "",
+    binding.shift ? "shift" : "",
+    binding.meta ? "meta" : "",
+    keyPart,
+  ]
+    .filter(Boolean)
+    .join("+");
+}
+
+export function areShortcutBindingsEqual(left, right) {
+  const leftSignature = getShortcutSignature(left);
+  const rightSignature = getShortcutSignature(right);
+  return Boolean(leftSignature) && leftSignature === rightSignature;
+}
+
+function getShortcutKeyLabel(binding) {
+  const normalizedCode = normalizeShortcutCodeValue(binding?.code);
+  if (normalizedCode === "Space") return "Space";
+  if (normalizedCode === "Enter") return "Enter";
+  if (normalizedCode === "ArrowLeft") return "ArrowLeft";
+  if (normalizedCode === "ArrowRight") return "ArrowRight";
+  if (normalizedCode === "ArrowUp") return "ArrowUp";
+  if (normalizedCode === "ArrowDown") return "ArrowDown";
+  if (normalizedCode === "Home") return "Home";
+  if (normalizedCode === "End") return "End";
+  if (normalizedCode === "PageUp") return "PageUp";
+  if (normalizedCode === "PageDown") return "PageDown";
+  if (/^F\d{1,2}$/i.test(normalizedCode)) return normalizedCode.toUpperCase();
+  if (/^Key[A-Z]$/.test(normalizedCode)) return normalizedCode.slice(3);
+  if (/^Digit\d$/.test(normalizedCode)) return normalizedCode.slice(5);
+  if (normalizedCode) return normalizedCode;
+
+  const normalizedKey = normalizeShortcutKeyValue(binding?.key);
+  if (SHORT_KEY_LABELS[normalizedKey]) {
+    return SHORT_KEY_LABELS[normalizedKey];
+  }
+  if (isFunctionShortcutKey(normalizedKey)) {
+    return normalizedKey.toUpperCase();
+  }
+  if (normalizedKey.length === 1) {
+    return normalizedKey.toUpperCase();
+  }
+  return normalizedKey || "未设置";
+}
+
+export function getShortcutLabel(bindingValue) {
+  const binding = normalizeShortcutBindingValue(bindingValue);
+  if (!binding) return "未设置";
+  const modifierLabels = [];
+  if (binding.ctrl) modifierLabels.push("Ctrl");
+  if (binding.alt) modifierLabels.push("Alt");
+  if (binding.shift) modifierLabels.push("Shift");
+  if (binding.meta) modifierLabels.push("Meta");
+  return [...modifierLabels, getShortcutKeyLabel(binding)].join("+");
+}
+
+function getFirstAvailableShortcutBinding(excluded = new Set(), preferredActionId = "") {
+  const candidates = [
+    DEFAULT_SHORTCUTS[preferredActionId],
+    ...SHORTCUT_ACTIONS.map((action) => DEFAULT_SHORTCUTS[action.id]),
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    const signature = getShortcutSignature(candidate);
+    if (signature && !excluded.has(signature)) {
+      return cloneShortcutBinding(candidate);
+    }
+  }
+  return cloneShortcutBinding(DEFAULT_SHORTCUTS.reveal_letter);
 }
 
 export function sanitizeShortcutMap(rawShortcutMap = {}) {
   const nextShortcutMap = {};
   const occupied = new Set();
   for (const action of SHORTCUT_ACTIONS) {
-    const requested = normalizeShortcutValue(rawShortcutMap?.[action.id]) || DEFAULT_SHORTCUTS[action.id];
-    const resolved = occupied.has(requested) ? getFirstAvailableShortcut(occupied, DEFAULT_SHORTCUTS[action.id]) : requested;
+    const requestedRaw = normalizeShortcutBindingValue(rawShortcutMap?.[action.id]);
+    const requested = isShortcutBindingAllowed(requestedRaw) ? requestedRaw : cloneShortcutBinding(DEFAULT_SHORTCUTS[action.id]);
+    const requestedSignature = getShortcutSignature(requested);
+    const resolved =
+      requestedSignature && !occupied.has(requestedSignature)
+        ? cloneShortcutBinding(requested)
+        : getFirstAvailableShortcutBinding(occupied, action.id);
     nextShortcutMap[action.id] = resolved;
-    occupied.add(resolved);
+    occupied.add(getShortcutSignature(resolved));
   }
   return nextShortcutMap;
 }
@@ -114,7 +315,9 @@ export function readLearningSettings() {
     return sanitizeLearningSettings();
   }
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(LEARNING_SETTINGS_STORAGE_KEY) || "{}");
+    const rawValue =
+      window.localStorage.getItem(LEARNING_SETTINGS_STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_LEARNING_SETTINGS_STORAGE_KEY) ?? "{}";
+    const parsed = JSON.parse(rawValue);
     return sanitizeLearningSettings(parsed);
   } catch (_) {
     return sanitizeLearningSettings();
@@ -124,6 +327,7 @@ export function readLearningSettings() {
 export function writeLearningSettings(settings) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(LEARNING_SETTINGS_STORAGE_KEY, JSON.stringify(sanitizeLearningSettings(settings)));
+  window.localStorage.removeItem(LEGACY_LEARNING_SETTINGS_STORAGE_KEY);
 }
 
 export function getPresetSummaryLines(learningSettings) {
@@ -199,59 +403,60 @@ export function resolveReplayAssistance(learningSettings, stage) {
 }
 
 export function isShortcutPressed(event, shortcutValue) {
-  const key = String(event.key || "").toLowerCase();
-  switch (shortcutValue) {
-    case "space":
-      return !event.shiftKey && event.key === " ";
-    case "shift+space":
-      return event.shiftKey && event.key === " ";
-    case "enter":
-      return !event.shiftKey && key === "enter";
-    case "shift+enter":
-      return event.shiftKey && key === "enter";
-    case "arrowleft":
-      return !event.shiftKey && key === "arrowleft";
-    case "arrowright":
-      return !event.shiftKey && key === "arrowright";
-    case "shift+arrowleft":
-      return event.shiftKey && key === "arrowleft";
-    case "shift+arrowright":
-      return event.shiftKey && key === "arrowright";
-    case "shift+r":
-      return event.shiftKey && key === "r";
-    case "shift+n":
-      return event.shiftKey && key === "n";
-    case "shift+p":
-      return event.shiftKey && key === "p";
-    default:
-      return false;
-  }
+  const binding = normalizeShortcutBindingValue(shortcutValue);
+  if (!binding) return false;
+  const eventCode = normalizeShortcutCodeValue(event.code);
+  const eventKey = normalizeShortcutKeyValue(event.key);
+  const matchesKey = binding.code ? binding.code === eventCode : binding.key === eventKey;
+  if (!matchesKey) return false;
+  return (
+    binding.shift === Boolean(event.shiftKey) &&
+    binding.ctrl === Boolean(event.ctrlKey) &&
+    binding.alt === Boolean(event.altKey) &&
+    binding.meta === Boolean(event.metaKey)
+  );
 }
 
-export function getShortcutFromKeyboardEvent(event) {
-  if (event.ctrlKey || event.metaKey || event.altKey) {
-    return { value: "", error: "暂不支持 Ctrl / Alt / Command 组合键，请改用单键或 Shift 组合。" };
+export function captureShortcutFromKeyboardEvent(event) {
+  const key = normalizeShortcutKeyValue(event.key);
+  const code = normalizeShortcutCodeValue(event.code) || inferShortcutCodeFromKey(key);
+  const hasModifier = Boolean(event.shiftKey || event.ctrlKey || event.altKey || event.metaKey);
+
+  if (MODIFIER_ONLY_KEYS.has(key)) {
+    return { value: null, error: "请按一个完整快捷键，单独的修饰键不能保存。" };
   }
-  const key = String(event.key || "");
-  const lowered = key.toLowerCase();
-  let candidate = "";
-  if (key === " ") {
-    candidate = event.shiftKey ? "shift+space" : "space";
-  } else if (lowered === "enter") {
-    candidate = event.shiftKey ? "shift+enter" : "enter";
-  } else if (lowered === "arrowleft") {
-    candidate = event.shiftKey ? "shift+arrowleft" : "arrowleft";
-  } else if (lowered === "arrowright") {
-    candidate = event.shiftKey ? "shift+arrowright" : "arrowright";
-  } else if (["r", "n", "p"].includes(lowered) && event.shiftKey) {
-    candidate = `shift+${lowered}`;
+  if (RESERVED_SHORTCUT_KEYS.has(key)) {
+    if (key === "escape") {
+      return { value: null, error: "Esc 固定用于退出沉浸学习，不能分配给其他动作。" };
+    }
+    if (key === "tab") {
+      return { value: null, error: "Tab 需要保留给焦点切换，不能设置为学习快捷键。" };
+    }
+    return { value: null, error: `${getShortcutKeyLabel({ code, key })} 会影响输入或焦点，不建议设置为学习快捷键。` };
   }
 
-  if (!candidate) {
+  if (!hasModifier && isPrintableShortcutKey(key)) {
     return {
-      value: "",
-      error: "仅支持 Space、Enter、方向键，以及 Shift+R / Shift+N / Shift+P 这类安全快捷键。",
+      value: null,
+      error: "裸字母、数字和标点会与拼写输入冲突，请改用功能键、方向键，或加上 Shift / Ctrl / Alt / Meta 组合。",
     };
   }
-  return { value: candidate, error: "" };
+  if (!hasModifier && !isAllowedBareShortcut({ code, key })) {
+    return {
+      value: null,
+      error: "该单键不在允许范围内。请改用 Space、Enter、方向键、Home/End、PageUp/PageDown、F1-F12 或媒体键。",
+    };
+  }
+
+  return {
+    value: {
+      code,
+      key,
+      shift: Boolean(event.shiftKey),
+      ctrl: Boolean(event.ctrlKey),
+      alt: Boolean(event.altKey),
+      meta: Boolean(event.metaKey),
+    },
+    error: "",
+  };
 }
