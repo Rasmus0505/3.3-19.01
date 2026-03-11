@@ -481,37 +481,38 @@
   width: auto;
   max-width: 1120px;
   margin: 0 auto;
-  align-items: center;
+  align-items: stretch;
   gap: 10px;
-  padding: 0;
-  border: none;
-  background: transparent;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  background: color-mix(in oklch, var(--color-card) 96%, white 4%);
   color: var(--color-foreground);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(18px);
+}
+
+.immersive-page--cinema .immersive-typing-toolbar {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
   backdrop-filter: none;
 }
 
-.immersive-page--cinema .immersive-typing-toolbar {
-  width: min(1120px, calc(100% - 8px));
-  margin: 0 auto;
-  padding: 10px 12px;
-  border-radius: 18px;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.78), rgba(15, 23, 42, 0.64));
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(18px);
-}
-
 .immersive-page--cinema .immersive-typing-toolbar-meta,
 .immersive-page--cinema .immersive-shortcut-hint {
-  color: rgba(255, 255, 255, 0.76);
+  color: var(--color-muted-foreground);
 }
 
 .immersive-previous-sentence--cinema {
-  width: min(1120px, calc(100% - 8px));
-  margin: 0 auto;
-  padding: 0 4px;
-  color: rgba(255, 255, 255, 0.92);
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.42);
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  color: var(--color-muted-foreground);
+  text-shadow: none;
 }
 
 @media (max-width: 768px) {
@@ -575,12 +576,12 @@
     right: 12px;
     bottom: max(78px, calc(env(safe-area-inset-bottom) + 32px));
     left: 12px;
-    padding: 0;
+    padding: 14px;
   }
 
   .immersive-page--cinema .immersive-typing-toolbar {
     width: 100%;
-    padding: 10px;
+    padding: 0;
     border-radius: 14px;
   }
 

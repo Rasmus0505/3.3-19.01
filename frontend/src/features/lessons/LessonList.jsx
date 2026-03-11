@@ -178,6 +178,11 @@ export function LessonList({
   );
   const presetSummaryLines = useMemo(() => getPresetSummaryLines(learningSettings), [learningSettings]);
 
+  function startLessonFromHistory(lessonId, source) {
+    console.debug("[DEBUG] history.lesson.start", { lessonId, source });
+    void onStartLesson?.(lessonId);
+  }
+
   useEffect(() => {
     writeLearningSettings(learningSettings);
   }, [learningSettings]);
@@ -347,7 +352,7 @@ export function LessonList({
           <History className="size-4" />
           历史记录
         </CardTitle>
-        <CardDescription>继续学习已有课程，或整理标题、字幕和本地视频。</CardDescription>
+        <CardDescription>点击课程卡片或右侧按钮，直接进入全屏学习并继续当前进度。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <section className="rounded-2xl border bg-muted/10 p-4 md:p-5">
@@ -355,7 +360,7 @@ export function LessonList({
             <div className="space-y-1">
               <p className="text-sm font-semibold text-foreground">学习参数预设</p>
               <p className="text-sm text-muted-foreground">
-                先在这里设好重播策略和快捷键，再从下方课程卡片点击“开始学习 / 继续学习”直接进入全屏。
+                先在这里设好重播策略和快捷键，再从下方任意课程卡片直接进入全屏学习。
               </p>
             </div>
             <Badge variant="outline">浏览器全局默认</Badge>
@@ -540,7 +545,7 @@ export function LessonList({
                     <button
                       type="button"
                       className="flex min-w-0 flex-1 items-stretch gap-4 text-left"
-                      onClick={() => onSelect?.(lesson.id)}
+                      onClick={() => startLessonFromHistory(lesson.id, "card")}
                     >
                       <MediaCover
                         coverDataUrl={mediaMeta.coverDataUrl}
@@ -576,10 +581,7 @@ export function LessonList({
                       <Button
                         type="button"
                         className="w-full"
-                        onClick={() => {
-                          console.debug("[DEBUG] history.lesson.start", { lessonId: lesson.id });
-                          void onStartLesson?.(lesson.id);
-                        }}
+                        onClick={() => startLessonFromHistory(lesson.id, "button")}
                       >
                         <Play className="size-4" />
                         {actionLabel}
