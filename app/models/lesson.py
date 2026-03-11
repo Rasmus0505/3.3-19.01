@@ -80,6 +80,7 @@ class LessonGenerationTask(Base):
     counters_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     translation_debug_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     failure_debug_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    asr_raw_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     subtitle_cache_seed_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_code: Mapped[str] = mapped_column(String(64), default="", nullable=False)
     message: Mapped[str] = mapped_column(String(1200), default="", nullable=False)
@@ -90,6 +91,7 @@ class LessonGenerationTask(Base):
     artifacts_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     artifact_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     failed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    raw_debug_purged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
 

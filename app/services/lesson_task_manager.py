@@ -6,12 +6,12 @@ from pathlib import Path
 from typing import Callable
 from uuid import uuid4
 
-from sqlalchemy import inspect, select
+from sqlalchemy import func, inspect, select, update
 from sqlalchemy.orm import Session
 
 from app.core.timezone import now_shanghai_naive
 from app.db import APP_SCHEMA, SessionLocal
-from app.models import LessonGenerationTask
+from app.models import LessonGenerationTask, TranslationRequestLog
 from app.services.media import cleanup_dir
 
 
@@ -143,6 +143,7 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
     failure_debug = _copy_dict(task.failure_debug_json) if isinstance(task.failure_debug_json, dict) else None
     if failure_debug is not None and task.failed_at is not None and not failure_debug.get("failed_at"):
         failure_debug["failed_at"] = task.failed_at
+    asr_raw = _copy_dict(task.asr_raw_json) if isinstance(task.asr_raw_json, dict) else None
     return {
         "task_id": task.task_id,
         "owner_user_id": int(task.owner_user_id),
@@ -157,6 +158,8 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
         "counters": _copy_dict(task.counters_json),
         "translation_debug": _copy_dict(task.translation_debug_json) if isinstance(task.translation_debug_json, dict) else None,
         "failure_debug": failure_debug,
+        "asr_raw": asr_raw,
+        "has_raw_debug": bool(asr_raw),
         "subtitle_cache_seed": _copy_dict(task.subtitle_cache_seed_json) if isinstance(task.subtitle_cache_seed_json, dict) else None,
         "error_code": str(task.error_code or ""),
         "message": str(task.message or ""),
@@ -165,6 +168,7 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
         "artifacts": _copy_dict(task.artifacts_json),
         "artifact_expires_at": task.artifact_expires_at,
         "failed_at": task.failed_at,
+        "raw_debug_purged_at": task.raw_debug_purged_at,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
     }
@@ -234,9 +238,11 @@ def create_task(
             source_path=source_path,
             artifacts_json=_default_artifacts(work_dir, source_path),
             failure_debug_json=None,
+            asr_raw_json=None,
             resume_available=False,
             resume_stage="convert_audio",
             failed_at=None,
+            raw_debug_purged_at=None,
         )
         session.add(task)
         session.commit()
@@ -267,6 +273,7 @@ def update_task_progress(
     current_text: str | None = None,
     counters: dict | None = None,
     translation_debug: dict | None = None,
+    asr_raw: dict | None = None,
     artifacts_patch: dict | None = None,
     db: Session | None = None,
     session_factory: SessionFactory | None = None,
@@ -296,6 +303,9 @@ def update_task_progress(
             task.counters_json = merged
         if translation_debug is not None:
             task.translation_debug_json = dict(translation_debug)
+        if asr_raw is not None:
+            task.asr_raw_json = dict(asr_raw)
+            task.raw_debug_purged_at = None
         if artifacts_patch:
             merged_artifacts = _copy_dict(task.artifacts_json)
             merged_artifacts.update(artifacts_patch)
@@ -420,6 +430,44 @@ def mark_task_succeeded(
         task.artifact_expires_at = now_shanghai_naive()
         task.failed_at = None
         session.commit()
+    finally:
+        if owns_session:
+            session.close()
+
+
+def purge_task_raw_debug(
+    task_id: str,
+    *,
+    db: Session | None = None,
+    session_factory: SessionFactory | None = None,
+) -> dict | None:
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
+    try:
+        ensure_lesson_task_storage_ready(session)
+        task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        if not task:
+            return None
+        purged_at = now_shanghai_naive()
+        translation_attempt_count = int(
+            session.scalar(select(func.count(TranslationRequestLog.id)).where(TranslationRequestLog.task_id == task_id))
+            or 0
+        )
+        session.execute(
+            update(TranslationRequestLog)
+            .where(TranslationRequestLog.task_id == task_id)
+            .values(raw_request_text="", raw_response_text="", raw_error_text="")
+        )
+        task.asr_raw_json = None
+        task.raw_debug_purged_at = purged_at
+        if owns_session:
+            session.commit()
+        else:
+            session.flush()
+        return {
+            "task_id": task_id,
+            "translation_attempt_count": translation_attempt_count,
+            "raw_debug_purged_at": purged_at,
+        }
     finally:
         if owns_session:
             session.close()

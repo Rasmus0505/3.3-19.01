@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, ClipboardList, Settings2, ShieldCheck, Sparkles } from "lucide-react";
+import { Activity, AlertTriangle, ClipboardList, DatabaseZap, Settings2, ShieldCheck, Sparkles } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
@@ -6,6 +6,7 @@ import { AdminLessonTaskLogsTab } from "../admin-logs/AdminLessonTaskLogsTab";
 import { AdminTranslationLogsTab } from "../admin-logs/AdminTranslationLogsTab";
 import { AdminOperationLogsTab } from "../admin-operation-logs/AdminOperationLogsTab";
 import { AdminOverviewTab } from "../admin-overview/AdminOverviewTab";
+import { AdminSqlConsoleTab } from "../admin-sql-console/AdminSqlConsoleTab";
 import { AdminSubtitleSettingsTab } from "../admin-subtitle-settings/AdminSubtitleSettingsTab";
 import { AdminSystemTab } from "../admin-system/AdminSystemTab";
 import { mergeSearchParams, readStringParam } from "../../shared/lib/adminSearchParams";
@@ -22,6 +23,7 @@ const SECTION_PANELS = {
   ],
   operations: [
     { value: "operations", label: "操作审计", description: "检查后台敏感操作留痕。", component: AdminOperationLogsTab },
+    { value: "sql-console", label: "SQL 控台", description: "执行受控 SQL 查询与 DML 写操作。", component: AdminSqlConsoleTab },
     { value: "subtitle-policy", label: "策略配置", description: "集中维护字幕与翻译默认策略。", component: AdminSubtitleSettingsTab },
   ],
 };
@@ -32,6 +34,7 @@ const TAB_ALIASES = {
   "task-failures": "tasks",
   translations: "tasks",
   operations: "operations",
+  "sql-console": "operations",
   "subtitle-policy": "operations",
 };
 
@@ -49,6 +52,7 @@ const PANEL_ALIASES = {
   system: "system",
   "task-failures": "task-failures",
   translations: "translations",
+  "sql-console": "sql-console",
   "subtitle-policy": "subtitle-policy",
 };
 
@@ -131,6 +135,12 @@ export function AdminMonitoringWorkspace({ apiCall }) {
                 <Link to="/admin/monitoring?tab=operations&panel=subtitle-policy">
                   <Settings2 className="size-4" />
                   调整策略
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/admin/monitoring?tab=operations&panel=sql-console">
+                  <DatabaseZap className="size-4" />
+                  执行 SQL
                 </Link>
               </Button>
             </div>

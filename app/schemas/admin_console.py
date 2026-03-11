@@ -138,6 +138,8 @@ class AdminLessonTaskLogItem(BaseModel):
     resume_available: bool = False
     translation_debug_summary: AdminLessonTaskLogTranslationSummary | None = None
     failure_debug: AdminLessonTaskFailureDebug | None = None
+    has_raw_debug: bool = False
+    raw_debug_purged_at: datetime | None = None
     artifact_expires_at: datetime | None = None
     failed_at: datetime | None = None
     created_at: datetime
@@ -152,3 +154,44 @@ class AdminLessonTaskLogsResponse(BaseModel):
     items: list[AdminLessonTaskLogItem]
     summary_cards: list[AdminVisualStat] = Field(default_factory=list)
     charts: list[AdminVisualChart] = Field(default_factory=list)
+
+
+class AdminLessonTaskTranslationAttempt(BaseModel):
+    id: int
+    sentence_idx: int
+    attempt_no: int
+    provider: str
+    model_name: str
+    base_url: str
+    input_text_preview: str
+    provider_request_id: str | None
+    status_code: int | None
+    finish_reason: str | None
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    success: bool
+    error_code: str | None
+    error_message: str = ""
+    raw_request_text: str = ""
+    raw_response_text: str = ""
+    raw_error_text: str = ""
+    started_at: datetime
+    finished_at: datetime
+    created_at: datetime
+
+
+class AdminLessonTaskLogDetail(AdminLessonTaskLogItem):
+    asr_raw: dict[str, Any] | None = None
+    translation_attempts: list[AdminLessonTaskTranslationAttempt] = Field(default_factory=list)
+
+
+class AdminLessonTaskLogDetailResponse(BaseModel):
+    ok: bool = True
+    item: AdminLessonTaskLogDetail
+
+
+class AdminLessonTaskRawDebugDeleteResponse(BaseModel):
+    ok: bool = True
+    task_id: str
+    raw_debug_purged_at: datetime | None = None

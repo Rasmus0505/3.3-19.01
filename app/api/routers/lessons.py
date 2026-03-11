@@ -15,7 +15,7 @@ from app.api.routers._helpers import require_lesson_owner
 from app.api.serializers import to_lesson_detail_response, to_lesson_item_response
 from app.core.config import BASE_TMP_DIR, LESSON_DEFAULT_ASR_MODEL, REQUEST_TIMEOUT_SECONDS
 from app.core.errors import error_response, map_billing_error, map_media_error
-from app.db import get_db
+from app.db import SessionLocal, get_db
 from app.models import Lesson, User
 from app.repositories.lessons import get_lesson_sentences, list_lessons_for_user
 from app.schemas import (
@@ -42,6 +42,7 @@ from app.services.lesson_command_service import (
     invalidate_lesson_related_queries,
     rename_lesson_for_user,
     resume_lesson_task_for_user,
+    run_lesson_generation_task as _run_lesson_generation_task,
 )
 from app.services.lesson_query_service import get_lesson_catalog_payload, get_lesson_detail_payload
 from app.services.lesson_service import LessonService

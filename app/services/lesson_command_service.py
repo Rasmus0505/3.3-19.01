@@ -69,6 +69,7 @@ def run_lesson_generation_task(
                 current_text=payload.get("current_text"),
                 counters=payload.get("counters"),
                 translation_debug=payload.get("translation_debug"),
+                asr_raw=payload.get("asr_raw"),
                 session_factory=session_factory,
             )
 

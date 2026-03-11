@@ -41,6 +41,7 @@ const MONITORING_TAB_MAP = {
   "task-failures": "tasks",
   translations: "tasks",
   operations: "operations",
+  "sql-console": "operations",
   "subtitle-policy": "operations",
 };
 
@@ -52,6 +53,7 @@ const MONITORING_PANEL_MAP = {
   "task-failures": "task-failures",
   translations: "translations",
   operations: "operations",
+  "sql-console": "sql-console",
   "subtitle-policy": "subtitle-policy",
 };
 
@@ -396,6 +398,7 @@ export function AdminApp({ apiCall, onLogout }) {
                 <Route path="overview" element={<LegacyAdminRedirect to="/admin/monitoring" fallbackTab="health" fallbackPanel="overview" />} />
                 <Route path="system" element={<LegacyAdminRedirect to="/admin/monitoring" fallbackTab="health" fallbackPanel="system" />} />
                 <Route path="operation-logs" element={<LegacyAdminRedirect to="/admin/monitoring" fallbackTab="operations" fallbackPanel="operations" />} />
+                <Route path="sql-console" element={<LegacyAdminRedirect to="/admin/monitoring" fallbackTab="operations" fallbackPanel="sql-console" />} />
                 <Route path="lesson-task-logs" element={<LegacyAdminRedirect to="/admin/monitoring" fallbackTab="tasks" fallbackPanel="task-failures" />} />
                 <Route path="translation-logs" element={<LegacyAdminRedirect to="/admin/monitoring" fallbackTab="tasks" fallbackPanel="translations" />} />
                 <Route path="subtitle-settings" element={<LegacyAdminRedirect to="/admin/monitoring" fallbackTab="operations" fallbackPanel="subtitle-policy" />} />

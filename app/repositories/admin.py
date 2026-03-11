@@ -3,7 +3,7 @@
 from datetime import datetime
 import logging
 
-from sqlalchemy import delete, desc, func, inspect, select, update
+from sqlalchemy import case, delete, desc, func, inspect, select, update
 from sqlalchemy.orm import Session
 
 from app.db import APP_SCHEMA

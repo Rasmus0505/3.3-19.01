@@ -97,6 +97,10 @@ export const DEFAULT_UI_PREFERENCES = {
   showFullscreenPreviousSentence: false,
 };
 
+export const DEFAULT_PLAYBACK_PREFERENCES = {
+  autoReplayAnsweredSentence: true,
+};
+
 function clampNumber(value, min, max, fallback, { integer = false } = {}) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
@@ -358,6 +362,7 @@ export function sanitizeLearningSettings(rawSettings = {}) {
     shortcuts: sanitizeShortcutMap(rawSettings?.shortcuts),
     customConfig: sanitizeCustomReplayConfig(rawSettings?.customConfig),
     uiPreferences: sanitizeUiPreferences(rawSettings?.uiPreferences),
+    playbackPreferences: sanitizePlaybackPreferences(rawSettings?.playbackPreferences),
   };
 }
 
@@ -529,5 +534,14 @@ export function sanitizeUiPreferences(rawPreferences = {}) {
       typeof rawPreferences?.showFullscreenPreviousSentence === "boolean"
         ? rawPreferences.showFullscreenPreviousSentence
         : DEFAULT_UI_PREFERENCES.showFullscreenPreviousSentence,
+  };
+}
+
+export function sanitizePlaybackPreferences(rawPreferences = {}) {
+  return {
+    autoReplayAnsweredSentence:
+      typeof rawPreferences?.autoReplayAnsweredSentence === "boolean"
+        ? rawPreferences.autoReplayAnsweredSentence
+        : DEFAULT_PLAYBACK_PREFERENCES.autoReplayAnsweredSentence,
   };
 }

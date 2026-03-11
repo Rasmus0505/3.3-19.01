@@ -6,7 +6,7 @@ from pathlib import Path
 
 from sqlalchemy import select, text
 
-from app.models import Lesson, User
+from app.models import Lesson, LessonGenerationTask, TranslationRequestLog, User
 from app.services.lesson_task_manager import create_task, mark_task_failed
 from test_regression_api import _register_and_login, test_client
 
@@ -172,6 +172,229 @@ def test_admin_lesson_task_logs_exposes_traceback_excerpt(test_client, tmp_path)
     assert "Traceback" in item["traceback_excerpt"]
     assert "traceback_excerpt" in item["failure_debug"]
     assert "RuntimeError: unit failure" in item["failure_debug"]["traceback_excerpt"]
+
+
+def test_admin_lesson_task_log_detail_exposes_raw_debug_payloads(test_client, tmp_path):
+    client, session_factory, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "admin-task-detail@example.com")
+
+    admin_token = _register_and_login(client, email="admin-task-detail@example.com")
+    _register_and_login(client, email="task-detail-user@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    task_id = "lesson_task_admin_detail_raw_case"
+    work_dir = tmp_path / "task-detail-artifacts"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    source_path = work_dir / "source.mp4"
+    source_path.write_bytes(b"video")
+
+    session = session_factory()
+    try:
+        learner = session.scalar(select(User).where(User.email == "task-detail-user@example.com"))
+        assert learner is not None
+        create_task(
+            task_id=task_id,
+            owner_user_id=learner.id,
+            source_filename="detail.mp4",
+            asr_model="qwen3-asr-flash-filetrans",
+            semantic_split_enabled=False,
+            work_dir=str(work_dir),
+            source_path=str(source_path),
+            db=session,
+        )
+        task_row = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        assert task_row is not None
+        task_row.asr_raw_json = {
+            "model": "qwen3-asr-flash-filetrans",
+            "task_id": "dashscope_asr_001",
+            "task_status": "SUCCEEDED",
+            "usage_seconds": 12,
+            "transcription_url": "https://example.com/asr.json",
+            "preview_text": "hello world",
+            "asr_result_json": {"transcripts": [{"text": "hello world"}]},
+        }
+        mark_task_failed(
+            task_id,
+            error_code="INTERNAL_ERROR",
+            message="课程生成失败",
+            exception_type="RuntimeError",
+            detail_excerpt="unit failure detail",
+            traceback_excerpt="Traceback (most recent call last):\nRuntimeError: unit failure",
+            resume_available=False,
+            db=session,
+        )
+        session.add(
+            TranslationRequestLog(
+                trace_id="trace_raw_case",
+                task_id=task_id,
+                user_id=learner.id,
+                sentence_idx=0,
+                attempt_no=1,
+                provider="dashscope_compatible",
+                model_name="qwen-mt-flash",
+                base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                input_text_preview="hello world",
+                provider_request_id="req_raw_case",
+                status_code=429,
+                finish_reason=None,
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                success=False,
+                error_code="RATE_LIMIT",
+                error_message="rate limited",
+                raw_request_text='{"model":"qwen-mt-flash","messages":[{"role":"user","content":"hello world"}]}',
+                raw_response_text='{"id":"resp_001","choices":[]}',
+                raw_error_text='{"status_code":429,"body":{"error":{"message":"rate limited"}}}',
+                started_at=datetime(2026, 3, 11, 16, 0, 0),
+                finished_at=datetime(2026, 3, 11, 16, 0, 1),
+                created_at=datetime(2026, 3, 11, 16, 0, 1),
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.get(f"/api/admin/lesson-task-logs/{task_id}", headers=admin_headers)
+    assert resp.status_code == 200
+    payload = resp.json()["item"]
+    assert payload["task_id"] == task_id
+    assert payload["has_raw_debug"] is True
+    assert payload["asr_raw"]["task_id"] == "dashscope_asr_001"
+    assert payload["failure_debug"]["traceback_excerpt"].startswith("Traceback")
+    assert len(payload["translation_attempts"]) == 1
+    attempt = payload["translation_attempts"][0]
+    assert '"content":"hello world"' in attempt["raw_request_text"]
+    assert '"choices":[]' in attempt["raw_response_text"]
+    assert '"status_code":429' in attempt["raw_error_text"]
+
+
+def test_admin_lesson_task_log_detail_raw_debug_delete_preserves_summary(test_client, tmp_path):
+    client, session_factory, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "admin-task-delete@example.com")
+
+    admin_token = _register_and_login(client, email="admin-task-delete@example.com")
+    _register_and_login(client, email="task-delete-user@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    task_id = "lesson_task_admin_delete_raw_case"
+    work_dir = tmp_path / "task-delete-artifacts"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    source_path = work_dir / "source.mp4"
+    source_path.write_bytes(b"video")
+
+    session = session_factory()
+    try:
+        learner = session.scalar(select(User).where(User.email == "task-delete-user@example.com"))
+        assert learner is not None
+        create_task(
+            task_id=task_id,
+            owner_user_id=learner.id,
+            source_filename="delete.mp4",
+            asr_model="qwen3-asr-flash-filetrans",
+            semantic_split_enabled=False,
+            work_dir=str(work_dir),
+            source_path=str(source_path),
+            db=session,
+        )
+        task_row = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        assert task_row is not None
+        task_row.asr_raw_json = {"task_id": "raw_to_delete"}
+        mark_task_failed(
+            task_id,
+            error_code="INTERNAL_ERROR",
+            message="课程生成失败",
+            exception_type="RuntimeError",
+            detail_excerpt="delete raw detail",
+            traceback_excerpt="Traceback (most recent call last):\nRuntimeError: delete raw",
+            resume_available=False,
+            db=session,
+        )
+        session.add(
+            TranslationRequestLog(
+                trace_id="trace_delete_case",
+                task_id=task_id,
+                user_id=learner.id,
+                sentence_idx=0,
+                attempt_no=1,
+                provider="dashscope_compatible",
+                model_name="qwen-mt-flash",
+                base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                input_text_preview="delete me",
+                provider_request_id="req_delete_case",
+                status_code=500,
+                finish_reason=None,
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                success=False,
+                error_code="REQUEST_FAILED",
+                error_message="server error",
+                raw_request_text='{"delete":"request"}',
+                raw_response_text='{"delete":"response"}',
+                raw_error_text='{"delete":"error"}',
+                started_at=datetime(2026, 3, 11, 16, 5, 0),
+                finished_at=datetime(2026, 3, 11, 16, 5, 1),
+                created_at=datetime(2026, 3, 11, 16, 5, 1),
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    delete_resp = client.delete(f"/api/admin/lesson-task-logs/{task_id}/raw", headers=admin_headers)
+    assert delete_resp.status_code == 200
+    assert delete_resp.json()["ok"] is True
+    assert delete_resp.json()["raw_debug_purged_at"]
+
+    detail_resp = client.get(f"/api/admin/lesson-task-logs/{task_id}", headers=admin_headers)
+    assert detail_resp.status_code == 200
+    item = detail_resp.json()["item"]
+    assert item["has_raw_debug"] is False
+    assert item["raw_debug_purged_at"] is not None
+    assert item["asr_raw"] is None
+    assert item["failure_debug"]["detail_excerpt"] == "delete raw detail"
+    assert item["translation_attempts"][0]["raw_request_text"] == ""
+    assert item["translation_attempts"][0]["raw_response_text"] == ""
+    assert item["translation_attempts"][0]["raw_error_text"] == ""
+
+
+def test_admin_lesson_task_log_detail_requires_admin(test_client, tmp_path):
+    client, session_factory, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "admin-task-protected@example.com")
+
+    _register_and_login(client, email="admin-task-protected@example.com")
+    user_token = _register_and_login(client, email="task-protected-user@example.com")
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+
+    task_id = "lesson_task_admin_protected_case"
+    work_dir = tmp_path / "task-protected-artifacts"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    source_path = work_dir / "source.mp4"
+    source_path.write_bytes(b"video")
+
+    session = session_factory()
+    try:
+        learner = session.scalar(select(User).where(User.email == "task-protected-user@example.com"))
+        assert learner is not None
+        create_task(
+            task_id=task_id,
+            owner_user_id=learner.id,
+            source_filename="protected.mp4",
+            asr_model="qwen3-asr-flash-filetrans",
+            semantic_split_enabled=False,
+            work_dir=str(work_dir),
+            source_path=str(source_path),
+            db=session,
+        )
+    finally:
+        session.close()
+
+    detail_resp = client.get(f"/api/admin/lesson-task-logs/{task_id}", headers=user_headers)
+    assert detail_resp.status_code == 403
+
+    delete_resp = client.delete(f"/api/admin/lesson-task-logs/{task_id}/raw", headers=user_headers)
+    assert delete_resp.status_code == 403
 
 
 def test_admin_lesson_task_logs_accepts_empty_lesson_id_and_rejects_invalid(test_client):
