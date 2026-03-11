@@ -531,7 +531,7 @@ export function LearningShellContainer() {
               onOpenSearch={() => setCommandOpen(true)}
               onLogout={handleLogout}
               isAdminUser={isAdminUser}
-              onAdminNavigate={() => navigate("/admin/ops")}
+              onAdminNavigate={() => navigate("/admin/monitoring?tab=health&panel=overview")}
             />
           </Sidebar>
         ) : null}
@@ -550,7 +550,7 @@ export function LearningShellContainer() {
               onOpenSearch={() => setCommandOpen(true)}
               onLogout={handleLogout}
               isAdminUser={isAdminUser}
-              onAdminNavigate={() => navigate("/admin/ops")}
+              onAdminNavigate={() => navigate("/admin/monitoring?tab=health&panel=overview")}
             />
           ) : null}
 

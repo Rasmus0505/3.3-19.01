@@ -3,21 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
+import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing } from "../../shared/lib/datetime";
+import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
+import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, MetricCard, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
-
-function parseError(data, fallback) {
-  return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
-}
-
-async function jsonOrEmpty(resp) {
-  try {
-    return await resp.json();
-  } catch (_) {
-    return {};
-  }
-}
 
 function fileNameFromDisposition(disposition, fallback) {
   const match = String(disposition || "").match(/filename\*=UTF-8''([^;]+)|filename=\"?([^\";]+)\"?/i);
@@ -49,6 +40,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportConfirmText, setExportConfirmText] = useState("");
   const [actionDialog, setActionDialog] = useState(null);
+  const { error, clearError, captureError } = useErrorHandler();
 
   useEffect(() => {
     setSearchParams(
@@ -72,6 +64,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
   async function loadCodes(nextPage = page) {
     setLoading(true);
     setStatus("");
+    clearError();
     try {
       const query = new URLSearchParams({
         page: String(nextPage),
@@ -86,11 +79,19 @@ export function AdminRedeemCodesTab({ apiCall }) {
       if (redeemedTo) query.set("redeemed_to", datetimeLocalToBeijingOffset(redeemedTo));
 
       const resp = await apiCall(`/api/admin/redeem-codes?${query.toString()}`);
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "加载兑换码失败");
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminRedeemCodesTab",
+            action: "加载兑换码列表",
+            endpoint: "/api/admin/redeem-codes",
+            method: "GET",
+            meta: Object.fromEntries(query.entries()),
+            fallbackMessage: "加载兑换码失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
       setItems(Array.isArray(data.items) ? data.items : []);
@@ -98,9 +99,15 @@ export function AdminRedeemCodesTab({ apiCall }) {
       setSummaryCards(Array.isArray(data.summary_cards) ? data.summary_cards : []);
       setSelectedIds(new Set());
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminRedeemCodesTab",
+          action: "加载兑换码列表",
+          endpoint: "/api/admin/redeem-codes",
+          method: "GET",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setLoading(false);
     }
@@ -134,22 +141,38 @@ export function AdminRedeemCodesTab({ apiCall }) {
 
   async function applyCodeAction(codeId, actionPath, actionLabel) {
     setStatus("");
+    clearError();
     try {
       const resp = await apiCall(`/api/admin/redeem-codes/${codeId}/${actionPath}`, { method: "POST" });
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, `${actionLabel}失败`);
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminRedeemCodesTab",
+            action: actionLabel,
+            endpoint: `/api/admin/redeem-codes/${codeId}/${actionPath}`,
+            method: "POST",
+            meta: { code_id: codeId, action_path: actionPath },
+            fallbackMessage: `${actionLabel}失败`,
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
       toast.success(`${actionLabel}成功`);
       setActionDialog(null);
       await loadCodes(page);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminRedeemCodesTab",
+          action: actionLabel,
+          endpoint: `/api/admin/redeem-codes/${codeId}/${actionPath}`,
+          method: "POST",
+          meta: { code_id: codeId, action_path: actionPath },
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     }
   }
 
@@ -162,32 +185,48 @@ export function AdminRedeemCodesTab({ apiCall }) {
     }
 
     setStatus("");
+    clearError();
     try {
       const resp = await apiCall("/api/admin/redeem-codes/bulk-disable", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code_ids: Array.from(selectedIds) }),
       });
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "批量停用失败");
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminRedeemCodesTab",
+            action: "批量停用兑换码",
+            endpoint: "/api/admin/redeem-codes/bulk-disable",
+            method: "POST",
+            meta: { code_ids: Array.from(selectedIds) },
+            fallbackMessage: "批量停用失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
       setConfirmBulkOpen(false);
       toast.success(`已停用 ${Number(data.changed_count || 0)} 个兑换码`);
       await loadCodes(page);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminRedeemCodesTab",
+          action: "批量停用兑换码",
+          endpoint: "/api/admin/redeem-codes/bulk-disable",
+          method: "POST",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     }
   }
 
   async function exportUnredeemedCsv() {
     setExporting(true);
     setStatus("");
+    clearError();
     try {
       const payload = {
         confirm_text: exportConfirmText.trim(),
@@ -201,10 +240,18 @@ export function AdminRedeemCodesTab({ apiCall }) {
       });
 
       if (!resp.ok) {
-        const data = await jsonOrEmpty(resp);
-        const message = parseError(data, "导出失败");
-        setStatus(message);
-        toast.error(message);
+        const data = await parseJsonSafely(resp);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminRedeemCodesTab",
+            action: "导出未兑换码",
+            endpoint: "/api/admin/redeem-codes/export",
+            method: "POST",
+            meta: payload,
+            fallbackMessage: "导出失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
 
@@ -221,9 +268,15 @@ export function AdminRedeemCodesTab({ apiCall }) {
       setExportConfirmText("");
       toast.success("导出成功");
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminRedeemCodesTab",
+          action: "导出未兑换码",
+          endpoint: "/api/admin/redeem-codes/export",
+          method: "POST",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setExporting(false);
     }
@@ -376,7 +429,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
           </div>
         </div>
 
-        {status ? <Alert><AlertDescription>{status}</AlertDescription></Alert> : null}
+        {error ? <AdminErrorNotice error={error} /> : status ? <Alert><AlertDescription>{status}</AlertDescription></Alert> : null}
 
         <Dialog open={confirmBulkOpen} onOpenChange={setConfirmBulkOpen}>
           <DialogContent>

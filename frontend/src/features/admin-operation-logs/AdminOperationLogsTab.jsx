@@ -3,11 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
+import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
+import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
+import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import {
-  Alert,
-  AlertDescription,
   Badge,
   Button,
   FilterPanel,
@@ -27,18 +28,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../shared/ui";
-
-function parseError(data, fallback) {
-  return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
-}
-
-async function jsonOrEmpty(resp) {
-  try {
-    return await resp.json();
-  } catch (_) {
-    return {};
-  }
-}
 
 function toLocalDatetimeValue(date) {
   if (!date) return "";
@@ -63,6 +52,7 @@ export function AdminOperationLogsTab({ apiCall }) {
   const [dateTo, setDateTo] = useState(() => readStringParam(searchParams, "date_to", toLocalDatetimeValue(now)));
   const [summaryCards, setSummaryCards] = useState([]);
   const [charts, setCharts] = useState([]);
+  const { error, clearError, captureError } = useErrorHandler();
 
   useEffect(() => {
     setSearchParams(
@@ -82,6 +72,7 @@ export function AdminOperationLogsTab({ apiCall }) {
   async function loadLogs(nextPage = page) {
     setLoading(true);
     setStatus("");
+    clearError();
     try {
       const query = new URLSearchParams({
         page: String(nextPage),
@@ -95,11 +86,19 @@ export function AdminOperationLogsTab({ apiCall }) {
       if (normalizedDateFrom) query.set("date_from", normalizedDateFrom);
       if (normalizedDateTo) query.set("date_to", normalizedDateTo);
       const resp = await apiCall(`/api/admin/operation-logs?${query.toString()}`);
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "加载操作日志失败");
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminOperationLogsTab",
+            action: "加载操作日志",
+            endpoint: "/api/admin/operation-logs",
+            method: "GET",
+            meta: Object.fromEntries(query.entries()),
+            fallbackMessage: "加载操作日志失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
       setItems(Array.isArray(data.items) ? data.items : []);
@@ -107,9 +106,15 @@ export function AdminOperationLogsTab({ apiCall }) {
       setSummaryCards(Array.isArray(data.summary_cards) ? data.summary_cards : []);
       setCharts(Array.isArray(data.charts) ? data.charts : []);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminOperationLogsTab",
+          action: "加载操作日志",
+          endpoint: "/api/admin/operation-logs",
+          method: "GET",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setLoading(false);
     }
@@ -240,10 +245,10 @@ export function AdminOperationLogsTab({ apiCall }) {
         </Pagination>
       </div>
 
-      {status ? (
-        <Alert>
-          <AlertDescription>{status}</AlertDescription>
-        </Alert>
+      {error ? (
+        <AdminErrorNotice error={error} />
+      ) : status ? (
+        <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{status}</div>
       ) : null}
     </div>
   );

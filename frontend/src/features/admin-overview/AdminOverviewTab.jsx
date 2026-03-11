@@ -1,22 +1,12 @@
 import { Activity, ArrowRight, Gift, RefreshCcw, ScrollText, Shield, Sparkles, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { toast } from "sonner";
 
+import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { formatDateTimeBeijing } from "../../shared/lib/datetime";
+import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
+import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, MetricCard, MetricChart, ResponsiveTable } from "../../shared/ui";
-
-function parseError(data, fallback) {
-  return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
-}
-
-async function jsonOrEmpty(resp) {
-  try {
-    return await resp.json();
-  } catch (_) {
-    return {};
-  }
-}
 
 function toneForCard(label) {
   if (label.includes("异常")) return "danger";
@@ -44,17 +34,26 @@ export function AdminOverviewTab({ apiCall }) {
   const [recentOperations, setRecentOperations] = useState([]);
   const [summaryCards, setSummaryCards] = useState([]);
   const [charts, setCharts] = useState([]);
+  const { error, clearError, captureError } = useErrorHandler();
 
   async function loadOverview() {
     setLoading(true);
     setStatus("");
+    clearError();
     try {
       const resp = await apiCall("/api/admin/overview");
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "加载总览失败");
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminOverviewTab",
+            action: "加载总览",
+            endpoint: "/api/admin/overview",
+            method: "GET",
+            fallbackMessage: "加载总览失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
       setMetrics(data.metrics || null);
@@ -63,9 +62,15 @@ export function AdminOverviewTab({ apiCall }) {
       setSummaryCards(Array.isArray(data.summary_cards) ? data.summary_cards : []);
       setCharts(Array.isArray(data.charts) ? data.charts : []);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminOverviewTab",
+          action: "加载总览",
+          endpoint: "/api/admin/overview",
+          method: "GET",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setLoading(false);
     }
@@ -138,13 +143,13 @@ export function AdminOverviewTab({ apiCall }) {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/ops?tab=system">
+              <Link to="/admin/monitoring?tab=health&panel=system">
                 去系统检查
                 <ArrowRight className="size-4" />
               </Link>
             </Button>
             <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/pipeline?tab=task-failures">去生成失败</Link>
+              <Link to="/admin/monitoring?tab=tasks&panel=task-failures">去生成失败</Link>
             </Button>
             <Button size="sm" onClick={loadOverview} disabled={loading}>
               <RefreshCcw className="size-4" />
@@ -198,7 +203,7 @@ export function AdminOverviewTab({ apiCall }) {
               <CardDescription>快速看最近的兑换批次是否还在正常发放和过期。</CardDescription>
             </div>
             <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/redeem?tab=batches">查看批次</Link>
+              <Link to="/admin/business?tab=redeem&panel=batches">查看批次</Link>
             </Button>
           </CardHeader>
           <CardContent>
@@ -223,7 +228,7 @@ export function AdminOverviewTab({ apiCall }) {
               <CardDescription>重点看计费、调账和兑换码状态变更等关键操作。</CardDescription>
             </div>
             <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/ops?tab=operations">查看操作日志</Link>
+              <Link to="/admin/monitoring?tab=operations&panel=operations">查看操作日志</Link>
             </Button>
           </CardHeader>
           <CardContent>
@@ -242,7 +247,9 @@ export function AdminOverviewTab({ apiCall }) {
         </Card>
       </div>
 
-      {status ? (
+      {error ? (
+        <AdminErrorNotice error={error} />
+      ) : status ? (
         <Card className="rounded-3xl border border-destructive/30 bg-destructive/5 shadow-sm">
           <CardContent className="p-4 text-sm text-destructive">{status}</CardContent>
         </Card>

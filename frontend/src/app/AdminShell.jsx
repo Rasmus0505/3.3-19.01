@@ -64,8 +64,8 @@ export function AdminShell() {
           <div className="container">
             <Card>
               <CardHeader>
-                <CardTitle>无管理员权限</CardTitle>
-                <CardDescription>当前账号不在 `ADMIN_EMAILS` 白名单中。</CardDescription>
+                <CardTitle>权限不足</CardTitle>
+                <CardDescription>需要管理员权限</CardDescription>
               </CardHeader>
               <CardContent className="flex gap-2">
                 <Button variant="outline" asChild>

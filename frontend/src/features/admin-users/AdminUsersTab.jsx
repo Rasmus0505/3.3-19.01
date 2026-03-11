@@ -3,12 +3,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
+import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import { formatDateTimeBeijing } from "../../shared/lib/datetime";
+import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
+import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import {
   ActionMenu,
-  Alert,
-  AlertDescription,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -49,18 +50,6 @@ import {
   Skeleton,
 } from "../../shared/ui";
 
-function parseError(data, fallback) {
-  return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
-}
-
-async function jsonOrEmpty(resp) {
-  try {
-    return await resp.json();
-  } catch (_) {
-    return {};
-  }
-}
-
 function formatPoints(points) {
   const value = Number(points || 0);
   return `${value >= 0 ? "" : "-"}${Math.abs(value)} 点`;
@@ -94,6 +83,7 @@ export function AdminUsersTab({ apiCall }) {
   const [deletingUser, setDeletingUser] = useState(null);
   const [deletingUserId, setDeletingUserId] = useState(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const { error, clearError, captureError } = useErrorHandler();
 
   useEffect(() => {
     setSearchParams(
@@ -111,6 +101,7 @@ export function AdminUsersTab({ apiCall }) {
   async function loadUsers(nextPage = page) {
     setLoading(true);
     setStatus("");
+    clearError();
     try {
       const query = new URLSearchParams({
         page: String(nextPage),
@@ -120,20 +111,34 @@ export function AdminUsersTab({ apiCall }) {
         keyword: keyword.trim(),
       });
       const resp = await apiCall(`/api/admin/users?${query.toString()}`);
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "加载用户失败");
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminUsersTab",
+            action: "加载用户列表",
+            endpoint: "/api/admin/users",
+            method: "GET",
+            meta: Object.fromEntries(query.entries()),
+            fallbackMessage: "加载用户失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
       setUsers(Array.isArray(data.items) ? data.items : []);
       setTotal(Number(data.total || 0));
       setSummaryCards(Array.isArray(data.summary_cards) ? data.summary_cards : []);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminUsersTab",
+          action: "加载用户列表",
+          endpoint: "/api/admin/users",
+          method: "GET",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setLoading(false);
     }
@@ -176,18 +181,37 @@ export function AdminUsersTab({ apiCall }) {
     setSummaryUser(user);
     setSummaryOpen(true);
     setSummaryLoading(true);
+    clearError();
     try {
       const resp = await apiCall(`/api/admin/users/${user.id}/summary`);
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "加载用户摘要失败");
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminUsersTab",
+            action: "加载用户摘要",
+            endpoint: `/api/admin/users/${user.id}/summary`,
+            method: "GET",
+            meta: { user_id: user.id, user_email: user.email },
+            fallbackMessage: "加载用户摘要失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         setSummaryOpen(false);
         return;
       }
       setSummaryData(data.summary || null);
     } catch (error) {
-      toast.error(`网络错误: ${String(error)}`);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminUsersTab",
+          action: "加载用户摘要",
+          endpoint: `/api/admin/users/${user.id}/summary`,
+          method: "GET",
+          meta: { user_id: user.id, user_email: user.email },
+        }),
+      );
+      setStatus(formattedError.displayMessage);
       setSummaryOpen(false);
     } finally {
       setSummaryLoading(false);
@@ -203,16 +227,26 @@ export function AdminUsersTab({ apiCall }) {
   async function submitAdjust() {
     if (!adjustingUser) return;
     setAdjustLoading(true);
+    clearError();
     try {
       const resp = await apiCall(`/api/admin/users/${adjustingUser.id}/wallet-adjust`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ delta_points: Number(deltaPoints), reason: reason.trim() }),
       });
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "调账失败");
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminUsersTab",
+            action: "余额调账",
+            endpoint: `/api/admin/users/${adjustingUser.id}/wallet-adjust`,
+            method: "POST",
+            meta: { user_id: adjustingUser.id, user_email: adjustingUser.email, delta_points: Number(deltaPoints), reason: reason.trim() },
+            fallbackMessage: "调账失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
       toast.success(`调账成功：${adjustingUser.email}，余额 ${formatPoints(data.balance_points)}`);
@@ -220,7 +254,16 @@ export function AdminUsersTab({ apiCall }) {
       setAdjustingUser(null);
       loadUsers(page);
     } catch (error) {
-      toast.error(`网络错误: ${String(error)}`);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminUsersTab",
+          action: "余额调账",
+          endpoint: `/api/admin/users/${adjustingUser.id}/wallet-adjust`,
+          method: "POST",
+          meta: { user_id: adjustingUser.id, user_email: adjustingUser.email },
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setAdjustLoading(false);
     }
@@ -234,12 +277,22 @@ export function AdminUsersTab({ apiCall }) {
   async function submitDelete() {
     if (!deletingUser) return;
     setDeletingUserId(deletingUser.id);
+    clearError();
     try {
       const resp = await apiCall(`/api/admin/users/${deletingUser.id}`, { method: "DELETE" });
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "删除用户失败");
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminUsersTab",
+            action: "删除用户",
+            endpoint: `/api/admin/users/${deletingUser.id}`,
+            method: "DELETE",
+            meta: { user_id: deletingUser.id, user_email: deletingUser.email },
+            fallbackMessage: "删除用户失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
       const failedCount = Array.isArray(data.file_cleanup_failed_dirs) ? data.file_cleanup_failed_dirs.length : 0;
@@ -256,7 +309,16 @@ export function AdminUsersTab({ apiCall }) {
       setPage(1);
       loadUsers(1);
     } catch (error) {
-      toast.error(`网络错误: ${String(error)}`);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminUsersTab",
+          action: "删除用户",
+          endpoint: `/api/admin/users/${deletingUser.id}`,
+          method: "DELETE",
+          meta: { user_id: deletingUser.id, user_email: deletingUser.email },
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setDeletingUserId(null);
     }
@@ -442,10 +504,10 @@ export function AdminUsersTab({ apiCall }) {
         </Pagination>
       </div>
 
-      {status ? (
-        <Alert>
-          <AlertDescription>{status}</AlertDescription>
-        </Alert>
+      {error ? (
+        <AdminErrorNotice error={error} />
+      ) : status ? (
+        <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{status}</div>
       ) : null}
 
       <Dialog open={Boolean(adjustingUser)} onOpenChange={(open) => !open && setAdjustingUser(null)}>
@@ -530,10 +592,10 @@ export function AdminUsersTab({ apiCall }) {
               </Card>
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" asChild>
-                  <Link to={`/admin/users?tab=wallet&user_email=${encodeURIComponent(summaryUser?.email || "")}`}>查看余额流水</Link>
+                  <Link to={`/admin/business?tab=users&panel=wallet&user_email=${encodeURIComponent(summaryUser?.email || "")}`}>查看余额流水</Link>
                 </Button>
                 <Button variant="outline" asChild>
-                  <Link to={`/admin/redeem?tab=audit&user_email=${encodeURIComponent(summaryUser?.email || "")}`}>查看兑换审计</Link>
+                  <Link to={`/admin/business?tab=redeem&panel=audit&user_email=${encodeURIComponent(summaryUser?.email || "")}`}>查看兑换审计</Link>
                 </Button>
               </div>
             </div>

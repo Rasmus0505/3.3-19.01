@@ -67,13 +67,10 @@ export function LearningShellHeader({
           </Sheet>
 
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">学习中心</p>
             <div className="flex min-w-0 items-center gap-2">
               <h1 className="truncate text-sm font-semibold">{currentPanel.title}</h1>
-              <Badge variant="outline">{accessToken ? "已登录" : "未登录"}</Badge>
               {accessToken ? <Badge variant="outline">{lessonsCount} 门课程</Badge> : null}
             </div>
-            <p className="hidden text-xs text-muted-foreground md:block">{currentPanel.description}</p>
           </div>
 
           <div className="ml-auto flex items-center gap-2">
