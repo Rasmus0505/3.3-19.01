@@ -1,7 +1,6 @@
-import { Gift, History, LogOut, Search, Shield, Sparkles, UploadCloud } from "lucide-react";
+import { Gift, History, LogIn, LogOut, Search, Shield, Sparkles, UploadCloud } from "lucide-react";
 
 import {
-  Button,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
@@ -13,6 +12,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "../../shared/ui";
+import { WalletBadge } from "../../features/wallet/WalletBadge";
 
 export const PANEL_ITEMS = [
   {
@@ -49,15 +49,26 @@ export function LearningShellSidebar({
   activePanel,
   onPanelSelect,
   accessToken,
+  walletBalance = 0,
   hasLessons,
   onOpenSearch,
   onLogout,
+  hasStoredToken = false,
+  authStatus = "anonymous",
+  authStatusMessage = "",
   isAdminUser,
   onAdminNavigate,
   mobile = false,
 }) {
   const { open } = useSidebar();
   const expanded = mobile || open;
+  const showSearchAction = Boolean(accessToken && hasLessons);
+  const showAdminAction = Boolean(accessToken && isAdminUser);
+  const showLogoutAction = Boolean(hasStoredToken);
+  const loginHint =
+    authStatus === "expired"
+      ? authStatusMessage || "登录已失效，请重新登录后继续上传、同步和进入管理台。"
+      : "登录后可上传素材、同步进度，并在侧边栏进入管理后台。";
 
   return (
     <>
@@ -94,30 +105,77 @@ export function LearningShellSidebar({
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {showSearchAction || showAdminAction || showLogoutAction ? (
+          <SidebarGroup>
+            {expanded ? <SidebarGroupLabel>快捷操作</SidebarGroupLabel> : null}
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {showSearchAction ? (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      collapsed={!expanded}
+                      onClick={onOpenSearch}
+                      title="查找课程"
+                      aria-label="查找课程"
+                    >
+                      <Search className="size-5 shrink-0" />
+                      {expanded ? <span className="truncate font-medium">查找课程</span> : null}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ) : null}
+                {showAdminAction ? (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      collapsed={!expanded}
+                      onClick={onAdminNavigate}
+                      title="管理后台"
+                      aria-label="管理后台"
+                    >
+                      <Shield className="size-5 shrink-0" />
+                      {expanded ? <span className="truncate font-medium">管理后台</span> : null}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ) : null}
+                {showLogoutAction ? (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      collapsed={!expanded}
+                      onClick={onLogout}
+                      title="退出登录"
+                      aria-label="退出登录"
+                    >
+                      <LogOut className="size-5 shrink-0" />
+                      {expanded ? <span className="truncate font-medium">退出登录</span> : null}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ) : null}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ) : null}
       </SidebarContent>
 
       <SidebarFooter className="space-y-2">
-        {mobile ? (
-          <div className="grid gap-2">
-            {hasLessons ? (
-              <Button variant="outline" className="justify-start" onClick={onOpenSearch}>
-                <Search className="size-4" />
-                查找课程
-              </Button>
-            ) : null}
-            {isAdminUser ? (
-              <Button variant="outline" className="justify-start" onClick={onAdminNavigate}>
-                <Shield className="size-4" />
-                管理后台
-              </Button>
-            ) : null}
-            {accessToken ? (
-              <Button className="justify-start" onClick={onLogout}>
-                <LogOut className="size-4" />
-                退出登录
-              </Button>
-            ) : null}
+        {accessToken && expanded ? (
+          <div className="rounded-2xl border bg-muted/30 p-3">
+            <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
           </div>
+        ) : null}
+        {!accessToken ? (
+          <div className="rounded-2xl border bg-muted/30 p-3">
+            <div className="flex items-start gap-2">
+              <LogIn className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              {expanded ? (
+                <p className="text-xs leading-5 text-muted-foreground">{loginHint}</p>
+              ) : (
+                <span className="sr-only">{loginHint}</span>
+              )}
+            </div>
+          </div>
+        ) : null}
+        {expanded ? (
+          <p className="text-xs text-muted-foreground">右上角快捷入口已统一移到这里，桌面和移动端用同一套操作区。</p>
         ) : null}
       </SidebarFooter>
     </>

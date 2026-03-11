@@ -1,6 +1,6 @@
-import { Activity, AlertTriangle, LogOut, Menu, Shield, Users } from "lucide-react";
+import { Activity, AlertTriangle, ArrowLeft, LogOut, Menu, Shield, Users } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { AdminBusinessWorkspace, BUSINESS_TABS } from "./features/admin-workspaces/AdminBusinessWorkspace";
 import { AdminMonitoringWorkspace, MONITORING_TABS } from "./features/admin-workspaces/AdminMonitoringWorkspace";
@@ -112,7 +112,7 @@ function LegacyAdminRedirect({ to, fallbackTab, fallbackPanel, tabMap = {}, pane
   return <Navigate to={`${to}${nextSearch ? `?${nextSearch}` : ""}`} replace />;
 }
 
-function AdminSidebarNavigation({ navigationGroups, activeItem, onItemSelect, onBackToLearning, onLogout, mobile = false }) {
+function AdminSidebarNavigation({ navigationGroups, activeItem, quickActions, onItemSelect, onBackToLearning, onLogout, mobile = false }) {
   const { open } = useSidebar();
   const expanded = mobile || open;
 
@@ -160,6 +160,37 @@ function AdminSidebarNavigation({ navigationGroups, activeItem, onItemSelect, on
             </SidebarGroupContent>
           </SidebarGroup>
         ))}
+
+        <SidebarSeparator />
+
+        <SidebarGroup>
+          {expanded ? <SidebarGroupLabel>快捷入口</SidebarGroupLabel> : null}
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {quickActions.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <SidebarMenuItem key={item.key}>
+                    <SidebarMenuButton
+                      collapsed={!expanded}
+                      onClick={item.onSelect}
+                      title={item.label}
+                      aria-label={item.label}
+                    >
+                      <Icon className="size-5 shrink-0" />
+                      {expanded ? (
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium text-foreground">{item.label}</span>
+                          <span className="block truncate text-xs text-muted-foreground">{item.description}</span>
+                        </span>
+                      ) : null}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter className="space-y-2">
@@ -169,17 +200,30 @@ function AdminSidebarNavigation({ navigationGroups, activeItem, onItemSelect, on
             <p className="text-xs text-muted-foreground">面向 Zeabur 运营：优先看状态、复制错误、再做修复。</p>
           </>
         ) : null}
-        {mobile ? (
-          <div className="grid gap-2">
-            <Button variant="outline" className="justify-start" onClick={onBackToLearning}>
-              返回学习页
-            </Button>
-            <Button className="justify-start" onClick={onLogout}>
-              <LogOut className="size-4" />
-              退出登录
-            </Button>
-          </div>
-        ) : null}
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              collapsed={!expanded}
+              onClick={onBackToLearning}
+              title="返回学习页"
+              aria-label="返回学习页"
+            >
+              <ArrowLeft className="size-5 shrink-0" />
+              {expanded ? <span className="truncate font-medium">返回学习页</span> : null}
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              collapsed={!expanded}
+              onClick={onLogout}
+              title="退出登录"
+              aria-label="退出登录"
+            >
+              <LogOut className="size-5 shrink-0" />
+              {expanded ? <span className="truncate font-medium">退出登录</span> : null}
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarFooter>
     </>
   );
@@ -225,6 +269,47 @@ export function AdminApp({ apiCall, onLogout }) {
     navigate("/");
   }
 
+  function handleLogout() {
+    setMobileNavOpen(false);
+    onLogout();
+  }
+
+  const quickActions = useMemo(
+    () => [
+      {
+        key: "health",
+        label: "系统健康",
+        description: "查看健康与总览",
+        icon: Activity,
+        onSelect: () => {
+          setMobileNavOpen(false);
+          navigate("/admin/monitoring?tab=health&panel=overview");
+        },
+      },
+      {
+        key: "tasks",
+        label: "任务监控",
+        description: "直达失败任务排查",
+        icon: AlertTriangle,
+        onSelect: () => {
+          setMobileNavOpen(false);
+          navigate("/admin/monitoring?tab=tasks&panel=task-failures&status=error");
+        },
+      },
+      {
+        key: "users",
+        label: "用户管理",
+        description: "查看用户与钱包数据",
+        icon: Users,
+        onSelect: () => {
+          setMobileNavOpen(false);
+          navigate("/admin/business?tab=users&panel=list");
+        },
+      },
+    ],
+    [navigate],
+  );
+
   return (
     <SidebarProvider storageKey={SIDEBAR_STORAGE_KEY}>
       <div className="section-soft min-h-screen bg-background md:flex">
@@ -232,9 +317,10 @@ export function AdminApp({ apiCall, onLogout }) {
           <AdminSidebarNavigation
             navigationGroups={navigationGroups}
             activeItem={activeItem}
+            quickActions={quickActions}
             onItemSelect={handleItemSelect}
             onBackToLearning={handleBackToLearning}
-            onLogout={onLogout}
+            onLogout={handleLogout}
           />
         </Sidebar>
 
@@ -258,9 +344,10 @@ export function AdminApp({ apiCall, onLogout }) {
                       <AdminSidebarNavigation
                         navigationGroups={navigationGroups}
                         activeItem={activeItem}
+                        quickActions={quickActions}
                         onItemSelect={handleItemSelect}
                         onBackToLearning={handleBackToLearning}
-                        onLogout={onLogout}
+                        onLogout={handleLogout}
                         mobile
                       />
                     </div>
@@ -277,28 +364,6 @@ export function AdminApp({ apiCall, onLogout }) {
                     </Badge>
                   </div>
                   <p className="truncate text-xs text-muted-foreground">{activeItem.description}</p>
-                </div>
-
-                <div className="ml-auto hidden items-center gap-2 xl:flex">
-                  <Button variant="outline" size="sm" onClick={() => navigate("/admin/monitoring?tab=health&panel=overview")}>
-                    <Activity className="size-4" />
-                    系统健康
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => navigate("/admin/monitoring?tab=tasks&panel=task-failures&status=error")}>
-                    <AlertTriangle className="size-4" />
-                    任务监控
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => navigate("/admin/business?tab=users&panel=list")}>
-                    <Users className="size-4" />
-                    用户管理
-                  </Button>
-                  <Button variant="outline" size="sm" asChild>
-                    <NavLink to="/">返回学习页</NavLink>
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={onLogout}>
-                    <LogOut className="size-4" />
-                    退出
-                  </Button>
                 </div>
               </div>
             </div>

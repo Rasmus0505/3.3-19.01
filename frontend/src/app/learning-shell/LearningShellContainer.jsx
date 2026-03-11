@@ -113,6 +113,9 @@ export function LearningShellContainer() {
   const navigate = useNavigate();
 
   const accessToken = useAppStore((state) => state.accessToken);
+  const hasStoredToken = useAppStore((state) => state.hasStoredToken);
+  const authStatus = useAppStore((state) => state.authStatus);
+  const authStatusMessage = useAppStore((state) => state.authStatusMessage);
   const hydrateAccessToken = useAppStore((state) => state.hydrateAccessToken);
   const logout = useAppStore((state) => state.logout);
   const detectAdmin = useAppStore((state) => state.detectAdmin);
@@ -527,9 +530,13 @@ export function LearningShellContainer() {
               activePanel={activePanel}
               onPanelSelect={handlePanelChange}
               accessToken={accessToken}
+              walletBalance={walletBalance}
               hasLessons={lessons.length > 0}
               onOpenSearch={() => setCommandOpen(true)}
               onLogout={handleLogout}
+              hasStoredToken={hasStoredToken}
+              authStatus={authStatus}
+              authStatusMessage={authStatusMessage}
               isAdminUser={isAdminUser}
               onAdminNavigate={() => navigate("/admin/monitoring?tab=health&panel=overview")}
             />
@@ -549,6 +556,9 @@ export function LearningShellContainer() {
               onPanelSelect={handlePanelChange}
               onOpenSearch={() => setCommandOpen(true)}
               onLogout={handleLogout}
+              hasStoredToken={hasStoredToken}
+              authStatus={authStatus}
+              authStatusMessage={authStatusMessage}
               isAdminUser={isAdminUser}
               onAdminNavigate={() => navigate("/admin/monitoring?tab=health&panel=overview")}
             />

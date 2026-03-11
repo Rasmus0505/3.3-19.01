@@ -8,6 +8,9 @@ import { useAppStore } from "../store";
 
 export function AdminShell() {
   const accessToken = useAppStore((state) => state.accessToken);
+  const hasStoredToken = useAppStore((state) => state.hasStoredToken);
+  const authStatus = useAppStore((state) => state.authStatus);
+  const authStatusMessage = useAppStore((state) => state.authStatusMessage);
   const isAdminUser = useAppStore((state) => state.isAdminUser);
   const adminAuthState = useAppStore((state) => state.adminAuthState);
   const detectAdmin = useAppStore((state) => state.detectAdmin);
@@ -19,19 +22,21 @@ export function AdminShell() {
   }, [accessToken, detectAdmin]);
 
   if (!accessToken) {
+    const expired = authStatus === "expired";
     return (
       <div className="section-soft min-h-screen bg-background">
         <div className="container-wrapper py-8">
           <div className="container">
             <Card>
               <CardHeader>
-                <CardTitle>未登录</CardTitle>
-                <CardDescription>请先登录后再访问管理员后台。</CardDescription>
+                <CardTitle>{expired ? "登录已失效" : "未登录"}</CardTitle>
+                <CardDescription>{expired ? authStatusMessage || "请返回学习页重新登录后再访问管理员后台。" : "请先登录后再访问管理员后台。"}</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex gap-2">
                 <Button asChild>
                   <NavLink to="/">返回学习页登录</NavLink>
                 </Button>
+                {hasStoredToken ? <Button variant="outline" onClick={logout}>退出登录</Button> : null}
               </CardContent>
             </Card>
           </div>

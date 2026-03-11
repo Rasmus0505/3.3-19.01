@@ -9,6 +9,9 @@ import { useAppStore } from "../../store";
 export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
   const setAccessToken = useAppStore((state) => state.setAccessToken);
   const setGlobalStatus = useAppStore((state) => state.setGlobalStatus);
+  const authStatus = useAppStore((state) => state.authStatus);
+  const authStatusMessage = useAppStore((state) => state.authStatusMessage);
+  const hasStoredToken = useAppStore((state) => state.hasStoredToken);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -46,11 +49,19 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
     }
   }
 
+  const isExpired = authStatus === "expired";
+  const description = isExpired ? authStatusMessage || "当前登录已失效，请重新登录后继续。" : "上传素材，同步学习进度";
+  const footerMessage = isExpired
+    ? hasStoredToken
+      ? "重新登录后会覆盖当前已失效的本地令牌。"
+      : "请重新登录后继续。"
+    : "登录后即可开始上传和学习。";
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>登录</CardTitle>
-        <CardDescription>上传素材，同步学习进度</CardDescription>
+        <CardTitle>{isExpired ? "登录已失效" : "登录"}</CardTitle>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <form
@@ -96,8 +107,12 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
           <Alert className="w-full py-2">
             <AlertDescription>{status}</AlertDescription>
           </Alert>
+        ) : isExpired ? (
+          <Alert variant="destructive" className="w-full py-2">
+            <AlertDescription>{footerMessage}</AlertDescription>
+          </Alert>
         ) : (
-          <p className="text-sm text-muted-foreground">登录后即可开始上传和学习。</p>
+          <p className="text-sm text-muted-foreground">{footerMessage}</p>
         )}
       </CardFooter>
     </Card>
