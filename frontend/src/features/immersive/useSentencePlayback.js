@@ -38,6 +38,11 @@ export function useSentencePlayback({
   const isPlaybackPausedRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPlaybackPaused, setIsPlaybackPaused] = useState(false);
+  const [currentPlaybackRate, setCurrentPlaybackRate] = useState(1);
+
+  const syncPlaybackRate = useCallback((nextRate) => {
+    setCurrentPlaybackRate(Math.max(0.4, Math.min(1, Number(nextRate || 1))));
+  }, []);
 
   const clearClipUrl = useCallback(() => {
     if (clipObjectUrlRef.current) {
@@ -50,7 +55,8 @@ export function useSentencePlayback({
     if (!media) return;
     media.playbackRate = playbackPlan.initialRate;
     media.defaultPlaybackRate = playbackPlan.initialRate;
-  }, []);
+    syncPlaybackRate(playbackPlan.initialRate);
+  }, [syncPlaybackRate]);
 
   const applyScheduledRateSteps = useCallback((media, currentRelativeSec) => {
     if (!media) return;
@@ -62,9 +68,10 @@ export function useSentencePlayback({
       }
       media.playbackRate = nextStep.rate;
       media.defaultPlaybackRate = nextStep.rate;
+      syncPlaybackRate(nextStep.rate);
       nextRateStepIndexRef.current += 1;
     }
-  }, []);
+  }, [syncPlaybackRate]);
 
   const finishPlayback = useCallback(() => {
     isSegmentPlayingRef.current = false;
@@ -72,10 +79,11 @@ export function useSentencePlayback({
     isPlaybackPausedRef.current = false;
     setIsPlaying(false);
     setIsPlaybackPaused(false);
+    syncPlaybackRate(1);
     resetMediaRate(mediaElementRef.current);
     resetMediaRate(clipAudioRef.current);
     onSentenceFinished?.();
-  }, [clipAudioRef, mediaElementRef, onSentenceFinished]);
+  }, [clipAudioRef, mediaElementRef, onSentenceFinished, syncPlaybackRate]);
 
   const stopPlayback = useCallback(() => {
     isSegmentPlayingRef.current = false;
@@ -83,6 +91,7 @@ export function useSentencePlayback({
     isPlaybackPausedRef.current = false;
     setIsPlaying(false);
     setIsPlaybackPaused(false);
+    syncPlaybackRate(1);
     playbackPlanRef.current = { initialRate: 1, rateSteps: [] };
     nextRateStepIndexRef.current = 0;
     segmentStartRef.current = 0;
@@ -102,7 +111,7 @@ export function useSentencePlayback({
     }
     resetMediaRate(clipAudio);
     clearClipUrl();
-  }, [clearClipUrl, clipAudioRef, mediaElementRef]);
+  }, [clearClipUrl, clipAudioRef, mediaElementRef, syncPlaybackRate]);
 
   const togglePausePlayback = useCallback(async () => {
     const media = mode === "clip" ? clipAudioRef.current : mediaElementRef.current;
@@ -202,6 +211,7 @@ export function useSentencePlayback({
           isPlaybackPausedRef.current = false;
           setIsPlaying(false);
           setIsPlaybackPaused(false);
+          syncPlaybackRate(1);
           resetMediaRate(clipAudio);
         };
         clipAudio.ontimeupdate = () => {
@@ -221,6 +231,7 @@ export function useSentencePlayback({
           clearClipUrl();
           hasActivePlaybackRef.current = false;
           isPlaybackPausedRef.current = false;
+          syncPlaybackRate(1);
           resetMediaRate(clipAudio);
           return { ok: false, reason: "autoplay_blocked", detail: String(error) };
         }
@@ -248,11 +259,12 @@ export function useSentencePlayback({
       } catch (error) {
         hasActivePlaybackRef.current = false;
         isPlaybackPausedRef.current = false;
+        syncPlaybackRate(1);
         resetMediaRate(media);
         return { ok: false, reason: "autoplay_blocked", detail: String(error) };
       }
     },
-    [accessToken, apiClient, applyInitialRate, applyScheduledRateSteps, clearClipUrl, clipAudioRef, finishPlayback, mediaElementRef, mode, stopPlayback],
+    [accessToken, apiClient, applyInitialRate, applyScheduledRateSteps, clearClipUrl, clipAudioRef, finishPlayback, mediaElementRef, mode, stopPlayback, syncPlaybackRate],
   );
 
   useEffect(() => {
@@ -264,6 +276,7 @@ export function useSentencePlayback({
   return {
     isPlaying,
     isPlaybackPaused,
+    currentPlaybackRate,
     playSentence,
     stopPlayback,
     togglePausePlayback,

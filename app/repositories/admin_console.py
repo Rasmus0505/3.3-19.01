@@ -509,6 +509,39 @@ def list_admin_lesson_task_logs(
     }
 
 
+def get_admin_lesson_task_log_detail(db: Session, *, task_id: str) -> dict[str, object] | None:
+    ensure_lesson_task_storage_ready(db)
+    owner_user = User.__table__.alias("lesson_task_owner")
+    row = db.execute(
+        select(LessonGenerationTask, owner_user.c.email.label("user_email"))
+        .outerjoin(owner_user, owner_user.c.id == LessonGenerationTask.owner_user_id)
+        .where(LessonGenerationTask.task_id == task_id)
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+
+    translation_attempts = list(
+        db.scalars(
+            select(TranslationRequestLog)
+            .where(TranslationRequestLog.task_id == task_id)
+            .order_by(TranslationRequestLog.created_at.asc(), TranslationRequestLog.id.asc())
+        ).all()
+    )
+    has_raw_debug = bool(getattr(row[0], "asr_raw_json", None)) or any(
+        bool(str(getattr(item, "raw_request_text", "") or "").strip())
+        or bool(str(getattr(item, "raw_response_text", "") or "").strip())
+        or bool(str(getattr(item, "raw_error_text", "") or "").strip())
+        for item in translation_attempts
+    )
+    return {
+        "row": row[0],
+        "user_email": row.user_email,
+        "translation_attempts": translation_attempts,
+        "has_raw_debug": has_raw_debug,
+    }
+
+
 def get_admin_overview_data(db: Session, *, now: datetime) -> dict[str, object]:
     return query_cache.get_or_set(
         "admin_overview",

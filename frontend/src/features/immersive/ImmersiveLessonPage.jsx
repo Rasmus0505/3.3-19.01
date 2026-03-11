@@ -43,6 +43,10 @@ function debugImmersiveLog(event, detail = {}) {
   console.debug("[DEBUG] immersive.learning", event, detail);
 }
 
+function formatPlaybackRateLabel(rate) {
+  return `${Number(rate || 1).toFixed(2)}x`;
+}
+
 function getFullscreenElement() {
   if (typeof document === "undefined") return null;
   return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null;
@@ -546,6 +550,8 @@ export function ImmersiveLessonPage({
   const [sentenceTypingDone, setSentenceTypingDone] = useState(false);
   const [sentencePlaybackDone, setSentencePlaybackDone] = useState(false);
   const [sentencePlaybackRequired, setSentencePlaybackRequired] = useState(true);
+  const [postAnswerReplayState, setPostAnswerReplayState] = useState("idle");
+  const [translationDisplayMode, setTranslationDisplayMode] = useState("previous");
   const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
   const [isFullscreenFallback, setIsFullscreenFallback] = useState(false);
   const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(
@@ -607,10 +613,16 @@ export function ImmersiveLessonPage({
 
   const currentSentence = lesson?.sentences?.[currentSentenceIndex] || null;
   const previousSentence = currentSentenceIndex > 0 ? lesson?.sentences?.[currentSentenceIndex - 1] || null : null;
+  const currentSentenceEn = currentSentence?.text_en || "(当前句英文暂缺)";
+  const currentSentenceZh = currentSentence ? currentSentence.text_zh || "(当前句中文翻译暂缺)" : "(暂无当前句中文翻译)";
   const previousSentenceEn = previousSentence?.text_en || "(当前是第一句，无上一句)";
   const previousSentenceZh = previousSentence
     ? previousSentence.text_zh || "(翻译失败，暂缺)"
     : "(暂无上一句中文翻译)";
+  const autoReplayAnsweredSentence = learningSettings.playbackPreferences?.autoReplayAnsweredSentence !== false;
+  const translationHeading = translationDisplayMode === "current_answered" ? "本句" : "上一句";
+  const translationEn = translationDisplayMode === "current_answered" ? currentSentenceEn : previousSentenceEn;
+  const translationZh = translationDisplayMode === "current_answered" ? currentSentenceZh : previousSentenceZh;
   const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens : []), [currentSentence?.tokens]);
   const sentenceWordTimingMap = useMemo(
     () => buildSentenceWordTimingMap(lesson?.sentences || [], lesson?.subtitle_cache_seed?.asr_payload || null),
@@ -641,6 +653,8 @@ export function ImmersiveLessonPage({
     setSentenceTypingDone(false);
     setSentencePlaybackDone(false);
     setSentencePlaybackRequired(Boolean(playbackRequired));
+    setPostAnswerReplayState("idle");
+    setTranslationDisplayMode("previous");
     replayAssistStageRef.current = 0;
     replayProgressAnchorRef.current = 0;
   }, []);
@@ -755,6 +769,10 @@ export function ImmersiveLessonPage({
       typingDone: sentenceTypingDone,
     });
     setSentencePlaybackDone(true);
+    if (playbackKind === "answer_completed_replay") {
+      setPostAnswerReplayState("completed");
+      return;
+    }
     if (!expectedTokens.length) {
       setSentenceTypingDone(true);
       return;
@@ -762,14 +780,15 @@ export function ImmersiveLessonPage({
     setPhase("typing");
   }, [currentSentenceIndex, expectedTokens.length, sentenceTypingDone]);
 
-  const { isPlaying, isPlaybackPaused, playSentence, stopPlayback, togglePausePlayback, onMainMediaTimeUpdate } = useSentencePlayback({
+  const { isPlaying, isPlaybackPaused, currentPlaybackRate, playSentence, stopPlayback, togglePausePlayback, onMainMediaTimeUpdate } =
+    useSentencePlayback({
     mode: mediaMode,
     mediaElementRef,
     clipAudioRef,
     apiClient,
     accessToken,
     onSentenceFinished,
-  });
+    });
 
   const tryPlayCurrentSentence = useCallback(
     async ({ manual = false, playbackKind = "initial", playbackPlan = null, source = "unknown" } = {}) => {
@@ -832,6 +851,39 @@ export function ImmersiveLessonPage({
     },
     [currentSentence, currentSentenceIndex, expectedTokens.length, learningSettings.shortcuts.replay_sentence, needsBinding, playSentence],
   );
+
+  const startAnswerCompletedReplay = useCallback(async () => {
+    if (!currentSentence) {
+      setPostAnswerReplayState("completed");
+      return;
+    }
+
+    setPostAnswerReplayState("replaying");
+    setSentencePlaybackDone(false);
+    playbackKindRef.current = "answer_completed_replay";
+    setPhase("playing");
+    setMediaError("");
+    debugImmersiveLog("answer_completed_replay.start", {
+      sentenceIndex: currentSentenceIndex,
+    });
+
+    const result = await playSentence(currentSentence, { initialRate: 1, rateSteps: [] });
+    if (result.ok) {
+      debugImmersiveLog("answer_completed_replay.playing", {
+        sentenceIndex: currentSentenceIndex,
+      });
+      return;
+    }
+
+    debugImmersiveLog("answer_completed_replay.skip", {
+      sentenceIndex: currentSentenceIndex,
+      reason: result.reason || "unknown",
+      detail: result.detail || "",
+    });
+    setPostAnswerReplayState("completed");
+    setSentencePlaybackDone(true);
+    setPhase("typing");
+  }, [currentSentence, currentSentenceIndex, playSentence]);
 
   useEffect(() => {
     if (!lesson) return;
@@ -971,6 +1023,31 @@ export function ImmersiveLessonPage({
   }, [currentSentence, immersiveActive, mediaMode, mediaReady, needsBinding, phase, tryPlayCurrentSentence]);
 
   useEffect(() => {
+    if (!immersiveActive) return;
+    if (!autoReplayAnsweredSentence) return;
+    if (!sentenceTypingDone) return;
+    setTranslationDisplayMode("current_answered");
+    setPostAnswerReplayState((current) => (current === "idle" ? "waiting_initial_finish" : current));
+  }, [autoReplayAnsweredSentence, immersiveActive, sentenceTypingDone]);
+
+  useEffect(() => {
+    if (!immersiveActive) return;
+    if (!autoReplayAnsweredSentence) return;
+    if (!sentenceTypingDone) return;
+    if (postAnswerReplayState !== "waiting_initial_finish") return;
+    if (sentencePlaybackRequired && !sentencePlaybackDone) return;
+    void startAnswerCompletedReplay();
+  }, [
+    autoReplayAnsweredSentence,
+    immersiveActive,
+    postAnswerReplayState,
+    sentencePlaybackDone,
+    sentencePlaybackRequired,
+    sentenceTypingDone,
+    startAnswerCompletedReplay,
+  ]);
+
+  useEffect(() => {
     if (!typingEnabled) return;
     focusTypingInput();
   }, [activeWordIndex, currentSentenceIndex, focusTypingInput, typingEnabled]);
@@ -994,19 +1071,33 @@ export function ImmersiveLessonPage({
   useEffect(() => {
     if (!immersiveActive) return;
     if (!sentenceTypingDone) return;
-    if (sentencePlaybackRequired && !sentencePlaybackDone) return;
+    if (autoReplayAnsweredSentence) {
+      if (postAnswerReplayState !== "completed") return;
+    } else if (sentencePlaybackRequired && !sentencePlaybackDone) {
+      return;
+    }
     if (sentenceAdvanceLockedRef.current) return;
     sentenceAdvanceLockedRef.current = true;
     setPhase("transition");
     setTimeout(() => {
       void handleSentencePassed();
     }, 120);
-  }, [handleSentencePassed, immersiveActive, sentencePlaybackDone, sentencePlaybackRequired, sentenceTypingDone]);
+  }, [
+    autoReplayAnsweredSentence,
+    handleSentencePassed,
+    immersiveActive,
+    postAnswerReplayState,
+    sentencePlaybackDone,
+    sentencePlaybackRequired,
+    sentenceTypingDone,
+  ]);
 
   useEffect(() => {
     if (immersiveActive) return;
     stopPlayback();
     setPhase("idle");
+    setPostAnswerReplayState("idle");
+    setTranslationDisplayMode("previous");
   }, [immersiveActive, stopPlayback]);
 
   const handleMainMediaError = useCallback(() => {
@@ -1115,7 +1206,6 @@ export function ImmersiveLessonPage({
         await exitElementFullscreen().catch(() => {});
         setIsCinemaFullscreen(false);
         setIsFullscreenFallback(false);
-        setShowFullscreenPreviousSentence(false);
       }
       handler(source);
     },
@@ -1123,19 +1213,8 @@ export function ImmersiveLessonPage({
   );
 
   const exitCinemaFullscreen = useCallback(async () => {
-    setShowFullscreenPreviousSentence(false);
-    if (isFullscreenFallback) {
-      setIsFullscreenFallback(false);
-      setIsCinemaFullscreen(false);
-      return;
-    }
-
-    const fullscreenElement = getFullscreenElement();
-    if (fullscreenElement && immersiveContainerRef.current && fullscreenElement === immersiveContainerRef.current) {
-      await exitElementFullscreen().catch(() => {});
-    }
-    setIsCinemaFullscreen(false);
-  }, [isFullscreenFallback]);
+    await exitImmersive("button_exit_fullscreen");
+  }, [exitImmersive]);
 
   const enterCinemaFullscreen = useCallback(async ({ source = "manual", showFailureToast = false } = {}) => {
     if (!immersiveActive) return { ok: false, reason: "immersive_inactive" };
@@ -1400,8 +1479,12 @@ export function ImmersiveLessonPage({
 
   useEffect(() => {
     if (immersiveActive || !cinemaFullscreenActive) return;
-    void exitCinemaFullscreen();
-  }, [cinemaFullscreenActive, exitCinemaFullscreen, immersiveActive]);
+    void (async () => {
+      await exitElementFullscreen().catch(() => {});
+      setIsCinemaFullscreen(false);
+      setIsFullscreenFallback(false);
+    })();
+  }, [cinemaFullscreenActive, immersiveActive]);
 
   useEffect(() => {
     if (!typingEnabled || !cinemaFullscreenActive) return;
@@ -1419,10 +1502,6 @@ export function ImmersiveLessonPage({
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        if (isCinemaFullscreen || isFullscreenFallback) {
-          void exitCinemaFullscreen();
-          return;
-        }
         void exitImmersive("shortcut_esc");
         return;
       }
@@ -1468,13 +1547,10 @@ export function ImmersiveLessonPage({
       window.removeEventListener("keydown", onWindowKeyDown);
     };
   }, [
-    exitCinemaFullscreen,
     exitImmersive,
     goToPreviousSentence,
     goToNextSentence,
     immersiveActive,
-    isCinemaFullscreen,
-    isFullscreenFallback,
     learningSettings.shortcuts,
     handleTogglePausePlayback,
     replayCurrentSentence,
@@ -1490,10 +1566,6 @@ export function ImmersiveLessonPage({
       if (key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        if (isCinemaFullscreen || isFullscreenFallback) {
-          void exitCinemaFullscreen();
-          return;
-        }
         void exitImmersive("shortcut_esc");
         return;
       }
@@ -1608,12 +1680,9 @@ export function ImmersiveLessonPage({
       currentSentence,
       exitImmersive,
       expectedTokens,
-      exitCinemaFullscreen,
       goToPreviousSentence,
       goToNextSentence,
       handleTogglePausePlayback,
-      isCinemaFullscreen,
-      isFullscreenFallback,
       learningSettings.shortcuts,
       playKeySound,
       replayCurrentSentence,
@@ -1644,6 +1713,8 @@ export function ImmersiveLessonPage({
     .filter(Boolean)
     .join(" ");
   const cinemaButtonClassName = cinemaFullscreenActive ? "immersive-cinema-button" : undefined;
+  const showPlaybackRateBadge = cinemaFullscreenActive && currentPlaybackRate < 0.999;
+  const playbackRateLabel = formatPlaybackRateLabel(currentPlaybackRate);
 
   return (
     <div
@@ -1661,7 +1732,7 @@ export function ImmersiveLessonPage({
         <CardHeader className="immersive-card-header">
           <div className="immersive-header">
             <div className={cinemaHeaderControlsClassName} onMouseEnter={wakeCinemaControls} onFocusCapture={wakeCinemaControls}>
-              {immersiveActive && hasExitHandler ? (
+              {immersiveActive && hasExitHandler && !cinemaFullscreenActive ? (
                 <Button variant="outline" size="sm" className={cinemaButtonClassName} onClick={() => void exitImmersive("button")}>
                   <ArrowLeft className="size-4" />
                   退出
@@ -1669,8 +1740,9 @@ export function ImmersiveLessonPage({
               ) : null}
               {immersiveActive && cinemaFullscreenActive ? (
                 <>
+                  {showPlaybackRateBadge ? <Badge variant="secondary">{playbackRateLabel}</Badge> : null}
                   <Button variant="outline" size="sm" className={cinemaButtonClassName} onClick={() => void exitCinemaFullscreen()}>
-                    退出全屏
+                    退出学习
                   </Button>
                   <Button
                     variant="outline"
@@ -1797,8 +1869,8 @@ export function ImmersiveLessonPage({
 
               {!cinemaFullscreenActive || showFullscreenPreviousSentence ? (
                 <div className={`immersive-previous-sentence ${cinemaFullscreenActive ? "immersive-previous-sentence--cinema" : ""}`}>
-                  <p>上一句：{previousSentenceEn}</p>
-                  <p className="pl-[4.5em]">{previousSentenceZh}</p>
+                  <p>{translationHeading}：{translationEn}</p>
+                  <p className="pl-[4.5em]">{translationZh}</p>
                 </div>
               ) : null}
               {!cinemaFullscreenActive ? (

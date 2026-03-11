@@ -1,4 +1,4 @@
-import { Bug, FileWarning, RefreshCcw } from "lucide-react";
+import { Bug, Copy, FileWarning, LoaderCircle, RefreshCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
-import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
+import { copyTextToClipboard, formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
 import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import {
   Badge,
@@ -45,6 +45,57 @@ function formatTranslationSummary(summary) {
   return `句子 ${summary.total_sentences || 0}，失败 ${summary.failed_sentences || 0}，请求 ${summary.request_count || 0}，Tokens ${summary.total_tokens || 0}`;
 }
 
+function stringifyBlock(value) {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch (_) {
+    return String(value);
+  }
+}
+
+function isTaskActive(status) {
+  return ["pending", "running"].includes(String(status || "").toLowerCase());
+}
+
+function RawCopyButton({ label, text, disabled = false }) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      disabled={disabled}
+      onClick={async () => {
+        try {
+          await copyTextToClipboard(text);
+          toast.success(`${label}已复制`);
+        } catch (error) {
+          toast.error(`复制失败: ${String(error)}`);
+        }
+      }}
+    >
+      <Copy className="size-4" />
+      复制
+    </Button>
+  );
+}
+
+function DebugBlock({ title, text, copyLabel, emptyText = "暂无内容" }) {
+  const normalizedText = String(text || "");
+  return (
+    <div className="rounded-3xl border bg-muted/20 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="font-medium">{title}</p>
+        <RawCopyButton label={copyLabel} text={normalizedText} disabled={!normalizedText} />
+      </div>
+      <pre className="mt-3 max-h-[320px] overflow-auto whitespace-pre-wrap break-words rounded-2xl bg-background/80 p-3 text-xs">
+        {normalizedText || emptyText}
+      </pre>
+    </div>
+  );
+}
+
 export function AdminLessonTaskLogsTab({ apiCall }) {
   const now = getBeijingNowForPicker();
   const defaultFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -65,7 +116,12 @@ export function AdminLessonTaskLogsTab({ apiCall }) {
   const [summaryCards, setSummaryCards] = useState([]);
   const [charts, setCharts] = useState([]);
   const { error, clearError, captureError } = useErrorHandler();
+  const [detailSeed, setDetailSeed] = useState(null);
+  const [detailTaskId, setDetailTaskId] = useState("");
   const [detailItem, setDetailItem] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailStatus, setDetailStatus] = useState("");
+  const [detailBusy, setDetailBusy] = useState(false);
 
   useEffect(() => {
     setSearchParams(
@@ -122,9 +178,9 @@ export function AdminLessonTaskLogsTab({ apiCall }) {
       setTotal(Number(data.total || 0));
       setSummaryCards(Array.isArray(data.summary_cards) ? data.summary_cards : []);
       setCharts(Array.isArray(data.charts) ? data.charts : []);
-    } catch (error) {
+    } catch (requestError) {
       const formattedError = captureError(
-        formatNetworkError(error, {
+        formatNetworkError(requestError, {
           component: "AdminLessonTaskLogsTab",
           action: "加载生成日志",
           endpoint: "/api/admin/lesson-task-logs",
@@ -137,17 +193,70 @@ export function AdminLessonTaskLogsTab({ apiCall }) {
     }
   }
 
+  async function loadDetail(taskIdToLoad, { silent = false } = {}) {
+    if (!taskIdToLoad) return null;
+    if (!silent) {
+      setDetailLoading(true);
+    }
+    setDetailStatus("");
+    try {
+      const resp = await apiCall(`/api/admin/lesson-task-logs/${encodeURIComponent(taskIdToLoad)}`);
+      const data = await parseJsonSafely(resp);
+      if (!resp.ok) {
+        const formattedError = formatResponseError(resp, data, {
+          component: "AdminLessonTaskLogsTab",
+          action: "加载生成任务详情",
+          endpoint: `/api/admin/lesson-task-logs/${taskIdToLoad}`,
+          method: "GET",
+          fallbackMessage: "加载任务详情失败",
+        });
+        setDetailStatus(formattedError.displayMessage);
+        return null;
+      }
+      const nextItem = data?.item || null;
+      setDetailItem(nextItem);
+      setItems((currentItems) =>
+        currentItems.map((item) => (item.task_id === taskIdToLoad ? { ...item, ...nextItem } : item)),
+      );
+      return nextItem;
+    } catch (requestError) {
+      const formattedError = formatNetworkError(requestError, {
+        component: "AdminLessonTaskLogsTab",
+        action: "加载生成任务详情",
+        endpoint: `/api/admin/lesson-task-logs/${taskIdToLoad}`,
+        method: "GET",
+      });
+      setDetailStatus(formattedError.displayMessage);
+      return null;
+    } finally {
+      if (!silent) {
+        setDetailLoading(false);
+      }
+    }
+  }
+
   useEffect(() => {
     loadLogs(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize]);
 
+  useEffect(() => {
+    if (!detailTaskId) return undefined;
+    const currentStatus = detailItem?.status || detailSeed?.status || "";
+    if (!isTaskActive(currentStatus)) return undefined;
+    const timer = window.setTimeout(() => {
+      loadDetail(detailTaskId, { silent: true });
+    }, 3000);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailItem?.status, detailSeed?.status, detailTaskId]);
+
   async function copyFilters() {
     try {
       await copyCurrentUrl();
       toast.success("已复制筛选链接");
-    } catch (error) {
-      toast.error(`复制失败: ${String(error)}`);
+    } catch (copyError) {
+      toast.error(`复制失败: ${String(copyError)}`);
     }
   }
 
@@ -163,6 +272,47 @@ export function AdminLessonTaskLogsTab({ apiCall }) {
     setDateTo(toLocalDatetimeValue(now));
   }
 
+  async function openDetail(item) {
+    setDetailSeed(item);
+    setDetailTaskId(String(item.task_id || ""));
+    setDetailItem(null);
+    setDetailStatus("");
+    await loadDetail(String(item.task_id || ""));
+  }
+
+  async function deleteRawDebug() {
+    if (!detailTaskId) return;
+    setDetailBusy(true);
+    setDetailStatus("");
+    try {
+      const resp = await apiCall(`/api/admin/lesson-task-logs/${encodeURIComponent(detailTaskId)}/raw`, { method: "DELETE" });
+      const data = await parseJsonSafely(resp);
+      if (!resp.ok) {
+        const formattedError = formatResponseError(resp, data, {
+          component: "AdminLessonTaskLogsTab",
+          action: "删除任务原始日志",
+          endpoint: `/api/admin/lesson-task-logs/${detailTaskId}/raw`,
+          method: "DELETE",
+          fallbackMessage: "删除原始日志失败",
+        });
+        setDetailStatus(formattedError.displayMessage);
+        return;
+      }
+      toast.success("已删除该任务的原始日志");
+      await Promise.all([loadDetail(detailTaskId), loadLogs(page)]);
+    } catch (requestError) {
+      const formattedError = formatNetworkError(requestError, {
+        component: "AdminLessonTaskLogsTab",
+        action: "删除任务原始日志",
+        endpoint: `/api/admin/lesson-task-logs/${detailTaskId}/raw`,
+        method: "DELETE",
+      });
+      setDetailStatus(formattedError.displayMessage);
+    } finally {
+      setDetailBusy(false);
+    }
+  }
+
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const columns = useMemo(
     () => [
@@ -171,11 +321,39 @@ export function AdminLessonTaskLogsTab({ apiCall }) {
       { key: "user", header: "用户", mobileLabel: "用户", render: (item) => item.user_email || "-" },
       { key: "status", header: "状态", mobileLabel: "状态", render: (item) => <Badge variant={item.status === "failed" ? "destructive" : item.status === "completed" ? "default" : "secondary"}>{item.status}</Badge> },
       { key: "stage", header: "阶段", mobileLabel: "阶段", render: (item) => item.failure_debug?.failed_stage || item.current_stage || "-" },
+      {
+        key: "raw",
+        header: "原始日志",
+        mobileLabel: "原始日志",
+        render: (item) =>
+          item.has_raw_debug ? (
+            <Badge variant="outline">已保留</Badge>
+          ) : item.raw_debug_purged_at ? (
+            <Badge variant="secondary">已清理</Badge>
+          ) : (
+            "-"
+          ),
+      },
       { key: "message", header: "错误摘要", mobileLabel: "错误摘要", render: (item) => item.message || "-" },
       { key: "resume", header: "续跑", mobileLabel: "续跑", render: (item) => (item.resume_available ? "可继续" : "不可继续") },
-      { key: "detail", header: "详情", render: (item) => <Button size="sm" variant="outline" onClick={() => setDetailItem(item)}>查看详情</Button> },
+      { key: "detail", header: "详情", render: (item) => <Button size="sm" variant="outline" onClick={() => openDetail(item)}>查看详情</Button> },
     ],
     [],
+  );
+
+  const detailView = detailItem || detailSeed;
+  const asrRawText = stringifyBlock(detailItem?.asr_raw);
+  const errorText = stringifyBlock(
+    detailItem
+      ? {
+          error_code: detailItem.error_code,
+          message: detailItem.message,
+          exception_type: detailItem.exception_type,
+          detail_excerpt: detailItem.detail_excerpt,
+          traceback_excerpt: detailItem.traceback_excerpt,
+          last_progress_text: detailItem.last_progress_text,
+        }
+      : null,
   );
 
   return (
@@ -256,7 +434,7 @@ export function AdminLessonTaskLogsTab({ apiCall }) {
         mobileFooter={(item) => item.message || item.failure_debug?.detail_excerpt || "暂无错误摘要"}
         emptyText="暂无生成任务日志"
         loading={loading}
-        minWidth={1500}
+        minWidth={1620}
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -284,32 +462,111 @@ export function AdminLessonTaskLogsTab({ apiCall }) {
         <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{status}</div>
       ) : null}
 
-      <Dialog open={Boolean(detailItem)} onOpenChange={(open) => !open && setDetailItem(null)}>
-        <DialogContent className="max-w-4xl">
+      <Dialog
+        open={Boolean(detailTaskId)}
+        onOpenChange={(open) => {
+          if (open) return;
+          setDetailTaskId("");
+          setDetailSeed(null);
+          setDetailItem(null);
+          setDetailStatus("");
+          setDetailLoading(false);
+          setDetailBusy(false);
+        }}
+      >
+        <DialogContent className="max-w-5xl">
           <DialogHeader>
-            <DialogTitle>生成失败详情</DialogTitle>
+            <DialogTitle>生成任务详情</DialogTitle>
             <DialogDescription>
-              {detailItem?.task_id || "-"} · {detailItem?.source_filename || "-"}
+              {detailView?.task_id || "-"} · {detailView?.source_filename || "-"}
             </DialogDescription>
           </DialogHeader>
-          {detailItem ? (
+          {detailLoading && !detailItem ? (
+            <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+              <LoaderCircle className="size-4 animate-spin" />
+              正在加载任务详情
+            </div>
+          ) : null}
+          {detailView ? (
             <div className="space-y-4 text-sm">
-              <div className="grid gap-3 md:grid-cols-2">
-                <MetricCard icon={FileWarning} label="失败阶段" value={detailItem.failure_debug?.failed_stage || detailItem.current_stage || "-"} hint="优先看最先失败的步骤" tone="danger" />
-                <MetricCard icon={Bug} label="可否续跑" value={detailItem.resume_available ? "可继续生成" : "不可继续"} hint={formatDateTimeBeijing(detailItem.failed_at || detailItem.updated_at || detailItem.created_at)} tone={detailItem.resume_available ? "success" : "warning"} />
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <MetricCard icon={FileWarning} label="当前阶段" value={detailView.failure_debug?.failed_stage || detailView.current_stage || "-"} hint="优先看最先失败的步骤" tone="danger" />
+                <MetricCard icon={Bug} label="任务状态" value={detailView.status || "-"} hint={formatDateTimeBeijing(detailView.failed_at || detailView.updated_at || detailView.created_at)} tone={detailView.status === "failed" ? "danger" : detailView.status === "running" ? "warning" : "success"} />
+                <MetricCard icon={Bug} label="续跑能力" value={detailView.resume_available ? "可继续生成" : "不可继续"} hint={detailView.resume_stage ? `断点阶段：${detailView.resume_stage}` : "无可用断点"} tone={detailView.resume_available ? "success" : "warning"} />
+                <MetricCard icon={Bug} label="原始日志" value={detailItem?.has_raw_debug ? "已保留" : detailView.raw_debug_purged_at ? "已清理" : "暂无"} hint={detailView.raw_debug_purged_at ? `清理时间：${formatDateTimeBeijing(detailView.raw_debug_purged_at)}` : "ASR 与翻译原始返回"} tone={detailItem?.has_raw_debug ? "info" : "default"} />
               </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" type="button" onClick={() => loadDetail(detailTaskId)} disabled={!detailTaskId || detailBusy}>
+                  <RefreshCcw className="size-4" />
+                  刷新详情
+                </Button>
+                <Button variant="outline" type="button" onClick={deleteRawDebug} disabled={!detailItem || !detailItem.has_raw_debug || detailBusy}>
+                  <Trash2 className="size-4" />
+                  删除原始日志
+                </Button>
+                {detailBusy ? <span className="text-xs text-muted-foreground">正在清理原始日志</span> : null}
+                {isTaskActive(detailView.status) ? <span className="text-xs text-muted-foreground">任务处理中，详情会自动刷新</span> : null}
+              </div>
+
+              {detailStatus ? <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{detailStatus}</div> : null}
+
+              <DebugBlock title="任务/失败概览" text={errorText} copyLabel="错误信息" emptyText="暂无错误信息" />
+
               <div className="rounded-3xl border bg-muted/20 p-4">
-                <p className="font-medium">错误信息</p>
-                <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{detailItem.message || detailItem.failure_debug?.detail_excerpt || "-"}</pre>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-medium">ASR 原始结果</p>
+                  <RawCopyButton label="ASR 原始结果" text={asrRawText} disabled={!asrRawText} />
+                </div>
+                <pre className="mt-3 max-h-[360px] overflow-auto whitespace-pre-wrap break-words rounded-2xl bg-background/80 p-3 text-xs">
+                  {asrRawText || (detailView.raw_debug_purged_at ? "原始日志已清理，仅保留摘要" : "暂无 ASR 原始结果")}
+                </pre>
               </div>
+
               <div className="rounded-3xl border bg-muted/20 p-4">
                 <p className="font-medium">翻译调试摘要</p>
-                <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{formatTranslationSummary(detailItem.translation_debug_summary)}</pre>
+                <pre className="mt-3 whitespace-pre-wrap break-words rounded-2xl bg-background/80 p-3 text-xs">
+                  {formatTranslationSummary(detailView.translation_debug_summary)}
+                </pre>
               </div>
-              <div className="rounded-3xl border bg-muted/20 p-4">
-                <p className="font-medium">完整失败调试对象</p>
-                <pre className="mt-2 max-h-[360px] overflow-auto whitespace-pre-wrap break-words text-xs">{JSON.stringify(detailItem.failure_debug, null, 2)}</pre>
+
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-medium">翻译原始请求与原始返回</p>
+                  <span className="text-xs text-muted-foreground">共 {detailItem?.translation_attempts?.length || 0} 条</span>
+                </div>
+                {detailItem?.translation_attempts?.length ? (
+                  detailItem.translation_attempts.map((attempt) => (
+                    <div key={attempt.id} className="rounded-3xl border p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={attempt.success ? "default" : "destructive"}>{attempt.success ? "成功" : "失败"}</Badge>
+                        <span className="text-sm font-medium">
+                          第 {attempt.sentence_idx + 1} 句 · 第 {attempt.attempt_no} 次
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {attempt.provider} / {attempt.model_name} · {formatDateTimeBeijing(attempt.created_at)}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        预览：{attempt.input_text_preview || "-"} · Tokens {attempt.total_tokens || 0}
+                        {attempt.status_code ? ` · HTTP ${attempt.status_code}` : ""}
+                        {attempt.error_code ? ` · ${attempt.error_code}` : ""}
+                      </p>
+                      <div className="mt-4 grid gap-4 xl:grid-cols-3">
+                        <DebugBlock title="原始请求" text={attempt.raw_request_text} copyLabel="翻译原始请求" emptyText="暂无原始请求" />
+                        <DebugBlock title="原始返回" text={attempt.raw_response_text} copyLabel="翻译原始返回" emptyText="暂无原始返回" />
+                        <DebugBlock title="原始报错" text={attempt.raw_error_text || attempt.error_message} copyLabel="翻译原始报错" emptyText="暂无原始报错" />
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
+                    暂无翻译原始请求记录
+                  </div>
+                )}
               </div>
+
+              <DebugBlock title="完整失败调试对象" text={stringifyBlock(detailView.failure_debug)} copyLabel="失败调试对象" emptyText="暂无失败调试对象" />
             </div>
           ) : null}
         </DialogContent>

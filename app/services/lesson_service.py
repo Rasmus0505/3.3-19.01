@@ -378,13 +378,17 @@ def _segment_result_to_payload(
     segment_words: list[dict[str, Any]],
     segment_sentences: list[dict[str, Any]],
     usage_seconds: int | None,
+    raw_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "segment_index": int(segment_index),
         "segment_words": list(segment_words),
         "segment_sentences": list(segment_sentences),
         "usage_seconds": int(usage_seconds) if isinstance(usage_seconds, int) and usage_seconds > 0 else None,
     }
+    if isinstance(raw_result, dict) and raw_result:
+        payload["raw_result"] = dict(raw_result)
+    return payload
 
 
 def _build_asr_cache_meta(
@@ -432,7 +436,7 @@ def _is_asr_cache_compatible(
     return all(cache_meta.get(key) == value for key, value in expected.items())
 
 
-def _load_segment_result(result_path: Path) -> tuple[int, list[dict[str, Any]], list[dict[str, Any]], int | None] | None:
+def _load_segment_result(result_path: Path) -> tuple[int, list[dict[str, Any]], list[dict[str, Any]], int | None, dict[str, Any] | None] | None:
     payload = _read_json_file(result_path)
     if not payload:
         return None
@@ -441,6 +445,7 @@ def _load_segment_result(result_path: Path) -> tuple[int, list[dict[str, Any]], 
         [dict(item) for item in list(payload.get("segment_words") or []) if isinstance(item, dict)],
         [dict(item) for item in list(payload.get("segment_sentences") or []) if isinstance(item, dict)],
         int(payload["usage_seconds"]) if isinstance(payload.get("usage_seconds"), int) and int(payload.get("usage_seconds")) > 0 else None,
+        dict(payload.get("raw_result") or {}) if isinstance(payload.get("raw_result"), dict) else None,
     )
 
 
@@ -450,7 +455,7 @@ def _transcribe_segment(
     segment_path: Path,
     asr_model: str,
     result_path: Path | None = None,
-) -> tuple[int, list[dict[str, Any]], list[dict[str, Any]], int | None]:
+) -> tuple[int, list[dict[str, Any]], list[dict[str, Any]], int | None, dict[str, Any] | None]:
     if result_path:
         cached = _load_segment_result(result_path)
         if cached:
@@ -465,6 +470,7 @@ def _transcribe_segment(
         segment_words,
         segment_sentences,
         int(usage_seconds) if isinstance(usage_seconds, int) and usage_seconds > 0 else None,
+        dict(asr_result),
     )
     if result_path:
         _write_json_file(result_path, _segment_result_to_payload(*payload))
@@ -477,7 +483,7 @@ def _call_transcribe_segment(
     segment_path: Path,
     asr_model: str,
     result_path: Path | None = None,
-) -> tuple[int, list[dict[str, Any]], list[dict[str, Any]], int | None]:
+) -> tuple[int, list[dict[str, Any]], list[dict[str, Any]], int | None, dict[str, Any] | None]:
     try:
         return _transcribe_segment(
             segment_index,
@@ -837,6 +843,7 @@ class LessonService:
                 if isinstance(cached_result.get("usage_seconds"), int) and int(cached_result.get("usage_seconds")) > 0
                 else None,
                 "progress_counters": dict(cached_result.get("progress_counters") or {}),
+                "asr_raw": dict(cached_result.get("raw_result") or {}) if isinstance(cached_result.get("raw_result"), dict) else None,
             }
 
         duration_seconds = max(1, math.ceil(source_duration_ms / 1000))
@@ -890,26 +897,12 @@ class LessonService:
             )
             asr_payload = asr_result["asr_result_json"]
             actual_sentence_count = max(1, len(extract_sentences(asr_payload)))
-            _emit_progress(
-                progress_callback,
-                stage_key="asr_transcribe",
-                stage_status="completed",
-                overall_percent=_progress_percent_by_stage("asr_transcribe", 1.0),
-                current_text=f"识别完成 {actual_sentence_count}/{actual_sentence_count}",
-                counters={
-                    "asr_done": actual_sentence_count,
-                    "asr_estimated": actual_sentence_count,
-                    "translate_done": 0,
-                    "translate_total": 0,
-                    "segment_done": 0,
-                    "segment_total": 0,
-                },
-            )
             payload = {
                 "asr_payload": asr_payload,
                 "usage_seconds": int(asr_result.get("usage_seconds"))
                 if isinstance(asr_result.get("usage_seconds"), int) and int(asr_result.get("usage_seconds")) > 0
                 else None,
+                "raw_result": dict(asr_result),
                 "cache_meta": _build_asr_cache_meta(
                     opus_path=opus_path,
                     source_duration_ms=source_duration_ms,
@@ -925,8 +918,29 @@ class LessonService:
                     "segment_total": 0,
                 },
             }
+            _emit_progress(
+                progress_callback,
+                stage_key="asr_transcribe",
+                stage_status="completed",
+                overall_percent=_progress_percent_by_stage("asr_transcribe", 1.0),
+                current_text=f"识别完成 {actual_sentence_count}/{actual_sentence_count}",
+                counters={
+                    "asr_done": actual_sentence_count,
+                    "asr_estimated": actual_sentence_count,
+                    "translate_done": 0,
+                    "translate_total": 0,
+                    "segment_done": 0,
+                    "segment_total": 0,
+                },
+                asr_raw=payload["raw_result"],
+            )
             _write_json_file(asr_result_path, payload)
-            return payload
+            return {
+                "asr_payload": payload["asr_payload"],
+                "usage_seconds": payload["usage_seconds"],
+                "progress_counters": dict(payload.get("progress_counters") or {}),
+                "asr_raw": dict(payload["raw_result"]),
+            }
 
         segments = _split_audio_segments(
             opus_path,
@@ -965,7 +979,7 @@ class LessonService:
             },
         )
 
-        merged: list[tuple[int, list[dict[str, Any]], list[dict[str, Any]], int | None]] = []
+        merged: list[tuple[int, list[dict[str, Any]], list[dict[str, Any]], int | None, dict[str, Any] | None]] = []
         completed_segments = 0
         segment_results_dir = req_dir / _SEGMENT_RESULT_DIR
         segment_results_dir.mkdir(parents=True, exist_ok=True)
@@ -1003,8 +1017,8 @@ class LessonService:
                 for segment_index, segment_start_ms, segment_path, result_path in pending_segments
             }
             for future in as_completed(future_map):
-                segment_index, segment_words, segment_sentences, usage_seconds = future.result()
-                merged.append((segment_index, segment_words, segment_sentences, usage_seconds))
+                segment_index, segment_words, segment_sentences, usage_seconds, raw_result = future.result()
+                merged.append((segment_index, segment_words, segment_sentences, usage_seconds, raw_result))
                 completed_segments += 1
                 ratio = completed_segments / total_segments
                 _emit_progress(
@@ -1035,11 +1049,19 @@ class LessonService:
         ordered_words: list[dict[str, Any]] = []
         fallback_sentences: list[dict[str, Any]] = []
         usage_values: list[int] = []
-        for _, segment_words, segment_sentences, usage_seconds in merged:
+        raw_segments: list[dict[str, Any]] = []
+        for segment_index, segment_words, segment_sentences, usage_seconds, raw_result in merged:
             ordered_words.extend(segment_words)
             fallback_sentences.extend(segment_sentences)
             if isinstance(usage_seconds, int) and usage_seconds > 0:
                 usage_values.append(usage_seconds)
+            raw_segments.append(
+                {
+                    "segment_index": int(segment_index),
+                    "usage_seconds": int(usage_seconds) if isinstance(usage_seconds, int) and usage_seconds > 0 else None,
+                    "raw_result": dict(raw_result) if isinstance(raw_result, dict) else None,
+                }
+            )
 
         ordered_words.sort(key=lambda item: (int(item["begin_ms"]), int(item["end_ms"])))
         fallback_sentences.sort(key=lambda item: (int(item["begin_ms"]), int(item["end_ms"])))
@@ -1047,6 +1069,33 @@ class LessonService:
         if not ordered_words and not fallback_sentences:
             raise MediaError("ASR_SENTENCE_MISSING", "ASR 返回结果缺少句级信息", "并发分段后未提取到任何词或句子")
 
+        usage_total_seconds = sum(usage_values) if len(usage_values) == total_segments else None
+        merged_asr_payload = _build_parallel_payload(source_duration_ms, ordered_words, fallback_sentences)
+        payload = {
+            "asr_payload": merged_asr_payload,
+            "usage_seconds": usage_total_seconds,
+            "raw_result": {
+                "mode": "parallel",
+                "segment_count": total_segments,
+                "usage_seconds": usage_total_seconds,
+                "segments": raw_segments,
+                "asr_result_json": merged_asr_payload,
+            },
+            "cache_meta": _build_asr_cache_meta(
+                opus_path=opus_path,
+                source_duration_ms=source_duration_ms,
+                parallel_enabled=parallel_enabled,
+                parallel_threshold_seconds=parallel_threshold_seconds,
+                segment_target_seconds=segment_target_seconds,
+                max_concurrency=max_concurrency,
+            ),
+            "progress_counters": {
+                "asr_done": total_segments,
+                "asr_estimated": total_segments,
+                "segment_done": total_segments,
+                    "segment_total": total_segments,
+                },
+            }
         _emit_progress(
             progress_callback,
             stage_key="asr_transcribe",
@@ -1061,29 +1110,15 @@ class LessonService:
                 "segment_done": total_segments,
                 "segment_total": total_segments,
             },
+            asr_raw=payload["raw_result"],
         )
-
-        usage_total_seconds = sum(usage_values) if len(usage_values) == total_segments else None
-        payload = {
-            "asr_payload": _build_parallel_payload(source_duration_ms, ordered_words, fallback_sentences),
-            "usage_seconds": usage_total_seconds,
-            "cache_meta": _build_asr_cache_meta(
-                opus_path=opus_path,
-                source_duration_ms=source_duration_ms,
-                parallel_enabled=parallel_enabled,
-                parallel_threshold_seconds=parallel_threshold_seconds,
-                segment_target_seconds=segment_target_seconds,
-                max_concurrency=max_concurrency,
-            ),
-            "progress_counters": {
-                "asr_done": total_segments,
-                "asr_estimated": total_segments,
-                "segment_done": total_segments,
-                "segment_total": total_segments,
-            },
-        }
         _write_json_file(asr_result_path, payload)
-        return payload
+        return {
+            "asr_payload": payload["asr_payload"],
+            "usage_seconds": payload["usage_seconds"],
+            "progress_counters": dict(payload.get("progress_counters") or {}),
+            "asr_raw": dict(payload["raw_result"]),
+        }
 
     @staticmethod
     def generate_from_saved_file(

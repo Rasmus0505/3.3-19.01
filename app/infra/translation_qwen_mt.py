@@ -62,6 +62,9 @@ class TranslationAttemptRecord:
     success: bool
     error_code: str
     error_message: str
+    raw_request_text: str
+    raw_response_text: str
+    raw_error_text: str
     started_at: object
     finished_at: object
 
@@ -82,6 +85,9 @@ class TranslationAttemptRecord:
             "success": self.success,
             "error_code": self.error_code,
             "error_message": self.error_message,
+            "raw_request_text": self.raw_request_text,
+            "raw_response_text": self.raw_response_text,
+            "raw_error_text": self.raw_error_text,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
         }
@@ -121,6 +127,48 @@ def _preview_text(text: str, *, limit: int = 96) -> str:
 
 def _preview_batch(items: list[tuple[int, str]]) -> str:
     return _preview_text(" | ".join(text for _, text in items), limit=180)
+
+
+def _json_default(value):
+    if hasattr(value, "model_dump"):
+        try:
+            return value.model_dump()
+        except Exception:
+            pass
+    if hasattr(value, "to_dict"):
+        try:
+            return value.to_dict()
+        except Exception:
+            pass
+    if hasattr(value, "__dict__"):
+        return value.__dict__
+    return str(value)
+
+
+def _serialize_raw_payload(payload: object) -> str:
+    if payload is None:
+        return ""
+    if isinstance(payload, str):
+        return payload
+    try:
+        return json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default)
+    except Exception:
+        return str(payload)
+
+
+def _build_raw_request_text(*, prompt: str) -> str:
+    return _serialize_raw_payload(
+        {
+            "provider": "dashscope_compatible",
+            "base_url": MT_BASE_URL,
+            "request": {
+                "model": MT_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0,
+                "timeout": MT_TIMEOUT_SECONDS,
+            },
+        }
+    )
 
 
 def _normalize_batch_max_chars(value: int | None) -> int:
@@ -164,7 +212,7 @@ def _respect_min_request_interval() -> None:
         _LAST_REQUEST_AT = now
 
 
-def _extract_error_context(exc: Exception) -> dict[str, str | int | None]:
+def _extract_error_context(exc: Exception) -> dict[str, object]:
     response = getattr(exc, "response", None)
     status_code = getattr(exc, "status_code", None)
     if status_code is None and response is not None:
@@ -190,6 +238,7 @@ def _extract_error_context(exc: Exception) -> dict[str, str | int | None]:
         "request_id": request_id,
         "detail": detail,
         "error_code": error_code,
+        "body": body,
     }
 
 
@@ -218,6 +267,9 @@ def _build_attempt_record(
     success: bool,
     error_code: str = "",
     error_message: str = "",
+    raw_request_text: str = "",
+    raw_response_text: str = "",
+    raw_error_text: str = "",
     started_at=None,
     finished_at=None,
 ) -> TranslationAttemptRecord:
@@ -237,6 +289,9 @@ def _build_attempt_record(
         success=bool(success),
         error_code=str(error_code or "").strip(),
         error_message=str(error_message or "")[:1200],
+        raw_request_text=str(raw_request_text or ""),
+        raw_response_text=str(raw_response_text or ""),
+        raw_error_text=str(raw_error_text or ""),
         started_at=started_at or now_shanghai_naive(),
         finished_at=finished_at or now_shanghai_naive(),
     )
@@ -330,6 +385,7 @@ def _request_batch_translation(
     batch_texts = [text for _, text in items]
     batch_preview = _preview_batch(items)
     prompt = _build_batch_prompt(batch_texts)
+    raw_request_text = _build_raw_request_text(prompt=prompt)
     attempt_records: list[TranslationAttemptRecord] = []
 
     for attempt_no in range(1, MT_RETRY_MAX_ATTEMPTS + 1):
@@ -344,6 +400,13 @@ def _request_batch_translation(
             )
         except Exception as exc:
             context = _extract_error_context(exc)
+            raw_error_text = _serialize_raw_payload(
+                {
+                    "exception_type": exc.__class__.__name__,
+                    "message": str(exc),
+                    "context": context,
+                }
+            )
             record = _build_attempt_record(
                 sentence_idx=start_idx,
                 input_text=batch_preview,
@@ -353,6 +416,8 @@ def _request_batch_translation(
                 success=False,
                 error_code=str(context["error_code"] or "") or "REQUEST_FAILED",
                 error_message=str(context["detail"] or "")[:1200],
+                raw_request_text=raw_request_text,
+                raw_error_text=raw_error_text,
                 started_at=started_at,
                 finished_at=now_shanghai_naive(),
             )
@@ -383,6 +448,7 @@ def _request_batch_translation(
 
         prompt_tokens, completion_tokens, total_tokens = _usage_values(completion)
         provider_request_id = str(getattr(completion, "_request_id", "") or getattr(completion, "id", "") or "").strip()
+        raw_response_text = _serialize_raw_payload(completion)
 
         if not completion.choices:
             record = _build_attempt_record(
@@ -397,6 +463,8 @@ def _request_batch_translation(
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 total_tokens=total_tokens,
+                raw_request_text=raw_request_text,
+                raw_response_text=raw_response_text,
                 started_at=started_at,
                 finished_at=now_shanghai_naive(),
             )
@@ -434,6 +502,8 @@ def _request_batch_translation(
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 total_tokens=total_tokens,
+                raw_request_text=raw_request_text,
+                raw_response_text=raw_response_text,
                 started_at=started_at,
                 finished_at=now_shanghai_naive(),
             )
@@ -460,6 +530,8 @@ def _request_batch_translation(
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
             success=True,
+            raw_request_text=raw_request_text,
+            raw_response_text=raw_response_text,
             started_at=started_at,
             finished_at=now_shanghai_naive(),
         )

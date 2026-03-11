@@ -169,6 +169,17 @@ export function LessonList({
     }));
   }
 
+  function handlePlaybackPreferenceChange(field, checked) {
+    setSettingsError("");
+    updateLearningSettings((current) => ({
+      ...current,
+      playbackPreferences: {
+        ...current.playbackPreferences,
+        [field]: checked,
+      },
+    }));
+  }
+
   const cards = useMemo(
     () =>
       lessons.map((lesson) => {
@@ -407,6 +418,26 @@ export function LessonList({
               {presetSummaryLines.map((line) => (
                 <p key={line}>{line}</p>
               ))}
+            </div>
+
+            <div className="rounded-2xl border bg-background/80 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">答完自动重播本句</p>
+                  <p className="text-xs text-muted-foreground">
+                    开启后，答完先显示本句翻译，再用 1x 自动重播一次，结束后自动进入下一句。
+                  </p>
+                </div>
+                <Switch
+                  checked={learningSettings.playbackPreferences?.autoReplayAnsweredSentence !== false}
+                  onCheckedChange={(checked) => handlePlaybackPreferenceChange("autoReplayAnsweredSentence", checked)}
+                />
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                {learningSettings.playbackPreferences?.autoReplayAnsweredSentence !== false
+                  ? "当前：已开启。若浏览器拦截自动重播，会直接进入下一句。"
+                  : "当前：已关闭。答完后会沿用现在的直接过句逻辑。"}
+              </p>
             </div>
 
             {learningSettings.presetId === "custom" ? (
