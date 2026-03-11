@@ -43,6 +43,10 @@ const LEGACY_SHORTCUT_BINDINGS = {
   "shift+space": { code: "Space", key: "space", shift: true, ctrl: false, alt: false, meta: false },
   enter: { code: "Enter", key: "enter", shift: false, ctrl: false, alt: false, meta: false },
   "shift+enter": { code: "Enter", key: "enter", shift: true, ctrl: false, alt: false, meta: false },
+  "shift+a": { code: "KeyA", key: "a", shift: true, ctrl: false, alt: false, meta: false },
+  "shift+s": { code: "KeyS", key: "s", shift: true, ctrl: false, alt: false, meta: false },
+  "shift+q": { code: "KeyQ", key: "q", shift: true, ctrl: false, alt: false, meta: false },
+  "shift+w": { code: "KeyW", key: "w", shift: true, ctrl: false, alt: false, meta: false },
   arrowleft: { code: "ArrowLeft", key: "arrowleft", shift: false, ctrl: false, alt: false, meta: false },
   arrowright: { code: "ArrowRight", key: "arrowright", shift: false, ctrl: false, alt: false, meta: false },
   "shift+arrowleft": { code: "ArrowLeft", key: "arrowleft", shift: true, ctrl: false, alt: false, meta: false },
@@ -63,12 +67,12 @@ export const SHORTCUT_ACTIONS = [
 ];
 
 export const DEFAULT_SHORTCUTS = {
-  reveal_letter: LEGACY_SHORTCUT_BINDINGS.space,
-  reveal_word: LEGACY_SHORTCUT_BINDINGS["shift+space"],
-  previous_sentence: LEGACY_SHORTCUT_BINDINGS.arrowleft,
-  next_sentence: LEGACY_SHORTCUT_BINDINGS.enter,
+  reveal_letter: LEGACY_SHORTCUT_BINDINGS["shift+a"],
+  reveal_word: LEGACY_SHORTCUT_BINDINGS["shift+s"],
+  previous_sentence: LEGACY_SHORTCUT_BINDINGS["shift+q"],
+  next_sentence: LEGACY_SHORTCUT_BINDINGS["shift+w"],
   replay_sentence: LEGACY_SHORTCUT_BINDINGS["shift+r"],
-  toggle_pause_playback: LEGACY_SHORTCUT_BINDINGS["shift+k"],
+  toggle_pause_playback: LEGACY_SHORTCUT_BINDINGS.space,
 };
 
 export const REPLAY_PRESET_OPTIONS = [
@@ -79,11 +83,18 @@ export const REPLAY_PRESET_OPTIONS = [
 ];
 
 export const DEFAULT_CUSTOM_REPLAY_CONFIG = {
+  speedEnabled: true,
   tailSpeedStep: 0.1,
   minimumTailSpeed: 0.75,
+  revealLetterEnabled: true,
   revealLetterAt: 2,
+  revealWordEnabled: true,
   revealWordAt: 3,
   extraRevealWordsPerReplay: 1,
+};
+
+export const DEFAULT_UI_PREFERENCES = {
+  showFullscreenPreviousSentence: false,
 };
 
 function clampNumber(value, min, max, fallback, { integer = false } = {}) {
@@ -270,26 +281,65 @@ function getFirstAvailableShortcutBinding(excluded = new Set(), preferredActionI
 export function sanitizeShortcutMap(rawShortcutMap = {}) {
   const nextShortcutMap = {};
   const occupied = new Set();
+  const hasAnyShortcutSetting = SHORTCUT_ACTIONS.some((action) => Object.prototype.hasOwnProperty.call(rawShortcutMap, action.id));
   for (const action of SHORTCUT_ACTIONS) {
-    const requestedRaw = normalizeShortcutBindingValue(rawShortcutMap?.[action.id]);
-    const requested = isShortcutBindingAllowed(requestedRaw) ? requestedRaw : cloneShortcutBinding(DEFAULT_SHORTCUTS[action.id]);
-    const requestedSignature = getShortcutSignature(requested);
-    const resolved =
-      requestedSignature && !occupied.has(requestedSignature)
-        ? cloneShortcutBinding(requested)
-        : getFirstAvailableShortcutBinding(occupied, action.id);
-    nextShortcutMap[action.id] = resolved;
-    occupied.add(getShortcutSignature(resolved));
+    const hasExplicitValue = Object.prototype.hasOwnProperty.call(rawShortcutMap, action.id);
+    const rawValue = rawShortcutMap?.[action.id];
+    if (hasExplicitValue && (rawValue == null || rawValue === "")) {
+      nextShortcutMap[action.id] = null;
+      continue;
+    }
+
+    const requestedRaw = normalizeShortcutBindingValue(rawValue);
+    if (hasExplicitValue) {
+      if (!isShortcutBindingAllowed(requestedRaw)) {
+        nextShortcutMap[action.id] = null;
+        continue;
+      }
+      const requestedSignature = getShortcutSignature(requestedRaw);
+      if (!requestedSignature || occupied.has(requestedSignature)) {
+        nextShortcutMap[action.id] = null;
+        continue;
+      }
+      nextShortcutMap[action.id] = cloneShortcutBinding(requestedRaw);
+      occupied.add(requestedSignature);
+      continue;
+    }
+
+    const fallbackBinding =
+      hasAnyShortcutSetting && action.id in DEFAULT_SHORTCUTS ? cloneShortcutBinding(DEFAULT_SHORTCUTS[action.id]) : cloneShortcutBinding(DEFAULT_SHORTCUTS[action.id]);
+    const fallbackSignature = getShortcutSignature(fallbackBinding);
+    if (fallbackSignature && !occupied.has(fallbackSignature)) {
+      nextShortcutMap[action.id] = fallbackBinding;
+      occupied.add(fallbackSignature);
+      continue;
+    }
+    nextShortcutMap[action.id] = hasAnyShortcutSetting ? null : getFirstAvailableShortcutBinding(occupied, action.id);
+    const resolvedSignature = getShortcutSignature(nextShortcutMap[action.id]);
+    if (resolvedSignature) {
+      occupied.add(resolvedSignature);
+    }
   }
   return nextShortcutMap;
 }
 
 export function sanitizeCustomReplayConfig(rawConfig = {}) {
+  const revealLetterAt = clampNumber(rawConfig?.revealLetterAt, 0, 8, DEFAULT_CUSTOM_REPLAY_CONFIG.revealLetterAt, { integer: true });
+  const revealWordAt = clampNumber(rawConfig?.revealWordAt, 0, 8, DEFAULT_CUSTOM_REPLAY_CONFIG.revealWordAt, { integer: true });
   return {
+    speedEnabled: typeof rawConfig?.speedEnabled === "boolean" ? rawConfig.speedEnabled : DEFAULT_CUSTOM_REPLAY_CONFIG.speedEnabled,
     tailSpeedStep: clampNumber(rawConfig?.tailSpeedStep, 0.01, 0.5, DEFAULT_CUSTOM_REPLAY_CONFIG.tailSpeedStep),
     minimumTailSpeed: clampNumber(rawConfig?.minimumTailSpeed, 0.4, 0.98, DEFAULT_CUSTOM_REPLAY_CONFIG.minimumTailSpeed),
-    revealLetterAt: clampNumber(rawConfig?.revealLetterAt, 0, 8, DEFAULT_CUSTOM_REPLAY_CONFIG.revealLetterAt, { integer: true }),
-    revealWordAt: clampNumber(rawConfig?.revealWordAt, 0, 8, DEFAULT_CUSTOM_REPLAY_CONFIG.revealWordAt, { integer: true }),
+    revealLetterEnabled:
+      typeof rawConfig?.revealLetterEnabled === "boolean"
+        ? rawConfig.revealLetterEnabled
+        : revealLetterAt > 0,
+    revealLetterAt,
+    revealWordEnabled:
+      typeof rawConfig?.revealWordEnabled === "boolean"
+        ? rawConfig.revealWordEnabled
+        : revealWordAt > 0,
+    revealWordAt,
     extraRevealWordsPerReplay: clampNumber(
       rawConfig?.extraRevealWordsPerReplay,
       0,
@@ -307,6 +357,7 @@ export function sanitizeLearningSettings(rawSettings = {}) {
     presetId,
     shortcuts: sanitizeShortcutMap(rawSettings?.shortcuts),
     customConfig: sanitizeCustomReplayConfig(rawSettings?.customConfig),
+    uiPreferences: sanitizeUiPreferences(rawSettings?.uiPreferences),
   };
 }
 
@@ -357,11 +408,15 @@ export function getPresetSummaryLines(learningSettings) {
   }
   const customConfig = sanitizeCustomReplayConfig(learningSettings?.customConfig);
   return [
-    `每次手动重播尾段额外降速 ${(customConfig.tailSpeedStep * 100).toFixed(0)}%，最低 ${customConfig.minimumTailSpeed.toFixed(2)}x`,
-    customConfig.revealLetterAt > 0 ? `第 ${customConfig.revealLetterAt} 次重播开始揭示 1 个字母` : "不自动揭示字母",
-    customConfig.revealWordAt > 0
-      ? `第 ${customConfig.revealWordAt} 次重播开始揭示单词，之后每次额外 +${customConfig.extraRevealWordsPerReplay} 个单词`
-      : "不自动揭示单词",
+    customConfig.speedEnabled
+      ? `倍速辅助：已开启，尾段每次额外降速 ${(customConfig.tailSpeedStep * 100).toFixed(0)}%，最低 ${customConfig.minimumTailSpeed.toFixed(2)}x`
+      : "倍速辅助：已关闭，重播保持原速",
+    customConfig.revealLetterEnabled
+      ? `字母揭示：已开启，从第 ${customConfig.revealLetterAt} 次重播开始`
+      : "字母揭示：已关闭",
+    customConfig.revealWordEnabled
+      ? `单词揭示：已开启，从第 ${customConfig.revealWordAt} 次重播开始，之后每次额外 +${customConfig.extraRevealWordsPerReplay} 个词`
+      : "单词揭示：已关闭",
   ];
 }
 
@@ -390,14 +445,21 @@ export function resolveReplayAssistance(learningSettings, stage) {
     };
   }
   const customConfig = sanitizeCustomReplayConfig(learningSettings?.customConfig);
-  const tailRate = Math.max(customConfig.minimumTailSpeed, Number((1 - safeStage * customConfig.tailSpeedStep).toFixed(2)));
+  const tailRate = customConfig.speedEnabled
+    ? Math.max(customConfig.minimumTailSpeed, Number((1 - safeStage * customConfig.tailSpeedStep).toFixed(2)))
+    : 1;
   const revealWordCount =
-    customConfig.revealWordAt > 0 && safeStage >= customConfig.revealWordAt
+    customConfig.revealWordEnabled && customConfig.revealWordAt > 0 && safeStage >= customConfig.revealWordAt
       ? 1 + Math.max(0, safeStage - customConfig.revealWordAt) * customConfig.extraRevealWordsPerReplay
       : 0;
   return {
     tailRate,
-    revealLetterCount: revealWordCount > 0 ? 0 : customConfig.revealLetterAt > 0 && safeStage === customConfig.revealLetterAt ? 1 : 0,
+    revealLetterCount:
+      revealWordCount > 0
+        ? 0
+        : customConfig.revealLetterEnabled && customConfig.revealLetterAt > 0 && safeStage === customConfig.revealLetterAt
+          ? 1
+          : 0,
     revealWordCount,
   };
 }
@@ -458,5 +520,14 @@ export function captureShortcutFromKeyboardEvent(event) {
       meta: Boolean(event.metaKey),
     },
     error: "",
+  };
+}
+
+export function sanitizeUiPreferences(rawPreferences = {}) {
+  return {
+    showFullscreenPreviousSentence:
+      typeof rawPreferences?.showFullscreenPreviousSentence === "boolean"
+        ? rawPreferences.showFullscreenPreviousSentence
+        : DEFAULT_UI_PREFERENCES.showFullscreenPreviousSentence,
   };
 }

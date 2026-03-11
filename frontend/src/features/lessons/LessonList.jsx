@@ -33,6 +33,7 @@ import {
   MediaCover,
   Progress,
   Skeleton,
+  Switch,
 } from "../../shared/ui";
 import {
   areShortcutBindingsEqual,
@@ -156,6 +157,18 @@ export function LessonList({
     }));
   }
 
+  function handleCustomConfigToggle(field, checked) {
+    setSettingsError("");
+    updateLearningSettings((current) => ({
+      ...current,
+      presetId: "custom",
+      customConfig: {
+        ...current.customConfig,
+        [field]: checked,
+      },
+    }));
+  }
+
   const cards = useMemo(
     () =>
       lessons.map((lesson) => {
@@ -208,19 +221,16 @@ export function LessonList({
         return;
       }
 
-      const alreadyUsedBy = SHORTCUT_ACTIONS.find(
-        (item) => item.id !== recordingShortcutActionId && areShortcutBindingsEqual(learningSettings.shortcuts[item.id], value),
-      );
-      if (alreadyUsedBy) {
-        setSettingsError(`${getShortcutLabel(value)} 已分配给“${alreadyUsedBy.label}”，请换一个快捷键。`);
-        return;
-      }
-
       setSettingsError("");
       updateLearningSettings((current) => ({
         ...current,
         shortcuts: {
-          ...current.shortcuts,
+          ...Object.fromEntries(
+            Object.entries(current.shortcuts).map(([actionId, actionValue]) => [
+              actionId,
+              actionId !== recordingShortcutActionId && areShortcutBindingsEqual(actionValue, value) ? null : actionValue,
+            ]),
+          ),
           [recordingShortcutActionId]: value,
         },
       }));
@@ -400,61 +410,108 @@ export function LessonList({
             </div>
 
             {learningSettings.presetId === "custom" ? (
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">尾段降速步长</p>
-                  <Input
-                    type="number"
-                    min="0.01"
-                    max="0.5"
-                    step="0.01"
-                    value={learningSettings.customConfig.tailSpeedStep}
-                    onChange={(event) => handleCustomConfigChange("tailSpeedStep", event.target.value)}
-                  />
+              <div className="grid gap-3 xl:grid-cols-3">
+                <div className="rounded-2xl border bg-background/80 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">倍速辅助</p>
+                      <p className="text-xs text-muted-foreground">关闭后重播保持原速；开启后优先压低未掌握尾段。</p>
+                    </div>
+                    <Switch
+                      checked={learningSettings.customConfig.speedEnabled}
+                      onCheckedChange={(checked) => handleCustomConfigToggle("speedEnabled", checked)}
+                    />
+                  </div>
+                  <div className={cn("mt-4 grid gap-3", !learningSettings.customConfig.speedEnabled && "opacity-60")}>
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">每次额外降速</p>
+                      <Input
+                        type="number"
+                        min="0.01"
+                        max="0.5"
+                        step="0.01"
+                        disabled={!learningSettings.customConfig.speedEnabled}
+                        value={learningSettings.customConfig.tailSpeedStep}
+                        onChange={(event) => handleCustomConfigChange("tailSpeedStep", event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">最低倍速</p>
+                      <Input
+                        type="number"
+                        min="0.4"
+                        max="0.98"
+                        step="0.01"
+                        disabled={!learningSettings.customConfig.speedEnabled}
+                        value={learningSettings.customConfig.minimumTailSpeed}
+                        onChange={(event) => handleCustomConfigChange("minimumTailSpeed", event.target.value)}
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">最低尾段倍速</p>
-                  <Input
-                    type="number"
-                    min="0.4"
-                    max="0.98"
-                    step="0.01"
-                    value={learningSettings.customConfig.minimumTailSpeed}
-                    onChange={(event) => handleCustomConfigChange("minimumTailSpeed", event.target.value)}
-                  />
+
+                <div className="rounded-2xl border bg-background/80 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">字母揭示</p>
+                      <p className="text-xs text-muted-foreground">关闭后不会再自动补字母；开启后只在设定阶段触发。</p>
+                    </div>
+                    <Switch
+                      checked={learningSettings.customConfig.revealLetterEnabled}
+                      onCheckedChange={(checked) => handleCustomConfigToggle("revealLetterEnabled", checked)}
+                    />
+                  </div>
+                  <div className={cn("mt-4 space-y-2", !learningSettings.customConfig.revealLetterEnabled && "opacity-60")}>
+                    <p className="text-sm font-medium">从第几次重播开始</p>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="8"
+                      step="1"
+                      disabled={!learningSettings.customConfig.revealLetterEnabled}
+                      value={learningSettings.customConfig.revealLetterAt}
+                      onChange={(event) => handleCustomConfigChange("revealLetterAt", event.target.value)}
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">揭示字母阈值</p>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="8"
-                    step="1"
-                    value={learningSettings.customConfig.revealLetterAt}
-                    onChange={(event) => handleCustomConfigChange("revealLetterAt", event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">揭示单词阈值</p>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="8"
-                    step="1"
-                    value={learningSettings.customConfig.revealWordAt}
-                    onChange={(event) => handleCustomConfigChange("revealWordAt", event.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">额外揭示词数</p>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="4"
-                    step="1"
-                    value={learningSettings.customConfig.extraRevealWordsPerReplay}
-                    onChange={(event) => handleCustomConfigChange("extraRevealWordsPerReplay", event.target.value)}
-                  />
+
+                <div className="rounded-2xl border bg-background/80 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">单词揭示</p>
+                      <p className="text-xs text-muted-foreground">关闭后不会再自动补完整单词；开启后可以单独调开始阶段和递增量。</p>
+                    </div>
+                    <Switch
+                      checked={learningSettings.customConfig.revealWordEnabled}
+                      onCheckedChange={(checked) => handleCustomConfigToggle("revealWordEnabled", checked)}
+                    />
+                  </div>
+                  <div className={cn("mt-4 grid gap-3", !learningSettings.customConfig.revealWordEnabled && "opacity-60")}>
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">从第几次重播开始</p>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="8"
+                        step="1"
+                        disabled={!learningSettings.customConfig.revealWordEnabled}
+                        value={learningSettings.customConfig.revealWordAt}
+                        onChange={(event) => handleCustomConfigChange("revealWordAt", event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">之后每次额外揭示词数</p>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="4"
+                        step="1"
+                        disabled={!learningSettings.customConfig.revealWordEnabled}
+                        value={learningSettings.customConfig.extraRevealWordsPerReplay}
+                        onChange={(event) => handleCustomConfigChange("extraRevealWordsPerReplay", event.target.value)}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : null}
@@ -463,7 +520,7 @@ export function LessonList({
               <div className="space-y-1">
                 <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">快捷键配置</p>
                 <p className="text-sm text-muted-foreground">
-                  点一下按钮后直接按键录入；支持更多安全组合，Esc 固定保留为退出沉浸学习。
+                  点一下按钮后直接按键录入；支持更多安全组合，Esc 固定保留为退出沉浸学习。若与其他动作冲突，会直接覆盖并清空旧动作。
                 </p>
               </div>
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -498,7 +555,7 @@ export function LessonList({
               </Alert>
             ) : (
               <p className="text-xs text-muted-foreground">
-                推荐默认：Space 揭示字母，Shift+Space 揭示单词，ArrowLeft 上一句，Enter 下一句，Shift+R 重播，Shift+K 暂停/继续播放。
+                推荐默认：Shift+A 揭示字母，Shift+S 揭示单词，Shift+Q 上一句，Shift+W 下一句，Shift+R 重播，Space 暂停/继续播放。
               </p>
             )}
           </div>
