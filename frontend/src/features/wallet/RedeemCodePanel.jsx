@@ -66,7 +66,7 @@ export function RedeemCodePanel({ apiCall, onWalletChanged }) {
           <Gift className="size-4" />
           兑换码充值
         </CardTitle>
-        <CardDescription>输入兑换码后自动充值到当前账户，可直接回到历史记录继续学习。</CardDescription>
+        <CardDescription>输入兑换码充值账户</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <form className="space-y-3" onSubmit={submitRedeem}>

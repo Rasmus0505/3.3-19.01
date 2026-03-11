@@ -1,17 +1,11 @@
 import { RefreshCcw, Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 
+import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { formatDateTimeBeijing } from "../../shared/lib/datetime";
+import { formatNetworkError, parseJsonSafely } from "../../shared/lib/errorFormatter";
+import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
-
-async function jsonOrEmpty(resp) {
-  try {
-    return await resp.json();
-  } catch (_) {
-    return {};
-  }
-}
 
 function StatusBadge({ ok, readyLabel = "正常", failLabel = "异常" }) {
   return <Badge variant={ok ? "default" : "destructive"}>{ok ? readyLabel : failLabel}</Badge>;
@@ -24,10 +18,12 @@ export function AdminSystemTab({ apiCall }) {
   const [healthReady, setHealthReady] = useState(null);
   const [billingRatesOk, setBillingRatesOk] = useState(false);
   const [overviewOk, setOverviewOk] = useState(false);
+  const { error, clearError, captureError } = useErrorHandler();
 
   async function loadSystem() {
     setLoading(true);
     setStatus("");
+    clearError();
     try {
       const [healthResp, healthReadyResp, billingRatesResp, overviewResp] = await Promise.all([
         apiCall("/health"),
@@ -35,21 +31,51 @@ export function AdminSystemTab({ apiCall }) {
         apiCall("/api/admin/billing-rates"),
         apiCall("/api/admin/overview"),
       ]);
-      const healthData = await jsonOrEmpty(healthResp);
-      const healthReadyData = await jsonOrEmpty(healthReadyResp);
+      const healthData = await parseJsonSafely(healthResp);
+      const healthReadyData = await parseJsonSafely(healthReadyResp);
       if (!healthResp.ok || !healthReadyResp.ok) {
-        const message = `系统检查失败：/health=${healthResp.status} /health/ready=${healthReadyResp.status}`;
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          {
+            code: "SYSTEM_CHECK_FAILED",
+            message: `系统检查失败：/health=${healthResp.status} /health/ready=${healthReadyResp.status}`,
+            details: {
+              health: healthData,
+              health_ready: healthReadyData,
+              billing_rates_status: billingRatesResp.status,
+              overview_status: overviewResp.status,
+            },
+            status: healthResp.status,
+            statusText: healthResp.statusText,
+            responseBody: {
+              health: healthData,
+              health_ready: healthReadyData,
+            },
+          },
+          {
+            context: {
+              component: "AdminSystemTab",
+              action: "加载系统检查",
+              endpoint: "/health + /health/ready",
+              method: "GET",
+            },
+          },
+        );
+        setStatus(formattedError.displayMessage);
       }
       setHealth(healthData);
       setHealthReady(healthReadyData);
       setBillingRatesOk(billingRatesResp.ok);
       setOverviewOk(overviewResp.ok);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminSystemTab",
+          action: "加载系统检查",
+          endpoint: "/health + /health/ready",
+          method: "GET",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setLoading(false);
     }
@@ -149,7 +175,9 @@ export function AdminSystemTab({ apiCall }) {
         </CardContent>
       </Card>
 
-      {status ? (
+      {error ? (
+        <AdminErrorNotice error={error} />
+      ) : status ? (
         <Alert>
           <AlertDescription>{status}</AlertDescription>
         </Alert>

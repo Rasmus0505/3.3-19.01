@@ -3,21 +3,12 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
+import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
+import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
+import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, MetricCard, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
-
-function parseError(data, fallback) {
-  return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
-}
-
-async function jsonOrEmpty(resp) {
-  try {
-    return await resp.json();
-  } catch (_) {
-    return {};
-  }
-}
 
 function toLocalDatetimeValue(date) {
   if (!date) return "";
@@ -49,6 +40,7 @@ export function AdminRedeemAuditTab({ apiCall }) {
   const [dateTo, setDateTo] = useState(() => readStringParam(searchParams, "date_to", toLocalDatetimeValue(now)));
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportConfirmText, setExportConfirmText] = useState("");
+  const { error, clearError, captureError } = useErrorHandler();
 
   useEffect(() => {
     setSearchParams(
@@ -67,6 +59,7 @@ export function AdminRedeemAuditTab({ apiCall }) {
   async function loadAudit(nextPage = page) {
     setLoading(true);
     setStatus("");
+    clearError();
     try {
       const query = new URLSearchParams({
         page: String(nextPage),
@@ -79,20 +72,34 @@ export function AdminRedeemAuditTab({ apiCall }) {
       if (normalizedDateFrom) query.set("date_from", normalizedDateFrom);
       if (normalizedDateTo) query.set("date_to", normalizedDateTo);
       const resp = await apiCall(`/api/admin/redeem-audit?${query.toString()}`);
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "加载审计日志失败");
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminRedeemAuditTab",
+            action: "加载兑换审计",
+            endpoint: "/api/admin/redeem-audit",
+            method: "GET",
+            meta: Object.fromEntries(query.entries()),
+            fallbackMessage: "加载审计日志失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
       setItems(Array.isArray(data.items) ? data.items : []);
       setTotal(Number(data.total || 0));
       setSummaryCards(Array.isArray(data.summary_cards) ? data.summary_cards : []);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminRedeemAuditTab",
+          action: "加载兑换审计",
+          endpoint: "/api/admin/redeem-audit",
+          method: "GET",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setLoading(false);
     }
@@ -115,6 +122,7 @@ export function AdminRedeemAuditTab({ apiCall }) {
   async function exportCsv() {
     setExporting(true);
     setStatus("");
+    clearError();
     try {
       const resp = await apiCall("/api/admin/redeem-audit/export", {
         method: "POST",
@@ -128,10 +136,18 @@ export function AdminRedeemAuditTab({ apiCall }) {
         }),
       });
       if (!resp.ok) {
-        const data = await jsonOrEmpty(resp);
-        const message = parseError(data, "导出失败");
-        setStatus(message);
-        toast.error(message);
+        const data = await parseJsonSafely(resp);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminRedeemAuditTab",
+            action: "导出兑换审计",
+            endpoint: "/api/admin/redeem-audit/export",
+            method: "POST",
+            meta: { user_email: userEmail.trim(), batch_id: batchId.trim() },
+            fallbackMessage: "导出失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
 
@@ -148,9 +164,15 @@ export function AdminRedeemAuditTab({ apiCall }) {
       setExportConfirmText("");
       toast.success("导出成功");
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminRedeemAuditTab",
+          action: "导出兑换审计",
+          endpoint: "/api/admin/redeem-audit/export",
+          method: "POST",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setExporting(false);
     }
@@ -281,7 +303,7 @@ export function AdminRedeemAuditTab({ apiCall }) {
           </div>
         </div>
 
-        {status ? <Alert><AlertDescription>{status}</AlertDescription></Alert> : null}
+        {error ? <AdminErrorNotice error={error} /> : status ? <Alert><AlertDescription>{status}</AlertDescription></Alert> : null}
 
         <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
           <DialogContent>

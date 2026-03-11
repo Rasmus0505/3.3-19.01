@@ -2,20 +2,11 @@ import { RefreshCcw, RotateCcw, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { formatDateTimeBeijing } from "../../shared/lib/datetime";
+import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
+import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Skeleton, Switch } from "../../shared/ui";
-
-function parseError(data, fallback) {
-  return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
-}
-
-async function jsonOrEmpty(resp) {
-  try {
-    return await resp.json();
-  } catch (_) {
-    return {};
-  }
-}
 
 const defaultDraft = {
   semantic_split_default_enabled: false,
@@ -97,19 +88,28 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [rollbacking, setRollbacking] = useState(false);
+  const { error, clearError, captureError } = useErrorHandler();
 
   const dirty = useMemo(() => !draftsEqual(draft, loadedSettings), [draft, loadedSettings]);
 
   async function loadSettings() {
     setLoading(true);
     setStatus("");
+    clearError();
     try {
       const resp = await apiCall("/api/admin/subtitle-settings/history");
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "加载字幕配置失败");
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminSubtitleSettingsTab",
+            action: "加载字幕配置",
+            endpoint: "/api/admin/subtitle-settings/history",
+            method: "GET",
+            fallbackMessage: "加载字幕配置失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
       const current = normalizeDraft(data.current || data.settings || defaultDraft);
@@ -118,9 +118,15 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
       setCurrentMeta(data.current || data.settings || null);
       setRollbackCandidate(data.rollback_candidate || null);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminSubtitleSettingsTab",
+          action: "加载字幕配置",
+          endpoint: "/api/admin/subtitle-settings/history",
+          method: "GET",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setLoading(false);
     }
@@ -138,26 +144,41 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
   async function saveSettings() {
     setSaving(true);
     setStatus("");
+    clearError();
     try {
       const resp = await apiCall("/api/admin/subtitle-settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(normalizeDraft(draft)),
       });
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "保存字幕配置失败");
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminSubtitleSettingsTab",
+            action: "保存字幕配置",
+            endpoint: "/api/admin/subtitle-settings",
+            method: "PUT",
+            meta: { draft: normalizeDraft(draft) },
+            fallbackMessage: "保存字幕配置失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
       setStatus("设置已保存");
       toast.success("设置已保存");
       await loadSettings();
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminSubtitleSettingsTab",
+          action: "保存字幕配置",
+          endpoint: "/api/admin/subtitle-settings",
+          method: "PUT",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setSaving(false);
     }
@@ -166,24 +187,38 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
   async function rollbackLast() {
     setRollbacking(true);
     setStatus("");
+    clearError();
     try {
       const resp = await apiCall("/api/admin/subtitle-settings/rollback-last", {
         method: "POST",
       });
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "回滚上一版本失败");
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminSubtitleSettingsTab",
+            action: "回滚字幕配置",
+            endpoint: "/api/admin/subtitle-settings/rollback-last",
+            method: "POST",
+            fallbackMessage: "回滚上一版本失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
       setStatus("已回滚到上一版");
       toast.success("已回滚到上一版");
       await loadSettings();
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminSubtitleSettingsTab",
+          action: "回滚字幕配置",
+          endpoint: "/api/admin/subtitle-settings/rollback-last",
+          method: "POST",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setRollbacking(false);
     }
@@ -200,7 +235,9 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
       </CardHeader>
       <CardContent className="space-y-4">
         {loading ? <Skeleton className="h-10 w-full" /> : null}
-        {status ? (
+        {error ? (
+          <AdminErrorNotice error={error} />
+        ) : status ? (
           <Alert>
             <AlertDescription>{status}</AlertDescription>
           </Alert>

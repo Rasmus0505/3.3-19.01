@@ -495,7 +495,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base"><UploadCloud className="size-4" />上传素材</CardTitle>
-        <CardDescription>导入视频或音频后，系统会自动识别、翻译并生成可学习课程。</CardDescription>
+        <CardDescription>自动识别翻译，生成学习课程</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <Alert>

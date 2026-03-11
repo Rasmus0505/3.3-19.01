@@ -3,21 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
+import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
+import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
+import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Label, MetricCard, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea } from "../../shared/ui";
-
-function parseError(data, fallback) {
-  return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
-}
-
-async function jsonOrEmpty(resp) {
-  try {
-    return await resp.json();
-  } catch (_) {
-    return {};
-  }
-}
 
 function toLocalDatetimeValue(date) {
   if (!date) return "";
@@ -51,6 +42,7 @@ export function AdminRedeemBatchesTab({ apiCall }) {
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
   const [copyBatchId, setCopyBatchId] = useState(null);
   const [copyQuantity, setCopyQuantity] = useState("100");
+  const { error, clearError, captureError } = useErrorHandler();
 
   useEffect(() => {
     setSearchParams(
@@ -67,6 +59,7 @@ export function AdminRedeemBatchesTab({ apiCall }) {
   async function loadBatches(nextPage = page) {
     setLoading(true);
     setStatus("");
+    clearError();
     try {
       const query = new URLSearchParams({
         page: String(nextPage),
@@ -75,20 +68,34 @@ export function AdminRedeemBatchesTab({ apiCall }) {
         status: statusFilter,
       });
       const resp = await apiCall(`/api/admin/redeem-batches?${query.toString()}`);
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "加载批次失败");
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminRedeemBatchesTab",
+            action: "加载兑换批次",
+            endpoint: "/api/admin/redeem-batches",
+            method: "GET",
+            meta: Object.fromEntries(query.entries()),
+            fallbackMessage: "加载批次失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
       setItems(Array.isArray(data.items) ? data.items : []);
       setTotal(Number(data.total || 0));
       setSummaryCards(Array.isArray(data.summary_cards) ? data.summary_cards : []);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminRedeemBatchesTab",
+          action: "加载兑换批次",
+          endpoint: "/api/admin/redeem-batches",
+          method: "GET",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setLoading(false);
     }
@@ -112,6 +119,7 @@ export function AdminRedeemBatchesTab({ apiCall }) {
     event.preventDefault();
     setCreating(true);
     setStatus("");
+    clearError();
     try {
       const payload = {
         batch_name: batchName.trim() || `batch-${Date.now()}`,
@@ -130,11 +138,19 @@ export function AdminRedeemBatchesTab({ apiCall }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "创建批次失败");
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminRedeemBatchesTab",
+            action: "创建兑换批次",
+            endpoint: "/api/admin/redeem-batches",
+            method: "POST",
+            meta: payload,
+            fallbackMessage: "创建批次失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
 
@@ -145,9 +161,15 @@ export function AdminRedeemBatchesTab({ apiCall }) {
       setPage(1);
       await loadBatches(1);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminRedeemBatchesTab",
+          action: "创建兑换批次",
+          endpoint: "/api/admin/redeem-batches",
+          method: "POST",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setCreating(false);
     }
@@ -165,22 +187,37 @@ export function AdminRedeemBatchesTab({ apiCall }) {
   async function submitBatchAction() {
     if (!actionDialog) return;
     setStatus("");
+    clearError();
     try {
       const resp = await apiCall(`/api/admin/redeem-batches/${actionDialog.batchId}/${actionDialog.actionPath}`, { method: "POST" });
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, `${actionDialog.actionLabel}失败`);
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminRedeemBatchesTab",
+            action: actionDialog.actionLabel,
+            endpoint: `/api/admin/redeem-batches/${actionDialog.batchId}/${actionDialog.actionPath}`,
+            method: "POST",
+            meta: { batch_id: actionDialog.batchId, action_path: actionDialog.actionPath },
+            fallbackMessage: `${actionDialog.actionLabel}失败`,
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
       setActionDialog(null);
       toast.success(`${actionDialog.actionLabel}成功`);
       await loadBatches(page);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminRedeemBatchesTab",
+          action: actionDialog.actionLabel,
+          endpoint: `/api/admin/redeem-batches/${actionDialog.batchId}/${actionDialog.actionPath}`,
+          method: "POST",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     }
   }
 
@@ -195,17 +232,26 @@ export function AdminRedeemBatchesTab({ apiCall }) {
     }
 
     setStatus("");
+    clearError();
     try {
       const resp = await apiCall(`/api/admin/redeem-batches/${copyBatchId}/copy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ generate_quantity: quantity }),
       });
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "复制失败");
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminRedeemBatchesTab",
+            action: "复制兑换批次",
+            endpoint: `/api/admin/redeem-batches/${copyBatchId}/copy`,
+            method: "POST",
+            meta: { batch_id: copyBatchId, generate_quantity: quantity },
+            fallbackMessage: "复制失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
 
@@ -216,9 +262,15 @@ export function AdminRedeemBatchesTab({ apiCall }) {
       setPage(1);
       await loadBatches(1);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminRedeemBatchesTab",
+          action: "复制兑换批次",
+          endpoint: `/api/admin/redeem-batches/${copyBatchId}/copy`,
+          method: "POST",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     }
   }
 
@@ -358,10 +410,10 @@ export function AdminRedeemBatchesTab({ apiCall }) {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Button size="sm" variant="outline" asChild>
-                          <Link to={`/admin/redeem?tab=codes&batch_id=${item.id}`}>兑换码</Link>
+                          <Link to={`/admin/business?tab=redeem&panel=codes&batch_id=${item.id}`}>兑换码</Link>
                         </Button>
                         <Button size="sm" variant="outline" asChild>
-                          <Link to={`/admin/redeem?tab=audit&batch_id=${item.id}`}>审计</Link>
+                          <Link to={`/admin/business?tab=redeem&panel=audit&batch_id=${item.id}`}>审计</Link>
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => setActionDialog({ batchId: item.id, actionPath: "activate", actionLabel: "激活", batchName: item.batch_name })}>
                           <PlayCircle className="size-4" />
@@ -409,7 +461,7 @@ export function AdminRedeemBatchesTab({ apiCall }) {
             </div>
           </div>
 
-          {status ? <Alert><AlertDescription>{status}</AlertDescription></Alert> : null}
+          {error ? <AdminErrorNotice error={error} /> : status ? <Alert><AlertDescription>{status}</AlertDescription></Alert> : null}
         </CardContent>
       </Card>
 

@@ -2,7 +2,10 @@ import { Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { formatDateTimeBeijing } from "../../shared/lib/datetime";
+import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
+import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import {
   Alert,
   AlertDescription,
@@ -30,18 +33,6 @@ import {
   TableRow,
 } from "../../shared/ui";
 
-function parseError(data, fallback) {
-  return `${data?.error_code || "ERROR"}: ${data?.message || fallback}`;
-}
-
-async function jsonOrEmpty(resp) {
-  try {
-    return await resp.json();
-  } catch (_) {
-    return {};
-  }
-}
-
 function isDraftChanged(item, draft) {
   return (
     Number(item.points_per_minute || 0) !== Number(draft.points_per_minute || 0) ||
@@ -61,17 +52,26 @@ export function AdminRatesTab({ apiCall }) {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [savingModel, setSavingModel] = useState("");
+  const { error, clearError, captureError } = useErrorHandler();
 
   async function loadRates() {
     setLoading(true);
     setStatus("");
+    clearError();
     try {
       const resp = await apiCall("/api/admin/billing-rates");
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "加载计费配置失败");
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminRatesTab",
+            action: "加载计费配置",
+            endpoint: "/api/admin/billing-rates",
+            method: "GET",
+            fallbackMessage: "加载计费配置失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
       const list = Array.isArray(data.rates) ? data.rates : [];
@@ -91,9 +91,15 @@ export function AdminRatesTab({ apiCall }) {
       });
       setDrafts(draftMap);
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminRatesTab",
+          action: "加载计费配置",
+          endpoint: "/api/admin/billing-rates",
+          method: "GET",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setLoading(false);
     }
@@ -108,6 +114,7 @@ export function AdminRatesTab({ apiCall }) {
     if (!draft) return;
     setSavingModel(modelName);
     setStatus("");
+    clearError();
     try {
       const resp = await apiCall(`/api/admin/billing-rates/${encodeURIComponent(modelName)}`, {
         method: "PUT",
@@ -123,11 +130,19 @@ export function AdminRatesTab({ apiCall }) {
           max_concurrency: Number(draft.max_concurrency || 1),
         }),
       });
-      const data = await jsonOrEmpty(resp);
+      const data = await parseJsonSafely(resp);
       if (!resp.ok) {
-        const message = parseError(data, "保存计费配置失败");
-        setStatus(message);
-        toast.error(message);
+        const formattedError = captureError(
+          formatResponseError(resp, data, {
+            component: "AdminRatesTab",
+            action: "保存计费配置",
+            endpoint: `/api/admin/billing-rates/${encodeURIComponent(modelName)}`,
+            method: "PUT",
+            meta: { model_name: modelName, draft },
+            fallbackMessage: "保存计费配置失败",
+          }),
+        );
+        setStatus(formattedError.displayMessage);
         return;
       }
       const message = `模型 ${modelName} 已更新`;
@@ -135,9 +150,16 @@ export function AdminRatesTab({ apiCall }) {
       toast.success(message);
       await loadRates();
     } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
+      const formattedError = captureError(
+        formatNetworkError(error, {
+          component: "AdminRatesTab",
+          action: "保存计费配置",
+          endpoint: `/api/admin/billing-rates/${encodeURIComponent(modelName)}`,
+          method: "PUT",
+          meta: { model_name: modelName },
+        }),
+      );
+      setStatus(formattedError.displayMessage);
     } finally {
       setSavingModel("");
     }
@@ -298,7 +320,9 @@ export function AdminRatesTab({ apiCall }) {
           </Table>
         </ScrollArea>
 
-        {status ? (
+        {error ? (
+          <AdminErrorNotice error={error} />
+        ) : status ? (
           <Alert>
             <AlertDescription>{status}</AlertDescription>
           </Alert>

@@ -49,8 +49,8 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>登录后开始学习</CardTitle>
-        <CardDescription>登录后可上传素材、同步进度，并继续之前的课程。</CardDescription>
+        <CardTitle>登录</CardTitle>
+        <CardDescription>上传素材，同步学习进度</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <form
