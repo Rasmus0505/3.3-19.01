@@ -10,6 +10,9 @@ import { REFRESH_KEY, TOKEN_KEY } from "./authStorage";
 
 export function AdminShellStandalone() {
   const accessToken = useAppStore((state) => state.accessToken);
+  const hasStoredToken = useAppStore((state) => state.hasStoredToken);
+  const authStatus = useAppStore((state) => state.authStatus);
+  const authStatusMessage = useAppStore((state) => state.authStatusMessage);
   const isAdminUser = useAppStore((state) => state.isAdminUser);
   const adminAuthState = useAppStore((state) => state.adminAuthState);
   const detectAdmin = useAppStore((state) => state.detectAdmin);
@@ -26,17 +29,25 @@ export function AdminShellStandalone() {
   }, [accessToken, detectAdmin]);
 
   if (!accessToken) {
+    const expired = authStatus === "expired";
     return (
       <div className="section-soft min-h-screen bg-background">
         <div className="container-wrapper py-8">
           <div className="container">
             <Card>
               <CardHeader>
-                <CardTitle>未登录</CardTitle>
-                <CardDescription>请使用管理员账号登录后访问独立管理后台。</CardDescription>
+                <CardTitle>{expired ? "管理员登录已失效" : "未登录"}</CardTitle>
+                <CardDescription>{expired ? authStatusMessage || "请重新登录管理员账号后继续。" : "请使用管理员账号登录后访问独立管理后台。"}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <AuthPanel onAuthed={hydrateAccessToken} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
+                {hasStoredToken ? (
+                  <div className="flex justify-end">
+                    <Button variant="outline" onClick={logout}>
+                      退出登录
+                    </Button>
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           </div>

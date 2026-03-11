@@ -34,6 +34,16 @@ import {
   Progress,
   Skeleton,
 } from "../../shared/ui";
+import {
+  getPresetSummaryLines,
+  getShortcutFromKeyboardEvent,
+  getShortcutLabel,
+  readLearningSettings,
+  REPLAY_PRESET_OPTIONS,
+  sanitizeLearningSettings,
+  SHORTCUT_ACTIONS,
+  writeLearningSettings,
+} from "../immersive/learningSettings";
 
 function formatCreatedAt(createdAt) {
   if (!createdAt) return "时间未知";
@@ -118,10 +128,32 @@ export function LessonList({
   const [subtitleMode, setSubtitleMode] = useState("plain");
   const [subtitleBusy, setSubtitleBusy] = useState(false);
   const [status, setStatus] = useState("");
+  const [learningSettings, setLearningSettings] = useState(() => readLearningSettings());
+  const [settingsError, setSettingsError] = useState("");
+  const [recordingShortcutActionId, setRecordingShortcutActionId] = useState("");
   const restoreInputRef = useRef(null);
   const restoreTargetRef = useRef(null);
   const activeSubtitleProgress =
     subtitleLesson && subtitleRegenerateState?.lessonId === subtitleLesson.id ? subtitleRegenerateState : null;
+
+  function updateLearningSettings(updater) {
+    setLearningSettings((current) => {
+      const nextValue = typeof updater === "function" ? updater(current) : updater;
+      return sanitizeLearningSettings(nextValue);
+    });
+  }
+
+  function handleCustomConfigChange(field, value) {
+    setSettingsError("");
+    updateLearningSettings((current) => ({
+      ...current,
+      presetId: "custom",
+      customConfig: {
+        ...current.customConfig,
+        [field]: value,
+      },
+    }));
+  }
 
   const cards = useMemo(
     () =>
@@ -144,6 +176,56 @@ export function LessonList({
       }),
     [lessonCardMetaMap, lessonMediaMetaMap, lessons, subtitleCacheMetaMap],
   );
+  const presetSummaryLines = useMemo(() => getPresetSummaryLines(learningSettings), [learningSettings]);
+
+  useEffect(() => {
+    writeLearningSettings(learningSettings);
+  }, [learningSettings]);
+
+  useEffect(() => {
+    if (!recordingShortcutActionId || typeof window === "undefined") return undefined;
+
+    const handleShortcutKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setRecordingShortcutActionId("");
+        setSettingsError("已取消快捷键录入。");
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      const { value, error } = getShortcutFromKeyboardEvent(event);
+      if (error) {
+        setSettingsError(error);
+        return;
+      }
+
+      const alreadyUsedBy = SHORTCUT_ACTIONS.find(
+        (item) => item.id !== recordingShortcutActionId && learningSettings.shortcuts[item.id] === value,
+      );
+      if (alreadyUsedBy) {
+        setSettingsError(`${getShortcutLabel(value)} 已分配给“${alreadyUsedBy.label}”，请换一个快捷键。`);
+        return;
+      }
+
+      setSettingsError("");
+      updateLearningSettings((current) => ({
+        ...current,
+        shortcuts: {
+          ...current.shortcuts,
+          [recordingShortcutActionId]: value,
+        },
+      }));
+      setRecordingShortcutActionId("");
+    };
+
+    window.addEventListener("keydown", handleShortcutKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", handleShortcutKeyDown, true);
+    };
+  }, [learningSettings.shortcuts, recordingShortcutActionId]);
 
   useEffect(() => {
     if (renamingLesson && !lessons.some((item) => item.id === renamingLesson.id)) {
@@ -268,6 +350,152 @@ export function LessonList({
         <CardDescription>继续学习已有课程，或整理标题、字幕和本地视频。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <section className="rounded-2xl border bg-muted/10 p-4 md:p-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-foreground">学习参数预设</p>
+              <p className="text-sm text-muted-foreground">
+                先在这里设好重播策略和快捷键，再从下方课程卡片点击“开始学习 / 继续学习”直接进入全屏。
+              </p>
+            </div>
+            <Badge variant="outline">浏览器全局默认</Badge>
+          </div>
+
+          <div className="mt-4 space-y-4">
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">学习预设</p>
+              <div className="flex flex-wrap gap-2">
+                {REPLAY_PRESET_OPTIONS.map((item) => {
+                  const active = learningSettings.presetId === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-sm transition-colors",
+                        active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background hover:border-primary/40",
+                      )}
+                      onClick={() => {
+                        setSettingsError("");
+                        updateLearningSettings((current) => ({ ...current, presetId: item.id }));
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border bg-background/80 px-4 py-3 text-sm text-muted-foreground">
+              {presetSummaryLines.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+            </div>
+
+            {learningSettings.presetId === "custom" ? (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">尾段降速步长</p>
+                  <Input
+                    type="number"
+                    min="0.01"
+                    max="0.5"
+                    step="0.01"
+                    value={learningSettings.customConfig.tailSpeedStep}
+                    onChange={(event) => handleCustomConfigChange("tailSpeedStep", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">最低尾段倍速</p>
+                  <Input
+                    type="number"
+                    min="0.4"
+                    max="0.98"
+                    step="0.01"
+                    value={learningSettings.customConfig.minimumTailSpeed}
+                    onChange={(event) => handleCustomConfigChange("minimumTailSpeed", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">揭示字母阈值</p>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="8"
+                    step="1"
+                    value={learningSettings.customConfig.revealLetterAt}
+                    onChange={(event) => handleCustomConfigChange("revealLetterAt", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">揭示单词阈值</p>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="8"
+                    step="1"
+                    value={learningSettings.customConfig.revealWordAt}
+                    onChange={(event) => handleCustomConfigChange("revealWordAt", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">额外揭示词数</p>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="4"
+                    step="1"
+                    value={learningSettings.customConfig.extraRevealWordsPerReplay}
+                    onChange={(event) => handleCustomConfigChange("extraRevealWordsPerReplay", event.target.value)}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">快捷键配置</p>
+                <p className="text-sm text-muted-foreground">点一下按钮后直接按键录入；不支持 Ctrl / Alt / Command 组合。</p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                {SHORTCUT_ACTIONS.map((action) => {
+                  const recording = recordingShortcutActionId === action.id;
+                  return (
+                    <div key={action.id} className="rounded-2xl border bg-background/80 p-3">
+                      <p className="text-sm font-medium">{action.label}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        当前：{getShortcutLabel(learningSettings.shortcuts[action.id])}
+                      </p>
+                      <Button
+                        type="button"
+                        variant={recording ? "default" : "outline"}
+                        className="mt-3 w-full"
+                        onClick={() => {
+                          setSettingsError("");
+                          setRecordingShortcutActionId((current) => (current === action.id ? "" : action.id));
+                        }}
+                      >
+                        {recording ? "请直接按键…" : "点击录入"}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {settingsError ? (
+              <Alert variant="destructive">
+                <AlertDescription>{settingsError}</AlertDescription>
+              </Alert>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                推荐默认：Space 揭示字母，Shift+Space 揭示单词，ArrowLeft 上一句，Enter 下一句，Shift+R 重播。
+              </p>
+            )}
+          </div>
+        </section>
+
         {loading ? (
           <div className="space-y-3">
             <Skeleton className="h-32 w-full rounded-2xl" />

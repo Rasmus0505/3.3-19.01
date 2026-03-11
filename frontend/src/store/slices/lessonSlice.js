@@ -148,7 +148,19 @@ export function createLessonSlice(set, get) {
         const detailData = await parseResponse(detailResp);
         const progressData = await parseResponse(progressResp);
         if (!detailResp.ok) {
-          get().setGlobalStatus(toErrorText(detailData, "加载课程详情失败"));
+          const message = toErrorText(detailData, "加载课程详情失败");
+          if (detailResp.status === 401 || detailResp.status === 403) {
+            console.debug("[DEBUG] lesson detail auth failed", { lessonId, status: detailResp.status });
+            get().markAuthExpired(message);
+          }
+          get().setGlobalStatus(message);
+          return null;
+        }
+        if (progressResp.status === 401 || progressResp.status === 403) {
+          const message = toErrorText(progressData, "登录已失效，请重新登录");
+          console.debug("[DEBUG] lesson progress auth failed", { lessonId, status: progressResp.status });
+          get().markAuthExpired(message);
+          get().setGlobalStatus(message);
           return null;
         }
         const progress = progressResp.ok ? buildProgressSnapshot(progressData) : buildProgressSnapshot();
@@ -201,7 +213,12 @@ export function createLessonSlice(set, get) {
         const resp = await api(`/api/lessons/catalog?${params.toString()}`, {}, accessToken);
         const data = await parseResponse(resp);
         if (!resp.ok) {
-          get().setGlobalStatus(toErrorText(data, "加载课程失败"));
+          const message = toErrorText(data, "加载课程失败");
+          if (resp.status === 401 || resp.status === 403) {
+            console.debug("[DEBUG] lesson catalog auth failed", { status: resp.status, page, query: String(query || "") });
+            get().markAuthExpired(message);
+          }
+          get().setGlobalStatus(message);
           return [];
         }
         const incoming = Array.isArray(data.items) ? data.items : [];
@@ -262,6 +279,12 @@ export function createLessonSlice(set, get) {
           set({ walletBalance });
           return walletBalance;
         }
+        if (resp.status === 401 || resp.status === 403) {
+          const message = toErrorText(data, "登录已失效，请重新登录");
+          console.debug("[DEBUG] wallet auth failed", { status: resp.status });
+          get().markAuthExpired(message);
+          get().setGlobalStatus(message);
+        }
       } catch (_) {
         // noop
       }
@@ -286,6 +309,12 @@ export function createLessonSlice(set, get) {
             },
           });
           return Array.isArray(data.rates) ? data.rates : [];
+        }
+        if (resp.status === 401 || resp.status === 403) {
+          const message = toErrorText(data, "登录已失效，请重新登录");
+          console.debug("[DEBUG] billing rates auth failed", { status: resp.status });
+          get().markAuthExpired(message);
+          get().setGlobalStatus(message);
         }
       } catch (_) {
         // noop

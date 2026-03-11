@@ -10,68 +10,17 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Input,
-  Label,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
 } from "../../shared/ui";
+import { getShortcutLabel, isShortcutPressed, readLearningSettings, resolveReplayAssistance } from "./learningSettings";
 import { getMediaExt, isAudioFilename, isVideoFilename, normalizeToken } from "./tokenNormalize";
 import { useSentencePlayback } from "./useSentencePlayback";
 import { useTypingFeedbackSounds } from "./useTypingFeedbackSounds";
 import "./immersive.css";
 
-const LEARNING_SETTINGS_STORAGE_KEY = "immersive_learning_settings_v1";
 const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
 const APOSTROPHE_RE = /[’']/g;
 const CINEMA_CONTROLS_IDLE_MS = 3000;
 const WORD_TIMING_TOLERANCE_MS = 140;
-const SHORTCUT_OPTIONS = [
-  { value: "space", label: "Space" },
-  { value: "shift+space", label: "Shift+Space" },
-  { value: "enter", label: "Enter" },
-  { value: "shift+enter", label: "Shift+Enter" },
-  { value: "arrowleft", label: "ArrowLeft" },
-  { value: "arrowright", label: "ArrowRight" },
-  { value: "shift+arrowleft", label: "Shift+ArrowLeft" },
-  { value: "shift+arrowright", label: "Shift+ArrowRight" },
-  { value: "shift+r", label: "Shift+R" },
-  { value: "shift+n", label: "Shift+N" },
-  { value: "shift+p", label: "Shift+P" },
-];
-const SHORTCUT_ACTIONS = [
-  { id: "reveal_letter", label: "揭示字母" },
-  { id: "reveal_word", label: "揭示单词" },
-  { id: "previous_sentence", label: "上一句" },
-  { id: "next_sentence", label: "下一句" },
-  { id: "replay_sentence", label: "重播" },
-];
-const DEFAULT_SHORTCUTS = {
-  reveal_letter: "space",
-  reveal_word: "shift+space",
-  previous_sentence: "arrowleft",
-  next_sentence: "enter",
-  replay_sentence: "shift+r",
-};
-const REPLAY_PRESET_OPTIONS = [
-  { id: "standard", label: "标准渐进" },
-  { id: "recall", label: "更强回忆" },
-  { id: "assist", label: "更强扶助" },
-  { id: "custom", label: "自定义" },
-];
-const DEFAULT_CUSTOM_REPLAY_CONFIG = {
-  tailSpeedStep: 0.1,
-  minimumTailSpeed: 0.75,
-  revealLetterAt: 2,
-  revealWordAt: 3,
-  extraRevealWordsPerReplay: 1,
-};
 const MEDIA_TYPE_BY_EXTENSION = {
   ".mp4": "video/mp4",
   ".mov": "video/quicktime",
@@ -90,81 +39,6 @@ const MEDIA_TYPE_BY_EXTENSION = {
 function debugImmersiveLog(event, detail = {}) {
   if (typeof console === "undefined" || typeof console.debug !== "function") return;
   console.debug("[DEBUG] immersive.learning", event, detail);
-}
-
-function clampNumber(value, min, max, fallback, { integer = false } = {}) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  const clamped = Math.min(max, Math.max(min, parsed));
-  return integer ? Math.round(clamped) : Number(clamped.toFixed(2));
-}
-
-function normalizeShortcutValue(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  return SHORTCUT_OPTIONS.some((item) => item.value === normalized) ? normalized : "";
-}
-
-function getShortcutLabel(shortcutValue) {
-  return SHORTCUT_OPTIONS.find((item) => item.value === shortcutValue)?.label || shortcutValue;
-}
-
-function getFirstAvailableShortcut(excluded = new Set(), preferred = "") {
-  const normalizedPreferred = normalizeShortcutValue(preferred);
-  if (normalizedPreferred && !excluded.has(normalizedPreferred)) {
-    return normalizedPreferred;
-  }
-  return SHORTCUT_OPTIONS.find((item) => !excluded.has(item.value))?.value || SHORTCUT_OPTIONS[0].value;
-}
-
-function sanitizeShortcutMap(rawShortcutMap = {}) {
-  const nextShortcutMap = {};
-  const occupied = new Set();
-  for (const action of SHORTCUT_ACTIONS) {
-    const requested = normalizeShortcutValue(rawShortcutMap?.[action.id]) || DEFAULT_SHORTCUTS[action.id];
-    const resolved = occupied.has(requested) ? getFirstAvailableShortcut(occupied, DEFAULT_SHORTCUTS[action.id]) : requested;
-    nextShortcutMap[action.id] = resolved;
-    occupied.add(resolved);
-  }
-  return nextShortcutMap;
-}
-
-function sanitizeCustomReplayConfig(rawConfig = {}) {
-  return {
-    tailSpeedStep: clampNumber(rawConfig?.tailSpeedStep, 0.01, 0.5, DEFAULT_CUSTOM_REPLAY_CONFIG.tailSpeedStep),
-    minimumTailSpeed: clampNumber(rawConfig?.minimumTailSpeed, 0.4, 0.98, DEFAULT_CUSTOM_REPLAY_CONFIG.minimumTailSpeed),
-    revealLetterAt: clampNumber(rawConfig?.revealLetterAt, 0, 8, DEFAULT_CUSTOM_REPLAY_CONFIG.revealLetterAt, { integer: true }),
-    revealWordAt: clampNumber(rawConfig?.revealWordAt, 0, 8, DEFAULT_CUSTOM_REPLAY_CONFIG.revealWordAt, { integer: true }),
-    extraRevealWordsPerReplay: clampNumber(
-      rawConfig?.extraRevealWordsPerReplay,
-      0,
-      4,
-      DEFAULT_CUSTOM_REPLAY_CONFIG.extraRevealWordsPerReplay,
-      { integer: true },
-    ),
-  };
-}
-
-function sanitizeLearningSettings(rawSettings = {}) {
-  const presetId = REPLAY_PRESET_OPTIONS.some((item) => item.id === rawSettings?.presetId) ? rawSettings.presetId : "standard";
-  return {
-    presetId,
-    shortcuts: sanitizeShortcutMap(rawSettings?.shortcuts),
-    customConfig: sanitizeCustomReplayConfig(rawSettings?.customConfig),
-  };
-}
-
-function getInitialLearningSettings() {
-  if (typeof window === "undefined") {
-    return sanitizeLearningSettings();
-  }
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(LEARNING_SETTINGS_STORAGE_KEY) || "{}");
-    return sanitizeLearningSettings(parsed);
-  } catch (_) {
-    return sanitizeLearningSettings();
-  }
 }
 
 function getFullscreenElement() {
@@ -369,78 +243,6 @@ function applyReplayAssistanceToSnapshot(snapshot, tokens, assistance) {
   return { snapshot: nextSnapshot, completedSentence };
 }
 
-function getPresetSummaryLines(learningSettings) {
-  const presetId = learningSettings?.presetId || "standard";
-  if (presetId === "standard") {
-    return [
-      "第1次：未答尾段 0.95x",
-      "第2次：未答尾段 0.85x，揭示当前词 1 个字母",
-      "第3次：未答尾段 0.75x，揭示当前词 1 个完整单词",
-      "第4次起：保持 0.75x，每次额外多揭示 1 个单词",
-    ];
-  }
-  if (presetId === "recall") {
-    return [
-      "第1次：未答尾段 0.95x",
-      "第2次：未答尾段 0.85x",
-      "第3次：未答尾段 0.75x，揭示当前词 1 个字母",
-      "第4次起：保持 0.75x，每次揭示 1 个单词",
-    ];
-  }
-  if (presetId === "assist") {
-    return [
-      "第1次：未答尾段 0.90x，揭示当前词 1 个字母",
-      "第2次：未答尾段 0.80x，揭示当前词 1 个单词",
-      "第3次起：保持 0.75x，每次揭示 1 个单词",
-    ];
-  }
-  const customConfig = sanitizeCustomReplayConfig(learningSettings?.customConfig);
-  return [
-    `每次手动重播尾段额外降速 ${(customConfig.tailSpeedStep * 100).toFixed(0)}%，最低 ${customConfig.minimumTailSpeed.toFixed(2)}x`,
-    customConfig.revealLetterAt > 0 ? `第 ${customConfig.revealLetterAt} 次重播开始揭示 1 个字母` : "不自动揭示字母",
-    customConfig.revealWordAt > 0
-      ? `第 ${customConfig.revealWordAt} 次重播开始揭示单词，之后每次额外 +${customConfig.extraRevealWordsPerReplay} 个单词`
-      : "不自动揭示单词",
-  ];
-}
-
-function resolveReplayAssistance(learningSettings, stage) {
-  const safeStage = Math.max(1, Number(stage || 1));
-  const presetId = learningSettings?.presetId || "standard";
-  if (presetId === "standard") {
-    return {
-      tailRate: safeStage === 1 ? 0.95 : safeStage === 2 ? 0.85 : 0.75,
-      revealLetterCount: safeStage === 2 ? 1 : 0,
-      revealWordCount: safeStage >= 3 ? 1 + Math.max(0, safeStage - 3) : 0,
-    };
-  }
-  if (presetId === "recall") {
-    return {
-      tailRate: safeStage === 1 ? 0.95 : safeStage === 2 ? 0.85 : 0.75,
-      revealLetterCount: safeStage === 3 ? 1 : 0,
-      revealWordCount: safeStage >= 4 ? 1 : 0,
-    };
-  }
-  if (presetId === "assist") {
-    return {
-      tailRate: safeStage === 1 ? 0.9 : safeStage === 2 ? 0.8 : 0.75,
-      revealLetterCount: safeStage === 1 ? 1 : 0,
-      revealWordCount: safeStage >= 2 ? 1 : 0,
-    };
-  }
-  const customConfig = sanitizeCustomReplayConfig(learningSettings?.customConfig);
-  const tailRate = Math.max(customConfig.minimumTailSpeed, Number((1 - safeStage * customConfig.tailSpeedStep).toFixed(2)));
-  const revealWordCount =
-    customConfig.revealWordAt > 0 && safeStage >= customConfig.revealWordAt
-      ? 1 + Math.max(0, safeStage - customConfig.revealWordAt) * customConfig.extraRevealWordsPerReplay
-      : 0;
-  return {
-    tailRate,
-    revealLetterCount: revealWordCount > 0 ? 0 : customConfig.revealLetterAt > 0 && safeStage === customConfig.revealLetterAt ? 1 : 0,
-    revealWordCount,
-  };
-}
-
 function readTimeMs(value, { seconds = false } = {}) {
   const raw = Number(value);
   if (!Number.isFinite(raw)) return 0;
@@ -629,36 +431,6 @@ function buildReplayPlaybackPlan(sentence, sentenceTiming, activeWordIndex, tail
   };
 }
 
-function isShortcutPressed(event, shortcutValue) {
-  const key = String(event.key || "").toLowerCase();
-  switch (shortcutValue) {
-    case "space":
-      return !event.shiftKey && event.key === " ";
-    case "shift+space":
-      return event.shiftKey && event.key === " ";
-    case "enter":
-      return !event.shiftKey && key === "enter";
-    case "shift+enter":
-      return event.shiftKey && key === "enter";
-    case "arrowleft":
-      return !event.shiftKey && key === "arrowleft";
-    case "arrowright":
-      return !event.shiftKey && key === "arrowright";
-    case "shift+arrowleft":
-      return event.shiftKey && key === "arrowleft";
-    case "shift+arrowright":
-      return event.shiftKey && key === "arrowright";
-    case "shift+r":
-      return event.shiftKey && key === "r";
-    case "shift+n":
-      return event.shiftKey && key === "n";
-    case "shift+p":
-      return event.shiftKey && key === "p";
-    default:
-      return false;
-  }
-}
-
 function isEditableShortcutTarget(target) {
   if (!target) return false;
   if (target?.isContentEditable) return true;
@@ -755,8 +527,7 @@ export function ImmersiveLessonPage({
   const [currentWordInput, setCurrentWordInput] = useState("");
   const [wordInputs, setWordInputs] = useState([]);
   const [wordStatuses, setWordStatuses] = useState([]);
-  const [learningSettings, setLearningSettings] = useState(() => getInitialLearningSettings());
-  const [settingsError, setSettingsError] = useState("");
+  const [learningSettings] = useState(() => readLearningSettings());
   const [sentenceTypingDone, setSentenceTypingDone] = useState(false);
   const [sentencePlaybackDone, setSentencePlaybackDone] = useState(false);
   const [sentencePlaybackRequired, setSentencePlaybackRequired] = useState(true);
@@ -779,7 +550,6 @@ export function ImmersiveLessonPage({
   const playbackKindRef = useRef("initial");
   const replayAssistStageRef = useRef(0);
   const replayProgressAnchorRef = useRef(0);
-  const pendingAutoFullscreenRef = useRef(false);
   const cinemaFullscreenActive = isCinemaFullscreen || isFullscreenFallback;
   const hasExitHandler = typeof onExitImmersive === "function" || typeof onBack === "function";
   const typingEnabled =
@@ -1208,11 +978,6 @@ export function ImmersiveLessonPage({
     setPhase("idle");
   }, [immersiveActive, stopPlayback]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(LEARNING_SETTINGS_STORAGE_KEY, JSON.stringify(sanitizeLearningSettings(learningSettings)));
-  }, [learningSettings]);
-
   const handleMainMediaError = useCallback(() => {
     const hasClipFallback = lesson?.media_storage === "server" && Array.isArray(lesson?.sentences) && lesson.sentences.some((item) => item?.audio_url);
     if (hasClipFallback) {
@@ -1326,12 +1091,6 @@ export function ImmersiveLessonPage({
     [isCinemaFullscreen, isFullscreenFallback, onBack, onExitImmersive],
   );
 
-  const startImmersive = useCallback(() => {
-    if (typeof onStartImmersive !== "function") return;
-    pendingAutoFullscreenRef.current = true;
-    onStartImmersive();
-  }, [onStartImmersive]);
-
   const exitCinemaFullscreen = useCallback(async () => {
     setShowFullscreenPreviousSentence(false);
     if (isFullscreenFallback) {
@@ -1395,51 +1154,6 @@ export function ImmersiveLessonPage({
       void jumpToSentence(currentSentenceIndex + 1, source);
     },
     [currentSentenceIndex, jumpToSentence, sentenceCount],
-  );
-
-  const updateLearningSettings = useCallback((updater) => {
-    setLearningSettings((current) => {
-      const nextValue = typeof updater === "function" ? updater(current) : updater;
-      return sanitizeLearningSettings(nextValue);
-    });
-  }, []);
-
-  const handleShortcutChange = useCallback(
-    (actionId, nextShortcutValue) => {
-      const normalized = normalizeShortcutValue(nextShortcutValue);
-      if (!normalized) return;
-      const alreadyUsedBy = SHORTCUT_ACTIONS.find(
-        (item) => item.id !== actionId && learningSettings.shortcuts[item.id] === normalized,
-      );
-      if (alreadyUsedBy) {
-        setSettingsError(`${getShortcutLabel(normalized)} 已分配给“${alreadyUsedBy.label}”，请换一个快捷键。`);
-        return;
-      }
-      setSettingsError("");
-      updateLearningSettings((current) => ({
-        ...current,
-        shortcuts: {
-          ...current.shortcuts,
-          [actionId]: normalized,
-        },
-      }));
-    },
-    [learningSettings.shortcuts, updateLearningSettings],
-  );
-
-  const handleCustomConfigChange = useCallback(
-    (field, value) => {
-      setSettingsError("");
-      updateLearningSettings((current) => ({
-        ...current,
-        presetId: "custom",
-        customConfig: {
-          ...current.customConfig,
-          [field]: value,
-        },
-      }));
-    },
-    [updateLearningSettings],
   );
 
   const revealCurrentLetter = useCallback(
@@ -1607,17 +1321,6 @@ export function ImmersiveLessonPage({
     if (!typingEnabled || !cinemaFullscreenActive) return;
     focusTypingInput();
   }, [cinemaFullscreenActive, focusTypingInput, typingEnabled]);
-
-  useEffect(() => {
-    if (!immersiveActive) return;
-    if (!pendingAutoFullscreenRef.current) return;
-    if (cinemaFullscreenActive) {
-      pendingAutoFullscreenRef.current = false;
-      return;
-    }
-    pendingAutoFullscreenRef.current = false;
-    void enterCinemaFullscreen();
-  }, [cinemaFullscreenActive, enterCinemaFullscreen, immersiveActive]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -1833,12 +1536,7 @@ export function ImmersiveLessonPage({
   }
 
   const showMediaLoadingOverlay = mediaLoading && !needsBinding && !mediaReady;
-  const canGoPrevious = currentSentenceIndex > 0;
-  const canGoNext = currentSentenceIndex < Math.max(0, sentenceCount - 1);
-  const canRevealLetter = typingEnabled && activeWordIndex < expectedTokens.length && expectedTokens.length > 0;
-  const canRevealWord = typingEnabled && activeWordIndex < expectedTokens.length && expectedTokens.length > 0;
   const waitingForInitialPlayback = sentenceTypingDone && !sentencePlaybackDone && sentencePlaybackRequired;
-  const presetSummaryLines = getPresetSummaryLines(learningSettings);
   const cinemaHeaderControlsClassName = [
     "immersive-header-left",
     cinemaFullscreenActive ? "immersive-header-left--cinema" : "",
@@ -1847,7 +1545,6 @@ export function ImmersiveLessonPage({
     .filter(Boolean)
     .join(" ");
   const cinemaButtonClassName = cinemaFullscreenActive ? "immersive-cinema-button" : undefined;
-  const toolbarButtonClassName = cinemaFullscreenActive ? "immersive-toolbar-button immersive-toolbar-button--cinema" : "immersive-toolbar-button";
 
   return (
     <div
@@ -1959,243 +1656,17 @@ export function ImmersiveLessonPage({
           </div>
 
           {!immersiveActive ? (
-            <div className="immersive-settings-panel">
-              <div className="immersive-settings-card">
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-foreground">开始前配置</p>
-                  <p className="text-sm text-muted-foreground">先定好扶助策略和快捷键，点击“开始学习”后直接进入全屏沉浸学习。</p>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">学习预设</Label>
-                    <div className="immersive-preset-grid">
-                      {REPLAY_PRESET_OPTIONS.map((item) => {
-                        const active = learningSettings.presetId === item.id;
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            className={`immersive-preset-chip ${active ? "immersive-preset-chip--active" : ""}`}
-                            onClick={() => {
-                              setSettingsError("");
-                              updateLearningSettings((current) => ({ ...current, presetId: item.id }));
-                            }}
-                          >
-                            {item.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="immersive-settings-summary">
-                    {presetSummaryLines.map((line) => (
-                      <p key={line}>{line}</p>
-                    ))}
-                  </div>
-
-                  {learningSettings.presetId === "custom" ? (
-                    <div className="immersive-custom-grid">
-                      <div className="space-y-2">
-                        <Label htmlFor="tail-speed-step">尾段降速步长</Label>
-                        <Input
-                          id="tail-speed-step"
-                          type="number"
-                          min="0.01"
-                          max="0.5"
-                          step="0.01"
-                          value={learningSettings.customConfig.tailSpeedStep}
-                          onChange={(event) => handleCustomConfigChange("tailSpeedStep", event.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="minimum-tail-speed">最低尾段倍速</Label>
-                        <Input
-                          id="minimum-tail-speed"
-                          type="number"
-                          min="0.4"
-                          max="0.98"
-                          step="0.01"
-                          value={learningSettings.customConfig.minimumTailSpeed}
-                          onChange={(event) => handleCustomConfigChange("minimumTailSpeed", event.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="reveal-letter-at">第几次开始揭示字母</Label>
-                        <Input
-                          id="reveal-letter-at"
-                          type="number"
-                          min="0"
-                          max="8"
-                          step="1"
-                          value={learningSettings.customConfig.revealLetterAt}
-                          onChange={(event) => handleCustomConfigChange("revealLetterAt", event.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="reveal-word-at">第几次开始揭示单词</Label>
-                        <Input
-                          id="reveal-word-at"
-                          type="number"
-                          min="0"
-                          max="8"
-                          step="1"
-                          value={learningSettings.customConfig.revealWordAt}
-                          onChange={(event) => handleCustomConfigChange("revealWordAt", event.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="extra-word-count">阈值后每次额外揭示单词数</Label>
-                        <Input
-                          id="extra-word-count"
-                          type="number"
-                          min="0"
-                          max="4"
-                          step="1"
-                          value={learningSettings.customConfig.extraRevealWordsPerReplay}
-                          onChange={(event) => handleCustomConfigChange("extraRevealWordsPerReplay", event.target.value)}
-                        />
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">快捷键</Label>
-                      <p className="text-sm text-muted-foreground">仅支持安全白名单，所有设置按当前浏览器全局记忆。</p>
-                    </div>
-                    <div className="immersive-shortcut-grid">
-                      {SHORTCUT_ACTIONS.map((action) => (
-                        <div key={action.id} className="space-y-2">
-                          <Label htmlFor={`shortcut-${action.id}`}>{action.label}</Label>
-                          <Select value={learningSettings.shortcuts[action.id]} onValueChange={(value) => handleShortcutChange(action.id, value)}>
-                            <SelectTrigger id={`shortcut-${action.id}`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {SHORTCUT_OPTIONS.map((option) => {
-                                const occupiedByOther = SHORTCUT_ACTIONS.some(
-                                  (item) => item.id !== action.id && learningSettings.shortcuts[item.id] === option.value,
-                                );
-                                return (
-                                  <SelectItem key={option.value} value={option.value} disabled={occupiedByOther}>
-                                    {option.label}
-                                  </SelectItem>
-                                );
-                              })}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {settingsError ? (
-                    <p className="text-xs text-destructive">{settingsError}</p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">默认推荐：Space 揭示字母，Shift+Space 揭示单词，ArrowLeft 上一句，Enter 下一句，Shift+R 重播。</p>
-                  )}
-                </div>
-
-                <Button className="h-12 w-full bg-black text-base font-semibold text-white hover:bg-black/90" onClick={startImmersive}>
-                  开始学习
-                </Button>
-              </div>
+            <div className="rounded-2xl border border-dashed bg-muted/15 px-6 py-8 text-sm text-muted-foreground">
+              请先在历史记录页顶部配置学习参数，再从课程卡片进入学习。
             </div>
           ) : (
             <div className={`immersive-typing ${cinemaFullscreenActive ? "immersive-typing--cinema" : ""}`}>
-              <div className="immersive-typing-toolbar">
-                <div className="immersive-typing-toolbar-controls">
-                  <TooltipProvider delayDuration={120}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={toolbarButtonClassName}
-                          onClick={() => revealCurrentLetter("button_reveal_letter")}
-                          disabled={!canRevealLetter}
-                        >
-                          揭示字母
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{getShortcutLabel(learningSettings.shortcuts.reveal_letter)}</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <TooltipProvider delayDuration={120}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={toolbarButtonClassName}
-                          onClick={() => revealCurrentWord("button_reveal_word")}
-                          disabled={!canRevealWord}
-                        >
-                          <Eye className="size-4" />
-                          揭示单词
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{getShortcutLabel(learningSettings.shortcuts.reveal_word)}</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <TooltipProvider delayDuration={120}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={toolbarButtonClassName}
-                          onClick={() => replayCurrentSentence("button_replay")}
-                          disabled={phase === "transition" || needsBinding}
-                        >
-                          重播
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{getShortcutLabel(learningSettings.shortcuts.replay_sentence)}</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <TooltipProvider delayDuration={120}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={toolbarButtonClassName}
-                          onClick={() => goToPreviousSentence("button_prev")}
-                          disabled={!canGoPrevious || phase === "transition"}
-                        >
-                          <ArrowLeft className="size-4" />
-                          上一句
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{getShortcutLabel(learningSettings.shortcuts.previous_sentence)}</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <TooltipProvider delayDuration={120}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={toolbarButtonClassName}
-                          onClick={() => goToNextSentence("button_next")}
-                          disabled={!canGoNext || phase === "transition"}
-                        >
-                          下一句
-                          <ArrowRight className="size-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{getShortcutLabel(learningSettings.shortcuts.next_sentence)}</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <Badge variant="outline">
-                    已完成 {completedIndexes.length} / {sentenceCount}
-                  </Badge>
-                  {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
-                </div>
-                <div className="immersive-typing-toolbar-meta">
-                  <span className="immersive-shortcut-hint">
-                    预设：{REPLAY_PRESET_OPTIONS.find((item) => item.id === learningSettings.presetId)?.label || "标准渐进"}
-                  </span>
-                  <span className="immersive-shortcut-hint">重播后会对未答尾段降速，并按阶梯逐步揭示提示。</span>
-                </div>
+              <div className="immersive-typing-status">
+                <Badge variant="outline">
+                  第 {Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 句
+                </Badge>
+                <Badge variant="outline">已完成 {completedIndexes.length} / {sentenceCount}</Badge>
+                {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
               </div>
 
               {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
@@ -2234,6 +1705,15 @@ export function ImmersiveLessonPage({
                   <p>上一句：{previousSentenceEn}</p>
                   <p className="pl-[4.5em]">{previousSentenceZh}</p>
                 </div>
+              ) : null}
+              {!cinemaFullscreenActive ? (
+                <p className="immersive-keyboard-hint text-xs text-muted-foreground">
+                  快捷键按历史页顶部配置生效：{getShortcutLabel(learningSettings.shortcuts.reveal_letter)} 揭示字母，
+                  {getShortcutLabel(learningSettings.shortcuts.reveal_word)} 揭示单词，
+                  {getShortcutLabel(learningSettings.shortcuts.previous_sentence)} 上一句，
+                  {getShortcutLabel(learningSettings.shortcuts.next_sentence)} 下一句，
+                  {getShortcutLabel(learningSettings.shortcuts.replay_sentence)} 重播。
+                </p>
               ) : null}
               {!cinemaFullscreenActive && phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
             </div>
