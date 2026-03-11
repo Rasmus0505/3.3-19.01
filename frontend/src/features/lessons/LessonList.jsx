@@ -35,8 +35,9 @@ import {
   Skeleton,
 } from "../../shared/ui";
 import {
+  areShortcutBindingsEqual,
+  captureShortcutFromKeyboardEvent,
   getPresetSummaryLines,
-  getShortcutFromKeyboardEvent,
   getShortcutLabel,
   readLearningSettings,
   REPLAY_PRESET_OPTIONS,
@@ -201,14 +202,14 @@ export function LessonList({
 
       event.preventDefault();
       event.stopPropagation();
-      const { value, error } = getShortcutFromKeyboardEvent(event);
+      const { value, error } = captureShortcutFromKeyboardEvent(event);
       if (error) {
         setSettingsError(error);
         return;
       }
 
       const alreadyUsedBy = SHORTCUT_ACTIONS.find(
-        (item) => item.id !== recordingShortcutActionId && learningSettings.shortcuts[item.id] === value,
+        (item) => item.id !== recordingShortcutActionId && areShortcutBindingsEqual(learningSettings.shortcuts[item.id], value),
       );
       if (alreadyUsedBy) {
         setSettingsError(`${getShortcutLabel(value)} 已分配给“${alreadyUsedBy.label}”，请换一个快捷键。`);
@@ -461,9 +462,11 @@ export function LessonList({
             <div className="space-y-3">
               <div className="space-y-1">
                 <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">快捷键配置</p>
-                <p className="text-sm text-muted-foreground">点一下按钮后直接按键录入；不支持 Ctrl / Alt / Command 组合。</p>
+                <p className="text-sm text-muted-foreground">
+                  点一下按钮后直接按键录入；支持更多安全组合，Esc 固定保留为退出沉浸学习。
+                </p>
               </div>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {SHORTCUT_ACTIONS.map((action) => {
                   const recording = recordingShortcutActionId === action.id;
                   return (
@@ -495,7 +498,7 @@ export function LessonList({
               </Alert>
             ) : (
               <p className="text-xs text-muted-foreground">
-                推荐默认：Space 揭示字母，Shift+Space 揭示单词，ArrowLeft 上一句，Enter 下一句，Shift+R 重播。
+                推荐默认：Space 揭示字母，Shift+Space 揭示单词，ArrowLeft 上一句，Enter 下一句，Shift+R 重播，Shift+K 暂停/继续播放。
               </p>
             )}
           </div>

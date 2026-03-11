@@ -733,7 +733,7 @@ export function ImmersiveLessonPage({
     setPhase("typing");
   }, [currentSentenceIndex, expectedTokens.length, sentenceTypingDone]);
 
-  const { isPlaying, playSentence, stopPlayback, onMainMediaTimeUpdate } = useSentencePlayback({
+  const { isPlaying, isPlaybackPaused, playSentence, stopPlayback, togglePausePlayback, onMainMediaTimeUpdate } = useSentencePlayback({
     mode: mediaMode,
     mediaElementRef,
     clipAudioRef,
@@ -1259,6 +1259,30 @@ export function ImmersiveLessonPage({
     ],
   );
 
+  const handleTogglePausePlayback = useCallback(
+    (source = "button_toggle_pause") => {
+      if (!currentSentence || needsBinding) return;
+      const replayShortcutLabel = getShortcutLabel(learningSettings.shortcuts.replay_sentence);
+      void (async () => {
+        const result = await togglePausePlayback();
+        if (!result.ok) {
+          if (result.reason === "autoplay_blocked") {
+            setMediaError(`恢复播放失败。你可以改按 ${replayShortcutLabel} 重新播放本句。`);
+          }
+          return;
+        }
+        setMediaError("");
+        setPhase(result.state === "paused" ? "typing" : "playing");
+        debugImmersiveLog("toggle_pause_playback", {
+          source,
+          sentenceIndex: currentSentenceIndex,
+          state: result.state,
+        });
+      })();
+    },
+    [currentSentence, currentSentenceIndex, learningSettings.shortcuts.replay_sentence, needsBinding, togglePausePlayback],
+  );
+
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
 
@@ -1356,7 +1380,6 @@ export function ImmersiveLessonPage({
     if (typeof window === "undefined") return undefined;
 
     const onWindowKeyDown = (event) => {
-      if (event.ctrlKey || event.metaKey || event.altKey) return;
       const fromTypingInput = event.target === typingInputRef.current;
       if (isEditableShortcutTarget(event.target) && !fromTypingInput) return;
       if (!immersiveActive) return;
@@ -1374,31 +1397,37 @@ export function ImmersiveLessonPage({
       if (isShortcutPressed(event, learningSettings.shortcuts.replay_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        replayCurrentSentence(`shortcut_${learningSettings.shortcuts.replay_sentence}`);
+        replayCurrentSentence(`shortcut_${getShortcutLabel(learningSettings.shortcuts.replay_sentence)}`);
+        return;
+      }
+      if (isShortcutPressed(event, learningSettings.shortcuts.toggle_pause_playback)) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleTogglePausePlayback(`shortcut_${getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)}`);
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.previous_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        goToPreviousSentence(`shortcut_${learningSettings.shortcuts.previous_sentence}`);
+        goToPreviousSentence(`shortcut_${getShortcutLabel(learningSettings.shortcuts.previous_sentence)}`);
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.next_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        goToNextSentence(`shortcut_${learningSettings.shortcuts.next_sentence}`);
+        goToNextSentence(`shortcut_${getShortcutLabel(learningSettings.shortcuts.next_sentence)}`);
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.reveal_letter)) {
         event.preventDefault();
         event.stopPropagation();
-        revealCurrentLetter(`shortcut_${learningSettings.shortcuts.reveal_letter}`);
+        revealCurrentLetter(`shortcut_${getShortcutLabel(learningSettings.shortcuts.reveal_letter)}`);
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.reveal_word)) {
         event.preventDefault();
         event.stopPropagation();
-        revealCurrentWord(`shortcut_${learningSettings.shortcuts.reveal_word}`);
+        revealCurrentWord(`shortcut_${getShortcutLabel(learningSettings.shortcuts.reveal_word)}`);
       }
     };
 
@@ -1415,6 +1444,7 @@ export function ImmersiveLessonPage({
     isCinemaFullscreen,
     isFullscreenFallback,
     learningSettings.shortcuts,
+    handleTogglePausePlayback,
     replayCurrentSentence,
     revealCurrentLetter,
     revealCurrentWord,
@@ -1438,31 +1468,37 @@ export function ImmersiveLessonPage({
       if (isShortcutPressed(event, learningSettings.shortcuts.replay_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        replayCurrentSentence(`shortcut_${learningSettings.shortcuts.replay_sentence}`);
+        replayCurrentSentence(`shortcut_${getShortcutLabel(learningSettings.shortcuts.replay_sentence)}`);
+        return;
+      }
+      if (isShortcutPressed(event, learningSettings.shortcuts.toggle_pause_playback)) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleTogglePausePlayback(`shortcut_${getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)}`);
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.previous_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        goToPreviousSentence(`shortcut_${learningSettings.shortcuts.previous_sentence}`);
+        goToPreviousSentence(`shortcut_${getShortcutLabel(learningSettings.shortcuts.previous_sentence)}`);
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.next_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        goToNextSentence(`shortcut_${learningSettings.shortcuts.next_sentence}`);
+        goToNextSentence(`shortcut_${getShortcutLabel(learningSettings.shortcuts.next_sentence)}`);
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.reveal_letter)) {
         event.preventDefault();
         event.stopPropagation();
-        revealCurrentLetter(`shortcut_${learningSettings.shortcuts.reveal_letter}`);
+        revealCurrentLetter(`shortcut_${getShortcutLabel(learningSettings.shortcuts.reveal_letter)}`);
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.reveal_word)) {
         event.preventDefault();
         event.stopPropagation();
-        revealCurrentWord(`shortcut_${learningSettings.shortcuts.reveal_word}`);
+        revealCurrentWord(`shortcut_${getShortcutLabel(learningSettings.shortcuts.reveal_word)}`);
         return;
       }
 
@@ -1543,6 +1579,7 @@ export function ImmersiveLessonPage({
       exitCinemaFullscreen,
       goToPreviousSentence,
       goToNextSentence,
+      handleTogglePausePlayback,
       isCinemaFullscreen,
       isFullscreenFallback,
       learningSettings.shortcuts,
@@ -1692,6 +1729,7 @@ export function ImmersiveLessonPage({
                 </Badge>
                 <Badge variant="outline">已完成 {completedIndexes.length} / {sentenceCount}</Badge>
                 {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
+                {isPlaybackPaused ? <Badge variant="outline">已暂停</Badge> : null}
               </div>
 
               {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
@@ -1737,7 +1775,8 @@ export function ImmersiveLessonPage({
                   {getShortcutLabel(learningSettings.shortcuts.reveal_word)} 揭示单词，
                   {getShortcutLabel(learningSettings.shortcuts.previous_sentence)} 上一句，
                   {getShortcutLabel(learningSettings.shortcuts.next_sentence)} 下一句，
-                  {getShortcutLabel(learningSettings.shortcuts.replay_sentence)} 重播。
+                  {getShortcutLabel(learningSettings.shortcuts.replay_sentence)} 重播，
+                  {getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)} 暂停/继续播放。
                 </p>
               ) : null}
               {!cinemaFullscreenActive && phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}

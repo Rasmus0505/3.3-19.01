@@ -34,7 +34,10 @@ export function useSentencePlayback({
   const playbackPlanRef = useRef({ initialRate: 1, rateSteps: [] });
   const nextRateStepIndexRef = useRef(0);
   const segmentStartRef = useRef(0);
+  const hasActivePlaybackRef = useRef(false);
+  const isPlaybackPausedRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaybackPaused, setIsPlaybackPaused] = useState(false);
 
   const clearClipUrl = useCallback(() => {
     if (clipObjectUrlRef.current) {
@@ -65,7 +68,10 @@ export function useSentencePlayback({
 
   const finishPlayback = useCallback(() => {
     isSegmentPlayingRef.current = false;
+    hasActivePlaybackRef.current = false;
+    isPlaybackPausedRef.current = false;
     setIsPlaying(false);
+    setIsPlaybackPaused(false);
     resetMediaRate(mediaElementRef.current);
     resetMediaRate(clipAudioRef.current);
     onSentenceFinished?.();
@@ -73,7 +79,10 @@ export function useSentencePlayback({
 
   const stopPlayback = useCallback(() => {
     isSegmentPlayingRef.current = false;
+    hasActivePlaybackRef.current = false;
+    isPlaybackPausedRef.current = false;
     setIsPlaying(false);
+    setIsPlaybackPaused(false);
     playbackPlanRef.current = { initialRate: 1, rateSteps: [] };
     nextRateStepIndexRef.current = 0;
     segmentStartRef.current = 0;
@@ -94,6 +103,38 @@ export function useSentencePlayback({
     resetMediaRate(clipAudio);
     clearClipUrl();
   }, [clearClipUrl, clipAudioRef, mediaElementRef]);
+
+  const togglePausePlayback = useCallback(async () => {
+    const media = mode === "clip" ? clipAudioRef.current : mediaElementRef.current;
+    if (!media || !hasActivePlaybackRef.current) {
+      return { ok: false, reason: "playback_inactive" };
+    }
+
+    if (isSegmentPlayingRef.current && !media.paused) {
+      media.pause();
+      isSegmentPlayingRef.current = false;
+      isPlaybackPausedRef.current = true;
+      setIsPlaying(false);
+      setIsPlaybackPaused(true);
+      return { ok: true, state: "paused" };
+    }
+
+    if (!isPlaybackPausedRef.current) {
+      return { ok: false, reason: "playback_not_paused" };
+    }
+
+    applyScheduledRateSteps(media, media.currentTime - segmentStartRef.current);
+    try {
+      await media.play();
+      isSegmentPlayingRef.current = true;
+      isPlaybackPausedRef.current = false;
+      setIsPlaying(true);
+      setIsPlaybackPaused(false);
+      return { ok: true, state: "playing" };
+    } catch (error) {
+      return { ok: false, reason: "autoplay_blocked", detail: String(error) };
+    }
+  }, [applyScheduledRateSteps, clipAudioRef, mediaElementRef, mode]);
 
   const onMainMediaTimeUpdate = useCallback(() => {
     if (mode === "clip") return;
@@ -157,7 +198,10 @@ export function useSentencePlayback({
           if (token !== playTokenRef.current) return;
           clearClipUrl();
           isSegmentPlayingRef.current = false;
+          hasActivePlaybackRef.current = false;
+          isPlaybackPausedRef.current = false;
           setIsPlaying(false);
+          setIsPlaybackPaused(false);
           resetMediaRate(clipAudio);
         };
         clipAudio.ontimeupdate = () => {
@@ -168,10 +212,15 @@ export function useSentencePlayback({
         try {
           await clipAudio.play();
           isSegmentPlayingRef.current = true;
+          hasActivePlaybackRef.current = true;
+          isPlaybackPausedRef.current = false;
           setIsPlaying(true);
+          setIsPlaybackPaused(false);
           return { ok: true };
         } catch (error) {
           clearClipUrl();
+          hasActivePlaybackRef.current = false;
+          isPlaybackPausedRef.current = false;
           resetMediaRate(clipAudio);
           return { ok: false, reason: "autoplay_blocked", detail: String(error) };
         }
@@ -191,9 +240,14 @@ export function useSentencePlayback({
       try {
         await media.play();
         isSegmentPlayingRef.current = true;
+        hasActivePlaybackRef.current = true;
+        isPlaybackPausedRef.current = false;
         setIsPlaying(true);
+        setIsPlaybackPaused(false);
         return { ok: true };
       } catch (error) {
+        hasActivePlaybackRef.current = false;
+        isPlaybackPausedRef.current = false;
         resetMediaRate(media);
         return { ok: false, reason: "autoplay_blocked", detail: String(error) };
       }
@@ -209,8 +263,10 @@ export function useSentencePlayback({
 
   return {
     isPlaying,
+    isPlaybackPaused,
     playSentence,
     stopPlayback,
+    togglePausePlayback,
     onMainMediaTimeUpdate,
   };
 }
