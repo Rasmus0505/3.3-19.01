@@ -1,6 +1,6 @@
-import { Activity, AlertTriangle, ClipboardList, DatabaseZap, Settings2, ShieldCheck, Sparkles } from "lucide-react";
-import { useEffect, useMemo } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { AlertTriangle, ClipboardList, ShieldCheck } from "lucide-react";
+import { useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { AdminLessonTaskLogsTab } from "../admin-logs/AdminLessonTaskLogsTab";
 import { AdminTranslationLogsTab } from "../admin-logs/AdminTranslationLogsTab";
@@ -10,7 +10,7 @@ import { AdminSqlConsoleTab } from "../admin-sql-console/AdminSqlConsoleTab";
 import { AdminSubtitleSettingsTab } from "../admin-subtitle-settings/AdminSubtitleSettingsTab";
 import { AdminSystemTab } from "../admin-system/AdminSystemTab";
 import { mergeSearchParams, readStringParam } from "../../shared/lib/adminSearchParams";
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../shared/ui";
+import { CardDescription, CardTitle } from "../../shared/ui";
 
 const SECTION_PANELS = {
   health: [
@@ -98,98 +98,15 @@ export function AdminMonitoringWorkspace({ apiCall }) {
     scrollToPanel(activePanel);
   }, [activePanel]);
 
-  const activeSection = useMemo(() => MONITORING_TABS.find((item) => item.value === activeTab) || MONITORING_TABS[0], [activeTab]);
-
-  function handlePanelJump(panelValue) {
-    console.debug("[DEBUG] admin-monitoring-panel-jump", { tab: activeTab, panel: panelValue });
-    setSearchParams(mergeSearchParams(searchParams, { tab: activeTab, panel: panelValue }));
-    scrollToPanel(panelValue);
-  }
-
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader className="space-y-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <CardTitle className="text-lg">运营监控</CardTitle>
-                <Badge variant="outline">ops + pipeline</Badge>
-              </div>
-              <CardDescription>把健康检查、任务排查、操作审计收成 3 个直接入口，避免“先选工作台再选标签页”的双层跳转。</CardDescription>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/admin/monitoring?tab=health&panel=overview">
-                  <Activity className="size-4" />
-                  看总览
-                </Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/admin/monitoring?tab=tasks&panel=task-failures&status=error">
-                  <AlertTriangle className="size-4" />
-                  查失败任务
-                </Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/admin/monitoring?tab=operations&panel=subtitle-policy">
-                  <Settings2 className="size-4" />
-                  调整策略
-                </Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/admin/monitoring?tab=operations&panel=sql-console">
-                  <DatabaseZap className="size-4" />
-                  执行 SQL
-                </Link>
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3">
-          {MONITORING_TABS.map((item) => {
-            const Icon = item.icon;
-            const active = item.value === activeSection.value;
-            return (
-              <button
-                key={item.value}
-                type="button"
-                className={`rounded-3xl border p-4 text-left transition ${active ? "border-primary bg-primary/5" : "border-dashed hover:border-primary/40"}`}
-                onClick={() => setSearchParams(mergeSearchParams(searchParams, { tab: item.value, panel: PANEL_DEFAULTS[item.value] }))}
-              >
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <Icon className="size-4" />
-                  {item.label}
-                </div>
-                <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
-              </button>
-            );
-          })}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{activeSection.label}</CardTitle>
-          <CardDescription>{activeSection.description}</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          {SECTION_PANELS[activeTab].map((panel) => (
-            <Button key={panel.value} type="button" variant={panel.value === activePanel ? "default" : "outline"} size="sm" onClick={() => handlePanelJump(panel.value)}>
-              {panel.label}
-            </Button>
-          ))}
-          <span className="ml-auto text-xs text-muted-foreground">保留旧深链兼容：旧 tab 会自动映射到当前分区与子块。</span>
-        </CardContent>
-      </Card>
-
       {SECTION_PANELS[activeTab].map((panel) => {
         const Component = panel.component;
         return (
           <section key={panel.value} id={`monitoring-${panel.value}`} className="scroll-mt-24 space-y-3">
             <div className="space-y-1">
-              <h2 className="text-sm font-medium">{panel.label}</h2>
-              <p className="text-sm text-muted-foreground">{panel.description}</p>
+              <CardTitle className="text-base">{panel.label}</CardTitle>
+              <CardDescription>{panel.description}</CardDescription>
             </div>
             <Component apiCall={apiCall} />
           </section>

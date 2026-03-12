@@ -1,5 +1,5 @@
-﻿import { AdminShell } from "../app/AdminShell";
+import { LearningShell } from "../app/LearningShell";
 
 export function AdminPage() {
-  return <AdminShell />;
+  return <LearningShell />;
 }

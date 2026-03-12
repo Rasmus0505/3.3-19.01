@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
+import { AdminApp } from "../../AdminApp";
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import {
   deleteLessonMedia,
@@ -20,6 +21,12 @@ import {
   setActiveLessonSubtitleVariant,
 } from "../../shared/media/localSubtitleStore";
 import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
   CommandDialog,
   CommandEmpty,
   CommandGroup,
@@ -29,7 +36,9 @@ import {
   Sidebar,
   SidebarInset,
   SidebarProvider,
+  Skeleton,
 } from "../../shared/ui";
+import { resolveAdminNavItem } from "../../shared/lib/adminSearchParams";
 import { useAppStore } from "../../store";
 import { getDefaultMediaPreview } from "../../store/slices/mediaSlice";
 import { LearningShellHeader } from "./LearningShellHeader";
@@ -120,6 +129,7 @@ export function LearningShellContainer() {
   const logout = useAppStore((state) => state.logout);
   const detectAdmin = useAppStore((state) => state.detectAdmin);
   const isAdminUser = useAppStore((state) => state.isAdminUser);
+  const adminAuthState = useAppStore((state) => state.adminAuthState);
 
   const lessons = useAppStore((state) => state.lessons);
   const lessonsPage = useAppStore((state) => state.lessonsPage);
@@ -169,7 +179,10 @@ export function LearningShellContainer() {
   const setImmersiveActive = useAppStore((state) => state.setImmersiveActive);
   const setUploadTaskState = useAppStore((state) => state.setUploadTaskState);
 
-  const activePanel = getPanelItemByPathname(location.pathname).key;
+  const [adminNavExpanded, setAdminNavExpanded] = useState(false);
+  const isAdminRoute = location.pathname.startsWith("/admin");
+  const activeAdminItem = useMemo(() => resolveAdminNavItem(location.pathname, location.search), [location.pathname, location.search]);
+  const activePanel = isAdminRoute ? null : getPanelItemByPathname(location.pathname).key;
   const immersiveLayoutActive = Boolean(accessToken && currentLesson?.id && immersiveActive);
   const lastNonImmersivePanelRef = useRef(getPanelItemByPathname(location.pathname).key);
 
@@ -195,14 +208,22 @@ export function LearningShellContainer() {
 
   useEffect(() => {
     if (!immersiveLayoutActive) {
-      lastNonImmersivePanelRef.current = activePanel;
+      if (activePanel) {
+        lastNonImmersivePanelRef.current = activePanel;
+      }
     }
     console.debug("[DEBUG] learning sidebar route synced", {
       pathname: location.pathname,
-      panel: activePanel,
+      panel: activePanel || activeAdminItem.key,
+      isAdminRoute,
       immersiveLayoutActive,
     });
-  }, [activePanel, immersiveLayoutActive, location.pathname]);
+  }, [activeAdminItem.key, activePanel, immersiveLayoutActive, isAdminRoute, location.pathname]);
+
+  useEffect(() => {
+    if (!isAdminRoute) return;
+    setAdminNavExpanded(true);
+  }, [isAdminRoute]);
 
   useEffect(() => {
     setMobileNavOpen(false);
@@ -221,7 +242,9 @@ export function LearningShellContainer() {
   }, [accessToken, commandOpen, commandQuery, currentLesson?.id, loadCatalog]);
 
   const filteredLessons = useMemo(() => lessons, [lessons]);
-  const currentPanel = PANEL_ITEMS.find((item) => item.key === activePanel) || PANEL_ITEMS[0];
+  const currentPanel = isAdminRoute
+    ? { title: activeAdminItem.label }
+    : PANEL_ITEMS.find((item) => item.key === activePanel) || PANEL_ITEMS[0];
 
   async function persistLessonSubtitleCacheSeed(lesson) {
     if (!lesson?.id || !lesson?.subtitle_cache_seed) return;
@@ -242,6 +265,16 @@ export function LearningShellContainer() {
   function handlePanelChange(nextPanel) {
     navigate(getPanelPath(nextPanel));
     setMobileNavOpen(false);
+  }
+
+  function handleAdminToggle(nextExpanded) {
+    setAdminNavExpanded((prev) => (typeof nextExpanded === "boolean" ? nextExpanded : !prev));
+  }
+
+  function handleAdminSelect(item) {
+    setAdminNavExpanded(true);
+    setMobileNavOpen(false);
+    navigate(item.href);
   }
 
   function handleLogout() {
@@ -521,6 +554,58 @@ export function LearningShellContainer() {
     });
   }
 
+  function renderAdminContent() {
+    if (!accessToken) {
+      const expired = authStatus === "expired";
+      return (
+        <Card>
+          <CardHeader>
+            <CardTitle>{expired ? "登录已失效" : "未登录"}</CardTitle>
+            <CardDescription>{expired ? authStatusMessage || "请返回学习页重新登录后再访问管理台。" : "请先登录后再访问管理台。"}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex gap-2">
+            <Button onClick={() => navigate("/")}>返回学习页登录</Button>
+            {hasStoredToken ? (
+              <Button variant="outline" onClick={handleLogout}>
+                退出登录
+              </Button>
+            ) : null}
+          </CardContent>
+        </Card>
+      );
+    }
+
+    if (adminAuthState === "idle" || adminAuthState === "checking") {
+      return (
+        <Card>
+          <CardContent className="space-y-3 p-6">
+            <p className="text-sm text-muted-foreground">正在验证管理员权限...</p>
+            <Skeleton className="h-4 w-52" />
+          </CardContent>
+        </Card>
+      );
+    }
+
+    if (!isAdminUser) {
+      return (
+        <Card>
+          <CardHeader>
+            <CardTitle>权限不足</CardTitle>
+            <CardDescription>需要管理员权限</CardDescription>
+          </CardHeader>
+          <CardContent className="flex gap-2">
+            <Button variant="outline" onClick={() => navigate("/")}>
+              返回学习页
+            </Button>
+            <Button onClick={handleLogout}>退出登录</Button>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    return <AdminApp apiCall={(path, options = {}) => api(path, options, accessToken)} onLogout={handleLogout} />;
+  }
+
   return (
     <SidebarProvider storageKey={SIDEBAR_STORAGE_KEY}>
       <div className="section-soft min-h-screen bg-background md:flex">
@@ -538,7 +623,11 @@ export function LearningShellContainer() {
               authStatus={authStatus}
               authStatusMessage={authStatusMessage}
               isAdminUser={isAdminUser}
-              onAdminNavigate={() => navigate("/admin/monitoring?tab=health&panel=overview")}
+              isAdminRoute={isAdminRoute}
+              activeAdminKey={activeAdminItem.key}
+              adminNavExpanded={adminNavExpanded}
+              onAdminToggle={handleAdminToggle}
+              onAdminSelect={handleAdminSelect}
             />
           </Sidebar>
         ) : null}
@@ -560,58 +649,68 @@ export function LearningShellContainer() {
               authStatus={authStatus}
               authStatusMessage={authStatusMessage}
               isAdminUser={isAdminUser}
-              onAdminNavigate={() => navigate("/admin/monitoring?tab=health&panel=overview")}
+              isAdminRoute={isAdminRoute}
+              activeAdminKey={activeAdminItem.key}
+              adminNavExpanded={adminNavExpanded}
+              onAdminToggle={handleAdminToggle}
+              onAdminSelect={handleAdminSelect}
             />
           ) : null}
 
           <main className="container-wrapper py-4 md:py-6">
             <div className="container">
-              <LearningShellPanelContent
-                activePanel={activePanel}
-                accessToken={accessToken}
-                currentLesson={currentLesson}
-                immersiveLayoutActive={immersiveLayoutActive}
-                mediaRestoreTick={mediaRestoreTick}
-                globalStatus={globalStatus}
-                onAuthed={handleAuthed}
-                onProgressSynced={refreshCurrentLesson}
-                onExitImmersive={handleExitImmersive}
-                onStartImmersive={handleStartImmersive}
-                lessons={lessons}
-                currentLessonNeedsBinding={currentLessonNeedsBinding}
-                lessonCardMetaMap={lessonCardMetaMap}
-                lessonMediaMetaMap={lessonMediaMetaMap}
-                subtitleCacheMetaMap={subtitleCacheMetaMap}
-                subtitleRegenerateState={subtitleRegenerateState}
-                loadingLessons={loadingLessons}
-                hasMoreLessons={hasMoreLessons}
-                loadingMoreLessons={loadingMoreLessons}
-                onLoadMoreLessons={handleLoadMoreLessons}
-                onSelectLesson={(lessonId) => loadLessonDetail(lessonId, { autoEnterImmersive: false })}
-                onStartLesson={handleStartLesson}
-                onRenameLesson={handleRenameLesson}
-                onDeleteLesson={handleDeleteLesson}
-                onRestoreLessonMedia={handleRestoreLessonMedia}
-                onRegenerateSubtitles={handleRegenerateSubtitles}
-                onSwitchToUpload={() => handlePanelChange("upload")}
-                walletBalance={walletBalance}
-                billingRates={billingRates}
-                subtitleSettings={subtitleSettings}
-                onCreatedLesson={handleLessonCreated}
-                onWalletChanged={loadWallet}
-                onTaskStateChange={setUploadTaskState}
-                onNavigateToGeneratedLesson={handleNavigateToGeneratedLesson}
-                apiCall={(path, options = {}) => api(path, options, accessToken)}
-              />
+              {isAdminRoute ? (
+                renderAdminContent()
+              ) : (
+                <LearningShellPanelContent
+                  activePanel={activePanel}
+                  accessToken={accessToken}
+                  currentLesson={currentLesson}
+                  immersiveLayoutActive={immersiveLayoutActive}
+                  mediaRestoreTick={mediaRestoreTick}
+                  globalStatus={globalStatus}
+                  onAuthed={handleAuthed}
+                  onProgressSynced={refreshCurrentLesson}
+                  onExitImmersive={handleExitImmersive}
+                  onStartImmersive={handleStartImmersive}
+                  lessons={lessons}
+                  currentLessonNeedsBinding={currentLessonNeedsBinding}
+                  lessonCardMetaMap={lessonCardMetaMap}
+                  lessonMediaMetaMap={lessonMediaMetaMap}
+                  subtitleCacheMetaMap={subtitleCacheMetaMap}
+                  subtitleRegenerateState={subtitleRegenerateState}
+                  loadingLessons={loadingLessons}
+                  hasMoreLessons={hasMoreLessons}
+                  loadingMoreLessons={loadingMoreLessons}
+                  onLoadMoreLessons={handleLoadMoreLessons}
+                  onSelectLesson={(lessonId) => loadLessonDetail(lessonId, { autoEnterImmersive: false })}
+                  onStartLesson={handleStartLesson}
+                  onRenameLesson={handleRenameLesson}
+                  onDeleteLesson={handleDeleteLesson}
+                  onRestoreLessonMedia={handleRestoreLessonMedia}
+                  onRegenerateSubtitles={handleRegenerateSubtitles}
+                  onSwitchToUpload={() => handlePanelChange("upload")}
+                  walletBalance={walletBalance}
+                  billingRates={billingRates}
+                  subtitleSettings={subtitleSettings}
+                  onCreatedLesson={handleLessonCreated}
+                  onWalletChanged={loadWallet}
+                  onTaskStateChange={setUploadTaskState}
+                  onNavigateToGeneratedLesson={handleNavigateToGeneratedLesson}
+                  apiCall={(path, options = {}) => api(path, options, accessToken)}
+                />
+              )}
             </div>
           </main>
 
-          <UploadTaskFloatingCard
-            activePanel={activePanel}
-            accessToken={accessToken}
-            uploadTaskState={uploadTaskState}
-            onOpenUpload={() => handlePanelChange("upload")}
-          />
+          {!isAdminRoute ? (
+            <UploadTaskFloatingCard
+              activePanel={activePanel}
+              accessToken={accessToken}
+              uploadTaskState={uploadTaskState}
+              onOpenUpload={() => handlePanelChange("upload")}
+            />
+          ) : null}
 
           <CommandDialog
             open={commandOpen}

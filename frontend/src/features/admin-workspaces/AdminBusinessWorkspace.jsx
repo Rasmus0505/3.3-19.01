@@ -1,6 +1,6 @@
-import { Coins, Gift, Settings2, Ticket, Users } from "lucide-react";
-import { useEffect, useMemo } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Gift, Users } from "lucide-react";
+import { useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { AdminLogsTab } from "../admin-logs/AdminLogsTab";
 import { AdminRatesTab } from "../admin-rates/AdminRatesTab";
@@ -9,7 +9,7 @@ import { AdminRedeemBatchesTab } from "../admin-redeem/AdminRedeemBatchesTab";
 import { AdminRedeemCodesTab } from "../admin-redeem/AdminRedeemCodesTab";
 import { AdminUsersTab } from "../admin-users/AdminUsersTab";
 import { mergeSearchParams, readStringParam } from "../../shared/lib/adminSearchParams";
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../shared/ui";
+import { CardDescription, CardTitle } from "../../shared/ui";
 
 const SECTION_PANELS = {
   users: [
@@ -90,92 +90,15 @@ export function AdminBusinessWorkspace({ apiCall }) {
     scrollToPanel(activePanel);
   }, [activePanel]);
 
-  const activeSection = useMemo(() => BUSINESS_TABS.find((item) => item.value === activeTab) || BUSINESS_TABS[0], [activeTab]);
-
-  function handlePanelJump(panelValue) {
-    console.debug("[DEBUG] admin-business-panel-jump", { tab: activeTab, panel: panelValue });
-    setSearchParams(mergeSearchParams(searchParams, { tab: activeTab, panel: panelValue }));
-    scrollToPanel(panelValue);
-  }
-
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader className="space-y-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <CardTitle className="text-lg">业务管理</CardTitle>
-                <Badge variant="outline">users + redeem</Badge>
-              </div>
-              <CardDescription>把用户计费与活动兑换收敛到两个直接入口，减少找用户、看流水、看活动时的重复跳转。</CardDescription>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/admin/business?tab=users&panel=list">
-                  <Users className="size-4" />
-                  查用户
-                </Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/admin/business?tab=users&panel=wallet">
-                  <Coins className="size-4" />
-                  看流水
-                </Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/admin/business?tab=redeem&panel=batches">
-                  <Ticket className="size-4" />
-                  看活动
-                </Link>
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2">
-          {BUSINESS_TABS.map((item) => {
-            const Icon = item.icon;
-            const active = item.value === activeSection.value;
-            return (
-              <button
-                key={item.value}
-                type="button"
-                className={`rounded-3xl border p-4 text-left transition ${active ? "border-primary bg-primary/5" : "border-dashed hover:border-primary/40"}`}
-                onClick={() => setSearchParams(mergeSearchParams(searchParams, { tab: item.value, panel: PANEL_DEFAULTS[item.value] }))}
-              >
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <Icon className="size-4" />
-                  {item.label}
-                </div>
-                <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
-              </button>
-            );
-          })}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{activeSection.label}</CardTitle>
-          <CardDescription>{activeSection.description}</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          {SECTION_PANELS[activeTab].map((panel) => (
-            <Button key={panel.value} type="button" variant={panel.value === activePanel ? "default" : "outline"} size="sm" onClick={() => handlePanelJump(panel.value)}>
-              {panel.label}
-            </Button>
-          ))}
-          <span className="ml-auto text-xs text-muted-foreground">旧用户/兑换深链会自动折叠到当前分区并滚动到对应模块。</span>
-        </CardContent>
-      </Card>
-
       {SECTION_PANELS[activeTab].map((panel) => {
         const Component = panel.component;
         return (
           <section key={panel.value} id={`business-${panel.value}`} className="scroll-mt-24 space-y-3">
             <div className="space-y-1">
-              <h2 className="text-sm font-medium">{panel.label}</h2>
-              <p className="text-sm text-muted-foreground">{panel.description}</p>
+              <CardTitle className="text-base">{panel.label}</CardTitle>
+              <CardDescription>{panel.description}</CardDescription>
             </div>
             <Component apiCall={apiCall} />
           </section>
