@@ -27,8 +27,14 @@ export function LearningShellHeader({
   authStatus = "anonymous",
   authStatusMessage = "",
   isAdminUser,
-  onAdminNavigate,
+  isAdminRoute = false,
+  activeAdminKey = "",
+  adminNavExpanded = false,
+  onAdminToggle,
+  onAdminSelect,
 }) {
+  const showLessonsBadge = accessToken && !isAdminRoute;
+
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className="container-wrapper">
@@ -43,7 +49,7 @@ export function LearningShellHeader({
             <SheetContent side="left" className="w-[320px] p-0">
               <SheetHeader className="sr-only">
                 <SheetTitle>{currentPanel.title}</SheetTitle>
-                <SheetDescription>在移动端切换学习面板、课程跳转与账号操作。</SheetDescription>
+                <SheetDescription>{isAdminRoute ? "在移动端展开管理台子项、切换后台页面与账号操作。" : "在移动端切换学习面板、课程跳转与账号操作。"}</SheetDescription>
               </SheetHeader>
               <div className="flex h-full flex-col">
                 <LearningShellSidebar
@@ -61,9 +67,15 @@ export function LearningShellHeader({
                   authStatus={authStatus}
                   authStatusMessage={authStatusMessage}
                   isAdminUser={isAdminUser}
-                  onAdminNavigate={() => {
+                  isAdminRoute={isAdminRoute}
+                  activeAdminKey={activeAdminKey}
+                  adminNavExpanded={adminNavExpanded}
+                  onAdminToggle={(nextExpanded) => {
+                    onAdminToggle?.(nextExpanded);
+                  }}
+                  onAdminSelect={(item) => {
                     setMobileNavOpen(false);
-                    onAdminNavigate();
+                    onAdminSelect?.(item);
                   }}
                   mobile
                 />
@@ -74,7 +86,7 @@ export function LearningShellHeader({
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2">
               <h1 className="truncate text-sm font-semibold">{currentPanel.title}</h1>
-              {accessToken ? <Badge variant="outline">{lessonsCount} 门课程</Badge> : null}
+              {showLessonsBadge ? <Badge variant="outline">{lessonsCount} 门课程</Badge> : null}
             </div>
           </div>
         </div>

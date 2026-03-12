@@ -1,4 +1,4 @@
-import { Gift, History, LogIn, LogOut, Search, Shield, Sparkles, UploadCloud } from "lucide-react";
+import { ChevronDown, Gift, History, LogIn, LogOut, Search, Shield, Sparkles, UploadCloud } from "lucide-react";
 
 import {
   SidebarContent,
@@ -12,6 +12,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "../../shared/ui";
+import { ADMIN_NAV_ITEMS } from "../../shared/lib/adminSearchParams";
 import { WalletBadge } from "../../features/wallet/WalletBadge";
 
 export const PANEL_ITEMS = [
@@ -57,10 +58,14 @@ export function LearningShellSidebar({
   authStatus = "anonymous",
   authStatusMessage = "",
   isAdminUser,
-  onAdminNavigate,
+  isAdminRoute = false,
+  activeAdminKey = "",
+  adminNavExpanded = false,
+  onAdminToggle,
+  onAdminSelect,
   mobile = false,
 }) {
-  const { open } = useSidebar();
+  const { open, setOpen } = useSidebar();
   const expanded = mobile || open;
   const showSearchAction = Boolean(accessToken && hasLessons);
   const showAdminAction = Boolean(accessToken && isAdminUser);
@@ -68,7 +73,24 @@ export function LearningShellSidebar({
   const loginHint =
     authStatus === "expired"
       ? authStatusMessage || "登录已失效，请重新登录后继续上传、同步和进入管理台。"
-      : "登录后可上传素材、同步进度，并在侧边栏进入管理后台。";
+      : "登录后可上传素材、同步进度，并在侧边栏进入管理台。";
+
+  function handleAdminToggle() {
+    if (!expanded) {
+      setOpen(true);
+      onAdminToggle?.(true);
+      console.debug("[DEBUG] learning-admin-nav-expand", { source: "collapsed-sidebar" });
+      return;
+    }
+    const nextExpanded = !adminNavExpanded;
+    console.debug("[DEBUG] learning-admin-nav-toggle", { nextExpanded, mobile });
+    onAdminToggle?.(nextExpanded);
+  }
+
+  function handleAdminSelect(item) {
+    console.debug("[DEBUG] learning-admin-nav-select", { key: item.key, href: item.href });
+    onAdminSelect?.(item);
+  }
 
   return (
     <>
@@ -125,17 +147,46 @@ export function LearningShellSidebar({
                   </SidebarMenuItem>
                 ) : null}
                 {showAdminAction ? (
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      collapsed={!expanded}
-                      onClick={onAdminNavigate}
-                      title="管理后台"
-                      aria-label="管理后台"
-                    >
-                      <Shield className="size-5 shrink-0" />
-                      {expanded ? <span className="truncate font-medium">管理后台</span> : null}
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+                  <>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        active={isAdminRoute}
+                        collapsed={!expanded}
+                        onClick={handleAdminToggle}
+                        title="管理台"
+                        aria-label="管理台"
+                      >
+                        <Shield className="size-5 shrink-0" />
+                        {expanded ? (
+                          <>
+                            <span className="truncate font-medium">管理台</span>
+                            <ChevronDown
+                              className={`ml-auto size-4 shrink-0 text-muted-foreground transition-transform ${adminNavExpanded ? "rotate-180" : ""}`}
+                            />
+                          </>
+                        ) : null}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    {expanded && adminNavExpanded
+                      ? ADMIN_NAV_ITEMS.map((item) => (
+                          <SidebarMenuItem key={item.key}>
+                            <SidebarMenuButton
+                              active={activeAdminKey === item.key}
+                              collapsed={false}
+                              onClick={() => handleAdminSelect(item)}
+                              title={item.label}
+                              aria-label={item.label}
+                              className="min-h-11 rounded-xl border-transparent py-2.5 pl-11 pr-3"
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate font-medium text-foreground">{item.label}</span>
+                                <span className="block truncate text-xs text-muted-foreground">{item.description}</span>
+                              </span>
+                            </SidebarMenuButton>
+                          </SidebarMenuItem>
+                        ))
+                      : null}
+                  </>
                 ) : null}
                 {showLogoutAction ? (
                   <SidebarMenuItem>
@@ -175,7 +226,7 @@ export function LearningShellSidebar({
           </div>
         ) : null}
         {expanded ? (
-          <p className="text-xs text-muted-foreground">右上角快捷入口已统一移到这里，桌面和移动端用同一套操作区。</p>
+          <p className="text-xs text-muted-foreground">学习页和管理台共用这一套左侧导航，进入管理台后只在这里展开子项。</p>
         ) : null}
       </SidebarFooter>
     </>
