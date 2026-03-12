@@ -1,4 +1,4 @@
-import { Gift, PauseCircle, PlayCircle, RefreshCcw } from "lucide-react";
+import { Gift, PauseCircle, PlayCircle, RefreshCcw, Ticket } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
