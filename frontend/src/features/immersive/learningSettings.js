@@ -83,9 +83,6 @@ export const REPLAY_PRESET_OPTIONS = [
 ];
 
 export const DEFAULT_CUSTOM_REPLAY_CONFIG = {
-  speedEnabled: true,
-  tailSpeedStep: 0.1,
-  minimumTailSpeed: 0.75,
   revealLetterEnabled: true,
   revealLetterAt: 2,
   revealWordEnabled: true,
@@ -331,9 +328,6 @@ export function sanitizeCustomReplayConfig(rawConfig = {}) {
   const revealLetterAt = clampNumber(rawConfig?.revealLetterAt, 0, 8, DEFAULT_CUSTOM_REPLAY_CONFIG.revealLetterAt, { integer: true });
   const revealWordAt = clampNumber(rawConfig?.revealWordAt, 0, 8, DEFAULT_CUSTOM_REPLAY_CONFIG.revealWordAt, { integer: true });
   return {
-    speedEnabled: typeof rawConfig?.speedEnabled === "boolean" ? rawConfig.speedEnabled : DEFAULT_CUSTOM_REPLAY_CONFIG.speedEnabled,
-    tailSpeedStep: clampNumber(rawConfig?.tailSpeedStep, 0.01, 0.5, DEFAULT_CUSTOM_REPLAY_CONFIG.tailSpeedStep),
-    minimumTailSpeed: clampNumber(rawConfig?.minimumTailSpeed, 0.4, 0.98, DEFAULT_CUSTOM_REPLAY_CONFIG.minimumTailSpeed),
     revealLetterEnabled:
       typeof rawConfig?.revealLetterEnabled === "boolean"
         ? rawConfig.revealLetterEnabled
@@ -413,9 +407,6 @@ export function getPresetSummaryLines(learningSettings) {
   }
   const customConfig = sanitizeCustomReplayConfig(learningSettings?.customConfig);
   return [
-    customConfig.speedEnabled
-      ? `倍速辅助：已开启，尾段每次额外降速 ${(customConfig.tailSpeedStep * 100).toFixed(0)}%，最低 ${customConfig.minimumTailSpeed.toFixed(2)}x`
-      : "倍速辅助：已关闭，重播保持原速",
     customConfig.revealLetterEnabled
       ? `字母揭示：已开启，从第 ${customConfig.revealLetterAt} 次重播开始`
       : "字母揭示：已关闭",
@@ -450,15 +441,12 @@ export function resolveReplayAssistance(learningSettings, stage) {
     };
   }
   const customConfig = sanitizeCustomReplayConfig(learningSettings?.customConfig);
-  const tailRate = customConfig.speedEnabled
-    ? Math.max(customConfig.minimumTailSpeed, Number((1 - safeStage * customConfig.tailSpeedStep).toFixed(2)))
-    : 1;
   const revealWordCount =
     customConfig.revealWordEnabled && customConfig.revealWordAt > 0 && safeStage >= customConfig.revealWordAt
       ? 1 + Math.max(0, safeStage - customConfig.revealWordAt) * customConfig.extraRevealWordsPerReplay
       : 0;
   return {
-    tailRate,
+    tailRate: 1,
     revealLetterCount:
       revealWordCount > 0
         ? 0

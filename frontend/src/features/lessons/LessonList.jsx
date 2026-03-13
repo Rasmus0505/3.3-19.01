@@ -441,46 +441,7 @@ export function LessonList({
             </div>
 
             {learningSettings.presetId === "custom" ? (
-              <div className="grid gap-3 xl:grid-cols-3">
-                <div className="rounded-2xl border bg-background/80 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium">倍速辅助</p>
-                      <p className="text-xs text-muted-foreground">关闭后重播保持原速；开启后优先压低未掌握尾段。</p>
-                    </div>
-                    <Switch
-                      checked={learningSettings.customConfig.speedEnabled}
-                      onCheckedChange={(checked) => handleCustomConfigToggle("speedEnabled", checked)}
-                    />
-                  </div>
-                  <div className={cn("mt-4 grid gap-3", !learningSettings.customConfig.speedEnabled && "opacity-60")}>
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">每次额外降速</p>
-                      <Input
-                        type="number"
-                        min="0.01"
-                        max="0.5"
-                        step="0.01"
-                        disabled={!learningSettings.customConfig.speedEnabled}
-                        value={learningSettings.customConfig.tailSpeedStep}
-                        onChange={(event) => handleCustomConfigChange("tailSpeedStep", event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">最低倍速</p>
-                      <Input
-                        type="number"
-                        min="0.4"
-                        max="0.98"
-                        step="0.01"
-                        disabled={!learningSettings.customConfig.speedEnabled}
-                        value={learningSettings.customConfig.minimumTailSpeed}
-                        onChange={(event) => handleCustomConfigChange("minimumTailSpeed", event.target.value)}
-                      />
-                    </div>
-                  </div>
-                </div>
-
+              <div className="grid gap-3 xl:grid-cols-2">
                 <div className="rounded-2xl border bg-background/80 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="space-y-1">
