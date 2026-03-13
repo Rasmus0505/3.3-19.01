@@ -70,9 +70,6 @@ export function UploadTaskFloatingCard({ activePanel, accessToken, uploadTaskSta
       setTerminalVisible(false);
       setTerminalDismissedSignature(terminalSignature);
     }
-    if (uploadTaskState?.phase === "success") {
-      return;
-    }
     onOpenUpload?.();
   }
 
@@ -92,7 +89,7 @@ export function UploadTaskFloatingCard({ activePanel, accessToken, uploadTaskSta
             <p className="text-sm font-semibold">{uploadTaskState.headline}</p>
             <p className="text-xs text-muted-foreground">
               {uploadTaskState.phase === "success"
-                ? "课程已生成，新课已经回到历史记录并高亮"
+                ? "已生成完成，点此回到上传页"
                 : uploadTaskState.phase === "error"
                   ? uploadTaskState.resumeAvailable
                     ? "生成中断，可继续处理"

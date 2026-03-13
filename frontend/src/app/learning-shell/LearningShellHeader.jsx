@@ -84,12 +84,9 @@ export function LearningShellHeader({
           </Sheet>
 
           <div className="min-w-0">
-            <div className="min-w-0 space-y-1">
-              <div className="flex min-w-0 items-center gap-2">
-                <h1 className="truncate text-sm font-semibold text-slate-900">{currentPanel.title}</h1>
-                {showLessonsBadge ? <Badge variant="outline">已同步 {lessonsCount} 门课程</Badge> : null}
-              </div>
-              {currentPanel.description ? <p className="truncate text-xs text-muted-foreground">{currentPanel.description}</p> : null}
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="truncate text-sm font-semibold">{currentPanel.title}</h1>
+              {showLessonsBadge ? <Badge variant="outline">{lessonsCount} 门课程</Badge> : null}
             </div>
           </div>
         </div>
