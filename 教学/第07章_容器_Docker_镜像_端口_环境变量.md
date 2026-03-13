@@ -46,7 +46,7 @@ Dockerfile -> 构建镜像 -> 运行成容器
 关键点：
 
 - 安装了 `ffmpeg`，支持音频处理
-- 暴露端口 `8000`
+- 暴露端口 `8080`
 - 启动命令最终跑 `uvicorn`
 
 ---
@@ -57,7 +57,7 @@ Dockerfile -> 构建镜像 -> 运行成容器
 
 本项目默认：
 
-- 应用监听 `PORT`（默认 `8000`）
+- 应用监听 `PORT`（默认 `8080`）
 
 在 Zeabur 上，平台会处理公网访问与端口映射，你主要关注：
 
@@ -84,7 +84,6 @@ Dockerfile -> 构建镜像 -> 运行成容器
 
 ### 常见可选变量
 
-- `AUTO_MIGRATE_ON_START=true`
 - `TMP_WORK_DIR=/tmp/zeabur3.3`
 - `MT_BASE_URL`
 - `MT_MODEL`
@@ -96,11 +95,14 @@ Dockerfile -> 构建镜像 -> 运行成容器
 `scripts/start.sh` 关键动作：
 
 1. 检查关键环境变量是否存在（日志中有 `[DEBUG]`）
-2. 根据 `AUTO_MIGRATE_ON_START` 决定是否执行迁移
-3. 迁移失败时按重试策略处理
-4. 最终启动 `uvicorn app.main:app`
+2. 提示当前仓库改为手动迁移模式
+3. 最终启动 `uvicorn app.main:app`
 
-这解释了为什么你在日志里会看到“迁移重试”和“degraded_start”。
+数据库结构变更统一手动执行：
+
+```text
+python -m alembic -c alembic.ini upgrade head
+```
 
 ---
 
@@ -110,7 +112,7 @@ Dockerfile -> 构建镜像 -> 运行成容器
 
 这是高风险行为，必须避免。密钥只放环境变量。
 
-### 误区 2：端口写死 8000 就够了
+### 误区 2：端口写死 8080 就够了
 
 在托管平台通常应优先读取平台注入端口（本项目已支持 `PORT`）。
 
@@ -125,4 +127,3 @@ Dockerfile -> 构建镜像 -> 运行成容器
 1. 解释镜像和容器的关系。
 2. 解释为什么本项目不能把 DashScope key 写进代码。
 3. 说出部署时最少必须填的 4 个环境变量。
-

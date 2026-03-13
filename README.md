@@ -55,9 +55,6 @@
 建议同时保留：
 
 - `PORT=8080`
-- `AUTO_MIGRATE_ON_START=true`
-- `DB_INIT_MODE=auto`
-- `ALEMBIC_CONFIG=alembic.ini`
 - `TMP_WORK_DIR=/tmp/zeabur3.3`
 - `MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 - `MT_MODEL=qwen-mt-flash`
@@ -66,6 +63,18 @@
 
 分句和翻译批次默认值不建议靠环境变量维护。  
 上线后请到后台的“字幕/分句设置”里调整。
+
+### 第 4 步：先执行手动迁移
+
+- 在 `web` 服务的终端里执行：
+
+```text
+python -m alembic -c alembic.ini upgrade head
+```
+
+- 如果 Zeabur AI 可以代执行，直接让它在 `web` 服务里执行这条命令
+- 迁移失败时保留完整报错，不要忽略
+- 迁移成功后，对 `web` 点一次 `Redeploy` 或 `Restart`
 
 ## 部署后怎么验证
 
@@ -98,9 +107,9 @@ GET /health/ready
 
 - `/health` 正常，但 `/health/ready` 返回 `503`
   - 先检查 `DATABASE_URL`
-  - 再看 Alembic 迁移日志
+  - 再确认是否已经手动执行 `python -m alembic -c alembic.ini upgrade head`
 - 管理后台接口返回 `500`
-  - 先确认迁移是否真的执行成功
+  - 先确认手动迁移是否真的执行成功
   - 再检查数据库连接和权限
 - 上传转写失败
   - 先确认 `DASHSCOPE_API_KEY` 已填写
@@ -113,11 +122,12 @@ GET /health/ready
 本次先只部署两个服务：web 和 postgresql，不要先部署 Metabase。
 请提醒我填写这些环境变量：PORT=8080、DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS、ASR_SEGMENT_TARGET_SECONDS、ASR_SEGMENT_SEARCH_WINDOW_SECONDS。
 字幕和分句默认值请不要通过环境变量调整，部署完成后提醒我去后台“字幕/分句设置”里修改。
+web 服务启动后，请先在 web 服务里执行 `python -m alembic -c alembic.ini upgrade head`，成功后再重启一次 web。
 web 服务启动后，请按顺序帮我验证：
 1. GET /health 返回 200
 2. GET /health/ready 返回 200
 3. POST /api/transcribe/file 上传一个媒体文件能成功
-如果 /health 正常但 /health/ready 不正常，请优先检查数据库连接和迁移日志。
+如果 /health 正常但 /health/ready 不正常，请优先检查数据库连接和手动迁移日志。
 ```
 
 ## 本地开发
@@ -129,23 +139,23 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-本地 SQLite 快速运行：
+本地 SQLite 手动迁移运行：
 
 ```powershell
 $env:PORT="8080"
 $env:DATABASE_URL="sqlite:///./app.db"
-$env:DB_INIT_MODE="auto"
 $env:JWT_SECRET="change-me"
+python -m alembic -c alembic.ini upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
-本地 Postgres 迁移运行：
+本地 Postgres 手动迁移运行：
 
 ```powershell
 $env:PORT="8080"
 $env:DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/app_test"
 $env:JWT_SECRET="change-me"
-python -m alembic upgrade head
+python -m alembic -c alembic.ini upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 

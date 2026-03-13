@@ -28,6 +28,6 @@ COPY --from=frontend-builder /frontend/dist/ ./app/static/
 
 RUN chmod +x /app/scripts/start.sh
 
-EXPOSE 8000
+EXPOSE 8080
 
 CMD ["sh", "/app/scripts/start.sh"]

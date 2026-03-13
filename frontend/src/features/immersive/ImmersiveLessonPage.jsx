@@ -23,6 +23,7 @@ const APOSTROPHE_RE = /[’']/g;
 const CINEMA_CONTROLS_IDLE_MS = 3000;
 const MIN_PERCEPTIBLE_SLOWDOWN_WINDOW_MS = 900;
 const WORD_TIMING_TOLERANCE_MS = 140;
+const PROGRAMMATIC_FULLSCREEN_EXIT_RESET_MS = 1000;
 const MEDIA_TYPE_BY_EXTENSION = {
   ".mp4": "video/mp4",
   ".mov": "video/quicktime",
@@ -574,6 +575,8 @@ export function ImmersiveLessonPage({
   const replayAssistStageRef = useRef(0);
   const replayProgressAnchorRef = useRef(0);
   const autoFullscreenAttemptKeyRef = useRef("");
+  const programmaticFullscreenExitRef = useRef(false);
+  const programmaticFullscreenExitTimerRef = useRef(null);
   const cinemaFullscreenActive = isCinemaFullscreen || isFullscreenFallback;
   const hasExitHandler = typeof onExitImmersive === "function" || typeof onBack === "function";
   const typingEnabled =
@@ -610,6 +613,27 @@ export function ImmersiveLessonPage({
       setCinemaControlsIdle(true);
     }, CINEMA_CONTROLS_IDLE_MS);
   }, [cinemaFullscreenActive, clearCinemaControlsIdleTimer]);
+
+  const clearProgrammaticFullscreenExit = useCallback(() => {
+    programmaticFullscreenExitRef.current = false;
+    if (typeof window === "undefined") return;
+    if (programmaticFullscreenExitTimerRef.current !== null) {
+      window.clearTimeout(programmaticFullscreenExitTimerRef.current);
+      programmaticFullscreenExitTimerRef.current = null;
+    }
+  }, []);
+
+  const markProgrammaticFullscreenExit = useCallback(() => {
+    programmaticFullscreenExitRef.current = true;
+    if (typeof window === "undefined") return;
+    if (programmaticFullscreenExitTimerRef.current !== null) {
+      window.clearTimeout(programmaticFullscreenExitTimerRef.current);
+    }
+    programmaticFullscreenExitTimerRef.current = window.setTimeout(() => {
+      programmaticFullscreenExitRef.current = false;
+      programmaticFullscreenExitTimerRef.current = null;
+    }, PROGRAMMATIC_FULLSCREEN_EXIT_RESET_MS);
+  }, []);
 
   const currentSentence = lesson?.sentences?.[currentSentenceIndex] || null;
   const previousSentence = currentSentenceIndex > 0 ? lesson?.sentences?.[currentSentenceIndex - 1] || null : null;
@@ -1203,13 +1227,16 @@ export function ImmersiveLessonPage({
       const handler = typeof onExitImmersive === "function" ? onExitImmersive : onBack;
       if (typeof handler !== "function") return;
       if (isCinemaFullscreen || isFullscreenFallback) {
+        if (isCinemaFullscreen) {
+          markProgrammaticFullscreenExit();
+        }
         await exitElementFullscreen().catch(() => {});
         setIsCinemaFullscreen(false);
         setIsFullscreenFallback(false);
       }
       handler(source);
     },
-    [isCinemaFullscreen, isFullscreenFallback, onBack, onExitImmersive],
+    [isCinemaFullscreen, isFullscreenFallback, markProgrammaticFullscreenExit, onBack, onExitImmersive],
   );
 
   const exitCinemaFullscreen = useCallback(async () => {
@@ -1403,7 +1430,22 @@ export function ImmersiveLessonPage({
     const syncFullscreenState = () => {
       const fullscreenElement = getFullscreenElement();
       const nextIsCinemaFullscreen = Boolean(immersiveContainerRef.current && fullscreenElement === immersiveContainerRef.current);
+      const leftSystemFullscreen = isCinemaFullscreen && !nextIsCinemaFullscreen;
       setIsCinemaFullscreen(nextIsCinemaFullscreen);
+      if (!leftSystemFullscreen) {
+        return;
+      }
+      if (programmaticFullscreenExitRef.current) {
+        clearProgrammaticFullscreenExit();
+        return;
+      }
+      if (!immersiveActive || !hasExitHandler) {
+        return;
+      }
+      debugImmersiveLog("cinema_fullscreen.exit_via_system", {
+        lessonId: lesson?.id,
+      });
+      void exitImmersive("system_fullscreen_exit");
     };
 
     document.addEventListener("fullscreenchange", syncFullscreenState);
@@ -1414,7 +1456,7 @@ export function ImmersiveLessonPage({
       document.removeEventListener("webkitfullscreenchange", syncFullscreenState);
       document.removeEventListener("MSFullscreenChange", syncFullscreenState);
     };
-  }, []);
+  }, [clearProgrammaticFullscreenExit, exitImmersive, hasExitHandler, immersiveActive, isCinemaFullscreen, lesson?.id]);
 
   useEffect(() => {
     if (!immersiveActive) {
@@ -1450,6 +1492,12 @@ export function ImmersiveLessonPage({
       clearCinemaControlsIdleTimer();
     };
   }, [clearCinemaControlsIdleTimer]);
+
+  useEffect(() => {
+    return () => {
+      clearProgrammaticFullscreenExit();
+    };
+  }, [clearProgrammaticFullscreenExit]);
 
   useEffect(() => {
     if (!cinemaFullscreenActive || typeof window === "undefined") {

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import asyncio
 import logging
-import os
 import re
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
@@ -17,11 +15,10 @@ from sqlalchemy import inspect, text
 from app.api.routers import admin, admin_console, admin_sql_console, auth, billing, lessons, media, practice, transcribe, wallet
 from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, DASHSCOPE_API_KEY, SERVICE_NAME, STATIC_DIR
 from app.core.logging import setup_logging
-from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, init_db, schema_name_for_url
+from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, schema_name_for_url
 from app.models import LessonGenerationTask
 from app.services.admin_bootstrap import ensure_admin_users
 from app.services.asr_dashscope import setup_dashscope
-from app.services.billing_service import ensure_default_subtitle_settings
 from app.services.media import get_media_runtime_status
 
 
@@ -100,24 +97,6 @@ def _utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _read_positive_int_env(name: str, default: int) -> int:
-    raw = os.getenv(name, str(default)).strip()
-    try:
-        value = int(raw)
-    except Exception:
-        return default
-    return value if value > 0 else default
-
-
-def _read_positive_float_env(name: str, default: float) -> float:
-    raw = os.getenv(name, str(default)).strip()
-    try:
-        value = float(raw)
-    except Exception:
-        return default
-    return value if value > 0 else default
-
-
 def _ensure_runtime_status(app: FastAPI) -> RuntimeStatus:
     status = getattr(app.state, "runtime_status", None)
     if status is None:
@@ -128,9 +107,6 @@ def _ensure_runtime_status(app: FastAPI) -> RuntimeStatus:
 
 def _probe_database_ready() -> tuple[bool, str]:
     try:
-        init_db()
-        with SessionLocal() as db:
-            ensure_default_subtitle_settings(db)
         schema = schema_name_for_url(DATABASE_URL)
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
@@ -197,26 +173,19 @@ def _refresh_optional_runtime_status(app: FastAPI) -> None:
 
 async def _bootstrap_runtime_state(app: FastAPI) -> None:
     runtime_status = _ensure_runtime_status(app)
-    retries = _read_positive_int_env("STARTUP_DB_MAX_RETRIES", 8)
-    delay_seconds = _read_positive_float_env("STARTUP_DB_RETRY_DELAY_SECONDS", 2.0)
-
-    for attempt in range(1, retries + 1):
-        ready, error = _probe_database_ready()
-        runtime_status.db_ready = ready
-        runtime_status.db_error = error
-        runtime_status.checked_at = _utc_iso()
-        if ready:
-            logger.info("[DEBUG] startup.db ready attempt=%s/%s", attempt, retries)
-            admin_ok, admin_error = _bootstrap_admin_users()
-            runtime_status.admin_bootstrap_ok = admin_ok
-            runtime_status.admin_bootstrap_error = admin_error
-            if admin_ok:
-                logger.info("[DEBUG] startup.admin_bootstrap ready")
-            return
-
-        logger.warning("[DEBUG] startup.db unavailable attempt=%s/%s detail=%s", attempt, retries, error)
-        if attempt < retries:
-            await asyncio.sleep(delay_seconds)
+    ready, error = _probe_database_ready()
+    runtime_status.db_ready = ready
+    runtime_status.db_error = error
+    runtime_status.checked_at = _utc_iso()
+    if ready:
+        logger.info("[DEBUG] startup.db ready")
+        admin_ok, admin_error = _bootstrap_admin_users()
+        runtime_status.admin_bootstrap_ok = admin_ok
+        runtime_status.admin_bootstrap_error = admin_error
+        if admin_ok:
+            logger.info("[DEBUG] startup.admin_bootstrap ready")
+        return
+    logger.warning("[DEBUG] startup.db unavailable detail=%s", error)
 
 
 def _runtime_status_payload(runtime_status: RuntimeStatus) -> dict:
