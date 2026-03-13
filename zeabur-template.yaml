@@ -29,6 +29,7 @@ spec:
     1. Connect this GitHub repository directly in Zeabur
     2. Build from the repository Dockerfile
     3. Deploy only `web` + `postgresql` for the first rollout
+    4. Run `python -m alembic -c alembic.ini upgrade head` manually in `web`
 
     This template remains as a fallback import option.
   services:
@@ -113,10 +114,6 @@ spec:
             default: "8080"
           PYTHONUNBUFFERED:
             default: "1"
-          AUTO_MIGRATE_ON_START:
-            default: "true"
-          DB_INIT_MODE:
-            default: auto
           DATABASE_URL:
             default: ${POSTGRES_CONNECTION_STRING}
           DASHSCOPE_API_KEY:

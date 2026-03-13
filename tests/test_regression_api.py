@@ -614,6 +614,49 @@ def test_health_ready_endpoint(test_client, monkeypatch):
     assert data["status"]["db_ready"] is True
 
 
+def test_probe_database_ready_does_not_open_session_for_schema_checks(monkeypatch):
+    from app import main as app_main
+
+    class DummyConnection:
+        def execute(self, _sql):
+            return None
+
+    class DummyEngineConnection:
+        def __enter__(self):
+            return DummyConnection()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class DummyEngine:
+        def connect(self):
+            return DummyEngineConnection()
+
+    class DummyInspector:
+        def has_table(self, table_name, schema=None):
+            return table_name == "billing_model_rates"
+
+        def get_columns(self, table_name, schema=None):
+            if table_name != "billing_model_rates":
+                return []
+            required = app_main.READINESS_REQUIRED_COLUMNS["billing_model_rates"]
+            return [{"name": name} for name in required]
+
+    monkeypatch.setattr(app_main, "engine", DummyEngine())
+    monkeypatch.setattr(app_main, "inspect", lambda _connection: DummyInspector())
+    monkeypatch.setattr(app_main, "BUSINESS_TABLES", ("billing_model_rates",))
+    monkeypatch.setattr(
+        app_main,
+        "SessionLocal",
+        lambda: (_ for _ in ()).throw(AssertionError("SessionLocal should not be used during readiness schema checks")),
+    )
+
+    ready, error = app_main._probe_database_ready()
+
+    assert ready is True
+    assert error == ""
+
+
 def test_lesson_task_resume_reuses_failed_task_artifacts(test_client, monkeypatch, tmp_path):
     client, session_factory, _ = test_client
     token = _register_and_login(client, email="resume-task@example.com")

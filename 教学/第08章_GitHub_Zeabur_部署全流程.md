@@ -54,17 +54,28 @@
 
 建议加：
 
-- `AUTO_MIGRATE_ON_START=true`
+- `PORT=8080`
 - `TMP_WORK_DIR=/tmp/zeabur3.3`
 - `MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 - `MT_MODEL=qwen-mt-plus`
 
-### 步骤 5：触发部署并看日志
+### 步骤 5：手动执行迁移
+
+- 在 `web` 服务中执行：
+
+```text
+python -m alembic -c alembic.ini upgrade head
+```
+
+- 迁移失败时保留完整报错
+- 迁移成功后重启 `web`
+
+### 步骤 6：触发部署并看日志
 
 关注三类日志：
 
 1. 构建日志（依赖是否安装成功）
-2. 启动日志（迁移是否成功）
+2. 手动迁移日志（迁移是否成功）
 3. 运行日志（健康检查是否通过）
 
 ---
@@ -95,7 +106,7 @@
 优先检查：
 
 1. `DATABASE_URL` 是否正确
-2. 迁移是否执行成功
+2. 手动迁移是否执行成功
 3. 数据库服务是否可连接
 
 ### 故障 2：上传接口失败
@@ -121,12 +132,13 @@
 ```text
 请帮我在 Zeabur 上部署这个 GitHub 仓库，按仓库根目录 Dockerfile 构建。
 本次先只部署两个服务：web 和 postgresql，不要部署 metabase。
-请提醒我填写 4 个环境变量：DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS。
+请提醒我填写环境变量：PORT=8080、DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS。
+web 服务启动后，请先在 web 服务里执行 `python -m alembic -c alembic.ini upgrade head`，成功后再重启一次 web。
 部署后请依次验证：
 1) GET /health 返回 200
 2) GET /health/ready 返回 200
 3) POST /api/transcribe/file 上传媒体文件成功
-如果 /health 正常但 /health/ready 失败，请先检查数据库连接和迁移日志。
+如果 /health 正常但 /health/ready 失败，请先检查数据库连接和手动迁移日志。
 ```
 
 ---
@@ -136,4 +148,3 @@
 1. 第一次上线为什么建议只上 `web + postgresql`？
 2. 为什么 `/health` 通过不代表业务可用？
 3. 说出 Zeabur 上最先要填的 4 个环境变量。
-

@@ -42,14 +42,23 @@
 建议同时保留：
 
 - `PORT=8080`
-- `AUTO_MIGRATE_ON_START=true`
-- `ALEMBIC_CONFIG=alembic.ini`
-- `DB_INIT_MODE=auto`
 - `TMP_WORK_DIR=/tmp/zeabur3.3`
 - `MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 - `MT_MODEL=qwen-mt-flash`
 
 分句和翻译批次默认值，请到后台“字幕/分句设置”里调整。
+
+### 第四步：先执行一次手动迁移
+
+- 在 `web` 服务里执行：
+
+```text
+python -m alembic -c alembic.ini upgrade head
+```
+
+- 如果你不想自己敲命令，可以直接让 Zeabur AI 在 `web` 服务中执行这条命令
+- 迁移失败时保留完整报错，不要吞错
+- 迁移成功后，对 `web` 点一次 `Redeploy` 或 `Restart`
 
 ## 部署后怎么验证
 
@@ -66,7 +75,7 @@
 如果这里返回 `503`，优先看：
 
 1. `DATABASE_URL`
-2. Alembic 迁移日志
+2. 是否已手动执行 `python -m alembic -c alembic.ini upgrade head`
 3. Postgres 是否已 ready
 
 ### 最后验证业务是否跑通
@@ -84,18 +93,15 @@
 
 按这个顺序查：
 
-1. 确认 `web` 环境变量里有：
-   - `AUTO_MIGRATE_ON_START=true`
-   - `ALEMBIC_CONFIG=alembic.ini`
-   - `DB_INIT_MODE=auto`
-2. 在 Zeabur 对 `web` 点一次 `Redeploy`
-3. 打开部署日志，确认出现迁移成功相关日志
+1. 先在 `web` 服务里执行 `python -m alembic -c alembic.ini upgrade head`
+2. 确认迁移日志没有报错
+3. 在 Zeabur 对 `web` 点一次 `Redeploy`
 4. 如果迁移没成功，再检查 `DATABASE_URL` 和数据库权限
 
 ### `/health` 正常，但 `/health/ready` 不正常
 
 - 先看数据库连通性
-- 再看迁移是否执行
+- 再看手动迁移是否执行
 - 最后看业务表是否创建完成
 
 ## 可直接发给 Zeabur AI 的提示词
@@ -105,13 +111,13 @@
 部署方式使用仓库根目录 Dockerfile。
 这次先只创建两个服务：web 和 postgresql，不要先创建 metabase。
 请提醒我填写这些环境变量：PORT=8080、DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS。
-并确认 AUTO_MIGRATE_ON_START=true、ALEMBIC_CONFIG=alembic.ini、DB_INIT_MODE=auto。
+web 服务构建完成后，请先在 web 服务里执行 `python -m alembic -c alembic.ini upgrade head`，成功后再重启一次 web。
 部署完成后，请按顺序帮我验证：
 1. GET /health 返回 200
 2. GET /health/ready 返回 200
 3. GET /api/admin/billing-rates 返回 200
 4. POST /api/transcribe/file 上传媒体文件成功
-如果 /health 正常但 /health/ready 不正常，请优先排查数据库连接和迁移日志。
+如果 /health 正常但 /health/ready 不正常，请优先排查数据库连接和手动迁移日志。
 ```
 
 ## 第二阶段再做什么
