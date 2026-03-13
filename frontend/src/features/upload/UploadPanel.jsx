@@ -10,10 +10,10 @@ import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, Ca
 
 const QWEN_MODEL = "qwen3-asr-flash-filetrans";
 const DISPLAY_STAGES = [
-  { key: "convert_audio", label: "转换" },
-  { key: "asr_transcribe", label: "识别" },
-  { key: "translate_zh", label: "翻译" },
-  { key: "write_lesson", label: "生成" },
+  { key: "convert_audio", label: "提取音频" },
+  { key: "asr_transcribe", label: "识别字幕" },
+  { key: "translate_zh", label: "整理翻译" },
+  { key: "write_lesson", label: "写入课程" },
 ];
 
 function clampPercent(value) {
@@ -40,9 +40,9 @@ function getCurrentTaskStageKey(taskSnapshot) {
 }
 
 function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
-  if (phase === "uploading") return `上传素材 ${clampPercent(uploadPercent)}%`;
-  if (!taskSnapshot) return phase === "success" ? "生成课程完成" : phase === "error" ? "生成课程失败" : "等待上传";
-  if (phase === "success") return "生成课程完成";
+  if (phase === "uploading") return `上传中 ${clampPercent(uploadPercent)}%`;
+  if (!taskSnapshot) return phase === "success" ? "课程已生成" : phase === "error" ? "生成失败，请处理" : "等待选择文件";
+  if (phase === "success") return "课程已生成";
   const counters = taskSnapshot.counters || {};
   const stageKey = getCurrentTaskStageKey(taskSnapshot);
   if (stageKey === "asr_transcribe") {
@@ -51,14 +51,14 @@ function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
     if (segmentTotal > 0) return `识别分段 ${segmentDone}/${segmentTotal}`;
     const done = Math.max(0, Number(counters.asr_done || 0));
     const total = Math.max(done, Number(counters.asr_estimated || 0));
-    return done > 0 && total > 0 ? `识别字幕 ${done}/${total}` : String(taskSnapshot.current_text || "识别中");
+    return done > 0 && total > 0 ? `识别字幕 ${done}/${total}` : String(taskSnapshot.current_text || "正在识别字幕");
   }
   if (stageKey === "translate_zh") {
     const done = Math.max(0, Number(counters.translate_done || 0));
     const total = Math.max(done, Number(counters.translate_total || 0));
-    return total > 0 ? `翻译字幕 ${done}/${total}` : String(taskSnapshot.current_text || "翻译字幕");
+    return total > 0 ? `整理翻译 ${done}/${total}` : String(taskSnapshot.current_text || "正在整理翻译");
   }
-  return stageKey === "convert_audio" ? "转换音频" : stageKey === "write_lesson" ? "生成课程" : String(taskSnapshot.current_text || "等待处理");
+  return stageKey === "convert_audio" ? "正在提取音频" : stageKey === "write_lesson" ? "正在写入课程" : String(taskSnapshot.current_text || "等待处理");
 }
 
 function getVisualProgress(phase, uploadPercent, taskSnapshot) {
@@ -221,7 +221,6 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   async function finalizeSuccess(data, sourceFile = file, silentToast = false) {
     let mediaPersisted = false;
     let mediaPreview = null;
-    let successMessage = "";
     if (data.lesson?.id && sourceFile && data.lesson.media_storage === "client_indexeddb" && !bindingCompleted) {
       try {
         await requestPersistentStorage();
@@ -232,7 +231,10 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
         mediaPreview = { lessonId: Number(data.lesson.id || 0), hasMedia: false, mediaType: String(sourceFile?.type || ""), coverDataUrl, aspectRatio: coverAspectRatio, fileName: String(sourceFile?.name || data.lesson.source_filename || "") };
       }
     }
-    if (data.lesson?.media_storage === "client_indexeddb" && !mediaPersisted) successMessage = "课程已生成，但当前浏览器未保存本地视频，请在历史记录中恢复视频后再开始学习。";
+    const successMessage =
+      data.lesson?.media_storage === "client_indexeddb" && !mediaPersisted
+        ? "课程已生成，已回到历史记录。当前浏览器还没保存本地视频，请先恢复视频后再开始学习。"
+        : "课程已生成，已回到历史记录。";
     setTaskSnapshot(data);
     setPhase("success");
     setStatus(successMessage);
@@ -241,7 +243,13 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     await persistSession({ phase: "success", taskSnapshot: data, bindingCompleted: Boolean(mediaPersisted || data.lesson?.media_storage !== "client_indexeddb"), status: successMessage });
     await onWalletChanged?.();
     if (data.lesson) await onCreated?.({ lesson: data.lesson, mediaPreview, mediaPersisted });
-    if (!silentToast) (successMessage ? toast.warning(successMessage) : toast.success("课程已生成"));
+    if (!silentToast) {
+      if (data.lesson?.media_storage === "client_indexeddb" && !mediaPersisted) {
+        toast.warning(successMessage);
+      } else {
+        toast.success(successMessage);
+      }
+    }
   }
 
   async function pollTask(nextTaskId, silentToast = false, pollToken = pollTokenRef.current) {
@@ -491,63 +499,162 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     }
   }
 
+  const guideSteps = [
+    { title: "选一个本地文件", note: "音频或视频都可以，系统会先读取时长和封面。" },
+    { title: "等待自动处理", note: "会依次识别、翻译，再写成一节课程。" },
+    { title: "回历史记录开始学", note: "生成完成后会回到历史记录，并把新课程选中给你。" },
+  ];
+
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base"><UploadCloud className="size-4" />上传素材</CardTitle>
-        <CardDescription>自动识别翻译，生成学习课程</CardDescription>
+      <CardHeader className="space-y-0">
+        <div className="manual-kicker">新建课程</div>
+        <CardTitle className="manual-title flex items-center gap-2">
+          <UploadCloud className="size-5" />
+          上传一份素材，自动生成课程
+        </CardTitle>
+        <CardDescription className="manual-subtitle">支持音频和视频。处理完成后，系统会回到历史记录，并把新课程直接放到你眼前。</CardDescription>
+        <div className="manual-steps">
+          {guideSteps.map((step, index) => (
+            <div key={step.title} className="manual-step">
+              <span className="manual-step-index">{index + 1}</span>
+              <div>
+                <p className="manual-step-title">{step.title}</p>
+                <p className="manual-step-note">{step.note}</p>
+              </div>
+            </div>
+          ))}
+        </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <Alert>
-          <AlertDescription>
-            <p className="text-muted-foreground">当前余额：{Number(balancePoints || 0)} 点</p>
-            <p className="text-muted-foreground">
+      <CardContent className="manual-page">
+        <section className="manual-info-grid">
+          <div className="manual-soft-card">
+            <p className="manual-info-label">当前余额</p>
+            <p className="manual-info-value">{Number(balancePoints || 0)} 点</p>
+            <p className="manual-info-help">{likelyInsufficient ? "如果这次余额不够，提交会直接被拒绝。" : "点数足够时，可以直接开始生成。"} </p>
+          </div>
+          <div className="manual-soft-card">
+            <p className="manual-info-label">
               <Tooltip>
-                <TooltipTrigger asChild><span className="cursor-help underline decoration-dotted underline-offset-2">预估扣费</span></TooltipTrigger>
+                <TooltipTrigger asChild>
+                  <span className="cursor-help underline decoration-dotted underline-offset-2">预估扣费</span>
+                </TooltipTrigger>
                 <TooltipContent>向上取整秒数后按分钟计费，再向上取整到点数。</TooltipContent>
               </Tooltip>
-              ：{selectedRate ? (durationSec != null ? `${estimatedPoints} 点（${selectedRate.points_per_minute} 点/分钟）` : "选择文件后显示") : "该模型未配置单价"}
             </p>
-            {likelyInsufficient ? <p className="mt-1 text-destructive">余额可能不足，提交将被拒绝。</p> : null}
-          </AlertDescription>
-        </Alert>
+            <p className="manual-info-value">
+              {selectedRate ? (durationSec != null ? `${estimatedPoints} 点` : "选好文件后显示") : "当前模型没有单价"}
+            </p>
+            <p className="manual-info-help">
+              {selectedRate ? `${selectedRate.points_per_minute} 点/分钟。时长越长，点数越高。` : "请先检查计费模型配置。"}
+            </p>
+          </div>
+          <div className="manual-soft-card">
+            <p className="manual-info-label">默认处理方式</p>
+            <p className="manual-info-value">{semanticSplitEnabled ? "更适合阅读" : "更快出结果"}</p>
+            <p className="manual-info-help">{semanticSplitEnabled ? "会更贴近语义，但速度更慢一些。" : "优先按标准流程生成，适合大多数素材。"}</p>
+          </div>
+        </section>
 
-        {file ? <MediaCover coverDataUrl={coverDataUrl} alt={isVideoSource ? "视频封面" : "音频素材"} aspectRatio={coverAspectRatio} className="border bg-muted/20" fallback={<div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">{isVideoSource ? "封面提取中或失败" : "音频素材（无视频封面）"}</div>} /> : null}
+        {likelyInsufficient ? (
+          <Alert variant="destructive">
+            <AlertDescription>余额可能不足。建议先充值，或换一份更短的素材再试。</AlertDescription>
+          </Alert>
+        ) : null}
+
+        {file ? (
+          <MediaCover
+            coverDataUrl={coverDataUrl}
+            alt={isVideoSource ? "视频封面" : "音频素材"}
+            aspectRatio={coverAspectRatio}
+            className="rounded-[24px] border bg-muted/20"
+            fallback={
+              <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+                {isVideoSource ? "封面正在提取，或这份文件暂时没有可用封面。" : "这是音频素材，没有视频封面。"}
+              </div>
+            }
+          />
+        ) : null}
 
         {showProgress ? (
-          <div className="space-y-3 rounded-2xl border bg-muted/15 p-4">
+          <div className="manual-soft-card space-y-3">
             <div className="flex items-start justify-between gap-3">
-              <div className="space-y-1"><p className="text-sm font-medium">{getProgressHeadline(phase, uploadPercent, taskSnapshot)}</p><p className="text-xs text-muted-foreground">总进度</p></div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium">{getProgressHeadline(phase, uploadPercent, taskSnapshot)}</p>
+                <p className="text-xs text-muted-foreground">总进度</p>
+              </div>
               <span className="text-sm font-semibold tabular-nums text-muted-foreground">{progressPercent}%</span>
             </div>
-            <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted"><div className={cn("h-full rounded-full transition-[width,background-color] duration-300", phase === "success" ? "bg-emerald-500" : phase === "error" ? "bg-red-500" : phase === "uploading" ? "bg-sky-500" : "bg-amber-500")} style={{ width: `${progressPercent}%` }} /></div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{stageItems.map((item) => <div key={item.key} className={cn("rounded-xl border px-3 py-2 text-sm font-medium", item.status === "completed" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700" : item.status === "running" ? "border-amber-500/40 bg-amber-500/10 text-amber-700" : item.status === "failed" ? "border-red-500/30 bg-red-500/10 text-red-600" : "border-border bg-muted/30 text-muted-foreground")}>{item.label}</div>)}</div>
+            <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-[width,background-color] duration-300",
+                  phase === "success" ? "bg-emerald-500" : phase === "error" ? "bg-red-500" : phase === "uploading" ? "bg-sky-500" : "bg-amber-500",
+                )}
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {stageItems.map((item) => (
+                <div
+                  key={item.key}
+                  className={cn(
+                    "rounded-xl border px-3 py-2 text-sm font-medium",
+                    item.status === "completed"
+                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+                      : item.status === "running"
+                        ? "border-amber-500/40 bg-amber-500/10 text-amber-700"
+                        : item.status === "failed"
+                          ? "border-red-500/30 bg-red-500/10 text-red-600"
+                          : "border-border bg-muted/30 text-muted-foreground",
+                  )}
+                >
+                  {item.label}
+                </div>
+              ))}
+            </div>
           </div>
         ) : null}
 
         {phase === "success" && taskSnapshot?.lesson ? (
           <div className="space-y-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-            <div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 size-5 text-emerald-600" /><div className="space-y-1"><p className="text-sm font-semibold text-emerald-700">生成成功</p><p className="text-sm text-emerald-700/80">{status || "课程已写入历史记录，你可以现在开始学习，或继续上传下一份素材。"}</p></div></div>
-            <div className="flex flex-wrap gap-2"><Button type="button" onClick={() => onNavigateToLesson?.(taskSnapshot.lesson.id)}>去学习</Button><Button type="button" variant="outline" onClick={() => void resetSession()}>继续上传</Button></div>
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="mt-0.5 size-5 text-emerald-600" />
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-emerald-700">课程已经生成</p>
+                <p className="text-sm text-emerald-700/80">{status || "系统已经回到历史记录，新课程会自动高亮。"}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" onClick={() => onNavigateToLesson?.(taskSnapshot.lesson.id)}>回历史记录开始学习</Button>
+              <Button type="button" variant="outline" onClick={() => void resetSession()}>继续上传下一份</Button>
+            </div>
           </div>
         ) : null}
 
         {phase === "error" && status ? (
           <div className="space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
-            <p className="text-sm text-destructive">{status}</p>
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-destructive">这次没有生成成功</p>
+              <p className="text-sm text-destructive">{status}</p>
+            </div>
             <div className="flex flex-wrap gap-2">
               {canRetryWithoutUpload ? <Button type="button" onClick={() => void resumeTask()}><RefreshCcw className="size-4" />{taskSnapshot?.resume_available ? "免上传继续生成" : "免上传重新生成"}</Button> : null}
-              {hasLocalFile ? <Button type="button" variant="secondary" onClick={() => void submit()}><RefreshCcw className="size-4" />重新上传当前素材</Button> : null}
-              {hasLocalFile ? <Button type="button" variant="ghost" onClick={() => void clearTaskRuntime()}>保留素材并清空错误</Button> : null}
+              {hasLocalFile ? <Button type="button" variant="secondary" onClick={() => void submit()}><RefreshCcw className="size-4" />重新上传这份素材</Button> : null}
+              {hasLocalFile ? <Button type="button" variant="ghost" onClick={() => void clearTaskRuntime()}>保留文件并清空错误</Button> : null}
               <Button type="button" variant="outline" onClick={() => void resetSession()}>更换素材</Button>
             </div>
           </div>
         ) : null}
 
-        <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
-          <div className="grid gap-2">
-            <input id="asr-file" ref={fileInputRef} type="file" className="hidden" onChange={(event) => { void onSelectFile(event.target.files?.[0] ?? null); }} disabled={loading} />
+        <form className="manual-muted-panel space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+          <div className="space-y-3">
+            <div>
+              <p className="manual-section-heading">第 1 步：准备素材</p>
+              <p className="manual-section-copy">选一份本地音频或视频。如果你手里只有在线链接，可以先转成文件再回来上传。</p>
+            </div>
             <div className="grid gap-2 md:grid-cols-2">
+              <input id="asr-file" ref={fileInputRef} type="file" className="hidden" onChange={(event) => { void onSelectFile(event.target.files?.[0] ?? null); }} disabled={loading} />
               <Button
                 type="button"
                 variant="outline"
@@ -560,28 +667,44 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
                 }}
                 disabled={loading}
               >
-                选择文件
+                选择本地文件
               </Button>
-              <Button type="button" variant="secondary" className="h-11" onClick={() => setLinkDialogOpen(true)} disabled={loading}>链接生成视频</Button>
+              <Button type="button" variant="secondary" className="h-11" onClick={() => setLinkDialogOpen(true)} disabled={loading}>先把链接转成文件</Button>
             </div>
-            {file ? <p className="text-xs text-muted-foreground">{file.name}</p> : null}
+            {file ? <p className="manual-inline-note">已选文件：{file.name}</p> : <p className="manual-inline-note">还没有选择文件，选好后才会显示时长和预估扣费。</p>}
           </div>
-          <div className="flex items-start justify-between gap-3 rounded-xl border p-4">
-            <div className="space-y-1"><p className="text-sm font-medium">开启语义分句</p><p className="text-xs text-muted-foreground">更贴近语义，但会更慢，且可能增加模型调用。</p></div>
-            <div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">{semanticSplitEnabled ? "已开启" : "已关闭"}</span><Switch checked={semanticSplitEnabled} onCheckedChange={setSemanticSplitEnabled} disabled={loading} /></div>
+
+          <div className="manual-soft-card flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">第 2 步：决定句子要不要按语义重切</p>
+              <p className="text-xs text-muted-foreground">开启后更贴近阅读习惯，但会更慢，也可能增加一点模型调用。</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">{semanticSplitEnabled ? "已开启" : "已关闭"}</span>
+              <Switch checked={semanticSplitEnabled} onCheckedChange={setSemanticSplitEnabled} disabled={loading} />
+            </div>
           </div>
-          <Button type="submit" disabled={loading || phase === "success"} className="h-11 w-full">{loading ? <span className="inline-flex items-center gap-2"><Loader2 className="size-4 animate-spin" />生成中</span> : phase === "success" ? "已生成完成" : "开始生成课程"}</Button>
+
+          <Button type="submit" disabled={loading || phase === "success"} className="h-11 w-full">
+            {loading ? <span className="inline-flex items-center gap-2"><Loader2 className="size-4 animate-spin" />正在生成课程</span> : phase === "success" ? "课程已生成" : "第 3 步：开始生成课程"}
+          </Button>
         </form>
 
         <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>链接生成视频</DialogTitle>
-              <DialogDescription asChild><div className="space-y-1"><p>上传视频才可以获取素材</p><p>您可自行寻找可以链接转视频的合法工具</p><p>或使用推荐的工具网站</p></div></DialogDescription>
+              <DialogTitle>先把在线链接转成文件</DialogTitle>
+              <DialogDescription asChild>
+                <div className="space-y-1">
+                  <p>系统只能处理你上传的本地文件。</p>
+                  <p>如果现在手里只有在线视频链接，可以先用合法工具转成文件，再回到这里上传。</p>
+                  <p>下面保留一个常用入口，方便你少走一步。</p>
+                </div>
+              </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setLinkDialogOpen(false)}>取消</Button>
-              <Button type="button" onClick={() => window.open("https://snapany.com/zh", "_blank", "noopener,noreferrer")}>跳转</Button>
+              <Button type="button" variant="ghost" onClick={() => setLinkDialogOpen(false)}>稍后再说</Button>
+              <Button type="button" onClick={() => window.open("https://snapany.com/zh", "_blank", "noopener,noreferrer")}>打开推荐工具</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

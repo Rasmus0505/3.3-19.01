@@ -287,6 +287,21 @@ export function LearningShellContainer() {
     navigate(getPanelPath(lastNonImmersivePanelRef.current));
   }
 
+  async function openLessonInHistory(lessonId) {
+    if (!lessonId) return;
+    lastNonImmersivePanelRef.current = "history";
+    setImmersiveActive(false);
+    setMobileNavOpen(false);
+    navigate(getPanelPath("history"));
+    console.debug("[DEBUG] upload success returning to history", { lessonId });
+    await loadCatalog({
+      page: 1,
+      query: "",
+      preferredLessonId: lessonId,
+      autoEnterImmersive: false,
+    });
+  }
+
   async function handleLessonCreated(payload) {
     const lesson = payload?.lesson || null;
     const lessonId = lesson?.id;
@@ -294,12 +309,11 @@ export function LearningShellContainer() {
 
     const mediaPersisted = Boolean(payload?.mediaPersisted);
     const needsBinding = lesson.media_storage === "client_indexeddb" && !mediaPersisted;
-    const shouldAutoEnterImmersive = lesson.media_storage !== "client_indexeddb" || mediaPersisted;
     const mediaPreview = buildCreatedLessonMediaPreview(lesson, payload?.mediaPreview, mediaPersisted);
 
     mergeLessonMediaMeta({ [lessonId]: mediaPreview });
     await persistLessonSubtitleCacheSeed(lesson);
-    await loadCatalog({ page: 1, query: "", preferredLessonId: lessonId, autoEnterImmersive: shouldAutoEnterImmersive });
+    await openLessonInHistory(lessonId);
     await loadWallet();
     setCurrentLessonNeedsBinding(needsBinding);
   }
@@ -331,8 +345,7 @@ export function LearningShellContainer() {
 
   async function handleNavigateToGeneratedLesson(lessonId) {
     if (!lessonId) return;
-    lastNonImmersivePanelRef.current = activePanel;
-    await loadLessonDetail(lessonId, { autoEnterImmersive: true });
+    await openLessonInHistory(lessonId);
   }
 
   async function handleRenameLesson(lessonId, title) {

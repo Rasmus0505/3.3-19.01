@@ -202,6 +202,19 @@ export function LessonList({
     [lessonCardMetaMap, lessonMediaMetaMap, lessons, subtitleCacheMetaMap],
   );
   const presetSummaryLines = useMemo(() => getPresetSummaryLines(learningSettings), [learningSettings]);
+  const selectedPresetOption = useMemo(
+    () => REPLAY_PRESET_OPTIONS.find((item) => item.id === learningSettings.presetId) || REPLAY_PRESET_OPTIONS[0],
+    [learningSettings.presetId],
+  );
+  const activeShortcutCount = useMemo(
+    () => SHORTCUT_ACTIONS.filter((action) => Boolean(learningSettings.shortcuts?.[action.id])).length,
+    [learningSettings.shortcuts],
+  );
+  const guideSteps = [
+    { title: "先确认学习方案", note: "上面的设置会作为这个浏览器进入课程时的默认方案。" },
+    { title: "再从下方选课程", note: "新生成的课程也会自动回到这里高亮。" },
+    { title: "点一下直接开始", note: "课程卡和按钮都会直接带你进入学习。" },
+  ];
 
   function startLessonFromHistory(lessonId, source) {
     console.debug("[DEBUG] history.lesson.start", { lessonId, source });
@@ -369,28 +382,59 @@ export function LessonList({
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <History className="size-4" />
-          历史记录
+      <CardHeader className="space-y-0">
+        <div className="manual-kicker">课程历史</div>
+        <CardTitle className="manual-title flex items-center gap-2">
+          <History className="size-5" />
+          回到课程历史，直接接着学
         </CardTitle>
-        <CardDescription>点击课程卡片或右侧按钮，直接进入全屏学习并继续当前进度。</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <section className="rounded-2xl border bg-muted/10 p-4 md:p-5">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div className="space-y-1">
-              <p className="text-sm font-semibold text-foreground">学习参数预设</p>
-              <p className="text-sm text-muted-foreground">
-                先在这里设好重播策略和快捷键，再从下方任意课程卡片直接进入全屏学习。
-              </p>
+        <CardDescription className="manual-subtitle">先确认这台设备的学习方案，再从下方挑一节课程继续。新生成的课程也会自动回到这里高亮。</CardDescription>
+        <div className="manual-steps">
+          {guideSteps.map((step, index) => (
+            <div key={step.title} className="manual-step">
+              <span className="manual-step-index">{index + 1}</span>
+              <div>
+                <p className="manual-step-title">{step.title}</p>
+                <p className="manual-step-note">{step.note}</p>
+              </div>
             </div>
-            <Badge variant="outline">浏览器全局默认</Badge>
+          ))}
+        </div>
+      </CardHeader>
+      <CardContent className="manual-page">
+        <section className="manual-muted-panel space-y-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-1">
+              <p className="manual-section-heading">学习方案</p>
+              <p className="manual-section-copy">这里决定进入课程后的默认重播、揭示和快捷键行为。先看摘要，再按需要微调。</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="manual-chip manual-chip-info">浏览器默认方案</span>
+              <span className="manual-chip manual-chip-neutral">{selectedPresetOption.label}</span>
+            </div>
           </div>
 
-          <div className="mt-4 space-y-4">
+          <div className="manual-info-grid">
+            <div className="manual-soft-card">
+              <p className="manual-info-label">当前方案</p>
+              <p className="manual-info-value">{selectedPresetOption.label}</p>
+              <p className="manual-info-help">进入任何课程时，都会先带上这套默认学习节奏。</p>
+            </div>
+            <div className="manual-soft-card">
+              <p className="manual-info-label">答后处理</p>
+              <p className="manual-info-value">{learningSettings.playbackPreferences?.autoReplayAnsweredSentence !== false ? "答后自动重播本句" : "答后直接进入下一句"}</p>
+              <p className="manual-info-help">你可以按当前习惯，决定每句答完后的默认动作。</p>
+            </div>
+            <div className="manual-soft-card">
+              <p className="manual-info-label">快捷键状态</p>
+              <p className="manual-info-value">{activeShortcutCount > 0 ? `${activeShortcutCount} 个动作已设置` : "还没有设置快捷键"}</p>
+              <p className="manual-info-help">如果你常用键盘学习，可以在下方直接录入。</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
             <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">学习预设</p>
+              <p className="manual-info-label">学习预设</p>
               <div className="flex flex-wrap gap-2">
                 {REPLAY_PRESET_OPTIONS.map((item) => {
                   const active = learningSettings.presetId === item.id;
@@ -414,19 +458,20 @@ export function LessonList({
               </div>
             </div>
 
-            <div className="rounded-2xl border bg-background/80 px-4 py-3 text-sm text-muted-foreground">
-              {presetSummaryLines.map((line) => (
-                <p key={line}>{line}</p>
-              ))}
+            <div className="manual-soft-card">
+              <p className="manual-info-label">当前方案摘要</p>
+              <div className="mt-3 space-y-2 text-sm text-slate-600">
+                {presetSummaryLines.map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+              </div>
             </div>
 
-            <div className="rounded-2xl border bg-background/80 p-4">
+            <div className="manual-soft-card">
               <div className="flex items-center justify-between gap-3">
                 <div className="space-y-1">
                   <p className="text-sm font-medium">答完自动重播本句</p>
-                  <p className="text-xs text-muted-foreground">
-                    开启后，答完先显示本句翻译，再用 1x 自动重播一次，结束后自动进入下一句。
-                  </p>
+                  <p className="text-xs text-muted-foreground">开启后，会先显示翻译，再用 1x 重播一次，然后自动进入下一句。</p>
                 </div>
                 <Switch
                   checked={learningSettings.playbackPreferences?.autoReplayAnsweredSentence !== false}
@@ -435,18 +480,18 @@ export function LessonList({
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
                 {learningSettings.playbackPreferences?.autoReplayAnsweredSentence !== false
-                  ? "当前：已开启。若浏览器拦截自动重播，会直接进入下一句。"
-                  : "当前：已关闭。答完后会沿用现在的直接过句逻辑。"}
+                  ? "当前已开启。若浏览器拦截自动重播，会直接进入下一句。"
+                  : "当前已关闭。答完后会沿用直接过句的逻辑。"}
               </p>
             </div>
 
             {learningSettings.presetId === "custom" ? (
               <div className="grid gap-3 xl:grid-cols-3">
-                <div className="rounded-2xl border bg-background/80 p-4">
+                <div className="manual-soft-card">
                   <div className="flex items-center justify-between gap-3">
                     <div className="space-y-1">
                       <p className="text-sm font-medium">倍速辅助</p>
-                      <p className="text-xs text-muted-foreground">关闭后重播保持原速；开启后优先压低未掌握尾段。</p>
+                      <p className="text-xs text-muted-foreground">只在你没掌握的尾段降速，其他部分仍保持自然节奏。</p>
                     </div>
                     <Switch
                       checked={learningSettings.customConfig.speedEnabled}
@@ -481,11 +526,11 @@ export function LessonList({
                   </div>
                 </div>
 
-                <div className="rounded-2xl border bg-background/80 p-4">
+                <div className="manual-soft-card">
                   <div className="flex items-center justify-between gap-3">
                     <div className="space-y-1">
                       <p className="text-sm font-medium">字母揭示</p>
-                      <p className="text-xs text-muted-foreground">关闭后不会再自动补字母；开启后只在设定阶段触发。</p>
+                      <p className="text-xs text-muted-foreground">需要时再补字母，适合先自己回忆、再看一点提示。</p>
                     </div>
                     <Switch
                       checked={learningSettings.customConfig.revealLetterEnabled}
@@ -506,11 +551,11 @@ export function LessonList({
                   </div>
                 </div>
 
-                <div className="rounded-2xl border bg-background/80 p-4">
+                <div className="manual-soft-card">
                   <div className="flex items-center justify-between gap-3">
                     <div className="space-y-1">
                       <p className="text-sm font-medium">单词揭示</p>
-                      <p className="text-xs text-muted-foreground">关闭后不会再自动补完整单词；开启后可以单独调开始阶段和递增量。</p>
+                      <p className="text-xs text-muted-foreground">需要更明显提示时，再逐步补完整单词和额外词数。</p>
                     </div>
                     <Switch
                       checked={learningSettings.customConfig.revealWordEnabled}
@@ -549,20 +594,16 @@ export function LessonList({
 
             <div className="space-y-3">
               <div className="space-y-1">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">快捷键配置</p>
-                <p className="text-sm text-muted-foreground">
-                  点一下按钮后直接按键录入；支持更多安全组合，Esc 固定保留为退出沉浸学习。若与其他动作冲突，会直接覆盖并清空旧动作。
-                </p>
+                <p className="manual-info-label">快捷键配置</p>
+                <p className="text-sm text-muted-foreground">点一下按钮后直接按键录入。Esc 会固定保留为退出学习；如果冲突，旧动作会被覆盖。</p>
               </div>
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {SHORTCUT_ACTIONS.map((action) => {
                   const recording = recordingShortcutActionId === action.id;
                   return (
-                    <div key={action.id} className="rounded-2xl border bg-background/80 p-3">
+                    <div key={action.id} className="manual-soft-card p-3">
                       <p className="text-sm font-medium">{action.label}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        当前：{getShortcutLabel(learningSettings.shortcuts[action.id])}
-                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">现在是：{getShortcutLabel(learningSettings.shortcuts[action.id])}</p>
                       <Button
                         type="button"
                         variant={recording ? "default" : "outline"}
@@ -572,7 +613,7 @@ export function LessonList({
                           setRecordingShortcutActionId((current) => (current === action.id ? "" : action.id));
                         }}
                       >
-                        {recording ? "请直接按键…" : "点击录入"}
+                        {recording ? "请直接按键…" : "录入按键"}
                       </Button>
                     </div>
                   );
@@ -585,34 +626,47 @@ export function LessonList({
                 <AlertDescription>{settingsError}</AlertDescription>
               </Alert>
             ) : (
-              <p className="text-xs text-muted-foreground">
-                推荐默认：Shift+A 揭示字母，Shift+S 揭示单词，Shift+Q 上一句，Shift+W 下一句，Shift+R 重播，Space 暂停/继续播放。
+              <p className="manual-inline-note">
+                推荐默认：Shift+A 揭示字母，Shift+S 揭示单词，Shift+Q 上一句，Shift+W 下一句，Shift+R 重播，Space 暂停或继续播放。
               </p>
             )}
           </div>
         </section>
 
-        {loading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-32 w-full rounded-2xl" />
-            <Skeleton className="h-32 w-full rounded-2xl" />
+        <section className="space-y-4">
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div className="space-y-1">
+              <p className="manual-kicker">你的课程</p>
+              <h3 className="text-xl font-semibold tracking-tight text-slate-900">选择一节课程开始</h3>
+              <p className="text-sm text-muted-foreground">课程卡会优先展示当前状态、字幕版本和开始入口，你不用先读大段说明。</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="manual-chip manual-chip-neutral">{cards.length} 门课程</span>
+              {currentLessonId ? <span className="manual-chip manual-chip-success">当前课程已高亮</span> : null}
+            </div>
           </div>
-        ) : null}
 
-        {!loading && cards.length === 0 ? (
-          <div className="rounded-2xl border border-dashed bg-muted/15 px-6 py-10 text-center">
-            <p className="text-base font-medium">还没有课程记录</p>
-            <p className="mt-2 text-sm text-muted-foreground">先上传一份素材，生成第一节课程后再回来继续学习。</p>
-            {onSwitchToUpload ? (
-              <Button className="mt-4" onClick={onSwitchToUpload}>
-                去生成课程
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
+          {loading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-36 w-full rounded-[28px]" />
+              <Skeleton className="h-36 w-full rounded-[28px]" />
+            </div>
+          ) : null}
 
-        {!loading ? (
-          <div className="space-y-3">
+          {!loading && cards.length === 0 ? (
+            <div className="rounded-[28px] border border-dashed bg-muted/15 px-6 py-10 text-center">
+              <p className="text-base font-medium">还没有课程记录</p>
+              <p className="mt-2 text-sm text-muted-foreground">先上传一份素材，生成第一节课程后再回来继续学习。</p>
+              {onSwitchToUpload ? (
+                <Button className="mt-4" onClick={onSwitchToUpload}>
+                  去上传素材
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {!loading ? (
+            <div className="space-y-3">
             {cards.map(({ lesson, mediaMeta, subtitleMeta, sentenceCount, actionLabel, needsBinding, createdAtLabel }) => {
               const selected = currentLessonId === lesson.id;
               const currentVariantLabel =
@@ -620,19 +674,23 @@ export function LessonList({
                   ? "语义分句"
                   : subtitleMeta.currentSemanticSplitEnabled === false
                     ? "原始字幕"
-                    : "服务器字幕";
+                    : "默认字幕";
               const subtitleVariantHint = subtitleMeta.canRegenerate
-                ? `已缓存${subtitleMeta.hasPlainVariant && subtitleMeta.hasSemanticVariant ? "双模式字幕" : "当前模式字幕"}`
-                : "仅新上传的课程支持";
+                ? subtitleMeta.hasPlainVariant && subtitleMeta.hasSemanticVariant
+                  ? "已准备两套字幕，随时可以切换。"
+                  : "当前已缓存一套字幕，后续还能继续补齐。"
+                : "仅新上传的课程支持字幕切换。";
               return (
                 <div
                   key={lesson.id}
                   className={cn(
-                    "overflow-hidden rounded-2xl border bg-background transition-all",
-                    selected ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-primary/30 hover:bg-muted/10",
+                    "overflow-hidden rounded-[28px] border bg-background transition-all",
+                    selected
+                      ? "border-sky-300 bg-sky-50/70 shadow-[0_18px_40px_rgba(14,165,233,0.08)]"
+                      : "border-slate-200 hover:border-sky-200 hover:bg-slate-50/70",
                   )}
                 >
-                  <div className="flex flex-col gap-4 p-4 md:flex-row">
+                  <div className="flex flex-col gap-4 p-4 md:flex-row md:p-5">
                     <button
                       type="button"
                       className="flex min-w-0 flex-1 items-stretch gap-4 text-left"
@@ -642,38 +700,36 @@ export function LessonList({
                         coverDataUrl={mediaMeta.coverDataUrl}
                         alt={getCoverAssistiveText(lesson)}
                         aspectRatio={mediaMeta.aspectRatio}
-                        className="shrink-0 md:w-44"
+                        className="shrink-0 rounded-2xl md:w-44"
                       />
 
-                      <div className="flex min-w-0 flex-1 flex-col justify-between gap-3">
-                        <div className="space-y-2">
+                      <div className="flex min-w-0 flex-1 flex-col justify-between gap-4">
+                        <div className="space-y-3">
                           <div className="flex flex-wrap items-center gap-2">
-                            <div className="truncate text-lg font-semibold">{lesson.title}</div>
-                            {selected ? <Badge variant="outline">当前课程</Badge> : null}
+                            <div className="truncate text-lg font-semibold text-slate-900 md:text-xl">{lesson.title || `课程 ${lesson.id}`}</div>
+                            {selected ? <Badge variant="outline">当前高亮</Badge> : null}
                             {needsBinding ? <Badge variant="secondary">待恢复视频</Badge> : null}
-                            {selected && currentLessonNeedsBinding ? <Badge variant="secondary">需绑定本地视频</Badge> : null}
-                            <Badge variant="outline">{currentVariantLabel}</Badge>
+                            {selected && currentLessonNeedsBinding ? <Badge variant="secondary">先恢复本地视频</Badge> : null}
                           </div>
-                          <p className="line-clamp-2 text-sm text-muted-foreground">{lesson.source_filename || "未命名素材"}</p>
+                          <p className="line-clamp-2 text-sm leading-6 text-slate-600">{lesson.source_filename || "未命名素材"}</p>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                          <span>{sentenceCount} 句</span>
-                          <span>{subtitleVariantHint}</span>
-                          <span className="inline-flex items-center gap-1">
-                            <Clock3 className="size-4" />
-                            {createdAtLabel}
-                          </span>
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap gap-2">
+                            <span className="manual-chip manual-chip-neutral">{sentenceCount} 句</span>
+                            <span className="manual-chip manual-chip-neutral">{currentVariantLabel}</span>
+                            <span className="manual-chip manual-chip-neutral inline-flex gap-1">
+                              <Clock3 className="size-3.5" />
+                              {createdAtLabel}
+                            </span>
+                          </div>
+                          <p className="text-xs leading-5 text-slate-500">{subtitleVariantHint}</p>
                         </div>
                       </div>
                     </button>
 
-                    <div className="flex shrink-0 flex-col gap-2 md:w-40">
-                      <Button
-                        type="button"
-                        className="w-full"
-                        onClick={() => startLessonFromHistory(lesson.id, "button")}
-                      >
+                    <div className="flex shrink-0 flex-col gap-2 md:w-44">
+                      <Button type="button" className="w-full" onClick={() => startLessonFromHistory(lesson.id, "button")}>
                         <Play className="size-4" />
                         {actionLabel}
                       </Button>
@@ -769,8 +825,9 @@ export function LessonList({
                 </Button>
               </div>
             ) : null}
-          </div>
-        ) : null}
+            </div>
+          ) : null}
+        </section>
 
         <Dialog
           open={Boolean(renamingLesson)}
@@ -784,7 +841,7 @@ export function LessonList({
           <DialogContent>
             <DialogHeader>
               <DialogTitle>修改课程标题</DialogTitle>
-              <DialogDescription>保存后会立即显示在课程列表里。</DialogDescription>
+              <DialogDescription>保存后，历史记录和课程列表会立刻同步。</DialogDescription>
             </DialogHeader>
             <Input
               value={renameTitle}
@@ -823,7 +880,7 @@ export function LessonList({
             <DialogHeader>
               <DialogTitle>切换字幕版本</DialogTitle>
               <DialogDescription>
-                这里不会重新识别音频。切到“原始字幕”会回到 ASR 原句，切到“语义分句”会重新整理长句并更新中文字幕。
+                这里不会重新识别音频，只会切换这节课程现在使用的字幕版本。
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
@@ -846,7 +903,7 @@ export function LessonList({
                 </Button>
               </div>
               <p className="text-sm text-muted-foreground">
-                {subtitleMode === "semantic" ? "适合长句较多的课程，阅读会更轻松。" : "直接回到识别后的原始分句结果。"}
+                {subtitleMode === "semantic" ? "适合长句较多的素材，阅读会更顺。" : "直接回到识别后的原始切句结果。"}
               </p>
               {subtitleBusy ? (
                 <div className="rounded-xl border bg-muted/20 p-3">
@@ -891,7 +948,7 @@ export function LessonList({
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>确认删除这节课程？</AlertDialogTitle>
-              <AlertDialogDescription>课程、学习进度和相关记录都会被删除，删除后不可恢复。</AlertDialogDescription>
+              <AlertDialogDescription>课程、学习进度和相关记录都会一起删除，删除后不能恢复。</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={deleteBusy}>取消</AlertDialogCancel>

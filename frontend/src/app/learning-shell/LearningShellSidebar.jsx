@@ -18,19 +18,22 @@ import { WalletBadge } from "../../features/wallet/WalletBadge";
 export const PANEL_ITEMS = [
   {
     key: "history",
-    title: "历史记录",
+    title: "课程历史",
+    description: "查看课程，接着上次进度学",
     icon: History,
     path: "/",
   },
   {
     key: "upload",
     title: "上传素材",
+    description: "把音频或视频变成课程",
     icon: UploadCloud,
     path: "/upload",
   },
   {
     key: "redeem",
-    title: "兑换码充值",
+    title: "兑换点数",
+    description: "输入兑换码后立即到账",
     icon: Gift,
     path: "/redeem",
   },
@@ -72,8 +75,8 @@ export function LearningShellSidebar({
   const showLogoutAction = Boolean(hasStoredToken);
   const loginHint =
     authStatus === "expired"
-      ? authStatusMessage || "登录已失效，请重新登录后继续上传、同步和进入管理台。"
-      : "登录后可上传素材、同步进度，并在侧边栏进入管理台。";
+      ? authStatusMessage || "登录已失效。重新登录后，上传、课程和点数才会继续同步。"
+      : "先登录，再上传素材、查看课程历史，或从这里进入管理台。";
 
   function handleAdminToggle() {
     if (!expanded) {
@@ -117,9 +120,14 @@ export function LearningShellSidebar({
                 const selected = activePanel === item.key;
                 return (
                   <SidebarMenuItem key={item.key}>
-                    <SidebarMenuButton active={selected} collapsed={!expanded} onClick={() => onPanelSelect(item.key)}>
+                    <SidebarMenuButton active={selected} collapsed={!expanded} onClick={() => onPanelSelect(item.key)} className={expanded ? "items-start py-3.5" : ""}>
                       <Icon className="size-5 shrink-0" />
-                      {expanded ? <span className="truncate font-medium">{item.title}</span> : null}
+                      {expanded ? (
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium text-foreground">{item.title}</span>
+                          <span className="mt-1 block truncate text-xs text-muted-foreground">{item.description}</span>
+                        </span>
+                      ) : null}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
@@ -226,7 +234,7 @@ export function LearningShellSidebar({
           </div>
         ) : null}
         {expanded ? (
-          <p className="text-xs text-muted-foreground">学习页和管理台共用这一套左侧导航，进入管理台后只在这里展开子项。</p>
+          <p className="text-xs text-muted-foreground">这套导航同时服务学习页和管理台。进入管理台后，子项会只在这里展开。</p>
         ) : null}
       </SidebarFooter>
     </>
