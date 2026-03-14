@@ -56,6 +56,11 @@
 python -m alembic -c alembic.ini upgrade head
 ```
 
+- `scripts/start.sh` 默认会在启动前自动执行这条 Alembic 迁移命令
+- PostgreSQL 默认会先拿 advisory lock，避免多实例重复跑迁移
+- 自动迁移失败时会保留完整报错，应用仍会启动，但 `/health/ready` 会继续返回 `503`
+- 如需临时改回手动迁移，设置 `AUTO_MIGRATE_ON_START=0`
+
 - 如果你不想自己敲命令，可以直接让 Zeabur AI 在 `web` 服务中执行这条命令
 - 迁移失败时保留完整报错，不要吞错
 - 迁移成功后，对 `web` 点一次 `Redeploy` 或 `Restart`
@@ -75,7 +80,7 @@ python -m alembic -c alembic.ini upgrade head
 如果这里返回 `503`，优先看：
 
 1. `DATABASE_URL`
-2. 是否已手动执行 `python -m alembic -c alembic.ini upgrade head`
+2. 自动迁移日志是否报错；如果已关闭自动迁移，再确认是否手动执行 `python -m alembic -c alembic.ini upgrade head`
 3. Postgres 是否已 ready
 
 ### 最后验证业务是否跑通
@@ -93,8 +98,8 @@ python -m alembic -c alembic.ini upgrade head
 
 按这个顺序查：
 
-1. 先在 `web` 服务里执行 `python -m alembic -c alembic.ini upgrade head`
-2. 确认迁移日志没有报错
+1. 先查看 `web` 服务自动迁移日志是否有报错
+2. 如果你关闭了自动迁移，再手动执行 `python -m alembic -c alembic.ini upgrade head`
 3. 在 Zeabur 对 `web` 点一次 `Redeploy`
 4. 如果迁移没成功，再检查 `DATABASE_URL` 和数据库权限
 
@@ -110,8 +115,8 @@ python -m alembic -c alembic.ini upgrade head
 请帮我把这个 GitHub 仓库部署到 Zeabur。
 部署方式使用仓库根目录 Dockerfile。
 这次先只创建两个服务：web 和 postgresql，不要先创建 metabase。
-请提醒我填写这些环境变量：PORT=8080、DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS。
-web 服务构建完成后，请先在 web 服务里执行 `python -m alembic -c alembic.ini upgrade head`，成功后再重启一次 web。
+请提醒我填写这些环境变量：PORT=8080、DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS、AUTO_MIGRATE_ON_START=1、AUTO_MIGRATE_CONTINUE_ON_FAILURE=1、AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS=180。
+web 服务构建完成后，请先查看自动迁移日志是否成功；如果失败，请完整返回报错，不要省略。只有在我明确关闭 `AUTO_MIGRATE_ON_START` 时，才改为手动执行 `python -m alembic -c alembic.ini upgrade head`。
 部署完成后，请按顺序帮我验证：
 1. GET /health 返回 200
 2. GET /health/ready 返回 200

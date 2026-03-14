@@ -60,6 +60,9 @@
 - `MT_MODEL=qwen-mt-flash`
 - `ASR_SEGMENT_TARGET_SECONDS=300`
 - `ASR_SEGMENT_SEARCH_WINDOW_SECONDS=45`
+- `AUTO_MIGRATE_ON_START=1`
+- `AUTO_MIGRATE_CONTINUE_ON_FAILURE=1`
+- `AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS=180`
 
 分句和翻译批次默认值不建议靠环境变量维护。  
 上线后请到后台的“字幕/分句设置”里调整。
@@ -71,6 +74,11 @@
 ```text
 python -m alembic -c alembic.ini upgrade head
 ```
+
+- `scripts/start.sh` 默认会在启动前自动执行这条 Alembic 迁移命令
+- PostgreSQL 默认会先拿 advisory lock，避免多实例重复跑迁移
+- 自动迁移失败时会保留完整报错，应用仍会启动，但 `/health/ready` 会继续返回 `503`
+- 如需临时改回手动迁移，设置 `AUTO_MIGRATE_ON_START=0`
 
 - 如果 Zeabur AI 可以代执行，直接让它在 `web` 服务里执行这条命令
 - 迁移失败时保留完整报错，不要忽略
@@ -107,9 +115,9 @@ GET /health/ready
 
 - `/health` 正常，但 `/health/ready` 返回 `503`
   - 先检查 `DATABASE_URL`
-  - 再确认是否已经手动执行 `python -m alembic -c alembic.ini upgrade head`
+  - 再确认自动迁移日志是否报错；如果你关闭了自动迁移，再手动执行 `python -m alembic -c alembic.ini upgrade head`
 - 管理后台接口返回 `500`
-  - 先确认手动迁移是否真的执行成功
+  - 先确认自动迁移或手动迁移是否真的执行成功
   - 再检查数据库连接和权限
 - 上传转写失败
   - 先确认 `DASHSCOPE_API_KEY` 已填写
@@ -120,9 +128,9 @@ GET /health/ready
 ```text
 请帮我在 Zeabur 上部署这个 GitHub 仓库，按仓库根目录 Dockerfile 构建。
 本次先只部署两个服务：web 和 postgresql，不要先部署 Metabase。
-请提醒我填写这些环境变量：PORT=8080、DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS、ASR_SEGMENT_TARGET_SECONDS、ASR_SEGMENT_SEARCH_WINDOW_SECONDS。
+请提醒我填写这些环境变量：PORT=8080、DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS、ASR_SEGMENT_TARGET_SECONDS、ASR_SEGMENT_SEARCH_WINDOW_SECONDS、AUTO_MIGRATE_ON_START=1、AUTO_MIGRATE_CONTINUE_ON_FAILURE=1、AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS=180。
 字幕和分句默认值请不要通过环境变量调整，部署完成后提醒我去后台“字幕/分句设置”里修改。
-web 服务启动后，请先在 web 服务里执行 `python -m alembic -c alembic.ini upgrade head`，成功后再重启一次 web。
+web 服务启动后，请先查看自动迁移日志是否成功；如果失败，请完整返回报错，不要省略。只有在我明确关闭 `AUTO_MIGRATE_ON_START` 时，才改为手动执行 `python -m alembic -c alembic.ini upgrade head`。
 web 服务启动后，请按顺序帮我验证：
 1. GET /health 返回 200
 2. GET /health/ready 返回 200

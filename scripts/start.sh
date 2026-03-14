@@ -13,7 +13,13 @@ else
   echo "[DEBUG] boot.env DASHSCOPE_API_KEY=missing"
 fi
 
-echo "[DEBUG] boot.migrate mode=manual_only"
-echo "[boot] automatic alembic migration disabled; run 'python -m alembic -c alembic.ini upgrade head' manually before expecting /health/ready=200"
+if [ "${AUTO_MIGRATE_ON_START:-1}" = "0" ]; then
+  echo "[DEBUG] boot.migrate mode=manual_only"
+  echo "[boot] automatic alembic migration disabled; run 'python -m alembic -c alembic.ini upgrade head' manually before expecting /health/ready=200"
+else
+  echo "[DEBUG] boot.migrate mode=auto"
+  python -m app.db.migration_bootstrap
+fi
+
 echo "[boot] starting uvicorn"
 exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8080}"
