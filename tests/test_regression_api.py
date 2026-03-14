@@ -574,7 +574,7 @@ def test_lesson_generation_tasks_repair_migration_recreates_missing_table(tmp_pa
     finally:
         verify_engine.dispose()
 
-    assert version == "20260311_0017"
+    assert version == "20260314_0018"
     assert table_count == 1
     assert {"task_id", "owner_user_id", "failure_debug_json", "failed_at", "asr_raw_json", "raw_debug_purged_at"}.issubset(column_names)
     assert {"raw_request_text", "raw_response_text", "raw_error_text"}.issubset(translation_log_columns)
