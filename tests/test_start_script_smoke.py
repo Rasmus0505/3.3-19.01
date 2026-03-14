@@ -34,7 +34,7 @@ def _require_postgres_database_url() -> str:
     return database_url
 
 
-def _build_runtime_env(database_url: str, port: int, tmp_work_dir: Path) -> dict[str, str]:
+def _build_runtime_env(database_url: str, port: int, tmp_work_dir: Path, *, auto_migrate: bool = True) -> dict[str, str]:
     env = os.environ.copy()
     env.update(
         {
@@ -44,6 +44,9 @@ def _build_runtime_env(database_url: str, port: int, tmp_work_dir: Path) -> dict
             "DASHSCOPE_API_KEY": "",
             "TMP_WORK_DIR": str(tmp_work_dir),
             "PORT": str(port),
+            "AUTO_MIGRATE_ON_START": "1" if auto_migrate else "0",
+            "AUTO_MIGRATE_CONTINUE_ON_FAILURE": "0",
+            "AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS": "20",
         }
     )
     return env
@@ -132,7 +135,7 @@ def test_start_script_boots_without_running_migrations(tmp_path):
     port = _pick_free_port()
     tmp_work_dir = tmp_path / "runtime"
     tmp_work_dir.mkdir(parents=True, exist_ok=True)
-    process = _start_process(_build_runtime_env(database_url, port, tmp_work_dir))
+    process = _start_process(_build_runtime_env(database_url, port, tmp_work_dir, auto_migrate=False))
     try:
         health_payload, ready_payload = _wait_for_status(process, port, 503)
         assert health_payload["ok"] is True
@@ -157,7 +160,7 @@ def test_start_script_ready_after_manual_migration(tmp_path):
     tmp_work_dir = tmp_path / "runtime-ready"
     tmp_work_dir.mkdir(parents=True, exist_ok=True)
 
-    process = _start_process(_build_runtime_env(database_url, port, tmp_work_dir))
+    process = _start_process(_build_runtime_env(database_url, port, tmp_work_dir, auto_migrate=False))
     try:
         health_payload, ready_payload = _wait_for_status(process, port, 200)
         assert health_payload["ok"] is True
@@ -176,3 +179,26 @@ def test_start_script_ready_after_manual_migration(tmp_path):
 
     if process.returncode not in (0, -15):
         raise AssertionError(f"start script exited with {process.returncode}\n{logs}")
+
+
+@pytest.mark.skipif(shutil.which("sh") is None, reason="requires sh")
+def test_start_script_runs_auto_migration_before_boot(tmp_path):
+    database_url = _require_postgres_database_url()
+    _reset_postgres_database(database_url)
+
+    port = _pick_free_port()
+    tmp_work_dir = tmp_path / "runtime-auto"
+    tmp_work_dir.mkdir(parents=True, exist_ok=True)
+
+    process = _start_process(_build_runtime_env(database_url, port, tmp_work_dir, auto_migrate=True))
+    try:
+        health_payload, ready_payload = _wait_for_status(process, port, 200)
+        assert health_payload["ok"] is True
+        assert health_payload["ready"] is True
+        assert ready_payload["ok"] is True
+    finally:
+        logs = _stop_process(process)
+
+    if process.returncode not in (0, -15):
+        raise AssertionError(f"start script exited with {process.returncode}\n{logs}")
+    assert "[DEBUG] boot.migrate success=true" in logs
