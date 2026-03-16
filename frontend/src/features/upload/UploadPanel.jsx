@@ -257,10 +257,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setLoading(false);
     setBindingCompleted(Boolean(mediaPersisted || data.lesson?.media_storage !== "client_indexeddb"));
     if (ownerUserId) {
-      console.debug("[DEBUG] upload success cache cleared", {
-        ownerUserId,
-        lessonId: Number(data.lesson?.id || 0),
-      });
       await clearActiveGenerationTask(ownerUserId);
     }
     await onWalletChanged?.();
@@ -328,16 +324,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       const savedPhase = String(saved.phase || "").toLowerCase();
       const savedTaskStatus = String(saved.task_snapshot?.status || "").toLowerCase();
       if (savedPhase === "success" || savedTaskStatus === "succeeded") {
-        console.debug("[DEBUG] stale upload success cache dropped", { ownerUserId });
         await clearActiveGenerationTask(ownerUserId);
         return;
       }
 
-      console.debug("[DEBUG] upload session restored", {
-        ownerUserId,
-        phase: savedPhase,
-        taskId: String(saved.task_id || ""),
-      });
       const restoredFile = createFileFromBlob(saved.file_blob, saved.file_name, saved.media_type);
       setFile(restoredFile);
       setTaskId(String(saved.task_id || ""));
@@ -371,10 +361,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   useEffect(() => {
     const wasActivePanel = previousPanelActiveRef.current;
     if (!wasActivePanel && isActivePanel && phase === "success") {
-      console.debug("[DEBUG] upload panel success state cleared on return", {
-        ownerUserId,
-        taskId,
-      });
       resetLocalSessionState();
     }
     previousPanelActiveRef.current = Boolean(isActivePanel);

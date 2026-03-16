@@ -204,8 +204,7 @@ export function LessonList({
   );
   const presetSummaryLines = useMemo(() => getPresetSummaryLines(learningSettings), [learningSettings]);
 
-  function startLessonFromHistory(lessonId, source) {
-    console.debug("[DEBUG] history.lesson.start", { lessonId, source });
+  function startLessonFromHistory(lessonId) {
     void onStartLesson?.(lessonId);
   }
 
@@ -599,7 +598,7 @@ export function LessonList({
                     <button
                       type="button"
                       className="flex min-w-0 flex-1 items-stretch gap-4 text-left"
-                      onClick={() => startLessonFromHistory(lesson.id, "card")}
+                      onClick={() => startLessonFromHistory(lesson.id)}
                     >
                       <MediaCover
                         coverDataUrl={mediaMeta.coverDataUrl}
@@ -635,7 +634,7 @@ export function LessonList({
                       <Button
                         type="button"
                         className="w-full"
-                        onClick={() => startLessonFromHistory(lesson.id, "button")}
+                        onClick={() => startLessonFromHistory(lesson.id)}
                         data-guide-id={isGuideTarget ? "history-start-latest" : undefined}
                       >
                         <Play className="size-4" />
@@ -644,7 +643,6 @@ export function LessonList({
                       <Popover
                         open={menuLessonId === lesson.id}
                         onOpenChange={(open) => {
-                          console.debug("[DEBUG] history.lesson.menu.toggle", { lessonId: lesson.id, open });
                           setMenuLessonId(open ? lesson.id : null);
                         }}
                       >
@@ -655,9 +653,6 @@ export function LessonList({
                             variant="outline"
                             className="self-end"
                             aria-label="open-lesson-menu"
-                            onClick={() => {
-                              console.debug("[DEBUG] history.lesson.menu.click", { lessonId: lesson.id });
-                            }}
                             disabled={renameBusy || deleteBusy || subtitleBusy || Boolean(restoringLessonId)}
                           >
                             <MoreVertical className="size-4" />

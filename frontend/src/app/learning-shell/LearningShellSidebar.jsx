@@ -88,16 +88,13 @@ export function LearningShellSidebar({
     if (!expanded) {
       setOpen(true);
       onAdminToggle?.(true);
-      console.debug("[DEBUG] learning-admin-nav-expand", { source: "collapsed-sidebar" });
       return;
     }
     const nextExpanded = !adminNavExpanded;
-    console.debug("[DEBUG] learning-admin-nav-toggle", { nextExpanded, mobile });
     onAdminToggle?.(nextExpanded);
   }
 
   function handleAdminSelect(item) {
-    console.debug("[DEBUG] learning-admin-nav-select", { key: item.key, href: item.href });
     onAdminSelect?.(item);
   }
 
