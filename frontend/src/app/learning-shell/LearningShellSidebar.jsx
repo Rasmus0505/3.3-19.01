@@ -1,4 +1,4 @@
-import { ChevronDown, Gift, History, LogIn, LogOut, Search, Shield, Sparkles, UploadCloud } from "lucide-react";
+import { BookOpenText, ChevronDown, Gift, History, LogIn, LogOut, Search, Shield, Sparkles, UploadCloud } from "lucide-react";
 
 import {
   SidebarContent,
@@ -16,6 +16,12 @@ import { ADMIN_NAV_ITEMS } from "../../shared/lib/adminSearchParams";
 import { WalletBadge } from "../../features/wallet/WalletBadge";
 
 export const PANEL_ITEMS = [
+  {
+    key: "getting-started",
+    title: "新手教程",
+    icon: BookOpenText,
+    path: "/getting-started",
+  },
   {
     key: "history",
     title: "历史记录",
@@ -39,6 +45,9 @@ export const PANEL_ITEMS = [
 export const SIDEBAR_STORAGE_KEY = "app-shell-sidebar-open";
 
 export function getPanelItemByPathname(pathname) {
+  if (pathname === "/help/getting-started") {
+    return PANEL_ITEMS[0];
+  }
   return PANEL_ITEMS.find((item) => item.path === pathname) || PANEL_ITEMS[0];
 }
 
@@ -115,9 +124,22 @@ export function LearningShellSidebar({
               {PANEL_ITEMS.map((item) => {
                 const Icon = item.icon;
                 const selected = activePanel === item.key;
+                const guideId =
+                  mobile || item.key === "getting-started"
+                    ? undefined
+                    : item.key === "upload"
+                      ? "sidebar-upload"
+                      : item.key === "history"
+                        ? "sidebar-history"
+                        : undefined;
                 return (
                   <SidebarMenuItem key={item.key}>
-                    <SidebarMenuButton active={selected} collapsed={!expanded} onClick={() => onPanelSelect(item.key)}>
+                    <SidebarMenuButton
+                      active={selected}
+                      collapsed={!expanded}
+                      onClick={() => onPanelSelect(item.key)}
+                      data-guide-id={guideId}
+                    >
                       <Icon className="size-5 shrink-0" />
                       {expanded ? <span className="truncate font-medium">{item.title}</span> : null}
                     </SidebarMenuButton>

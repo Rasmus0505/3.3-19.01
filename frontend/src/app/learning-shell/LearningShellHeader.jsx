@@ -1,5 +1,4 @@
-import { BookOpenText, Menu } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Menu } from "lucide-react";
 
 import {
   Badge,
@@ -92,15 +91,6 @@ export function LearningShellHeader({
               <h1 className="truncate text-sm font-semibold">{currentPanel.title}</h1>
               {showLessonsBadge ? <Badge variant="outline">{lessonsCount} 门课程</Badge> : null}
             </div>
-          </div>
-
-          <div className="ml-auto">
-            <Button asChild variant="outline" size="sm" className="gap-2">
-              <Link to="/help/getting-started">
-                <BookOpenText className="size-4" />
-                新手教程
-              </Link>
-            </Button>
           </div>
         </div>
       </div>
