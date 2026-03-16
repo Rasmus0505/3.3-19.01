@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import get_current_user
 from app.api.routers._helpers import require_lesson_owner
 from app.api.serializers import to_lesson_detail_response, to_lesson_item_response
-from app.core.config import BASE_TMP_DIR, LESSON_DEFAULT_ASR_MODEL, REQUEST_TIMEOUT_SECONDS
+from app.core.config import BASE_TMP_DIR, REQUEST_TIMEOUT_SECONDS
 from app.core.errors import error_response, map_billing_error, map_media_error
 from app.db import SessionLocal, get_db
 from app.models import Lesson, User
@@ -35,7 +35,7 @@ from app.schemas import (
     LessonTaskResponse,
 )
 from app.services.asr_dashscope import AsrError, SUPPORTED_MODELS
-from app.services.billing_service import BillingError
+from app.services.billing_service import BillingError, get_default_asr_model
 from app.services.lesson_command_service import (
     create_lesson_task_from_upload,
     delete_lesson_for_user,
@@ -114,12 +114,12 @@ def _to_task_response(task: dict, db: Session) -> LessonTaskResponse:
 )
 async def create_lesson(
     video_file: UploadFile = File(...),
-    asr_model: str = Form(LESSON_DEFAULT_ASR_MODEL),
+    asr_model: str = Form(""),
     semantic_split_enabled: bool | None = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    selected_model = (asr_model or "").strip() or LESSON_DEFAULT_ASR_MODEL
+    selected_model = (asr_model or "").strip() or get_default_asr_model(db)
     if selected_model not in SUPPORTED_MODELS:
         return error_response(400, "INVALID_MODEL", "不支持的模型", {"supported_models": sorted(SUPPORTED_MODELS), "input_model": selected_model})
 
@@ -164,12 +164,12 @@ async def create_lesson(
 )
 async def create_lesson_task(
     video_file: UploadFile = File(...),
-    asr_model: str = Form(LESSON_DEFAULT_ASR_MODEL),
+    asr_model: str = Form(""),
     semantic_split_enabled: bool | None = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    selected_model = (asr_model or "").strip() or LESSON_DEFAULT_ASR_MODEL
+    selected_model = (asr_model or "").strip() or get_default_asr_model(db)
     if selected_model not in SUPPORTED_MODELS:
         return error_response(400, "INVALID_MODEL", "不支持的模型", {"supported_models": sorted(SUPPORTED_MODELS), "input_model": selected_model})
     try:

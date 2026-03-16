@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -16,6 +16,7 @@ from app.repositories.admin_console import (
     get_admin_user_activity_summary,
     list_admin_lesson_task_logs,
     list_admin_operation_logs,
+    list_admin_user_activity,
 )
 from app.schemas import ErrorResponse
 from app.schemas.admin_console import (
@@ -32,6 +33,8 @@ from app.schemas.admin_console import (
     AdminOverviewBatchItem,
     AdminOverviewMetrics,
     AdminOverviewResponse,
+    AdminUserActivityItem,
+    AdminUserActivityResponse,
     AdminUserActivitySummary,
     AdminUserActivitySummaryResponse,
 )
@@ -149,6 +152,21 @@ def _to_translation_attempt_item(row) -> AdminLessonTaskTranslationAttempt:
         started_at=to_shanghai_aware(row.started_at),
         finished_at=to_shanghai_aware(row.finished_at),
         created_at=to_shanghai_aware(row.created_at),
+    )
+
+
+def _to_user_activity_item(row) -> AdminUserActivityItem:
+    return AdminUserActivityItem(
+        id=int(row.id),
+        email=str(row.email or ""),
+        created_at=to_shanghai_aware(row.created_at),
+        last_login_at=to_shanghai_aware(row.last_login_at) if row.last_login_at else None,
+        balance_points=int(row.balance_points or 0),
+        login_days=int(row.login_days or 0),
+        login_events=int(row.login_events or 0),
+        lessons_created=int(row.lessons_created or 0),
+        consumed_points=int(row.consumed_points or 0),
+        redeemed_points=int(row.redeemed_points or 0),
     )
 
 
@@ -363,16 +381,70 @@ def admin_delete_lesson_task_raw_debug(
 
 
 @router.get(
+    "/user-activity",
+    response_model=AdminUserActivityResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_user_activity(
+    keyword: str = "",
+    page: int = 1,
+    page_size: int = 20,
+    sort_by: str = "login_events",
+    sort_dir: str = "desc",
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    page = max(page, 1)
+    page_size = max(1, min(page_size, 100))
+    now = _now()
+    normalized_date_from = to_shanghai_naive(date_from)
+    if normalized_date_from is None:
+        normalized_date_from = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=6)
+    normalized_date_to = to_shanghai_naive(date_to) or now
+    payload = list_admin_user_activity(
+        db,
+        keyword=keyword,
+        date_from=normalized_date_from,
+        date_to=normalized_date_to,
+        page=page,
+        page_size=page_size,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+    return AdminUserActivityResponse(
+        ok=True,
+        page=page,
+        page_size=page_size,
+        total=int(payload["total"]),
+        range_start=to_shanghai_aware(payload["range_start"]),
+        range_end=to_shanghai_aware(payload["range_end"]),
+        items=[_to_user_activity_item(row) for row in payload["rows"]],
+        summary_cards=payload.get("summary_cards", []),
+        charts=payload.get("charts", []),
+    )
+
+
+@router.get(
     "/users/{user_id}/summary",
     response_model=AdminUserActivitySummaryResponse,
     responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
 )
 def admin_user_activity_summary(
     user_id: int,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
     db: Session = Depends(get_db),
     _: User = Depends(get_admin_user),
 ):
-    payload = get_admin_user_activity_summary(db, user_id=user_id, now=_now())
+    payload = get_admin_user_activity_summary(
+        db,
+        user_id=user_id,
+        now=_now(),
+        date_from=to_shanghai_naive(date_from),
+        date_to=to_shanghai_naive(date_to),
+    )
     return AdminUserActivitySummaryResponse(
         ok=True,
         summary=AdminUserActivitySummary(
@@ -381,7 +453,15 @@ def admin_user_activity_summary(
             latest_lesson_created_at=to_shanghai_aware(payload["latest_lesson_created_at"]) if payload["latest_lesson_created_at"] else None,
             latest_wallet_event_at=to_shanghai_aware(payload["latest_wallet_event_at"]) if payload["latest_wallet_event_at"] else None,
             latest_redeem_at=to_shanghai_aware(payload["latest_redeem_at"]) if payload["latest_redeem_at"] else None,
+            latest_login_at=to_shanghai_aware(payload["latest_login_at"]) if payload["latest_login_at"] else None,
             consumed_points_30d=payload["consumed_points_30d"],
             redeemed_points_30d=payload["redeemed_points_30d"],
+            range_start=to_shanghai_aware(payload["range_start"]) if payload["range_start"] else None,
+            range_end=to_shanghai_aware(payload["range_end"]) if payload["range_end"] else None,
+            login_days_in_range=int(payload["login_days_in_range"] or 0),
+            login_events_in_range=int(payload["login_events_in_range"] or 0),
+            lessons_created_in_range=int(payload["lessons_created_in_range"] or 0),
+            consumed_points_in_range=int(payload["consumed_points_in_range"] or 0),
+            redeemed_points_in_range=int(payload["redeemed_points_in_range"] or 0),
         ),
     )

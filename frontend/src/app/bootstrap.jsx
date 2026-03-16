@@ -3,6 +3,9 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 const LearningPage = lazy(() => import("../pages/LearningPage").then((module) => ({ default: module.LearningPage })));
 const AdminPage = lazy(() => import("../pages/AdminPage").then((module) => ({ default: module.AdminPage })));
+const GettingStartedHelpPage = lazy(() =>
+  import("../pages/GettingStartedHelpPage").then((module) => ({ default: module.GettingStartedHelpPage })),
+);
 
 export function BootstrapApp() {
   return (
@@ -11,6 +14,7 @@ export function BootstrapApp() {
         <Route path="/" element={<LearningPage />} />
         <Route path="/upload" element={<LearningPage />} />
         <Route path="/redeem" element={<LearningPage />} />
+        <Route path="/help/getting-started" element={<GettingStartedHelpPage />} />
         <Route path="/admin/*" element={<AdminPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

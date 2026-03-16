@@ -99,6 +99,7 @@ class SubtitleSetting(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     semantic_split_default_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    default_asr_model: Mapped[str] = mapped_column(String(100), default="qwen3-asr-flash-filetrans", nullable=False)
     subtitle_split_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     subtitle_split_target_words: Mapped[int] = mapped_column(Integer, default=18, nullable=False)
     subtitle_split_max_words: Mapped[int] = mapped_column(Integer, default=28, nullable=False)

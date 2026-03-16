@@ -10,10 +10,11 @@ from app.models.billing import (
     WalletLedger,
 )
 from app.models.lesson import Lesson, LessonGenerationTask, LessonProgress, LessonSentence, MediaAsset
-from app.models.user import User
+from app.models.user import User, UserLoginEvent
 
 __all__ = [
     "User",
+    "UserLoginEvent",
     "Lesson",
     "LessonSentence",
     "LessonProgress",

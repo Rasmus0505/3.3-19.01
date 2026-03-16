@@ -410,10 +410,10 @@ export function AdminRedeemBatchesTab({ apiCall }) {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Button size="sm" variant="outline" asChild>
-                          <Link to={`/admin/business?tab=redeem&panel=codes&batch_id=${item.id}`}>兑换码</Link>
+                          <Link to={`/admin/redeem?panel=codes&batch_id=${item.id}`}>兑换码</Link>
                         </Button>
                         <Button size="sm" variant="outline" asChild>
-                          <Link to={`/admin/business?tab=redeem&panel=audit&batch_id=${item.id}`}>审计</Link>
+                          <Link to={`/admin/redeem?panel=audit&batch_id=${item.id}`}>审计</Link>
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => setActionDialog({ batchId: item.id, actionPath: "activate", actionLabel: "激活", batchName: item.batch_name })}>
                           <PlayCircle className="size-4" />

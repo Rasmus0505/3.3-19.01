@@ -35,7 +35,7 @@ function toLocalDatetimeValue(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function AdminTranslationLogsTab({ apiCall }) {
+export function AdminTranslationLogsTab({ apiCall, defaultSuccess = "all" }) {
   const now = getBeijingNowForPicker();
   const defaultFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -48,7 +48,7 @@ export function AdminTranslationLogsTab({ apiCall }) {
   const [userEmail, setUserEmail] = useState(() => readStringParam(searchParams, "user_email"));
   const [taskId, setTaskId] = useState(() => readStringParam(searchParams, "task_id"));
   const [lessonId, setLessonId] = useState(() => readStringParam(searchParams, "lesson_id"));
-  const [success, setSuccess] = useState(() => readStringParam(searchParams, "success", "all") || "all");
+  const [success, setSuccess] = useState(() => readStringParam(searchParams, "success", defaultSuccess) || defaultSuccess);
   const [dateFrom, setDateFrom] = useState(() => readStringParam(searchParams, "date_from", toLocalDatetimeValue(defaultFrom)));
   const [dateTo, setDateTo] = useState(() => readStringParam(searchParams, "date_to", toLocalDatetimeValue(now)));
   const [summaryCards, setSummaryCards] = useState([]);
@@ -143,7 +143,7 @@ export function AdminTranslationLogsTab({ apiCall }) {
     setUserEmail("");
     setTaskId("");
     setLessonId("");
-    setSuccess("all");
+    setSuccess(defaultSuccess);
     setDateFrom(toLocalDatetimeValue(defaultFrom));
     setDateTo(toLocalDatetimeValue(now));
   }

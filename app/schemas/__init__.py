@@ -31,6 +31,7 @@ from app.schemas.admin import (
     WalletAdjustResponse,
     WalletLedgerItem,
 )
+from app.schemas.admin_console import AdminUserActivityItem, AdminUserActivityResponse, AdminUserActivitySummary, AdminUserActivitySummaryResponse
 from app.schemas.auth import AuthRequest, AuthResponse, LogoutResponse, RefreshRequest, UserResponse
 from app.schemas.billing import (
     BillingRateItem,
@@ -109,6 +110,10 @@ __all__ = [
     "AdminUserDeleteResponse",
     "AdminUserItem",
     "AdminUsersResponse",
+    "AdminUserActivityItem",
+    "AdminUserActivityResponse",
+    "AdminUserActivitySummary",
+    "AdminUserActivitySummaryResponse",
     "WalletAdjustRequest",
     "WalletAdjustResponse",
     "WalletLedgerItem",

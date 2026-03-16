@@ -72,7 +72,7 @@ export const lessonInitialState = {
   currentLesson: null,
   walletBalance: 0,
   billingRates: [],
-  subtitleSettings: { semantic_split_default_enabled: false },
+  subtitleSettings: { semantic_split_default_enabled: false, default_asr_model: "" },
   lessonCardMetaMap: {},
   subtitleCacheMetaMap: {},
   subtitleRegenerateState: null,
@@ -103,6 +103,7 @@ export function createLessonSlice(set, get) {
       set({
         subtitleSettings: {
           semantic_split_default_enabled: Boolean(subtitleSettings?.semantic_split_default_enabled),
+          default_asr_model: String(subtitleSettings?.default_asr_model || ""),
         },
       }),
     async refreshSubtitleCacheMeta(lessonList, options = {}) {
@@ -294,7 +295,7 @@ export function createLessonSlice(set, get) {
       if (!get().accessToken) {
         set({
           billingRates: [],
-          subtitleSettings: { semantic_split_default_enabled: false },
+          subtitleSettings: { semantic_split_default_enabled: false, default_asr_model: "" },
         });
         return [];
       }
@@ -306,6 +307,7 @@ export function createLessonSlice(set, get) {
             billingRates: Array.isArray(data.rates) ? data.rates : [],
             subtitleSettings: {
               semantic_split_default_enabled: Boolean(data.subtitle_settings?.semantic_split_default_enabled),
+              default_asr_model: String(data.subtitle_settings?.default_asr_model || ""),
             },
           });
           return Array.isArray(data.rates) ? data.rates : [];

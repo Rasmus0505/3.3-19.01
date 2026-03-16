@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
-from app.api.routers import admin, admin_console, admin_sql_console, auth, billing, lessons, media, practice, transcribe, wallet
+from app.api.routers import admin, admin_console, auth, billing, lessons, media, practice, transcribe, wallet
 from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, DASHSCOPE_API_KEY, SERVICE_NAME, STATIC_DIR
 from app.core.logging import setup_logging
 from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, schema_name_for_url
@@ -20,6 +20,7 @@ from app.models import LessonGenerationTask
 from app.services.admin_bootstrap import ensure_admin_users
 from app.services.asr_dashscope import setup_dashscope
 from app.services.media import get_media_runtime_status
+from app.services.user_activity import ensure_user_activity_schema
 
 
 setup_logging()
@@ -30,6 +31,12 @@ LESSON_TASK_REQUIRED_COLUMNS: tuple[str, ...] = tuple(str(column.name) for colum
 
 
 READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
+    "users": ("last_login_at",),
+    "user_login_events": (
+        "user_id",
+        "event_type",
+        "created_at",
+    ),
     "billing_model_rates": (
         "billing_unit",
         "points_per_1k_tokens",
@@ -63,6 +70,7 @@ READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
     ),
     "subtitle_settings": (
         "semantic_split_default_enabled",
+        "default_asr_model",
         "subtitle_split_enabled",
         "subtitle_split_target_words",
         "subtitle_split_max_words",
@@ -173,6 +181,11 @@ def _refresh_optional_runtime_status(app: FastAPI) -> None:
 
 async def _bootstrap_runtime_state(app: FastAPI) -> None:
     runtime_status = _ensure_runtime_status(app)
+    db = SessionLocal()
+    try:
+        ensure_user_activity_schema(db)
+    finally:
+        db.close()
     ready, error = _probe_database_ready()
     runtime_status.db_ready = ready
     runtime_status.db_error = error
@@ -275,7 +288,6 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(wallet.router)
     app.include_router(billing.router)
     app.include_router(admin.router)
-    app.include_router(admin_sql_console.router)
     app.include_router(admin_console.router)
     app.include_router(transcribe.router)
     app.include_router(lessons.router)

@@ -34,6 +34,7 @@ class AdminUserItem(BaseModel):
     email: str
     created_at: datetime
     balance_points: int
+    last_login_at: datetime | None = None
 
 
 class AdminUsersResponse(BaseModel):
@@ -147,6 +148,7 @@ class AdminTranslationLogsResponse(BaseModel):
 
 class AdminSubtitleSettingsItem(BaseModel):
     semantic_split_default_enabled: bool
+    default_asr_model: str
     subtitle_split_enabled: bool
     subtitle_split_target_words: int
     subtitle_split_max_words: int
@@ -160,6 +162,7 @@ class AdminSubtitleSettingsItem(BaseModel):
 
 class AdminSubtitleSettingsUpdateRequest(BaseModel):
     semantic_split_default_enabled: bool
+    default_asr_model: str = Field(min_length=1, max_length=100)
     subtitle_split_enabled: bool
     subtitle_split_target_words: int = Field(gt=0, le=200)
     subtitle_split_max_words: int = Field(gt=0, le=300)

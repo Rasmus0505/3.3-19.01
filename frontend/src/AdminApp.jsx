@@ -1,69 +1,66 @@
 import { useMemo } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
-import { AdminBusinessWorkspace } from "./features/admin-workspaces/AdminBusinessWorkspace";
-import { AdminMonitoringWorkspace } from "./features/admin-workspaces/AdminMonitoringWorkspace";
+import { AdminHealthPage } from "./features/admin-pages/AdminHealthPage";
+import { AdminModelsPage } from "./features/admin-pages/AdminModelsPage";
+import { AdminRedeemPage } from "./features/admin-pages/AdminRedeemPage";
+import { AdminUsersPage } from "./features/admin-pages/AdminUsersPage";
 import { useErrorCopyShortcut } from "./shared/hooks/useErrorCopyShortcut";
-import { Badge } from "./shared/ui";
 import { resolveAdminNavItem } from "./shared/lib/adminSearchParams";
+import { Badge } from "./shared/ui";
 
-const MONITORING_TAB_MAP = {
-  health: "health",
-  overview: "health",
-  system: "health",
-  tasks: "tasks",
-  "task-failures": "tasks",
-  translations: "tasks",
-  operations: "operations",
-  "sql-console": "operations",
-  "subtitle-policy": "operations",
-};
+function applyLegacyPanel(searchParams, panel) {
+  if (panel) searchParams.set("panel", panel);
+  else searchParams.delete("panel");
+  searchParams.delete("tab");
+  return searchParams;
+}
 
-const MONITORING_PANEL_MAP = {
-  health: "overview",
-  overview: "overview",
-  system: "system",
-  tasks: "task-failures",
-  "task-failures": "task-failures",
-  translations: "translations",
-  operations: "operations",
-  "sql-console": "sql-console",
-  "subtitle-policy": "subtitle-policy",
-};
+function resolveLegacyMonitoringDestination(requestedTab, requestedPanel) {
+  const panel = String(requestedPanel || "").trim().toLowerCase();
+  const tab = String(requestedTab || "").trim().toLowerCase();
+  const key = panel || tab;
 
-const BUSINESS_TAB_MAP = {
-  users: "users",
-  list: "users",
-  wallet: "users",
-  rates: "users",
-  redeem: "redeem",
-  batches: "redeem",
-  codes: "redeem",
-  audit: "redeem",
-};
+  if (["subtitle-policy", "rates"].includes(key)) {
+    return { path: "/admin/models", panel: "strategy" };
+  }
+  if (["task-failures", "tasks"].includes(key)) {
+    return { path: "/admin/health", panel: "tasks" };
+  }
+  if (key === "translations") {
+    return { path: "/admin/health", panel: "translations" };
+  }
+  if (key === "operations") {
+    return { path: "/admin/health", panel: "operations" };
+  }
+  return { path: "/admin/health", panel: "diagnosis" };
+}
 
-const BUSINESS_PANEL_MAP = {
-  users: "list",
-  list: "list",
-  wallet: "wallet",
-  rates: "rates",
-  redeem: "batches",
-  batches: "batches",
-  codes: "codes",
-  audit: "audit",
-};
+function resolveLegacyBusinessDestination(requestedTab, requestedPanel) {
+  const panel = String(requestedPanel || "").trim().toLowerCase();
+  const tab = String(requestedTab || "").trim().toLowerCase();
+  const key = panel || tab;
 
-function LegacyAdminRedirect({ to, fallbackTab, fallbackPanel, tabMap = {}, panelMap = {} }) {
+  if (key === "wallet") {
+    return { path: "/admin/users", panel: "wallet" };
+  }
+  if (key === "rates") {
+    return { path: "/admin/models", panel: "rates" };
+  }
+  if (["codes", "audit", "batches", "redeem"].includes(key)) {
+    return { path: "/admin/redeem", panel: key === "redeem" ? "batches" : key };
+  }
+  return { path: "/admin/users", panel: "activity" };
+}
+
+function LegacyAdminRedirect({ resolveDestination }) {
   const location = useLocation();
   const nextSearchParams = new URLSearchParams(location.search);
-  const requestedTab = nextSearchParams.get("tab") || "";
-  const mappedTab = tabMap[requestedTab] || fallbackTab;
-  const mappedPanel = panelMap[nextSearchParams.get("panel") || ""] || panelMap[requestedTab] || fallbackPanel;
-  nextSearchParams.set("tab", mappedTab);
-  if (mappedPanel) nextSearchParams.set("panel", mappedPanel);
-  else nextSearchParams.delete("panel");
-  const nextSearch = nextSearchParams.toString();
-  return <Navigate to={`${to}${nextSearch ? `?${nextSearch}` : ""}`} replace />;
+  const requestedTab = nextSearchParams.get("tab");
+  const requestedPanel = nextSearchParams.get("panel");
+  const destination = resolveDestination(requestedTab, requestedPanel, location.pathname);
+  const nextSearch = applyLegacyPanel(nextSearchParams, destination.panel).toString();
+  return <Navigate to={`${destination.path}${nextSearch ? `?${nextSearch}` : ""}`} replace />;
 }
 
 export function AdminApp({ apiCall }) {
@@ -84,40 +81,30 @@ export function AdminApp({ apiCall }) {
       </section>
 
       <Routes>
-        <Route index element={<Navigate to="monitoring?tab=health&panel=overview" replace />} />
-        <Route path="monitoring" element={<AdminMonitoringWorkspace apiCall={apiCall} />} />
-        <Route path="business" element={<AdminBusinessWorkspace apiCall={apiCall} />} />
+        <Route index element={<Navigate to="health" replace />} />
+        <Route path="health" element={<AdminHealthPage apiCall={apiCall} />} />
+        <Route path="users" element={<AdminUsersPage apiCall={apiCall} />} />
+        <Route path="models" element={<AdminModelsPage apiCall={apiCall} />} />
+        <Route path="redeem" element={<AdminRedeemPage apiCall={apiCall} />} />
 
-        <Route
-          path="ops"
-          element={<LegacyAdminRedirect to="/admin/monitoring" fallbackTab="health" fallbackPanel="overview" tabMap={MONITORING_TAB_MAP} panelMap={MONITORING_PANEL_MAP} />}
-        />
-        <Route
-          path="pipeline"
-          element={<LegacyAdminRedirect to="/admin/monitoring" fallbackTab="tasks" fallbackPanel="task-failures" tabMap={MONITORING_TAB_MAP} panelMap={MONITORING_PANEL_MAP} />}
-        />
-        <Route
-          path="users"
-          element={<LegacyAdminRedirect to="/admin/business" fallbackTab="users" fallbackPanel="list" tabMap={BUSINESS_TAB_MAP} panelMap={BUSINESS_PANEL_MAP} />}
-        />
-        <Route
-          path="redeem"
-          element={<LegacyAdminRedirect to="/admin/business" fallbackTab="redeem" fallbackPanel="batches" tabMap={BUSINESS_TAB_MAP} panelMap={BUSINESS_PANEL_MAP} />}
-        />
+        <Route path="monitoring" element={<LegacyAdminRedirect resolveDestination={resolveLegacyMonitoringDestination} />} />
+        <Route path="ops" element={<LegacyAdminRedirect resolveDestination={resolveLegacyMonitoringDestination} />} />
+        <Route path="pipeline" element={<LegacyAdminRedirect resolveDestination={resolveLegacyMonitoringDestination} />} />
+        <Route path="business" element={<LegacyAdminRedirect resolveDestination={resolveLegacyBusinessDestination} />} />
 
-        <Route path="overview" element={<LegacyAdminRedirect to="/admin/monitoring" fallbackTab="health" fallbackPanel="overview" />} />
-        <Route path="system" element={<LegacyAdminRedirect to="/admin/monitoring" fallbackTab="health" fallbackPanel="system" />} />
-        <Route path="operation-logs" element={<LegacyAdminRedirect to="/admin/monitoring" fallbackTab="operations" fallbackPanel="operations" />} />
-        <Route path="sql-console" element={<LegacyAdminRedirect to="/admin/monitoring" fallbackTab="operations" fallbackPanel="sql-console" />} />
-        <Route path="lesson-task-logs" element={<LegacyAdminRedirect to="/admin/monitoring" fallbackTab="tasks" fallbackPanel="task-failures" />} />
-        <Route path="translation-logs" element={<LegacyAdminRedirect to="/admin/monitoring" fallbackTab="tasks" fallbackPanel="translations" />} />
-        <Route path="subtitle-settings" element={<LegacyAdminRedirect to="/admin/monitoring" fallbackTab="operations" fallbackPanel="subtitle-policy" />} />
-        <Route path="logs" element={<LegacyAdminRedirect to="/admin/business" fallbackTab="users" fallbackPanel="wallet" />} />
-        <Route path="rates" element={<LegacyAdminRedirect to="/admin/business" fallbackTab="users" fallbackPanel="rates" />} />
-        <Route path="redeem-batches" element={<LegacyAdminRedirect to="/admin/business" fallbackTab="redeem" fallbackPanel="batches" />} />
-        <Route path="redeem-codes" element={<LegacyAdminRedirect to="/admin/business" fallbackTab="redeem" fallbackPanel="codes" />} />
-        <Route path="redeem-audit" element={<LegacyAdminRedirect to="/admin/business" fallbackTab="redeem" fallbackPanel="audit" />} />
-        <Route path="*" element={<Navigate to="monitoring?tab=health&panel=overview" replace />} />
+        <Route path="overview" element={<Navigate to="/admin/health?panel=diagnosis" replace />} />
+        <Route path="system" element={<Navigate to="/admin/health?panel=diagnosis" replace />} />
+        <Route path="operation-logs" element={<Navigate to="/admin/health?panel=operations" replace />} />
+        <Route path="sql-console" element={<Navigate to="/admin/health?panel=diagnosis" replace />} />
+        <Route path="lesson-task-logs" element={<Navigate to="/admin/health?panel=tasks" replace />} />
+        <Route path="translation-logs" element={<Navigate to="/admin/health?panel=translations" replace />} />
+        <Route path="subtitle-settings" element={<Navigate to="/admin/models?panel=strategy" replace />} />
+        <Route path="logs" element={<Navigate to="/admin/users?panel=wallet" replace />} />
+        <Route path="rates" element={<Navigate to="/admin/models?panel=rates" replace />} />
+        <Route path="redeem-batches" element={<Navigate to="/admin/redeem?panel=batches" replace />} />
+        <Route path="redeem-codes" element={<Navigate to="/admin/redeem?panel=codes" replace />} />
+        <Route path="redeem-audit" element={<Navigate to="/admin/redeem?panel=audit" replace />} />
+        <Route path="*" element={<Navigate to="health" replace />} />
       </Routes>
     </div>
   );

@@ -41,59 +41,30 @@ export function mergeSearchParams(currentSearchParams, entries) {
   return searchParams;
 }
 
-const MONITORING_TAB_TO_NAV_KEY = {
-  health: "health",
-  overview: "health",
-  system: "health",
-  tasks: "tasks",
-  "task-failures": "tasks",
-  translations: "tasks",
-  operations: "operations",
-  "sql-console": "operations",
-  "subtitle-policy": "operations",
-};
-
-const BUSINESS_TAB_TO_NAV_KEY = {
-  users: "users",
-  list: "users",
-  wallet: "users",
-  rates: "users",
-  redeem: "redeem",
-  batches: "redeem",
-  codes: "redeem",
-  audit: "redeem",
-};
-
 export const ADMIN_NAV_ITEMS = [
   {
     key: "health",
     label: "系统健康",
-    description: "查看总览与系统检查。",
-    href: "/admin/monitoring?tab=health&panel=overview",
-  },
-  {
-    key: "tasks",
-    label: "任务监控",
-    description: "查看生成失败与翻译记录。",
-    href: "/admin/monitoring?tab=tasks&panel=task-failures",
-  },
-  {
-    key: "operations",
-    label: "操作审计",
-    description: "查看审计、SQL 控台与策略配置。",
-    href: "/admin/monitoring?tab=operations&panel=operations",
+    description: "查看诊断卡、失败任务和后台异常。",
+    href: "/admin/health",
   },
   {
     key: "users",
-    label: "用户计费",
-    description: "查看用户、流水与计费配置。",
-    href: "/admin/business?tab=users&panel=list",
+    label: "用户活跃",
+    description: "查看活跃趋势、用户列表和余额流水。",
+    href: "/admin/users",
+  },
+  {
+    key: "models",
+    label: "模型管理",
+    description: "维护模型参数、默认 ASR 和字幕策略。",
+    href: "/admin/models",
   },
   {
     key: "redeem",
-    label: "活动管理",
-    description: "查看批次、兑换码与兑换审计。",
-    href: "/admin/business?tab=redeem&panel=batches",
+    label: "活动兑换",
+    description: "管理批次、兑换码和兑换审计。",
+    href: "/admin/redeem",
   },
 ];
 
@@ -101,44 +72,56 @@ export function getAdminNavItemByKey(key) {
   return ADMIN_NAV_ITEMS.find((item) => item.key === key) || ADMIN_NAV_ITEMS[0];
 }
 
+function resolveLegacyMonitoringNavKey(requestedTab, requestedPanel) {
+  const panel = String(requestedPanel || "").trim().toLowerCase();
+  const tab = String(requestedTab || "").trim().toLowerCase();
+  if (["subtitle-policy", "rates"].includes(panel) || ["subtitle-policy", "rates"].includes(tab)) {
+    return "models";
+  }
+  return "health";
+}
+
+function resolveLegacyBusinessNavKey(requestedTab, requestedPanel) {
+  const panel = String(requestedPanel || "").trim().toLowerCase();
+  const tab = String(requestedTab || "").trim().toLowerCase();
+  if (panel === "rates") return "models";
+  if (["redeem", "batches", "codes", "audit"].includes(panel) || ["redeem", "batches", "codes", "audit"].includes(tab)) {
+    return "redeem";
+  }
+  return "users";
+}
+
 export function resolveAdminNavKey(pathname, searchValue = "") {
   const searchParams = searchValue instanceof URLSearchParams ? searchValue : new URLSearchParams(searchValue);
   const requestedTab = readStringParam(searchParams, "tab");
+  const requestedPanel = readStringParam(searchParams, "panel");
+
+  if (pathname.startsWith("/admin/health")) return "health";
+  if (pathname.startsWith("/admin/users") || pathname.startsWith("/admin/logs")) return "users";
+  if (pathname.startsWith("/admin/models") || pathname.startsWith("/admin/rates") || pathname.startsWith("/admin/subtitle-settings")) return "models";
+  if (pathname.startsWith("/admin/redeem")) return "redeem";
+
+  if (pathname.startsWith("/admin/monitoring") || pathname.startsWith("/admin/pipeline") || pathname.startsWith("/admin/ops")) {
+    return resolveLegacyMonitoringNavKey(requestedTab, requestedPanel);
+  }
 
   if (pathname.startsWith("/admin/business")) {
-    return BUSINESS_TAB_TO_NAV_KEY[requestedTab] || "users";
+    return resolveLegacyBusinessNavKey(requestedTab, requestedPanel);
   }
 
-  if (pathname.startsWith("/admin/users") || pathname.startsWith("/admin/logs") || pathname.startsWith("/admin/rates")) {
-    return "users";
-  }
-
-  if (
-    pathname.startsWith("/admin/redeem") ||
-    pathname.startsWith("/admin/redeem-batches") ||
-    pathname.startsWith("/admin/redeem-codes") ||
-    pathname.startsWith("/admin/redeem-audit")
-  ) {
-    return "redeem";
-  }
-
-  if (pathname.startsWith("/admin/pipeline") || pathname.startsWith("/admin/lesson-task-logs") || pathname.startsWith("/admin/translation-logs")) {
-    return "tasks";
-  }
-
-  if (
-    pathname.startsWith("/admin/operation-logs") ||
-    pathname.startsWith("/admin/sql-console") ||
-    pathname.startsWith("/admin/subtitle-settings")
-  ) {
-    return "operations";
-  }
-
-  if (pathname.startsWith("/admin/ops") || pathname.startsWith("/admin/overview") || pathname.startsWith("/admin/system")) {
+  if (pathname.startsWith("/admin/overview") || pathname.startsWith("/admin/system") || pathname.startsWith("/admin/lesson-task-logs")) {
     return "health";
   }
 
-  return MONITORING_TAB_TO_NAV_KEY[requestedTab] || "health";
+  if (pathname.startsWith("/admin/translation-logs") || pathname.startsWith("/admin/operation-logs") || pathname.startsWith("/admin/sql-console")) {
+    return "health";
+  }
+
+  if (pathname.startsWith("/admin/redeem-batches") || pathname.startsWith("/admin/redeem-codes") || pathname.startsWith("/admin/redeem-audit")) {
+    return "redeem";
+  }
+
+  return "health";
 }
 
 export function resolveAdminNavItem(pathname, searchValue = "") {

@@ -96,7 +96,7 @@ function DebugBlock({ title, text, copyLabel, emptyText = "暂无内容" }) {
   );
 }
 
-export function AdminLessonTaskLogsTab({ apiCall }) {
+export function AdminLessonTaskLogsTab({ apiCall, defaultStatus = "all" }) {
   const now = getBeijingNowForPicker();
   const defaultFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -106,7 +106,7 @@ export function AdminLessonTaskLogsTab({ apiCall }) {
   const [pageSize, setPageSize] = useState(() => readIntParam(searchParams, "page_size", 20, { min: 1, max: 100 }));
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [statusFilter, setStatusFilter] = useState(() => readStringParam(searchParams, "status", "all") || "all");
+  const [statusFilter, setStatusFilter] = useState(() => readStringParam(searchParams, "status", defaultStatus) || defaultStatus);
   const [userEmail, setUserEmail] = useState(() => readStringParam(searchParams, "user_email"));
   const [taskId, setTaskId] = useState(() => readStringParam(searchParams, "task_id"));
   const [lessonId, setLessonId] = useState(() => readStringParam(searchParams, "lesson_id"));
@@ -263,7 +263,7 @@ export function AdminLessonTaskLogsTab({ apiCall }) {
   function resetFilters() {
     setPage(1);
     setPageSize(20);
-    setStatusFilter("all");
+    setStatusFilter(defaultStatus);
     setUserEmail("");
     setTaskId("");
     setLessonId("");

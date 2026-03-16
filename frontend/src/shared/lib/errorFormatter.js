@@ -146,6 +146,30 @@ export function buildErrorCopyText(error) {
     .join("\n");
 }
 
+export function buildAdminIssueCopyText(issue = {}) {
+  const sections = [
+    ["问题标题", issue.title],
+    ["问题等级", issue.severity],
+    ["问题摘要", issue.summary],
+    ["影响范围", issue.impact],
+    ["关键状态", Array.isArray(issue.statusLines) ? issue.statusLines.filter(Boolean).join("\n") : issue.statusLines],
+    ["关键日志", stringifyValue(issue.logs)],
+    ["接口快照", stringifyValue(issue.endpointSnapshot)],
+    [
+      "Zeabur 排查提示",
+      Array.isArray(issue.zeaburHints)
+        ? issue.zeaburHints.filter(Boolean).map((item, index) => `${index + 1}. ${item}`).join("\n")
+        : issue.zeaburHints,
+    ],
+    ["可直接发给开发 AI 的提示词", issue.prompt],
+  ];
+
+  return sections
+    .filter(([, value]) => value)
+    .map(([label, value]) => `${label}:\n${value}`)
+    .join("\n\n");
+}
+
 export async function copyTextToClipboard(text) {
   if (navigator?.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);

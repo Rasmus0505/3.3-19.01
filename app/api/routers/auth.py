@@ -11,6 +11,7 @@ from app.models import User
 from app.schemas import AuthRequest, AuthResponse, ErrorResponse, LogoutResponse, RefreshRequest
 from app.security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from app.services.billing_service import get_or_create_wallet_account
+from app.services.user_activity import ensure_user_activity_schema, record_user_login_event
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.post("/register", response_model=AuthResponse, responses={400: {"model": ErrorResponse}})
 def register(payload: AuthRequest, db: Session = Depends(get_db)):
+    ensure_user_activity_schema(db)
     exists = db.scalar(select(User).where(User.email == payload.email.lower()))
     if exists:
         return error_response(400, "EMAIL_EXISTS", "邮箱已注册")
@@ -25,6 +27,7 @@ def register(payload: AuthRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.flush()
     get_or_create_wallet_account(db, user.id, for_update=False)
+    record_user_login_event(db, user_id=user.id, event_type="register")
     db.commit()
     db.refresh(user)
     return AuthResponse(
@@ -37,9 +40,13 @@ def register(payload: AuthRequest, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=AuthResponse, responses={401: {"model": ErrorResponse}})
 def login(payload: AuthRequest, db: Session = Depends(get_db)):
+    ensure_user_activity_schema(db)
     user = db.scalar(select(User).where(User.email == payload.email.lower()))
     if not user or not verify_password(payload.password, user.password_hash):
         return error_response(401, "INVALID_CREDENTIALS", "邮箱或密码错误")
+    record_user_login_event(db, user_id=user.id, event_type="login")
+    db.commit()
+    db.refresh(user)
     return AuthResponse(
         ok=True,
         access_token=create_access_token(user.id),

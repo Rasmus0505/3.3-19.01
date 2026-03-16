@@ -1,12 +1,23 @@
 const DB_NAME = "english_trainer_generation_tasks";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = "generation_tasks";
-const ACTIVE_KEY = "active";
+const LEGACY_ACTIVE_KEY = "active";
+const ACTIVE_KEY_PREFIX = "active_user:";
 
 function assertIndexedDbAvailable() {
   if (typeof indexedDB === "undefined") {
-    throw new Error("当前浏览器不支持 IndexedDB");
+    throw new Error("褰撳墠娴忚鍣ㄤ笉鏀寔 IndexedDB");
   }
+}
+
+function normalizeOwnerUserId(ownerUserId) {
+  const normalized = Number(ownerUserId || 0);
+  return Number.isInteger(normalized) && normalized > 0 ? normalized : 0;
+}
+
+function buildScopedActiveKey(ownerUserId) {
+  const normalized = normalizeOwnerUserId(ownerUserId);
+  return normalized ? `${ACTIVE_KEY_PREFIX}${normalized}` : "";
 }
 
 function openDatabase() {
@@ -15,12 +26,13 @@ function openDatabase() {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "id" });
-      }
+      const store = db.objectStoreNames.contains(STORE_NAME)
+        ? request.transaction.objectStore(STORE_NAME)
+        : db.createObjectStore(STORE_NAME, { keyPath: "id" });
+      store.delete(LEGACY_ACTIVE_KEY);
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("打开生成任务缓存失败"));
+    request.onerror = () => reject(request.error || new Error("鎵撳紑鐢熸垚浠诲姟缂撳瓨澶辫触"));
   });
 }
 
@@ -40,31 +52,43 @@ function withStore(mode, handler) {
         }
 
         request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error || new Error("生成任务缓存失败"));
+        request.onerror = () => reject(request.error || new Error("鐢熸垚浠诲姟缂撳瓨澶辫触"));
         tx.oncomplete = () => db.close();
         tx.onerror = () => {
           db.close();
-          reject(tx.error || new Error("生成任务事务失败"));
+          reject(tx.error || new Error("鐢熸垚浠诲姟浜嬪姟澶辫触"));
         };
       }),
   );
 }
 
-export async function saveActiveGenerationTask(payload) {
-  await withStore("readwrite", (store) =>
-    store.put({
-      id: ACTIVE_KEY,
+export async function saveActiveGenerationTask(ownerUserId, payload) {
+  const normalizedOwnerUserId = normalizeOwnerUserId(ownerUserId);
+  const scopedKey = buildScopedActiveKey(normalizedOwnerUserId);
+  if (!scopedKey) return;
+  await withStore("readwrite", (store) => {
+    store.delete(LEGACY_ACTIVE_KEY);
+    return store.put({
+      id: scopedKey,
+      owner_user_id: normalizedOwnerUserId,
       ...payload,
       updated_at: Date.now(),
-    }),
-  );
+    });
+  });
 }
 
-export async function getActiveGenerationTask() {
-  const result = await withStore("readonly", (store) => store.get(ACTIVE_KEY));
-  return result && typeof result === "object" ? result : null;
+export async function getActiveGenerationTask(ownerUserId) {
+  const scopedKey = buildScopedActiveKey(ownerUserId);
+  if (!scopedKey) return null;
+  const result = await withStore("readonly", (store) => store.get(scopedKey));
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+  return normalizeOwnerUserId(result.owner_user_id) === normalizeOwnerUserId(ownerUserId) ? result : null;
 }
 
-export async function clearActiveGenerationTask() {
-  await withStore("readwrite", (store) => store.delete(ACTIVE_KEY));
+export async function clearActiveGenerationTask(ownerUserId) {
+  const scopedKey = buildScopedActiveKey(ownerUserId);
+  if (!scopedKey) return;
+  await withStore("readwrite", (store) => store.delete(scopedKey));
 }
