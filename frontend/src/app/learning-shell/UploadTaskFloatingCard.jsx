@@ -38,13 +38,7 @@ export function UploadTaskFloatingCard({ activePanel, accessToken, uploadTaskSta
     }
 
     setTerminalVisible(true);
-    if (import.meta.env.DEV) {
-      console.debug("[DEBUG] UploadTaskFloatingCard schedule auto hide", { terminalSignature });
-    }
     autoHideTimerRef.current = window.setTimeout(() => {
-      if (import.meta.env.DEV) {
-        console.debug("[DEBUG] UploadTaskFloatingCard auto hidden", { terminalSignature });
-      }
       setTerminalVisible(false);
       setTerminalDismissedSignature(terminalSignature);
       autoHideTimerRef.current = null;
@@ -63,9 +57,6 @@ export function UploadTaskFloatingCard({ activePanel, accessToken, uploadTaskSta
       if (autoHideTimerRef.current) {
         window.clearTimeout(autoHideTimerRef.current);
         autoHideTimerRef.current = null;
-      }
-      if (import.meta.env.DEV) {
-        console.debug("[DEBUG] UploadTaskFloatingCard dismissed by click", { terminalSignature });
       }
       setTerminalVisible(false);
       setTerminalDismissedSignature(terminalSignature);

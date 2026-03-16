@@ -314,7 +314,6 @@ export function LessonListLocalSubtitles({
                         type="button"
                         className="w-full"
                         onClick={() => {
-                          console.debug("[DEBUG] history.lesson.start", { lessonId: lesson.id });
                           void onStartLesson?.(lesson.id);
                         }}
                       >

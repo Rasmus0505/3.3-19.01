@@ -124,46 +124,31 @@ const GETTING_STARTED_GUIDE_STEPS = [
   {
     id: "open-upload",
     targetId: "sidebar-upload",
-    targetLabel: "左侧学习导航里的“上传素材”",
-    title: "先点左侧“上传素材”",
-    description: "第一步只点左侧真实按钮，让主内容区切到上传页。",
-    waitingText: "请点击左侧“上传素材”，这一步不会用“下一步”替代你的真实点击。",
+    instruction: "请点左侧“上传素材”",
     advanceOnTargetClick: true,
   },
   {
     id: "pick-file",
     targetId: "upload-select-file",
-    targetLabel: "上传页里的“选择文件”区域",
-    title: "选择第一份素材",
-    description: "点击真实上传区域，选择一段 30 到 60 秒的英文素材。看到文件名后会自动进入下一步。",
-    waitingText: "请点击“选择文件”，选中文件后这一步会自动完成。",
+    instruction: "请点“选择文件”并选中素材",
     advanceOnTargetClick: false,
   },
   {
     id: "submit-upload",
     targetId: "upload-submit",
-    targetLabel: "上传页底部的“开始生成课程”按钮",
-    title: "真正开始生成课程",
-    description: "这一步必须点击真实“开始生成课程”按钮，而且要等任务成功后才会继续。",
-    waitingText: "请点击“开始生成课程”，然后等待页面出现成功状态。",
+    instruction: "请点“开始生成课程”",
     advanceOnTargetClick: false,
   },
   {
     id: "open-history",
     targetId: "sidebar-history",
-    targetLabel: "左侧学习导航里的“历史记录”",
-    title: "回到历史记录",
-    description: "课程生成成功后，点击左侧真实“历史记录”入口，准备打开刚生成的课程。",
-    waitingText: "请点击左侧“历史记录”，不要点上传页里的其他按钮。",
+    instruction: "请点左侧“历史记录”",
     advanceOnTargetClick: true,
   },
   {
     id: "start-lesson",
     targetId: "history-start-latest",
-    targetLabel: "最新课程卡片上的“开始学习”按钮",
-    title: "开始学习第一课",
-    description: "最后一步，点击真实“开始学习”，直接进入课程。完成后这个账号会记录为已走通过一次新手引导。",
-    waitingText: "请点击最新课程卡片上的“开始学习”。",
+    instruction: "请点最新课程上的“开始学习”",
     advanceOnTargetClick: true,
   },
 ];
@@ -273,12 +258,6 @@ export function LearningShellContainer() {
         lastNonImmersivePanelRef.current = activePanel;
       }
     }
-    console.debug("[DEBUG] learning sidebar route synced", {
-      pathname: location.pathname,
-      panel: activePanel || activeAdminItem.key,
-      isAdminRoute,
-      immersiveLayoutActive,
-    });
   }, [activeAdminItem.key, activePanel, immersiveLayoutActive, isAdminRoute, location.pathname]);
 
   useEffect(() => {
@@ -361,24 +340,24 @@ export function LearningShellContainer() {
     ? { title: activeAdminItem.label }
     : PANEL_ITEMS.find((item) => item.key === activePanel) || PANEL_ITEMS[0];
   const currentGettingStartedGuideStep = gettingStartedGuideActive ? GETTING_STARTED_GUIDE_STEPS[gettingStartedGuideStepIndex] || null : null;
-  const gettingStartedGuideStatusText = useMemo(() => {
+  const gettingStartedGuideInstruction = useMemo(() => {
     if (!currentGettingStartedGuideStep) return "";
     if (currentGettingStartedGuideStep.id === "pick-file") {
       const phase = String(uploadTaskState?.phase || "").toLowerCase();
-      if (phase === "ready") return "已看到文件名，正在切到下一步。";
-      if (phase === "probing") return "已选中文件，正在读取时长和封面。";
-      return "请点击“选择文件”，选中文件后会自动前进。";
+      if (phase === "ready") return "已选中文件，正在继续";
+      if (phase === "probing") return "已选中文件，正在读取文件";
+      return currentGettingStartedGuideStep.instruction;
     }
     if (currentGettingStartedGuideStep.id === "submit-upload") {
       const phase = String(uploadTaskState?.phase || "").toLowerCase();
       if (phase === "uploading" || phase === "processing") {
-        return uploadTaskState?.headline || "正在生成课程，请等待成功。";
+        return uploadTaskState?.headline || "等待生成完成…";
       }
-      if (phase === "success") return "课程已生成，正在进入下一步。";
-      if (phase === "error") return uploadTaskState?.statusText || "生成失败，请先看上传页报错。";
-      return "请点击“开始生成课程”，成功前这一步不会结束。";
+      if (phase === "success") return "课程已生成，正在继续";
+      if (phase === "error") return uploadTaskState?.statusText || "生成失败，请先看上传页";
+      return currentGettingStartedGuideStep.instruction;
     }
-    return currentGettingStartedGuideStep.waitingText;
+    return currentGettingStartedGuideStep.instruction;
   }, [currentGettingStartedGuideStep, uploadTaskState?.headline, uploadTaskState?.phase, uploadTaskState?.statusText]);
 
   async function persistLessonSubtitleCacheSeed(lesson) {
@@ -427,6 +406,7 @@ export function LearningShellContainer() {
     }
     setShowGettingStartedWelcome(false);
     setLatestGeneratedLessonId(0);
+    setUploadTaskState(null);
     navigate(getPanelPath("getting-started"));
     setGettingStartedGuideActive(true);
     setGettingStartedGuideStepIndex(0);
@@ -452,12 +432,6 @@ export function LearningShellContainer() {
 
   function handleGettingStartedGuidePrevious() {
     setGettingStartedGuideStepIndex((currentIndex) => Math.max(0, currentIndex - 1));
-  }
-
-  function handleGettingStartedGuideSkip() {
-    closeGettingStartedGuide();
-    navigate(getPanelPath("getting-started"));
-    toast("已跳过点选引导，你可以稍后回到新手教程重新开始");
   }
 
   function handlePanelChange(nextPanel) {
@@ -497,11 +471,6 @@ export function LearningShellContainer() {
     const needsBinding = lesson.media_storage === "client_indexeddb" && !mediaPersisted;
     const mediaPreview = buildCreatedLessonMediaPreview(lesson, payload?.mediaPreview, mediaPersisted);
 
-    console.debug("[DEBUG] upload lesson created, returning to history", {
-      lessonId,
-      needsBinding,
-      mediaPersisted,
-    });
     lastNonImmersivePanelRef.current = "history";
     setImmersiveActive(false);
     navigate(getPanelPath("history"));
@@ -539,7 +508,6 @@ export function LearningShellContainer() {
 
   async function handleNavigateToGeneratedLesson(lessonId) {
     if (!lessonId) return;
-    console.debug("[DEBUG] navigate to generated lesson via history", { lessonId });
     lastNonImmersivePanelRef.current = "history";
     setImmersiveActive(false);
     navigate(getPanelPath("history"));
@@ -967,10 +935,8 @@ export function LearningShellContainer() {
               active={gettingStartedGuideActive}
               step={currentGettingStartedGuideStep}
               stepIndex={gettingStartedGuideStepIndex}
-              totalSteps={GETTING_STARTED_GUIDE_STEPS.length}
-              statusText={gettingStartedGuideStatusText}
+              instructionText={gettingStartedGuideInstruction}
               onPrevious={handleGettingStartedGuidePrevious}
-              onSkip={handleGettingStartedGuideSkip}
               onExit={closeGettingStartedGuide}
               onTargetAction={handleGettingStartedGuideTargetAction}
             />

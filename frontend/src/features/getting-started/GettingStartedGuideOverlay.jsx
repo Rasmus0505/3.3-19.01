@@ -1,13 +1,9 @@
-import { ArrowLeft, MousePointerClick, SkipForward, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { cn } from "../../lib/utils";
-import { Badge, Button } from "../../shared/ui";
+import { Button } from "../../shared/ui";
 
 const SPOTLIGHT_PADDING = 12;
-const CARD_WIDTH = 360;
-const CARD_HEIGHT_ESTIMATE = 260;
 
 function getTargetElement(targetId) {
   if (!targetId || typeof document === "undefined") return null;
@@ -17,53 +13,79 @@ function getTargetElement(targetId) {
 function measureTarget(targetId) {
   const element = getTargetElement(targetId);
   if (!(element instanceof HTMLElement)) return null;
+
   const rect = element.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return null;
+
   return {
-    top: Math.max(8, rect.top - SPOTLIGHT_PADDING),
-    left: Math.max(8, rect.left - SPOTLIGHT_PADDING),
-    width: Math.max(48, rect.width + SPOTLIGHT_PADDING * 2),
-    height: Math.max(48, rect.height + SPOTLIGHT_PADDING * 2),
+    top: Math.max(0, rect.top),
+    left: Math.max(0, rect.left),
+    width: rect.width,
+    height: rect.height,
+    highlightTop: Math.max(8, rect.top - SPOTLIGHT_PADDING),
+    highlightLeft: Math.max(8, rect.left - SPOTLIGHT_PADDING),
+    highlightWidth: Math.max(48, rect.width + SPOTLIGHT_PADDING * 2),
+    highlightHeight: Math.max(48, rect.height + SPOTLIGHT_PADDING * 2),
   };
 }
 
-function computeCardPosition(targetRect) {
-  if (typeof window === "undefined") {
-    return { top: 16, left: 16, width: CARD_WIDTH };
+function buildBlockers(targetRect) {
+  if (typeof window === "undefined") return [];
+
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+
+  if (!targetRect) {
+    return [
+      {
+        top: 0,
+        left: 0,
+        width: viewportWidth,
+        height: viewportHeight,
+      },
+    ];
   }
 
-  const viewportWidth = window.innerWidth || 1280;
-  const viewportHeight = window.innerHeight || 720;
-  const width = Math.min(CARD_WIDTH, Math.max(300, viewportWidth - 32));
-  let left = viewportWidth - width - 16;
-  let top = 16;
+  const rightStart = targetRect.left + targetRect.width;
+  const bottomStart = targetRect.top + targetRect.height;
 
-  if (targetRect) {
-    left = Math.min(Math.max(16, targetRect.left + targetRect.width + 16), viewportWidth - width - 16);
-    if (left + width > viewportWidth - 16) {
-      left = Math.max(16, targetRect.left - width - 16);
-    }
-    top = Math.min(Math.max(16, targetRect.top), viewportHeight - CARD_HEIGHT_ESTIMATE - 16);
-    if (targetRect.top + targetRect.height + CARD_HEIGHT_ESTIMATE + 24 < viewportHeight) {
-      top = targetRect.top + targetRect.height + 16;
-    }
-  }
-
-  return { top, left, width };
+  return [
+    {
+      top: 0,
+      left: 0,
+      width: viewportWidth,
+      height: Math.max(0, targetRect.top),
+    },
+    {
+      top: targetRect.top,
+      left: 0,
+      width: Math.max(0, targetRect.left),
+      height: targetRect.height,
+    },
+    {
+      top: targetRect.top,
+      left: rightStart,
+      width: Math.max(0, viewportWidth - rightStart),
+      height: targetRect.height,
+    },
+    {
+      top: bottomStart,
+      left: 0,
+      width: viewportWidth,
+      height: Math.max(0, viewportHeight - bottomStart),
+    },
+  ].filter((blocker) => blocker.width > 0 && blocker.height > 0);
 }
 
 export function GettingStartedGuideOverlay({
   active = false,
   step = null,
   stepIndex = 0,
-  totalSteps = 0,
-  statusText = "",
+  instructionText = "",
   onPrevious,
-  onSkip,
   onExit,
   onTargetAction,
 }) {
-  const cardRef = useRef(null);
   const [targetRect, setTargetRect] = useState(null);
 
   useEffect(() => {
@@ -89,108 +111,83 @@ export function GettingStartedGuideOverlay({
   }, [active, step?.targetId]);
 
   useEffect(() => {
-    if (!active || !step?.targetId || typeof document === "undefined") return undefined;
+    if (!active || !step?.targetId || !step.advanceOnTargetClick || typeof document === "undefined") {
+      return undefined;
+    }
 
-    function handleCapturedEvent(event) {
-      const cardElement = cardRef.current;
+    function handleTargetClick(event) {
       const targetElement = getTargetElement(step.targetId);
       const nextTarget = event.target;
 
-      if (cardElement instanceof HTMLElement && nextTarget instanceof Node && cardElement.contains(nextTarget)) {
+      if (!(targetElement instanceof HTMLElement) || !(nextTarget instanceof Node)) {
         return;
       }
 
-      if (targetElement instanceof HTMLElement && nextTarget instanceof Node && targetElement.contains(nextTarget)) {
-        if (event.type === "click" && step.advanceOnTargetClick) {
-          window.setTimeout(() => {
-            onTargetAction?.(step.id);
-          }, 0);
-        }
-        return;
+      if (targetElement.contains(nextTarget)) {
+        window.setTimeout(() => {
+          onTargetAction?.(step.id);
+        }, 0);
       }
-
-      event.preventDefault();
-      event.stopPropagation();
     }
 
-    document.addEventListener("pointerdown", handleCapturedEvent, true);
-    document.addEventListener("click", handleCapturedEvent, true);
-
+    document.addEventListener("click", handleTargetClick, true);
     return () => {
-      document.removeEventListener("pointerdown", handleCapturedEvent, true);
-      document.removeEventListener("click", handleCapturedEvent, true);
+      document.removeEventListener("click", handleTargetClick, true);
     };
   }, [active, onTargetAction, step]);
 
-  const cardPosition = useMemo(() => computeCardPosition(targetRect), [targetRect]);
+  const blockers = useMemo(() => buildBlockers(targetRect), [targetRect]);
+  const visibleInstruction = instructionText || step?.instruction || "";
 
   if (!active || !step || typeof document === "undefined") {
     return null;
   }
 
-  const overlayNode = (
+  return createPortal(
     <div className="fixed inset-0 z-[120]">
-      {targetRect ? (
+      {blockers.map((blocker, index) => (
         <div
-          className="pointer-events-none fixed rounded-[28px] border-2 border-primary bg-transparent shadow-[0_0_0_9999px_rgba(15,23,42,0.55)] transition-all duration-150"
+          key={`${blocker.top}-${blocker.left}-${index}`}
+          className="fixed bg-slate-950/60"
           style={{
-            top: `${targetRect.top}px`,
-            left: `${targetRect.left}px`,
-            width: `${targetRect.width}px`,
-            height: `${targetRect.height}px`,
+            top: `${blocker.top}px`,
+            left: `${blocker.left}px`,
+            width: `${blocker.width}px`,
+            height: `${blocker.height}px`,
           }}
         />
-      ) : (
-        <div className="pointer-events-none fixed inset-0 bg-slate-950/55" />
-      )}
+      ))}
 
-      <div
-        ref={cardRef}
-        className="fixed rounded-[28px] border border-border/80 bg-background/98 p-5 shadow-2xl backdrop-blur"
-        style={{
-          top: `${cardPosition.top}px`,
-          left: `${cardPosition.left}px`,
-          width: `${cardPosition.width}px`,
-        }}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">
-                步骤 {Math.min(stepIndex + 1, totalSteps)}/{totalSteps}
-              </Badge>
-              <Badge variant="outline">只点高亮目标</Badge>
-            </div>
-            <p className="text-base font-semibold text-foreground">{step.title}</p>
-          </div>
-          <div className="rounded-full border bg-muted/20 p-2 text-primary">
-            <MousePointerClick className="size-4" />
-          </div>
-        </div>
+      {targetRect ? (
+        <div
+          className="pointer-events-none fixed rounded-[28px] border-2 border-primary bg-transparent shadow-[0_0_0_1px_rgba(255,255,255,0.35)] transition-all duration-150"
+          style={{
+            top: `${targetRect.highlightTop}px`,
+            left: `${targetRect.highlightLeft}px`,
+            width: `${targetRect.highlightWidth}px`,
+            height: `${targetRect.highlightHeight}px`,
+          }}
+        />
+      ) : null}
 
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">{step.description}</p>
-        <div className="mt-4 rounded-2xl border bg-muted/20 px-4 py-3 text-sm leading-6 text-foreground">
-          <p className="font-medium">目标：{step.targetLabel}</p>
-          <p className="mt-1 text-muted-foreground">{statusText || step.waitingText}</p>
-        </div>
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          <Button variant="outline" onClick={onPrevious} disabled={stepIndex === 0}>
-            <ArrowLeft className="size-4" />
+      <div className="fixed inset-x-0 top-3 flex justify-center px-3">
+        <div className="flex w-full max-w-4xl items-center gap-2 rounded-full border border-border/80 bg-background/98 px-3 py-2 shadow-2xl backdrop-blur">
+          <p className="min-w-0 flex-1 text-sm font-medium text-foreground md:text-base">{visibleInstruction}</p>
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-8 rounded-full px-3 text-xs md:text-sm"
+            onClick={onPrevious}
+            disabled={stepIndex === 0}
+          >
             上一步
           </Button>
-          <Button variant="ghost" onClick={onSkip}>
-            <SkipForward className="size-4" />
-            跳过
-          </Button>
-          <Button variant="ghost" onClick={onExit} className={cn("ml-auto")}>
-            <X className="size-4" />
+          <Button type="button" variant="ghost" className="h-8 rounded-full px-3 text-xs md:text-sm" onClick={onExit}>
             退出
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
-
-  return createPortal(overlayNode, document.body);
 }
