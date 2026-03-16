@@ -144,11 +144,11 @@ export function GettingStartedGuideOverlay({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[120]">
+    <div className="pointer-events-none fixed inset-0 z-[120]">
       {blockers.map((blocker, index) => (
         <div
           key={`${blocker.top}-${blocker.left}-${index}`}
-          className="fixed bg-slate-950/60"
+          className="pointer-events-auto fixed bg-slate-950/60"
           style={{
             top: `${blocker.top}px`,
             left: `${blocker.left}px`,
@@ -170,8 +170,8 @@ export function GettingStartedGuideOverlay({
         />
       ) : null}
 
-      <div className="fixed inset-x-0 top-3 flex justify-center px-3">
-        <div className="flex w-full max-w-4xl items-center gap-2 rounded-full border border-border/80 bg-background/98 px-3 py-2 shadow-2xl backdrop-blur">
+      <div className="pointer-events-none fixed inset-x-0 top-3 flex justify-center px-3">
+        <div className="pointer-events-auto flex w-full max-w-4xl items-center gap-2 rounded-full border border-border/80 bg-background/98 px-3 py-2 shadow-2xl backdrop-blur">
           <p className="min-w-0 flex-1 text-sm font-medium text-foreground md:text-base">{visibleInstruction}</p>
           <Button
             type="button"
