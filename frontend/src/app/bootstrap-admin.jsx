@@ -10,7 +10,7 @@ export function BootstrapAdminApp() {
     <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">页面加载中...</div>}>
       <Routes>
         <Route path="/admin/*" element={<AdminShellStandalone />} />
-        <Route path="*" element={<Navigate to="/admin/monitoring?tab=health&panel=overview" replace />} />
+        <Route path="*" element={<Navigate to="/admin/health" replace />} />
       </Routes>
     </Suspense>
   );

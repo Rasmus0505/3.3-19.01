@@ -6,10 +6,29 @@ import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { formatDateTimeBeijing } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
 import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
-import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Skeleton, Switch } from "../../shared/ui";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Skeleton,
+  Switch,
+} from "../../shared/ui";
 
 const defaultDraft = {
   semantic_split_default_enabled: false,
+  default_asr_model: "",
   subtitle_split_enabled: true,
   subtitle_split_target_words: 18,
   subtitle_split_max_words: 28,
@@ -63,9 +82,10 @@ const presetOptions = [
   },
 ];
 
-function normalizeDraft(source) {
+function normalizeDraft(source, fallbackAsrModel = "") {
   return {
     semantic_split_default_enabled: Boolean(source?.semantic_split_default_enabled),
+    default_asr_model: String(source?.default_asr_model || fallbackAsrModel || ""),
     subtitle_split_enabled: Boolean(source?.subtitle_split_enabled),
     subtitle_split_target_words: Number(source?.subtitle_split_target_words || 18),
     subtitle_split_max_words: Number(source?.subtitle_split_max_words || 28),
@@ -79,11 +99,23 @@ function draftsEqual(left, right) {
   return JSON.stringify(normalizeDraft(left)) === JSON.stringify(normalizeDraft(right));
 }
 
+function pickAvailableAsrModels(rates, currentModel = "") {
+  const models = (Array.isArray(rates) ? rates : [])
+    .filter((item) => item?.billing_unit === "minute" && item?.is_active)
+    .map((item) => String(item.model_name || "").trim())
+    .filter(Boolean);
+  if (currentModel && !models.includes(currentModel)) {
+    models.unshift(currentModel);
+  }
+  return Array.from(new Set(models));
+}
+
 export function AdminSubtitleSettingsTab({ apiCall }) {
   const [draft, setDraft] = useState(defaultDraft);
   const [loadedSettings, setLoadedSettings] = useState(defaultDraft);
   const [currentMeta, setCurrentMeta] = useState(null);
   const [rollbackCandidate, setRollbackCandidate] = useState(null);
+  const [availableAsrModels, setAvailableAsrModels] = useState([]);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -97,14 +129,19 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
     setStatus("");
     clearError();
     try {
-      const resp = await apiCall("/api/admin/subtitle-settings/history");
-      const data = await parseJsonSafely(resp);
-      if (!resp.ok) {
+      const [historyResp, ratesResp] = await Promise.all([
+        apiCall("/api/admin/subtitle-settings/history"),
+        apiCall("/api/admin/billing-rates"),
+      ]);
+      const [historyData, ratesData] = await Promise.all([parseJsonSafely(historyResp), parseJsonSafely(ratesResp)]);
+      if (!historyResp.ok || !ratesResp.ok) {
+        const failedResponse = historyResp.ok ? ratesResp : historyResp;
+        const failedData = historyResp.ok ? ratesData : historyData;
         const formattedError = captureError(
-          formatResponseError(resp, data, {
+          formatResponseError(failedResponse, failedData, {
             component: "AdminSubtitleSettingsTab",
             action: "加载字幕配置",
-            endpoint: "/api/admin/subtitle-settings/history",
+            endpoint: "/api/admin/subtitle-settings/history + /api/admin/billing-rates",
             method: "GET",
             fallbackMessage: "加载字幕配置失败",
           }),
@@ -112,17 +149,23 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
         setStatus(formattedError.displayMessage);
         return;
       }
-      const current = normalizeDraft(data.current || data.settings || defaultDraft);
+
+      const currentSource = historyData.current || historyData.settings || defaultDraft;
+      const availableModels = pickAvailableAsrModels(ratesData.rates, String(currentSource?.default_asr_model || ""));
+      const fallbackAsrModel = availableModels[0] || String(currentSource?.default_asr_model || "");
+      const current = normalizeDraft(currentSource, fallbackAsrModel);
+
+      setAvailableAsrModels(availableModels);
       setDraft(current);
       setLoadedSettings(current);
-      setCurrentMeta(data.current || data.settings || null);
-      setRollbackCandidate(data.rollback_candidate || null);
-    } catch (error) {
+      setCurrentMeta(historyData.current || historyData.settings || null);
+      setRollbackCandidate(historyData.rollback_candidate || null);
+    } catch (requestError) {
       const formattedError = captureError(
-        formatNetworkError(error, {
+        formatNetworkError(requestError, {
           component: "AdminSubtitleSettingsTab",
           action: "加载字幕配置",
-          endpoint: "/api/admin/subtitle-settings/history",
+          endpoint: "/api/admin/subtitle-settings/history + /api/admin/billing-rates",
           method: "GET",
         }),
       );
@@ -138,7 +181,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
   }, []);
 
   function applyPreset(settings) {
-    setDraft(normalizeDraft(settings));
+    setDraft((prev) => normalizeDraft({ ...settings, default_asr_model: prev.default_asr_model || availableAsrModels[0] || "" }));
   }
 
   async function saveSettings() {
@@ -149,7 +192,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
       const resp = await apiCall("/api/admin/subtitle-settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(normalizeDraft(draft)),
+        body: JSON.stringify(normalizeDraft(draft, availableAsrModels[0] || "")),
       });
       const data = await parseJsonSafely(resp);
       if (!resp.ok) {
@@ -159,7 +202,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
             action: "保存字幕配置",
             endpoint: "/api/admin/subtitle-settings",
             method: "PUT",
-            meta: { draft: normalizeDraft(draft) },
+            meta: { draft: normalizeDraft(draft, availableAsrModels[0] || "") },
             fallbackMessage: "保存字幕配置失败",
           }),
         );
@@ -169,9 +212,9 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
       setStatus("设置已保存");
       toast.success("设置已保存");
       await loadSettings();
-    } catch (error) {
+    } catch (requestError) {
       const formattedError = captureError(
-        formatNetworkError(error, {
+        formatNetworkError(requestError, {
           component: "AdminSubtitleSettingsTab",
           action: "保存字幕配置",
           endpoint: "/api/admin/subtitle-settings",
@@ -209,9 +252,9 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
       setStatus("已回滚到上一版");
       toast.success("已回滚到上一版");
       await loadSettings();
-    } catch (error) {
+    } catch (requestError) {
       const formattedError = captureError(
-        formatNetworkError(error, {
+        formatNetworkError(requestError, {
           component: "AdminSubtitleSettingsTab",
           action: "回滚字幕配置",
           endpoint: "/api/admin/subtitle-settings/rollback-last",
@@ -229,9 +272,9 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Sparkles className="size-4" />
-          字幕/分句设置
+          默认策略
         </CardTitle>
-        <CardDescription>统一管理默认分句和翻译批次。改完后，新任务会按这里的设置执行。</CardDescription>
+        <CardDescription>统一管理默认 ASR、默认分句和翻译批次。改完后，新任务会按这里的后台设置执行。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {loading ? <Skeleton className="h-10 w-full" /> : null}
@@ -261,6 +304,27 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-3 rounded-md border p-4">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">默认 ASR 模型</p>
+              <Select
+                value={draft.default_asr_model || availableAsrModels[0] || ""}
+                onValueChange={(value) => setDraft((prev) => ({ ...prev, default_asr_model: value }))}
+                disabled={saving || rollbacking || availableAsrModels.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={availableAsrModels.length ? "选择默认 ASR 模型" : "当前没有可用的 ASR 模型"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableAsrModels.map((modelName) => (
+                    <SelectItem key={modelName} value={modelName}>
+                      {modelName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">候选项只来自当前启用的分钟计费模型。上传页和课程创建默认都会优先使用这里的配置。</p>
+            </div>
+
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-medium">上传页默认开启语义分句</p>
@@ -289,19 +353,16 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
           <div className="space-y-3 rounded-md border p-4">
             <div className="space-y-2">
               <p className="text-sm font-medium">当前生效版本</p>
-              <p className="text-xs text-muted-foreground">
-                最近更新时间：{formatDateTimeBeijing(currentMeta?.updated_at)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                最近修改人：{currentMeta?.updated_by_user_email || "未知 / 尚无记录"}
-              </p>
+              <p className="text-xs text-muted-foreground">最近更新时间：{formatDateTimeBeijing(currentMeta?.updated_at)}</p>
+              <p className="text-xs text-muted-foreground">最近修改人：{currentMeta?.updated_by_user_email || "未知 / 尚无记录"}</p>
+              <p className="text-xs text-muted-foreground">当前默认 ASR：{draft.default_asr_model || "未配置"}</p>
               <p className="text-xs text-muted-foreground">
                 可回滚版本：
                 {rollbackCandidate ? ` ${rollbackCandidate.operator_user_email || "未知操作员"} / ${formatDateTimeBeijing(rollbackCandidate.created_at)}` : " 暂无"}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => setDraft(normalizeDraft(loadedSettings))} disabled={!dirty || saving || rollbacking}>
+              <Button variant="outline" size="sm" onClick={() => setDraft(normalizeDraft(loadedSettings, availableAsrModels[0] || ""))} disabled={!dirty || saving || rollbacking}>
                 <RefreshCcw className="size-4" />
                 恢复当前生效值
               </Button>
@@ -322,9 +383,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
                 min={1}
                 max={300}
                 value={draft.semantic_split_timeout_seconds}
-                onChange={(event) =>
-                  setDraft((prev) => ({ ...prev, semantic_split_timeout_seconds: Number(event.target.value || 1) }))
-                }
+                onChange={(event) => setDraft((prev) => ({ ...prev, semantic_split_timeout_seconds: Number(event.target.value || 1) }))}
                 disabled={saving || rollbacking}
               />
               <p className="text-xs text-muted-foreground">这里只控制等待时长，不需要单独配置模型。</p>
@@ -336,9 +395,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
                 min={1}
                 max={12000}
                 value={draft.translation_batch_max_chars}
-                onChange={(event) =>
-                  setDraft((prev) => ({ ...prev, translation_batch_max_chars: Number(event.target.value || 1) }))
-                }
+                onChange={(event) => setDraft((prev) => ({ ...prev, translation_batch_max_chars: Number(event.target.value || 1) }))}
                 disabled={saving || rollbacking}
               />
               <p className="text-xs text-muted-foreground">越小越稳，越大越省请求次数；MVP 阶段建议 2200-3200。</p>
@@ -353,9 +410,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
                 min={1}
                 max={200}
                 value={draft.subtitle_split_target_words}
-                onChange={(event) =>
-                  setDraft((prev) => ({ ...prev, subtitle_split_target_words: Number(event.target.value || 1) }))
-                }
+                onChange={(event) => setDraft((prev) => ({ ...prev, subtitle_split_target_words: Number(event.target.value || 1) }))}
                 disabled={saving || rollbacking}
               />
               <p className="text-xs text-muted-foreground">一句理想长度，适合大多数字幕阅读节奏。</p>
@@ -367,9 +422,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
                 min={1}
                 max={300}
                 value={draft.subtitle_split_max_words}
-                onChange={(event) =>
-                  setDraft((prev) => ({ ...prev, subtitle_split_max_words: Number(event.target.value || 1) }))
-                }
+                onChange={(event) => setDraft((prev) => ({ ...prev, subtitle_split_max_words: Number(event.target.value || 1) }))}
                 disabled={saving || rollbacking}
               />
             </div>
@@ -380,9 +433,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
                 min={1}
                 max={300}
                 value={draft.semantic_split_max_words_threshold}
-                onChange={(event) =>
-                  setDraft((prev) => ({ ...prev, semantic_split_max_words_threshold: Number(event.target.value || 1) }))
-                }
+                onChange={(event) => setDraft((prev) => ({ ...prev, semantic_split_max_words_threshold: Number(event.target.value || 1) }))}
                 disabled={saving || rollbacking}
               />
               <p className="text-xs text-muted-foreground">规则分句后仍超过这个长度，才值得继续调用模型做语义拆分。</p>
@@ -392,7 +443,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
 
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={dirty ? "default" : "outline"}>{dirty ? "有未保存修改" : "当前与线上一致"}</Badge>
-          <Button onClick={saveSettings} disabled={saving || loading || rollbacking || !dirty}>
+          <Button onClick={saveSettings} disabled={saving || loading || rollbacking || !dirty || !draft.default_asr_model}>
             {saving ? "保存中..." : "保存设置"}
           </Button>
           <Button variant="outline" onClick={loadSettings} disabled={saving || rollbacking}>

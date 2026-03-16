@@ -88,13 +88,46 @@ class AdminUserActivitySummary(BaseModel):
     latest_lesson_created_at: datetime | None
     latest_wallet_event_at: datetime | None
     latest_redeem_at: datetime | None
+    latest_login_at: datetime | None = None
     consumed_points_30d: int
     redeemed_points_30d: int
+    range_start: datetime | None = None
+    range_end: datetime | None = None
+    login_days_in_range: int = 0
+    login_events_in_range: int = 0
+    lessons_created_in_range: int = 0
+    consumed_points_in_range: int = 0
+    redeemed_points_in_range: int = 0
 
 
 class AdminUserActivitySummaryResponse(BaseModel):
     ok: bool = True
     summary: AdminUserActivitySummary
+
+
+class AdminUserActivityItem(BaseModel):
+    id: int
+    email: str
+    created_at: datetime
+    last_login_at: datetime | None = None
+    balance_points: int
+    login_days: int = 0
+    login_events: int = 0
+    lessons_created: int = 0
+    consumed_points: int = 0
+    redeemed_points: int = 0
+
+
+class AdminUserActivityResponse(BaseModel):
+    ok: bool = True
+    page: int
+    page_size: int
+    total: int
+    range_start: datetime
+    range_end: datetime
+    items: list[AdminUserActivityItem]
+    summary_cards: list[AdminVisualStat] = Field(default_factory=list)
+    charts: list[AdminVisualChart] = Field(default_factory=list)
 
 
 class AdminLessonTaskLogTranslationSummary(BaseModel):

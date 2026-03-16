@@ -145,12 +145,16 @@ def to_rate_item(rate: BillingModelRate) -> BillingRateItem:
 
 
 def to_public_subtitle_settings(item: SubtitleSetting) -> PublicSubtitleSettings:
-    return PublicSubtitleSettings(semantic_split_default_enabled=bool(item.semantic_split_default_enabled))
+    return PublicSubtitleSettings(
+        semantic_split_default_enabled=bool(item.semantic_split_default_enabled),
+        default_asr_model=str(getattr(item, "default_asr_model", "") or ""),
+    )
 
 
 def to_admin_subtitle_settings_item(item: SubtitleSetting) -> AdminSubtitleSettingsItem:
     return AdminSubtitleSettingsItem(
         semantic_split_default_enabled=bool(item.semantic_split_default_enabled),
+        default_asr_model=str(getattr(item, "default_asr_model", "") or ""),
         subtitle_split_enabled=bool(item.subtitle_split_enabled),
         subtitle_split_target_words=int(item.subtitle_split_target_words),
         subtitle_split_max_words=int(item.subtitle_split_max_words),

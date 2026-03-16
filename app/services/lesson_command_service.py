@@ -9,12 +9,12 @@ from pathlib import Path
 from sqlalchemy import update
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, LESSON_DEFAULT_ASR_MODEL, UPLOAD_MAX_BYTES
+from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, UPLOAD_MAX_BYTES
 from app.models import Lesson, WalletLedger
 from app.repositories.admin_console import invalidate_admin_overview_cache, invalidate_admin_user_activity_summary_cache
 from app.repositories.lessons import update_lesson_title_for_user
 from app.services.asr_dashscope import AsrError
-from app.services.billing_service import BillingError
+from app.services.billing_service import BillingError, get_default_asr_model
 from app.services.lesson_query_service import invalidate_lesson_catalog_cache
 from app.services.lesson_service import LessonService
 from app.services.lesson_task_manager import (
@@ -272,7 +272,7 @@ def resume_lesson_task_for_user(*, task_id: str, user_id: int, db: Session) -> d
             "source_filename": str(resumed.get("source_filename") or source_path.name),
             "source_path": source_path,
             "req_dir": req_dir,
-            "asr_model": str(resumed.get("asr_model") or LESSON_DEFAULT_ASR_MODEL),
+            "asr_model": str(resumed.get("asr_model") or get_default_asr_model(db)),
             "semantic_split_enabled": bool(resumed.get("semantic_split_enabled")),
             "session_factory": task_session_factory,
         },

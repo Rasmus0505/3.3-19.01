@@ -1,15 +1,34 @@
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
-import { clearAuthStorage, TOKEN_KEY } from "../../app/authStorage";
+import { clearAuthStorage, TOKEN_KEY, USER_EMAIL_KEY, USER_ID_KEY } from "../../app/authStorage";
 
 function readStoredAccessToken() {
   if (typeof localStorage === "undefined") return "";
   return localStorage.getItem(TOKEN_KEY) || "";
 }
 
+function normalizeStoredUser(user) {
+  const id = Number(user?.id || 0);
+  const email = String(user?.email || "").trim();
+  if (!Number.isFinite(id) || id <= 0 || !email) {
+    return null;
+  }
+  return { id, email };
+}
+
+function readStoredCurrentUser() {
+  if (typeof localStorage === "undefined") return null;
+  return normalizeStoredUser({
+    id: localStorage.getItem(USER_ID_KEY),
+    email: localStorage.getItem(USER_EMAIL_KEY),
+  });
+}
+
 function buildAuthInitialState() {
   const accessToken = readStoredAccessToken();
+  const currentUser = readStoredCurrentUser();
   return {
     accessToken,
+    currentUser,
     hasStoredToken: Boolean(accessToken),
     authStatus: accessToken ? "active" : "anonymous",
     authStatusMessage: "",
@@ -26,8 +45,10 @@ export function createAuthSlice(set, get) {
     resetAuthState: () => set({ ...buildAuthInitialState() }),
     hydrateAccessToken: () => {
       const accessToken = readStoredAccessToken();
+      const currentUser = readStoredCurrentUser();
       set({
         accessToken,
+        currentUser,
         hasStoredToken: Boolean(accessToken),
         authStatus: accessToken ? "active" : "anonymous",
         authStatusMessage: "",
@@ -40,6 +61,7 @@ export function createAuthSlice(set, get) {
       const nextAccessToken = String(accessToken || "");
       set({
         accessToken: nextAccessToken,
+        currentUser: nextAccessToken ? readStoredCurrentUser() : null,
         hasStoredToken: Boolean(nextAccessToken || readStoredAccessToken()),
         authStatus: nextAccessToken ? "active" : "anonymous",
         authStatusMessage: "",
@@ -47,11 +69,15 @@ export function createAuthSlice(set, get) {
         adminAuthState: "idle",
       });
     },
+    setCurrentUser: (currentUser) => {
+      set({ currentUser: normalizeStoredUser(currentUser) });
+    },
     markAuthExpired: (message = "登录已失效，请重新登录") => {
       const nextMessage = String(message || "登录已失效，请重新登录");
       console.debug("[DEBUG] auth expired", { message: nextMessage });
       set({
         accessToken: "",
+        currentUser: readStoredCurrentUser(),
         hasStoredToken: Boolean(readStoredAccessToken()),
         authStatus: "expired",
         authStatusMessage: nextMessage,

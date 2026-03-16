@@ -31,9 +31,9 @@ def list_admin_users(
     page_size: int,
     sort_by: str,
     sort_dir: str,
-) -> tuple[int, list[tuple[int, str, datetime, int]]]:
+) -> tuple[int, list[tuple[int, str, datetime, int, datetime | None]]]:
     balance_col = func.coalesce(WalletAccount.balance_points, 0)
-    base_stmt = select(User.id, User.email, User.created_at, balance_col.label("balance_points")).outerjoin(
+    base_stmt = select(User.id, User.email, User.created_at, balance_col.label("balance_points"), User.last_login_at).outerjoin(
         WalletAccount, WalletAccount.user_id == User.id
     )
     count_stmt = select(func.count(User.id))
@@ -47,6 +47,8 @@ def list_admin_users(
     sort_desc = (sort_dir or "desc").strip().lower() != "asc"
     if sort_key == "email":
         col = User.email
+    elif sort_key == "last_login_at":
+        col = User.last_login_at
     elif sort_key == "balance_points":
         col = balance_col
     else:
@@ -57,7 +59,7 @@ def list_admin_users(
     rows = db.execute(
         base_stmt.order_by(order_col, desc(User.id)).offset((page - 1) * page_size).limit(page_size)
     ).all()
-    items = [(row.id, row.email, row.created_at, int(row.balance_points or 0)) for row in rows]
+    items = [(row.id, row.email, row.created_at, int(row.balance_points or 0), row.last_login_at) for row in rows]
     return total, items
 
 

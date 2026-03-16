@@ -1,5 +1,5 @@
 import { CheckCircle2, Loader2, RefreshCcw, UploadCloud } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { cn } from "../../lib/utils";
@@ -7,6 +7,7 @@ import { api, parseResponse, toErrorText, uploadWithProgress } from "../../share
 import { clearActiveGenerationTask, getActiveGenerationTask, saveActiveGenerationTask } from "../../shared/media/localTaskStore";
 import { extractMediaCoverPreview, getLessonMediaPreview, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, MediaCover, Switch, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
+import { useAppStore } from "../../store";
 
 const QWEN_MODEL = "qwen3-asr-flash-filetrans";
 const DISPLAY_STAGES = [
@@ -91,7 +92,8 @@ function buildTaskState({ phase, taskId, taskSnapshot, uploadPercent, status }) 
   };
 }
 
-export function UploadPanel({ accessToken, onCreated, balancePoints, billingRates, subtitleSettings, onWalletChanged, onTaskStateChange, onNavigateToLesson }) {
+export function UploadPanel({ accessToken, isActivePanel = true, onCreated, balancePoints, billingRates, subtitleSettings, onWalletChanged, onTaskStateChange, onNavigateToLesson }) {
+  const currentUser = useAppStore((state) => state.currentUser);
   const [file, setFile] = useState(null);
   const [taskId, setTaskId] = useState("");
   const [loading, setLoading] = useState(false);
@@ -112,9 +114,17 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   const pollTokenRef = useRef(0);
   const uploadAbortRef = useRef(null);
   const fileInputRef = useRef(null);
-  const restoredRef = useRef(false);
+  const previousPanelActiveRef = useRef(Boolean(isActivePanel));
+  const ownerUserId = Number(currentUser?.id || 0);
 
-  const selectedRate = getRateByModel(billingRates, QWEN_MODEL);
+  const selectedAsrModel = useMemo(() => {
+    const configuredModel = String(subtitleSettings?.default_asr_model || "").trim();
+    if (configuredModel && getRateByModel(billingRates, configuredModel)) {
+      return configuredModel;
+    }
+    return configuredModel || QWEN_MODEL;
+  }, [billingRates, subtitleSettings?.default_asr_model]);
+  const selectedRate = getRateByModel(billingRates, selectedAsrModel) || getRateByModel(billingRates, QWEN_MODEL);
   const estimatedPoints = selectedRate ? calculatePointsBySeconds(durationSec || 0, selectedRate.points_per_minute) : 0;
   const likelyInsufficient = Number.isFinite(balancePoints) && estimatedPoints > 0 && balancePoints < estimatedPoints;
   const stageItems = getStageItems(taskSnapshot);
@@ -147,15 +157,40 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     setSemanticSplitEnabled(Boolean(subtitleSettings?.semantic_split_default_enabled));
   }, [subtitleSettings?.semantic_split_default_enabled]);
 
+  function resetLocalSessionState(options = {}) {
+    const { clearFileInput = true } = options;
+    stopPollingSession();
+    uploadAbortRef.current?.abort();
+    uploadAbortRef.current = null;
+    if (clearFileInput && fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    setFile(null);
+    setTaskId("");
+    setLoading(false);
+    setStatus("");
+    setDurationSec(null);
+    setPhase("idle");
+    setCoverDataUrl("");
+    setCoverAspectRatio(0);
+    setCoverWidth(0);
+    setCoverHeight(0);
+    setIsVideoSource(false);
+    setTaskSnapshot(null);
+    setUploadPercent(0);
+    setBindingCompleted(false);
+  }
+
   async function persistSession(overrides = {}) {
     const nextFile = overrides.file ?? file;
     const nextTaskId = overrides.taskId ?? taskId;
     const nextPhase = overrides.phase ?? phase;
+    if (!ownerUserId) return;
     if (!nextFile && !nextTaskId && nextPhase === "idle") {
-      await clearActiveGenerationTask();
+      await clearActiveGenerationTask(ownerUserId);
       return;
     }
-    await saveActiveGenerationTask({
+    await saveActiveGenerationTask(ownerUserId, {
       task_id: nextTaskId,
       phase: nextPhase,
       task_snapshot: overrides.taskSnapshot ?? taskSnapshot,
@@ -176,26 +211,9 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   }
 
   async function resetSession() {
-    stopPollingSession();
-    uploadAbortRef.current?.abort();
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-    setFile(null);
-    setTaskId("");
-    setLoading(false);
-    setStatus("");
-    setDurationSec(null);
-    setPhase("idle");
-    setCoverDataUrl("");
-    setCoverAspectRatio(0);
-    setCoverWidth(0);
-    setCoverHeight(0);
-    setIsVideoSource(false);
-    setTaskSnapshot(null);
-    setUploadPercent(0);
-    setBindingCompleted(false);
-    await clearActiveGenerationTask();
+    resetLocalSessionState();
+    if (!ownerUserId) return;
+    await clearActiveGenerationTask(ownerUserId);
   }
 
   async function clearTaskRuntime(nextStatus = "") {
@@ -238,7 +256,13 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     setStatus(successMessage);
     setLoading(false);
     setBindingCompleted(Boolean(mediaPersisted || data.lesson?.media_storage !== "client_indexeddb"));
-    await persistSession({ phase: "success", taskSnapshot: data, bindingCompleted: Boolean(mediaPersisted || data.lesson?.media_storage !== "client_indexeddb"), status: successMessage });
+    if (ownerUserId) {
+      console.debug("[DEBUG] upload success cache cleared", {
+        ownerUserId,
+        lessonId: Number(data.lesson?.id || 0),
+      });
+      await clearActiveGenerationTask(ownerUserId);
+    }
     await onWalletChanged?.();
     if (data.lesson) await onCreated?.({ lesson: data.lesson, mediaPreview, mediaPersisted });
     if (!silentToast) (successMessage ? toast.warning(successMessage) : toast.success("课程已生成"));
@@ -292,12 +316,28 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
   }
 
   useEffect(() => {
-    if (restoredRef.current) return;
-    restoredRef.current = true;
     let canceled = false;
+    resetLocalSessionState();
+    previousPanelActiveRef.current = Boolean(isActivePanel);
+
     async function restoreSession() {
-      const saved = await getActiveGenerationTask();
+      if (!ownerUserId) return;
+      const saved = await getActiveGenerationTask(ownerUserId);
       if (!saved || canceled) return;
+
+      const savedPhase = String(saved.phase || "").toLowerCase();
+      const savedTaskStatus = String(saved.task_snapshot?.status || "").toLowerCase();
+      if (savedPhase === "success" || savedTaskStatus === "succeeded") {
+        console.debug("[DEBUG] stale upload success cache dropped", { ownerUserId });
+        await clearActiveGenerationTask(ownerUserId);
+        return;
+      }
+
+      console.debug("[DEBUG] upload session restored", {
+        ownerUserId,
+        phase: savedPhase,
+        taskId: String(saved.task_id || ""),
+      });
       const restoredFile = createFileFromBlob(saved.file_blob, saved.file_name, saved.media_type);
       setFile(restoredFile);
       setTaskId(String(saved.task_id || ""));
@@ -312,23 +352,33 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
       setTaskSnapshot(saved.task_snapshot || null);
       setUploadPercent(Number(saved.upload_percent || 0));
       setBindingCompleted(Boolean(saved.binding_completed));
-      setLoading(["uploading", "processing"].includes(String(saved.phase || "")));
+      setLoading(["uploading", "processing"].includes(savedPhase));
       if (
         saved.task_id &&
-        (["pending", "running"].includes(String(saved.task_snapshot?.status || "").toLowerCase()) ||
-          ["processing", "uploading"].includes(String(saved.phase || "").toLowerCase()))
+        (["pending", "running"].includes(savedTaskStatus) || ["processing", "uploading"].includes(savedPhase))
       ) {
         const pollToken = startPollingSession();
         void pollTask(String(saved.task_id), true, pollToken);
-      } else if (saved.task_id && String(saved.task_snapshot?.status || "").toLowerCase() === "succeeded" && !saved.binding_completed) {
-        await finalizeSuccess(saved.task_snapshot, restoredFile, true);
       }
     }
+
     void restoreSession();
     return () => {
       canceled = true;
     };
-  }, []);
+  }, [ownerUserId]);
+
+  useEffect(() => {
+    const wasActivePanel = previousPanelActiveRef.current;
+    if (!wasActivePanel && isActivePanel && phase === "success") {
+      console.debug("[DEBUG] upload panel success state cleared on return", {
+        ownerUserId,
+        taskId,
+      });
+      resetLocalSessionState();
+    }
+    previousPanelActiveRef.current = Boolean(isActivePanel);
+  }, [isActivePanel, ownerUserId, phase, taskId]);
 
   async function onSelectFile(nextFile) {
     stopPollingSession();
@@ -348,7 +398,9 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     setBindingCompleted(false);
     if (!nextFile) {
       setPhase("idle");
-      await clearActiveGenerationTask();
+      if (ownerUserId) {
+        await clearActiveGenerationTask(ownerUserId);
+      }
       return;
     }
     setPhase("probing");
@@ -389,7 +441,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
     try {
       const form = new FormData();
       form.append("video_file", file);
-      form.append("asr_model", QWEN_MODEL);
+      form.append("asr_model", selectedAsrModel);
       form.append("semantic_split_enabled", semanticSplitEnabled ? "true" : "false");
       const abortController = new AbortController();
       uploadAbortRef.current = abortController;
@@ -508,6 +560,7 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
               </Tooltip>
               ：{selectedRate ? (durationSec != null ? `${estimatedPoints} 点（${selectedRate.points_per_minute} 点/分钟）` : "选择文件后显示") : "该模型未配置单价"}
             </p>
+            <p className="text-muted-foreground">默认 ASR 模型：{selectedAsrModel}</p>
             {likelyInsufficient ? <p className="mt-1 text-destructive">余额可能不足，提交将被拒绝。</p> : null}
           </AlertDescription>
         </Alert>
@@ -527,8 +580,23 @@ export function UploadPanel({ accessToken, onCreated, balancePoints, billingRate
 
         {phase === "success" && taskSnapshot?.lesson ? (
           <div className="space-y-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-            <div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 size-5 text-emerald-600" /><div className="space-y-1"><p className="text-sm font-semibold text-emerald-700">生成成功</p><p className="text-sm text-emerald-700/80">{status || "课程已写入历史记录，你可以现在开始学习，或继续上传下一份素材。"}</p></div></div>
-            <div className="flex flex-wrap gap-2"><Button type="button" onClick={() => onNavigateToLesson?.(taskSnapshot.lesson.id)}>去学习</Button><Button type="button" variant="outline" onClick={() => void resetSession()}>继续上传</Button></div>
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="mt-0.5 size-5 text-emerald-600" />
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-emerald-700">生成成功</p>
+                <p className="text-sm text-emerald-700/80">
+                  {status || "课程已写入历史记录，你可以回到历史记录定位新课程，或继续上传下一份素材。"}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" onClick={() => onNavigateToLesson?.(taskSnapshot.lesson.id)}>
+                去历史记录
+              </Button>
+              <Button type="button" variant="outline" onClick={() => void resetSession()}>
+                继续上传
+              </Button>
+            </div>
           </div>
         ) : null}
 

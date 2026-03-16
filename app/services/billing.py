@@ -13,7 +13,7 @@ from sqlalchemy import func, inspect, select, text
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
-from app.core.config import REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_DEFAULT_VALID_DAYS
+from app.core.config import LESSON_DEFAULT_ASR_MODEL, REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_DEFAULT_VALID_DAYS
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
 from app.repositories.billing_rates import list_billing_rates as query_billing_rates
 from app.models import (
@@ -86,6 +86,7 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
 
 DEFAULT_SUBTITLE_SETTINGS = {
     "semantic_split_default_enabled": False,
+    "default_asr_model": LESSON_DEFAULT_ASR_MODEL,
     "subtitle_split_enabled": True,
     "subtitle_split_target_words": 18,
     "subtitle_split_max_words": 28,
@@ -96,6 +97,7 @@ DEFAULT_SUBTITLE_SETTINGS = {
 
 _SUBTITLE_SETTINGS_REQUIRED_COLUMN_SQL: tuple[tuple[str, str, str], ...] = (
     ("semantic_split_default_enabled", "BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("default_asr_model", f"VARCHAR(100) NOT NULL DEFAULT '{LESSON_DEFAULT_ASR_MODEL}'", f"VARCHAR(100) NOT NULL DEFAULT '{LESSON_DEFAULT_ASR_MODEL}'"),
     ("subtitle_split_enabled", "BOOLEAN NOT NULL DEFAULT 1", "BOOLEAN NOT NULL DEFAULT TRUE"),
     ("subtitle_split_target_words", "INTEGER NOT NULL DEFAULT 18", "INTEGER NOT NULL DEFAULT 18"),
     ("subtitle_split_max_words", "INTEGER NOT NULL DEFAULT 28", "INTEGER NOT NULL DEFAULT 28"),
@@ -120,6 +122,7 @@ class BillingError(Exception):
 @dataclass(frozen=True)
 class SubtitleSettingsSnapshot:
     semantic_split_default_enabled: bool
+    default_asr_model: str
     subtitle_split_enabled: bool
     subtitle_split_target_words: int
     subtitle_split_max_words: int
@@ -685,6 +688,7 @@ def get_subtitle_settings_snapshot(db: Session) -> SubtitleSettingsSnapshot:
     row = get_subtitle_settings(db)
     return SubtitleSettingsSnapshot(
         semantic_split_default_enabled=bool(row.semantic_split_default_enabled),
+        default_asr_model=str(getattr(row, "default_asr_model", "") or LESSON_DEFAULT_ASR_MODEL),
         subtitle_split_enabled=bool(row.subtitle_split_enabled),
         subtitle_split_target_words=int(row.subtitle_split_target_words),
         subtitle_split_max_words=int(row.subtitle_split_max_words),
@@ -828,6 +832,9 @@ def _backfill_subtitle_settings_values(db: Session) -> bool:
         if isinstance(default_value, bool):
             update_sql = text(f"UPDATE {table_name} SET {column_name} = :default_value WHERE {column_name} IS NULL")
             params = {"default_value": int(default_value) if dialect_name == "sqlite" else bool(default_value)}
+        elif column_name == "default_asr_model":
+            update_sql = text(f"UPDATE {table_name} SET {column_name} = :default_value WHERE {column_name} IS NULL OR TRIM({column_name}) = ''")
+            params = {"default_value": str(default_value or LESSON_DEFAULT_ASR_MODEL)}
         elif column_name == "translation_batch_max_chars":
             update_sql = text(
                 f"UPDATE {table_name} SET {column_name} = {int(default_value)} "
@@ -862,6 +869,12 @@ def _normalize_subtitle_settings_row(row: SubtitleSetting) -> bool:
                 setattr(row, key, value)
                 changed = True
             continue
+        if key == "default_asr_model":
+            normalized_value = str(current or "").strip() or str(value or LESSON_DEFAULT_ASR_MODEL)
+            if normalized_value != current:
+                setattr(row, key, normalized_value)
+                changed = True
+            continue
         if current in (None, ""):
             setattr(row, key, value)
             changed = True
@@ -879,6 +892,11 @@ def _normalize_subtitle_settings_row(row: SubtitleSetting) -> bool:
         row.updated_at = _now()
         changed = True
     return changed
+
+
+def get_default_asr_model(db: Session) -> str:
+    row = get_subtitle_settings(db)
+    return str(getattr(row, "default_asr_model", "") or "").strip() or LESSON_DEFAULT_ASR_MODEL
 
 
 def get_or_create_wallet_account(db: Session, user_id: int, *, for_update: bool = False) -> WalletAccount:

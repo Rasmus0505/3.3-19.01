@@ -14,11 +14,14 @@ from app.models import (
     RedeemCodeBatch,
     TranslationRequestLog,
     User,
+    UserLoginEvent,
+    WalletAccount,
     WalletLedger,
 )
 from app.repositories.admin import list_redeem_batches
 from app.services.query_cache import query_cache
 from app.services.lesson_task_manager import ensure_lesson_task_storage_ready
+from app.services.user_activity import ensure_user_activity_schema
 
 CHART_COLORS = {
     "blue": "#2563eb",
@@ -42,6 +45,10 @@ def _date_key(value) -> str:
 
 def _date_label(value: datetime) -> str:
     return value.strftime("%m-%d")
+
+
+def _range_end_exclusive(date_to: datetime) -> datetime:
+    return date_to + timedelta(days=1)
 
 
 def _build_daily_points(days: int, now: datetime, series_maps: dict[str, dict[str, int]]) -> list[dict[str, int | str]]:
@@ -551,8 +558,214 @@ def get_admin_overview_data(db: Session, *, now: datetime) -> dict[str, object]:
     )
 
 
-def _get_admin_user_activity_summary_uncached(db: Session, *, user_id: int, now: datetime) -> dict[str, object]:
+def list_admin_user_activity(
+    db: Session,
+    *,
+    keyword: str,
+    date_from: datetime,
+    date_to: datetime,
+    page: int,
+    page_size: int,
+    sort_by: str,
+    sort_dir: str,
+) -> dict[str, object]:
+    ensure_user_activity_schema(db)
+    range_end = _range_end_exclusive(date_to)
+    normalized_keyword = keyword.strip().lower()
+
+    login_activity = (
+        select(
+            UserLoginEvent.user_id.label("user_id"),
+            func.count(UserLoginEvent.id).label("login_events"),
+            func.count(func.distinct(func.date(UserLoginEvent.created_at))).label("login_days"),
+            func.max(UserLoginEvent.created_at).label("last_login_at"),
+        )
+        .where(UserLoginEvent.created_at >= date_from, UserLoginEvent.created_at < range_end)
+        .group_by(UserLoginEvent.user_id)
+        .subquery()
+    )
+    lesson_activity = (
+        select(
+            Lesson.user_id.label("user_id"),
+            func.count(Lesson.id).label("lessons_created"),
+        )
+        .where(Lesson.created_at >= date_from, Lesson.created_at < range_end)
+        .group_by(Lesson.user_id)
+        .subquery()
+    )
+    wallet_activity = (
+        select(
+            WalletLedger.user_id.label("user_id"),
+            func.coalesce(func.sum(case((WalletLedger.delta_points < 0, -WalletLedger.delta_points), else_=0)), 0).label("consumed_points"),
+            func.coalesce(
+                func.sum(case((WalletLedger.event_type == "redeem_code", WalletLedger.delta_points), else_=0)),
+                0,
+            ).label("redeemed_points"),
+        )
+        .where(
+            WalletLedger.created_at >= date_from,
+            WalletLedger.created_at < range_end,
+            WalletLedger.event_type.in_(["consume", "consume_translate", "redeem_code"]),
+        )
+        .group_by(WalletLedger.user_id)
+        .subquery()
+    )
+
+    base = (
+        select(
+            User.id,
+            User.email,
+            User.created_at,
+            User.last_login_at,
+            func.coalesce(WalletAccount.balance_points, 0).label("balance_points"),
+            func.coalesce(login_activity.c.login_days, 0).label("login_days"),
+            func.coalesce(login_activity.c.login_events, 0).label("login_events"),
+            func.coalesce(lesson_activity.c.lessons_created, 0).label("lessons_created"),
+            func.coalesce(wallet_activity.c.consumed_points, 0).label("consumed_points"),
+            func.coalesce(wallet_activity.c.redeemed_points, 0).label("redeemed_points"),
+        )
+        .join(login_activity, login_activity.c.user_id == User.id)
+        .outerjoin(WalletAccount, WalletAccount.user_id == User.id)
+        .outerjoin(lesson_activity, lesson_activity.c.user_id == User.id)
+        .outerjoin(wallet_activity, wallet_activity.c.user_id == User.id)
+    )
+    count_stmt = select(func.count()).select_from(
+        select(User.id).join(login_activity, login_activity.c.user_id == User.id).subquery()
+    )
+
+    if normalized_keyword:
+        pattern = f"%{normalized_keyword}%"
+        base = base.where(func.lower(User.email).like(pattern))
+        count_stmt = select(func.count()).select_from(
+            select(User.id)
+            .join(login_activity, login_activity.c.user_id == User.id)
+            .where(func.lower(User.email).like(pattern))
+            .subquery()
+        )
+
+    sort_key = (sort_by or "login_events").strip().lower()
+    sort_desc = (sort_dir or "desc").strip().lower() != "asc"
+    sort_columns = {
+        "email": User.email,
+        "created_at": User.created_at,
+        "last_login_at": func.coalesce(login_activity.c.last_login_at, User.last_login_at),
+        "balance_points": func.coalesce(WalletAccount.balance_points, 0),
+        "login_days": login_activity.c.login_days,
+        "login_events": login_activity.c.login_events,
+        "lessons_created": lesson_activity.c.lessons_created,
+        "consumed_points": wallet_activity.c.consumed_points,
+        "redeemed_points": wallet_activity.c.redeemed_points,
+    }
+    sort_column = sort_columns.get(sort_key, login_activity.c.login_events)
+    order_column = desc(sort_column) if sort_desc else sort_column.asc()
+
+    total = int(db.scalar(count_stmt) or 0)
+    rows = db.execute(base.order_by(order_column, desc(User.id)).offset((page - 1) * page_size).limit(page_size)).all()
+
+    login_filter = [UserLoginEvent.created_at >= date_from, UserLoginEvent.created_at < range_end]
+    if normalized_keyword:
+        login_filter.append(func.lower(User.email).like(f"%{normalized_keyword}%"))
+    timeline_rows = db.execute(
+        select(
+            func.date(UserLoginEvent.created_at).label("bucket"),
+            func.count(func.distinct(UserLoginEvent.user_id)).label("active_users"),
+            func.count(UserLoginEvent.id).label("login_events"),
+        )
+        .join(User, User.id == UserLoginEvent.user_id)
+        .where(*login_filter)
+        .group_by(func.date(UserLoginEvent.created_at))
+        .order_by(func.date(UserLoginEvent.created_at))
+    ).all()
+    new_user_filter = [User.created_at >= date_from, User.created_at < range_end]
+    if normalized_keyword:
+        new_user_filter.append(func.lower(User.email).like(f"%{normalized_keyword}%"))
+    new_user_rows = db.execute(
+        select(func.date(User.created_at).label("bucket"), func.count(User.id))
+        .where(*new_user_filter)
+        .group_by(func.date(User.created_at))
+        .order_by(func.date(User.created_at))
+    ).all()
+    new_user_map = {_date_key(bucket): int(count or 0) for bucket, count in new_user_rows}
+    timeline_points = []
+    cursor = date_from.replace(hour=0, minute=0, second=0, microsecond=0)
+    date_to_day = date_to.replace(hour=0, minute=0, second=0, microsecond=0)
+    timeline_map = {_date_key(bucket): {"active_users": int(active_users or 0), "login_events": int(login_events or 0)} for bucket, active_users, login_events in timeline_rows}
+    while cursor <= date_to_day:
+        key = cursor.strftime("%Y-%m-%d")
+        timeline_points.append(
+            {
+                "label": _date_label(cursor),
+                "活跃用户": int(timeline_map.get(key, {}).get("active_users", 0)),
+                "登录次数": int(timeline_map.get(key, {}).get("login_events", 0)),
+                "新增用户": int(new_user_map.get(key, 0)),
+            }
+        )
+        cursor += timedelta(days=1)
+
+    total_login_events = int(
+        db.scalar(
+            select(func.count(UserLoginEvent.id))
+            .join(User, User.id == UserLoginEvent.user_id)
+            .where(*login_filter)
+        )
+        or 0
+    )
+    total_new_users = int(db.scalar(select(func.count(User.id)).where(*new_user_filter)) or 0)
+    total_consumed_points = int(
+        db.scalar(
+            select(func.coalesce(func.sum(case((WalletLedger.delta_points < 0, -WalletLedger.delta_points), else_=0)), 0))
+            .join(User, User.id == WalletLedger.user_id)
+            .where(
+                WalletLedger.created_at >= date_from,
+                WalletLedger.created_at < range_end,
+                WalletLedger.event_type.in_(["consume", "consume_translate"]),
+                *( [func.lower(User.email).like(f"%{normalized_keyword}%")] if normalized_keyword else [] ),
+            )
+        )
+        or 0
+    )
+
+    return {
+        "total": total,
+        "rows": rows,
+        "summary_cards": [
+            {"label": "活跃用户", "value": total, "hint": "当前时间范围内至少登录一次的用户数", "tone": "info"},
+            {"label": "登录次数", "value": total_login_events, "hint": "同一用户多次登录会累计", "tone": "default"},
+            {"label": "新增用户", "value": total_new_users, "hint": "同范围内新注册账号数", "tone": "success"},
+            {"label": "区间消耗点数", "value": total_consumed_points, "hint": "登录活跃用户在当前范围内的消耗", "tone": "warning"},
+        ],
+        "charts": [
+            {
+                "title": "活跃趋势",
+                "description": "按天查看活跃用户、登录次数和新增用户。",
+                "type": "line",
+                "x_key": "label",
+                "series": [
+                    {"key": "活跃用户", "name": "活跃用户", "color": CHART_COLORS["blue"]},
+                    {"key": "登录次数", "name": "登录次数", "color": CHART_COLORS["cyan"]},
+                    {"key": "新增用户", "name": "新增用户", "color": CHART_COLORS["green"]},
+                ],
+                "data": timeline_points,
+            }
+        ],
+        "range_start": date_from,
+        "range_end": date_to,
+    }
+
+
+def _get_admin_user_activity_summary_uncached(
+    db: Session,
+    *,
+    user_id: int,
+    now: datetime,
+    date_from: datetime | None,
+    date_to: datetime | None,
+) -> dict[str, object]:
+    ensure_user_activity_schema(db)
     since_30_days = now - timedelta(days=30)
+    range_start = date_from or since_30_days
+    range_end = date_to or now
+    range_end_exclusive = _range_end_exclusive(range_end)
     latest_lesson_created_at = db.scalar(select(func.max(Lesson.created_at)).where(Lesson.user_id == user_id))
     latest_wallet_event_at = db.scalar(select(func.max(WalletLedger.created_at)).where(WalletLedger.user_id == user_id))
     latest_redeem_at = db.scalar(
@@ -582,21 +795,93 @@ def _get_admin_user_activity_summary_uncached(db: Session, *, user_id: int, now:
         )
         or 0
     )
+    latest_login_at = db.scalar(select(func.max(UserLoginEvent.created_at)).where(UserLoginEvent.user_id == user_id))
+    login_events_in_range = int(
+        db.scalar(
+            select(func.count(UserLoginEvent.id)).where(
+                UserLoginEvent.user_id == user_id,
+                UserLoginEvent.created_at >= range_start,
+                UserLoginEvent.created_at < range_end_exclusive,
+            )
+        )
+        or 0
+    )
+    login_days_in_range = int(
+        db.scalar(
+            select(func.count(func.distinct(func.date(UserLoginEvent.created_at)))).where(
+                UserLoginEvent.user_id == user_id,
+                UserLoginEvent.created_at >= range_start,
+                UserLoginEvent.created_at < range_end_exclusive,
+            )
+        )
+        or 0
+    )
+    lessons_created_in_range = int(
+        db.scalar(
+            select(func.count(Lesson.id)).where(
+                Lesson.user_id == user_id,
+                Lesson.created_at >= range_start,
+                Lesson.created_at < range_end_exclusive,
+            )
+        )
+        or 0
+    )
+    consumed_points_in_range = int(
+        db.scalar(
+            select(func.coalesce(func.sum(case((WalletLedger.delta_points < 0, -WalletLedger.delta_points), else_=0)), 0)).where(
+                WalletLedger.user_id == user_id,
+                WalletLedger.created_at >= range_start,
+                WalletLedger.created_at < range_end_exclusive,
+                WalletLedger.event_type.in_(["consume", "consume_translate"]),
+            )
+        )
+        or 0
+    )
+    redeemed_points_in_range = int(
+        db.scalar(
+            select(func.coalesce(func.sum(WalletLedger.delta_points), 0)).where(
+                WalletLedger.user_id == user_id,
+                WalletLedger.created_at >= range_start,
+                WalletLedger.created_at < range_end_exclusive,
+                WalletLedger.event_type == "redeem_code",
+            )
+        )
+        or 0
+    )
     return {
         "user_id": user_id,
         "lesson_count": lesson_count,
         "latest_lesson_created_at": latest_lesson_created_at,
         "latest_wallet_event_at": latest_wallet_event_at,
         "latest_redeem_at": latest_redeem_at,
+        "latest_login_at": latest_login_at,
         "consumed_points_30d": consumed_points_30d,
         "redeemed_points_30d": redeemed_points_30d,
+        "range_start": range_start,
+        "range_end": range_end,
+        "login_days_in_range": login_days_in_range,
+        "login_events_in_range": login_events_in_range,
+        "lessons_created_in_range": lessons_created_in_range,
+        "consumed_points_in_range": consumed_points_in_range,
+        "redeemed_points_in_range": redeemed_points_in_range,
     }
 
 
-def get_admin_user_activity_summary(db: Session, *, user_id: int, now: datetime) -> dict[str, object]:
+def get_admin_user_activity_summary(
+    db: Session,
+    *,
+    user_id: int,
+    now: datetime,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> dict[str, object]:
     return query_cache.get_or_set(
         f"admin_user_summary:{int(user_id)}",
-        {"bucket": now.replace(second=0, microsecond=0).isoformat()},
+        {
+            "bucket": now.replace(second=0, microsecond=0).isoformat(),
+            "date_from": date_from.isoformat() if date_from else "",
+            "date_to": date_to.isoformat() if date_to else "",
+        },
         ADMIN_USER_SUMMARY_TTL_SECONDS,
-        lambda: _get_admin_user_activity_summary_uncached(db, user_id=user_id, now=now),
+        lambda: _get_admin_user_activity_summary_uncached(db, user_id=user_id, now=now, date_from=date_from, date_to=date_to),
     )

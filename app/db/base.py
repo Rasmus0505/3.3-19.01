@@ -8,6 +8,7 @@ from sqlalchemy.orm import DeclarativeBase
 APP_SCHEMA = "app"
 BUSINESS_TABLES = (
     "users",
+    "user_login_events",
     "lessons",
     "lesson_sentences",
     "lesson_progress",

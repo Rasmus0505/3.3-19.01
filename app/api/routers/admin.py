@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_admin_emails, get_admin_user
 from app.api.serializers import to_admin_subtitle_settings_item, to_rate_item
-from app.core.config import REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_EXPORT_CONFIRM_TEXT
+from app.core.config import LESSON_DEFAULT_ASR_MODEL, REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_EXPORT_CONFIRM_TEXT
 from app.core.errors import error_response, map_billing_error
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
 from app.db import get_db
@@ -146,6 +146,7 @@ def _subtitle_settings_item_from_dict(
 ) -> AdminSubtitleSettingsItem:
     return AdminSubtitleSettingsItem(
         semantic_split_default_enabled=bool(payload.get("semantic_split_default_enabled")),
+        default_asr_model=str(payload.get("default_asr_model") or LESSON_DEFAULT_ASR_MODEL),
         subtitle_split_enabled=bool(payload.get("subtitle_split_enabled", True)),
         subtitle_split_target_words=int(payload.get("subtitle_split_target_words", 18) or 18),
         subtitle_split_max_words=int(payload.get("subtitle_split_max_words", 28) or 28),
@@ -256,8 +257,9 @@ def admin_list_users(
             email=email,
             created_at=to_shanghai_aware(created_at),
             balance_points=balance_points,
+            last_login_at=to_shanghai_aware(last_login_at) if last_login_at else None,
         )
-        for user_id, email, created_at, balance_points in rows
+        for user_id, email, created_at, balance_points, last_login_at in rows
     ]
     visible_balance_points = sum(int(item.balance_points or 0) for item in items)
     return AdminUsersResponse(
@@ -269,7 +271,7 @@ def admin_list_users(
         summary_cards=[
             {"label": "匹配用户", "value": total, "hint": "当前关键词筛中的总用户数", "tone": "info"},
             {"label": "本页余额合计", "value": visible_balance_points, "hint": "仅统计当前页，避免误读为全量", "tone": "success"},
-            {"label": "当前排序", "value": f"{sort_by}/{sort_dir}", "hint": "方便确认列表视角", "tone": "default"},
+            {"label": "当前排序", "value": f"{sort_by}/{sort_dir}", "hint": "支持按最近登录排序", "tone": "default"},
         ],
     )
 
@@ -578,9 +580,20 @@ def admin_update_subtitle_settings(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_admin_user),
 ):
+    normalized_default_asr_model = payload.default_asr_model.strip()
+    if not normalized_default_asr_model:
+        return error_response(400, "INVALID_DEFAULT_ASR_MODEL", "默认 ASR 模型不能为空")
+    available_asr_models = {
+        str(item.model_name or "").strip()
+        for item in list_billing_rates(db)
+        if str(getattr(item, "billing_unit", "minute") or "minute") == "minute"
+    }
+    if normalized_default_asr_model not in available_asr_models:
+        return error_response(400, "INVALID_DEFAULT_ASR_MODEL", "默认 ASR 模型不在当前可用模型列表内", normalized_default_asr_model)
     settings = get_subtitle_settings(db)
     before = to_admin_subtitle_settings_item(settings).model_dump(mode="json")
     settings.semantic_split_default_enabled = payload.semantic_split_default_enabled
+    settings.default_asr_model = normalized_default_asr_model
     settings.subtitle_split_enabled = payload.subtitle_split_enabled
     settings.subtitle_split_target_words = payload.subtitle_split_target_words
     settings.subtitle_split_max_words = payload.subtitle_split_max_words
@@ -623,6 +636,7 @@ def admin_rollback_subtitle_settings_last(
     before = _subtitle_settings_item_with_meta(settings).model_dump(mode="json")
     previous = rollback_candidate.settings
     settings.semantic_split_default_enabled = previous.semantic_split_default_enabled
+    settings.default_asr_model = previous.default_asr_model
     settings.subtitle_split_enabled = previous.subtitle_split_enabled
     settings.subtitle_split_target_words = previous.subtitle_split_target_words
     settings.subtitle_split_max_words = previous.subtitle_split_max_words

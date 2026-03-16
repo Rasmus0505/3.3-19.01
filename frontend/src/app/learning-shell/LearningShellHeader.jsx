@@ -1,4 +1,6 @@
-import { Menu } from "lucide-react";
+import { BookOpenText, Menu } from "lucide-react";
+import { Link } from "react-router-dom";
+
 import {
   Badge,
   Button,
@@ -49,7 +51,9 @@ export function LearningShellHeader({
             <SheetContent side="left" className="w-[320px] p-0">
               <SheetHeader className="sr-only">
                 <SheetTitle>{currentPanel.title}</SheetTitle>
-                <SheetDescription>{isAdminRoute ? "在移动端展开管理台子项、切换后台页面与账号操作。" : "在移动端切换学习面板、课程跳转与账号操作。"}</SheetDescription>
+                <SheetDescription>
+                  {isAdminRoute ? "在移动端展开管理台子项、切换后台页面与账号操作。" : "在移动端切换学习面板、课程跳转与账号操作。"}
+                </SheetDescription>
               </SheetHeader>
               <div className="flex h-full flex-col">
                 <LearningShellSidebar
@@ -88,6 +92,15 @@ export function LearningShellHeader({
               <h1 className="truncate text-sm font-semibold">{currentPanel.title}</h1>
               {showLessonsBadge ? <Badge variant="outline">{lessonsCount} 门课程</Badge> : null}
             </div>
+          </div>
+
+          <div className="ml-auto">
+            <Button asChild variant="outline" size="sm" className="gap-2">
+              <Link to="/help/getting-started">
+                <BookOpenText className="size-4" />
+                新手教程
+              </Link>
+            </Button>
           </div>
         </div>
       </div>

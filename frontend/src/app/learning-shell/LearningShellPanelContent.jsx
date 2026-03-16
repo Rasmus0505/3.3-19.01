@@ -116,6 +116,7 @@ export function LearningShellPanelContent({
             <Suspense fallback={<PanelFallback />}>
               <UploadPanel
                 accessToken={accessToken}
+                isActivePanel={activePanel === "upload"}
                 onCreated={onCreatedLesson}
                 balancePoints={walletBalance}
                 billingRates={billingRates}
