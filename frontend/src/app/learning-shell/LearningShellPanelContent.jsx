@@ -1,6 +1,7 @@
 import { Suspense, lazy } from "react";
 
 import { AuthPanel } from "../../features/auth/AuthPanel";
+import { GettingStartedPanel } from "../../features/getting-started/GettingStartedPanel";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui";
 import { REFRESH_KEY, TOKEN_KEY } from "../authStorage";
 
@@ -19,6 +20,7 @@ export function LearningShellPanelContent({
   activePanel,
   accessToken,
   currentLesson,
+  currentUser,
   immersiveLayoutActive,
   mediaRestoreTick,
   globalStatus,
@@ -51,6 +53,14 @@ export function LearningShellPanelContent({
   onTaskStateChange,
   onNavigateToGeneratedLesson,
   apiCall,
+  isMobileViewport,
+  gettingStartedProgress,
+  showGettingStartedWelcome,
+  onDismissGettingStartedWelcome,
+  onStartGettingStartedGuide,
+  onGoToLogin,
+  onGoToHistory,
+  guideTargetLessonId,
 }) {
   const contentAlert = globalStatus ? (
     <Alert variant="destructive">
@@ -82,12 +92,26 @@ export function LearningShellPanelContent({
   return (
     <section className="min-w-0 space-y-4">
       {contentAlert}
-      {!accessToken ? (
+      {!accessToken && activePanel !== "getting-started" ? (
         <div className="mx-auto max-w-md">
           <AuthPanel onAuthed={onAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
         </div>
       ) : (
         <>
+          <div className={activePanel === "getting-started" ? "block" : "hidden"}>
+            <GettingStartedPanel
+              accessToken={accessToken}
+              currentUser={currentUser}
+              isMobileViewport={isMobileViewport}
+              progressState={gettingStartedProgress}
+              showWelcomePrompt={showGettingStartedWelcome}
+              onDismissWelcome={onDismissGettingStartedWelcome}
+              onStartGuide={onStartGettingStartedGuide}
+              onGoLogin={onGoToLogin}
+              onGoUpload={() => onSwitchToUpload?.()}
+              onGoHistory={onGoToHistory}
+            />
+          </div>
           <div className={activePanel === "history" ? "block" : "hidden"}>
             <Suspense fallback={<PanelFallback />}>
               <LessonList
@@ -98,6 +122,7 @@ export function LearningShellPanelContent({
                 lessonMediaMetaMap={lessonMediaMetaMap}
                 subtitleCacheMetaMap={subtitleCacheMetaMap}
                 subtitleRegenerateState={subtitleRegenerateState}
+                guideTargetLessonId={guideTargetLessonId}
                 onSelect={onSelectLesson}
                 onStartLesson={onStartLesson}
                 onRename={onRenameLesson}

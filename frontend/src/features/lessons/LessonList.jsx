@@ -106,6 +106,7 @@ export function LessonList({
   lessonCardMetaMap = {},
   lessonMediaMetaMap = {},
   subtitleCacheMetaMap = {},
+  guideTargetLessonId = 0,
   onSelect,
   onStartLesson,
   onRename,
@@ -576,6 +577,7 @@ export function LessonList({
           <div className="space-y-3">
             {cards.map(({ lesson, mediaMeta, subtitleMeta, sentenceCount, actionLabel, needsBinding, createdAtLabel }) => {
               const selected = currentLessonId === lesson.id;
+              const isGuideTarget = Number(guideTargetLessonId || 0) > 0 ? Number(guideTargetLessonId) === Number(lesson.id) : lesson.id === cards[0]?.lesson.id;
               const currentVariantLabel =
                 subtitleMeta.currentSemanticSplitEnabled === true
                   ? "语义分句"
@@ -634,6 +636,7 @@ export function LessonList({
                         type="button"
                         className="w-full"
                         onClick={() => startLessonFromHistory(lesson.id, "button")}
+                        data-guide-id={isGuideTarget ? "history-start-latest" : undefined}
                       >
                         <Play className="size-4" />
                         {actionLabel}

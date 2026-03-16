@@ -1,6 +1,4 @@
-import { BookOpenText } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
 import { USER_EMAIL_KEY, USER_ID_KEY } from "../../app/authStorage";
@@ -111,23 +109,6 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
             </Button>
           </div>
         </form>
-
-        <div className="rounded-2xl border bg-muted/20 p-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">第一次使用先看新手教程</p>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                5 到 8 分钟走完登录、上传、生成、历史记录和开始学习整条主线。
-              </p>
-            </div>
-            <Button asChild variant="outline" size="sm" className="shrink-0 gap-2">
-              <Link to="/help/getting-started">
-                <BookOpenText className="size-4" />
-                先看教程
-              </Link>
-            </Button>
-          </div>
-        </div>
       </CardContent>
       <CardFooter>
         {status ? (

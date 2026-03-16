@@ -613,7 +613,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         ) : null}
 
         <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
-          <div className="grid gap-2">
+          <div className="grid gap-2" data-guide-id="upload-select-file">
             <input id="asr-file" ref={fileInputRef} type="file" className="hidden" onChange={(event) => { void onSelectFile(event.target.files?.[0] ?? null); }} disabled={loading} />
             <div className="grid gap-2 md:grid-cols-2">
               <Button
@@ -638,7 +638,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             <div className="space-y-1"><p className="text-sm font-medium">开启语义分句</p><p className="text-xs text-muted-foreground">更贴近语义，但会更慢，且可能增加模型调用。</p></div>
             <div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">{semanticSplitEnabled ? "已开启" : "已关闭"}</span><Switch checked={semanticSplitEnabled} onCheckedChange={setSemanticSplitEnabled} disabled={loading} /></div>
           </div>
-          <Button type="submit" disabled={loading || phase === "success"} className="h-11 w-full">{loading ? <span className="inline-flex items-center gap-2"><Loader2 className="size-4 animate-spin" />生成中</span> : phase === "success" ? "已生成完成" : "开始生成课程"}</Button>
+          <Button type="submit" disabled={loading || phase === "success"} className="h-11 w-full" data-guide-id="upload-submit">{loading ? <span className="inline-flex items-center gap-2"><Loader2 className="size-4 animate-spin" />生成中</span> : phase === "success" ? "已生成完成" : "开始生成课程"}</Button>
         </form>
 
         <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
