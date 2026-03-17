@@ -16,7 +16,7 @@ const UPLOAD_PROGRESS_PERSIST_INTERVAL_MS = 800;
 const LOCAL_ASR_TARGET_SAMPLE_RATE = 16000;
 const LOCAL_ASR_FILE_ACCEPT = "audio/*,video/mp4,.mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.opus";
 const LOCAL_MODEL_VISUAL_PROGRESS_INTERVAL_MS = 120;
-const DEFAULT_LOCAL_ASR_ASSET_BASE_URL = "/static/local-asr-assets";
+const DEFAULT_LOCAL_ASR_ASSET_BASE_URL = "/api/local-asr-assets";
 const LOCAL_ASR_ASSET_BASE_URL = (import.meta.env.VITE_LOCAL_ASR_MODEL_BASE_URL || DEFAULT_LOCAL_ASR_ASSET_BASE_URL).trim().replace(/\/+$/, "");
 const LOCAL_MODEL_OPTIONS = [
   {
