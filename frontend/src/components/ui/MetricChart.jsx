@@ -12,12 +12,17 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { useEffect, useRef, useState } from "react";
 
 import { cn } from "../../lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./card";
 import { Skeleton } from "./skeleton";
 
 const DEFAULT_COLORS = ["#2563eb", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
+
+function hasPositiveChartSize(size) {
+  return size.width > 0 && size.height > 0;
+}
 
 function renderSeries(type, series) {
   return series.map((item, index) => {
@@ -52,6 +57,59 @@ export function MetricChart({
   className,
 }) {
   const ChartComponent = type === "bar" ? BarChart : type === "area" ? AreaChart : LineChart;
+  const chartContainerRef = useRef(null);
+  const waitForVisibleLogRef = useRef(false);
+  const [chartContainerSize, setChartContainerSize] = useState(() => ({
+    width: 0,
+    height: Math.max(0, Number(height) || 0),
+  }));
+
+  useEffect(() => {
+    const element = chartContainerRef.current;
+    if (!element) return undefined;
+
+    function updateChartContainerSize() {
+      const nextSize = {
+        width: Math.round(element.clientWidth || 0),
+        height: Math.round(element.clientHeight || Number(height) || 0),
+      };
+
+      setChartContainerSize((currentSize) =>
+        currentSize.width === nextSize.width && currentSize.height === nextSize.height ? currentSize : nextSize,
+      );
+
+      if (!data.length) return;
+
+      if (hasPositiveChartSize(nextSize)) {
+        if (waitForVisibleLogRef.current) {
+          console.debug("[DEBUG] metric chart container ready", { title, ...nextSize });
+          waitForVisibleLogRef.current = false;
+        }
+        return;
+      }
+
+      if (!waitForVisibleLogRef.current) {
+        console.debug("[DEBUG] metric chart waiting for visible container", { title, ...nextSize });
+        waitForVisibleLogRef.current = true;
+      }
+    }
+
+    updateChartContainerSize();
+
+    if (typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateChartContainerSize();
+    });
+    resizeObserver.observe(element);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [data.length, height, title]);
+
+  const chartReady = hasPositiveChartSize(chartContainerSize);
 
   return (
     <Card className={cn("rounded-3xl border shadow-sm", className)}>
@@ -69,17 +127,23 @@ export function MetricChart({
             {emptyText}
           </div>
         ) : (
-          <div style={{ height }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <ChartComponent data={data} margin={{ top: 12, right: 8, left: -12, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148,163,184,0.2)" />
-                <XAxis dataKey={xKey} tickLine={false} axisLine={false} tick={{ fontSize: 12 }} />
-                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 12 }} width={42} />
-                <Tooltip />
-                <Legend wrapperStyle={{ fontSize: "12px" }} />
-                {renderSeries(type, series)}
-              </ChartComponent>
-            </ResponsiveContainer>
+          <div ref={chartContainerRef} className="min-w-0" style={{ height }}>
+            {chartReady ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <ChartComponent data={data} margin={{ top: 12, right: 8, left: -12, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148,163,184,0.2)" />
+                  <XAxis dataKey={xKey} tickLine={false} axisLine={false} tick={{ fontSize: 12 }} />
+                  <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 12 }} width={42} />
+                  <Tooltip />
+                  <Legend wrapperStyle={{ fontSize: "12px" }} />
+                  {renderSeries(type, series)}
+                </ChartComponent>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center rounded-2xl border border-dashed bg-muted/20 px-4 text-sm text-muted-foreground">
+                图表布局准备中...
+              </div>
+            )}
           </div>
         )}
       </CardContent>

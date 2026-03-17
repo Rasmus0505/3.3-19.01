@@ -37,7 +37,15 @@ def _require_postgres_database_url() -> str:
     return database_url
 
 
-def _build_runtime_env(database_url: str, port: int, tmp_work_dir: Path, *, auto_migrate: bool = True) -> dict[str, str]:
+def _build_runtime_env(
+    database_url: str,
+    port: int,
+    tmp_work_dir: Path,
+    *,
+    auto_migrate: bool = True,
+    auto_migrate_value: str | None = None,
+) -> dict[str, str]:
+    resolved_auto_migrate = auto_migrate_value if auto_migrate_value is not None else ("1" if auto_migrate else "0")
     env = os.environ.copy()
     env.update(
         {
@@ -47,7 +55,7 @@ def _build_runtime_env(database_url: str, port: int, tmp_work_dir: Path, *, auto
             "DASHSCOPE_API_KEY": "",
             "TMP_WORK_DIR": str(tmp_work_dir),
             "PORT": str(port),
-            "AUTO_MIGRATE_ON_START": "1" if auto_migrate else "0",
+            "AUTO_MIGRATE_ON_START": resolved_auto_migrate,
             "AUTO_MIGRATE_CONTINUE_ON_FAILURE": "0",
             "AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS": "20",
         }
@@ -139,6 +147,18 @@ def _stop_process(process: subprocess.Popen[str]) -> str:
     return logs
 
 
+def _run_migration_bootstrap_subprocess(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "app.db.migration_bootstrap"],
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=60,
+    )
+
+
 @pytest.mark.skipif(shutil.which("sh") is None, reason="requires sh")
 def test_start_script_boots_without_running_migrations(tmp_path):
     database_url = _require_postgres_database_url()
@@ -160,6 +180,35 @@ def test_start_script_boots_without_running_migrations(tmp_path):
     if process.returncode not in (0, -15):
         raise AssertionError(f"start script exited with {process.returncode}\n{logs}")
     assert "automatic alembic migration disabled" in logs
+
+
+@pytest.mark.skipif(shutil.which("sh") is None, reason="requires sh")
+@pytest.mark.parametrize("manual_value", ["0", "false", "no", "off"])
+def test_start_script_boots_with_manual_mode_aliases(tmp_path, manual_value):
+    database_url = f"sqlite:///{(tmp_path / f'manual-{manual_value}.db').as_posix()}"
+
+    port = _pick_free_port()
+    tmp_work_dir = tmp_path / f"runtime-manual-{manual_value}"
+    tmp_work_dir.mkdir(parents=True, exist_ok=True)
+    process = _start_process(
+        _build_runtime_env(
+            database_url,
+            port,
+            tmp_work_dir,
+            auto_migrate_value=manual_value,
+        )
+    )
+    try:
+        health_payload, ready_payload = _wait_for_status(process, port, 503)
+        assert health_payload["ok"] is True
+        assert health_payload["ready"] is False
+        assert ready_payload["ok"] is False
+    finally:
+        logs = _stop_process(process)
+
+    if process.returncode not in (0, -15):
+        raise AssertionError(f"start script exited with {process.returncode}\n{logs}")
+    assert f"[DEBUG] boot.migrate mode=manual_only raw={manual_value}" in logs
 
 
 @pytest.mark.skipif(shutil.which("sh") is None, reason="requires sh")
@@ -214,6 +263,46 @@ def test_start_script_runs_auto_migration_before_boot(tmp_path):
     if process.returncode not in (0, -15):
         raise AssertionError(f"start script exited with {process.returncode}\n{logs}")
     assert "[DEBUG] boot.migrate success=true" in logs
+
+
+@pytest.mark.parametrize("manual_value", ["0", "false", "no", "off"])
+def test_migration_bootstrap_exits_zero_for_manual_mode_aliases(tmp_path, manual_value):
+    database_url = f"sqlite:///{(tmp_path / f'bootstrap-{manual_value}.db').as_posix()}"
+    env = os.environ.copy()
+    env.update(
+        {
+            "DATABASE_URL": database_url,
+            "AUTO_MIGRATE_ON_START": manual_value,
+            "AUTO_MIGRATE_CONTINUE_ON_FAILURE": "0",
+        }
+    )
+
+    result = _run_migration_bootstrap_subprocess(env)
+
+    assert result.returncode == 0, result.stdout
+    assert "[DEBUG] boot.migrate enabled=false mode=manual attempted=false allow_startup=true" in result.stdout
+
+
+def test_migration_bootstrap_continue_on_failure_only_relaxes_attempted_failures(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'failure-continue.db').as_posix()}"
+    continue_env = os.environ.copy()
+    continue_env.update(
+        {
+            "DATABASE_URL": database_url,
+            "AUTO_MIGRATE_ON_START": "1",
+            "AUTO_MIGRATE_CONTINUE_ON_FAILURE": "1",
+            "ALEMBIC_CONFIG": "missing-alembic.ini",
+        }
+    )
+    block_env = dict(continue_env)
+    block_env["AUTO_MIGRATE_CONTINUE_ON_FAILURE"] = "0"
+
+    continue_result = _run_migration_bootstrap_subprocess(continue_env)
+    block_result = _run_migration_bootstrap_subprocess(block_env)
+
+    assert continue_result.returncode == 0, continue_result.stdout
+    assert "[boot] automatic migration failed; continuing app startup and leaving /health/ready unavailable" in continue_result.stdout
+    assert block_result.returncode != 0, block_result.stdout
 
 
 def test_repair_redundant_linear_version_rows_collapses_head_and_ancestors(tmp_path):
