@@ -4,10 +4,11 @@ import { toast } from "sonner";
 
 import { cn } from "../../lib/utils";
 import { api, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
-import { clearActiveGenerationTask, getActiveGenerationTask, saveActiveGenerationTask } from "../../shared/media/localTaskStore";
 import { extractMediaCoverPreview, getLessonMediaPreview, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
+import { clearActiveGenerationTask, getActiveGenerationTask, saveActiveGenerationTask } from "../../shared/media/localTaskStore";
 import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, MediaCover, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
 import { useAppStore } from "../../store";
+import { LocalAsrPreviewCard } from "./LocalAsrPreviewCard";
 
 const QWEN_MODEL = "qwen3-asr-flash-filetrans";
 const UPLOAD_PROGRESS_PERSIST_INTERVAL_MS = 800;
@@ -417,10 +418,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       uploadPersistRef.current.latestPercent = Number(saved.upload_percent || 0);
       setBindingCompleted(Boolean(saved.binding_completed));
       setLoading(["processing"].includes(restoredPhase));
-      if (
-        saved.task_id &&
-        (["pending", "running"].includes(savedTaskStatus) || ["processing", "uploading"].includes(savedPhase))
-      ) {
+      if (saved.task_id && (["pending", "running"].includes(savedTaskStatus) || ["processing", "uploading"].includes(savedPhase))) {
         const pollToken = startPollingSession();
         void pollTask(String(saved.task_id), true, pollToken);
       }
@@ -747,6 +745,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             </Button>
           ) : null}
         </form>
+
+        <LocalAsrPreviewCard disabled={loading} />
 
         <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
           <DialogContent>
