@@ -2,6 +2,7 @@
 const DB_VERSION = 1;
 const STORE_NAME = "lesson_subtitle_variants";
 const ORIGINAL_SUBTITLE_STRATEGY_VERSION = 2;
+const PLAIN_VARIANT_KEY = "plain";
 
 function assertIndexedDbAvailable() {
   if (typeof indexedDB === "undefined") {
@@ -122,8 +123,18 @@ function getUsableVariant(record, variantKey) {
 
 function getCurrentVariantKey(record) {
   const currentVariantKey = String(record?.current_variant_key || "");
-  if (!currentVariantKey) return "";
-  return getUsableVariant(record, currentVariantKey) ? currentVariantKey : "";
+  if (currentVariantKey === PLAIN_VARIANT_KEY && getUsableVariant(record, PLAIN_VARIANT_KEY)) {
+    return PLAIN_VARIANT_KEY;
+  }
+  return getUsableVariant(record, PLAIN_VARIANT_KEY) ? PLAIN_VARIANT_KEY : "";
+}
+
+function buildPlainOnlyVariants(record, nextPlainVariant = null) {
+  const currentPlainVariant = getUsableVariant(record, PLAIN_VARIANT_KEY);
+  if (nextPlainVariant) {
+    return { [PLAIN_VARIANT_KEY]: nextPlainVariant };
+  }
+  return currentPlainVariant ? { [PLAIN_VARIANT_KEY]: currentPlainVariant } : {};
 }
 
 function emptyAvailability(lessonId) {
@@ -163,83 +174,79 @@ export async function getLessonSubtitleAvailability(lessonId) {
     hasSource: Boolean(record.asr_payload && typeof record.asr_payload === "object"),
     canRegenerate: Boolean(record.asr_payload && typeof record.asr_payload === "object"),
     currentVariantKey,
-    currentSemanticSplitEnabled: currentVariantKey === "semantic" ? true : currentVariantKey === "plain" ? false : null,
-    hasPlainVariant: Boolean(getUsableVariant(record, "plain")),
-    hasSemanticVariant: Boolean(getUsableVariant(record, "semantic")),
+    currentSemanticSplitEnabled: currentVariantKey === PLAIN_VARIANT_KEY ? false : null,
+    hasPlainVariant: Boolean(getUsableVariant(record, PLAIN_VARIANT_KEY)),
+    hasSemanticVariant: false,
   };
 }
 
 export async function saveLessonSubtitleCacheSeed(lessonId, seed) {
   const normalizedLessonId = normalizeLessonId(lessonId);
   const normalizedVariant = normalizeVariant(seed);
-  const variantKey = getVariantKey(normalizedVariant.semantic_split_enabled);
   const current = (await getLessonSubtitleCache(normalizedLessonId)) || { lesson_id: normalizedLessonId, variants: {} };
-  const nextVariants = {
-    ...(current.variants || {}),
-  };
-  if (isVariantUsable(variantKey, normalizedVariant)) {
-    nextVariants[variantKey] = normalizedVariant;
-  }
+  const nextPlainVariant =
+    normalizedVariant.semantic_split_enabled === false && isVariantUsable(PLAIN_VARIANT_KEY, normalizedVariant) ? normalizedVariant : null;
   const payload = {
     lesson_id: normalizedLessonId,
     asr_payload: cloneJsonSafe(seed?.asr_payload || current.asr_payload || {}),
-    variants: nextVariants,
-    current_variant_key: isVariantUsable(variantKey, normalizedVariant) ? variantKey : getCurrentVariantKey(current),
+    variants: buildPlainOnlyVariants(current, nextPlainVariant),
+    current_variant_key: nextPlainVariant ? PLAIN_VARIANT_KEY : getCurrentVariantKey(current),
     updated_at: Date.now(),
   };
   await withStore("readwrite", (store) => store.put(payload));
   console.debug("[DEBUG] localSubtitleStore.seed.save", {
     lessonId: normalizedLessonId,
-    variantKey,
-    usable: isVariantUsable(variantKey, normalizedVariant),
+    variantKey: nextPlainVariant ? PLAIN_VARIANT_KEY : "",
+    usable: Boolean(nextPlainVariant),
   });
   return payload;
 }
 
 export async function getCachedLessonSubtitleVariant(lessonId, semanticSplitEnabled) {
+  if (Boolean(semanticSplitEnabled)) return null;
   const normalizedLessonId = normalizeLessonId(lessonId);
   const record = await getLessonSubtitleCache(normalizedLessonId);
   if (!record) return null;
-  const variantKey = getVariantKey(Boolean(semanticSplitEnabled));
-  return getUsableVariant(record, variantKey);
+  return getUsableVariant(record, PLAIN_VARIANT_KEY);
 }
 
 export async function saveLessonSubtitleVariant(lessonId, variant, options = {}) {
   const normalizedLessonId = normalizeLessonId(lessonId);
   const normalizedVariant = normalizeVariant(variant);
-  const variantKey = getVariantKey(normalizedVariant.semantic_split_enabled);
   const current = (await getLessonSubtitleCache(normalizedLessonId)) || { lesson_id: normalizedLessonId, variants: {} };
+  if (normalizedVariant.semantic_split_enabled || !isVariantUsable(PLAIN_VARIANT_KEY, normalizedVariant)) {
+    return null;
+  }
   const payload = {
     lesson_id: normalizedLessonId,
     asr_payload: cloneJsonSafe(current.asr_payload || {}),
-    variants: {
-      ...(current.variants || {}),
-      [variantKey]: normalizedVariant,
-    },
-    current_variant_key: options.makeActive === false ? getCurrentVariantKey(current) : variantKey,
+    variants: buildPlainOnlyVariants(current, normalizedVariant),
+    current_variant_key: options.makeActive === false ? getCurrentVariantKey(current) : PLAIN_VARIANT_KEY,
     updated_at: Date.now(),
   };
   await withStore("readwrite", (store) => store.put(payload));
-  console.debug("[DEBUG] localSubtitleStore.variant.save", { lessonId: normalizedLessonId, variantKey });
-  return payload.variants[variantKey];
+  console.debug("[DEBUG] localSubtitleStore.variant.save", { lessonId: normalizedLessonId, variantKey: PLAIN_VARIANT_KEY });
+  return payload.variants[PLAIN_VARIANT_KEY] || null;
 }
 
 export async function setActiveLessonSubtitleVariant(lessonId, semanticSplitEnabled) {
+  if (Boolean(semanticSplitEnabled)) {
+    return null;
+  }
   const normalizedLessonId = normalizeLessonId(lessonId);
-  const variantKey = getVariantKey(Boolean(semanticSplitEnabled));
   const current = await getLessonSubtitleCache(normalizedLessonId);
-  const nextVariant = getUsableVariant(current, variantKey);
+  const nextVariant = getUsableVariant(current, PLAIN_VARIANT_KEY);
   if (!nextVariant) {
     return null;
   }
   await withStore("readwrite", (store) =>
     store.put({
       ...current,
-      current_variant_key: variantKey,
+      current_variant_key: PLAIN_VARIANT_KEY,
       updated_at: Date.now(),
     }),
   );
-  console.debug("[DEBUG] localSubtitleStore.variant.activate", { lessonId: normalizedLessonId, variantKey });
+  console.debug("[DEBUG] localSubtitleStore.variant.activate", { lessonId: normalizedLessonId, variantKey: PLAIN_VARIANT_KEY });
   return nextVariant;
 }
 
