@@ -2,6 +2,7 @@ import { Suspense, lazy } from "react";
 
 import { AuthPanel } from "../../features/auth/AuthPanel";
 import { GettingStartedPanel } from "../../features/getting-started/GettingStartedPanel";
+import { LearningStatsPanel } from "../../features/learning-stats/LearningStatsPanel";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui";
 import { REFRESH_KEY, TOKEN_KEY } from "../authStorage";
 
@@ -32,18 +33,14 @@ export function LearningShellPanelContent({
   currentLessonNeedsBinding,
   lessonCardMetaMap,
   lessonMediaMetaMap,
-  subtitleCacheMetaMap,
-  subtitleRegenerateState,
   loadingLessons,
   hasMoreLessons,
   loadingMoreLessons,
   onLoadMoreLessons,
-  onSelectLesson,
   onStartLesson,
   onRenameLesson,
   onDeleteLesson,
   onRestoreLessonMedia,
-  onRegenerateSubtitles,
   onSwitchToUpload,
   walletBalance,
   billingRates,
@@ -120,15 +117,11 @@ export function LearningShellPanelContent({
                 currentLessonNeedsBinding={currentLessonNeedsBinding}
                 lessonCardMetaMap={lessonCardMetaMap}
                 lessonMediaMetaMap={lessonMediaMetaMap}
-                subtitleCacheMetaMap={subtitleCacheMetaMap}
-                subtitleRegenerateState={subtitleRegenerateState}
                 guideTargetLessonId={guideTargetLessonId}
-                onSelect={onSelectLesson}
                 onStartLesson={onStartLesson}
                 onRename={onRenameLesson}
                 onDelete={onDeleteLesson}
                 onRestoreMedia={onRestoreLessonMedia}
-                onRegenerateSubtitles={onRegenerateSubtitles}
                 onSwitchToUpload={onSwitchToUpload}
                 loading={loadingLessons}
                 hasMore={hasMoreLessons}
@@ -136,6 +129,14 @@ export function LearningShellPanelContent({
                 onLoadMore={onLoadMoreLessons}
               />
             </Suspense>
+          </div>
+          <div className={activePanel === "stats" ? "block" : "hidden"}>
+            <LearningStatsPanel
+              accessToken={accessToken}
+              onStartLesson={onStartLesson}
+              onSwitchToUpload={onSwitchToUpload}
+              onGoToHistory={onGoToHistory}
+            />
           </div>
           <div className={activePanel === "upload" ? "block" : "hidden"}>
             <Suspense fallback={<PanelFallback />}>

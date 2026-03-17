@@ -1,5 +1,5 @@
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
-import { getActiveLessonSubtitleVariant, getLessonSubtitleAvailability } from "../../shared/media/localSubtitleStore";
+import { getActiveLessonSubtitleVariant, getLessonSubtitleAvailability, saveLessonSubtitleCacheSeed } from "../../shared/media/localSubtitleStore";
 
 function buildProgressSnapshot(progressData = {}) {
   return {
@@ -42,7 +42,7 @@ function mergeLessonWithSubtitleVariant(lesson, variant) {
     ...lesson,
     sentences: variant.sentences,
     subtitle_variant_state: {
-      semantic_split_enabled: Boolean(variant.semantic_split_enabled),
+      semantic_split_enabled: false,
       split_mode: String(variant.split_mode || ""),
       source_word_count: Number(variant.source_word_count || 0),
       local_only: true,
@@ -75,7 +75,6 @@ export const lessonInitialState = {
   subtitleSettings: { semantic_split_default_enabled: false, default_asr_model: "" },
   lessonCardMetaMap: {},
   subtitleCacheMetaMap: {},
-  subtitleRegenerateState: null,
 };
 
 export function createLessonSlice(set, get) {
@@ -96,7 +95,6 @@ export function createLessonSlice(set, get) {
         },
       })),
     setSubtitleCacheMetaMap: (subtitleCacheMetaMap) => set({ subtitleCacheMetaMap: subtitleCacheMetaMap || {} }),
-    setSubtitleRegenerateState: (subtitleRegenerateState) => set({ subtitleRegenerateState: subtitleRegenerateState || null }),
     setWalletBalance: (walletBalance) => set({ walletBalance: Number(walletBalance || 0) }),
     setBillingRates: (billingRates) => set({ billingRates: Array.isArray(billingRates) ? billingRates : [] }),
     setSubtitleSettings: (subtitleSettings) =>
@@ -165,6 +163,13 @@ export function createLessonSlice(set, get) {
           return null;
         }
         const progress = progressResp.ok ? buildProgressSnapshot(progressData) : buildProgressSnapshot();
+        if (detailData?.subtitle_cache_seed) {
+          try {
+            await saveLessonSubtitleCacheSeed(lessonId, detailData.subtitle_cache_seed);
+          } catch (_) {
+            // Ignore local subtitle cache write failures.
+          }
+        }
         const merged = await applyLocalSubtitleVariant({ ...detailData, progress });
         set((state) => ({
           currentLesson: merged,

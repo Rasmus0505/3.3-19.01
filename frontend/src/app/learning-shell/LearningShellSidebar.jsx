@@ -1,4 +1,4 @@
-import { BookOpenText, ChevronDown, Gift, History, LogIn, LogOut, Search, Shield, Sparkles, UploadCloud } from "lucide-react";
+import { BookOpenText, ChevronDown, Gift, History, LogIn, LogOut, Search, Shield, Sparkles, TrendingUp, UploadCloud } from "lucide-react";
 
 import {
   SidebarContent,
@@ -27,6 +27,12 @@ export const PANEL_ITEMS = [
     title: "历史记录",
     icon: History,
     path: "/",
+  },
+  {
+    key: "stats",
+    title: "学习数据",
+    icon: TrendingUp,
+    path: "/stats",
   },
   {
     key: "upload",

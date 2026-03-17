@@ -51,42 +51,27 @@ import { useCurrentLessonMediaBinding } from "./hooks/useCurrentLessonMediaBindi
 import { useLearningShellBootstrap } from "./hooks/useLearningShellBootstrap";
 import { useLearningShellPrefetch } from "./hooks/useLearningShellPrefetch";
 
-function parseSseEventBlock(block) {
-  if (!block) return null;
-  const lines = String(block)
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .filter(Boolean);
-  if (!lines.length) return null;
-  let event = "message";
-  const dataLines = [];
-  for (const line of lines) {
-    if (line.startsWith("event:")) {
-      event = line.slice(6).trim() || "message";
-      continue;
-    }
-    if (line.startsWith("data:")) {
-      dataLines.push(line.slice(5).trim());
-    }
+async function requestOriginalSubtitleVariant(accessToken, lessonId, asrPayload) {
+  const resp = await api(
+    `/api/lessons/${lessonId}/subtitle-variants`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        asr_payload: asrPayload,
+        semantic_split_enabled: false,
+      }),
+    },
+    accessToken,
+  );
+  const data = await parseResponse(resp);
+  if (!resp.ok) {
+    const message = toErrorText(data, "重新生成字幕失败");
+    const error = new Error(message);
+    error.userMessage = message;
+    throw error;
   }
-  if (!dataLines.length) return null;
-  try {
-    return { event, data: JSON.parse(dataLines.join("\n")) };
-  } catch (_) {
-    return null;
-  }
-}
-
-function buildSubtitleRegenerateState(lessonId, payload = {}, status = "streaming") {
-  return {
-    lessonId,
-    stage: String(payload.stage || "prepare"),
-    message: String(payload.message || "正在重切分句"),
-    done: Number(payload.translate_done || 0),
-    total: Number(payload.translate_total || 0),
-    status,
-    semanticSplitEnabled: Boolean(payload.semantic_split_enabled),
-  };
+  return data;
 }
 
 function mergeLessonWithSubtitleVariant(lesson, variant) {
@@ -97,12 +82,27 @@ function mergeLessonWithSubtitleVariant(lesson, variant) {
     ...lesson,
     sentences: variant.sentences,
     subtitle_variant_state: {
-      semantic_split_enabled: Boolean(variant.semantic_split_enabled),
+      semantic_split_enabled: false,
       split_mode: String(variant.split_mode || ""),
       source_word_count: Number(variant.source_word_count || 0),
       local_only: true,
     },
   };
+}
+
+function applyLessonSubtitleVariantToStore(lessonId, activeVariant) {
+  useAppStore.setState((state) => ({
+    currentLesson: state.currentLesson?.id === lessonId ? mergeLessonWithSubtitleVariant(state.currentLesson, activeVariant) : state.currentLesson,
+    lessonCardMetaMap: {
+      ...state.lessonCardMetaMap,
+      [lessonId]: {
+        ...(state.lessonCardMetaMap[lessonId] || {}),
+        sentenceCount: Array.isArray(activeVariant?.sentences)
+          ? activeVariant.sentences.length
+          : Number(state.lessonCardMetaMap[lessonId]?.sentenceCount || 0),
+      },
+    },
+  }));
 }
 
 function buildCreatedLessonMediaPreview(lesson, mediaPreview, mediaPersisted) {
@@ -179,8 +179,6 @@ export function LearningShellContainer() {
   const billingRates = useAppStore((state) => state.billingRates);
   const subtitleSettings = useAppStore((state) => state.subtitleSettings);
   const lessonCardMetaMap = useAppStore((state) => state.lessonCardMetaMap);
-  const subtitleCacheMetaMap = useAppStore((state) => state.subtitleCacheMetaMap);
-  const subtitleRegenerateState = useAppStore((state) => state.subtitleRegenerateState);
 
   const lessonMediaMetaMap = useAppStore((state) => state.lessonMediaMetaMap);
   const currentLessonNeedsBinding = useAppStore((state) => state.currentLessonNeedsBinding);
@@ -201,7 +199,6 @@ export function LearningShellContainer() {
   const renameLesson = useAppStore((state) => state.renameLesson);
   const deleteLesson = useAppStore((state) => state.deleteLesson);
   const refreshSubtitleCacheMeta = useAppStore((state) => state.refreshSubtitleCacheMeta);
-  const setSubtitleRegenerateState = useAppStore((state) => state.setSubtitleRegenerateState);
 
   const prefetchLessonMediaMeta = useAppStore((state) => state.prefetchLessonMediaMeta);
   const detectCurrentLessonMediaBinding = useAppStore((state) => state.detectCurrentLessonMediaBinding);
@@ -231,6 +228,7 @@ export function LearningShellContainer() {
   const [gettingStartedGuideActive, setGettingStartedGuideActive] = useState(false);
   const [gettingStartedGuideStepIndex, setGettingStartedGuideStepIndex] = useState(0);
   const [latestGeneratedLessonId, setLatestGeneratedLessonId] = useState(0);
+  const originalSubtitleRecoveryRef = useRef(new Map());
 
   useLearningShellBootstrap({
     accessToken,
@@ -369,6 +367,69 @@ export function LearningShellContainer() {
       // Ignore local subtitle cache write failures.
     }
   }
+
+  useEffect(() => {
+    const lessonId = Number(currentLesson?.id || 0);
+    if (!accessToken || lessonId <= 0) return;
+
+    const recoveryState = originalSubtitleRecoveryRef.current.get(lessonId);
+    if (recoveryState === "pending" || recoveryState === "done" || recoveryState === "missing") {
+      return;
+    }
+
+    let canceled = false;
+    originalSubtitleRecoveryRef.current.set(lessonId, "pending");
+
+    async function ensureOriginalAsrLesson() {
+      try {
+        if (currentLesson?.subtitle_cache_seed) {
+          await persistLessonSubtitleCacheSeed(currentLesson);
+        }
+
+        let activeVariant = await getCachedLessonSubtitleVariant(lessonId, false);
+        if (activeVariant) {
+          await setActiveLessonSubtitleVariant(lessonId, false);
+        } else {
+          const subtitleCacheMeta = await getLessonSubtitleAvailability(lessonId);
+          if (!subtitleCacheMeta?.hasSource) {
+            originalSubtitleRecoveryRef.current.set(lessonId, "missing");
+            return;
+          }
+          const rawCache = await getLessonSubtitleCache(lessonId);
+          const asrPayload = rawCache?.asr_payload || currentLesson?.subtitle_cache_seed?.asr_payload || null;
+          if (!asrPayload || typeof asrPayload !== "object") {
+            originalSubtitleRecoveryRef.current.set(lessonId, "missing");
+            return;
+          }
+          const data = await requestOriginalSubtitleVariant(accessToken, lessonId, asrPayload);
+          activeVariant = await saveLessonSubtitleVariant(lessonId, data);
+        }
+
+        if (!activeVariant) {
+          originalSubtitleRecoveryRef.current.set(lessonId, "missing");
+          return;
+        }
+
+        if (canceled) {
+          originalSubtitleRecoveryRef.current.delete(lessonId);
+          return;
+        }
+        applyLessonSubtitleVariantToStore(lessonId, activeVariant);
+        await refreshSubtitleCacheMeta([{ id: lessonId }], { merge: true });
+        originalSubtitleRecoveryRef.current.set(lessonId, "done");
+      } catch (_) {
+        originalSubtitleRecoveryRef.current.delete(lessonId);
+      }
+    }
+
+    void ensureOriginalAsrLesson();
+    return () => {
+      canceled = true;
+      if (originalSubtitleRecoveryRef.current.get(lessonId) === "pending") {
+        originalSubtitleRecoveryRef.current.delete(lessonId);
+      }
+    };
+  }, [accessToken, currentLesson, refreshSubtitleCacheMeta]);
 
   function handleAuthed() {
     hydrateAccessToken();
@@ -537,161 +598,6 @@ export function LearningShellContainer() {
     return result;
   }
 
-  async function handleRegenerateSubtitles(lesson, semanticSplitEnabled) {
-    const lessonId = Number(lesson?.id || 0);
-    if (!lessonId || !accessToken) {
-      return { ok: false, message: "请先登录" };
-    }
-
-    async function requestSubtitleVariantOnce(asrPayload) {
-      const resp = await api(
-        `/api/lessons/${lessonId}/subtitle-variants`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            asr_payload: asrPayload,
-            semantic_split_enabled: Boolean(semanticSplitEnabled),
-          }),
-        },
-        accessToken,
-      );
-      const data = await parseResponse(resp);
-      if (!resp.ok) {
-        const message = toErrorText(data, "重新生成字幕失败");
-        const error = new Error(message);
-        error.userMessage = message;
-        throw error;
-      }
-      return data;
-    }
-
-    async function requestSubtitleVariantStream(asrPayload) {
-      const resp = await api(
-        `/api/lessons/${lessonId}/subtitle-variants/stream`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            asr_payload: asrPayload,
-            semantic_split_enabled: Boolean(semanticSplitEnabled),
-          }),
-        },
-        accessToken,
-      );
-      if (!resp.ok || !resp.body) {
-        const data = await parseResponse(resp);
-        const message = toErrorText(data, "重新生成字幕失败");
-        const error = new Error(message);
-        error.userMessage = message;
-        throw error;
-      }
-
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let buffer = "";
-      let resultPayload = null;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-        const blocks = buffer.split("\n\n");
-        buffer = done ? "" : blocks.pop() || "";
-        for (const block of blocks) {
-          const parsed = parseSseEventBlock(block);
-          if (!parsed) continue;
-          if (parsed.event === "progress") {
-            setSubtitleRegenerateState(buildSubtitleRegenerateState(lessonId, parsed.data, "streaming"));
-            continue;
-          }
-          if (parsed.event === "error") {
-            const message = toErrorText(parsed.data || {}, "重新生成字幕失败");
-            const error = new Error(message);
-            error.userMessage = message;
-            throw error;
-          }
-          if (parsed.event === "result") {
-            resultPayload = parsed.data;
-          }
-        }
-        if (done) break;
-      }
-
-      if (!resultPayload) {
-        const error = new Error("流式结果为空，自动改走普通请求");
-        error.userMessage = error.message;
-        throw error;
-      }
-      return resultPayload;
-    }
-
-    try {
-      const cachedVariant = await getCachedLessonSubtitleVariant(lessonId, semanticSplitEnabled);
-      let activeVariant = cachedVariant;
-      if (cachedVariant) {
-        await setActiveLessonSubtitleVariant(lessonId, semanticSplitEnabled);
-      } else {
-        const subtitleCacheMeta = await getLessonSubtitleAvailability(lessonId);
-        if (!subtitleCacheMeta?.hasSource) {
-          return { ok: false, message: "当前浏览器缺少原始 ASR 缓存，仅改造后新上传课程支持重新生成字幕" };
-        }
-        const rawCache = await getLessonSubtitleCache(lessonId);
-        const asrPayload = rawCache?.asr_payload || lesson?.subtitle_cache_seed?.asr_payload || null;
-        if (!asrPayload || typeof asrPayload !== "object") {
-          return { ok: false, message: "当前浏览器缺少原始 ASR 缓存，仅改造后新上传课程支持重新生成字幕" };
-        }
-        let data = null;
-        try {
-          data = await requestSubtitleVariantStream(asrPayload);
-        } catch (_) {
-          setSubtitleRegenerateState(
-            buildSubtitleRegenerateState(
-              lessonId,
-              {
-                stage: "fallback",
-                message: "流式反馈中断，正在切回普通请求",
-                translate_done: 0,
-                translate_total: 0,
-                semantic_split_enabled: Boolean(semanticSplitEnabled),
-              },
-              "fallback",
-            ),
-          );
-          data = await requestSubtitleVariantOnce(asrPayload);
-        }
-        activeVariant = await saveLessonSubtitleVariant(lessonId, data);
-      }
-
-      if (!activeVariant) {
-        return { ok: false, message: "未找到可切换的字幕版本" };
-      }
-
-      useAppStore.setState((state) => ({
-        currentLesson: state.currentLesson?.id === lessonId ? mergeLessonWithSubtitleVariant(state.currentLesson, activeVariant) : state.currentLesson,
-        lessonCardMetaMap: {
-          ...state.lessonCardMetaMap,
-          [lessonId]: {
-            ...(state.lessonCardMetaMap[lessonId] || {}),
-            sentenceCount: Array.isArray(activeVariant.sentences)
-              ? activeVariant.sentences.length
-              : Number(state.lessonCardMetaMap[lessonId]?.sentenceCount || 0),
-          },
-        },
-      }));
-      await refreshSubtitleCacheMeta([{ id: lessonId }], { merge: true });
-      setGlobalStatus("");
-      const message = semanticSplitEnabled ? "已切换为语义分句" : "已切换为原始字幕";
-      toast.success(message);
-      return { ok: true, message };
-    } catch (error) {
-      const message = error?.userMessage || `网络错误: ${String(error)}`;
-      setGlobalStatus(message);
-      return { ok: false, message };
-    } finally {
-      setSubtitleRegenerateState(null);
-    }
-  }
-
   async function handleRestoreLessonMedia(lesson, file) {
     if (!lesson?.id || !file) {
       return { ok: false, message: "恢复视频参数无效" };
@@ -857,18 +763,14 @@ export function LearningShellContainer() {
                   currentLessonNeedsBinding={currentLessonNeedsBinding}
                   lessonCardMetaMap={lessonCardMetaMap}
                   lessonMediaMetaMap={lessonMediaMetaMap}
-                  subtitleCacheMetaMap={subtitleCacheMetaMap}
-                  subtitleRegenerateState={subtitleRegenerateState}
                   loadingLessons={loadingLessons}
                   hasMoreLessons={hasMoreLessons}
                   loadingMoreLessons={loadingMoreLessons}
                   onLoadMoreLessons={handleLoadMoreLessons}
-                  onSelectLesson={(lessonId) => loadLessonDetail(lessonId, { autoEnterImmersive: false })}
                   onStartLesson={handleStartLesson}
                   onRenameLesson={handleRenameLesson}
                   onDeleteLesson={handleDeleteLesson}
                   onRestoreLessonMedia={handleRestoreLessonMedia}
-                  onRegenerateSubtitles={handleRegenerateSubtitles}
                   onSwitchToUpload={() => handlePanelChange("upload")}
                   walletBalance={walletBalance}
                   billingRates={billingRates}

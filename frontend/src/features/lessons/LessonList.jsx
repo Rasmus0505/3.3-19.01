@@ -1,4 +1,4 @@
-import { Clock3, History, MoreVertical, Pencil, Play, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { Clock3, History, MoreVertical, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "../../lib/utils";
@@ -31,7 +31,6 @@ import {
   PopoverContent,
   PopoverTrigger,
   MediaCover,
-  Progress,
   Skeleton,
   Switch,
 } from "../../shared/ui";
@@ -74,47 +73,18 @@ function getCoverAssistiveText(lesson) {
   return title ? `${title} 默认封面` : "课程默认封面";
 }
 
-function getSubtitleProgressValue(progress) {
-  if (!progress) return 0;
-  const done = Number(progress.done || 0);
-  const total = Number(progress.total || 0);
-  if (total > 0) {
-    return Math.max(8, Math.min(100, Math.round((done / total) * 100)));
-  }
-  if (progress.stage === "prepare") return 18;
-  if (progress.stage === "semantic_split") return 42;
-  if (progress.stage === "fallback") return 84;
-  if (progress.stage === "completed") return 100;
-  return 12;
-}
-
-function getSubtitleBusyLabel(progress) {
-  if (!progress) return "处理中...";
-  if (progress.stage === "translate" && Number(progress.total || 0) > 0) {
-    return `正在翻译 ${Number(progress.done || 0)}/${Number(progress.total || 0)}`;
-  }
-  if (progress.stage === "semantic_split") return "正在细分长句...";
-  if (progress.stage === "fallback") return "正在切回稳定模式...";
-  if (progress.stage === "completed") return "即将完成...";
-  return "正在更新字幕...";
-}
-
 export function LessonList({
   lessons,
   currentLessonId,
   currentLessonNeedsBinding = false,
   lessonCardMetaMap = {},
   lessonMediaMetaMap = {},
-  subtitleCacheMetaMap = {},
   guideTargetLessonId = 0,
-  onSelect,
   onStartLesson,
   onRename,
   onDelete,
   onRestoreMedia,
-  onRegenerateSubtitles,
   onSwitchToUpload,
-  subtitleRegenerateState = null,
   loading = false,
   hasMore = false,
   loadingMore = false,
@@ -127,17 +97,12 @@ export function LessonList({
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [menuLessonId, setMenuLessonId] = useState(null);
   const [restoringLessonId, setRestoringLessonId] = useState(null);
-  const [subtitleLesson, setSubtitleLesson] = useState(null);
-  const [subtitleMode, setSubtitleMode] = useState("plain");
-  const [subtitleBusy, setSubtitleBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [learningSettings, setLearningSettings] = useState(() => readLearningSettings());
   const [settingsError, setSettingsError] = useState("");
   const [recordingShortcutActionId, setRecordingShortcutActionId] = useState("");
   const restoreInputRef = useRef(null);
   const restoreTargetRef = useRef(null);
-  const activeSubtitleProgress =
-    subtitleLesson && subtitleRegenerateState?.lessonId === subtitleLesson.id ? subtitleRegenerateState : null;
 
   function updateLearningSettings(updater) {
     setLearningSettings((current) => {
@@ -186,21 +151,19 @@ export function LessonList({
       lessons.map((lesson) => {
         const meta = lessonCardMetaMap[lesson.id] || {};
         const mediaMeta = lessonMediaMetaMap[lesson.id] || {};
-        const subtitleMeta = subtitleCacheMetaMap[lesson.id] || {};
         const sentenceCount = Number(meta.sentenceCount || lesson.sentences?.length || 0);
         const actionLabel = hasProgressSnapshot(meta.progress) ? "继续学习" : "开始学习";
         const needsBinding = lesson.media_storage === "client_indexeddb" && !mediaMeta.hasMedia;
         return {
           lesson,
           mediaMeta,
-          subtitleMeta,
           sentenceCount,
           actionLabel,
           needsBinding,
           createdAtLabel: formatCreatedAt(lesson.created_at),
         };
       }),
-    [lessonCardMetaMap, lessonMediaMetaMap, lessons, subtitleCacheMetaMap],
+    [lessonCardMetaMap, lessonMediaMetaMap, lessons],
   );
   const presetSummaryLines = useMemo(() => getPresetSummaryLines(learningSettings), [learningSettings]);
 
@@ -269,11 +232,7 @@ export function LessonList({
       setRestoringLessonId(null);
       restoreTargetRef.current = null;
     }
-    if (subtitleLesson && !lessons.some((item) => item.id === subtitleLesson.id)) {
-      setSubtitleLesson(null);
-      setSubtitleMode("plain");
-    }
-  }, [deletingLesson, lessons, menuLessonId, renamingLesson, restoringLessonId, subtitleLesson]);
+  }, [deletingLesson, lessons, menuLessonId, renamingLesson, restoringLessonId]);
 
   function openRenameDialog(lesson) {
     setRenamingLesson(lesson);
@@ -344,29 +303,6 @@ export function LessonList({
       restoreTargetRef.current = null;
     }
   }
-
-  function openSubtitleDialog(lesson, subtitleMeta) {
-    setSubtitleLesson(lesson);
-    setSubtitleMode(subtitleMeta?.currentSemanticSplitEnabled ? "semantic" : "plain");
-    setStatus("");
-  }
-
-  async function submitRegenerate() {
-    if (!subtitleLesson || !onRegenerateSubtitles) return;
-    setSubtitleBusy(true);
-    try {
-      const result = await onRegenerateSubtitles(subtitleLesson, subtitleMode === "semantic");
-      if (result?.ok) {
-        setSubtitleLesson(null);
-        setStatus(result?.message || "字幕已切换");
-      } else {
-        setStatus(result?.message || "重新生成字幕失败");
-      }
-    } finally {
-      setSubtitleBusy(false);
-    }
-  }
-
   return (
     <Card>
       <CardHeader>
@@ -574,18 +510,9 @@ export function LessonList({
 
         {!loading ? (
           <div className="space-y-3">
-            {cards.map(({ lesson, mediaMeta, subtitleMeta, sentenceCount, actionLabel, needsBinding, createdAtLabel }) => {
+            {cards.map(({ lesson, mediaMeta, sentenceCount, actionLabel, needsBinding, createdAtLabel }) => {
               const selected = currentLessonId === lesson.id;
               const isGuideTarget = Number(guideTargetLessonId || 0) > 0 ? Number(guideTargetLessonId) === Number(lesson.id) : lesson.id === cards[0]?.lesson.id;
-              const currentVariantLabel =
-                subtitleMeta.currentSemanticSplitEnabled === true
-                  ? "语义分句"
-                  : subtitleMeta.currentSemanticSplitEnabled === false
-                    ? "原始字幕"
-                    : "服务器字幕";
-              const subtitleVariantHint = subtitleMeta.canRegenerate
-                ? `已缓存${subtitleMeta.hasPlainVariant && subtitleMeta.hasSemanticVariant ? "双模式字幕" : "当前模式字幕"}`
-                : "仅新上传的课程支持";
               return (
                 <div
                   key={lesson.id}
@@ -614,14 +541,12 @@ export function LessonList({
                             {selected ? <Badge variant="outline">当前课程</Badge> : null}
                             {needsBinding ? <Badge variant="secondary">待恢复视频</Badge> : null}
                             {selected && currentLessonNeedsBinding ? <Badge variant="secondary">需绑定本地视频</Badge> : null}
-                            <Badge variant="outline">{currentVariantLabel}</Badge>
                           </div>
                           <p className="line-clamp-2 text-sm text-muted-foreground">{lesson.source_filename || "未命名素材"}</p>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                           <span>{sentenceCount} 句</span>
-                          <span>{subtitleVariantHint}</span>
                           <span className="inline-flex items-center gap-1">
                             <Clock3 className="size-4" />
                             {createdAtLabel}
@@ -653,7 +578,7 @@ export function LessonList({
                             variant="outline"
                             className="self-end"
                             aria-label="open-lesson-menu"
-                            disabled={renameBusy || deleteBusy || subtitleBusy || Boolean(restoringLessonId)}
+                            disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
                           >
                             <MoreVertical className="size-4" />
                           </Button>
@@ -679,22 +604,8 @@ export function LessonList({
                               size="sm"
                               variant="ghost"
                               className="w-full justify-start"
-                              onClick={() => {
-                                openSubtitleDialog(lesson, subtitleMeta);
-                                setMenuLessonId(null);
-                              }}
-                              disabled={renameBusy || deleteBusy || subtitleBusy || !subtitleMeta.canRegenerate}
-                            >
-                              <Sparkles className="size-4" />
-                              {subtitleMeta.canRegenerate ? "切换字幕版本" : "切换字幕版本（仅新上传）"}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="w-full justify-start"
                               onClick={() => openRestorePicker(lesson)}
-                              disabled={renameBusy || deleteBusy || subtitleBusy || Boolean(restoringLessonId)}
+                              disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
                             >
                               <RotateCcw className="size-4" />
                               恢复本地视频
@@ -708,7 +619,7 @@ export function LessonList({
                                 setDeletingLesson(lesson);
                                 setMenuLessonId(null);
                               }}
-                              disabled={renameBusy || deleteBusy || subtitleBusy || Boolean(restoringLessonId)}
+                              disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
                             >
                               <Trash2 className="size-4" />
                               删除
@@ -765,75 +676,6 @@ export function LessonList({
               </Button>
               <Button onClick={() => void submitRename()} disabled={renameBusy}>
                 {renameBusy ? "保存中..." : "保存"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog
-          open={Boolean(subtitleLesson)}
-          onOpenChange={(open) => {
-            if (!open && !subtitleBusy) {
-              setSubtitleLesson(null);
-            }
-          }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>切换字幕版本</DialogTitle>
-              <DialogDescription>
-                这里不会重新识别音频。切到“原始字幕”会回到 ASR 原句，切到“语义分句”会重新整理长句并更新中文字幕。
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <Button
-                  type="button"
-                  variant={subtitleMode === "plain" ? "default" : "outline"}
-                  onClick={() => setSubtitleMode("plain")}
-                  disabled={subtitleBusy}
-                >
-                  原始字幕
-                </Button>
-                <Button
-                  type="button"
-                  variant={subtitleMode === "semantic" ? "default" : "outline"}
-                  onClick={() => setSubtitleMode("semantic")}
-                  disabled={subtitleBusy}
-                >
-                  语义分句
-                </Button>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {subtitleMode === "semantic" ? "适合长句较多的课程，阅读会更轻松。" : "直接回到识别后的原始分句结果。"}
-              </p>
-              {subtitleBusy ? (
-                <div className="rounded-xl border bg-muted/20 p-3">
-                  <div className="flex items-center justify-between gap-3 text-sm">
-                    <span className="font-medium">{activeSubtitleProgress?.message || "正在更新字幕"}</span>
-                    {Number(activeSubtitleProgress?.total || 0) > 0 ? (
-                      <span className="text-muted-foreground">
-                        {Number(activeSubtitleProgress?.done || 0)}/{Number(activeSubtitleProgress?.total || 0)}
-                      </span>
-                    ) : null}
-                  </div>
-                  <Progress value={getSubtitleProgressValue(activeSubtitleProgress)} className="mt-3 h-2" />
-                </div>
-              ) : null}
-            </div>
-            <DialogFooter>
-              <Button
-                variant="ghost"
-                disabled={subtitleBusy}
-                onClick={() => {
-                  if (subtitleBusy) return;
-                  setSubtitleLesson(null);
-                }}
-              >
-                取消
-              </Button>
-              <Button onClick={() => void submitRegenerate()} disabled={subtitleBusy}>
-                {subtitleBusy ? getSubtitleBusyLabel(activeSubtitleProgress) : "确认切换"}
               </Button>
             </DialogFooter>
           </DialogContent>

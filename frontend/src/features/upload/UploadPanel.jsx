@@ -6,10 +6,11 @@ import { cn } from "../../lib/utils";
 import { api, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
 import { clearActiveGenerationTask, getActiveGenerationTask, saveActiveGenerationTask } from "../../shared/media/localTaskStore";
 import { extractMediaCoverPreview, getLessonMediaPreview, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
-import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, MediaCover, Switch, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
+import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, MediaCover, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
 import { useAppStore } from "../../store";
 
 const QWEN_MODEL = "qwen3-asr-flash-filetrans";
+const UPLOAD_PROGRESS_PERSIST_INTERVAL_MS = 800;
 const DISPLAY_STAGES = [
   { key: "convert_audio", label: "转换" },
   { key: "asr_transcribe", label: "识别" },
@@ -42,6 +43,7 @@ function getCurrentTaskStageKey(taskSnapshot) {
 
 function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
   if (phase === "uploading") return `上传素材 ${clampPercent(uploadPercent)}%`;
+  if (phase === "upload_paused") return `上传素材 ${clampPercent(uploadPercent)}%`;
   if (!taskSnapshot) return phase === "success" ? "生成课程完成" : phase === "error" ? "生成课程失败" : "等待上传";
   if (phase === "success") return "生成课程完成";
   const counters = taskSnapshot.counters || {};
@@ -65,7 +67,7 @@ function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
 function getVisualProgress(phase, uploadPercent, taskSnapshot) {
   if (phase === "success") return 100;
   if (phase === "processing" || taskSnapshot) return Math.round(42 + clampPercent(taskSnapshot?.overall_percent) * 0.58);
-  if (phase === "uploading") return Math.round(Math.max(3, Math.min(42, clampPercent(uploadPercent) * 0.42)));
+  if (phase === "uploading" || phase === "upload_paused") return Math.round(Math.max(3, Math.min(42, clampPercent(uploadPercent) * 0.42)));
   return 0;
 }
 
@@ -106,13 +108,13 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [coverHeight, setCoverHeight] = useState(0);
   const [isVideoSource, setIsVideoSource] = useState(false);
   const [taskSnapshot, setTaskSnapshot] = useState(null);
-  const [semanticSplitEnabled, setSemanticSplitEnabled] = useState(Boolean(subtitleSettings?.semantic_split_default_enabled));
   const [uploadPercent, setUploadPercent] = useState(0);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [bindingCompleted, setBindingCompleted] = useState(false);
   const pollingAbortRef = useRef(false);
   const pollTokenRef = useRef(0);
   const uploadAbortRef = useRef(null);
+  const uploadPersistRef = useRef({ timer: null, lastSavedAt: 0, lastSavedPercent: -1, latestPercent: 0 });
   const fileInputRef = useRef(null);
   const previousPanelActiveRef = useRef(Boolean(isActivePanel));
   const ownerUserId = Number(currentUser?.id || 0);
@@ -129,9 +131,23 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const likelyInsufficient = Number.isFinite(balancePoints) && estimatedPoints > 0 && balancePoints < estimatedPoints;
   const stageItems = getStageItems(taskSnapshot);
   const progressPercent = getVisualProgress(phase, uploadPercent, taskSnapshot);
-  const showProgress = loading || phase === "success" || phase === "error" || Boolean(taskSnapshot);
+  const showProgress = loading || phase === "success" || phase === "error" || phase === "upload_paused" || Boolean(taskSnapshot);
   const canRetryWithoutUpload = Boolean(taskId);
   const hasLocalFile = Boolean(file);
+
+  function clearUploadPersistTimer() {
+    if (uploadPersistRef.current.timer) {
+      clearTimeout(uploadPersistRef.current.timer);
+      uploadPersistRef.current.timer = null;
+    }
+  }
+
+  function resetUploadPersistState() {
+    clearUploadPersistTimer();
+    uploadPersistRef.current.lastSavedAt = 0;
+    uploadPersistRef.current.lastSavedPercent = -1;
+    uploadPersistRef.current.latestPercent = 0;
+  }
 
   function stopPollingSession() {
     pollingAbortRef.current = true;
@@ -150,16 +166,14 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   useEffect(() => () => {
     stopPollingSession();
+    clearUploadPersistTimer();
     uploadAbortRef.current?.abort();
   }, []);
-
-  useEffect(() => {
-    setSemanticSplitEnabled(Boolean(subtitleSettings?.semantic_split_default_enabled));
-  }, [subtitleSettings?.semantic_split_default_enabled]);
 
   function resetLocalSessionState(options = {}) {
     const { clearFileInput = true } = options;
     stopPollingSession();
+    resetUploadPersistState();
     uploadAbortRef.current?.abort();
     uploadAbortRef.current = null;
     if (clearFileInput && fileInputRef.current) {
@@ -205,7 +219,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       is_video_source: Boolean(overrides.isVideoSource ?? isVideoSource),
       upload_percent: Number(overrides.uploadPercent ?? uploadPercent ?? 0),
       status_text: String(overrides.status ?? status ?? ""),
-      semantic_split_enabled: Boolean(overrides.semanticSplitEnabled ?? semanticSplitEnabled),
+      semantic_split_enabled: false,
       binding_completed: Boolean(overrides.bindingCompleted ?? bindingCompleted),
     });
   }
@@ -216,8 +230,60 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     await clearActiveGenerationTask(ownerUserId);
   }
 
+  function persistUploadProgress(nextPercent) {
+    if (!ownerUserId || !file) return;
+    const normalizedPercent = clampPercent(nextPercent);
+    uploadPersistRef.current.latestPercent = normalizedPercent;
+    const now = Date.now();
+    const elapsed = now - Number(uploadPersistRef.current.lastSavedAt || 0);
+    const shouldPersistImmediately =
+      uploadPersistRef.current.lastSavedPercent < 0 ||
+      normalizedPercent >= 100 ||
+      elapsed >= UPLOAD_PROGRESS_PERSIST_INTERVAL_MS;
+
+    clearUploadPersistTimer();
+
+    const flush = () => {
+      uploadPersistRef.current.lastSavedAt = Date.now();
+      uploadPersistRef.current.lastSavedPercent = normalizedPercent;
+      void persistSession({ phase: "uploading", uploadPercent: normalizedPercent, status: "" });
+    };
+
+    if (shouldPersistImmediately) {
+      flush();
+      return;
+    }
+
+    uploadPersistRef.current.timer = setTimeout(() => {
+      uploadPersistRef.current.timer = null;
+      flush();
+    }, Math.max(80, UPLOAD_PROGRESS_PERSIST_INTERVAL_MS - elapsed));
+  }
+
+  async function pauseUpload(nextStatus = "上传已暂停，可继续上传当前素材") {
+    stopPollingSession();
+    clearUploadPersistTimer();
+    const activeAbortController = uploadAbortRef.current;
+    uploadAbortRef.current = null;
+    activeAbortController?.abort();
+    setTaskId("");
+    setLoading(false);
+    setStatus(nextStatus);
+    setPhase("upload_paused");
+    setTaskSnapshot(null);
+    await persistSession({
+      taskId: "",
+      phase: "upload_paused",
+      taskSnapshot: null,
+      uploadPercent: clampPercent(uploadPersistRef.current.latestPercent || uploadPercent),
+      status: nextStatus,
+      bindingCompleted: false,
+    });
+  }
+
   async function clearTaskRuntime(nextStatus = "") {
     stopPollingSession();
+    resetUploadPersistState();
     uploadAbortRef.current?.abort();
     setTaskId("");
     setLoading(false);
@@ -237,6 +303,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }
 
   async function finalizeSuccess(data, sourceFile = file, silentToast = false) {
+    resetUploadPersistState();
     let mediaPersisted = false;
     let mediaPreview = null;
     let successMessage = "";
@@ -298,6 +365,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       }
       setPhase("processing");
       setLoading(true);
+      resetUploadPersistState();
       await persistSession({ phase: "processing", taskSnapshot: data, uploadPercent: 100 });
       setTimeout(() => void pollTask(nextTaskId, silentToast, pollToken), 1000);
     } catch (error) {
@@ -329,11 +397,16 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       }
 
       const restoredFile = createFileFromBlob(saved.file_blob, saved.file_name, saved.media_type);
+      const restoredPhase = !saved.task_id && savedPhase === "uploading" ? "upload_paused" : savedPhase;
+      const restoredStatus =
+        !saved.task_id && savedPhase === "uploading"
+          ? String(saved.status_text || "检测到上次上传中断，可继续上传当前素材")
+          : String(saved.status_text || "");
       setFile(restoredFile);
       setTaskId(String(saved.task_id || ""));
-      setStatus(String(saved.status_text || ""));
+      setStatus(restoredStatus);
       setDurationSec(Number(saved.duration_seconds || 0) || null);
-      setPhase(String(saved.phase || "idle"));
+      setPhase(restoredPhase || "idle");
       setCoverDataUrl(String(saved.cover_data_url || ""));
       setCoverWidth(Number(saved.cover_width || 0));
       setCoverHeight(Number(saved.cover_height || 0));
@@ -341,8 +414,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       setIsVideoSource(Boolean(saved.is_video_source));
       setTaskSnapshot(saved.task_snapshot || null);
       setUploadPercent(Number(saved.upload_percent || 0));
+      uploadPersistRef.current.latestPercent = Number(saved.upload_percent || 0);
       setBindingCompleted(Boolean(saved.binding_completed));
-      setLoading(["uploading", "processing"].includes(savedPhase));
+      setLoading(["processing"].includes(restoredPhase));
       if (
         saved.task_id &&
         (["pending", "running"].includes(savedTaskStatus) || ["processing", "uploading"].includes(savedPhase))
@@ -368,6 +442,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   async function onSelectFile(nextFile) {
     stopPollingSession();
+    resetUploadPersistState();
     uploadAbortRef.current?.abort();
     setFile(nextFile);
     setTaskId("");
@@ -381,6 +456,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setCoverHeight(0);
     setIsVideoSource(false);
     setUploadPercent(0);
+    uploadPersistRef.current.latestPercent = 0;
     setBindingCompleted(false);
     if (!nextFile) {
       setPhase("idle");
@@ -416,6 +492,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       return;
     }
     stopPollingSession();
+    resetUploadPersistState();
     const pollToken = startPollingSession();
     uploadAbortRef.current?.abort();
     setLoading(true);
@@ -423,15 +500,31 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setStatus("");
     setTaskSnapshot(null);
     setUploadPercent(0);
+    uploadPersistRef.current.latestPercent = 0;
     setPhase("uploading");
+    await persistSession({ taskId: "", phase: "uploading", taskSnapshot: null, uploadPercent: 0, status: "", bindingCompleted: false });
     try {
       const form = new FormData();
       form.append("video_file", file);
       form.append("asr_model", selectedAsrModel);
-      form.append("semantic_split_enabled", semanticSplitEnabled ? "true" : "false");
+      form.append("semantic_split_enabled", "false");
       const abortController = new AbortController();
       uploadAbortRef.current = abortController;
-      const { ok, data } = await uploadWithProgress("/api/lessons/tasks", { method: "POST", body: form, signal: abortController.signal, onUploadProgress: ({ percent }) => setUploadPercent(percent) }, accessToken);
+      const { ok, data } = await uploadWithProgress(
+        "/api/lessons/tasks",
+        {
+          method: "POST",
+          body: form,
+          signal: abortController.signal,
+          onUploadProgress: ({ percent }) => {
+            const nextPercent = clampPercent(percent);
+            uploadPersistRef.current.latestPercent = nextPercent;
+            setUploadPercent(nextPercent);
+            persistUploadProgress(nextPercent);
+          },
+        },
+        accessToken,
+      );
       uploadAbortRef.current = null;
       if (!ok) {
         const message = toErrorText(data, "创建上传任务失败");
@@ -455,12 +548,15 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       }
       setTaskId(nextTaskId);
       setUploadPercent(100);
+      uploadPersistRef.current.latestPercent = 100;
       setPhase("processing");
+      resetUploadPersistState();
       await persistSession({ taskId: nextTaskId, phase: "processing", uploadPercent: 100 });
       void pollTask(nextTaskId, false, pollToken);
     } catch (error) {
       uploadAbortRef.current = null;
       if (error?.name === "AbortError") return;
+      resetUploadPersistState();
       const message = `网络错误: ${String(error)}`;
       setStatus(message);
       setPhase("error");
@@ -598,6 +694,17 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
           </div>
         ) : null}
 
+        {phase === "upload_paused" ? (
+          <div className="space-y-3 rounded-2xl border border-border bg-muted/15 p-4">
+            <p className="text-sm text-muted-foreground">{status || "上传已暂停，可继续上传当前素材。"}</p>
+            <div className="flex flex-wrap gap-2">
+              {hasLocalFile ? <Button type="button" onClick={() => void submit()}><RefreshCcw className="size-4" />继续上传当前素材</Button> : null}
+              {hasLocalFile ? <Button type="button" variant="ghost" onClick={() => void clearTaskRuntime()}>保留素材并清空状态</Button> : null}
+              <Button type="button" variant="outline" onClick={() => void resetSession()}>更换素材</Button>
+            </div>
+          </div>
+        ) : null}
+
         <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
           <div className="grid gap-2" data-guide-id="upload-select-file">
             <input id="asr-file" ref={fileInputRef} type="file" className="hidden" onChange={(event) => { void onSelectFile(event.target.files?.[0] ?? null); }} disabled={loading} />
@@ -620,11 +727,25 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             </div>
             {file ? <p className="text-xs text-muted-foreground">{file.name}</p> : null}
           </div>
-          <div className="flex items-start justify-between gap-3 rounded-xl border p-4">
-            <div className="space-y-1"><p className="text-sm font-medium">开启语义分句</p><p className="text-xs text-muted-foreground">更贴近语义，但会更慢，且可能增加模型调用。</p></div>
-            <div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">{semanticSplitEnabled ? "已开启" : "已关闭"}</span><Switch checked={semanticSplitEnabled} onCheckedChange={setSemanticSplitEnabled} disabled={loading} /></div>
-          </div>
-          <Button type="submit" disabled={loading || phase === "success"} className="h-11 w-full" data-guide-id="upload-submit">{loading ? <span className="inline-flex items-center gap-2"><Loader2 className="size-4 animate-spin" />生成中</span> : phase === "success" ? "已生成完成" : "开始生成课程"}</Button>
+          <Button type="submit" disabled={loading || phase === "success"} className="h-11 w-full" data-guide-id="upload-submit">
+            {loading ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="size-4 animate-spin" />
+                {phase === "uploading" ? "上传中" : "生成中"}
+              </span>
+            ) : phase === "success" ? (
+              "已生成完成"
+            ) : phase === "upload_paused" ? (
+              "继续上传当前素材"
+            ) : (
+              "开始生成课程"
+            )}
+          </Button>
+          {phase === "uploading" ? (
+            <Button type="button" variant="outline" className="h-11 w-full" onClick={() => void pauseUpload()}>
+              取消上传
+            </Button>
+          ) : null}
         </form>
 
         <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
