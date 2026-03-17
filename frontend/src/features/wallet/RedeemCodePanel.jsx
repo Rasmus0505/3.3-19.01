@@ -3,6 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { ENDPOINTS } from "../../shared/api/endpoints";
+import { formatMoneyCents } from "../../shared/lib/money";
 import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input } from "../../shared/ui";
 
 async function jsonOrEmpty(resp) {
@@ -45,7 +46,7 @@ export function RedeemCodePanel({ apiCall, onWalletChanged }) {
         return;
       }
 
-      const message = `兑换成功：+${Number(data.redeemed_points || 0)} 点`;
+      const message = `兑换成功：+${formatMoneyCents(data.redeemed_amount_cents ?? data.redeemed_points ?? 0)}`;
       setStatus(message);
       toast.success(message);
       setCode("");
@@ -66,7 +67,7 @@ export function RedeemCodePanel({ apiCall, onWalletChanged }) {
           <Gift className="size-4" />
           兑换码充值
         </CardTitle>
-        <CardDescription>输入兑换码充值账户</CardDescription>
+        <CardDescription>输入兑换码为账户充值金额</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <form className="space-y-3" onSubmit={submitRedeem}>

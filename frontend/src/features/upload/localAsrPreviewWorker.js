@@ -1,6 +1,5 @@
 import { pipeline } from "@huggingface/transformers";
 
-const MODEL_ID = "onnx-community/whisper-tiny.en_timestamped";
 const TASK_NAME = "automatic-speech-recognition";
 const TARGET_SAMPLE_RATE = 16000;
 const TRANSCRIBE_OPTIONS = {
@@ -11,6 +10,7 @@ const TRANSCRIBE_OPTIONS = {
 
 let pipelinePromise = null;
 let activeRuntime = "";
+let activeModelId = "";
 
 function toErrorMessage(error) {
   if (error instanceof Error && error.message) {
@@ -19,12 +19,16 @@ function toErrorMessage(error) {
   return String(error || "未知错误");
 }
 
+function normalizeModelId(modelId) {
+  return String(modelId || "").trim();
+}
+
 function buildProgressPayload(requestId, stage, payload = {}) {
   return {
     type: "progress",
     requestId,
     stage,
-    modelId: MODEL_ID,
+    modelId: normalizeModelId(payload.modelId),
     ...payload,
   };
 }
@@ -34,7 +38,7 @@ function buildResultPayload(requestId, action, payload = {}) {
     type: "result",
     requestId,
     action,
-    model_id: MODEL_ID,
+    model_id: normalizeModelId(payload.model_id || payload.modelId),
     ...payload,
   };
 }
@@ -44,7 +48,7 @@ function buildErrorPayload(requestId, action, error, payload = {}) {
     type: "error",
     requestId,
     action,
-    model_id: MODEL_ID,
+    model_id: normalizeModelId(payload.model_id || payload.modelId),
     message: toErrorMessage(error),
     ...payload,
   };
@@ -100,7 +104,31 @@ function normalizeSegments(result) {
   ];
 }
 
-async function createPipeline(requestId, preferredRuntime = "webgpu") {
+function buildAsrPayload(segments) {
+  const sentences = Array.isArray(segments)
+    ? segments.map((segment) => ({
+        text: String(segment.text || "").trim(),
+        begin_time: Math.max(0, Number(segment.begin_ms || 0)),
+        end_time: Math.max(0, Number(segment.end_ms || 0)),
+      })).filter((segment) => segment.text && segment.end_time > segment.begin_time)
+    : [];
+  const transcriptText = sentences.map((item) => item.text).join(" ").trim();
+  return {
+    source: "local_browser_asr",
+    transcripts: [
+      {
+        text: transcriptText,
+        sentences,
+      },
+    ],
+  };
+}
+
+async function createPipeline(requestId, modelId, preferredRuntime = "webgpu") {
+  const normalizedModelId = normalizeModelId(modelId);
+  if (!normalizedModelId) {
+    throw new Error("缺少本地模型 ID");
+  }
   const runtimes = preferredRuntime === "wasm" ? ["wasm"] : ["webgpu", "wasm"];
   let lastError = null;
 
@@ -108,12 +136,13 @@ async function createPipeline(requestId, preferredRuntime = "webgpu") {
     try {
       self.postMessage(
         buildProgressPayload(requestId, "model-load-start", {
+          modelId: normalizedModelId,
           runtime,
           status_text: runtime === "webgpu" ? "正在尝试 WebGPU" : "正在回退到 WASM",
         }),
       );
 
-      const instance = await pipeline(TASK_NAME, MODEL_ID, {
+      const instance = await pipeline(TASK_NAME, normalizedModelId, {
         device: runtime,
         progress_callback: (event) => {
           const progress = Number(event?.progress);
@@ -124,6 +153,7 @@ async function createPipeline(requestId, preferredRuntime = "webgpu") {
               : null;
           self.postMessage(
             buildProgressPayload(requestId, "model-progress", {
+              modelId: normalizedModelId,
               runtime,
               file: String(event?.file || ""),
               status: String(event?.status || ""),
@@ -136,12 +166,14 @@ async function createPipeline(requestId, preferredRuntime = "webgpu") {
       });
 
       activeRuntime = runtime;
+      activeModelId = normalizedModelId;
       return instance;
     } catch (error) {
       lastError = error;
       if (runtime === "webgpu") {
         self.postMessage(
           buildProgressPayload(requestId, "runtime-fallback", {
+            modelId: normalizedModelId,
             runtime: "wasm",
             status_text: "WebGPU 不可用，已自动回退到 WASM",
             detail: toErrorMessage(error),
@@ -155,11 +187,16 @@ async function createPipeline(requestId, preferredRuntime = "webgpu") {
   throw lastError || new Error("本地 ASR 模型加载失败");
 }
 
-async function ensurePipeline(requestId, preferredRuntime = "webgpu") {
-  if (!pipelinePromise) {
-    pipelinePromise = createPipeline(requestId, preferredRuntime).catch((error) => {
+async function ensurePipeline(requestId, modelId, preferredRuntime = "webgpu") {
+  const normalizedModelId = normalizeModelId(modelId);
+  if (!normalizedModelId) {
+    throw new Error("缺少本地模型 ID");
+  }
+  if (!pipelinePromise || activeModelId !== normalizedModelId) {
+    pipelinePromise = createPipeline(requestId, normalizedModelId, preferredRuntime).catch((error) => {
       pipelinePromise = null;
       activeRuntime = "";
+      activeModelId = "";
       throw error;
     });
   }
@@ -170,6 +207,7 @@ self.addEventListener("message", async (event) => {
   const payload = event?.data || {};
   const action = String(payload?.type || "");
   const requestId = String(payload?.requestId || "");
+  const modelId = normalizeModelId(payload?.modelId);
 
   if (!action || !requestId) {
     return;
@@ -177,22 +215,33 @@ self.addEventListener("message", async (event) => {
 
   if (action === "load-model") {
     try {
-      await ensurePipeline(requestId, String(payload?.preferredRuntime || "webgpu"));
+      await ensurePipeline(requestId, modelId, String(payload?.preferredRuntime || "webgpu"));
       self.postMessage(
         buildResultPayload(requestId, action, {
+          model_id: modelId,
           runtime: activeRuntime || "wasm",
           sampling_rate: TARGET_SAMPLE_RATE,
         }),
       );
     } catch (error) {
-      self.postMessage(buildErrorPayload(requestId, action, error));
+      self.postMessage(buildErrorPayload(requestId, action, error, { modelId }));
     }
+    return;
+  }
+
+  if (action === "dispose-model") {
+    if (activeModelId === modelId) {
+      pipelinePromise = null;
+      activeRuntime = "";
+      activeModelId = "";
+    }
+    self.postMessage(buildResultPayload(requestId, action, { model_id: modelId }));
     return;
   }
 
   if (action === "transcribe-audio") {
     try {
-      const transcriber = await ensurePipeline(requestId, String(payload?.preferredRuntime || "webgpu"));
+      const transcriber = await ensurePipeline(requestId, modelId, String(payload?.preferredRuntime || "webgpu"));
       const audioData = payload?.audioData;
       if (!(audioData instanceof Float32Array)) {
         throw new Error("音频数据无效，必须是 Float32Array");
@@ -200,6 +249,7 @@ self.addEventListener("message", async (event) => {
 
       self.postMessage(
         buildProgressPayload(requestId, "transcribe-start", {
+          modelId,
           runtime: activeRuntime || "wasm",
           status_text: "正在本地识别英文字幕",
         }),
@@ -214,13 +264,15 @@ self.addEventListener("message", async (event) => {
 
       self.postMessage(
         buildResultPayload(requestId, action, {
+          model_id: modelId,
           runtime: activeRuntime || "wasm",
           preview_text: previewText,
           segments,
+          asr_payload: buildAsrPayload(segments),
         }),
       );
     } catch (error) {
-      self.postMessage(buildErrorPayload(requestId, action, error));
+      self.postMessage(buildErrorPayload(requestId, action, error, { modelId }));
     }
   }
 });

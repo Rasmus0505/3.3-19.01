@@ -17,6 +17,25 @@ from app.schemas import (
 from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
 
 
+LOCAL_ASR_MODEL_META: dict[str, tuple[str, str]] = {
+    "local-whisper-tiny-en": ("Tiny · 英文", "local"),
+    "local-whisper-base-en": ("Base · 英文", "local"),
+    "local-whisper-small-en": ("Small · 英文", "local"),
+    "local-whisper-medium-en": ("Medium · 英文", "local"),
+}
+
+
+def _rate_display_meta(model_name: str) -> tuple[str, str]:
+    normalized = str(model_name or "").strip()
+    if normalized == "qwen3-asr-flash-filetrans":
+        return "高速 · 云端 ASR", "cloud"
+    if normalized in LOCAL_ASR_MODEL_META:
+        return LOCAL_ASR_MODEL_META[normalized]
+    if normalized == "qwen-mt-flash":
+        return "翻译成本参考", "internal"
+    return normalized or "未命名模型", "cloud"
+
+
 def to_user_response(user: User) -> UserResponse:
     return UserResponse(id=user.id, email=user.email, created_at=to_shanghai_aware(user.created_at))
 
@@ -130,16 +149,20 @@ def to_lesson_detail_response(lesson: Lesson, sentences: list[LessonSentence]) -
 
 
 def to_rate_item(rate: BillingModelRate) -> BillingRateItem:
+    display_name, runtime_kind = _rate_display_meta(rate.model_name)
     return BillingRateItem(
         model_name=rate.model_name,
-        points_per_minute=rate.points_per_minute,
-        points_per_1k_tokens=int(getattr(rate, "points_per_1k_tokens", 0) or 0),
+        display_name=display_name,
+        price_per_minute_cents=int(getattr(rate, "price_per_minute_cents", 0) or 0),
+        cost_per_minute_cents=int(getattr(rate, "cost_per_minute_cents", 0) or 0),
+        gross_profit_per_minute_cents=int(getattr(rate, "gross_profit_per_minute_cents", 0) or 0),
         billing_unit=str(getattr(rate, "billing_unit", "minute") or "minute"),
         is_active=rate.is_active,
         parallel_enabled=bool(rate.parallel_enabled),
         parallel_threshold_seconds=int(rate.parallel_threshold_seconds),
         segment_seconds=int(rate.segment_seconds),
         max_concurrency=int(rate.max_concurrency),
+        runtime_kind=runtime_kind,
         updated_at=to_shanghai_aware(rate.updated_at),
     )
 

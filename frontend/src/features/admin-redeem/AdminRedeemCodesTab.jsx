@@ -7,6 +7,7 @@ import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
+import { formatMoneyCents } from "../../shared/lib/money";
 import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, MetricCard, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../shared/ui";
 
@@ -383,7 +384,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
                     <TableCell>{item.id}</TableCell>
                     <TableCell>{item.code_mask}</TableCell>
                     <TableCell>{item.batch_name} (#{item.batch_id})</TableCell>
-                    <TableCell>{item.face_value_points}</TableCell>
+                    <TableCell>{formatMoneyCents(item.face_value_amount_cents ?? item.face_value_points ?? 0)}</TableCell>
                     <TableCell><Badge variant="outline">{item.status}</Badge></TableCell>
                     <TableCell><Badge>{item.effective_status}</Badge></TableCell>
                     <TableCell>{item.redeemed_user_email || "-"}</TableCell>

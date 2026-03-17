@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.schemas.billing import BillingRateItem
 
@@ -75,6 +75,9 @@ class WalletLedgerItem(BaseModel):
     event_type: str
     delta_points: int
     balance_after: int
+    delta_amount_cents: int | None = None
+    balance_after_amount_cents: int | None = None
+    amount_unit: str = "cents"
     model_name: str | None
     duration_ms: int | None
     lesson_id: int | None
@@ -96,9 +99,11 @@ class AdminWalletLogsResponse(BaseModel):
 
 
 class AdminBillingRateUpdateRequest(BaseModel):
-    points_per_minute: int = Field(ge=0)
-    points_per_1k_tokens: int = Field(ge=0)
-    billing_unit: str = Field(min_length=1, max_length=32)
+    model_config = ConfigDict(populate_by_name=True)
+
+    price_per_minute_cents: int = Field(ge=0, validation_alias=AliasChoices("price_per_minute_cents", "points_per_minute"))
+    cost_per_minute_cents: int = Field(ge=0, validation_alias=AliasChoices("cost_per_minute_cents"))
+    billing_unit: str = Field(default="minute", min_length=1, max_length=32)
     is_active: bool
     parallel_enabled: bool
     parallel_threshold_seconds: int = Field(gt=0, le=24 * 60 * 60)

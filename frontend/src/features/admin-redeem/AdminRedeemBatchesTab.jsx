@@ -7,6 +7,7 @@ import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
+import { formatMoneyCents } from "../../shared/lib/money";
 import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Label, MetricCard, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea } from "../../shared/ui";
 
@@ -291,7 +292,7 @@ export function AdminRedeemBatchesTab({ apiCall }) {
               <Input value={batchName} onChange={(event) => setBatchName(event.target.value)} placeholder="如：3月活动A" />
             </div>
             <div className="space-y-2">
-              <Label>面额</Label>
+              <Label>面额（分）</Label>
               <Input type="number" min={1} value={faceValuePoints} onChange={(event) => setFaceValuePoints(Number(event.target.value || 1))} />
             </div>
             <div className="space-y-2">
@@ -329,8 +330,8 @@ export function AdminRedeemBatchesTab({ apiCall }) {
       </Card>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <Card><CardContent className="space-y-1 p-4"><p className="text-xs text-muted-foreground">当前页总发放点数</p><p className="text-xl font-semibold">{batchHealth.totalIssued}</p></CardContent></Card>
-        <Card><CardContent className="space-y-1 p-4"><p className="text-xs text-muted-foreground">当前页已发放点数</p><p className="text-xl font-semibold">{batchHealth.totalRedeemed}</p></CardContent></Card>
+        <Card><CardContent className="space-y-1 p-4"><p className="text-xs text-muted-foreground">当前页总发放金额</p><p className="text-xl font-semibold">{formatMoneyCents(batchHealth.totalIssued)}</p></CardContent></Card>
+        <Card><CardContent className="space-y-1 p-4"><p className="text-xs text-muted-foreground">当前页已发放金额</p><p className="text-xl font-semibold">{formatMoneyCents(batchHealth.totalRedeemed)}</p></CardContent></Card>
         <Card><CardContent className="space-y-1 p-4"><p className="text-xs text-muted-foreground">当前页 active 批次数</p><p className="text-xl font-semibold">{batchHealth.activeCount}</p></CardContent></Card>
       </div>
 
@@ -382,8 +383,8 @@ export function AdminRedeemBatchesTab({ apiCall }) {
                   <TableHead>已兑</TableHead>
                   <TableHead>剩余</TableHead>
                   <TableHead>兑换率</TableHead>
-                  <TableHead>总发放点数</TableHead>
-                  <TableHead>已发放点数</TableHead>
+                  <TableHead>总发放金额</TableHead>
+                  <TableHead>已发放金额</TableHead>
                   <TableHead>状态</TableHead>
                   <TableHead>生效时间</TableHead>
                   <TableHead>失效时间</TableHead>
@@ -396,13 +397,13 @@ export function AdminRedeemBatchesTab({ apiCall }) {
                   <TableRow key={item.id}>
                     <TableCell>{item.id}</TableCell>
                     <TableCell>{item.batch_name}</TableCell>
-                    <TableCell>{item.face_value_points}</TableCell>
+                    <TableCell>{formatMoneyCents(item.face_value_amount_cents ?? item.face_value_points ?? 0)}</TableCell>
                     <TableCell>{item.generated_count}</TableCell>
                     <TableCell>{item.redeemed_count}</TableCell>
                     <TableCell>{item.remaining_count}</TableCell>
                     <TableCell>{(Number(item.redeem_rate || 0) * 100).toFixed(2)}%</TableCell>
                     <TableCell>{item.total_issued_points}</TableCell>
-                    <TableCell>{item.total_redeemed_points}</TableCell>
+                    <TableCell>{formatMoneyCents(item.total_redeemed_points || 0)}</TableCell>
                     <TableCell><Badge variant="outline">{item.status}</Badge></TableCell>
                     <TableCell>{formatDateTimeBeijing(item.active_from)}</TableCell>
                     <TableCell>{formatDateTimeBeijing(item.expire_at)}</TableCell>

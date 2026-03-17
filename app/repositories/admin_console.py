@@ -194,7 +194,7 @@ def _get_admin_overview_data_uncached(db: Session, *, now: datetime) -> dict[str
     today_new_users = int(db.scalar(select(func.count(User.id)).where(User.created_at >= today_start)) or 0)
     today_redeem_points = int(
         db.scalar(
-            select(func.coalesce(func.sum(WalletLedger.delta_points), 0)).where(
+            select(func.coalesce(func.sum(WalletLedger.delta_amount_cents), 0)).where(
                 WalletLedger.created_at >= today_start,
                 WalletLedger.event_type == "redeem_code",
             )
@@ -203,7 +203,7 @@ def _get_admin_overview_data_uncached(db: Session, *, now: datetime) -> dict[str
     )
     today_spent_points = int(
         db.scalar(
-            select(func.coalesce(func.sum(case((WalletLedger.delta_points < 0, -WalletLedger.delta_points), else_=0)), 0)).where(
+            select(func.coalesce(func.sum(case((WalletLedger.delta_amount_cents < 0, -WalletLedger.delta_amount_cents), else_=0)), 0)).where(
                 WalletLedger.created_at >= today_start,
                 WalletLedger.event_type.in_(["consume", "consume_translate"]),
             )
@@ -244,7 +244,7 @@ def _get_admin_overview_data_uncached(db: Session, *, now: datetime) -> dict[str
     redeem_series = _sum_by_day(
         db,
         select(WalletLedger.id).where(WalletLedger.created_at >= seven_days_start, WalletLedger.event_type == "redeem_code"),
-        WalletLedger.delta_points,
+        WalletLedger.delta_amount_cents,
         WalletLedger.created_at,
     )
     spent_series = _sum_by_day(
@@ -252,9 +252,9 @@ def _get_admin_overview_data_uncached(db: Session, *, now: datetime) -> dict[str
         select(WalletLedger.id).where(
             WalletLedger.created_at >= seven_days_start,
             WalletLedger.event_type.in_(["consume", "consume_translate"]),
-            WalletLedger.delta_points < 0,
+            WalletLedger.delta_amount_cents < 0,
         ),
-        -WalletLedger.delta_points,
+        -WalletLedger.delta_amount_cents,
         WalletLedger.created_at,
     )
     translation_failure_series = _count_by_day(
@@ -285,8 +285,8 @@ def _get_admin_overview_data_uncached(db: Session, *, now: datetime) -> dict[str
         now,
         {
             "新增账号": user_series,
-            "充值点数": redeem_series,
-            "消耗点数": spent_series,
+            "充值金额": redeem_series,
+            "消耗金额": spent_series,
             "异常数": {key: translation_failure_series.get(key, 0) + redeem_failure_series.get(key, 0) for key in set(translation_failure_series) | set(redeem_failure_series)},
         },
     )
@@ -304,8 +304,8 @@ def _get_admin_overview_data_uncached(db: Session, *, now: datetime) -> dict[str
         "recent_operations": recent_operation_rows,
         "summary_cards": [
             {"label": "今日新增账号", "value": today_new_users, "hint": "按北京时间今天统计", "tone": "info"},
-            {"label": "今日充值点数", "value": today_redeem_points, "hint": "仅统计兑换码入账", "tone": "success"},
-            {"label": "今日消耗点数", "value": today_spent_points, "hint": "转写与翻译合计", "tone": "warning"},
+            {"label": "今日充值金额", "value": today_redeem_points, "hint": "仅统计兑换码入账", "tone": "success"},
+            {"label": "今日消耗金额", "value": today_spent_points, "hint": "转写与翻译合计", "tone": "warning"},
             {"label": "近 24 小时异常", "value": translation_failures_24h + redeem_failures_24h, "hint": "翻译失败 + 兑换失败", "tone": "danger"},
         ],
         "charts": [
@@ -316,8 +316,8 @@ def _get_admin_overview_data_uncached(db: Session, *, now: datetime) -> dict[str
                 "x_key": "label",
                 "series": [
                     {"key": "新增账号", "name": "新增账号", "color": CHART_COLORS["blue"]},
-                    {"key": "充值点数", "name": "充值点数", "color": CHART_COLORS["green"]},
-                    {"key": "消耗点数", "name": "消耗点数", "color": CHART_COLORS["amber"]},
+                    {"key": "充值金额", "name": "充值金额", "color": CHART_COLORS["green"]},
+                    {"key": "消耗金额", "name": "消耗金额", "color": CHART_COLORS["amber"]},
                     {"key": "异常数", "name": "异常数", "color": CHART_COLORS["rose"]},
                 ],
                 "data": overview_points,
@@ -596,9 +596,9 @@ def list_admin_user_activity(
     wallet_activity = (
         select(
             WalletLedger.user_id.label("user_id"),
-            func.coalesce(func.sum(case((WalletLedger.delta_points < 0, -WalletLedger.delta_points), else_=0)), 0).label("consumed_points"),
+            func.coalesce(func.sum(case((WalletLedger.delta_amount_cents < 0, -WalletLedger.delta_amount_cents), else_=0)), 0).label("consumed_points"),
             func.coalesce(
-                func.sum(case((WalletLedger.event_type == "redeem_code", WalletLedger.delta_points), else_=0)),
+                func.sum(case((WalletLedger.event_type == "redeem_code", WalletLedger.delta_amount_cents), else_=0)),
                 0,
             ).label("redeemed_points"),
         )
@@ -617,7 +617,7 @@ def list_admin_user_activity(
             User.email,
             User.created_at,
             User.last_login_at,
-            func.coalesce(WalletAccount.balance_points, 0).label("balance_points"),
+            func.coalesce(WalletAccount.balance_amount_cents, 0).label("balance_points"),
             func.coalesce(login_activity.c.login_days, 0).label("login_days"),
             func.coalesce(login_activity.c.login_events, 0).label("login_events"),
             func.coalesce(lesson_activity.c.lessons_created, 0).label("lessons_created"),
@@ -649,7 +649,7 @@ def list_admin_user_activity(
         "email": User.email,
         "created_at": User.created_at,
         "last_login_at": func.coalesce(login_activity.c.last_login_at, User.last_login_at),
-        "balance_points": func.coalesce(WalletAccount.balance_points, 0),
+        "balance_points": func.coalesce(WalletAccount.balance_amount_cents, 0),
         "login_days": login_activity.c.login_days,
         "login_events": login_activity.c.login_events,
         "lessons_created": lesson_activity.c.lessons_created,
@@ -713,7 +713,7 @@ def list_admin_user_activity(
     total_new_users = int(db.scalar(select(func.count(User.id)).where(*new_user_filter)) or 0)
     total_consumed_points = int(
         db.scalar(
-            select(func.coalesce(func.sum(case((WalletLedger.delta_points < 0, -WalletLedger.delta_points), else_=0)), 0))
+            select(func.coalesce(func.sum(case((WalletLedger.delta_amount_cents < 0, -WalletLedger.delta_amount_cents), else_=0)), 0))
             .join(User, User.id == WalletLedger.user_id)
             .where(
                 WalletLedger.created_at >= date_from,
@@ -732,7 +732,7 @@ def list_admin_user_activity(
             {"label": "活跃用户", "value": total, "hint": "当前时间范围内至少登录一次的用户数", "tone": "info"},
             {"label": "登录次数", "value": total_login_events, "hint": "同一用户多次登录会累计", "tone": "default"},
             {"label": "新增用户", "value": total_new_users, "hint": "同范围内新注册账号数", "tone": "success"},
-            {"label": "区间消耗点数", "value": total_consumed_points, "hint": "登录活跃用户在当前范围内的消耗", "tone": "warning"},
+            {"label": "区间消耗金额", "value": total_consumed_points, "hint": "登录活跃用户在当前范围内的消耗", "tone": "warning"},
         ],
         "charts": [
             {
@@ -777,7 +777,7 @@ def _get_admin_user_activity_summary_uncached(
     lesson_count = int(db.scalar(select(func.count(Lesson.id)).where(Lesson.user_id == user_id)) or 0)
     consumed_points_30d = int(
         db.scalar(
-            select(func.coalesce(func.sum(case((WalletLedger.delta_points < 0, -WalletLedger.delta_points), else_=0)), 0)).where(
+            select(func.coalesce(func.sum(case((WalletLedger.delta_amount_cents < 0, -WalletLedger.delta_amount_cents), else_=0)), 0)).where(
                 WalletLedger.user_id == user_id,
                 WalletLedger.created_at >= since_30_days,
                 WalletLedger.event_type.in_(["consume", "consume_translate"]),
@@ -787,7 +787,7 @@ def _get_admin_user_activity_summary_uncached(
     )
     redeemed_points_30d = int(
         db.scalar(
-            select(func.coalesce(func.sum(WalletLedger.delta_points), 0)).where(
+            select(func.coalesce(func.sum(WalletLedger.delta_amount_cents), 0)).where(
                 WalletLedger.user_id == user_id,
                 WalletLedger.created_at >= since_30_days,
                 WalletLedger.event_type == "redeem_code",
@@ -828,7 +828,7 @@ def _get_admin_user_activity_summary_uncached(
     )
     consumed_points_in_range = int(
         db.scalar(
-            select(func.coalesce(func.sum(case((WalletLedger.delta_points < 0, -WalletLedger.delta_points), else_=0)), 0)).where(
+            select(func.coalesce(func.sum(case((WalletLedger.delta_amount_cents < 0, -WalletLedger.delta_amount_cents), else_=0)), 0)).where(
                 WalletLedger.user_id == user_id,
                 WalletLedger.created_at >= range_start,
                 WalletLedger.created_at < range_end_exclusive,
@@ -839,7 +839,7 @@ def _get_admin_user_activity_summary_uncached(
     )
     redeemed_points_in_range = int(
         db.scalar(
-            select(func.coalesce(func.sum(WalletLedger.delta_points), 0)).where(
+            select(func.coalesce(func.sum(WalletLedger.delta_amount_cents), 0)).where(
                 WalletLedger.user_id == user_id,
                 WalletLedger.created_at >= range_start,
                 WalletLedger.created_at < range_end_exclusive,

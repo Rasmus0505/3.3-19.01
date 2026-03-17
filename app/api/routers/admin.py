@@ -76,6 +76,7 @@ from app.services.billing_service import (
     copy_redeem_batch_and_codes,
     create_redeem_batch_and_codes,
     enforce_mt_flash_only_rates,
+    ensure_default_billing_rates,
     get_subtitle_settings,
     manual_adjust,
     set_redeem_batch_status,
@@ -384,6 +385,9 @@ def admin_wallet_logs(
             event_type=ledger.event_type,
             delta_points=int(ledger.delta_points),
             balance_after=int(ledger.balance_after),
+            delta_amount_cents=int(getattr(ledger, "delta_amount_cents", ledger.delta_points)),
+            balance_after_amount_cents=int(getattr(ledger, "balance_after_amount_cents", ledger.balance_after)),
+            amount_unit=str(getattr(ledger, "amount_unit", "cents") or "cents"),
             model_name=ledger.model_name,
             duration_ms=ledger.duration_ms,
             lesson_id=ledger.lesson_id,
@@ -496,6 +500,7 @@ def admin_translation_logs(
     responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
 )
 def admin_billing_rates(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
+    ensure_default_billing_rates(db)
     enforce_mt_flash_only_rates(db)
     rates = list_billing_rates(db)
     return AdminBillingRatesResponse(ok=True, rates=[to_rate_item(item) for item in rates])
@@ -518,13 +523,13 @@ def admin_update_billing_rate(
     rate = db.get(BillingModelRate, model_name)
     if not rate:
         return error_response(404, "BILLING_RATE_NOT_FOUND", "计费模型不存在", model_name)
-    if payload.points_per_minute <= 0 and payload.points_per_1k_tokens <= 0:
-        return error_response(400, "INVALID_BILLING_RATE", "分钟费率和 Token 费率不能同时为 0")
+    if payload.price_per_minute_cents < 0 or payload.cost_per_minute_cents < 0:
+        return error_response(400, "INVALID_BILLING_RATE", "分钟售价和分钟成本不能为负数")
     normalized_unit = payload.billing_unit.strip().lower()
     if normalized_unit not in {"minute", "1k_tokens"}:
         return error_response(400, "INVALID_BILLING_UNIT", "计费单位仅支持 minute 或 1k_tokens", payload.billing_unit)
-    rate.points_per_minute = payload.points_per_minute
-    rate.points_per_1k_tokens = payload.points_per_1k_tokens
+    rate.price_per_minute_cents = payload.price_per_minute_cents
+    rate.cost_per_minute_cents = payload.cost_per_minute_cents
     rate.billing_unit = normalized_unit
     rate.is_active = payload.is_active
     rate.parallel_enabled = payload.parallel_enabled

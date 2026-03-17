@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { formatDateTimeBeijing } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
+import { formatMoneyCents, formatMoneyPerMinute } from "../../shared/lib/money";
 import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import {
   Alert,
@@ -35,8 +36,8 @@ import {
 
 function isDraftChanged(item, draft) {
   return (
-    Number(item.points_per_minute || 0) !== Number(draft.points_per_minute || 0) ||
-    Number(item.points_per_1k_tokens || 0) !== Number(draft.points_per_1k_tokens || 0) ||
+    Number(item.price_per_minute_cents || 0) !== Number(draft.price_per_minute_cents || 0) ||
+    Number(item.cost_per_minute_cents || 0) !== Number(draft.cost_per_minute_cents || 0) ||
     String(item.billing_unit || "minute") !== String(draft.billing_unit || "minute") ||
     Boolean(item.is_active) !== Boolean(draft.is_active) ||
     Boolean(item.parallel_enabled) !== Boolean(draft.parallel_enabled) ||
@@ -74,13 +75,13 @@ export function AdminRatesTab({ apiCall }) {
         setStatus(formattedError.displayMessage);
         return;
       }
-      const list = Array.isArray(data.rates) ? data.rates : [];
+      const list = (Array.isArray(data.rates) ? data.rates : []).filter((item) => String(item.billing_unit || "minute") === "minute");
       setRates(list);
       const draftMap = {};
       list.forEach((item) => {
         draftMap[item.model_name] = {
-          points_per_minute: Number(item.points_per_minute || 0),
-          points_per_1k_tokens: Number(item.points_per_1k_tokens || 0),
+          price_per_minute_cents: Number(item.price_per_minute_cents || 0),
+          cost_per_minute_cents: Number(item.cost_per_minute_cents || 0),
           billing_unit: String(item.billing_unit || "minute"),
           is_active: Boolean(item.is_active),
           parallel_enabled: Boolean(item.parallel_enabled),
@@ -120,8 +121,8 @@ export function AdminRatesTab({ apiCall }) {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          points_per_minute: Number(draft.points_per_minute || 0),
-          points_per_1k_tokens: Number(draft.points_per_1k_tokens || 0),
+          price_per_minute_cents: Number(draft.price_per_minute_cents || 0),
+          cost_per_minute_cents: Number(draft.cost_per_minute_cents || 0),
           billing_unit: String(draft.billing_unit || "minute"),
           is_active: Boolean(draft.is_active),
           parallel_enabled: Boolean(draft.parallel_enabled),
@@ -196,9 +197,9 @@ export function AdminRatesTab({ apiCall }) {
               <div className="flex flex-wrap gap-2">
                 {dirtyModels.map(({ item, draft }) => (
                   <Badge key={item.model_name} variant="outline">
-                    {item.model_name}: {item.billing_unit}/{item.points_per_minute}/{item.points_per_1k_tokens}
+                    {item.display_name || item.model_name}: {formatMoneyCents(item.price_per_minute_cents)} / {formatMoneyCents(item.cost_per_minute_cents)}
                     {" -> "}
-                    {draft.billing_unit}/{draft.points_per_minute}/{draft.points_per_1k_tokens}
+                    {formatMoneyCents(draft.price_per_minute_cents)} / {formatMoneyCents(draft.cost_per_minute_cents)}
                   </Badge>
                 ))}
               </div>
@@ -207,13 +208,13 @@ export function AdminRatesTab({ apiCall }) {
         ) : null}
         {loading ? <Skeleton className="h-10 w-full" /> : null}
         <ScrollArea className="w-full rounded-md border">
-          <Table className="min-w-[1460px]">
+          <Table className="min-w-[1380px]">
             <TableHeader>
               <TableRow>
                 <TableHead>模型</TableHead>
-                <TableHead>计费单位</TableHead>
-                <TableHead>点数/分钟</TableHead>
-                <TableHead>点数/1k Tokens</TableHead>
+                <TableHead>售价/分钟</TableHead>
+                <TableHead>成本/分钟</TableHead>
+                <TableHead>毛利/分钟</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead>并发开关</TableHead>
                 <TableHead>并发阈值(秒)</TableHead>
@@ -228,35 +229,34 @@ export function AdminRatesTab({ apiCall }) {
                 const draft = drafts[item.model_name] || item;
                 return (
                   <TableRow key={item.model_name}>
-                    <TableCell className="font-medium">{item.model_name}</TableCell>
-                    <TableCell>
-                      <Select value={draft.billing_unit} onValueChange={(value) => updateDraft(item.model_name, { billing_unit: value })}>
-                        <SelectTrigger className="w-[140px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="minute">minute</SelectItem>
-                          <SelectItem value="1k_tokens">1k_tokens</SelectItem>
-                        </SelectContent>
-                      </Select>
+                    <TableCell className="font-medium">
+                      <div className="space-y-1">
+                        <p>{item.display_name || item.model_name}</p>
+                        <p className="text-xs text-muted-foreground">{item.model_name}</p>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Input
                         type="number"
                         min={0}
-                        value={draft.points_per_minute}
-                        onChange={(e) => updateDraft(item.model_name, { points_per_minute: Number(e.target.value || 0) })}
+                        value={draft.price_per_minute_cents}
+                        onChange={(e) => updateDraft(item.model_name, { price_per_minute_cents: Number(e.target.value || 0) })}
                         className="max-w-[150px]"
                       />
+                      <p className="mt-1 text-xs text-muted-foreground">{formatMoneyPerMinute(draft.price_per_minute_cents)}</p>
                     </TableCell>
                     <TableCell>
                       <Input
                         type="number"
                         min={0}
-                        value={draft.points_per_1k_tokens}
-                        onChange={(e) => updateDraft(item.model_name, { points_per_1k_tokens: Number(e.target.value || 0) })}
-                        className="max-w-[170px]"
+                        value={draft.cost_per_minute_cents}
+                        onChange={(e) => updateDraft(item.model_name, { cost_per_minute_cents: Number(e.target.value || 0) })}
+                        className="max-w-[150px]"
                       />
+                      <p className="mt-1 text-xs text-muted-foreground">{formatMoneyPerMinute(draft.cost_per_minute_cents)}</p>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm font-medium">{formatMoneyPerMinute(Number(draft.price_per_minute_cents || 0) - Number(draft.cost_per_minute_cents || 0))}</div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">

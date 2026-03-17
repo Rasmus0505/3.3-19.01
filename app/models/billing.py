@@ -14,11 +14,19 @@ class WalletAccount(Base):
     __table_args__ = table_args()
 
     user_id: Mapped[int] = mapped_column(ForeignKey(schema_fk("users.id")), primary_key=True)
-    balance_points: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    balance_amount_cents: Mapped[int] = mapped_column("balance_points", BigInteger, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
 
     user: Mapped["User"] = relationship(back_populates="wallet_account")
+
+    @property
+    def balance_points(self) -> int:
+        return int(self.balance_amount_cents or 0)
+
+    @balance_points.setter
+    def balance_points(self, value: int) -> None:
+        self.balance_amount_cents = int(value or 0)
 
 
 class WalletLedger(Base):
@@ -38,8 +46,9 @@ class WalletLedger(Base):
         index=True,
     )
     event_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    delta_points: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    balance_after: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    delta_amount_cents: Mapped[int] = mapped_column("delta_points", BigInteger, nullable=False)
+    balance_after_amount_cents: Mapped[int] = mapped_column("balance_after", BigInteger, nullable=False)
+    amount_unit: Mapped[str] = mapped_column(String(16), default="cents", nullable=False)
     model_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     lesson_id: Mapped[int | None] = mapped_column(ForeignKey(schema_fk("lessons.id")), nullable=True, index=True)
@@ -57,20 +66,38 @@ class WalletLedger(Base):
     note: Mapped[str] = mapped_column(Text, default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False, index=True)
 
+    @property
+    def delta_points(self) -> int:
+        return int(self.delta_amount_cents or 0)
+
+    @delta_points.setter
+    def delta_points(self, value: int) -> None:
+        self.delta_amount_cents = int(value or 0)
+
+    @property
+    def balance_after(self) -> int:
+        return int(self.balance_after_amount_cents or 0)
+
+    @balance_after.setter
+    def balance_after(self, value: int) -> None:
+        self.balance_after_amount_cents = int(value or 0)
+
 
 class BillingModelRate(Base):
     __tablename__ = "billing_model_rates"
     __table_args__ = table_args(
         CheckConstraint("points_per_minute >= 0", name="ck_billing_rate_positive"),
         CheckConstraint("points_per_1k_tokens >= 0", name="ck_billing_rate_token_non_negative"),
+        CheckConstraint("cost_per_minute_cents >= 0", name="ck_billing_rate_cost_non_negative"),
         CheckConstraint("parallel_threshold_seconds > 0", name="ck_billing_parallel_threshold_positive"),
         CheckConstraint("segment_seconds > 0", name="ck_billing_segment_seconds_positive"),
         CheckConstraint("max_concurrency > 0", name="ck_billing_max_concurrency_positive"),
     )
 
     model_name: Mapped[str] = mapped_column(String(100), primary_key=True)
-    points_per_minute: Mapped[int] = mapped_column(Integer, nullable=False)
-    points_per_1k_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    price_per_minute_cents: Mapped[int] = mapped_column("points_per_minute", Integer, nullable=False)
+    cost_per_1k_tokens_cents: Mapped[int] = mapped_column("points_per_1k_tokens", Integer, default=0, nullable=False)
+    cost_per_minute_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     billing_unit: Mapped[str] = mapped_column(String(32), default="minute", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     parallel_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -82,6 +109,26 @@ class BillingModelRate(Base):
         ForeignKey(schema_fk("users.id"), ondelete="SET NULL"),
         nullable=True,
     )
+
+    @property
+    def points_per_minute(self) -> int:
+        return int(self.price_per_minute_cents or 0)
+
+    @points_per_minute.setter
+    def points_per_minute(self, value: int) -> None:
+        self.price_per_minute_cents = int(value or 0)
+
+    @property
+    def points_per_1k_tokens(self) -> int:
+        return int(self.cost_per_1k_tokens_cents or 0)
+
+    @points_per_1k_tokens.setter
+    def points_per_1k_tokens(self, value: int) -> None:
+        self.cost_per_1k_tokens_cents = int(value or 0)
+
+    @property
+    def gross_profit_per_minute_cents(self) -> int:
+        return int(self.price_per_minute_cents or 0) - int(self.cost_per_minute_cents or 0)
 
 
 class SubtitleSetting(Base):
@@ -159,7 +206,8 @@ class RedeemCodeBatch(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     batch_name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
-    face_value_points: Mapped[int] = mapped_column(Integer, nullable=False)
+    face_value_amount_cents: Mapped[int] = mapped_column("face_value_points", Integer, nullable=False)
+    face_value_unit: Mapped[str] = mapped_column(String(16), default="cents", nullable=False)
     generated_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     active_from: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     expire_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
@@ -173,6 +221,14 @@ class RedeemCodeBatch(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
+
+    @property
+    def face_value_points(self) -> int:
+        return int(self.face_value_amount_cents or 0)
+
+    @face_value_points.setter
+    def face_value_points(self, value: int) -> None:
+        self.face_value_amount_cents = int(value or 0)
 
 
 class RedeemCode(Base):

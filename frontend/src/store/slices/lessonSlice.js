@@ -281,7 +281,7 @@ export function createLessonSlice(set, get) {
         const resp = await api("/api/wallet/me", {}, get().accessToken);
         const data = await parseResponse(resp);
         if (resp.ok) {
-          const walletBalance = Number(data.balance_points || 0);
+          const walletBalance = Number(data.balance_amount_cents ?? data.balance_points ?? 0);
           set({ walletBalance });
           return walletBalance;
         }

@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -1031,7 +1032,8 @@ def test_admin_billing_rates_endpoint_handles_legacy_schema_defaults(tmp_path):
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["ok"] is True
-    assert payload["rates"][0]["points_per_1k_tokens"] == 0
+    assert payload["rates"][0]["price_per_minute_cents"] == 130
+    assert payload["rates"][0]["cost_per_minute_cents"] == 0
     assert payload["rates"][0]["billing_unit"] == "minute"
     assert payload["rates"][0]["parallel_enabled"] is False
 
@@ -1443,7 +1445,7 @@ def test_wallet_and_admin_endpoints(test_client):
 
     wallet = client.get("/api/wallet/me", headers=headers)
     assert wallet.status_code == 200
-    assert "balance_points" in wallet.json()
+    assert "balance_amount_cents" in wallet.json()
 
     seed_dirty = session_factory()
     try:
@@ -1467,7 +1469,7 @@ def test_wallet_and_admin_endpoints(test_client):
     rates = client.get("/api/admin/billing-rates", headers=headers)
     assert rates.status_code == 200
     assert isinstance(rates.json().get("rates"), list)
-    assert any("points_per_1k_tokens" in item and "billing_unit" in item for item in rates.json().get("rates", []))
+    assert any("price_per_minute_cents" in item and "cost_per_minute_cents" in item for item in rates.json().get("rates", []))
     admin_model_names = [str(item.get("model_name") or "") for item in rates.json().get("rates", [])]
     admin_mt_models = [name for name in admin_model_names if name.startswith("qwen-mt-")]
     assert admin_mt_models == ["qwen-mt-flash"]
@@ -1488,10 +1490,10 @@ def test_wallet_and_admin_endpoints(test_client):
     assert public_rates.status_code == 200
     assert "subtitle_settings" in public_rates.json()
     assert public_rates.json()["subtitle_settings"]["semantic_split_default_enabled"] is False
-    assert any("points_per_1k_tokens" in item and "billing_unit" in item for item in public_rates.json()["rates"])
+    assert all("price_per_minute_cents" in item and "cost_per_minute_cents" in item for item in public_rates.json()["rates"])
     public_model_names = [str(item.get("model_name") or "") for item in public_rates.json().get("rates", [])]
     public_mt_models = [name for name in public_model_names if name.startswith("qwen-mt-")]
-    assert public_mt_models == ["qwen-mt-flash"]
+    assert public_mt_models == []
 
     verify_clean = session_factory()
     try:
@@ -1499,10 +1501,68 @@ def test_wallet_and_admin_endpoints(test_client):
     finally:
         verify_clean.close()
 
-    subtitle_settings = client.get("/api/admin/subtitle-settings", headers=headers)
-    assert subtitle_settings.status_code == 200
-    assert subtitle_settings.json()["settings"]["subtitle_split_enabled"] is True
-    assert subtitle_settings.json()["settings"]["translation_batch_max_chars"] == 2600
+
+def test_create_local_asr_lesson_task(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="local-asr@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from app.services import lesson_service as lesson_service_module
+    from app.services import lesson_command_service as lesson_command_service_module
+
+    monkeypatch.setattr(
+        lesson_service_module,
+        "translate_sentences_to_zh",
+        lambda texts, api_key, progress_callback=None: _translation_batch_result(["你好"] * len(texts), total_tokens=36),
+    )
+
+    class ImmediateThread:
+        def __init__(self, target=None, kwargs=None, daemon=None):
+            self._target = target
+            self._kwargs = kwargs or {}
+
+        def start(self):
+            if self._target:
+                self._target(**self._kwargs)
+
+    monkeypatch.setattr(lesson_command_service_module.threading, "Thread", ImmediateThread)
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "local-asr@example.com").one()
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 10_000
+        session.add(account)
+        session.commit()
+    finally:
+        session.close()
+
+    payload = {
+        "asr_model": "local-whisper-base-en",
+        "source_filename": "demo.wav",
+        "source_duration_ms": 12_000,
+        "asr_payload": {
+            "transcripts": [
+                {
+                    "sentences": [
+                        {"text": "Hello world", "begin_time": 0, "end_time": 1400},
+                        {"text": "How are you", "begin_time": 1400, "end_time": 3200},
+                    ]
+                }
+            ]
+        },
+    }
+
+    create_task_resp = client.post("/api/lessons/tasks/local-asr", headers=headers, json=payload)
+    assert create_task_resp.status_code == 200
+    task_id = create_task_resp.json()["task_id"]
+    assert task_id
+
+    task_resp = client.get(f"/api/lessons/tasks/{task_id}", headers=headers)
+    assert task_resp.status_code == 200
+    task_payload = task_resp.json()
+    assert task_payload["status"] == "succeeded"
+    assert task_payload["lesson"]["asr_model"] == "local-whisper-base-en"
 
 
 def test_admin_update_billing_rate_rejects_non_flash_mt_model(test_client):

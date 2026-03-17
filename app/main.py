@@ -40,6 +40,7 @@ READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
     "billing_model_rates": (
         "billing_unit",
         "points_per_1k_tokens",
+        "cost_per_minute_cents",
         "parallel_enabled",
         "parallel_threshold_seconds",
         "segment_seconds",

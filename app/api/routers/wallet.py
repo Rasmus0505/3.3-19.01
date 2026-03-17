@@ -20,7 +20,7 @@ def wallet_me(db: Session = Depends(get_db), current_user: User = Depends(get_cu
     account = get_or_create_wallet_account(db, current_user.id, for_update=False)
     db.commit()
     db.refresh(account)
-    return WalletMeResponse(ok=True, balance_points=account.balance_points, updated_at=to_shanghai_aware(account.updated_at))
+    return WalletMeResponse(ok=True, balance_amount_cents=account.balance_amount_cents, updated_at=to_shanghai_aware(account.updated_at))
 
 
 @router.post(
@@ -38,8 +38,8 @@ def wallet_redeem_code(
         db.commit()
         return WalletRedeemCodeResponse(
             ok=True,
-            balance_points=ledger.balance_after,
-            redeemed_points=ledger.delta_points,
+            balance_amount_cents=ledger.balance_after_amount_cents,
+            redeemed_amount_cents=ledger.delta_amount_cents,
             redeem_code_mask=ledger.redeem_code_mask or "",
         )
     except BillingError as exc:

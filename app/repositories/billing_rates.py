@@ -45,6 +45,7 @@ def list_billing_rates(db: Session, *, active_only: bool = False) -> list[Billin
     }
     required_columns = {
         "points_per_1k_tokens",
+        "cost_per_minute_cents",
         "billing_unit",
         "parallel_enabled",
         "parallel_threshold_seconds",
@@ -70,6 +71,7 @@ def list_billing_rates(db: Session, *, active_only: bool = False) -> list[Billin
                 model_name,
                 points_per_minute,
                 {_legacy_select_expr(column_names, "points_per_1k_tokens", "0")},
+                {_legacy_select_expr(column_names, "cost_per_minute_cents", "0")},
                 {_legacy_select_expr(column_names, "billing_unit", "'minute'")},
                 {_legacy_select_expr(column_names, "is_active", "TRUE")},
                 {_legacy_select_expr(column_names, "parallel_enabled", "FALSE")},
@@ -86,6 +88,9 @@ def list_billing_rates(db: Session, *, active_only: bool = False) -> list[Billin
     items: list[SimpleNamespace] = []
     for row in rows:
         payload = dict(row)
+        payload["price_per_minute_cents"] = int(payload.get("points_per_minute", 0) or 0)
+        payload["cost_per_1k_tokens_cents"] = int(payload.get("points_per_1k_tokens", 0) or 0)
+        payload["gross_profit_per_minute_cents"] = int(payload["price_per_minute_cents"]) - int(payload.get("cost_per_minute_cents", 0) or 0)
         updated_at = payload.get("updated_at")
         if isinstance(updated_at, str):
             try:

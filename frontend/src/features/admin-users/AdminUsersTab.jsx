@@ -7,6 +7,7 @@ import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
+import { formatMoneyCents } from "../../shared/lib/money";
 import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import {
   ActionMenu,
@@ -75,9 +76,8 @@ function buildRangeBounds(mode, singleDate, rangeStart, rangeEnd) {
   };
 }
 
-function formatPoints(points) {
-  const value = Number(points || 0);
-  return `${value >= 0 ? "" : "-"}${Math.abs(value)} 点`;
+function formatAmount(amountCents) {
+  return formatMoneyCents(amountCents);
 }
 
 function formatRangeText(mode, singleDate, rangeStart, rangeEnd) {
@@ -311,7 +311,7 @@ export function AdminUsersTab({ apiCall }) {
         setStatus(formattedError.displayMessage);
         return;
       }
-      toast.success(`调账成功：${adjustingUser.email}，余额 ${formatPoints(data.balance_points)}`);
+      toast.success(`调账成功：${adjustingUser.email}，余额 ${formatAmount(data.balance_amount_cents ?? data.balance_points ?? 0)}`);
       setConfirmAdjustOpen(false);
       setAdjustingUser(null);
       loadUsers(page);
@@ -461,7 +461,7 @@ export function AdminUsersTab({ apiCall }) {
           </button>
         ),
         mobileLabel: "区间消耗",
-        render: (item) => `${Number(item.consumed_points || 0)} 点`,
+        render: (item) => formatAmount(item.consumed_points || 0),
       },
       {
         key: "balance_points",
@@ -472,7 +472,7 @@ export function AdminUsersTab({ apiCall }) {
           </button>
         ),
         mobileLabel: "当前余额",
-        render: (item) => <Badge variant={Number(item.balance_points || 0) > 0 ? "default" : "secondary"}>{formatPoints(item.balance_points)}</Badge>,
+        render: (item) => <Badge variant={Number(item.balance_points || 0) > 0 ? "default" : "secondary"}>{formatAmount(item.balance_amount_cents ?? item.balance_points ?? 0)}</Badge>,
       },
       {
         key: "actions",
@@ -482,7 +482,7 @@ export function AdminUsersTab({ apiCall }) {
             label={`${item.email} 的操作`}
             items={[
               { key: "summary", label: "查看活跃摘要", description: "看选定时间范围内的登录和业务行为", icon: Activity, onSelect: () => openSummary(item) },
-              { key: "adjust", label: "余额调账", description: "手工加减点数并记录原因", icon: Wallet, onSelect: () => openAdjustDialog(item) },
+              { key: "adjust", label: "余额调账", description: "手工加减金额并记录原因", icon: Wallet, onSelect: () => openAdjustDialog(item) },
               { key: "delete", label: deletingUserId === item.id ? "删除中..." : "删除用户", description: "删除账号、课程和流水，操作不可恢复", icon: Trash2, variant: "destructive", disabled: deletingUserId === item.id, onSelect: () => openDeleteConfirm(item) },
             ]}
           />
@@ -535,7 +535,7 @@ export function AdminUsersTab({ apiCall }) {
             key={item.label}
             icon={item.label.includes("消耗") || item.label.includes("余额") ? Wallet : Activity}
             label={item.label}
-            value={item.value}
+            value={String(item.label || "").includes("金额") || String(item.label || "").includes("余额") ? formatAmount(item.value) : item.value}
             hint={item.hint}
             tone={item.tone || "default"}
             loading={loading && users.length === 0}
@@ -625,7 +625,7 @@ export function AdminUsersTab({ apiCall }) {
         getRowKey={(item) => item.id}
         mobileTitle={(item) => item.email}
         mobileDescription={(item) => `最近登录 ${formatDateTimeBeijing(item.last_login_at)}`}
-        mobileFooter={(item) => `登录 ${Number(item.login_events || 0)} 次，余额 ${formatPoints(item.balance_points)}`}
+        mobileFooter={(item) => `登录 ${Number(item.login_events || 0)} 次，余额 ${formatAmount(item.balance_amount_cents ?? item.balance_points ?? 0)}`}
         mobileActions={(item) => columns.find((column) => column.key === "actions")?.render(item)}
         emptyText="当前时间范围内暂无活跃用户"
         loading={loading}
@@ -665,12 +665,12 @@ export function AdminUsersTab({ apiCall }) {
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-2">
-              <Label>变动点数（可负数）</Label>
+              <Label>变动金额（分，可负数）</Label>
               <Input type="number" value={deltaPoints} onChange={(event) => setDeltaPoints(Number(event.target.value || 0))} />
             </div>
             <div className="space-y-2">
               <Label>原因</Label>
-              <Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="例如：线下充值 1000 点" />
+              <Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="例如：线下充值 1000 分" />
             </div>
           </div>
           <DialogFooter>
@@ -689,7 +689,7 @@ export function AdminUsersTab({ apiCall }) {
           <AlertDialogHeader>
             <AlertDialogTitle>确认提交调账？</AlertDialogTitle>
             <AlertDialogDescription>
-              {adjustingUser?.email || "-"} 将变动 {formatPoints(deltaPoints)}，原因：{reason || "-"}
+              {adjustingUser?.email || "-"} 将变动 {formatAmount(deltaPoints)}，原因：{reason || "-"}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -731,8 +731,8 @@ export function AdminUsersTab({ apiCall }) {
                 <MetricCard icon={Activity} label="登录天数" value={summaryData?.login_days_in_range ?? 0} hint="选定范围内至少登录过的天数" tone="info" />
                 <MetricCard icon={Activity} label="登录次数" value={summaryData?.login_events_in_range ?? 0} hint="选定范围内累计登录次数" tone="default" />
                 <MetricCard icon={Activity} label="区间新建课程" value={summaryData?.lessons_created_in_range ?? 0} hint="同范围内创建的课程数" tone="warning" />
-                <MetricCard icon={Wallet} label="区间消耗点数" value={`${summaryData?.consumed_points_in_range ?? 0} 点`} hint="当前范围内转写与翻译消耗" tone="warning" />
-                <MetricCard icon={Wallet} label="区间兑换点数" value={`${summaryData?.redeemed_points_in_range ?? 0} 点`} hint="当前范围内兑换入账" tone="success" />
+                <MetricCard icon={Wallet} label="区间消耗金额" value={formatAmount(summaryData?.consumed_points_in_range ?? 0)} hint="当前范围内转写与翻译消耗" tone="warning" />
+                <MetricCard icon={Wallet} label="区间兑换金额" value={formatAmount(summaryData?.redeemed_points_in_range ?? 0)} hint="当前范围内兑换入账" tone="success" />
                 <MetricCard icon={Wallet} label="当前总课程数" value={summaryData?.lesson_count ?? 0} hint="用户累计课程数" tone="default" />
               </div>
               <Card className="rounded-3xl border shadow-none">
@@ -741,8 +741,8 @@ export function AdminUsersTab({ apiCall }) {
                   <p>最近创建课程：{formatDateTimeBeijing(summaryData?.latest_lesson_created_at)}</p>
                   <p>最近钱包事件：{formatDateTimeBeijing(summaryData?.latest_wallet_event_at)}</p>
                   <p>最近兑换：{formatDateTimeBeijing(summaryData?.latest_redeem_at)}</p>
-                  <p>近 30 天扣点：{summaryData?.consumed_points_30d ?? 0} 点</p>
-                  <p>近 30 天兑换：{summaryData?.redeemed_points_30d ?? 0} 点</p>
+                  <p>近 30 天扣费：{formatAmount(summaryData?.consumed_points_30d ?? 0)}</p>
+                  <p>近 30 天兑换：{formatAmount(summaryData?.redeemed_points_30d ?? 0)}</p>
                 </CardContent>
               </Card>
               <div className="flex flex-wrap gap-2">

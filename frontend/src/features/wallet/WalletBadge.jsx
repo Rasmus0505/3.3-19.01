@@ -1,6 +1,7 @@
-﻿import { Badge } from "../../shared/ui";
+﻿import { formatMoneyCents } from "../../shared/lib/money";
+import { Badge } from "../../shared/ui";
 
-export function WalletBadge({ accessToken, balancePoints }) {
+export function WalletBadge({ accessToken, balanceAmountCents, balancePoints }) {
   if (!accessToken) return null;
-  return <Badge variant="outline">余额 {balancePoints} 点</Badge>;
+  return <Badge variant="outline">余额 {formatMoneyCents(balanceAmountCents ?? balancePoints ?? 0)}</Badge>;
 }

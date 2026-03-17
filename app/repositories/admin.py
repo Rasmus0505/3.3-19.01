@@ -32,7 +32,7 @@ def list_admin_users(
     sort_by: str,
     sort_dir: str,
 ) -> tuple[int, list[tuple[int, str, datetime, int, datetime | None]]]:
-    balance_col = func.coalesce(WalletAccount.balance_points, 0)
+    balance_col = func.coalesce(WalletAccount.balance_amount_cents, 0)
     base_stmt = select(User.id, User.email, User.created_at, balance_col.label("balance_points"), User.last_login_at).outerjoin(
         WalletAccount, WalletAccount.user_id == User.id
     )
@@ -99,13 +99,17 @@ def list_wallet_logs(
     ).all()
     inflow_points = int(
         db.scalar(
-            base.with_only_columns(func.coalesce(func.sum(case((WalletLedger.delta_points > 0, WalletLedger.delta_points), else_=0)), 0))
+            base.with_only_columns(
+                func.coalesce(func.sum(case((WalletLedger.delta_amount_cents > 0, WalletLedger.delta_amount_cents), else_=0)), 0)
+            )
         )
         or 0
     )
     outflow_points = int(
         db.scalar(
-            base.with_only_columns(func.coalesce(func.sum(case((WalletLedger.delta_points < 0, -WalletLedger.delta_points), else_=0)), 0))
+            base.with_only_columns(
+                func.coalesce(func.sum(case((WalletLedger.delta_amount_cents < 0, -WalletLedger.delta_amount_cents), else_=0)), 0)
+            )
         )
         or 0
     )
@@ -118,8 +122,8 @@ def list_wallet_logs(
     timeline = db.execute(
         base.with_only_columns(
             func.date(WalletLedger.created_at),
-            func.coalesce(func.sum(case((WalletLedger.delta_points > 0, WalletLedger.delta_points), else_=0)), 0).label("inflow_points"),
-            func.coalesce(func.sum(case((WalletLedger.delta_points < 0, -WalletLedger.delta_points), else_=0)), 0).label("outflow_points"),
+            func.coalesce(func.sum(case((WalletLedger.delta_amount_cents > 0, WalletLedger.delta_amount_cents), else_=0)), 0).label("inflow_points"),
+            func.coalesce(func.sum(case((WalletLedger.delta_amount_cents < 0, -WalletLedger.delta_amount_cents), else_=0)), 0).label("outflow_points"),
         )
         .group_by(func.date(WalletLedger.created_at))
         .order_by(func.date(WalletLedger.created_at))
@@ -129,21 +133,21 @@ def list_wallet_logs(
         "rows": rows,
         "summary_cards": [
             {"label": "匹配流水", "value": total, "hint": "当前筛选条件下的流水总数", "tone": "info"},
-            {"label": "累计入账点数", "value": inflow_points, "hint": "筛选范围内所有正向入账", "tone": "success"},
-            {"label": "累计扣减点数", "value": outflow_points, "hint": "筛选范围内所有消耗与扣减", "tone": "warning"},
+            {"label": "累计入账金额", "value": inflow_points, "hint": "筛选范围内所有正向入账", "tone": "success"},
+            {"label": "累计扣减金额", "value": outflow_points, "hint": "筛选范围内所有消耗与扣减", "tone": "warning"},
         ],
         "charts": [
             {
-                "title": "流水点数趋势",
+                "title": "流水金额趋势",
                 "description": "把入账和扣减放在同一张图里，方便看异常波动。",
                 "type": "line",
                 "x_key": "label",
                 "series": [
-                    {"key": "入账点数", "name": "入账点数", "color": "#10b981"},
-                    {"key": "扣减点数", "name": "扣减点数", "color": "#f59e0b"},
+                    {"key": "入账金额", "name": "入账金额", "color": "#10b981"},
+                    {"key": "扣减金额", "name": "扣减金额", "color": "#f59e0b"},
                 ],
                 "data": [
-                    {"label": str(bucket)[5:] if bucket else "-", "入账点数": int(inflow or 0), "扣减点数": int(outflow or 0)}
+                    {"label": str(bucket)[5:] if bucket else "-", "入账金额": int(inflow or 0), "扣减金额": int(outflow or 0)}
                     for bucket, inflow, outflow in timeline
                 ],
             },
