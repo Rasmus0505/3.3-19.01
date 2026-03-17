@@ -2,6 +2,7 @@
 
 from datetime import datetime
 import logging
+from types import SimpleNamespace
 
 from sqlalchemy import case, delete, desc, func, inspect, select, update
 from sqlalchemy.orm import Session
@@ -21,6 +22,53 @@ from app.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _schema_name(db: Session) -> str | None:
+    bind = db.get_bind()
+    if bind is None or bind.dialect.name == "sqlite":
+        return None
+    return APP_SCHEMA
+
+
+def _qualified_table(table_name: str, schema: str | None) -> str:
+    return f"{schema}.{table_name}" if schema else table_name
+
+
+def admin_storage_ready(
+    db: Session,
+    *,
+    scope: str,
+    table_name: str,
+    required_columns: tuple[str, ...] = (),
+) -> bool:
+    bind = db.get_bind()
+    if bind is None:
+        logger.warning("[DEBUG] admin_storage.not_ready scope=%s reason=missing_bind", scope)
+        return False
+
+    schema = _schema_name(db)
+    qualified_table = _qualified_table(table_name, schema)
+    inspector = inspect(bind)
+    if not inspector.has_table(table_name, schema=schema):
+        logger.warning("[DEBUG] admin_storage.not_ready scope=%s reason=missing_table table=%s", scope, qualified_table)
+        return False
+
+    existing_columns = {
+        str(item.get("name") or "").strip()
+        for item in inspector.get_columns(table_name, schema=schema)
+    }
+    missing_columns = [name for name in required_columns if name not in existing_columns]
+    if missing_columns:
+        logger.warning(
+            "[DEBUG] admin_storage.not_ready scope=%s reason=missing_columns table=%s missing=%s",
+            scope,
+            qualified_table,
+            ",".join(missing_columns),
+        )
+        return False
+
+    return True
 
 
 def list_admin_users(
@@ -300,45 +348,100 @@ def list_redeem_batches(
     page_size: int,
     now: datetime,
 ) -> tuple[int, list[tuple[RedeemCodeBatch, int, str]]]:
-    base_stmt = select(RedeemCodeBatch)
-    count_stmt = select(func.count(RedeemCodeBatch.id))
+    if not admin_storage_ready(
+        db,
+        scope="admin.redeem_batches.batch_table",
+        table_name=RedeemCodeBatch.__tablename__,
+        required_columns=(
+            "id",
+            "batch_name",
+            "face_value_points",
+            "generated_count",
+            "active_from",
+            "expire_at",
+            "daily_limit_per_user",
+            "status",
+            "remark",
+            "created_by_user_id",
+            "created_at",
+            "updated_at",
+        ),
+    ):
+        return 0, []
+    if not admin_storage_ready(
+        db,
+        scope="admin.redeem_batches.code_table",
+        table_name=RedeemCode.__tablename__,
+        required_columns=("id", "batch_id", "status"),
+    ):
+        return 0, []
+
+    batch_table = RedeemCodeBatch.__table__
+    code_table = RedeemCode.__table__
+    base_stmt = select(
+        batch_table.c.id.label("id"),
+        batch_table.c.batch_name.label("batch_name"),
+        batch_table.c.face_value_points.label("face_value_points"),
+        batch_table.c.generated_count.label("generated_count"),
+        batch_table.c.active_from.label("active_from"),
+        batch_table.c.expire_at.label("expire_at"),
+        batch_table.c.daily_limit_per_user.label("daily_limit_per_user"),
+        batch_table.c.status.label("status"),
+        batch_table.c.remark.label("remark"),
+        batch_table.c.created_by_user_id.label("created_by_user_id"),
+        batch_table.c.created_at.label("created_at"),
+        batch_table.c.updated_at.label("updated_at"),
+    )
+    count_stmt = select(func.count(batch_table.c.id))
 
     if keyword.strip():
         pattern = f"%{keyword.strip().lower()}%"
-        base_stmt = base_stmt.where(func.lower(RedeemCodeBatch.batch_name).like(pattern))
-        count_stmt = count_stmt.where(func.lower(RedeemCodeBatch.batch_name).like(pattern))
+        base_stmt = base_stmt.where(func.lower(batch_table.c.batch_name).like(pattern))
+        count_stmt = count_stmt.where(func.lower(batch_table.c.batch_name).like(pattern))
 
     normalized_status = status.strip().lower()
     if normalized_status in {"active", "paused"}:
-        base_stmt = base_stmt.where(RedeemCodeBatch.status == normalized_status)
-        count_stmt = count_stmt.where(RedeemCodeBatch.status == normalized_status)
+        base_stmt = base_stmt.where(batch_table.c.status == normalized_status)
+        count_stmt = count_stmt.where(batch_table.c.status == normalized_status)
     elif normalized_status == "expired":
-        base_stmt = base_stmt.where((RedeemCodeBatch.status == "expired") | (RedeemCodeBatch.expire_at <= now))
-        count_stmt = count_stmt.where((RedeemCodeBatch.status == "expired") | (RedeemCodeBatch.expire_at <= now))
+        base_stmt = base_stmt.where((batch_table.c.status == "expired") | (batch_table.c.expire_at <= now))
+        count_stmt = count_stmt.where((batch_table.c.status == "expired") | (batch_table.c.expire_at <= now))
 
     total = int(db.scalar(count_stmt) or 0)
-    batch_rows = list(
-        db.scalars(
-            base_stmt.order_by(RedeemCodeBatch.created_at.desc(), RedeemCodeBatch.id.desc()).offset((page - 1) * page_size).limit(page_size)
-        ).all()
-    )
-    batch_ids = [row.id for row in batch_rows]
+    batch_rows = db.execute(
+        base_stmt.order_by(batch_table.c.created_at.desc(), batch_table.c.id.desc()).offset((page - 1) * page_size).limit(page_size)
+    ).all()
+    batch_ids = [int(row.id) for row in batch_rows]
     if not batch_ids:
         return total, []
 
     redeemed_map = {
         int(row.batch_id): int(row.redeemed_count)
         for row in db.execute(
-            select(RedeemCode.batch_id, func.count(RedeemCode.id).label("redeemed_count"))
-            .where(RedeemCode.batch_id.in_(batch_ids), RedeemCode.status == "redeemed")
-            .group_by(RedeemCode.batch_id)
+            select(code_table.c.batch_id, func.count(code_table.c.id).label("redeemed_count"))
+            .where(code_table.c.batch_id.in_(batch_ids), code_table.c.status == "redeemed")
+            .group_by(code_table.c.batch_id)
         ).all()
     }
 
     items: list[tuple[RedeemCodeBatch, int, str]] = []
     for row in batch_rows:
-        redeemed_count = redeemed_map.get(row.id, 0)
-        items.append((row, redeemed_count, _effective_batch_status(row, now)))
+        batch = SimpleNamespace(
+            id=int(row.id),
+            batch_name=str(row.batch_name or ""),
+            face_value_points=int(row.face_value_points or 0),
+            generated_count=int(row.generated_count or 0),
+            active_from=row.active_from,
+            expire_at=row.expire_at,
+            daily_limit_per_user=row.daily_limit_per_user,
+            status=str(row.status or ""),
+            remark=str(row.remark or ""),
+            created_by_user_id=row.created_by_user_id,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+        redeemed_count = redeemed_map.get(batch.id, 0)
+        items.append((batch, redeemed_count, _effective_batch_status(batch, now)))
     return total, items
 
 
@@ -356,51 +459,91 @@ def list_redeem_codes(
     page_size: int,
     now: datetime,
 ) -> tuple[int, list[tuple[RedeemCode, RedeemCodeBatch, str | None]]]:
+    if not admin_storage_ready(
+        db,
+        scope="admin.redeem_codes.batch_table",
+        table_name=RedeemCodeBatch.__tablename__,
+        required_columns=("id", "batch_name", "face_value_points", "status", "expire_at"),
+    ):
+        return 0, []
+    if not admin_storage_ready(
+        db,
+        scope="admin.redeem_codes.code_table",
+        table_name=RedeemCode.__tablename__,
+        required_columns=(
+            "id",
+            "batch_id",
+            "masked_code",
+            "status",
+            "created_by_user_id",
+            "redeemed_by_user_id",
+            "redeemed_at",
+            "created_at",
+        ),
+    ):
+        return 0, []
+
+    batch_table = RedeemCodeBatch.__table__
+    code_table = RedeemCode.__table__
     redeemed_user = User.__table__.alias("redeemed_user")
 
     base = (
-        select(RedeemCode, RedeemCodeBatch, redeemed_user.c.email.label("redeemed_email"))
-        .join(RedeemCodeBatch, RedeemCodeBatch.id == RedeemCode.batch_id)
-        .outerjoin(redeemed_user, redeemed_user.c.id == RedeemCode.redeemed_by_user_id)
+        select(
+            code_table.c.id.label("code_id"),
+            code_table.c.batch_id.label("code_batch_id"),
+            code_table.c.masked_code.label("code_masked_code"),
+            code_table.c.status.label("code_status"),
+            code_table.c.created_by_user_id.label("code_created_by_user_id"),
+            code_table.c.redeemed_at.label("code_redeemed_at"),
+            code_table.c.created_at.label("code_created_at"),
+            batch_table.c.id.label("batch_id"),
+            batch_table.c.batch_name.label("batch_name"),
+            batch_table.c.face_value_points.label("batch_face_value_points"),
+            batch_table.c.status.label("batch_status"),
+            batch_table.c.expire_at.label("batch_expire_at"),
+            redeemed_user.c.email.label("redeemed_email"),
+        )
+        .join(batch_table, batch_table.c.id == code_table.c.batch_id)
+        .outerjoin(redeemed_user, redeemed_user.c.id == code_table.c.redeemed_by_user_id)
     )
-    count_stmt = select(func.count(RedeemCode.id)).join(RedeemCodeBatch, RedeemCodeBatch.id == RedeemCode.batch_id).outerjoin(
+    count_stmt = select(func.count(code_table.c.id)).join(batch_table, batch_table.c.id == code_table.c.batch_id).outerjoin(
         redeemed_user, redeemed_user.c.id == RedeemCode.redeemed_by_user_id
     )
 
     if batch_id is not None:
-        base = base.where(RedeemCode.batch_id == batch_id)
-        count_stmt = count_stmt.where(RedeemCode.batch_id == batch_id)
+        base = base.where(code_table.c.batch_id == batch_id)
+        count_stmt = count_stmt.where(code_table.c.batch_id == batch_id)
 
     normalized_status = status.strip().lower()
     if normalized_status == "redeemed":
-        base = base.where(RedeemCode.status == "redeemed")
-        count_stmt = count_stmt.where(RedeemCode.status == "redeemed")
+        base = base.where(code_table.c.status == "redeemed")
+        count_stmt = count_stmt.where(code_table.c.status == "redeemed")
     elif normalized_status == "disabled":
-        base = base.where((RedeemCode.status.in_(["disabled", "abandoned"])) | (RedeemCodeBatch.status == "paused"))
-        count_stmt = count_stmt.where((RedeemCode.status.in_(["disabled", "abandoned"])) | (RedeemCodeBatch.status == "paused"))
+        base = base.where((code_table.c.status.in_(["disabled", "abandoned"])) | (batch_table.c.status == "paused"))
+        count_stmt = count_stmt.where((code_table.c.status.in_(["disabled", "abandoned"])) | (batch_table.c.status == "paused"))
     elif normalized_status == "expired":
         base = base.where(
-            RedeemCode.status == "active",
-            ((RedeemCodeBatch.status == "expired") | (RedeemCodeBatch.expire_at <= now)),
+            code_table.c.status == "active",
+            ((batch_table.c.status == "expired") | (batch_table.c.expire_at <= now)),
         )
         count_stmt = count_stmt.where(
-            RedeemCode.status == "active",
-            ((RedeemCodeBatch.status == "expired") | (RedeemCodeBatch.expire_at <= now)),
+            code_table.c.status == "active",
+            ((batch_table.c.status == "expired") | (batch_table.c.expire_at <= now)),
         )
     elif normalized_status == "unredeemed":
         base = base.where(
-            RedeemCode.status == "active",
-            RedeemCodeBatch.status == "active",
-            RedeemCodeBatch.expire_at > now,
+            code_table.c.status == "active",
+            batch_table.c.status == "active",
+            batch_table.c.expire_at > now,
         )
         count_stmt = count_stmt.where(
-            RedeemCode.status == "active",
-            RedeemCodeBatch.status == "active",
-            RedeemCodeBatch.expire_at > now,
+            code_table.c.status == "active",
+            batch_table.c.status == "active",
+            batch_table.c.expire_at > now,
         )
     elif normalized_status == "abandoned":
-        base = base.where(RedeemCode.status == "abandoned")
-        count_stmt = count_stmt.where(RedeemCode.status == "abandoned")
+        base = base.where(code_table.c.status == "abandoned")
+        count_stmt = count_stmt.where(code_table.c.status == "abandoned")
 
     if redeem_user_email.strip():
         pattern = f"%{redeem_user_email.strip().lower()}%"
@@ -408,42 +551,105 @@ def list_redeem_codes(
         count_stmt = count_stmt.where(func.lower(redeemed_user.c.email).like(pattern))
 
     if created_from:
-        base = base.where(RedeemCode.created_at >= created_from)
-        count_stmt = count_stmt.where(RedeemCode.created_at >= created_from)
+        base = base.where(code_table.c.created_at >= created_from)
+        count_stmt = count_stmt.where(code_table.c.created_at >= created_from)
     if created_to:
-        base = base.where(RedeemCode.created_at <= created_to)
-        count_stmt = count_stmt.where(RedeemCode.created_at <= created_to)
+        base = base.where(code_table.c.created_at <= created_to)
+        count_stmt = count_stmt.where(code_table.c.created_at <= created_to)
 
     if redeemed_from:
-        base = base.where(RedeemCode.redeemed_at >= redeemed_from)
-        count_stmt = count_stmt.where(RedeemCode.redeemed_at >= redeemed_from)
+        base = base.where(code_table.c.redeemed_at >= redeemed_from)
+        count_stmt = count_stmt.where(code_table.c.redeemed_at >= redeemed_from)
     if redeemed_to:
-        base = base.where(RedeemCode.redeemed_at <= redeemed_to)
-        count_stmt = count_stmt.where(RedeemCode.redeemed_at <= redeemed_to)
+        base = base.where(code_table.c.redeemed_at <= redeemed_to)
+        count_stmt = count_stmt.where(code_table.c.redeemed_at <= redeemed_to)
 
     total = int(db.scalar(count_stmt) or 0)
     rows = db.execute(
-        base.order_by(RedeemCode.created_at.desc(), RedeemCode.id.desc()).offset((page - 1) * page_size).limit(page_size)
+        base.order_by(code_table.c.created_at.desc(), code_table.c.id.desc()).offset((page - 1) * page_size).limit(page_size)
     ).all()
 
-    return total, [(row[0], row[1], row.redeemed_email) for row in rows]
+    return total, [
+        (
+            SimpleNamespace(
+                id=int(row.code_id),
+                batch_id=int(row.code_batch_id),
+                masked_code=str(row.code_masked_code or ""),
+                status=str(row.code_status or ""),
+                created_by_user_id=row.code_created_by_user_id,
+                redeemed_at=row.code_redeemed_at,
+                created_at=row.code_created_at,
+            ),
+            SimpleNamespace(
+                id=int(row.batch_id),
+                batch_name=str(row.batch_name or ""),
+                face_value_points=int(row.batch_face_value_points or 0),
+                status=str(row.batch_status or ""),
+                expire_at=row.batch_expire_at,
+            ),
+            row.redeemed_email,
+        )
+        for row in rows
+    ]
 
 
 def list_unredeemed_codes_for_export(db: Session, *, batch_id: int | None, now: datetime) -> list[tuple[RedeemCode, RedeemCodeBatch]]:
+    if not admin_storage_ready(
+        db,
+        scope="admin.redeem_export.batch_table",
+        table_name=RedeemCodeBatch.__tablename__,
+        required_columns=("id", "batch_name", "face_value_points", "active_from", "expire_at", "status"),
+    ):
+        return []
+    if not admin_storage_ready(
+        db,
+        scope="admin.redeem_export.code_table",
+        table_name=RedeemCode.__tablename__,
+        required_columns=("id", "batch_id", "code_plain", "masked_code", "status"),
+    ):
+        return []
+
     stmt = (
-        select(RedeemCode, RedeemCodeBatch)
-        .join(RedeemCodeBatch, RedeemCodeBatch.id == RedeemCode.batch_id)
+        select(
+            RedeemCode.__table__.c.id.label("code_id"),
+            RedeemCode.__table__.c.batch_id.label("code_batch_id"),
+            RedeemCode.__table__.c.code_plain.label("code_plain"),
+            RedeemCode.__table__.c.masked_code.label("masked_code"),
+            RedeemCodeBatch.__table__.c.id.label("batch_id"),
+            RedeemCodeBatch.__table__.c.batch_name.label("batch_name"),
+            RedeemCodeBatch.__table__.c.face_value_points.label("face_value_points"),
+            RedeemCodeBatch.__table__.c.active_from.label("active_from"),
+            RedeemCodeBatch.__table__.c.expire_at.label("expire_at"),
+        )
+        .join(RedeemCodeBatch.__table__, RedeemCodeBatch.__table__.c.id == RedeemCode.__table__.c.batch_id)
         .where(
-            RedeemCode.status == "active",
-            RedeemCodeBatch.status == "active",
-            RedeemCodeBatch.expire_at > now,
+            RedeemCode.__table__.c.status == "active",
+            RedeemCodeBatch.__table__.c.status == "active",
+            RedeemCodeBatch.__table__.c.expire_at > now,
         )
     )
     if batch_id is not None:
-        stmt = stmt.where(RedeemCode.batch_id == batch_id)
+        stmt = stmt.where(RedeemCode.__table__.c.batch_id == batch_id)
 
-    rows = db.execute(stmt.order_by(RedeemCodeBatch.id.asc(), RedeemCode.id.asc())).all()
-    return [(row[0], row[1]) for row in rows]
+    rows = db.execute(stmt.order_by(RedeemCodeBatch.__table__.c.id.asc(), RedeemCode.__table__.c.id.asc())).all()
+    return [
+        (
+            SimpleNamespace(
+                id=int(row.code_id),
+                batch_id=int(row.code_batch_id),
+                code_plain=str(row.code_plain or ""),
+                masked_code=str(row.masked_code or ""),
+            ),
+            SimpleNamespace(
+                id=int(row.batch_id),
+                batch_name=str(row.batch_name or ""),
+                face_value_points=int(row.face_value_points or 0),
+                active_from=row.active_from,
+                expire_at=row.expire_at,
+            ),
+        )
+        for row in rows
+    ]
 
 
 def list_redeem_audit_rows(
@@ -456,6 +662,21 @@ def list_redeem_audit_rows(
     page: int,
     page_size: int,
 ) -> tuple[int, list[tuple[RedeemCodeAttempt, str | None, str | None]]]:
+    if not admin_storage_ready(
+        db,
+        scope="admin.redeem_audit.attempt_table",
+        table_name=RedeemCodeAttempt.__tablename__,
+        required_columns=("id", "user_id", "batch_id", "code_id", "code_mask", "success", "failure_reason", "created_at"),
+    ):
+        return 0, []
+    if not admin_storage_ready(
+        db,
+        scope="admin.redeem_audit.batch_table",
+        table_name=RedeemCodeBatch.__tablename__,
+        required_columns=("id", "batch_name"),
+    ):
+        return 0, []
+
     user_table = User.__table__.alias("audit_user")
     base = (
         select(RedeemCodeAttempt, user_table.c.email.label("user_email"), RedeemCodeBatch.batch_name.label("batch_name"))
@@ -499,6 +720,21 @@ def list_all_redeem_audit_rows(
     date_from: datetime | None,
     date_to: datetime | None,
 ) -> list[tuple[RedeemCodeAttempt, str | None, str | None]]:
+    if not admin_storage_ready(
+        db,
+        scope="admin.redeem_audit_export.attempt_table",
+        table_name=RedeemCodeAttempt.__tablename__,
+        required_columns=("id", "user_id", "batch_id", "code_id", "code_mask", "success", "failure_reason", "created_at"),
+    ):
+        return []
+    if not admin_storage_ready(
+        db,
+        scope="admin.redeem_audit_export.batch_table",
+        table_name=RedeemCodeBatch.__tablename__,
+        required_columns=("id", "batch_name"),
+    ):
+        return []
+
     user_table = User.__table__.alias("audit_user")
     stmt = (
         select(RedeemCodeAttempt, user_table.c.email.label("user_email"), RedeemCodeBatch.batch_name.label("batch_name"))

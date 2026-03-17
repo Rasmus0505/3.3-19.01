@@ -82,8 +82,7 @@ def upgrade() -> None:
                     expire_at = :now
                 WHERE status IN ('active', 'paused')
                 """
-            ),
-            {"now": now},
+            ).bindparams(now=now)
         )
 
 

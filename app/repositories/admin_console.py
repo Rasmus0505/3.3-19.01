@@ -18,7 +18,7 @@ from app.models import (
     WalletAccount,
     WalletLedger,
 )
-from app.repositories.admin import list_redeem_batches
+from app.repositories.admin import admin_storage_ready, list_redeem_batches
 from app.services.query_cache import query_cache
 from app.services.lesson_task_manager import ensure_lesson_task_storage_ready
 from app.services.user_activity import ensure_user_activity_schema
@@ -190,6 +190,30 @@ def _get_admin_overview_data_uncached(db: Session, *, now: datetime) -> dict[str
     today_start = _start_of_day(now)
     last_24_hours = now - timedelta(hours=24)
     seven_days_start = _start_of_day(now) - timedelta(days=6)
+    translation_logs_ready = admin_storage_ready(
+        db,
+        scope="admin.overview.translation_logs",
+        table_name=TranslationRequestLog.__tablename__,
+        required_columns=("id", "created_at", "success"),
+    )
+    redeem_attempts_ready = admin_storage_ready(
+        db,
+        scope="admin.overview.redeem_attempts",
+        table_name=RedeemCodeAttempt.__tablename__,
+        required_columns=("id", "created_at", "success"),
+    )
+    redeem_batches_ready = admin_storage_ready(
+        db,
+        scope="admin.overview.redeem_batches",
+        table_name=RedeemCodeBatch.__tablename__,
+        required_columns=("id", "status", "expire_at"),
+    )
+    admin_operation_logs_ready = admin_storage_ready(
+        db,
+        scope="admin.overview.operation_logs",
+        table_name=AdminOperationLog.__tablename__,
+        required_columns=("id", "operator_user_id", "action_type", "target_type", "target_id", "before_value", "after_value", "note", "created_at"),
+    )
 
     today_new_users = int(db.scalar(select(func.count(User.id)).where(User.created_at >= today_start)) or 0)
     today_redeem_points = int(
@@ -210,35 +234,45 @@ def _get_admin_overview_data_uncached(db: Session, *, now: datetime) -> dict[str
         )
         or 0
     )
-    translation_failures_24h = int(
-        db.scalar(
-            select(func.count(TranslationRequestLog.id)).where(
-                TranslationRequestLog.created_at >= last_24_hours,
-                TranslationRequestLog.success.is_(False),
+    translation_failures_24h = 0
+    if translation_logs_ready:
+        translation_failures_24h = int(
+            db.scalar(
+                select(func.count(TranslationRequestLog.id)).where(
+                    TranslationRequestLog.created_at >= last_24_hours,
+                    TranslationRequestLog.success.is_(False),
+                )
             )
+            or 0
         )
-        or 0
-    )
-    redeem_failures_24h = int(
-        db.scalar(
-            select(func.count(RedeemCodeAttempt.id)).where(
-                RedeemCodeAttempt.created_at >= last_24_hours,
-                RedeemCodeAttempt.success.is_(False),
+    redeem_failures_24h = 0
+    if redeem_attempts_ready:
+        redeem_failures_24h = int(
+            db.scalar(
+                select(func.count(RedeemCodeAttempt.id)).where(
+                    RedeemCodeAttempt.created_at >= last_24_hours,
+                    RedeemCodeAttempt.success.is_(False),
+                )
             )
+            or 0
         )
-        or 0
-    )
-    active_batches = int(
-        db.scalar(select(func.count(RedeemCodeBatch.id)).where(RedeemCodeBatch.status == "active", RedeemCodeBatch.expire_at > now)) or 0
-    )
+    active_batches = 0
+    if redeem_batches_ready:
+        active_batches = int(
+            db.scalar(select(func.count(RedeemCodeBatch.id)).where(RedeemCodeBatch.status == "active", RedeemCodeBatch.expire_at > now)) or 0
+        )
 
-    _, recent_batch_rows = list_redeem_batches(db, keyword="", status="all", page=1, page_size=5, now=now)
-    recent_operation_rows = db.execute(
-        select(AdminOperationLog, User.email.label("operator_email"))
-        .outerjoin(User, User.id == AdminOperationLog.operator_user_id)
-        .order_by(AdminOperationLog.created_at.desc(), AdminOperationLog.id.desc())
-        .limit(6)
-    ).all()
+    recent_batch_rows = []
+    if redeem_batches_ready:
+        _, recent_batch_rows = list_redeem_batches(db, keyword="", status="all", page=1, page_size=5, now=now)
+    recent_operation_rows = []
+    if admin_operation_logs_ready:
+        recent_operation_rows = db.execute(
+            select(AdminOperationLog, User.email.label("operator_email"))
+            .outerjoin(User, User.id == AdminOperationLog.operator_user_id)
+            .order_by(AdminOperationLog.created_at.desc(), AdminOperationLog.id.desc())
+            .limit(6)
+        ).all()
 
     user_series = _count_by_day(db, select(User.id).where(User.created_at >= seven_days_start), User.id, User.created_at)
     redeem_series = _sum_by_day(
@@ -257,20 +291,26 @@ def _get_admin_overview_data_uncached(db: Session, *, now: datetime) -> dict[str
         -WalletLedger.delta_amount_cents,
         WalletLedger.created_at,
     )
-    translation_failure_series = _count_by_day(
-        db,
-        select(TranslationRequestLog.id).where(TranslationRequestLog.created_at >= seven_days_start, TranslationRequestLog.success.is_(False)),
-        TranslationRequestLog.id,
-        TranslationRequestLog.created_at,
-    )
-    redeem_failure_series = _count_by_day(
-        db,
-        select(RedeemCodeAttempt.id).where(RedeemCodeAttempt.created_at >= seven_days_start, RedeemCodeAttempt.success.is_(False)),
-        RedeemCodeAttempt.id,
-        RedeemCodeAttempt.created_at,
-    )
+    translation_failure_series = {}
+    if translation_logs_ready:
+        translation_failure_series = _count_by_day(
+            db,
+            select(TranslationRequestLog.id).where(TranslationRequestLog.created_at >= seven_days_start, TranslationRequestLog.success.is_(False)),
+            TranslationRequestLog.id,
+            TranslationRequestLog.created_at,
+        )
+    redeem_failure_series = {}
+    if redeem_attempts_ready:
+        redeem_failure_series = _count_by_day(
+            db,
+            select(RedeemCodeAttempt.id).where(RedeemCodeAttempt.created_at >= seven_days_start, RedeemCodeAttempt.success.is_(False)),
+            RedeemCodeAttempt.id,
+            RedeemCodeAttempt.created_at,
+        )
 
-    batch_rows = db.execute(select(RedeemCodeBatch.status, RedeemCodeBatch.expire_at)).all()
+    batch_rows = []
+    if redeem_batches_ready:
+        batch_rows = db.execute(select(RedeemCodeBatch.status, RedeemCodeBatch.expire_at)).all()
     batch_status_counter: Counter[str] = Counter()
     for status, expire_at in batch_rows:
         if status == "expired" or (expire_at and expire_at <= now):
