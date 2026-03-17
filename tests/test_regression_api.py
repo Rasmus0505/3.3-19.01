@@ -1519,6 +1519,36 @@ def test_local_asr_asset_route_serves_cached_asset(test_client, tmp_path, monkey
     assert resp.headers["content-type"].startswith("application/javascript")
 
 
+def test_local_asr_asset_route_installs_git_when_missing(monkeypatch):
+    commands: list[list[str]] = []
+    installed = {"git": False}
+
+    def fake_command_available(name: str) -> bool:
+        if name == "apt-get":
+            return True
+        if name == "git":
+            return installed["git"]
+        return False
+
+    def fake_run(cmd, **kwargs):
+        commands.append(list(cmd))
+        if cmd[:3] == ["apt-get", "install", "-y"]:
+            installed["git"] = True
+
+    monkeypatch.setattr(local_asr_assets_router, "_command_available", fake_command_available)
+    monkeypatch.setattr(local_asr_assets_router, "_git_lfs_ready", lambda: installed["git"])
+    monkeypatch.setattr(local_asr_assets_router, "_run_local_asr_cmd", fake_run)
+    monkeypatch.setattr(local_asr_assets_router.os, "geteuid", lambda: 0, raising=False)
+
+    local_asr_assets_router._ensure_git_dependencies()
+
+    assert commands == [
+        ["apt-get", "update"],
+        ["apt-get", "install", "-y", "--no-install-recommends", "git", "git-lfs"],
+        ["git", "lfs", "install", "--skip-repo"],
+    ]
+
+
 def test_create_local_asr_lesson_task(test_client, monkeypatch, tmp_path):
     client, session_factory, _ = test_client
     token = _register_and_login(client, email="local-asr@example.com")
