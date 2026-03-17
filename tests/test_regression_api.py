@@ -1538,7 +1538,7 @@ def test_create_local_asr_lesson_task(test_client, monkeypatch, tmp_path):
         session.close()
 
     payload = {
-        "asr_model": "local-whisper-base-en",
+        "asr_model": "local-sensevoice-small",
         "source_filename": "demo.wav",
         "source_duration_ms": 12_000,
         "asr_payload": {
@@ -1562,7 +1562,7 @@ def test_create_local_asr_lesson_task(test_client, monkeypatch, tmp_path):
     assert task_resp.status_code == 200
     task_payload = task_resp.json()
     assert task_payload["status"] == "succeeded"
-    assert task_payload["lesson"]["asr_model"] == "local-whisper-base-en"
+    assert task_payload["lesson"]["asr_model"] == "local-sensevoice-small"
 
 
 def test_admin_update_billing_rate_rejects_non_flash_mt_model(test_client):

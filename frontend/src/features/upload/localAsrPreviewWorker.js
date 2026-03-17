@@ -1,16 +1,21 @@
-import { pipeline } from "@huggingface/transformers";
-
-const TASK_NAME = "automatic-speech-recognition";
 const TARGET_SAMPLE_RATE = 16000;
-const TRANSCRIBE_OPTIONS = {
-  chunk_length_s: 20,
-  stride_length_s: 5,
-  return_timestamps: true,
+const DEFAULT_MODEL_ID = "local-sensevoice-small";
+const DEFAULT_ASSET_BASE_URL =
+  "https://www.modelscope.cn/studios/csukuangfj/web-assembly-vad-asr-sherpa-onnx-zh-en-jp-ko-cantonese-sense-voice/resolve/master";
+
+const RUNTIME_FILES = {
+  asrScript: "sherpa-onnx-asr.js",
+  runtimeScript: "sherpa-onnx-wasm-main-vad-asr.js",
+  runtimeWasm: "sherpa-onnx-wasm-main-vad-asr.wasm",
+  runtimeData: "sherpa-onnx-wasm-main-vad-asr.data",
 };
 
-let pipelinePromise = null;
-let activeRuntime = "";
+let runtimePromise = null;
+let runtimeModule = null;
+let activeRecognizer = null;
 let activeModelId = "";
+let activeAssetBaseUrl = "";
+let runtimeInitialized = false;
 
 function toErrorMessage(error) {
   if (error instanceof Error && error.message) {
@@ -20,7 +25,15 @@ function toErrorMessage(error) {
 }
 
 function normalizeModelId(modelId) {
-  return String(modelId || "").trim();
+  return String(modelId || "").trim() || DEFAULT_MODEL_ID;
+}
+
+function normalizeAssetBaseUrl(assetBaseUrl) {
+  return String(assetBaseUrl || DEFAULT_ASSET_BASE_URL).trim().replace(/\/+$/, "") || DEFAULT_ASSET_BASE_URL;
+}
+
+function buildAssetUrl(assetBaseUrl, fileName) {
+  return `${normalizeAssetBaseUrl(assetBaseUrl)}/${String(fileName || "").replace(/^\/+/, "")}`;
 }
 
 function buildProgressPayload(requestId, stage, payload = {}) {
@@ -54,153 +67,412 @@ function buildErrorPayload(requestId, action, error, payload = {}) {
   };
 }
 
-function normalizeTimestampToMs(timestamp) {
-  if (Array.isArray(timestamp) && timestamp.length >= 2) {
-    const beginSec = Number(timestamp[0] || 0);
-    const endSec = Number(timestamp[1] || beginSec || 0);
-    return {
-      begin_ms: Math.max(0, Math.round(beginSec * 1000)),
-      end_ms: Math.max(0, Math.round(endSec * 1000)),
-    };
-  }
-  if (timestamp && typeof timestamp === "object") {
-    const beginSec = Number(timestamp.start ?? timestamp.begin ?? 0);
-    const endSec = Number(timestamp.end ?? timestamp.stop ?? beginSec ?? 0);
-    return {
-      begin_ms: Math.max(0, Math.round(beginSec * 1000)),
-      end_ms: Math.max(0, Math.round(endSec * 1000)),
-    };
-  }
-  return { begin_ms: 0, end_ms: 0 };
+function postDebugLog(message, extra = {}) {
+  console.debug("[DEBUG] local_asr.worker", message, extra);
 }
 
-function normalizeSegments(result) {
-  const chunks = Array.isArray(result?.chunks) ? result.chunks : [];
-  if (chunks.length > 0) {
-    return chunks
-      .map((chunk, index) => {
-        const time = normalizeTimestampToMs(chunk?.timestamp);
-        const text = String(chunk?.text || "").trim();
-        if (!text) return null;
-        return {
-          id: `${index}-${time.begin_ms}-${time.end_ms}`,
-          begin_ms: time.begin_ms,
-          end_ms: Math.max(time.begin_ms, time.end_ms),
-          text,
-        };
-      })
-      .filter(Boolean);
-  }
-
-  const text = String(result?.text || "").trim();
-  if (!text) return [];
-  return [
-    {
-      id: "0-0-0",
-      begin_ms: 0,
-      end_ms: 0,
-      text,
-    },
-  ];
+function postProgress(requestId, stage, payload = {}) {
+  self.postMessage(buildProgressPayload(requestId, stage, payload));
 }
 
-function buildAsrPayload(segments) {
-  const sentences = Array.isArray(segments)
-    ? segments.map((segment) => ({
-        text: String(segment.text || "").trim(),
-        begin_time: Math.max(0, Number(segment.begin_ms || 0)),
-        end_time: Math.max(0, Number(segment.end_ms || 0)),
-      })).filter((segment) => segment.text && segment.end_time > segment.begin_time)
-    : [];
-  const transcriptText = sentences.map((item) => item.text).join(" ").trim();
-  return {
-    source: "local_browser_asr",
-    transcripts: [
-      {
-        text: transcriptText,
-        sentences,
+function computeProgressPercent(loaded, total) {
+  const safeLoaded = Number(loaded || 0);
+  const safeTotal = Number(total || 0);
+  if (!Number.isFinite(safeLoaded) || !Number.isFinite(safeTotal) || safeTotal <= 0) {
+    return null;
+  }
+  return Math.max(0, Math.min(100, Math.round((safeLoaded / safeTotal) * 100)));
+}
+
+function fileExists(filename) {
+  if (!runtimeModule) return 0;
+  const fileName = String(filename || "").trim();
+  const fileNameLen = runtimeModule.lengthBytesUTF8(fileName) + 1;
+  const pointer = runtimeModule._malloc(fileNameLen);
+  runtimeModule.stringToUTF8(fileName, pointer, fileNameLen);
+  const exists = runtimeModule._SherpaOnnxFileExists(pointer);
+  runtimeModule._free(pointer);
+  return exists;
+}
+
+function createRecognizer(Module) {
+  if (typeof OfflineRecognizer !== "function") {
+    throw new Error("sherpa-onnx OfflineRecognizer 未加载成功");
+  }
+  if (fileExists("sense-voice.onnx") !== 1) {
+    throw new Error("SenseVoice 模型文件未就绪");
+  }
+  if (fileExists("tokens.txt") !== 1) {
+    throw new Error("SenseVoice tokens 文件未就绪");
+  }
+  const config = {
+    modelConfig: {
+      debug: 0,
+      tokens: "./tokens.txt",
+      senseVoice: {
+        model: "./sense-voice.onnx",
+        useInverseTextNormalization: 1,
       },
-    ],
+    },
   };
+  postDebugLog("recognizer.create", { modelId: activeModelId, assetBaseUrl: activeAssetBaseUrl });
+  return new OfflineRecognizer(config, Module);
 }
 
-async function createPipeline(requestId, modelId, preferredRuntime = "webgpu") {
-  const normalizedModelId = normalizeModelId(modelId);
-  if (!normalizedModelId) {
-    throw new Error("缺少本地模型 ID");
-  }
-  const runtimes = preferredRuntime === "wasm" ? ["wasm"] : ["webgpu", "wasm"];
-  let lastError = null;
-
-  for (const runtime of runtimes) {
+function resetRuntimeState() {
+  if (activeRecognizer && typeof activeRecognizer.free === "function") {
     try {
-      self.postMessage(
-        buildProgressPayload(requestId, "model-load-start", {
-          modelId: normalizedModelId,
-          runtime,
-          status_text: runtime === "webgpu" ? "正在尝试 WebGPU" : "正在回退到 WASM",
-        }),
-      );
+      activeRecognizer.free();
+    } catch (_) {
+      // Ignore recognizer cleanup failures.
+    }
+  }
+  activeRecognizer = null;
+  runtimePromise = null;
+  runtimeModule = null;
+  runtimeInitialized = false;
+}
 
-      const instance = await pipeline(TASK_NAME, normalizedModelId, {
-        device: runtime,
-        progress_callback: (event) => {
-          const progress = Number(event?.progress);
-          const percent = Number.isFinite(progress)
-            ? Math.max(0, Math.min(100, Math.round(progress)))
-            : Number.isFinite(Number(event?.loaded)) && Number.isFinite(Number(event?.total)) && Number(event.total) > 0
-              ? Math.max(0, Math.min(100, Math.round((Number(event.loaded) / Number(event.total)) * 100)))
-              : null;
-          self.postMessage(
-            buildProgressPayload(requestId, "model-progress", {
-              modelId: normalizedModelId,
-              runtime,
-              file: String(event?.file || ""),
-              status: String(event?.status || ""),
-              progress: percent,
-              loaded: Number(event?.loaded || 0),
-              total: Number(event?.total || 0),
-            }),
-          );
+function handleModuleStatus(requestId, modelId, status) {
+  const statusText = String(status || "").trim();
+  if (!statusText) return;
+
+  if (statusText === "Running...") {
+    postProgress(requestId, "model-progress", {
+      modelId,
+      runtime: "wasm",
+      progress: 100,
+      status: "模型资源已下载，正在初始化 SenseVoice",
+      status_text: "模型资源已下载，正在初始化 SenseVoice",
+      file: RUNTIME_FILES.runtimeData,
+    });
+    return;
+  }
+
+  const downloadMatch = statusText.match(/Downloading data\.\.\. \((\d+)\/(\d+)\)/);
+  if (downloadMatch) {
+    const loaded = Number(downloadMatch[1] || 0);
+    const total = Number(downloadMatch[2] || 0);
+    const progress = computeProgressPercent(loaded, total);
+    postProgress(requestId, "model-progress", {
+      modelId,
+      runtime: "wasm",
+      file: RUNTIME_FILES.runtimeData,
+      loaded,
+      total,
+      progress,
+      status: progress == null ? "正在下载本地 SenseVoice 资源" : `正在下载本地 SenseVoice 资源 ${progress}%`,
+      status_text: progress == null ? "正在下载本地 SenseVoice 资源" : `正在下载本地 SenseVoice 资源 ${progress}%`,
+    });
+    return;
+  }
+
+  postProgress(requestId, "model-progress", {
+    modelId,
+    runtime: "wasm",
+    progress: null,
+    status: statusText,
+    status_text: statusText,
+  });
+}
+
+async function ensureRuntime(requestId, modelId, assetBaseUrl) {
+  const normalizedModelId = normalizeModelId(modelId);
+  const normalizedAssetBaseUrl = normalizeAssetBaseUrl(assetBaseUrl);
+
+  if (runtimeInitialized && runtimeModule && activeRecognizer) {
+    return { runtime: "wasm", modelId: normalizedModelId };
+  }
+
+  if (runtimeInitialized && runtimeModule && !activeRecognizer) {
+    activeRecognizer = createRecognizer(runtimeModule);
+    return { runtime: "wasm", modelId: normalizedModelId };
+  }
+
+  if (runtimePromise) {
+    return runtimePromise;
+  }
+
+  activeModelId = normalizedModelId;
+  activeAssetBaseUrl = normalizedAssetBaseUrl;
+
+  postProgress(requestId, "model-load-start", {
+    modelId: normalizedModelId,
+    runtime: "wasm",
+    status_text: "正在检查并下载本地 SenseVoice 资源",
+  });
+
+  runtimePromise = new Promise((resolve, reject) => {
+    try {
+      self.Module = {
+        locateFile(path) {
+          if (path === RUNTIME_FILES.runtimeWasm || path === RUNTIME_FILES.runtimeData) {
+            return buildAssetUrl(normalizedAssetBaseUrl, path);
+          }
+          return buildAssetUrl(normalizedAssetBaseUrl, path);
         },
-      });
+        setStatus(status) {
+          handleModuleStatus(requestId, normalizedModelId, status);
+        },
+        onRuntimeInitialized() {
+          try {
+            runtimeModule = self.Module;
+            activeRecognizer = createRecognizer(runtimeModule);
+            runtimeInitialized = true;
+            postDebugLog("runtime.ready", { modelId: normalizedModelId, assetBaseUrl: normalizedAssetBaseUrl });
+            postProgress(requestId, "model-ready", {
+              modelId: normalizedModelId,
+              runtime: "wasm",
+              progress: 100,
+              status_text: "本地 SenseVoice 模型已就绪",
+            });
+            resolve({ runtime: "wasm", modelId: normalizedModelId });
+          } catch (error) {
+            reject(error);
+          }
+        },
+      };
 
-      activeRuntime = runtime;
-      activeModelId = normalizedModelId;
-      return instance;
+      importScripts(buildAssetUrl(normalizedAssetBaseUrl, RUNTIME_FILES.asrScript));
+      importScripts(buildAssetUrl(normalizedAssetBaseUrl, RUNTIME_FILES.runtimeScript));
     } catch (error) {
-      lastError = error;
-      if (runtime === "webgpu") {
-        self.postMessage(
-          buildProgressPayload(requestId, "runtime-fallback", {
-            modelId: normalizedModelId,
-            runtime: "wasm",
-            status_text: "WebGPU 不可用，已自动回退到 WASM",
-            detail: toErrorMessage(error),
-          }),
-        );
-        continue;
-      }
+      reject(error);
+    }
+  })
+    .catch((error) => {
+      postDebugLog("runtime.error", { message: toErrorMessage(error) });
+      resetRuntimeState();
+      throw error;
+    })
+    .finally(() => {
+      runtimePromise = null;
+    });
+
+  return runtimePromise;
+}
+
+function normalizeSurfaceText(text) {
+  return String(text || "")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripSurfacePunctuation(text) {
+  return normalizeSurfaceText(text).replace(/^[\s.,!?;:"'`~()\[\]{}-]+|[\s.,!?;:"'`~()\[\]{}-]+$/g, "");
+}
+
+function composeText(parts) {
+  return String(parts || [])
+    .replace(/\s+([,.;!?])/g, "$1")
+    .replace(/\s+'/g, "'")
+    .replace(/'\s+/g, "'")
+    .trim();
+}
+
+function splitTextIntoSurfaceWords(text) {
+  return String(text || "")
+    .split(/\s+/)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+}
+
+function approximateWordsFromText(text, totalDurationMs) {
+  const surfaces = splitTextIntoSurfaceWords(text);
+  if (!surfaces.length) return [];
+
+  const totalWeight = surfaces.reduce((sum, surface) => sum + Math.max(stripSurfacePunctuation(surface).length, 1), 0);
+  let cursor = 0;
+  return surfaces.map((surface, index) => {
+    const weight = Math.max(stripSurfacePunctuation(surface).length, 1);
+    const beginMs = cursor;
+    const isLast = index === surfaces.length - 1;
+    const endMs = isLast
+      ? totalDurationMs
+      : Math.max(beginMs + 1, cursor + Math.round((weight / Math.max(totalWeight, 1)) * totalDurationMs));
+    cursor = endMs;
+    return {
+      text: stripSurfacePunctuation(surface) || surface,
+      surface,
+      begin_ms: beginMs,
+      end_ms: endMs,
+    };
+  });
+}
+
+function decodeTimedWordsFromTokens(result) {
+  const tokens = Array.isArray(result?.tokens) ? result.tokens : [];
+  const timestamps = Array.isArray(result?.timestamps) ? result.timestamps : [];
+  const durations = Array.isArray(result?.durations) ? result.durations : [];
+  if (!tokens.length || timestamps.length !== tokens.length || durations.length !== tokens.length) {
+    return [];
+  }
+
+  const words = [];
+  let currentWord = null;
+
+  function flushCurrentWord() {
+    if (!currentWord) return;
+    const surface = normalizeSurfaceText(currentWord.surface);
+    if (surface && currentWord.end_ms > currentWord.begin_ms) {
+      words.push({
+        text: stripSurfacePunctuation(surface) || surface,
+        surface,
+        begin_ms: currentWord.begin_ms,
+        end_ms: currentWord.end_ms,
+      });
+    }
+    currentWord = null;
+  }
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const rawToken = String(tokens[index] || "").trim();
+    if (!rawToken || /^<.*>$/.test(rawToken) || /^<\|.*\|>$/.test(rawToken)) {
+      continue;
+    }
+
+    const tokenBeginMs = Math.max(0, Math.round(Number(timestamps[index] || 0) * 1000));
+    const tokenDurationMs = Math.max(1, Math.round(Number(durations[index] || 0) * 1000));
+    const tokenEndMs = tokenBeginMs + tokenDurationMs;
+
+    const startsWord = /^[▁Ġ]/u.test(rawToken);
+    const normalizedToken = rawToken.replace(/^[▁Ġ]+/gu, "").replace(/[▁Ġ]/gu, " ").trim();
+    if (!normalizedToken) {
+      continue;
+    }
+
+    const punctuationOnly = /^[,.;!?，。！？；:：'"`~()\[\]{}-]+$/u.test(normalizedToken);
+
+    if (!currentWord || startsWord) {
+      flushCurrentWord();
+      currentWord = {
+        surface: normalizedToken,
+        begin_ms: tokenBeginMs,
+        end_ms: tokenEndMs,
+      };
+      continue;
+    }
+
+    if (punctuationOnly) {
+      currentWord.surface = `${currentWord.surface}${normalizedToken}`;
+      currentWord.end_ms = tokenEndMs;
+      continue;
+    }
+
+    currentWord.surface = `${currentWord.surface}${normalizedToken}`;
+    currentWord.end_ms = tokenEndMs;
+  }
+
+  flushCurrentWord();
+  return words;
+}
+
+function chooseWordItems(result, samplingRate, sampleCount) {
+  const timedWords = decodeTimedWordsFromTokens(result);
+  const plainWords = splitTextIntoSurfaceWords(result?.text);
+  if (timedWords.length > 0 && (plainWords.length === 0 || timedWords.length <= plainWords.length * 2)) {
+    return timedWords;
+  }
+  const totalDurationMs = Math.max(1, Math.round((Math.max(0, Number(sampleCount || 0)) / Math.max(1, Number(samplingRate || TARGET_SAMPLE_RATE))) * 1000));
+  return approximateWordsFromText(result?.text, totalDurationMs);
+}
+
+function buildSentenceEntries(words, fallbackText, totalDurationMs) {
+  const sourceWords = Array.isArray(words) ? words : [];
+  if (!sourceWords.length) {
+    const text = normalizeSurfaceText(fallbackText);
+    if (!text) return [];
+    return [
+      {
+        id: `0-0-${totalDurationMs}`,
+        text,
+        begin_ms: 0,
+        end_ms: Math.max(1, totalDurationMs),
+      },
+    ];
+  }
+
+  const sentences = [];
+  let currentWords = [];
+
+  function flushSentence() {
+    if (!currentWords.length) return;
+    const beginMs = Math.max(0, Number(currentWords[0]?.begin_ms || 0));
+    const endMs = Math.max(beginMs + 1, Number(currentWords[currentWords.length - 1]?.end_ms || beginMs + 1));
+    const text = composeText(currentWords.map((item) => item.surface).join(" "));
+    if (text) {
+      sentences.push({
+        id: `${sentences.length}-${beginMs}-${endMs}`,
+        text,
+        begin_ms: beginMs,
+        end_ms: endMs,
+      });
+    }
+    currentWords = [];
+  }
+
+  for (let index = 0; index < sourceWords.length; index += 1) {
+    const current = sourceWords[index];
+    const next = sourceWords[index + 1] || null;
+    currentWords.push(current);
+    const gapMs = next ? Math.max(0, Number(next.begin_ms || 0) - Number(current.end_ms || 0)) : 0;
+    const endsWithBoundary = /[.!?;。！？；]$/u.test(String(current.surface || ""));
+    const endsWithSoftBoundary = /[,，:：]$/u.test(String(current.surface || ""));
+    const reachedWordSoftLimit = currentWords.length >= 18;
+    const shouldSplit =
+      !next ||
+      endsWithBoundary ||
+      gapMs >= 1200 ||
+      (reachedWordSoftLimit && (endsWithSoftBoundary || gapMs >= 400 || currentWords.length >= 24));
+
+    if (shouldSplit) {
+      flushSentence();
     }
   }
 
-  throw lastError || new Error("本地 ASR 模型加载失败");
+  flushSentence();
+
+  if (!sentences.length) {
+    return [
+      {
+        id: `0-0-${totalDurationMs}`,
+        text: composeText(sourceWords.map((item) => item.surface).join(" ")),
+        begin_ms: 0,
+        end_ms: Math.max(1, totalDurationMs),
+      },
+    ];
+  }
+
+  return sentences;
 }
 
-async function ensurePipeline(requestId, modelId, preferredRuntime = "webgpu") {
-  const normalizedModelId = normalizeModelId(modelId);
-  if (!normalizedModelId) {
-    throw new Error("缺少本地模型 ID");
-  }
-  if (!pipelinePromise || activeModelId !== normalizedModelId) {
-    pipelinePromise = createPipeline(requestId, normalizedModelId, preferredRuntime).catch((error) => {
-      pipelinePromise = null;
-      activeRuntime = "";
-      activeModelId = "";
-      throw error;
-    });
-  }
-  return pipelinePromise;
+function buildAsrPayload(result, words, sentences) {
+  const transcriptText = composeText(
+    (Array.isArray(sentences) && sentences.length ? sentences : words).map((item) => item.text || item.surface).join(" "),
+  );
+  return {
+    source: "local_browser_asr",
+    engine: "sherpa_onnx_sensevoice",
+    transcripts: [
+      {
+        text: transcriptText,
+        lang: String(result?.lang || ""),
+        emotion: String(result?.emotion || ""),
+        event: String(result?.event || ""),
+        words: words.map((item) => ({
+          text: String(item.text || item.surface || "").trim(),
+          surface: String(item.surface || item.text || "").trim(),
+          begin_time: Math.max(0, Number(item.begin_ms || 0)),
+          end_time: Math.max(0, Number(item.end_ms || 0)),
+        })),
+        sentences: sentences.map((item) => ({
+          text: String(item.text || "").trim(),
+          begin_time: Math.max(0, Number(item.begin_ms || 0)),
+          end_time: Math.max(0, Number(item.end_ms || 0)),
+        })),
+      },
+    ],
+  };
 }
 
 self.addEventListener("message", async (event) => {
@@ -208,6 +480,7 @@ self.addEventListener("message", async (event) => {
   const action = String(payload?.type || "");
   const requestId = String(payload?.requestId || "");
   const modelId = normalizeModelId(payload?.modelId);
+  const assetBaseUrl = normalizeAssetBaseUrl(payload?.assetBaseUrl);
 
   if (!action || !requestId) {
     return;
@@ -215,12 +488,13 @@ self.addEventListener("message", async (event) => {
 
   if (action === "load-model") {
     try {
-      await ensurePipeline(requestId, modelId, String(payload?.preferredRuntime || "webgpu"));
+      await ensureRuntime(requestId, modelId, assetBaseUrl);
       self.postMessage(
         buildResultPayload(requestId, action, {
           model_id: modelId,
-          runtime: activeRuntime || "wasm",
+          runtime: "wasm",
           sampling_rate: TARGET_SAMPLE_RATE,
+          asset_base_url: assetBaseUrl,
         }),
       );
     } catch (error) {
@@ -230,47 +504,63 @@ self.addEventListener("message", async (event) => {
   }
 
   if (action === "dispose-model") {
-    if (activeModelId === modelId) {
-      pipelinePromise = null;
-      activeRuntime = "";
-      activeModelId = "";
+    postDebugLog("dispose", { modelId });
+    if (activeRecognizer && typeof activeRecognizer.free === "function") {
+      try {
+        activeRecognizer.free();
+      } catch (_) {
+        // Ignore recognizer cleanup failures.
+      }
     }
-    self.postMessage(buildResultPayload(requestId, action, { model_id: modelId }));
+    activeRecognizer = null;
+    runtimeInitialized = Boolean(runtimeModule);
+    self.postMessage(buildResultPayload(requestId, action, { model_id: modelId, runtime: "wasm" }));
     return;
   }
 
   if (action === "transcribe-audio") {
     try {
-      const transcriber = await ensurePipeline(requestId, modelId, String(payload?.preferredRuntime || "webgpu"));
+      await ensureRuntime(requestId, modelId, assetBaseUrl);
       const audioData = payload?.audioData;
+      const samplingRate = Number(payload?.samplingRate || TARGET_SAMPLE_RATE);
       if (!(audioData instanceof Float32Array)) {
         throw new Error("音频数据无效，必须是 Float32Array");
       }
 
-      self.postMessage(
-        buildProgressPayload(requestId, "transcribe-start", {
-          modelId,
-          runtime: activeRuntime || "wasm",
-          status_text: "正在本地识别英文字幕",
-        }),
-      );
-
-      const result = await transcriber(audioData, {
-        ...TRANSCRIBE_OPTIONS,
-        sampling_rate: Number(payload?.samplingRate || TARGET_SAMPLE_RATE),
+      postDebugLog("transcribe.start", {
+        modelId,
+        sampleCount: audioData.length,
+        samplingRate,
       });
-      const segments = normalizeSegments(result);
-      const previewText = segments.map((item) => item.text).join(" ").trim();
+      postProgress(requestId, "transcribe-start", {
+        modelId,
+        runtime: "wasm",
+        status_text: "正在本地识别字幕",
+      });
 
-      self.postMessage(
-        buildResultPayload(requestId, action, {
-          model_id: modelId,
-          runtime: activeRuntime || "wasm",
-          preview_text: previewText,
-          segments,
-          asr_payload: buildAsrPayload(segments),
-        }),
-      );
+      const stream = activeRecognizer.createStream();
+      try {
+        stream.acceptWaveform(samplingRate, audioData);
+        activeRecognizer.decode(stream);
+        const result = activeRecognizer.getResult(stream) || {};
+        const totalDurationMs = Math.max(1, Math.round((audioData.length / Math.max(1, samplingRate)) * 1000));
+        const wordItems = chooseWordItems(result, samplingRate, audioData.length);
+        const sentenceEntries = buildSentenceEntries(wordItems, result?.text, totalDurationMs);
+        const previewText = String(result?.text || composeText(sentenceEntries.map((item) => item.text).join(" ")) || "").trim();
+
+        self.postMessage(
+          buildResultPayload(requestId, action, {
+            model_id: modelId,
+            runtime: "wasm",
+            preview_text: previewText,
+            segments: sentenceEntries,
+            raw_result: result,
+            asr_payload: buildAsrPayload(result, wordItems, sentenceEntries),
+          }),
+        );
+      } finally {
+        stream.free();
+      }
     } catch (error) {
       self.postMessage(buildErrorPayload(requestId, action, error, { modelId }));
     }

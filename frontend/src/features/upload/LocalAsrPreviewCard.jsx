@@ -6,7 +6,11 @@ import { cn } from "../../lib/utils";
 import { getLocalAsrPreviewState, saveLocalAsrPreviewState } from "../../shared/media/localAsrPreviewStore";
 import { Button, ScrollArea } from "../../shared/ui";
 
-const LOCAL_ASR_MODEL_ID = "onnx-community/whisper-tiny.en_timestamped";
+const LOCAL_ASR_MODEL_ID = "local-sensevoice-small";
+const LOCAL_ASR_MODEL_LABEL = "SenseVoice Small";
+const DEFAULT_LOCAL_ASR_ASSET_BASE_URL =
+  "https://www.modelscope.cn/studios/csukuangfj/web-assembly-vad-asr-sherpa-onnx-zh-en-jp-ko-cantonese-sense-voice/resolve/master";
+const LOCAL_ASR_ASSET_BASE_URL = (import.meta.env.VITE_LOCAL_ASR_MODEL_BASE_URL || DEFAULT_LOCAL_ASR_ASSET_BASE_URL).trim().replace(/\/+$/, "");
 const LOCAL_ASR_FILE_ACCEPT = "audio/*,video/mp4,.mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.opus";
 const LOCAL_ASR_TARGET_SAMPLE_RATE = 16000;
 
@@ -130,17 +134,17 @@ function buildWorkerRequestId(sequence) {
 export function LocalAsrPreviewCard({ disabled = false }) {
   const localAsrSupport = useMemo(() => detectLocalAsrPreviewSupport(), []);
   const [localModelStatus, setLocalModelStatus] = useState(localAsrSupport.supported ? "idle" : "unsupported");
-  const [localModelStatusText, setLocalModelStatusText] = useState(localAsrSupport.supported ? "尚未下载本地 ASR 模型" : localAsrSupport.reason);
+  const [localModelStatusText, setLocalModelStatusText] = useState(localAsrSupport.supported ? "尚未下载本地 SenseVoice" : localAsrSupport.reason);
   const [localModelProgress, setLocalModelProgress] = useState(null);
   const [localModelRuntime, setLocalModelRuntime] = useState("");
   const [localModelError, setLocalModelError] = useState("");
   const [localPreviewFile, setLocalPreviewFile] = useState(null);
   const [localPreviewPhase, setLocalPreviewPhase] = useState("idle");
-  const [localPreviewStatusText, setLocalPreviewStatusText] = useState(localAsrSupport.supported ? "下载模型后可在本地试玩英文字幕预览" : localAsrSupport.reason);
+  const [localPreviewStatusText, setLocalPreviewStatusText] = useState(localAsrSupport.supported ? "下载模型后可在本地试玩字幕预览" : localAsrSupport.reason);
   const [localPreviewText, setLocalPreviewText] = useState("");
   const [localPreviewSegments, setLocalPreviewSegments] = useState([]);
   const [localPreviewRuntime, setLocalPreviewRuntime] = useState("");
-  const [localPreviewWarning, setLocalPreviewWarning] = useState(localAsrSupport.webgpuSupported ? "" : "当前浏览器不支持 WebGPU，试玩会自动回退到 WASM。");
+  const [localPreviewWarning, setLocalPreviewWarning] = useState("SenseVoice 本地模式当前使用 WASM 运行，首次下载会稍慢。");
   const localPreviewInputRef = useRef(null);
   const localAsrWorkerRef = useRef(null);
   const localAsrRequestSequenceRef = useRef(0);
@@ -182,7 +186,10 @@ export function LocalAsrPreviewCard({ disabled = false }) {
     const requestId = buildWorkerRequestId(localAsrRequestSequenceRef.current);
     return new Promise((resolve, reject) => {
       localAsrPendingRequestsRef.current.set(requestId, { resolve, reject, type });
-      localAsrWorkerRef.current.postMessage({ type, requestId, preferredRuntime: "webgpu", ...payload }, transfer);
+      localAsrWorkerRef.current.postMessage(
+        { type, requestId, modelId: LOCAL_ASR_MODEL_ID, preferredRuntime: "wasm", assetBaseUrl: LOCAL_ASR_ASSET_BASE_URL, ...payload },
+        transfer,
+      );
     });
   }
 
@@ -205,7 +212,7 @@ export function LocalAsrPreviewCard({ disabled = false }) {
         setLocalModelProgress(100);
         setLocalModelRuntime(runtime);
         if (runtime === "wasm") {
-          setLocalPreviewWarning("WebGPU 不可用，已自动回退到 WASM，试玩速度会更慢。");
+          setLocalPreviewWarning("SenseVoice 本地模式当前使用 WASM 运行，首次下载会稍慢。");
         }
         void persistLocalAsrState({ status: "ready", runtime, lastError: "" });
         return result;
@@ -228,7 +235,7 @@ export function LocalAsrPreviewCard({ disabled = false }) {
 
   useEffect(() => {
     if (!localAsrSupport.supported) return undefined;
-    const worker = new Worker(new URL("./localAsrPreviewWorker.js", import.meta.url), { type: "module" });
+    const worker = new Worker(new URL("./localAsrPreviewWorker.js", import.meta.url));
     localAsrWorkerRef.current = worker;
 
     const handleMessage = (event) => {
@@ -252,14 +259,14 @@ export function LocalAsrPreviewCard({ disabled = false }) {
           return;
         }
         if (payload.stage === "runtime-fallback") {
-          setLocalPreviewWarning("WebGPU 不可用，已自动回退到 WASM，试玩速度会更慢。");
-          setLocalModelStatusText(String(payload.status_text || "WebGPU 不可用，已自动回退到 WASM"));
+          setLocalPreviewWarning("SenseVoice 本地模式当前使用 WASM 运行，首次下载会稍慢。");
+          setLocalModelStatusText(String(payload.status_text || "SenseVoice 当前使用 WASM 运行"));
           setLocalModelRuntime(String(payload.runtime || "wasm"));
           return;
         }
         if (payload.stage === "transcribe-start") {
           setLocalPreviewPhase("transcribing");
-          setLocalPreviewStatusText(String(payload.status_text || "正在本地识别英文字幕"));
+          setLocalPreviewStatusText(String(payload.status_text || "正在本地识别字幕"));
           setLocalPreviewRuntime(String(payload.runtime || localPreviewRuntime || ""));
         }
         return;
@@ -328,7 +335,7 @@ export function LocalAsrPreviewCard({ disabled = false }) {
           setLocalModelProgress(100);
           setLocalModelStatusText(runtime === "wasm" ? "模型已缓存，上次使用 WASM 运行" : "模型已缓存，可直接试玩");
           if (runtime === "wasm") {
-            setLocalPreviewWarning("WebGPU 不可用，已自动回退到 WASM，试玩速度会更慢。");
+            setLocalPreviewWarning("SenseVoice 本地模式当前使用 WASM 运行，首次下载会稍慢。");
           }
           return;
         }
@@ -350,9 +357,9 @@ export function LocalAsrPreviewCard({ disabled = false }) {
   async function handleDownloadModel() {
     try {
       const result = await ensureModelReady();
-      setLocalPreviewStatusText("模型已就绪，选择本地音频或 MP4 文件即可试玩英文字幕预览");
+      setLocalPreviewStatusText("模型已就绪，选择本地音频或 MP4 文件即可试玩字幕预览");
       setLocalPreviewRuntime(String(result?.runtime || ""));
-      toast.success("本地 ASR 模型已准备好");
+      toast.success("本地 SenseVoice 已准备好");
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : String(error);
       setLocalPreviewPhase("error");
@@ -381,10 +388,10 @@ export function LocalAsrPreviewCard({ disabled = false }) {
       setLocalPreviewRuntime(String(readyResult?.runtime || ""));
       const audioData = await decodeFileForLocalAsr(file);
       if (!(audioData instanceof Float32Array) || audioData.length <= 0) {
-        throw new Error("本地音频解析结果为空，无法试玩英文字幕预览");
+        throw new Error("本地音频解析结果为空，无法试玩字幕预览");
       }
       setLocalPreviewPhase("transcribing");
-      setLocalPreviewStatusText("正在本地识别英文字幕");
+      setLocalPreviewStatusText("正在本地识别字幕");
       const result = await createWorkerRequest("transcribe-audio", { audioData, samplingRate: LOCAL_ASR_TARGET_SAMPLE_RATE, fileName: String(file.name || "") }, [audioData.buffer]);
       const segments = Array.isArray(result?.segments) ? result.segments : [];
       const previewText = String(result?.preview_text || "").trim();
@@ -393,13 +400,13 @@ export function LocalAsrPreviewCard({ disabled = false }) {
       setLocalPreviewText(previewText);
       setLocalPreviewRuntime(runtime);
       setLocalPreviewPhase("success");
-      setLocalPreviewStatusText(segments.length > 0 ? `本地识别完成，共 ${segments.length} 段英文字幕` : "本地识别完成，但未得到可用字幕");
+      setLocalPreviewStatusText(segments.length > 0 ? `本地识别完成，共 ${segments.length} 段字幕` : "本地识别完成，但未得到可用字幕");
       if (runtime === "wasm") {
-        setLocalPreviewWarning("当前使用 WASM 运行本地 ASR，后续若换到支持 WebGPU 的桌面浏览器，速度会更快。");
+        setLocalPreviewWarning("SenseVoice 本地模式当前使用 WASM 运行，首次下载会稍慢。");
       }
       await persistLocalAsrState({ status: "ready", runtime, lastError: "" });
       if (segments.length > 0) {
-        toast.success("本地英文字幕预览已生成");
+        toast.success("本地字幕预览已生成");
       } else {
         toast.warning("识别完成，但没有得到可用字幕段落");
       }
@@ -429,7 +436,7 @@ export function LocalAsrPreviewCard({ disabled = false }) {
           <div>
             <p className="text-sm font-semibold">本地 ASR 试玩</p>
             <p className="text-xs text-muted-foreground">
-              下载 {LOCAL_ASR_MODEL_ID} 后，可在桌面 {localAsrSupport.browserName || "Chrome / Edge"} 本地跑英文字幕预览，不上传媒体文件。
+              下载 {LOCAL_ASR_MODEL_LABEL} 后，可在桌面 {localAsrSupport.browserName || "Chrome / Edge"} 本地跑字幕预览，不上传媒体文件。
             </p>
           </div>
           <span
@@ -502,7 +509,7 @@ export function LocalAsrPreviewCard({ disabled = false }) {
       {localPreviewHasResult ? (
         <div className="space-y-3 rounded-xl border bg-background/80 p-3">
           <div className="space-y-1">
-            <p className="text-sm font-semibold">英文字幕预览</p>
+            <p className="text-sm font-semibold">字幕预览</p>
             <p className="text-xs text-muted-foreground">{localPreviewText || "本次预览未生成摘要文本"}</p>
           </div>
           <ScrollArea className="h-72 rounded-lg border bg-muted/20">

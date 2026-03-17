@@ -61,15 +61,9 @@ DEFAULT_MT_COST_PER_1K_TOKENS_CENTS = 15
 MT_FLASH_MODEL = "qwen-mt-flash"
 MT_MODEL_PREFIX = "qwen-mt-"
 FAST_CLOUD_MODEL = "qwen3-asr-flash-filetrans"
-LOCAL_WHISPER_TINY_MODEL = "local-whisper-tiny-en"
-LOCAL_WHISPER_BASE_MODEL = "local-whisper-base-en"
-LOCAL_WHISPER_SMALL_MODEL = "local-whisper-small-en"
-LOCAL_WHISPER_MEDIUM_MODEL = "local-whisper-medium-en"
+LOCAL_SENSEVOICE_SMALL_MODEL = "local-sensevoice-small"
 LOCAL_BROWSER_ASR_MODELS: tuple[str, ...] = (
-    LOCAL_WHISPER_TINY_MODEL,
-    LOCAL_WHISPER_BASE_MODEL,
-    LOCAL_WHISPER_SMALL_MODEL,
-    LOCAL_WHISPER_MEDIUM_MODEL,
+    LOCAL_SENSEVOICE_SMALL_MODEL,
 )
 
 DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
@@ -85,40 +79,7 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
         "max_concurrency": 4,
     },
     {
-        "model_name": LOCAL_WHISPER_TINY_MODEL,
-        "points_per_minute": 130,
-        "points_per_1k_tokens": 0,
-        "cost_per_minute_cents": 0,
-        "billing_unit": "minute",
-        "parallel_enabled": False,
-        "parallel_threshold_seconds": 600,
-        "segment_seconds": 300,
-        "max_concurrency": 1,
-    },
-    {
-        "model_name": LOCAL_WHISPER_BASE_MODEL,
-        "points_per_minute": 130,
-        "points_per_1k_tokens": 0,
-        "cost_per_minute_cents": 0,
-        "billing_unit": "minute",
-        "parallel_enabled": False,
-        "parallel_threshold_seconds": 600,
-        "segment_seconds": 300,
-        "max_concurrency": 1,
-    },
-    {
-        "model_name": LOCAL_WHISPER_SMALL_MODEL,
-        "points_per_minute": 130,
-        "points_per_1k_tokens": 0,
-        "cost_per_minute_cents": 0,
-        "billing_unit": "minute",
-        "parallel_enabled": False,
-        "parallel_threshold_seconds": 600,
-        "segment_seconds": 300,
-        "max_concurrency": 1,
-    },
-    {
-        "model_name": LOCAL_WHISPER_MEDIUM_MODEL,
+        "model_name": LOCAL_SENSEVOICE_SMALL_MODEL,
         "points_per_minute": 130,
         "points_per_1k_tokens": 0,
         "cost_per_minute_cents": 0,
