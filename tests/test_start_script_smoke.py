@@ -10,9 +10,12 @@ from pathlib import Path
 
 import pytest
 import requests
-from sqlalchemy import inspect
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+from sqlalchemy import inspect, text
 
 from app.db import APP_SCHEMA, BUSINESS_TABLES, create_database_engine
+from app.db.migration_bootstrap import _repair_redundant_linear_version_rows
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -77,6 +80,15 @@ def _run_manual_migration(database_url: str) -> None:
     )
     if result.returncode != 0:
         raise AssertionError(f"manual migration failed with {result.returncode}\n{result.stdout}")
+
+
+def _latest_linear_revision_chain(*, limit: int) -> list[str]:
+    script = ScriptDirectory.from_config(Config(str(REPO_ROOT / "alembic.ini")))
+    heads = tuple(script.get_heads())
+    assert len(heads) == 1
+    revisions = [str(item.revision) for item in script.walk_revisions(base="base", head=heads[0]) if item.revision]
+    assert len(revisions) >= limit
+    return revisions[:limit]
 
 
 def _start_process(env: dict[str, str]) -> subprocess.Popen[str]:
@@ -202,3 +214,60 @@ def test_start_script_runs_auto_migration_before_boot(tmp_path):
     if process.returncode not in (0, -15):
         raise AssertionError(f"start script exited with {process.returncode}\n{logs}")
     assert "[DEBUG] boot.migrate success=true" in logs
+
+
+def test_repair_redundant_linear_version_rows_collapses_head_and_ancestors(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'redundant_versions.db').as_posix()}"
+    revisions = _latest_linear_revision_chain(limit=3)
+    engine = create_database_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+            for version_num in reversed(revisions):
+                connection.execute(
+                    text("INSERT INTO alembic_version (version_num) VALUES (:version_num)"),
+                    {"version_num": version_num},
+                )
+
+        with engine.connect() as connection:
+            repaired = _repair_redundant_linear_version_rows(
+                connection,
+                database_url=database_url,
+                repo_root=REPO_ROOT,
+                alembic_config="alembic.ini",
+            )
+            rows = connection.execute(text("SELECT version_num FROM alembic_version")).scalars().all()
+    finally:
+        engine.dispose()
+
+    assert repaired is True
+    assert rows == [revisions[0]]
+
+
+def test_repair_redundant_linear_version_rows_skips_when_head_missing(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'ancestor_only_versions.db').as_posix()}"
+    revisions = _latest_linear_revision_chain(limit=3)
+    ancestor_rows = list(reversed(revisions[1:]))
+    engine = create_database_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+            for version_num in ancestor_rows:
+                connection.execute(
+                    text("INSERT INTO alembic_version (version_num) VALUES (:version_num)"),
+                    {"version_num": version_num},
+                )
+
+        with engine.connect() as connection:
+            repaired = _repair_redundant_linear_version_rows(
+                connection,
+                database_url=database_url,
+                repo_root=REPO_ROOT,
+                alembic_config="alembic.ini",
+            )
+            rows = connection.execute(text("SELECT version_num FROM alembic_version ORDER BY version_num")).scalars().all()
+    finally:
+        engine.dispose()
+
+    assert repaired is False
+    assert rows == sorted(ancestor_rows)

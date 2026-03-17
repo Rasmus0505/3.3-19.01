@@ -1143,7 +1143,6 @@ def test_probe_database_ready_reports_missing_critical_columns(monkeypatch):
                 {"name": "updated_by_user_id"},
             ]
 
-    monkeypatch.setattr(app_main, "init_db", lambda: None)
     monkeypatch.setattr(app_main, "schema_name_for_url", lambda _url: "app")
     monkeypatch.setattr(app_main, "engine", DummyEngine())
     monkeypatch.setattr(app_main, "inspect", lambda _conn: DummyInspector())
@@ -1194,7 +1193,6 @@ def test_probe_database_ready_reports_missing_subtitle_settings_table(monkeypatc
                 {"name": "updated_by_user_id"},
             ]
 
-    monkeypatch.setattr(app_main, "init_db", lambda: None)
     monkeypatch.setattr(app_main, "schema_name_for_url", lambda _url: "app")
     monkeypatch.setattr(app_main, "engine", DummyEngine())
     monkeypatch.setattr(app_main, "inspect", lambda _conn: DummyInspector())
@@ -1203,6 +1201,73 @@ def test_probe_database_ready_reports_missing_subtitle_settings_table(monkeypatc
     ready, error = app_main._probe_database_ready()
     assert ready is False
     assert error == "missing business tables: subtitle_settings"
+
+
+def test_probe_database_ready_reports_missing_learning_stats_table(monkeypatch):
+    from app import main as app_main
+
+    class DummyConnection:
+        def execute(self, _sql):
+            return None
+
+    class DummyEngineConnection:
+        def __enter__(self):
+            return DummyConnection()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class DummyEngine:
+        def connect(self):
+            return DummyEngineConnection()
+
+    class DummyInspector:
+        def has_table(self, table_name, schema=None):
+            return table_name in {"billing_model_rates", "subtitle_settings"}
+
+        def get_columns(self, table_name, schema=None):
+            if table_name == "billing_model_rates":
+                return [
+                    {"name": "model_name"},
+                    {"name": "points_per_minute"},
+                    {"name": "points_per_1k_tokens"},
+                    {"name": "billing_unit"},
+                    {"name": "is_active"},
+                    {"name": "parallel_enabled"},
+                    {"name": "parallel_threshold_seconds"},
+                    {"name": "segment_seconds"},
+                    {"name": "max_concurrency"},
+                    {"name": "updated_at"},
+                    {"name": "updated_by_user_id"},
+                ]
+            if table_name == "subtitle_settings":
+                return [
+                    {"name": "id"},
+                    {"name": "semantic_split_default_enabled"},
+                    {"name": "default_asr_model"},
+                    {"name": "subtitle_split_enabled"},
+                    {"name": "subtitle_split_target_words"},
+                    {"name": "subtitle_split_max_words"},
+                    {"name": "semantic_split_max_words_threshold"},
+                    {"name": "semantic_split_timeout_seconds"},
+                    {"name": "translation_batch_max_chars"},
+                    {"name": "updated_at"},
+                    {"name": "updated_by_user_id"},
+                ]
+            return []
+
+    monkeypatch.setattr(app_main, "schema_name_for_url", lambda _url: "app")
+    monkeypatch.setattr(app_main, "engine", DummyEngine())
+    monkeypatch.setattr(app_main, "inspect", lambda _conn: DummyInspector())
+    monkeypatch.setattr(
+        app_main,
+        "BUSINESS_TABLES",
+        ("billing_model_rates", "subtitle_settings", "user_learning_daily_stats"),
+    )
+
+    ready, error = app_main._probe_database_ready()
+    assert ready is False
+    assert error == "missing business tables: user_learning_daily_stats"
 
 
 def test_transcribe_audio_requires_dashscope_api_key(monkeypatch, tmp_path):
@@ -1685,11 +1750,10 @@ def test_subtitle_settings_endpoints_self_heal_missing_columns(test_client):
     monkeypatch.setattr(app_main, "engine", probe_engine)
     monkeypatch.setattr(app_main, "DATABASE_URL", str(probe_engine.url))
     monkeypatch.setattr(app_main, "SessionLocal", session_factory)
-    monkeypatch.setattr(app_main, "init_db", lambda: None)
 
     ready_resp = client.get("/health/ready")
-    assert ready_resp.status_code == 200
-    assert ready_resp.json()["ok"] is True
+    assert ready_resp.status_code == 503
+    assert ready_resp.json()["ok"] is False
 
     public_resp = client.get("/api/billing/rates")
     assert public_resp.status_code == 200
@@ -1701,6 +1765,10 @@ def test_subtitle_settings_endpoints_self_heal_missing_columns(test_client):
     history_resp = client.get("/api/admin/subtitle-settings/history")
     assert history_resp.status_code == 200
     assert history_resp.json()["ok"] is True
+
+    ready_after_repair = client.get("/health/ready")
+    assert ready_after_repair.status_code == 200
+    assert ready_after_repair.json()["ok"] is True
 
     verify = session_factory()
     try:
