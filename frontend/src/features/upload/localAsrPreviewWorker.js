@@ -1,7 +1,6 @@
 const TARGET_SAMPLE_RATE = 16000;
 const DEFAULT_MODEL_ID = "local-sensevoice-small";
-const DEFAULT_ASSET_BASE_URL =
-  "https://www.modelscope.cn/studios/csukuangfj/web-assembly-vad-asr-sherpa-onnx-zh-en-jp-ko-cantonese-sense-voice/resolve/master";
+const DEFAULT_ASSET_BASE_URL = "/static/local-asr-assets";
 
 const RUNTIME_FILES = {
   asrScript: "sherpa-onnx-asr.js",
