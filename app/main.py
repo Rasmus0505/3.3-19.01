@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
-from app.api.routers import admin, admin_console, auth, billing, lessons, media, practice, transcribe, wallet
+from app.api.routers import admin, admin_console, auth, billing, lessons, local_asr_assets, media, practice, transcribe, wallet
 from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, DASHSCOPE_API_KEY, SERVICE_NAME, STATIC_DIR
 from app.core.logging import setup_logging
 from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, schema_name_for_url
@@ -294,6 +294,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(lessons.router)
     app.include_router(practice.router)
     app.include_router(media.router)
+    app.include_router(local_asr_assets.router)
     return app
 
 

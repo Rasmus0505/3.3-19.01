@@ -17,6 +17,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps.auth import get_admin_user
+from app.api.routers import local_asr_assets as local_asr_assets_router
 from app.db import Base, create_database_engine, get_db
 from app.main import create_app
 from app.models import BillingModelRate, Lesson, LessonGenerationTask, LessonProgress, LessonSentence, MediaAsset, SubtitleSetting, TranslationRequestLog, User, WalletLedger
@@ -1500,6 +1501,22 @@ def test_wallet_and_admin_endpoints(test_client):
         assert verify_clean.get(BillingModelRate, "qwen-mt-custom") is None
     finally:
         verify_clean.close()
+
+
+def test_local_asr_asset_route_serves_cached_asset(test_client, tmp_path, monkeypatch):
+    client, _, _ = test_client
+    cache_dir = tmp_path / "local_asr_assets"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    asset_path = cache_dir / "sherpa-onnx-asr.js"
+    asset_path.write_text("console.log('sensevoice');", encoding="utf-8")
+
+    monkeypatch.setattr(local_asr_assets_router, "LOCAL_ASR_CACHE_DIR", cache_dir)
+    monkeypatch.setattr(local_asr_assets_router, "_ensure_asset_cache_populated", lambda: None)
+
+    resp = client.get("/api/local-asr-assets/sherpa-onnx-asr.js")
+    assert resp.status_code == 200
+    assert "console.log('sensevoice');" in resp.text
+    assert resp.headers["content-type"].startswith("application/javascript")
 
 
 def test_create_local_asr_lesson_task(test_client, monkeypatch, tmp_path):

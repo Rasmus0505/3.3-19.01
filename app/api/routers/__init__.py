@@ -1,3 +1,3 @@
-from app.api.routers import admin, auth, billing, lessons, media, practice, transcribe, wallet
+from app.api.routers import admin, auth, billing, lessons, local_asr_assets, media, practice, transcribe, wallet
 
-__all__ = ["auth", "wallet", "billing", "admin", "lessons", "practice", "media", "transcribe"]
+__all__ = ["auth", "wallet", "billing", "admin", "lessons", "practice", "media", "transcribe", "local_asr_assets"]
