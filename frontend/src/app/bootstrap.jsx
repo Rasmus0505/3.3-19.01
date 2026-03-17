@@ -10,6 +10,7 @@ export function BootstrapApp() {
       <Routes>
         <Route path="/" element={<LearningPage />} />
         <Route path="/getting-started" element={<LearningPage />} />
+        <Route path="/stats" element={<LearningPage />} />
         <Route path="/upload" element={<LearningPage />} />
         <Route path="/redeem" element={<LearningPage />} />
         <Route path="/help/getting-started" element={<Navigate to="/getting-started" replace />} />
