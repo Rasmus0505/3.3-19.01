@@ -31,12 +31,14 @@ from app.schemas import (
     LessonSubtitleVariantRequest,
     LessonSubtitleVariantResponse,
     LessonTaskCreateResponse,
+    LocalAsrLessonTaskCreateRequest,
     LessonTaskResumeResponse,
     LessonTaskResponse,
 )
 from app.services.asr_dashscope import AsrError, SUPPORTED_MODELS
-from app.services.billing_service import BillingError, get_default_asr_model
+from app.services.billing_service import BillingError, LOCAL_BROWSER_ASR_MODELS, get_default_asr_model
 from app.services.lesson_command_service import (
+    create_lesson_task_from_local_asr,
     create_lesson_task_from_upload,
     delete_lesson_for_user,
     invalidate_lesson_related_queries,
@@ -189,6 +191,43 @@ async def create_lesson_task(
         return error_response(500, "INTERNAL_ERROR", "任务创建失败", str(exc)[:1200])
     finally:
         await video_file.close()
+
+
+@router.post(
+    "/tasks/local-asr",
+    response_model=LessonTaskCreateResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+)
+def create_local_asr_lesson_task(
+    payload: LocalAsrLessonTaskCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    selected_model = str(payload.asr_model or "").strip()
+    if selected_model not in set(LOCAL_BROWSER_ASR_MODELS):
+        return error_response(
+            400,
+            "INVALID_LOCAL_ASR_MODEL",
+            "不支持的本地模型",
+            {"supported_models": list(LOCAL_BROWSER_ASR_MODELS), "input_model": selected_model},
+        )
+    try:
+        task_payload = create_lesson_task_from_local_asr(
+            source_filename=str(payload.source_filename or "").strip(),
+            source_duration_ms=int(payload.source_duration_ms or 0),
+            asr_payload=dict(payload.asr_payload or {}),
+            owner_user_id=current_user.id,
+            asr_model=selected_model,
+            semantic_split_enabled=False,
+            db=db,
+        )
+        return LessonTaskCreateResponse(ok=True, task_id=str(task_payload["task_id"]))
+    except LessonTaskStorageNotReadyError as exc:
+        return error_response(503, exc.code, exc.message, exc.detail)
+    except BillingError as exc:
+        return map_billing_error(exc)
+    except Exception as exc:
+        return error_response(500, "INTERNAL_ERROR", "本地 ASR 任务创建失败", str(exc)[:1200])
 
 
 @router.get(

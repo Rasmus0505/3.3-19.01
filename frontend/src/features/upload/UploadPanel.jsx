@@ -4,14 +4,47 @@ import { toast } from "sonner";
 
 import { cn } from "../../lib/utils";
 import { api, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
+import { formatMoneyCents, formatMoneyPerMinute } from "../../shared/lib/money";
+import { deleteLocalAsrPreviewState, getLocalAsrPreviewState, listLocalAsrPreviewStates, saveLocalAsrPreviewState } from "../../shared/media/localAsrPreviewStore";
 import { extractMediaCoverPreview, getLessonMediaPreview, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import { clearActiveGenerationTask, getActiveGenerationTask, saveActiveGenerationTask } from "../../shared/media/localTaskStore";
-import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, MediaCover, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
+import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, MediaCover, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
 import { useAppStore } from "../../store";
-import { LocalAsrPreviewCard } from "./LocalAsrPreviewCard";
 
 const QWEN_MODEL = "qwen3-asr-flash-filetrans";
 const UPLOAD_PROGRESS_PERSIST_INTERVAL_MS = 800;
+const LOCAL_ASR_TARGET_SAMPLE_RATE = 16000;
+const LOCAL_ASR_FILE_ACCEPT = "audio/*,video/mp4,.mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.opus";
+const LOCAL_MODEL_OPTIONS = [
+  {
+    key: "local-whisper-tiny-en",
+    workerModelId: "onnx-community/whisper-tiny.en_timestamped",
+    title: "Tiny",
+    subtitle: "最快，适合先试跑",
+    sizeEstimateMb: { webgpu: 150, wasm: 45 },
+  },
+  {
+    key: "local-whisper-base-en",
+    workerModelId: "onnx-community/whisper-base.en_timestamped",
+    title: "Base",
+    subtitle: "推荐默认档，速度和准确率更平衡",
+    sizeEstimateMb: { webgpu: 290, wasm: 80 },
+  },
+  {
+    key: "local-whisper-small-en",
+    workerModelId: "onnx-community/whisper-small.en_timestamped",
+    title: "Small",
+    subtitle: "更准，但下载和首跑更重",
+    sizeEstimateMb: { webgpu: 970, wasm: 250 },
+  },
+  {
+    key: "local-whisper-medium-en",
+    workerModelId: "onnx-community/whisper-medium.en_timestamped",
+    title: "Medium",
+    subtitle: "最重但更稳，适合高配置浏览器",
+    sizeEstimateMb: { webgpu: 3150, wasm: 1000 },
+  },
+];
 const DISPLAY_STAGES = [
   { key: "convert_audio", label: "转换" },
   { key: "asr_transcribe", label: "识别" },
@@ -32,6 +65,132 @@ function calculatePointsBySeconds(seconds, pointsPerMinute) {
   return Math.ceil((Math.ceil(seconds) * pointsPerMinute) / 60);
 }
 
+function getLocalModelMeta(modelKey) {
+  return LOCAL_MODEL_OPTIONS.find((item) => item.key === modelKey) || LOCAL_MODEL_OPTIONS[1];
+}
+
+function detectLocalAsrSupport() {
+  if (typeof window === "undefined" || typeof navigator === "undefined") {
+    return { supported: false, reason: "当前环境不支持浏览器本地 ASR", browserName: "", webgpuSupported: false };
+  }
+  const userAgent = String(navigator.userAgent || "");
+  const isMobile = Boolean(navigator.userAgentData?.mobile) || /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent);
+  const isEdge = /\bEdg\//.test(userAgent);
+  const isChrome = /\bChrome\//.test(userAgent) && !/\bEdg\//.test(userAgent) && !/\bOPR\//.test(userAgent);
+  const browserName = isEdge ? "Edge" : isChrome ? "Chrome" : "";
+  const webgpuSupported = typeof navigator.gpu !== "undefined";
+  if (isMobile) {
+    return { supported: false, reason: "均衡模式仅支持桌面端 Chrome / Edge", browserName, webgpuSupported };
+  }
+  if (!browserName) {
+    return { supported: false, reason: "均衡模式当前仅支持桌面 Chrome / Edge", browserName: "", webgpuSupported };
+  }
+  return { supported: true, reason: "", browserName, webgpuSupported };
+}
+
+function formatLocalModelEstimate(meta, support) {
+  const preferredRuntime = support.webgpuSupported ? "webgpu" : "wasm";
+  const amountMb = Number(meta?.sizeEstimateMb?.[preferredRuntime] || 0);
+  if (!amountMb) return "预计大小待确认";
+  return `${support.webgpuSupported ? "WebGPU" : "WASM"} 约 ${amountMb >= 1024 ? `${(amountMb / 1024).toFixed(1)}GB` : `${amountMb}MB`}`;
+}
+
+function getLocalModelStatusLabel(status) {
+  if (status === "loading") return "下载中";
+  if (status === "ready" || status === "cached") return "已下载";
+  if (status === "removing") return "卸载中";
+  if (status === "error") return "异常";
+  if (status === "unsupported") return "不可用";
+  return "未下载";
+}
+
+function mixAudioBufferToMono(audioBuffer) {
+  const channelCount = Math.max(1, Number(audioBuffer?.numberOfChannels || 1));
+  const sampleCount = Math.max(0, Number(audioBuffer?.length || 0));
+  if (sampleCount <= 0) return new Float32Array(0);
+  if (channelCount === 1) {
+    return new Float32Array(audioBuffer.getChannelData(0));
+  }
+  const mixed = new Float32Array(sampleCount);
+  for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
+    const channelData = audioBuffer.getChannelData(channelIndex);
+    for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
+      mixed[sampleIndex] += channelData[sampleIndex] / channelCount;
+    }
+  }
+  return mixed;
+}
+
+function resampleFloat32(samples, sourceSampleRate, targetSampleRate) {
+  const safeSourceSampleRate = Math.max(1, Number(sourceSampleRate || 0));
+  const safeTargetSampleRate = Math.max(1, Number(targetSampleRate || 0));
+  if (!(samples instanceof Float32Array)) return new Float32Array(0);
+  if (!samples.length || safeSourceSampleRate === safeTargetSampleRate) {
+    return new Float32Array(samples);
+  }
+  const ratio = safeSourceSampleRate / safeTargetSampleRate;
+  const outputLength = Math.max(1, Math.round(samples.length / ratio));
+  const output = new Float32Array(outputLength);
+  for (let index = 0; index < outputLength; index += 1) {
+    const position = index * ratio;
+    const leftIndex = Math.floor(position);
+    const rightIndex = Math.min(samples.length - 1, leftIndex + 1);
+    const interpolation = position - leftIndex;
+    output[index] = samples[leftIndex] * (1 - interpolation) + samples[rightIndex] * interpolation;
+  }
+  return output;
+}
+
+async function decodeFileForLocalAsr(file) {
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) {
+    throw new Error("当前浏览器不支持 AudioContext，无法使用均衡模式");
+  }
+  const audioContext = new AudioContextCtor();
+  try {
+    const fileBytes = await file.arrayBuffer();
+    let audioBuffer;
+    try {
+      audioBuffer = await audioContext.decodeAudioData(fileBytes.slice(0));
+    } catch (error) {
+      const isMp4 = String(file?.type || "").toLowerCase() === "video/mp4" || /\.mp4$/i.test(String(file?.name || ""));
+      if (isMp4) {
+        throw new Error("当前 MP4 音轨无法本地解码，请改传音频或切回高速模式。");
+      }
+      throw new Error(`本地解析音频失败: ${error instanceof Error && error.message ? error.message : String(error)}`);
+    }
+    const mono = mixAudioBufferToMono(audioBuffer);
+    return resampleFloat32(mono, audioBuffer.sampleRate, LOCAL_ASR_TARGET_SAMPLE_RATE);
+  } finally {
+    try {
+      await audioContext.close();
+    } catch (_) {
+      // ignore
+    }
+  }
+}
+
+function buildWorkerRequestId(sequence) {
+  return `upload-local-asr-${Date.now()}-${sequence}`;
+}
+
+async function clearLocalModelCaches(modelMeta) {
+  if (typeof caches === "undefined") return;
+  const patterns = [modelMeta.workerModelId, encodeURIComponent(modelMeta.workerModelId), ...modelMeta.workerModelId.split("/")];
+  const cacheNames = await caches.keys();
+  await Promise.all(
+    cacheNames.map(async (cacheName) => {
+      const cache = await caches.open(cacheName);
+      const requests = await cache.keys();
+      await Promise.all(
+        requests
+          .filter((request) => patterns.some((pattern) => request.url.includes(pattern)))
+          .map((request) => cache.delete(request)),
+      );
+    }),
+  );
+}
+
 function getStageItems(taskSnapshot) {
   const map = Object.fromEntries((Array.isArray(taskSnapshot?.stages) ? taskSnapshot.stages : []).map((item) => [item.key, item.status || "pending"]));
   return DISPLAY_STAGES.map((item) => ({ ...item, status: map[item.key] || "pending" }));
@@ -45,6 +204,7 @@ function getCurrentTaskStageKey(taskSnapshot) {
 function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
   if (phase === "uploading") return `上传素材 ${clampPercent(uploadPercent)}%`;
   if (phase === "upload_paused") return `上传素材 ${clampPercent(uploadPercent)}%`;
+  if (phase === "local_transcribing") return "均衡模式正在本地识别英文字幕";
   if (!taskSnapshot) return phase === "success" ? "生成课程完成" : phase === "error" ? "生成课程失败" : "等待上传";
   if (phase === "success") return "生成课程完成";
   const counters = taskSnapshot.counters || {};
@@ -67,6 +227,7 @@ function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
 
 function getVisualProgress(phase, uploadPercent, taskSnapshot) {
   if (phase === "success") return 100;
+  if (phase === "local_transcribing") return 28;
   if (phase === "processing" || taskSnapshot) return Math.round(42 + clampPercent(taskSnapshot?.overall_percent) * 0.58);
   if (phase === "uploading" || phase === "upload_paused") return Math.round(Math.max(3, Math.min(42, clampPercent(uploadPercent) * 0.42)));
   return 0;
@@ -95,8 +256,10 @@ function buildTaskState({ phase, taskId, taskSnapshot, uploadPercent, status }) 
   };
 }
 
-export function UploadPanel({ accessToken, isActivePanel = true, onCreated, balancePoints, billingRates, subtitleSettings, onWalletChanged, onTaskStateChange, onNavigateToLesson }) {
+export function UploadPanel({ accessToken, isActivePanel = true, onCreated, balanceAmountCents = 0, balancePoints, billingRates, subtitleSettings, onWalletChanged, onTaskStateChange, onNavigateToLesson }) {
   const currentUser = useAppStore((state) => state.currentUser);
+  const normalizedBalanceAmountCents = Number(balanceAmountCents ?? balancePoints ?? 0);
+  const localAsrSupport = useMemo(() => detectLocalAsrSupport(), []);
   const [file, setFile] = useState(null);
   const [taskId, setTaskId] = useState("");
   const [loading, setLoading] = useState(false);
@@ -112,29 +275,82 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [uploadPercent, setUploadPercent] = useState(0);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [bindingCompleted, setBindingCompleted] = useState(false);
+  const [mode, setMode] = useState("fast");
+  const [selectedBalancedModel, setSelectedBalancedModel] = useState(() => {
+    const configuredModel = String(subtitleSettings?.default_asr_model || "").trim();
+    return LOCAL_MODEL_OPTIONS.some((item) => item.key === configuredModel) ? configuredModel : LOCAL_MODEL_OPTIONS[1].key;
+  });
+  const [localModelStateMap, setLocalModelStateMap] = useState({});
+  const [localBusyModelKey, setLocalBusyModelKey] = useState("");
+  const [localBusyText, setLocalBusyText] = useState("");
   const pollingAbortRef = useRef(false);
   const pollTokenRef = useRef(0);
   const uploadAbortRef = useRef(null);
   const uploadPersistRef = useRef({ timer: null, lastSavedAt: 0, lastSavedPercent: -1, latestPercent: 0 });
   const fileInputRef = useRef(null);
   const previousPanelActiveRef = useRef(Boolean(isActivePanel));
+  const localAsrWorkerRef = useRef(null);
+  const localAsrRequestSequenceRef = useRef(0);
+  const localAsrPendingRequestsRef = useRef(new Map());
   const ownerUserId = Number(currentUser?.id || 0);
 
-  const selectedAsrModel = useMemo(() => {
+  const selectedFastModel = useMemo(() => {
     const configuredModel = String(subtitleSettings?.default_asr_model || "").trim();
-    if (configuredModel && getRateByModel(billingRates, configuredModel)) {
-      return configuredModel;
-    }
-    return configuredModel || QWEN_MODEL;
+    if (configuredModel === QWEN_MODEL && getRateByModel(billingRates, configuredModel)) return configuredModel;
+    return getRateByModel(billingRates, QWEN_MODEL)?.model_name || QWEN_MODEL;
   }, [billingRates, subtitleSettings?.default_asr_model]);
-  const selectedRate = getRateByModel(billingRates, selectedAsrModel) || getRateByModel(billingRates, QWEN_MODEL);
-  const estimatedPoints = selectedRate ? calculatePointsBySeconds(durationSec || 0, selectedRate.points_per_minute) : 0;
-  const likelyInsufficient = Number.isFinite(balancePoints) && estimatedPoints > 0 && balancePoints < estimatedPoints;
+  const selectedAsrModel = mode === "balanced" ? selectedBalancedModel : selectedFastModel;
+  const selectedRate = getRateByModel(billingRates, selectedAsrModel) || getRateByModel(billingRates, selectedFastModel);
+  const estimatedChargeCents = selectedRate ? calculatePointsBySeconds(durationSec || 0, selectedRate.price_per_minute_cents) : 0;
+  const likelyInsufficient = Number.isFinite(normalizedBalanceAmountCents) && estimatedChargeCents > 0 && normalizedBalanceAmountCents < estimatedChargeCents;
+  const selectedLocalModelMeta = getLocalModelMeta(selectedBalancedModel);
   const stageItems = getStageItems(taskSnapshot);
   const progressPercent = getVisualProgress(phase, uploadPercent, taskSnapshot);
   const showProgress = loading || phase === "success" || phase === "error" || phase === "upload_paused" || Boolean(taskSnapshot);
   const canRetryWithoutUpload = Boolean(taskId);
   const hasLocalFile = Boolean(file);
+  const localTranscribing = phase === "local_transcribing";
+  const localModeBusy = Boolean(localBusyModelKey) || localTranscribing;
+
+  function updateLocalModelState(modelKey, patch) {
+    setLocalModelStateMap((prev) => ({
+      ...prev,
+      [modelKey]: {
+        ...(prev[modelKey] || {}),
+        ...(patch || {}),
+      },
+    }));
+  }
+
+  function rejectPendingLocalRequests(message) {
+    const error = new Error(message || "本地 ASR Worker 不可用");
+    for (const [, request] of localAsrPendingRequestsRef.current.entries()) {
+      request.reject(error);
+    }
+    localAsrPendingRequestsRef.current.clear();
+  }
+
+  function createWorkerRequest(type, modelKey, payload = {}, transfer = []) {
+    const modelMeta = getLocalModelMeta(modelKey);
+    if (!localAsrWorkerRef.current || !modelMeta) {
+      return Promise.reject(new Error("本地 ASR Worker 未初始化"));
+    }
+    localAsrRequestSequenceRef.current += 1;
+    const requestId = buildWorkerRequestId(localAsrRequestSequenceRef.current);
+    return new Promise((resolve, reject) => {
+      localAsrPendingRequestsRef.current.set(requestId, { resolve, reject, type, modelKey });
+      localAsrWorkerRef.current.postMessage(
+        {
+          type,
+          requestId,
+          modelId: modelMeta.workerModelId,
+          preferredRuntime: localAsrSupport.webgpuSupported ? "webgpu" : "wasm",
+          ...payload,
+        },
+        transfer,
+      );
+    });
+  }
 
   function clearUploadPersistTimer() {
     if (uploadPersistRef.current.timer) {
@@ -169,7 +385,133 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     stopPollingSession();
     clearUploadPersistTimer();
     uploadAbortRef.current?.abort();
+    rejectPendingLocalRequests("本地 ASR Worker 已关闭");
+    localAsrWorkerRef.current?.terminate?.();
   }, []);
+
+  useEffect(() => {
+    if (!localAsrSupport.supported) {
+      const unsupportedMap = Object.fromEntries(
+        LOCAL_MODEL_OPTIONS.map((item) => [
+          item.key,
+          {
+            status: "unsupported",
+            runtime: "",
+            progress: null,
+            error: localAsrSupport.reason,
+          },
+        ]),
+      );
+      setLocalModelStateMap(unsupportedMap);
+      return undefined;
+    }
+    const worker = new Worker(new URL("./localAsrPreviewWorker.js", import.meta.url), { type: "module" });
+    localAsrWorkerRef.current = worker;
+
+    const handleMessage = (event) => {
+      const payload = event?.data || {};
+      const requestId = String(payload?.requestId || "");
+      const pending = requestId ? localAsrPendingRequestsRef.current.get(requestId) : null;
+      const modelKey = pending?.modelKey || LOCAL_MODEL_OPTIONS.find((item) => item.workerModelId === String(payload?.modelId || payload?.model_id || ""))?.key || "";
+      if (payload?.type === "progress" && modelKey) {
+        if (payload.stage === "model-load-start") {
+          updateLocalModelState(modelKey, { status: "loading", runtime: String(payload.runtime || ""), progress: null, error: "" });
+          setLocalBusyModelKey(modelKey);
+          setLocalBusyText(String(payload.status_text || "正在下载模型"));
+          return;
+        }
+        if (payload.stage === "model-progress") {
+          updateLocalModelState(modelKey, {
+            status: "loading",
+            runtime: String(payload.runtime || ""),
+            progress: Number.isFinite(Number(payload.progress)) ? clampPercent(payload.progress) : null,
+            error: "",
+          });
+          setLocalBusyModelKey(modelKey);
+          setLocalBusyText(String(payload.status || "正在下载模型"));
+          return;
+        }
+        if (payload.stage === "runtime-fallback") {
+          updateLocalModelState(modelKey, { runtime: String(payload.runtime || "wasm") });
+          setLocalBusyText(String(payload.status_text || "已回退到 WASM"));
+          return;
+        }
+      }
+      if (payload?.type === "result" && pending) {
+        localAsrPendingRequestsRef.current.delete(requestId);
+        pending.resolve(payload);
+        return;
+      }
+      if (payload?.type === "error" && pending) {
+        localAsrPendingRequestsRef.current.delete(requestId);
+        pending.reject(new Error(String(payload.message || "本地 ASR Worker 失败")));
+      }
+    };
+
+    const handleWorkerError = (event) => {
+      const message = event?.message || "本地 ASR Worker 启动失败";
+      rejectPendingLocalRequests(message);
+      setLocalBusyModelKey("");
+      setLocalBusyText("");
+      setLocalModelStateMap((prev) => {
+        const next = { ...prev };
+        LOCAL_MODEL_OPTIONS.forEach((item) => {
+          next[item.key] = {
+            ...(next[item.key] || {}),
+            status: "error",
+            error: message,
+          };
+        });
+        return next;
+      });
+    };
+
+    worker.addEventListener("message", handleMessage);
+    worker.addEventListener("error", handleWorkerError);
+    return () => {
+      worker.removeEventListener("message", handleMessage);
+      worker.removeEventListener("error", handleWorkerError);
+      rejectPendingLocalRequests("本地 ASR Worker 已关闭");
+      worker.terminate();
+      if (localAsrWorkerRef.current === worker) {
+        localAsrWorkerRef.current = null;
+      }
+    };
+  }, [localAsrSupport.reason, localAsrSupport.supported]);
+
+  useEffect(() => {
+    let canceled = false;
+    async function restoreLocalModelState() {
+      const cachedStates = await listLocalAsrPreviewStates().catch(() => []);
+      if (canceled) return;
+      const nextMap = Object.fromEntries(
+        LOCAL_MODEL_OPTIONS.map((item) => {
+          const cached = cachedStates.find((entry) => entry?.model_id === item.key);
+          if (!localAsrSupport.supported) {
+            return [item.key, { status: "unsupported", runtime: "", progress: null, error: localAsrSupport.reason }];
+          }
+          if (!cached) {
+            return [item.key, { status: "idle", runtime: "", progress: null, error: "" }];
+          }
+          const cachedStatus = String(cached.status || "").trim();
+          return [
+            item.key,
+            {
+              status: cachedStatus === "ready" ? "cached" : cachedStatus || "idle",
+              runtime: String(cached.runtime || ""),
+              progress: cachedStatus === "ready" ? 100 : null,
+              error: String(cached.last_error || ""),
+            },
+          ];
+        }),
+      );
+      setLocalModelStateMap(nextMap);
+    }
+    void restoreLocalModelState();
+    return () => {
+      canceled = true;
+    };
+  }, [localAsrSupport.reason, localAsrSupport.supported]);
 
   function resetLocalSessionState(options = {}) {
     const { clearFileInput = true } = options;
@@ -481,6 +823,150 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
   }
 
+  async function handleLocalModelDownload(modelKey) {
+    if (!localAsrSupport.supported) {
+      toast.error(localAsrSupport.reason || "当前浏览器不支持均衡模式");
+      return;
+    }
+    setLocalBusyModelKey(modelKey);
+    setLocalBusyText("正在检查并下载本地模型");
+    updateLocalModelState(modelKey, { status: "loading", progress: null, error: "" });
+    try {
+      const result = await createWorkerRequest("load-model", modelKey);
+      const runtime = String(result?.runtime || "");
+      updateLocalModelState(modelKey, { status: "ready", runtime, progress: 100, error: "" });
+      await saveLocalAsrPreviewState(modelKey, {
+        status: "ready",
+        runtime,
+        browser_supported: true,
+        webgpu_supported: Boolean(localAsrSupport.webgpuSupported),
+        last_error: "",
+        user_agent: String(navigator?.userAgent || ""),
+      });
+      setSelectedBalancedModel(modelKey);
+      toast.success("本地模型已准备好");
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : String(error);
+      updateLocalModelState(modelKey, { status: "error", progress: null, error: message });
+      await saveLocalAsrPreviewState(modelKey, {
+        status: "error",
+        runtime: "",
+        browser_supported: true,
+        webgpu_supported: Boolean(localAsrSupport.webgpuSupported),
+        last_error: message,
+        user_agent: String(navigator?.userAgent || ""),
+      });
+      toast.error(message);
+    } finally {
+      setLocalBusyModelKey("");
+      setLocalBusyText("");
+    }
+  }
+
+  async function handleLocalModelRemove(modelKey) {
+    const modelMeta = getLocalModelMeta(modelKey);
+    setLocalBusyModelKey(modelKey);
+    setLocalBusyText("正在卸载本地模型");
+    updateLocalModelState(modelKey, { status: "removing", error: "" });
+    try {
+      await createWorkerRequest("dispose-model", modelKey).catch(() => null);
+      await clearLocalModelCaches(modelMeta);
+      await deleteLocalAsrPreviewState(modelKey);
+      updateLocalModelState(modelKey, { status: "idle", runtime: "", progress: null, error: "" });
+      toast.success("本地模型已卸载");
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : String(error);
+      updateLocalModelState(modelKey, { status: "error", progress: null, error: message });
+      toast.error(`卸载失败: ${message}`);
+    } finally {
+      setLocalBusyModelKey("");
+      setLocalBusyText("");
+    }
+  }
+
+  async function submitBalanced(pollToken) {
+    if (!localAsrSupport.supported) {
+      const message = localAsrSupport.reason || "当前浏览器不支持均衡模式";
+      setStatus(message);
+      setPhase("error");
+      setLoading(false);
+      toast.error(message);
+      return;
+    }
+    const modelState = localModelStateMap[selectedBalancedModel] || {};
+    if (!["ready", "cached"].includes(String(modelState.status || ""))) {
+      const message = "请先下载并就绪一个本地模型";
+      setStatus(message);
+      setPhase("error");
+      setLoading(false);
+      toast.error(message);
+      return;
+    }
+    setPhase("local_transcribing");
+    setLoading(true);
+    setStatus("正在本地识别英文字幕");
+    await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: "正在本地识别英文字幕", bindingCompleted: false });
+    try {
+      const audioData = await decodeFileForLocalAsr(file);
+      if (!(audioData instanceof Float32Array) || audioData.length <= 0) {
+        throw new Error("本地音频解析结果为空，无法继续生成");
+      }
+      const localResult = await createWorkerRequest(
+        "transcribe-audio",
+        selectedBalancedModel,
+        {
+          audioData,
+          samplingRate: LOCAL_ASR_TARGET_SAMPLE_RATE,
+          fileName: String(file?.name || ""),
+        },
+        [audioData.buffer],
+      );
+      if (!Array.isArray(localResult?.asr_payload?.transcripts?.[0]?.sentences) || localResult.asr_payload.transcripts[0].sentences.length === 0) {
+        throw new Error("本地模型未识别出可用字幕，请切回高速模式或更换素材");
+      }
+      const resp = await api(
+        "/api/lessons/tasks/local-asr",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            asr_model: selectedBalancedModel,
+            source_filename: String(file?.name || "local-source"),
+            source_duration_ms: Math.max(1, Math.round(Number(durationSec || 0) * 1000)),
+            asr_payload: localResult?.asr_payload || {},
+          }),
+        },
+        accessToken,
+      );
+      const data = await parseResponse(resp);
+      if (!resp.ok) {
+        const message = toErrorText(data, "创建本地任务失败");
+        setStatus(message);
+        setPhase("error");
+        setLoading(false);
+        toast.error(message);
+        await persistSession({ phase: "error", status: message });
+        await onWalletChanged?.();
+        return;
+      }
+      const nextTaskId = String(data.task_id || "");
+      setTaskId(nextTaskId);
+      setTaskSnapshot(null);
+      setPhase("processing");
+      setLoading(true);
+      setStatus("");
+      await persistSession({ taskId: nextTaskId, phase: "processing", taskSnapshot: null, uploadPercent: 100, status: "", bindingCompleted: false });
+      void pollTask(nextTaskId, false, pollToken);
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : `网络错误: ${String(error)}`;
+      setStatus(message);
+      setPhase("error");
+      setLoading(false);
+      toast.error(message);
+      await persistSession({ phase: "error", status: message });
+    }
+  }
+
   async function submit() {
     if (!file) {
       const message = "请先选择文件";
@@ -499,6 +985,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setTaskSnapshot(null);
     setUploadPercent(0);
     uploadPersistRef.current.latestPercent = 0;
+    if (mode === "balanced") {
+      await submitBalanced(pollToken);
+      return;
+    }
     setPhase("uploading");
     await persistSession({ taskId: "", phase: "uploading", taskSnapshot: null, uploadPercent: 0, status: "", bindingCompleted: false });
     try {
@@ -632,18 +1122,90 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       <CardContent className="space-y-4">
         <Alert>
           <AlertDescription>
-            <p className="text-muted-foreground">当前余额：{Number(balancePoints || 0)} 点</p>
+            <p className="text-muted-foreground">当前余额：{formatMoneyCents(normalizedBalanceAmountCents)}</p>
             <p className="text-muted-foreground">
               <Tooltip>
                 <TooltipTrigger asChild><span className="cursor-help underline decoration-dotted underline-offset-2">预估扣费</span></TooltipTrigger>
-                <TooltipContent>向上取整秒数后按分钟计费，再向上取整到点数。</TooltipContent>
+                <TooltipContent>按素材秒数折算分钟后计费，金额统一按分存储、按元展示。</TooltipContent>
               </Tooltip>
-              ：{selectedRate ? (durationSec != null ? `${estimatedPoints} 点（${selectedRate.points_per_minute} 点/分钟）` : "选择文件后显示") : "该模型未配置单价"}
+              ：{selectedRate ? (durationSec != null ? `${formatMoneyCents(estimatedChargeCents)}（${formatMoneyPerMinute(selectedRate.price_per_minute_cents)}）` : "选择文件后显示") : "该模型未配置单价"}
             </p>
-            <p className="text-muted-foreground">默认 ASR 模型：{selectedAsrModel}</p>
+            <p className="text-muted-foreground">当前模式：{mode === "balanced" ? `均衡 · ${selectedLocalModelMeta.title}` : "高速 · 云端 ASR"}</p>
             {likelyInsufficient ? <p className="mt-1 text-destructive">余额可能不足，提交将被拒绝。</p> : null}
           </AlertDescription>
         </Alert>
+
+        <div className="space-y-2">
+          <p className="text-sm font-medium">生成模式</p>
+          <div className="grid gap-2 md:grid-cols-2">
+            <Button type="button" variant={mode === "fast" ? "default" : "outline"} className="h-11 justify-start" onClick={() => setMode("fast")} disabled={loading || localTranscribing}>
+              高速
+            </Button>
+            <Button type="button" variant={mode === "balanced" ? "default" : "outline"} className="h-11 justify-start" onClick={() => setMode("balanced")} disabled={loading || localTranscribing}>
+              均衡
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            高速走云端 ASR；均衡会在你的浏览器本地下载模型并识别，再把识别结果接入原有翻译和生成流程。
+          </p>
+          {mode === "balanced" && !localAsrSupport.supported ? <p className="text-xs text-destructive">{localAsrSupport.reason}</p> : null}
+        </div>
+
+        {mode === "balanced" ? (
+          <div className="space-y-3 rounded-2xl border bg-muted/10 p-4">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold">本地模型管理</p>
+              <p className="text-xs text-muted-foreground">
+                模型下载发生在当前浏览器，不占用 Zeabur 服务器带宽。当前浏览器预计下载：{localAsrSupport.supported ? (localAsrSupport.webgpuSupported ? "WebGPU" : "WASM") : "-"}。
+              </p>
+            </div>
+            <div className="grid gap-3 xl:grid-cols-2">
+              {LOCAL_MODEL_OPTIONS.map((item) => {
+                const state = localModelStateMap[item.key] || { status: localAsrSupport.supported ? "idle" : "unsupported", runtime: "", progress: null, error: localAsrSupport.reason };
+                const selected = selectedBalancedModel === item.key;
+                const downloaded = ["ready", "cached"].includes(String(state.status || ""));
+                return (
+                  <div
+                    key={item.key}
+                    className={cn(
+                      "space-y-3 rounded-2xl border p-4 transition-colors",
+                      selected ? "border-primary bg-primary/5" : "border-border bg-background/80",
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <button type="button" className="text-left" onClick={() => setSelectedBalancedModel(item.key)} disabled={loading || localTranscribing}>
+                          <p className="text-sm font-semibold">{item.title}</p>
+                          <p className="text-xs text-muted-foreground">{item.subtitle}</p>
+                        </button>
+                      </div>
+                      <Badge variant={downloaded ? "default" : "outline"}>{getLocalModelStatusLabel(state.status)}</Badge>
+                    </div>
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      <p>预计下载：{formatLocalModelEstimate(item, localAsrSupport)}</p>
+                      {state.runtime ? <p>上次运行时：{String(state.runtime || "").toUpperCase()}</p> : null}
+                      {Number.isFinite(Number(state.progress)) ? <p>下载进度：{clampPercent(state.progress)}%</p> : null}
+                      {state.error ? <p className="text-destructive">{state.error}</p> : null}
+                      {localBusyModelKey === item.key && localBusyText ? <p>{localBusyText}</p> : null}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" size="sm" onClick={() => void handleLocalModelDownload(item.key)} disabled={!localAsrSupport.supported || loading || localTranscribing || localBusyModelKey === item.key}>
+                        {String(state.status || "") === "loading" ? <Loader2 className="size-4 animate-spin" /> : null}
+                        {downloaded ? "重新校验" : "下载模型"}
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" onClick={() => setSelectedBalancedModel(item.key)} disabled={loading || localTranscribing}>
+                        设为当前
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => void handleLocalModelRemove(item.key)} disabled={!downloaded || loading || localTranscribing || localBusyModelKey === item.key}>
+                        卸载
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
 
         {file ? <MediaCover coverDataUrl={coverDataUrl} alt={isVideoSource ? "视频封面" : "音频素材"} aspectRatio={coverAspectRatio} className="border bg-muted/20" fallback={<div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">{isVideoSource ? "封面提取中或失败" : "音频素材（无视频封面）"}</div>} /> : null}
 
@@ -705,7 +1267,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
         <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
           <div className="grid gap-2" data-guide-id="upload-select-file">
-            <input id="asr-file" ref={fileInputRef} type="file" className="hidden" onChange={(event) => { void onSelectFile(event.target.files?.[0] ?? null); }} disabled={loading} />
+            <input id="asr-file" ref={fileInputRef} type="file" accept={mode === "balanced" ? LOCAL_ASR_FILE_ACCEPT : undefined} className="hidden" onChange={(event) => { void onSelectFile(event.target.files?.[0] ?? null); }} disabled={loading || localModeBusy} />
             <div className="grid gap-2 md:grid-cols-2">
               <Button
                 type="button"
@@ -717,26 +1279,27 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                     fileInputRef.current.click();
                   }
                 }}
-                disabled={loading}
+                disabled={loading || localModeBusy}
               >
                 选择文件
               </Button>
-              <Button type="button" variant="secondary" className="h-11" onClick={() => setLinkDialogOpen(true)} disabled={loading}>链接生成视频</Button>
+              <Button type="button" variant="secondary" className="h-11" onClick={() => setLinkDialogOpen(true)} disabled={loading || localModeBusy}>链接生成视频</Button>
             </div>
             {file ? <p className="text-xs text-muted-foreground">{file.name}</p> : null}
+            {mode === "balanced" ? <p className="text-xs text-muted-foreground">均衡模式会先在本地识别，再把识别结果接入生成流程。</p> : null}
           </div>
-          <Button type="submit" disabled={loading || phase === "success"} className="h-11 w-full" data-guide-id="upload-submit">
+          <Button type="submit" disabled={loading || phase === "success" || (mode === "balanced" && (!localAsrSupport.supported || localModeBusy))} className="h-11 w-full" data-guide-id="upload-submit">
             {loading ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="size-4 animate-spin" />
-                {phase === "uploading" ? "上传中" : "生成中"}
+                {phase === "uploading" ? "上传中" : phase === "local_transcribing" ? "本地识别中" : "生成中"}
               </span>
             ) : phase === "success" ? (
               "已生成完成"
             ) : phase === "upload_paused" ? (
               "继续上传当前素材"
             ) : (
-              "开始生成课程"
+              mode === "balanced" ? "开始均衡生成" : "开始生成课程"
             )}
           </Button>
           {phase === "uploading" ? (
@@ -745,8 +1308,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             </Button>
           ) : null}
         </form>
-
-        <LocalAsrPreviewCard disabled={loading} />
 
         <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
           <DialogContent>

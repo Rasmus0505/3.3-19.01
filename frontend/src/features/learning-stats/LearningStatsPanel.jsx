@@ -12,6 +12,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
+import { formatMoneyCents } from "../../shared/lib/money";
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, MetricCard, MetricChart } from "../../shared/ui";
 
 const RANGE_OPTIONS = [
@@ -111,7 +112,7 @@ export function LearningStatsPanel({ accessToken, onStartLesson, onSwitchToUploa
   const coachHint = useMemo(() => {
     if (!summary) return "";
     const recentLearningText = summary.recent_learning_at ? `最近学习：${formatDateTime(summary.recent_learning_at)}` : "最近还没有学习记录";
-    return `${recentLearningText}，当前余额 ${Number(summary.balance_points || 0)} 点。`;
+    return `${recentLearningText}，当前余额 ${formatMoneyCents(summary.balance_amount_cents ?? summary.balance_points ?? 0)}。`;
   }, [summary]);
 
   function handleRecommendationAction() {

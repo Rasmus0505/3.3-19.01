@@ -57,15 +57,27 @@ _REDEEM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_MT_POINTS_PER_1K_TOKENS = 15
+DEFAULT_MT_COST_PER_1K_TOKENS_CENTS = 15
 MT_FLASH_MODEL = "qwen-mt-flash"
 MT_MODEL_PREFIX = "qwen-mt-"
+FAST_CLOUD_MODEL = "qwen3-asr-flash-filetrans"
+LOCAL_WHISPER_TINY_MODEL = "local-whisper-tiny-en"
+LOCAL_WHISPER_BASE_MODEL = "local-whisper-base-en"
+LOCAL_WHISPER_SMALL_MODEL = "local-whisper-small-en"
+LOCAL_WHISPER_MEDIUM_MODEL = "local-whisper-medium-en"
+LOCAL_BROWSER_ASR_MODELS: tuple[str, ...] = (
+    LOCAL_WHISPER_TINY_MODEL,
+    LOCAL_WHISPER_BASE_MODEL,
+    LOCAL_WHISPER_SMALL_MODEL,
+    LOCAL_WHISPER_MEDIUM_MODEL,
+)
 
 DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
     {
-        "model_name": "qwen3-asr-flash-filetrans",
+        "model_name": FAST_CLOUD_MODEL,
         "points_per_minute": 130,
         "points_per_1k_tokens": 0,
+        "cost_per_minute_cents": 0,
         "billing_unit": "minute",
         "parallel_enabled": True,
         "parallel_threshold_seconds": 600,
@@ -73,9 +85,54 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
         "max_concurrency": 4,
     },
     {
+        "model_name": LOCAL_WHISPER_TINY_MODEL,
+        "points_per_minute": 130,
+        "points_per_1k_tokens": 0,
+        "cost_per_minute_cents": 0,
+        "billing_unit": "minute",
+        "parallel_enabled": False,
+        "parallel_threshold_seconds": 600,
+        "segment_seconds": 300,
+        "max_concurrency": 1,
+    },
+    {
+        "model_name": LOCAL_WHISPER_BASE_MODEL,
+        "points_per_minute": 130,
+        "points_per_1k_tokens": 0,
+        "cost_per_minute_cents": 0,
+        "billing_unit": "minute",
+        "parallel_enabled": False,
+        "parallel_threshold_seconds": 600,
+        "segment_seconds": 300,
+        "max_concurrency": 1,
+    },
+    {
+        "model_name": LOCAL_WHISPER_SMALL_MODEL,
+        "points_per_minute": 130,
+        "points_per_1k_tokens": 0,
+        "cost_per_minute_cents": 0,
+        "billing_unit": "minute",
+        "parallel_enabled": False,
+        "parallel_threshold_seconds": 600,
+        "segment_seconds": 300,
+        "max_concurrency": 1,
+    },
+    {
+        "model_name": LOCAL_WHISPER_MEDIUM_MODEL,
+        "points_per_minute": 130,
+        "points_per_1k_tokens": 0,
+        "cost_per_minute_cents": 0,
+        "billing_unit": "minute",
+        "parallel_enabled": False,
+        "parallel_threshold_seconds": 600,
+        "segment_seconds": 300,
+        "max_concurrency": 1,
+    },
+    {
         "model_name": MT_FLASH_MODEL,
         "points_per_minute": 0,
-        "points_per_1k_tokens": DEFAULT_MT_POINTS_PER_1K_TOKENS,
+        "points_per_1k_tokens": DEFAULT_MT_COST_PER_1K_TOKENS_CENTS,
+        "cost_per_minute_cents": 0,
         "billing_unit": "1k_tokens",
         "parallel_enabled": False,
         "parallel_threshold_seconds": 600,
@@ -149,6 +206,8 @@ def _ensure_legacy_sqlite_billing_columns(db: Session) -> None:
     alter_sql: list[str] = []
     if "points_per_1k_tokens" not in existing_columns:
         alter_sql.append("ALTER TABLE billing_model_rates ADD COLUMN points_per_1k_tokens INTEGER NOT NULL DEFAULT 0")
+    if "cost_per_minute_cents" not in existing_columns:
+        alter_sql.append("ALTER TABLE billing_model_rates ADD COLUMN cost_per_minute_cents INTEGER NOT NULL DEFAULT 0")
     if "billing_unit" not in existing_columns:
         alter_sql.append("ALTER TABLE billing_model_rates ADD COLUMN billing_unit VARCHAR(32) NOT NULL DEFAULT 'minute'")
     if "parallel_enabled" not in existing_columns:
@@ -187,6 +246,8 @@ def _ensure_legacy_sqlite_wallet_ledger_event_types(db: Session) -> None:
         alter_sql.append("ALTER TABLE wallet_ledger ADD COLUMN redeem_code_id INTEGER")
     if "redeem_code_mask" not in existing_columns:
         alter_sql.append("ALTER TABLE wallet_ledger ADD COLUMN redeem_code_mask VARCHAR(32)")
+    if "amount_unit" not in existing_columns:
+        alter_sql.append("ALTER TABLE wallet_ledger ADD COLUMN amount_unit VARCHAR(16) NOT NULL DEFAULT 'points'")
 
     if alter_sql:
         for sql in alter_sql:
@@ -219,6 +280,7 @@ def _sqlite_billing_rates_requires_rebuild(db: Session) -> bool:
     return (
         "points_per_minute > 0" in ddl
         or "ck_billing_rate_token_non_negative" not in ddl
+        or "ck_billing_rate_cost_non_negative" not in ddl
         or "ck_billing_parallel_threshold_positive" not in ddl
         or "ck_billing_segment_seconds_positive" not in ddl
         or "ck_billing_max_concurrency_positive" not in ddl
@@ -248,6 +310,7 @@ def _rebuild_legacy_sqlite_billing_rates(db: Session) -> None:
                     model_name,
                     points_per_minute,
                     points_per_1k_tokens,
+                    cost_per_minute_cents,
                     billing_unit,
                     is_active,
                     parallel_enabled,
@@ -267,6 +330,10 @@ def _rebuild_legacy_sqlite_billing_rates(db: Session) -> None:
                         WHEN COALESCE(points_per_1k_tokens, 0) < 0 THEN 0
                         ELSE COALESCE(points_per_1k_tokens, 0)
                     END AS points_per_1k_tokens,
+                    CASE
+                        WHEN COALESCE(cost_per_minute_cents, 0) < 0 THEN 0
+                        ELSE COALESCE(cost_per_minute_cents, 0)
+                    END AS cost_per_minute_cents,
                     CASE
                         WHEN TRIM(COALESCE(billing_unit, '')) <> '' THEN TRIM(billing_unit)
                         WHEN COALESCE(points_per_1k_tokens, 0) > 0 THEN '1k_tokens'
@@ -332,6 +399,7 @@ def _rebuild_legacy_sqlite_wallet_ledger(db: Session) -> None:
                     event_type,
                     delta_points,
                     balance_after,
+                    amount_unit,
                     model_name,
                     duration_ms,
                     lesson_id,
@@ -348,6 +416,7 @@ def _rebuild_legacy_sqlite_wallet_ledger(db: Session) -> None:
                     event_type,
                     delta_points,
                     balance_after,
+                    COALESCE(amount_unit, 'points') AS amount_unit,
                     model_name,
                     duration_ms,
                     lesson_id,
@@ -471,7 +540,8 @@ def _flash_mt_default_payload() -> dict[str, object]:
     return {
         "model_name": MT_FLASH_MODEL,
         "points_per_minute": 0,
-        "points_per_1k_tokens": DEFAULT_MT_POINTS_PER_1K_TOKENS,
+        "points_per_1k_tokens": DEFAULT_MT_COST_PER_1K_TOKENS_CENTS,
+        "cost_per_minute_cents": 0,
         "billing_unit": "1k_tokens",
         "parallel_enabled": False,
         "parallel_threshold_seconds": 600,
@@ -496,6 +566,7 @@ def _cleanup_non_flash_mt_rates(db: Session, *, ensure_flash: bool) -> tuple[int
         "model_name",
         "points_per_minute",
         "points_per_1k_tokens",
+        "cost_per_minute_cents",
         "billing_unit",
         "is_active",
         "parallel_enabled",
@@ -535,6 +606,7 @@ def _cleanup_non_flash_mt_rates(db: Session, *, ensure_flash: bool) -> tuple[int
                 model_name=MT_FLASH_MODEL,
                 points_per_minute=int(seed.get("points_per_minute") or 0),
                 points_per_1k_tokens=int(seed.get("points_per_1k_tokens") or 0),
+                cost_per_minute_cents=int(seed.get("cost_per_minute_cents") or 0),
                 billing_unit=str(seed.get("billing_unit") or "1k_tokens"),
                 is_active=True,
                 parallel_enabled=bool(seed.get("parallel_enabled")),
@@ -593,6 +665,7 @@ def ensure_default_billing_rates(
         parallel_threshold_seconds = int(item.get("parallel_threshold_seconds") or 600)
         segment_seconds = int(item.get("segment_seconds") or 300)
         max_concurrency = int(item.get("max_concurrency") or 2)
+        cost_per_minute_cents = int(item.get("cost_per_minute_cents") or 0)
         exists = db.get(BillingModelRate, model_name)
         if exists:
             row_changed = False
@@ -614,6 +687,9 @@ def ensure_default_billing_rates(
             if int(exists.max_concurrency or 0) <= 0:
                 exists.max_concurrency = int(max_concurrency)
                 row_changed = True
+            if int(getattr(exists, "cost_per_minute_cents", 0) or 0) < 0:
+                exists.cost_per_minute_cents = cost_per_minute_cents
+                row_changed = True
             if row_changed:
                 db.add(exists)
                 changed = True
@@ -623,6 +699,7 @@ def ensure_default_billing_rates(
                 model_name=model_name,
                 points_per_minute=points_per_minute,
                 points_per_1k_tokens=points_per_1k_tokens,
+                cost_per_minute_cents=cost_per_minute_cents,
                 billing_unit=billing_unit,
                 is_active=True,
                 parallel_enabled=parallel_enabled,
@@ -906,7 +983,7 @@ def get_or_create_wallet_account(db: Session, user_id: int, *, for_update: bool 
     account = db.scalar(stmt)
     if account:
         return account
-    account = WalletAccount(user_id=user_id, balance_points=0)
+    account = WalletAccount(user_id=user_id, balance_amount_cents=0)
     db.add(account)
     db.flush()
     return account
@@ -922,20 +999,29 @@ def get_model_rate(db: Session, model_name: str, *, require_active: bool = True)
 
 
 def list_public_rates(db: Session) -> list[BillingModelRate]:
-    return list(query_billing_rates(db, active_only=True))
+    rows = list(query_billing_rates(db, active_only=True))
+    return [row for row in rows if str(getattr(row, "billing_unit", "minute") or "minute") == "minute"]
+
+
+def calculate_amount_by_duration_ms(duration_ms: int, price_per_minute_cents: int) -> int:
+    if duration_ms <= 0 or price_per_minute_cents <= 0:
+        return 0
+    seconds = ceil(duration_ms / 1000)
+    return ceil((seconds * price_per_minute_cents) / 60)
+
+
+def calculate_cost_by_tokens(total_tokens: int, cost_per_1k_tokens_cents: int) -> int:
+    if total_tokens <= 0 or cost_per_1k_tokens_cents <= 0:
+        return 0
+    return ceil((int(total_tokens) * int(cost_per_1k_tokens_cents)) / 1000)
 
 
 def calculate_points(duration_ms: int, points_per_minute: int) -> int:
-    if duration_ms <= 0 or points_per_minute <= 0:
-        return 0
-    seconds = ceil(duration_ms / 1000)
-    return ceil((seconds * points_per_minute) / 60)
+    return calculate_amount_by_duration_ms(duration_ms, points_per_minute)
 
 
 def calculate_token_points(total_tokens: int, points_per_1k_tokens: int) -> int:
-    if total_tokens <= 0 or points_per_1k_tokens <= 0:
-        return 0
-    return ceil((int(total_tokens) * int(points_per_1k_tokens)) / 1000)
+    return calculate_cost_by_tokens(total_tokens, points_per_1k_tokens)
 
 
 def _append_ledger(
@@ -946,6 +1032,7 @@ def _append_ledger(
     event_type: str,
     delta_points: int,
     balance_after: int,
+    amount_unit: str = "cents",
     model_name: str | None = None,
     duration_ms: int | None = None,
     lesson_id: int | None = None,
@@ -958,8 +1045,9 @@ def _append_ledger(
         user_id=user_id,
         operator_user_id=operator_user_id,
         event_type=event_type,
-        delta_points=delta_points,
-        balance_after=balance_after,
+        delta_amount_cents=delta_points,
+        balance_after_amount_cents=balance_after,
+        amount_unit=str(amount_unit or "cents"),
         model_name=model_name,
         duration_ms=duration_ms,
         lesson_id=lesson_id,
@@ -1296,7 +1384,8 @@ def create_redeem_batch_and_codes(
 
     batch = RedeemCodeBatch(
         batch_name=batch_name.strip() or f"batch_{now.strftime('%Y%m%d_%H%M%S')}",
-        face_value_points=face_value_points,
+        face_value_amount_cents=face_value_points,
+        face_value_unit="cents",
         generated_count=generate_quantity,
         active_from=start_at,
         expire_at=end_at,

@@ -63,6 +63,11 @@ export async function getLocalAsrPreviewState(modelId) {
   return record;
 }
 
+export async function listLocalAsrPreviewStates() {
+  const records = await withStore("readonly", (store) => store.getAll());
+  return Array.isArray(records) ? records : [];
+}
+
 export async function saveLocalAsrPreviewState(modelId, payload) {
   const normalizedModelId = normalizeModelId(modelId);
   if (!normalizedModelId) return null;
@@ -79,4 +84,10 @@ export async function saveLocalAsrPreviewState(modelId, payload) {
   };
   await withStore("readwrite", (store) => store.put(nextRecord));
   return nextRecord;
+}
+
+export async function deleteLocalAsrPreviewState(modelId) {
+  const normalizedModelId = normalizeModelId(modelId);
+  if (!normalizedModelId) return;
+  await withStore("readwrite", (store) => store.delete(normalizedModelId));
 }

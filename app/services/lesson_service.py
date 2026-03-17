@@ -814,6 +814,366 @@ class LessonService:
         )
 
     @staticmethod
+    def generate_from_local_asr_payload(
+        *,
+        asr_payload: dict[str, Any],
+        source_filename: str,
+        source_duration_ms: int,
+        req_dir: Path,
+        owner_id: int,
+        asr_model: str,
+        db: Session,
+        progress_callback: ProgressCallback | None = None,
+        task_id: str | None = None,
+        semantic_split_enabled: bool | None = None,
+    ) -> Lesson:
+        asr_result_path = req_dir / _ASR_RESULT_FILE
+        variant_result_path = req_dir / _VARIANT_RESULT_FILE
+        translation_checkpoint_path = req_dir / _TRANSLATION_CHECKPOINT_FILE
+        lesson_result_path = req_dir / _LESSON_RESULT_FILE
+
+        lesson_checkpoint = _read_json_file(lesson_result_path)
+        if isinstance(lesson_checkpoint, dict) and lesson_checkpoint.get("lesson_id"):
+            existing_lesson = db.get(Lesson, int(lesson_checkpoint["lesson_id"]))
+            if existing_lesson:
+                subtitle_cache_seed = lesson_checkpoint.get("subtitle_cache_seed")
+                if isinstance(subtitle_cache_seed, dict):
+                    existing_lesson.subtitle_cache_seed = dict(subtitle_cache_seed)
+                return existing_lesson
+        if task_id:
+            existing_lesson_id = db.scalar(
+                select(TranslationRequestLog.lesson_id)
+                .where(
+                    TranslationRequestLog.task_id == task_id,
+                    TranslationRequestLog.lesson_id.is_not(None),
+                )
+                .limit(1)
+            )
+            if existing_lesson_id:
+                existing_lesson = db.get(Lesson, int(existing_lesson_id))
+                if existing_lesson:
+                    cached_asr = _read_json_file(asr_result_path)
+                    cached_variant = _read_json_file(variant_result_path)
+                    if cached_asr and cached_variant:
+                        existing_lesson.subtitle_cache_seed = LessonService.build_subtitle_cache_seed(
+                            asr_payload=dict(cached_asr.get("asr_payload") or {}),
+                            variant=dict(cached_variant),
+                        )
+                    return existing_lesson
+
+        if not isinstance(asr_payload, dict):
+            raise MediaError("ASR_PAYLOAD_INVALID", "本地 ASR 结果无效", "asr_payload 必须是对象")
+
+        reserved_points = 0
+        reserved_duration_ms = max(1, int(source_duration_ms or 0))
+        reserve_ledger_id: int | None = None
+        translation_trace_id = uuid4().hex
+
+        try:
+            rate = get_model_rate(db, asr_model)
+            reserved_points = calculate_points(reserved_duration_ms, rate.points_per_minute)
+            logger.info(
+                "[DEBUG] lesson.generate.local reserve owner_id=%s model=%s duration_ms=%s amount_cents=%s",
+                owner_id,
+                asr_model,
+                reserved_duration_ms,
+                reserved_points,
+            )
+            reserve_ledger = reserve_points(
+                db,
+                user_id=owner_id,
+                points=reserved_points,
+                model_name=asr_model,
+                duration_ms=reserved_duration_ms,
+                note=f"本地均衡生成预扣，模型={asr_model}",
+            )
+            reserve_ledger_id = reserve_ledger.id
+            db.commit()
+
+            actual_sentence_count = max(1, len(extract_sentences(asr_payload)))
+            asr_progress_counters = {
+                "asr_done": actual_sentence_count,
+                "asr_estimated": actual_sentence_count,
+                "segment_done": 0,
+                "segment_total": 0,
+            }
+            try:
+                _write_json_file(
+                    asr_result_path,
+                    {
+                        "asr_payload": dict(asr_payload),
+                        "usage_seconds": max(1, math.ceil(reserved_duration_ms / 1000)),
+                        "raw_result": {
+                            "mode": "local_browser",
+                            "model_name": asr_model,
+                            "source_duration_ms": reserved_duration_ms,
+                            "asr_result_json": dict(asr_payload),
+                        },
+                        "progress_counters": dict(asr_progress_counters),
+                    },
+                )
+            except Exception:
+                logger.exception("[DEBUG] lesson.local_asr.checkpoint.write_failed path=%s", asr_result_path)
+
+            _emit_progress(
+                progress_callback,
+                stage_key="convert_audio",
+                stage_status="completed",
+                overall_percent=_progress_percent_by_stage("convert_audio", 1.0),
+                current_text="本地模型已就绪",
+                counters={"asr_done": 0, "asr_estimated": 0, "translate_done": 0, "translate_total": 0, "segment_done": 0, "segment_total": 0},
+            )
+            _emit_progress(
+                progress_callback,
+                stage_key="asr_transcribe",
+                stage_status="completed",
+                overall_percent=_progress_percent_by_stage("asr_transcribe", 1.0),
+                current_text=f"识别字幕 {actual_sentence_count}/{actual_sentence_count}",
+                counters={
+                    "asr_done": actual_sentence_count,
+                    "asr_estimated": actual_sentence_count,
+                    "translate_done": 0,
+                    "translate_total": 0,
+                    "segment_done": 0,
+                    "segment_total": 0,
+                },
+                asr_raw={"mode": "local_browser", "model_name": asr_model},
+            )
+
+            usage_seconds = max(1, math.ceil(reserved_duration_ms / 1000))
+            runtime_sentences: list[dict[str, Any]] = []
+            translate_total = 0
+
+            def _on_before_translation(total: int) -> None:
+                nonlocal translate_total
+                translate_total = max(0, int(total))
+                _emit_progress(
+                    progress_callback,
+                    stage_key="translate_zh",
+                    stage_status="running",
+                    overall_percent=_progress_percent_by_stage("translate_zh", 0.0),
+                    current_text=f"翻译字幕 0/{translate_total}",
+                    counters={
+                        "asr_done": asr_progress_counters["asr_done"],
+                        "asr_estimated": asr_progress_counters["asr_estimated"],
+                        "translate_done": 0,
+                        "translate_total": translate_total,
+                        "segment_done": asr_progress_counters["segment_done"],
+                        "segment_total": asr_progress_counters["segment_total"],
+                    },
+                )
+
+            def _on_translation_progress(done: int, total: int) -> None:
+                _emit_progress(
+                    progress_callback,
+                    stage_key="translate_zh",
+                    stage_status="running",
+                    overall_percent=_progress_percent_by_stage("translate_zh", done / max(total, 1)),
+                    current_text=f"翻译字幕 {done}/{total}",
+                    counters={
+                        "asr_done": asr_progress_counters["asr_done"],
+                        "asr_estimated": asr_progress_counters["asr_estimated"],
+                        "translate_done": done,
+                        "translate_total": total,
+                        "segment_done": asr_progress_counters["segment_done"],
+                        "segment_total": asr_progress_counters["segment_total"],
+                    },
+                )
+
+            if variant_result_path.exists():
+                variant = _read_json_file(variant_result_path)
+                if not isinstance(variant, dict):
+                    variant = None
+            else:
+                variant = None
+
+            if not isinstance(variant, dict):
+                variant = LessonService.build_subtitle_variant(
+                    asr_payload=asr_payload,
+                    db=db,
+                    task_id=task_id,
+                    semantic_split_enabled=semantic_split_enabled,
+                    before_translate_callback=_on_before_translation,
+                    translation_progress_callback=_on_translation_progress,
+                    translation_checkpoint_path=translation_checkpoint_path,
+                )
+                _write_json_file(variant_result_path, variant)
+            runtime_sentences = list(variant["sentences"])
+            translate_total = len(runtime_sentences)
+            translation_rate = get_model_rate(db, MT_MODEL)
+            translation_usage = dict(variant.get("translation_usage") or {})
+            translation_cost_amount_cents = calculate_token_points(
+                int(translation_usage.get("total_tokens", 0) or 0),
+                int(getattr(translation_rate, "points_per_1k_tokens", 0) or 0),
+            )
+            translation_usage["charged_points"] = 0
+            translation_usage["charged_amount_cents"] = 0
+            translation_usage["actual_cost_amount_cents"] = translation_cost_amount_cents
+            translation_debug = {
+                "total_sentences": translate_total,
+                "failed_sentences": int(variant.get("translate_failed_count", 0)),
+                "request_count": int(variant.get("translation_request_count", 0)),
+                "success_request_count": int(variant.get("translation_success_request_count", 0)),
+                "usage": translation_usage,
+                "latest_error_summary": str(variant.get("latest_translate_error_summary") or ""),
+            }
+            _emit_progress(
+                progress_callback,
+                stage_key="translate_zh",
+                stage_status="completed",
+                overall_percent=_progress_percent_by_stage("translate_zh", 1.0),
+                current_text=f"翻译字幕 {translate_total}/{translate_total}",
+                counters={
+                    "asr_done": asr_progress_counters["asr_done"],
+                    "asr_estimated": asr_progress_counters["asr_estimated"],
+                    "translate_done": translate_total,
+                    "translate_total": translate_total,
+                    "segment_done": asr_progress_counters["segment_done"],
+                    "segment_total": asr_progress_counters["segment_total"],
+                },
+                translation_debug=translation_debug,
+            )
+
+            failed_count = int(variant.get("translate_failed_count", 0))
+            failed_ratio = failed_count / max(translate_total, 1)
+            lesson_status = "partial_ready" if failed_ratio >= 0.3 else "ready"
+            duration_ms = estimate_duration_ms(asr_payload, runtime_sentences)
+            actual_duration_ms = reserved_duration_ms
+            actual_points = calculate_points(actual_duration_ms, rate.points_per_minute)
+            actual_cost_amount_cents = calculate_points(actual_duration_ms, int(getattr(rate, "cost_per_minute_cents", 0) or 0)) + translation_cost_amount_cents
+            gross_profit_amount_cents = int(actual_points) - int(actual_cost_amount_cents)
+            translation_debug["estimated_charge_amount_cents"] = int(reserved_points)
+            translation_debug["actual_charge_amount_cents"] = int(actual_points)
+            translation_debug["actual_cost_amount_cents"] = int(actual_cost_amount_cents)
+            translation_debug["gross_profit_amount_cents"] = int(gross_profit_amount_cents)
+            translation_usage["actual_revenue_amount_cents"] = int(actual_points)
+            translation_usage["gross_profit_amount_cents"] = int(gross_profit_amount_cents)
+            points_diff = int(actual_points) - int(reserved_points)
+
+            _emit_progress(
+                progress_callback,
+                stage_key="write_lesson",
+                stage_status="running",
+                overall_percent=_progress_percent_by_stage("write_lesson", 0.2),
+                current_text="写入课程",
+                counters={
+                    "asr_done": asr_progress_counters["asr_done"],
+                    "asr_estimated": asr_progress_counters["asr_estimated"],
+                    "translate_done": translate_total,
+                    "translate_total": translate_total,
+                    "segment_done": asr_progress_counters["segment_done"],
+                    "segment_total": asr_progress_counters["segment_total"],
+                },
+            )
+
+            lesson = Lesson(
+                user_id=owner_id,
+                title=Path(source_filename or "lesson").stem[:200] or "lesson",
+                source_filename=source_filename,
+                asr_model=asr_model,
+                duration_ms=duration_ms,
+                media_storage="client_indexeddb",
+                source_duration_ms=reserved_duration_ms,
+                status=lesson_status,
+            )
+            db.add(lesson)
+            db.flush()
+
+            for sentence in runtime_sentences:
+                db.add(
+                    LessonSentence(
+                        lesson_id=lesson.id,
+                        idx=int(sentence["idx"]),
+                        begin_ms=int(sentence["begin_ms"]),
+                        end_ms=int(sentence["end_ms"]),
+                        text_en=str(sentence["text_en"]),
+                        text_zh=str(sentence["text_zh"]),
+                        tokens_json=[str(item) for item in list(sentence.get("tokens") or [])],
+                        audio_clip_path=None,
+                    )
+                )
+
+            create_progress(db, lesson_id=lesson.id, user_id=owner_id)
+            append_translation_request_logs(
+                db,
+                trace_id=translation_trace_id,
+                user_id=owner_id,
+                task_id=task_id,
+                lesson_id=lesson.id,
+                records=list(variant.get("translation_attempt_records") or []),
+            )
+            settle_reserved_points(
+                db,
+                user_id=owner_id,
+                model_name=asr_model,
+                reserved_points=reserved_points,
+                actual_points=actual_points,
+                duration_ms=actual_duration_ms,
+                note=(
+                    f"本地均衡生成结算，预扣流水#{reserve_ledger_id}，预扣金额={reserved_points}分，实耗金额={actual_points}分，差额={points_diff}分，"
+                    f"usage_seconds={usage_seconds}"
+                ),
+            )
+            record_consume(
+                db,
+                user_id=owner_id,
+                model_name=asr_model,
+                duration_ms=actual_duration_ms,
+                lesson_id=lesson.id,
+                note=(
+                    f"本地均衡生成完成，预扣流水#{reserve_ledger_id}，预扣金额={reserved_points}分，实耗金额={actual_points}分，差额={points_diff}分，"
+                    f"usage_seconds={usage_seconds}"
+                ),
+            )
+            db.commit()
+            db.refresh(lesson)
+            lesson.subtitle_cache_seed = LessonService.build_subtitle_cache_seed(asr_payload=asr_payload, variant=variant)
+            try:
+                _write_json_file(
+                    lesson_result_path,
+                    {
+                        "lesson_id": int(lesson.id),
+                        "subtitle_cache_seed": lesson.subtitle_cache_seed,
+                    },
+                )
+            except Exception:
+                logger.exception("[DEBUG] lesson.local_asr.lesson_checkpoint.write_failed path=%s", lesson_result_path)
+
+            _emit_progress(
+                progress_callback,
+                stage_key="write_lesson",
+                stage_status="completed",
+                overall_percent=100,
+                current_text="课程生成完成",
+                counters={
+                    "asr_done": asr_progress_counters["asr_done"],
+                    "asr_estimated": asr_progress_counters["asr_estimated"],
+                    "translate_done": translate_total,
+                    "translate_total": translate_total,
+                    "segment_done": asr_progress_counters["segment_done"],
+                    "segment_total": asr_progress_counters["segment_total"],
+                },
+                translation_debug=translation_debug,
+            )
+            return lesson
+        except Exception:
+            db.rollback()
+            if reserve_ledger_id is not None:
+                try:
+                    refund_points(
+                        db,
+                        user_id=owner_id,
+                        points=reserved_points,
+                        model_name=asr_model,
+                        duration_ms=reserved_duration_ms,
+                        note=f"本地均衡生成失败，退回预扣金额，预扣流水#{reserve_ledger_id}",
+                    )
+                    db.commit()
+                except Exception:
+                    db.rollback()
+            raise
+
+    @staticmethod
     def _transcribe_with_optional_parallel(
         *,
         opus_path: Path,
@@ -1301,11 +1661,13 @@ class LessonService:
             translate_total = len(runtime_sentences)
             translation_rate = get_model_rate(db, MT_MODEL)
             translation_usage = dict(variant.get("translation_usage") or {})
-            translation_points = calculate_token_points(
+            translation_cost_amount_cents = calculate_token_points(
                 int(translation_usage.get("total_tokens", 0) or 0),
                 int(getattr(translation_rate, "points_per_1k_tokens", 0) or 0),
             )
-            translation_usage["charged_points"] = translation_points
+            translation_usage["charged_points"] = 0
+            translation_usage["charged_amount_cents"] = 0
+            translation_usage["actual_cost_amount_cents"] = translation_cost_amount_cents
             translation_debug = {
                 "total_sentences": translate_total,
                 "failed_sentences": int(variant.get("translate_failed_count", 0)),
@@ -1338,15 +1700,24 @@ class LessonService:
             usage_hit = isinstance(usage_seconds, int) and usage_seconds > 0
             actual_duration_ms = int(usage_seconds * 1000) if usage_hit else int(duration_ms)
             actual_points = calculate_points(actual_duration_ms, rate.points_per_minute)
+            actual_cost_amount_cents = calculate_points(actual_duration_ms, int(getattr(rate, "cost_per_minute_cents", 0) or 0)) + translation_cost_amount_cents
+            gross_profit_amount_cents = int(actual_points) - int(actual_cost_amount_cents)
+            translation_debug["estimated_charge_amount_cents"] = int(reserved_points)
+            translation_debug["actual_charge_amount_cents"] = int(actual_points)
+            translation_debug["actual_cost_amount_cents"] = int(actual_cost_amount_cents)
+            translation_debug["gross_profit_amount_cents"] = int(gross_profit_amount_cents)
+            translation_usage["actual_revenue_amount_cents"] = int(actual_points)
+            translation_usage["gross_profit_amount_cents"] = int(gross_profit_amount_cents)
             points_diff = int(actual_points) - int(reserved_points)
             logger.info(
-                "[DEBUG] lesson.generate settle owner_id=%s model=%s usage_hit=%s reserved_points=%s actual_points=%s diff=%s",
+                "[DEBUG] lesson.generate settle owner_id=%s model=%s usage_hit=%s reserved_amount_cents=%s actual_amount_cents=%s diff=%s actual_cost_amount_cents=%s",
                 owner_id,
                 asr_model,
                 usage_hit,
                 reserved_points,
                 actual_points,
                 points_diff,
+                actual_cost_amount_cents,
             )
 
             _emit_progress(
@@ -1414,36 +1785,19 @@ class LessonService:
                 actual_points=actual_points,
                 duration_ms=actual_duration_ms,
                 note=(
-                    f"课程生成结算，预扣流水#{reserve_ledger_id}，预扣={reserved_points}，实耗={actual_points}，差额={points_diff}，"
+                    f"课程生成结算，预扣流水#{reserve_ledger_id}，预扣金额={reserved_points}分，实耗金额={actual_points}分，差额={points_diff}分，"
                     f"usage_seconds={usage_seconds if usage_hit else 'fallback'}"
                 ),
             )
             logger.info(
-                "[DEBUG] lesson.generate translate_settle owner_id=%s lesson_id=%s model=%s total_tokens=%s charged_points=%s failed=%s requests=%s",
+                "[DEBUG] lesson.generate translate_cost owner_id=%s lesson_id=%s model=%s total_tokens=%s actual_cost_amount_cents=%s failed=%s requests=%s",
                 owner_id,
                 lesson.id,
                 MT_MODEL,
                 int(translation_usage.get("total_tokens", 0) or 0),
-                translation_points,
+                translation_cost_amount_cents,
                 failed_count,
                 int(variant.get("translation_request_count", 0) or 0),
-            )
-            consume_points(
-                db,
-                user_id=owner_id,
-                points=translation_points,
-                model_name=MT_MODEL,
-                lesson_id=lesson.id,
-                event_type=EVENT_CONSUME_TRANSLATE,
-                note=(
-                    f"课程翻译扣点，请求={int(variant.get('translation_request_count', 0) or 0)}，"
-                    f"成功请求={int(variant.get('translation_success_request_count', 0) or 0)}，"
-                    f"失败句数={failed_count}，"
-                    f"prompt_tokens={int(translation_usage.get('prompt_tokens', 0) or 0)}，"
-                    f"completion_tokens={int(translation_usage.get('completion_tokens', 0) or 0)}，"
-                    f"total_tokens={int(translation_usage.get('total_tokens', 0) or 0)}，"
-                    f"trace_id={translation_trace_id}"
-                ),
             )
             record_consume(
                 db,
@@ -1452,7 +1806,7 @@ class LessonService:
                 duration_ms=actual_duration_ms,
                 lesson_id=lesson.id,
                 note=(
-                    f"课程生成完成，预扣流水#{reserve_ledger_id}，预扣={reserved_points}，实耗={actual_points}，差额={points_diff}，"
+                    f"课程生成完成，预扣流水#{reserve_ledger_id}，预扣金额={reserved_points}分，实耗金额={actual_points}分，差额={points_diff}分，"
                     f"usage_seconds={usage_seconds if usage_hit else 'fallback'}"
                 ),
             )

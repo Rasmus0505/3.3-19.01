@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class WalletMeResponse(BaseModel):
     ok: bool = True
-    balance_points: int
+    balance_amount_cents: int
     updated_at: datetime
 
 
@@ -17,8 +17,8 @@ class WalletRedeemCodeRequest(BaseModel):
 
 class WalletRedeemCodeResponse(BaseModel):
     ok: bool = True
-    balance_points: int
-    redeemed_points: int
+    balance_amount_cents: int
+    redeemed_amount_cents: int
     redeem_code_mask: str
 
 
@@ -29,14 +29,17 @@ class PublicSubtitleSettings(BaseModel):
 
 class BillingRateItem(BaseModel):
     model_name: str
-    points_per_minute: int
-    points_per_1k_tokens: int
+    display_name: str = ""
+    price_per_minute_cents: int
+    cost_per_minute_cents: int
+    gross_profit_per_minute_cents: int
     billing_unit: str
     is_active: bool
     parallel_enabled: bool
     parallel_threshold_seconds: int
     segment_seconds: int
     max_concurrency: int
+    runtime_kind: str = "cloud"
     updated_at: datetime
 
 

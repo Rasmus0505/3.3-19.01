@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 import threading
@@ -14,7 +15,7 @@ from app.models import Lesson, WalletLedger
 from app.repositories.admin_console import invalidate_admin_overview_cache, invalidate_admin_user_activity_summary_cache
 from app.repositories.lessons import update_lesson_title_for_user
 from app.services.asr_dashscope import AsrError
-from app.services.billing_service import BillingError, get_default_asr_model
+from app.services.billing_service import BillingError, ensure_default_billing_rates, get_default_asr_model
 from app.services.lesson_query_service import invalidate_lesson_catalog_cache
 from app.services.lesson_service import LessonService
 from app.services.lesson_task_manager import (
@@ -25,6 +26,7 @@ from app.services.lesson_task_manager import (
     get_task,
     mark_task_failed,
     mark_task_succeeded,
+    patch_task_artifacts,
     reset_failed_task_for_restart,
     reset_task_for_resume,
     update_task_progress,
@@ -55,6 +57,8 @@ def run_lesson_generation_task(
     asr_model: str,
     semantic_split_enabled: bool | None,
     session_factory: sessionmaker[Session],
+    input_mode: str = "upload",
+    source_duration_ms: int | None = None,
 ) -> None:
     db = session_factory()
     try:
@@ -73,17 +77,33 @@ def run_lesson_generation_task(
                 session_factory=session_factory,
             )
 
-        lesson = LessonService.generate_from_saved_file(
-            source_path=source_path,
-            source_filename=source_filename,
-            req_dir=req_dir,
-            owner_id=owner_id,
-            asr_model=asr_model,
-            task_id=task_id,
-            semantic_split_enabled=semantic_split_enabled,
-            db=db,
-            progress_callback=_progress,
-        )
+        normalized_input_mode = str(input_mode or "upload").strip().lower()
+        if normalized_input_mode == "local_asr":
+            local_payload = json.loads(Path(source_path).read_text(encoding="utf-8"))
+            lesson = LessonService.generate_from_local_asr_payload(
+                asr_payload=dict(local_payload.get("asr_payload") or {}),
+                source_filename=source_filename,
+                source_duration_ms=int(local_payload.get("source_duration_ms") or source_duration_ms or 0),
+                req_dir=req_dir,
+                owner_id=owner_id,
+                asr_model=asr_model,
+                task_id=task_id,
+                semantic_split_enabled=semantic_split_enabled,
+                db=db,
+                progress_callback=_progress,
+            )
+        else:
+            lesson = LessonService.generate_from_saved_file(
+                source_path=source_path,
+                source_filename=source_filename,
+                req_dir=req_dir,
+                owner_id=owner_id,
+                asr_model=asr_model,
+                task_id=task_id,
+                semantic_split_enabled=semantic_split_enabled,
+                db=db,
+                progress_callback=_progress,
+            )
         mark_task_succeeded(
             task_id,
             lesson_id=lesson.id,
@@ -160,6 +180,7 @@ def create_lesson_task_from_upload(
     req_dir.mkdir(parents=True, exist_ok=True)
     task_session_factory = build_lesson_task_session_factory(db.get_bind())
     try:
+        ensure_default_billing_rates(db)
         ensure_lesson_task_storage_ready(db)
         source_filename = (video_file.filename or "unknown")[:255]
         suffix = validate_suffix(source_filename)
@@ -187,11 +208,84 @@ def create_lesson_task_from_upload(
                 "asr_model": asr_model,
                 "semantic_split_enabled": semantic_split_enabled,
                 "session_factory": task_session_factory,
+                "input_mode": "upload",
             },
             daemon=True,
         )
         thread.start()
         logger.info("[DEBUG] lessons.task.create.started task_id=%s user_id=%s", task_id, owner_user_id)
+        return {"task_id": task_id}
+    except Exception:
+        cleanup_dir(req_dir)
+        raise
+
+
+def create_lesson_task_from_local_asr(
+    *,
+    source_filename: str,
+    source_duration_ms: int,
+    asr_payload: dict,
+    owner_user_id: int,
+    asr_model: str,
+    semantic_split_enabled: bool | None,
+    db: Session,
+) -> dict[str, object]:
+    task_id = build_task_id()
+    req_dir = BASE_TMP_DIR / task_id
+    req_dir.mkdir(parents=True, exist_ok=True)
+    task_session_factory = build_lesson_task_session_factory(db.get_bind())
+    try:
+        ensure_default_billing_rates(db)
+        ensure_lesson_task_storage_ready(db)
+        payload_path = req_dir / "local_asr_payload.json"
+        payload_path.write_text(
+            json.dumps(
+                {
+                    "asr_payload": dict(asr_payload or {}),
+                    "source_duration_ms": int(source_duration_ms or 0),
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        create_task(
+            task_id=task_id,
+            owner_user_id=owner_user_id,
+            source_filename=(source_filename or "local_asr.json")[:255],
+            asr_model=asr_model,
+            semantic_split_enabled=semantic_split_enabled,
+            work_dir=str(req_dir),
+            source_path=str(payload_path),
+            db=db,
+        )
+        patch_task_artifacts(
+            task_id,
+            artifacts_patch={
+                "input_mode": "local_asr",
+                "source_duration_ms": int(source_duration_ms or 0),
+                "local_asr_payload_path": str(payload_path),
+            },
+            db=db,
+        )
+        thread = threading.Thread(
+            target=run_lesson_generation_task,
+            kwargs={
+                "task_id": task_id,
+                "owner_id": owner_user_id,
+                "source_filename": (source_filename or "local_asr.json")[:255],
+                "source_path": payload_path,
+                "req_dir": req_dir,
+                "asr_model": asr_model,
+                "semantic_split_enabled": semantic_split_enabled,
+                "session_factory": task_session_factory,
+                "input_mode": "local_asr",
+                "source_duration_ms": int(source_duration_ms or 0),
+            },
+            daemon=True,
+        )
+        thread.start()
+        logger.info("[DEBUG] lessons.task.local_asr.started task_id=%s user_id=%s", task_id, owner_user_id)
         return {"task_id": task_id}
     except Exception:
         cleanup_dir(req_dir)
@@ -264,6 +358,7 @@ def resume_lesson_task_for_user(*, task_id: str, user_id: int, db: Session) -> d
         }
 
     task_session_factory = build_lesson_task_session_factory(db.get_bind())
+    input_mode = str(artifacts.get("input_mode") or "upload").strip().lower() or "upload"
     thread = threading.Thread(
         target=run_lesson_generation_task,
         kwargs={
@@ -275,6 +370,8 @@ def resume_lesson_task_for_user(*, task_id: str, user_id: int, db: Session) -> d
             "asr_model": str(resumed.get("asr_model") or get_default_asr_model(db)),
             "semantic_split_enabled": bool(resumed.get("semantic_split_enabled")),
             "session_factory": task_session_factory,
+            "input_mode": input_mode,
+            "source_duration_ms": int(artifacts.get("source_duration_ms") or 0),
         },
         daemon=True,
     )

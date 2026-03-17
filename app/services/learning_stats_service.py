@@ -335,7 +335,7 @@ def build_learning_progress_summary(
         db.scalar(
             select(
                 func.coalesce(
-                    func.sum(case((WalletLedger.delta_points < 0, -WalletLedger.delta_points), else_=0)),
+                    func.sum(case((WalletLedger.delta_amount_cents < 0, -WalletLedger.delta_amount_cents), else_=0)),
                     0,
                 )
             ).where(

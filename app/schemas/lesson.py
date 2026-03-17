@@ -97,6 +97,10 @@ class LessonTaskTranslationUsageResponse(BaseModel):
     completion_tokens: int = 0
     total_tokens: int = 0
     charged_points: int = 0
+    charged_amount_cents: int = 0
+    actual_cost_amount_cents: int = 0
+    actual_revenue_amount_cents: int = 0
+    gross_profit_amount_cents: int = 0
 
 
 class LessonTaskTranslationDebugResponse(BaseModel):
@@ -104,6 +108,10 @@ class LessonTaskTranslationDebugResponse(BaseModel):
     failed_sentences: int = 0
     request_count: int = 0
     success_request_count: int = 0
+    estimated_charge_amount_cents: int = 0
+    actual_charge_amount_cents: int = 0
+    actual_cost_amount_cents: int = 0
+    gross_profit_amount_cents: int = 0
     usage: LessonTaskTranslationUsageResponse = Field(default_factory=LessonTaskTranslationUsageResponse)
     latest_error_summary: str = ""
 
@@ -142,6 +150,13 @@ class LessonTaskResponse(BaseModel):
 class LessonTaskCreateResponse(BaseModel):
     ok: bool = True
     task_id: str
+
+
+class LocalAsrLessonTaskCreateRequest(BaseModel):
+    asr_model: str = Field(min_length=1, max_length=100)
+    source_filename: str = Field(min_length=1, max_length=255)
+    source_duration_ms: int = Field(gt=0)
+    asr_payload: dict[str, Any]
 
 
 class LessonTaskResumeResponse(BaseModel):

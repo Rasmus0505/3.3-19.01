@@ -272,7 +272,7 @@ export function LearningShellLocalSubtitles() {
     const resp = await api("/api/wallet/me", {}, accessToken);
     const data = await parseResponse(resp);
     if (resp.ok) {
-      setWalletBalance(Number(data.balance_points || 0));
+      setWalletBalance(Number(data.balance_amount_cents ?? data.balance_points ?? 0));
     }
   }
 
