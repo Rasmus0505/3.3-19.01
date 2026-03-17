@@ -18,6 +18,7 @@ from app.services.lesson_builder import normalize_learning_english_text, tokeniz
 
 
 LOCAL_ASR_MODEL_META: dict[str, tuple[str, str]] = {
+    "local-sensevoice-small": ("SenseVoice Small · 本地", "local"),
     "local-whisper-tiny-en": ("Tiny · 英文", "local"),
     "local-whisper-base-en": ("Base · 英文", "local"),
     "local-whisper-small-en": ("Small · 英文", "local"),

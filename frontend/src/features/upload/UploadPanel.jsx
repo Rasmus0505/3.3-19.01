@@ -16,14 +16,24 @@ const UPLOAD_PROGRESS_PERSIST_INTERVAL_MS = 800;
 const LOCAL_ASR_TARGET_SAMPLE_RATE = 16000;
 const LOCAL_ASR_FILE_ACCEPT = "audio/*,video/mp4,.mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.opus";
 const LOCAL_MODEL_VISUAL_PROGRESS_INTERVAL_MS = 120;
+const DEFAULT_LOCAL_ASR_ASSET_BASE_URL =
+  "https://www.modelscope.cn/studios/csukuangfj/web-assembly-vad-asr-sherpa-onnx-zh-en-jp-ko-cantonese-sense-voice/resolve/master";
+const LOCAL_ASR_ASSET_BASE_URL = (import.meta.env.VITE_LOCAL_ASR_MODEL_BASE_URL || DEFAULT_LOCAL_ASR_ASSET_BASE_URL).trim().replace(/\/+$/, "");
 const LOCAL_MODEL_OPTIONS = [
   {
-    key: "local-whisper-tiny-en",
-    workerModelId: "onnx-community/whisper-tiny.en_timestamped",
-    title: "Tiny",
+    key: "local-sensevoice-small",
+    workerModelId: "local-sensevoice-small",
+    title: "SenseVoice Small",
     subtitle: "最快，适合先试跑",
-    sizeEstimateMb: { webgpu: 150, wasm: 45 },
+    sizeEstimateMb: { wasm: 180 },
+    cacheFiles: [
+      "sherpa-onnx-asr.js",
+      "sherpa-onnx-wasm-main-vad-asr.js",
+      "sherpa-onnx-wasm-main-vad-asr.wasm",
+      "sherpa-onnx-wasm-main-vad-asr.data",
+    ],
   },
+  /*
   {
     key: "local-whisper-base-en",
     workerModelId: "onnx-community/whisper-base.en_timestamped",
@@ -45,6 +55,7 @@ const LOCAL_MODEL_OPTIONS = [
     subtitle: "最重但更稳，适合高配置浏览器",
     sizeEstimateMb: { webgpu: 3150, wasm: 1000 },
   },
+  */
 ];
 const DISPLAY_STAGES = [
   { key: "convert_audio", label: "转换" },
@@ -67,7 +78,7 @@ function calculatePointsBySeconds(seconds, pointsPerMinute) {
 }
 
 function getLocalModelMeta(modelKey) {
-  return LOCAL_MODEL_OPTIONS.find((item) => item.key === modelKey) || LOCAL_MODEL_OPTIONS[1];
+  return LOCAL_MODEL_OPTIONS.find((item) => item.key === modelKey) || LOCAL_MODEL_OPTIONS[0];
 }
 
 function detectLocalAsrSupport() {
@@ -90,7 +101,7 @@ function detectLocalAsrSupport() {
 }
 
 function formatLocalModelEstimate(meta, support) {
-  const preferredRuntime = support.webgpuSupported ? "webgpu" : "wasm";
+  const preferredRuntime = support.webgpuSupported && Number(meta?.sizeEstimateMb?.webgpu || 0) > 0 ? "webgpu" : "wasm";
   const amountMb = Number(meta?.sizeEstimateMb?.[preferredRuntime] || 0);
   if (!amountMb) return "待确认";
   return amountMb >= 1024 ? `${(amountMb / 1024).toFixed(1)}GB` : `${amountMb}MB`;
@@ -177,7 +188,11 @@ function buildWorkerRequestId(sequence) {
 
 async function clearLocalModelCaches(modelMeta) {
   if (typeof caches === "undefined") return;
-  const patterns = [modelMeta.workerModelId, encodeURIComponent(modelMeta.workerModelId), ...modelMeta.workerModelId.split("/")];
+  const patterns = [
+    LOCAL_ASR_ASSET_BASE_URL,
+    encodeURIComponent(LOCAL_ASR_ASSET_BASE_URL),
+    ...(Array.isArray(modelMeta?.cacheFiles) ? modelMeta.cacheFiles : []),
+  ];
   const cacheNames = await caches.keys();
   await Promise.all(
     cacheNames.map(async (cacheName) => {
@@ -205,7 +220,7 @@ function getCurrentTaskStageKey(taskSnapshot) {
 function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
   if (phase === "uploading") return `上传素材 ${clampPercent(uploadPercent)}%`;
   if (phase === "upload_paused") return `上传素材 ${clampPercent(uploadPercent)}%`;
-  if (phase === "local_transcribing") return "均衡模式正在本地识别英文字幕";
+  if (phase === "local_transcribing") return "均衡模式正在本地识别字幕";
   if (!taskSnapshot) return phase === "success" ? "生成课程完成" : phase === "error" ? "生成课程失败" : "等待上传";
   if (phase === "success") return "生成课程完成";
   const counters = taskSnapshot.counters || {};
@@ -279,7 +294,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [mode, setMode] = useState("balanced");
   const [selectedBalancedModel, setSelectedBalancedModel] = useState(() => {
     const configuredModel = String(subtitleSettings?.default_asr_model || "").trim();
-    return LOCAL_MODEL_OPTIONS.some((item) => item.key === configuredModel) ? configuredModel : LOCAL_MODEL_OPTIONS[1].key;
+    return configuredModel === LOCAL_MODEL_OPTIONS[0].key ? configuredModel : LOCAL_MODEL_OPTIONS[0].key;
   });
   const [localModelStateMap, setLocalModelStateMap] = useState({});
   const [localModelVisualProgressMap, setLocalModelVisualProgressMap] = useState({});
@@ -346,7 +361,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
           type,
           requestId,
           modelId: modelMeta.workerModelId,
-          preferredRuntime: localAsrSupport.webgpuSupported ? "webgpu" : "wasm",
+          preferredRuntime: "wasm",
+          assetBaseUrl: LOCAL_ASR_ASSET_BASE_URL,
           ...payload,
         },
         transfer,
@@ -407,7 +423,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       setLocalModelStateMap(unsupportedMap);
       return undefined;
     }
-    const worker = new Worker(new URL("./localAsrPreviewWorker.js", import.meta.url), { type: "module" });
+    const worker = new Worker(new URL("./localAsrPreviewWorker.js", import.meta.url));
     localAsrWorkerRef.current = worker;
 
     const handleMessage = (event) => {
@@ -952,8 +968,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
     setPhase("local_transcribing");
     setLoading(true);
-    setStatus("正在本地识别英文字幕");
-    await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: "正在本地识别英文字幕", bindingCompleted: false });
+    setStatus("正在本地识别字幕");
+    await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: "正在本地识别字幕", bindingCompleted: false });
     try {
       const audioData = await decodeFileForLocalAsr(file);
       if (!(audioData instanceof Float32Array) || audioData.length <= 0) {
@@ -1198,7 +1214,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
         {mode === "balanced" ? (
           <div className="grid gap-3 xl:grid-cols-2">
-            {LOCAL_MODEL_OPTIONS.map((item) => {
+            {LOCAL_MODEL_OPTIONS.slice(0, 1).map((item) => {
               const state = localModelStateMap[item.key] || { status: localAsrSupport.supported ? "idle" : "unsupported", runtime: "", progress: null, error: localAsrSupport.reason };
               const selected = selectedBalancedModel === item.key;
               const downloaded = ["ready", "cached"].includes(String(state.status || ""));
