@@ -15,6 +15,7 @@ const QWEN_MODEL = "qwen3-asr-flash-filetrans";
 const UPLOAD_PROGRESS_PERSIST_INTERVAL_MS = 800;
 const LOCAL_ASR_TARGET_SAMPLE_RATE = 16000;
 const LOCAL_ASR_FILE_ACCEPT = "audio/*,video/mp4,.mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.opus";
+const LOCAL_MODEL_VISUAL_PROGRESS_INTERVAL_MS = 120;
 const LOCAL_MODEL_OPTIONS = [
   {
     key: "local-whisper-tiny-en",
@@ -91,8 +92,8 @@ function detectLocalAsrSupport() {
 function formatLocalModelEstimate(meta, support) {
   const preferredRuntime = support.webgpuSupported ? "webgpu" : "wasm";
   const amountMb = Number(meta?.sizeEstimateMb?.[preferredRuntime] || 0);
-  if (!amountMb) return "预计大小待确认";
-  return `${support.webgpuSupported ? "WebGPU" : "WASM"} 约 ${amountMb >= 1024 ? `${(amountMb / 1024).toFixed(1)}GB` : `${amountMb}MB`}`;
+  if (!amountMb) return "待确认";
+  return amountMb >= 1024 ? `${(amountMb / 1024).toFixed(1)}GB` : `${amountMb}MB`;
 }
 
 function getLocalModelStatusLabel(status) {
@@ -275,12 +276,13 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [uploadPercent, setUploadPercent] = useState(0);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [bindingCompleted, setBindingCompleted] = useState(false);
-  const [mode, setMode] = useState("fast");
+  const [mode, setMode] = useState("balanced");
   const [selectedBalancedModel, setSelectedBalancedModel] = useState(() => {
     const configuredModel = String(subtitleSettings?.default_asr_model || "").trim();
     return LOCAL_MODEL_OPTIONS.some((item) => item.key === configuredModel) ? configuredModel : LOCAL_MODEL_OPTIONS[1].key;
   });
   const [localModelStateMap, setLocalModelStateMap] = useState({});
+  const [localModelVisualProgressMap, setLocalModelVisualProgressMap] = useState({});
   const [localBusyModelKey, setLocalBusyModelKey] = useState("");
   const [localBusyText, setLocalBusyText] = useState("");
   const pollingAbortRef = useRef(false);
@@ -480,6 +482,49 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }, [localAsrSupport.reason, localAsrSupport.supported]);
 
   useEffect(() => {
+    const timer = setInterval(() => {
+      setLocalModelVisualProgressMap((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        LOCAL_MODEL_OPTIONS.forEach((item) => {
+          const modelState = localModelStateMap[item.key] || {};
+          const status = String(modelState.status || "");
+          const rawProgress = Number(modelState.progress);
+          const shouldShowProgress =
+            ["ready", "cached"].includes(status) || (status === "loading" && Number.isFinite(rawProgress));
+
+          if (!shouldShowProgress) {
+            if (Object.prototype.hasOwnProperty.call(next, item.key)) {
+              delete next[item.key];
+              changed = true;
+            }
+            return;
+          }
+
+          const target = ["ready", "cached"].includes(status) ? 100 : clampPercent(rawProgress);
+          const current = Number.isFinite(Number(prev[item.key])) ? clampPercent(prev[item.key]) : 0;
+          const nextValue =
+            target >= 100
+              ? 100
+              : current >= target
+                ? current
+                : Math.min(target, current + Math.max(1, Math.ceil((target - current) * 0.22)));
+
+          if (!Object.prototype.hasOwnProperty.call(next, item.key) || Math.abs(Number(next[item.key]) - nextValue) > 0.001) {
+            next[item.key] = nextValue;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }, LOCAL_MODEL_VISUAL_PROGRESS_INTERVAL_MS);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [localModelStateMap]);
+
+  useEffect(() => {
     let canceled = false;
     async function restoreLocalModelState() {
       const cachedStates = await listLocalAsrPreviewStates().catch(() => []);
@@ -542,6 +587,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     const nextFile = overrides.file ?? file;
     const nextTaskId = overrides.taskId ?? taskId;
     const nextPhase = overrides.phase ?? phase;
+    const nextMode = overrides.mode ?? mode;
     if (!ownerUserId) return;
     if (!nextFile && !nextTaskId && nextPhase === "idle") {
       await clearActiveGenerationTask(ownerUserId);
@@ -560,6 +606,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       aspect_ratio: Number(overrides.aspectRatio ?? coverAspectRatio ?? 0),
       duration_seconds: Number(overrides.durationSec ?? durationSec ?? 0),
       is_video_source: Boolean(overrides.isVideoSource ?? isVideoSource),
+      generation_mode: nextMode === "fast" ? "fast" : "balanced",
       upload_percent: Number(overrides.uploadPercent ?? uploadPercent ?? 0),
       status_text: String(overrides.status ?? status ?? ""),
       semantic_split_enabled: false,
@@ -750,6 +797,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       setStatus(restoredStatus);
       setDurationSec(Number(saved.duration_seconds || 0) || null);
       setPhase(restoredPhase || "idle");
+      setMode(String(saved.generation_mode || "").toLowerCase() === "fast" ? "fast" : "balanced");
       setCoverDataUrl(String(saved.cover_data_url || ""));
       setCoverWidth(Number(saved.cover_width || 0));
       setCoverHeight(Number(saved.cover_height || 0));
@@ -1130,80 +1178,77 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               </Tooltip>
               ：{selectedRate ? (durationSec != null ? `${formatMoneyCents(estimatedChargeCents)}（${formatMoneyPerMinute(selectedRate.price_per_minute_cents)}）` : "选择文件后显示") : "该模型未配置单价"}
             </p>
-            <p className="text-muted-foreground">当前模式：{mode === "balanced" ? `均衡 · ${selectedLocalModelMeta.title}` : "高速 · 云端 ASR"}</p>
+            <p className="text-muted-foreground">当前模式：{mode === "balanced" ? `均衡 · ${selectedLocalModelMeta.title}` : "高速"}</p>
             {likelyInsufficient ? <p className="mt-1 text-destructive">余额可能不足，提交将被拒绝。</p> : null}
           </AlertDescription>
         </Alert>
 
         <div className="space-y-2">
           <p className="text-sm font-medium">生成模式</p>
-          <div className="grid gap-2 md:grid-cols-2">
-            <Button type="button" variant={mode === "fast" ? "default" : "outline"} className="h-11 justify-start" onClick={() => setMode("fast")} disabled={loading || localTranscribing}>
-              高速
-            </Button>
-            <Button type="button" variant={mode === "balanced" ? "default" : "outline"} className="h-11 justify-start" onClick={() => setMode("balanced")} disabled={loading || localTranscribing}>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant={mode === "balanced" ? "default" : "outline"} className="h-9 px-4" onClick={() => setMode("balanced")} disabled={loading || localTranscribing}>
               均衡
             </Button>
+            <Button type="button" variant={mode === "fast" ? "default" : "outline"} className="h-9 px-4" onClick={() => setMode("fast")} disabled={loading || localTranscribing}>
+              高速
+            </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            高速走云端 ASR；均衡会在你的浏览器本地下载模型并识别，再把识别结果接入原有翻译和生成流程。
-          </p>
           {mode === "balanced" && !localAsrSupport.supported ? <p className="text-xs text-destructive">{localAsrSupport.reason}</p> : null}
         </div>
 
         {mode === "balanced" ? (
-          <div className="space-y-3 rounded-2xl border bg-muted/10 p-4">
-            <div className="space-y-1">
-              <p className="text-sm font-semibold">本地模型管理</p>
-              <p className="text-xs text-muted-foreground">
-                模型下载发生在当前浏览器，不占用 Zeabur 服务器带宽。当前浏览器预计下载：{localAsrSupport.supported ? (localAsrSupport.webgpuSupported ? "WebGPU" : "WASM") : "-"}。
-              </p>
-            </div>
-            <div className="grid gap-3 xl:grid-cols-2">
-              {LOCAL_MODEL_OPTIONS.map((item) => {
-                const state = localModelStateMap[item.key] || { status: localAsrSupport.supported ? "idle" : "unsupported", runtime: "", progress: null, error: localAsrSupport.reason };
-                const selected = selectedBalancedModel === item.key;
-                const downloaded = ["ready", "cached"].includes(String(state.status || ""));
-                return (
-                  <div
-                    key={item.key}
-                    className={cn(
-                      "space-y-3 rounded-2xl border p-4 transition-colors",
-                      selected ? "border-primary bg-primary/5" : "border-border bg-background/80",
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <button type="button" className="text-left" onClick={() => setSelectedBalancedModel(item.key)} disabled={loading || localTranscribing}>
-                          <p className="text-sm font-semibold">{item.title}</p>
-                          <p className="text-xs text-muted-foreground">{item.subtitle}</p>
-                        </button>
-                      </div>
-                      <Badge variant={downloaded ? "default" : "outline"}>{getLocalModelStatusLabel(state.status)}</Badge>
+          <div className="grid gap-3 xl:grid-cols-2">
+            {LOCAL_MODEL_OPTIONS.map((item) => {
+              const state = localModelStateMap[item.key] || { status: localAsrSupport.supported ? "idle" : "unsupported", runtime: "", progress: null, error: localAsrSupport.reason };
+              const selected = selectedBalancedModel === item.key;
+              const downloaded = ["ready", "cached"].includes(String(state.status || ""));
+              const visualProgress = Number(localModelVisualProgressMap[item.key]);
+              const showVisualProgress = Number.isFinite(visualProgress);
+              return (
+                <div
+                  key={item.key}
+                  className={cn(
+                    "space-y-3 rounded-2xl border p-4 transition-colors",
+                    selected ? "border-primary bg-primary/5" : "border-border bg-background/80",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <button type="button" className="text-left" onClick={() => setSelectedBalancedModel(item.key)} disabled={loading || localTranscribing}>
+                        <p className="text-sm font-semibold">{item.title}</p>
+                        <p className="text-xs text-muted-foreground">{item.subtitle}</p>
+                      </button>
                     </div>
-                    <div className="space-y-1 text-xs text-muted-foreground">
-                      <p>预计下载：{formatLocalModelEstimate(item, localAsrSupport)}</p>
-                      {state.runtime ? <p>上次运行时：{String(state.runtime || "").toUpperCase()}</p> : null}
-                      {Number.isFinite(Number(state.progress)) ? <p>下载进度：{clampPercent(state.progress)}%</p> : null}
-                      {state.error ? <p className="text-destructive">{state.error}</p> : null}
-                      {localBusyModelKey === item.key && localBusyText ? <p>{localBusyText}</p> : null}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" size="sm" onClick={() => void handleLocalModelDownload(item.key)} disabled={!localAsrSupport.supported || loading || localTranscribing || localBusyModelKey === item.key}>
-                        {String(state.status || "") === "loading" ? <Loader2 className="size-4 animate-spin" /> : null}
-                        {downloaded ? "重新校验" : "下载模型"}
-                      </Button>
-                      <Button type="button" size="sm" variant="outline" onClick={() => setSelectedBalancedModel(item.key)} disabled={loading || localTranscribing}>
-                        设为当前
-                      </Button>
-                      <Button type="button" size="sm" variant="ghost" onClick={() => void handleLocalModelRemove(item.key)} disabled={!downloaded || loading || localTranscribing || localBusyModelKey === item.key}>
-                        卸载
-                      </Button>
-                    </div>
+                    <Badge variant={downloaded ? "default" : "outline"}>{getLocalModelStatusLabel(state.status)}</Badge>
                   </div>
-                );
-              })}
-            </div>
+                  <div className="space-y-2 text-xs text-muted-foreground">
+                    <p>预计下载：{formatLocalModelEstimate(item, localAsrSupport)}</p>
+                    {showVisualProgress ? (
+                      <div className="space-y-1">
+                        <p>下载进度：{clampPercent(visualProgress)}%</p>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                          <div className="h-full rounded-full bg-primary transition-[width] duration-200" style={{ width: `${clampPercent(visualProgress)}%` }} />
+                        </div>
+                      </div>
+                    ) : null}
+                    {state.error ? <p className="text-destructive">{state.error}</p> : null}
+                    {localBusyModelKey === item.key && localBusyText ? <p>{localBusyText}</p> : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" onClick={() => void handleLocalModelDownload(item.key)} disabled={!localAsrSupport.supported || loading || localTranscribing || localBusyModelKey === item.key}>
+                      {String(state.status || "") === "loading" ? <Loader2 className="size-4 animate-spin" /> : null}
+                      {downloaded ? "重新校验" : "下载模型"}
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setSelectedBalancedModel(item.key)} disabled={loading || localTranscribing}>
+                      设为当前
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => void handleLocalModelRemove(item.key)} disabled={!downloaded || loading || localTranscribing || localBusyModelKey === item.key}>
+                      卸载
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : null}
 
@@ -1286,7 +1331,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               <Button type="button" variant="secondary" className="h-11" onClick={() => setLinkDialogOpen(true)} disabled={loading || localModeBusy}>链接生成视频</Button>
             </div>
             {file ? <p className="text-xs text-muted-foreground">{file.name}</p> : null}
-            {mode === "balanced" ? <p className="text-xs text-muted-foreground">均衡模式会先在本地识别，再把识别结果接入生成流程。</p> : null}
           </div>
           <Button type="submit" disabled={loading || phase === "success" || (mode === "balanced" && (!localAsrSupport.supported || localModeBusy))} className="h-11 w-full" data-guide-id="upload-submit">
             {loading ? (
