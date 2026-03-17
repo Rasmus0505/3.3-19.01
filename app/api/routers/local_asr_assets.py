@@ -47,9 +47,17 @@ def _asset_media_type(asset_name: str) -> str:
     return "application/octet-stream"
 
 
-def _run_local_asr_cmd(cmd: list[str], *, cwd: Path | None = None, timeout_seconds: int = 1800) -> None:
+def _run_local_asr_cmd(
+    cmd: list[str],
+    *,
+    cwd: Path | None = None,
+    timeout_seconds: int = 1800,
+    extra_env: dict[str, str] | None = None,
+) -> None:
     env = os.environ.copy()
     env["GIT_LFS_SKIP_SMUDGE"] = "0"
+    if extra_env:
+        env.update({str(key): str(value) for key, value in extra_env.items()})
     proc = subprocess.run(
         cmd,
         cwd=str(cwd) if cwd else None,
@@ -61,6 +69,49 @@ def _run_local_asr_cmd(cmd: list[str], *, cwd: Path | None = None, timeout_secon
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "").strip()[:1200]
         raise RuntimeError(detail or f"command failed: {' '.join(cmd)}")
+
+
+def _command_available(name: str) -> bool:
+    return shutil.which(name) is not None
+
+
+def _git_lfs_ready() -> bool:
+    if not _command_available("git"):
+        return False
+    proc = subprocess.run(
+        ["git", "lfs", "version"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=os.environ.copy(),
+    )
+    return proc.returncode == 0
+
+
+def _ensure_git_dependencies() -> None:
+    if _command_available("git") and _git_lfs_ready():
+        return
+
+    if not _command_available("apt-get"):
+        raise RuntimeError("git missing and apt-get unavailable")
+    if hasattr(os, "geteuid") and os.geteuid() != 0:
+        raise RuntimeError("git missing and runtime user is not root")
+
+    logger.warning("[DEBUG] local_asr.assets.install_git start")
+    install_env = {
+        "DEBIAN_FRONTEND": "noninteractive",
+    }
+    _run_local_asr_cmd(["apt-get", "update"], timeout_seconds=900, extra_env=install_env)
+    _run_local_asr_cmd(
+        ["apt-get", "install", "-y", "--no-install-recommends", "git", "git-lfs"],
+        timeout_seconds=1800,
+        extra_env=install_env,
+    )
+    _run_local_asr_cmd(["git", "lfs", "install", "--skip-repo"], timeout_seconds=120)
+
+    if not _command_available("git") or not _git_lfs_ready():
+        raise RuntimeError("git/git-lfs installation finished but commands are still unavailable")
+    logger.warning("[DEBUG] local_asr.assets.install_git done")
 
 
 def _ensure_asset_cache_populated() -> None:
@@ -78,6 +129,7 @@ def _ensure_asset_cache_populated() -> None:
         temp_dir = LOCAL_ASR_DOWNLOAD_ROOT / f"download_{uuid.uuid4().hex}"
         logger.info("[DEBUG] local_asr.assets.download_start missing=%s", ",".join(missing))
         try:
+            _ensure_git_dependencies()
             _run_local_asr_cmd(["git", "lfs", "install", "--skip-repo"], timeout_seconds=120)
             _run_local_asr_cmd(["git", "clone", "--depth", "1", LOCAL_ASR_ASSET_REPO_URL, str(temp_dir)], timeout_seconds=1800)
             for name in LOCAL_ASR_ALLOWED_FILES:
