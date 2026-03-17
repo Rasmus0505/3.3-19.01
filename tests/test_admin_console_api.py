@@ -8,7 +8,99 @@ from sqlalchemy import select, text
 
 from app.models import Lesson, LessonGenerationTask, TranslationRequestLog, User
 from app.services.lesson_task_manager import create_task, mark_task_failed
-from test_regression_api import _register_and_login, test_client
+from test_regression_api import _register_and_login, clear_query_caches, test_client
+
+
+def _recreate_legacy_redeem_tables_without_face_value_unit(session_factory) -> None:
+    session = session_factory()
+    try:
+        session.execute(text("DROP TABLE IF EXISTS redeem_code_attempts"))
+        session.execute(text("DROP TABLE IF EXISTS redeem_codes"))
+        session.execute(text("DROP TABLE IF EXISTS redeem_code_batches"))
+        session.execute(
+            text(
+                """
+                CREATE TABLE redeem_code_batches (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    batch_name VARCHAR(120) NOT NULL,
+                    face_value_points INTEGER NOT NULL,
+                    generated_count INTEGER NOT NULL DEFAULT 0,
+                    active_from DATETIME NOT NULL,
+                    expire_at DATETIME NOT NULL,
+                    daily_limit_per_user INTEGER,
+                    status VARCHAR(16) NOT NULL DEFAULT 'active',
+                    remark TEXT NOT NULL DEFAULT '',
+                    created_by_user_id INTEGER,
+                    created_at DATETIME NOT NULL,
+                    updated_at DATETIME NOT NULL
+                )
+                """
+            )
+        )
+        session.execute(
+            text(
+                """
+                CREATE TABLE redeem_codes (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    batch_id INTEGER NOT NULL,
+                    code_plain VARCHAR(64) NOT NULL,
+                    code_hash VARCHAR(64) NOT NULL,
+                    masked_code VARCHAR(32) NOT NULL,
+                    status VARCHAR(16) NOT NULL DEFAULT 'active',
+                    created_by_user_id INTEGER,
+                    redeemed_by_user_id INTEGER,
+                    redeemed_at DATETIME,
+                    created_at DATETIME NOT NULL,
+                    updated_at DATETIME NOT NULL
+                )
+                """
+            )
+        )
+        session.execute(
+            text(
+                """
+                CREATE TABLE redeem_code_attempts (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    user_id INTEGER,
+                    batch_id INTEGER,
+                    code_id INTEGER,
+                    code_mask VARCHAR(32) NOT NULL DEFAULT '',
+                    success BOOLEAN NOT NULL,
+                    failure_reason VARCHAR(64) NOT NULL DEFAULT '',
+                    created_at DATETIME NOT NULL
+                )
+                """
+            )
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO redeem_code_batches (
+                    id, batch_name, face_value_points, generated_count, active_from, expire_at,
+                    daily_limit_per_user, status, remark, created_by_user_id, created_at, updated_at
+                ) VALUES (
+                    1, 'legacy_batch', 88, 1, '2026-03-09 10:00:00', '2026-04-09 10:00:00',
+                    NULL, 'active', 'legacy schema', NULL, '2026-03-09 10:00:00', '2026-03-09 10:00:00'
+                )
+                """
+            )
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO redeem_codes (
+                    id, batch_id, code_plain, code_hash, masked_code, status,
+                    created_by_user_id, redeemed_by_user_id, redeemed_at, created_at, updated_at
+                ) VALUES (
+                    1, 1, 'LEGACY-CODE-001', 'legacy-hash-001', 'LEGACY-***-001', 'active',
+                    NULL, NULL, NULL, '2026-03-09 10:00:00', '2026-03-09 10:00:00'
+                )
+                """
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
 
 
 def test_admin_overview_returns_metrics_and_recent_rows(test_client):
@@ -48,6 +140,80 @@ def test_admin_overview_returns_metrics_and_recent_rows(test_client):
     assert data["metrics"]["active_batches"] >= 1
     assert len(data["recent_batches"]) >= 1
     assert any(item["action_type"] == "redeem_batch_create" for item in data["recent_operations"])
+
+
+def test_admin_overview_and_redeem_endpoints_degrade_when_tables_missing(test_client):
+    client, session_factory, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "admin-missing-schema@example.com")
+
+    admin_token = _register_and_login(client, email="admin-missing-schema@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    session = session_factory()
+    try:
+        session.execute(text("DROP TABLE IF EXISTS redeem_code_attempts"))
+        session.execute(text("DROP TABLE IF EXISTS redeem_codes"))
+        session.execute(text("DROP TABLE IF EXISTS redeem_code_batches"))
+        session.execute(text("DROP TABLE IF EXISTS translation_request_logs"))
+        session.execute(text("DROP TABLE IF EXISTS admin_operation_logs"))
+        session.commit()
+    finally:
+        session.close()
+
+    clear_query_caches()
+
+    overview = client.get("/api/admin/overview", headers=admin_headers)
+    assert overview.status_code == 200
+    overview_data = overview.json()
+    assert overview_data["metrics"]["translation_failures_24h"] == 0
+    assert overview_data["metrics"]["incidents_24h"] == 0
+    assert overview_data["metrics"]["active_batches"] == 0
+    assert overview_data["recent_batches"] == []
+    assert overview_data["recent_operations"] == []
+
+    batches = client.get("/api/admin/redeem-batches", headers=admin_headers)
+    assert batches.status_code == 200
+    assert batches.json()["total"] == 0
+
+    codes = client.get("/api/admin/redeem-codes?page=1&page_size=1", headers=admin_headers)
+    assert codes.status_code == 200
+    assert codes.json()["total"] == 0
+
+    audit = client.get("/api/admin/redeem-audit?page=1&page_size=1", headers=admin_headers)
+    assert audit.status_code == 200
+    assert audit.json()["total"] == 0
+
+
+def test_admin_redeem_endpoints_support_legacy_batch_schema_without_face_value_unit(test_client):
+    client, session_factory, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "admin-legacy-redeem@example.com")
+
+    admin_token = _register_and_login(client, email="admin-legacy-redeem@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    _recreate_legacy_redeem_tables_without_face_value_unit(session_factory)
+    clear_query_caches()
+
+    overview = client.get("/api/admin/overview", headers=admin_headers)
+    assert overview.status_code == 200
+    overview_data = overview.json()
+    assert overview_data["metrics"]["active_batches"] == 1
+    assert len(overview_data["recent_batches"]) == 1
+    assert overview_data["recent_batches"][0]["batch_name"] == "legacy_batch"
+
+    batches = client.get("/api/admin/redeem-batches?page=1&page_size=20", headers=admin_headers)
+    assert batches.status_code == 200
+    batches_data = batches.json()
+    assert batches_data["total"] == 1
+    assert batches_data["items"][0]["batch_name"] == "legacy_batch"
+    assert batches_data["items"][0]["face_value_points"] == 88
+
+    codes = client.get("/api/admin/redeem-codes?page=1&page_size=20", headers=admin_headers)
+    assert codes.status_code == 200
+    codes_data = codes.json()
+    assert codes_data["total"] == 1
+    assert codes_data["items"][0]["batch_name"] == "legacy_batch"
+    assert codes_data["items"][0]["effective_status"] == "unredeemed"
 
 
 def test_admin_operation_logs_and_user_summary(test_client):
