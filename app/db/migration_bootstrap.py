@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from alembic.config import Config
@@ -20,6 +21,14 @@ logger = logging.getLogger(__name__)
 DEFAULT_LOCK_ID = 33190114
 DEFAULT_LOCK_TIMEOUT_SECONDS = 180
 DEFAULT_CONTINUE_ON_FAILURE = True
+
+
+@dataclass(frozen=True)
+class StartupMigrationResult:
+    attempted: bool
+    succeeded: bool
+    allow_startup: bool
+    reason: str
 
 
 def _emit(message: str, *, level: str = "info") -> None:
@@ -169,16 +178,19 @@ def _alembic_config() -> str:
     return os.getenv("ALEMBIC_CONFIG", "alembic.ini").strip() or "alembic.ini"
 
 
-def run_startup_migration() -> bool:
+def run_startup_migration() -> StartupMigrationResult:
     auto_migrate = _env_bool("AUTO_MIGRATE_ON_START", True)
     if not auto_migrate:
-        _emit("[DEBUG] boot.migrate enabled=false mode=manual")
-        return False
+        _emit("[DEBUG] boot.migrate enabled=false mode=manual attempted=false allow_startup=true")
+        return StartupMigrationResult(attempted=False, succeeded=False, allow_startup=True, reason="manual_mode")
 
     database_url = os.getenv("DATABASE_URL", "").strip()
     if not database_url:
-        _emit("[DEBUG] boot.migrate skipped=true reason=missing_database_url", level="warning")
-        return False
+        _emit(
+            "[DEBUG] boot.migrate skipped=true reason=missing_database_url attempted=false allow_startup=true",
+            level="warning",
+        )
+        return StartupMigrationResult(attempted=False, succeeded=False, allow_startup=True, reason="missing_database_url")
 
     lock_id = _env_int("AUTO_MIGRATE_LOCK_ID", DEFAULT_LOCK_ID)
     lock_timeout_seconds = _env_int("AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS", DEFAULT_LOCK_TIMEOUT_SECONDS)
@@ -207,7 +219,7 @@ def run_startup_migration() -> bool:
         else:
             _acquire_postgres_lock(database_url, lock_id, lock_timeout_seconds)
         _emit("[DEBUG] boot.migrate success=true")
-        return True
+        return StartupMigrationResult(attempted=True, succeeded=True, allow_startup=True, reason="success")
     except Exception:
         logger.exception("[DEBUG] boot.migrate failed")
         print("[DEBUG] boot.migrate failed", flush=True)
@@ -216,13 +228,13 @@ def run_startup_migration() -> bool:
                 "[boot] automatic migration failed; continuing app startup and leaving /health/ready unavailable",
                 level="warning",
             )
-            return False
+            return StartupMigrationResult(attempted=True, succeeded=False, allow_startup=True, reason="failed_continue")
         raise
 
 
 if __name__ == "__main__":
     try:
-        migrated = run_startup_migration()
+        result = run_startup_migration()
     except Exception:
         raise
-    sys.exit(0 if migrated or _env_bool("AUTO_MIGRATE_CONTINUE_ON_FAILURE", DEFAULT_CONTINUE_ON_FAILURE) else 1)
+    sys.exit(0 if result.allow_startup else 1)
