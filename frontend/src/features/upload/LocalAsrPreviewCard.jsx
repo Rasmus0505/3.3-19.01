@@ -8,8 +8,7 @@ import { Button, ScrollArea } from "../../shared/ui";
 
 const LOCAL_ASR_MODEL_ID = "local-sensevoice-small";
 const LOCAL_ASR_MODEL_LABEL = "SenseVoice Small";
-const DEFAULT_LOCAL_ASR_ASSET_BASE_URL =
-  "https://www.modelscope.cn/studios/csukuangfj/web-assembly-vad-asr-sherpa-onnx-zh-en-jp-ko-cantonese-sense-voice/resolve/master";
+const DEFAULT_LOCAL_ASR_ASSET_BASE_URL = "/static/local-asr-assets";
 const LOCAL_ASR_ASSET_BASE_URL = (import.meta.env.VITE_LOCAL_ASR_MODEL_BASE_URL || DEFAULT_LOCAL_ASR_ASSET_BASE_URL).trim().replace(/\/+$/, "");
 const LOCAL_ASR_FILE_ACCEPT = "audio/*,video/mp4,.mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.opus";
 const LOCAL_ASR_TARGET_SAMPLE_RATE = 16000;

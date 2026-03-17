@@ -7,6 +7,7 @@ import { formatDateTimeBeijing } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
 import { formatMoneyCents, formatMoneyPerMinute } from "../../shared/lib/money";
 import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
+import { getRateDraftValidationMessage, RATE_INTEGER_CENTS_MESSAGE } from "./rateDraftValidation";
 import {
   Alert,
   AlertDescription,
@@ -113,6 +114,15 @@ export function AdminRatesTab({ apiCall }) {
   async function saveRate(modelName) {
     const draft = drafts[modelName];
     if (!draft) return;
+    const validationMessage = getRateDraftValidationMessage(draft);
+    if (validationMessage) {
+      console.debug("[DEBUG] admin billing rate save blocked by integer cents validation", {
+        modelName,
+        draft,
+      });
+      setStatus(validationMessage);
+      return;
+    }
     setSavingModel(modelName);
     setStatus("");
     clearError();
@@ -179,6 +189,9 @@ export function AdminRatesTab({ apiCall }) {
   const dirtyModels = rates
     .map((item) => ({ item, draft: drafts[item.model_name] || item }))
     .filter(({ item, draft }) => isDraftChanged(item, draft));
+  const invalidModels = rates
+    .map((item) => ({ item, draft: drafts[item.model_name] || item, validationMessage: getRateDraftValidationMessage(drafts[item.model_name] || item) }))
+    .filter(({ validationMessage }) => Boolean(validationMessage));
 
   return (
     <Card>
@@ -206,6 +219,20 @@ export function AdminRatesTab({ apiCall }) {
             </AlertDescription>
           </Alert>
         ) : null}
+        {invalidModels.length > 0 ? (
+          <Alert variant="destructive">
+            <AlertDescription className="space-y-2">
+              <p>以下模型的分钟金额不是合法整数分，保存前需要先修正：</p>
+              <div className="flex flex-wrap gap-2">
+                {invalidModels.map(({ item, validationMessage }) => (
+                  <Badge key={item.model_name} variant="outline">
+                    {item.display_name || item.model_name}: {validationMessage}
+                  </Badge>
+                ))}
+              </div>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {loading ? <Skeleton className="h-10 w-full" /> : null}
         <ScrollArea className="w-full rounded-md border">
           <Table className="min-w-[1380px]">
@@ -227,6 +254,9 @@ export function AdminRatesTab({ apiCall }) {
             <TableBody>
               {rates.map((item) => {
                 const draft = drafts[item.model_name] || item;
+                const validationMessage = getRateDraftValidationMessage(draft);
+                const priceInvalid = Number.isFinite(Number(draft.price_per_minute_cents)) && !Number.isInteger(Number(draft.price_per_minute_cents || 0));
+                const costInvalid = Number.isFinite(Number(draft.cost_per_minute_cents)) && !Number.isInteger(Number(draft.cost_per_minute_cents || 0));
                 return (
                   <TableRow key={item.model_name}>
                     <TableCell className="font-medium">
@@ -239,24 +269,36 @@ export function AdminRatesTab({ apiCall }) {
                       <Input
                         type="number"
                         min={0}
+                        step={1}
                         value={draft.price_per_minute_cents}
                         onChange={(e) => updateDraft(item.model_name, { price_per_minute_cents: Number(e.target.value || 0) })}
+                        aria-invalid={priceInvalid}
                         className="max-w-[150px]"
                       />
-                      <p className="mt-1 text-xs text-muted-foreground">{formatMoneyPerMinute(draft.price_per_minute_cents)}</p>
+                      <p className={`mt-1 text-xs ${priceInvalid ? "text-destructive" : "text-muted-foreground"}`}>
+                        {priceInvalid ? RATE_INTEGER_CENTS_MESSAGE : formatMoneyPerMinute(draft.price_per_minute_cents)}
+                      </p>
                     </TableCell>
                     <TableCell>
                       <Input
                         type="number"
                         min={0}
+                        step={1}
                         value={draft.cost_per_minute_cents}
                         onChange={(e) => updateDraft(item.model_name, { cost_per_minute_cents: Number(e.target.value || 0) })}
+                        aria-invalid={costInvalid}
                         className="max-w-[150px]"
                       />
-                      <p className="mt-1 text-xs text-muted-foreground">{formatMoneyPerMinute(draft.cost_per_minute_cents)}</p>
+                      <p className={`mt-1 text-xs ${costInvalid ? "text-destructive" : "text-muted-foreground"}`}>
+                        {costInvalid ? RATE_INTEGER_CENTS_MESSAGE : formatMoneyPerMinute(draft.cost_per_minute_cents)}
+                      </p>
                     </TableCell>
                     <TableCell>
-                      <div className="text-sm font-medium">{formatMoneyPerMinute(Number(draft.price_per_minute_cents || 0) - Number(draft.cost_per_minute_cents || 0))}</div>
+                      <div className="text-sm font-medium">
+                        {validationMessage
+                          ? "请先改为整数分"
+                          : formatMoneyPerMinute(Number(draft.price_per_minute_cents || 0) - Number(draft.cost_per_minute_cents || 0))}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -302,7 +344,11 @@ export function AdminRatesTab({ apiCall }) {
                     </TableCell>
                     <TableCell>{formatDateTimeBeijing(item.updated_at)}</TableCell>
                     <TableCell>
-                      <Button size="sm" onClick={() => saveRate(item.model_name)} disabled={savingModel === item.model_name}>
+                      <Button
+                        size="sm"
+                        onClick={() => saveRate(item.model_name)}
+                        disabled={savingModel === item.model_name || Boolean(validationMessage)}
+                      >
                         {savingModel === item.model_name ? "保存中..." : "保存"}
                       </Button>
                     </TableCell>
