@@ -30,8 +30,7 @@ spec:
     2. Build from the repository Dockerfile
     3. Deploy only `web` + `postgresql` for the first rollout
     4. Mount a persistent volume to `/data` for `web`
-    5. Set `WHISPER_MIRROR_ROOT=/data/local_whisper_assets`
-    6. Run `python -m alembic -c alembic.ini upgrade head` manually in `web`
+    5. Run `python -m alembic -c alembic.ini upgrade head` manually in `web`
 
     This template remains as a fallback import option.
   services:
@@ -133,8 +132,6 @@ spec:
             default: /tmp/zeabur3.3
           PERSISTENT_DATA_DIR:
             default: /data
-          WHISPER_MIRROR_ROOT:
-            default: /data/local_whisper_assets
           MT_BASE_URL:
             default: https://dashscope.aliyuncs.com/compatible-mode/v1
           MT_MODEL:

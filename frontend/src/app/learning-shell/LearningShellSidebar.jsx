@@ -1,4 +1,4 @@
-import { BookOpenText, ChevronDown, Download, Gift, History, LogIn, LogOut, Search, Shield, Sparkles, TrendingUp, UploadCloud } from "lucide-react";
+import { BookOpenText, ChevronDown, Gift, History, LogIn, LogOut, Search, Shield, Sparkles, TrendingUp, UploadCloud } from "lucide-react";
 
 import {
   SidebarContent,
@@ -39,12 +39,6 @@ export const PANEL_ITEMS = [
     title: "上传素材",
     icon: UploadCloud,
     path: "/upload",
-  },
-  {
-    key: "models",
-    title: "模型下载",
-    icon: Download,
-    path: "/models",
   },
   {
     key: "redeem",

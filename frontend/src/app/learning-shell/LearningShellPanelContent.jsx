@@ -3,7 +3,6 @@ import { Suspense, lazy } from "react";
 import { AuthPanel } from "../../features/auth/AuthPanel";
 import { GettingStartedPanel } from "../../features/getting-started/GettingStartedPanel";
 import { LearningStatsPanel } from "../../features/learning-stats/LearningStatsPanel";
-import { WhisperDownloadPanel } from "../../features/models/WhisperDownloadPanel";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui";
 import { REFRESH_KEY, TOKEN_KEY } from "../authStorage";
 
@@ -60,7 +59,7 @@ export function LearningShellPanelContent({
   onGoToHistory,
   guideTargetLessonId,
 }) {
-  const publicPanels = new Set(["getting-started", "models"]);
+  const publicPanels = new Set(["getting-started"]);
   const contentAlert = globalStatus ? (
     <Alert variant="destructive">
       <AlertTitle>系统消息</AlertTitle>
@@ -154,9 +153,6 @@ export function LearningShellPanelContent({
                 onNavigateToLesson={onNavigateToGeneratedLesson}
               />
             </Suspense>
-          </div>
-          <div className={activePanel === "models" ? "block" : "hidden"}>
-            <WhisperDownloadPanel />
           </div>
           <div className={activePanel === "redeem" ? "block" : "hidden"}>
             <Suspense fallback={<PanelFallback />}>

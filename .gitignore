@@ -8,6 +8,7 @@ tmp/
 tmp_filetrans/
 frontend/node_modules/
 frontend/dist/
+modelscope_whisper/
 
 asr_test_results.json
 asr_filetrans_via_dashscope_files_results.json

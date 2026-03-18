@@ -12,8 +12,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
-from app.api.routers import admin, admin_console, auth, billing, lessons, local_asr_assets, local_whisper_assets, local_whisper_browser_assets, media, practice, transcribe, wallet
-from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, DASHSCOPE_API_KEY, PERSISTENT_DATA_DIR, SERVICE_NAME, STATIC_DIR, WHISPER_MIRROR_ROOT
+from app.api.routers import admin, admin_console, auth, billing, lessons, local_asr_assets, media, practice, transcribe, wallet
+from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, DASHSCOPE_API_KEY, PERSISTENT_DATA_DIR, SERVICE_NAME, STATIC_DIR
 from app.core.logging import setup_logging
 from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, schema_name_for_url
 from app.models import LessonGenerationTask
@@ -261,13 +261,11 @@ async def app_lifespan(app: FastAPI):
     BASE_TMP_DIR.mkdir(parents=True, exist_ok=True)
     BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
     PERSISTENT_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    WHISPER_MIRROR_ROOT.mkdir(parents=True, exist_ok=True)
     logger.info(
-        "[DEBUG] startup.paths tmp_dir=%s tmp_data_dir=%s persistent_data_dir=%s whisper_cache_dir=%s",
+        "[DEBUG] startup.paths tmp_dir=%s tmp_data_dir=%s persistent_data_dir=%s",
         BASE_TMP_DIR,
         BASE_DATA_DIR,
         PERSISTENT_DATA_DIR,
-        WHISPER_MIRROR_ROOT,
     )
     _refresh_optional_runtime_status(app)
     await _bootstrap_runtime_state(app)
@@ -275,10 +273,6 @@ async def app_lifespan(app: FastAPI):
         logger.info("[DEBUG] startup.local_asr_prefetch scheduled")
     else:
         logger.info("[DEBUG] startup.local_asr_prefetch skipped")
-    if local_whisper_assets.schedule_local_whisper_asset_prefetch():
-        logger.info("[DEBUG] startup.local_whisper_prefetch scheduled")
-    else:
-        logger.info("[DEBUG] startup.local_whisper_prefetch skipped")
     logger.info("[DEBUG] startup.ready")
     yield
 
@@ -341,8 +335,6 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(practice.router)
     app.include_router(media.router)
     app.include_router(local_asr_assets.router)
-    app.include_router(local_whisper_assets.router)
-    app.include_router(local_whisper_browser_assets.router)
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa_fallback_page(full_path: str) -> FileResponse:
