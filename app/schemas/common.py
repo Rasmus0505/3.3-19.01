@@ -1,8 +1,8 @@
 ﻿from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SuccessResponse(BaseModel):
@@ -22,3 +22,20 @@ class ErrorResponse(BaseModel):
     error_code: str
     message: str
     detail: Any = ""
+
+
+class AsrModelStatusResponse(BaseModel):
+    ok: bool = True
+    model_key: str
+    status: Literal["ready", "preparing", "missing", "error"]
+    download_required: bool = False
+    preparing: bool = False
+    cached: bool = False
+    message: str = ""
+    last_error: str = ""
+    model_dir: str = ""
+    missing_files: list[str] = Field(default_factory=list)
+
+
+class AsrModelPrepareResponse(AsrModelStatusResponse):
+    pass

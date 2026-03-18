@@ -46,7 +46,7 @@ from app.schemas.billing import (
     WalletRedeemCodeRequest,
     WalletRedeemCodeResponse,
 )
-from app.schemas.common import ErrorResponse, SuccessResponse
+from app.schemas.common import AsrModelPrepareResponse, AsrModelStatusResponse, ErrorResponse, SuccessResponse
 from app.schemas.lesson import (
     LessonCatalogItemResponse,
     LessonCatalogProgressSummaryResponse,
@@ -76,6 +76,8 @@ from app.schemas.practice import ProgressResponse, ProgressUpdateRequest, TokenC
 __all__ = [
     "SuccessResponse",
     "ErrorResponse",
+    "AsrModelStatusResponse",
+    "AsrModelPrepareResponse",
     "AuthRequest",
     "UserResponse",
     "AuthResponse",
