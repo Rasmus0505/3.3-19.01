@@ -43,8 +43,13 @@
 
 - `PORT=8080`
 - `TMP_WORK_DIR=/tmp/zeabur3.3`
+- `PERSISTENT_DATA_DIR=/data`
+- `WHISPER_MIRROR_ROOT=/data/local_whisper_assets`
 - `MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 - `MT_MODEL=qwen-mt-flash`
+
+- `web` 服务额外挂一个持久卷到 `/data`
+- Whisper 模型缓存要落在 `/data/local_whisper_assets`
 
 分句和翻译批次默认值，请到后台“字幕/分句设置”里调整。
 

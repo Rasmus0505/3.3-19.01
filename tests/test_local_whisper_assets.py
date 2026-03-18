@@ -23,10 +23,12 @@ def _apply_test_whisper_spec(monkeypatch, tmp_path: Path) -> dict[str, dict[str,
             "files": ("config.json", "model.safetensors"),
         },
     }
+    persistent_root = tmp_path / "persistent"
     monkeypatch.setattr(local_whisper_assets_router, "WHISPER_MODEL_SPECS", spec)
     monkeypatch.setattr(local_whisper_assets_router, "WHISPER_MIRROR_MODELS", ("whisper-base", "whisper-small"))
     monkeypatch.setattr(local_whisper_assets_router, "WHISPER_PREFETCH_ON_START", True)
-    monkeypatch.setattr(local_whisper_assets_router, "WHISPER_MIRROR_ROOT", tmp_path / "local_whisper_assets")
+    monkeypatch.setattr(local_whisper_assets_router, "PERSISTENT_DATA_DIR", persistent_root)
+    monkeypatch.setattr(local_whisper_assets_router, "WHISPER_MIRROR_ROOT", persistent_root / "local_whisper_assets")
     local_whisper_assets_router._model_locks.clear()
     local_whisper_assets_router._prefetching_models.clear()
     local_whisper_assets_router._prefetch_errors.clear()
@@ -36,7 +38,7 @@ def _apply_test_whisper_spec(monkeypatch, tmp_path: Path) -> dict[str, dict[str,
 
 def test_local_whisper_status_route_reports_ready_model(monkeypatch, tmp_path):
     spec = _apply_test_whisper_spec(monkeypatch, tmp_path)
-    cache_dir = tmp_path / "local_whisper_assets" / "whisper-base"
+    cache_dir = tmp_path / "persistent" / "local_whisper_assets" / "whisper-base"
     cache_dir.mkdir(parents=True, exist_ok=True)
     for asset_name in spec["whisper-base"]["files"]:
         (cache_dir / str(asset_name)).write_text(f"asset:{asset_name}", encoding="utf-8")
@@ -51,7 +53,9 @@ def test_local_whisper_status_route_reports_ready_model(monkeypatch, tmp_path):
 
     assert resp.status_code == 200
     payload = resp.json()
-    assert payload["cache_root"] == str(tmp_path / "local_whisper_assets")
+    assert payload["persistent_root"] == str(tmp_path / "persistent")
+    assert payload["using_persistent_storage"] is True
+    assert payload["cache_root"] == str(tmp_path / "persistent" / "local_whisper_assets")
     assert payload["enabled_models"] == ["whisper-base", "whisper-small"]
     ready_entry = next(item for item in payload["models"] if item["model_key"] == "whisper-base")
     assert ready_entry["current"] is True
@@ -63,7 +67,7 @@ def test_local_whisper_status_route_reports_ready_model(monkeypatch, tmp_path):
 
 def test_local_whisper_asset_route_serves_cached_asset(monkeypatch, tmp_path):
     _apply_test_whisper_spec(monkeypatch, tmp_path)
-    cache_dir = tmp_path / "local_whisper_assets" / "whisper-base"
+    cache_dir = tmp_path / "persistent" / "local_whisper_assets" / "whisper-base"
     cache_dir.mkdir(parents=True, exist_ok=True)
     asset_path = cache_dir / "config.json"
     asset_path.write_text('{"model":"whisper-base"}', encoding="utf-8")
@@ -117,7 +121,7 @@ def test_local_whisper_asset_download_caches_files_and_writes_version(monkeypatc
 
     local_whisper_assets_router._download_model_cache("whisper-base", force_refresh=True)
 
-    cache_dir = tmp_path / "local_whisper_assets" / "whisper-base"
+    cache_dir = tmp_path / "persistent" / "local_whisper_assets" / "whisper-base"
     for asset_name in spec["whisper-base"]["files"]:
         assert (cache_dir / str(asset_name)).read_text(encoding="utf-8") == f"payload:{asset_name}"
     assert (cache_dir / local_whisper_assets_router.WHISPER_CACHE_VERSION_FILE).read_text(encoding="utf-8").strip() == "test-whisper-base-v1"
@@ -125,6 +129,21 @@ def test_local_whisper_asset_download_caches_files_and_writes_version(monkeypatc
         "https://huggingface.co/openai/whisper-base/resolve/main/config.json?download=true",
         "https://huggingface.co/openai/whisper-base/resolve/main/model.safetensors?download=true",
     ]
+
+
+def test_schedule_local_whisper_prefetch_skips_when_cache_current(monkeypatch, tmp_path):
+    spec = _apply_test_whisper_spec(monkeypatch, tmp_path)
+    for model_key in ("whisper-base", "whisper-small"):
+        cache_dir = tmp_path / "persistent" / "local_whisper_assets" / model_key
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        for asset_name in spec[model_key]["files"]:
+            (cache_dir / str(asset_name)).write_text(f"asset:{asset_name}", encoding="utf-8")
+        (cache_dir / local_whisper_assets_router.WHISPER_CACHE_VERSION_FILE).write_text(
+            str(spec[model_key]["cache_version"]),
+            encoding="utf-8",
+        )
+
+    assert local_whisper_assets_router.schedule_local_whisper_asset_prefetch() is False
 
 
 def test_startup_schedules_local_whisper_prefetch(monkeypatch, tmp_path):
@@ -135,6 +154,8 @@ def test_startup_schedules_local_whisper_prefetch(monkeypatch, tmp_path):
 
     monkeypatch.setattr(app_main, "BASE_TMP_DIR", tmp_base)
     monkeypatch.setattr(app_main, "BASE_DATA_DIR", tmp_base / "data")
+    monkeypatch.setattr(app_main, "PERSISTENT_DATA_DIR", tmp_base / "persistent")
+    monkeypatch.setattr(app_main, "WHISPER_MIRROR_ROOT", tmp_base / "persistent" / "local_whisper_assets")
     monkeypatch.setattr(app_main, "DASHSCOPE_API_KEY", "")
     monkeypatch.setattr(app_main, "_refresh_optional_runtime_status", lambda _app: None)
     monkeypatch.setattr(app_main.local_asr_assets, "schedule_local_asr_asset_prefetch", lambda: False)

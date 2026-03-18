@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
 from app.api.routers import admin, admin_console, auth, billing, lessons, local_asr_assets, local_whisper_assets, media, practice, transcribe, wallet
-from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, DASHSCOPE_API_KEY, SERVICE_NAME, STATIC_DIR
+from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, DASHSCOPE_API_KEY, PERSISTENT_DATA_DIR, SERVICE_NAME, STATIC_DIR, WHISPER_MIRROR_ROOT
 from app.core.logging import setup_logging
 from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, schema_name_for_url
 from app.models import LessonGenerationTask
@@ -246,6 +246,15 @@ async def app_lifespan(app: FastAPI):
     logger.info("[DEBUG] startup.begin")
     BASE_TMP_DIR.mkdir(parents=True, exist_ok=True)
     BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    PERSISTENT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    WHISPER_MIRROR_ROOT.mkdir(parents=True, exist_ok=True)
+    logger.info(
+        "[DEBUG] startup.paths tmp_dir=%s tmp_data_dir=%s persistent_data_dir=%s whisper_cache_dir=%s",
+        BASE_TMP_DIR,
+        BASE_DATA_DIR,
+        PERSISTENT_DATA_DIR,
+        WHISPER_MIRROR_ROOT,
+    )
     _refresh_optional_runtime_status(app)
     await _bootstrap_runtime_state(app)
     if local_asr_assets.schedule_local_asr_asset_prefetch():
