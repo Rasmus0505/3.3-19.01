@@ -5,13 +5,13 @@ import { toast } from "sonner";
 import { cn } from "../../lib/utils";
 import { getLocalAsrPreviewState, saveLocalAsrPreviewState } from "../../shared/media/localAsrPreviewStore";
 import { Button, ScrollArea } from "../../shared/ui";
+import { buildLocalAsrLongAudioWarning, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS, LOCAL_ASR_TARGET_SAMPLE_RATE, preprocessLocalAsrFile } from "./localAsrAudioPreprocess";
 
 const LOCAL_ASR_MODEL_ID = "local-sensevoice-small";
 const LOCAL_ASR_MODEL_LABEL = "SenseVoice Small";
 const DEFAULT_LOCAL_ASR_ASSET_BASE_URL = "/api/local-asr-assets";
 const LOCAL_ASR_ASSET_BASE_URL = (import.meta.env.VITE_LOCAL_ASR_MODEL_BASE_URL || DEFAULT_LOCAL_ASR_ASSET_BASE_URL).trim().replace(/\/+$/, "");
 const LOCAL_ASR_FILE_ACCEPT = "audio/*,video/mp4,.mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.opus";
-const LOCAL_ASR_TARGET_SAMPLE_RATE = 16000;
 
 function clampPercent(value) {
   return Math.max(0, Math.min(100, Number(value) || 0));
@@ -60,70 +60,16 @@ function formatPreviewTime(ms) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(milliseconds).padStart(3, "0")}`;
 }
 
-function mixAudioBufferToMono(audioBuffer) {
-  const channelCount = Math.max(1, Number(audioBuffer?.numberOfChannels || 1));
-  const sampleCount = Math.max(0, Number(audioBuffer?.length || 0));
-  if (sampleCount <= 0) return new Float32Array(0);
-  if (channelCount === 1) {
-    return new Float32Array(audioBuffer.getChannelData(0));
+function nowMs() {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
   }
-  const mixed = new Float32Array(sampleCount);
-  for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
-    const channelData = audioBuffer.getChannelData(channelIndex);
-    for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
-      mixed[sampleIndex] += channelData[sampleIndex] / channelCount;
-    }
-  }
-  return mixed;
+  return Date.now();
 }
 
-function resampleFloat32(samples, sourceSampleRate, targetSampleRate) {
-  const safeSourceSampleRate = Math.max(1, Number(sourceSampleRate || 0));
-  const safeTargetSampleRate = Math.max(1, Number(targetSampleRate || 0));
-  if (!(samples instanceof Float32Array)) return new Float32Array(0);
-  if (!samples.length || safeSourceSampleRate === safeTargetSampleRate) {
-    return new Float32Array(samples);
-  }
-  const ratio = safeSourceSampleRate / safeTargetSampleRate;
-  const outputLength = Math.max(1, Math.round(samples.length / ratio));
-  const output = new Float32Array(outputLength);
-  for (let index = 0; index < outputLength; index += 1) {
-    const position = index * ratio;
-    const leftIndex = Math.floor(position);
-    const rightIndex = Math.min(samples.length - 1, leftIndex + 1);
-    const interpolation = position - leftIndex;
-    output[index] = samples[leftIndex] * (1 - interpolation) + samples[rightIndex] * interpolation;
-  }
-  return output;
-}
-
-async function decodeFileForLocalAsr(file) {
-  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextCtor) {
-    throw new Error("当前浏览器不支持 AudioContext，无法试玩本地 ASR");
-  }
-  const audioContext = new AudioContextCtor();
-  try {
-    const fileBytes = await file.arrayBuffer();
-    let audioBuffer;
-    try {
-      audioBuffer = await audioContext.decodeAudioData(fileBytes.slice(0));
-    } catch (error) {
-      const isMp4 = String(file?.type || "").toLowerCase() === "video/mp4" || /\.mp4$/i.test(String(file?.name || ""));
-      if (isMp4) {
-        throw new Error("当前 MP4 编码无法本地试玩，请改传音频或使用云端识别。");
-      }
-      throw new Error(`本地解析音频失败: ${error instanceof Error && error.message ? error.message : String(error)}`);
-    }
-    const mono = mixAudioBufferToMono(audioBuffer);
-    return resampleFloat32(mono, audioBuffer.sampleRate, LOCAL_ASR_TARGET_SAMPLE_RATE);
-  } finally {
-    try {
-      await audioContext.close();
-    } catch (_) {
-      // Ignore audio context close failures.
-    }
-  }
+function logPreviewDebug(message, extra = {}) {
+  if (typeof console === "undefined" || typeof console.debug !== "function") return;
+  console.debug("[DEBUG] local_asr.preview", message, extra);
 }
 
 function buildWorkerRequestId(sequence) {
@@ -144,6 +90,7 @@ export function LocalAsrPreviewCard({ disabled = false }) {
   const [localPreviewSegments, setLocalPreviewSegments] = useState([]);
   const [localPreviewRuntime, setLocalPreviewRuntime] = useState("");
   const [localPreviewWarning, setLocalPreviewWarning] = useState("SenseVoice 本地模式当前使用 WASM 运行，首次下载会稍慢。");
+  const [localPreviewPerformanceWarning, setLocalPreviewPerformanceWarning] = useState("");
   const localPreviewInputRef = useRef(null);
   const localAsrWorkerRef = useRef(null);
   const localAsrRequestSequenceRef = useRef(0);
@@ -380,21 +327,50 @@ export function LocalAsrPreviewCard({ disabled = false }) {
     setLocalPreviewSegments([]);
     setLocalPreviewText("");
     setLocalPreviewRuntime("");
+    setLocalPreviewPerformanceWarning("");
     setLocalPreviewPhase("decoding");
     setLocalPreviewStatusText("正在本地解析音频");
+    const totalStart = nowMs();
     try {
       const readyResult = await ensureModelReady();
       setLocalPreviewRuntime(String(readyResult?.runtime || ""));
-      const audioData = await decodeFileForLocalAsr(file);
+      const preprocessResult = await preprocessLocalAsrFile(file, { targetSampleRate: LOCAL_ASR_TARGET_SAMPLE_RATE });
+      const audioData = preprocessResult?.audioData;
+      const durationSec = Math.max(0, Number(preprocessResult?.durationSec || 0));
+      const preprocessMetrics = {
+        audio_extract_ms: Math.max(0, Number(preprocessResult?.metrics?.audio_extract_ms || 0)),
+        decode_ms: Math.max(0, Number(preprocessResult?.metrics?.decode_ms || 0)),
+        resample_ms: Math.max(0, Number(preprocessResult?.metrics?.resample_ms || 0)),
+        preprocess_ms: Math.max(0, Number(preprocessResult?.metrics?.preprocess_ms || 0)),
+        source_sample_rate: Math.max(0, Number(preprocessResult?.metrics?.source_sample_rate || 0)),
+        target_sample_rate: Math.max(0, Number(preprocessResult?.metrics?.target_sample_rate || 0)),
+        channel_count: Math.max(0, Number(preprocessResult?.metrics?.channel_count || 0)),
+        input_bytes: Math.max(0, Number(preprocessResult?.metrics?.input_bytes || 0)),
+        sample_count: Math.max(0, Number(preprocessResult?.metrics?.sample_count || 0)),
+        resample_strategy: String(preprocessResult?.metrics?.resample_strategy || ""),
+      };
       if (!(audioData instanceof Float32Array) || audioData.length <= 0) {
         throw new Error("本地音频解析结果为空，无法试玩字幕预览");
       }
+      const longAudioWarning = buildLocalAsrLongAudioWarning(durationSec, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS);
+      setLocalPreviewPerformanceWarning(longAudioWarning);
+      logPreviewDebug("preprocess.done", {
+        file_name: String(file.name || ""),
+        duration_sec: durationSec,
+        warning: Boolean(longAudioWarning),
+        ...preprocessMetrics,
+      });
       setLocalPreviewPhase("transcribing");
       setLocalPreviewStatusText("正在本地识别字幕");
+      const workerStart = nowMs();
       const result = await createWorkerRequest("transcribe-audio", { audioData, samplingRate: LOCAL_ASR_TARGET_SAMPLE_RATE, fileName: String(file.name || "") }, [audioData.buffer]);
+      const workerDecodeMs = Math.max(0, Math.round(nowMs() - workerStart));
+      const postprocessStart = nowMs();
       const segments = Array.isArray(result?.segments) ? result.segments : [];
       const previewText = String(result?.preview_text || "").trim();
       const runtime = String(result?.runtime || "");
+      const postprocessMs = Math.max(0, Math.round(nowMs() - postprocessStart));
+      const totalLocalAsrMs = Math.max(0, Math.round(nowMs() - totalStart));
       setLocalPreviewSegments(segments);
       setLocalPreviewText(previewText);
       setLocalPreviewRuntime(runtime);
@@ -403,6 +379,22 @@ export function LocalAsrPreviewCard({ disabled = false }) {
       if (runtime === "wasm") {
         setLocalPreviewWarning("SenseVoice 本地模式当前使用 WASM 运行，首次下载会稍慢。");
       }
+      logPreviewDebug("run.done", {
+        file_name: String(file.name || ""),
+        runtime,
+        duration_sec: durationSec,
+        audio_extract_ms: preprocessMetrics.audio_extract_ms,
+        decode_ms: preprocessMetrics.decode_ms,
+        resample_ms: preprocessMetrics.resample_ms,
+        worker_decode_ms: workerDecodeMs,
+        postprocess_ms: postprocessMs,
+        total_local_asr_ms: totalLocalAsrMs,
+        sample_count: preprocessMetrics.sample_count,
+        source_sample_rate: preprocessMetrics.source_sample_rate,
+        target_sample_rate: preprocessMetrics.target_sample_rate,
+        channel_count: preprocessMetrics.channel_count,
+        resample_strategy: preprocessMetrics.resample_strategy,
+      });
       await persistLocalAsrState({ status: "ready", runtime, lastError: "" });
       if (segments.length > 0) {
         toast.success("本地字幕预览已生成");
@@ -411,10 +403,16 @@ export function LocalAsrPreviewCard({ disabled = false }) {
       }
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : String(error);
+      logPreviewDebug("run.failed", {
+        file_name: String(file?.name || ""),
+        total_local_asr_ms: Math.max(0, Math.round(nowMs() - totalStart)),
+        message,
+      });
       setLocalPreviewPhase("error");
       setLocalPreviewStatusText(message);
       setLocalPreviewSegments([]);
       setLocalPreviewText("");
+      setLocalPreviewPerformanceWarning("");
       toast.error(message.includes("MP4") ? message : `本地 ASR 试玩失败: ${message}`);
     }
   }
@@ -503,6 +501,7 @@ export function LocalAsrPreviewCard({ disabled = false }) {
         {localPreviewFile ? <p className="text-sm font-medium">{localPreviewFile.name}</p> : <p className="text-sm text-muted-foreground">尚未选择本地试玩文件</p>}
         <p className={cn("text-sm", localPreviewPhase === "error" ? "text-destructive" : "text-muted-foreground")}>{localPreviewStatusText}</p>
         {localPreviewRuntime ? <p className="text-xs text-muted-foreground">本次运行时：{formatRuntimeLabel(localPreviewRuntime)}</p> : null}
+        {localPreviewPerformanceWarning ? <p className="text-xs text-amber-700">{localPreviewPerformanceWarning}</p> : null}
       </div>
 
       {localPreviewHasResult ? (
