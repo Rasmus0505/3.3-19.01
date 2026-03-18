@@ -56,6 +56,8 @@
 
 - `PORT=8080`
 - `TMP_WORK_DIR=/tmp/zeabur3.3`
+- `PERSISTENT_DATA_DIR=/data`
+- `WHISPER_MIRROR_ROOT=/data/local_whisper_assets`
 - `MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 - `MT_MODEL=qwen-mt-flash`
 - `ASR_SEGMENT_TARGET_SECONDS=300`
@@ -63,6 +65,7 @@
 - `AUTO_MIGRATE_ON_START=1`
 - `AUTO_MIGRATE_CONTINUE_ON_FAILURE=1`
 - `AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS=180`
+- `web` 服务额外挂一个持久卷到 `/data`
 
 分句和翻译批次默认值不建议靠环境变量维护。  
 上线后请到后台的“字幕/分句设置”里调整。

@@ -27,12 +27,14 @@ const LOCAL_STAGE_PROGRESS_INTERVAL_MS = 800;
 const DEFAULT_LOCAL_ASR_ASSET_BASE_URL = "/api/local-asr-assets";
 const LOCAL_ASR_ASSET_BASE_URL = (import.meta.env.VITE_LOCAL_ASR_MODEL_BASE_URL || DEFAULT_LOCAL_ASR_ASSET_BASE_URL).trim().replace(/\/+$/, "");
 const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止识别，可重新开始均衡生成。";
+const LOCAL_WHISPER_UPLOAD_UNAVAILABLE_REASON = "上传页均衡模式当前只接入 SenseVoice 识别内核，Whisper 模型先展示入口，暂未开放直接生成。";
 const LOCAL_MODEL_OPTIONS = [
   {
     key: "local-sensevoice-small",
     workerModelId: "local-sensevoice-small",
     title: "SenseVoice Small",
     subtitle: "官方 SenseVoice 小模型，适合先试跑字幕识别。",
+    uploadEnabled: true,
     sizeEstimateMb: { wasm: 180 },
     cacheFiles: [
       "sherpa-onnx-asr.js",
@@ -41,29 +43,24 @@ const LOCAL_MODEL_OPTIONS = [
       "sherpa-onnx-wasm-main-vad-asr.data",
     ],
   },
-  /*
   {
     key: "local-whisper-base-en",
     workerModelId: "onnx-community/whisper-base.en_timestamped",
     title: "Base",
-    subtitle: "鎺ㄨ崘榛樿妗ｏ紝閫熷害鍜屽噯纭巼鏇村钩琛?,
+    subtitle: "Whisper Base 英文模型，先恢复入口展示。",
+    uploadEnabled: false,
+    unavailableReason: LOCAL_WHISPER_UPLOAD_UNAVAILABLE_REASON,
     sizeEstimateMb: { webgpu: 290, wasm: 80 },
   },
   {
     key: "local-whisper-small-en",
     workerModelId: "onnx-community/whisper-small.en_timestamped",
     title: "Small",
-    subtitle: "鏇村噯锛屼絾涓嬭浇鍜岄璺戞洿閲?,
+    subtitle: "Whisper Small 英文模型，更准但更重。",
+    uploadEnabled: false,
+    unavailableReason: LOCAL_WHISPER_UPLOAD_UNAVAILABLE_REASON,
     sizeEstimateMb: { webgpu: 970, wasm: 250 },
   },
-  {
-    key: "local-whisper-medium-en",
-    workerModelId: "onnx-community/whisper-medium.en_timestamped",
-    title: "Medium",
-    subtitle: "鏈€閲嶄絾鏇寸ǔ锛岄€傚悎楂橀厤缃祻瑙堝櫒",
-    sizeEstimateMb: { webgpu: 3150, wasm: 1000 },
-  },
-  */
 ];
 const DISPLAY_STAGES = [
   { key: "convert_audio", label: "转换" },
@@ -93,6 +90,21 @@ function calculatePointsBySeconds(seconds, pointsPerMinute) {
 
 function getLocalModelMeta(modelKey) {
   return LOCAL_MODEL_OPTIONS.find((item) => item.key === modelKey) || LOCAL_MODEL_OPTIONS[0];
+}
+
+function getDefaultBalancedModelKey(configuredModel = "") {
+  const normalizedConfiguredModel = String(configuredModel || "").trim();
+  const configuredMeta = LOCAL_MODEL_OPTIONS.find((item) => item.key === normalizedConfiguredModel);
+  if (configuredMeta?.uploadEnabled) return configuredMeta.key;
+  return LOCAL_MODEL_OPTIONS.find((item) => item.uploadEnabled)?.key || LOCAL_MODEL_OPTIONS[0].key;
+}
+
+function isLocalBalancedModelUploadEnabled(modelKey) {
+  return Boolean(getLocalModelMeta(modelKey)?.uploadEnabled);
+}
+
+function getLocalBalancedModelUnavailableReason(modelKey) {
+  return String(getLocalModelMeta(modelKey)?.unavailableReason || "").trim();
 }
 
 function detectLocalAsrSupport() {
@@ -510,7 +522,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [localWorkerReady, setLocalWorkerReady] = useState(false);
   const [selectedBalancedModel, setSelectedBalancedModel] = useState(() => {
     const configuredModel = String(subtitleSettings?.default_asr_model || "").trim();
-    return configuredModel === LOCAL_MODEL_OPTIONS[0].key ? configuredModel : LOCAL_MODEL_OPTIONS[0].key;
+    return getDefaultBalancedModelKey(configuredModel);
   });
   const [localModelStateMap, setLocalModelStateMap] = useState({});
   const [localModelVisualProgressMap, setLocalModelVisualProgressMap] = useState({});
@@ -693,6 +705,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }, []);
 
   useEffect(() => {
+    if (!isLocalBalancedModelUploadEnabled(selectedBalancedModel)) {
+      setSelectedBalancedModel(getDefaultBalancedModelKey(selectedBalancedModel));
+    }
+  }, [selectedBalancedModel]);
+
+  useEffect(() => {
     if (!localAsrSupport.supported) {
       setLocalWorkerReady(false);
       const unsupportedMap = Object.fromEntries(
@@ -839,6 +857,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
           const cached = cachedStates.find((entry) => entry?.model_id === item.key);
           if (!localAsrSupport.supported) {
             return [item.key, { status: "unsupported", runtime: "", progress: null, error: localAsrSupport.reason }];
+          }
+          if (!item.uploadEnabled) {
+            return [item.key, { status: "unsupported", runtime: "", progress: null, error: String(item.unavailableReason || "") }];
           }
           if (!cached) {
             return [item.key, { status: "idle", runtime: "", progress: null, error: "" }];
@@ -1311,6 +1332,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }
 
   async function handleLocalModelDownload(modelKey) {
+    if (!isLocalBalancedModelUploadEnabled(modelKey)) {
+      toast.error(getLocalBalancedModelUnavailableReason(modelKey) || "当前模型暂未开放");
+      return;
+    }
     if (!localAsrSupport.supported) {
       toast.error(localAsrSupport.reason || "当前浏览器不支持均衡模式");
       return;
@@ -1355,6 +1380,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }
 
   async function handleLocalModelRemove(modelKey) {
+    if (!isLocalBalancedModelUploadEnabled(modelKey)) {
+      toast.error(getLocalBalancedModelUnavailableReason(modelKey) || "当前模型暂未开放");
+      return;
+    }
     if (!localWorkerReady) {
       toast.error("识别组件正在初始化，请稍后再试");
       return;
@@ -1390,6 +1419,14 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
     if (!localWorkerReady) {
       const message = "识别组件正在重置，请稍后再试。";
+      setStatus(message);
+      setPhase("error");
+      setLoading(false);
+      toast.error(message);
+      return;
+    }
+    if (!isLocalBalancedModelUploadEnabled(selectedBalancedModel)) {
+      const message = getLocalBalancedModelUnavailableReason(selectedBalancedModel) || "当前模型暂未开放";
       setStatus(message);
       setPhase("error");
       setLoading(false);
@@ -1780,10 +1817,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
         {mode === "balanced" ? (
           <div className="grid gap-3 xl:grid-cols-2">
-            {LOCAL_MODEL_OPTIONS.slice(0, 1).map((item) => {
+            {LOCAL_MODEL_OPTIONS.map((item) => {
               const state = localModelStateMap[item.key] || { status: localAsrSupport.supported ? "idle" : "unsupported", runtime: "", progress: null, error: localAsrSupport.reason };
               const selected = selectedBalancedModel === item.key;
               const downloaded = ["ready", "cached"].includes(String(state.status || ""));
+              const uploadEnabled = Boolean(item.uploadEnabled);
               const visualProgress = Number(localModelVisualProgressMap[item.key]);
               const showVisualProgress = Number.isFinite(visualProgress);
               return (
@@ -1813,18 +1851,36 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                         </div>
                       </div>
                     ) : null}
-                    {state.error ? <p className="text-destructive">{state.error}</p> : null}
+                    {!uploadEnabled ? <p className="text-amber-700">{String(item.unavailableReason || LOCAL_WHISPER_UPLOAD_UNAVAILABLE_REASON)}</p> : null}
+                    {state.error && !(state.status === "unsupported" && !uploadEnabled) ? <p className="text-destructive">{state.error}</p> : null}
                     {localBusyModelKey === item.key && localBusyText ? <p>{localBusyText}</p> : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button type="button" size="sm" onClick={() => void handleLocalModelDownload(item.key)} disabled={!localAsrSupport.supported || !localWorkerReady || uploadActionBusy || localBusyModelKey === item.key}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => void handleLocalModelDownload(item.key)}
+                      disabled={!uploadEnabled || !localAsrSupport.supported || !localWorkerReady || uploadActionBusy || localBusyModelKey === item.key}
+                    >
                       {String(state.status || "") === "loading" ? <Loader2 className="size-4 animate-spin" /> : null}
-                      {downloaded ? "重新校验模型" : "下载模型"}
+                      {uploadEnabled ? (downloaded ? "重新校验模型" : "下载模型") : "暂未开放"}
                     </Button>
-                    <Button type="button" size="sm" variant="outline" onClick={() => setSelectedBalancedModel(item.key)} disabled={!localWorkerReady || uploadActionBusy || localBusyModelKey === item.key}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSelectedBalancedModel(item.key)}
+                      disabled={!uploadEnabled || !localWorkerReady || uploadActionBusy || localBusyModelKey === item.key}
+                    >
                       设为当前
                     </Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => void handleLocalModelRemove(item.key)} disabled={!downloaded || !localWorkerReady || uploadActionBusy || localBusyModelKey === item.key}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void handleLocalModelRemove(item.key)}
+                      disabled={!uploadEnabled || !downloaded || !localWorkerReady || uploadActionBusy || localBusyModelKey === item.key}
+                    >
                       卸载
                     </Button>
                   </div>

@@ -12,7 +12,7 @@ import requests
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
-from app.core.config import WHISPER_MIRROR_MODELS, WHISPER_MIRROR_ROOT, WHISPER_PREFETCH_ON_START
+from app.core.config import PERSISTENT_DATA_DIR, WHISPER_MIRROR_MODELS, WHISPER_MIRROR_ROOT, WHISPER_PREFETCH_ON_START
 
 
 router = APIRouter(prefix="/api/local-whisper-assets", tags=["local-whisper-assets"])
@@ -64,6 +64,18 @@ _prefetch_state_lock = threading.Lock()
 _prefetch_thread: threading.Thread | None = None
 _prefetching_models: set[str] = set()
 _prefetch_errors: dict[str, str] = {}
+
+
+def _is_subpath(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+        return True
+    except Exception:
+        return False
+
+
+def _using_persistent_storage() -> bool:
+    return _is_subpath(WHISPER_MIRROR_ROOT, PERSISTENT_DATA_DIR)
 
 
 def _media_type(asset_name: str) -> str:
@@ -319,6 +331,8 @@ def get_local_whisper_asset_status() -> dict[str, Any]:
     return {
         "ok": True,
         "prefetch_enabled": WHISPER_PREFETCH_ON_START,
+        "persistent_root": str(PERSISTENT_DATA_DIR),
+        "using_persistent_storage": _using_persistent_storage(),
         "cache_root": str(WHISPER_MIRROR_ROOT),
         "enabled_models": list(enabled_models),
         "models": [_status_payload(model_key) for model_key in enabled_models],
