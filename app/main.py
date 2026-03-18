@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
-from app.api.routers import admin, admin_console, auth, billing, lessons, local_asr_assets, media, practice, transcribe, wallet
+from app.api.routers import admin, admin_console, auth, billing, lessons, local_asr_assets, local_whisper_assets, media, practice, transcribe, wallet
 from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, DASHSCOPE_API_KEY, SERVICE_NAME, STATIC_DIR
 from app.core.logging import setup_logging
 from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, schema_name_for_url
@@ -252,6 +252,10 @@ async def app_lifespan(app: FastAPI):
         logger.info("[DEBUG] startup.local_asr_prefetch scheduled")
     else:
         logger.info("[DEBUG] startup.local_asr_prefetch skipped")
+    if local_whisper_assets.schedule_local_whisper_asset_prefetch():
+        logger.info("[DEBUG] startup.local_whisper_prefetch scheduled")
+    else:
+        logger.info("[DEBUG] startup.local_whisper_prefetch skipped")
     logger.info("[DEBUG] startup.ready")
     yield
 
@@ -314,6 +318,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(practice.router)
     app.include_router(media.router)
     app.include_router(local_asr_assets.router)
+    app.include_router(local_whisper_assets.router)
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa_fallback_page(full_path: str) -> FileResponse:
