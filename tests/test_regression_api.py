@@ -2689,6 +2689,105 @@ def test_generate_from_saved_file_records_mt_usage_and_consume(test_client, monk
         session.close()
 
 
+def test_generate_from_saved_file_ignores_translation_log_persist_failure(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    _register_and_login(client, email="billing-user-log-fail@example.com")
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "billing-user-log-fail@example.com").one()
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 500
+        session.add(account)
+        session.commit()
+
+        from app.services import lesson_service as lesson_service_module
+
+        req_dir = tmp_path / "req_log_fail"
+        req_dir.mkdir(parents=True, exist_ok=True)
+        source_path = tmp_path / "source_log_fail.mp4"
+        source_path.write_bytes(b"video")
+
+        monkeypatch.setattr(lesson_service_module, "extract_audio_for_asr", lambda _src, dst: dst.write_bytes(b"opus"))
+        monkeypatch.setattr(lesson_service_module, "probe_audio_duration_ms", lambda _path: 60_000)
+        monkeypatch.setattr(
+            lesson_service_module.LessonService,
+            "_transcribe_with_optional_parallel",
+            staticmethod(lambda **kwargs: {"asr_payload": {"transcripts": [{"sentences": []}]}, "usage_seconds": 60}),
+        )
+        monkeypatch.setattr(
+            lesson_service_module.LessonService,
+            "build_subtitle_variant",
+            staticmethod(
+                lambda **kwargs: {
+                    "semantic_split_enabled": False,
+                    "split_mode": "word_level_split",
+                    "source_word_count": 2,
+                    "sentences": [
+                        {
+                            "idx": 0,
+                            "begin_ms": 0,
+                            "end_ms": 900,
+                            "text_en": "hello world",
+                            "text_zh": "你好世界",
+                            "tokens": ["hello", "world"],
+                        }
+                    ],
+                    "translate_failed_count": 0,
+                    "translation_attempt_records": [
+                        {
+                            "sentence_idx": 0,
+                            "attempt_no": 1,
+                            "provider": "dashscope_compatible",
+                            "model_name": "qwen-mt-flash",
+                            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                            "input_text_preview": "hello world",
+                            "provider_request_id": "req_test",
+                            "status_code": 200,
+                            "finish_reason": "stop",
+                            "prompt_tokens": 40,
+                            "completion_tokens": 20,
+                            "total_tokens": 60,
+                            "success": True,
+                            "error_code": "",
+                            "error_message": "",
+                            "started_at": datetime.utcnow(),
+                            "finished_at": datetime.utcnow(),
+                        }
+                    ],
+                    "translation_request_count": 1,
+                    "translation_success_request_count": 1,
+                    "translation_usage": {"prompt_tokens": 40, "completion_tokens": 20, "total_tokens": 60, "charged_points": 0},
+                    "latest_translate_error_summary": "",
+                }
+            ),
+        )
+        monkeypatch.setattr(
+            lesson_service_module,
+            "append_translation_request_logs",
+            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("translation log insert failed")),
+        )
+
+        lesson = LessonService.generate_from_saved_file(
+            source_path=source_path,
+            source_filename="source_log_fail.mp4",
+            req_dir=req_dir,
+            owner_id=user.id,
+            asr_model=QWEN_ASR_MODEL,
+            db=session,
+            task_id="task_billing_log_fail",
+            semantic_split_enabled=False,
+        )
+
+        assert lesson.id > 0
+        lesson_sentences = session.query(LessonSentence).filter(LessonSentence.lesson_id == lesson.id).all()
+        assert len(lesson_sentences) == 1
+        translation_logs = session.query(TranslationRequestLog).filter(TranslationRequestLog.task_id == "task_billing_log_fail").all()
+        assert translation_logs == []
+    finally:
+        session.close()
+
+
 def test_regenerate_lesson_subtitle_variant_endpoint(test_client, monkeypatch):
     client, session_factory, _ = test_client
     token = _register_and_login(client, email="variant-user@example.com")
