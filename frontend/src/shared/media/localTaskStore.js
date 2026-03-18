@@ -3,10 +3,11 @@ const DB_VERSION = 2;
 const STORE_NAME = "generation_tasks";
 const LEGACY_ACTIVE_KEY = "active";
 const ACTIVE_KEY_PREFIX = "active_user:";
+const SUCCESS_SNAPSHOT_KEY_PREFIX = "success_user:";
 
 function assertIndexedDbAvailable() {
   if (typeof indexedDB === "undefined") {
-    throw new Error("褰撳墠娴忚鍣ㄤ笉鏀寔 IndexedDB");
+    throw new Error("当前浏览器不支持 IndexedDB");
   }
 }
 
@@ -32,7 +33,7 @@ function openDatabase() {
       store.delete(LEGACY_ACTIVE_KEY);
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("鎵撳紑鐢熸垚浠诲姟缂撳瓨澶辫触"));
+    request.onerror = () => reject(request.error || new Error("打开生成任务缓存失败"));
   });
 }
 
@@ -52,14 +53,19 @@ function withStore(mode, handler) {
         }
 
         request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error || new Error("鐢熸垚浠诲姟缂撳瓨澶辫触"));
+        request.onerror = () => reject(request.error || new Error("生成任务缓存失败"));
         tx.oncomplete = () => db.close();
         tx.onerror = () => {
           db.close();
-          reject(tx.error || new Error("鐢熸垚浠诲姟浜嬪姟澶辫触"));
+          reject(tx.error || new Error("生成任务事务失败"));
         };
       }),
   );
+}
+
+function buildSuccessSnapshotKey(ownerUserId) {
+  const normalized = normalizeOwnerUserId(ownerUserId);
+  return normalized ? `${SUCCESS_SNAPSHOT_KEY_PREFIX}${normalized}` : "";
 }
 
 export async function saveActiveGenerationTask(ownerUserId, payload) {
@@ -91,4 +97,35 @@ export async function clearActiveGenerationTask(ownerUserId) {
   const scopedKey = buildScopedActiveKey(ownerUserId);
   if (!scopedKey) return;
   await withStore("readwrite", (store) => store.delete(scopedKey));
+}
+
+export async function saveUploadPanelSuccessSnapshot(ownerUserId, payload) {
+  const normalizedOwnerUserId = normalizeOwnerUserId(ownerUserId);
+  const snapshotKey = buildSuccessSnapshotKey(normalizedOwnerUserId);
+  if (!snapshotKey) return;
+  await withStore("readwrite", (store) =>
+    store.put({
+      id: snapshotKey,
+      owner_user_id: normalizedOwnerUserId,
+      snapshot_type: "upload_success",
+      ...payload,
+      updated_at: Date.now(),
+    }),
+  );
+}
+
+export async function getUploadPanelSuccessSnapshot(ownerUserId) {
+  const snapshotKey = buildSuccessSnapshotKey(ownerUserId);
+  if (!snapshotKey) return null;
+  const result = await withStore("readonly", (store) => store.get(snapshotKey));
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+  return normalizeOwnerUserId(result.owner_user_id) === normalizeOwnerUserId(ownerUserId) ? result : null;
+}
+
+export async function clearUploadPanelSuccessSnapshot(ownerUserId) {
+  const snapshotKey = buildSuccessSnapshotKey(ownerUserId);
+  if (!snapshotKey) return;
+  await withStore("readwrite", (store) => store.delete(snapshotKey));
 }

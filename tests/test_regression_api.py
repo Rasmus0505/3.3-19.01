@@ -949,10 +949,16 @@ def test_startup_without_dashscope_key_keeps_health_alive(monkeypatch, tmp_path)
     from app import main as app_main
 
     tmp_base = tmp_path / "startup"
+    prefetch_called = {"count": 0}
     monkeypatch.setattr(app_main, "BASE_TMP_DIR", tmp_base)
     monkeypatch.setattr(app_main, "BASE_DATA_DIR", tmp_base / "data")
     monkeypatch.setattr(app_main, "DASHSCOPE_API_KEY", "")
     monkeypatch.setattr(app_main, "_refresh_optional_runtime_status", lambda _app: None)
+    monkeypatch.setattr(
+        app_main.local_asr_assets,
+        "schedule_local_asr_asset_prefetch",
+        lambda: prefetch_called.__setitem__("count", prefetch_called["count"] + 1) or True,
+    )
 
     async def fake_bootstrap(app):
         runtime_status = app_main._ensure_runtime_status(app)
@@ -967,6 +973,7 @@ def test_startup_without_dashscope_key_keeps_health_alive(monkeypatch, tmp_path)
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
     assert resp.json()["ready"] is True
+    assert prefetch_called["count"] == 1
 
 
 def test_health_ready_returns_503_when_database_unavailable(monkeypatch):
@@ -1547,6 +1554,45 @@ def test_local_asr_asset_route_installs_git_when_missing(monkeypatch):
         ["apt-get", "install", "-y", "--no-install-recommends", "git", "git-lfs"],
         ["git", "lfs", "install", "--skip-repo"],
     ]
+
+
+def test_local_asr_asset_prefetch_needed_when_cache_version_is_stale(tmp_path, monkeypatch):
+    cache_dir = tmp_path / "local_asr_assets"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    for name in local_asr_assets_router.LOCAL_ASR_ALLOWED_FILES:
+        (cache_dir / name).write_bytes(name.encode("utf-8"))
+    (cache_dir / local_asr_assets_router.LOCAL_ASR_CACHE_VERSION_FILE).write_text("old-version", encoding="utf-8")
+
+    monkeypatch.setattr(local_asr_assets_router, "LOCAL_ASR_CACHE_DIR", cache_dir)
+
+    assert local_asr_assets_router.has_local_asr_asset_cache() is True
+    assert local_asr_assets_router.is_local_asr_asset_cache_current() is False
+    assert local_asr_assets_router.local_asr_asset_prefetch_needed() is True
+
+
+def test_local_asr_asset_download_refreshes_cache_version(tmp_path, monkeypatch):
+    cache_dir = tmp_path / "local_asr_assets"
+    download_root = tmp_path / "downloads"
+
+    monkeypatch.setattr(local_asr_assets_router, "LOCAL_ASR_CACHE_DIR", cache_dir)
+    monkeypatch.setattr(local_asr_assets_router, "LOCAL_ASR_DOWNLOAD_ROOT", download_root)
+    monkeypatch.setattr(local_asr_assets_router, "_ensure_git_dependencies", lambda: None)
+
+    def fake_run(cmd, **kwargs):
+        if cmd[:2] == ["git", "clone"]:
+            target_dir = Path(cmd[-1])
+            target_dir.mkdir(parents=True, exist_ok=True)
+            for name in local_asr_assets_router.LOCAL_ASR_ALLOWED_FILES:
+                (target_dir / name).write_text(f"asset:{name}", encoding="utf-8")
+
+    monkeypatch.setattr(local_asr_assets_router, "_run_local_asr_cmd", fake_run)
+
+    local_asr_assets_router._download_asset_cache(force_refresh=True)
+
+    assert cache_dir.exists()
+    assert (cache_dir / local_asr_assets_router.LOCAL_ASR_CACHE_VERSION_FILE).read_text(encoding="utf-8").strip() == local_asr_assets_router.LOCAL_ASR_CACHE_VERSION
+    for name in local_asr_assets_router.LOCAL_ASR_ALLOWED_FILES:
+        assert (cache_dir / name).read_text(encoding="utf-8") == f"asset:{name}"
 
 
 def test_extract_local_asr_audio_route_returns_file(test_client, monkeypatch, tmp_path):

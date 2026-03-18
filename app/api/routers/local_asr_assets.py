@@ -30,10 +30,14 @@ LOCAL_ASR_ALLOWED_FILES: tuple[str, ...] = (
 )
 LOCAL_ASR_CACHE_DIR = BASE_DATA_DIR / "local_asr_assets"
 LOCAL_ASR_DOWNLOAD_ROOT = BASE_TMP_DIR / "local_asr_assets"
+LOCAL_ASR_CACHE_VERSION = "sensevoice-small-20260318-v1"
+LOCAL_ASR_CACHE_VERSION_FILE = ".cache_version"
 LOCAL_ASR_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=86400",
 }
 _asset_lock = threading.Lock()
+_prefetch_lock = threading.Lock()
+_prefetch_thread: threading.Thread | None = None
 
 
 def _asset_media_type(asset_name: str) -> str:
@@ -45,6 +49,40 @@ def _asset_media_type(asset_name: str) -> str:
     if suffix == ".data":
         return "application/octet-stream"
     return "application/octet-stream"
+
+
+def _cache_version_path() -> Path:
+    return LOCAL_ASR_CACHE_DIR / LOCAL_ASR_CACHE_VERSION_FILE
+
+
+def _missing_asset_files() -> list[str]:
+    return [name for name in LOCAL_ASR_ALLOWED_FILES if not (LOCAL_ASR_CACHE_DIR / name).exists()]
+
+
+def _read_cache_version() -> str:
+    version_path = _cache_version_path()
+    if not version_path.exists():
+        return ""
+    try:
+        return version_path.read_text(encoding="utf-8").strip()
+    except Exception:
+        return ""
+
+
+def _write_cache_version() -> None:
+    _cache_version_path().write_text(LOCAL_ASR_CACHE_VERSION, encoding="utf-8")
+
+
+def has_local_asr_asset_cache() -> bool:
+    return not _missing_asset_files()
+
+
+def is_local_asr_asset_cache_current() -> bool:
+    return has_local_asr_asset_cache() and _read_cache_version() == LOCAL_ASR_CACHE_VERSION
+
+
+def local_asr_asset_prefetch_needed() -> bool:
+    return not has_local_asr_asset_cache() or not is_local_asr_asset_cache_current()
 
 
 def _run_local_asr_cmd(
@@ -114,20 +152,24 @@ def _ensure_git_dependencies() -> None:
     logger.warning("[DEBUG] local_asr.assets.install_git done")
 
 
-def _ensure_asset_cache_populated() -> None:
-    missing = [name for name in LOCAL_ASR_ALLOWED_FILES if not (LOCAL_ASR_CACHE_DIR / name).exists()]
-    if not missing:
-        return
-
+def _download_asset_cache(*, force_refresh: bool = False) -> None:
     with _asset_lock:
-        missing = [name for name in LOCAL_ASR_ALLOWED_FILES if not (LOCAL_ASR_CACHE_DIR / name).exists()]
-        if not missing:
+        missing = _missing_asset_files()
+        current = is_local_asr_asset_cache_current()
+        if not force_refresh and not missing:
+            return
+        if force_refresh and not missing and current:
             return
 
         LOCAL_ASR_DOWNLOAD_ROOT.mkdir(parents=True, exist_ok=True)
         LOCAL_ASR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
         temp_dir = LOCAL_ASR_DOWNLOAD_ROOT / f"download_{uuid.uuid4().hex}"
-        logger.info("[DEBUG] local_asr.assets.download_start missing=%s", ",".join(missing))
+        logger.info(
+            "[DEBUG] local_asr.assets.download_start missing=%s force_refresh=%s current=%s",
+            ",".join(missing),
+            force_refresh,
+            current,
+        )
         try:
             _ensure_git_dependencies()
             _run_local_asr_cmd(["git", "lfs", "install", "--skip-repo"], timeout_seconds=120)
@@ -137,6 +179,7 @@ def _ensure_asset_cache_populated() -> None:
                 if not source_path.exists():
                     raise RuntimeError(f"missing asset in repo: {name}")
                 shutil.copy2(source_path, LOCAL_ASR_CACHE_DIR / name)
+            _write_cache_version()
             logger.info("[DEBUG] local_asr.assets.download_done files=%s", len(LOCAL_ASR_ALLOWED_FILES))
         except Exception as exc:
             logger.exception("[DEBUG] local_asr.assets.download_failed detail=%s", str(exc)[:400])
@@ -144,6 +187,44 @@ def _ensure_asset_cache_populated() -> None:
         finally:
             if temp_dir.exists():
                 shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def _ensure_asset_cache_populated() -> None:
+    if has_local_asr_asset_cache():
+        return
+    _download_asset_cache(force_refresh=False)
+
+
+def _prefetch_local_asr_assets() -> None:
+    try:
+        if not local_asr_asset_prefetch_needed():
+            logger.info("[DEBUG] local_asr.assets.prefetch_skip reason=cache_ready")
+            return
+        logger.info(
+            "[DEBUG] local_asr.assets.prefetch_start has_cache=%s current=%s",
+            has_local_asr_asset_cache(),
+            is_local_asr_asset_cache_current(),
+        )
+        _download_asset_cache(force_refresh=True)
+        logger.info("[DEBUG] local_asr.assets.prefetch_done current=%s", is_local_asr_asset_cache_current())
+    except Exception as exc:
+        logger.exception("[DEBUG] local_asr.assets.prefetch_failed detail=%s", str(exc)[:400])
+    finally:
+        global _prefetch_thread
+        with _prefetch_lock:
+            _prefetch_thread = None
+
+
+def schedule_local_asr_asset_prefetch() -> bool:
+    global _prefetch_thread
+    if not local_asr_asset_prefetch_needed():
+        return False
+    with _prefetch_lock:
+        if _prefetch_thread and _prefetch_thread.is_alive():
+            return False
+        _prefetch_thread = threading.Thread(target=_prefetch_local_asr_assets, name="local-asr-prefetch", daemon=True)
+        _prefetch_thread.start()
+        return True
 
 
 @router.get("/{asset_name}")

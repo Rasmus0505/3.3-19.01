@@ -233,6 +233,10 @@ async def app_lifespan(app: FastAPI):
     BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
     _refresh_optional_runtime_status(app)
     await _bootstrap_runtime_state(app)
+    if local_asr_assets.schedule_local_asr_asset_prefetch():
+        logger.info("[DEBUG] startup.local_asr_prefetch scheduled")
+    else:
+        logger.info("[DEBUG] startup.local_asr_prefetch skipped")
     logger.info("[DEBUG] startup.ready")
     yield
 
