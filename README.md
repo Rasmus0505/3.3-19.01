@@ -57,7 +57,6 @@
 - `PORT=8080`
 - `TMP_WORK_DIR=/tmp/zeabur3.3`
 - `PERSISTENT_DATA_DIR=/data`
-- `WHISPER_MIRROR_ROOT=/data/local_whisper_assets`
 - `MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 - `MT_MODEL=qwen-mt-flash`
 - `ASR_SEGMENT_TARGET_SECONDS=300`
