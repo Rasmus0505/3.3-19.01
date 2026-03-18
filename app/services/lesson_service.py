@@ -104,6 +104,33 @@ def _emit_progress(callback: ProgressCallback | None, **payload: Any) -> None:
         logger.exception("[DEBUG] lesson.progress.emit_failed payload=%s", payload)
 
 
+def _append_translation_request_logs_safe(
+    db: Session,
+    *,
+    trace_id: str,
+    user_id: int | None,
+    task_id: str | None,
+    lesson_id: int | None,
+    records: list[dict[str, Any]] | None,
+) -> None:
+    try:
+        append_translation_request_logs(
+            db,
+            trace_id=trace_id,
+            user_id=user_id,
+            task_id=task_id,
+            lesson_id=lesson_id,
+            records=list(records or []),
+        )
+    except Exception as exc:
+        logger.exception(
+            "[DEBUG] lesson.translation_logs.persist_failed task_id=%s lesson_id=%s detail=%s",
+            task_id,
+            lesson_id,
+            str(exc)[:400],
+        )
+
+
 def _call_transcribe_audio_file(
     audio_path: str,
     *,
@@ -1094,7 +1121,7 @@ class LessonService:
                 )
 
             create_progress(db, lesson_id=lesson.id, user_id=owner_id)
-            append_translation_request_logs(
+            _append_translation_request_logs_safe(
                 db,
                 trace_id=translation_trace_id,
                 user_id=owner_id,
@@ -1769,7 +1796,7 @@ class LessonService:
                 )
 
             create_progress(db, lesson_id=lesson.id, user_id=owner_id)
-            append_translation_request_logs(
+            _append_translation_request_logs_safe(
                 db,
                 trace_id=translation_trace_id,
                 user_id=owner_id,
