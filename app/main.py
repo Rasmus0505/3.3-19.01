@@ -226,6 +226,21 @@ def _spa_shell_response() -> FileResponse:
     return response
 
 
+def _is_spa_fallback_path(full_path: str) -> bool:
+    normalized_path = str(full_path or "").strip().lstrip("/")
+    if not normalized_path:
+        return True
+
+    root_segment = normalized_path.split("/", 1)[0].lower()
+    if root_segment in {"api", "health", "static"}:
+        return False
+    if normalized_path.lower() == "favicon.ico":
+        return False
+
+    last_segment = normalized_path.rsplit("/", 1)[-1]
+    return "." not in last_segment
+
+
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
     logger.info("[DEBUG] startup.begin")
@@ -299,6 +314,14 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(practice.router)
     app.include_router(media.router)
     app.include_router(local_asr_assets.router)
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback_page(full_path: str) -> FileResponse:
+        if not _is_spa_fallback_path(full_path):
+            raise HTTPException(status_code=404, detail="Not Found")
+        logger.info("[DEBUG] spa.fallback path=%s", full_path or "/")
+        return _spa_shell_response()
+
     return app
 
 
