@@ -1245,20 +1245,27 @@ class LessonService:
         if not should_parallel:
             def _on_single_asr_progress(payload: dict[str, Any]) -> None:
                 elapsed_seconds = max(0, int(payload.get("elapsed_seconds", 0) or 0))
-                wait_text = "识别中" if elapsed_seconds <= 0 else f"识别中，已等待 {elapsed_seconds} 秒"
+                segment_done = max(0, int(payload.get("segment_done", 0) or 0))
+                segment_total = max(segment_done, int(payload.get("segment_total", 0) or 0))
+                if segment_total > 0:
+                    wait_text = f"识别中 {segment_done}/{segment_total}"
+                    stage_ratio = min(0.98, max(segment_done / max(segment_total, 1), 0.02))
+                else:
+                    wait_text = "识别中" if elapsed_seconds <= 0 else f"识别中，已等待 {elapsed_seconds} 秒"
+                    stage_ratio = _single_asr_stage_ratio(elapsed_seconds)
                 _emit_progress(
                     progress_callback,
                     stage_key="asr_transcribe",
                     stage_status="running",
-                    overall_percent=_progress_percent_by_stage("asr_transcribe", _single_asr_stage_ratio(elapsed_seconds)),
+                    overall_percent=_progress_percent_by_stage("asr_transcribe", stage_ratio),
                     current_text=wait_text,
                     counters={
-                        "asr_done": 0,
-                        "asr_estimated": 0,
+                        "asr_done": segment_done if segment_total > 0 else 0,
+                        "asr_estimated": segment_total if segment_total > 0 else 0,
                         "translate_done": 0,
                         "translate_total": 0,
-                        "segment_done": 0,
-                        "segment_total": 0,
+                        "segment_done": segment_done,
+                        "segment_total": segment_total,
                     },
                 )
 
@@ -1284,6 +1291,8 @@ class LessonService:
             )
             asr_payload = asr_result["asr_result_json"]
             actual_sentence_count = max(1, len(extract_sentences(asr_payload)))
+            raw_generate_result = dict(asr_result.get("raw_generate_result") or {}) if isinstance(asr_result.get("raw_generate_result"), dict) else {}
+            single_segment_total = max(0, int(raw_generate_result.get("segment_count", 0) or 0))
             payload = {
                 "asr_payload": asr_payload,
                 "usage_seconds": int(asr_result.get("usage_seconds"))
@@ -1301,8 +1310,8 @@ class LessonService:
                 "progress_counters": {
                     "asr_done": actual_sentence_count,
                     "asr_estimated": actual_sentence_count,
-                    "segment_done": 0,
-                    "segment_total": 0,
+                    "segment_done": single_segment_total,
+                    "segment_total": single_segment_total,
                 },
             }
             _emit_progress(
@@ -1310,14 +1319,18 @@ class LessonService:
                 stage_key="asr_transcribe",
                 stage_status="completed",
                 overall_percent=_progress_percent_by_stage("asr_transcribe", 1.0),
-                current_text=f"识别完成 {actual_sentence_count}/{actual_sentence_count}",
+                current_text=(
+                    f"识别中 {single_segment_total}/{single_segment_total}"
+                    if single_segment_total > 0
+                    else f"识别完成 {actual_sentence_count}/{actual_sentence_count}"
+                ),
                 counters={
                     "asr_done": actual_sentence_count,
                     "asr_estimated": actual_sentence_count,
                     "translate_done": 0,
                     "translate_total": 0,
-                    "segment_done": 0,
-                    "segment_total": 0,
+                    "segment_done": single_segment_total,
+                    "segment_total": single_segment_total,
                 },
                 asr_raw=payload["raw_result"],
             )

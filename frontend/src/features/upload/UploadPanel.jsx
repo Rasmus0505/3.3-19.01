@@ -40,6 +40,7 @@ const LOCAL_MODEL_VISUAL_PROGRESS_INTERVAL_MS = 120;
 const LOCAL_STAGE_PROGRESS_INTERVAL_MS = 800;
 const DEFAULT_LOCAL_ASR_ASSET_BASE_URL = "/api/local-asr-assets";
 const LOCAL_ASR_ASSET_BASE_URL = (import.meta.env.VITE_LOCAL_ASR_MODEL_BASE_URL || DEFAULT_LOCAL_ASR_ASSET_BASE_URL).trim().replace(/\/+$/, "");
+const ASR_MODELS_API_BASE = "/api/asr-models";
 const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止生成，可重新开始。";
 const LOCAL_MODEL_OPTIONS = [
   {
@@ -68,9 +69,9 @@ const UPLOAD_MODEL_OPTIONS = [
   {
     key: FASTER_WHISPER_MODEL,
     title: "Faster Whisper Medium",
-    subtitle: "服务端本地 Whisper，首次部署会自动下载模型后再识别。",
+    subtitle: "服务端识别，适合不想在浏览器里准备本地模型的场景。",
     mode: "fast",
-    note: "首次部署或首次切换到该模型时，服务会自动把模型下载到 Zeabur 持久卷。",
+    note: "首次使用前需要先准备服务端模型。",
     sourceModelId: "pengzhendong/faster-whisper-medium",
     deployPath: "/data/modelscope_whisper/faster-whisper-medium",
   },
@@ -87,6 +88,7 @@ const STAGE_PROGRESS_BOUNDS = {
   translate_zh: { start: 60, end: 90 },
   write_lesson: { start: 90, end: 100 },
 };
+const SERVER_PREPARABLE_MODELS = new Set([FASTER_WHISPER_MODEL]);
 
 function clampPercent(value) {
   return Math.max(0, Math.min(100, Number(value) || 0));
@@ -190,6 +192,20 @@ function getLocalModelStatusLabel(status) {
   if (status === "error") return "不可用";
   if (status === "unsupported") return "不可用";
   return "未下载";
+}
+
+function getServerModelStatusLabel(modelState) {
+  const status = String(modelState?.status || "").trim().toLowerCase();
+  if (Boolean(modelState?.preparing) || ["loading", "preparing", "downloading"].includes(status)) return "准备中";
+  if (Boolean(modelState?.cached) || ["ready", "cached"].includes(status)) return "已就绪";
+  if (status === "error") return "异常";
+  return "未准备";
+}
+
+function isServerModelReady(modelState) {
+  const status = String(modelState?.status || "").trim().toLowerCase();
+  if (Boolean(modelState?.cached) || ["ready", "cached"].includes(status)) return true;
+  return Boolean(modelState) && modelState.downloadRequired === false && !modelState.preparing && status !== "error";
 }
 
 function formatDurationLabel(seconds) {
@@ -313,7 +329,7 @@ function getStageProgressRatioFromOverall(stageKey, overallPercent) {
   return (safeOverallPercent - bounds.start) / span;
 }
 
-function buildStageCounterDisplay(done, total, fallbackRatio, fallbackTotal = 1) {
+function buildStageCounterDisplay(done, total, fallbackRatio, fallbackTotal = 0) {
   const safeDone = Math.max(0, Number(done || 0));
   const safeTotal = Math.max(safeDone, Number(total || 0));
   if (safeTotal > 0) {
@@ -323,7 +339,13 @@ function buildStageCounterDisplay(done, total, fallbackRatio, fallbackTotal = 1)
     };
   }
   const safeFallbackRatio = Math.max(0, Math.min(1, Number(fallbackRatio) || 0));
-  const normalizedFallbackTotal = Math.max(1, Number(fallbackTotal || 1));
+  const normalizedFallbackTotal = Math.max(0, Number(fallbackTotal || 0));
+  if (normalizedFallbackTotal <= 0) {
+    return {
+      detailText: "--",
+      progressPercent: clampPercent(safeFallbackRatio * 100),
+    };
+  }
   const fallbackDone = safeFallbackRatio >= 1 ? normalizedFallbackTotal : Math.max(0, Math.floor(normalizedFallbackTotal * safeFallbackRatio));
   return {
     detailText: `${fallbackDone}/${normalizedFallbackTotal}`,
@@ -386,7 +408,7 @@ function getStageDisplayMeta(taskSnapshot, stageKey, stageStatus, currentStageKe
     } else {
       const done = Math.max(0, Number(counters.asr_done || 0));
       const total = Math.max(done, Number(counters.asr_estimated || 0));
-      progressMeta = buildStageCounterDisplay(done, total, fallbackRatio, Math.max(1, total));
+      progressMeta = total > 0 ? buildStageCounterDisplay(done, total, fallbackRatio, total) : buildStageCounterDisplay(0, 0, fallbackRatio, 0);
     }
   } else if (stageKey === "translate_zh") {
     const done = Math.max(0, Number(counters.translate_done || 0));
@@ -420,10 +442,11 @@ function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
   if (stageKey === "asr_transcribe") {
     const segmentDone = Math.max(0, Number(counters.segment_done || 0));
     const segmentTotal = Math.max(segmentDone, Number(counters.segment_total || 0));
-    if (segmentTotal > 0) return `识别分段 ${segmentDone}/${segmentTotal}`;
+    if (segmentTotal > 0) return `识别中 ${segmentDone}/${segmentTotal}`;
     const done = Math.max(0, Number(counters.asr_done || 0));
     const total = Math.max(done, Number(counters.asr_estimated || 0));
-    return done > 0 && total > 0 ? `识别字幕 ${done}/${total}` : sanitizeUserFacingText(taskSnapshot.current_text || "识别中");
+    if (done > 0 && total > 0) return `识别中 ${done}/${total}`;
+    return sanitizeUserFacingText(taskSnapshot.current_text || "识别中");
   }
   if (stageKey === "translate_zh") {
     const done = Math.max(0, Number(counters.translate_done || 0));
@@ -564,6 +587,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [localProgressSnapshot, setLocalProgressSnapshot] = useState(null);
   const [localBusyModelKey, setLocalBusyModelKey] = useState("");
   const [localBusyText, setLocalBusyText] = useState("");
+  const [serverModelStateMap, setServerModelStateMap] = useState({});
+  const [serverBusyModelKey, setServerBusyModelKey] = useState("");
+  const [serverBusyText, setServerBusyText] = useState("");
   const [localModelAdvancedOpen, setLocalModelAdvancedOpen] = useState(false);
   const pollingAbortRef = useRef(false);
   const pollTokenRef = useRef(0);
@@ -589,7 +615,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     return getDefaultFastUploadModelKey(configuredDefaultAsrModel);
   }, [configuredDefaultAsrModel, selectedUploadModel]);
   const selectedUploadModelMeta = getUploadModelMeta(selectedUploadModel);
-  const showingSenseVoiceCard = selectedUploadModelMeta.mode === "balanced";
   const selectedAsrModel = mode === "balanced" ? selectedBalancedModel : selectedFastModel;
   const selectedRate = getRateByModel(billingRates, selectedAsrModel) || getRateByModel(billingRates, selectedFastModel);
   const estimatedChargeCents = selectedRate ? calculatePointsBySeconds(durationSec || 0, selectedRate.price_per_minute_cents) : 0;
@@ -603,12 +628,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     () => (mode === "balanced" ? buildLocalAsrLongAudioWarning(durationSec, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS) : ""),
     [durationSec, mode],
   );
-  const selectedModelSupportReason = showingSenseVoiceCard ? sanitizeUserFacingText(localAsrSupport.reason) : "";
-  const selectedModelHeadline = showingSenseVoiceCard
-    ? selectedLocalModelDownloaded
-      ? "模型已就绪，选择素材后可直接生成。"
-      : "首次使用前先准备模型，准备好后就能直接生成。"
-    : "首次使用可能会多等一会，准备好后就能直接生成。";
+  const selectedServerModelState = serverModelStateMap[selectedUploadModel] || {};
+  const selectedServerModelReady = isServerModelReady(selectedServerModelState);
+  const selectedServerModelPreparing =
+    Boolean(selectedServerModelState.preparing) || ["loading", "preparing", "downloading"].includes(String(selectedServerModelState.status || ""));
+  const selectedFastModelNeedsPreparation = mode === "fast" && SERVER_PREPARABLE_MODELS.has(selectedUploadModel);
   const localTranscribing = phase === "local_transcribing";
   const displayTaskSnapshot = localTranscribing ? localProgressSnapshot : taskSnapshot;
   const stageItems = getStageDisplayItems(displayTaskSnapshot);
@@ -619,11 +643,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const showMediaPreview = Boolean(file || coverDataUrl);
   const sourceDisplayName = String(file?.name || taskSnapshot?.lesson?.source_filename || "");
   const uploadActionBusy = loading && ["uploading", "processing", "local_transcribing"].includes(String(phase || ""));
-  const localModeBusy = Boolean(localBusyModelKey) || localTranscribing;
+  const localModeBusy = Boolean(localBusyModelKey || serverBusyModelKey) || localTranscribing;
   const primaryActionDisabled =
     phase === "success" ||
     (loading && !localTranscribing) ||
-    (mode === "balanced" && !localTranscribing && (!localAsrSupport.supported || !localWorkerReady || Boolean(localBusyModelKey)));
+    (mode === "balanced" && !localTranscribing && (!localAsrSupport.supported || !localWorkerReady || Boolean(localBusyModelKey))) ||
+    (selectedFastModelNeedsPreparation && (!selectedServerModelReady || selectedServerModelPreparing || Boolean(serverBusyModelKey)));
 
   function updateLocalModelState(modelKey, patch) {
     setLocalModelStateMap((prev) => ({
@@ -633,6 +658,33 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         ...(patch || {}),
       },
     }));
+  }
+
+  function updateServerModelState(modelKey, patch) {
+    setServerModelStateMap((prev) => ({
+      ...prev,
+      [modelKey]: {
+        ...(prev[modelKey] || {}),
+        ...(patch || {}),
+      },
+    }));
+  }
+
+  function applyServerModelState(modelKey, payload, overrides = {}) {
+    const status = String(overrides.status || payload?.status || "idle").trim().toLowerCase();
+    const message = String(overrides.message || payload?.message || "");
+    const lastError = String(overrides.lastError ?? payload?.last_error ?? payload?.lastError ?? "");
+    const preparing = Boolean(overrides.preparing ?? payload?.preparing);
+    const cached = Boolean(overrides.cached ?? payload?.cached);
+    const downloadRequired = Boolean(overrides.downloadRequired ?? payload?.download_required ?? payload?.downloadRequired);
+    updateServerModelState(modelKey, {
+      status,
+      message,
+      lastError,
+      preparing,
+      cached,
+      downloadRequired,
+    });
   }
 
   function applyVerifiedLocalModelState(modelKey, verification, overrides = {}) {
@@ -997,6 +1049,46 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     };
   }, [localAsrSupport.reason, localAsrSupport.supported]);
 
+  useEffect(() => {
+    let canceled = false;
+    async function restoreServerModelState() {
+      const entries = await Promise.all(
+        Array.from(SERVER_PREPARABLE_MODELS).map(async (modelKey) => {
+          const payload = await fetchServerModelStatus(modelKey, { silent: true });
+          if (payload) {
+            return [
+              modelKey,
+              {
+                status: String(payload.status || "idle"),
+                message: String(payload.message || ""),
+                lastError: String(payload.last_error || ""),
+                preparing: Boolean(payload.preparing),
+                cached: Boolean(payload.cached),
+                downloadRequired: Boolean(payload.download_required),
+              },
+            ];
+          }
+          return [modelKey, { status: "error", lastError: "检查模型状态失败" }];
+        }),
+      );
+      if (canceled) return;
+      setServerModelStateMap((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+    }
+    void restoreServerModelState();
+    return () => {
+      canceled = true;
+    };
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (!selectedFastModelNeedsPreparation) return undefined;
+    if (!selectedServerModelPreparing) return undefined;
+    const timer = setInterval(() => {
+      void fetchServerModelStatus(selectedUploadModel, { silent: true });
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [selectedFastModelNeedsPreparation, selectedServerModelPreparing, selectedUploadModel]);
+
   function resetLocalSessionState(options = {}) {
     const { clearFileInput = true } = options;
     stopPollingSession();
@@ -1027,6 +1119,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setBindingCompleted(false);
     setLocalBusyModelKey("");
     setLocalBusyText("");
+    setServerBusyModelKey("");
+    setServerBusyText("");
     successStateOriginRef.current = "none";
   }
 
@@ -1448,10 +1542,83 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
   }
 
+  async function fetchServerModelStatus(modelKey, options = {}) {
+    const { silent = false } = options;
+    try {
+      const resp = await api(`${ASR_MODELS_API_BASE}/${encodeURIComponent(modelKey)}/status`, { method: "GET" }, accessToken);
+      const payload = await parseResponse(resp);
+      if (!resp.ok) {
+        throw new Error(toErrorText(payload, "检查模型状态失败"));
+      }
+      applyServerModelState(modelKey, payload);
+      return payload;
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : String(error);
+      updateServerModelState(modelKey, {
+        status: "error",
+        lastError: message,
+      });
+      if (!silent) {
+        toast.error(message);
+      }
+      return null;
+    }
+  }
+
   function handleSelectUploadModelCard(modelKey) {
     const nextModelMeta = getUploadModelMeta(modelKey);
     setSelectedUploadModel(nextModelMeta.key);
     setMode(nextModelMeta.mode);
+    if (SERVER_PREPARABLE_MODELS.has(nextModelMeta.key)) {
+      void fetchServerModelStatus(nextModelMeta.key, { silent: true });
+    }
+  }
+
+  async function handleServerModelPrepare(modelKey) {
+    setServerBusyModelKey(modelKey);
+    setServerBusyText("正在准备模型");
+    updateServerModelState(modelKey, {
+      status: "preparing",
+      preparing: true,
+      lastError: "",
+    });
+    try {
+      const resp = await api(`${ASR_MODELS_API_BASE}/${encodeURIComponent(modelKey)}/prepare`, { method: "POST" }, accessToken);
+      const payload = await parseResponse(resp);
+      if (!resp.ok) {
+        throw new Error(toErrorText(payload, "准备模型失败"));
+      }
+      applyServerModelState(modelKey, payload);
+      if (!payload?.preparing) {
+        await fetchServerModelStatus(modelKey, { silent: true });
+      }
+      toast.success(Boolean(payload?.preparing) ? "已开始准备模型" : "模型状态已更新");
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : String(error);
+      updateServerModelState(modelKey, {
+        status: "error",
+        preparing: false,
+        lastError: message,
+      });
+      toast.error(message);
+    } finally {
+      setServerBusyModelKey("");
+      setServerBusyText("");
+    }
+  }
+
+  async function handleServerModelReverify(modelKey) {
+    setServerBusyModelKey(modelKey);
+    setServerBusyText("正在检查模型状态");
+    try {
+      const payload = await fetchServerModelStatus(modelKey, { silent: false });
+      if (payload) {
+        toast.success("模型状态已刷新");
+      }
+    } finally {
+      setServerBusyModelKey("");
+      setServerBusyText("");
+    }
   }
 
   async function handleLocalModelDownload(modelKey) {
@@ -1985,99 +2152,144 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             <p className="text-xs text-muted-foreground">先选一个模型，再上传素材开始生成。</p>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {UPLOAD_MODEL_OPTIONS.map((item) => {
               const selected = selectedUploadModel === item.key;
               const isSenseVoice = item.mode === "balanced";
-              const senseVoiceReady = isSenseVoice && selectedLocalModelDownloaded;
+              const isQwen = item.key === QWEN_MODEL;
+              const isFasterWhisper = item.key === FASTER_WHISPER_MODEL;
+              const localCardState = localModelStateMap[selectedBalancedModel] || {};
+              const localCardDownloaded = ["ready", "cached"].includes(String(localCardState.status || ""));
+              const localCardStorageLabel = getLocalAsrStorageModeLabel(localCardState.storageMode || LOCAL_ASR_STORAGE_MODE_BROWSER);
+              const localCardBusy = localBusyModelKey === selectedBalancedModel;
+              const localSupportReason = sanitizeUserFacingText(localAsrSupport.reason || "");
+              const fasterModelState = serverModelStateMap[item.key] || {};
+              const fasterModelReady = isServerModelReady(fasterModelState);
+              const fasterModelBusy = serverBusyModelKey === item.key;
+              const fasterModelError = sanitizeUserFacingText(fasterModelState.lastError || "");
+              const fasterModelMessage = fasterModelBusy
+                ? sanitizeUserFacingText(serverBusyText || "正在准备模型")
+                : sanitizeUserFacingText(
+                    fasterModelError || fasterModelState.message || (fasterModelReady ? "模型已就绪，选择素材后可直接生成。" : "首次使用前请先准备模型。"),
+                  );
+              const senseVoiceDescription = localCardDownloaded ? "模型已就绪，选择素材后可直接生成。" : "首次使用前请先准备模型。";
+              const cardStatusLabel = isSenseVoice
+                ? getLocalModelStatusLabel(localCardState.status)
+                : isFasterWhisper
+                  ? getServerModelStatusLabel(fasterModelState)
+                  : "无需准备";
+              const cardTag = isSenseVoice ? (localCardDownloaded ? "推荐" : "需准备") : isQwen ? "快速" : "需准备";
+
               return (
-                <button
+                <div
                   key={item.key}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   className={cn(
                     "space-y-3 rounded-2xl border p-4 text-left transition-colors",
                     selected ? "border-primary bg-primary/5" : "border-border bg-background/80",
+                    uploadActionBusy ? "cursor-not-allowed opacity-80" : "cursor-pointer",
                   )}
-                  onClick={() => handleSelectUploadModelCard(item.key)}
-                  disabled={uploadActionBusy}
+                  onClick={() => {
+                    if (uploadActionBusy) return;
+                    handleSelectUploadModelCard(item.key);
+                  }}
+                  onKeyDown={(event) => {
+                    if (uploadActionBusy) return;
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      handleSelectUploadModelCard(item.key);
+                    }
+                  }}
+                  aria-disabled={uploadActionBusy}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1">
                       <p className="text-sm font-semibold">{item.title}</p>
                       <p className="text-xs text-muted-foreground">{item.subtitle}</p>
                     </div>
-                    <Badge variant={selected ? "default" : "outline"}>
-                      {isSenseVoice ? (senseVoiceReady ? "推荐" : "需准备") : "快速"}
-                    </Badge>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={selected ? "default" : "outline"}>{cardTag}</Badge>
+                      <Badge variant={cardStatusLabel === "已就绪" || cardStatusLabel === "已下载" ? "default" : cardStatusLabel === "异常" ? "destructive" : "outline"}>
+                        {cardStatusLabel}
+                      </Badge>
+                    </div>
                   </div>
+
                   <p className="text-xs text-muted-foreground">
-                    {isSenseVoice ? `首次准备约 ${formatLocalModelEstimate(selectedLocalModelMeta, localAsrSupport)}` : item.note}
+                    {isSenseVoice ? `首次准备约 ${formatLocalModelEstimate(selectedLocalModelMeta, localAsrSupport)}` : item.note || "选择素材后可直接开始。"}
                   </p>
-                </button>
+
+                  {isSenseVoice ? <p className="text-sm text-muted-foreground">{senseVoiceDescription}</p> : null}
+                  {isSenseVoice && localSupportReason ? <p className="text-xs text-destructive">{localSupportReason}</p> : null}
+                  {isSenseVoice && localCardState.storageSummary ? <p className="text-xs text-muted-foreground">{localCardState.storageSummary}</p> : null}
+                  {isSenseVoice && localCardState.message && !localCardState.error ? <p className="text-xs text-muted-foreground">{localCardState.message}</p> : null}
+                  {isSenseVoice && localCardState.error ? <p className="text-xs text-destructive">{localCardState.error}</p> : null}
+                  {isSenseVoice && localCardBusy && localBusyText ? <p className="text-xs text-muted-foreground">{localBusyText}</p> : null}
+
+                  {isSenseVoice && Number.isFinite(Number(localModelVisualProgressMap[selectedBalancedModel])) ? (
+                    <div className="space-y-1">
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary transition-[width] duration-200"
+                          style={{ width: `${clampPercent(localModelVisualProgressMap[selectedBalancedModel])}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">准备进度：{clampPercent(localModelVisualProgressMap[selectedBalancedModel])}%</p>
+                    </div>
+                  ) : null}
+
+                  {isFasterWhisper ? (
+                    <>
+                      <p className={cn("text-sm", fasterModelError ? "text-destructive" : "text-muted-foreground")}>{fasterModelMessage}</p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void (fasterModelReady ? handleServerModelReverify(item.key) : handleServerModelPrepare(item.key));
+                          }}
+                          disabled={uploadActionBusy || fasterModelBusy || localTranscribing}
+                        >
+                          {fasterModelBusy ? <Loader2 className="size-4 animate-spin" /> : null}
+                          {fasterModelReady ? "重新检查模型" : "准备模型"}
+                        </Button>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {isSenseVoice ? (
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void (localCardDownloaded ? handleLocalModelReverify(selectedBalancedModel) : handleLocalModelDownload(selectedBalancedModel));
+                        }}
+                        disabled={!localAsrSupport.supported || !localWorkerReady || uploadActionBusy || localCardBusy}
+                      >
+                        {String(localCardState.status || "") === "loading" ? <Loader2 className="size-4 animate-spin" /> : null}
+                        {localCardDownloaded ? "重新检查模型" : "准备模型"}
+                      </Button>
+                      {localCardDownloaded ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleLocalModelRemove(selectedBalancedModel);
+                          }}
+                          disabled={!localWorkerReady || uploadActionBusy || localCardBusy}
+                        >
+                          清除模型
+                        </Button>
+                      ) : null}
+                      <Badge variant="secondary">{localCardStorageLabel}</Badge>
+                    </div>
+                  ) : null}
+                </div>
               );
             })}
-          </div>
-
-          <div className="space-y-4 rounded-2xl border bg-muted/10 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="space-y-1">
-                <p className="text-sm font-semibold">{selectedUploadModelMeta.title}</p>
-                <p className="text-xs text-muted-foreground">{selectedUploadModelMeta.subtitle}</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={showingSenseVoiceCard ? (selectedLocalModelDownloaded ? "default" : "outline") : "secondary"}>
-                  {showingSenseVoiceCard ? getLocalModelStatusLabel(selectedLocalModelState.status) : "服务端"}
-                </Badge>
-                {showingSenseVoiceCard ? <Badge variant="secondary">{selectedLocalModelStorageLabel}</Badge> : null}
-              </div>
-            </div>
-
-            <p className="text-sm text-muted-foreground">{selectedModelHeadline}</p>
-            {showingSenseVoiceCard && selectedModelSupportReason ? <p className="text-xs text-destructive">{selectedModelSupportReason}</p> : null}
-            {showingSenseVoiceCard && selectedLocalModelState.storageSummary ? <p className="text-xs text-muted-foreground">{selectedLocalModelState.storageSummary}</p> : null}
-            {showingSenseVoiceCard && selectedLocalModelState.message && !selectedLocalModelState.error ? <p className="text-xs text-muted-foreground">{selectedLocalModelState.message}</p> : null}
-            {showingSenseVoiceCard && selectedLocalModelState.error ? <p className="text-xs text-destructive">{selectedLocalModelState.error}</p> : null}
-            {showingSenseVoiceCard && localBusyModelKey === selectedBalancedModel && localBusyText ? <p className="text-xs text-muted-foreground">{localBusyText}</p> : null}
-            {!showingSenseVoiceCard && selectedUploadModelMeta.note ? <p className="text-xs text-muted-foreground">{selectedUploadModelMeta.note}</p> : null}
-
-            {showingSenseVoiceCard && Number.isFinite(Number(localModelVisualProgressMap[selectedBalancedModel])) ? (
-              <div className="space-y-1">
-                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary transition-[width] duration-200"
-                    style={{ width: `${clampPercent(localModelVisualProgressMap[selectedBalancedModel])}%` }}
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground">准备进度：{clampPercent(localModelVisualProgressMap[selectedBalancedModel])}%</p>
-              </div>
-            ) : null}
-
-            <div className="flex flex-wrap gap-2">
-              {showingSenseVoiceCard ? (
-                <>
-                  <Button
-                    type="button"
-                    onClick={() => void (selectedLocalModelDownloaded ? handleLocalModelReverify(selectedBalancedModel) : handleLocalModelDownload(selectedBalancedModel))}
-                    disabled={!localAsrSupport.supported || !localWorkerReady || uploadActionBusy || localBusyModelKey === selectedBalancedModel}
-                  >
-                    {String(selectedLocalModelState.status || "") === "loading" ? <Loader2 className="size-4 animate-spin" /> : null}
-                    {selectedLocalModelDownloaded ? "重新检查模型" : "准备模型"}
-                  </Button>
-                  {selectedLocalModelDownloaded ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => void handleLocalModelRemove(selectedBalancedModel)}
-                      disabled={!localWorkerReady || uploadActionBusy || localBusyModelKey === selectedBalancedModel}
-                    >
-                      清除模型
-                    </Button>
-                  ) : null}
-                </>
-              ) : (
-                <Badge variant="outline">首次使用可能会多等一会</Badge>
-              )}
-            </div>
           </div>
         </div>
 
