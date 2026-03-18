@@ -23,8 +23,10 @@ const UPLOAD_PROGRESS_PERSIST_INTERVAL_MS = 800;
 const LOCAL_ASR_TARGET_SAMPLE_RATE = 16000;
 const LOCAL_ASR_FILE_ACCEPT = "audio/*,video/mp4,.mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.opus";
 const LOCAL_MODEL_VISUAL_PROGRESS_INTERVAL_MS = 120;
+const LOCAL_STAGE_PROGRESS_INTERVAL_MS = 800;
 const DEFAULT_LOCAL_ASR_ASSET_BASE_URL = "/api/local-asr-assets";
 const LOCAL_ASR_ASSET_BASE_URL = (import.meta.env.VITE_LOCAL_ASR_MODEL_BASE_URL || DEFAULT_LOCAL_ASR_ASSET_BASE_URL).trim().replace(/\/+$/, "");
+const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止本地识别，可重新开始均衡生成。";
 const LOCAL_MODEL_OPTIONS = [
   {
     key: "local-sensevoice-small",
@@ -166,7 +168,13 @@ function resampleFloat32(samples, sourceSampleRate, targetSampleRate) {
   return output;
 }
 
-async function extractAudioForLocalAsrWithServer(file, accessToken = "") {
+function createAbortError(message) {
+  const error = new Error(message || "操作已取消");
+  error.name = "AbortError";
+  return error;
+}
+
+async function extractAudioForLocalAsrWithServer(file, accessToken = "", signal = undefined) {
   const form = new FormData();
   form.append("video_file", file);
   const resp = await api(
@@ -174,6 +182,7 @@ async function extractAudioForLocalAsrWithServer(file, accessToken = "") {
     {
       method: "POST",
       body: form,
+      signal,
     },
     accessToken,
   );
@@ -213,8 +222,20 @@ async function decodeFileForLocalAsr(file, accessToken = "") {
   }
 }
 
-async function prepareAudioDataForLocalAsr(file, accessToken = "") {
+async function prepareAudioDataForLocalAsr(file, accessToken = "", options = {}) {
+  const { preferServerExtract = false, signal = undefined } = options;
   const isMp4 = String(file?.type || "").toLowerCase() === "video/mp4" || /\.mp4$/i.test(String(file?.name || ""));
+  if (isMp4 && preferServerExtract) {
+    if (!accessToken) {
+      throw new Error("当前登录状态已失效，请重新登录后再试。");
+    }
+    const extractedAudio = await extractAudioForLocalAsrWithServer(file, accessToken, signal);
+    const extractedFile = new File([extractedAudio], `${String(file?.name || "local-source").replace(/\.[^.]+$/, "") || "local-source"}.opus`, {
+      type: String(extractedAudio.type || "audio/ogg"),
+      lastModified: Date.now(),
+    });
+    return decodeFileForLocalAsr(extractedFile, accessToken);
+  }
   try {
     return await decodeFileForLocalAsr(file, accessToken);
   } catch (error) {
@@ -224,7 +245,7 @@ async function prepareAudioDataForLocalAsr(file, accessToken = "") {
     if (!accessToken) {
       throw new Error("当前 MP4 音轨无法在本地直接解码，请改传音频或切回高速模式。");
     }
-    const extractedAudio = await extractAudioForLocalAsrWithServer(file, accessToken);
+    const extractedAudio = await extractAudioForLocalAsrWithServer(file, accessToken, signal);
     const extractedFile = new File([extractedAudio], `${String(file?.name || "local-source").replace(/\.[^.]+$/, "") || "local-source"}.opus`, {
       type: String(extractedAudio.type || "audio/ogg"),
       lastModified: Date.now(),
@@ -271,7 +292,7 @@ function getCurrentTaskStageKey(taskSnapshot) {
 function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
   if (phase === "uploading") return `上传素材 ${clampPercent(uploadPercent)}%`;
   if (phase === "upload_paused") return `上传素材 ${clampPercent(uploadPercent)}%`;
-  if (phase === "local_transcribing") return "均衡模式正在本地识别字幕";
+  if (phase === "local_transcribing") return String(taskSnapshot?.current_text || "均衡模式正在本地识别字幕");
   if (!taskSnapshot) return phase === "success" ? "生成课程完成" : phase === "error" ? "生成课程失败" : "等待上传";
   if (phase === "success") return "生成课程完成";
   const counters = taskSnapshot.counters || {};
@@ -294,10 +315,45 @@ function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
 
 function getVisualProgress(phase, uploadPercent, taskSnapshot) {
   if (phase === "success") return 100;
-  if (phase === "local_transcribing") return 28;
+  if (phase === "local_transcribing") {
+    return taskSnapshot ? clampPercent(taskSnapshot?.overall_percent) : 28;
+  }
   if (phase === "processing" || taskSnapshot) return Math.round(42 + clampPercent(taskSnapshot?.overall_percent) * 0.58);
   if (phase === "uploading" || phase === "upload_paused") return Math.round(Math.max(3, Math.min(42, clampPercent(uploadPercent) * 0.42)));
   return 0;
+}
+
+function getStageProgressPercent(stageKey, ratio = 1) {
+  const safeRatio = Math.max(0, Math.min(1, Number(ratio) || 0));
+  if (stageKey === "convert_audio") return Math.round(20 * safeRatio);
+  if (stageKey === "asr_transcribe") return Math.round(20 + 40 * safeRatio);
+  if (stageKey === "translate_zh") return Math.round(60 + 30 * safeRatio);
+  if (stageKey === "write_lesson") return Math.round(90 + 10 * safeRatio);
+  return 0;
+}
+
+function estimateLocalAsrStageRatio(elapsedMs, durationSec) {
+  const elapsedSeconds = Math.max(0, Number(elapsedMs || 0)) / 1000;
+  const expectedSeconds = Math.max(30, Math.min(120, Math.round(Math.max(10, Number(durationSec || 0)) * 0.6)));
+  if (elapsedSeconds <= 0) return 0.12;
+  return Math.min(0.84, 0.12 + Math.min(0.72, (elapsedSeconds / expectedSeconds) * 0.72));
+}
+
+function buildLocalProgressSnapshot({ stageKey, stageStatus = "running", ratio = 0, currentText = "", counters = {} }) {
+  const stageIndex = DISPLAY_STAGES.findIndex((item) => item.key === stageKey);
+  return {
+    overall_percent: getStageProgressPercent(stageKey, ratio),
+    current_text: String(currentText || ""),
+    counters: { ...(counters || {}) },
+    stages: DISPLAY_STAGES.map((item, index) => {
+      let status = "pending";
+      if (stageIndex >= 0) {
+        if (index < stageIndex) status = "completed";
+        if (index === stageIndex) status = stageStatus;
+      }
+      return { key: item.key, status };
+    }),
+  };
 }
 
 function createFileFromBlob(blob, fileName, mediaType) {
@@ -347,18 +403,25 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [bindingCompleted, setBindingCompleted] = useState(false);
   const [mode, setMode] = useState("balanced");
+  const [localWorkerEpoch, setLocalWorkerEpoch] = useState(0);
+  const [localWorkerReady, setLocalWorkerReady] = useState(false);
   const [selectedBalancedModel, setSelectedBalancedModel] = useState(() => {
     const configuredModel = String(subtitleSettings?.default_asr_model || "").trim();
     return configuredModel === LOCAL_MODEL_OPTIONS[0].key ? configuredModel : LOCAL_MODEL_OPTIONS[0].key;
   });
   const [localModelStateMap, setLocalModelStateMap] = useState({});
   const [localModelVisualProgressMap, setLocalModelVisualProgressMap] = useState({});
+  const [localProgressSnapshot, setLocalProgressSnapshot] = useState(null);
   const [localBusyModelKey, setLocalBusyModelKey] = useState("");
   const [localBusyText, setLocalBusyText] = useState("");
   const pollingAbortRef = useRef(false);
   const pollTokenRef = useRef(0);
   const uploadAbortRef = useRef(null);
+  const localRunAbortRef = useRef(null);
   const uploadPersistRef = useRef({ timer: null, lastSavedAt: 0, lastSavedPercent: -1, latestPercent: 0 });
+  const localRunTokenRef = useRef(0);
+  const localStageProgressTimerRef = useRef(null);
+  const localStageProgressMetaRef = useRef({ runToken: 0, startedAt: 0, durationSec: 0, statusText: "" });
   const fileInputRef = useRef(null);
   const previousPanelActiveRef = useRef(Boolean(isActivePanel));
   const successStateOriginRef = useRef("none");
@@ -377,16 +440,21 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const estimatedChargeCents = selectedRate ? calculatePointsBySeconds(durationSec || 0, selectedRate.price_per_minute_cents) : 0;
   const likelyInsufficient = Number.isFinite(normalizedBalanceAmountCents) && estimatedChargeCents > 0 && normalizedBalanceAmountCents < estimatedChargeCents;
   const selectedLocalModelMeta = getLocalModelMeta(selectedBalancedModel);
-  const stageItems = getStageItems(taskSnapshot);
-  const progressPercent = getVisualProgress(phase, uploadPercent, taskSnapshot);
-  const showProgress = loading || phase === "success" || phase === "error" || phase === "upload_paused" || Boolean(taskSnapshot);
+  const localTranscribing = phase === "local_transcribing";
+  const displayTaskSnapshot = localTranscribing ? localProgressSnapshot : taskSnapshot;
+  const stageItems = getStageItems(displayTaskSnapshot);
+  const progressPercent = getVisualProgress(phase, uploadPercent, displayTaskSnapshot);
+  const showProgress = loading || phase === "success" || phase === "error" || phase === "upload_paused" || Boolean(displayTaskSnapshot);
   const canRetryWithoutUpload = Boolean(taskId);
   const hasLocalFile = Boolean(file);
   const showMediaPreview = Boolean(file || coverDataUrl);
   const sourceDisplayName = String(file?.name || taskSnapshot?.lesson?.source_filename || "");
-  const localTranscribing = phase === "local_transcribing";
   const uploadActionBusy = loading && ["uploading", "processing", "local_transcribing"].includes(String(phase || ""));
   const localModeBusy = Boolean(localBusyModelKey) || localTranscribing;
+  const primaryActionDisabled =
+    phase === "success" ||
+    (loading && !localTranscribing) ||
+    (mode === "balanced" && !localTranscribing && (!localAsrSupport.supported || !localWorkerReady || Boolean(localBusyModelKey)));
 
   function updateLocalModelState(modelKey, patch) {
     setLocalModelStateMap((prev) => ({
@@ -398,8 +466,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }));
   }
 
-  function rejectPendingLocalRequests(message) {
-    const error = new Error(message || "本地 ASR Worker 不可用");
+  function rejectPendingLocalRequests(message, errorName = "Error") {
+    const error = errorName === "AbortError" ? createAbortError(message || "本地识别已取消") : new Error(message || "本地 ASR Worker 不可用");
     for (const [, request] of localAsrPendingRequestsRef.current.entries()) {
       request.reject(error);
     }
@@ -429,6 +497,55 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     });
   }
 
+  function clearLocalStageProgressTimer() {
+    if (localStageProgressTimerRef.current) {
+      clearInterval(localStageProgressTimerRef.current);
+      localStageProgressTimerRef.current = null;
+    }
+  }
+
+  function restartLocalWorker(message = "本地 ASR Worker 已重置", errorName = "AbortError") {
+    rejectPendingLocalRequests(message, errorName);
+    localRunAbortRef.current?.abort();
+    localRunAbortRef.current = null;
+    setLocalWorkerReady(false);
+    if (localAsrWorkerRef.current) {
+      localAsrWorkerRef.current.terminate?.();
+      localAsrWorkerRef.current = null;
+    }
+    setLocalWorkerEpoch((prev) => prev + 1);
+  }
+
+  function setLocalProgress(stageKey, stageStatus, ratio, currentText, counters = {}) {
+    setLocalProgressSnapshot(
+      buildLocalProgressSnapshot({
+        stageKey,
+        stageStatus,
+        ratio,
+        currentText,
+        counters,
+      }),
+    );
+  }
+
+  function startLocalAsrVisualProgress(runToken, nextStatusText, nextDurationSec) {
+    clearLocalStageProgressTimer();
+    localStageProgressMetaRef.current = {
+      runToken,
+      startedAt: Date.now(),
+      durationSec: Number(nextDurationSec || 0),
+      statusText: String(nextStatusText || "正在本地识别字幕"),
+    };
+    const initialRatio = estimateLocalAsrStageRatio(0, nextDurationSec);
+    setLocalProgress("asr_transcribe", "running", initialRatio, nextStatusText);
+    localStageProgressTimerRef.current = setInterval(() => {
+      if (runToken !== localRunTokenRef.current) return;
+      const elapsedMs = Date.now() - Number(localStageProgressMetaRef.current.startedAt || 0);
+      const ratio = estimateLocalAsrStageRatio(elapsedMs, localStageProgressMetaRef.current.durationSec);
+      setLocalProgress("asr_transcribe", "running", ratio, localStageProgressMetaRef.current.statusText);
+    }, LOCAL_STAGE_PROGRESS_INTERVAL_MS);
+  }
+
   function clearUploadPersistTimer() {
     if (uploadPersistRef.current.timer) {
       clearTimeout(uploadPersistRef.current.timer);
@@ -455,19 +572,22 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }
 
   useEffect(() => {
-    onTaskStateChange?.(buildTaskState({ phase, taskId, taskSnapshot, uploadPercent, status }));
-  }, [onTaskStateChange, phase, taskId, taskSnapshot, uploadPercent, status]);
+    onTaskStateChange?.(buildTaskState({ phase, taskId, taskSnapshot: displayTaskSnapshot, uploadPercent, status }));
+  }, [onTaskStateChange, phase, taskId, displayTaskSnapshot, uploadPercent, status]);
 
   useEffect(() => () => {
     stopPollingSession();
     clearUploadPersistTimer();
+    clearLocalStageProgressTimer();
     uploadAbortRef.current?.abort();
+    localRunAbortRef.current?.abort();
     rejectPendingLocalRequests("本地 ASR Worker 已关闭");
     localAsrWorkerRef.current?.terminate?.();
   }, []);
 
   useEffect(() => {
     if (!localAsrSupport.supported) {
+      setLocalWorkerReady(false);
       const unsupportedMap = Object.fromEntries(
         LOCAL_MODEL_OPTIONS.map((item) => [
           item.key,
@@ -484,6 +604,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
     const worker = new Worker(new URL("./localAsrPreviewWorker.js", import.meta.url));
     localAsrWorkerRef.current = worker;
+    setLocalWorkerReady(true);
 
     const handleMessage = (event) => {
       const payload = event?.data || {};
@@ -528,6 +649,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     const handleWorkerError = (event) => {
       const message = event?.message || "本地 ASR Worker 启动失败";
       rejectPendingLocalRequests(message);
+      setLocalWorkerReady(false);
       setLocalBusyModelKey("");
       setLocalBusyText("");
       setLocalModelStateMap((prev) => {
@@ -549,12 +671,13 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       worker.removeEventListener("message", handleMessage);
       worker.removeEventListener("error", handleWorkerError);
       rejectPendingLocalRequests("本地 ASR Worker 已关闭");
+      setLocalWorkerReady(false);
       worker.terminate();
       if (localAsrWorkerRef.current === worker) {
         localAsrWorkerRef.current = null;
       }
     };
-  }, [localAsrSupport.reason, localAsrSupport.supported]);
+  }, [localAsrSupport.reason, localAsrSupport.supported, localWorkerEpoch]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -639,6 +762,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     resetUploadPersistState();
     uploadAbortRef.current?.abort();
     uploadAbortRef.current = null;
+    localRunAbortRef.current?.abort();
+    localRunAbortRef.current = null;
+    clearLocalStageProgressTimer();
+    localRunTokenRef.current += 1;
     if (clearFileInput && fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -655,6 +782,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setIsVideoSource(false);
     setTaskSnapshot(null);
     setUploadPercent(0);
+    setLocalProgressSnapshot(null);
     setBindingCompleted(false);
     setLocalBusyModelKey("");
     setLocalBusyText("");
@@ -806,12 +934,17 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     stopPollingSession();
     resetUploadPersistState();
     uploadAbortRef.current?.abort();
+    localRunAbortRef.current?.abort();
+    localRunAbortRef.current = null;
+    clearLocalStageProgressTimer();
+    localRunTokenRef.current += 1;
     setTaskId("");
     setLoading(false);
     setStatus(nextStatus);
     setPhase(file ? "ready" : "idle");
     setTaskSnapshot(null);
     setUploadPercent(0);
+    setLocalProgressSnapshot(null);
     setBindingCompleted(false);
     await persistSession({
       taskId: "",
@@ -823,8 +956,43 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     });
   }
 
+  async function stopLocalRecognition() {
+    if (!localTranscribing) return;
+    console.debug("[DEBUG] upload.local_asr.stop", {
+      fileName: String(file?.name || ""),
+      model: selectedBalancedModel,
+    });
+    stopPollingSession();
+    resetUploadPersistState();
+    localRunTokenRef.current += 1;
+    localRunAbortRef.current?.abort();
+    localRunAbortRef.current = null;
+    clearLocalStageProgressTimer();
+    restartLocalWorker("本地识别已停止", "AbortError");
+    setTaskId("");
+    setTaskSnapshot(null);
+    setLocalProgressSnapshot(null);
+    setUploadPercent(0);
+    setLoading(false);
+    setStatus(LOCAL_RECOGNITION_STOPPED_MESSAGE);
+    setPhase(file ? "ready" : "idle");
+    setBindingCompleted(false);
+    await persistSession({
+      taskId: "",
+      phase: file ? "ready" : "idle",
+      taskSnapshot: null,
+      uploadPercent: 0,
+      status: LOCAL_RECOGNITION_STOPPED_MESSAGE,
+      bindingCompleted: false,
+    });
+    toast.success("已停止本地识别");
+  }
+
   async function finalizeSuccess(data, sourceFile = file, silentToast = false) {
     resetUploadPersistState();
+    clearLocalStageProgressTimer();
+    localRunAbortRef.current = null;
+    setLocalProgressSnapshot(null);
     let mediaPersisted = false;
     let mediaPreview = null;
     let successMessage = "";
@@ -985,6 +1153,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     stopPollingSession();
     resetUploadPersistState();
     uploadAbortRef.current?.abort();
+    localRunAbortRef.current?.abort();
+    localRunAbortRef.current = null;
+    clearLocalStageProgressTimer();
+    localRunTokenRef.current += 1;
     if (ownerUserId) {
       await clearUploadPanelSuccessSnapshot(ownerUserId);
     }
@@ -1001,6 +1173,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setIsVideoSource(false);
     setUploadPercent(0);
     uploadPersistRef.current.latestPercent = 0;
+    setLocalProgressSnapshot(null);
     setBindingCompleted(false);
     setLocalBusyModelKey("");
     setLocalBusyText("");
@@ -1033,6 +1206,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   async function handleLocalModelDownload(modelKey) {
     if (!localAsrSupport.supported) {
       toast.error(localAsrSupport.reason || "当前浏览器不支持均衡模式");
+      return;
+    }
+    if (!localWorkerReady) {
+      toast.error("本地识别组件正在初始化，请稍后再试");
       return;
     }
     setLocalBusyModelKey(modelKey);
@@ -1071,6 +1248,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }
 
   async function handleLocalModelRemove(modelKey) {
+    if (!localWorkerReady) {
+      toast.error("本地识别组件正在初始化，请稍后再试");
+      return;
+    }
     const modelMeta = getLocalModelMeta(modelKey);
     setLocalBusyModelKey(modelKey);
     setLocalBusyText("正在卸载本地模型");
@@ -1100,6 +1281,14 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       toast.error(message);
       return;
     }
+    if (!localWorkerReady) {
+      const message = "本地识别组件正在重置，请稍后再试。";
+      setStatus(message);
+      setPhase("error");
+      setLoading(false);
+      toast.error(message);
+      return;
+    }
     const modelState = localModelStateMap[selectedBalancedModel] || {};
     if (!["ready", "cached"].includes(String(modelState.status || ""))) {
       const message = "请先下载并就绪一个本地模型";
@@ -1109,21 +1298,55 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       toast.error(message);
       return;
     }
+    const runToken = localRunTokenRef.current + 1;
+    localRunTokenRef.current = runToken;
+    localRunAbortRef.current?.abort();
+    localRunAbortRef.current = null;
+    clearLocalStageProgressTimer();
+    setLocalProgressSnapshot(null);
     setPhase("local_transcribing");
     setLoading(true);
     setStatus("正在本地识别字幕");
     await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: "正在本地识别字幕", bindingCompleted: false });
     try {
-      if (String(file?.type || "").startsWith("video/")) {
-        setStatus("正在从视频提取音轨");
-        await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: "正在从视频提取音轨", bindingCompleted: false });
+      const isVideoFile = String(file?.type || "").startsWith("video/");
+      if (isVideoFile) {
+        const extractingStatus = "正在从视频提取音轨";
+        console.debug("[DEBUG] upload.local_asr.stage", {
+          stage: "convert_audio",
+          fileName: String(file?.name || ""),
+          model: selectedBalancedModel,
+        });
+        setStatus(extractingStatus);
+        setLocalProgress("convert_audio", "running", 0.4, extractingStatus);
+        await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: extractingStatus, bindingCompleted: false });
+      } else {
+        setLocalProgress("convert_audio", "completed", 1, "音频已就绪，准备识别字幕");
       }
-      const audioData = await prepareAudioDataForLocalAsr(file, accessToken);
+      const prepareAbortController = new AbortController();
+      localRunAbortRef.current = prepareAbortController;
+      const audioData = await prepareAudioDataForLocalAsr(file, accessToken, {
+        preferServerExtract: isVideoFile,
+        signal: prepareAbortController.signal,
+      });
+      if (runToken !== localRunTokenRef.current) return;
+      localRunAbortRef.current = null;
       if (!(audioData instanceof Float32Array) || audioData.length <= 0) {
         throw new Error("本地音频解析结果为空，无法继续生成");
       }
-      setStatus("正在本地识别字幕");
-      await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: "正在本地识别字幕", bindingCompleted: false });
+      const localAsrStatus = "正在本地识别字幕";
+      console.debug("[DEBUG] upload.local_asr.stage", {
+        stage: "asr_transcribe",
+        fileName: String(file?.name || ""),
+        model: selectedBalancedModel,
+        sampleCount: audioData.length,
+      });
+      setStatus(localAsrStatus);
+      if (isVideoFile) {
+        setLocalProgress("convert_audio", "completed", 1, "转换音频格式完成");
+      }
+      startLocalAsrVisualProgress(runToken, localAsrStatus, durationSec);
+      await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: localAsrStatus, bindingCompleted: false });
       const localResult = await createWorkerRequest(
         "transcribe-audio",
         selectedBalancedModel,
@@ -1134,14 +1357,21 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         },
         [audioData.buffer],
       );
+      if (runToken !== localRunTokenRef.current) return;
+      clearLocalStageProgressTimer();
       if (!Array.isArray(localResult?.asr_payload?.transcripts?.[0]?.sentences) || localResult.asr_payload.transcripts[0].sentences.length === 0) {
         throw new Error("本地模型未识别出可用字幕，请切回高速模式或更换素材");
       }
+      const sentenceCount = localResult.asr_payload.transcripts[0].sentences.length;
+      setLocalProgress("asr_transcribe", "completed", 1, `本地识别完成，共 ${sentenceCount} 段字幕`);
+      const createTaskAbortController = new AbortController();
+      localRunAbortRef.current = createTaskAbortController;
       const resp = await api(
         "/api/lessons/tasks/local-asr",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: createTaskAbortController.signal,
           body: JSON.stringify({
             asr_model: selectedBalancedModel,
             source_filename: String(file?.name || "local-source"),
@@ -1151,8 +1381,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         },
         accessToken,
       );
+      if (runToken !== localRunTokenRef.current) return;
+      localRunAbortRef.current = null;
       const data = await parseResponse(resp);
       if (!resp.ok) {
+        setLocalProgressSnapshot(null);
         const message = toErrorText(data, "创建本地任务失败");
         setStatus(message);
         setPhase("error");
@@ -1165,12 +1398,19 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       const nextTaskId = String(data.task_id || "");
       setTaskId(nextTaskId);
       setTaskSnapshot(null);
+      setLocalProgressSnapshot(null);
       setPhase("processing");
       setLoading(true);
       setStatus("");
       await persistSession({ taskId: nextTaskId, phase: "processing", taskSnapshot: null, uploadPercent: 100, status: "", bindingCompleted: false });
       void pollTask(nextTaskId, false, pollToken);
     } catch (error) {
+      clearLocalStageProgressTimer();
+      localRunAbortRef.current = null;
+      if (error?.name === "AbortError") {
+        return;
+      }
+      setLocalProgressSnapshot(null);
       const message = error instanceof Error && error.message ? error.message : `网络错误: ${String(error)}`;
       setStatus(message);
       setPhase("error");
@@ -1194,6 +1434,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     successStateOriginRef.current = "none";
     stopPollingSession();
     resetUploadPersistState();
+    localRunAbortRef.current?.abort();
+    localRunAbortRef.current = null;
+    clearLocalStageProgressTimer();
+    localRunTokenRef.current += 1;
     const pollToken = startPollingSession();
     uploadAbortRef.current?.abort();
     setLoading(true);
@@ -1202,6 +1446,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setTaskSnapshot(null);
     setUploadPercent(0);
     uploadPersistRef.current.latestPercent = 0;
+    setLocalProgressSnapshot(null);
     if (mode === "balanced") {
       await submitBalanced(pollToken);
       return;
@@ -1409,14 +1654,14 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                     {localBusyModelKey === item.key && localBusyText ? <p>{localBusyText}</p> : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button type="button" size="sm" onClick={() => void handleLocalModelDownload(item.key)} disabled={!localAsrSupport.supported || uploadActionBusy || localBusyModelKey === item.key}>
+                    <Button type="button" size="sm" onClick={() => void handleLocalModelDownload(item.key)} disabled={!localAsrSupport.supported || !localWorkerReady || uploadActionBusy || localBusyModelKey === item.key}>
                       {String(state.status || "") === "loading" ? <Loader2 className="size-4 animate-spin" /> : null}
                       {downloaded ? "重新校验模型" : "下载模型"}
                     </Button>
-                    <Button type="button" size="sm" variant="outline" onClick={() => setSelectedBalancedModel(item.key)} disabled={uploadActionBusy || localBusyModelKey === item.key}>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setSelectedBalancedModel(item.key)} disabled={!localWorkerReady || uploadActionBusy || localBusyModelKey === item.key}>
                       设为当前
                     </Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => void handleLocalModelRemove(item.key)} disabled={!downloaded || uploadActionBusy || localBusyModelKey === item.key}>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => void handleLocalModelRemove(item.key)} disabled={!downloaded || !localWorkerReady || uploadActionBusy || localBusyModelKey === item.key}>
                       卸载
                     </Button>
                   </div>
@@ -1496,11 +1741,19 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             </div>
           </div>
 
-          <Button type="submit" disabled={loading || phase === "success" || (mode === "balanced" && (!localAsrSupport.supported || localModeBusy))} className="h-11 w-full" data-guide-id="upload-submit">
-            {loading ? (
+          <Button
+            type={localTranscribing ? "button" : "submit"}
+            disabled={primaryActionDisabled}
+            className="h-11 w-full"
+            data-guide-id="upload-submit"
+            onClick={localTranscribing ? () => void stopLocalRecognition() : undefined}
+          >
+            {localTranscribing ? (
+              "停止识别"
+            ) : loading ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="size-4 animate-spin" />
-                {phase === "uploading" ? "上传中" : phase === "local_transcribing" ? "本地识别中" : "生成中"}
+                {phase === "uploading" ? "上传中" : "生成中"}
               </span>
             ) : phase === "success" ? (
               "已生成完成"
@@ -1524,7 +1777,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
           <div className="space-y-3 rounded-2xl border bg-muted/15 p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
-                <p className="text-sm font-medium">{getProgressHeadline(phase, uploadPercent, taskSnapshot)}</p>
+                <p className="text-sm font-medium">{getProgressHeadline(phase, uploadPercent, displayTaskSnapshot)}</p>
                 <p className="text-xs text-muted-foreground">总进度</p>
               </div>
               <span className="text-sm font-semibold tabular-nums text-muted-foreground">{progressPercent}%</span>
