@@ -5,8 +5,22 @@ import { toast } from "sonner";
 import { cn } from "../../lib/utils";
 import { api, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
 import { formatMoneyCents, formatMoneyPerMinute } from "../../shared/lib/money";
-import { deleteLocalAsrPreviewState, getLocalAsrPreviewState, listLocalAsrPreviewStates, saveLocalAsrPreviewState } from "../../shared/media/localAsrPreviewStore";
+import {
+  bindLocalAsrModelDirectory,
+  ensureLocalAsrModel,
+  getLocalAsrStorageModeLabel,
+  getLocalAsrWorkerAssetPayload,
+  localAsrDirectoryBindingSupported,
+  LOCAL_ASR_STORAGE_MODE_BROWSER,
+  LOCAL_ASR_STORAGE_MODE_DIRECTORY,
+  releaseAllLocalAsrWorkerAssetPayloads,
+  releaseLocalAsrWorkerAssetPayload,
+  removeLocalAsrModel,
+  switchLocalAsrStorageMode,
+  verifyLocalAsrModel,
+} from "../../shared/media/localAsrAssetManager";
 import { extractMediaCoverPreview, getLessonMediaPreview, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
+import { removeLocalWhisperModel, verifyLocalWhisperModel } from "../../shared/media/localWhisperModelManager";
 import {
   clearActiveGenerationTask,
   clearUploadPanelSuccessSnapshot,
@@ -18,6 +32,7 @@ import {
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, MediaCover, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
 import { useAppStore } from "../../store";
 import { buildLocalAsrLongAudioWarning, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS, LOCAL_ASR_TARGET_SAMPLE_RATE, preprocessLocalAsrFile } from "./localAsrAudioPreprocess";
+import { disposeLocalWhisperPipeline, ensureLocalWhisperPipeline, transcribeWithLocalWhisper } from "./localWhisperRuntime";
 
 const QWEN_MODEL = "qwen3-asr-flash-filetrans";
 const UPLOAD_PROGRESS_PERSIST_INTERVAL_MS = 800;
@@ -47,18 +62,16 @@ const LOCAL_MODEL_OPTIONS = [
     key: "local-whisper-base-en",
     workerModelId: "onnx-community/whisper-base.en_timestamped",
     title: "Base",
-    subtitle: "Whisper Base 英文模型，先恢复入口展示。",
-    uploadEnabled: false,
-    unavailableReason: LOCAL_WHISPER_UPLOAD_UNAVAILABLE_REASON,
+    subtitle: "Whisper Base 英文模型，支持在上传页均衡模式直接识别生成。",
+    uploadEnabled: true,
     sizeEstimateMb: { webgpu: 290, wasm: 80 },
   },
   {
     key: "local-whisper-small-en",
     workerModelId: "onnx-community/whisper-small.en_timestamped",
     title: "Small",
-    subtitle: "Whisper Small 英文模型，更准但更重。",
-    uploadEnabled: false,
-    unavailableReason: LOCAL_WHISPER_UPLOAD_UNAVAILABLE_REASON,
+    subtitle: "Whisper Small 英文模型，更准但更重，支持直接识别生成。",
+    uploadEnabled: true,
     sizeEstimateMb: { webgpu: 970, wasm: 250 },
   },
 ];
@@ -83,6 +96,10 @@ function getRateByModel(rates, modelName) {
   return rates.find((item) => item.model_name === modelName && item.is_active);
 }
 
+function isServerRuntimeModel(rate) {
+  return Boolean(rate) && String(rate.runtime_kind || "cloud") !== "local" && String(rate.billing_unit || "minute") === "minute";
+}
+
 function calculatePointsBySeconds(seconds, pointsPerMinute) {
   if (!Number.isFinite(seconds) || seconds <= 0 || !Number.isFinite(pointsPerMinute) || pointsPerMinute <= 0) return 0;
   return Math.ceil((Math.ceil(seconds) * pointsPerMinute) / 60);
@@ -105,6 +122,10 @@ function isLocalBalancedModelUploadEnabled(modelKey) {
 
 function getLocalBalancedModelUnavailableReason(modelKey) {
   return String(getLocalModelMeta(modelKey)?.unavailableReason || "").trim();
+}
+
+function isWhisperLocalModel(modelKey) {
+  return String(modelKey || "").startsWith("local-whisper-");
 }
 
 function detectLocalAsrSupport() {
@@ -137,7 +158,7 @@ function getLocalModelStatusLabel(status) {
   if (status === "loading") return "下载中";
   if (status === "ready" || status === "cached") return "已下载";
   if (status === "removing") return "卸载中";
-  if (status === "error") return "异常";
+  if (status === "error") return "不可用";
   if (status === "unsupported") return "不可用";
   return "未下载";
 }
@@ -242,27 +263,6 @@ async function prepareAudioDataForLocalAsr(file, accessToken = "", options = {})
 
 function buildWorkerRequestId(sequence) {
   return `upload-local-asr-${Date.now()}-${sequence}`;
-}
-
-async function clearLocalModelCaches(modelMeta) {
-  if (typeof caches === "undefined") return;
-  const patterns = [
-    LOCAL_ASR_ASSET_BASE_URL,
-    encodeURIComponent(LOCAL_ASR_ASSET_BASE_URL),
-    ...(Array.isArray(modelMeta?.cacheFiles) ? modelMeta.cacheFiles : []),
-  ];
-  const cacheNames = await caches.keys();
-  await Promise.all(
-    cacheNames.map(async (cacheName) => {
-      const cache = await caches.open(cacheName);
-      const requests = await cache.keys();
-      await Promise.all(
-        requests
-          .filter((request) => patterns.some((pattern) => request.url.includes(pattern)))
-          .map((request) => cache.delete(request)),
-      );
-    }),
-  );
 }
 
 function getStageItems(taskSnapshot) {
@@ -502,6 +502,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const currentUser = useAppStore((state) => state.currentUser);
   const normalizedBalanceAmountCents = Number(balanceAmountCents ?? balancePoints ?? 0);
   const localAsrSupport = useMemo(() => detectLocalAsrSupport(), []);
+  const localDirectoryBindingAvailable = useMemo(() => localAsrDirectoryBindingSupported(), []);
   const [file, setFile] = useState(null);
   const [taskId, setTaskId] = useState("");
   const [loading, setLoading] = useState(false);
@@ -519,7 +520,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [bindingCompleted, setBindingCompleted] = useState(false);
   const [mode, setMode] = useState("balanced");
   const [localWorkerEpoch, setLocalWorkerEpoch] = useState(0);
-  const [localWorkerReady, setLocalWorkerReady] = useState(false);
+  const [localWorkerReadyMap, setLocalWorkerReadyMap] = useState({ sensevoice: false, whisper: false });
   const [selectedBalancedModel, setSelectedBalancedModel] = useState(() => {
     const configuredModel = String(subtitleSettings?.default_asr_model || "").trim();
     return getDefaultBalancedModelKey(configuredModel);
@@ -529,6 +530,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [localProgressSnapshot, setLocalProgressSnapshot] = useState(null);
   const [localBusyModelKey, setLocalBusyModelKey] = useState("");
   const [localBusyText, setLocalBusyText] = useState("");
+  const [localModelAdvancedOpen, setLocalModelAdvancedOpen] = useState(false);
   const pollingAbortRef = useRef(false);
   const pollTokenRef = useRef(0);
   const uploadAbortRef = useRef(null);
@@ -540,21 +542,28 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const fileInputRef = useRef(null);
   const previousPanelActiveRef = useRef(Boolean(isActivePanel));
   const successStateOriginRef = useRef("none");
-  const localAsrWorkerRef = useRef(null);
+  const localSenseWorkerRef = useRef(null);
   const localAsrRequestSequenceRef = useRef(0);
   const localAsrPendingRequestsRef = useRef(new Map());
   const ownerUserId = Number(currentUser?.id || 0);
 
   const selectedFastModel = useMemo(() => {
     const configuredModel = String(subtitleSettings?.default_asr_model || "").trim();
-    if (configuredModel === QWEN_MODEL && getRateByModel(billingRates, configuredModel)) return configuredModel;
-    return getRateByModel(billingRates, QWEN_MODEL)?.model_name || QWEN_MODEL;
+    const configuredRate = getRateByModel(billingRates, configuredModel);
+    if (isServerRuntimeModel(configuredRate)) return configuredRate.model_name;
+    const fallbackServerRate = billingRates.find((item) => isServerRuntimeModel(item));
+    return fallbackServerRate?.model_name || QWEN_MODEL;
   }, [billingRates, subtitleSettings?.default_asr_model]);
   const selectedAsrModel = mode === "balanced" ? selectedBalancedModel : selectedFastModel;
   const selectedRate = getRateByModel(billingRates, selectedAsrModel) || getRateByModel(billingRates, selectedFastModel);
   const estimatedChargeCents = selectedRate ? calculatePointsBySeconds(durationSec || 0, selectedRate.price_per_minute_cents) : 0;
   const likelyInsufficient = Number.isFinite(normalizedBalanceAmountCents) && estimatedChargeCents > 0 && normalizedBalanceAmountCents < estimatedChargeCents;
   const selectedLocalModelMeta = getLocalModelMeta(selectedBalancedModel);
+  const selectedLocalModelState = localModelStateMap[selectedBalancedModel] || {};
+  const selectedLocalModelDownloaded = ["ready", "cached"].includes(String(selectedLocalModelState.status || ""));
+  const selectedLocalModelStorageLabel = getLocalAsrStorageModeLabel(selectedLocalModelState.storageMode || LOCAL_ASR_STORAGE_MODE_BROWSER);
+  const selectedWorkerKind = isWhisperLocalModel(selectedBalancedModel) ? "whisper" : "sensevoice";
+  const localWorkerReady = Boolean(localWorkerReadyMap[selectedWorkerKind]);
   const balancedPerformanceWarning = useMemo(
     () => (mode === "balanced" ? buildLocalAsrLongAudioWarning(durationSec, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS) : ""),
     [durationSec, mode],
@@ -585,6 +594,37 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }));
   }
 
+  function applyVerifiedLocalModelState(modelKey, verification, overrides = {}) {
+    const nextStatus = String(overrides.status || verification?.status || "idle");
+    const nextError = String(overrides.error ?? verification?.error ?? "");
+    const nextMessage = String(overrides.message || verification?.message || "");
+    updateLocalModelState(modelKey, {
+      status: nextStatus,
+      runtime: String(overrides.runtime || verification?.runtime || "wasm"),
+      progress: overrides.progress ?? (nextStatus === "ready" || nextStatus === "cached" ? 100 : null),
+      error: nextError,
+      message: nextMessage,
+      storageMode: String(overrides.storageMode || verification?.storageMode || LOCAL_ASR_STORAGE_MODE_BROWSER),
+      storageSummary: String(overrides.storageSummary || verification?.storageSummary || ""),
+      directoryName: String(overrides.directoryName || verification?.directoryName || ""),
+      directoryBound: Boolean(overrides.directoryBound ?? verification?.directoryBound),
+      cacheVersion: String(overrides.cacheVersion || verification?.cacheVersion || ""),
+      missingFiles: Array.isArray(overrides.missingFiles) ? overrides.missingFiles : Array.isArray(verification?.missingFiles) ? verification.missingFiles : [],
+    });
+  }
+
+  function getWorkerKindByModelKey(modelKey) {
+    return isWhisperLocalModel(modelKey) ? "whisper" : "sensevoice";
+  }
+
+  function getWorkerRefByModelKey(modelKey) {
+    return getWorkerKindByModelKey(modelKey) === "whisper" ? null : localSenseWorkerRef.current;
+  }
+
+  function setWorkerReady(workerKind, ready) {
+    setLocalWorkerReadyMap((prev) => ({ ...prev, [workerKind]: Boolean(ready) }));
+  }
+
   function rejectPendingLocalRequests(message, errorName = "Error") {
     const error = errorName === "AbortError" ? createAbortError(message || "识别已取消") : new Error(message || "识别组件不可用");
     for (const [, request] of localAsrPendingRequestsRef.current.entries()) {
@@ -593,22 +633,57 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     localAsrPendingRequestsRef.current.clear();
   }
 
-  function createWorkerRequest(type, modelKey, payload = {}, transfer = []) {
+  async function createWorkerRequest(type, modelKey, payload = {}, transfer = []) {
     const modelMeta = getLocalModelMeta(modelKey);
-    if (!localAsrWorkerRef.current || !modelMeta) {
-      return Promise.reject(new Error("识别组件未初始化"));
+    if (!modelMeta) {
+      throw new Error("识别组件未初始化");
+    }
+    if (isWhisperLocalModel(modelKey)) {
+      if (type === "load-model") {
+        return ensureLocalWhisperPipeline(modelKey, {
+          onProgress: (progress) => {
+            updateLocalModelState(modelKey, {
+              status: "loading",
+              progress: Number.isFinite(Number(progress?.overallProgress)) ? clampPercent(progress.overallProgress) : null,
+              error: "",
+            });
+            setLocalBusyModelKey(modelKey);
+            setLocalBusyText(sanitizeUserFacingText(progress?.statusText || "正在下载模型"));
+          },
+        });
+      }
+      if (type === "dispose-model") {
+        await disposeLocalWhisperPipeline();
+        return { runtime: "wasm" };
+      }
+      if (type === "transcribe-audio") {
+        const audioData = payload?.audioData;
+        const samplingRate = Number(payload?.samplingRate || LOCAL_ASR_TARGET_SAMPLE_RATE);
+        return transcribeWithLocalWhisper(modelKey, audioData, samplingRate);
+      }
+      throw new Error("当前操作不支持 Whisper 模型");
+    }
+
+    const worker = getWorkerRefByModelKey(modelKey);
+    if (!worker) {
+      throw new Error("识别组件未初始化");
+    }
+    let workerPayload = {};
+    if (type === "load-model" || type === "transcribe-audio") {
+      workerPayload = await getLocalAsrWorkerAssetPayload(modelKey, LOCAL_ASR_ASSET_BASE_URL);
     }
     localAsrRequestSequenceRef.current += 1;
     const requestId = buildWorkerRequestId(localAsrRequestSequenceRef.current);
     return new Promise((resolve, reject) => {
       localAsrPendingRequestsRef.current.set(requestId, { resolve, reject, type, modelKey });
-      localAsrWorkerRef.current.postMessage(
+      worker.postMessage(
         {
           type,
           requestId,
           modelId: modelMeta.workerModelId,
           preferredRuntime: "wasm",
           assetBaseUrl: LOCAL_ASR_ASSET_BASE_URL,
+          ...workerPayload,
           ...payload,
         },
         transfer,
@@ -627,11 +702,13 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     rejectPendingLocalRequests(message, errorName);
     localRunAbortRef.current?.abort();
     localRunAbortRef.current = null;
-    setLocalWorkerReady(false);
-    if (localAsrWorkerRef.current) {
-      localAsrWorkerRef.current.terminate?.();
-      localAsrWorkerRef.current = null;
+    setLocalWorkerReadyMap({ sensevoice: false, whisper: false });
+    if (localSenseWorkerRef.current) {
+      localSenseWorkerRef.current.terminate?.();
+      localSenseWorkerRef.current = null;
     }
+    releaseAllLocalAsrWorkerAssetPayloads();
+    void disposeLocalWhisperPipeline().catch(() => null);
     setLocalWorkerEpoch((prev) => prev + 1);
   }
 
@@ -701,7 +778,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     uploadAbortRef.current?.abort();
     localRunAbortRef.current?.abort();
     rejectPendingLocalRequests("识别组件已关闭");
-    localAsrWorkerRef.current?.terminate?.();
+    localSenseWorkerRef.current?.terminate?.();
+    releaseAllLocalAsrWorkerAssetPayloads();
+    void disposeLocalWhisperPipeline().catch(() => null);
   }, []);
 
   useEffect(() => {
@@ -712,7 +791,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   useEffect(() => {
     if (!localAsrSupport.supported) {
-      setLocalWorkerReady(false);
+      setLocalWorkerReadyMap({ sensevoice: false, whisper: false });
       const unsupportedMap = Object.fromEntries(
         LOCAL_MODEL_OPTIONS.map((item) => [
           item.key,
@@ -727,9 +806,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       setLocalModelStateMap(unsupportedMap);
       return undefined;
     }
-    const worker = new Worker(new URL("./localAsrPreviewWorker.js", import.meta.url));
-    localAsrWorkerRef.current = worker;
-    setLocalWorkerReady(true);
+    const senseWorker = new Worker(new URL("./localAsrPreviewWorker.js", import.meta.url));
+    localSenseWorkerRef.current = senseWorker;
+    setLocalWorkerReadyMap({ sensevoice: true, whisper: true });
 
     const handleMessage = (event) => {
       const payload = event?.data || {};
@@ -771,15 +850,16 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       }
     };
 
-    const handleWorkerError = (event) => {
+    const buildWorkerErrorHandler = (workerKind) => (event) => {
       const message = sanitizeUserFacingText(event?.message || "识别组件启动失败");
       rejectPendingLocalRequests(message);
-      setLocalWorkerReady(false);
+      setWorkerReady(workerKind, false);
       setLocalBusyModelKey("");
       setLocalBusyText("");
       setLocalModelStateMap((prev) => {
         const next = { ...prev };
         LOCAL_MODEL_OPTIONS.forEach((item) => {
+          if (getWorkerKindByModelKey(item.key) !== workerKind) return;
           next[item.key] = {
             ...(next[item.key] || {}),
             status: "error",
@@ -789,18 +869,18 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         return next;
       });
     };
+    const handleSenseWorkerError = buildWorkerErrorHandler("sensevoice");
 
-    worker.addEventListener("message", handleMessage);
-    worker.addEventListener("error", handleWorkerError);
+    senseWorker.addEventListener("message", handleMessage);
+    senseWorker.addEventListener("error", handleSenseWorkerError);
     return () => {
-      worker.removeEventListener("message", handleMessage);
-      worker.removeEventListener("error", handleWorkerError);
+      senseWorker.removeEventListener("message", handleMessage);
+      senseWorker.removeEventListener("error", handleSenseWorkerError);
       rejectPendingLocalRequests("识别组件已关闭");
-      setLocalWorkerReady(false);
-      worker.terminate();
-      if (localAsrWorkerRef.current === worker) {
-        localAsrWorkerRef.current = null;
-      }
+      setLocalWorkerReadyMap({ sensevoice: false, whisper: false });
+      senseWorker.terminate();
+      releaseAllLocalAsrWorkerAssetPayloads();
+      if (localSenseWorkerRef.current === senseWorker) localSenseWorkerRef.current = null;
     };
   }, [localAsrSupport.reason, localAsrSupport.supported, localWorkerEpoch]);
 
@@ -850,32 +930,49 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   useEffect(() => {
     let canceled = false;
     async function restoreLocalModelState() {
-      const cachedStates = await listLocalAsrPreviewStates().catch(() => []);
-      if (canceled) return;
-      const nextMap = Object.fromEntries(
-        LOCAL_MODEL_OPTIONS.map((item) => {
-          const cached = cachedStates.find((entry) => entry?.model_id === item.key);
+      const nextEntries = await Promise.all(
+        LOCAL_MODEL_OPTIONS.map(async (item) => {
           if (!localAsrSupport.supported) {
             return [item.key, { status: "unsupported", runtime: "", progress: null, error: localAsrSupport.reason }];
           }
           if (!item.uploadEnabled) {
             return [item.key, { status: "unsupported", runtime: "", progress: null, error: String(item.unavailableReason || "") }];
           }
-          if (!cached) {
-            return [item.key, { status: "idle", runtime: "", progress: null, error: "" }];
+          try {
+            const verification = isWhisperLocalModel(item.key)
+              ? await verifyLocalWhisperModel(item.key)
+              : await verifyLocalAsrModel(item.key, LOCAL_ASR_ASSET_BASE_URL);
+            return [
+              item.key,
+              {
+                status: verification.status,
+                runtime: verification.runtime,
+                progress: verification.ready ? 100 : null,
+                error: verification.error,
+                message: verification.message,
+                storageMode: verification.storageMode,
+                storageSummary: verification.storageSummary,
+                directoryName: verification.directoryName,
+                directoryBound: verification.directoryBound,
+                cacheVersion: verification.cacheVersion,
+                missingFiles: verification.missingFiles,
+              },
+            ];
+          } catch (error) {
+            return [
+              item.key,
+              {
+                status: "error",
+                runtime: "",
+                progress: null,
+                error: error instanceof Error && error.message ? error.message : String(error),
+              },
+            ];
           }
-          const cachedStatus = String(cached.status || "").trim();
-          return [
-            item.key,
-            {
-              status: cachedStatus === "ready" ? "cached" : cachedStatus || "idle",
-              runtime: String(cached.runtime || ""),
-              progress: cachedStatus === "ready" ? 100 : null,
-              error: String(cached.last_error || ""),
-            },
-          ];
         }),
       );
+      if (canceled) return;
+      const nextMap = Object.fromEntries(nextEntries);
       setLocalModelStateMap(nextMap);
     }
     void restoreLocalModelState();
@@ -1346,32 +1443,37 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
     setLocalBusyModelKey(modelKey);
     setLocalBusyText("正在检查并下载模型");
-    updateLocalModelState(modelKey, { status: "loading", progress: null, error: "" });
+    updateLocalModelState(modelKey, { status: "loading", progress: null, error: "", message: "" });
     try {
-      const result = await createWorkerRequest("load-model", modelKey);
-      const runtime = String(result?.runtime || "");
-      updateLocalModelState(modelKey, { status: "ready", runtime, progress: 100, error: "" });
-      await saveLocalAsrPreviewState(modelKey, {
-        status: "ready",
-        runtime,
-        browser_supported: true,
-        webgpu_supported: Boolean(localAsrSupport.webgpuSupported),
-        last_error: "",
-        user_agent: String(navigator?.userAgent || ""),
-      });
+      let verification;
+      if (isWhisperLocalModel(modelKey)) {
+        const result = await createWorkerRequest("load-model", modelKey);
+        const runtime = String(result?.runtime || "");
+        verification = await verifyLocalWhisperModel(modelKey);
+        applyVerifiedLocalModelState(modelKey, verification, { status: "ready", runtime, progress: 100, error: "", message: verification.message });
+      } else {
+        verification = await ensureLocalAsrModel(modelKey, LOCAL_ASR_ASSET_BASE_URL, {
+            webgpuSupported: localAsrSupport.webgpuSupported,
+            requestPersistentStorage,
+            onProgress: (progress) => {
+              updateLocalModelState(modelKey, {
+                status: "loading",
+                progress: Number.isFinite(Number(progress?.overallProgress)) ? clampPercent(progress.overallProgress) : null,
+                error: "",
+              });
+              setLocalBusyText(sanitizeUserFacingText(progress?.statusText || "正在下载模型"));
+            },
+          });
+        releaseLocalAsrWorkerAssetPayload(modelKey);
+        const result = await createWorkerRequest("load-model", modelKey);
+        const runtime = String(result?.runtime || "");
+        applyVerifiedLocalModelState(modelKey, verification, { status: "ready", runtime, progress: 100, error: "", message: verification.message });
+      }
       setSelectedBalancedModel(modelKey);
       toast.success("模型已准备好");
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : String(error);
-      updateLocalModelState(modelKey, { status: "error", progress: null, error: message });
-      await saveLocalAsrPreviewState(modelKey, {
-        status: "error",
-        runtime: "",
-        browser_supported: true,
-        webgpu_supported: Boolean(localAsrSupport.webgpuSupported),
-        last_error: message,
-        user_agent: String(navigator?.userAgent || ""),
-      });
+      updateLocalModelState(modelKey, { status: "error", progress: null, error: message, message });
       toast.error(message);
     } finally {
       setLocalBusyModelKey("");
@@ -1388,20 +1490,85 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       toast.error("识别组件正在初始化，请稍后再试");
       return;
     }
-    const modelMeta = getLocalModelMeta(modelKey);
     setLocalBusyModelKey(modelKey);
     setLocalBusyText("正在卸载模型");
     updateLocalModelState(modelKey, { status: "removing", error: "" });
     try {
       await createWorkerRequest("dispose-model", modelKey).catch(() => null);
-      await clearLocalModelCaches(modelMeta);
-      await deleteLocalAsrPreviewState(modelKey);
-      updateLocalModelState(modelKey, { status: "idle", runtime: "", progress: null, error: "" });
+      const verification = isWhisperLocalModel(modelKey) ? await removeLocalWhisperModel(modelKey) : await removeLocalAsrModel(modelKey, LOCAL_ASR_ASSET_BASE_URL);
+      applyVerifiedLocalModelState(modelKey, verification, { status: verification.status, runtime: "", progress: null });
       toast.success("模型已卸载");
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : String(error);
-      updateLocalModelState(modelKey, { status: "error", progress: null, error: message });
+      updateLocalModelState(modelKey, { status: "error", progress: null, error: message, message });
       toast.error(`卸载失败: ${message}`);
+    } finally {
+      setLocalBusyModelKey("");
+      setLocalBusyText("");
+    }
+  }
+
+  async function handleLocalModelReverify(modelKey) {
+    setLocalBusyModelKey(modelKey);
+    setLocalBusyText("正在校验模型状态");
+    try {
+      const verification = isWhisperLocalModel(modelKey) ? await verifyLocalWhisperModel(modelKey) : await verifyLocalAsrModel(modelKey, LOCAL_ASR_ASSET_BASE_URL);
+      applyVerifiedLocalModelState(modelKey, verification, { progress: verification.ready ? 100 : null });
+      toast.success(verification.ready ? "模型校验通过" : verification.message || "模型尚未就绪");
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : String(error);
+      updateLocalModelState(modelKey, { status: "error", progress: null, error: message, message });
+      toast.error(message);
+    } finally {
+      setLocalBusyModelKey("");
+      setLocalBusyText("");
+    }
+  }
+
+  async function handleUseBrowserCache(modelKey) {
+    if (isWhisperLocalModel(modelKey)) {
+      await handleLocalModelReverify(modelKey);
+      return;
+    }
+    setLocalBusyModelKey(modelKey);
+    setLocalBusyText("正在切换为浏览器缓存");
+    try {
+      const verification = await switchLocalAsrStorageMode(modelKey, LOCAL_ASR_STORAGE_MODE_BROWSER, LOCAL_ASR_ASSET_BASE_URL);
+      applyVerifiedLocalModelState(modelKey, verification, { progress: verification.ready ? 100 : null });
+      toast.success("已切换为浏览器持久缓存");
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : String(error);
+      updateLocalModelState(modelKey, { status: "error", progress: null, error: message, message });
+      toast.error(message);
+    } finally {
+      setLocalBusyModelKey("");
+      setLocalBusyText("");
+    }
+  }
+
+  async function handleBindLocalDirectory(modelKey) {
+    if (isWhisperLocalModel(modelKey)) {
+      toast.error("Whisper 当前只支持浏览器持久缓存");
+      return;
+    }
+    if (!localDirectoryBindingAvailable) {
+      toast.error("当前浏览器不支持选择本地目录");
+      return;
+    }
+    setLocalBusyModelKey(modelKey);
+    setLocalBusyText("正在绑定本地目录");
+    try {
+      const verification = await bindLocalAsrModelDirectory(modelKey, LOCAL_ASR_ASSET_BASE_URL);
+      applyVerifiedLocalModelState(modelKey, verification, { progress: verification.ready ? 100 : null });
+      toast.success("目录已绑定，接下来下载会写入该目录");
+    } catch (error) {
+      if (String(error?.name || "") === "AbortError") {
+        toast.error("已取消目录选择");
+      } else {
+        const message = error instanceof Error && error.message ? error.message : String(error);
+        updateLocalModelState(modelKey, { status: "error", progress: null, error: message, message });
+        toast.error(message);
+      }
     } finally {
       setLocalBusyModelKey("");
       setLocalBusyText("");
@@ -1816,77 +1983,179 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         </div>
 
         {mode === "balanced" ? (
-          <div className="grid gap-3 xl:grid-cols-2">
-            {LOCAL_MODEL_OPTIONS.map((item) => {
-              const state = localModelStateMap[item.key] || { status: localAsrSupport.supported ? "idle" : "unsupported", runtime: "", progress: null, error: localAsrSupport.reason };
-              const selected = selectedBalancedModel === item.key;
-              const downloaded = ["ready", "cached"].includes(String(state.status || ""));
-              const uploadEnabled = Boolean(item.uploadEnabled);
-              const visualProgress = Number(localModelVisualProgressMap[item.key]);
-              const showVisualProgress = Number.isFinite(visualProgress);
-              return (
-                <div
-                  key={item.key}
-                  className={cn(
-                    "space-y-3 rounded-2xl border p-4 transition-colors",
-                    selected ? "border-primary bg-primary/5" : "border-border bg-background/80",
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <button type="button" className="text-left" onClick={() => setSelectedBalancedModel(item.key)} disabled={uploadActionBusy || localBusyModelKey === item.key}>
-                        <p className="text-sm font-semibold">{item.title}</p>
-                        <p className="text-xs text-muted-foreground">{item.subtitle}</p>
-                      </button>
-                    </div>
-                    <Badge variant={downloaded ? "default" : "outline"}>{getLocalModelStatusLabel(state.status)}</Badge>
+          <div className="space-y-3">
+            <div className="space-y-4 rounded-2xl border bg-muted/10 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold">当前本地模型</p>
+                  <p className="text-base font-semibold">{selectedLocalModelMeta.title}</p>
+                  <p className="text-xs text-muted-foreground">{selectedLocalModelMeta.subtitle}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={selectedLocalModelDownloaded ? "default" : "outline"}>{getLocalModelStatusLabel(selectedLocalModelState.status)}</Badge>
+                  <Badge variant="secondary">{selectedLocalModelStorageLabel}</Badge>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-xl border bg-background/80 p-3">
+                  <p className="text-xs text-muted-foreground">当前是否可用</p>
+                  <p className="mt-1 text-sm font-medium">{selectedLocalModelDownloaded ? "已就绪，可直接开始均衡生成" : "尚未就绪，需要先准备模型"}</p>
+                </div>
+                <div className="rounded-xl border bg-background/80 p-3">
+                  <p className="text-xs text-muted-foreground">缓存方式</p>
+                  <p className="mt-1 text-sm font-medium">{selectedLocalModelStorageLabel}</p>
+                </div>
+                <div className="rounded-xl border bg-background/80 p-3">
+                  <p className="text-xs text-muted-foreground">预计下载</p>
+                  <p className="mt-1 text-sm font-medium">{formatLocalModelEstimate(selectedLocalModelMeta, localAsrSupport)}</p>
+                </div>
+              </div>
+
+              {selectedLocalModelState.storageSummary ? <p className="text-xs text-muted-foreground">{selectedLocalModelState.storageSummary}</p> : null}
+              {selectedLocalModelState.message && !selectedLocalModelState.error ? <p className="text-xs text-muted-foreground">{selectedLocalModelState.message}</p> : null}
+              {selectedLocalModelState.error ? <p className="text-xs text-destructive">{selectedLocalModelState.error}</p> : null}
+              {localBusyModelKey === selectedBalancedModel && localBusyText ? <p className="text-xs text-muted-foreground">{localBusyText}</p> : null}
+
+              {Number.isFinite(Number(localModelVisualProgressMap[selectedBalancedModel])) ? (
+                <div className="space-y-1">
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary transition-[width] duration-200"
+                      style={{ width: `${clampPercent(localModelVisualProgressMap[selectedBalancedModel])}%` }}
+                    />
                   </div>
-                  <div className="space-y-2 text-xs text-muted-foreground">
-                    <p>预计下载：{formatLocalModelEstimate(item, localAsrSupport)}</p>
-                    {showVisualProgress ? (
-                      <div className="space-y-1">
-                        <p>下载进度：{clampPercent(visualProgress)}%</p>
-                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                          <div className="h-full rounded-full bg-primary transition-[width] duration-200" style={{ width: `${clampPercent(visualProgress)}%` }} />
-                        </div>
-                      </div>
-                    ) : null}
-                    {!uploadEnabled ? <p className="text-amber-700">{String(item.unavailableReason || LOCAL_WHISPER_UPLOAD_UNAVAILABLE_REASON)}</p> : null}
-                    {state.error && !(state.status === "unsupported" && !uploadEnabled) ? <p className="text-destructive">{state.error}</p> : null}
-                    {localBusyModelKey === item.key && localBusyText ? <p>{localBusyText}</p> : null}
+                  <p className="text-xs text-muted-foreground">下载进度：{clampPercent(localModelVisualProgressMap[selectedBalancedModel])}%</p>
+                </div>
+              ) : null}
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  onClick={() => void (selectedLocalModelDownloaded ? handleLocalModelReverify(selectedBalancedModel) : handleLocalModelDownload(selectedBalancedModel))}
+                  disabled={!localAsrSupport.supported || !localWorkerReady || uploadActionBusy || localBusyModelKey === selectedBalancedModel}
+                >
+                  {String(selectedLocalModelState.status || "") === "loading" ? <Loader2 className="size-4 animate-spin" /> : null}
+                  {selectedLocalModelDownloaded ? "重新校验模型" : "下载模型"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setLocalModelAdvancedOpen((prev) => !prev)}
+                  disabled={uploadActionBusy}
+                >
+                  {localModelAdvancedOpen ? "收起高级设置" : "高级设置"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => void handleLocalModelRemove(selectedBalancedModel)}
+                  disabled={!selectedLocalModelDownloaded || !localWorkerReady || uploadActionBusy || localBusyModelKey === selectedBalancedModel}
+                >
+                  卸载当前模型
+                </Button>
+              </div>
+
+              {localModelAdvancedOpen ? (
+                <div className="space-y-3 rounded-xl border border-dashed bg-background/70 p-3">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">高级设置</p>
+                    <p className="text-xs text-muted-foreground">
+                      {isWhisperLocalModel(selectedBalancedModel)
+                        ? "Whisper 当前固定使用浏览器持久缓存。下载完成后刷新页面不会重复拉取。"
+                        : "默认使用浏览器持久缓存。高级用户可绑定本地目录，把模型文件写到自己选择的文件夹。"}
+                    </p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-xl border bg-muted/20 p-3">
+                      <p className="text-xs text-muted-foreground">当前策略</p>
+                      <p className="mt-1 text-sm font-medium">{selectedLocalModelStorageLabel}</p>
+                      {selectedLocalModelState.directoryName ? <p className="mt-1 text-xs text-muted-foreground">已绑定目录：{selectedLocalModelState.directoryName}</p> : null}
+                    </div>
+                    <div className="rounded-xl border bg-muted/20 p-3">
+                      <p className="text-xs text-muted-foreground">版本</p>
+                      <p className="mt-1 break-all text-sm font-medium">{selectedLocalModelState.cacheVersion || "等待校验"}</p>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button
                       type="button"
                       size="sm"
-                      onClick={() => void handleLocalModelDownload(item.key)}
-                      disabled={!uploadEnabled || !localAsrSupport.supported || !localWorkerReady || uploadActionBusy || localBusyModelKey === item.key}
+                      variant={selectedLocalModelState.storageMode === LOCAL_ASR_STORAGE_MODE_BROWSER ? "default" : "outline"}
+                      onClick={() => void handleUseBrowserCache(selectedBalancedModel)}
+                      disabled={!localAsrSupport.supported || uploadActionBusy || localBusyModelKey === selectedBalancedModel}
                     >
-                      {String(state.status || "") === "loading" ? <Loader2 className="size-4 animate-spin" /> : null}
-                      {uploadEnabled ? (downloaded ? "重新校验模型" : "下载模型") : "暂未开放"}
+                      使用浏览器缓存
                     </Button>
                     <Button
                       type="button"
                       size="sm"
-                      variant="outline"
-                      onClick={() => setSelectedBalancedModel(item.key)}
-                      disabled={!uploadEnabled || !localWorkerReady || uploadActionBusy || localBusyModelKey === item.key}
+                      variant={selectedLocalModelState.storageMode === LOCAL_ASR_STORAGE_MODE_DIRECTORY ? "default" : "outline"}
+                      onClick={() => void handleBindLocalDirectory(selectedBalancedModel)}
+                      disabled={isWhisperLocalModel(selectedBalancedModel) || !localDirectoryBindingAvailable || !localAsrSupport.supported || uploadActionBusy || localBusyModelKey === selectedBalancedModel}
                     >
-                      设为当前
+                      {selectedLocalModelState.directoryName ? "重新选择目录" : "绑定本地目录"}
                     </Button>
                     <Button
                       type="button"
                       size="sm"
                       variant="ghost"
-                      onClick={() => void handleLocalModelRemove(item.key)}
-                      disabled={!uploadEnabled || !downloaded || !localWorkerReady || uploadActionBusy || localBusyModelKey === item.key}
+                      onClick={() => void handleLocalModelReverify(selectedBalancedModel)}
+                      disabled={!localAsrSupport.supported || uploadActionBusy || localBusyModelKey === selectedBalancedModel}
                     >
-                      卸载
+                      重新校验
                     </Button>
                   </div>
+                  {isWhisperLocalModel(selectedBalancedModel) ? <p className="text-xs text-muted-foreground">Whisper 暂不支持绑定本地目录。</p> : null}
+                  {!isWhisperLocalModel(selectedBalancedModel) && !localDirectoryBindingAvailable ? <p className="text-xs text-muted-foreground">当前浏览器不支持目录绑定，将继续使用浏览器持久缓存。</p> : null}
                 </div>
-              );
-            })}
+              ) : null}
+            </div>
+
+            <div className="grid gap-3 xl:grid-cols-2">
+              {LOCAL_MODEL_OPTIONS.map((item) => {
+                const state = localModelStateMap[item.key] || { status: localAsrSupport.supported ? "idle" : "unsupported", runtime: "", progress: null, error: localAsrSupport.reason };
+                const selected = selectedBalancedModel === item.key;
+                const downloaded = ["ready", "cached"].includes(String(state.status || ""));
+                const uploadEnabled = Boolean(item.uploadEnabled);
+                return (
+                  <div
+                    key={item.key}
+                    className={cn(
+                      "space-y-3 rounded-2xl border p-4 transition-colors",
+                      selected ? "border-primary bg-primary/5" : "border-border bg-background/80",
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <button type="button" className="text-left" onClick={() => setSelectedBalancedModel(item.key)} disabled={uploadActionBusy || localBusyModelKey === item.key}>
+                          <p className="text-sm font-semibold">{item.title}</p>
+                          <p className="text-xs text-muted-foreground">{item.subtitle}</p>
+                        </button>
+                      </div>
+                      <Badge variant={downloaded ? "default" : "outline"}>{getLocalModelStatusLabel(state.status)}</Badge>
+                    </div>
+                    <div className="space-y-2 text-xs text-muted-foreground">
+                      <p>预计下载：{formatLocalModelEstimate(item, localAsrSupport)}</p>
+                      {!uploadEnabled ? <p className="text-amber-700">{String(item.unavailableReason || LOCAL_WHISPER_UPLOAD_UNAVAILABLE_REASON)}</p> : null}
+                      {state.storageSummary ? <p>{state.storageSummary}</p> : null}
+                      {state.error && !(state.status === "unsupported" && !uploadEnabled) ? <p className="text-destructive">{state.error}</p> : null}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={selected ? "default" : "outline"}
+                        onClick={() => setSelectedBalancedModel(item.key)}
+                        disabled={!uploadEnabled || !localWorkerReady || uploadActionBusy || localBusyModelKey === item.key}
+                      >
+                        {selected ? "当前使用中" : "设为当前"}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         ) : null}
 

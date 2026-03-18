@@ -25,6 +25,7 @@ from app.services.billing_service import ensure_default_billing_rates, get_or_cr
 from app.services.lesson_service import LessonService
 from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
 from app.services.query_cache import clear_query_caches
+from app.services.sensevoice import SENSEVOICE_ASR_MODEL, get_sensevoice_settings
 
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
 
@@ -1420,6 +1421,31 @@ def test_transcribe_file_endpoint_with_stubbed_service(test_client, monkeypatch,
     assert body["model"] == QWEN_ASR_MODEL
 
 
+def test_transcribe_audio_file_dispatches_to_sensevoice(monkeypatch):
+    from app.infra import asr_dashscope as asr_runtime
+
+    captured = {}
+
+    def fake_sensevoice(audio_path, *, progress_callback=None):
+        captured["audio_path"] = audio_path
+        captured["progress_callback"] = progress_callback
+        return {
+            "model": SENSEVOICE_ASR_MODEL,
+            "task_id": "",
+            "task_status": "SUCCEEDED",
+            "transcription_url": "",
+            "preview_text": "hello from sensevoice",
+            "asr_result_json": {"transcripts": [{"text": "hello from sensevoice"}]},
+        }
+
+    monkeypatch.setattr(asr_runtime, "_transcribe_audio_file_with_sensevoice", fake_sensevoice)
+
+    result = asr_runtime.transcribe_audio_file("demo.opus", model=SENSEVOICE_ASR_MODEL)
+    assert result["model"] == SENSEVOICE_ASR_MODEL
+    assert result["preview_text"] == "hello from sensevoice"
+    assert captured["audio_path"] == "demo.opus"
+
+
 def test_create_lesson_rejects_para_model(test_client):
     client, _, _ = test_client
     token = _register_and_login(client, email="reject-model@example.com")
@@ -1435,7 +1461,8 @@ def test_create_lesson_rejects_para_model(test_client):
     data = resp.json()
     assert data["error_code"] == "INVALID_MODEL"
     assert "supported_models" in data.get("detail", {})
-    assert data["detail"]["supported_models"] == [QWEN_ASR_MODEL]
+    assert QWEN_ASR_MODEL in data["detail"]["supported_models"]
+    assert SENSEVOICE_ASR_MODEL in data["detail"]["supported_models"]
 
 
 def test_auth_register_and_login(test_client):
@@ -1742,6 +1769,53 @@ def test_admin_subtitle_settings_roundtrip(test_client):
     assert fetch_resp.json()["settings"]["translation_batch_max_chars"] == 3200
 
 
+def test_admin_sensevoice_settings_roundtrip_and_rollback(test_client):
+    client, _, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "sensevoice-admin@example.com")
+    admin_token = _register_and_login(client, email="sensevoice-admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    initial_resp = client.get("/api/admin/sensevoice-settings/history", headers=admin_headers)
+    assert initial_resp.status_code == 200
+    initial_settings = initial_resp.json()["current"]
+
+    update_resp = client.put(
+        "/api/admin/sensevoice-settings",
+        headers=admin_headers,
+        json={
+            "model_dir": "iic/SenseVoiceSmall",
+            "trust_remote_code": True,
+            "remote_code": "/srv/models/sensevoice/model.py",
+            "device": "cpu",
+            "language": "en",
+            "vad_model": "fsmn-vad",
+            "vad_max_single_segment_time": 45000,
+            "use_itn": False,
+            "batch_size_s": 80,
+            "merge_vad": False,
+            "merge_length_s": 20,
+            "ban_emo_unk": True,
+        },
+    )
+    assert update_resp.status_code == 200
+    payload = update_resp.json()["settings"]
+    assert payload["trust_remote_code"] is True
+    assert payload["device"] == "cpu"
+    assert payload["batch_size_s"] == 80
+    assert payload["ban_emo_unk"] is True
+
+    fetch_resp = client.get("/api/admin/sensevoice-settings", headers=admin_headers)
+    assert fetch_resp.status_code == 200
+    assert fetch_resp.json()["settings"]["language"] == "en"
+
+    rollback_resp = client.post("/api/admin/sensevoice-settings/rollback-last", headers=admin_headers)
+    assert rollback_resp.status_code == 200
+    rollback_payload = rollback_resp.json()["settings"]
+    assert rollback_payload["model_dir"] == initial_settings["model_dir"]
+    assert rollback_payload["device"] == initial_settings["device"]
+    assert rollback_payload["batch_size_s"] == initial_settings["batch_size_s"]
+
+
 def test_admin_translation_logs_endpoint_filters_by_task_and_success(test_client, monkeypatch):
     client, session_factory, _ = test_client
     monkeypatch.setenv("ADMIN_EMAILS", "translation-admin@example.com")
@@ -1879,6 +1953,51 @@ def test_public_billing_rates_self_heals_missing_subtitle_settings_table(test_cl
         row = get_subtitle_settings(verify)
         assert isinstance(row, SubtitleSetting)
         assert row.id == 1
+    finally:
+        verify.close()
+
+
+def test_admin_sensevoice_settings_self_heals_missing_table(test_client, monkeypatch):
+    client, session_factory, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "sensevoice-heal-admin@example.com")
+    admin_token = _register_and_login(client, email="sensevoice-heal-admin@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    session = session_factory()
+    try:
+        session.execute(text("DROP TABLE IF EXISTS sensevoice_settings"))
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.put(
+        "/api/admin/sensevoice-settings",
+        headers=headers,
+        json={
+            "model_dir": "iic/SenseVoiceSmall",
+            "trust_remote_code": False,
+            "remote_code": "",
+            "device": "cuda:0",
+            "language": "auto",
+            "vad_model": "fsmn-vad",
+            "vad_max_single_segment_time": 30000,
+            "use_itn": True,
+            "batch_size_s": 60,
+            "merge_vad": True,
+            "merge_length_s": 15,
+            "ban_emo_unk": False,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["settings"]["model_dir"] == "iic/SenseVoiceSmall"
+    assert body["settings"]["device"] == "cuda:0"
+
+    verify = session_factory()
+    try:
+        row = get_sensevoice_settings(verify)
+        assert row.id == 1
+        assert row.model_dir == "iic/SenseVoiceSmall"
     finally:
         verify.close()
 

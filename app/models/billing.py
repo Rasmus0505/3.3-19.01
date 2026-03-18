@@ -160,6 +160,34 @@ class SubtitleSetting(Base):
     )
 
 
+class SenseVoiceSetting(Base):
+    __tablename__ = "sensevoice_settings"
+    __table_args__ = table_args(
+        CheckConstraint("vad_max_single_segment_time > 0", name="ck_sensevoice_vad_max_segment_positive"),
+        CheckConstraint("batch_size_s > 0", name="ck_sensevoice_batch_size_positive"),
+        CheckConstraint("merge_length_s > 0", name="ck_sensevoice_merge_length_positive"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    model_dir: Mapped[str] = mapped_column(String(255), default="iic/SenseVoiceSmall", nullable=False)
+    trust_remote_code: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    remote_code: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    device: Mapped[str] = mapped_column(String(64), default="cuda:0", nullable=False)
+    language: Mapped[str] = mapped_column(String(32), default="auto", nullable=False)
+    vad_model: Mapped[str] = mapped_column(String(100), default="fsmn-vad", nullable=False)
+    vad_max_single_segment_time: Mapped[int] = mapped_column(Integer, default=30000, nullable=False)
+    use_itn: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    batch_size_s: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
+    merge_vad: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    merge_length_s: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+    ban_emo_unk: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
+    updated_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey(schema_fk("users.id"), ondelete="SET NULL"),
+        nullable=True,
+    )
+
+
 class TranslationRequestLog(Base):
     __tablename__ = "translation_request_logs"
     __table_args__ = table_args(
