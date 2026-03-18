@@ -27,6 +27,8 @@ def _rate_display_meta(model_name: str) -> tuple[str, str]:
     normalized = str(model_name or "").strip()
     if normalized == "sensevoice-small":
         return "SenseVoice Small · 服务端 ASR", "cloud"
+    if normalized == "faster-whisper-medium":
+        return "Faster Whisper Medium · 服务端 ASR", "cloud"
     if normalized == "qwen3-asr-flash-filetrans":
         return "高速 · 云端 ASR", "cloud"
     if normalized in LOCAL_ASR_MODEL_META:

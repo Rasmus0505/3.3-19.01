@@ -10,12 +10,13 @@ from dashscope.audio.qwen_asr import QwenTranscription
 from dashscope.files import Files
 
 from app.core.config import ASR_TASK_POLL_SECONDS
+from app.services.faster_whisper_asr import FASTER_WHISPER_ASR_MODEL, transcribe_audio_file_with_faster_whisper
 from app.services.sensevoice import SENSEVOICE_ASR_MODEL, get_sensevoice_settings_snapshot, transcribe_audio_file_with_sensevoice
 
 
 DEFAULT_MODEL = SENSEVOICE_ASR_MODEL
 QWEN_DEFAULT_MODEL = "qwen3-asr-flash-filetrans"
-SUPPORTED_MODELS = {DEFAULT_MODEL, QWEN_DEFAULT_MODEL}
+SUPPORTED_MODELS = {DEFAULT_MODEL, QWEN_DEFAULT_MODEL, FASTER_WHISPER_ASR_MODEL}
 
 
 class AsrError(RuntimeError):
@@ -300,6 +301,15 @@ def _transcribe_audio_file_with_sensevoice(audio_path: str, *, progress_callback
         raise AsrError("SENSEVOICE_TRANSCRIBE_FAILED", "SenseVoice transcribe failed", str(exc)[:1200]) from exc
 
 
+def _transcribe_audio_file_with_faster_whisper(audio_path: str, *, progress_callback=None) -> dict[str, Any]:
+    try:
+        return transcribe_audio_file_with_faster_whisper(audio_path, progress_callback=progress_callback)
+    except AsrError:
+        raise
+    except Exception as exc:
+        raise AsrError("FASTER_WHISPER_TRANSCRIBE_FAILED", "Faster Whisper transcribe failed", str(exc)[:1200]) from exc
+
+
 def transcribe_audio_file(
     audio_path: str,
     *,
@@ -312,4 +322,6 @@ def transcribe_audio_file(
         raise AsrError("INVALID_MODEL", "不支持的模型", model_name)
     if model_name == SENSEVOICE_ASR_MODEL:
         return _transcribe_audio_file_with_sensevoice(audio_path, progress_callback=progress_callback)
+    if model_name == FASTER_WHISPER_ASR_MODEL:
+        return _transcribe_audio_file_with_faster_whisper(audio_path, progress_callback=progress_callback)
     return _transcribe_audio_file_with_qwen(audio_path, model=model_name, requests_timeout=requests_timeout, progress_callback=progress_callback)

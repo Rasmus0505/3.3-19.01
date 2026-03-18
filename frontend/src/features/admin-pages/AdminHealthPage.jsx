@@ -1,73 +1,87 @@
-import { AlertTriangle, ClipboardList, ShieldCheck } from "lucide-react";
-import { useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Copy, RefreshCcw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
-import { AdminLessonTaskLogsTab } from "../admin-logs/AdminLessonTaskLogsTab";
-import { AdminTranslationLogsTab } from "../admin-logs/AdminTranslationLogsTab";
-import { AdminOperationLogsTab } from "../admin-operation-logs/AdminOperationLogsTab";
 import { AdminSystemTab } from "../admin-system/AdminSystemTab";
-import { mergeSearchParams, readStringParam } from "../../shared/lib/adminSearchParams";
-import { Badge, Button, Card, CardDescription, CardHeader, CardTitle } from "../../shared/ui";
-
-const PANELS = [
-  { value: "diagnosis", label: "系统诊断", description: "先看问题卡、关键接口和复制给 AI 的修复包。", icon: ShieldCheck },
-  { value: "tasks", label: "生成失败", description: "查看最近失败任务、阶段和原始调试摘要。", icon: AlertTriangle },
-  { value: "translations", label: "翻译失败", description: "按任务和时间范围追失败请求与 Tokens。", icon: AlertTriangle },
-  { value: "operations", label: "后台审计", description: "核对关键管理员操作和异常变更。", icon: ClipboardList },
-];
-
-function getPanel(value) {
-  return PANELS.find((item) => item.value === value) || PANELS[0];
-}
+import { buildAdminHealthCopyText, copyTextToClipboard, formatNetworkError, parseJsonSafely } from "../../shared/lib/errorFormatter";
+import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
+import { Button } from "../../shared/ui";
 
 export function AdminHealthPage({ apiCall }) {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const requestedPanel = readStringParam(searchParams, "panel", "diagnosis");
-  const activePanel = getPanel(requestedPanel).value;
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState("");
+  const [snapshot, setSnapshot] = useState(null);
+  const { error, clearError, captureError } = useErrorHandler();
+
+  async function loadSystemSnapshot() {
+    setLoading(true);
+    setStatus("");
+    clearError();
+    try {
+      const [healthResp, readyResp] = await Promise.all([apiCall("/health"), apiCall("/health/ready")]);
+      const [healthData, readyData] = await Promise.all([parseJsonSafely(healthResp), parseJsonSafely(readyResp)]);
+
+      setSnapshot({
+        health: { ok: healthResp.ok, status: healthResp.status, data: healthData },
+        ready: { ok: readyResp.ok, status: readyResp.status, data: readyData },
+      });
+    } catch (requestError) {
+      const formattedError = captureError(
+        formatNetworkError(requestError, {
+          component: "AdminHealthPage",
+          action: "加载系统健康快照",
+          endpoint: "/health + /health/ready",
+          method: "GET",
+        }),
+      );
+      setStatus(formattedError.displayMessage);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    if (requestedPanel === activePanel) return;
-    setSearchParams(mergeSearchParams(searchParams, { panel: activePanel }), { replace: true });
-  }, [activePanel, requestedPanel, searchParams, setSearchParams]);
+    loadSystemSnapshot();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  function switchPanel(nextPanel) {
-    setSearchParams(mergeSearchParams(searchParams, { panel: nextPanel, page: null }), { replace: nextPanel === activePanel });
+  async function copyHealthPackage(audience) {
+    if (!snapshot) {
+      toast.error("诊断结果还没加载完成");
+      return;
+    }
+    try {
+      await copyTextToClipboard(buildAdminHealthCopyText({ snapshot, audience }));
+      toast.success(audience === "zeabur" ? "已复制给 Zeabur AI 的诊断包" : "已复制给编程 AI 的诊断包");
+    } catch (requestError) {
+      toast.error(`复制失败: ${String(requestError)}`);
+    }
   }
 
   return (
     <div className="space-y-4">
-      <Card className="rounded-3xl border shadow-sm">
-        <CardHeader className="space-y-4">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">服务 / 数据库 / 日志 / 审计</Badge>
-              <Badge variant="outline">Zeabur 排查提示</Badge>
-            </div>
-            <div>
-              <CardTitle className="text-lg">系统健康页先给结论，再下钻到失败链路</CardTitle>
-              <CardDescription>这里不再拆成多个一级入口。先看诊断卡确认系统哪一层出问题，再切到失败任务、翻译失败或后台审计继续排查。</CardDescription>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {PANELS.map((item) => {
-              const Icon = item.icon;
-              const active = item.value === activePanel;
-              return (
-                <Button key={item.value} variant={active ? "default" : "outline"} size="sm" onClick={() => switchPanel(item.value)}>
-                  <Icon className="size-4" />
-                  {item.label}
-                </Button>
-              );
-            })}
-          </div>
-          <p className="text-sm text-muted-foreground">{getPanel(activePanel).description}</p>
-        </CardHeader>
-      </Card>
+      <section className="flex flex-col gap-3 rounded-3xl border bg-card px-5 py-4 shadow-sm md:flex-row md:items-center md:justify-between">
+        <div className="space-y-1">
+          <p className="text-sm font-medium">主要看数据库和关键接口是否正常</p>
+          <p className="text-sm text-muted-foreground">这里不再展示失败任务、翻译失败和后台审计，只保留系统是否能正常运行的快照。</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => copyHealthPackage("zeabur")} disabled={!snapshot}>
+            <Copy className="size-4" />
+            复制给 Zeabur AI
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => copyHealthPackage("developer")} disabled={!snapshot}>
+            <Copy className="size-4" />
+            复制给编程 AI
+          </Button>
+          <Button size="sm" onClick={loadSystemSnapshot} disabled={loading}>
+            <RefreshCcw className="size-4" />
+            重新诊断
+          </Button>
+        </div>
+      </section>
 
-      {activePanel === "diagnosis" ? <AdminSystemTab apiCall={apiCall} /> : null}
-      {activePanel === "tasks" ? <AdminLessonTaskLogsTab apiCall={apiCall} defaultStatus="failed" /> : null}
-      {activePanel === "translations" ? <AdminTranslationLogsTab apiCall={apiCall} defaultSuccess="false" /> : null}
-      {activePanel === "operations" ? <AdminOperationLogsTab apiCall={apiCall} /> : null}
+      <AdminSystemTab snapshot={snapshot} loading={loading} status={status} error={error} />
     </div>
   );
 }

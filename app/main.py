@@ -13,12 +13,13 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
 from app.api.routers import admin, admin_console, auth, billing, lessons, local_asr_assets, media, practice, transcribe, wallet
-from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, DASHSCOPE_API_KEY, PERSISTENT_DATA_DIR, SERVICE_NAME, STATIC_DIR
+from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, DASHSCOPE_API_KEY, FASTER_WHISPER_MODEL_DIR, PERSISTENT_DATA_DIR, SERVICE_NAME, STATIC_DIR
 from app.core.logging import setup_logging
 from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, schema_name_for_url
 from app.models import LessonGenerationTask
 from app.services.admin_bootstrap import ensure_admin_users
 from app.services.asr_dashscope import setup_dashscope
+from app.services.faster_whisper_asr import schedule_faster_whisper_model_prefetch
 from app.services.media import get_media_runtime_status
 from app.services.user_activity import ensure_user_activity_schema
 
@@ -261,11 +262,13 @@ async def app_lifespan(app: FastAPI):
     BASE_TMP_DIR.mkdir(parents=True, exist_ok=True)
     BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
     PERSISTENT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    FASTER_WHISPER_MODEL_DIR.parent.mkdir(parents=True, exist_ok=True)
     logger.info(
-        "[DEBUG] startup.paths tmp_dir=%s tmp_data_dir=%s persistent_data_dir=%s",
+        "[DEBUG] startup.paths tmp_dir=%s tmp_data_dir=%s persistent_data_dir=%s faster_whisper_model_dir=%s",
         BASE_TMP_DIR,
         BASE_DATA_DIR,
         PERSISTENT_DATA_DIR,
+        FASTER_WHISPER_MODEL_DIR,
     )
     _refresh_optional_runtime_status(app)
     await _bootstrap_runtime_state(app)
@@ -273,6 +276,10 @@ async def app_lifespan(app: FastAPI):
         logger.info("[DEBUG] startup.local_asr_prefetch scheduled")
     else:
         logger.info("[DEBUG] startup.local_asr_prefetch skipped")
+    if schedule_faster_whisper_model_prefetch():
+        logger.info("[DEBUG] startup.faster_whisper_prefetch scheduled")
+    else:
+        logger.info("[DEBUG] startup.faster_whisper_prefetch skipped")
     logger.info("[DEBUG] startup.ready")
     yield
 

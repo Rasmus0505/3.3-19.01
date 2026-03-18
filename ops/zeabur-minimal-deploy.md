@@ -44,10 +44,16 @@
 - `PORT=8080`
 - `TMP_WORK_DIR=/tmp/zeabur3.3`
 - `PERSISTENT_DATA_DIR=/data`
+- `FASTER_WHISPER_MODELSCOPE_MODEL_ID=pengzhendong/faster-whisper-medium`
+- `FASTER_WHISPER_MODEL_DIR=/data/modelscope_whisper/faster-whisper-medium`
+- `FASTER_WHISPER_PREFETCH_ON_START=1`
+- `FASTER_WHISPER_COMPUTE_TYPE=int8`
+- `FASTER_WHISPER_CPU_THREADS=4`
 - `MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 - `MT_MODEL=qwen-mt-flash`
 
 - `web` 服务额外挂一个持久卷到 `/data`
+- 如果上传页选择 `Faster Whisper Medium`，服务会在首次启动后自动下载模型到 `/data/modelscope_whisper/faster-whisper-medium`
 
 分句和翻译批次默认值，请到后台“字幕/分句设置”里调整。
 

@@ -170,6 +170,121 @@ export function buildAdminIssueCopyText(issue = {}) {
     .join("\n\n");
 }
 
+function buildHealthSnapshotRows(snapshot = {}) {
+  const runtimeStatus = snapshot?.ready?.data?.status || {};
+  const rows = [
+    {
+      item: "/health",
+      status: snapshot?.health?.status || "-",
+      detail: snapshot?.health?.data?.service || "-",
+    },
+    {
+      item: "/health/ready",
+      status: snapshot?.ready?.ok ? "已就绪" : "未就绪",
+      detail: runtimeStatus?.db_error || "数据库与关键字段检查通过",
+    },
+    {
+      item: "管理员初始化",
+      status: runtimeStatus?.admin_bootstrap_ok ? "成功" : "失败",
+      detail: runtimeStatus?.admin_bootstrap_error || "管理员账号初始化正常",
+    },
+    {
+      item: "DASHSCOPE_API_KEY",
+      status: runtimeStatus?.dashscope_configured ? "已配置" : "缺失",
+      detail: "缺失会影响转写和翻译调用",
+    },
+    {
+      item: "ffmpeg / ffprobe",
+      status: runtimeStatus?.ffmpeg_ready && runtimeStatus?.ffprobe_ready ? "已就绪" : "异常",
+      detail: runtimeStatus?.media_detail || "-",
+    },
+    {
+      item: "最近检查时间",
+      status: runtimeStatus?.checked_at ? "已记录" : "未记录",
+      detail: formatDateTimeBeijing(runtimeStatus?.checked_at) || "-",
+    },
+  ];
+
+  return rows
+    .map((row) => [row.item, row.status, row.detail].join(" | "))
+    .join("\n");
+}
+
+function collectHealthIssues(snapshot = {}) {
+  const runtimeStatus = snapshot?.ready?.data?.status || {};
+  const issues = [];
+
+  if (!snapshot?.health?.ok) {
+    issues.push(`/health 返回 ${snapshot?.health?.status || "-"}，服务基础存活检查异常。`);
+  }
+  if (!snapshot?.ready?.ok || runtimeStatus?.db_ready === false) {
+    issues.push(`数据库未就绪：${runtimeStatus?.db_error || "请检查迁移、数据库连接和业务表是否完整。"}`);
+  }
+  if (!runtimeStatus?.admin_bootstrap_ok) {
+    issues.push(`管理员初始化异常：${runtimeStatus?.admin_bootstrap_error || "请检查 ADMIN_EMAILS 与管理员初始化流程。"}`);
+  }
+  if (!runtimeStatus?.dashscope_configured) {
+    issues.push("DASHSCOPE_API_KEY 缺失。");
+  }
+  if (!runtimeStatus?.ffmpeg_ready || !runtimeStatus?.ffprobe_ready) {
+    issues.push(`媒体依赖异常：${runtimeStatus?.media_detail || "ffmpeg / ffprobe 未正常就绪。"}`);
+  }
+
+  return issues;
+}
+
+function buildZeaburHealthPrompt(snapshot = {}) {
+  const runtimeStatus = snapshot?.ready?.data?.status || {};
+  return [
+    "请你作为 Zeabur AI，按最少步骤帮我排查这个服务。",
+    "目标：先判断是不是部署、环境变量、数据库连接或迁移问题，不讨论无关改造。",
+    "请按下面顺序输出：",
+    "1. 先根据接口状态快照判断最可能的问题层：服务 / 数据库 / 环境变量 / 媒体依赖。",
+    "2. 明确告诉我去 Zeabur 看哪个服务日志、看哪几个环境变量。",
+    "3. 如果判断是数据库或迁移问题，请直接告诉我是否需要执行 `python -m alembic -c alembic.ini upgrade head`。",
+    "4. 如果判断是环境变量问题，只列出需要补的项，不要展开讲运维理论。",
+    "",
+    `当前数据库状态：${runtimeStatus?.db_error || "未发现数据库阻断异常"}`,
+    `当前管理员初始化状态：${runtimeStatus?.admin_bootstrap_error || "管理员初始化正常"}`,
+    `当前媒体依赖状态：${runtimeStatus?.media_detail || "未发现媒体依赖异常"}`,
+  ].join("\n");
+}
+
+function buildDeveloperHealthPrompt(snapshot = {}) {
+  const issues = collectHealthIssues(snapshot);
+  return [
+    "请你作为这个仓库的编程 AI，基于下面的系统健康快照给出最小修复方案。",
+    "要求：",
+    "1. 先判断问题更像是代码回归、迁移缺失、环境变量缺失还是依赖缺失。",
+    "2. 如果需要改代码，只给最小必要修改，不要改现有 API 契约。",
+    "3. 不要吞掉原始错误信息。",
+    "4. 明确列出改完后要怎么验证。",
+    "",
+    `当前判断：${issues.length ? issues.join("；") : "当前未发现阻断性问题，请只做最小分析。"}`,
+  ].join("\n");
+}
+
+export function buildAdminHealthCopyText({ snapshot = {}, audience = "developer" } = {}) {
+  const runtimeStatus = snapshot?.ready?.data?.status || {};
+  const issues = collectHealthIssues(snapshot);
+  const prompt = audience === "zeabur" ? buildZeaburHealthPrompt(snapshot) : buildDeveloperHealthPrompt(snapshot);
+  const audienceLabel = audience === "zeabur" ? "可直接发给 Zeabur AI 的提示词" : "可直接发给编程 AI 的提示词";
+  const sections = [
+    ["页面", "系统健康"],
+    ["检查时间", formatDateTimeBeijing(runtimeStatus?.checked_at || new Date().toISOString())],
+    ["当前判断", issues.length ? issues.join("\n") : "当前未发现阻断性问题"],
+    ["接口状态快照", buildHealthSnapshotRows(snapshot)],
+    ["/health 响应体", stringifyValue(snapshot?.health?.data)],
+    ["/health/ready 响应体", stringifyValue(snapshot?.ready?.data)],
+    [audienceLabel, prompt],
+  ];
+
+  return sections
+    .filter(([, value]) => value)
+    .map(([label, value]) => `${label}:\n${value}`)
+    .join("\n\n");
+}
+
 export async function copyTextToClipboard(text) {
   if (navigator?.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);

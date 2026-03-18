@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
-import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
+import { copyCurrentUrl, mergeScopedSearchParams, readScopedIntParam, readScopedStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
 import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
@@ -22,29 +22,29 @@ function fileNameFromDisposition(disposition, fallback) {
   return raw ? decodeURIComponent(raw) : fallback;
 }
 
-export function AdminRedeemAuditTab({ apiCall }) {
+export function AdminRedeemAuditTab({ apiCall, queryPrefix = "" }) {
   const now = getBeijingNowForPicker();
   const defaultFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [summaryCards, setSummaryCards] = useState([]);
   const [status, setStatus] = useState("");
-  const [page, setPage] = useState(() => readIntParam(searchParams, "page", 1, { min: 1 }));
-  const [pageSize, setPageSize] = useState(() => readIntParam(searchParams, "page_size", 20, { min: 1, max: 100 }));
+  const [page, setPage] = useState(() => readScopedIntParam(searchParams, queryPrefix, "page", 1, { min: 1 }));
+  const [pageSize, setPageSize] = useState(() => readScopedIntParam(searchParams, queryPrefix, "page_size", 20, { min: 1, max: 100 }));
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [userEmail, setUserEmail] = useState(() => readStringParam(searchParams, "user_email"));
-  const [batchId, setBatchId] = useState(() => readStringParam(searchParams, "batch_id"));
-  const [dateFrom, setDateFrom] = useState(() => readStringParam(searchParams, "date_from", toLocalDatetimeValue(defaultFrom)));
-  const [dateTo, setDateTo] = useState(() => readStringParam(searchParams, "date_to", toLocalDatetimeValue(now)));
+  const [userEmail, setUserEmail] = useState(() => readScopedStringParam(searchParams, queryPrefix, "user_email"));
+  const [batchId, setBatchId] = useState(() => readScopedStringParam(searchParams, queryPrefix, "batch_id"));
+  const [dateFrom, setDateFrom] = useState(() => readScopedStringParam(searchParams, queryPrefix, "date_from", toLocalDatetimeValue(defaultFrom)));
+  const [dateTo, setDateTo] = useState(() => readScopedStringParam(searchParams, queryPrefix, "date_to", toLocalDatetimeValue(now)));
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportConfirmText, setExportConfirmText] = useState("");
   const { error, clearError, captureError } = useErrorHandler();
 
   useEffect(() => {
     setSearchParams(
-      mergeSearchParams(searchParams, {
+      mergeScopedSearchParams(searchParams, queryPrefix, {
         page,
         page_size: pageSize,
         user_email: userEmail,
@@ -54,7 +54,7 @@ export function AdminRedeemAuditTab({ apiCall }) {
       }),
       { replace: true }
     );
-  }, [batchId, dateFrom, dateTo, page, pageSize, setSearchParams, userEmail]);
+  }, [batchId, dateFrom, dateTo, page, pageSize, queryPrefix, searchParams, setSearchParams, userEmail]);
 
   async function loadAudit(nextPage = page) {
     setLoading(true);

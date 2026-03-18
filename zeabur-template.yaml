@@ -30,7 +30,8 @@ spec:
     2. Build from the repository Dockerfile
     3. Deploy only `web` + `postgresql` for the first rollout
     4. Mount a persistent volume to `/data` for `web`
-    5. Run `python -m alembic -c alembic.ini upgrade head` manually in `web`
+    5. The service can auto-download `pengzhendong/faster-whisper-medium` to `/data/modelscope_whisper/faster-whisper-medium`
+    6. Run `python -m alembic -c alembic.ini upgrade head` manually in `web`
 
     This template remains as a fallback import option.
   services:
@@ -132,6 +133,16 @@ spec:
             default: /tmp/zeabur3.3
           PERSISTENT_DATA_DIR:
             default: /data
+          FASTER_WHISPER_MODELSCOPE_MODEL_ID:
+            default: pengzhendong/faster-whisper-medium
+          FASTER_WHISPER_MODEL_DIR:
+            default: /data/modelscope_whisper/faster-whisper-medium
+          FASTER_WHISPER_PREFETCH_ON_START:
+            default: "1"
+          FASTER_WHISPER_COMPUTE_TYPE:
+            default: int8
+          FASTER_WHISPER_CPU_THREADS:
+            default: "4"
           MT_BASE_URL:
             default: https://dashscope.aliyuncs.com/compatible-mode/v1
           MT_MODEL:

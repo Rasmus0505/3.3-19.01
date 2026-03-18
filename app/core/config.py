@@ -8,6 +8,8 @@ from pathlib import Path
 SERVICE_NAME = "zeabur3.3-min-asr"
 REQUEST_TIMEOUT_SECONDS = 480
 UPLOAD_MAX_BYTES = 200 * 1024 * 1024
+APP_DIR = Path(__file__).resolve().parent.parent
+STATIC_DIR = APP_DIR / "static"
 
 BASE_TMP_DIR = Path(os.getenv("TMP_WORK_DIR", "/tmp/zeabur3.3"))
 BASE_DATA_DIR = BASE_TMP_DIR / "data"
@@ -18,6 +20,12 @@ def _default_persistent_data_dir() -> Path:
     if os.name == "nt":
         return Path(tempfile.gettempdir()) / "zeabur3.3-persistent"
     return Path("/data")
+
+
+def _default_faster_whisper_model_dir() -> Path:
+    if os.name == "nt":
+        return APP_DIR.parent / "modelscope_whisper" / "faster-whisper-medium"
+    return Path("/data") / "modelscope_whisper" / "faster-whisper-medium"
 
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "").strip()
 LESSON_DEFAULT_ASR_MODEL = os.getenv("LESSON_DEFAULT_ASR_MODEL", "sensevoice-small").strip()
@@ -62,10 +70,14 @@ MT_RETRY_MAX_ATTEMPTS = _get_env_int("MT_RETRY_MAX_ATTEMPTS", 4)
 PERSISTENT_DATA_DIR = Path(
     os.getenv("PERSISTENT_DATA_DIR", str(_default_persistent_data_dir())).strip() or str(_default_persistent_data_dir())
 )
+FASTER_WHISPER_MODELSCOPE_MODEL_ID = os.getenv("FASTER_WHISPER_MODELSCOPE_MODEL_ID", "pengzhendong/faster-whisper-medium").strip() or "pengzhendong/faster-whisper-medium"
+FASTER_WHISPER_MODEL_DIR = Path(
+    os.getenv("FASTER_WHISPER_MODEL_DIR", str(_default_faster_whisper_model_dir())).strip() or str(_default_faster_whisper_model_dir())
+)
+FASTER_WHISPER_PREFETCH_ON_START = _get_env_bool("FASTER_WHISPER_PREFETCH_ON_START", True)
+FASTER_WHISPER_COMPUTE_TYPE = os.getenv("FASTER_WHISPER_COMPUTE_TYPE", "int8").strip() or "int8"
+FASTER_WHISPER_CPU_THREADS = _get_env_int("FASTER_WHISPER_CPU_THREADS", 4)
 
 REDEEM_CODE_DEFAULT_VALID_DAYS = _get_env_int("REDEEM_CODE_DEFAULT_VALID_DAYS", 30)
 REDEEM_CODE_DEFAULT_DAILY_LIMIT = _get_env_int("REDEEM_CODE_DEFAULT_DAILY_LIMIT", 5)
 REDEEM_CODE_EXPORT_CONFIRM_TEXT = os.getenv("REDEEM_CODE_EXPORT_CONFIRM_TEXT", "EXPORT").strip() or "EXPORT"
-
-APP_DIR = Path(__file__).resolve().parent.parent
-STATIC_DIR = APP_DIR / "static"

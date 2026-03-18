@@ -57,6 +57,11 @@
 - `PORT=8080`
 - `TMP_WORK_DIR=/tmp/zeabur3.3`
 - `PERSISTENT_DATA_DIR=/data`
+- `FASTER_WHISPER_MODELSCOPE_MODEL_ID=pengzhendong/faster-whisper-medium`
+- `FASTER_WHISPER_MODEL_DIR=/data/modelscope_whisper/faster-whisper-medium`
+- `FASTER_WHISPER_PREFETCH_ON_START=1`
+- `FASTER_WHISPER_COMPUTE_TYPE=int8`
+- `FASTER_WHISPER_CPU_THREADS=4`
 - `MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 - `MT_MODEL=qwen-mt-flash`
 - `ASR_SEGMENT_TARGET_SECONDS=300`
@@ -65,6 +70,7 @@
 - `AUTO_MIGRATE_CONTINUE_ON_FAILURE=1`
 - `AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS=180`
 - `web` 服务额外挂一个持久卷到 `/data`
+- 如果上传页要用 `Faster Whisper Medium`，服务会在首次启动后自动把模型下载到 `/data/modelscope_whisper/faster-whisper-medium`
 
 分句和翻译批次默认值不建议靠环境变量维护。  
 上线后请到后台的“字幕/分句设置”里调整。
@@ -131,9 +137,10 @@ GET /health/ready
 ```text
 请帮我在 Zeabur 上部署这个 GitHub 仓库，按仓库根目录 Dockerfile 构建。
 本次先只部署两个服务：web 和 postgresql，不要先部署 Metabase。
-请提醒我填写这些环境变量：PORT=8080、DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS、ASR_SEGMENT_TARGET_SECONDS、ASR_SEGMENT_SEARCH_WINDOW_SECONDS、AUTO_MIGRATE_ON_START=1、AUTO_MIGRATE_CONTINUE_ON_FAILURE=1、AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS=180。
+请提醒我填写这些环境变量：PORT=8080、DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS、ASR_SEGMENT_TARGET_SECONDS、ASR_SEGMENT_SEARCH_WINDOW_SECONDS、AUTO_MIGRATE_ON_START=1、AUTO_MIGRATE_CONTINUE_ON_FAILURE=1、AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS=180、FASTER_WHISPER_MODELSCOPE_MODEL_ID=pengzhendong/faster-whisper-medium、FASTER_WHISPER_MODEL_DIR=/data/modelscope_whisper/faster-whisper-medium、FASTER_WHISPER_PREFETCH_ON_START=1、FASTER_WHISPER_COMPUTE_TYPE=int8、FASTER_WHISPER_CPU_THREADS=4。
 字幕和分句默认值请不要通过环境变量调整，部署完成后提醒我去后台“字幕/分句设置”里修改。
 web 服务启动后，请先查看自动迁移日志是否成功；如果失败，请完整返回报错，不要省略。只有在我明确关闭 `AUTO_MIGRATE_ON_START` 时，才改为手动执行 `python -m alembic -c alembic.ini upgrade head`。如果要关闭自动迁移，请把 `AUTO_MIGRATE_ON_START` 明确填成字符串 `0`。
+如果上传页要使用 `Faster Whisper Medium`，请确认 `web` 已挂载持久卷 `/data`，并检查模型是否已下载到 `/data/modelscope_whisper/faster-whisper-medium`。
 web 服务启动后，请按顺序帮我验证：
 1. GET /health 返回 200
 2. GET /health/ready 返回 200
