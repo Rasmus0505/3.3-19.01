@@ -13,6 +13,19 @@ export function readStringParam(searchParams, key, fallback = "") {
   return raw == null ? fallback : String(raw);
 }
 
+export function buildScopedKey(prefix, key) {
+  const normalizedPrefix = String(prefix || "").trim();
+  return normalizedPrefix ? `${normalizedPrefix}_${key}` : key;
+}
+
+export function readScopedIntParam(searchParams, prefix, key, fallback, options = {}) {
+  return readIntParam(searchParams, buildScopedKey(prefix, key), fallback, options);
+}
+
+export function readScopedStringParam(searchParams, prefix, key, fallback = "") {
+  return readStringParam(searchParams, buildScopedKey(prefix, key), fallback);
+}
+
 export function buildSearchParams(entries) {
   const searchParams = new URLSearchParams();
   Object.entries(entries).forEach(([key, value]) => {
@@ -22,6 +35,12 @@ export function buildSearchParams(entries) {
     searchParams.set(key, normalized);
   });
   return searchParams;
+}
+
+export function buildScopedSearchParams(prefix, entries) {
+  return buildSearchParams(
+    Object.fromEntries(Object.entries(entries).map(([key, value]) => [buildScopedKey(prefix, key), value])),
+  );
 }
 
 export function mergeSearchParams(currentSearchParams, entries) {
@@ -41,11 +60,18 @@ export function mergeSearchParams(currentSearchParams, entries) {
   return searchParams;
 }
 
+export function mergeScopedSearchParams(currentSearchParams, prefix, entries) {
+  return mergeSearchParams(
+    currentSearchParams,
+    Object.fromEntries(Object.entries(entries).map(([key, value]) => [buildScopedKey(prefix, key), value])),
+  );
+}
+
 export const ADMIN_NAV_ITEMS = [
   {
     key: "health",
     label: "系统健康",
-    description: "查看诊断卡、失败任务和后台异常。",
+    description: "主要看数据库和关键接口状态。",
     href: "/admin/health",
   },
   {
@@ -57,7 +83,7 @@ export const ADMIN_NAV_ITEMS = [
   {
     key: "models",
     label: "模型管理",
-    description: "维护模型参数、默认 ASR 和字幕策略。",
+    description: "维护模型计费、默认策略和 SenseVoice 参数。",
     href: "/admin/models",
   },
   {
@@ -72,60 +98,15 @@ export function getAdminNavItemByKey(key) {
   return ADMIN_NAV_ITEMS.find((item) => item.key === key) || ADMIN_NAV_ITEMS[0];
 }
 
-function resolveLegacyMonitoringNavKey(requestedTab, requestedPanel) {
-  const panel = String(requestedPanel || "").trim().toLowerCase();
-  const tab = String(requestedTab || "").trim().toLowerCase();
-  if (["subtitle-policy", "rates"].includes(panel) || ["subtitle-policy", "rates"].includes(tab)) {
-    return "models";
-  }
-  return "health";
-}
-
-function resolveLegacyBusinessNavKey(requestedTab, requestedPanel) {
-  const panel = String(requestedPanel || "").trim().toLowerCase();
-  const tab = String(requestedTab || "").trim().toLowerCase();
-  if (panel === "rates") return "models";
-  if (["redeem", "batches", "codes", "audit"].includes(panel) || ["redeem", "batches", "codes", "audit"].includes(tab)) {
-    return "redeem";
-  }
-  return "users";
-}
-
-export function resolveAdminNavKey(pathname, searchValue = "") {
-  const searchParams = searchValue instanceof URLSearchParams ? searchValue : new URLSearchParams(searchValue);
-  const requestedTab = readStringParam(searchParams, "tab");
-  const requestedPanel = readStringParam(searchParams, "panel");
-
-  if (pathname.startsWith("/admin/health")) return "health";
+export function resolveAdminNavKey(pathname) {
   if (pathname.startsWith("/admin/users") || pathname.startsWith("/admin/logs")) return "users";
   if (pathname.startsWith("/admin/models") || pathname.startsWith("/admin/rates") || pathname.startsWith("/admin/subtitle-settings")) return "models";
   if (pathname.startsWith("/admin/redeem")) return "redeem";
-
-  if (pathname.startsWith("/admin/monitoring") || pathname.startsWith("/admin/pipeline") || pathname.startsWith("/admin/ops")) {
-    return resolveLegacyMonitoringNavKey(requestedTab, requestedPanel);
-  }
-
-  if (pathname.startsWith("/admin/business")) {
-    return resolveLegacyBusinessNavKey(requestedTab, requestedPanel);
-  }
-
-  if (pathname.startsWith("/admin/overview") || pathname.startsWith("/admin/system") || pathname.startsWith("/admin/lesson-task-logs")) {
-    return "health";
-  }
-
-  if (pathname.startsWith("/admin/translation-logs") || pathname.startsWith("/admin/operation-logs") || pathname.startsWith("/admin/sql-console")) {
-    return "health";
-  }
-
-  if (pathname.startsWith("/admin/redeem-batches") || pathname.startsWith("/admin/redeem-codes") || pathname.startsWith("/admin/redeem-audit")) {
-    return "redeem";
-  }
-
   return "health";
 }
 
-export function resolveAdminNavItem(pathname, searchValue = "") {
-  return getAdminNavItemByKey(resolveAdminNavKey(pathname, searchValue));
+export function resolveAdminNavItem(pathname) {
+  return getAdminNavItemByKey(resolveAdminNavKey(pathname));
 }
 
 export async function copyCurrentUrl() {

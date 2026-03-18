@@ -747,10 +747,10 @@ export function AdminUsersTab({ apiCall }) {
               </Card>
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" asChild>
-                  <Link to={`/admin/users?panel=wallet&user_email=${encodeURIComponent(summaryUser?.email || "")}`}>查看余额流水</Link>
+                  <Link to={`/admin/users?wallet_user_email=${encodeURIComponent(summaryUser?.email || "")}#admin-users-wallet-logs`}>查看余额流水</Link>
                 </Button>
                 <Button variant="outline" asChild>
-                  <Link to={`/admin/redeem?panel=audit&user_email=${encodeURIComponent(summaryUser?.email || "")}`}>查看兑换审计</Link>
+                  <Link to={`/admin/redeem?audit_user_email=${encodeURIComponent(summaryUser?.email || "")}#admin-redeem-audit`}>查看兑换审计</Link>
                 </Button>
               </div>
             </div>

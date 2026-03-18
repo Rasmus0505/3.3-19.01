@@ -4,7 +4,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
-import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
+import { buildScopedSearchParams, copyCurrentUrl, mergeScopedSearchParams, readScopedIntParam, readScopedStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
 import { formatMoneyCents } from "../../shared/lib/money";
@@ -17,7 +17,7 @@ function toLocalDatetimeValue(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function AdminRedeemBatchesTab({ apiCall }) {
+export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
   const beijingNow = getBeijingNowForPicker();
   const [searchParams, setSearchParams] = useSearchParams();
   const [status, setStatus] = useState("");
@@ -25,10 +25,10 @@ export function AdminRedeemBatchesTab({ apiCall }) {
   const [items, setItems] = useState([]);
   const [summaryCards, setSummaryCards] = useState([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(() => readIntParam(searchParams, "page", 1, { min: 1 }));
-  const [pageSize, setPageSize] = useState(() => readIntParam(searchParams, "page_size", 20, { min: 1, max: 100 }));
-  const [keyword, setKeyword] = useState(() => readStringParam(searchParams, "keyword"));
-  const [statusFilter, setStatusFilter] = useState(() => readStringParam(searchParams, "status", "all") || "all");
+  const [page, setPage] = useState(() => readScopedIntParam(searchParams, queryPrefix, "page", 1, { min: 1 }));
+  const [pageSize, setPageSize] = useState(() => readScopedIntParam(searchParams, queryPrefix, "page_size", 20, { min: 1, max: 100 }));
+  const [keyword, setKeyword] = useState(() => readScopedStringParam(searchParams, queryPrefix, "keyword"));
+  const [statusFilter, setStatusFilter] = useState(() => readScopedStringParam(searchParams, queryPrefix, "status", "all") || "all");
 
   const [creating, setCreating] = useState(false);
   const [batchName, setBatchName] = useState("");
@@ -47,7 +47,7 @@ export function AdminRedeemBatchesTab({ apiCall }) {
 
   useEffect(() => {
     setSearchParams(
-      mergeSearchParams(searchParams, {
+      mergeScopedSearchParams(searchParams, queryPrefix, {
         page,
         page_size: pageSize,
         keyword,
@@ -55,7 +55,7 @@ export function AdminRedeemBatchesTab({ apiCall }) {
       }),
       { replace: true }
     );
-  }, [keyword, page, pageSize, setSearchParams, statusFilter]);
+  }, [keyword, page, pageSize, queryPrefix, searchParams, setSearchParams, statusFilter]);
 
   async function loadBatches(nextPage = page) {
     setLoading(true);
@@ -411,10 +411,10 @@ export function AdminRedeemBatchesTab({ apiCall }) {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Button size="sm" variant="outline" asChild>
-                          <Link to={`/admin/redeem?panel=codes&batch_id=${item.id}`}>兑换码</Link>
+                          <Link to={`/admin/redeem?${buildScopedSearchParams("codes", { batch_id: item.id }).toString()}#admin-redeem-codes`}>兑换码</Link>
                         </Button>
                         <Button size="sm" variant="outline" asChild>
-                          <Link to={`/admin/redeem?panel=audit&batch_id=${item.id}`}>审计</Link>
+                          <Link to={`/admin/redeem?${buildScopedSearchParams("audit", { batch_id: item.id }).toString()}#admin-redeem-audit`}>审计</Link>
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => setActionDialog({ batchId: item.id, actionPath: "activate", actionLabel: "激活", batchName: item.batch_name })}>
                           <PlayCircle className="size-4" />

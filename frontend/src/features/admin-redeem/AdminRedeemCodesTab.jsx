@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
-import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
+import { copyCurrentUrl, mergeScopedSearchParams, readScopedIntParam, readScopedStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
 import { formatMoneyCents } from "../../shared/lib/money";
@@ -17,23 +17,23 @@ function fileNameFromDisposition(disposition, fallback) {
   return raw ? decodeURIComponent(raw) : fallback;
 }
 
-export function AdminRedeemCodesTab({ apiCall }) {
+export function AdminRedeemCodesTab({ apiCall, queryPrefix = "" }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState([]);
   const [summaryCards, setSummaryCards] = useState([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(() => readIntParam(searchParams, "page", 1, { min: 1 }));
-  const [pageSize, setPageSize] = useState(() => readIntParam(searchParams, "page_size", 20, { min: 1, max: 100 }));
+  const [page, setPage] = useState(() => readScopedIntParam(searchParams, queryPrefix, "page", 1, { min: 1, max: Number.MAX_SAFE_INTEGER }));
+  const [pageSize, setPageSize] = useState(() => readScopedIntParam(searchParams, queryPrefix, "page_size", 20, { min: 1, max: 100 }));
 
-  const [batchId, setBatchId] = useState(() => readStringParam(searchParams, "batch_id"));
-  const [statusFilter, setStatusFilter] = useState(() => readStringParam(searchParams, "status", "all") || "all");
-  const [redeemUserEmail, setRedeemUserEmail] = useState(() => readStringParam(searchParams, "redeem_user_email"));
-  const [createdFrom, setCreatedFrom] = useState(() => readStringParam(searchParams, "created_from"));
-  const [createdTo, setCreatedTo] = useState(() => readStringParam(searchParams, "created_to"));
-  const [redeemedFrom, setRedeemedFrom] = useState(() => readStringParam(searchParams, "redeemed_from"));
-  const [redeemedTo, setRedeemedTo] = useState(() => readStringParam(searchParams, "redeemed_to"));
+  const [batchId, setBatchId] = useState(() => readScopedStringParam(searchParams, queryPrefix, "batch_id"));
+  const [statusFilter, setStatusFilter] = useState(() => readScopedStringParam(searchParams, queryPrefix, "status", "all") || "all");
+  const [redeemUserEmail, setRedeemUserEmail] = useState(() => readScopedStringParam(searchParams, queryPrefix, "redeem_user_email"));
+  const [createdFrom, setCreatedFrom] = useState(() => readScopedStringParam(searchParams, queryPrefix, "created_from"));
+  const [createdTo, setCreatedTo] = useState(() => readScopedStringParam(searchParams, queryPrefix, "created_to"));
+  const [redeemedFrom, setRedeemedFrom] = useState(() => readScopedStringParam(searchParams, queryPrefix, "redeemed_from"));
+  const [redeemedTo, setRedeemedTo] = useState(() => readScopedStringParam(searchParams, queryPrefix, "redeemed_to"));
 
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [exporting, setExporting] = useState(false);
@@ -45,7 +45,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
 
   useEffect(() => {
     setSearchParams(
-      mergeSearchParams(searchParams, {
+      mergeScopedSearchParams(searchParams, queryPrefix, {
         page,
         page_size: pageSize,
         batch_id: batchId,
@@ -58,7 +58,7 @@ export function AdminRedeemCodesTab({ apiCall }) {
       }),
       { replace: true }
     );
-  }, [batchId, createdFrom, createdTo, page, pageSize, redeemUserEmail, redeemedFrom, redeemedTo, setSearchParams, statusFilter]);
+  }, [batchId, createdFrom, createdTo, page, pageSize, queryPrefix, redeemUserEmail, redeemedFrom, redeemedTo, searchParams, setSearchParams, statusFilter]);
 
   const pageCount = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
 
