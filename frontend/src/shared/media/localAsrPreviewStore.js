@@ -1,5 +1,5 @@
 const DB_NAME = "english_trainer_local_asr_preview";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = "model_state";
 
 function assertIndexedDbAvailable() {
@@ -80,6 +80,16 @@ export async function saveLocalAsrPreviewState(modelId, payload) {
     browser_supported: Boolean(payload?.browser_supported ?? existing?.browser_supported),
     last_error: String(payload?.last_error || ""),
     user_agent: String(payload?.user_agent || existing?.user_agent || ""),
+    storage_mode: String(payload?.storage_mode || existing?.storage_mode || "browser-persistent-cache"),
+    cache_version: String(payload?.cache_version || existing?.cache_version || ""),
+    asset_base_url: String(payload?.asset_base_url || existing?.asset_base_url || ""),
+    asset_manifest: payload?.asset_manifest && typeof payload.asset_manifest === "object" ? { ...payload.asset_manifest } : { ...(existing?.asset_manifest || {}) },
+    verification_status: String(payload?.verification_status || existing?.verification_status || "unknown"),
+    directory_binding_enabled: Boolean(payload?.directory_binding_enabled ?? existing?.directory_binding_enabled),
+    directory_name: String(payload?.directory_name || existing?.directory_name || ""),
+    directory_handle: payload?.directory_handle ?? existing?.directory_handle ?? null,
+    last_verified_at: Number(payload?.last_verified_at ?? existing?.last_verified_at ?? 0),
+    storage_summary: String(payload?.storage_summary || existing?.storage_summary || ""),
     updated_at: Date.now(),
   };
   await withStore("readwrite", (store) => store.put(nextRecord));

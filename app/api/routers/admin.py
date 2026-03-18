@@ -12,12 +12,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_admin_emails, get_admin_user
-from app.api.serializers import to_admin_subtitle_settings_item, to_rate_item
+from app.api.serializers import to_admin_subtitle_settings_item, to_rate_item, to_sensevoice_settings_item
 from app.core.config import LESSON_DEFAULT_ASR_MODEL, REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_EXPORT_CONFIRM_TEXT
 from app.core.errors import error_response, map_billing_error
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
 from app.db import get_db
-from app.models import AdminOperationLog, BillingModelRate, RedeemCode, RedeemCodeBatch, SubtitleSetting, User
+from app.models import AdminOperationLog, BillingModelRate, RedeemCode, RedeemCodeBatch, SenseVoiceSetting, SubtitleSetting, User
 from app.repositories.admin import (
     list_admin_users,
     list_all_redeem_audit_rows,
@@ -36,6 +36,11 @@ from app.schemas import (
     AdminSubtitleSettingsHistoryResponse,
     AdminSubtitleSettingsResponse,
     AdminSubtitleSettingsUpdateRequest,
+    SenseVoiceSettingsHistoryItem,
+    SenseVoiceSettingsHistoryResponse,
+    SenseVoiceSettingsItem,
+    SenseVoiceSettingsResponse,
+    SenseVoiceSettingsUpdateRequest,
     AdminTranslationLogItem,
     AdminTranslationLogsResponse,
     AdminRedeemAuditExportRequest,
@@ -82,6 +87,7 @@ from app.services.billing_service import (
     set_redeem_batch_status,
     update_redeem_code_status,
 )
+from app.services.sensevoice import get_sensevoice_settings
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -160,6 +166,46 @@ def _subtitle_settings_item_from_dict(
     )
 
 
+def _sensevoice_settings_item_with_meta(
+    settings: SenseVoiceSetting,
+    *,
+    updated_by_user_email: str | None = None,
+) -> SenseVoiceSettingsItem:
+    item = to_sensevoice_settings_item(settings)
+    return item.model_copy(
+        update={
+            "updated_by_user_id": settings.updated_by_user_id,
+            "updated_by_user_email": updated_by_user_email,
+        }
+    )
+
+
+def _sensevoice_settings_item_from_dict(
+    payload: dict[str, object],
+    *,
+    updated_at: datetime,
+    updated_by_user_id: int | None = None,
+    updated_by_user_email: str | None = None,
+) -> SenseVoiceSettingsItem:
+    return SenseVoiceSettingsItem(
+        model_dir=str(payload.get("model_dir") or "iic/SenseVoiceSmall"),
+        trust_remote_code=bool(payload.get("trust_remote_code")),
+        remote_code=str(payload.get("remote_code") or ""),
+        device=str(payload.get("device") or "cuda:0"),
+        language=str(payload.get("language") or "auto"),
+        vad_model=str(payload.get("vad_model") or "fsmn-vad"),
+        vad_max_single_segment_time=max(1, int(payload.get("vad_max_single_segment_time", 30000) or 30000)),
+        use_itn=bool(payload.get("use_itn", True)),
+        batch_size_s=max(1, int(payload.get("batch_size_s", 60) or 60)),
+        merge_vad=bool(payload.get("merge_vad", True)),
+        merge_length_s=max(1, int(payload.get("merge_length_s", 15) or 15)),
+        ban_emo_unk=bool(payload.get("ban_emo_unk", False)),
+        updated_at=to_shanghai_aware(updated_at),
+        updated_by_user_id=updated_by_user_id,
+        updated_by_user_email=updated_by_user_email,
+    )
+
+
 def _load_subtitle_settings_rollback_candidate(db: Session) -> AdminSubtitleSettingsHistoryItem | None:
     operator_user = User.__table__.alias("subtitle_settings_operator")
     row = db.execute(
@@ -189,6 +235,43 @@ def _load_subtitle_settings_rollback_candidate(db: Session) -> AdminSubtitleSett
         operator_user_id=row[0].operator_user_id,
         operator_user_email=row.operator_email,
         settings=_subtitle_settings_item_from_dict(
+            payload,
+            updated_at=row[0].created_at,
+            updated_by_user_id=row[0].operator_user_id,
+            updated_by_user_email=row.operator_email,
+        ),
+    )
+
+
+def _load_sensevoice_settings_rollback_candidate(db: Session) -> SenseVoiceSettingsHistoryItem | None:
+    operator_user = User.__table__.alias("sensevoice_settings_operator")
+    row = db.execute(
+        select(AdminOperationLog, operator_user.c.email.label("operator_email"))
+        .outerjoin(operator_user, operator_user.c.id == AdminOperationLog.operator_user_id)
+        .where(
+            AdminOperationLog.target_type == "sensevoice_settings",
+            AdminOperationLog.action_type.in_(["sensevoice_settings_update", "sensevoice_settings_rollback"]),
+        )
+        .order_by(AdminOperationLog.created_at.desc(), AdminOperationLog.id.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+
+    raw_before = getattr(row[0], "before_value", "") or ""
+    try:
+        payload = json.loads(raw_before)
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict) or not payload:
+        return None
+
+    return SenseVoiceSettingsHistoryItem(
+        action_id=int(row[0].id),
+        created_at=to_shanghai_aware(row[0].created_at),
+        operator_user_id=row[0].operator_user_id,
+        operator_user_email=row.operator_email,
+        settings=_sensevoice_settings_item_from_dict(
             payload,
             updated_at=row[0].created_at,
             updated_by_user_id=row[0].operator_user_id,
@@ -585,9 +668,8 @@ def admin_update_subtitle_settings(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_admin_user),
 ):
-    normalized_default_asr_model = payload.default_asr_model.strip()
-    if not normalized_default_asr_model:
-        return error_response(400, "INVALID_DEFAULT_ASR_MODEL", "默认 ASR 模型不能为空")
+    settings = get_subtitle_settings(db)
+    normalized_default_asr_model = payload.default_asr_model.strip() or str(getattr(settings, "default_asr_model", "") or LESSON_DEFAULT_ASR_MODEL)
     available_asr_models = {
         str(item.model_name or "").strip()
         for item in list_billing_rates(db)
@@ -595,7 +677,6 @@ def admin_update_subtitle_settings(
     }
     if normalized_default_asr_model not in available_asr_models:
         return error_response(400, "INVALID_DEFAULT_ASR_MODEL", "默认 ASR 模型不在当前可用模型列表内", normalized_default_asr_model)
-    settings = get_subtitle_settings(db)
     before = to_admin_subtitle_settings_item(settings).model_dump(mode="json")
     settings.semantic_split_default_enabled = payload.semantic_split_default_enabled
     settings.default_asr_model = normalized_default_asr_model
@@ -664,6 +745,126 @@ def admin_rollback_subtitle_settings_last(
     db.commit()
     db.refresh(settings)
     return AdminSubtitleSettingsResponse(ok=True, settings=_subtitle_settings_item_with_meta(settings, updated_by_user_email=current_admin.email))
+
+
+@router.get(
+    "/sensevoice-settings",
+    response_model=SenseVoiceSettingsResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_get_sensevoice_settings(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
+    settings = get_sensevoice_settings(db)
+    updated_by_user_email = None
+    if settings.updated_by_user_id:
+        updated_by_user = db.get(User, settings.updated_by_user_id)
+        updated_by_user_email = updated_by_user.email if updated_by_user is not None else None
+    return SenseVoiceSettingsResponse(ok=True, settings=_sensevoice_settings_item_with_meta(settings, updated_by_user_email=updated_by_user_email))
+
+
+@router.get(
+    "/sensevoice-settings/history",
+    response_model=SenseVoiceSettingsHistoryResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_get_sensevoice_settings_history(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
+    settings = get_sensevoice_settings(db)
+    updated_by_user_email = None
+    if settings.updated_by_user_id:
+        updated_by_user = db.get(User, settings.updated_by_user_id)
+        updated_by_user_email = updated_by_user.email if updated_by_user is not None else None
+    return SenseVoiceSettingsHistoryResponse(
+        ok=True,
+        current=_sensevoice_settings_item_with_meta(settings, updated_by_user_email=updated_by_user_email),
+        rollback_candidate=_load_sensevoice_settings_rollback_candidate(db),
+    )
+
+
+@router.put(
+    "/sensevoice-settings",
+    response_model=SenseVoiceSettingsResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_update_sensevoice_settings(
+    payload: SenseVoiceSettingsUpdateRequest,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    settings = get_sensevoice_settings(db)
+    before = _sensevoice_settings_item_with_meta(settings).model_dump(mode="json")
+    settings.model_dir = payload.model_dir.strip()
+    settings.trust_remote_code = payload.trust_remote_code
+    settings.remote_code = payload.remote_code.strip()
+    settings.device = payload.device.strip()
+    settings.language = payload.language.strip()
+    settings.vad_model = payload.vad_model.strip()
+    settings.vad_max_single_segment_time = payload.vad_max_single_segment_time
+    settings.use_itn = payload.use_itn
+    settings.batch_size_s = payload.batch_size_s
+    settings.merge_vad = payload.merge_vad
+    settings.merge_length_s = payload.merge_length_s
+    settings.ban_emo_unk = payload.ban_emo_unk
+    settings.updated_by_user_id = current_admin.id
+    db.add(settings)
+    db.flush()
+    append_admin_operation_log(
+        db,
+        operator_user_id=current_admin.id,
+        action_type="sensevoice_settings_update",
+        target_type="sensevoice_settings",
+        target_id=str(getattr(settings, "id", 1)),
+        before_value=before,
+        after_value=_sensevoice_settings_item_with_meta(settings, updated_by_user_email=current_admin.email).model_dump(mode="json"),
+        note="sensevoice_settings",
+    )
+    db.commit()
+    db.refresh(settings)
+    return SenseVoiceSettingsResponse(ok=True, settings=_sensevoice_settings_item_with_meta(settings, updated_by_user_email=current_admin.email))
+
+
+@router.post(
+    "/sensevoice-settings/rollback-last",
+    response_model=SenseVoiceSettingsResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_rollback_sensevoice_settings_last(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    rollback_candidate = _load_sensevoice_settings_rollback_candidate(db)
+    if rollback_candidate is None:
+        return error_response(400, "SENSEVOICE_SETTINGS_ROLLBACK_EMPTY", "暂无可回滚的上一版本")
+
+    settings = get_sensevoice_settings(db)
+    before = _sensevoice_settings_item_with_meta(settings).model_dump(mode="json")
+    previous = rollback_candidate.settings
+    settings.model_dir = previous.model_dir
+    settings.trust_remote_code = previous.trust_remote_code
+    settings.remote_code = previous.remote_code
+    settings.device = previous.device
+    settings.language = previous.language
+    settings.vad_model = previous.vad_model
+    settings.vad_max_single_segment_time = previous.vad_max_single_segment_time
+    settings.use_itn = previous.use_itn
+    settings.batch_size_s = previous.batch_size_s
+    settings.merge_vad = previous.merge_vad
+    settings.merge_length_s = previous.merge_length_s
+    settings.ban_emo_unk = previous.ban_emo_unk
+    settings.updated_by_user_id = current_admin.id
+    db.add(settings)
+    db.flush()
+    append_admin_operation_log(
+        db,
+        operator_user_id=current_admin.id,
+        action_type="sensevoice_settings_rollback",
+        target_type="sensevoice_settings",
+        target_id=str(getattr(settings, "id", 1)),
+        before_value=before,
+        after_value=_sensevoice_settings_item_with_meta(settings, updated_by_user_email=current_admin.email).model_dump(mode="json"),
+        note=f"sensevoice_settings_rollback_from:{rollback_candidate.action_id}",
+    )
+    db.commit()
+    db.refresh(settings)
+    return SenseVoiceSettingsResponse(ok=True, settings=_sensevoice_settings_item_with_meta(settings, updated_by_user_email=current_admin.email))
 
 
 @router.post(

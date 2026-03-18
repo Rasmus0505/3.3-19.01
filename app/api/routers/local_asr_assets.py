@@ -227,6 +227,21 @@ def schedule_local_asr_asset_prefetch() -> bool:
         return True
 
 
+@router.get("/status")
+def get_local_asr_asset_status():
+    missing_files = _missing_asset_files()
+    return {
+        "ok": True,
+        "model_key": "local-sensevoice-small",
+        "cache_version": LOCAL_ASR_CACHE_VERSION,
+        "allowed_files": list(LOCAL_ASR_ALLOWED_FILES),
+        "cache_dir": str(LOCAL_ASR_CACHE_DIR),
+        "cached": not missing_files,
+        "current": is_local_asr_asset_cache_current(),
+        "missing_files": missing_files,
+    }
+
+
 @router.get("/{asset_name}")
 def get_local_asr_asset(asset_name: str):
     if asset_name not in LOCAL_ASR_ALLOWED_FILES:

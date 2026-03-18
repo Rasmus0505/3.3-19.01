@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
-from app.api.routers import admin, admin_console, auth, billing, lessons, local_asr_assets, local_whisper_assets, media, practice, transcribe, wallet
+from app.api.routers import admin, admin_console, auth, billing, lessons, local_asr_assets, local_whisper_assets, local_whisper_browser_assets, media, practice, transcribe, wallet
 from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, DASHSCOPE_API_KEY, PERSISTENT_DATA_DIR, SERVICE_NAME, STATIC_DIR, WHISPER_MIRROR_ROOT
 from app.core.logging import setup_logging
 from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, schema_name_for_url
@@ -78,6 +78,20 @@ READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "semantic_split_max_words_threshold",
         "semantic_split_timeout_seconds",
         "translation_batch_max_chars",
+    ),
+    "sensevoice_settings": (
+        "model_dir",
+        "trust_remote_code",
+        "remote_code",
+        "device",
+        "language",
+        "vad_model",
+        "vad_max_single_segment_time",
+        "use_itn",
+        "batch_size_s",
+        "merge_vad",
+        "merge_length_s",
+        "ban_emo_unk",
     ),
     "lesson_generation_tasks": LESSON_TASK_REQUIRED_COLUMNS,
 }
@@ -328,6 +342,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(media.router)
     app.include_router(local_asr_assets.router)
     app.include_router(local_whisper_assets.router)
+    app.include_router(local_whisper_browser_assets.router)
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa_fallback_page(full_path: str) -> FileResponse:

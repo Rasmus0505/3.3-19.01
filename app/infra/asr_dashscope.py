@@ -10,10 +10,12 @@ from dashscope.audio.qwen_asr import QwenTranscription
 from dashscope.files import Files
 
 from app.core.config import ASR_TASK_POLL_SECONDS
+from app.services.sensevoice import SENSEVOICE_ASR_MODEL, get_sensevoice_settings_snapshot, transcribe_audio_file_with_sensevoice
 
 
-DEFAULT_MODEL = "qwen3-asr-flash-filetrans"
-SUPPORTED_MODELS = {DEFAULT_MODEL}
+DEFAULT_MODEL = SENSEVOICE_ASR_MODEL
+QWEN_DEFAULT_MODEL = "qwen3-asr-flash-filetrans"
+SUPPORTED_MODELS = {DEFAULT_MODEL, QWEN_DEFAULT_MODEL}
 
 
 class AsrError(RuntimeError):
@@ -99,7 +101,6 @@ def _extract_transcription_url(wait_out: dict[str, Any]) -> str:
 
 
 def _extract_usage_seconds(wait_out: dict[str, Any], wait_resp: Any) -> int | None:
-    # DashScope SDK object may expose usage either as top-level attribute or nested dict payload.
     candidates: list[Any] = []
     resp_usage = _to_dict(getattr(wait_resp, "usage", None))
     if resp_usage:
@@ -125,34 +126,8 @@ def _extract_usage_seconds(wait_out: dict[str, Any], wait_resp: Any) -> int | No
     return None
 
 
-def _build_preview_text(payload: dict[str, Any], max_items: int = 3) -> str:
-    texts: list[str] = []
-    transcripts = payload.get("transcripts")
-    if isinstance(transcripts, list):
-        for item in transcripts:
-            if not isinstance(item, dict):
-                continue
-            text = str(item.get("text") or "").strip()
-            if text:
-                texts.append(text)
-            if len(texts) >= max_items:
-                break
-    if not texts:
-        sentences = payload.get("sentences")
-        if isinstance(sentences, list):
-            for item in sentences:
-                if not isinstance(item, dict):
-                    continue
-                text = str(item.get("text") or "").strip()
-                if text:
-                    texts.append(text)
-                if len(texts) >= max_items:
-                    break
-    return " ".join(texts).strip()
-
-
 def _create_task(model: str, signed_url: str) -> Any:
-    if model == "qwen3-asr-flash-filetrans":
+    if model == QWEN_DEFAULT_MODEL:
         return QwenTranscription.async_call(
             model=model,
             file_url=signed_url,
@@ -163,7 +138,7 @@ def _create_task(model: str, signed_url: str) -> Any:
 
 
 def _fetch_task(model: str, task_id: str) -> Any:
-    if model == "qwen3-asr-flash-filetrans":
+    if model == QWEN_DEFAULT_MODEL:
         return QwenTranscription.fetch(task=task_id)
     raise AsrError("INVALID_MODEL", "不支持的模型", model)
 
@@ -184,17 +159,14 @@ def _emit_task_progress(progress_callback, *, task_id: str, task_status: str, el
         pass
 
 
-def transcribe_audio_file(
+def _transcribe_audio_file_with_qwen(
     audio_path: str,
     *,
-    model: str = DEFAULT_MODEL,
+    model: str,
     requests_timeout: int = 120,
     progress_callback=None,
 ) -> dict[str, Any]:
     _ensure_dashscope_api_key()
-    model_name = (model or "").strip()
-    if model_name not in SUPPORTED_MODELS:
-        raise AsrError("INVALID_MODEL", "不支持的模型", model_name)
 
     try:
         upload_resp = Files.upload(file_path=audio_path, purpose="inference")
@@ -204,11 +176,7 @@ def transcribe_audio_file(
 
     file_id = _resolve_file_id(upload_out)
     if not file_id:
-        raise AsrError(
-            "ASR_UPLOAD_FAILED",
-            "上传音频成功但 file_id 为空",
-            json.dumps(upload_out, ensure_ascii=False)[:1200],
-        )
+        raise AsrError("ASR_UPLOAD_FAILED", "上传音频成功但 file_id 为空", json.dumps(upload_out, ensure_ascii=False)[:1200])
 
     try:
         meta_resp = Files.get(file_id=file_id)
@@ -218,14 +186,10 @@ def transcribe_audio_file(
 
     signed_url = _resolve_signed_url(meta_out)
     if not signed_url:
-        raise AsrError(
-            "ASR_FILE_META_FAILED",
-            "查询文件成功但签名 URL 为空",
-            json.dumps(meta_out, ensure_ascii=False)[:1200],
-        )
+        raise AsrError("ASR_FILE_META_FAILED", "查询文件成功但签名 URL 为空", json.dumps(meta_out, ensure_ascii=False)[:1200])
 
     try:
-        task_resp = _create_task(model_name, signed_url)
+        task_resp = _create_task(model, signed_url)
     except AsrError:
         raise
     except Exception as exc:
@@ -234,11 +198,7 @@ def transcribe_audio_file(
     task_out = _to_dict(getattr(task_resp, "output", None))
     task_id = str(task_out.get("task_id") or "").strip()
     if not task_id:
-        raise AsrError(
-            "ASR_TASK_CREATE_FAILED",
-            "ASR 任务创建成功但 task_id 为空",
-            json.dumps(task_out, ensure_ascii=False)[:1200],
-        )
+        raise AsrError("ASR_TASK_CREATE_FAILED", "ASR 任务创建成功但 task_id 为空", json.dumps(task_out, ensure_ascii=False)[:1200])
 
     poll_interval_seconds = max(1, int(ASR_TASK_POLL_SECONDS))
     poll_count = 0
@@ -247,7 +207,7 @@ def transcribe_audio_file(
 
     while True:
         try:
-            fetch_resp = _fetch_task(model_name, task_id)
+            fetch_resp = _fetch_task(model, task_id)
         except AsrError:
             raise
         except Exception as exc:
@@ -293,46 +253,63 @@ def transcribe_audio_file(
         time.sleep(poll_interval_seconds)
 
     usage_seconds = _extract_usage_seconds(fetch_out, fetch_resp)
-    if task_status != "SUCCEEDED":
-        sub_code = str(fetch_out.get("code") or "").strip()
-        sub_msg = str(fetch_out.get("message") or "").strip()
-        raise AsrError(
-            "ASR_TASK_FAILED",
-            "ASR 任务失败",
-            json.dumps({"task_status": task_status, "subtask_code": sub_code, "subtask_message": sub_msg}, ensure_ascii=False),
-        )
-
     transcription_url = _extract_transcription_url(fetch_out)
     if not transcription_url:
-        raise AsrError(
-            "ASR_RESULT_URL_MISSING",
-            "ASR 任务成功但缺少 transcription_url",
-            json.dumps(fetch_out, ensure_ascii=False)[:1200],
-        )
+        raise AsrError("ASR_RESULT_URL_MISSING", "ASR 任务成功但缺少 transcription_url", json.dumps(fetch_out, ensure_ascii=False)[:1200])
 
     try:
         result_resp = requests.get(transcription_url, timeout=requests_timeout)
     except Exception as exc:
         raise AsrError("ASR_RESULT_DOWNLOAD_FAILED", "下载转写结果失败", str(exc)[:1200]) from exc
     if result_resp.status_code != 200:
-        raise AsrError(
-            "ASR_RESULT_DOWNLOAD_FAILED",
-            f"下载转写结果失败（HTTP {result_resp.status_code}）",
-            result_resp.text[:800],
-        )
+        raise AsrError("ASR_RESULT_DOWNLOAD_FAILED", f"下载转写结果失败（HTTP {result_resp.status_code}）", result_resp.text[:800])
 
     try:
         result_payload = result_resp.json()
     except Exception as exc:
         raise AsrError("ASR_RESULT_JSON_INVALID", "转写结果不是合法 JSON", str(exc)[:1200]) from exc
 
-    preview_text = _build_preview_text(result_payload)
+    preview_text = ""
+    transcripts = result_payload.get("transcripts")
+    if isinstance(transcripts, list):
+        preview_text = " ".join(str(item.get("text") or "").strip() for item in transcripts[:3] if isinstance(item, dict)).strip()
     return {
-        "model": model_name,
+        "model": model,
         "task_id": task_id,
-        "task_status": task_status,
+        "task_status": "SUCCEEDED",
         "usage_seconds": usage_seconds,
         "transcription_url": transcription_url,
         "preview_text": preview_text,
         "asr_result_json": result_payload,
     }
+
+
+def _transcribe_audio_file_with_sensevoice(audio_path: str, *, progress_callback=None) -> dict[str, Any]:
+    try:
+        from app.db import SessionLocal
+
+        db = SessionLocal()
+        try:
+            settings = get_sensevoice_settings_snapshot(db)
+        finally:
+            db.close()
+        return transcribe_audio_file_with_sensevoice(audio_path, settings=settings, progress_callback=progress_callback)
+    except AsrError:
+        raise
+    except Exception as exc:
+        raise AsrError("SENSEVOICE_TRANSCRIBE_FAILED", "SenseVoice transcribe failed", str(exc)[:1200]) from exc
+
+
+def transcribe_audio_file(
+    audio_path: str,
+    *,
+    model: str = DEFAULT_MODEL,
+    requests_timeout: int = 120,
+    progress_callback=None,
+) -> dict[str, Any]:
+    model_name = (model or "").strip()
+    if model_name not in SUPPORTED_MODELS:
+        raise AsrError("INVALID_MODEL", "不支持的模型", model_name)
+    if model_name == SENSEVOICE_ASR_MODEL:
+        return _transcribe_audio_file_with_sensevoice(audio_path, progress_callback=progress_callback)
+    return _transcribe_audio_file_with_qwen(audio_path, model=model_name, requests_timeout=requests_timeout, progress_callback=progress_callback)

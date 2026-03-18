@@ -167,7 +167,7 @@ class AdminSubtitleSettingsItem(BaseModel):
 
 class AdminSubtitleSettingsUpdateRequest(BaseModel):
     semantic_split_default_enabled: bool
-    default_asr_model: str = Field(min_length=1, max_length=100)
+    default_asr_model: str = Field(default="", max_length=100)
     subtitle_split_enabled: bool
     subtitle_split_target_words: int = Field(gt=0, le=200)
     subtitle_split_max_words: int = Field(gt=0, le=300)
@@ -193,6 +193,58 @@ class AdminSubtitleSettingsHistoryResponse(BaseModel):
     ok: bool = True
     current: AdminSubtitleSettingsItem
     rollback_candidate: AdminSubtitleSettingsHistoryItem | None = None
+
+
+class SenseVoiceSettingsItem(BaseModel):
+    model_dir: str
+    trust_remote_code: bool
+    remote_code: str
+    device: str
+    language: str
+    vad_model: str
+    vad_max_single_segment_time: int
+    use_itn: bool
+    batch_size_s: int
+    merge_vad: bool
+    merge_length_s: int
+    ban_emo_unk: bool
+    updated_at: datetime
+    updated_by_user_id: int | None = None
+    updated_by_user_email: str | None = None
+
+
+class SenseVoiceSettingsUpdateRequest(BaseModel):
+    model_dir: str = Field(min_length=1, max_length=255)
+    trust_remote_code: bool
+    remote_code: str = Field(default="", max_length=500)
+    device: str = Field(min_length=1, max_length=64)
+    language: str = Field(min_length=1, max_length=32)
+    vad_model: str = Field(default="", max_length=100)
+    vad_max_single_segment_time: int = Field(gt=0, le=60 * 60 * 1000)
+    use_itn: bool
+    batch_size_s: int = Field(gt=0, le=24 * 60 * 60)
+    merge_vad: bool
+    merge_length_s: int = Field(gt=0, le=24 * 60 * 60)
+    ban_emo_unk: bool
+
+
+class SenseVoiceSettingsResponse(BaseModel):
+    ok: bool = True
+    settings: SenseVoiceSettingsItem
+
+
+class SenseVoiceSettingsHistoryItem(BaseModel):
+    action_id: int
+    created_at: datetime
+    operator_user_id: int | None = None
+    operator_user_email: str | None = None
+    settings: SenseVoiceSettingsItem
+
+
+class SenseVoiceSettingsHistoryResponse(BaseModel):
+    ok: bool = True
+    current: SenseVoiceSettingsItem
+    rollback_candidate: SenseVoiceSettingsHistoryItem | None = None
 
 
 class AdminRedeemBatchCreateRequest(BaseModel):

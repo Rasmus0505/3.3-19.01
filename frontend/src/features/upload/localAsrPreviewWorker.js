@@ -14,6 +14,7 @@ let runtimeModule = null;
 let activeRecognizer = null;
 let activeModelId = "";
 let activeAssetBaseUrl = "";
+let activeAssetUrls = null;
 let runtimeInitialized = false;
 
 function nowMs() {
@@ -40,6 +41,15 @@ function normalizeAssetBaseUrl(assetBaseUrl) {
 
 function buildAssetUrl(assetBaseUrl, fileName) {
   return `${normalizeAssetBaseUrl(assetBaseUrl)}/${String(fileName || "").replace(/^\/+/, "")}`;
+}
+
+function resolveAssetUrl(assetUrls, assetBaseUrl, fileName) {
+  const normalizedFileName = String(fileName || "").trim();
+  const explicitUrl = assetUrls && typeof assetUrls === "object" ? String(assetUrls[normalizedFileName] || "").trim() : "";
+  if (explicitUrl) {
+    return explicitUrl;
+  }
+  return buildAssetUrl(assetBaseUrl, normalizedFileName);
 }
 
 function buildProgressPayload(requestId, stage, payload = {}) {
@@ -137,6 +147,14 @@ function resetRuntimeState() {
   runtimePromise = null;
   runtimeModule = null;
   runtimeInitialized = false;
+  if (activeAssetUrls && typeof activeAssetUrls === "object") {
+    Object.values(activeAssetUrls).forEach((value) => {
+      if (typeof value === "string" && value.startsWith("blob:")) {
+        URL.revokeObjectURL(value);
+      }
+    });
+  }
+  activeAssetUrls = null;
 }
 
 function handleModuleStatus(requestId, modelId, status) {
@@ -182,7 +200,7 @@ function handleModuleStatus(requestId, modelId, status) {
   });
 }
 
-async function ensureRuntime(requestId, modelId, assetBaseUrl) {
+async function ensureRuntime(requestId, modelId, assetBaseUrl, assetUrls) {
   const normalizedModelId = normalizeModelId(modelId);
   const normalizedAssetBaseUrl = normalizeAssetBaseUrl(assetBaseUrl);
 
@@ -201,6 +219,7 @@ async function ensureRuntime(requestId, modelId, assetBaseUrl) {
 
   activeModelId = normalizedModelId;
   activeAssetBaseUrl = normalizedAssetBaseUrl;
+  activeAssetUrls = assetUrls && typeof assetUrls === "object" ? { ...assetUrls } : null;
 
   postProgress(requestId, "model-load-start", {
     modelId: normalizedModelId,
@@ -212,10 +231,7 @@ async function ensureRuntime(requestId, modelId, assetBaseUrl) {
     try {
       self.Module = {
         locateFile(path) {
-          if (path === RUNTIME_FILES.runtimeWasm || path === RUNTIME_FILES.runtimeData) {
-            return buildAssetUrl(normalizedAssetBaseUrl, path);
-          }
-          return buildAssetUrl(normalizedAssetBaseUrl, path);
+          return resolveAssetUrl(activeAssetUrls, normalizedAssetBaseUrl, path);
         },
         setStatus(status) {
           handleModuleStatus(requestId, normalizedModelId, status);
@@ -239,8 +255,8 @@ async function ensureRuntime(requestId, modelId, assetBaseUrl) {
         },
       };
 
-      importScripts(buildAssetUrl(normalizedAssetBaseUrl, RUNTIME_FILES.asrScript));
-      importScripts(buildAssetUrl(normalizedAssetBaseUrl, RUNTIME_FILES.runtimeScript));
+      importScripts(resolveAssetUrl(activeAssetUrls, normalizedAssetBaseUrl, RUNTIME_FILES.asrScript));
+      importScripts(resolveAssetUrl(activeAssetUrls, normalizedAssetBaseUrl, RUNTIME_FILES.runtimeScript));
     } catch (error) {
       reject(error);
     }
@@ -487,6 +503,7 @@ self.addEventListener("message", async (event) => {
   const requestId = String(payload?.requestId || "");
   const modelId = normalizeModelId(payload?.modelId);
   const assetBaseUrl = normalizeAssetBaseUrl(payload?.assetBaseUrl);
+  const assetUrls = payload?.assetUrls && typeof payload.assetUrls === "object" ? payload.assetUrls : null;
 
   if (!action || !requestId) {
     return;
@@ -494,7 +511,7 @@ self.addEventListener("message", async (event) => {
 
   if (action === "load-model") {
     try {
-      await ensureRuntime(requestId, modelId, assetBaseUrl);
+      await ensureRuntime(requestId, modelId, assetBaseUrl, assetUrls);
       self.postMessage(
         buildResultPayload(requestId, action, {
           model_id: modelId,
@@ -526,7 +543,7 @@ self.addEventListener("message", async (event) => {
 
   if (action === "transcribe-audio") {
     try {
-      await ensureRuntime(requestId, modelId, assetBaseUrl);
+      await ensureRuntime(requestId, modelId, assetBaseUrl, assetUrls);
       const audioData = payload?.audioData;
       const samplingRate = Number(payload?.samplingRate || TARGET_SAMPLE_RATE);
       if (!(audioData instanceof Float32Array)) {
