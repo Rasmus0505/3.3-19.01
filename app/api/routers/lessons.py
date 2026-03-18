@@ -5,15 +5,16 @@ import json
 import logging
 import queue
 import threading
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
 from app.api.routers._helpers import require_lesson_owner
 from app.api.serializers import to_lesson_detail_response, to_lesson_item_response
-from app.core.config import BASE_TMP_DIR, REQUEST_TIMEOUT_SECONDS
+from app.core.config import BASE_TMP_DIR, REQUEST_TIMEOUT_SECONDS, UPLOAD_MAX_BYTES
 from app.core.errors import error_response, map_billing_error, map_media_error
 from app.db import SessionLocal, get_db
 from app.models import Lesson, User
@@ -53,7 +54,7 @@ from app.services.lesson_task_manager import (
     ensure_lesson_task_storage_ready,
     get_task,
 )
-from app.services.media import MediaError, cleanup_dir, create_request_dir
+from app.services.media import MediaError, cleanup_dir, create_request_dir, extract_audio_for_asr, save_upload_file_stream
 
 
 router = APIRouter(prefix="/api/lessons", tags=["lessons"])
@@ -191,6 +192,37 @@ async def create_lesson_task(
         return error_response(500, "INTERNAL_ERROR", "任务创建失败", str(exc)[:1200])
     finally:
         await video_file.close()
+
+
+@router.post(
+    "/local-asr/audio-extract",
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 413: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+)
+async def extract_local_asr_audio(
+    background_tasks: BackgroundTasks,
+    video_file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    _ = current_user
+    req_dir = create_request_dir(BASE_TMP_DIR)
+    source_suffix = Path(video_file.filename or "").suffix or ".bin"
+    source_path = req_dir / f"source{source_suffix}"
+    output_path = req_dir / "local_asr_audio.opus"
+    try:
+        save_upload_file_stream(video_file, source_path, max_bytes=UPLOAD_MAX_BYTES)
+        logger.info("[DEBUG] lesson.local_asr.extract_audio start source=%s", video_file.filename or "unknown")
+        extract_audio_for_asr(source_path, output_path)
+        await video_file.close()
+        background_tasks.add_task(cleanup_dir, req_dir)
+        return FileResponse(path=str(output_path), media_type="audio/ogg", filename=output_path.name)
+    except MediaError as exc:
+        cleanup_dir(req_dir)
+        await video_file.close()
+        return map_media_error(exc)
+    except Exception as exc:
+        cleanup_dir(req_dir)
+        await video_file.close()
+        return error_response(500, "INTERNAL_ERROR", "本地音轨提取失败", str(exc)[:1200])
 
 
 @router.post(

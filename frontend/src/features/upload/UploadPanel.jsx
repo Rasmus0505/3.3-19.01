@@ -1,4 +1,4 @@
-import { CheckCircle2, Loader2, RefreshCcw, UploadCloud } from "lucide-react";
+﻿import { CheckCircle2, Loader2, RefreshCcw, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -23,7 +23,7 @@ const LOCAL_MODEL_OPTIONS = [
     key: "local-sensevoice-small",
     workerModelId: "local-sensevoice-small",
     title: "SenseVoice Small",
-    subtitle: "最快，适合先试跑",
+    subtitle: "官方 SenseVoice 小模型，适合先试跑本地字幕识别。",
     sizeEstimateMb: { wasm: 180 },
     cacheFiles: [
       "sherpa-onnx-asr.js",
@@ -37,30 +37,30 @@ const LOCAL_MODEL_OPTIONS = [
     key: "local-whisper-base-en",
     workerModelId: "onnx-community/whisper-base.en_timestamped",
     title: "Base",
-    subtitle: "推荐默认档，速度和准确率更平衡",
+    subtitle: "鎺ㄨ崘榛樿妗ｏ紝閫熷害鍜屽噯纭巼鏇村钩琛?,
     sizeEstimateMb: { webgpu: 290, wasm: 80 },
   },
   {
     key: "local-whisper-small-en",
     workerModelId: "onnx-community/whisper-small.en_timestamped",
     title: "Small",
-    subtitle: "更准，但下载和首跑更重",
+    subtitle: "鏇村噯锛屼絾涓嬭浇鍜岄璺戞洿閲?,
     sizeEstimateMb: { webgpu: 970, wasm: 250 },
   },
   {
     key: "local-whisper-medium-en",
     workerModelId: "onnx-community/whisper-medium.en_timestamped",
     title: "Medium",
-    subtitle: "最重但更稳，适合高配置浏览器",
+    subtitle: "鏈€閲嶄絾鏇寸ǔ锛岄€傚悎楂橀厤缃祻瑙堝櫒",
     sizeEstimateMb: { webgpu: 3150, wasm: 1000 },
   },
   */
 ];
 const DISPLAY_STAGES = [
-  { key: "convert_audio", label: "转换" },
-  { key: "asr_transcribe", label: "识别" },
-  { key: "translate_zh", label: "翻译" },
-  { key: "write_lesson", label: "生成" },
+  { key: "convert_audio", label: "杞崲" },
+  { key: "asr_transcribe", label: "璇嗗埆" },
+  { key: "translate_zh", label: "缈昏瘧" },
+  { key: "write_lesson", label: "鐢熸垚" },
 ];
 
 function clampPercent(value) {
@@ -82,7 +82,7 @@ function getLocalModelMeta(modelKey) {
 
 function detectLocalAsrSupport() {
   if (typeof window === "undefined" || typeof navigator === "undefined") {
-    return { supported: false, reason: "当前环境不支持浏览器本地 ASR", browserName: "", webgpuSupported: false };
+    return { supported: false, reason: "褰撳墠鐜涓嶆敮鎸佹祻瑙堝櫒鏈湴 ASR", browserName: "", webgpuSupported: false };
   }
   const userAgent = String(navigator.userAgent || "");
   const isMobile = Boolean(navigator.userAgentData?.mobile) || /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent);
@@ -91,10 +91,10 @@ function detectLocalAsrSupport() {
   const browserName = isEdge ? "Edge" : isChrome ? "Chrome" : "";
   const webgpuSupported = typeof navigator.gpu !== "undefined";
   if (isMobile) {
-    return { supported: false, reason: "均衡模式仅支持桌面端 Chrome / Edge", browserName, webgpuSupported };
+    return { supported: false, reason: "鍧囪　妯″紡浠呮敮鎸佹闈㈢ Chrome / Edge", browserName, webgpuSupported };
   }
   if (!browserName) {
-    return { supported: false, reason: "均衡模式当前仅支持桌面 Chrome / Edge", browserName: "", webgpuSupported };
+    return { supported: false, reason: "鍧囪　妯″紡褰撳墠浠呮敮鎸佹闈?Chrome / Edge", browserName: "", webgpuSupported };
   }
   return { supported: true, reason: "", browserName, webgpuSupported };
 }
@@ -110,7 +110,7 @@ function getLocalModelStatusLabel(status) {
   if (status === "loading") return "下载中";
   if (status === "ready" || status === "cached") return "已下载";
   if (status === "removing") return "卸载中";
-  if (status === "error") return "异常";
+  if (status === "error") return "寮傚父";
   if (status === "unsupported") return "不可用";
   return "未下载";
 }
@@ -152,7 +152,25 @@ function resampleFloat32(samples, sourceSampleRate, targetSampleRate) {
   return output;
 }
 
-async function decodeFileForLocalAsr(file) {
+async function extractAudioForLocalAsrWithServer(file, accessToken = "") {
+  const form = new FormData();
+  form.append("video_file", file);
+  const resp = await api(
+    "/api/lessons/local-asr/audio-extract",
+    {
+      method: "POST",
+      body: form,
+    },
+    accessToken,
+  );
+  if (!resp.ok) {
+    const payload = await parseResponse(resp);
+    throw new Error(toErrorText(payload, "鏈湴瑙嗛闊宠建鎻愬彇澶辫触"));
+  }
+  return resp.blob();
+}
+
+async function decodeFileForLocalAsr(file, accessToken = "") {
   const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextCtor) {
     throw new Error("当前浏览器不支持 AudioContext，无法使用均衡模式");
@@ -168,7 +186,7 @@ async function decodeFileForLocalAsr(file) {
       if (isMp4) {
         throw new Error("当前 MP4 音轨无法本地解码，请改传音频或切回高速模式。");
       }
-      throw new Error(`本地解析音频失败: ${error instanceof Error && error.message ? error.message : String(error)}`);
+      throw new Error(`鏈湴瑙ｆ瀽闊抽澶辫触: ${error instanceof Error && error.message ? error.message : String(error)}`);
     }
     const mono = mixAudioBufferToMono(audioBuffer);
     return resampleFloat32(mono, audioBuffer.sampleRate, LOCAL_ASR_TARGET_SAMPLE_RATE);
@@ -178,6 +196,26 @@ async function decodeFileForLocalAsr(file) {
     } catch (_) {
       // ignore
     }
+  }
+}
+
+async function prepareAudioDataForLocalAsr(file, accessToken = "") {
+  const isMp4 = String(file?.type || "").toLowerCase() === "video/mp4" || /\.mp4$/i.test(String(file?.name || ""));
+  try {
+    return await decodeFileForLocalAsr(file, accessToken);
+  } catch (error) {
+    if (!isMp4) {
+      throw error;
+    }
+    if (!accessToken) {
+      throw new Error("当前 MP4 音轨无法在本地直接解码，请改传音频或切回高速模式。");
+    }
+    const extractedAudio = await extractAudioForLocalAsrWithServer(file, accessToken);
+    const extractedFile = new File([extractedAudio], `${String(file?.name || "local-source").replace(/\.[^.]+$/, "") || "local-source"}.opus`, {
+      type: String(extractedAudio.type || "audio/ogg"),
+      lastModified: Date.now(),
+    });
+    return decodeFileForLocalAsr(extractedFile, accessToken);
   }
 }
 
@@ -217,17 +255,17 @@ function getCurrentTaskStageKey(taskSnapshot) {
 }
 
 function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
-  if (phase === "uploading") return `上传素材 ${clampPercent(uploadPercent)}%`;
-  if (phase === "upload_paused") return `上传素材 ${clampPercent(uploadPercent)}%`;
-  if (phase === "local_transcribing") return "均衡模式正在本地识别字幕";
-  if (!taskSnapshot) return phase === "success" ? "生成课程完成" : phase === "error" ? "生成课程失败" : "等待上传";
-  if (phase === "success") return "生成课程完成";
+  if (phase === "uploading") return `涓婁紶绱犳潗 ${clampPercent(uploadPercent)}%`;
+  if (phase === "upload_paused") return `涓婁紶绱犳潗 ${clampPercent(uploadPercent)}%`;
+  if (phase === "local_transcribing") return "鍧囪　妯″紡姝ｅ湪鏈湴璇嗗埆瀛楀箷";
+  if (!taskSnapshot) return phase === "success" ? "鐢熸垚璇剧▼瀹屾垚" : phase === "error" ? "鐢熸垚璇剧▼澶辫触" : "绛夊緟涓婁紶";
+  if (phase === "success") return "鐢熸垚璇剧▼瀹屾垚";
   const counters = taskSnapshot.counters || {};
   const stageKey = getCurrentTaskStageKey(taskSnapshot);
   if (stageKey === "asr_transcribe") {
     const segmentDone = Math.max(0, Number(counters.segment_done || 0));
     const segmentTotal = Math.max(segmentDone, Number(counters.segment_total || 0));
-    if (segmentTotal > 0) return `识别分段 ${segmentDone}/${segmentTotal}`;
+    if (segmentTotal > 0) return `璇嗗埆鍒嗘 ${segmentDone}/${segmentTotal}`;
     const done = Math.max(0, Number(counters.asr_done || 0));
     const total = Math.max(done, Number(counters.asr_estimated || 0));
     return done > 0 && total > 0 ? `识别字幕 ${done}/${total}` : String(taskSnapshot.current_text || "识别中");
@@ -235,9 +273,9 @@ function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
   if (stageKey === "translate_zh") {
     const done = Math.max(0, Number(counters.translate_done || 0));
     const total = Math.max(done, Number(counters.translate_total || 0));
-    return total > 0 ? `翻译字幕 ${done}/${total}` : String(taskSnapshot.current_text || "翻译字幕");
+    return total > 0 ? `缈昏瘧瀛楀箷 ${done}/${total}` : String(taskSnapshot.current_text || "缈昏瘧瀛楀箷");
   }
-  return stageKey === "convert_audio" ? "转换音频" : stageKey === "write_lesson" ? "生成课程" : String(taskSnapshot.current_text || "等待处理");
+  return stageKey === "convert_audio" ? "杞崲闊抽" : stageKey === "write_lesson" ? "鐢熸垚璇剧▼" : String(taskSnapshot.current_text || "绛夊緟澶勭悊");
 }
 
 function getVisualProgress(phase, uploadPercent, taskSnapshot) {
@@ -349,7 +387,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   function createWorkerRequest(type, modelKey, payload = {}, transfer = []) {
     const modelMeta = getLocalModelMeta(modelKey);
     if (!localAsrWorkerRef.current || !modelMeta) {
-      return Promise.reject(new Error("本地 ASR Worker 未初始化"));
+      return Promise.reject(new Error("鏈湴 ASR Worker 鏈垵濮嬪寲"));
     }
     localAsrRequestSequenceRef.current += 1;
     const requestId = buildWorkerRequestId(localAsrRequestSequenceRef.current);
@@ -434,7 +472,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         if (payload.stage === "model-load-start") {
           updateLocalModelState(modelKey, { status: "loading", runtime: String(payload.runtime || ""), progress: null, error: "" });
           setLocalBusyModelKey(modelKey);
-          setLocalBusyText(String(payload.status_text || "正在下载模型"));
+          setLocalBusyText(String(payload.status_text || "姝ｅ湪涓嬭浇妯″瀷"));
           return;
         }
         if (payload.stage === "model-progress") {
@@ -445,12 +483,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             error: "",
           });
           setLocalBusyModelKey(modelKey);
-          setLocalBusyText(String(payload.status || "正在下载模型"));
+          setLocalBusyText(String(payload.status || "姝ｅ湪涓嬭浇妯″瀷"));
           return;
         }
         if (payload.stage === "runtime-fallback") {
           updateLocalModelState(modelKey, { runtime: String(payload.runtime || "wasm") });
-          setLocalBusyText(String(payload.status_text || "已回退到 WASM"));
+          setLocalBusyText(String(payload.status_text || "宸插洖閫€鍒?WASM"));
           return;
         }
       }
@@ -461,12 +499,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       }
       if (payload?.type === "error" && pending) {
         localAsrPendingRequestsRef.current.delete(requestId);
-        pending.reject(new Error(String(payload.message || "本地 ASR Worker 失败")));
+        pending.reject(new Error(String(payload.message || "鏈湴 ASR Worker 澶辫触")));
       }
     };
 
     const handleWorkerError = (event) => {
-      const message = event?.message || "本地 ASR Worker 启动失败";
+      const message = event?.message || "鏈湴 ASR Worker 鍚姩澶辫触";
       rejectPendingLocalRequests(message);
       setLocalBusyModelKey("");
       setLocalBusyText("");
@@ -743,7 +781,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       const data = await parseResponse(resp);
       if (pollingAbortRef.current || pollToken !== pollTokenRef.current) return;
       if (!resp.ok) {
-        const message = toErrorText(data, "查询任务失败");
+        const message = toErrorText(data, "鏌ヨ浠诲姟澶辫触");
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -759,7 +797,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         return;
       }
       if (taskStatus === "failed") {
-        const message = `${data.error_code || "ERROR"}: ${data.message || "生成失败"}`;
+        const message = `${data.error_code || "ERROR"}: ${data.message || "鐢熸垚澶辫触"}`;
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -775,7 +813,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       setTimeout(() => void pollTask(nextTaskId, silentToast, pollToken), 1000);
     } catch (error) {
       if (pollingAbortRef.current || pollToken !== pollTokenRef.current || error?.name === "AbortError") return;
-      const message = `网络错误: ${String(error)}`;
+      const message = `缃戠粶閿欒: ${String(error)}`;
       setStatus(message);
       setPhase("error");
       setLoading(false);
@@ -805,7 +843,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       const restoredPhase = !saved.task_id && savedPhase === "uploading" ? "upload_paused" : savedPhase;
       const restoredStatus =
         !saved.task_id && savedPhase === "uploading"
-          ? String(saved.status_text || "检测到上次上传中断，可继续上传当前素材")
+          ? String(saved.status_text || "妫€娴嬪埌涓婃涓婁紶涓柇锛屽彲缁х画涓婁紶褰撳墠绱犳潗")
           : String(saved.status_text || "");
       setFile(restoredFile);
       setTaskId(String(saved.task_id || ""));
@@ -888,11 +926,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   async function handleLocalModelDownload(modelKey) {
     if (!localAsrSupport.supported) {
-      toast.error(localAsrSupport.reason || "当前浏览器不支持均衡模式");
+      toast.error(localAsrSupport.reason || "褰撳墠娴忚鍣ㄤ笉鏀寔鍧囪　妯″紡");
       return;
     }
     setLocalBusyModelKey(modelKey);
-    setLocalBusyText("正在检查并下载本地模型");
+    setLocalBusyText("姝ｅ湪妫€鏌ュ苟涓嬭浇鏈湴妯″瀷");
     updateLocalModelState(modelKey, { status: "loading", progress: null, error: "" });
     try {
       const result = await createWorkerRequest("load-model", modelKey);
@@ -907,7 +945,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         user_agent: String(navigator?.userAgent || ""),
       });
       setSelectedBalancedModel(modelKey);
-      toast.success("本地模型已准备好");
+      toast.success("鏈湴妯″瀷宸插噯澶囧ソ");
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : String(error);
       updateLocalModelState(modelKey, { status: "error", progress: null, error: message });
@@ -929,7 +967,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   async function handleLocalModelRemove(modelKey) {
     const modelMeta = getLocalModelMeta(modelKey);
     setLocalBusyModelKey(modelKey);
-    setLocalBusyText("正在卸载本地模型");
+    setLocalBusyText("姝ｅ湪鍗歌浇鏈湴妯″瀷");
     updateLocalModelState(modelKey, { status: "removing", error: "" });
     try {
       await createWorkerRequest("dispose-model", modelKey).catch(() => null);
@@ -940,7 +978,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : String(error);
       updateLocalModelState(modelKey, { status: "error", progress: null, error: message });
-      toast.error(`卸载失败: ${message}`);
+      toast.error(`鍗歌浇澶辫触: ${message}`);
     } finally {
       setLocalBusyModelKey("");
       setLocalBusyText("");
@@ -949,7 +987,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   async function submitBalanced(pollToken) {
     if (!localAsrSupport.supported) {
-      const message = localAsrSupport.reason || "当前浏览器不支持均衡模式";
+      const message = localAsrSupport.reason || "褰撳墠娴忚鍣ㄤ笉鏀寔鍧囪　妯″紡";
       setStatus(message);
       setPhase("error");
       setLoading(false);
@@ -967,13 +1005,19 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
     setPhase("local_transcribing");
     setLoading(true);
-    setStatus("正在本地识别字幕");
-    await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: "正在本地识别字幕", bindingCompleted: false });
+    setStatus("姝ｅ湪鏈湴璇嗗埆瀛楀箷");
+    await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: "姝ｅ湪鏈湴璇嗗埆瀛楀箷", bindingCompleted: false });
     try {
-      const audioData = await decodeFileForLocalAsr(file);
+      if (String(file?.type || "").startsWith("video/")) {
+        setStatus("正在从视频提取音轨");
+        await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: "正在从视频提取音轨", bindingCompleted: false });
+      }
+      const audioData = await prepareAudioDataForLocalAsr(file, accessToken);
       if (!(audioData instanceof Float32Array) || audioData.length <= 0) {
         throw new Error("本地音频解析结果为空，无法继续生成");
       }
+      setStatus("姝ｅ湪鏈湴璇嗗埆瀛楀箷");
+      await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: "姝ｅ湪鏈湴璇嗗埆瀛楀箷", bindingCompleted: false });
       const localResult = await createWorkerRequest(
         "transcribe-audio",
         selectedBalancedModel,
@@ -985,7 +1029,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         [audioData.buffer],
       );
       if (!Array.isArray(localResult?.asr_payload?.transcripts?.[0]?.sentences) || localResult.asr_payload.transcripts[0].sentences.length === 0) {
-        throw new Error("本地模型未识别出可用字幕，请切回高速模式或更换素材");
+        throw new Error("鏈湴妯″瀷鏈瘑鍒嚭鍙敤瀛楀箷锛岃鍒囧洖楂橀€熸ā寮忔垨鏇存崲绱犳潗");
       }
       const resp = await api(
         "/api/lessons/tasks/local-asr",
@@ -1003,7 +1047,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       );
       const data = await parseResponse(resp);
       if (!resp.ok) {
-        const message = toErrorText(data, "创建本地任务失败");
+        const message = toErrorText(data, "鍒涘缓鏈湴浠诲姟澶辫触");
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -1021,7 +1065,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       await persistSession({ taskId: nextTaskId, phase: "processing", taskSnapshot: null, uploadPercent: 100, status: "", bindingCompleted: false });
       void pollTask(nextTaskId, false, pollToken);
     } catch (error) {
-      const message = error instanceof Error && error.message ? error.message : `网络错误: ${String(error)}`;
+      const message = error instanceof Error && error.message ? error.message : `缃戠粶閿欒: ${String(error)}`;
       setStatus(message);
       setPhase("error");
       setLoading(false);
@@ -1032,7 +1076,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   async function submit() {
     if (!file) {
-      const message = "请先选择文件";
+      const message = "璇峰厛閫夋嫨鏂囦欢";
       setStatus(message);
       setPhase("error");
       toast.error(message);
@@ -1078,7 +1122,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       );
       uploadAbortRef.current = null;
       if (!ok) {
-        const message = toErrorText(data, "创建上传任务失败");
+        const message = toErrorText(data, "鍒涘缓涓婁紶浠诲姟澶辫触");
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -1089,7 +1133,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       }
       const nextTaskId = String(data.task_id || "");
       if (!nextTaskId) {
-        const message = "任务创建成功但缺少 task_id";
+        const message = "浠诲姟鍒涘缓鎴愬姛浣嗙己灏?task_id";
         setStatus(message);
         setPhase("error");
         setLoading(false);
@@ -1108,7 +1152,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       uploadAbortRef.current = null;
       if (error?.name === "AbortError") return;
       resetUploadPersistState();
-      const message = `网络错误: ${String(error)}`;
+      const message = `缃戠粶閿欒: ${String(error)}`;
       setStatus(message);
       setPhase("error");
       setLoading(false);
@@ -1179,8 +1223,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base"><UploadCloud className="size-4" />上传素材</CardTitle>
-        <CardDescription>自动识别翻译，生成学习课程</CardDescription>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <UploadCloud className="size-4" />
+          上传素材
+        </CardTitle>
+        <CardDescription>自动识别、翻译并生成学习课程。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <Alert>
@@ -1188,7 +1235,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             <p className="text-muted-foreground">当前余额：{formatMoneyCents(normalizedBalanceAmountCents)}</p>
             <p className="text-muted-foreground">
               <Tooltip>
-                <TooltipTrigger asChild><span className="cursor-help underline decoration-dotted underline-offset-2">预估扣费</span></TooltipTrigger>
+                <TooltipTrigger asChild>
+                  <span className="cursor-help underline decoration-dotted underline-offset-2">预估扣费</span>
+                </TooltipTrigger>
                 <TooltipContent>按素材秒数折算分钟后计费，金额统一按分存储、按元展示。</TooltipContent>
               </Tooltip>
               ：{selectedRate ? (durationSec != null ? `${formatMoneyCents(estimatedChargeCents)}（${formatMoneyPerMinute(selectedRate.price_per_minute_cents)}）` : "选择文件后显示") : "该模型未配置单价"}
@@ -1267,16 +1316,53 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
           </div>
         ) : null}
 
-        {file ? <MediaCover coverDataUrl={coverDataUrl} alt={isVideoSource ? "视频封面" : "音频素材"} aspectRatio={coverAspectRatio} className="border bg-muted/20" fallback={<div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">{isVideoSource ? "封面提取中或失败" : "音频素材（无视频封面）"}</div>} /> : null}
+        {file ? (
+          <MediaCover
+            coverDataUrl={coverDataUrl}
+            alt={isVideoSource ? "视频封面" : "音频素材"}
+            aspectRatio={coverAspectRatio}
+            className="border bg-muted/20"
+            fallback={<div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">{isVideoSource ? "封面提取中或失败" : "音频素材（无视频封面）"}</div>}
+          />
+        ) : null}
 
         {showProgress ? (
           <div className="space-y-3 rounded-2xl border bg-muted/15 p-4">
             <div className="flex items-start justify-between gap-3">
-              <div className="space-y-1"><p className="text-sm font-medium">{getProgressHeadline(phase, uploadPercent, taskSnapshot)}</p><p className="text-xs text-muted-foreground">总进度</p></div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium">{getProgressHeadline(phase, uploadPercent, taskSnapshot)}</p>
+                <p className="text-xs text-muted-foreground">总进度</p>
+              </div>
               <span className="text-sm font-semibold tabular-nums text-muted-foreground">{progressPercent}%</span>
             </div>
-            <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted"><div className={cn("h-full rounded-full transition-[width,background-color] duration-300", phase === "success" ? "bg-emerald-500" : phase === "error" ? "bg-red-500" : phase === "uploading" ? "bg-sky-500" : "bg-amber-500")} style={{ width: `${progressPercent}%` }} /></div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{stageItems.map((item) => <div key={item.key} className={cn("rounded-xl border px-3 py-2 text-sm font-medium", item.status === "completed" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700" : item.status === "running" ? "border-amber-500/40 bg-amber-500/10 text-amber-700" : item.status === "failed" ? "border-red-500/30 bg-red-500/10 text-red-600" : "border-border bg-muted/30 text-muted-foreground")}>{item.label}</div>)}</div>
+            <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-[width,background-color] duration-300",
+                  phase === "success" ? "bg-emerald-500" : phase === "error" ? "bg-red-500" : phase === "uploading" ? "bg-sky-500" : "bg-amber-500",
+                )}
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {stageItems.map((item) => (
+                <div
+                  key={item.key}
+                  className={cn(
+                    "rounded-xl border px-3 py-2 text-sm font-medium",
+                    item.status === "completed"
+                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+                      : item.status === "running"
+                        ? "border-amber-500/40 bg-amber-500/10 text-amber-700"
+                        : item.status === "failed"
+                          ? "border-red-500/30 bg-red-500/10 text-red-600"
+                          : "border-border bg-muted/30 text-muted-foreground",
+                  )}
+                >
+                  {item.label}
+                </div>
+              ))}
+            </div>
           </div>
         ) : null}
 
@@ -1286,14 +1372,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               <CheckCircle2 className="mt-0.5 size-5 text-emerald-600" />
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-emerald-700">生成成功</p>
-                <p className="text-sm text-emerald-700/80">
-                  {status || "课程已写入历史记录，你可以回到历史记录定位新课程，或继续上传下一份素材。"}
-                </p>
+                <p className="text-sm text-emerald-700/80">{status || "课程已写入历史记录，你可以现在开始学习，或继续上传下一份素材。"}</p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" onClick={() => onNavigateToLesson?.(taskSnapshot.lesson.id)}>
-                去历史记录
+                去学习
               </Button>
               <Button type="button" variant="outline" onClick={() => void resetSession()}>
                 继续上传
@@ -1306,10 +1390,26 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
           <div className="space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
             <p className="text-sm text-destructive">{status}</p>
             <div className="flex flex-wrap gap-2">
-              {canRetryWithoutUpload ? <Button type="button" onClick={() => void resumeTask()}><RefreshCcw className="size-4" />{taskSnapshot?.resume_available ? "免上传继续生成" : "免上传重新生成"}</Button> : null}
-              {hasLocalFile ? <Button type="button" variant="secondary" onClick={() => void submit()}><RefreshCcw className="size-4" />重新上传当前素材</Button> : null}
-              {hasLocalFile ? <Button type="button" variant="ghost" onClick={() => void clearTaskRuntime()}>保留素材并清空错误</Button> : null}
-              <Button type="button" variant="outline" onClick={() => void resetSession()}>更换素材</Button>
+              {canRetryWithoutUpload ? (
+                <Button type="button" onClick={() => void resumeTask()}>
+                  <RefreshCcw className="size-4" />
+                  {taskSnapshot?.resume_available ? "免上传继续生成" : "免上传重新生成"}
+                </Button>
+              ) : null}
+              {hasLocalFile ? (
+                <Button type="button" variant="secondary" onClick={() => void submit()}>
+                  <RefreshCcw className="size-4" />
+                  重新上传当前素材
+                </Button>
+              ) : null}
+              {hasLocalFile ? (
+                <Button type="button" variant="ghost" onClick={() => void clearTaskRuntime()}>
+                  保留素材并清空错误
+                </Button>
+              ) : null}
+              <Button type="button" variant="outline" onClick={() => void resetSession()}>
+                更换素材
+              </Button>
             </div>
           </div>
         ) : null}
@@ -1318,16 +1418,43 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
           <div className="space-y-3 rounded-2xl border border-border bg-muted/15 p-4">
             <p className="text-sm text-muted-foreground">{status || "上传已暂停，可继续上传当前素材。"}</p>
             <div className="flex flex-wrap gap-2">
-              {hasLocalFile ? <Button type="button" onClick={() => void submit()}><RefreshCcw className="size-4" />继续上传当前素材</Button> : null}
-              {hasLocalFile ? <Button type="button" variant="ghost" onClick={() => void clearTaskRuntime()}>保留素材并清空状态</Button> : null}
-              <Button type="button" variant="outline" onClick={() => void resetSession()}>更换素材</Button>
+              {hasLocalFile ? (
+                <Button type="button" onClick={() => void submit()}>
+                  <RefreshCcw className="size-4" />
+                  继续上传当前素材
+                </Button>
+              ) : null}
+              {hasLocalFile ? (
+                <Button type="button" variant="ghost" onClick={() => void clearTaskRuntime()}>
+                  保留素材并清空状态
+                </Button>
+              ) : null}
+              <Button type="button" variant="outline" onClick={() => void resetSession()}>
+                更换素材
+              </Button>
             </div>
           </div>
         ) : null}
 
-        <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
           <div className="grid gap-2" data-guide-id="upload-select-file">
-            <input id="asr-file" ref={fileInputRef} type="file" accept={mode === "balanced" ? LOCAL_ASR_FILE_ACCEPT : undefined} className="hidden" onChange={(event) => { void onSelectFile(event.target.files?.[0] ?? null); }} disabled={loading || localModeBusy} />
+            <input
+              id="asr-file"
+              ref={fileInputRef}
+              type="file"
+              accept={mode === "balanced" ? LOCAL_ASR_FILE_ACCEPT : undefined}
+              className="hidden"
+              onChange={(event) => {
+                void onSelectFile(event.target.files?.[0] ?? null);
+              }}
+              disabled={loading || localModeBusy}
+            />
             <div className="grid gap-2 md:grid-cols-2">
               <Button
                 type="button"
@@ -1343,10 +1470,13 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               >
                 选择文件
               </Button>
-              <Button type="button" variant="secondary" className="h-11" onClick={() => setLinkDialogOpen(true)} disabled={loading || localModeBusy}>链接生成视频</Button>
+              <Button type="button" variant="secondary" className="h-11" onClick={() => setLinkDialogOpen(true)} disabled={loading || localModeBusy}>
+                链接生成视频
+              </Button>
             </div>
             {file ? <p className="text-xs text-muted-foreground">{file.name}</p> : null}
           </div>
+
           <Button type="submit" disabled={loading || phase === "success" || (mode === "balanced" && (!localAsrSupport.supported || localModeBusy))} className="h-11 w-full" data-guide-id="upload-submit">
             {loading ? (
               <span className="inline-flex items-center gap-2">
@@ -1357,10 +1487,13 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               "已生成完成"
             ) : phase === "upload_paused" ? (
               "继续上传当前素材"
+            ) : mode === "balanced" ? (
+              "开始均衡生成"
             ) : (
-              mode === "balanced" ? "开始均衡生成" : "开始生成课程"
+              "开始生成课程"
             )}
           </Button>
+
           {phase === "uploading" ? (
             <Button type="button" variant="outline" className="h-11 w-full" onClick={() => void pauseUpload()}>
               取消上传
@@ -1372,11 +1505,21 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
           <DialogContent>
             <DialogHeader>
               <DialogTitle>链接生成视频</DialogTitle>
-              <DialogDescription asChild><div className="space-y-1"><p>上传视频才可以获取素材</p><p>您可自行寻找可以链接转视频的合法工具</p><p>或使用推荐的工具网站</p></div></DialogDescription>
+              <DialogDescription asChild>
+                <div className="space-y-1">
+                  <p>上传视频才可以获取素材。</p>
+                  <p>您可自行寻找可以链接转视频的合法工具。</p>
+                  <p>或使用推荐的工具网站。</p>
+                </div>
+              </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setLinkDialogOpen(false)}>取消</Button>
-              <Button type="button" onClick={() => window.open("https://snapany.com/zh", "_blank", "noopener,noreferrer")}>跳转</Button>
+              <Button type="button" variant="ghost" onClick={() => setLinkDialogOpen(false)}>
+                取消
+              </Button>
+              <Button type="button" onClick={() => window.open("https://snapany.com/zh", "_blank", "noopener,noreferrer")}>
+                跳转
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

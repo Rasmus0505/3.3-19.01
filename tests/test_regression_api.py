@@ -1549,6 +1549,33 @@ def test_local_asr_asset_route_installs_git_when_missing(monkeypatch):
     ]
 
 
+def test_extract_local_asr_audio_route_returns_file(test_client, monkeypatch, tmp_path):
+    client, _, _ = test_client
+    token = _register_and_login(client, email="local-audio-extract@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from app.api.routers import lessons as lesson_router
+
+    monkeypatch.setattr(lesson_router, "BASE_TMP_DIR", tmp_path)
+
+    def fake_save_upload_file_stream(upload_file, dst_path, *, max_bytes):
+      dst_path.write_bytes(b"video")
+      return len(b"video")
+
+    def fake_extract_audio_for_asr(input_path, output_path):
+      output_path.write_bytes(b"opus-audio")
+
+    monkeypatch.setattr(lesson_router, "save_upload_file_stream", fake_save_upload_file_stream)
+    monkeypatch.setattr(lesson_router, "extract_audio_for_asr", fake_extract_audio_for_asr)
+
+    files = {"video_file": ("demo.mp4", io.BytesIO(b"video"), "video/mp4")}
+    resp = client.post("/api/lessons/local-asr/audio-extract", headers=headers, files=files)
+
+    assert resp.status_code == 200
+    assert resp.content == b"opus-audio"
+    assert resp.headers["content-type"].startswith("audio/ogg")
+
+
 def test_create_local_asr_lesson_task(test_client, monkeypatch, tmp_path):
     client, session_factory, _ = test_client
     token = _register_and_login(client, email="local-asr@example.com")
