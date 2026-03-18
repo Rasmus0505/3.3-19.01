@@ -17,10 +17,10 @@ import {
 } from "../../shared/media/localTaskStore";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, MediaCover, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
 import { useAppStore } from "../../store";
+import { buildLocalAsrLongAudioWarning, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS, LOCAL_ASR_TARGET_SAMPLE_RATE, preprocessLocalAsrFile } from "./localAsrAudioPreprocess";
 
 const QWEN_MODEL = "qwen3-asr-flash-filetrans";
 const UPLOAD_PROGRESS_PERSIST_INTERVAL_MS = 800;
-const LOCAL_ASR_TARGET_SAMPLE_RATE = 16000;
 const LOCAL_ASR_FILE_ACCEPT = "audio/*,video/mp4,.mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.opus";
 const LOCAL_MODEL_VISUAL_PROGRESS_INTERVAL_MS = 120;
 const LOCAL_STAGE_PROGRESS_INTERVAL_MS = 800;
@@ -137,47 +137,22 @@ function formatDurationLabel(seconds) {
   return `${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
 }
 
-function mixAudioBufferToMono(audioBuffer) {
-  const channelCount = Math.max(1, Number(audioBuffer?.numberOfChannels || 1));
-  const sampleCount = Math.max(0, Number(audioBuffer?.length || 0));
-  if (sampleCount <= 0) return new Float32Array(0);
-  if (channelCount === 1) {
-    return new Float32Array(audioBuffer.getChannelData(0));
-  }
-  const mixed = new Float32Array(sampleCount);
-  for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
-    const channelData = audioBuffer.getChannelData(channelIndex);
-    for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
-      mixed[sampleIndex] += channelData[sampleIndex] / channelCount;
-    }
-  }
-  return mixed;
-}
-
-function resampleFloat32(samples, sourceSampleRate, targetSampleRate) {
-  const safeSourceSampleRate = Math.max(1, Number(sourceSampleRate || 0));
-  const safeTargetSampleRate = Math.max(1, Number(targetSampleRate || 0));
-  if (!(samples instanceof Float32Array)) return new Float32Array(0);
-  if (!samples.length || safeSourceSampleRate === safeTargetSampleRate) {
-    return new Float32Array(samples);
-  }
-  const ratio = safeSourceSampleRate / safeTargetSampleRate;
-  const outputLength = Math.max(1, Math.round(samples.length / ratio));
-  const output = new Float32Array(outputLength);
-  for (let index = 0; index < outputLength; index += 1) {
-    const position = index * ratio;
-    const leftIndex = Math.floor(position);
-    const rightIndex = Math.min(samples.length - 1, leftIndex + 1);
-    const interpolation = position - leftIndex;
-    output[index] = samples[leftIndex] * (1 - interpolation) + samples[rightIndex] * interpolation;
-  }
-  return output;
-}
-
 function createAbortError(message) {
   const error = new Error(message || "操作已取消");
   error.name = "AbortError";
   return error;
+}
+
+function nowMs() {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
+
+function logUploadLocalAsrDebug(message, extra = {}) {
+  if (typeof console === "undefined" || typeof console.debug !== "function") return;
+  console.debug("[DEBUG] upload.local_asr", message, extra);
 }
 
 async function extractAudioForLocalAsrWithServer(file, accessToken = "", signal = undefined) {
@@ -199,51 +174,36 @@ async function extractAudioForLocalAsrWithServer(file, accessToken = "", signal 
   return resp.blob();
 }
 
-async function decodeFileForLocalAsr(file, accessToken = "") {
-  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextCtor) {
-    throw new Error("当前浏览器不支持 AudioContext，无法使用均衡模式");
-  }
-  const audioContext = new AudioContextCtor();
-  try {
-    const fileBytes = await file.arrayBuffer();
-    let audioBuffer;
-    try {
-      audioBuffer = await audioContext.decodeAudioData(fileBytes.slice(0));
-    } catch (error) {
-      const isMp4 = String(file?.type || "").toLowerCase() === "video/mp4" || /\.mp4$/i.test(String(file?.name || ""));
-      if (isMp4) {
-        throw new Error("当前 MP4 音轨无法直接解码，请改传音频或切回高速模式。");
-      }
-      throw new Error(`解析音频失败: ${error instanceof Error && error.message ? error.message : String(error)}`);
-    }
-    const mono = mixAudioBufferToMono(audioBuffer);
-    return resampleFloat32(mono, audioBuffer.sampleRate, LOCAL_ASR_TARGET_SAMPLE_RATE);
-  } finally {
-    try {
-      await audioContext.close();
-    } catch (_) {
-      // ignore
-    }
-  }
-}
-
 async function prepareAudioDataForLocalAsr(file, accessToken = "", options = {}) {
   const { preferServerExtract = false, signal = undefined } = options;
   const isMp4 = String(file?.type || "").toLowerCase() === "video/mp4" || /\.mp4$/i.test(String(file?.name || ""));
+  const preprocessOptions = {
+    targetSampleRate: LOCAL_ASR_TARGET_SAMPLE_RATE,
+    unsupportedAudioContextMessage: "当前浏览器不支持 AudioContext，无法使用均衡模式",
+    mp4DecodeErrorMessage: "当前 MP4 音轨无法直接解码，请改传音频或切回高速模式。",
+    decodeErrorPrefix: "解析音频失败",
+  };
   if (isMp4 && preferServerExtract) {
     if (!accessToken) {
       throw new Error("当前登录状态已失效，请重新登录后再试。");
     }
+    const extractStart = nowMs();
     const extractedAudio = await extractAudioForLocalAsrWithServer(file, accessToken, signal);
     const extractedFile = new File([extractedAudio], `${String(file?.name || "local-source").replace(/\.[^.]+$/, "") || "local-source"}.opus`, {
       type: String(extractedAudio.type || "audio/ogg"),
       lastModified: Date.now(),
     });
-    return decodeFileForLocalAsr(extractedFile, accessToken);
+    const preprocessResult = await preprocessLocalAsrFile(extractedFile, preprocessOptions);
+    return {
+      ...preprocessResult,
+      metrics: {
+        ...(preprocessResult?.metrics || {}),
+        audio_extract_ms: Math.max(0, Math.round(nowMs() - extractStart)),
+      },
+    };
   }
   try {
-    return await decodeFileForLocalAsr(file, accessToken);
+    return await preprocessLocalAsrFile(file, preprocessOptions);
   } catch (error) {
     if (!isMp4) {
       throw error;
@@ -251,12 +211,20 @@ async function prepareAudioDataForLocalAsr(file, accessToken = "", options = {})
     if (!accessToken) {
       throw new Error("当前 MP4 音轨无法直接解码，请改传音频或切回高速模式。");
     }
+    const extractStart = nowMs();
     const extractedAudio = await extractAudioForLocalAsrWithServer(file, accessToken, signal);
     const extractedFile = new File([extractedAudio], `${String(file?.name || "local-source").replace(/\.[^.]+$/, "") || "local-source"}.opus`, {
       type: String(extractedAudio.type || "audio/ogg"),
       lastModified: Date.now(),
     });
-    return decodeFileForLocalAsr(extractedFile, accessToken);
+    const preprocessResult = await preprocessLocalAsrFile(extractedFile, preprocessOptions);
+    return {
+      ...preprocessResult,
+      metrics: {
+        ...(preprocessResult?.metrics || {}),
+        audio_extract_ms: Math.max(0, Math.round(nowMs() - extractStart)),
+      },
+    };
   }
 }
 
@@ -575,6 +543,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const estimatedChargeCents = selectedRate ? calculatePointsBySeconds(durationSec || 0, selectedRate.price_per_minute_cents) : 0;
   const likelyInsufficient = Number.isFinite(normalizedBalanceAmountCents) && estimatedChargeCents > 0 && normalizedBalanceAmountCents < estimatedChargeCents;
   const selectedLocalModelMeta = getLocalModelMeta(selectedBalancedModel);
+  const balancedPerformanceWarning = useMemo(
+    () => (mode === "balanced" ? buildLocalAsrLongAudioWarning(durationSec, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS) : ""),
+    [durationSec, mode],
+  );
   const localTranscribing = phase === "local_transcribing";
   const displayTaskSnapshot = localTranscribing ? localProgressSnapshot : taskSnapshot;
   const stageItems = getStageDisplayItems(displayTaskSnapshot);
@@ -1443,6 +1415,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setLoading(true);
     setStatus("正在识别字幕");
     await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: "正在识别字幕", bindingCompleted: false });
+    const totalStart = nowMs();
     try {
       const isVideoFile = String(file?.type || "").startsWith("video/");
       if (isVideoFile) {
@@ -1460,15 +1433,36 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       }
       const prepareAbortController = new AbortController();
       localRunAbortRef.current = prepareAbortController;
-      const audioData = await prepareAudioDataForLocalAsr(file, accessToken, {
+      const preprocessResult = await prepareAudioDataForLocalAsr(file, accessToken, {
         preferServerExtract: isVideoFile,
         signal: prepareAbortController.signal,
       });
       if (runToken !== localRunTokenRef.current) return;
       localRunAbortRef.current = null;
+      const audioData = preprocessResult?.audioData;
+      const preprocessDurationSec = Math.max(0, Number(preprocessResult?.durationSec || durationSec || 0));
+      const preprocessMetrics = {
+        audio_extract_ms: Math.max(0, Number(preprocessResult?.metrics?.audio_extract_ms || 0)),
+        decode_ms: Math.max(0, Number(preprocessResult?.metrics?.decode_ms || 0)),
+        resample_ms: Math.max(0, Number(preprocessResult?.metrics?.resample_ms || 0)),
+        preprocess_ms: Math.max(0, Number(preprocessResult?.metrics?.preprocess_ms || 0)),
+        source_sample_rate: Math.max(0, Number(preprocessResult?.metrics?.source_sample_rate || 0)),
+        target_sample_rate: Math.max(0, Number(preprocessResult?.metrics?.target_sample_rate || 0)),
+        channel_count: Math.max(0, Number(preprocessResult?.metrics?.channel_count || 0)),
+        input_bytes: Math.max(0, Number(preprocessResult?.metrics?.input_bytes || 0)),
+        sample_count: Math.max(0, Number(preprocessResult?.metrics?.sample_count || 0)),
+        resample_strategy: String(preprocessResult?.metrics?.resample_strategy || ""),
+      };
       if (!(audioData instanceof Float32Array) || audioData.length <= 0) {
         throw new Error("音频解析结果为空，无法继续生成");
       }
+      logUploadLocalAsrDebug("preprocess.done", {
+        file_name: String(file?.name || ""),
+        model: selectedBalancedModel,
+        duration_sec: preprocessDurationSec,
+        warning: Boolean(buildLocalAsrLongAudioWarning(preprocessDurationSec, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS)),
+        ...preprocessMetrics,
+      });
       const localAsrStatus = "正在识别字幕";
       console.debug("[DEBUG] upload.local_asr.stage", {
         stage: "asr_transcribe",
@@ -1480,8 +1474,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       if (isVideoFile) {
         setLocalProgress("convert_audio", "completed", 1, "转换音频格式完成");
       }
-      startLocalAsrVisualProgress(runToken, localAsrStatus, durationSec);
+      startLocalAsrVisualProgress(runToken, localAsrStatus, preprocessDurationSec || durationSec);
       await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: localAsrStatus, bindingCompleted: false });
+      const workerStart = nowMs();
       const localResult = await createWorkerRequest(
         "transcribe-audio",
         selectedBalancedModel,
@@ -1493,11 +1488,31 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         [audioData.buffer],
       );
       if (runToken !== localRunTokenRef.current) return;
+      const workerDecodeMs = Math.max(0, Math.round(nowMs() - workerStart));
+      const postprocessStart = nowMs();
       clearLocalStageProgressTimer();
       if (!Array.isArray(localResult?.asr_payload?.transcripts?.[0]?.sentences) || localResult.asr_payload.transcripts[0].sentences.length === 0) {
         throw new Error("当前模型未识别出可用字幕，请切回高速模式或更换素材");
       }
       const sentenceCount = localResult.asr_payload.transcripts[0].sentences.length;
+      const postprocessMs = Math.max(0, Math.round(nowMs() - postprocessStart));
+      logUploadLocalAsrDebug("run.done", {
+        file_name: String(file?.name || ""),
+        model: selectedBalancedModel,
+        duration_sec: preprocessDurationSec,
+        audio_extract_ms: preprocessMetrics.audio_extract_ms,
+        decode_ms: preprocessMetrics.decode_ms,
+        resample_ms: preprocessMetrics.resample_ms,
+        worker_decode_ms: workerDecodeMs,
+        postprocess_ms: postprocessMs,
+        total_local_asr_ms: Math.max(0, Math.round(nowMs() - totalStart)),
+        sample_count: preprocessMetrics.sample_count,
+        source_sample_rate: preprocessMetrics.source_sample_rate,
+        target_sample_rate: preprocessMetrics.target_sample_rate,
+        channel_count: preprocessMetrics.channel_count,
+        resample_strategy: preprocessMetrics.resample_strategy,
+        sentence_count: sentenceCount,
+      });
       setLocalProgress("asr_transcribe", "completed", 1, `识别完成，共 ${sentenceCount} 段字幕`, {
         asr_done: sentenceCount,
         asr_estimated: sentenceCount,
@@ -1552,6 +1567,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       if (error?.name === "AbortError") {
         return;
       }
+      logUploadLocalAsrDebug("run.failed", {
+        file_name: String(file?.name || ""),
+        model: selectedBalancedModel,
+        total_local_asr_ms: Math.max(0, Math.round(nowMs() - totalStart)),
+        message: error instanceof Error && error.message ? error.message : String(error),
+      });
       setLocalProgressSnapshot(null);
       const message = error instanceof Error && error.message ? error.message : `网络错误: ${String(error)}`;
       setStatus(message);
@@ -1842,6 +1863,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             {sourceDisplayName ? <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{sourceDisplayName}</p> : null}
           </div>
         ) : null}
+        {mode === "balanced" && balancedPerformanceWarning ? <p className="text-xs text-amber-700">{balancedPerformanceWarning}</p> : null}
 
         <form
           className="space-y-4"

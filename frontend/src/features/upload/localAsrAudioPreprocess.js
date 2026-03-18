@@ -53,11 +53,13 @@ function resampleFloat32(samples, sourceSampleRate, targetSampleRate) {
   return output;
 }
 
-function buildDecodeError(file, error) {
+function buildDecodeError(file, error, options = {}) {
+  const mp4DecodeErrorMessage = String(options?.mp4DecodeErrorMessage || "当前 MP4 编码无法本地试玩，请改传音频或使用云端识别。");
+  const decodeErrorPrefix = String(options?.decodeErrorPrefix || "本地解析音频失败");
   if (isMp4File(file)) {
-    return new Error("当前 MP4 编码无法本地试玩，请改传音频或使用云端识别。");
+    return new Error(mp4DecodeErrorMessage);
   }
-  return new Error(`本地解析音频失败: ${error instanceof Error && error.message ? error.message : String(error)}`);
+  return new Error(`${decodeErrorPrefix}: ${error instanceof Error && error.message ? error.message : String(error)}`);
 }
 
 function getAudioContextCtor() {
@@ -125,7 +127,7 @@ export async function preprocessLocalAsrFile(file, options = {}) {
   const targetSampleRate = Math.max(1, Number(options?.targetSampleRate || LOCAL_ASR_TARGET_SAMPLE_RATE));
   const AudioContextCtor = getAudioContextCtor();
   if (!AudioContextCtor) {
-    throw new Error("当前浏览器不支持 AudioContext，无法试玩本地 ASR");
+    throw new Error(String(options?.unsupportedAudioContextMessage || "当前浏览器不支持 AudioContext，无法试玩本地 ASR"));
   }
   const audioContext = new AudioContextCtor();
   const totalStart = nowMs();
@@ -136,7 +138,7 @@ export async function preprocessLocalAsrFile(file, options = {}) {
     try {
       audioBuffer = await audioContext.decodeAudioData(fileBytes.slice(0));
     } catch (error) {
-      throw buildDecodeError(file, error);
+      throw buildDecodeError(file, error, options);
     }
     const decodeMs = roundMs(nowMs() - decodeStart);
     const resampleStart = nowMs();

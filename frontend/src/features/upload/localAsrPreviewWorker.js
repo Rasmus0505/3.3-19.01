@@ -16,6 +16,13 @@ let activeModelId = "";
 let activeAssetBaseUrl = "";
 let runtimeInitialized = false;
 
+function nowMs() {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
+
 function toErrorMessage(error) {
   if (error instanceof Error && error.message) {
     return error.message;
@@ -536,16 +543,31 @@ self.addEventListener("message", async (event) => {
         runtime: "wasm",
         status_text: "正在本地识别字幕",
       });
+      const totalStart = nowMs();
 
       const stream = activeRecognizer.createStream();
       try {
+        const decodeStart = nowMs();
         stream.acceptWaveform(samplingRate, audioData);
         activeRecognizer.decode(stream);
         const result = activeRecognizer.getResult(stream) || {};
+        const workerDecodeMs = Math.max(0, Math.round(nowMs() - decodeStart));
+        const postprocessStart = nowMs();
         const totalDurationMs = Math.max(1, Math.round((audioData.length / Math.max(1, samplingRate)) * 1000));
         const wordItems = chooseWordItems(result, samplingRate, audioData.length);
         const sentenceEntries = buildSentenceEntries(wordItems, result?.text, totalDurationMs);
         const previewText = String(result?.text || composeText(sentenceEntries.map((item) => item.text).join(" ")) || "").trim();
+        const asrPayload = buildAsrPayload(result, wordItems, sentenceEntries);
+        const postprocessMs = Math.max(0, Math.round(nowMs() - postprocessStart));
+        postDebugLog("transcribe.done", {
+          modelId,
+          sampleCount: audioData.length,
+          samplingRate,
+          worker_decode_ms: workerDecodeMs,
+          postprocess_ms: postprocessMs,
+          total_worker_ms: Math.max(0, Math.round(nowMs() - totalStart)),
+          sentenceCount: sentenceEntries.length,
+        });
 
         self.postMessage(
           buildResultPayload(requestId, action, {
@@ -554,7 +576,7 @@ self.addEventListener("message", async (event) => {
             preview_text: previewText,
             segments: sentenceEntries,
             raw_result: result,
-            asr_payload: buildAsrPayload(result, wordItems, sentenceEntries),
+            asr_payload: asrPayload,
           }),
         );
       } finally {
