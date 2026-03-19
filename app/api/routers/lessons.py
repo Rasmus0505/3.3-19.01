@@ -23,6 +23,8 @@ from app.schemas import (
     ErrorResponse,
     LessonCatalogResponse,
     LessonCreateResponse,
+    LessonBulkDeleteRequest,
+    LessonBulkDeleteResponse,
     LessonDeleteResponse,
     LessonDetailResponse,
     LessonItemResponse,
@@ -32,6 +34,7 @@ from app.schemas import (
     LessonSubtitleVariantRequest,
     LessonSubtitleVariantResponse,
     LessonTaskCreateResponse,
+    LessonTaskControlResponse,
     LocalAsrLessonTaskCreateRequest,
     LessonTaskResumeResponse,
     LessonTaskResponse,
@@ -41,8 +44,10 @@ from app.services.billing_service import BillingError, LOCAL_BROWSER_ASR_MODELS,
 from app.services.lesson_command_service import (
     create_lesson_task_from_local_asr,
     create_lesson_task_from_upload,
+    bulk_delete_lessons_for_user,
     delete_lesson_for_user,
     invalidate_lesson_related_queries,
+    request_lesson_task_control_for_user,
     rename_lesson_for_user,
     resume_lesson_task_for_user,
     run_lesson_generation_task as _run_lesson_generation_task,
@@ -107,6 +112,11 @@ def _to_task_response(task: dict, db: Session) -> LessonTaskResponse:
         resume_available=bool(task.get("resume_available")),
         resume_stage=str(task.get("resume_stage") or ""),
         artifact_expires_at=task.get("artifact_expires_at"),
+        control_action=str(task.get("control_action") or ""),
+        paused_at=task.get("paused_at"),
+        terminated_at=task.get("terminated_at"),
+        can_pause=bool(task.get("can_pause")),
+        can_terminate=bool(task.get("can_terminate")),
     )
 
 
@@ -297,6 +307,42 @@ def resume_lesson_task(task_id: str, db: Session = Depends(get_db), current_user
     return LessonTaskResumeResponse(ok=True, task_id=task_id)
 
 
+@router.post(
+    "/tasks/{task_id}/pause",
+    response_model=LessonTaskControlResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+)
+def pause_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        payload = request_lesson_task_control_for_user(task_id=task_id, user_id=current_user.id, action="pause", db=db)
+    except LessonTaskStorageNotReadyError as exc:
+        return error_response(503, exc.code, exc.message, exc.detail)
+    if payload is None:
+        return error_response(404, "TASK_NOT_FOUND", "任务不存在")
+    requested = payload.get("requested")
+    if requested is None:
+        return error_response(400, "TASK_PAUSE_UNAVAILABLE", "当前任务不可暂停")
+    return LessonTaskControlResponse(ok=True, task_id=task_id, status=str(requested.get("status") or "pausing"))
+
+
+@router.post(
+    "/tasks/{task_id}/terminate",
+    response_model=LessonTaskControlResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+)
+def terminate_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        payload = request_lesson_task_control_for_user(task_id=task_id, user_id=current_user.id, action="terminate", db=db)
+    except LessonTaskStorageNotReadyError as exc:
+        return error_response(503, exc.code, exc.message, exc.detail)
+    if payload is None:
+        return error_response(404, "TASK_NOT_FOUND", "任务不存在")
+    requested = payload.get("requested")
+    if requested is None:
+        return error_response(400, "TASK_TERMINATE_UNAVAILABLE", "当前任务不可终止")
+    return LessonTaskControlResponse(ok=True, task_id=task_id, status=str(requested.get("status") or "terminating"))
+
+
 @router.get("/catalog", response_model=LessonCatalogResponse, responses={401: {"model": ErrorResponse}})
 def list_lesson_catalog(
     page: int = 1,
@@ -469,3 +515,52 @@ def delete_lesson(
 
     logger.info("[DEBUG] lessons.delete.success lesson_id=%s user_id=%s", lesson_id, current_user.id)
     return LessonDeleteResponse(ok=True, lesson_id=lesson_id)
+
+
+@router.post(
+    "/bulk-delete",
+    response_model=LessonBulkDeleteResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def bulk_delete_lessons(
+    payload: LessonBulkDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    normalized_ids = sorted({int(item) for item in list(payload.lesson_ids or []) if int(item) > 0})
+    delete_all = bool(payload.delete_all)
+    if not delete_all and not normalized_ids:
+        return error_response(400, "EMPTY_DELETE_SELECTION", "请先选择要删除的历史记录")
+
+    try:
+        logger.info(
+            "[DEBUG] lessons.bulk_delete.request user_id=%s delete_all=%s count=%s",
+            current_user.id,
+            delete_all,
+            len(normalized_ids),
+        )
+        result = bulk_delete_lessons_for_user(
+            db=db,
+            user_id=current_user.id,
+            lesson_ids=normalized_ids,
+            delete_all=delete_all,
+        )
+    except Exception as exc:
+        logger.exception("lessons.bulk_delete.failed user_id=%s", current_user.id)
+        db.rollback()
+        return error_response(500, "INTERNAL_ERROR", "批量删除历史失败", str(exc)[:1200])
+
+    deleted_ids = [int(item) for item in list(result.get("deleted_ids") or [])]
+    failed_ids = [int(item) for item in list(result.get("failed_ids") or [])]
+    logger.info(
+        "[DEBUG] lessons.bulk_delete.success user_id=%s deleted_count=%s failed_count=%s",
+        current_user.id,
+        len(deleted_ids),
+        len(failed_ids),
+    )
+    return LessonBulkDeleteResponse(
+        ok=True,
+        deleted_ids=deleted_ids,
+        deleted_count=int(result.get("deleted_count") or len(deleted_ids)),
+        failed_ids=failed_ids,
+    )

@@ -77,6 +77,18 @@ class LessonDeleteResponse(BaseModel):
     lesson_id: int
 
 
+class LessonBulkDeleteRequest(BaseModel):
+    lesson_ids: list[int] = Field(default_factory=list)
+    delete_all: bool = False
+
+
+class LessonBulkDeleteResponse(BaseModel):
+    ok: bool = True
+    deleted_ids: list[int] = Field(default_factory=list)
+    deleted_count: int = 0
+    failed_ids: list[int] = Field(default_factory=list)
+
+
 class LessonTaskStageResponse(BaseModel):
     key: str
     label: str
@@ -131,7 +143,7 @@ class LessonTaskFailureDebugResponse(BaseModel):
 class LessonTaskResponse(BaseModel):
     ok: bool = True
     task_id: str
-    status: Literal["pending", "running", "succeeded", "failed"]
+    status: Literal["pending", "running", "pausing", "paused", "terminating", "terminated", "succeeded", "failed"]
     overall_percent: int
     current_text: str
     stages: list[LessonTaskStageResponse]
@@ -145,6 +157,11 @@ class LessonTaskResponse(BaseModel):
     resume_available: bool = False
     resume_stage: str = ""
     artifact_expires_at: datetime | None = None
+    control_action: Literal["", "pause", "terminate"] = ""
+    paused_at: datetime | None = None
+    terminated_at: datetime | None = None
+    can_pause: bool = False
+    can_terminate: bool = False
 
 
 class LessonTaskCreateResponse(BaseModel):
@@ -162,6 +179,12 @@ class LocalAsrLessonTaskCreateRequest(BaseModel):
 class LessonTaskResumeResponse(BaseModel):
     ok: bool = True
     task_id: str
+
+
+class LessonTaskControlResponse(BaseModel):
+    ok: bool = True
+    task_id: str
+    status: Literal["pending", "running", "pausing", "paused", "terminating", "terminated", "succeeded", "failed"]
 
 
 class LessonSubtitleVariantRequest(BaseModel):

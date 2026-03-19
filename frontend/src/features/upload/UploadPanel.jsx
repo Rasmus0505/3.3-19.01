@@ -89,6 +89,15 @@ const STAGE_PROGRESS_BOUNDS = {
   write_lesson: { start: 90, end: 100 },
 };
 const SERVER_PREPARABLE_MODELS = new Set([FASTER_WHISPER_MODEL]);
+const ACTIVE_SERVER_TASK_STATUSES = new Set(["pending", "running", "pausing", "terminating"]);
+const STOPPABLE_SERVER_TASK_STATUSES = new Set(["pending", "running"]);
+const RECOVERABLE_SERVER_TASK_STATUSES = new Set(["paused", "terminated"]);
+const RESTORE_BANNER_MODES = {
+  NONE: "none",
+  VERIFYING: "verifying",
+  STALE: "stale",
+  INTERRUPTED: "interrupted",
+};
 
 function clampPercent(value) {
   return Math.max(0, Math.min(100, Number(value) || 0));
@@ -437,6 +446,10 @@ function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
   if (phase === "upload_paused") return `上传素材 ${clampPercent(uploadPercent)}%`;
   if (!taskSnapshot) return phase === "success" ? "生成课程完成" : phase === "error" ? "生成课程失败" : "等待上传";
   if (phase === "success") return "生成课程完成";
+  const taskStatus = String(taskSnapshot.status || "").toLowerCase();
+  if (taskStatus === "paused" || taskStatus === "terminated") {
+    return sanitizeUserFacingText(taskSnapshot.current_text || taskSnapshot.message || "已停止当前生成");
+  }
   const counters = taskSnapshot.counters || {};
   const stageKey = getCurrentTaskStageKey(taskSnapshot);
   if (stageKey === "asr_transcribe") {
@@ -550,8 +563,36 @@ function buildTaskState({ phase, taskId, taskSnapshot, uploadPercent, status }) 
   };
 }
 
+function getRecoveryBannerText(taskSnapshot) {
+  const taskStatus = String(taskSnapshot?.status || "").toLowerCase();
+  const currentText = sanitizeUserFacingText(String(taskSnapshot?.current_text || taskSnapshot?.message || ""));
+  if (taskStatus === "paused") {
+    return currentText || "已暂停当前生成，可继续生成或重新开始。";
+  }
+  if (taskStatus === "terminated") {
+    return currentText || "已终止当前生成，素材仍保留，可重新开始。";
+  }
+  return "";
+}
+
 function getInterruptedLocalAsrStatus(hasFile) {
   return hasFile ? "上次生成已中断，请重新开始。" : "";
+}
+
+function getTaskStatusCardText(restoreBannerMode, taskSnapshot, statusText = "") {
+  if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING) {
+    return "正在检查上次任务状态...";
+  }
+  if (restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED) {
+    if (Boolean(taskSnapshot?.resume_available)) {
+      return "上次生成已中断，可继续生成或重新开始。";
+    }
+    return "上次生成已中断，可重新开始或清空这次记录。";
+  }
+  if (restoreBannerMode === RESTORE_BANNER_MODES.STALE) {
+    return String(statusText || "上次生成记录已失效，可重新开始或清空这次记录。");
+  }
+  return "";
 }
 
 export function UploadPanel({ accessToken, isActivePanel = true, onCreated, balanceAmountCents = 0, balancePoints, billingRates, subtitleSettings, onWalletChanged, onTaskStateChange, onNavigateToLesson }) {
@@ -591,6 +632,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [serverBusyModelKey, setServerBusyModelKey] = useState("");
   const [serverBusyText, setServerBusyText] = useState("");
   const [localModelAdvancedOpen, setLocalModelAdvancedOpen] = useState(false);
+  const [restoreBannerMode, setRestoreBannerMode] = useState(RESTORE_BANNER_MODES.NONE);
   const pollingAbortRef = useRef(false);
   const pollTokenRef = useRef(0);
   const uploadAbortRef = useRef(null);
@@ -635,18 +677,42 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const selectedFastModelNeedsPreparation = mode === "fast" && SERVER_PREPARABLE_MODELS.has(selectedUploadModel);
   const localTranscribing = phase === "local_transcribing";
   const displayTaskSnapshot = localTranscribing ? localProgressSnapshot : taskSnapshot;
+  const hasLocalFile = Boolean(file);
+  const displayTaskStatus = String(displayTaskSnapshot?.status || "").toLowerCase();
+  const isRestoreVerifying = restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING;
+  const showRestoreInfoCard = restoreBannerMode !== RESTORE_BANNER_MODES.NONE;
+  const serviceTaskActive =
+    !localTranscribing &&
+    !isRestoreVerifying &&
+    Boolean(taskId) &&
+    ACTIVE_SERVER_TASK_STATUSES.has(displayTaskStatus || (phase === "processing" ? "running" : ""));
+  const serviceTaskStopActionsVisible =
+    !isRestoreVerifying &&
+    serviceTaskActive &&
+    (Boolean(displayTaskSnapshot?.can_pause) || Boolean(displayTaskSnapshot?.can_terminate) || STOPPABLE_SERVER_TASK_STATUSES.has(displayTaskStatus));
+  const taskPaused = !localTranscribing && displayTaskStatus === "paused";
+  const taskTerminated = !localTranscribing && displayTaskStatus === "terminated";
+  const showRecoveryBanner = hasLocalFile && RECOVERABLE_SERVER_TASK_STATUSES.has(displayTaskStatus);
+  const recoveryBannerText = getRecoveryBannerText(displayTaskSnapshot);
+  const taskStatusCardText = getTaskStatusCardText(restoreBannerMode, taskSnapshot, status);
+  const showTaskStatusCard =
+    restoreBannerMode !== RESTORE_BANNER_MODES.NONE || (showRecoveryBanner && !isRestoreVerifying);
   const stageItems = getStageDisplayItems(displayTaskSnapshot);
   const progressPercent = getVisualProgress(phase, uploadPercent, displayTaskSnapshot);
-  const showProgress = loading || phase === "success" || phase === "error" || phase === "upload_paused" || Boolean(displayTaskSnapshot);
-  const canRetryWithoutUpload = Boolean(taskId);
-  const hasLocalFile = Boolean(file);
+  const showProgress =
+    !isRestoreVerifying &&
+    restoreBannerMode !== RESTORE_BANNER_MODES.STALE &&
+    restoreBannerMode !== RESTORE_BANNER_MODES.INTERRUPTED &&
+    !RECOVERABLE_SERVER_TASK_STATUSES.has(displayTaskStatus) &&
+    (loading || phase === "success" || phase === "error" || phase === "upload_paused" || Boolean(displayTaskSnapshot));
+  const canRetryWithoutUpload = Boolean(taskId) && (Boolean(taskSnapshot?.resume_available) || phase === "error");
   const showMediaPreview = Boolean(file || coverDataUrl);
   const sourceDisplayName = String(file?.name || taskSnapshot?.lesson?.source_filename || "");
   const uploadActionBusy = loading && ["uploading", "processing", "local_transcribing"].includes(String(phase || ""));
   const localModeBusy = Boolean(localBusyModelKey || serverBusyModelKey) || localTranscribing;
   const primaryActionDisabled =
     phase === "success" ||
-    (loading && !localTranscribing) ||
+    (loading && !localTranscribing && !serviceTaskStopActionsVisible) ||
     (mode === "balanced" && !localTranscribing && (!localAsrSupport.supported || !localWorkerReady || Boolean(localBusyModelKey))) ||
     (selectedFastModelNeedsPreparation && (!selectedServerModelReady || selectedServerModelPreparing || Boolean(serverBusyModelKey)));
 
@@ -1121,6 +1187,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setLocalBusyText("");
     setServerBusyModelKey("");
     setServerBusyText("");
+    setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
     successStateOriginRef.current = "none";
   }
 
@@ -1284,6 +1351,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setUploadPercent(0);
     setLocalProgressSnapshot(null);
     setBindingCompleted(false);
+    setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
     await persistSession({
       taskId: "",
       phase: file ? "ready" : "idle",
@@ -1349,6 +1417,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setPhase("success");
     setStatus(successMessage);
     setLoading(false);
+    setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
     setBindingCompleted(Boolean(mediaPersisted || data.lesson?.media_storage !== "client_indexeddb"));
     successStateOriginRef.current = "live";
     if (ownerUserId) {
@@ -1367,6 +1436,17 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       const data = await parseResponse(resp);
       if (pollingAbortRef.current || pollToken !== pollTokenRef.current) return;
       if (!resp.ok) {
+        if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING) {
+          const nextStatus = "上次生成记录已失效，可重新开始或清空这次记录。";
+          setTaskId("");
+          setTaskSnapshot(null);
+          setRestoreBannerMode(RESTORE_BANNER_MODES.STALE);
+          setStatus(nextStatus);
+          setPhase(file ? "ready" : "idle");
+          setLoading(false);
+          await persistSession({ taskId: "", phase: file ? "ready" : "idle", taskSnapshot: null, uploadPercent: 0, status: nextStatus });
+          return;
+        }
         const message = toErrorText(data, "查询任务失败");
         setStatus(message);
         setPhase("error");
@@ -1378,11 +1458,42 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       setTaskId(String(data.task_id || nextTaskId));
       setTaskSnapshot(data);
       const taskStatus = String(data.status || "").toLowerCase();
+      if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING) {
+        if (ACTIVE_SERVER_TASK_STATUSES.has(taskStatus)) {
+          setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
+        } else if (RECOVERABLE_SERVER_TASK_STATUSES.has(taskStatus)) {
+          setRestoreBannerMode(RESTORE_BANNER_MODES.INTERRUPTED);
+        } else if (taskStatus === "failed") {
+          setRestoreBannerMode(RESTORE_BANNER_MODES.STALE);
+        }
+      }
       if (taskStatus === "succeeded") {
         await finalizeSuccess(data, file, silentToast);
         return;
       }
+      if (taskStatus === "paused" || taskStatus === "terminated") {
+        setRestoreBannerMode(RESTORE_BANNER_MODES.INTERRUPTED);
+        const nextPhase = file ? "ready" : "idle";
+        const nextStatus = String(data.current_text || data.message || "");
+        setStatus(nextStatus);
+        setPhase(nextPhase);
+        setLoading(false);
+        resetUploadPersistState();
+        await persistSession({ phase: nextPhase, taskSnapshot: data, uploadPercent: 100, status: nextStatus });
+        return;
+      }
       if (taskStatus === "failed") {
+        if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING && !Boolean(data.resume_available)) {
+          setTaskId("");
+          setTaskSnapshot(null);
+          setRestoreBannerMode(RESTORE_BANNER_MODES.STALE);
+          const nextStatus = "上次生成记录已失效，可重新开始或清空这次记录。";
+          setStatus(nextStatus);
+          setPhase(file ? "ready" : "idle");
+          setLoading(false);
+          await persistSession({ taskId: "", phase: file ? "ready" : "idle", taskSnapshot: null, uploadPercent: 0, status: nextStatus });
+          return;
+        }
         const message = `${data.error_code || "ERROR"}: ${data.message || "生成失败"}`;
         setStatus(message);
         setPhase("error");
@@ -1395,10 +1506,21 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       setPhase("processing");
       setLoading(true);
       resetUploadPersistState();
-      await persistSession({ phase: "processing", taskSnapshot: data, uploadPercent: 100 });
+      await persistSession({ phase: "processing", taskSnapshot: data, uploadPercent: 100, status: String(data.current_text || "") });
       setTimeout(() => void pollTask(nextTaskId, silentToast, pollToken), 1000);
     } catch (error) {
       if (pollingAbortRef.current || pollToken !== pollTokenRef.current || error?.name === "AbortError") return;
+      if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING) {
+        const nextStatus = "检查上次任务状态失败，可重新开始或稍后重试。";
+        setTaskId("");
+        setTaskSnapshot(null);
+        setRestoreBannerMode(RESTORE_BANNER_MODES.STALE);
+        setStatus(nextStatus);
+        setPhase(file ? "ready" : "idle");
+        setLoading(false);
+        await persistSession({ taskId: "", phase: file ? "ready" : "idle", taskSnapshot: null, uploadPercent: 0, status: nextStatus });
+        return;
+      }
       const message = `网络错误: ${String(error)}`;
       setStatus(message);
       setPhase("error");
@@ -1426,21 +1548,41 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
         const restoredFile = createFileFromBlob(saved.file_blob, saved.file_name, saved.media_type);
         const wasLocalTranscribing = savedPhase === "local_transcribing";
+        const isRecoverableServerTask = ["paused", "terminated"].includes(savedTaskStatus);
         const restoredPhase = wasLocalTranscribing
           ? restoredFile
             ? "ready"
             : "idle"
+          : isRecoverableServerTask
+            ? restoredFile
+              ? "ready"
+              : "idle"
           : !saved.task_id && savedPhase === "uploading"
             ? "upload_paused"
             : savedPhase;
         const restoredStatus = wasLocalTranscribing
           ? getInterruptedLocalAsrStatus(Boolean(restoredFile))
+          : isRecoverableServerTask
+            ? String(saved.task_snapshot?.current_text || saved.status_text || "")
           : !saved.task_id && savedPhase === "uploading"
             ? String(saved.status_text || "检测到上次上传中断，可继续上传当前素材")
             : String(saved.status_text || "");
+        const savedTaskId = String(saved.task_id || "").trim();
+        const savedSnapshotExists = Boolean(saved.task_snapshot);
+        const nextRestoreBannerMode = savedTaskId
+          ? RESTORE_BANNER_MODES.VERIFYING
+          : savedSnapshotExists
+            ? RESTORE_BANNER_MODES.STALE
+            : RESTORE_BANNER_MODES.NONE;
+        const nextStatus =
+          nextRestoreBannerMode === RESTORE_BANNER_MODES.VERIFYING
+            ? "正在检查上次任务状态..."
+            : nextRestoreBannerMode === RESTORE_BANNER_MODES.STALE
+              ? "上次生成记录已失效，可重新开始或清空这次记录。"
+              : restoredStatus;
         setFile(restoredFile);
-        setTaskId(String(saved.task_id || ""));
-        setStatus(restoredStatus);
+        setTaskId(savedTaskId);
+        setStatus(nextStatus);
         setDurationSec(Number(saved.duration_seconds || 0) || null);
         setPhase(restoredPhase || "idle");
         setMode(String(saved.generation_mode || "").toLowerCase() === "fast" ? "fast" : "balanced");
@@ -1450,17 +1592,18 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         setCoverHeight(Number(saved.cover_height || 0));
         setCoverAspectRatio(Number(saved.aspect_ratio || 0));
         setIsVideoSource(Boolean(saved.is_video_source));
-        setTaskSnapshot(saved.task_snapshot || null);
+        setTaskSnapshot(nextRestoreBannerMode === RESTORE_BANNER_MODES.NONE && isRecoverableServerTask ? saved.task_snapshot || null : null);
         setUploadPercent(Number(saved.upload_percent || 0));
         uploadPersistRef.current.latestPercent = Number(saved.upload_percent || 0);
         setBindingCompleted(Boolean(saved.binding_completed));
         setLocalBusyModelKey("");
         setLocalBusyText("");
         successStateOriginRef.current = "none";
-        setLoading(["processing"].includes(restoredPhase));
-        if (saved.task_id && (["pending", "running"].includes(savedTaskStatus) || ["processing", "uploading"].includes(savedPhase))) {
+        setRestoreBannerMode(nextRestoreBannerMode);
+        setLoading(["processing"].includes(restoredPhase) && ACTIVE_SERVER_TASK_STATUSES.has(savedTaskStatus || "running"));
+        if (savedTaskId && (ACTIVE_SERVER_TASK_STATUSES.has(savedTaskStatus) || ["processing", "uploading"].includes(savedPhase))) {
           const pollToken = startPollingSession();
-          void pollTask(String(saved.task_id), true, pollToken);
+          void pollTask(savedTaskId, true, pollToken);
         }
         return;
       }
@@ -2066,6 +2209,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     const pollToken = startPollingSession();
     setLoading(true);
     setStatus("");
+    setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
     try {
       const resp = await api(`/api/lessons/tasks/${taskId}/resume`, { method: "POST" }, accessToken);
       const data = await parseResponse(resp);
@@ -2109,6 +2253,55 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       );
       await persistSession({ phase: "processing", uploadPercent: 100, status: "" });
       void pollTask(taskId, false, pollToken);
+    } catch (error) {
+      const message = `网络错误: ${String(error)}`;
+      setStatus(message);
+      setPhase("error");
+      setLoading(false);
+      toast.error(message);
+      await persistSession({ phase: "error", status: message });
+    }
+  }
+
+  async function requestServerTaskControl(action) {
+    if (!taskId) return;
+    const normalizedAction = action === "terminate" ? "terminate" : "pause";
+    const endpoint = normalizedAction === "terminate" ? "terminate" : "pause";
+    const pendingStatus = normalizedAction === "terminate" ? "terminating" : "pausing";
+    const pendingText = normalizedAction === "terminate" ? "正在终止，当前步骤完成后会停止生成" : "正在暂停，当前步骤完成后会保留进度";
+    try {
+      stopPollingSession();
+      setLoading(true);
+      setStatus(pendingText);
+      setPhase("processing");
+      setTaskSnapshot((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: pendingStatus,
+              current_text: pendingText,
+              message: "",
+              control_action: normalizedAction,
+              can_pause: false,
+              can_terminate: normalizedAction === "terminate",
+            }
+          : prev,
+      );
+      await persistSession({ phase: "processing", status: pendingText });
+      const resp = await api(`/api/lessons/tasks/${taskId}/${endpoint}`, { method: "POST" }, accessToken);
+      const data = await parseResponse(resp);
+      if (!resp.ok) {
+        const message = toErrorText(data, normalizedAction === "terminate" ? "终止生成失败" : "暂停生成失败");
+        setStatus(message);
+        setPhase("error");
+        setLoading(false);
+        toast.error(message);
+        await persistSession({ phase: "error", status: message });
+        return;
+      }
+      const pollToken = startPollingSession();
+      void pollTask(taskId, true, pollToken);
+      toast.success(normalizedAction === "terminate" ? "已提交终止请求" : "已提交暂停请求");
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
       setStatus(message);
@@ -2324,6 +2517,37 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         ) : null}
         {mode === "balanced" && balancedPerformanceWarning ? <p className="text-xs text-amber-700">{simplifyLongAudioWarning(balancedPerformanceWarning)}</p> : null}
 
+        {showTaskStatusCard ? (
+          <div className="space-y-3 rounded-2xl border border-border bg-muted/15 p-4">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">任务状态</p>
+              <p className="text-sm text-muted-foreground">
+                {restoreBannerMode === RESTORE_BANNER_MODES.NONE ? recoveryBannerText || taskStatusCardText : taskStatusCardText}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED || restoreBannerMode === RESTORE_BANNER_MODES.NONE) &&
+              (taskPaused || Boolean(taskSnapshot?.resume_available)) ? (
+                <Button type="button" onClick={() => void resumeTask()}>
+                  <RefreshCcw className="size-4" />
+                  继续生成
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant={(restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED || restoreBannerMode === RESTORE_BANNER_MODES.NONE) && taskPaused ? "outline" : "default"}
+                onClick={() => void clearTaskRuntime("已保留素材，可重新开始。")}
+              >
+                <RefreshCcw className="size-4" />
+                重新开始
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => void clearTaskRuntime()}>
+                清空这次记录
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
         <form
           className="space-y-4"
           onSubmit={(event) => {
@@ -2364,28 +2588,65 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             </div>
           </div>
 
-          <Button
-            type={localTranscribing ? "button" : "submit"}
-            disabled={primaryActionDisabled}
-            className="h-11 w-full"
-            data-guide-id="upload-submit"
-            onClick={localTranscribing ? () => void stopLocalRecognition() : undefined}
-          >
-            {localTranscribing ? (
-              "停止生成"
-            ) : loading ? (
-              <span className="inline-flex items-center gap-2">
-                <Loader2 className="size-4 animate-spin" />
-                {phase === "uploading" ? "上传中" : "生成中"}
-              </span>
-            ) : phase === "success" ? (
-              "已生成完成"
-            ) : phase === "upload_paused" ? (
-              "继续上传当前素材"
-            ) : (
-              "开始生成"
-            )}
-          </Button>
+          {serviceTaskStopActionsVisible ? (
+            <div className="grid gap-2 md:grid-cols-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11"
+                onClick={() => void requestServerTaskControl("pause")}
+                disabled={Boolean(displayTaskSnapshot?.control_action) || !Boolean(displayTaskSnapshot?.can_pause)}
+              >
+                {displayTaskStatus === "pausing" ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="size-4 animate-spin" />
+                    暂停请求中
+                  </span>
+                ) : (
+                  "暂停并保留进度"
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-11"
+                onClick={() => void requestServerTaskControl("terminate")}
+                disabled={Boolean(displayTaskSnapshot?.control_action) || !Boolean(displayTaskSnapshot?.can_terminate)}
+              >
+                {displayTaskStatus === "terminating" ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="size-4 animate-spin" />
+                    终止请求中
+                  </span>
+                ) : (
+                  "终止并保留素材"
+                )}
+              </Button>
+            </div>
+          ) : (
+            <Button
+              type={localTranscribing ? "button" : "submit"}
+              disabled={primaryActionDisabled}
+              className="h-11 w-full"
+              data-guide-id="upload-submit"
+              onClick={localTranscribing ? () => void stopLocalRecognition() : undefined}
+            >
+              {localTranscribing ? (
+                "停止生成"
+              ) : loading ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="size-4 animate-spin" />
+                  {phase === "uploading" ? "上传中" : "生成中"}
+                </span>
+              ) : phase === "success" ? (
+                "已生成完成"
+              ) : phase === "upload_paused" ? (
+                "继续上传当前素材"
+              ) : (
+                "开始生成"
+              )}
+            </Button>
+          )}
 
           {phase === "uploading" ? (
             <Button type="button" variant="outline" className="h-11 w-full" onClick={() => void pauseUpload()}>
