@@ -5,64 +5,79 @@ import { AdminFasterWhisperSettingsTab } from "../admin-faster-whisper-settings/
 import { AdminRatesTab } from "../admin-rates/AdminRatesTab";
 import { AdminSenseVoiceSettingsTab } from "../admin-sensevoice-settings/AdminSenseVoiceSettingsTab";
 import { AdminSubtitleSettingsTab } from "../admin-subtitle-settings/AdminSubtitleSettingsTab";
-import { readStringParam } from "../../shared/lib/adminSearchParams";
-import { CardDescription, CardTitle } from "../../shared/ui";
+import { mergeSearchParams, readStringParam } from "../../shared/lib/adminSearchParams";
+import { CardDescription, CardTitle, Tabs, TabsContent, TabsList, TabsTrigger } from "../../shared/ui";
 
-function scrollIntoSection(sectionId) {
-  const target = document.getElementById(sectionId);
-  if (!target) return;
-  requestAnimationFrame(() => target.scrollIntoView({ behavior: "smooth", block: "start" }));
-}
-
-function resolveSectionId(panel) {
-  if (panel === "strategy") return "admin-models-strategy";
-  if (panel === "sensevoice") return "admin-models-sensevoice";
-  if (panel === "faster-whisper") return "admin-models-faster-whisper";
-  if (panel === "rates") return "admin-models-rates";
-  return "";
-}
+const MODEL_TABS = [
+  {
+    value: "billing",
+    label: "计费与启停",
+    description: "维护 3 个 ASR 模型和 1 个 MT 模型的售价、成本与启停状态。",
+    component: AdminRatesTab,
+  },
+  {
+    value: "strategy",
+    label: "默认策略",
+    description: "统一配置默认 ASR、语义分句和翻译批次策略。",
+    component: AdminSubtitleSettingsTab,
+  },
+  {
+    value: "sensevoice",
+    label: "SenseVoice",
+    description: "调整服务端 SenseVoice 的加载与推理参数集合。",
+    component: AdminSenseVoiceSettingsTab,
+  },
+  {
+    value: "faster-whisper",
+    label: "Faster Whisper",
+    description: "配置 Faster Whisper 的设备、线程、VAD 与状态参数。",
+    component: AdminFasterWhisperSettingsTab,
+  },
+];
 
 export function AdminModelsPage({ apiCall }) {
-  const [searchParams] = useSearchParams();
-  const requestedPanel = readStringParam(searchParams, "panel");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = readStringParam(searchParams, "tab");
+  const validTab = MODEL_TABS.some((tab) => tab.value === requestedTab);
+  const activeTab = validTab ? requestedTab : MODEL_TABS[0].value;
 
   useEffect(() => {
-    const sectionId = resolveSectionId(requestedPanel);
-    if (sectionId) scrollIntoSection(sectionId);
-  }, [requestedPanel]);
+    if (requestedTab === activeTab) return;
+    setSearchParams(mergeSearchParams(searchParams, { tab: activeTab }), { replace: true });
+  }, [activeTab, requestedTab, searchParams, setSearchParams]);
 
   return (
     <div className="space-y-6">
-      <section id="admin-models-rates" className="scroll-mt-24 space-y-3">
-        <div className="space-y-1">
-          <CardTitle className="text-base">模型参数</CardTitle>
-          <CardDescription>维护 3 个 ASR 模型和 1 个 MT 翻译模型的费率、启停状态与并发参数。</CardDescription>
+      <section className="rounded-3xl border bg-card p-6 shadow-sm">
+        <div className="space-y-2">
+          <CardTitle className="text-base">模型管理</CardTitle>
+          <CardDescription>先改常用配置，再在需要时展开高级运行参数；旧地址会统一跳到这里，不再保留重复入口。</CardDescription>
         </div>
-        <AdminRatesTab apiCall={apiCall} />
-      </section>
 
-      <section id="admin-models-strategy" className="scroll-mt-24 space-y-3 border-t pt-6">
-        <div className="space-y-1">
-          <CardTitle className="text-base">默认策略</CardTitle>
-          <CardDescription>统一维护默认 ASR、分句和翻译批次策略。</CardDescription>
-        </div>
-        <AdminSubtitleSettingsTab apiCall={apiCall} />
-      </section>
+        <Tabs value={activeTab} onValueChange={(value) => setSearchParams(mergeSearchParams(searchParams, { tab: value }))}>
+          <TabsList className="h-auto flex-wrap justify-start gap-2">
+            {MODEL_TABS.map((tab) => (
+              <TabsTrigger key={tab.value} value={tab.value}>
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
 
-      <section id="admin-models-sensevoice" className="scroll-mt-24 space-y-3 border-t pt-6">
-        <div className="space-y-1">
-          <CardTitle className="text-base">SenseVoice 参数</CardTitle>
-          <CardDescription>单独维护服务端 SenseVoice 的加载和推理参数。</CardDescription>
-        </div>
-        <AdminSenseVoiceSettingsTab apiCall={apiCall} />
-      </section>
-
-      <section id="admin-models-faster-whisper" className="scroll-mt-24 space-y-3 border-t pt-6">
-        <div className="space-y-1">
-          <CardTitle className="text-base">Faster Whisper 参数</CardTitle>
-          <CardDescription>单独维护服务端 Faster Whisper 的设备、线程和推理参数。</CardDescription>
-        </div>
-        <AdminFasterWhisperSettingsTab apiCall={apiCall} />
+          <div className="mt-6 space-y-6">
+            {MODEL_TABS.map((tab) => {
+              const Component = tab.component;
+              return (
+              <TabsContent key={tab.value} value={tab.value} className="space-y-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">{tab.label}</p>
+                  <p className="text-xs text-muted-foreground">{tab.description}</p>
+                </div>
+                <Component apiCall={apiCall} />
+              </TabsContent>
+              );
+            })}
+          </div>
+        </Tabs>
       </section>
     </div>
   );

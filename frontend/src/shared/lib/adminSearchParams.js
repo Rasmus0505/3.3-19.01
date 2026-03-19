@@ -83,7 +83,7 @@ export const ADMIN_NAV_ITEMS = [
   {
     key: "models",
     label: "模型管理",
-    description: "维护模型计费、默认策略和 SenseVoice 参数。",
+    description: "维护模型计费、默认策略以及 SenseVoice / Faster Whisper 参数。",
     href: "/admin/models",
   },
   {
@@ -100,7 +100,7 @@ export function getAdminNavItemByKey(key) {
 
 export function resolveAdminNavKey(pathname) {
   if (pathname.startsWith("/admin/users") || pathname.startsWith("/admin/logs")) return "users";
-  if (pathname.startsWith("/admin/models") || pathname.startsWith("/admin/rates") || pathname.startsWith("/admin/subtitle-settings")) return "models";
+  if (pathname.startsWith("/admin/models")) return "models";
   if (pathname.startsWith("/admin/redeem")) return "redeem";
   return "health";
 }
