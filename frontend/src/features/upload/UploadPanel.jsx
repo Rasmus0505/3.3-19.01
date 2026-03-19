@@ -8,7 +8,6 @@ import { formatMoneyCents, formatMoneyPerMinute } from "../../shared/lib/money";
 import {
   bindLocalAsrModelDirectory,
   ensureLocalAsrModel,
-  getLocalAsrStorageModeLabel,
   getLocalAsrWorkerAssetPayload,
   localAsrDirectoryBindingSupported,
   LOCAL_ASR_STORAGE_MODE_BROWSER,
@@ -177,17 +176,6 @@ function detectLocalAsrSupport() {
   return { supported: true, reason: "", browserName, webgpuSupported };
 }
 
-function formatLocalModelEstimate(meta, support) {
-  const preferredRuntime = support.webgpuSupported && Number(meta?.sizeEstimateMb?.webgpu || 0) > 0 ? "webgpu" : "wasm";
-  const amountMb = Number(meta?.sizeEstimateMb?.[preferredRuntime] || 0);
-  if (!amountMb) return "待确认";
-  return amountMb >= 1024 ? `${(amountMb / 1024).toFixed(1)}GB` : `${amountMb}MB`;
-}
-
-function buildModelScopeDownloadCommand(modelId, targetDir) {
-  return `modelscope download --model ${modelId} --local_dir ./${targetDir}`;
-}
-
 function simplifyLongAudioWarning(text) {
   return String(text || "")
     .replace(/WASM 模式会明显较慢，更建议改用高速模式。?/g, "当前素材较长，生成会慢一些。")
@@ -195,20 +183,15 @@ function simplifyLongAudioWarning(text) {
 }
 
 function getLocalModelStatusLabel(status) {
-  if (status === "loading") return "下载中";
   if (status === "ready" || status === "cached") return "已下载";
-  if (status === "removing") return "卸载中";
-  if (status === "error") return "不可用";
-  if (status === "unsupported") return "不可用";
   return "未下载";
 }
 
 function getServerModelStatusLabel(modelState) {
   const status = String(modelState?.status || "").trim().toLowerCase();
-  if (Boolean(modelState?.preparing) || ["loading", "preparing", "downloading"].includes(status)) return "准备中";
-  if (Boolean(modelState?.cached) || ["ready", "cached"].includes(status)) return "已就绪";
-  if (status === "error") return "异常";
-  return "未准备";
+  if (Boolean(modelState?.cached) || ["ready", "cached"].includes(status)) return "已下载";
+  if (Boolean(modelState) && modelState.downloadRequired === false && !modelState.preparing && status !== "error") return "已下载";
+  return "未下载";
 }
 
 function isServerModelReady(modelState) {
@@ -661,10 +644,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const selectedRate = getRateByModel(billingRates, selectedAsrModel) || getRateByModel(billingRates, selectedFastModel);
   const estimatedChargeCents = selectedRate ? calculatePointsBySeconds(durationSec || 0, selectedRate.price_per_minute_cents) : 0;
   const likelyInsufficient = Number.isFinite(normalizedBalanceAmountCents) && estimatedChargeCents > 0 && normalizedBalanceAmountCents < estimatedChargeCents;
-  const selectedLocalModelMeta = getLocalModelMeta(selectedBalancedModel);
-  const selectedLocalModelState = localModelStateMap[selectedBalancedModel] || {};
-  const selectedLocalModelDownloaded = ["ready", "cached"].includes(String(selectedLocalModelState.status || ""));
-  const selectedLocalModelStorageLabel = getLocalAsrStorageModeLabel(selectedLocalModelState.storageMode || LOCAL_ASR_STORAGE_MODE_BROWSER);
   const localWorkerReady = Boolean(localWorkerReadyMap.sensevoice);
   const balancedPerformanceWarning = useMemo(
     () => (mode === "balanced" ? buildLocalAsrLongAudioWarning(durationSec, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS) : ""),
@@ -1719,7 +1698,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   async function handleServerModelPrepare(modelKey) {
     setServerBusyModelKey(modelKey);
-    setServerBusyText("正在准备模型");
+    setServerBusyText("正在下载模型");
     updateServerModelState(modelKey, {
       status: "preparing",
       preparing: true,
@@ -1744,20 +1723,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         lastError: message,
       });
       toast.error(message);
-    } finally {
-      setServerBusyModelKey("");
-      setServerBusyText("");
-    }
-  }
-
-  async function handleServerModelReverify(modelKey) {
-    setServerBusyModelKey(modelKey);
-    setServerBusyText("正在检查模型状态");
-    try {
-      const payload = await fetchServerModelStatus(modelKey, { silent: false });
-      if (payload) {
-        toast.success("模型状态已刷新");
-      }
     } finally {
       setServerBusyModelKey("");
       setServerBusyText("");
@@ -1830,23 +1795,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       const message = error instanceof Error && error.message ? error.message : String(error);
       updateLocalModelState(modelKey, { status: "error", progress: null, error: message, message });
       toast.error(`卸载失败: ${message}`);
-    } finally {
-      setLocalBusyModelKey("");
-      setLocalBusyText("");
-    }
-  }
-
-  async function handleLocalModelReverify(modelKey) {
-    setLocalBusyModelKey(modelKey);
-    setLocalBusyText("正在校验模型状态");
-    try {
-      const verification = await verifyLocalAsrModel(modelKey, LOCAL_ASR_ASSET_BASE_URL);
-      applyVerifiedLocalModelState(modelKey, verification, { progress: verification.ready ? 100 : null });
-      toast.success(verification.ready ? "模型校验通过" : verification.message || "模型尚未就绪");
-    } catch (error) {
-      const message = error instanceof Error && error.message ? error.message : String(error);
-      updateLocalModelState(modelKey, { status: "error", progress: null, error: message, message });
-      toast.error(message);
     } finally {
       setLocalBusyModelKey("");
       setLocalBusyText("");
@@ -2349,29 +2297,28 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             {UPLOAD_MODEL_OPTIONS.map((item) => {
               const selected = selectedUploadModel === item.key;
               const isSenseVoice = item.mode === "balanced";
-              const isQwen = item.key === QWEN_MODEL;
               const isFasterWhisper = item.key === FASTER_WHISPER_MODEL;
               const localCardState = localModelStateMap[selectedBalancedModel] || {};
               const localCardDownloaded = ["ready", "cached"].includes(String(localCardState.status || ""));
-              const localCardStorageLabel = getLocalAsrStorageModeLabel(localCardState.storageMode || LOCAL_ASR_STORAGE_MODE_BROWSER);
               const localCardBusy = localBusyModelKey === selectedBalancedModel;
               const localSupportReason = sanitizeUserFacingText(localAsrSupport.reason || "");
+              const localCardError = sanitizeUserFacingText(localCardState.error || "");
+              const localCardHint =
+                localSupportReason ||
+                localCardError ||
+                (localCardBusy ? sanitizeUserFacingText(localBusyText || (localCardDownloaded ? "正在卸载模型" : "正在下载模型")) : "");
               const fasterModelState = serverModelStateMap[item.key] || {};
               const fasterModelReady = isServerModelReady(fasterModelState);
               const fasterModelBusy = serverBusyModelKey === item.key;
               const fasterModelError = sanitizeUserFacingText(fasterModelState.lastError || "");
               const fasterModelMessage = fasterModelBusy
-                ? sanitizeUserFacingText(serverBusyText || "正在准备模型")
-                : sanitizeUserFacingText(
-                    fasterModelError || fasterModelState.message || (fasterModelReady ? "模型已就绪，选择素材后可直接生成。" : "首次使用前请先准备模型。"),
-                  );
-              const senseVoiceDescription = localCardDownloaded ? "模型已就绪，选择素材后可直接生成。" : "首次使用前请先准备模型。";
+                ? sanitizeUserFacingText(serverBusyText || "正在下载模型")
+                : sanitizeUserFacingText(fasterModelError || "");
               const cardStatusLabel = isSenseVoice
                 ? getLocalModelStatusLabel(localCardState.status)
                 : isFasterWhisper
                   ? getServerModelStatusLabel(fasterModelState)
-                  : "无需准备";
-              const cardTag = isSenseVoice ? (localCardDownloaded ? "推荐" : "需准备") : isQwen ? "快速" : "需准备";
+                  : "已下载";
 
               return (
                 <div
@@ -2401,26 +2348,15 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                       <p className="text-sm font-semibold">{item.title}</p>
                       <p className="text-xs text-muted-foreground">{item.subtitle}</p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={selected ? "default" : "outline"}>{cardTag}</Badge>
-                      <Badge variant={cardStatusLabel === "已就绪" || cardStatusLabel === "已下载" ? "default" : cardStatusLabel === "异常" ? "destructive" : "outline"}>
-                        {cardStatusLabel}
-                      </Badge>
-                    </div>
+                    <Badge variant={cardStatusLabel === "已下载" ? "default" : "outline"}>{cardStatusLabel}</Badge>
                   </div>
+                  {isSenseVoice && localCardHint ? <p className={cn("text-xs", localSupportReason || localCardError ? "text-destructive" : "text-muted-foreground")}>{localCardHint}</p> : null}
+                  {isFasterWhisper && fasterModelMessage ? <p className={cn("text-xs", fasterModelError ? "text-destructive" : "text-muted-foreground")}>{fasterModelMessage}</p> : null}
 
-                  <p className="text-xs text-muted-foreground">
-                    {isSenseVoice ? `首次准备约 ${formatLocalModelEstimate(selectedLocalModelMeta, localAsrSupport)}` : item.note || "选择素材后可直接开始。"}
-                  </p>
-
-                  {isSenseVoice ? <p className="text-sm text-muted-foreground">{senseVoiceDescription}</p> : null}
-                  {isSenseVoice && localSupportReason ? <p className="text-xs text-destructive">{localSupportReason}</p> : null}
-                  {isSenseVoice && localCardState.storageSummary ? <p className="text-xs text-muted-foreground">{localCardState.storageSummary}</p> : null}
-                  {isSenseVoice && localCardState.message && !localCardState.error ? <p className="text-xs text-muted-foreground">{localCardState.message}</p> : null}
-                  {isSenseVoice && localCardState.error ? <p className="text-xs text-destructive">{localCardState.error}</p> : null}
-                  {isSenseVoice && localCardBusy && localBusyText ? <p className="text-xs text-muted-foreground">{localBusyText}</p> : null}
-
-                  {isSenseVoice && Number.isFinite(Number(localModelVisualProgressMap[selectedBalancedModel])) ? (
+                  {isSenseVoice &&
+                  localCardBusy &&
+                  String(localCardState.status || "") === "loading" &&
+                  Number.isFinite(Number(localModelVisualProgressMap[selectedBalancedModel])) ? (
                     <div className="space-y-1">
                       <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                         <div
@@ -2432,23 +2368,20 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                     </div>
                   ) : null}
 
-                  {isFasterWhisper ? (
-                    <>
-                      <p className={cn("text-sm", fasterModelError ? "text-destructive" : "text-muted-foreground")}>{fasterModelMessage}</p>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void (fasterModelReady ? handleServerModelReverify(item.key) : handleServerModelPrepare(item.key));
-                          }}
-                          disabled={uploadActionBusy || fasterModelBusy || localTranscribing}
-                        >
-                          {fasterModelBusy ? <Loader2 className="size-4 animate-spin" /> : null}
-                          {fasterModelReady ? "重新检查模型" : "准备模型"}
-                        </Button>
-                      </div>
-                    </>
+                  {isFasterWhisper && !fasterModelReady ? (
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleServerModelPrepare(item.key);
+                        }}
+                        disabled={uploadActionBusy || fasterModelBusy || localTranscribing}
+                      >
+                        {fasterModelBusy ? <Loader2 className="size-4 animate-spin" /> : null}
+                        下载模型
+                      </Button>
+                    </div>
                   ) : null}
 
                   {isSenseVoice ? (
@@ -2457,27 +2390,13 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
-                          void (localCardDownloaded ? handleLocalModelReverify(selectedBalancedModel) : handleLocalModelDownload(selectedBalancedModel));
+                          void (localCardDownloaded ? handleLocalModelRemove(selectedBalancedModel) : handleLocalModelDownload(selectedBalancedModel));
                         }}
                         disabled={!localAsrSupport.supported || !localWorkerReady || uploadActionBusy || localCardBusy}
                       >
-                        {String(localCardState.status || "") === "loading" ? <Loader2 className="size-4 animate-spin" /> : null}
-                        {localCardDownloaded ? "重新检查模型" : "准备模型"}
+                        {localCardBusy ? <Loader2 className="size-4 animate-spin" /> : null}
+                        {localCardDownloaded ? "卸载模型" : "下载模型"}
                       </Button>
-                      {localCardDownloaded ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleLocalModelRemove(selectedBalancedModel);
-                          }}
-                          disabled={!localWorkerReady || uploadActionBusy || localCardBusy}
-                        >
-                          清除模型
-                        </Button>
-                      ) : null}
-                      <Badge variant="secondary">{localCardStorageLabel}</Badge>
                     </div>
                   ) : null}
                 </div>
