@@ -1618,9 +1618,59 @@ def test_single_asr_progress_emits_waiting_text_without_fake_counts(monkeypatch,
     assert progress_events[0]["counters"]["asr_done"] == 0
     assert progress_events[0]["counters"]["asr_estimated"] == 0
     assert any(item["current_text"] == "识别中，已等待 4 秒" for item in progress_events)
-    assert progress_events[-1]["current_text"] == "识别完成 1/1"
+    assert progress_events[-1]["current_text"] == "识别完成"
     assert progress_events[-1]["counters"]["asr_done"] == 1
     assert progress_events[-1]["counters"]["asr_estimated"] == 1
+
+
+def test_single_asr_progress_uses_real_segment_counts(monkeypatch, tmp_path):
+    from app.services import lesson_service as lesson_service_module
+
+    opus_path = tmp_path / "sample.opus"
+    opus_path.write_bytes(b"opus")
+    req_dir = tmp_path / "req"
+    req_dir.mkdir(parents=True, exist_ok=True)
+
+    def fake_transcribe(audio_path, *, model, progress_callback=None, requests_timeout=120):
+        if progress_callback:
+            progress_callback({"segment_done": 1, "segment_total": 3, "elapsed_seconds": 2})
+            progress_callback({"segment_done": 2, "segment_total": 3, "elapsed_seconds": 4})
+        return {
+            "asr_result_json": {
+                "transcripts": [
+                    {
+                        "sentences": [
+                            {"text": "s1", "begin_time": 0, "end_time": 1000},
+                            {"text": "s2", "begin_time": 1000, "end_time": 2000},
+                            {"text": "s3", "begin_time": 2000, "end_time": 3000},
+                        ]
+                    }
+                ]
+            },
+            "usage_seconds": 3,
+            "raw_generate_result": {"segment_count": 3},
+        }
+
+    monkeypatch.setattr(lesson_service_module, "transcribe_audio_file", fake_transcribe)
+
+    progress_events: list[dict] = []
+    result = lesson_service_module.LessonService._transcribe_with_optional_parallel(
+        opus_path=opus_path,
+        req_dir=req_dir,
+        asr_model=QWEN_ASR_MODEL,
+        source_duration_ms=3000,
+        parallel_enabled=False,
+        parallel_threshold_seconds=600,
+        segment_target_seconds=300,
+        max_concurrency=2,
+        progress_callback=lambda payload: progress_events.append(dict(payload)),
+    )
+
+    assert result["progress_counters"]["segment_done"] == 3
+    assert result["progress_counters"]["segment_total"] == 3
+    assert any(item["current_text"] == "识别中 1/3" for item in progress_events)
+    assert any(item["current_text"] == "识别中 2/3" for item in progress_events)
+    assert progress_events[-1]["current_text"] == "识别完成 3/3"
 
 
 def test_transcribe_file_endpoint_with_stubbed_service(test_client, monkeypatch, tmp_path):

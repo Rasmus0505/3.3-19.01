@@ -368,10 +368,34 @@ def _serialize_info(info: Any) -> dict[str, Any]:
 
 
 def transcribe_audio_file_with_faster_whisper(audio_path: str, *, progress_callback=None) -> dict[str, Any]:
+    started = time.monotonic()
     _emit_faster_whisper_progress(progress_callback, {"elapsed_seconds": 0, "segment_done": 0, "segment_total": 0})
 
+    # Keep emitting waiting progress until the first segment arrives.
+    waiting_stop = threading.Event()
+    first_segment_seen = threading.Event()
+
+    def _emit_waiting_progress() -> None:
+        while not waiting_stop.wait(1.0):
+            if first_segment_seen.is_set():
+                return
+            _emit_faster_whisper_progress(
+                progress_callback,
+                {
+                    "elapsed_seconds": max(0, int(round(time.monotonic() - started))),
+                    "segment_done": 0,
+                    "segment_total": 0,
+                },
+            )
+
+    waiting_thread = threading.Thread(
+        target=_emit_waiting_progress,
+        name="faster-whisper-progress-waiting",
+        daemon=True,
+    )
+    waiting_thread.start()
+
     model = _get_or_create_model()
-    started = time.monotonic()
     segments_iter, info = model.transcribe(
         str(audio_path),
         beam_size=5,
@@ -392,48 +416,54 @@ def transcribe_audio_file_with_faster_whisper(audio_path: str, *, progress_callb
         float(getattr(info, "duration", 0) or 0),
     )
 
-    for segment in segments_iter:
-        text = str(getattr(segment, "text", "") or "").strip()
-        begin_ms = _seconds_to_ms(getattr(segment, "start", 0))
-        end_ms = _seconds_to_ms(getattr(segment, "end", 0))
-        last_end_ms = max(last_end_ms, end_ms)
-        if not text or end_ms <= begin_ms:
-            continue
+    try:
+        for segment in segments_iter:
+            text = str(getattr(segment, "text", "") or "").strip()
+            begin_ms = _seconds_to_ms(getattr(segment, "start", 0))
+            end_ms = _seconds_to_ms(getattr(segment, "end", 0))
+            last_end_ms = max(last_end_ms, end_ms)
+            if not text or end_ms <= begin_ms:
+                continue
 
-        segment_done += 1
-        segment_end_seconds = max(0.0, float(getattr(segment, "end", 0) or 0))
-        if segment_end_seconds > 0:
-            span_seconds = max(duration_hint_seconds, segment_end_seconds)
-            estimated_total = int(round(segment_done * span_seconds / segment_end_seconds))
-            segment_total_estimated = max(segment_total_estimated, segment_done, estimated_total)
-        else:
-            segment_total_estimated = max(segment_total_estimated, segment_done)
+            segment_done += 1
+            if segment_done == 1:
+                first_segment_seen.set()
+            segment_end_seconds = max(0.0, float(getattr(segment, "end", 0) or 0))
+            if segment_end_seconds > 0:
+                span_seconds = max(duration_hint_seconds, segment_end_seconds)
+                estimated_total = int(round(segment_done * span_seconds / segment_end_seconds))
+                segment_total_estimated = max(segment_total_estimated, segment_done, estimated_total)
+            else:
+                segment_total_estimated = max(segment_total_estimated, segment_done)
 
-        _emit_faster_whisper_progress(
-            progress_callback,
-            {
-                "elapsed_seconds": max(0, int(round(time.monotonic() - started))),
-                "segment_done": segment_done,
-                "segment_total": segment_total_estimated,
-            },
-        )
+            _emit_faster_whisper_progress(
+                progress_callback,
+                {
+                    "elapsed_seconds": max(0, int(round(time.monotonic() - started))),
+                    "segment_done": segment_done,
+                    "segment_total": segment_total_estimated,
+                },
+            )
 
-        words_payload = []
-        for word in list(getattr(segment, "words", None) or []):
-            payload = _segment_word_payload(word)
-            if payload:
-                words_payload.append(payload)
-                transcript_words.append(payload)
+            words_payload = []
+            for word in list(getattr(segment, "words", None) or []):
+                payload = _segment_word_payload(word)
+                if payload:
+                    words_payload.append(payload)
+                    transcript_words.append(payload)
 
-        sentence_payload: dict[str, Any] = {
-            "text": text,
-            "begin_time": begin_ms,
-            "end_time": end_ms,
-        }
-        if words_payload:
-            sentence_payload["words"] = words_payload
-        transcript_sentences.append(sentence_payload)
-        preview_parts.append(text)
+            sentence_payload: dict[str, Any] = {
+                "text": text,
+                "begin_time": begin_ms,
+                "end_time": end_ms,
+            }
+            if words_payload:
+                sentence_payload["words"] = words_payload
+            transcript_sentences.append(sentence_payload)
+            preview_parts.append(text)
+    finally:
+        waiting_stop.set()
+        waiting_thread.join(timeout=0.2)
 
     duration_seconds = max(
         1,

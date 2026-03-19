@@ -1320,9 +1320,9 @@ class LessonService:
                 stage_status="completed",
                 overall_percent=_progress_percent_by_stage("asr_transcribe", 1.0),
                 current_text=(
-                    f"识别中 {single_segment_total}/{single_segment_total}"
+                    f"识别完成 {single_segment_total}/{single_segment_total}"
                     if single_segment_total > 0
-                    else f"识别完成 {actual_sentence_count}/{actual_sentence_count}"
+                    else "识别完成"
                 ),
                 counters={
                     "asr_done": actual_sentence_count,
@@ -1368,7 +1368,7 @@ class LessonService:
             stage_key="asr_transcribe",
             stage_status="running",
             overall_percent=_progress_percent_by_stage("asr_transcribe", 0.1),
-            current_text=f"ASR分段 0/{total_segments}",
+            current_text=f"识别分段 0/{total_segments}",
             counters={
                 "asr_done": 0,
                 "asr_estimated": total_segments,
@@ -1501,7 +1501,7 @@ class LessonService:
             stage_key="asr_transcribe",
             stage_status="completed",
             overall_percent=_progress_percent_by_stage("asr_transcribe", 1.0),
-            current_text=f"识别分段 {total_segments}/{total_segments}",
+            current_text=f"识别完成 {total_segments}/{total_segments}",
             counters={
                 "asr_done": total_segments,
                 "asr_estimated": total_segments,
