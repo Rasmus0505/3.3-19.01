@@ -484,13 +484,13 @@ export function LessonList({
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-foreground">快捷键配置</p>
               </div>
-              <div className="space-y-2">
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                 {SHORTCUT_ACTIONS.map((action) => {
                   const recording = recordingShortcutActionId === action.id;
                   return (
-                    <div key={action.id} className="rounded-2xl border bg-background/80 p-3">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0 flex-1 space-y-1">
+                    <div key={action.id} className="flex h-full flex-col rounded-2xl border bg-background/80 p-3">
+                      <div className="flex flex-1 flex-col gap-3">
+                        <div className="min-w-0 space-y-1">
                           <p className="text-sm font-semibold text-foreground">{action.label}</p>
                           <p className="text-sm text-muted-foreground break-all">{getShortcutLabel(learningSettings.shortcuts[action.id])}</p>
                         </div>
@@ -498,7 +498,7 @@ export function LessonList({
                           type="button"
                           size="sm"
                           variant={recording ? "default" : "outline"}
-                          className="shrink-0"
+                          className="mt-auto self-start"
                           onClick={() => {
                             setSettingsError("");
                             setRecordingShortcutActionId((current) => (current === action.id ? "" : action.id));
