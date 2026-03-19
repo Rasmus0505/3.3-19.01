@@ -31,6 +31,8 @@ class BillingRateItem(BaseModel):
     model_name: str
     display_name: str = ""
     price_per_minute_cents: int
+    points_per_minute: int
+    points_per_1k_tokens: int
     cost_per_minute_cents: int
     gross_profit_per_minute_cents: int
     billing_unit: str

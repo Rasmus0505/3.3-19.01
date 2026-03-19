@@ -34,7 +34,7 @@ export function AdminModelsPage({ apiCall }) {
       <section id="admin-models-rates" className="scroll-mt-24 space-y-3">
         <div className="space-y-1">
           <CardTitle className="text-base">模型参数</CardTitle>
-          <CardDescription>保留现有模型费率、启停状态和并发参数。</CardDescription>
+          <CardDescription>维护 3 个 ASR 模型和 1 个 MT 翻译模型的费率、启停状态与并发参数。</CardDescription>
         </div>
         <AdminRatesTab apiCall={apiCall} />
       </section>

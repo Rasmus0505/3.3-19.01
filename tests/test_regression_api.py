@@ -1229,6 +1229,7 @@ def test_admin_billing_rates_endpoint_handles_legacy_schema_defaults(tmp_path):
     db_file = tmp_path / "legacy_admin_rates.db"
     engine = create_database_engine(f"sqlite:///{db_file}")
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=Session, future=True)
+    User.__table__.create(bind=engine, checkfirst=True)
 
     with engine.begin() as conn:
         conn.execute(
@@ -1809,6 +1810,19 @@ def test_wallet_and_admin_endpoints(test_client):
                 max_concurrency=1,
             )
         )
+        seed_dirty.merge(
+            BillingModelRate(
+                model_name="local-sensevoice-small",
+                points_per_minute=130,
+                points_per_1k_tokens=0,
+                billing_unit="minute",
+                is_active=True,
+                parallel_enabled=False,
+                parallel_threshold_seconds=600,
+                segment_seconds=300,
+                max_concurrency=1,
+            )
+        )
         seed_dirty.commit()
     finally:
         seed_dirty.close()
@@ -1820,6 +1834,7 @@ def test_wallet_and_admin_endpoints(test_client):
     admin_model_names = [str(item.get("model_name") or "") for item in rates.json().get("rates", [])]
     admin_mt_models = [name for name in admin_model_names if name.startswith("qwen-mt-")]
     assert admin_mt_models == ["qwen-mt-flash"]
+    assert "local-sensevoice-small" not in admin_model_names
 
     users = client.get("/api/admin/users", headers=headers)
     assert users.status_code == 200
@@ -1845,6 +1860,7 @@ def test_wallet_and_admin_endpoints(test_client):
     verify_clean = session_factory()
     try:
         assert verify_clean.get(BillingModelRate, "qwen-mt-custom") is None
+        assert verify_clean.get(BillingModelRate, "local-sensevoice-small") is None
     finally:
         verify_clean.close()
 
@@ -2047,6 +2063,57 @@ def test_admin_update_billing_rate_rejects_non_flash_mt_model(test_client):
     assert resp.status_code == 400
     payload = resp.json()
     assert payload["error_code"] == "MT_MODEL_DEPRECATED"
+
+
+def test_admin_update_billing_rate_accepts_mt_flash_token_pricing(test_client):
+    client, _, monkeypatch = test_client
+    token = _register_and_login(client, email="billing-flash-admin@example.com")
+    monkeypatch.setenv("ADMIN_EMAILS", "billing-flash-admin@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.put(
+        "/api/admin/billing-rates/qwen-mt-flash",
+        headers=headers,
+        json={
+            "points_per_1k_tokens": 19,
+            "billing_unit": "1k_tokens",
+            "is_active": True,
+            "parallel_enabled": False,
+            "parallel_threshold_seconds": 600,
+            "segment_seconds": 300,
+            "max_concurrency": 1,
+        },
+    )
+    assert resp.status_code == 200
+    rate = resp.json()["rates"][0]
+    assert rate["model_name"] == "qwen-mt-flash"
+    assert rate["billing_unit"] == "1k_tokens"
+    assert rate["points_per_1k_tokens"] == 19
+    assert rate["points_per_minute"] == 0
+
+
+def test_admin_update_billing_rate_rejects_local_browser_model(test_client):
+    client, _, monkeypatch = test_client
+    token = _register_and_login(client, email="billing-local-admin@example.com")
+    monkeypatch.setenv("ADMIN_EMAILS", "billing-local-admin@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.put(
+        "/api/admin/billing-rates/local-sensevoice-small",
+        headers=headers,
+        json={
+            "points_per_minute": 130,
+            "billing_unit": "minute",
+            "is_active": True,
+            "parallel_enabled": False,
+            "parallel_threshold_seconds": 600,
+            "segment_seconds": 300,
+            "max_concurrency": 1,
+        },
+    )
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["error_code"] == "BILLING_RATE_NOT_MANAGEABLE"
 
 
 def test_admin_subtitle_settings_roundtrip(test_client):

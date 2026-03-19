@@ -64,6 +64,17 @@ SENSEVOICE_CLOUD_MODEL = "sensevoice-small"
 FAST_CLOUD_MODEL = "qwen3-asr-flash-filetrans"
 FASTER_WHISPER_SERVER_MODEL = "faster-whisper-medium"
 LOCAL_SENSEVOICE_SMALL_MODEL = "local-sensevoice-small"
+ADMIN_BILLING_MODEL_ORDER: tuple[str, ...] = (
+    SENSEVOICE_CLOUD_MODEL,
+    FAST_CLOUD_MODEL,
+    FASTER_WHISPER_SERVER_MODEL,
+    MT_FLASH_MODEL,
+)
+PUBLIC_BILLING_MODEL_ORDER: tuple[str, ...] = (
+    SENSEVOICE_CLOUD_MODEL,
+    FAST_CLOUD_MODEL,
+    FASTER_WHISPER_SERVER_MODEL,
+)
 LOCAL_BROWSER_ASR_MODELS: tuple[str, ...] = (
     LOCAL_SENSEVOICE_SMALL_MODEL,
 )
@@ -93,17 +104,6 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
     },
     {
         "model_name": FASTER_WHISPER_SERVER_MODEL,
-        "points_per_minute": 130,
-        "points_per_1k_tokens": 0,
-        "cost_per_minute_cents": 0,
-        "billing_unit": "minute",
-        "parallel_enabled": False,
-        "parallel_threshold_seconds": 600,
-        "segment_seconds": 300,
-        "max_concurrency": 1,
-    },
-    {
-        "model_name": LOCAL_SENSEVOICE_SMALL_MODEL,
         "points_per_minute": 130,
         "points_per_1k_tokens": 0,
         "cost_per_minute_cents": 0,
@@ -611,6 +611,48 @@ def _cleanup_non_flash_mt_rates(db: Session, *, ensure_flash: bool) -> tuple[int
     return removed_count, seeded_flash
 
 
+def _cleanup_removed_admin_rates(db: Session) -> int:
+    removed_rows = list(
+        db.scalars(
+            select(BillingModelRate).where(
+                BillingModelRate.model_name.in_(
+                    [
+                        LOCAL_SENSEVOICE_SMALL_MODEL,
+                    ]
+                )
+            )
+        ).all()
+    )
+    removed_count = len(removed_rows)
+    for row in removed_rows:
+        db.delete(row)
+    if removed_count > 0:
+        logger.warning("[DEBUG] billing_rates.removed_admin_models_cleanup removed=%s", removed_count)
+    return removed_count
+
+
+def _sort_rates_by_model_order(rows: Iterable[BillingModelRate], model_order: tuple[str, ...]) -> list[BillingModelRate]:
+    order_map = {model_name: index for index, model_name in enumerate(model_order)}
+    return sorted(
+        rows,
+        key=lambda item: (
+            order_map.get(str(getattr(item, "model_name", "") or "").strip(), len(order_map)),
+            str(getattr(item, "model_name", "") or "").strip(),
+        ),
+    )
+
+
+def list_admin_rates(db: Session) -> list[BillingModelRate]:
+    rows = list(query_billing_rates(db))
+    admin_model_names = set(ADMIN_BILLING_MODEL_ORDER)
+    filtered_rows = [
+        row
+        for row in rows
+        if str(getattr(row, "model_name", "") or "").strip() in admin_model_names
+    ]
+    return _sort_rates_by_model_order(filtered_rows, ADMIN_BILLING_MODEL_ORDER)
+
+
 def enforce_mt_flash_only_rates(db: Session) -> bool:
     removed_count, seeded_flash = _cleanup_non_flash_mt_rates(db, ensure_flash=True)
     changed = removed_count > 0 or seeded_flash
@@ -636,6 +678,9 @@ def ensure_default_billing_rates(
     legacy_para = db.get(BillingModelRate, "paraformer-v2")
     if legacy_para is not None:
         db.delete(legacy_para)
+        changed = True
+    removed_admin_count = _cleanup_removed_admin_rates(db)
+    if removed_admin_count > 0:
         changed = True
     removed_count, seeded_flash = _cleanup_non_flash_mt_rates(db, ensure_flash=False)
     if removed_count > 0 or seeded_flash:
@@ -985,7 +1030,14 @@ def get_model_rate(db: Session, model_name: str, *, require_active: bool = True)
 
 def list_public_rates(db: Session) -> list[BillingModelRate]:
     rows = list(query_billing_rates(db, active_only=True))
-    return [row for row in rows if str(getattr(row, "billing_unit", "minute") or "minute") == "minute"]
+    public_model_names = set(PUBLIC_BILLING_MODEL_ORDER)
+    filtered_rows = [
+        row
+        for row in rows
+        if str(getattr(row, "model_name", "") or "").strip() in public_model_names
+        and str(getattr(row, "billing_unit", "minute") or "minute") == "minute"
+    ]
+    return _sort_rates_by_model_order(filtered_rows, PUBLIC_BILLING_MODEL_ORDER)
 
 
 def calculate_amount_by_duration_ms(duration_ms: int, price_per_minute_cents: int) -> int:

@@ -156,6 +156,8 @@ def to_rate_item(rate: BillingModelRate) -> BillingRateItem:
         model_name=rate.model_name,
         display_name=display_name,
         price_per_minute_cents=int(getattr(rate, "price_per_minute_cents", 0) or 0),
+        points_per_minute=int(getattr(rate, "price_per_minute_cents", 0) or 0),
+        points_per_1k_tokens=int(getattr(rate, "points_per_1k_tokens", 0) or 0),
         cost_per_minute_cents=int(getattr(rate, "cost_per_minute_cents", 0) or 0),
         gross_profit_per_minute_cents=int(getattr(rate, "gross_profit_per_minute_cents", 0) or 0),
         billing_unit=str(getattr(rate, "billing_unit", "minute") or "minute"),
