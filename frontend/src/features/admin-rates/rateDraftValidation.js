@@ -1,11 +1,21 @@
-export const RATE_INTEGER_CENTS_MESSAGE = "分钟售价和分钟成本按分填写，必须是非负整数；例如 1 表示 ¥0.01。";
+export const RATE_INTEGER_CENTS_MESSAGE = "费率字段必须填写为非负整数。";
 
 function isNonNegativeInteger(value) {
   return Number.isInteger(value) && value >= 0;
 }
 
-export function getInvalidMinuteCentsFieldLabels(draft) {
+function isTokenBillingDraft(draft) {
+  return String(draft?.billing_unit || "minute") === "1k_tokens";
+}
+
+export function getInvalidRateFieldLabels(draft) {
   const invalidLabels = [];
+  if (isTokenBillingDraft(draft)) {
+    if (!isNonNegativeInteger(Number(draft?.points_per_1k_tokens ?? 0))) {
+      invalidLabels.push("售价/1k Tokens");
+    }
+    return invalidLabels;
+  }
   if (!isNonNegativeInteger(Number(draft?.price_per_minute_cents ?? 0))) {
     invalidLabels.push("售价/分钟");
   }
@@ -16,7 +26,7 @@ export function getInvalidMinuteCentsFieldLabels(draft) {
 }
 
 export function getRateDraftValidationMessage(draft) {
-  const invalidLabels = getInvalidMinuteCentsFieldLabels(draft);
+  const invalidLabels = getInvalidRateFieldLabels(draft);
   if (!invalidLabels.length) {
     return "";
   }

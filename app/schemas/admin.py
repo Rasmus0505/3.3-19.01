@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.billing import BillingRateItem
 
@@ -101,14 +101,27 @@ class AdminWalletLogsResponse(BaseModel):
 class AdminBillingRateUpdateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    price_per_minute_cents: int = Field(ge=0, validation_alias=AliasChoices("price_per_minute_cents", "points_per_minute"))
-    cost_per_minute_cents: int = Field(ge=0, validation_alias=AliasChoices("cost_per_minute_cents"))
+    price_per_minute_cents: int = Field(default=0, ge=0)
+    points_per_1k_tokens: int = Field(default=0, ge=0)
+    cost_per_minute_cents: int = Field(default=0, ge=0)
     billing_unit: str = Field(default="minute", min_length=1, max_length=32)
     is_active: bool
     parallel_enabled: bool
     parallel_threshold_seconds: int = Field(gt=0, le=24 * 60 * 60)
     segment_seconds: int = Field(gt=0, le=2 * 60 * 60)
     max_concurrency: int = Field(gt=0, le=64)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_rate_fields(cls, value):
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        if "price_per_minute_cents" not in payload and "points_per_minute" in payload:
+            payload["price_per_minute_cents"] = payload.get("points_per_minute")
+        if "points_per_1k_tokens" not in payload and "points_per_1k_tokens_cents" in payload:
+            payload["points_per_1k_tokens"] = payload.get("points_per_1k_tokens_cents")
+        return payload
 
 
 class AdminBillingRatesResponse(BaseModel):

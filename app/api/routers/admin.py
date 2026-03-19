@@ -26,7 +26,6 @@ from app.repositories.admin import (
     list_redeem_codes,
     list_unredeemed_codes_for_export,
 )
-from app.repositories.billing_rates import list_billing_rates
 from app.repositories.wallet_ledger import list_translation_request_rows, list_wallet_ledger_rows
 from app.schemas import (
     AdminBillingRateUpdateRequest,
@@ -83,6 +82,7 @@ from app.services.billing_service import (
     enforce_mt_flash_only_rates,
     ensure_default_billing_rates,
     get_subtitle_settings,
+    list_admin_rates,
     manual_adjust,
     set_redeem_batch_status,
     update_redeem_code_status,
@@ -585,7 +585,7 @@ def admin_translation_logs(
 def admin_billing_rates(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
     ensure_default_billing_rates(db)
     enforce_mt_flash_only_rates(db)
-    rates = list_billing_rates(db)
+    rates = list_admin_rates(db)
     return AdminBillingRatesResponse(ok=True, rates=[to_rate_item(item) for item in rates])
 
 
@@ -603,17 +603,31 @@ def admin_update_billing_rate(
     normalized_model_name = (model_name or "").strip().lower()
     if normalized_model_name.startswith("qwen-mt-") and normalized_model_name != "qwen-mt-flash":
         return error_response(400, "MT_MODEL_DEPRECATED", "翻译模型仅支持 qwen-mt-flash", model_name)
+    ensure_default_billing_rates(db)
+    enforce_mt_flash_only_rates(db)
+    managed_model_names = {
+        str(item.model_name or "").strip().lower()
+        for item in list_admin_rates(db)
+    }
+    if normalized_model_name not in managed_model_names:
+        return error_response(400, "BILLING_RATE_NOT_MANAGEABLE", "该模型不在后台可维护范围内", model_name)
     rate = db.get(BillingModelRate, model_name)
     if not rate:
         return error_response(404, "BILLING_RATE_NOT_FOUND", "计费模型不存在", model_name)
     if payload.price_per_minute_cents < 0 or payload.cost_per_minute_cents < 0:
         return error_response(400, "INVALID_BILLING_RATE", "分钟售价和分钟成本不能为负数")
+    if payload.points_per_1k_tokens < 0:
+        return error_response(400, "INVALID_BILLING_RATE", "1k Tokens 费率不能为负数")
     normalized_unit = payload.billing_unit.strip().lower()
     if normalized_unit not in {"minute", "1k_tokens"}:
         return error_response(400, "INVALID_BILLING_UNIT", "计费单位仅支持 minute 或 1k_tokens", payload.billing_unit)
-    rate.price_per_minute_cents = payload.price_per_minute_cents
-    rate.cost_per_minute_cents = payload.cost_per_minute_cents
-    rate.billing_unit = normalized_unit
+    expected_unit = "1k_tokens" if normalized_model_name == "qwen-mt-flash" else "minute"
+    if normalized_unit != expected_unit:
+        return error_response(400, "INVALID_BILLING_UNIT", f"模型 {model_name} 仅支持 {expected_unit} 计费", payload.billing_unit)
+    rate.price_per_minute_cents = payload.price_per_minute_cents if expected_unit == "minute" else 0
+    rate.points_per_1k_tokens = payload.points_per_1k_tokens if expected_unit == "1k_tokens" else 0
+    rate.cost_per_minute_cents = payload.cost_per_minute_cents if expected_unit == "minute" else 0
+    rate.billing_unit = expected_unit
     rate.is_active = payload.is_active
     rate.parallel_enabled = payload.parallel_enabled
     rate.parallel_threshold_seconds = payload.parallel_threshold_seconds
@@ -672,7 +686,7 @@ def admin_update_subtitle_settings(
     normalized_default_asr_model = payload.default_asr_model.strip() or str(getattr(settings, "default_asr_model", "") or LESSON_DEFAULT_ASR_MODEL)
     available_asr_models = {
         str(item.model_name or "").strip()
-        for item in list_billing_rates(db)
+        for item in list_admin_rates(db)
         if str(getattr(item, "billing_unit", "minute") or "minute") == "minute"
     }
     if normalized_default_asr_model not in available_asr_models:
