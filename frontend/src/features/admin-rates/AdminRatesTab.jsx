@@ -216,7 +216,7 @@ export function AdminRatesTab({ apiCall }) {
           <Settings2 className="size-4" />
           计费配置
         </CardTitle>
-        <CardDescription>这里只维护 3 个 ASR 模型和 1 个 MT 翻译模型，不包含浏览器本地试玩模型。</CardDescription>
+        <CardDescription>这里只维护 3 个 ASR 模型和 1 个 MT 翻译模型（如 qwen-mt-flash），MT 行只使用 Token 计费字段，其他并发配置对它无效。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {dirtyModels.length > 0 ? (
@@ -350,9 +350,13 @@ export function AdminRatesTab({ apiCall }) {
                       <div className="flex items-center gap-2">
                         <Switch
                           checked={Boolean(draft.parallel_enabled)}
-                          onCheckedChange={(checked) => updateDraft(item.model_name, { parallel_enabled: checked })}
+                          onCheckedChange={(checked) => {
+                            if (tokenBilling) return;
+                            updateDraft(item.model_name, { parallel_enabled: checked });
+                          }}
+                          disabled={tokenBilling}
                         />
-                        <span className="text-xs text-muted-foreground">{draft.parallel_enabled ? "启用" : "关闭"}</span>
+                        <span className="text-xs text-muted-foreground">{tokenBilling ? "MT 模型忽略" : draft.parallel_enabled ? "启用" : "关闭"}</span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -360,27 +364,42 @@ export function AdminRatesTab({ apiCall }) {
                         type="number"
                         min={1}
                         value={draft.parallel_threshold_seconds}
-                        onChange={(e) => updateDraft(item.model_name, { parallel_threshold_seconds: Number(e.target.value || 1) })}
+                        onChange={(e) => {
+                          if (tokenBilling) return;
+                          updateDraft(item.model_name, { parallel_threshold_seconds: Number(e.target.value || 1) });
+                        }}
                         className="max-w-[150px]"
+                        disabled={tokenBilling}
                       />
+                      {tokenBilling ? <p className="text-xs text-muted-foreground mt-1">仅 ASR 有效</p> : null}
                     </TableCell>
                     <TableCell>
                       <Input
                         type="number"
                         min={1}
                         value={draft.segment_seconds}
-                        onChange={(e) => updateDraft(item.model_name, { segment_seconds: Number(e.target.value || 1) })}
+                        onChange={(e) => {
+                          if (tokenBilling) return;
+                          updateDraft(item.model_name, { segment_seconds: Number(e.target.value || 1) });
+                        }}
                         className="max-w-[150px]"
+                        disabled={tokenBilling}
                       />
+                      {tokenBilling ? <p className="text-xs text-muted-foreground mt-1">仅 ASR 有效</p> : null}
                     </TableCell>
                     <TableCell>
                       <Input
                         type="number"
                         min={1}
                         value={draft.max_concurrency}
-                        onChange={(e) => updateDraft(item.model_name, { max_concurrency: Number(e.target.value || 1) })}
+                        onChange={(e) => {
+                          if (tokenBilling) return;
+                          updateDraft(item.model_name, { max_concurrency: Number(e.target.value || 1) });
+                        }}
                         className="max-w-[140px]"
+                        disabled={tokenBilling}
                       />
+                      {tokenBilling ? <p className="text-xs text-muted-foreground mt-1">仅 ASR 有效</p> : null}
                     </TableCell>
                     <TableCell>{formatDateTimeBeijing(item.updated_at)}</TableCell>
                     <TableCell>

@@ -18,14 +18,28 @@ const defaultDraft = {
   condition_on_previous_text: false,
 };
 
-const FIELD_META = [
-  { key: "device", label: "运行设备", hint: "device（推荐 auto；本机有 NVIDIA GPU 时会优先吃 GPU，没有则自动回退 CPU）", type: "text" },
-  { key: "compute_type", label: "计算精度", hint: "compute_type（留空时自动选 GPU= float16、CPU= int8；仅在你明确要覆盖默认策略时填写）", type: "text" },
-  { key: "cpu_threads", label: "CPU 线程数", hint: "cpu_threads（仅 CPU 跑模型时主要影响吞吐；太高会和其他任务抢占资源）", type: "number" },
-  { key: "num_workers", label: "模型并发 worker", hint: "num_workers（允许同一个 Whisper 模型并行处理多个请求；越大越吃内存）", type: "number" },
-  { key: "beam_size", label: "Beam Size", hint: "beam_size（越大通常越准但越慢；本次默认保守值 5）", type: "number" },
-  { key: "vad_filter", label: "启用 VAD", hint: "vad_filter（识别前先做语音活动检测，通常更稳）", type: "bool" },
-  { key: "condition_on_previous_text", label: "使用上文条件", hint: "condition_on_previous_text（开启后会更依赖上一段文本，长音频并发时通常建议关闭）", type: "bool" },
+const FIELD_GROUPS = [
+  {
+    id: "common",
+    title: "常用参数",
+    description: "关键设备、 CPU/worker 与 beam size 参数，默认即可满足大多数场景。",
+    fields: [
+      { key: "device", label: "运行设备", hint: "device（推荐 auto；强制指定时请写 cuda:0 / cpu）", type: "text" },
+      { key: "cpu_threads", label: "CPU 线程数", hint: "cpu_threads（仅 CPU 推理时生效；过高会抢占同机资源）", type: "number" },
+      { key: "num_workers", label: "模型并发 worker", hint: "num_workers（同一模型的并发请求数；越高越吃内存）", type: "number" },
+      { key: "beam_size", label: "Beam Size", hint: "beam_size（越大越准越慢；推荐值 5）", type: "number" },
+    ],
+  },
+  {
+    id: "advanced",
+    title: "高级/危险设置",
+    description: "这些参数影响底层推理引擎，建议在有明确问题或要调优时才展开。",
+    fields: [
+      { key: "compute_type", label: "计算精度", hint: "compute_type（空值自动选择：GPU= float16 / CPU= int8；覆盖时请与设备匹配）", type: "text" },
+      { key: "vad_filter", label: "启用 VAD", hint: "vad_filter（开启则先做 VAD，可能减速但更稳；保持默认即可）", type: "bool" },
+      { key: "condition_on_previous_text", label: "使用上文条件", hint: "condition_on_previous_text（开启后上下文依赖更强，长音频建议关闭）", type: "bool" },
+    ],
+  },
 ];
 
 function normalizeDraft(source) {
@@ -56,6 +70,34 @@ export function AdminFasterWhisperSettingsTab({ apiCall }) {
   const { error, clearError, captureError } = useErrorHandler();
 
   const dirty = useMemo(() => !draftsEqual(draft, loadedSettings), [draft, loadedSettings]);
+
+  function renderField(field) {
+    const value = draft[field.key];
+    return (
+      <div key={field.key} className="rounded-2xl border bg-muted/20 p-4">
+        <div className="space-y-1">
+          <p className="text-sm font-medium">{field.label}</p>
+          <p className="text-xs text-muted-foreground">{field.hint}</p>
+        </div>
+        <div className="mt-3">
+          {field.type === "bool" ? (
+            <Switch checked={Boolean(value)} onCheckedChange={(checked) => setDraft((prev) => ({ ...prev, [field.key]: checked }))} />
+          ) : (
+            <Input
+              type={field.type === "number" ? "number" : "text"}
+              value={value}
+              onChange={(event) =>
+                setDraft((prev) => ({
+                  ...prev,
+                  [field.key]: field.type === "number" ? Number(event.target.value || 0) : event.target.value,
+                }))
+              }
+            />
+          )}
+        </div>
+      </div>
+    );
+  }
 
   async function loadSettings() {
     setLoading(true);
@@ -207,32 +249,30 @@ export function AdminFasterWhisperSettingsTab({ apiCall }) {
             ))}
           </div>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2">
-            {FIELD_META.map((field) => (
-              <div key={field.key} className="rounded-2xl border bg-muted/20 p-4">
+          <>
+            {FIELD_GROUPS.map((group) => (
+              <div key={group.id} className="space-y-3">
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">{field.label}</p>
-                  <p className="text-xs text-muted-foreground">{field.hint}</p>
+                  <p className="text-sm font-medium">{group.title}</p>
+                  <p className="text-xs text-muted-foreground">{group.description}</p>
                 </div>
-                <div className="mt-3">
-                  {field.type === "bool" ? (
-                    <Switch checked={Boolean(draft[field.key])} onCheckedChange={(checked) => setDraft((prev) => ({ ...prev, [field.key]: checked }))} />
-                  ) : (
-                    <Input
-                      type={field.type === "number" ? "number" : "text"}
-                      value={draft[field.key]}
-                      onChange={(event) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          [field.key]: field.type === "number" ? Number(event.target.value || 0) : event.target.value,
-                        }))
-                      }
-                    />
-                  )}
-                </div>
+                {group.id === "advanced" ? (
+                  <details className="rounded-2xl border border-dashed bg-muted/10" open={false}>
+                    <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-muted-foreground">
+                      高级 / 危险设置（默认折叠）
+                    </summary>
+                    <div className="grid gap-3 p-4 md:grid-cols-2">
+                      {group.fields.map((field) => renderField(field))}
+                    </div>
+                  </details>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {group.fields.map((field) => renderField(field))}
+                  </div>
+                )}
               </div>
             ))}
-          </div>
+          </>
         )}
 
         {rollbackCandidate ? (
