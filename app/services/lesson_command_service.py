@@ -11,7 +11,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, UPLOAD_MAX_BYTES
-from app.models import Lesson, WalletLedger
+from app.models import Lesson, LessonGenerationTask, WalletLedger
 from app.repositories.admin_console import invalidate_admin_overview_cache, invalidate_admin_user_activity_summary_cache
 from app.repositories.lessons import update_lesson_title_for_user
 from app.services.asr_dashscope import AsrError
@@ -393,6 +393,11 @@ def rename_lesson_for_user(*, db: Session, lesson_id: int, user_id: int, title: 
 
 def delete_lesson_for_user(*, db: Session, lesson: Lesson) -> None:
     lesson_dir = BASE_DATA_DIR / f"lesson_{lesson.id}"
+    detach_task_result = db.execute(
+        update(LessonGenerationTask).where(LessonGenerationTask.lesson_id == lesson.id).values(lesson_id=None)
+    )
+    detached_task_count = detach_task_result.rowcount if detach_task_result.rowcount is not None and detach_task_result.rowcount > 0 else 0
+    logger.info("[DEBUG] lessons.delete.detach_generation_tasks lesson_id=%s detached_task_count=%s", lesson.id, detached_task_count)
     db.execute(update(WalletLedger).where(WalletLedger.lesson_id == lesson.id).values(lesson_id=None))
     db.delete(lesson)
     db.commit()

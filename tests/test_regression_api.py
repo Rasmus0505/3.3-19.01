@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select, text
+from sqlalchemy import event, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps.auth import get_admin_user
@@ -2378,6 +2378,101 @@ def test_delete_lesson_clears_wallet_ledger_reference(test_client):
         assert ledger_after.lesson_id is None
     finally:
         verify.close()
+
+
+def test_delete_lesson_clears_generation_task_reference_under_sqlite_foreign_keys(tmp_path):
+    clear_query_caches()
+    db_file = tmp_path / "delete_lesson_task_fk.db"
+    engine = create_database_engine(f"sqlite:///{db_file}")
+
+    @event.listens_for(engine, "connect")
+    def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=Session, future=True)
+    Base.metadata.create_all(bind=engine)
+
+    seed = TestingSessionLocal()
+    try:
+        ensure_default_billing_rates(seed)
+    finally:
+        seed.close()
+
+    app = create_app(enable_lifespan=False)
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    with TestClient(app) as client:
+        token = _register_and_login(client, email="delete-task-owner@example.com")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        session = TestingSessionLocal()
+        try:
+            owner = session.query(User).filter(User.email == "delete-task-owner@example.com").one()
+            lesson = Lesson(
+                user_id=owner.id,
+                title="task linked lesson",
+                source_filename="task.mp4",
+                asr_model="qwen3-asr-flash-filetrans",
+                duration_ms=2000,
+                media_storage="client_indexeddb",
+                source_duration_ms=2000,
+                status="ready",
+            )
+            session.add(lesson)
+            session.flush()
+
+            task = LessonGenerationTask(
+                task_id="delete-lesson-linked-task",
+                owner_user_id=owner.id,
+                lesson_id=lesson.id,
+                source_filename="task.mp4",
+                asr_model="qwen3-asr-flash-filetrans",
+                semantic_split_enabled=False,
+                status="succeeded",
+                overall_percent=100,
+                current_text="done",
+                stages_json=[],
+                counters_json={},
+                work_dir="tmp/task",
+                source_path="tmp/task/source.mp4",
+                artifacts_json={},
+            )
+            session.add(task)
+            session.flush()
+            lesson_id = lesson.id
+            task_row_id = task.id
+            session.commit()
+        finally:
+            session.close()
+
+        delete_ok = client.delete(f"/api/lessons/{lesson_id}", headers=headers)
+        assert delete_ok.status_code == 200
+        assert delete_ok.json()["ok"] is True
+        assert delete_ok.json()["lesson_id"] == lesson_id
+
+        health_resp = client.get("/health")
+        assert health_resp.status_code == 200
+
+        verify = TestingSessionLocal()
+        try:
+            task_after = verify.query(LessonGenerationTask).filter(LessonGenerationTask.id == task_row_id).one()
+            assert task_after.lesson_id is None
+            assert verify.get(Lesson, lesson_id) is None
+        finally:
+            verify.close()
+
+    clear_query_caches()
+    engine.dispose()
 
 
 def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch, tmp_path):
