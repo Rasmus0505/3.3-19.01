@@ -24,9 +24,13 @@ from app.services.lesson_task_manager import (
     create_task,
     ensure_lesson_task_storage_ready,
     get_task,
+    get_task_control_action,
     mark_task_failed,
+    mark_task_paused,
     mark_task_succeeded,
+    mark_task_terminated,
     patch_task_artifacts,
+    request_task_control,
     reset_failed_task_for_restart,
     reset_task_for_resume,
     update_task_progress,
@@ -37,6 +41,14 @@ from app.services.media import MediaError, cleanup_dir, save_upload_file_stream,
 logger = logging.getLogger(__name__)
 
 
+class LessonTaskPauseRequested(RuntimeError):
+    pass
+
+
+class LessonTaskTerminateRequested(RuntimeError):
+    pass
+
+
 def build_lesson_task_session_factory(bind) -> sessionmaker[Session]:
     return sessionmaker(autocommit=False, autoflush=False, bind=bind, class_=Session, future=True)
 
@@ -45,6 +57,14 @@ def invalidate_lesson_related_queries(user_id: int) -> None:
     invalidate_lesson_catalog_cache(user_id)
     invalidate_admin_overview_cache()
     invalidate_admin_user_activity_summary_cache(user_id)
+
+
+def _raise_if_task_control_requested(task_id: str, *, session_factory: sessionmaker[Session]) -> None:
+    action = get_task_control_action(task_id, session_factory=session_factory)
+    if action == "pause":
+        raise LessonTaskPauseRequested("pause requested")
+    if action == "terminate":
+        raise LessonTaskTerminateRequested("terminate requested")
 
 
 def run_lesson_generation_task(
@@ -76,8 +96,10 @@ def run_lesson_generation_task(
                 asr_raw=payload.get("asr_raw"),
                 session_factory=session_factory,
             )
+            _raise_if_task_control_requested(task_id, session_factory=session_factory)
 
         normalized_input_mode = str(input_mode or "upload").strip().lower()
+        _raise_if_task_control_requested(task_id, session_factory=session_factory)
         if normalized_input_mode == "local_asr":
             local_payload = json.loads(Path(source_path).read_text(encoding="utf-8"))
             lesson = LessonService.generate_from_local_asr_payload(
@@ -104,6 +126,7 @@ def run_lesson_generation_task(
                 db=db,
                 progress_callback=_progress,
             )
+        _raise_if_task_control_requested(task_id, session_factory=session_factory)
         mark_task_succeeded(
             task_id,
             lesson_id=lesson.id,
@@ -112,6 +135,14 @@ def run_lesson_generation_task(
         )
         invalidate_lesson_related_queries(owner_id)
         logger.info("[DEBUG] lessons.task.succeeded task_id=%s lesson_id=%s", task_id, lesson.id)
+    except LessonTaskPauseRequested:
+        db.rollback()
+        mark_task_paused(task_id, session_factory=session_factory)
+        logger.info("[DEBUG] lessons.task.paused task_id=%s", task_id)
+    except LessonTaskTerminateRequested:
+        db.rollback()
+        mark_task_terminated(task_id, session_factory=session_factory)
+        logger.info("[DEBUG] lessons.task.terminated task_id=%s", task_id)
     except BillingError as exc:
         db.rollback()
         mark_task_failed(
@@ -378,6 +409,15 @@ def resume_lesson_task_for_user(*, task_id: str, user_id: int, db: Session) -> d
     thread.start()
     logger.info("[DEBUG] lessons.task.retry.started task_id=%s user_id=%s mode=%s", task_id, user_id, retry_mode or "unknown")
     return {"task": task, "resumed": resumed, "retry_mode": retry_mode, "task_id": task_id}
+
+
+def request_lesson_task_control_for_user(*, task_id: str, user_id: int, action: str, db: Session) -> dict[str, object] | None:
+    ensure_lesson_task_storage_ready(db)
+    task = get_task(task_id, db=db)
+    if not task or int(task.get("owner_user_id", 0)) != user_id:
+        return None
+    requested = request_task_control(task_id, action=action, db=db)
+    return {"task": task, "requested": requested}
 
 
 def rename_lesson_for_user(*, db: Session, lesson_id: int, user_id: int, title: str):
