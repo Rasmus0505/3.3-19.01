@@ -1673,6 +1673,38 @@ def test_single_asr_progress_uses_real_segment_counts(monkeypatch, tmp_path):
     assert progress_events[-1]["current_text"] == "识别完成 3/3"
 
 
+def test_faster_whisper_emits_waiting_progress_before_first_segment(monkeypatch):
+    from app.services import faster_whisper_asr as faster_whisper_module
+
+    class FakeModel:
+        def transcribe(self, audio_path, *, beam_size, word_timestamps, vad_filter, condition_on_previous_text):
+            def _segments():
+                time.sleep(1.2)
+                yield SimpleNamespace(text="hello world", start=0.0, end=1.0, words=[])
+
+            info = SimpleNamespace(
+                duration=1.0,
+                duration_after_vad=1.0,
+                language="en",
+                language_probability=0.99,
+                all_language_probs=[("en", 0.99)],
+            )
+            return _segments(), info
+
+    monkeypatch.setattr(faster_whisper_module, "_get_or_create_model", lambda: FakeModel())
+
+    progress_events: list[dict] = []
+    result = faster_whisper_module.transcribe_audio_file_with_faster_whisper(
+        "dummy.opus",
+        progress_callback=lambda payload: progress_events.append(dict(payload)),
+    )
+
+    waiting_events = [item for item in progress_events if item.get("segment_done") == 0 and item.get("segment_total") == 0]
+    assert result["raw_generate_result"]["segment_count"] == 1
+    assert len(waiting_events) >= 2
+    assert any(item.get("segment_done") == 1 for item in progress_events)
+
+
 def test_transcribe_file_endpoint_with_stubbed_service(test_client, monkeypatch, tmp_path):
     client, _, _ = test_client
     from app.api.routers import transcribe as transcribe_router
