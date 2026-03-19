@@ -30,6 +30,7 @@ export function LearningShellPanelContent({
   onExitImmersive,
   onStartImmersive,
   lessons,
+  totalLessons,
   currentLessonNeedsBinding,
   lessonCardMetaMap,
   lessonMediaMetaMap,
@@ -40,6 +41,7 @@ export function LearningShellPanelContent({
   onStartLesson,
   onRenameLesson,
   onDeleteLesson,
+  onBulkDeleteLessons,
   onRestoreLessonMedia,
   onSwitchToUpload,
   walletBalance,
@@ -114,6 +116,7 @@ export function LearningShellPanelContent({
             <Suspense fallback={<PanelFallback />}>
               <LessonList
                 lessons={lessons}
+                totalLessons={totalLessons}
                 currentLessonId={currentLesson?.id}
                 currentLessonNeedsBinding={currentLessonNeedsBinding}
                 lessonCardMetaMap={lessonCardMetaMap}
@@ -122,6 +125,7 @@ export function LearningShellPanelContent({
                 onStartLesson={onStartLesson}
                 onRename={onRenameLesson}
                 onDelete={onDeleteLesson}
+                onBulkDelete={onBulkDeleteLessons}
                 onRestoreMedia={onRestoreLessonMedia}
                 onSwitchToUpload={onSwitchToUpload}
                 loading={loadingLessons}

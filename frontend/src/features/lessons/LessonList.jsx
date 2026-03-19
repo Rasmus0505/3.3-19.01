@@ -75,6 +75,7 @@ function getCoverAssistiveText(lesson) {
 
 export function LessonList({
   lessons,
+  totalLessons = 0,
   currentLessonId,
   currentLessonNeedsBinding = false,
   lessonCardMetaMap = {},
@@ -83,6 +84,7 @@ export function LessonList({
   onStartLesson,
   onRename,
   onDelete,
+  onBulkDelete,
   onRestoreMedia,
   onSwitchToUpload,
   loading = false,
@@ -94,15 +96,23 @@ export function LessonList({
   const [renameTitle, setRenameTitle] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
   const [deletingLesson, setDeletingLesson] = useState(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [menuLessonId, setMenuLessonId] = useState(null);
   const [restoringLessonId, setRestoringLessonId] = useState(null);
   const [status, setStatus] = useState("");
+  const [selectionMode, setSelectionMode] = useState("none");
+  const [selectedLessonIds, setSelectedLessonIds] = useState([]);
+  const [excludedLessonIds, setExcludedLessonIds] = useState([]);
   const [learningSettings, setLearningSettings] = useState(() => readLearningSettings());
   const [settingsError, setSettingsError] = useState("");
   const [recordingShortcutActionId, setRecordingShortcutActionId] = useState("");
   const restoreInputRef = useRef(null);
   const restoreTargetRef = useRef(null);
+  const loadedLessonIds = useMemo(() => lessons.map((lesson) => Number(lesson.id || 0)).filter((item) => item > 0), [lessons]);
+  const loadedLessonIdSet = useMemo(() => new Set(loadedLessonIds), [loadedLessonIds]);
+  const selectedLessonIdSet = useMemo(() => new Set(selectedLessonIds), [selectedLessonIds]);
+  const excludedLessonIdSet = useMemo(() => new Set(excludedLessonIds), [excludedLessonIds]);
 
   function updateLearningSettings(updater) {
     setLearningSettings((current) => {
@@ -166,6 +176,59 @@ export function LessonList({
     [lessonCardMetaMap, lessonMediaMetaMap, lessons],
   );
   const presetSummaryLines = useMemo(() => getPresetSummaryLines(learningSettings), [learningSettings]);
+  const allHistorySelected = selectionMode === "all" && Number(totalLessons || 0) > 0;
+  const selectedCount = allHistorySelected ? Math.max(0, Number(totalLessons || 0) - excludedLessonIds.length) : selectedLessonIds.length;
+  const hasSelection = selectedCount > 0;
+
+  function isLessonSelected(lessonId) {
+    const normalizedLessonId = Number(lessonId || 0);
+    if (!normalizedLessonId) return false;
+    if (allHistorySelected) {
+      return !excludedLessonIdSet.has(normalizedLessonId);
+    }
+    return selectedLessonIdSet.has(normalizedLessonId);
+  }
+
+  function clearSelection() {
+    setSelectionMode("none");
+    setSelectedLessonIds([]);
+    setExcludedLessonIds([]);
+  }
+
+  function toggleLessonSelection(lessonId, checked) {
+    const normalizedLessonId = Number(lessonId || 0);
+    if (!normalizedLessonId) return;
+    if (allHistorySelected) {
+      setExcludedLessonIds((current) => {
+        const next = new Set(current);
+        if (checked) {
+          next.delete(normalizedLessonId);
+        } else {
+          next.add(normalizedLessonId);
+        }
+        return Array.from(next);
+      });
+      return;
+    }
+    setSelectedLessonIds((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(normalizedLessonId);
+      } else {
+        next.delete(normalizedLessonId);
+      }
+      const nextList = Array.from(next);
+      setSelectionMode(nextList.length > 0 ? "partial" : "none");
+      return nextList;
+    });
+  }
+
+  function selectAllHistory() {
+    setSelectionMode("all");
+    setSelectedLessonIds([]);
+    setExcludedLessonIds([]);
+    setStatus("");
+  }
 
   function startLessonFromHistory(lessonId) {
     void onStartLesson?.(lessonId);
@@ -234,6 +297,15 @@ export function LessonList({
     }
   }, [deletingLesson, lessons, menuLessonId, renamingLesson, restoringLessonId]);
 
+  useEffect(() => {
+    setSelectedLessonIds((current) => current.filter((lessonId) => loadedLessonIdSet.has(Number(lessonId || 0))));
+    setExcludedLessonIds((current) => current.filter((lessonId) => loadedLessonIdSet.has(Number(lessonId || 0))));
+    if (Number(totalLessons || 0) <= 0) {
+      clearSelection();
+      setBulkDeleteOpen(false);
+    }
+  }, [loadedLessonIdSet, totalLessons]);
+
   function openRenameDialog(lesson) {
     setRenamingLesson(lesson);
     setRenameTitle(String(lesson.title || ""));
@@ -273,6 +345,27 @@ export function LessonList({
         setStatus("");
       } else {
         setStatus(result?.message || "删除课程失败");
+      }
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
+  async function submitBulkDelete() {
+    if (!onBulkDelete || !hasSelection) return;
+    setDeleteBusy(true);
+    try {
+      const result = await onBulkDelete(
+        allHistorySelected
+          ? { deleteAll: true, lessonIds: [] }
+          : { deleteAll: false, lessonIds: selectedLessonIds },
+      );
+      if (result?.ok) {
+        clearSelection();
+        setBulkDeleteOpen(false);
+        setStatus("");
+      } else {
+        setStatus(result?.message || "批量删除历史失败");
       }
     } finally {
       setDeleteBusy(false);
@@ -489,6 +582,37 @@ export function LessonList({
           </div>
         </section>
 
+        {Number(totalLessons || cards.length || 0) > 0 ? (
+          <div className="sticky top-16 z-10 rounded-2xl border bg-background/95 px-4 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                {allHistorySelected ? (
+                  <Button type="button" variant="outline" onClick={clearSelection} disabled={deleteBusy}>
+                    取消全选
+                  </Button>
+                ) : (
+                  <Button type="button" variant="outline" onClick={selectAllHistory} disabled={deleteBusy}>
+                    全选全部历史
+                  </Button>
+                )}
+                {hasSelection ? (
+                  <p className="text-sm text-muted-foreground">
+                    {allHistorySelected ? `已选全部历史 ${selectedCount} 项` : `已选 ${selectedCount} 项`}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">请选择要删除的历史记录</p>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="destructive" disabled={!hasSelection || deleteBusy || !onBulkDelete} onClick={() => setBulkDeleteOpen(true)}>
+                  <Trash2 className="size-4" />
+                  批量删除
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {loading ? (
           <div className="space-y-3">
             <Skeleton className="h-32 w-full rounded-2xl" />
@@ -522,6 +646,17 @@ export function LessonList({
                   )}
                 >
                   <div className="flex flex-col gap-4 p-4 md:flex-row">
+                    <label className="flex shrink-0 items-start pt-1">
+                      <input
+                        type="checkbox"
+                        className="size-4 rounded border-input accent-primary"
+                        checked={isLessonSelected(lesson.id)}
+                        disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                        onChange={(event) => toggleLessonSelection(lesson.id, event.target.checked)}
+                        onClick={(event) => event.stopPropagation()}
+                        aria-label={`选择课程 ${lesson.title || lesson.source_filename || lesson.id}`}
+                      />
+                    </label>
                     <button
                       type="button"
                       className="flex min-w-0 flex-1 items-stretch gap-4 text-left"
@@ -704,6 +839,38 @@ export function LessonList({
                 disabled={deleteBusy}
               >
                 {deleteBusy ? "删除中..." : "确认删除"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog
+          open={bulkDeleteOpen}
+          onOpenChange={(open) => {
+            if (!open && !deleteBusy) {
+              setBulkDeleteOpen(false);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认删除选中的历史记录？</AlertDialogTitle>
+              <AlertDialogDescription>
+                {allHistorySelected
+                  ? `将删除全部历史记录中的 ${selectedCount} 项，课程、学习进度和相关记录都会被删除，删除后不可恢复。`
+                  : `将删除当前选中的 ${selectedCount} 项历史记录，课程、学习进度和相关记录都会被删除，删除后不可恢复。`}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleteBusy}>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(event) => {
+                  event.preventDefault();
+                  void submitBulkDelete();
+                }}
+                disabled={deleteBusy || !hasSelection}
+              >
+                {deleteBusy ? "删除中..." : "确认批量删除"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

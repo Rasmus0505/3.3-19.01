@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import time
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -763,6 +764,235 @@ def test_lesson_task_resume_reuses_failed_task_artifacts(test_client, monkeypatc
     assert success_payload["resume_available"] is False
     assert success_payload["lesson"]["title"] == "resume"
     assert attempts["count"] == 2
+
+
+def test_lesson_task_pause_and_resume_from_safe_point(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="pause-task@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from app.services import lesson_command_service as lesson_command_service_module
+    from app.services.lesson_task_manager import get_task_control_action
+
+    started = threading.Event()
+    attempts = {"count": 0}
+
+    def fake_generate_from_saved_file(*, source_filename, owner_id, asr_model, db, progress_callback=None, task_id=None, **kwargs):
+        attempts["count"] += 1
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage_key": "convert_audio",
+                    "stage_status": "completed",
+                    "overall_percent": 20,
+                    "current_text": "转换音频格式完成",
+                    "counters": {"asr_done": 0, "asr_estimated": 0, "translate_done": 0, "translate_total": 0, "segment_done": 0, "segment_total": 0},
+                }
+            )
+            progress_callback(
+                {
+                    "stage_key": "asr_transcribe",
+                    "stage_status": "completed",
+                    "overall_percent": 60,
+                    "current_text": "识别字幕 2/2",
+                    "counters": {"asr_done": 2, "asr_estimated": 2, "translate_done": 0, "translate_total": 0, "segment_done": 2, "segment_total": 2},
+                }
+            )
+        if attempts["count"] == 1:
+            started.set()
+            deadline = time.time() + 3
+            while get_task_control_action(str(task_id or ""), session_factory=session_factory) != "pause":
+                if time.time() >= deadline:
+                    raise AssertionError("pause request was not observed")
+                time.sleep(0.02)
+            progress_callback(
+                {
+                    "stage_key": "translate_zh",
+                    "stage_status": "running",
+                    "overall_percent": 72,
+                    "current_text": "翻译字幕 1/2",
+                    "counters": {"asr_done": 2, "asr_estimated": 2, "translate_done": 1, "translate_total": 2, "segment_done": 2, "segment_total": 2},
+                }
+            )
+            raise AssertionError("pause control should interrupt generation")
+
+        progress_callback(
+            {
+                "stage_key": "translate_zh",
+                "stage_status": "completed",
+                "overall_percent": 90,
+                "current_text": "翻译字幕 2/2",
+                "counters": {"asr_done": 2, "asr_estimated": 2, "translate_done": 2, "translate_total": 2, "segment_done": 2, "segment_total": 2},
+            }
+        )
+        progress_callback(
+            {
+                "stage_key": "write_lesson",
+                "stage_status": "completed",
+                "overall_percent": 100,
+                "current_text": "课程生成完成",
+                "counters": {"asr_done": 2, "asr_estimated": 2, "translate_done": 2, "translate_total": 2, "segment_done": 2, "segment_total": 2},
+            }
+        )
+        lesson = Lesson(
+            user_id=owner_id,
+            title=Path(source_filename).stem,
+            source_filename=source_filename,
+            asr_model=asr_model,
+            duration_ms=1000,
+            media_storage="client_indexeddb",
+            source_duration_ms=1000,
+            status="ready",
+        )
+        db.add(lesson)
+        db.flush()
+        db.add(LessonSentence(lesson_id=lesson.id, idx=0, begin_ms=0, end_ms=1000, text_en="hello", text_zh="你好", tokens_json=["hello"], audio_clip_path=None))
+        db.add(LessonProgress(lesson_id=lesson.id, user_id=owner_id, current_sentence_idx=0, completed_indexes_json=[], last_played_at_ms=0))
+        db.commit()
+        lesson.subtitle_cache_seed = {
+            "semantic_split_enabled": False,
+            "split_mode": "asr_sentences",
+            "source_word_count": 1,
+            "strategy_version": 2,
+            "asr_payload": {"transcripts": []},
+            "sentences": [{"idx": 0, "begin_ms": 0, "end_ms": 1000, "text_en": "hello", "text_zh": "你好", "tokens": ["hello"], "audio_url": None}],
+        }
+        return lesson
+
+    monkeypatch.setattr(lesson_command_service_module.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+
+    create_resp = client.post(
+        "/api/lessons/tasks",
+        headers=headers,
+        files={"video_file": ("pause.mp4", io.BytesIO(b"video"), "video/mp4")},
+        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+    )
+    assert create_resp.status_code == 200
+    task_id = create_resp.json()["task_id"]
+    assert started.wait(2)
+
+    running_resp = client.get(f"/api/lessons/tasks/{task_id}", headers=headers)
+    assert running_resp.status_code == 200
+    running_payload = running_resp.json()
+    assert running_payload["status"] == "running"
+    assert running_payload["can_pause"] is True
+    assert running_payload["can_terminate"] is True
+
+    pause_resp = client.post(f"/api/lessons/tasks/{task_id}/pause", headers=headers)
+    assert pause_resp.status_code == 200
+    assert pause_resp.json()["status"] == "pausing"
+
+    paused_payload = None
+    deadline = time.time() + 3
+    while time.time() < deadline:
+      paused_check = client.get(f"/api/lessons/tasks/{task_id}", headers=headers)
+      assert paused_check.status_code == 200
+      candidate = paused_check.json()
+      if candidate["status"] == "paused":
+          paused_payload = candidate
+          break
+      time.sleep(0.05)
+    assert paused_payload is not None
+    assert paused_payload["resume_available"] is True
+    assert paused_payload["resume_stage"] == "translate_zh"
+    assert paused_payload["paused_at"]
+    assert paused_payload["control_action"] == ""
+    assert paused_payload["can_pause"] is False
+    assert paused_payload["can_terminate"] is False
+
+    resume_resp = client.post(f"/api/lessons/tasks/{task_id}/resume", headers=headers)
+    assert resume_resp.status_code == 200
+    assert resume_resp.json()["ok"] is True
+
+    success_payload = None
+    deadline = time.time() + 3
+    while time.time() < deadline:
+        success_check = client.get(f"/api/lessons/tasks/{task_id}", headers=headers)
+        assert success_check.status_code == 200
+        candidate = success_check.json()
+        if candidate["status"] == "succeeded":
+            success_payload = candidate
+            break
+        time.sleep(0.05)
+    assert success_payload is not None
+    assert success_payload["lesson"]["title"] == "pause"
+    assert attempts["count"] == 2
+
+
+def test_lesson_task_terminate_marks_task_as_terminated(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="terminate-task@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from app.services import lesson_command_service as lesson_command_service_module
+    from app.services.lesson_task_manager import get_task_control_action
+
+    started = threading.Event()
+
+    def fake_generate_from_saved_file(*, progress_callback=None, task_id=None, **kwargs):
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage_key": "convert_audio",
+                    "stage_status": "completed",
+                    "overall_percent": 20,
+                    "current_text": "转换音频格式完成",
+                    "counters": {"asr_done": 0, "asr_estimated": 0, "translate_done": 0, "translate_total": 0, "segment_done": 0, "segment_total": 0},
+                }
+            )
+        started.set()
+        deadline = time.time() + 3
+        while get_task_control_action(str(task_id or ""), session_factory=session_factory) != "terminate":
+            if time.time() >= deadline:
+                raise AssertionError("terminate request was not observed")
+            time.sleep(0.02)
+        progress_callback(
+            {
+                "stage_key": "translate_zh",
+                "stage_status": "running",
+                "overall_percent": 72,
+                "current_text": "翻译字幕 1/2",
+                "counters": {"asr_done": 2, "asr_estimated": 2, "translate_done": 1, "translate_total": 2, "segment_done": 2, "segment_total": 2},
+            }
+        )
+        raise AssertionError("terminate control should interrupt generation")
+
+    monkeypatch.setattr(lesson_command_service_module.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+
+    create_resp = client.post(
+        "/api/lessons/tasks",
+        headers=headers,
+        files={"video_file": ("terminate.mp4", io.BytesIO(b"video"), "video/mp4")},
+        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+    )
+    assert create_resp.status_code == 200
+    task_id = create_resp.json()["task_id"]
+    assert started.wait(2)
+
+    terminate_resp = client.post(f"/api/lessons/tasks/{task_id}/terminate", headers=headers)
+    assert terminate_resp.status_code == 200
+    assert terminate_resp.json()["status"] == "terminating"
+
+    terminated_payload = None
+    deadline = time.time() + 3
+    while time.time() < deadline:
+        terminated_check = client.get(f"/api/lessons/tasks/{task_id}", headers=headers)
+        assert terminated_check.status_code == 200
+        candidate = terminated_check.json()
+        if candidate["status"] == "terminated":
+            terminated_payload = candidate
+            break
+        time.sleep(0.05)
+    assert terminated_payload is not None
+    assert terminated_payload["resume_available"] is False
+    assert terminated_payload["terminated_at"]
+    assert terminated_payload["can_pause"] is False
+    assert terminated_payload["can_terminate"] is False
+    assert "终止" in terminated_payload["current_text"]
+
+    resume_resp = client.post(f"/api/lessons/tasks/{task_id}/resume", headers=headers)
+    assert resume_resp.status_code == 400
+    assert resume_resp.json()["error_code"] == "TASK_RESUME_UNAVAILABLE"
 
 
 def test_lesson_task_resume_marks_missing_artifacts_as_non_resumable(test_client, monkeypatch, tmp_path):
@@ -2473,6 +2703,130 @@ def test_delete_lesson_clears_generation_task_reference_under_sqlite_foreign_key
 
     clear_query_caches()
     engine.dispose()
+
+
+def test_bulk_delete_lessons_by_ids_keeps_other_users_data(test_client):
+    client, session_factory, _ = test_client
+    owner_token = _register_and_login(client, email="bulk-delete-owner@example.com")
+    other_token = _register_and_login(client, email="bulk-delete-other@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+
+    session = session_factory()
+    try:
+        owner = session.query(User).filter(User.email == "bulk-delete-owner@example.com").one()
+        other = session.query(User).filter(User.email == "bulk-delete-other@example.com").one()
+        owner_lessons = [
+            Lesson(
+                user_id=owner.id,
+                title=f"owner lesson {index}",
+                source_filename=f"owner-{index}.mp4",
+                asr_model=QWEN_ASR_MODEL,
+                duration_ms=1000 + index,
+                media_storage="client_indexeddb",
+                source_duration_ms=1000 + index,
+                status="ready",
+            )
+            for index in range(1, 4)
+        ]
+        other_lesson = Lesson(
+            user_id=other.id,
+            title="other lesson",
+            source_filename="other.mp4",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=2000,
+            media_storage="client_indexeddb",
+            source_duration_ms=2000,
+            status="ready",
+        )
+        session.add_all([*owner_lessons, other_lesson])
+        session.flush()
+        owner_delete_ids = [owner_lessons[0].id, owner_lessons[2].id]
+        other_lesson_id = other_lesson.id
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.post(
+        "/api/lessons/bulk-delete",
+        headers=owner_headers,
+        json={"lesson_ids": owner_delete_ids, "delete_all": False},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["ok"] is True
+    assert sorted(payload["deleted_ids"]) == sorted(owner_delete_ids)
+    assert payload["deleted_count"] == 2
+    assert payload["failed_ids"] == []
+
+    for lesson_id in owner_delete_ids:
+        deleted_resp = client.get(f"/api/lessons/{lesson_id}", headers=owner_headers)
+        assert deleted_resp.status_code == 404
+
+    other_resp = client.get(f"/api/lessons/{other_lesson_id}", headers=other_headers)
+    assert other_resp.status_code == 200
+
+
+def test_bulk_delete_all_lessons_only_removes_current_user_history(test_client):
+    client, session_factory, _ = test_client
+    owner_token = _register_and_login(client, email="bulk-delete-all-owner@example.com")
+    other_token = _register_and_login(client, email="bulk-delete-all-other@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+
+    session = session_factory()
+    try:
+        owner = session.query(User).filter(User.email == "bulk-delete-all-owner@example.com").one()
+        other = session.query(User).filter(User.email == "bulk-delete-all-other@example.com").one()
+        owner_lessons = [
+            Lesson(
+                user_id=owner.id,
+                title=f"delete all owner {index}",
+                source_filename=f"delete-all-owner-{index}.mp4",
+                asr_model=QWEN_ASR_MODEL,
+                duration_ms=1500 + index,
+                media_storage="client_indexeddb",
+                source_duration_ms=1500 + index,
+                status="ready",
+            )
+            for index in range(1, 3)
+        ]
+        other_lesson = Lesson(
+            user_id=other.id,
+            title="delete all other",
+            source_filename="delete-all-other.mp4",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=2400,
+            media_storage="client_indexeddb",
+            source_duration_ms=2400,
+            status="ready",
+        )
+        session.add_all([*owner_lessons, other_lesson])
+        session.flush()
+        owner_lesson_ids = [lesson.id for lesson in owner_lessons]
+        other_lesson_id = other_lesson.id
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.post(
+        "/api/lessons/bulk-delete",
+        headers=owner_headers,
+        json={"lesson_ids": [], "delete_all": True},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["ok"] is True
+    assert sorted(payload["deleted_ids"]) == sorted(owner_lesson_ids)
+    assert payload["deleted_count"] == len(owner_lesson_ids)
+    assert payload["failed_ids"] == []
+
+    catalog_resp = client.get("/api/lessons/catalog", headers=owner_headers, params={"page": 1, "page_size": 20})
+    assert catalog_resp.status_code == 200
+    assert catalog_resp.json()["total"] == 0
+
+    other_resp = client.get(f"/api/lessons/{other_lesson_id}", headers=other_headers)
+    assert other_resp.status_code == 200
 
 
 def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch, tmp_path):
