@@ -34,8 +34,8 @@ export function AdminApp({ apiCall }) {
         <Route path="redeem" element={<AdminRedeemPage apiCall={apiCall} />} />
 
         <Route path="logs" element={<Navigate to="/admin/users#admin-users-wallet-logs" replace />} />
-        <Route path="rates" element={<Navigate to="/admin/models#admin-models-rates" replace />} />
-        <Route path="subtitle-settings" element={<Navigate to="/admin/models#admin-models-strategy" replace />} />
+        <Route path="rates" element={<Navigate to="/admin/models?tab=billing" replace />} />
+        <Route path="subtitle-settings" element={<Navigate to="/admin/models?tab=strategy" replace />} />
         <Route path="redeem-batches" element={<Navigate to="/admin/redeem#admin-redeem-batches" replace />} />
         <Route path="redeem-codes" element={<Navigate to="/admin/redeem#admin-redeem-codes" replace />} />
         <Route path="redeem-audit" element={<Navigate to="/admin/redeem#admin-redeem-audit" replace />} />
