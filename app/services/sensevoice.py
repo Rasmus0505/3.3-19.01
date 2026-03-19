@@ -381,12 +381,13 @@ def transcribe_audio_file_with_sensevoice(
     audio_path: str,
     *,
     settings: SenseVoiceSettingsSnapshot,
+    known_duration_ms: int | None = None,
     progress_callback=None,
 ) -> dict[str, Any]:
     model = _get_or_create_model(settings)
     _, rich_postprocess = _load_funasr_symbols()
     source_path = Path(str(audio_path))
-    duration_ms = max(1, int(_probe_audio_duration_ms(source_path) or 0))
+    duration_ms = max(1, int(known_duration_ms or 0) or int(_probe_audio_duration_ms(source_path) or 0))
 
     if progress_callback:
         try:

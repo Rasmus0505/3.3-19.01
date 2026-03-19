@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import { AdminFasterWhisperSettingsTab } from "../admin-faster-whisper-settings/AdminFasterWhisperSettingsTab";
 import { AdminRatesTab } from "../admin-rates/AdminRatesTab";
 import { AdminSenseVoiceSettingsTab } from "../admin-sensevoice-settings/AdminSenseVoiceSettingsTab";
 import { AdminSubtitleSettingsTab } from "../admin-subtitle-settings/AdminSubtitleSettingsTab";
@@ -16,6 +17,7 @@ function scrollIntoSection(sectionId) {
 function resolveSectionId(panel) {
   if (panel === "strategy") return "admin-models-strategy";
   if (panel === "sensevoice") return "admin-models-sensevoice";
+  if (panel === "faster-whisper") return "admin-models-faster-whisper";
   if (panel === "rates") return "admin-models-rates";
   return "";
 }
@@ -53,6 +55,14 @@ export function AdminModelsPage({ apiCall }) {
           <CardDescription>单独维护服务端 SenseVoice 的加载和推理参数。</CardDescription>
         </div>
         <AdminSenseVoiceSettingsTab apiCall={apiCall} />
+      </section>
+
+      <section id="admin-models-faster-whisper" className="scroll-mt-24 space-y-3 border-t pt-6">
+        <div className="space-y-1">
+          <CardTitle className="text-base">Faster Whisper 参数</CardTitle>
+          <CardDescription>单独维护服务端 Faster Whisper 的设备、线程和推理参数。</CardDescription>
+        </div>
+        <AdminFasterWhisperSettingsTab apiCall={apiCall} />
       </section>
     </div>
   );

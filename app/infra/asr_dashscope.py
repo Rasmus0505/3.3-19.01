@@ -285,7 +285,7 @@ def _transcribe_audio_file_with_qwen(
     }
 
 
-def _transcribe_audio_file_with_sensevoice(audio_path: str, *, progress_callback=None) -> dict[str, Any]:
+def _transcribe_audio_file_with_sensevoice(audio_path: str, *, known_duration_ms: int | None = None, progress_callback=None) -> dict[str, Any]:
     try:
         from app.db import SessionLocal
 
@@ -294,14 +294,19 @@ def _transcribe_audio_file_with_sensevoice(audio_path: str, *, progress_callback
             settings = get_sensevoice_settings_snapshot(db)
         finally:
             db.close()
-        return transcribe_audio_file_with_sensevoice(audio_path, settings=settings, progress_callback=progress_callback)
+        return transcribe_audio_file_with_sensevoice(
+            audio_path,
+            settings=settings,
+            known_duration_ms=known_duration_ms,
+            progress_callback=progress_callback,
+        )
     except AsrError:
         raise
     except Exception as exc:
         raise AsrError("SENSEVOICE_TRANSCRIBE_FAILED", "SenseVoice transcribe failed", str(exc)[:1200]) from exc
 
 
-def _transcribe_audio_file_with_faster_whisper(audio_path: str, *, progress_callback=None) -> dict[str, Any]:
+def _transcribe_audio_file_with_faster_whisper(audio_path: str, *, known_duration_ms: int | None = None, progress_callback=None) -> dict[str, Any]:
     try:
         return transcribe_audio_file_with_faster_whisper(audio_path, progress_callback=progress_callback)
     except AsrError:
@@ -315,13 +320,22 @@ def transcribe_audio_file(
     *,
     model: str = DEFAULT_MODEL,
     requests_timeout: int = 120,
+    known_duration_ms: int | None = None,
     progress_callback=None,
 ) -> dict[str, Any]:
     model_name = (model or "").strip()
     if model_name not in SUPPORTED_MODELS:
         raise AsrError("INVALID_MODEL", "不支持的模型", model_name)
     if model_name == SENSEVOICE_ASR_MODEL:
-        return _transcribe_audio_file_with_sensevoice(audio_path, progress_callback=progress_callback)
+        return _transcribe_audio_file_with_sensevoice(
+            audio_path,
+            known_duration_ms=known_duration_ms,
+            progress_callback=progress_callback,
+        )
     if model_name == FASTER_WHISPER_ASR_MODEL:
-        return _transcribe_audio_file_with_faster_whisper(audio_path, progress_callback=progress_callback)
+        return _transcribe_audio_file_with_faster_whisper(
+            audio_path,
+            known_duration_ms=known_duration_ms,
+            progress_callback=progress_callback,
+        )
     return _transcribe_audio_file_with_qwen(audio_path, model=model_name, requests_timeout=requests_timeout, progress_callback=progress_callback)

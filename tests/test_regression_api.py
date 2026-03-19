@@ -21,11 +21,12 @@ from app.api.deps.auth import get_admin_user
 from app.api.routers import local_asr_assets as local_asr_assets_router
 from app.db import Base, create_database_engine, get_db
 from app.main import create_app
-from app.models import BillingModelRate, Lesson, LessonGenerationTask, LessonProgress, LessonSentence, MediaAsset, SubtitleSetting, TranslationRequestLog, User, WalletLedger
+from app.models import BillingModelRate, FasterWhisperSetting, Lesson, LessonGenerationTask, LessonProgress, LessonSentence, MediaAsset, SubtitleSetting, TranslationRequestLog, User, WalletLedger
 from app.services.billing_service import ensure_default_billing_rates, get_or_create_wallet_account, get_subtitle_settings, settle_reserved_points
 from app.services.lesson_service import LessonService
 from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
 from app.services.query_cache import clear_query_caches
+from app.services.faster_whisper_asr import get_faster_whisper_settings
 from app.services.sensevoice import SENSEVOICE_ASR_MODEL, get_sensevoice_settings
 
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
@@ -1677,6 +1678,19 @@ def test_single_asr_progress_uses_real_segment_counts(monkeypatch, tmp_path):
 def test_faster_whisper_emits_waiting_progress_before_first_segment(monkeypatch):
     from app.services import faster_whisper_asr as faster_whisper_module
 
+    snapshot = faster_whisper_module.FasterWhisperSettingsSnapshot(
+        device="cpu",
+        compute_type="",
+        cpu_threads=4,
+        num_workers=2,
+        beam_size=5,
+        vad_filter=True,
+        condition_on_previous_text=False,
+        resolved_device="cpu",
+        resolved_device_index=0,
+        resolved_compute_type="int8",
+    )
+
     class FakeModel:
         def transcribe(self, audio_path, *, beam_size, word_timestamps, vad_filter, condition_on_previous_text):
             def _segments():
@@ -1692,7 +1706,8 @@ def test_faster_whisper_emits_waiting_progress_before_first_segment(monkeypatch)
             )
             return _segments(), info
 
-    monkeypatch.setattr(faster_whisper_module, "_get_or_create_model", lambda: FakeModel())
+    monkeypatch.setattr(faster_whisper_module, "_runtime_settings_snapshot", lambda: snapshot)
+    monkeypatch.setattr(faster_whisper_module, "_get_or_create_model", lambda settings=None: FakeModel())
 
     progress_events: list[dict] = []
     result = faster_whisper_module.transcribe_audio_file_with_faster_whisper(
@@ -1739,8 +1754,9 @@ def test_transcribe_audio_file_dispatches_to_sensevoice(monkeypatch):
 
     captured = {}
 
-    def fake_sensevoice(audio_path, *, progress_callback=None):
+    def fake_sensevoice(audio_path, *, known_duration_ms=None, progress_callback=None):
         captured["audio_path"] = audio_path
+        captured["known_duration_ms"] = known_duration_ms
         captured["progress_callback"] = progress_callback
         return {
             "model": SENSEVOICE_ASR_MODEL,
@@ -1757,6 +1773,46 @@ def test_transcribe_audio_file_dispatches_to_sensevoice(monkeypatch):
     assert result["model"] == SENSEVOICE_ASR_MODEL
     assert result["preview_text"] == "hello from sensevoice"
     assert captured["audio_path"] == "demo.opus"
+
+
+def test_sensevoice_uses_known_duration_without_ffprobe(monkeypatch):
+    from app.services import sensevoice as sensevoice_module
+
+    class DummyModel:
+        def generate(self, **kwargs):
+            return [{"text": "hello from sensevoice"}]
+
+    snapshot = sensevoice_module.SenseVoiceSettingsSnapshot(
+        model_dir="iic/SenseVoiceSmall",
+        trust_remote_code=False,
+        remote_code="",
+        device="cpu",
+        language="auto",
+        vad_model="fsmn-vad",
+        vad_max_single_segment_time=30000,
+        use_itn=True,
+        batch_size_s=60,
+        merge_vad=True,
+        merge_length_s=15,
+        ban_emo_unk=False,
+    )
+
+    monkeypatch.setattr(sensevoice_module, "_get_or_create_model", lambda settings: DummyModel())
+    monkeypatch.setattr(sensevoice_module, "_load_funasr_symbols", lambda: (None, None))
+    monkeypatch.setattr(
+        sensevoice_module,
+        "_probe_audio_duration_ms",
+        lambda _path: (_ for _ in ()).throw(AssertionError("ffprobe should be skipped when known duration is provided")),
+    )
+
+    result = sensevoice_module.transcribe_audio_file_with_sensevoice(
+        "demo.wav",
+        settings=snapshot,
+        known_duration_ms=2100,
+    )
+
+    assert result["usage_seconds"] == 3
+    assert result["preview_text"] == "hello from sensevoice"
 
 
 def test_create_lesson_rejects_para_model(test_client):
@@ -2195,6 +2251,50 @@ def test_admin_sensevoice_settings_roundtrip_and_rollback(test_client):
     assert rollback_payload["batch_size_s"] == initial_settings["batch_size_s"]
 
 
+def test_admin_faster_whisper_settings_roundtrip_and_rollback(test_client):
+    client, _, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "faster-whisper-admin@example.com")
+    admin_token = _register_and_login(client, email="faster-whisper-admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    initial_resp = client.get("/api/admin/faster-whisper-settings/history", headers=admin_headers)
+    assert initial_resp.status_code == 200
+    initial_settings = initial_resp.json()["current"]
+
+    update_resp = client.put(
+        "/api/admin/faster-whisper-settings",
+        headers=admin_headers,
+        json={
+            "device": "cpu",
+            "compute_type": "int8",
+            "cpu_threads": 6,
+            "num_workers": 3,
+            "beam_size": 4,
+            "vad_filter": False,
+            "condition_on_previous_text": True,
+        },
+    )
+    assert update_resp.status_code == 200
+    payload = update_resp.json()["settings"]
+    assert payload["device"] == "cpu"
+    assert payload["cpu_threads"] == 6
+    assert payload["num_workers"] == 3
+    assert payload["beam_size"] == 4
+    assert payload["vad_filter"] is False
+    assert payload["condition_on_previous_text"] is True
+
+    fetch_resp = client.get("/api/admin/faster-whisper-settings", headers=admin_headers)
+    assert fetch_resp.status_code == 200
+    assert fetch_resp.json()["settings"]["compute_type"] == "int8"
+
+    rollback_resp = client.post("/api/admin/faster-whisper-settings/rollback-last", headers=admin_headers)
+    assert rollback_resp.status_code == 200
+    rollback_payload = rollback_resp.json()["settings"]
+    assert rollback_payload["device"] == initial_settings["device"]
+    assert rollback_payload["cpu_threads"] == initial_settings["cpu_threads"]
+    assert rollback_payload["num_workers"] == initial_settings["num_workers"]
+
+
 def test_admin_translation_logs_endpoint_filters_by_task_and_success(test_client, monkeypatch):
     client, session_factory, _ = test_client
     monkeypatch.setenv("ADMIN_EMAILS", "translation-admin@example.com")
@@ -2377,6 +2477,47 @@ def test_admin_sensevoice_settings_self_heals_missing_table(test_client, monkeyp
         row = get_sensevoice_settings(verify)
         assert row.id == 1
         assert row.model_dir == "iic/SenseVoiceSmall"
+    finally:
+        verify.close()
+
+
+def test_admin_faster_whisper_settings_self_heals_missing_table(test_client, monkeypatch):
+    client, session_factory, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "faster-whisper-heal-admin@example.com")
+    admin_token = _register_and_login(client, email="faster-whisper-heal-admin@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    session = session_factory()
+    try:
+        session.execute(text("DROP TABLE IF EXISTS faster_whisper_settings"))
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.put(
+        "/api/admin/faster-whisper-settings",
+        headers=headers,
+        json={
+            "device": "auto",
+            "compute_type": "",
+            "cpu_threads": 4,
+            "num_workers": 2,
+            "beam_size": 5,
+            "vad_filter": True,
+            "condition_on_previous_text": False,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["settings"]["device"] == "auto"
+    assert body["settings"]["beam_size"] == 5
+
+    verify = session_factory()
+    try:
+        row = get_faster_whisper_settings(verify)
+        assert isinstance(row, FasterWhisperSetting)
+        assert row.id == 1
+        assert row.device == "auto"
     finally:
         verify.close()
 
@@ -3810,14 +3951,14 @@ def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
         lesson_service_module,
         "_split_audio_segments",
         lambda source_audio, segments_dir, target_seconds, search_window_seconds, duration_ms: [
-            (0, 0, tmp_path / "seg0.opus"),
-            (1, 5000, tmp_path / "seg1.opus"),
+            (0, 0, 5000, tmp_path / "seg0.opus"),
+            (1, 5000, 10000, tmp_path / "seg1.opus"),
         ],
     )
     monkeypatch.setattr(
         lesson_service_module,
         "_transcribe_segment",
-        lambda segment_index, segment_start_ms, segment_path, asr_model: (
+        lambda segment_index, segment_start_ms, segment_end_ms, segment_path, asr_model: (
             segment_index,
             [
                 {
@@ -3829,6 +3970,7 @@ def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
                 }
             ],
             [{"text": f"seg-{segment_index}", "begin_ms": segment_start_ms, "end_ms": segment_start_ms + 1000}],
+            None,
             None,
         ),
     )
@@ -3947,6 +4089,7 @@ def test_split_audio_segments_prefers_silence(monkeypatch, tmp_path):
 
     assert len(segments) == 2
     assert segments[0][1] == 0
+    assert segments[0][2] == 5700
     assert segments[1][1] == 5700
 
 

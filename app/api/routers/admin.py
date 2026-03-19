@@ -12,12 +12,17 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_admin_emails, get_admin_user
-from app.api.serializers import to_admin_subtitle_settings_item, to_rate_item, to_sensevoice_settings_item
+from app.api.serializers import (
+    to_admin_subtitle_settings_item,
+    to_faster_whisper_settings_item,
+    to_rate_item,
+    to_sensevoice_settings_item,
+)
 from app.core.config import LESSON_DEFAULT_ASR_MODEL, REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_EXPORT_CONFIRM_TEXT
 from app.core.errors import error_response, map_billing_error
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
 from app.db import get_db
-from app.models import AdminOperationLog, BillingModelRate, RedeemCode, RedeemCodeBatch, SenseVoiceSetting, SubtitleSetting, User
+from app.models import AdminOperationLog, BillingModelRate, FasterWhisperSetting, RedeemCode, RedeemCodeBatch, SenseVoiceSetting, SubtitleSetting, User
 from app.repositories.admin import (
     list_admin_users,
     list_all_redeem_audit_rows,
@@ -35,6 +40,11 @@ from app.schemas import (
     AdminSubtitleSettingsHistoryResponse,
     AdminSubtitleSettingsResponse,
     AdminSubtitleSettingsUpdateRequest,
+    FasterWhisperSettingsHistoryItem,
+    FasterWhisperSettingsHistoryResponse,
+    FasterWhisperSettingsItem,
+    FasterWhisperSettingsResponse,
+    FasterWhisperSettingsUpdateRequest,
     SenseVoiceSettingsHistoryItem,
     SenseVoiceSettingsHistoryResponse,
     SenseVoiceSettingsItem,
@@ -87,6 +97,7 @@ from app.services.billing_service import (
     set_redeem_batch_status,
     update_redeem_code_status,
 )
+from app.services.faster_whisper_asr import get_faster_whisper_settings
 from app.services.sensevoice import get_sensevoice_settings
 
 
@@ -206,6 +217,41 @@ def _sensevoice_settings_item_from_dict(
     )
 
 
+def _faster_whisper_settings_item_with_meta(
+    settings: FasterWhisperSetting,
+    *,
+    updated_by_user_email: str | None = None,
+) -> FasterWhisperSettingsItem:
+    item = to_faster_whisper_settings_item(settings)
+    return item.model_copy(
+        update={
+            "updated_by_user_id": settings.updated_by_user_id,
+            "updated_by_user_email": updated_by_user_email,
+        }
+    )
+
+
+def _faster_whisper_settings_item_from_dict(
+    payload: dict[str, object],
+    *,
+    updated_at: datetime,
+    updated_by_user_id: int | None = None,
+    updated_by_user_email: str | None = None,
+) -> FasterWhisperSettingsItem:
+    return FasterWhisperSettingsItem(
+        device=str(payload.get("device") or "auto"),
+        compute_type=str(payload.get("compute_type") or ""),
+        cpu_threads=max(1, int(payload.get("cpu_threads", 4) or 4)),
+        num_workers=max(1, int(payload.get("num_workers", 2) or 2)),
+        beam_size=max(1, int(payload.get("beam_size", 5) or 5)),
+        vad_filter=bool(payload.get("vad_filter", True)),
+        condition_on_previous_text=bool(payload.get("condition_on_previous_text", False)),
+        updated_at=to_shanghai_aware(updated_at),
+        updated_by_user_id=updated_by_user_id,
+        updated_by_user_email=updated_by_user_email,
+    )
+
+
 def _load_subtitle_settings_rollback_candidate(db: Session) -> AdminSubtitleSettingsHistoryItem | None:
     operator_user = User.__table__.alias("subtitle_settings_operator")
     row = db.execute(
@@ -272,6 +318,43 @@ def _load_sensevoice_settings_rollback_candidate(db: Session) -> SenseVoiceSetti
         operator_user_id=row[0].operator_user_id,
         operator_user_email=row.operator_email,
         settings=_sensevoice_settings_item_from_dict(
+            payload,
+            updated_at=row[0].created_at,
+            updated_by_user_id=row[0].operator_user_id,
+            updated_by_user_email=row.operator_email,
+        ),
+    )
+
+
+def _load_faster_whisper_settings_rollback_candidate(db: Session) -> FasterWhisperSettingsHistoryItem | None:
+    operator_user = User.__table__.alias("faster_whisper_settings_operator")
+    row = db.execute(
+        select(AdminOperationLog, operator_user.c.email.label("operator_email"))
+        .outerjoin(operator_user, operator_user.c.id == AdminOperationLog.operator_user_id)
+        .where(
+            AdminOperationLog.target_type == "faster_whisper_settings",
+            AdminOperationLog.action_type.in_(["faster_whisper_settings_update", "faster_whisper_settings_rollback"]),
+        )
+        .order_by(AdminOperationLog.created_at.desc(), AdminOperationLog.id.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+
+    raw_before = getattr(row[0], "before_value", "") or ""
+    try:
+        payload = json.loads(raw_before)
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict) or not payload:
+        return None
+
+    return FasterWhisperSettingsHistoryItem(
+        action_id=int(row[0].id),
+        created_at=to_shanghai_aware(row[0].created_at),
+        operator_user_id=row[0].operator_user_id,
+        operator_user_email=row.operator_email,
+        settings=_faster_whisper_settings_item_from_dict(
             payload,
             updated_at=row[0].created_at,
             updated_by_user_id=row[0].operator_user_id,
@@ -879,6 +962,125 @@ def admin_rollback_sensevoice_settings_last(
     db.commit()
     db.refresh(settings)
     return SenseVoiceSettingsResponse(ok=True, settings=_sensevoice_settings_item_with_meta(settings, updated_by_user_email=current_admin.email))
+
+
+@router.get(
+    "/faster-whisper-settings",
+    response_model=FasterWhisperSettingsResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_get_faster_whisper_settings(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
+    settings = get_faster_whisper_settings(db)
+    updated_by_user_email = None
+    if settings.updated_by_user_id:
+        updated_by_user = db.get(User, settings.updated_by_user_id)
+        updated_by_user_email = updated_by_user.email if updated_by_user is not None else None
+    return FasterWhisperSettingsResponse(
+        ok=True,
+        settings=_faster_whisper_settings_item_with_meta(settings, updated_by_user_email=updated_by_user_email),
+    )
+
+
+@router.get(
+    "/faster-whisper-settings/history",
+    response_model=FasterWhisperSettingsHistoryResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_get_faster_whisper_settings_history(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
+    settings = get_faster_whisper_settings(db)
+    updated_by_user_email = None
+    if settings.updated_by_user_id:
+        updated_by_user = db.get(User, settings.updated_by_user_id)
+        updated_by_user_email = updated_by_user.email if updated_by_user is not None else None
+    return FasterWhisperSettingsHistoryResponse(
+        ok=True,
+        current=_faster_whisper_settings_item_with_meta(settings, updated_by_user_email=updated_by_user_email),
+        rollback_candidate=_load_faster_whisper_settings_rollback_candidate(db),
+    )
+
+
+@router.put(
+    "/faster-whisper-settings",
+    response_model=FasterWhisperSettingsResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_update_faster_whisper_settings(
+    payload: FasterWhisperSettingsUpdateRequest,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    settings = get_faster_whisper_settings(db)
+    before = _faster_whisper_settings_item_with_meta(settings).model_dump(mode="json")
+    settings.device = payload.device.strip()
+    settings.compute_type = payload.compute_type.strip().lower()
+    settings.cpu_threads = payload.cpu_threads
+    settings.num_workers = payload.num_workers
+    settings.beam_size = payload.beam_size
+    settings.vad_filter = payload.vad_filter
+    settings.condition_on_previous_text = payload.condition_on_previous_text
+    settings.updated_by_user_id = current_admin.id
+    db.add(settings)
+    db.flush()
+    append_admin_operation_log(
+        db,
+        operator_user_id=current_admin.id,
+        action_type="faster_whisper_settings_update",
+        target_type="faster_whisper_settings",
+        target_id=str(getattr(settings, "id", 1)),
+        before_value=before,
+        after_value=_faster_whisper_settings_item_with_meta(settings, updated_by_user_email=current_admin.email).model_dump(mode="json"),
+        note="faster_whisper_settings",
+    )
+    db.commit()
+    db.refresh(settings)
+    return FasterWhisperSettingsResponse(
+        ok=True,
+        settings=_faster_whisper_settings_item_with_meta(settings, updated_by_user_email=current_admin.email),
+    )
+
+
+@router.post(
+    "/faster-whisper-settings/rollback-last",
+    response_model=FasterWhisperSettingsResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_rollback_faster_whisper_settings_last(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    rollback_candidate = _load_faster_whisper_settings_rollback_candidate(db)
+    if rollback_candidate is None:
+        return error_response(400, "FASTER_WHISPER_SETTINGS_ROLLBACK_EMPTY", "暂无可回滚的上一版本")
+
+    settings = get_faster_whisper_settings(db)
+    before = _faster_whisper_settings_item_with_meta(settings).model_dump(mode="json")
+    previous = rollback_candidate.settings
+    settings.device = previous.device
+    settings.compute_type = previous.compute_type
+    settings.cpu_threads = previous.cpu_threads
+    settings.num_workers = previous.num_workers
+    settings.beam_size = previous.beam_size
+    settings.vad_filter = previous.vad_filter
+    settings.condition_on_previous_text = previous.condition_on_previous_text
+    settings.updated_by_user_id = current_admin.id
+    db.add(settings)
+    db.flush()
+    append_admin_operation_log(
+        db,
+        operator_user_id=current_admin.id,
+        action_type="faster_whisper_settings_rollback",
+        target_type="faster_whisper_settings",
+        target_id=str(getattr(settings, "id", 1)),
+        before_value=before,
+        after_value=_faster_whisper_settings_item_with_meta(settings, updated_by_user_email=current_admin.email).model_dump(mode="json"),
+        note=f"faster_whisper_settings_rollback_from:{rollback_candidate.action_id}",
+    )
+    db.commit()
+    db.refresh(settings)
+    return FasterWhisperSettingsResponse(
+        ok=True,
+        settings=_faster_whisper_settings_item_with_meta(settings, updated_by_user_email=current_admin.email),
+    )
 
 
 @router.post(

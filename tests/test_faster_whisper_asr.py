@@ -28,6 +28,18 @@ def test_transcribe_audio_file_with_faster_whisper_builds_expected_payload(monke
     from app.services import faster_whisper_asr as module
 
     captured = {}
+    snapshot = module.FasterWhisperSettingsSnapshot(
+        device="cpu",
+        compute_type="",
+        cpu_threads=4,
+        num_workers=2,
+        beam_size=5,
+        vad_filter=True,
+        condition_on_previous_text=False,
+        resolved_device="cpu",
+        resolved_device_index=0,
+        resolved_compute_type="int8",
+    )
 
     class DummyModel:
         def transcribe(self, audio_path, **kwargs):
@@ -51,7 +63,8 @@ def test_transcribe_audio_file_with_faster_whisper_builds_expected_payload(monke
             )
             return iter([segment]), info
 
-    monkeypatch.setattr(module, "_get_or_create_model", lambda: DummyModel())
+    monkeypatch.setattr(module, "_runtime_settings_snapshot", lambda: snapshot)
+    monkeypatch.setattr(module, "_get_or_create_model", lambda settings=None: DummyModel())
 
     progress_events: list[dict] = []
     result = module.transcribe_audio_file_with_faster_whisper(
@@ -68,8 +81,10 @@ def test_transcribe_audio_file_with_faster_whisper_builds_expected_payload(monke
     assert transcript["words"][0]["surface"] == "Hello"
     assert transcript["words"][1]["punctuation"] == "."
     assert captured["audio_path"] == "demo.wav"
+    assert captured["kwargs"]["beam_size"] == 5
     assert captured["kwargs"]["word_timestamps"] is True
     assert captured["kwargs"]["vad_filter"] is True
+    assert result["settings_summary"]["resolved_compute_type"] == "int8"
     assert progress_events[0]["elapsed_seconds"] == 0
     assert progress_events[0]["segment_done"] == 0
     assert progress_events[0]["segment_total"] == 0
@@ -104,6 +119,46 @@ def test_prepare_faster_whisper_model_returns_preparing_when_scheduled(monkeypat
     assert payload["preparing"] is True
     assert payload["download_required"] is True
     assert payload["last_error"] == ""
+
+
+def test_get_or_create_model_uses_settings_snapshot(monkeypatch, tmp_path):
+    from app.services import faster_whisper_asr as module
+
+    captured = {}
+    model_dir = tmp_path / "faster-whisper-medium"
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    snapshot = module.FasterWhisperSettingsSnapshot(
+        device="auto",
+        compute_type="",
+        cpu_threads=6,
+        num_workers=2,
+        beam_size=5,
+        vad_filter=True,
+        condition_on_previous_text=False,
+        resolved_device="cuda:0",
+        resolved_device_index=0,
+        resolved_compute_type="float16",
+    )
+
+    class DummyWhisperModel:
+        def __init__(self, *args, **kwargs):
+            captured["args"] = args
+            captured["kwargs"] = dict(kwargs)
+
+    monkeypatch.setattr(module, "_CACHED_MODEL", None)
+    monkeypatch.setattr(module, "_CACHED_MODEL_SIGNATURE", "")
+    monkeypatch.setattr(module, "ensure_faster_whisper_model_downloaded", lambda force_refresh=False: model_dir)
+    monkeypatch.setattr(module, "_load_whisper_model_symbol", lambda: DummyWhisperModel)
+
+    module._get_or_create_model(snapshot)
+
+    assert captured["args"][0] == str(model_dir)
+    assert captured["kwargs"]["device"] == "cuda"
+    assert captured["kwargs"]["device_index"] == 0
+    assert captured["kwargs"]["compute_type"] == "float16"
+    assert captured["kwargs"]["cpu_threads"] == 6
+    assert captured["kwargs"]["num_workers"] == 2
 
 
 def test_asr_model_routes_report_status_and_prepare(monkeypatch):
@@ -159,8 +214,9 @@ def test_asr_runtime_routes_faster_whisper_model(monkeypatch):
 
     captured = {}
 
-    def fake_faster_whisper(audio_path: str, *, progress_callback=None):
+    def fake_faster_whisper(audio_path: str, *, known_duration_ms=None, progress_callback=None):
         captured["audio_path"] = audio_path
+        captured["known_duration_ms"] = known_duration_ms
         captured["progress_callback"] = progress_callback
         return {
             "model": "faster-whisper-medium",
