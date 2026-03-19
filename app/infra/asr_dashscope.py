@@ -10,7 +10,12 @@ from dashscope.audio.qwen_asr import QwenTranscription
 from dashscope.files import Files
 
 from app.core.config import ASR_TASK_POLL_SECONDS
-from app.services.faster_whisper_asr import FASTER_WHISPER_ASR_MODEL, transcribe_audio_file_with_faster_whisper
+from app.services.faster_whisper_asr import (
+    FASTER_WHISPER_ASR_MODEL,
+    FasterWhisperModelNotReadyError,
+    get_faster_whisper_model_status,
+    transcribe_audio_file_with_faster_whisper,
+)
 from app.services.sensevoice import SENSEVOICE_ASR_MODEL, get_sensevoice_settings_snapshot, transcribe_audio_file_with_sensevoice
 
 
@@ -309,6 +314,13 @@ def _transcribe_audio_file_with_sensevoice(audio_path: str, *, known_duration_ms
 def _transcribe_audio_file_with_faster_whisper(audio_path: str, *, known_duration_ms: int | None = None, progress_callback=None) -> dict[str, Any]:
     try:
         return transcribe_audio_file_with_faster_whisper(audio_path, progress_callback=progress_callback)
+    except FasterWhisperModelNotReadyError as exc:
+        status_payload = dict(getattr(exc, "status_payload", None) or get_faster_whisper_model_status())
+        raise AsrError(
+            "ASR_MODEL_NOT_READY",
+            str(status_payload.get("message") or "Faster Whisper model is not ready"),
+            json.dumps({"status": status_payload}, ensure_ascii=False)[:1200],
+        ) from exc
     except AsrError:
         raise
     except Exception as exc:
