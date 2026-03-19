@@ -7,10 +7,11 @@ import threading
 import traceback
 from pathlib import Path
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, UPLOAD_MAX_BYTES
+from app.core.timezone import now_shanghai_naive
 from app.models import Lesson, WalletLedger
 from app.repositories.admin_console import invalidate_admin_overview_cache, invalidate_admin_user_activity_summary_cache
 from app.repositories.lessons import update_lesson_title_for_user
@@ -21,6 +22,7 @@ from app.services.lesson_service import LessonService
 from app.services.lesson_task_manager import (
     LessonTaskStorageNotReadyError,
     build_task_id,
+    configure_task_runtime_probe,
     create_task,
     ensure_lesson_task_storage_ready,
     get_task,
@@ -39,6 +41,9 @@ from app.services.media import MediaError, cleanup_dir, save_upload_file_stream,
 
 
 logger = logging.getLogger(__name__)
+PROCESS_STARTED_AT = now_shanghai_naive()
+_ACTIVE_TASK_IDS: set[str] = set()
+_ACTIVE_TASK_IDS_LOCK = threading.Lock()
 
 
 class LessonTaskPauseRequested(RuntimeError):
@@ -47,6 +52,30 @@ class LessonTaskPauseRequested(RuntimeError):
 
 class LessonTaskTerminateRequested(RuntimeError):
     pass
+
+
+def is_task_active_in_current_process(task_id: str) -> bool:
+    normalized_task_id = str(task_id or "").strip()
+    if not normalized_task_id:
+        return False
+    with _ACTIVE_TASK_IDS_LOCK:
+        return normalized_task_id in _ACTIVE_TASK_IDS
+
+
+def _register_active_task(task_id: str) -> None:
+    normalized_task_id = str(task_id or "").strip()
+    if not normalized_task_id:
+        return
+    with _ACTIVE_TASK_IDS_LOCK:
+        _ACTIVE_TASK_IDS.add(normalized_task_id)
+
+
+def _unregister_active_task(task_id: str) -> None:
+    normalized_task_id = str(task_id or "").strip()
+    if not normalized_task_id:
+        return
+    with _ACTIVE_TASK_IDS_LOCK:
+        _ACTIVE_TASK_IDS.discard(normalized_task_id)
 
 
 def build_lesson_task_session_factory(bind) -> sessionmaker[Session]:
@@ -81,6 +110,7 @@ def run_lesson_generation_task(
     source_duration_ms: int | None = None,
 ) -> None:
     db = session_factory()
+    _register_active_task(task_id)
     try:
         logger.info("[DEBUG] lessons.task.start task_id=%s owner_id=%s model=%s", task_id, owner_id, asr_model)
 
@@ -195,6 +225,7 @@ def run_lesson_generation_task(
         )
         logger.exception("[DEBUG] lessons.task.failed task_id=%s detail=%s", task_id, str(exc)[:400])
     finally:
+        _unregister_active_task(task_id)
         db.close()
 
 
@@ -431,14 +462,55 @@ def rename_lesson_for_user(*, db: Session, lesson_id: int, user_id: int, title: 
     return lesson
 
 
-def delete_lesson_for_user(*, db: Session, lesson: Lesson) -> None:
+def _delete_lesson_row(*, db: Session, lesson: Lesson) -> Path:
     lesson_dir = BASE_DATA_DIR / f"lesson_{lesson.id}"
     db.execute(update(WalletLedger).where(WalletLedger.lesson_id == lesson.id).values(lesson_id=None))
     db.delete(lesson)
-    db.commit()
-    invalidate_lesson_related_queries(int(lesson.user_id))
+    return lesson_dir
+
+
+def _cleanup_lesson_dir(lesson_dir: Path, *, lesson_id: int) -> None:
     if lesson_dir.exists():
         try:
             shutil.rmtree(lesson_dir)
         except Exception as exc:
-            logger.warning("[DEBUG] lesson_delete.cleanup_failed lesson_id=%s dir=%s error=%s", lesson.id, lesson_dir, exc)
+            logger.warning("[DEBUG] lesson_delete.cleanup_failed lesson_id=%s dir=%s error=%s", lesson_id, lesson_dir, exc)
+
+
+def delete_lesson_for_user(*, db: Session, lesson: Lesson) -> None:
+    lesson_dir = _delete_lesson_row(db=db, lesson=lesson)
+    db.commit()
+    invalidate_lesson_related_queries(int(lesson.user_id))
+    _cleanup_lesson_dir(lesson_dir, lesson_id=int(lesson.id))
+
+
+def bulk_delete_lessons_for_user(*, db: Session, user_id: int, lesson_ids: list[int] | None = None, delete_all: bool = False) -> dict[str, object]:
+    normalized_ids = sorted({int(item) for item in list(lesson_ids or []) if int(item) > 0})
+    if not delete_all and not normalized_ids:
+        return {"deleted_ids": [], "deleted_count": 0, "failed_ids": []}
+
+    query = select(Lesson).where(Lesson.user_id == int(user_id))
+    if not delete_all:
+        query = query.where(Lesson.id.in_(normalized_ids))
+    lessons = list(db.scalars(query).all())
+    if not lessons:
+        return {"deleted_ids": [], "deleted_count": 0, "failed_ids": normalized_ids if not delete_all else []}
+
+    deleted_ids = [int(item.id) for item in lessons]
+    lesson_dirs: list[tuple[int, Path]] = []
+    for lesson in lessons:
+        lesson_dirs.append((int(lesson.id), _delete_lesson_row(db=db, lesson=lesson)))
+    db.commit()
+    invalidate_lesson_related_queries(int(user_id))
+    for lesson_id, lesson_dir in lesson_dirs:
+        _cleanup_lesson_dir(lesson_dir, lesson_id=lesson_id)
+
+    failed_ids = [] if delete_all else [lesson_id for lesson_id in normalized_ids if lesson_id not in deleted_ids]
+    return {
+        "deleted_ids": deleted_ids,
+        "deleted_count": len(deleted_ids),
+        "failed_ids": failed_ids,
+    }
+
+
+configure_task_runtime_probe(is_task_active_in_current_process, process_started_at=PROCESS_STARTED_AT)

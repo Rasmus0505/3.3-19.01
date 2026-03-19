@@ -4,22 +4,8 @@ import { toast } from "sonner";
 
 import { AdminApp } from "../../AdminApp";
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
-import {
-  deleteLessonMedia,
-  getLessonMediaPreview,
-  readMediaDurationSeconds,
-  requestPersistentStorage,
-  saveLessonMedia,
-} from "../../shared/media/localMediaStore";
-import {
-  deleteLessonSubtitleCache,
-  getCachedLessonSubtitleVariant,
-  getLessonSubtitleAvailability,
-  getLessonSubtitleCache,
-  saveLessonSubtitleCacheSeed,
-  saveLessonSubtitleVariant,
-  setActiveLessonSubtitleVariant,
-} from "../../shared/media/localSubtitleStore";
+import { getLessonMediaPreview, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
+import { getCachedLessonSubtitleVariant, getLessonSubtitleAvailability, getLessonSubtitleCache, saveLessonSubtitleCacheSeed, saveLessonSubtitleVariant, setActiveLessonSubtitleVariant } from "../../shared/media/localSubtitleStore";
 import {
   Button,
   Card,
@@ -169,6 +155,7 @@ export function LearningShellContainer() {
   const adminAuthState = useAppStore((state) => state.adminAuthState);
 
   const lessons = useAppStore((state) => state.lessons);
+  const lessonsTotal = useAppStore((state) => state.lessonsTotal);
   const lessonsPage = useAppStore((state) => state.lessonsPage);
   const lessonsQuery = useAppStore((state) => state.lessonsQuery);
   const hasMoreLessons = useAppStore((state) => state.hasMoreLessons);
@@ -198,6 +185,7 @@ export function LearningShellContainer() {
   const refreshCurrentLesson = useAppStore((state) => state.refreshCurrentLesson);
   const renameLesson = useAppStore((state) => state.renameLesson);
   const deleteLesson = useAppStore((state) => state.deleteLesson);
+  const deleteLessonsBulk = useAppStore((state) => state.deleteLessonsBulk);
   const refreshSubtitleCacheMeta = useAppStore((state) => state.refreshSubtitleCacheMeta);
 
   const prefetchLessonMediaMeta = useAppStore((state) => state.prefetchLessonMediaMeta);
@@ -580,20 +568,17 @@ export function LearningShellContainer() {
   }
 
   async function handleDeleteLesson(lessonId) {
-    const result = await deleteLesson(lessonId, { keepImmersiveAfterFallback: immersiveActive });
+    const result = await deleteLesson(lessonId);
     if (result.ok) {
-      void deleteLessonMedia(lessonId).catch(() => {
-        // Ignore local cache cleanup errors.
-      });
-      void deleteLessonSubtitleCache(lessonId).catch(() => {
-        // Ignore local subtitle cache cleanup errors.
-      });
-      useAppStore.setState((state) => {
-        const nextLessonMediaMetaMap = { ...state.lessonMediaMetaMap };
-        delete nextLessonMediaMetaMap[lessonId];
-        return { lessonMediaMetaMap: nextLessonMediaMetaMap };
-      });
       toast.success("删除历史成功");
+    }
+    return result;
+  }
+
+  async function handleBulkDeleteLessons(payload = {}) {
+    const result = await deleteLessonsBulk(payload);
+    if (result.ok) {
+      toast.success(result.message || `已删除 ${Number(result.deletedCount || 0)} 条历史记录`);
     }
     return result;
   }
@@ -760,6 +745,7 @@ export function LearningShellContainer() {
                   onExitImmersive={handleExitImmersive}
                   onStartImmersive={handleStartImmersive}
                   lessons={lessons}
+                  totalLessons={lessonsTotal}
                   currentLessonNeedsBinding={currentLessonNeedsBinding}
                   lessonCardMetaMap={lessonCardMetaMap}
                   lessonMediaMetaMap={lessonMediaMetaMap}
@@ -770,6 +756,7 @@ export function LearningShellContainer() {
                   onStartLesson={handleStartLesson}
                   onRenameLesson={handleRenameLesson}
                   onDeleteLesson={handleDeleteLesson}
+                  onBulkDeleteLessons={handleBulkDeleteLessons}
                   onRestoreLessonMedia={handleRestoreLessonMedia}
                   onSwitchToUpload={() => handlePanelChange("upload")}
                   walletBalance={walletBalance}

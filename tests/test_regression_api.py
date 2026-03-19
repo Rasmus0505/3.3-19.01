@@ -2610,6 +2610,130 @@ def test_delete_lesson_clears_wallet_ledger_reference(test_client):
         verify.close()
 
 
+def test_bulk_delete_lessons_by_ids_keeps_other_users_data(test_client):
+    client, session_factory, _ = test_client
+    owner_token = _register_and_login(client, email="bulk-delete-owner@example.com")
+    other_token = _register_and_login(client, email="bulk-delete-other@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+
+    session = session_factory()
+    try:
+        owner = session.query(User).filter(User.email == "bulk-delete-owner@example.com").one()
+        other = session.query(User).filter(User.email == "bulk-delete-other@example.com").one()
+        owner_lessons = [
+            Lesson(
+                user_id=owner.id,
+                title=f"owner lesson {index}",
+                source_filename=f"owner-{index}.mp4",
+                asr_model=QWEN_ASR_MODEL,
+                duration_ms=1000 + index,
+                media_storage="client_indexeddb",
+                source_duration_ms=1000 + index,
+                status="ready",
+            )
+            for index in range(1, 4)
+        ]
+        other_lesson = Lesson(
+            user_id=other.id,
+            title="other lesson",
+            source_filename="other.mp4",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=2000,
+            media_storage="client_indexeddb",
+            source_duration_ms=2000,
+            status="ready",
+        )
+        session.add_all([*owner_lessons, other_lesson])
+        session.flush()
+        owner_delete_ids = [owner_lessons[0].id, owner_lessons[2].id]
+        other_lesson_id = other_lesson.id
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.post(
+        "/api/lessons/bulk-delete",
+        headers=owner_headers,
+        json={"lesson_ids": owner_delete_ids, "delete_all": False},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["ok"] is True
+    assert sorted(payload["deleted_ids"]) == sorted(owner_delete_ids)
+    assert payload["deleted_count"] == 2
+    assert payload["failed_ids"] == []
+
+    for lesson_id in owner_delete_ids:
+        deleted_resp = client.get(f"/api/lessons/{lesson_id}", headers=owner_headers)
+        assert deleted_resp.status_code == 404
+
+    other_resp = client.get(f"/api/lessons/{other_lesson_id}", headers=other_headers)
+    assert other_resp.status_code == 200
+
+
+def test_bulk_delete_all_lessons_only_removes_current_user_history(test_client):
+    client, session_factory, _ = test_client
+    owner_token = _register_and_login(client, email="bulk-delete-all-owner@example.com")
+    other_token = _register_and_login(client, email="bulk-delete-all-other@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+
+    session = session_factory()
+    try:
+        owner = session.query(User).filter(User.email == "bulk-delete-all-owner@example.com").one()
+        other = session.query(User).filter(User.email == "bulk-delete-all-other@example.com").one()
+        owner_lessons = [
+            Lesson(
+                user_id=owner.id,
+                title=f"delete all owner {index}",
+                source_filename=f"delete-all-owner-{index}.mp4",
+                asr_model=QWEN_ASR_MODEL,
+                duration_ms=1500 + index,
+                media_storage="client_indexeddb",
+                source_duration_ms=1500 + index,
+                status="ready",
+            )
+            for index in range(1, 3)
+        ]
+        other_lesson = Lesson(
+            user_id=other.id,
+            title="delete all other",
+            source_filename="delete-all-other.mp4",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=2400,
+            media_storage="client_indexeddb",
+            source_duration_ms=2400,
+            status="ready",
+        )
+        session.add_all([*owner_lessons, other_lesson])
+        session.flush()
+        owner_lesson_ids = [lesson.id for lesson in owner_lessons]
+        other_lesson_id = other_lesson.id
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.post(
+        "/api/lessons/bulk-delete",
+        headers=owner_headers,
+        json={"lesson_ids": [], "delete_all": True},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["ok"] is True
+    assert sorted(payload["deleted_ids"]) == sorted(owner_lesson_ids)
+    assert payload["deleted_count"] == len(owner_lesson_ids)
+    assert payload["failed_ids"] == []
+
+    catalog_resp = client.get("/api/lessons/catalog", headers=owner_headers, params={"page": 1, "page_size": 20})
+    assert catalog_resp.status_code == 200
+    assert catalog_resp.json()["total"] == 0
+
+    other_resp = client.get(f"/api/lessons/{other_lesson_id}", headers=other_headers)
+    assert other_resp.status_code == 200
+
+
 def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch, tmp_path):
     client, session_factory, _ = test_client
     token = _register_and_login(client, email="creator@example.com")

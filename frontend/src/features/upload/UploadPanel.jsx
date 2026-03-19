@@ -92,6 +92,12 @@ const SERVER_PREPARABLE_MODELS = new Set([FASTER_WHISPER_MODEL]);
 const ACTIVE_SERVER_TASK_STATUSES = new Set(["pending", "running", "pausing", "terminating"]);
 const STOPPABLE_SERVER_TASK_STATUSES = new Set(["pending", "running"]);
 const RECOVERABLE_SERVER_TASK_STATUSES = new Set(["paused", "terminated"]);
+const RESTORE_BANNER_MODES = {
+  NONE: "none",
+  VERIFYING: "verifying",
+  STALE: "stale",
+  INTERRUPTED: "interrupted",
+};
 
 function clampPercent(value) {
   return Math.max(0, Math.min(100, Number(value) || 0));
@@ -573,6 +579,22 @@ function getInterruptedLocalAsrStatus(hasFile) {
   return hasFile ? "上次生成已中断，请重新开始。" : "";
 }
 
+function getTaskStatusCardText(restoreBannerMode, taskSnapshot, statusText = "") {
+  if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING) {
+    return "正在检查上次任务状态...";
+  }
+  if (restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED) {
+    if (Boolean(taskSnapshot?.resume_available)) {
+      return "上次生成已中断，可继续生成或重新开始。";
+    }
+    return "上次生成已中断，可重新开始或清空这次记录。";
+  }
+  if (restoreBannerMode === RESTORE_BANNER_MODES.STALE) {
+    return String(statusText || "上次生成记录已失效，可重新开始或清空这次记录。");
+  }
+  return "";
+}
+
 export function UploadPanel({ accessToken, isActivePanel = true, onCreated, balanceAmountCents = 0, balancePoints, billingRates, subtitleSettings, onWalletChanged, onTaskStateChange, onNavigateToLesson }) {
   const currentUser = useAppStore((state) => state.currentUser);
   const normalizedBalanceAmountCents = Number(balanceAmountCents ?? balancePoints ?? 0);
@@ -610,6 +632,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [serverBusyModelKey, setServerBusyModelKey] = useState("");
   const [serverBusyText, setServerBusyText] = useState("");
   const [localModelAdvancedOpen, setLocalModelAdvancedOpen] = useState(false);
+  const [restoreBannerMode, setRestoreBannerMode] = useState(RESTORE_BANNER_MODES.NONE);
   const pollingAbortRef = useRef(false);
   const pollTokenRef = useRef(0);
   const uploadAbortRef = useRef(null);
@@ -656,17 +679,32 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const displayTaskSnapshot = localTranscribing ? localProgressSnapshot : taskSnapshot;
   const hasLocalFile = Boolean(file);
   const displayTaskStatus = String(displayTaskSnapshot?.status || "").toLowerCase();
-  const serviceTaskActive = !localTranscribing && Boolean(taskId) && ACTIVE_SERVER_TASK_STATUSES.has(displayTaskStatus || (phase === "processing" ? "running" : ""));
+  const isRestoreVerifying = restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING;
+  const showRestoreInfoCard = restoreBannerMode !== RESTORE_BANNER_MODES.NONE;
+  const serviceTaskActive =
+    !localTranscribing &&
+    !isRestoreVerifying &&
+    Boolean(taskId) &&
+    ACTIVE_SERVER_TASK_STATUSES.has(displayTaskStatus || (phase === "processing" ? "running" : ""));
   const serviceTaskStopActionsVisible =
-    serviceTaskActive && (Boolean(displayTaskSnapshot?.can_pause) || Boolean(displayTaskSnapshot?.can_terminate) || STOPPABLE_SERVER_TASK_STATUSES.has(displayTaskStatus));
+    !isRestoreVerifying &&
+    serviceTaskActive &&
+    (Boolean(displayTaskSnapshot?.can_pause) || Boolean(displayTaskSnapshot?.can_terminate) || STOPPABLE_SERVER_TASK_STATUSES.has(displayTaskStatus));
   const taskPaused = !localTranscribing && displayTaskStatus === "paused";
   const taskTerminated = !localTranscribing && displayTaskStatus === "terminated";
   const showRecoveryBanner = hasLocalFile && RECOVERABLE_SERVER_TASK_STATUSES.has(displayTaskStatus);
   const recoveryBannerText = getRecoveryBannerText(displayTaskSnapshot);
+  const taskStatusCardText = getTaskStatusCardText(restoreBannerMode, taskSnapshot, status);
+  const showTaskStatusCard =
+    restoreBannerMode !== RESTORE_BANNER_MODES.NONE || (showRecoveryBanner && !isRestoreVerifying);
   const stageItems = getStageDisplayItems(displayTaskSnapshot);
   const progressPercent = getVisualProgress(phase, uploadPercent, displayTaskSnapshot);
   const showProgress =
-    loading || phase === "success" || phase === "error" || phase === "upload_paused" || Boolean(displayTaskSnapshot);
+    !isRestoreVerifying &&
+    restoreBannerMode !== RESTORE_BANNER_MODES.STALE &&
+    restoreBannerMode !== RESTORE_BANNER_MODES.INTERRUPTED &&
+    !RECOVERABLE_SERVER_TASK_STATUSES.has(displayTaskStatus) &&
+    (loading || phase === "success" || phase === "error" || phase === "upload_paused" || Boolean(displayTaskSnapshot));
   const canRetryWithoutUpload = Boolean(taskId) && (Boolean(taskSnapshot?.resume_available) || phase === "error");
   const showMediaPreview = Boolean(file || coverDataUrl);
   const sourceDisplayName = String(file?.name || taskSnapshot?.lesson?.source_filename || "");
@@ -1149,6 +1187,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setLocalBusyText("");
     setServerBusyModelKey("");
     setServerBusyText("");
+    setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
     successStateOriginRef.current = "none";
   }
 
@@ -1312,6 +1351,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setUploadPercent(0);
     setLocalProgressSnapshot(null);
     setBindingCompleted(false);
+    setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
     await persistSession({
       taskId: "",
       phase: file ? "ready" : "idle",
@@ -1377,6 +1417,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setPhase("success");
     setStatus(successMessage);
     setLoading(false);
+    setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
     setBindingCompleted(Boolean(mediaPersisted || data.lesson?.media_storage !== "client_indexeddb"));
     successStateOriginRef.current = "live";
     if (ownerUserId) {
@@ -1395,6 +1436,17 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       const data = await parseResponse(resp);
       if (pollingAbortRef.current || pollToken !== pollTokenRef.current) return;
       if (!resp.ok) {
+        if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING) {
+          const nextStatus = "上次生成记录已失效，可重新开始或清空这次记录。";
+          setTaskId("");
+          setTaskSnapshot(null);
+          setRestoreBannerMode(RESTORE_BANNER_MODES.STALE);
+          setStatus(nextStatus);
+          setPhase(file ? "ready" : "idle");
+          setLoading(false);
+          await persistSession({ taskId: "", phase: file ? "ready" : "idle", taskSnapshot: null, uploadPercent: 0, status: nextStatus });
+          return;
+        }
         const message = toErrorText(data, "查询任务失败");
         setStatus(message);
         setPhase("error");
@@ -1406,11 +1458,21 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       setTaskId(String(data.task_id || nextTaskId));
       setTaskSnapshot(data);
       const taskStatus = String(data.status || "").toLowerCase();
+      if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING) {
+        if (ACTIVE_SERVER_TASK_STATUSES.has(taskStatus)) {
+          setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
+        } else if (RECOVERABLE_SERVER_TASK_STATUSES.has(taskStatus)) {
+          setRestoreBannerMode(RESTORE_BANNER_MODES.INTERRUPTED);
+        } else if (taskStatus === "failed") {
+          setRestoreBannerMode(RESTORE_BANNER_MODES.STALE);
+        }
+      }
       if (taskStatus === "succeeded") {
         await finalizeSuccess(data, file, silentToast);
         return;
       }
       if (taskStatus === "paused" || taskStatus === "terminated") {
+        setRestoreBannerMode(RESTORE_BANNER_MODES.INTERRUPTED);
         const nextPhase = file ? "ready" : "idle";
         const nextStatus = String(data.current_text || data.message || "");
         setStatus(nextStatus);
@@ -1421,6 +1483,17 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         return;
       }
       if (taskStatus === "failed") {
+        if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING && !Boolean(data.resume_available)) {
+          setTaskId("");
+          setTaskSnapshot(null);
+          setRestoreBannerMode(RESTORE_BANNER_MODES.STALE);
+          const nextStatus = "上次生成记录已失效，可重新开始或清空这次记录。";
+          setStatus(nextStatus);
+          setPhase(file ? "ready" : "idle");
+          setLoading(false);
+          await persistSession({ taskId: "", phase: file ? "ready" : "idle", taskSnapshot: null, uploadPercent: 0, status: nextStatus });
+          return;
+        }
         const message = `${data.error_code || "ERROR"}: ${data.message || "生成失败"}`;
         setStatus(message);
         setPhase("error");
@@ -1437,6 +1510,17 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       setTimeout(() => void pollTask(nextTaskId, silentToast, pollToken), 1000);
     } catch (error) {
       if (pollingAbortRef.current || pollToken !== pollTokenRef.current || error?.name === "AbortError") return;
+      if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING) {
+        const nextStatus = "检查上次任务状态失败，可重新开始或稍后重试。";
+        setTaskId("");
+        setTaskSnapshot(null);
+        setRestoreBannerMode(RESTORE_BANNER_MODES.STALE);
+        setStatus(nextStatus);
+        setPhase(file ? "ready" : "idle");
+        setLoading(false);
+        await persistSession({ taskId: "", phase: file ? "ready" : "idle", taskSnapshot: null, uploadPercent: 0, status: nextStatus });
+        return;
+      }
       const message = `网络错误: ${String(error)}`;
       setStatus(message);
       setPhase("error");
@@ -1483,9 +1567,22 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
           : !saved.task_id && savedPhase === "uploading"
             ? String(saved.status_text || "检测到上次上传中断，可继续上传当前素材")
             : String(saved.status_text || "");
+        const savedTaskId = String(saved.task_id || "").trim();
+        const savedSnapshotExists = Boolean(saved.task_snapshot);
+        const nextRestoreBannerMode = savedTaskId
+          ? RESTORE_BANNER_MODES.VERIFYING
+          : savedSnapshotExists
+            ? RESTORE_BANNER_MODES.STALE
+            : RESTORE_BANNER_MODES.NONE;
+        const nextStatus =
+          nextRestoreBannerMode === RESTORE_BANNER_MODES.VERIFYING
+            ? "正在检查上次任务状态..."
+            : nextRestoreBannerMode === RESTORE_BANNER_MODES.STALE
+              ? "上次生成记录已失效，可重新开始或清空这次记录。"
+              : restoredStatus;
         setFile(restoredFile);
-        setTaskId(String(saved.task_id || ""));
-        setStatus(restoredStatus);
+        setTaskId(savedTaskId);
+        setStatus(nextStatus);
         setDurationSec(Number(saved.duration_seconds || 0) || null);
         setPhase(restoredPhase || "idle");
         setMode(String(saved.generation_mode || "").toLowerCase() === "fast" ? "fast" : "balanced");
@@ -1495,17 +1592,18 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         setCoverHeight(Number(saved.cover_height || 0));
         setCoverAspectRatio(Number(saved.aspect_ratio || 0));
         setIsVideoSource(Boolean(saved.is_video_source));
-        setTaskSnapshot(saved.task_snapshot || null);
+        setTaskSnapshot(nextRestoreBannerMode === RESTORE_BANNER_MODES.NONE && isRecoverableServerTask ? saved.task_snapshot || null : null);
         setUploadPercent(Number(saved.upload_percent || 0));
         uploadPersistRef.current.latestPercent = Number(saved.upload_percent || 0);
         setBindingCompleted(Boolean(saved.binding_completed));
         setLocalBusyModelKey("");
         setLocalBusyText("");
         successStateOriginRef.current = "none";
+        setRestoreBannerMode(nextRestoreBannerMode);
         setLoading(["processing"].includes(restoredPhase) && ACTIVE_SERVER_TASK_STATUSES.has(savedTaskStatus || "running"));
-        if (saved.task_id && (ACTIVE_SERVER_TASK_STATUSES.has(savedTaskStatus) || ["processing", "uploading"].includes(savedPhase))) {
+        if (savedTaskId && (ACTIVE_SERVER_TASK_STATUSES.has(savedTaskStatus) || ["processing", "uploading"].includes(savedPhase))) {
           const pollToken = startPollingSession();
-          void pollTask(String(saved.task_id), true, pollToken);
+          void pollTask(savedTaskId, true, pollToken);
         }
         return;
       }
@@ -2111,6 +2209,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     const pollToken = startPollingSession();
     setLoading(true);
     setStatus("");
+    setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
     try {
       const resp = await api(`/api/lessons/tasks/${taskId}/resume`, { method: "POST" }, accessToken);
       const data = await parseResponse(resp);
@@ -2418,19 +2517,32 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         ) : null}
         {mode === "balanced" && balancedPerformanceWarning ? <p className="text-xs text-amber-700">{simplifyLongAudioWarning(balancedPerformanceWarning)}</p> : null}
 
-        {showRecoveryBanner ? (
+        {showTaskStatusCard ? (
           <div className="space-y-3 rounded-2xl border border-border bg-muted/15 p-4">
-            <p className="text-sm text-muted-foreground">{recoveryBannerText}</p>
+            <div className="space-y-1">
+              <p className="text-sm font-medium">任务状态</p>
+              <p className="text-sm text-muted-foreground">
+                {restoreBannerMode === RESTORE_BANNER_MODES.NONE ? recoveryBannerText || taskStatusCardText : taskStatusCardText}
+              </p>
+            </div>
             <div className="flex flex-wrap gap-2">
-              {taskPaused ? (
+              {(restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED || restoreBannerMode === RESTORE_BANNER_MODES.NONE) &&
+              (taskPaused || Boolean(taskSnapshot?.resume_available)) ? (
                 <Button type="button" onClick={() => void resumeTask()}>
                   <RefreshCcw className="size-4" />
                   继续生成
                 </Button>
               ) : null}
-              <Button type="button" variant={taskPaused ? "outline" : "default"} onClick={() => void clearTaskRuntime("已保留素材，可重新开始。")}>
+              <Button
+                type="button"
+                variant={(restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED || restoreBannerMode === RESTORE_BANNER_MODES.NONE) && taskPaused ? "outline" : "default"}
+                onClick={() => void clearTaskRuntime("已保留素材，可重新开始。")}
+              >
                 <RefreshCcw className="size-4" />
                 重新开始
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => void clearTaskRuntime()}>
+                清空这次记录
               </Button>
             </div>
           </div>
