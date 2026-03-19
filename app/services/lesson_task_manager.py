@@ -19,6 +19,16 @@ FAILURE_RETENTION_HOURS = 24
 FAILURE_EXCEPTION_TYPE_LIMIT = 120
 FAILURE_DETAIL_EXCERPT_LIMIT = 2000
 FAILURE_TRACEBACK_EXCERPT_LIMIT = 4000
+TASK_CONTROL_ACTIONS: tuple[str, ...] = ("pause", "terminate")
+TASK_STATUS_RUNNING = "running"
+TASK_STATUS_PAUSING = "pausing"
+TASK_STATUS_PAUSED = "paused"
+TASK_STATUS_TERMINATING = "terminating"
+TASK_STATUS_TERMINATED = "terminated"
+TASK_STATUS_PENDING = "pending"
+TASK_STATUS_FAILED = "failed"
+TASK_STATUS_SUCCEEDED = "succeeded"
+TASK_ACTIVE_CONTROL_STATUSES = {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING, TASK_STATUS_TERMINATING}
 
 _STAGE_LABELS: tuple[tuple[str, str], ...] = (
     ("convert_audio", "转换音频格式"),
@@ -93,6 +103,10 @@ def _default_artifacts(work_dir: str, source_path: str) -> dict:
         "translation_checkpoint_path": str(base / "translation_checkpoint.json"),
         "segment_results_dir": str(base / "asr_segment_results"),
         "lesson_result_path": str(base / "lesson_result.json"),
+        "control_action": "",
+        "control_requested_at": "",
+        "paused_at": "",
+        "terminated_at": "",
     }
 
 
@@ -109,6 +123,30 @@ def _trim_text(value: str | None, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[: max(0, limit - 1)] + "…"
+
+
+def _get_control_action(artifacts: dict | None) -> str:
+    action = str((artifacts or {}).get("control_action") or "").strip().lower()
+    return action if action in TASK_CONTROL_ACTIONS else ""
+
+
+def _clear_control_fields(artifacts: dict | None) -> dict:
+    next_artifacts = _copy_dict(artifacts)
+    next_artifacts["control_action"] = ""
+    next_artifacts["control_requested_at"] = ""
+    return next_artifacts
+
+
+def _set_control_fields(artifacts: dict | None, *, action: str = "", requested_at=None, paused_at=None, terminated_at=None) -> dict:
+    next_artifacts = _copy_dict(artifacts)
+    normalized_action = action if action in TASK_CONTROL_ACTIONS else ""
+    next_artifacts["control_action"] = normalized_action
+    next_artifacts["control_requested_at"] = requested_at.isoformat() if requested_at else ""
+    if paused_at is not None:
+        next_artifacts["paused_at"] = paused_at.isoformat() if paused_at else ""
+    if terminated_at is not None:
+        next_artifacts["terminated_at"] = terminated_at.isoformat() if terminated_at else ""
+    return next_artifacts
 
 
 def _find_stage(stages: list[dict], stage_key: str) -> dict | None:
@@ -144,6 +182,9 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
     if failure_debug is not None and task.failed_at is not None and not failure_debug.get("failed_at"):
         failure_debug["failed_at"] = task.failed_at
     asr_raw = _copy_dict(task.asr_raw_json) if isinstance(task.asr_raw_json, dict) else None
+    artifacts = _copy_dict(task.artifacts_json)
+    status = str(task.status or "")
+    control_action = _get_control_action(artifacts)
     return {
         "task_id": task.task_id,
         "owner_user_id": int(task.owner_user_id),
@@ -151,7 +192,7 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
         "source_filename": task.source_filename,
         "asr_model": task.asr_model,
         "semantic_split_enabled": bool(task.semantic_split_enabled),
-        "status": task.status,
+        "status": status,
         "overall_percent": int(task.overall_percent or 0),
         "current_text": str(task.current_text or ""),
         "stages": _copy_list(task.stages_json),
@@ -165,10 +206,15 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
         "message": str(task.message or ""),
         "resume_available": bool(task.resume_available),
         "resume_stage": str(task.resume_stage or ""),
-        "artifacts": _copy_dict(task.artifacts_json),
+        "artifacts": artifacts,
         "artifact_expires_at": task.artifact_expires_at,
         "failed_at": task.failed_at,
         "raw_debug_purged_at": task.raw_debug_purged_at,
+        "control_action": control_action,
+        "paused_at": artifacts.get("paused_at") or None,
+        "terminated_at": artifacts.get("terminated_at") or None,
+        "can_pause": status in {TASK_STATUS_PENDING, TASK_STATUS_RUNNING} and control_action != "terminate",
+        "can_terminate": status in {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING, TASK_STATUS_TERMINATING},
         "created_at": task.created_at,
         "updated_at": task.updated_at,
     }
@@ -229,7 +275,7 @@ def create_task(
             source_filename=source_filename,
             asr_model=asr_model,
             semantic_split_enabled=bool(semantic_split_enabled),
-            status="pending",
+            status=TASK_STATUS_PENDING,
             overall_percent=0,
             current_text="等待处理",
             stages_json=_empty_stages(),
@@ -284,8 +330,8 @@ def update_task_progress(
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         if not task:
             return
-        if task.status in {"pending", "failed"}:
-            task.status = "running"
+        if str(task.status or "") in {TASK_STATUS_PENDING, TASK_STATUS_FAILED}:
+            task.status = TASK_STATUS_RUNNING
         stages = _copy_list(task.stages_json)
         if stage_key:
             stage = _find_stage(stages, stage_key)
@@ -375,7 +421,7 @@ def mark_task_failed(
         resume_stage = str(failed_stage or running_stage.get("key") or "") if running_stage else str(failed_stage or _infer_resume_stage(stages))
         next_translation_debug = dict(translation_debug) if isinstance(translation_debug, dict) else _copy_dict(task.translation_debug_json)
         task.stages_json = stages
-        task.status = "failed"
+        task.status = TASK_STATUS_FAILED
         task.translation_debug_json = next_translation_debug or None
         task.failure_debug_json = {
             "failed_stage": resume_stage,
@@ -395,6 +441,7 @@ def mark_task_failed(
         task.resume_available = bool(resume_stage) if resume_available is None else bool(resume_available)
         task.failed_at = failed_at
         task.artifact_expires_at = now_shanghai_naive() + timedelta(hours=FAILURE_RETENTION_HOURS)
+        task.artifacts_json = _clear_control_fields(task.artifacts_json)
         session.commit()
     finally:
         if owns_session:
@@ -419,7 +466,7 @@ def mark_task_succeeded(
         for stage in stages:
             stage["status"] = "completed"
         task.stages_json = stages
-        task.status = "succeeded"
+        task.status = TASK_STATUS_SUCCEEDED
         task.lesson_id = int(lesson_id)
         task.overall_percent = 100
         task.current_text = "课程生成完成"
@@ -429,6 +476,7 @@ def mark_task_succeeded(
         task.resume_stage = ""
         task.artifact_expires_at = now_shanghai_naive()
         task.failed_at = None
+        task.artifacts_json = _clear_control_fields(task.artifacts_json)
         session.commit()
     finally:
         if owns_session:
@@ -484,13 +532,13 @@ def reset_failed_task_for_restart(
     try:
         ensure_lesson_task_storage_ready(session)
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
-        if not task or str(task.status or "") != "failed":
+        if not task or str(task.status or "") != TASK_STATUS_FAILED:
             return None
         task.stages_json = _empty_stages()
         task.counters_json = _empty_counters()
         task.translation_debug_json = None
         task.failure_debug_json = None
-        task.status = "pending"
+        task.status = TASK_STATUS_PENDING
         task.overall_percent = 0
         task.current_text = "准备重新生成"
         task.error_code = ""
@@ -499,6 +547,7 @@ def reset_failed_task_for_restart(
         task.resume_stage = "convert_audio"
         task.artifact_expires_at = None
         task.failed_at = None
+        task.artifacts_json = _set_control_fields(task.artifacts_json, action="", requested_at=None, paused_at=None, terminated_at=None)
         session.commit()
         session.refresh(task)
         return _task_to_dict(task)
@@ -531,7 +580,7 @@ def reset_task_for_resume(
             elif stage.get("status") != "completed":
                 stage["status"] = "pending"
         task.stages_json = stages
-        task.status = "pending"
+        task.status = TASK_STATUS_PENDING
         task.current_text = "准备继续生成"
         task.failure_debug_json = None
         task.error_code = ""
@@ -539,9 +588,136 @@ def reset_task_for_resume(
         task.resume_available = False
         task.artifact_expires_at = None
         task.failed_at = None
+        task.artifacts_json = _set_control_fields(task.artifacts_json, action="", requested_at=None, paused_at=None, terminated_at=None)
         session.commit()
         session.refresh(task)
         return _task_to_dict(task)
+    finally:
+        if owns_session:
+            session.close()
+
+
+def request_task_control(
+    task_id: str,
+    *,
+    action: str,
+    db: Session | None = None,
+    session_factory: SessionFactory | None = None,
+) -> dict | None:
+    normalized_action = str(action or "").strip().lower()
+    if normalized_action not in TASK_CONTROL_ACTIONS:
+        return None
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
+    try:
+        ensure_lesson_task_storage_ready(session)
+        task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        if not task:
+            return None
+        status = str(task.status or "").strip().lower()
+        if normalized_action == "pause" and status not in {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING}:
+            return None
+        if normalized_action == "terminate" and status not in {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING, TASK_STATUS_TERMINATING}:
+            return None
+        requested_at = now_shanghai_naive()
+        task.status = TASK_STATUS_PAUSING if normalized_action == "pause" else TASK_STATUS_TERMINATING
+        task.current_text = "正在暂停，当前步骤完成后会保留进度" if normalized_action == "pause" else "正在终止，当前步骤完成后会停止生成"
+        task.message = ""
+        task.error_code = ""
+        task.resume_available = False
+        task.artifact_expires_at = None
+        task.artifacts_json = _set_control_fields(task.artifacts_json, action=normalized_action, requested_at=requested_at)
+        session.commit()
+        session.refresh(task)
+        return _task_to_dict(task)
+    finally:
+        if owns_session:
+            session.close()
+
+
+def get_task_control_action(
+    task_id: str,
+    *,
+    db: Session | None = None,
+    session_factory: SessionFactory | None = None,
+) -> str:
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
+    try:
+        ensure_lesson_task_storage_ready(session)
+        task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        if not task:
+            return ""
+        return _get_control_action(task.artifacts_json)
+    finally:
+        if owns_session:
+            session.close()
+
+
+def mark_task_paused(
+    task_id: str,
+    *,
+    message: str = "已暂停，可继续生成",
+    db: Session | None = None,
+    session_factory: SessionFactory | None = None,
+) -> None:
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
+    try:
+        ensure_lesson_task_storage_ready(session)
+        task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        if not task:
+            return
+        paused_at = now_shanghai_naive()
+        stages = _copy_list(task.stages_json)
+        running_stage = next((item for item in stages if item.get("status") == "running"), None)
+        if running_stage:
+            running_stage["status"] = "pending"
+        resume_stage = _infer_resume_stage(stages) or str(task.resume_stage or "")
+        task.stages_json = stages
+        task.status = TASK_STATUS_PAUSED
+        task.current_text = message
+        task.message = ""
+        task.error_code = ""
+        task.failure_debug_json = None
+        task.failed_at = None
+        task.resume_stage = resume_stage
+        task.resume_available = bool(resume_stage)
+        task.artifact_expires_at = None
+        task.artifacts_json = _set_control_fields(task.artifacts_json, action="", requested_at=None, paused_at=paused_at)
+        session.commit()
+    finally:
+        if owns_session:
+            session.close()
+
+
+def mark_task_terminated(
+    task_id: str,
+    *,
+    message: str = "已终止生成，素材仍保留",
+    db: Session | None = None,
+    session_factory: SessionFactory | None = None,
+) -> None:
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
+    try:
+        ensure_lesson_task_storage_ready(session)
+        task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        if not task:
+            return
+        terminated_at = now_shanghai_naive()
+        stages = _copy_list(task.stages_json)
+        running_stage = next((item for item in stages if item.get("status") == "running"), None)
+        if running_stage:
+            running_stage["status"] = "pending"
+        task.stages_json = stages
+        task.status = TASK_STATUS_TERMINATED
+        task.current_text = message
+        task.message = message
+        task.error_code = ""
+        task.failure_debug_json = None
+        task.failed_at = None
+        task.resume_available = False
+        task.resume_stage = _infer_resume_stage(stages) or str(task.resume_stage or "")
+        task.artifact_expires_at = now_shanghai_naive()
+        task.artifacts_json = _set_control_fields(task.artifacts_json, action="", requested_at=None, terminated_at=terminated_at)
+        session.commit()
     finally:
         if owns_session:
             session.close()

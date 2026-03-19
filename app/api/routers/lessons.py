@@ -32,6 +32,7 @@ from app.schemas import (
     LessonSubtitleVariantRequest,
     LessonSubtitleVariantResponse,
     LessonTaskCreateResponse,
+    LessonTaskControlResponse,
     LocalAsrLessonTaskCreateRequest,
     LessonTaskResumeResponse,
     LessonTaskResponse,
@@ -43,6 +44,7 @@ from app.services.lesson_command_service import (
     create_lesson_task_from_upload,
     delete_lesson_for_user,
     invalidate_lesson_related_queries,
+    request_lesson_task_control_for_user,
     rename_lesson_for_user,
     resume_lesson_task_for_user,
     run_lesson_generation_task as _run_lesson_generation_task,
@@ -107,6 +109,11 @@ def _to_task_response(task: dict, db: Session) -> LessonTaskResponse:
         resume_available=bool(task.get("resume_available")),
         resume_stage=str(task.get("resume_stage") or ""),
         artifact_expires_at=task.get("artifact_expires_at"),
+        control_action=str(task.get("control_action") or ""),
+        paused_at=task.get("paused_at"),
+        terminated_at=task.get("terminated_at"),
+        can_pause=bool(task.get("can_pause")),
+        can_terminate=bool(task.get("can_terminate")),
     )
 
 
@@ -295,6 +302,42 @@ def resume_lesson_task(task_id: str, db: Session = Depends(get_db), current_user
     if payload.get("artifact_missing"):
         return error_response(400, "TASK_ARTIFACT_MISSING", "素材已过期，请重新上传素材")
     return LessonTaskResumeResponse(ok=True, task_id=task_id)
+
+
+@router.post(
+    "/tasks/{task_id}/pause",
+    response_model=LessonTaskControlResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+)
+def pause_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        payload = request_lesson_task_control_for_user(task_id=task_id, user_id=current_user.id, action="pause", db=db)
+    except LessonTaskStorageNotReadyError as exc:
+        return error_response(503, exc.code, exc.message, exc.detail)
+    if payload is None:
+        return error_response(404, "TASK_NOT_FOUND", "任务不存在")
+    requested = payload.get("requested")
+    if requested is None:
+        return error_response(400, "TASK_PAUSE_UNAVAILABLE", "当前任务不可暂停")
+    return LessonTaskControlResponse(ok=True, task_id=task_id, status=str(requested.get("status") or "pausing"))
+
+
+@router.post(
+    "/tasks/{task_id}/terminate",
+    response_model=LessonTaskControlResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+)
+def terminate_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        payload = request_lesson_task_control_for_user(task_id=task_id, user_id=current_user.id, action="terminate", db=db)
+    except LessonTaskStorageNotReadyError as exc:
+        return error_response(503, exc.code, exc.message, exc.detail)
+    if payload is None:
+        return error_response(404, "TASK_NOT_FOUND", "任务不存在")
+    requested = payload.get("requested")
+    if requested is None:
+        return error_response(400, "TASK_TERMINATE_UNAVAILABLE", "当前任务不可终止")
+    return LessonTaskControlResponse(ok=True, task_id=task_id, status=str(requested.get("status") or "terminating"))
 
 
 @router.get("/catalog", response_model=LessonCatalogResponse, responses={401: {"model": ErrorResponse}})
