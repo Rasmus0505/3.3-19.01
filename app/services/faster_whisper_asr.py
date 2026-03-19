@@ -67,6 +67,12 @@ _CACHED_MODEL: Any | None = None
 _CACHED_MODEL_SIGNATURE = ""
 
 
+class FasterWhisperModelNotReadyError(RuntimeError):
+    def __init__(self, status_payload: dict[str, Any]):
+        self.status_payload = dict(status_payload or {})
+        super().__init__(str(self.status_payload.get("message") or "Faster Whisper model is not ready"))
+
+
 @dataclass(frozen=True)
 class FasterWhisperSettingsSnapshot:
     device: str
@@ -441,6 +447,27 @@ def prepare_faster_whisper_model(*, force_refresh: bool = False) -> dict[str, An
     return next_status
 
 
+def ensure_faster_whisper_model_ready_for_transcribe() -> dict[str, Any]:
+    status = get_faster_whisper_model_status()
+    if status["cached"] and not status["download_required"]:
+        return status
+
+    scheduled = schedule_faster_whisper_model_prepare(force_refresh=False)
+    next_status = get_faster_whisper_model_status()
+    if scheduled or next_status["preparing"]:
+        next_status.update(
+            {
+                "status": "preparing",
+                "preparing": True,
+                "message": "Faster Whisper model is preparing. Please retry in a moment.",
+                "last_error": "",
+            }
+        )
+    elif next_status["status"] == "missing":
+        next_status["message"] = "Faster Whisper model is not ready yet. Please prepare it first."
+    raise FasterWhisperModelNotReadyError(next_status)
+
+
 def ensure_faster_whisper_model_downloaded(*, force_refresh: bool = False) -> Path:
     with _MODEL_LOCK:
         if not force_refresh and has_faster_whisper_model_cache() and _model_cache_matches_current_config():
@@ -572,7 +599,7 @@ def _get_or_create_model(settings: FasterWhisperSettingsSnapshot | None = None):
     global _CACHED_MODEL, _CACHED_MODEL_SIGNATURE
 
     snapshot = settings or _runtime_settings_snapshot()
-    model_dir = ensure_faster_whisper_model_downloaded(force_refresh=False)
+    model_dir = FASTER_WHISPER_MODEL_DIR
     signature = _model_signature(snapshot)
     with _MODEL_LOCK:
         if _CACHED_MODEL is not None and _CACHED_MODEL_SIGNATURE == signature:
@@ -643,6 +670,7 @@ def transcribe_audio_file_with_faster_whisper(
     progress_callback=None,
 ) -> dict[str, Any]:
     snapshot = settings or _runtime_settings_snapshot()
+    ensure_faster_whisper_model_ready_for_transcribe()
     started = time.monotonic()
     _emit_faster_whisper_progress(progress_callback, {"elapsed_seconds": 0, "segment_done": 0, "segment_total": 0})
 

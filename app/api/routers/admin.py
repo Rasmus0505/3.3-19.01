@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -70,6 +70,8 @@ from app.schemas import (
     AdminUserDeleteResponse,
     AdminUserItem,
     AdminUsersResponse,
+    AsrModelPrepareResponse,
+    AsrModelStatusResponse,
     AdminWalletLogsResponse,
     ErrorResponse,
     WalletAdjustRequest,
@@ -97,7 +99,11 @@ from app.services.billing_service import (
     set_redeem_batch_status,
     update_redeem_code_status,
 )
-from app.services.faster_whisper_asr import get_faster_whisper_settings
+from app.services.faster_whisper_asr import (
+    get_faster_whisper_model_status,
+    get_faster_whisper_settings,
+    prepare_faster_whisper_model,
+)
 from app.services.sensevoice import get_sensevoice_settings
 
 
@@ -1081,6 +1087,39 @@ def admin_rollback_faster_whisper_settings_last(
         ok=True,
         settings=_faster_whisper_settings_item_with_meta(settings, updated_by_user_email=current_admin.email),
     )
+
+
+@router.get(
+    "/faster-whisper-model/status",
+    response_model=AsrModelStatusResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_get_faster_whisper_model_status(_: User = Depends(get_admin_user)):
+    return AsrModelStatusResponse(ok=True, **get_faster_whisper_model_status())
+
+
+@router.post(
+    "/faster-whisper-model/prepare",
+    response_model=AsrModelPrepareResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}, 502: {"model": ErrorResponse}},
+)
+def admin_prepare_faster_whisper_model(
+    force_refresh: bool = Query(False, description="Whether to force refresh the cached Faster Whisper model"),
+    _: User = Depends(get_admin_user),
+):
+    try:
+        payload = prepare_faster_whisper_model(force_refresh=bool(force_refresh))
+        return AsrModelPrepareResponse(ok=True, **payload)
+    except Exception as exc:
+        return error_response(
+            502,
+            "ASR_MODEL_PREPARE_FAILED",
+            "Faster Whisper model prepare failed",
+            {
+                "status": get_faster_whisper_model_status(),
+                "error": str(exc)[:1200],
+            },
+        )
 
 
 @router.post(
