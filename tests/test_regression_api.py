@@ -1783,6 +1783,7 @@ def test_faster_whisper_emits_waiting_progress_before_first_segment(monkeypatch)
             return _segments(), info
 
     monkeypatch.setattr(faster_whisper_module, "_runtime_settings_snapshot", lambda: snapshot)
+    monkeypatch.setattr(faster_whisper_module, "ensure_faster_whisper_model_ready_for_transcribe", lambda: {"status": "ready"})
     monkeypatch.setattr(faster_whisper_module, "_get_or_create_model", lambda settings=None: FakeModel())
 
     progress_events: list[dict] = []
@@ -1795,6 +1796,53 @@ def test_faster_whisper_emits_waiting_progress_before_first_segment(monkeypatch)
     assert result["raw_generate_result"]["segment_count"] == 1
     assert len(waiting_events) >= 2
     assert any(item.get("segment_done") == 1 for item in progress_events)
+
+
+def test_single_faster_whisper_progress_keeps_waiting_after_segments(monkeypatch, tmp_path):
+    from app.services import lesson_service as lesson_service_module
+
+    opus_path = tmp_path / "sample.opus"
+    opus_path.write_bytes(b"opus")
+    req_dir = tmp_path / "req"
+    req_dir.mkdir(parents=True, exist_ok=True)
+
+    def fake_transcribe(audio_path, *, model, progress_callback=None, requests_timeout=120):
+        if progress_callback:
+            progress_callback({"segment_done": 13, "segment_total": 0, "elapsed_seconds": 39})
+            progress_callback({"segment_done": 13, "segment_total": 0, "elapsed_seconds": 52})
+        return {
+            "asr_result_json": {
+                "transcripts": [
+                    {
+                        "sentences": [
+                            {"text": "hello world", "begin_time": 0, "end_time": 1000},
+                        ]
+                    }
+                ]
+            },
+            "usage_seconds": 1,
+            "raw_generate_result": {"segment_count": 13},
+        }
+
+    monkeypatch.setattr(lesson_service_module, "transcribe_audio_file", fake_transcribe)
+
+    progress_events: list[dict] = []
+    result = lesson_service_module.LessonService._transcribe_with_optional_parallel(
+        opus_path=opus_path,
+        req_dir=req_dir,
+        asr_model="faster-whisper-medium",
+        source_duration_ms=240000,
+        parallel_enabled=False,
+        parallel_threshold_seconds=600,
+        segment_target_seconds=300,
+        max_concurrency=1,
+        progress_callback=lambda payload: progress_events.append(dict(payload)),
+    )
+
+    assert result["progress_counters"]["segment_total"] == 13
+    assert any(item["current_text"] == "识别中，已识别 13 段" for item in progress_events)
+    assert any(item["current_text"] == "识别中，已识别 13 段，已等待 13 秒" for item in progress_events)
+    assert progress_events[-1]["current_text"] == "识别完成 13/13"
 
 
 def test_transcribe_file_endpoint_with_stubbed_service(test_client, monkeypatch, tmp_path):
@@ -4064,6 +4112,70 @@ def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
     payload_parallel = result_parallel["asr_payload"]
     assert payload_parallel["transcripts"][0]["words"][0]["text"] == "seg-0"
     assert payload_parallel["transcripts"][0]["words"][1]["text"] == "seg-1"
+    assert [item["begin_time"] for item in payload_parallel["transcripts"][0]["words"]] == [0, 5000]
+    assert [item["begin_time"] for item in payload_parallel["transcripts"][0]["sentences"]] == [0, 5000]
+
+
+def test_faster_whisper_parallel_threshold_converges_to_five_minutes(monkeypatch, tmp_path):
+    from app.services import lesson_service as lesson_service_module
+
+    single_calls = {"count": 0}
+
+    def fake_single_transcribe(path: str, model: str):
+        single_calls["count"] += 1
+        return {
+            "asr_result_json": {
+                "properties": {"original_duration_in_milliseconds": 328000},
+                "transcripts": [{"channel_id": 0, "sentences": [{"sentence_id": 0, "begin_time": 0, "end_time": 900, "text": "single"}]}],
+            }
+        }
+
+    monkeypatch.setattr(lesson_service_module, "transcribe_audio_file", fake_single_transcribe)
+    monkeypatch.setattr(
+        lesson_service_module,
+        "_split_audio_segments",
+        lambda source_audio, segments_dir, target_seconds, search_window_seconds, duration_ms: [
+            (0, 0, 160000, tmp_path / "seg0.opus"),
+            (1, 160000, 328000, tmp_path / "seg1.opus"),
+        ],
+    )
+    monkeypatch.setattr(
+        lesson_service_module,
+        "_transcribe_segment",
+        lambda segment_index, segment_start_ms, segment_end_ms, segment_path, asr_model: (
+            segment_index,
+            [
+                {
+                    "text": f"seg-{segment_index}",
+                    "surface": f"seg-{segment_index}",
+                    "punctuation": "",
+                    "begin_ms": segment_start_ms,
+                    "end_ms": segment_start_ms + 1000,
+                }
+            ],
+            [{"text": f"seg-{segment_index}", "begin_ms": segment_start_ms, "end_ms": segment_start_ms + 1000}],
+            None,
+            None,
+        ),
+    )
+
+    result = lesson_service_module.LessonService._transcribe_with_optional_parallel(
+        opus_path=tmp_path / "faster-whisper.opus",
+        req_dir=tmp_path / "fw",
+        asr_model="faster-whisper-medium",
+        source_duration_ms=328000,
+        parallel_enabled=True,
+        parallel_threshold_seconds=480,
+        segment_target_seconds=160,
+        max_concurrency=2,
+        progress_callback=None,
+    )
+
+    payload = result["asr_payload"]
+    assert single_calls["count"] == 0
+    assert result["progress_counters"]["segment_total"] == 2
+    assert payload["transcripts"][0]["words"][0]["begin_time"] == 0
+    assert payload["transcripts"][0]["words"][1]["begin_time"] == 160000
 
 
 def test_build_lesson_sentences_prefers_word_level_split():

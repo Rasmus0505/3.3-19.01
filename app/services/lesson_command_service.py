@@ -18,6 +18,7 @@ from app.repositories.admin_console import invalidate_admin_overview_cache, inva
 from app.repositories.lessons import update_lesson_title_for_user
 from app.services.asr_dashscope import AsrError
 from app.services.billing_service import BillingError, ensure_default_billing_rates, get_default_asr_model
+from app.services.faster_whisper_asr import FASTER_WHISPER_ASR_MODEL, get_faster_whisper_model_status, prepare_faster_whisper_model
 from app.services.lesson_query_service import invalidate_lesson_catalog_cache
 from app.services.lesson_service import LessonService
 from app.services.lesson_task_manager import (
@@ -39,6 +40,7 @@ from app.services.lesson_task_manager import (
     update_task_progress,
 )
 from app.services.media import MediaError, cleanup_dir, save_upload_file_stream, validate_suffix
+from app.services.sensevoice import SENSEVOICE_ASR_MODEL
 
 
 logger = logging.getLogger(__name__)
@@ -53,6 +55,40 @@ class LessonTaskPauseRequested(RuntimeError):
 
 class LessonTaskTerminateRequested(RuntimeError):
     pass
+
+
+def _resolve_task_asr_models(requested_asr_model: str) -> dict[str, object]:
+    normalized_requested_model = str(requested_asr_model or "").strip()
+    resolution = {
+        "requested_asr_model": normalized_requested_model,
+        "effective_asr_model": normalized_requested_model,
+        "model_fallback_applied": False,
+        "model_fallback_reason": "",
+    }
+    if normalized_requested_model != FASTER_WHISPER_ASR_MODEL:
+        return resolution
+
+    status = get_faster_whisper_model_status()
+    normalized_status = str(status.get("status") or "").strip().lower()
+    model_ready = bool(status.get("cached")) or normalized_status in {"ready", "cached"} or (
+        status.get("download_required") is False and not status.get("preparing") and normalized_status != "error"
+    )
+    if model_ready:
+        return resolution
+
+    try:
+        prepare_faster_whisper_model(force_refresh=False)
+    except Exception as exc:
+        logger.warning("[DEBUG] lessons.task.faster_whisper.prepare_schedule_failed detail=%s", str(exc)[:400])
+
+    resolution.update(
+        {
+            "effective_asr_model": SENSEVOICE_ASR_MODEL,
+            "model_fallback_applied": True,
+            "model_fallback_reason": "faster_whisper_model_not_ready",
+        }
+    )
+    return resolution
 
 
 def is_task_active_in_current_process(task_id: str) -> bool:
@@ -104,7 +140,8 @@ def run_lesson_generation_task(
     source_filename: str,
     source_path,
     req_dir,
-    asr_model: str,
+    requested_asr_model: str,
+    effective_asr_model: str,
     semantic_split_enabled: bool | None,
     session_factory: sessionmaker[Session],
     input_mode: str = "upload",
@@ -113,7 +150,13 @@ def run_lesson_generation_task(
     db = session_factory()
     _register_active_task(task_id)
     try:
-        logger.info("[DEBUG] lessons.task.start task_id=%s owner_id=%s model=%s", task_id, owner_id, asr_model)
+        logger.info(
+            "[DEBUG] lessons.task.start task_id=%s owner_id=%s requested_model=%s effective_model=%s",
+            task_id,
+            owner_id,
+            requested_asr_model,
+            effective_asr_model,
+        )
 
         def _progress(payload: dict) -> None:
             update_task_progress(
@@ -139,7 +182,7 @@ def run_lesson_generation_task(
                 source_duration_ms=int(local_payload.get("source_duration_ms") or source_duration_ms or 0),
                 req_dir=req_dir,
                 owner_id=owner_id,
-                asr_model=asr_model,
+                asr_model=effective_asr_model,
                 task_id=task_id,
                 semantic_split_enabled=semantic_split_enabled,
                 db=db,
@@ -151,7 +194,7 @@ def run_lesson_generation_task(
                 source_filename=source_filename,
                 req_dir=req_dir,
                 owner_id=owner_id,
-                asr_model=asr_model,
+                asr_model=effective_asr_model,
                 task_id=task_id,
                 semantic_split_enabled=semantic_split_enabled,
                 db=db,
@@ -265,12 +308,17 @@ def create_lesson_task_from_upload(
         suffix = validate_suffix(source_filename)
         source_path = req_dir / f"source{suffix}"
         save_upload_file_stream(video_file, source_path, max_bytes=UPLOAD_MAX_BYTES)
+        model_resolution = _resolve_task_asr_models(asr_model)
 
         create_task(
             task_id=task_id,
             owner_user_id=owner_user_id,
             source_filename=source_filename,
             asr_model=asr_model,
+            requested_asr_model=str(model_resolution["requested_asr_model"]),
+            effective_asr_model=str(model_resolution["effective_asr_model"]),
+            model_fallback_applied=bool(model_resolution["model_fallback_applied"]),
+            model_fallback_reason=str(model_resolution["model_fallback_reason"]),
             semantic_split_enabled=semantic_split_enabled,
             work_dir=str(req_dir),
             source_path=str(source_path),
@@ -284,7 +332,8 @@ def create_lesson_task_from_upload(
                 "source_filename": source_filename,
                 "source_path": source_path,
                 "req_dir": req_dir,
-                "asr_model": asr_model,
+                "requested_asr_model": str(model_resolution["requested_asr_model"]),
+                "effective_asr_model": str(model_resolution["effective_asr_model"]),
                 "semantic_split_enabled": semantic_split_enabled,
                 "session_factory": task_session_factory,
                 "input_mode": "upload",
@@ -293,7 +342,7 @@ def create_lesson_task_from_upload(
         )
         thread.start()
         logger.info("[DEBUG] lessons.task.create.started task_id=%s user_id=%s", task_id, owner_user_id)
-        return {"task_id": task_id}
+        return {"task_id": task_id, **model_resolution}
     except Exception:
         cleanup_dir(req_dir)
         raise
@@ -333,6 +382,8 @@ def create_lesson_task_from_local_asr(
             owner_user_id=owner_user_id,
             source_filename=(source_filename or "local_asr.json")[:255],
             asr_model=asr_model,
+            requested_asr_model=asr_model,
+            effective_asr_model=asr_model,
             semantic_split_enabled=semantic_split_enabled,
             work_dir=str(req_dir),
             source_path=str(payload_path),
@@ -355,7 +406,8 @@ def create_lesson_task_from_local_asr(
                 "source_filename": (source_filename or "local_asr.json")[:255],
                 "source_path": payload_path,
                 "req_dir": req_dir,
-                "asr_model": asr_model,
+                "requested_asr_model": asr_model,
+                "effective_asr_model": asr_model,
                 "semantic_split_enabled": semantic_split_enabled,
                 "session_factory": task_session_factory,
                 "input_mode": "local_asr",
@@ -365,7 +417,13 @@ def create_lesson_task_from_local_asr(
         )
         thread.start()
         logger.info("[DEBUG] lessons.task.local_asr.started task_id=%s user_id=%s", task_id, owner_user_id)
-        return {"task_id": task_id}
+        return {
+            "task_id": task_id,
+            "requested_asr_model": asr_model,
+            "effective_asr_model": asr_model,
+            "model_fallback_applied": False,
+            "model_fallback_reason": "",
+        }
     except Exception:
         cleanup_dir(req_dir)
         raise
@@ -446,7 +504,8 @@ def resume_lesson_task_for_user(*, task_id: str, user_id: int, db: Session) -> d
             "source_filename": str(resumed.get("source_filename") or source_path.name),
             "source_path": source_path,
             "req_dir": req_dir,
-            "asr_model": str(resumed.get("asr_model") or get_default_asr_model(db)),
+            "requested_asr_model": str(artifacts.get("requested_asr_model") or resumed.get("asr_model") or get_default_asr_model(db)),
+            "effective_asr_model": str(artifacts.get("effective_asr_model") or resumed.get("asr_model") or get_default_asr_model(db)),
             "semantic_split_enabled": bool(resumed.get("semantic_split_enabled")),
             "session_factory": task_session_factory,
             "input_mode": input_mode,

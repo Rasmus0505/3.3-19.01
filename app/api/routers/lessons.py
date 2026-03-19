@@ -98,6 +98,10 @@ def _to_task_response(task: dict, db: Session) -> LessonTaskResponse:
     return LessonTaskResponse(
         ok=True,
         task_id=task["task_id"],
+        requested_asr_model=str(task.get("requested_asr_model") or ""),
+        effective_asr_model=str(task.get("effective_asr_model") or ""),
+        model_fallback_applied=bool(task.get("model_fallback_applied")),
+        model_fallback_reason=str(task.get("model_fallback_reason") or ""),
         status=task["status"],
         overall_percent=int(task.get("overall_percent", 0)),
         current_text=str(task.get("current_text", "")),
@@ -193,7 +197,14 @@ async def create_lesson_task(
             semantic_split_enabled=semantic_split_enabled,
             db=db,
         )
-        return LessonTaskCreateResponse(ok=True, task_id=str(payload["task_id"]))
+        return LessonTaskCreateResponse(
+            ok=True,
+            task_id=str(payload["task_id"]),
+            requested_asr_model=str(payload.get("requested_asr_model") or ""),
+            effective_asr_model=str(payload.get("effective_asr_model") or ""),
+            model_fallback_applied=bool(payload.get("model_fallback_applied")),
+            model_fallback_reason=str(payload.get("model_fallback_reason") or ""),
+        )
     except MediaError as exc:
         return map_media_error(exc)
     except LessonTaskStorageNotReadyError as exc:
@@ -263,7 +274,14 @@ def create_local_asr_lesson_task(
             semantic_split_enabled=False,
             db=db,
         )
-        return LessonTaskCreateResponse(ok=True, task_id=str(task_payload["task_id"]))
+        return LessonTaskCreateResponse(
+            ok=True,
+            task_id=str(task_payload["task_id"]),
+            requested_asr_model=str(task_payload.get("requested_asr_model") or ""),
+            effective_asr_model=str(task_payload.get("effective_asr_model") or ""),
+            model_fallback_applied=bool(task_payload.get("model_fallback_applied")),
+            model_fallback_reason=str(task_payload.get("model_fallback_reason") or ""),
+        )
     except LessonTaskStorageNotReadyError as exc:
         return error_response(503, exc.code, exc.message, exc.detail)
     except BillingError as exc:

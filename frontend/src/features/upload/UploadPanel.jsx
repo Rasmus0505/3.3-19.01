@@ -194,9 +194,10 @@ function getLocalModelStatusLabel(status) {
 
 function getServerModelStatusLabel(modelState) {
   const status = String(modelState?.status || "").trim().toLowerCase();
+  if (Boolean(modelState?.preparing) || ["loading", "preparing", "downloading"].includes(status)) return "模型预热中";
   if (Boolean(modelState?.cached) || ["ready", "cached"].includes(status)) return "已下载";
   if (Boolean(modelState) && modelState.downloadRequired === false && !modelState.preparing && status !== "error") return "已下载";
-  return "未下载";
+  return "未准备";
 }
 
 function isServerModelReady(modelState) {
@@ -632,6 +633,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const fileInputRef = useRef(null);
   const previousPanelActiveRef = useRef(Boolean(isActivePanel));
   const successStateOriginRef = useRef("none");
+  const fallbackToastTaskRef = useRef("");
   const localSenseWorkerRef = useRef(null);
   const localAsrRequestSequenceRef = useRef(0);
   const localAsrPendingRequestsRef = useRef(new Map());
@@ -707,8 +709,17 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const primaryActionDisabled =
     phase === "success" ||
     (loading && !localTranscribing && !serviceTaskStopActionsVisible) ||
-    (mode === "balanced" && !localTranscribing && (!localAsrSupport.supported || !localWorkerReady || Boolean(localBusyModelKey))) ||
-    (selectedFastModelNeedsPreparation && (!selectedServerModelReady || selectedServerModelPreparing || Boolean(serverBusyModelKey)));
+    (mode === "balanced" && !localTranscribing && (!localAsrSupport.supported || !localWorkerReady || Boolean(localBusyModelKey)));
+
+  function maybeShowModelFallbackToast(payload) {
+    const taskIdForToast = String(payload?.task_id || "");
+    const requestedModel = String(payload?.requested_asr_model || "");
+    const effectiveModel = String(payload?.effective_asr_model || "");
+    if (!taskIdForToast || fallbackToastTaskRef.current === taskIdForToast) return;
+    if (requestedModel !== FASTER_WHISPER_MODEL || effectiveModel !== "sensevoice-small" || !payload?.model_fallback_applied) return;
+    fallbackToastTaskRef.current = taskIdForToast;
+    toast.warning("Faster Whisper 还在预热中，本次已自动切换到 SenseVoice Small，任务会继续处理。");
+  }
 
   function updateLocalModelState(modelKey, patch) {
     setLocalModelStateMap((prev) => ({
@@ -1346,6 +1357,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setLocalProgressSnapshot(null);
     setBindingCompleted(false);
     setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
+    fallbackToastTaskRef.current = "";
     await persistSession({
       taskId: "",
       phase: file ? "ready" : "idle",
@@ -1412,6 +1424,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setStatus(successMessage);
     setLoading(false);
     setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
+    maybeShowModelFallbackToast(data);
     setBindingCompleted(Boolean(mediaPersisted || data.lesson?.media_storage !== "client_indexeddb"));
     successStateOriginRef.current = "live";
     if (ownerUserId) {
@@ -1451,6 +1464,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       }
       setTaskId(String(data.task_id || nextTaskId));
       setTaskSnapshot(data);
+      maybeShowModelFallbackToast(data);
       const taskStatus = String(data.status || "").toLowerCase();
       if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING) {
         if (ACTIVE_SERVER_TASK_STATUSES.has(taskStatus)) {
@@ -1713,11 +1727,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   async function handleServerModelPrepare(modelKey) {
     setServerBusyModelKey(modelKey);
-    setServerBusyText("正在下载模型");
+    setServerBusyText("模型预热中");
     updateServerModelState(modelKey, {
       status: "preparing",
       preparing: true,
       lastError: "",
+      message: "模型预热中",
     });
     try {
       const resp = await api(`${ASR_MODELS_API_BASE}/${encodeURIComponent(modelKey)}/prepare`, { method: "POST" }, accessToken);
@@ -1729,7 +1744,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       if (!payload?.preparing) {
         await fetchServerModelStatus(modelKey, { silent: true });
       }
-      toast.success(Boolean(payload?.preparing) ? "已开始准备模型" : "模型状态已更新");
+      toast.success(Boolean(payload?.preparing) ? "模型预热中" : "模型已就绪");
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : String(error);
       updateServerModelState(modelKey, {
@@ -2146,6 +2161,16 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         await persistSession({ phase: "error", status: message });
         return;
       }
+      if (Boolean(data.model_fallback_applied)) {
+        updateServerModelState(FASTER_WHISPER_MODEL, {
+          status: "preparing",
+          preparing: true,
+          lastError: "",
+          message: "模型预热中",
+        });
+        void fetchServerModelStatus(FASTER_WHISPER_MODEL, { silent: true });
+      }
+      maybeShowModelFallbackToast({ ...data, task_id: nextTaskId });
       setTaskId(nextTaskId);
       setUploadPercent(100);
       uploadPersistRef.current.latestPercent = 100;
@@ -2325,10 +2350,14 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               const fasterModelState = serverModelStateMap[item.key] || {};
               const fasterModelReady = isServerModelReady(fasterModelState);
               const fasterModelBusy = serverBusyModelKey === item.key;
+              const fasterModelPreparing =
+                Boolean(fasterModelState.preparing) || ["loading", "preparing", "downloading"].includes(String(fasterModelState.status || "").trim().toLowerCase());
               const fasterModelError = sanitizeUserFacingText(fasterModelState.lastError || "");
               const fasterModelMessage = fasterModelBusy
-                ? sanitizeUserFacingText(serverBusyText || "正在下载模型")
-                : sanitizeUserFacingText(fasterModelError || "");
+                ? sanitizeUserFacingText(serverBusyText || "模型预热中")
+                : fasterModelPreparing
+                  ? "模型预热中"
+                  : sanitizeUserFacingText(fasterModelError || "");
               const cardStatusLabel = isSenseVoice
                 ? getLocalModelStatusLabel(localCardState.status)
                 : isFasterWhisper
@@ -2363,7 +2392,19 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                       <p className="text-sm font-semibold">{item.title}</p>
                       <p className="text-xs text-muted-foreground">{item.subtitle}</p>
                     </div>
-                    <Badge variant={cardStatusLabel === "已下载" ? "default" : "outline"}>{cardStatusLabel}</Badge>
+                    <Badge
+                      variant={cardStatusLabel === "已下载" ? "default" : "outline"}
+                      className={cn(cardStatusLabel === "已下载" ? "border-emerald-500 bg-emerald-500 text-white" : "")}
+                    >
+                      {isFasterWhisper ? (
+                        cardStatusLabel === "已下载" ? (
+                          <CheckCircle2 className="mr-1 size-3.5" />
+                        ) : fasterModelPreparing ? (
+                          <Loader2 className="mr-1 size-3.5 animate-spin" />
+                        ) : null
+                      ) : null}
+                      {cardStatusLabel}
+                    </Badge>
                   </div>
                   {isSenseVoice && localCardHint ? <p className={cn("text-xs", localSupportReason || localCardError ? "text-destructive" : "text-muted-foreground")}>{localCardHint}</p> : null}
                   {isFasterWhisper && fasterModelMessage ? <p className={cn("text-xs", fasterModelError ? "text-destructive" : "text-muted-foreground")}>{fasterModelMessage}</p> : null}
@@ -2393,8 +2434,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                         }}
                         disabled={uploadActionBusy || fasterModelBusy || localTranscribing}
                       >
-                        {fasterModelBusy ? <Loader2 className="size-4 animate-spin" /> : null}
-                        下载模型
+                        {fasterModelBusy || fasterModelPreparing ? <Loader2 className="size-4 animate-spin" /> : null}
+                        {fasterModelPreparing ? "模型预热中" : "开始预热"}
                       </Button>
                     </div>
                   ) : null}

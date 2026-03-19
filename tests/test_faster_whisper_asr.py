@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+import time
 
 from fastapi.testclient import TestClient
 
@@ -64,6 +65,7 @@ def test_transcribe_audio_file_with_faster_whisper_builds_expected_payload(monke
             return iter([segment]), info
 
     monkeypatch.setattr(module, "_runtime_settings_snapshot", lambda: snapshot)
+    monkeypatch.setattr(module, "ensure_faster_whisper_model_ready_for_transcribe", lambda: {"status": "ready"})
     monkeypatch.setattr(module, "_get_or_create_model", lambda settings=None: DummyModel())
 
     progress_events: list[dict] = []
@@ -88,9 +90,116 @@ def test_transcribe_audio_file_with_faster_whisper_builds_expected_payload(monke
     assert progress_events[0]["elapsed_seconds"] == 0
     assert progress_events[0]["segment_done"] == 0
     assert progress_events[0]["segment_total"] == 0
+    assert any(item["segment_done"] == 1 and item["segment_total"] == 0 for item in progress_events)
     assert progress_events[-1]["segment_done"] == 1
     assert progress_events[-1]["segment_total"] == 1
     assert progress_events[-1]["elapsed_seconds"] >= 0
+
+
+def test_transcribe_audio_file_with_faster_whisper_keeps_waiting_after_first_segment(monkeypatch):
+    from app.services import faster_whisper_asr as module
+
+    snapshot = module.FasterWhisperSettingsSnapshot(
+        device="cpu",
+        compute_type="",
+        cpu_threads=4,
+        num_workers=2,
+        beam_size=5,
+        vad_filter=True,
+        condition_on_previous_text=False,
+        resolved_device="cpu",
+        resolved_device_index=0,
+        resolved_compute_type="int8",
+    )
+
+    class DummyModel:
+        def transcribe(self, audio_path, **kwargs):
+            def _segments():
+                time.sleep(0.2)
+                yield SimpleNamespace(text="first", start=0.0, end=1.0, words=[])
+                time.sleep(1.3)
+                yield SimpleNamespace(text="second", start=1.0, end=2.0, words=[])
+
+            info = SimpleNamespace(
+                language="en",
+                language_probability=0.99,
+                duration=2.0,
+                duration_after_vad=2.0,
+                all_language_probs=[("en", 0.99)],
+            )
+            return _segments(), info
+
+    monkeypatch.setattr(module, "_runtime_settings_snapshot", lambda: snapshot)
+    monkeypatch.setattr(module, "ensure_faster_whisper_model_ready_for_transcribe", lambda: {"status": "ready"})
+    monkeypatch.setattr(module, "_get_or_create_model", lambda settings=None: DummyModel())
+
+    progress_events: list[dict] = []
+    module.transcribe_audio_file_with_faster_whisper(
+        "delayed.wav",
+        progress_callback=lambda payload: progress_events.append(dict(payload)),
+    )
+
+    single_segment_events = [
+        item
+        for item in progress_events
+        if item.get("segment_done") == 1 and item.get("segment_total") == 0
+    ]
+    assert len(single_segment_events) >= 2
+    assert progress_events[-1]["segment_done"] == 2
+    assert progress_events[-1]["segment_total"] == 2
+
+
+def test_transcribe_audio_file_with_faster_whisper_falls_back_to_cpu_when_cuda_runtime_missing(monkeypatch):
+    from app.services import faster_whisper_asr as module
+
+    snapshot = module.FasterWhisperSettingsSnapshot(
+        device="auto",
+        compute_type="",
+        cpu_threads=4,
+        num_workers=2,
+        beam_size=5,
+        vad_filter=True,
+        condition_on_previous_text=False,
+        resolved_device="cuda:0",
+        resolved_device_index=0,
+        resolved_compute_type="float16",
+    )
+
+    class BrokenCudaModel:
+        def transcribe(self, audio_path, **kwargs):
+            raise RuntimeError("Library cublas64_12.dll is not found or cannot be loaded")
+
+    class CpuFallbackModel:
+        def transcribe(self, audio_path, **kwargs):
+            segment = SimpleNamespace(text="fallback works", start=0.0, end=1.0, words=[])
+            info = SimpleNamespace(
+                language="en",
+                language_probability=0.99,
+                duration=1.0,
+                duration_after_vad=1.0,
+                all_language_probs=[("en", 0.99)],
+            )
+            return iter([segment]), info
+
+    created_devices: list[str] = []
+
+    def fake_get_or_create_model(settings=None):
+        assert settings is not None
+        created_devices.append(settings.resolved_device)
+        if settings.resolved_device.startswith("cuda"):
+            return BrokenCudaModel()
+        return CpuFallbackModel()
+
+    monkeypatch.setattr(module, "_runtime_settings_snapshot", lambda: snapshot)
+    monkeypatch.setattr(module, "ensure_faster_whisper_model_ready_for_transcribe", lambda: {"status": "ready"})
+    monkeypatch.setattr(module, "_get_or_create_model", fake_get_or_create_model)
+
+    result = module.transcribe_audio_file_with_faster_whisper("fallback.wav")
+
+    assert created_devices == ["cuda:0", "cpu"]
+    assert result["settings_summary"]["resolved_device"] == "cpu"
+    assert result["settings_summary"]["resolved_compute_type"] == "int8"
+    assert result["raw_generate_result"]["segment_count"] == 1
 
 
 def test_prepare_faster_whisper_model_returns_preparing_when_scheduled(monkeypatch):
@@ -148,6 +257,7 @@ def test_get_or_create_model_uses_settings_snapshot(monkeypatch, tmp_path):
 
     monkeypatch.setattr(module, "_CACHED_MODEL", None)
     monkeypatch.setattr(module, "_CACHED_MODEL_SIGNATURE", "")
+    monkeypatch.setattr(module, "FASTER_WHISPER_MODEL_DIR", model_dir)
     monkeypatch.setattr(module, "ensure_faster_whisper_model_downloaded", lambda force_refresh=False: model_dir)
     monkeypatch.setattr(module, "_load_whisper_model_symbol", lambda: DummyWhisperModel)
 

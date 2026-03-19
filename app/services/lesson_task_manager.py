@@ -95,7 +95,15 @@ def _empty_counters() -> dict:
     }
 
 
-def _default_artifacts(work_dir: str, source_path: str) -> dict:
+def _default_artifacts(
+    work_dir: str,
+    source_path: str,
+    *,
+    requested_asr_model: str = "",
+    effective_asr_model: str = "",
+    model_fallback_applied: bool = False,
+    model_fallback_reason: str = "",
+) -> dict:
     base = Path(work_dir)
     return {
         "work_dir": work_dir,
@@ -110,6 +118,10 @@ def _default_artifacts(work_dir: str, source_path: str) -> dict:
         "control_requested_at": "",
         "paused_at": "",
         "terminated_at": "",
+        "requested_asr_model": str(requested_asr_model or "").strip(),
+        "effective_asr_model": str(effective_asr_model or requested_asr_model or "").strip(),
+        "model_fallback_applied": bool(model_fallback_applied),
+        "model_fallback_reason": str(model_fallback_reason or "").strip(),
     }
 
 
@@ -266,6 +278,10 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
         "lesson_id": int(task.lesson_id) if task.lesson_id else None,
         "source_filename": task.source_filename,
         "asr_model": task.asr_model,
+        "requested_asr_model": str(artifacts.get("requested_asr_model") or task.asr_model or ""),
+        "effective_asr_model": str(artifacts.get("effective_asr_model") or task.asr_model or ""),
+        "model_fallback_applied": bool(artifacts.get("model_fallback_applied")),
+        "model_fallback_reason": str(artifacts.get("model_fallback_reason") or ""),
         "semantic_split_enabled": bool(task.semantic_split_enabled),
         "status": status,
         "overall_percent": int(task.overall_percent or 0),
@@ -334,6 +350,10 @@ def create_task(
     owner_user_id: int,
     source_filename: str,
     asr_model: str,
+    requested_asr_model: str | None = None,
+    effective_asr_model: str | None = None,
+    model_fallback_applied: bool = False,
+    model_fallback_reason: str = "",
     semantic_split_enabled: bool | None,
     work_dir: str,
     source_path: str,
@@ -357,7 +377,14 @@ def create_task(
             counters_json=_empty_counters(),
             work_dir=work_dir,
             source_path=source_path,
-            artifacts_json=_default_artifacts(work_dir, source_path),
+            artifacts_json=_default_artifacts(
+                work_dir,
+                source_path,
+                requested_asr_model=str(requested_asr_model or asr_model or "").strip(),
+                effective_asr_model=str(effective_asr_model or asr_model or "").strip(),
+                model_fallback_applied=bool(model_fallback_applied),
+                model_fallback_reason=str(model_fallback_reason or "").strip(),
+            ),
             failure_debug_json=None,
             asr_raw_json=None,
             resume_available=False,

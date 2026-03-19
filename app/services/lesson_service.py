@@ -24,6 +24,7 @@ from app.core.config import (
 from app.models import Lesson, LessonSentence, TranslationRequestLog
 from app.repositories.progress import create_progress
 from app.services.asr_dashscope import transcribe_audio_file
+from app.services.faster_whisper_asr import FASTER_WHISPER_ASR_MODEL
 from app.services.billing_service import (
     EVENT_CONSUME_TRANSLATE,
     append_translation_request_logs,
@@ -69,6 +70,7 @@ _VARIANT_RESULT_FILE = "variant_result.json"
 _TRANSLATION_CHECKPOINT_FILE = "translation_checkpoint.json"
 _LESSON_RESULT_FILE = "lesson_result.json"
 _SEGMENT_RESULT_DIR = "asr_segment_results"
+_FASTER_WHISPER_FORCE_PARALLEL_THRESHOLD_SECONDS = 300
 
 
 def _read_json_file(path: Path) -> dict[str, Any] | None:
@@ -202,6 +204,19 @@ def _single_asr_stage_ratio(elapsed_seconds: int) -> float:
     if elapsed_seconds <= 0:
         return 0.12
     return min(0.84, 0.12 + min(0.72, elapsed_seconds / 120.0 * 0.72))
+
+
+def _effective_parallel_threshold_seconds(
+    *,
+    asr_model: str,
+    parallel_enabled: bool,
+    max_concurrency: int,
+    parallel_threshold_seconds: int,
+) -> int:
+    threshold_seconds = max(1, int(parallel_threshold_seconds))
+    if asr_model == FASTER_WHISPER_ASR_MODEL and parallel_enabled and max_concurrency > 1:
+        return min(threshold_seconds, _FASTER_WHISPER_FORCE_PARALLEL_THRESHOLD_SECONDS)
+    return threshold_seconds
 
 
 def _serialize_word_items(words: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1239,13 +1254,19 @@ class LessonService:
         progress_callback: ProgressCallback | None,
     ) -> dict[str, Any]:
         asr_result_path = req_dir / _ASR_RESULT_FILE
+        effective_parallel_threshold_seconds = _effective_parallel_threshold_seconds(
+            asr_model=asr_model,
+            parallel_enabled=parallel_enabled,
+            max_concurrency=max_concurrency,
+            parallel_threshold_seconds=parallel_threshold_seconds,
+        )
         cached_result = _read_json_file(asr_result_path)
         if _is_asr_cache_compatible(
             cached_result,
             opus_path=opus_path,
             source_duration_ms=source_duration_ms,
             parallel_enabled=parallel_enabled,
-            parallel_threshold_seconds=parallel_threshold_seconds,
+            parallel_threshold_seconds=effective_parallel_threshold_seconds,
             segment_target_seconds=segment_target_seconds,
             max_concurrency=max_concurrency,
         ):
@@ -1262,19 +1283,33 @@ class LessonService:
 
         should_parallel = (
             parallel_enabled
-            and duration_seconds >= max(1, parallel_threshold_seconds)
+            and duration_seconds >= effective_parallel_threshold_seconds
             and segment_target_seconds > 0
             and max_concurrency > 1
         )
 
         if not should_parallel:
+            last_single_segment_done = 0
+            last_single_segment_change_elapsed = 0
+
             def _on_single_asr_progress(payload: dict[str, Any]) -> None:
+                nonlocal last_single_segment_done, last_single_segment_change_elapsed
                 elapsed_seconds = max(0, int(payload.get("elapsed_seconds", 0) or 0))
                 segment_done = max(0, int(payload.get("segment_done", 0) or 0))
-                segment_total = max(segment_done, int(payload.get("segment_total", 0) or 0))
+                raw_segment_total = max(0, int(payload.get("segment_total", 0) or 0))
+                segment_total = max(segment_done, raw_segment_total) if raw_segment_total > 0 else 0
+                if segment_done != last_single_segment_done:
+                    last_single_segment_done = segment_done
+                    last_single_segment_change_elapsed = elapsed_seconds
                 if segment_total > 0:
                     wait_text = f"识别中 {segment_done}/{segment_total}"
                     stage_ratio = min(0.98, max(segment_done / max(segment_total, 1), 0.02))
+                elif segment_done > 0:
+                    waited_seconds = max(0, elapsed_seconds - last_single_segment_change_elapsed)
+                    wait_text = f"识别中，已识别 {segment_done} 段"
+                    if waited_seconds > 0:
+                        wait_text = f"{wait_text}，已等待 {waited_seconds} 秒"
+                    stage_ratio = _single_asr_stage_ratio(elapsed_seconds)
                 else:
                     wait_text = "识别中" if elapsed_seconds <= 0 else f"识别中，已等待 {elapsed_seconds} 秒"
                     stage_ratio = _single_asr_stage_ratio(elapsed_seconds)
@@ -1285,8 +1320,8 @@ class LessonService:
                     overall_percent=_progress_percent_by_stage("asr_transcribe", stage_ratio),
                     current_text=wait_text,
                     counters={
-                        "asr_done": segment_done if segment_total > 0 else 0,
-                        "asr_estimated": segment_total if segment_total > 0 else 0,
+                        "asr_done": segment_done,
+                        "asr_estimated": segment_total,
                         "translate_done": 0,
                         "translate_total": 0,
                         "segment_done": segment_done,
@@ -1318,7 +1353,7 @@ class LessonService:
             asr_payload = asr_result["asr_result_json"]
             actual_sentence_count = max(1, len(extract_sentences(asr_payload)))
             raw_generate_result = dict(asr_result.get("raw_generate_result") or {}) if isinstance(asr_result.get("raw_generate_result"), dict) else {}
-            single_segment_total = max(0, int(raw_generate_result.get("segment_count", 0) or 0))
+            single_segment_total = max(actual_sentence_count, int(raw_generate_result.get("segment_count", 0) or 0))
             payload = {
                 "asr_payload": asr_payload,
                 "usage_seconds": int(asr_result.get("usage_seconds"))
@@ -1329,13 +1364,13 @@ class LessonService:
                     opus_path=opus_path,
                     source_duration_ms=source_duration_ms,
                     parallel_enabled=parallel_enabled,
-                    parallel_threshold_seconds=parallel_threshold_seconds,
+                    parallel_threshold_seconds=effective_parallel_threshold_seconds,
                     segment_target_seconds=segment_target_seconds,
                     max_concurrency=max_concurrency,
                 ),
                 "progress_counters": {
                     "asr_done": actual_sentence_count,
-                    "asr_estimated": actual_sentence_count,
+                    "asr_estimated": single_segment_total,
                     "segment_done": single_segment_total,
                     "segment_total": single_segment_total,
                 },
@@ -1382,7 +1417,7 @@ class LessonService:
         logger.info(
             "[DEBUG] lesson.parallel_asr enabled=true duration_seconds=%s threshold=%s target_seconds=%s search_window=%s concurrency=%s total_segments=%s",
             duration_seconds,
-            parallel_threshold_seconds,
+            effective_parallel_threshold_seconds,
             segment_target_seconds,
             ASR_SEGMENT_SEARCH_WINDOW_SECONDS,
             max_concurrency,
@@ -1511,7 +1546,7 @@ class LessonService:
                 opus_path=opus_path,
                 source_duration_ms=source_duration_ms,
                 parallel_enabled=parallel_enabled,
-                parallel_threshold_seconds=parallel_threshold_seconds,
+                parallel_threshold_seconds=effective_parallel_threshold_seconds,
                 segment_target_seconds=segment_target_seconds,
                 max_concurrency=max_concurrency,
             ),
