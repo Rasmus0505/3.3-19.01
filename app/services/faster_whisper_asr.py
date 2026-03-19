@@ -6,16 +6,20 @@ import math
 import re
 import threading
 import time
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import inspect, text
+from sqlalchemy.orm import Session
+
 from app.core.config import (
-    FASTER_WHISPER_COMPUTE_TYPE,
-    FASTER_WHISPER_CPU_THREADS,
     FASTER_WHISPER_MODEL_DIR,
     FASTER_WHISPER_MODELSCOPE_MODEL_ID,
     FASTER_WHISPER_PREFETCH_ON_START,
 )
+from app.core.timezone import now_shanghai_naive
+from app.models import FasterWhisperSetting
 
 
 logger = logging.getLogger(__name__)
@@ -29,6 +33,26 @@ FASTER_WHISPER_REQUIRED_FILES: tuple[str, ...] = (
     "vocabulary.txt",
 )
 FASTER_WHISPER_META_FILE = ".modelscope_meta.json"
+DEFAULT_FASTER_WHISPER_SETTINGS = {
+    "device": "auto",
+    "compute_type": "",
+    "cpu_threads": 4,
+    "num_workers": 2,
+    "beam_size": 5,
+    "vad_filter": True,
+    "condition_on_previous_text": False,
+}
+_FASTER_WHISPER_SETTINGS_REQUIRED_COLUMN_SQL: tuple[tuple[str, str, str], ...] = (
+    ("device", "VARCHAR(32) NOT NULL DEFAULT 'auto'", "VARCHAR(32) NOT NULL DEFAULT 'auto'"),
+    ("compute_type", "VARCHAR(32) NOT NULL DEFAULT ''", "VARCHAR(32) NOT NULL DEFAULT ''"),
+    ("cpu_threads", "INTEGER NOT NULL DEFAULT 4", "INTEGER NOT NULL DEFAULT 4"),
+    ("num_workers", "INTEGER NOT NULL DEFAULT 2", "INTEGER NOT NULL DEFAULT 2"),
+    ("beam_size", "INTEGER NOT NULL DEFAULT 5", "INTEGER NOT NULL DEFAULT 5"),
+    ("vad_filter", "BOOLEAN NOT NULL DEFAULT 1", "BOOLEAN NOT NULL DEFAULT TRUE"),
+    ("condition_on_previous_text", "BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("updated_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP", "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"),
+    ("updated_by_user_id", "INTEGER", "INTEGER"),
+)
 
 _NON_WORD_EDGE_RE = re.compile(r"^[^\w]+|[^\w]+$")
 _MODEL_LOCK = threading.Lock()
@@ -41,6 +65,242 @@ _DOWNLOAD_IN_PROGRESS = False
 _LAST_DOWNLOAD_ERROR = ""
 _CACHED_MODEL: Any | None = None
 _CACHED_MODEL_SIGNATURE = ""
+
+
+@dataclass(frozen=True)
+class FasterWhisperSettingsSnapshot:
+    device: str
+    compute_type: str
+    cpu_threads: int
+    num_workers: int
+    beam_size: int
+    vad_filter: bool
+    condition_on_previous_text: bool
+    resolved_device: str
+    resolved_device_index: int
+    resolved_compute_type: str
+
+
+def _faster_whisper_settings_schema_name(db: Session) -> str | None:
+    bind = db.get_bind()
+    if bind is None or bind.dialect.name == "sqlite":
+        return None
+    return FasterWhisperSetting.__table__.schema
+
+
+def _qualified_faster_whisper_settings_table(db: Session) -> str:
+    schema = _faster_whisper_settings_schema_name(db)
+    return f"{schema}.{FasterWhisperSetting.__tablename__}" if schema else FasterWhisperSetting.__tablename__
+
+
+def _faster_whisper_settings_column_names(db: Session) -> set[str]:
+    bind = db.get_bind()
+    if bind is None:
+        return set()
+    schema = _faster_whisper_settings_schema_name(db)
+    inspector = inspect(bind)
+    if not inspector.has_table(FasterWhisperSetting.__tablename__, schema=schema):
+        return set()
+    return {str(item.get("name") or "").strip() for item in inspector.get_columns(FasterWhisperSetting.__tablename__, schema=schema)}
+
+
+def _ensure_faster_whisper_settings_schema(db: Session) -> bool:
+    bind = db.get_bind()
+    if bind is None:
+        raise RuntimeError("faster_whisper_settings schema repair missing bind")
+
+    schema = _faster_whisper_settings_schema_name(db)
+    inspector = inspect(bind)
+    changed = False
+
+    if bind.dialect.name != "sqlite":
+        db.execute(text("CREATE SCHEMA IF NOT EXISTS app"))
+        db.commit()
+
+    if not inspector.has_table(FasterWhisperSetting.__tablename__, schema=schema):
+        FasterWhisperSetting.__table__.create(bind=bind, checkfirst=True)
+        db.commit()
+        changed = True
+
+    existing_columns = _faster_whisper_settings_column_names(db)
+    table_name = _qualified_faster_whisper_settings_table(db)
+    dialect_name = bind.dialect.name
+    missing_columns = [item for item in _FASTER_WHISPER_SETTINGS_REQUIRED_COLUMN_SQL if item[0] not in existing_columns]
+    for column_name, sqlite_sql, default_sql in missing_columns:
+        column_sql = sqlite_sql if dialect_name == "sqlite" else default_sql
+        db.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}"))
+        changed = True
+    if missing_columns:
+        db.commit()
+
+    if _backfill_faster_whisper_settings_values(db):
+        changed = True
+    return changed
+
+
+def _backfill_faster_whisper_settings_values(db: Session) -> bool:
+    table_name = _qualified_faster_whisper_settings_table(db)
+    column_names = _faster_whisper_settings_column_names(db)
+    if not column_names:
+        return False
+
+    dialect_name = str((db.get_bind().dialect.name if db.get_bind() is not None else "") or "").lower()
+    changed = False
+    for column_name, default_value in DEFAULT_FASTER_WHISPER_SETTINGS.items():
+        if column_name not in column_names:
+            continue
+        if isinstance(default_value, bool):
+            update_sql = text(f"UPDATE {table_name} SET {column_name} = :default_value WHERE {column_name} IS NULL")
+            params = {"default_value": int(default_value) if dialect_name == "sqlite" else bool(default_value)}
+        elif isinstance(default_value, int):
+            update_sql = text(
+                f"UPDATE {table_name} SET {column_name} = {int(default_value)} "
+                f"WHERE {column_name} IS NULL OR {column_name} <= 0"
+            )
+            params = None
+        else:
+            update_sql = text(f"UPDATE {table_name} SET {column_name} = :default_value WHERE {column_name} IS NULL")
+            params = {"default_value": str(default_value or "")}
+        result = db.execute(update_sql, params or {})
+        changed = changed or bool(getattr(result, "rowcount", 0))
+
+    if "updated_at" in column_names:
+        result = db.execute(text(f"UPDATE {table_name} SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))
+        changed = changed or bool(getattr(result, "rowcount", 0))
+
+    if changed:
+        db.commit()
+    return changed
+
+
+def _normalize_faster_whisper_settings_row(row: FasterWhisperSetting) -> bool:
+    changed = False
+    for key, value in DEFAULT_FASTER_WHISPER_SETTINGS.items():
+        current = getattr(row, key)
+        if isinstance(value, bool):
+            if current is None:
+                setattr(row, key, value)
+                changed = True
+            continue
+        if isinstance(value, int):
+            if current in (None, "") or int(current) <= 0:
+                setattr(row, key, value)
+                changed = True
+            continue
+        normalized_value = str(current or "").strip()
+        if normalized_value != str(current or ""):
+            setattr(row, key, normalized_value)
+            changed = True
+    if getattr(row, "updated_at", None) is None:
+        row.updated_at = now_shanghai_naive()
+        changed = True
+    return changed
+
+
+def ensure_default_faster_whisper_settings(db: Session) -> FasterWhisperSetting:
+    _ensure_faster_whisper_settings_schema(db)
+    row = db.get(FasterWhisperSetting, 1)
+    if row is None:
+        row = FasterWhisperSetting(id=1, **DEFAULT_FASTER_WHISPER_SETTINGS)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    elif _normalize_faster_whisper_settings_row(row):
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    return row
+
+
+def get_faster_whisper_settings(db: Session) -> FasterWhisperSetting:
+    _ensure_faster_whisper_settings_schema(db)
+    row = db.get(FasterWhisperSetting, 1)
+    if row is None:
+        row = ensure_default_faster_whisper_settings(db)
+    elif _normalize_faster_whisper_settings_row(row):
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    return row
+
+
+def _load_ctranslate2_symbols():
+    try:
+        import ctranslate2
+    except Exception as exc:  # pragma: no cover - import depends on runtime env
+        raise RuntimeError(f"ctranslate2 import failed: {str(exc)[:400]}") from exc
+    return ctranslate2
+
+
+def _cuda_available() -> bool:
+    try:
+        ctranslate2 = _load_ctranslate2_symbols()
+        return int(ctranslate2.get_cuda_device_count()) > 0
+    except Exception:
+        return False
+
+
+def _resolve_model_device(raw_device: str) -> tuple[str, int, str]:
+    normalized = str(raw_device or "").strip().lower()
+    if not normalized or normalized == "auto":
+        if _cuda_available():
+            return "cuda", 0, "cuda:0"
+        return "cpu", 0, "cpu"
+    if normalized.startswith("cuda"):
+        if ":" in normalized:
+            _, _, raw_index = normalized.partition(":")
+            try:
+                return "cuda", max(0, int(raw_index)), normalized
+            except Exception:
+                return "cuda", 0, "cuda:0"
+        return "cuda", 0, "cuda:0"
+    return normalized, 0, normalized
+
+
+def _resolve_compute_type(raw_compute_type: str, runtime_device: str) -> str:
+    normalized = str(raw_compute_type or "").strip().lower()
+    if normalized:
+        return normalized
+    return "float16" if runtime_device == "cuda" else "int8"
+
+
+def get_faster_whisper_settings_snapshot(db: Session) -> FasterWhisperSettingsSnapshot:
+    row = get_faster_whisper_settings(db)
+    configured_device = str(getattr(row, "device", "") or DEFAULT_FASTER_WHISPER_SETTINGS["device"])
+    runtime_device, runtime_device_index, resolved_device = _resolve_model_device(configured_device)
+    compute_type = str(getattr(row, "compute_type", "") or "")
+    resolved_compute_type = _resolve_compute_type(compute_type, runtime_device)
+    return FasterWhisperSettingsSnapshot(
+        device=configured_device,
+        compute_type=compute_type,
+        cpu_threads=max(1, int(getattr(row, "cpu_threads", DEFAULT_FASTER_WHISPER_SETTINGS["cpu_threads"]) or DEFAULT_FASTER_WHISPER_SETTINGS["cpu_threads"])),
+        num_workers=max(1, int(getattr(row, "num_workers", DEFAULT_FASTER_WHISPER_SETTINGS["num_workers"]) or DEFAULT_FASTER_WHISPER_SETTINGS["num_workers"])),
+        beam_size=max(1, int(getattr(row, "beam_size", DEFAULT_FASTER_WHISPER_SETTINGS["beam_size"]) or DEFAULT_FASTER_WHISPER_SETTINGS["beam_size"])),
+        vad_filter=bool(getattr(row, "vad_filter", DEFAULT_FASTER_WHISPER_SETTINGS["vad_filter"])),
+        condition_on_previous_text=bool(
+            getattr(row, "condition_on_previous_text", DEFAULT_FASTER_WHISPER_SETTINGS["condition_on_previous_text"])
+        ),
+        resolved_device=resolved_device,
+        resolved_device_index=runtime_device_index,
+        resolved_compute_type=resolved_compute_type,
+    )
+
+
+def _runtime_settings_snapshot() -> FasterWhisperSettingsSnapshot:
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        return get_faster_whisper_settings_snapshot(db)
+    finally:
+        db.close()
+
+
+def _settings_summary(snapshot: FasterWhisperSettingsSnapshot) -> dict[str, Any]:
+    payload = asdict(snapshot)
+    payload["model_dir"] = str(FASTER_WHISPER_MODEL_DIR)
+    payload["model_id"] = FASTER_WHISPER_MODELSCOPE_MODEL_ID
+    return payload
 
 
 def _meta_path() -> Path:
@@ -290,32 +550,41 @@ def schedule_faster_whisper_model_prefetch() -> bool:
         return True
 
 
-def _model_signature() -> str:
+def _model_signature(snapshot: FasterWhisperSettingsSnapshot) -> str:
     return json.dumps(
         {
             "model_dir": str(FASTER_WHISPER_MODEL_DIR),
-            "compute_type": FASTER_WHISPER_COMPUTE_TYPE,
-            "cpu_threads": int(FASTER_WHISPER_CPU_THREADS),
+            "model_id": FASTER_WHISPER_MODELSCOPE_MODEL_ID,
+            "device": snapshot.device,
+            "resolved_device": snapshot.resolved_device,
+            "resolved_device_index": int(snapshot.resolved_device_index),
+            "compute_type": snapshot.compute_type,
+            "resolved_compute_type": snapshot.resolved_compute_type,
+            "cpu_threads": int(snapshot.cpu_threads),
+            "num_workers": int(snapshot.num_workers),
         },
         ensure_ascii=False,
         sort_keys=True,
     )
 
 
-def _get_or_create_model():
+def _get_or_create_model(settings: FasterWhisperSettingsSnapshot | None = None):
     global _CACHED_MODEL, _CACHED_MODEL_SIGNATURE
 
+    snapshot = settings or _runtime_settings_snapshot()
     model_dir = ensure_faster_whisper_model_downloaded(force_refresh=False)
-    signature = _model_signature()
+    signature = _model_signature(snapshot)
     with _MODEL_LOCK:
         if _CACHED_MODEL is not None and _CACHED_MODEL_SIGNATURE == signature:
             return _CACHED_MODEL
         WhisperModel = _load_whisper_model_symbol()
         _CACHED_MODEL = WhisperModel(
             str(model_dir),
-            device="cpu",
-            compute_type=FASTER_WHISPER_COMPUTE_TYPE,
-            cpu_threads=int(FASTER_WHISPER_CPU_THREADS),
+            device=snapshot.resolved_device.split(":", 1)[0],
+            device_index=int(snapshot.resolved_device_index),
+            compute_type=snapshot.resolved_compute_type,
+            cpu_threads=int(snapshot.cpu_threads),
+            num_workers=int(snapshot.num_workers),
         )
         _CACHED_MODEL_SIGNATURE = signature
         return _CACHED_MODEL
@@ -367,11 +636,16 @@ def _serialize_info(info: Any) -> dict[str, Any]:
     }
 
 
-def transcribe_audio_file_with_faster_whisper(audio_path: str, *, progress_callback=None) -> dict[str, Any]:
+def transcribe_audio_file_with_faster_whisper(
+    audio_path: str,
+    *,
+    settings: FasterWhisperSettingsSnapshot | None = None,
+    progress_callback=None,
+) -> dict[str, Any]:
+    snapshot = settings or _runtime_settings_snapshot()
     started = time.monotonic()
     _emit_faster_whisper_progress(progress_callback, {"elapsed_seconds": 0, "segment_done": 0, "segment_total": 0})
 
-    # Keep emitting waiting progress until the first segment arrives.
     waiting_stop = threading.Event()
     first_segment_seen = threading.Event()
 
@@ -395,13 +669,13 @@ def transcribe_audio_file_with_faster_whisper(audio_path: str, *, progress_callb
     )
     waiting_thread.start()
 
-    model = _get_or_create_model()
+    model = _get_or_create_model(snapshot)
     segments_iter, info = model.transcribe(
         str(audio_path),
-        beam_size=5,
+        beam_size=int(snapshot.beam_size),
         word_timestamps=True,
-        vad_filter=True,
-        condition_on_previous_text=False,
+        vad_filter=bool(snapshot.vad_filter),
+        condition_on_previous_text=bool(snapshot.condition_on_previous_text),
     )
 
     transcript_words: list[dict[str, Any]] = []
@@ -509,12 +783,7 @@ def transcribe_audio_file_with_faster_whisper(audio_path: str, *, progress_callb
         "preview_text": preview_text,
         "asr_result_json": asr_payload,
         "provider": "faster_whisper",
-        "settings_summary": {
-            "model_dir": str(FASTER_WHISPER_MODEL_DIR),
-            "model_id": FASTER_WHISPER_MODELSCOPE_MODEL_ID,
-            "compute_type": FASTER_WHISPER_COMPUTE_TYPE,
-            "cpu_threads": int(FASTER_WHISPER_CPU_THREADS),
-        },
+        "settings_summary": _settings_summary(snapshot),
         "raw_generate_result": {
             "info": _serialize_info(info),
             "segment_count": len(transcript_sentences),

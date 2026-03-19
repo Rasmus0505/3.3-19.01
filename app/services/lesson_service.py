@@ -135,17 +135,28 @@ def _call_transcribe_audio_file(
     audio_path: str,
     *,
     model: str,
+    known_duration_ms: int | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     kwargs: dict[str, Any] = {"model": model}
+    if known_duration_ms is not None:
+        kwargs["known_duration_ms"] = max(1, int(known_duration_ms))
     if progress_callback is not None:
         kwargs["progress_callback"] = progress_callback
     try:
         return transcribe_audio_file(audio_path, **kwargs)
     except TypeError as exc:
-        if progress_callback is None or "unexpected keyword argument" not in str(exc):
+        if "unexpected keyword argument" not in str(exc):
             raise
-        return transcribe_audio_file(audio_path, model=model)
+        legacy_kwargs: dict[str, Any] = {"model": model}
+        if progress_callback is not None:
+            legacy_kwargs["progress_callback"] = progress_callback
+        try:
+            return transcribe_audio_file(audio_path, **legacy_kwargs)
+        except TypeError as fallback_exc:
+            if "unexpected keyword argument" not in str(fallback_exc):
+                raise
+            return transcribe_audio_file(audio_path, model=model)
 
 
 def _call_translate_sentences_to_zh(
@@ -318,13 +329,13 @@ def _split_audio_segments(
     target_seconds: int,
     search_window_seconds: int,
     duration_ms: int,
-) -> list[tuple[int, int, Path]]:
+) -> list[tuple[int, int, int, Path]]:
     if target_seconds <= 0:
         raise MediaError("ASR_SEGMENT_CONFIG_INVALID", "分段时长配置无效", str(target_seconds))
 
     total_seconds = max(1.0, duration_ms / 1000.0)
     segments_dir.mkdir(parents=True, exist_ok=True)
-    output: list[tuple[int, int, Path]] = []
+    output: list[tuple[int, int, int, Path]] = []
 
     segment_start_sec = 0.0
     index = 0
@@ -363,7 +374,14 @@ def _split_audio_segments(
             )
         except MediaError as exc:
             raise MediaError("ASR_SEGMENT_SPLIT_FAILED", "ASR 分段切片失败", exc.detail or exc.message) from exc
-        output.append((index, int(round(segment_start_sec * 1000)), segment_path))
+        output.append(
+            (
+                index,
+                int(round(segment_start_sec * 1000)),
+                int(round(segment_end_sec * 1000)),
+                segment_path,
+            )
+        )
         index += 1
         if segment_end_sec >= total_seconds:
             break
@@ -479,6 +497,7 @@ def _load_segment_result(result_path: Path) -> tuple[int, list[dict[str, Any]], 
 def _transcribe_segment(
     segment_index: int,
     segment_start_ms: int,
+    segment_end_ms: int,
     segment_path: Path,
     asr_model: str,
     result_path: Path | None = None,
@@ -487,7 +506,11 @@ def _transcribe_segment(
         cached = _load_segment_result(result_path)
         if cached:
             return cached
-    asr_result = _call_transcribe_audio_file(str(segment_path), model=asr_model)
+    asr_result = _call_transcribe_audio_file(
+        str(segment_path),
+        model=asr_model,
+        known_duration_ms=max(1, int(segment_end_ms) - int(segment_start_ms)),
+    )
     segment_payload = asr_result["asr_result_json"]
     usage_seconds = asr_result.get("usage_seconds")
     segment_words = _shift_words(extract_word_items(segment_payload), segment_start_ms)
@@ -507,6 +530,7 @@ def _transcribe_segment(
 def _call_transcribe_segment(
     segment_index: int,
     segment_start_ms: int,
+    segment_end_ms: int,
     segment_path: Path,
     asr_model: str,
     result_path: Path | None = None,
@@ -515,6 +539,7 @@ def _call_transcribe_segment(
         return _transcribe_segment(
             segment_index,
             segment_start_ms,
+            segment_end_ms,
             segment_path,
             asr_model,
             result_path=result_path,
@@ -522,7 +547,7 @@ def _call_transcribe_segment(
     except TypeError as exc:
         if result_path is None or "unexpected keyword argument" not in str(exc):
             raise
-        payload = _transcribe_segment(segment_index, segment_start_ms, segment_path, asr_model)
+        payload = _transcribe_segment(segment_index, segment_start_ms, segment_end_ms, segment_path, asr_model)
         _write_json_file(result_path, _segment_result_to_payload(*payload))
         return payload
 
@@ -1287,6 +1312,7 @@ class LessonService:
             asr_result = _call_transcribe_audio_file(
                 str(opus_path),
                 model=asr_model,
+                known_duration_ms=source_duration_ms,
                 progress_callback=_on_single_asr_progress,
             )
             asr_payload = asr_result["asr_result_json"]
@@ -1383,15 +1409,15 @@ class LessonService:
         completed_segments = 0
         segment_results_dir = req_dir / _SEGMENT_RESULT_DIR
         segment_results_dir.mkdir(parents=True, exist_ok=True)
-        pending_segments: list[tuple[int, int, Path, Path]] = []
-        for segment_index, segment_start_ms, segment_path in segments:
+        pending_segments: list[tuple[int, int, int, Path, Path]] = []
+        for segment_index, segment_start_ms, segment_end_ms, segment_path in segments:
             result_path = segment_results_dir / f"segment_{segment_index:04d}.json"
             cached_segment = _load_segment_result(result_path)
             if cached_segment:
                 merged.append(cached_segment)
                 completed_segments += 1
                 continue
-            pending_segments.append((segment_index, segment_start_ms, segment_path, result_path))
+            pending_segments.append((segment_index, segment_start_ms, segment_end_ms, segment_path, result_path))
 
         if completed_segments:
             ratio = completed_segments / total_segments
@@ -1413,8 +1439,8 @@ class LessonService:
 
         with ThreadPoolExecutor(max_workers=max(1, min(max_concurrency, max(1, len(pending_segments))))) as executor:
             future_map = {
-                executor.submit(_call_transcribe_segment, segment_index, segment_start_ms, segment_path, asr_model, result_path): segment_index
-                for segment_index, segment_start_ms, segment_path, result_path in pending_segments
+                executor.submit(_call_transcribe_segment, segment_index, segment_start_ms, segment_end_ms, segment_path, asr_model, result_path): segment_index
+                for segment_index, segment_start_ms, segment_end_ms, segment_path, result_path in pending_segments
             }
             for future in as_completed(future_map):
                 segment_index, segment_words, segment_sentences, usage_seconds, raw_result = future.result()

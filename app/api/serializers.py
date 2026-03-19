@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from app.core.timezone import to_shanghai_aware
-from app.models import BillingModelRate, Lesson, LessonSentence, SenseVoiceSetting, SubtitleSetting, User
+from app.models import BillingModelRate, FasterWhisperSetting, Lesson, LessonSentence, SenseVoiceSetting, SubtitleSetting, User
 from app.schemas import (
     AdminSubtitleSettingsItem,
     BillingRateItem,
+    FasterWhisperSettingsItem,
     LessonCatalogItemResponse,
     LessonCatalogProgressSummaryResponse,
     LessonDetailResponse,
@@ -206,5 +207,18 @@ def to_sensevoice_settings_item(item: SenseVoiceSetting) -> SenseVoiceSettingsIt
         merge_vad=bool(getattr(item, "merge_vad", True)),
         merge_length_s=int(getattr(item, "merge_length_s", 15) or 15),
         ban_emo_unk=bool(getattr(item, "ban_emo_unk", False)),
+        updated_at=to_shanghai_aware(item.updated_at),
+    )
+
+
+def to_faster_whisper_settings_item(item: FasterWhisperSetting) -> FasterWhisperSettingsItem:
+    return FasterWhisperSettingsItem(
+        device=str(getattr(item, "device", "") or ""),
+        compute_type=str(getattr(item, "compute_type", "") or ""),
+        cpu_threads=int(getattr(item, "cpu_threads", 4) or 4),
+        num_workers=int(getattr(item, "num_workers", 2) or 2),
+        beam_size=int(getattr(item, "beam_size", 5) or 5),
+        vad_filter=bool(getattr(item, "vad_filter", True)),
+        condition_on_previous_text=bool(getattr(item, "condition_on_previous_text", False)),
         updated_at=to_shanghai_aware(item.updated_at),
     )

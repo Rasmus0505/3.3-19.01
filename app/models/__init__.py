@@ -1,6 +1,7 @@
 from app.models.billing import (
     AdminOperationLog,
     BillingModelRate,
+    FasterWhisperSetting,
     RedeemCode,
     RedeemCodeAttempt,
     RedeemCodeBatch,
@@ -26,6 +27,7 @@ __all__ = [
     "BillingModelRate",
     "SubtitleSetting",
     "SenseVoiceSetting",
+    "FasterWhisperSetting",
     "TranslationRequestLog",
     "RedeemCodeBatch",
     "RedeemCode",

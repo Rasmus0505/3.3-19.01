@@ -188,6 +188,29 @@ class SenseVoiceSetting(Base):
     )
 
 
+class FasterWhisperSetting(Base):
+    __tablename__ = "faster_whisper_settings"
+    __table_args__ = table_args(
+        CheckConstraint("cpu_threads > 0", name="ck_faster_whisper_cpu_threads_positive"),
+        CheckConstraint("num_workers > 0", name="ck_faster_whisper_num_workers_positive"),
+        CheckConstraint("beam_size > 0", name="ck_faster_whisper_beam_size_positive"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    device: Mapped[str] = mapped_column(String(32), default="auto", nullable=False)
+    compute_type: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    cpu_threads: Mapped[int] = mapped_column(Integer, default=4, nullable=False)
+    num_workers: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
+    beam_size: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+    vad_filter: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    condition_on_previous_text: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
+    updated_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey(schema_fk("users.id"), ondelete="SET NULL"),
+        nullable=True,
+    )
+
+
 class TranslationRequestLog(Base):
     __tablename__ = "translation_request_logs"
     __table_args__ = table_args(

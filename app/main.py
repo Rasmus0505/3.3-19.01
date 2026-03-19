@@ -19,7 +19,7 @@ from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, schema_n
 from app.models import LessonGenerationTask
 from app.services.admin_bootstrap import ensure_admin_users
 from app.services.asr_dashscope import setup_dashscope
-from app.services.faster_whisper_asr import schedule_faster_whisper_model_prefetch
+from app.services.faster_whisper_asr import ensure_default_faster_whisper_settings, schedule_faster_whisper_model_prefetch
 from app.services.media import get_media_runtime_status
 from app.services.user_activity import ensure_user_activity_schema
 
@@ -93,6 +93,15 @@ READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "merge_vad",
         "merge_length_s",
         "ban_emo_unk",
+    ),
+    "faster_whisper_settings": (
+        "device",
+        "compute_type",
+        "cpu_threads",
+        "num_workers",
+        "beam_size",
+        "vad_filter",
+        "condition_on_previous_text",
     ),
     "lesson_generation_tasks": LESSON_TASK_REQUIRED_COLUMNS,
 }
@@ -200,6 +209,7 @@ async def _bootstrap_runtime_state(app: FastAPI) -> None:
     db = SessionLocal()
     try:
         ensure_user_activity_schema(db)
+        ensure_default_faster_whisper_settings(db)
     finally:
         db.close()
     ready, error = _probe_database_ready()
