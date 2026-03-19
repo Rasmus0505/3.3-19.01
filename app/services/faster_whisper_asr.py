@@ -6,7 +6,7 @@ import math
 import re
 import threading
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +65,11 @@ _DOWNLOAD_IN_PROGRESS = False
 _LAST_DOWNLOAD_ERROR = ""
 _CACHED_MODEL: Any | None = None
 _CACHED_MODEL_SIGNATURE = ""
+_CUDA_RUNTIME_ERROR_RE = re.compile(
+    r"(cublas|cudnn|cudart|cuda|cupti).*(not found|cannot be loaded|failed to load)|"
+    r"(not found|cannot be loaded|failed to load).*(cublas|cudnn|cudart|cuda|cupti)",
+    re.IGNORECASE,
+)
 
 
 class FasterWhisperModelNotReadyError(RuntimeError):
@@ -307,6 +312,43 @@ def _settings_summary(snapshot: FasterWhisperSettingsSnapshot) -> dict[str, Any]
     payload["model_dir"] = str(FASTER_WHISPER_MODEL_DIR)
     payload["model_id"] = FASTER_WHISPER_MODELSCOPE_MODEL_ID
     return payload
+
+
+def _clear_cached_model() -> None:
+    global _CACHED_MODEL, _CACHED_MODEL_SIGNATURE
+    with _MODEL_LOCK:
+        _CACHED_MODEL = None
+        _CACHED_MODEL_SIGNATURE = ""
+
+
+def _is_cuda_runtime_load_error(exc: Exception) -> bool:
+    return bool(_CUDA_RUNTIME_ERROR_RE.search(str(exc or "")))
+
+
+def _can_retry_on_cpu(snapshot: FasterWhisperSettingsSnapshot, exc: Exception) -> bool:
+    return snapshot.resolved_device.startswith("cuda") and _is_cuda_runtime_load_error(exc)
+
+
+def _cpu_retry_snapshot(snapshot: FasterWhisperSettingsSnapshot) -> FasterWhisperSettingsSnapshot:
+    return replace(
+        snapshot,
+        device="cpu",
+        compute_type="int8",
+        resolved_device="cpu",
+        resolved_device_index=0,
+        resolved_compute_type="int8",
+    )
+
+
+def _transcribe_with_model_snapshot(audio_path: str, snapshot: FasterWhisperSettingsSnapshot):
+    model = _get_or_create_model(snapshot)
+    return model.transcribe(
+        str(audio_path),
+        beam_size=int(snapshot.beam_size),
+        word_timestamps=True,
+        vad_filter=bool(snapshot.vad_filter),
+        condition_on_previous_text=bool(snapshot.condition_on_previous_text),
+    )
 
 
 def _meta_path() -> Path:
@@ -675,20 +717,45 @@ def transcribe_audio_file_with_faster_whisper(
     _emit_faster_whisper_progress(progress_callback, {"elapsed_seconds": 0, "segment_done": 0, "segment_total": 0})
 
     waiting_stop = threading.Event()
-    first_segment_seen = threading.Event()
+    progress_state = {
+        "segment_done": 0,
+        "first_segment_elapsed": None,
+        "last_segment_elapsed": 0,
+        "duration_hint_seconds": 0.0,
+    }
+    progress_state_lock = threading.Lock()
+    effective_snapshot = snapshot
 
     def _emit_waiting_progress() -> None:
+        last_logged_bucket = -1
         while not waiting_stop.wait(1.0):
-            if first_segment_seen.is_set():
-                return
+            elapsed_seconds = max(0, int(round(time.monotonic() - started)))
+            with progress_state_lock:
+                segment_done = int(progress_state["segment_done"])
+                first_segment_elapsed = progress_state["first_segment_elapsed"]
+                last_segment_elapsed = int(progress_state["last_segment_elapsed"])
+                duration_hint_seconds = float(progress_state["duration_hint_seconds"])
             _emit_faster_whisper_progress(
                 progress_callback,
                 {
-                    "elapsed_seconds": max(0, int(round(time.monotonic() - started))),
-                    "segment_done": 0,
+                    "elapsed_seconds": elapsed_seconds,
+                    "segment_done": segment_done,
                     "segment_total": 0,
                 },
             )
+            current_bucket = elapsed_seconds // 10
+            if elapsed_seconds >= 10 and current_bucket != last_logged_bucket:
+                last_logged_bucket = current_bucket
+                logger.info(
+                    "[DEBUG] faster_whisper.progress_waiting device=%s compute_type=%s elapsed_seconds=%s segment_done=%s first_segment_elapsed=%s last_segment_elapsed=%s duration_hint_seconds=%.3f",
+                    effective_snapshot.resolved_device,
+                    effective_snapshot.resolved_compute_type,
+                    elapsed_seconds,
+                    segment_done,
+                    first_segment_elapsed,
+                    last_segment_elapsed,
+                    duration_hint_seconds,
+                )
 
     waiting_thread = threading.Thread(
         target=_emit_waiting_progress,
@@ -697,26 +764,55 @@ def transcribe_audio_file_with_faster_whisper(
     )
     waiting_thread.start()
 
-    model = _get_or_create_model(snapshot)
-    segments_iter, info = model.transcribe(
-        str(audio_path),
-        beam_size=int(snapshot.beam_size),
-        word_timestamps=True,
-        vad_filter=bool(snapshot.vad_filter),
-        condition_on_previous_text=bool(snapshot.condition_on_previous_text),
+    logger.info(
+        "[DEBUG] faster_whisper.transcribe_start audio_path=%s device=%s compute_type=%s cpu_threads=%s num_workers=%s beam_size=%s vad_filter=%s condition_on_previous_text=%s",
+        audio_path,
+        snapshot.resolved_device,
+        snapshot.resolved_compute_type,
+        snapshot.cpu_threads,
+        snapshot.num_workers,
+        snapshot.beam_size,
+        snapshot.vad_filter,
+        snapshot.condition_on_previous_text,
     )
+    try:
+        segments_iter, info = _transcribe_with_model_snapshot(audio_path, snapshot)
+    except Exception as exc:
+        if not _can_retry_on_cpu(snapshot, exc):
+            waiting_stop.set()
+            waiting_thread.join(timeout=0.2)
+            raise
+        fallback_snapshot = _cpu_retry_snapshot(snapshot)
+        logger.warning(
+            "[DEBUG] faster_whisper.cuda_runtime_fallback audio_path=%s requested_device=%s requested_compute_type=%s detail=%s fallback_device=%s fallback_compute_type=%s",
+            audio_path,
+            snapshot.resolved_device,
+            snapshot.resolved_compute_type,
+            str(exc)[:400],
+            fallback_snapshot.resolved_device,
+            fallback_snapshot.resolved_compute_type,
+        )
+        _clear_cached_model()
+        effective_snapshot = fallback_snapshot
+        try:
+            segments_iter, info = _transcribe_with_model_snapshot(audio_path, fallback_snapshot)
+        except Exception:
+            waiting_stop.set()
+            waiting_thread.join(timeout=0.2)
+            raise
+    duration_hint_seconds = max(
+        0.0,
+        float(getattr(info, "duration_after_vad", 0) or 0),
+        float(getattr(info, "duration", 0) or 0),
+    )
+    with progress_state_lock:
+        progress_state["duration_hint_seconds"] = duration_hint_seconds
 
     transcript_words: list[dict[str, Any]] = []
     transcript_sentences: list[dict[str, Any]] = []
     preview_parts: list[str] = []
     last_end_ms = 0
     segment_done = 0
-    segment_total_estimated = 0
-    duration_hint_seconds = max(
-        0.0,
-        float(getattr(info, "duration_after_vad", 0) or 0),
-        float(getattr(info, "duration", 0) or 0),
-    )
 
     try:
         for segment in segments_iter:
@@ -728,22 +824,27 @@ def transcribe_audio_file_with_faster_whisper(
                 continue
 
             segment_done += 1
-            if segment_done == 1:
-                first_segment_seen.set()
-            segment_end_seconds = max(0.0, float(getattr(segment, "end", 0) or 0))
-            if segment_end_seconds > 0:
-                span_seconds = max(duration_hint_seconds, segment_end_seconds)
-                estimated_total = int(round(segment_done * span_seconds / segment_end_seconds))
-                segment_total_estimated = max(segment_total_estimated, segment_done, estimated_total)
-            else:
-                segment_total_estimated = max(segment_total_estimated, segment_done)
+            elapsed_seconds = max(0, int(round(time.monotonic() - started)))
+            with progress_state_lock:
+                progress_state["segment_done"] = segment_done
+                progress_state["last_segment_elapsed"] = elapsed_seconds
+                if progress_state["first_segment_elapsed"] is None:
+                    progress_state["first_segment_elapsed"] = elapsed_seconds
+                    logger.info(
+                        "[DEBUG] faster_whisper.first_segment audio_path=%s elapsed_seconds=%s duration_hint_seconds=%.3f device=%s compute_type=%s",
+                        audio_path,
+                        elapsed_seconds,
+                        duration_hint_seconds,
+                        effective_snapshot.resolved_device,
+                        effective_snapshot.resolved_compute_type,
+                    )
 
             _emit_faster_whisper_progress(
                 progress_callback,
                 {
-                    "elapsed_seconds": max(0, int(round(time.monotonic() - started))),
+                    "elapsed_seconds": elapsed_seconds,
                     "segment_done": segment_done,
-                    "segment_total": segment_total_estimated,
+                    "segment_total": 0,
                 },
             )
 
@@ -780,6 +881,15 @@ def transcribe_audio_file_with_faster_whisper(
     preview_text = " ".join(preview_parts).strip()
     language = str(getattr(info, "language", "") or "").strip()
 
+    logger.info(
+        "[DEBUG] faster_whisper.transcribe_done audio_path=%s elapsed_seconds=%s segment_count=%s duration_hint_seconds=%.3f device=%s compute_type=%s",
+        audio_path,
+        max(0, int(round(time.monotonic() - started))),
+        segment_done,
+        duration_hint_seconds,
+        effective_snapshot.resolved_device,
+        effective_snapshot.resolved_compute_type,
+    )
     _emit_faster_whisper_progress(
         progress_callback,
         {
@@ -811,7 +921,7 @@ def transcribe_audio_file_with_faster_whisper(
         "preview_text": preview_text,
         "asr_result_json": asr_payload,
         "provider": "faster_whisper",
-        "settings_summary": _settings_summary(snapshot),
+        "settings_summary": _settings_summary(effective_snapshot),
         "raw_generate_result": {
             "info": _serialize_info(info),
             "segment_count": len(transcript_sentences),

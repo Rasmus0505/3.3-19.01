@@ -143,6 +143,10 @@ class LessonTaskFailureDebugResponse(BaseModel):
 class LessonTaskResponse(BaseModel):
     ok: bool = True
     task_id: str
+    requested_asr_model: str = ""
+    effective_asr_model: str = ""
+    model_fallback_applied: bool = False
+    model_fallback_reason: str = ""
     status: Literal["pending", "running", "pausing", "paused", "terminating", "terminated", "succeeded", "failed"]
     overall_percent: int
     current_text: str
@@ -167,6 +171,10 @@ class LessonTaskResponse(BaseModel):
 class LessonTaskCreateResponse(BaseModel):
     ok: bool = True
     task_id: str
+    requested_asr_model: str = ""
+    effective_asr_model: str = ""
+    model_fallback_applied: bool = False
+    model_fallback_reason: str = ""
 
 
 class LocalAsrLessonTaskCreateRequest(BaseModel):
