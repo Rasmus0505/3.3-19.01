@@ -23,19 +23,33 @@ const defaultDraft = {
   ban_emo_unk: false,
 };
 
-const FIELD_META = [
-  { key: "model_dir", label: "模型路径", hint: "model_dir（模型名称或本地磁盘路径，用来决定加载哪套 SenseVoice 模型）", type: "text" },
-  { key: "trust_remote_code", label: "远程代码", hint: "trust_remote_code（是否允许从 remote_code 加载模型实现代码）", type: "bool" },
-  { key: "remote_code", label: "代码位置", hint: "remote_code（模型实现代码路径或 URL；仅 trust_remote_code 打开时生效）", type: "text" },
-  { key: "device", label: "运行设备", hint: "device（如 cuda:0 / cpu，用来决定推理跑在哪张卡或 CPU）", type: "text" },
-  { key: "language", label: "识别语言", hint: "language（如 auto / en / zn；固定语言通常比 auto 更稳定更快）", type: "text" },
-  { key: "vad_model", label: "VAD 模型", hint: "vad_model（是否启用 VAD 切段；空值表示关闭 VAD）", type: "text" },
-  { key: "vad_max_single_segment_time", label: "VAD 最大切段毫秒", hint: "vad_max_single_segment_time（VAD 单段上限，越小切得越碎，越大越容易保留长句）", type: "number" },
-  { key: "use_itn", label: "ITN", hint: "use_itn（是否输出标点和逆文本正则化结果）", type: "bool" },
-  { key: "batch_size_s", label: "动态批秒数", hint: "batch_size_s（动态 batch 的总音频时长，越大通常吞吐越高）", type: "number" },
-  { key: "merge_vad", label: "合并 VAD", hint: "merge_vad（是否把 VAD 切碎的短片段重新合并后再识别）", type: "bool" },
-  { key: "merge_length_s", label: "合并后秒数", hint: "merge_length_s（merge_vad 打开后，每段合并到多长）", type: "number" },
-  { key: "ban_emo_unk", label: "禁用 emo_unk", hint: "ban_emo_unk（禁用后句子都会被赋情感标签）", type: "bool" },
+const FIELD_GROUPS = [
+  {
+    id: "common",
+    title: "常用参数",
+    description: "常用的模型路径、运行设备和分句策略，调整频率最高。",
+    fields: [
+      { key: "model_dir", label: "模型路径", hint: "model_dir（模型名称或上线磁盘路径）", type: "text" },
+      { key: "device", label: "运行设备", hint: "device（常见值：cuda:0 / cpu；如需自动判断请明确填写 auto）", type: "text" },
+      { key: "language", label: "识别语言", hint: "language（auto / en / zn；固定语言比 auto 更稳定）", type: "text" },
+      { key: "vad_model", label: "VAD 模型", hint: "vad_model（空表示关闭 VAD；有值则开启并根据模型切割）", type: "text" },
+      { key: "vad_max_single_segment_time", label: "VAD 最大切段(ms)", hint: "每段最多时长，越小切得越细，越大越接近原始片段。", type: "number" },
+      { key: "batch_size_s", label: "动态批秒数", hint: "batch_size_s（每个 batch 的目标时长，太高可能影响响应时间）", type: "number" },
+      { key: "use_itn", label: "ITN", hint: "ITN（是否开启标点+归一化；关闭会保留原始 token）", type: "bool" },
+    ],
+  },
+  {
+    id: "advanced",
+    title: "高级/危险设置",
+    description: "高级 tuning 选项默认折叠，仅在排查或有特定需求时打开。",
+    fields: [
+      { key: "trust_remote_code", label: "远程代码", hint: "trust_remote_code（允许 remote_code 覆盖模型实现，关闭时 remote_code 无效）", type: "bool" },
+      { key: "remote_code", label: "代码位置", hint: "remote_code（示例：../custom/sensevoice.py；仅 trust_remote_code=true 时可编辑）", type: "text" },
+      { key: "merge_vad", label: "合并 VAD", hint: "merge_vad（是否把切碎的短句重新拼成中长句，适合长内容）", type: "bool" },
+      { key: "merge_length_s", label: "合并后秒数", hint: "merge_length_s（merge_vad 打开后，目标时长；越长越占内存）", type: "number" },
+      { key: "ban_emo_unk", label: "禁用 emo_unk", hint: "ban_emo_unk（是否屏蔽情感未知判定，主要用于调试）", type: "bool" },
+    ],
+  },
 ];
 
 function normalizeDraft(source) {
@@ -71,6 +85,41 @@ export function AdminSenseVoiceSettingsTab({ apiCall }) {
   const { error, clearError, captureError } = useErrorHandler();
 
   const dirty = useMemo(() => !draftsEqual(draft, loadedSettings), [draft, loadedSettings]);
+
+  function renderField(field) {
+    const value = draft[field.key];
+    const disabledRemote = field.key === "remote_code" && !draft.trust_remote_code;
+    return (
+      <div key={field.key} className="rounded-2xl border bg-muted/20 p-4">
+        <div className="space-y-1">
+          <p className="text-sm font-medium">{field.label}</p>
+          <p className="text-xs text-muted-foreground">{field.hint}</p>
+        </div>
+        <div className="mt-3">
+          {field.type === "bool" ? (
+            <Switch checked={Boolean(value)} onCheckedChange={(checked) => setDraft((prev) => ({ ...prev, [field.key]: checked }))} />
+          ) : (
+            <>
+              <Input
+                type={field.type === "number" ? "number" : "text"}
+                value={value}
+                disabled={disabledRemote}
+                onChange={(event) =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    [field.key]: field.type === "number" ? Number(event.target.value || 0) : event.target.value,
+                  }))
+                }
+              />
+              {field.key === "remote_code" && !draft.trust_remote_code ? (
+                <p className="mt-1 text-xs text-muted-foreground">远程代码仅在“远程代码”开关打开时才生效。</p>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   async function loadSettings() {
     setLoading(true);
@@ -222,32 +271,28 @@ export function AdminSenseVoiceSettingsTab({ apiCall }) {
             ))}
           </div>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2">
-            {FIELD_META.map((field) => (
-              <div key={field.key} className="rounded-2xl border bg-muted/20 p-4">
+          <>
+            {FIELD_GROUPS.map((group) => (
+              <div key={group.id} className="space-y-3">
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">{field.label}</p>
-                  <p className="text-xs text-muted-foreground">{field.hint}</p>
+                  <p className="text-sm font-medium">{group.title}</p>
+                  <p className="text-xs text-muted-foreground">{group.description}</p>
                 </div>
-                <div className="mt-3">
-                  {field.type === "bool" ? (
-                    <Switch checked={Boolean(draft[field.key])} onCheckedChange={(checked) => setDraft((prev) => ({ ...prev, [field.key]: checked }))} />
-                  ) : (
-                    <Input
-                      type={field.type === "number" ? "number" : "text"}
-                      value={draft[field.key]}
-                      onChange={(event) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          [field.key]: field.type === "number" ? Number(event.target.value || 0) : event.target.value,
-                        }))
-                      }
-                    />
-                  )}
-                </div>
+                {group.id === "advanced" ? (
+                  <details className="rounded-2xl border border-dashed bg-muted/10" open={false}>
+                    <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-muted-foreground">高级 / 危险设置（默认折叠）</summary>
+                    <div className="grid gap-3 p-4 md:grid-cols-2">
+                      {group.fields.map((field) => renderField(field))}
+                    </div>
+                  </details>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {group.fields.map((field) => renderField(field))}
+                  </div>
+                )}
               </div>
             ))}
-          </div>
+          </>
         )}
 
         {rollbackCandidate ? (
