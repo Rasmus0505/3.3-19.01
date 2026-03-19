@@ -77,6 +77,18 @@ class LessonDeleteResponse(BaseModel):
     lesson_id: int
 
 
+class LessonBulkDeleteRequest(BaseModel):
+    lesson_ids: list[int] = Field(default_factory=list)
+    delete_all: bool = False
+
+
+class LessonBulkDeleteResponse(BaseModel):
+    ok: bool = True
+    deleted_ids: list[int] = Field(default_factory=list)
+    deleted_count: int = 0
+    failed_ids: list[int] = Field(default_factory=list)
+
+
 class LessonTaskStageResponse(BaseModel):
     key: str
     label: str

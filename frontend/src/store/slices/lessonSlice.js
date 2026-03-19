@@ -1,5 +1,6 @@
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
-import { getActiveLessonSubtitleVariant, getLessonSubtitleAvailability, saveLessonSubtitleCacheSeed } from "../../shared/media/localSubtitleStore";
+import { deleteLessonMedia } from "../../shared/media/localMediaStore";
+import { deleteLessonSubtitleCache, getActiveLessonSubtitleVariant, getLessonSubtitleAvailability, saveLessonSubtitleCacheSeed } from "../../shared/media/localSubtitleStore";
 
 function buildProgressSnapshot(progressData = {}) {
   return {
@@ -58,6 +59,41 @@ async function applyLocalSubtitleVariant(lesson) {
   } catch (_) {
     return lesson;
   }
+}
+
+function normalizeDeletedLessonIds(lessonIds = []) {
+  return Array.from(new Set(listToNumberArray(lessonIds))).filter((item) => item > 0);
+}
+
+function listToNumberArray(items = []) {
+  return (Array.isArray(items) ? items : []).map((item) => Number(item || 0)).filter((item) => Number.isInteger(item) && item > 0);
+}
+
+function removeDeletedLessonsFromState(state, deletedIds) {
+  const deletedIdSet = new Set(listToNumberArray(deletedIds));
+  const nextLessons = state.lessons.filter((item) => !deletedIdSet.has(Number(item.id || 0)));
+  const nextLessonCardMetaMap = { ...state.lessonCardMetaMap };
+  const nextSubtitleCacheMetaMap = { ...state.subtitleCacheMetaMap };
+  for (const lessonId of deletedIdSet) {
+    delete nextLessonCardMetaMap[lessonId];
+    delete nextSubtitleCacheMetaMap[lessonId];
+  }
+  return {
+    lessons: nextLessons,
+    lessonCardMetaMap: nextLessonCardMetaMap,
+    subtitleCacheMetaMap: nextSubtitleCacheMetaMap,
+    currentLesson: deletedIdSet.has(Number(state.currentLesson?.id || 0)) ? null : state.currentLesson,
+  };
+}
+
+async function cleanupDeletedLessonArtifacts(lessonIds) {
+  const deletedIds = listToNumberArray(lessonIds);
+  await Promise.all(
+    deletedIds.flatMap((lessonId) => [
+      deleteLessonMedia(lessonId).catch(() => null),
+      deleteLessonSubtitleCache(lessonId).catch(() => null),
+    ]),
+  );
 }
 
 export const lessonInitialState = {
@@ -377,37 +413,91 @@ export function createLessonSlice(set, get) {
           get().setGlobalStatus(message);
           return { ok: false, message };
         }
-        const currentSnapshot = get().lessons;
-        const removedIndex = currentSnapshot.findIndex((item) => item.id === lessonId);
-        const nextLessons = currentSnapshot.filter((item) => item.id !== lessonId);
-        const deletingCurrentLesson = get().currentLesson?.id === lessonId;
+        const deletedIds = normalizeDeletedLessonIds([lessonId]);
+        const deletingCurrentLesson = deletedIds.includes(Number(get().currentLesson?.id || 0));
         set((state) => {
-          const nextLessonCardMetaMap = { ...state.lessonCardMetaMap };
-          const nextSubtitleCacheMetaMap = { ...state.subtitleCacheMetaMap };
-          delete nextLessonCardMetaMap[lessonId];
-          delete nextSubtitleCacheMetaMap[lessonId];
+          const nextState = removeDeletedLessonsFromState(state, deletedIds);
+          const nextTotal = Math.max(0, Number(state.lessonsTotal || 0) - deletedIds.length);
           return {
-            lessons: nextLessons,
-            currentLesson: deletingCurrentLesson ? null : state.currentLesson,
-            lessonCardMetaMap: nextLessonCardMetaMap,
-            subtitleCacheMetaMap: nextSubtitleCacheMetaMap,
+            ...nextState,
+            lessonsTotal: nextTotal,
+            hasMoreLessons: nextTotal > nextState.lessons.length,
           };
         });
+        await cleanupDeletedLessonArtifacts(deletedIds);
         if (deletingCurrentLesson) {
-          if (!nextLessons.length) {
-            get().setImmersiveActive(false);
-          } else {
-            const fallbackIndex = removedIndex >= 0 ? Math.min(removedIndex, nextLessons.length - 1) : 0;
-            const nextLessonId = nextLessons[fallbackIndex]?.id;
-            if (nextLessonId) {
-              await get().loadLessonDetail(nextLessonId, {
-                autoEnterImmersive: Boolean(options.keepImmersiveAfterFallback),
-              });
-            }
-          }
+          get().setImmersiveActive(false);
         }
         get().setGlobalStatus("");
-        return { ok: true, message: "删除历史成功" };
+        return { ok: true, message: "删除历史成功", deletedIds, deletedCount: deletedIds.length, currentLessonDeleted: deletingCurrentLesson };
+      } catch (error) {
+        const message = `网络错误: ${String(error)}`;
+        get().setGlobalStatus(message);
+        return { ok: false, message };
+      }
+    },
+    async deleteLessonsBulk({ lessonIds = [], deleteAll = false } = {}) {
+      if (!get().accessToken) {
+        return { ok: false, message: "请先登录" };
+      }
+      const normalizedIds = normalizeDeletedLessonIds(lessonIds);
+      if (!deleteAll && !normalizedIds.length) {
+        return { ok: false, message: "请先选择要删除的历史记录" };
+      }
+      try {
+        const resp = await api(
+          "/api/lessons/bulk-delete",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              lesson_ids: normalizedIds,
+              delete_all: Boolean(deleteAll),
+            }),
+          },
+          get().accessToken,
+        );
+        const data = await parseResponse(resp);
+        if (!resp.ok) {
+          const message = toErrorText(data, "批量删除历史失败");
+          get().setGlobalStatus(message);
+          return { ok: false, message, deletedIds: [], deletedCount: 0, failedIds: [] };
+        }
+        const deletedIds = normalizeDeletedLessonIds(data?.deleted_ids);
+        const deletedCount = Math.max(0, Number(data?.deleted_count || deletedIds.length));
+        const deletingCurrentLesson = deletedIds.includes(Number(get().currentLesson?.id || 0));
+        set((state) => {
+          if (deleteAll) {
+            return {
+              lessons: [],
+              lessonsTotal: 0,
+              hasMoreLessons: false,
+              currentLesson: null,
+              lessonCardMetaMap: {},
+              subtitleCacheMetaMap: {},
+            };
+          }
+          const nextState = removeDeletedLessonsFromState(state, deletedIds);
+          const nextTotal = Math.max(0, Number(state.lessonsTotal || 0) - deletedCount);
+          return {
+            ...nextState,
+            lessonsTotal: nextTotal,
+            hasMoreLessons: nextTotal > nextState.lessons.length,
+          };
+        });
+        await cleanupDeletedLessonArtifacts(deletedIds);
+        if (deletingCurrentLesson || deleteAll) {
+          get().setImmersiveActive(false);
+        }
+        get().setGlobalStatus("");
+        return {
+          ok: true,
+          message: deletedCount > 0 ? `已删除 ${deletedCount} 条历史记录` : "没有可删除的历史记录",
+          deletedIds,
+          deletedCount,
+          failedIds: listToNumberArray(data?.failed_ids),
+          currentLessonDeleted: deletingCurrentLesson || deleteAll,
+        };
       } catch (error) {
         const message = `网络错误: ${String(error)}`;
         get().setGlobalStatus(message);

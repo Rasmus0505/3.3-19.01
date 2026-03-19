@@ -23,6 +23,8 @@ from app.schemas import (
     ErrorResponse,
     LessonCatalogResponse,
     LessonCreateResponse,
+    LessonBulkDeleteRequest,
+    LessonBulkDeleteResponse,
     LessonDeleteResponse,
     LessonDetailResponse,
     LessonItemResponse,
@@ -42,6 +44,7 @@ from app.services.billing_service import BillingError, LOCAL_BROWSER_ASR_MODELS,
 from app.services.lesson_command_service import (
     create_lesson_task_from_local_asr,
     create_lesson_task_from_upload,
+    bulk_delete_lessons_for_user,
     delete_lesson_for_user,
     invalidate_lesson_related_queries,
     request_lesson_task_control_for_user,
@@ -512,3 +515,52 @@ def delete_lesson(
 
     logger.info("[DEBUG] lessons.delete.success lesson_id=%s user_id=%s", lesson_id, current_user.id)
     return LessonDeleteResponse(ok=True, lesson_id=lesson_id)
+
+
+@router.post(
+    "/bulk-delete",
+    response_model=LessonBulkDeleteResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def bulk_delete_lessons(
+    payload: LessonBulkDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    normalized_ids = sorted({int(item) for item in list(payload.lesson_ids or []) if int(item) > 0})
+    delete_all = bool(payload.delete_all)
+    if not delete_all and not normalized_ids:
+        return error_response(400, "EMPTY_DELETE_SELECTION", "请先选择要删除的历史记录")
+
+    try:
+        logger.info(
+            "[DEBUG] lessons.bulk_delete.request user_id=%s delete_all=%s count=%s",
+            current_user.id,
+            delete_all,
+            len(normalized_ids),
+        )
+        result = bulk_delete_lessons_for_user(
+            db=db,
+            user_id=current_user.id,
+            lesson_ids=normalized_ids,
+            delete_all=delete_all,
+        )
+    except Exception as exc:
+        logger.exception("lessons.bulk_delete.failed user_id=%s", current_user.id)
+        db.rollback()
+        return error_response(500, "INTERNAL_ERROR", "批量删除历史失败", str(exc)[:1200])
+
+    deleted_ids = [int(item) for item in list(result.get("deleted_ids") or [])]
+    failed_ids = [int(item) for item in list(result.get("failed_ids") or [])]
+    logger.info(
+        "[DEBUG] lessons.bulk_delete.success user_id=%s deleted_count=%s failed_count=%s",
+        current_user.id,
+        len(deleted_ids),
+        len(failed_ids),
+    )
+    return LessonBulkDeleteResponse(
+        ok=True,
+        deleted_ids=deleted_ids,
+        deleted_count=int(result.get("deleted_count") or len(deleted_ids)),
+        failed_ids=failed_ids,
+    )

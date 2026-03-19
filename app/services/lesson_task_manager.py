@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 from uuid import uuid4
@@ -29,6 +29,7 @@ TASK_STATUS_PENDING = "pending"
 TASK_STATUS_FAILED = "failed"
 TASK_STATUS_SUCCEEDED = "succeeded"
 TASK_ACTIVE_CONTROL_STATUSES = {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING, TASK_STATUS_TERMINATING}
+ORPHANED_TASK_RECOVERY_MESSAGE = "上次生成已中断，可继续生成或重新开始。"
 
 _STAGE_LABELS: tuple[tuple[str, str], ...] = (
     ("convert_audio", "转换音频格式"),
@@ -39,6 +40,8 @@ _STAGE_LABELS: tuple[tuple[str, str], ...] = (
 
 logger = logging.getLogger(__name__)
 LESSON_TASK_REQUIRED_COLUMNS: tuple[str, ...] = tuple(str(column.name) for column in LessonGenerationTask.__table__.columns)
+_ACTIVE_TASK_PROBE: Callable[[str], bool] | None = None
+_PROCESS_STARTED_AT = now_shanghai_naive()
 
 
 class LessonTaskStorageNotReadyError(Exception):
@@ -177,6 +180,78 @@ def _session_scope(
     return factory(), True
 
 
+def configure_task_runtime_probe(
+    active_task_probe: Callable[[str], bool] | None = None,
+    *,
+    process_started_at: datetime | None = None,
+) -> None:
+    global _ACTIVE_TASK_PROBE, _PROCESS_STARTED_AT
+    _ACTIVE_TASK_PROBE = active_task_probe
+    if process_started_at is not None:
+        _PROCESS_STARTED_AT = process_started_at
+
+
+def _is_task_active_in_current_process(task_id: str) -> bool:
+    if _ACTIVE_TASK_PROBE is None:
+        return False
+    try:
+        return bool(_ACTIVE_TASK_PROBE(str(task_id or "")))
+    except Exception:
+        logger.exception("[DEBUG] lessons.task.active_probe.failed task_id=%s", task_id)
+        return False
+
+
+def _should_recover_orphaned_task(task: LessonGenerationTask) -> bool:
+    status = str(task.status or "").strip().lower()
+    if status not in TASK_ACTIVE_CONTROL_STATUSES:
+        return False
+    updated_at = task.updated_at
+    if updated_at is None or updated_at >= _PROCESS_STARTED_AT:
+        return False
+    return not _is_task_active_in_current_process(task.task_id)
+
+
+def _recover_orphaned_task(task: LessonGenerationTask) -> None:
+    recovered_at = now_shanghai_naive()
+    previous_status = str(task.status or "").strip().lower()
+    stages = _copy_list(task.stages_json)
+    running_stage = next((item for item in stages if item.get("status") == "running"), None)
+    if running_stage:
+        running_stage["status"] = "pending"
+    resume_stage = _infer_resume_stage(stages) or str(task.resume_stage or "convert_audio") or "convert_audio"
+    next_artifacts = _set_control_fields(task.artifacts_json, action="", requested_at=None, paused_at=recovered_at, terminated_at=None)
+    next_artifacts["interrupted_recovery_at"] = recovered_at.isoformat()
+    next_artifacts["interrupted_recovery_from_status"] = previous_status
+
+    task.stages_json = stages
+    task.status = TASK_STATUS_PAUSED
+    task.current_text = ORPHANED_TASK_RECOVERY_MESSAGE
+    task.message = ""
+    task.error_code = ""
+    task.failure_debug_json = None
+    task.failed_at = None
+    task.resume_stage = resume_stage
+    task.resume_available = True
+    task.artifact_expires_at = None
+    task.artifacts_json = next_artifacts
+
+
+def _recover_orphaned_task_if_needed(task: LessonGenerationTask | None, session: Session) -> LessonGenerationTask | None:
+    if task is None or not _should_recover_orphaned_task(task):
+        return task
+    previous_status = str(task.status or "").strip().lower()
+    _recover_orphaned_task(task)
+    session.commit()
+    session.refresh(task)
+    logger.info(
+        "[DEBUG] lessons.task.orphan_recovered task_id=%s previous_status=%s resume_stage=%s",
+        task.task_id,
+        previous_status,
+        task.resume_stage,
+    )
+    return task
+
+
 def _task_to_dict(task: LessonGenerationTask) -> dict:
     failure_debug = _copy_dict(task.failure_debug_json) if isinstance(task.failure_debug_json, dict) else None
     if failure_debug is not None and task.failed_at is not None and not failure_debug.get("failed_at"):
@@ -304,6 +379,7 @@ def get_task(task_id: str, *, db: Session | None = None, session_factory: Sessio
     try:
         ensure_lesson_task_storage_ready(session)
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        task = _recover_orphaned_task_if_needed(task, session)
         return _task_to_dict(task) if task else None
     finally:
         if owns_session:
@@ -611,6 +687,9 @@ def request_task_control(
     try:
         ensure_lesson_task_storage_ready(session)
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        if not task:
+            return None
+        task = _recover_orphaned_task_if_needed(task, session)
         if not task:
             return None
         status = str(task.status or "").strip().lower()
