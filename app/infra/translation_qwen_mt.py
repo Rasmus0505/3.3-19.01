@@ -38,11 +38,22 @@ _BATCH_MAX_CHARS_CTX: contextvars.ContextVar[int] = contextvars.ContextVar(
 
 
 class TranslationError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, code: str = "TRANSLATION_FAILED", detail: str = ""):
+        super().__init__(message)
+        self.code = str(code or "TRANSLATION_FAILED").strip() or "TRANSLATION_FAILED"
+        self.message = str(message or "translation failed").strip() or "translation failed"
+        self.detail = str(detail or "").strip()
 
 
 class SemanticSplitError(RuntimeError):
     pass
+
+
+class TranslationResponseParseError(RuntimeError):
+    def __init__(self, error_code: str, message: str):
+        super().__init__(message)
+        self.error_code = error_code
+        self.error_message = message
 
 
 @dataclass(frozen=True)
@@ -303,13 +314,18 @@ def _extract_json_array(content: str, *, preserve_empty: bool) -> list[str]:
         return []
     try:
         parsed = json.loads(normalized)
-    except Exception:
+    except json.JSONDecodeError as exc:
         match = re.search(r"\[[\s\S]*\]", normalized)
         if not match:
-            return []
-        parsed = json.loads(match.group(0))
+            raise TranslationResponseParseError("INVALID_BATCH_JSON", f"invalid JSON response: {exc}") from exc
+        try:
+            parsed = json.loads(match.group(0))
+        except json.JSONDecodeError as exc2:
+            raise TranslationResponseParseError("INVALID_BATCH_JSON", f"invalid JSON fallback: {exc2}") from exc2
+    except Exception as exc:
+        raise TranslationResponseParseError("INVALID_BATCH_JSON", f"unexpected JSON error: {exc}") from exc
     if not isinstance(parsed, list):
-        return []
+        raise TranslationResponseParseError("INVALID_BATCH_JSON", "translation response is not a JSON array")
     items: list[str] = []
     for item in parsed:
         value = str(item or "").strip()
@@ -330,7 +346,10 @@ def _build_batch_prompt(texts: list[str]) -> str:
 
 
 def _parse_batch_response(content: str, *, expected_count: int) -> tuple[list[str] | None, str, str]:
-    items = _extract_json_array(content, preserve_empty=True)
+    try:
+        items = _extract_json_array(content, preserve_empty=True)
+    except TranslationResponseParseError as exc:
+        return None, exc.error_code, exc.error_message
     if len(items) != expected_count:
         return None, "INVALID_BATCH_COUNT", f"expected={expected_count} actual={len(items)}"
     if any(not item for item in items):
@@ -348,6 +367,10 @@ def _is_retryable_status(status_code: int | None) -> bool:
 
 def _retry_delay_seconds(attempt_no: int) -> float:
     return min(8.0, 0.8 * (2 ** max(0, attempt_no - 1)))
+
+
+def _is_fatal_batch_error(error_code: str) -> bool:
+    return str(error_code or "").strip().upper() == "INVALID_BATCH_JSON"
 
 
 def _build_sentence_batches(items: list[tuple[int, str]]) -> list[list[tuple[int, str]]]:
@@ -562,6 +585,18 @@ def _translate_batch_recursive(items: list[tuple[int, str]], *, api_key: str) ->
             failed_count=0,
             attempt_records=attempt_records,
             latest_error_summary="",
+        )
+
+    if _is_fatal_batch_error(error_code):
+        detail_parts = [str(error_message or error_code or "translation response parse failed").strip()]
+        if items:
+            detail_parts.append(f"sentence_idx={int(items[0][0]) + 1}")
+            detail_parts.append(f"size={len(items)}")
+            detail_parts.append(f"preview={_preview_batch(items)}")
+        raise TranslationError(
+            "翻译结果解析失败",
+            code="TRANSLATION_RESPONSE_INVALID",
+            detail="; ".join(part for part in detail_parts if part),
         )
 
     if len(items) > 1:

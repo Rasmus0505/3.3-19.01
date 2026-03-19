@@ -17,7 +17,6 @@ import {
   Button,
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
   Dialog,
@@ -37,10 +36,8 @@ import {
 import {
   areShortcutBindingsEqual,
   captureShortcutFromKeyboardEvent,
-  getPresetSummaryLines,
   getShortcutLabel,
   readLearningSettings,
-  REPLAY_PRESET_OPTIONS,
   sanitizeLearningSettings,
   SHORTCUT_ACTIONS,
   writeLearningSettings,
@@ -175,7 +172,6 @@ export function LessonList({
       }),
     [lessonCardMetaMap, lessonMediaMetaMap, lessons],
   );
-  const presetSummaryLines = useMemo(() => getPresetSummaryLines(learningSettings), [learningSettings]);
   const allHistorySelected = selectionMode === "all" && Number(totalLessons || 0) > 0;
   const selectedCount = allHistorySelected ? Math.max(0, Number(totalLessons || 0) - excludedLessonIds.length) : selectedLessonIds.length;
   const hasSelection = selectedCount > 0;
@@ -403,167 +399,114 @@ export function LessonList({
           <History className="size-4" />
           历史记录
         </CardTitle>
-        <CardDescription>点击课程卡片或右侧按钮，直接进入全屏学习并继续当前进度。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <section className="rounded-2xl border bg-muted/10 p-4 md:p-5">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div className="space-y-1">
-              <p className="text-sm font-semibold text-foreground">学习参数预设</p>
-              <p className="text-sm text-muted-foreground">
-                先在这里设好重播策略和快捷键，再从下方任意课程卡片直接进入全屏学习。
-              </p>
-            </div>
-            <Badge variant="outline">浏览器全局默认</Badge>
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-foreground">学习参数</p>
           </div>
 
           <div className="mt-4 space-y-4">
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">学习预设</p>
-              <div className="flex flex-wrap gap-2">
-                {REPLAY_PRESET_OPTIONS.map((item) => {
-                  const active = learningSettings.presetId === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className={cn(
-                        "rounded-full border px-3 py-1.5 text-sm transition-colors",
-                        active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background hover:border-primary/40",
-                      )}
-                      onClick={() => {
-                        setSettingsError("");
-                        updateLearningSettings((current) => ({ ...current, presetId: item.id }));
-                      }}
-                    >
-                      {item.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border bg-background/80 px-4 py-3 text-sm text-muted-foreground">
-              {presetSummaryLines.map((line) => (
-                <p key={line}>{line}</p>
-              ))}
-            </div>
-
-            <div className="rounded-2xl border bg-background/80 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">答完自动重播本句</p>
-                  <p className="text-xs text-muted-foreground">
-                    开启后，答完先显示本句翻译，再用 1x 自动重播一次，结束后自动进入下一句。
-                  </p>
+            <div className="grid gap-3 lg:grid-cols-3">
+              <div className="rounded-2xl border bg-background/80 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-foreground">答完自动重播本句</p>
+                  <Switch
+                    checked={learningSettings.playbackPreferences?.autoReplayAnsweredSentence !== false}
+                    onCheckedChange={(checked) => handlePlaybackPreferenceChange("autoReplayAnsweredSentence", checked)}
+                  />
                 </div>
-                <Switch
-                  checked={learningSettings.playbackPreferences?.autoReplayAnsweredSentence !== false}
-                  onCheckedChange={(checked) => handlePlaybackPreferenceChange("autoReplayAnsweredSentence", checked)}
-                />
               </div>
-              <p className="mt-3 text-xs text-muted-foreground">
-                {learningSettings.playbackPreferences?.autoReplayAnsweredSentence !== false
-                  ? "当前：已开启。若浏览器拦截自动重播，会直接进入下一句。"
-                  : "当前：已关闭。答完后会沿用现在的直接过句逻辑。"}
-              </p>
-            </div>
 
-            {learningSettings.presetId === "custom" ? (
-              <div className="grid gap-3 xl:grid-cols-2">
-                <div className="rounded-2xl border bg-background/80 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium">字母揭示</p>
-                      <p className="text-xs text-muted-foreground">关闭后不会再自动补字母；开启后只在设定阶段触发。</p>
-                    </div>
-                    <Switch
-                      checked={learningSettings.customConfig.revealLetterEnabled}
-                      onCheckedChange={(checked) => handleCustomConfigToggle("revealLetterEnabled", checked)}
-                    />
-                  </div>
-                  <div className={cn("mt-4 space-y-2", !learningSettings.customConfig.revealLetterEnabled && "opacity-60")}>
-                    <p className="text-sm font-medium">从第几次重播开始</p>
+              <div className="rounded-2xl border bg-background/80 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-foreground">字母揭示</p>
+                  <Switch
+                    checked={learningSettings.customConfig.revealLetterEnabled}
+                    onCheckedChange={(checked) => handleCustomConfigToggle("revealLetterEnabled", checked)}
+                  />
+                </div>
+                <div className={cn("mt-3 space-y-2", !learningSettings.customConfig.revealLetterEnabled && "opacity-60")}>
+                  <p className="text-xs font-medium text-foreground">开始阶段</p>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="8"
+                    step="1"
+                    className="h-9"
+                    disabled={!learningSettings.customConfig.revealLetterEnabled}
+                    value={learningSettings.customConfig.revealLetterAt}
+                    onChange={(event) => handleCustomConfigChange("revealLetterAt", event.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-2xl border bg-background/80 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-foreground">单词揭示</p>
+                  <Switch
+                    checked={learningSettings.customConfig.revealWordEnabled}
+                    onCheckedChange={(checked) => handleCustomConfigToggle("revealWordEnabled", checked)}
+                  />
+                </div>
+                <div className={cn("mt-3 grid gap-2 sm:grid-cols-2", !learningSettings.customConfig.revealWordEnabled && "opacity-60")}>
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-foreground">开始阶段</p>
                     <Input
                       type="number"
                       min="0"
                       max="8"
                       step="1"
-                      disabled={!learningSettings.customConfig.revealLetterEnabled}
-                      value={learningSettings.customConfig.revealLetterAt}
-                      onChange={(event) => handleCustomConfigChange("revealLetterAt", event.target.value)}
+                      className="h-9"
+                      disabled={!learningSettings.customConfig.revealWordEnabled}
+                      value={learningSettings.customConfig.revealWordAt}
+                      onChange={(event) => handleCustomConfigChange("revealWordAt", event.target.value)}
                     />
                   </div>
-                </div>
-
-                <div className="rounded-2xl border bg-background/80 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium">单词揭示</p>
-                      <p className="text-xs text-muted-foreground">关闭后不会再自动补完整单词；开启后可以单独调开始阶段和递增量。</p>
-                    </div>
-                    <Switch
-                      checked={learningSettings.customConfig.revealWordEnabled}
-                      onCheckedChange={(checked) => handleCustomConfigToggle("revealWordEnabled", checked)}
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-foreground">每次 + 词数</p>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="4"
+                      step="1"
+                      className="h-9"
+                      disabled={!learningSettings.customConfig.revealWordEnabled}
+                      value={learningSettings.customConfig.extraRevealWordsPerReplay}
+                      onChange={(event) => handleCustomConfigChange("extraRevealWordsPerReplay", event.target.value)}
                     />
-                  </div>
-                  <div className={cn("mt-4 grid gap-3", !learningSettings.customConfig.revealWordEnabled && "opacity-60")}>
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">从第几次重播开始</p>
-                      <Input
-                        type="number"
-                        min="0"
-                        max="8"
-                        step="1"
-                        disabled={!learningSettings.customConfig.revealWordEnabled}
-                        value={learningSettings.customConfig.revealWordAt}
-                        onChange={(event) => handleCustomConfigChange("revealWordAt", event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">之后每次额外揭示词数</p>
-                      <Input
-                        type="number"
-                        min="0"
-                        max="4"
-                        step="1"
-                        disabled={!learningSettings.customConfig.revealWordEnabled}
-                        value={learningSettings.customConfig.extraRevealWordsPerReplay}
-                        onChange={(event) => handleCustomConfigChange("extraRevealWordsPerReplay", event.target.value)}
-                      />
-                    </div>
                   </div>
                 </div>
               </div>
-            ) : null}
+            </div>
 
             <div className="space-y-3">
               <div className="space-y-1">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">快捷键配置</p>
-                <p className="text-sm text-muted-foreground">
-                  点一下按钮后直接按键录入；支持更多安全组合，Esc 固定保留为退出沉浸学习。若与其他动作冲突，会直接覆盖并清空旧动作。
-                </p>
+                <p className="text-sm font-semibold text-foreground">快捷键配置</p>
               </div>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div className="space-y-2">
                 {SHORTCUT_ACTIONS.map((action) => {
                   const recording = recordingShortcutActionId === action.id;
                   return (
                     <div key={action.id} className="rounded-2xl border bg-background/80 p-3">
-                      <p className="text-sm font-medium">{action.label}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        当前：{getShortcutLabel(learningSettings.shortcuts[action.id])}
-                      </p>
-                      <Button
-                        type="button"
-                        variant={recording ? "default" : "outline"}
-                        className="mt-3 w-full"
-                        onClick={() => {
-                          setSettingsError("");
-                          setRecordingShortcutActionId((current) => (current === action.id ? "" : action.id));
-                        }}
-                      >
-                        {recording ? "请直接按键…" : "点击录入"}
-                      </Button>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <p className="text-sm font-semibold text-foreground">{action.label}</p>
+                          <p className="text-sm text-muted-foreground break-all">{getShortcutLabel(learningSettings.shortcuts[action.id])}</p>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={recording ? "default" : "outline"}
+                          className="shrink-0"
+                          onClick={() => {
+                            setSettingsError("");
+                            setRecordingShortcutActionId((current) => (current === action.id ? "" : action.id));
+                          }}
+                        >
+                          {recording ? "请按键…" : "修改"}
+                        </Button>
+                      </div>
                     </div>
                   );
                 })}
@@ -574,11 +517,7 @@ export function LessonList({
               <Alert variant="destructive">
                 <AlertDescription>{settingsError}</AlertDescription>
               </Alert>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                推荐默认：Shift+A 揭示字母，Shift+S 揭示单词，Shift+Q 上一句，Shift+W 下一句，Shift+R 重播，Space 暂停/继续播放。
-              </p>
-            )}
+            ) : null}
           </div>
         </section>
 
@@ -600,7 +539,7 @@ export function LessonList({
                     {allHistorySelected ? `已选全部历史 ${selectedCount} 项` : `已选 ${selectedCount} 项`}
                   </p>
                 ) : (
-                  <p className="text-sm text-muted-foreground">请选择要删除的历史记录</p>
+                  <p className="text-sm text-muted-foreground">选择要删除的记录</p>
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-2">

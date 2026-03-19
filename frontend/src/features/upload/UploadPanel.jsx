@@ -81,6 +81,11 @@ const DISPLAY_STAGES = [
   { key: "translate_zh", label: "翻译" },
   { key: "write_lesson", label: "生成" },
 ];
+function getStageLabelByKey(stageKey) {
+  if (!stageKey) return "";
+  const stage = DISPLAY_STAGES.find((item) => item.key === stageKey);
+  return stage ? stage.label : stageKey;
+}
 const STAGE_PROGRESS_BOUNDS = {
   convert_audio: { start: 0, end: 20 },
   asr_transcribe: { start: 20, end: 60 },
@@ -658,6 +663,16 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const displayTaskSnapshot = localTranscribing ? localProgressSnapshot : taskSnapshot;
   const hasLocalFile = Boolean(file);
   const displayTaskStatus = String(displayTaskSnapshot?.status || "").toLowerCase();
+  const failureDebug = taskSnapshot?.failure_debug;
+  const failureStageKey = String(failureDebug?.failed_stage || taskSnapshot?.resume_stage || "").trim();
+  const failureStageLabel = failureStageKey ? getStageLabelByKey(failureStageKey) : "";
+  const failureDetailRaw =
+    failureDebug?.detail_excerpt ||
+    failureDebug?.latest_error_summary ||
+    failureDebug?.last_progress_text ||
+    taskSnapshot?.current_text ||
+    status;
+  const failureSummary = failureDetailRaw ? sanitizeUserFacingText(String(failureDetailRaw)).slice(0, 160) : "";
   const isRestoreVerifying = restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING;
   const showRestoreInfoCard = restoreBannerMode !== RESTORE_BANNER_MODES.NONE;
   const serviceTaskActive =
@@ -2656,6 +2671,16 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         {phase === "error" && status ? (
           <div className="space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
             <p className="text-sm text-destructive">{status}</p>
+            {(failureStageLabel || failureSummary) && (
+              <div className="space-y-1">
+                {failureStageLabel ? (
+                  <p className="text-xs font-semibold text-destructive">失败阶段：{failureStageLabel}</p>
+                ) : null}
+                {failureSummary ? (
+                  <p className="text-xs text-muted-foreground break-words">{failureSummary}</p>
+                ) : null}
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               {canRetryWithoutUpload ? (
                 <Button type="button" onClick={() => void resumeTask()}>

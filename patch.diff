@@ -1,0 +1,302 @@
+*** Begin Patch
+*** Add File: frontend/src/features/upload/localAsrParallel.js
++import { getLocalAsrWorkerAssetPayload, releaseLocalAsrWorkerAssetPayload } from "../../shared/media/localAsrAssetManager";
++
++const LOCAL_ASR_ASSET_BASE_URL = "/api/local-asr-assets";
++const LOCAL_ASR_OVERLAP_MS = 800;
++const REQUEST_ID_PREFIX = "local-parallel";
++const DEFAULT_MODEL_KEY = "local-sensevoice-small";
++
++let globalRequestSequence = 0;
++
++function buildRequestId() {
++  globalRequestSequence += 1;
++  return ${REQUEST_ID_PREFIX}--;
++}
++
++function clampConcurrency(value, min = 1, max = 4) {
++  if (!Number.isFinite(value)) return min;
++  const numeric = Math.max(min, Math.min(max, Math.trunc(value)));
++  return numeric;
++}
++
++export function determineLocalAsrConcurrency({ durationSec, hardwareConcurrency } = {}) {
++  const hardware = clampConcurrency(Number(hardwareConcurrency) || (typeof navigator !== "undefined" ? navigator.hardwareConcurrency : 4), 1, 16);
++  const duration = Math.max(0, Number(durationSec) || 0);
++  if (duration < 120) {
++    return 1;
++  }
++  if (duration < 420) {
++    return Math.min(2, Math.max(1, Math.floor(hardware / 2)));
++  }
++  if (duration < 900) {
++    return Math.min(3, Math.max(2, Math.floor(hardware / 3)));
++  }
++  return Math.min(4, hardware);
++}
++
++function splitAudioIntoSegments(audioData, samplingRate, concurrency, overlapMs) {
++  const normalizedConcurrency = clampConcurrency(concurrency, 1, audioData.length || 1);
++  const totalSamples = Math.max(0, audioData.length);
++  if (totalSamples === 0) return [];
++  const overlapSamples = Math.max(0, Math.round((overlapMs / 1000) * samplingRate));
++  const approxSegment = Math.max(1, Math.ceil(totalSamples / normalizedConcurrency));
++  const segments = [];
++  let cursor = 0;
++  for (let index = 0; index < normalizedConcurrency && cursor < totalSamples; index += 1) {
++    const start = Math.max(0, cursor - overlapSamples);
++    const end = Math.min(totalSamples, cursor + approxSegment + overlapSamples);
++    if (end <= start) {
++      cursor += approxSegment;
++      continue;
++    }
++    const slice = audioData.subarray(start, end);
++    segments.push({
++      index,
++      startSample: start,
++      endSample: end,
++      durationMs: Math.max(1, Math.round(((end - start) / samplingRate) * 1000)),
++      beginMs: (start / samplingRate) * 1000,
++      chunkData: new Float32Array(slice),
++    });
++    cursor += approxSegment;
++  }
++  if (segments.length === 0 && totalSamples > 0) {
++    segments.push({
++      index: 0,
++      startSample: 0,
++      endSample: totalSamples,
++      durationMs: Math.max(1, Math.round((totalSamples / samplingRate) * 1000)),
++      beginMs: 0,
++      chunkData: new Float32Array(audioData),
++    });
++  }
++  return segments;
++}
++
++function sortByBegin(a, b) {
++  return (a?.begin_time ?? 0) - (b?.begin_time ?? 0);
++}
++
++function dedupeSequence(items, key = "text") {
++  const deduped = [];
++  let lastBegin = -1;
++  let lastText = "";
++  for (const entry of items) {
++    if (entry == null) continue;
++    const begin = Number(entry.begin_time || 0);
++    if (lastBegin >= 0 && begin < lastBegin && entry[key] === lastText) {
++      continue;
++    }
++    deduped.push(entry);
++    lastBegin = begin;
++    lastText = String(entry[key] || "");
++  }
++  return deduped;
++}
++
++function mergeAsrPayload(results, segments) {
++  const words = [];
++  const sentences = [];
++  for (const { result, segment } of results) {
++    const transcript = Array.isArray(result?.asr_payload?.transcripts) ? result.asr_payload.transcripts[0] : null;
++    const offset = Number(segment?.beginMs || 0);
++    if (transcript?.words) {
++      for (const word of transcript.words) {
++        if (!word) continue;
++        words.push({
++          ...word,
++          begin_time: Math.max(0, Math.round(Number(word.begin_time || 0) + offset)),
++          end_time: Math.max(0, Math.round(Number(word.end_time || 0) + offset)),
++        });
++      }
++    }
++    if (transcript?.sentences) {
++      for (const sentence of transcript.sentences) {
++        if (!sentence) continue;
++        sentences.push({
++          ...sentence,
++          begin_time: Math.max(0, Math.round(Number(sentence.begin_time || 0) + offset)),
++          end_time: Math.max(0, Math.round(Number(sentence.end_time || 0) + offset)),
++        });
++      }
++    }
++  }
++  words.sort(sortByBegin);
++  sentences.sort(sortByBegin);
++  const dedupedWords = dedupeSequence(words, "text");
++  const dedupedSentences = dedupeSequence(sentences, "text");
++  const mergedText = dedupedSentences.map((item) => String(item.text || "")).filter(Boolean).join(" ") || dedupedWords.map((item) => String(item.text || "")).filter(Boolean).join(" ");
++  const totalDurationMs = Math.max(1, Math.round(segments.reduce((sum, segment) => sum + segment.durationMs, 0)));
++  return {
++    properties: { original_duration_in_milliseconds: totalDurationMs },
++    transcripts: [
++      {
++        channel_id: 0,
++        text: mergedText.trim(),
++        words: dedupedWords,
++        sentences: dedupedSentences,
++      },
++    ],
++  };
++}
++
++class LocalAsrWorkerSlot {
++  constructor({ modelId, assetPayload, assetBaseUrl }) {
++    this.modelId = modelId;
++    this.assetPayload = assetPayload;
++    this.assetBaseUrl = assetBaseUrl;
++    this.worker = null;
++    this.pending = new Map();
++    this.queue = Promise.resolve();
++    this.ready = this.initialize();
++  }
++
++  initialize() {
++    this.worker = new Worker(new URL("./localAsrPreviewWorker.js", import.meta.url));
++    this.worker.addEventListener("message", (event) => this.handleMessage(event));
++    this.worker.addEventListener("error", (event) => this.handleError(event));
++    return this.sendRequest("load-model", {});
++  }
++
++  handleMessage(event) {
++    const payload = event?.data || {};
++    const requestId = String(payload?.requestId || "");
++    if (!requestId) return;
++    const pending = this.pending.get(requestId);
++    if (!pending) return;
++    if (payload.type === "result") {
++      this.pending.delete(requestId);
++      pending.resolve(payload);
++      return;
++    }
++    if (payload.type === "error") {
++      this.pending.delete(requestId);
++      pending.reject(new Error(String(payload.message || "识别组件失败")));
++    }
++  }
++
++  handleError(event) {
++    const message = event?.message || "识别组件异常";
++    const error = new Error(String(message));
++    this.pending.forEach(({ reject }) => reject(error));
++    this.pending.clear();
++  }
++
++  sendRequest(type, payload, transfer = []) {
++    const requestId = buildRequestId();
++    return new Promise((resolve, reject) => {
++      this.pending.set(requestId, { resolve, reject });
++      this.worker.postMessage(
++        {
++          type,
++          requestId,
++          modelId: this.modelId,
++          assetBaseUrl: this.assetBaseUrl,
++          ...this.assetPayload,
++          ...payload,
++        },
++        transfer,
++      );
++    });
++  }
++
++  async transcribeSegment(segment, samplingRate, fileName) {
++    await this.ready;
++    return this.sendRequest(
++      "transcribe-audio",
++      {
++        audioData: segment.chunkData,
++        samplingRate,
++        fileName,
++      },
++      [segment.chunkData.buffer],
++    );
++  }
++
++  enqueueSegment(segment, samplingRate, fileName) {
++    this.queue = this.queue.then(() => this.transcribeSegment(segment, samplingRate, fileName));
++    return this.queue;
++  }
++
++  dispose() {
++    if (this.worker) {
++      this.worker.terminate();
++      this.worker = null;
++    }
++    this.pending.clear();
++  }
++}
++
++class LocalAsrWorkerPool {
++  constructor({ modelId, assetPayload, assetBaseUrl, concurrency }) {
++    this.slots = Array.from({ length: concurrency }).map(
++      () => new LocalAsrWorkerSlot({ modelId, assetPayload, assetBaseUrl }),
++    );
++  }
++
++  async transcribeSegments(segments, samplingRate, baseFileName) {
++    const jobs = [];
++    for (let index = 0; index < segments.length; index += 1) {
++      const slot = this.slots[index % this.slots.length];
++      const segment = segments[index];
++      const fileName = ${baseFileName || "local-sensevoice"}-segment-;
++      const job = slot
++        .enqueueSegment(segment, samplingRate, fileName)
++        .then((result) => ({ result, segment }));
++      jobs.push(job);
++    }
++    return Promise.all(jobs);
++  }
++
++  async dispose() {
++    await Promise.all(this.slots.map((slot) => slot.ready.catch(() => null)));
++    this.slots.forEach((slot) => slot.dispose());
++  }
++}
++
++export async function runLocalSenseVoiceParallel({
++  audioData,
++  samplingRate = 16000,
++  fileName = "local-source",
++  modelKey = DEFAULT_MODEL_KEY,
++  concurrency: requestedConcurrency,
++  assetBaseUrl = LOCAL_ASR_ASSET_BASE_URL,
++} = {}) {
++  if (!(audioData instanceof Float32Array) || audioData.length === 0) {
++    throw new Error("需要有效的 Float32Array 音频数据");
++  }
++  const durationSec = (audioData.length / samplingRate) || 0;
++  const concurrency = clampConcurrency(
++    requestedConcurrency || determineLocalAsrConcurrency({ durationSec }),
++    1,
++    Math.max(1, requestedConcurrency ?? 4),
++  );
++  const segments = splitAudioIntoSegments(audioData, samplingRate, concurrency, LOCAL_ASR_OVERLAP_MS);
++  if (!segments.length) {
++    throw new Error("无法生成识别分段");
++  }
++  const assetPayload = await getLocalAsrWorkerAssetPayload(modelKey, assetBaseUrl);
++  const pool = new LocalAsrWorkerPool({ modelId: modelKey, assetPayload, assetBaseUrl, concurrency });
++  try {
++    const results = await pool.transcribeSegments(segments, samplingRate, fileName);
++    const asrPayload = mergeAsrPayload(results, segments);
++    return {
++      concurrencyUsed: concurrency,
++      segmentCount: segments.length,
++      segmentDurationsMs: segments.map((segment) => segment.durationMs),
++      totalDurationMs: Math.max(1, Math.round((audioData.length / samplingRate) * 1000)),
++      asrPayload,
++      rawSegments: results.map(({ segment }, idx) => ({
++        index: segment.index,
++        beginMs: segment.beginMs,
++        durationMs: segment.durationMs,
++        order: idx,
++      })),
++    };
++  } finally {
++    await pool.dispose();
++    releaseLocalAsrWorkerAssetPayload(modelKey);
++  }
++}
+*** End Patch
