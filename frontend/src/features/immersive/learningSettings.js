@@ -98,6 +98,39 @@ export const DEFAULT_PLAYBACK_PREFERENCES = {
   autoReplayAnsweredSentence: true,
 };
 
+const DEFAULT_STANDARD_TAIL_RATES = {
+  firstReplay: 0.95,
+  secondReplay: 0.85,
+  laterReplay: 0.75,
+};
+
+function normalizeLegacyPresetId(rawPresetId) {
+  const normalized = rawPresetId === "recall" ? "hard" : rawPresetId;
+  return REPLAY_PRESET_OPTIONS.some((item) => item.id === normalized) ? normalized : "standard";
+}
+
+function getCustomReplayConfigForPreset(presetId) {
+  if (presetId === "hard") {
+    return {
+      revealLetterEnabled: true,
+      revealLetterAt: 3,
+      revealWordEnabled: true,
+      revealWordAt: 4,
+      extraRevealWordsPerReplay: 0,
+    };
+  }
+  if (presetId === "assist") {
+    return {
+      revealLetterEnabled: true,
+      revealLetterAt: 1,
+      revealWordEnabled: true,
+      revealWordAt: 2,
+      extraRevealWordsPerReplay: 0,
+    };
+  }
+  return DEFAULT_CUSTOM_REPLAY_CONFIG;
+}
+
 function clampNumber(value, min, max, fallback, { integer = false } = {}) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
@@ -349,12 +382,16 @@ export function sanitizeCustomReplayConfig(rawConfig = {}) {
 }
 
 export function sanitizeLearningSettings(rawSettings = {}) {
-  const legacyPresetId = rawSettings?.presetId === "recall" ? "hard" : rawSettings?.presetId;
-  const presetId = REPLAY_PRESET_OPTIONS.some((item) => item.id === legacyPresetId) ? legacyPresetId : "standard";
+  const legacyPresetId = normalizeLegacyPresetId(rawSettings?.presetId);
+  const presetId = "custom";
+  const derivedCustomConfig =
+    legacyPresetId === "custom" && rawSettings?.customConfig && typeof rawSettings.customConfig === "object"
+      ? rawSettings.customConfig
+      : getCustomReplayConfigForPreset(legacyPresetId);
   return {
     presetId,
     shortcuts: sanitizeShortcutMap(rawSettings?.shortcuts),
-    customConfig: sanitizeCustomReplayConfig(rawSettings?.customConfig),
+    customConfig: sanitizeCustomReplayConfig(derivedCustomConfig),
     uiPreferences: sanitizeUiPreferences(rawSettings?.uiPreferences),
     playbackPreferences: sanitizePlaybackPreferences(rawSettings?.playbackPreferences),
   };
@@ -418,35 +455,19 @@ export function getPresetSummaryLines(learningSettings) {
 
 export function resolveReplayAssistance(learningSettings, stage) {
   const safeStage = Math.max(1, Number(stage || 1));
-  const presetId = learningSettings?.presetId || "standard";
-  if (presetId === "standard") {
-    return {
-      tailRate: safeStage === 1 ? 0.95 : safeStage === 2 ? 0.85 : 0.75,
-      revealLetterCount: safeStage === 2 ? 1 : 0,
-      revealWordCount: safeStage >= 3 ? 1 + Math.max(0, safeStage - 3) : 0,
-    };
-  }
-  if (presetId === "hard") {
-    return {
-      tailRate: safeStage === 1 ? 0.95 : safeStage === 2 ? 0.85 : 0.75,
-      revealLetterCount: safeStage === 3 ? 1 : 0,
-      revealWordCount: safeStage >= 4 ? 1 : 0,
-    };
-  }
-  if (presetId === "assist") {
-    return {
-      tailRate: safeStage === 1 ? 0.9 : safeStage === 2 ? 0.8 : 0.75,
-      revealLetterCount: safeStage === 1 ? 1 : 0,
-      revealWordCount: safeStage >= 2 ? 1 : 0,
-    };
-  }
+  const presetId = learningSettings?.presetId || "custom";
   const customConfig = sanitizeCustomReplayConfig(learningSettings?.customConfig);
   const revealWordCount =
     customConfig.revealWordEnabled && customConfig.revealWordAt > 0 && safeStage >= customConfig.revealWordAt
       ? 1 + Math.max(0, safeStage - customConfig.revealWordAt) * customConfig.extraRevealWordsPerReplay
       : 0;
   return {
-    tailRate: 1,
+    tailRate:
+      safeStage === 1
+        ? DEFAULT_STANDARD_TAIL_RATES.firstReplay
+        : safeStage === 2
+          ? DEFAULT_STANDARD_TAIL_RATES.secondReplay
+          : DEFAULT_STANDARD_TAIL_RATES.laterReplay,
     revealLetterCount:
       revealWordCount > 0
         ? 0

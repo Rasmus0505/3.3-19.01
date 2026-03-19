@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, UPLOAD_MAX_BYTES
 from app.core.timezone import now_shanghai_naive
+from app.infra.translation_qwen_mt import TranslationError
 from app.models import Lesson, LessonGenerationTask, WalletLedger
 from app.repositories.admin_console import invalidate_admin_overview_cache, invalidate_admin_user_activity_summary_cache
 from app.repositories.lessons import update_lesson_title_for_user
@@ -209,6 +210,22 @@ def run_lesson_generation_task(
             session_factory=session_factory,
         )
         logger.warning("[DEBUG] lessons.task.media_failed task_id=%s code=%s", task_id, exc.code)
+    except TranslationError as exc:
+        db.rollback()
+        error_code = str(getattr(exc, "code", "") or "TRANSLATION_FAILED").strip() or "TRANSLATION_FAILED"
+        message = str(getattr(exc, "message", "") or str(exc) or "翻译阶段失败").strip() or "翻译阶段失败"
+        detail_excerpt = str(getattr(exc, "detail", "") or str(exc) or message)
+        mark_task_failed(
+            task_id,
+            error_code=error_code,
+            message=message,
+            exception_type=exc.__class__.__name__,
+            detail_excerpt=detail_excerpt,
+            traceback_excerpt=traceback.format_exc(),
+            failed_stage="translate_zh",
+            session_factory=session_factory,
+        )
+        logger.warning("[DEBUG] lessons.task.translation_failed task_id=%s code=%s detail=%s", task_id, error_code, detail_excerpt[:240])
     except LessonTaskStorageNotReadyError as exc:
         db.rollback()
         logger.exception("[DEBUG] lessons.task.storage_not_ready task_id=%s detail=%s", task_id, exc.detail)

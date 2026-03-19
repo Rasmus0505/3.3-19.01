@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.api.deps.auth import get_admin_user
 from app.api.routers import local_asr_assets as local_asr_assets_router
 from app.db import Base, create_database_engine, get_db
+from app.infra.translation_qwen_mt import TranslationError
 from app.main import create_app
 from app.models import BillingModelRate, FasterWhisperSetting, Lesson, LessonGenerationTask, LessonProgress, LessonSentence, MediaAsset, SubtitleSetting, TranslationRequestLog, User, WalletLedger
 from app.services.billing_service import ensure_default_billing_rates, get_or_create_wallet_account, get_subtitle_settings, settle_reserved_points
@@ -765,6 +766,81 @@ def test_lesson_task_resume_reuses_failed_task_artifacts(test_client, monkeypatc
     assert success_payload["resume_available"] is False
     assert success_payload["lesson"]["title"] == "resume"
     assert attempts["count"] == 2
+
+
+def test_lesson_task_reports_translation_parse_failure_with_explicit_error(test_client, monkeypatch):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="translation-parse-task@example.com")
+
+    from app.api.routers import lessons as lessons_router
+
+    import threading as py_threading
+
+    class ImmediateThread(py_threading.Thread):
+        def start(self):
+            if getattr(self, "_target", None) is lessons_router._run_lesson_generation_task:
+                self.run()
+                return
+            super().start()
+
+    def fake_generate_from_saved_file(*, source_path, source_filename, req_dir, owner_id, asr_model, db, progress_callback=None, task_id=None, semantic_split_enabled=None):
+        progress_callback(
+            {
+                "stage_key": "convert_audio",
+                "stage_status": "completed",
+                "overall_percent": 20,
+                "current_text": "转换音频格式完成",
+                "counters": {"asr_done": 0, "asr_estimated": 0, "translate_done": 0, "translate_total": 0, "segment_done": 0, "segment_total": 0},
+            }
+        )
+        progress_callback(
+            {
+                "stage_key": "asr_transcribe",
+                "stage_status": "completed",
+                "overall_percent": 60,
+                "current_text": "识别字幕 3/3",
+                "counters": {"asr_done": 3, "asr_estimated": 3, "translate_done": 0, "translate_total": 0, "segment_done": 3, "segment_total": 3},
+            }
+        )
+        progress_callback(
+            {
+                "stage_key": "translate_zh",
+                "stage_status": "running",
+                "overall_percent": 60,
+                "current_text": "翻译字幕 0/3",
+                "counters": {"asr_done": 3, "asr_estimated": 3, "translate_done": 0, "translate_total": 3, "segment_done": 3, "segment_total": 3},
+            }
+        )
+        error = TranslationError("翻译响应 JSON 非法控制字符")
+        error.code = "TRANSLATION_RESPONSE_INVALID"
+        error.message = "翻译结果解析失败"
+        error.detail = "翻译响应 JSON 非法控制字符：Invalid control character at line 21 column 27"
+        raise error
+
+    monkeypatch.setattr(lessons_router.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(lessons_router.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+
+    create_resp = client.post(
+        "/api/lessons/tasks",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"video_file": ("translation-parse.mp4", io.BytesIO(b"video"), "video/mp4")},
+        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+    )
+    assert create_resp.status_code == 200
+    task_id = create_resp.json()["task_id"]
+
+    failed_task = client.get(f"/api/lessons/tasks/{task_id}", headers={"Authorization": f"Bearer {token}"})
+    assert failed_task.status_code == 200
+    failed_payload = failed_task.json()
+    assert failed_payload["status"] == "failed"
+    assert failed_payload["error_code"] == "TRANSLATION_RESPONSE_INVALID"
+    assert failed_payload["message"] == "翻译结果解析失败"
+    assert failed_payload["resume_available"] is True
+    assert failed_payload["resume_stage"] == "translate_zh"
+    assert failed_payload["failure_debug"]["failed_stage"] == "translate_zh"
+    assert failed_payload["failure_debug"]["exception_type"] == "TranslationError"
+    assert "非法控制字符" in failed_payload["failure_debug"]["detail_excerpt"]
+    assert failed_payload["failure_debug"]["last_progress_text"] == "翻译字幕 0/3"
 
 
 def test_lesson_task_pause_and_resume_from_safe_point(test_client, monkeypatch, tmp_path):

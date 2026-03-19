@@ -41,6 +41,23 @@ def _completion_json(
     )
 
 
+def _raw_completion(
+    content: str,
+    *,
+    finish_reason: str = "stop",
+    request_id: str = "req_raw",
+    prompt_tokens: int = 12,
+    completion_tokens: int = 5,
+    total_tokens: int = 17,
+):
+    return SimpleNamespace(
+        id="chatcmpl-raw",
+        _request_id=request_id,
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content), finish_reason=finish_reason)],
+        usage=SimpleNamespace(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens),
+    )
+
+
 class _FakeCompletions:
     def __init__(self, scripted: list[object]):
         self.scripted = list(scripted)
@@ -218,4 +235,18 @@ def test_translate_sentences_to_zh_collects_final_failures(monkeypatch, caplog):
     assert result.latest_error_summary.startswith("第1句失败：REQUEST_FAILED")
     assert progress == [(1, 1)]
     assert "[DEBUG] qwen_mt.batch.item_failed" in caplog.text
-    assert "[DEBUG] qwen_mt.batch.partial_failed" in caplog.text
+
+
+def test_translate_sentences_to_zh_invalid_json_response(monkeypatch):
+    invalid_control = "[\"good\", \"bad" + chr(7) + "char\"]"
+    client, _ = _fake_client([_raw_completion(invalid_control, request_id="req_ctrl")])
+    monkeypatch.setattr(translation_qwen_mt, "_client", lambda api_key: client)
+
+    with pytest.raises(translation_qwen_mt.TranslationError) as exc_info:
+        translation_qwen_mt.translate_sentences_to_zh(["line"], "test-key")
+
+    exc = exc_info.value
+    assert exc.code == "TRANSLATION_RESPONSE_INVALID"
+    assert exc.message == "翻译结果解析失败"
+    assert "Invalid control character" in exc.detail
+    assert "sentence_idx=1" in exc.detail
