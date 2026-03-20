@@ -1,14 +1,17 @@
 ﻿from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
 from app.api.routers._helpers import require_lesson_owner
 from app.core.errors import error_response
-from app.core.timezone import to_shanghai_aware
+from datetime import timedelta
+
+from app.core.timezone import now_shanghai_naive, to_shanghai_aware
 from app.db import get_db
-from app.models import User
+from app.models import LessonSentence, User
 from app.repositories.lessons import get_sentence
 from app.repositories.progress import get_progress_for_user
 from app.schemas import ErrorResponse
@@ -86,15 +89,28 @@ def update_progress(
         return error_response(404, "PROGRESS_NOT_FOUND", "学习进度不存在")
 
     previous_completed_indexes = list(progress.completed_indexes_json or [])
+    previous_updated_at = progress.updated_at
+    sentence_total = int(
+        db.scalar(select(func.count(LessonSentence.id)).where(LessonSentence.lesson_id == lesson_id))
+        or 0
+    )
     progress.current_sentence_idx = payload.current_sentence_index
     progress.completed_indexes_json = sorted(set(payload.completed_sentence_indexes))
     progress.last_played_at_ms = payload.last_played_at_ms
     db.add(progress)
+    completed_lesson = sentence_total > 0 and len(progress.completed_indexes_json) >= sentence_total and len(previous_completed_indexes) < sentence_total
+    stalled_recovery = bool(
+        previous_updated_at is not None
+        and previous_updated_at <= (now_shanghai_naive() - timedelta(days=3))
+        and len(progress.completed_indexes_json) > len(previous_completed_indexes)
+    )
     record_progress_activity(
         db,
         user_id=current_user.id,
         previous_completed_indexes=previous_completed_indexes,
         next_completed_indexes=progress.completed_indexes_json,
+        completed_lesson=completed_lesson,
+        stalled_recovery=stalled_recovery,
     )
     db.commit()
     db.refresh(progress)

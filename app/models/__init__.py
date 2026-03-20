@@ -11,6 +11,7 @@ from app.models.billing import (
     WalletAccount,
     WalletLedger,
 )
+from app.models.learning_stats import UserLearningDailyStat
 from app.models.lesson import Lesson, LessonGenerationTask, LessonProgress, LessonSentence, MediaAsset
 from app.models.user import User, UserLoginEvent
 
@@ -29,6 +30,7 @@ __all__ = [
     "SenseVoiceSetting",
     "FasterWhisperSetting",
     "TranslationRequestLog",
+    "UserLearningDailyStat",
     "RedeemCodeBatch",
     "RedeemCode",
     "RedeemCodeAttempt",

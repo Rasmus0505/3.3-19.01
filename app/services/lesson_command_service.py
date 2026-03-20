@@ -202,10 +202,17 @@ def run_lesson_generation_task(
                 progress_callback=_progress,
             )
         _raise_if_task_control_requested(task_id, session_factory=session_factory)
+        task_result_meta = dict(getattr(lesson, "task_result_meta", None) or {})
         mark_task_succeeded(
             task_id,
             lesson_id=lesson.id,
             subtitle_cache_seed=getattr(lesson, "subtitle_cache_seed", None),
+            translation_debug=getattr(lesson, "translation_debug", None) or getattr(lesson, "task_translation_debug", None),
+            result_kind=str(task_result_meta.get("result_kind") or getattr(lesson, "task_result_kind", "") or ""),
+            result_message=str(task_result_meta.get("result_message") or getattr(lesson, "task_result_message", "") or ""),
+            partial_failure_stage=str(task_result_meta.get("partial_failure_stage") or getattr(lesson, "task_partial_failure_stage", "") or ""),
+            partial_failure_code=str(task_result_meta.get("partial_failure_code") or getattr(lesson, "task_partial_failure_code", "") or ""),
+            partial_failure_message=str(task_result_meta.get("partial_failure_message") or getattr(lesson, "task_partial_failure_message", "") or ""),
             session_factory=session_factory,
         )
         invalidate_lesson_related_queries(owner_id)
