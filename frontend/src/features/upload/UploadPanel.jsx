@@ -106,6 +106,8 @@ const RESTORE_BANNER_MODES = {
   STALE: "stale",
   INTERRUPTED: "interrupted",
 };
+const POLL_RETRY_LIMIT = 3;
+const POLL_RETRY_DELAY_MS = 1500;
 
 function clampPercent(value) {
   return Math.max(0, Math.min(100, Number(value) || 0));
@@ -684,6 +686,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [restoreBannerMode, setRestoreBannerMode] = useState(RESTORE_BANNER_MODES.NONE);
   const pollingAbortRef = useRef(false);
   const pollTokenRef = useRef(0);
+  const pollFailureCountRef = useRef(0);
   const uploadAbortRef = useRef(null);
   const localRunAbortRef = useRef(null);
   const uploadPersistRef = useRef({ timer: null, lastSavedAt: 0, lastSavedPercent: -1, latestPercent: 0 });
@@ -747,6 +750,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     (Boolean(displayTaskSnapshot?.can_pause) || Boolean(displayTaskSnapshot?.can_terminate) || STOPPABLE_SERVER_TASK_STATUSES.has(displayTaskStatus));
   const taskPaused = !localTranscribing && displayTaskStatus === "paused";
   const taskTerminated = !localTranscribing && displayTaskStatus === "terminated";
+  const canResumeServerTask = taskPaused || Boolean(taskSnapshot?.resume_available);
+  const canReconnectInterruptedTask = restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED && Boolean(taskId) && !canResumeServerTask;
   const showRecoveryBanner = hasLocalFile && RECOVERABLE_SERVER_TASK_STATUSES.has(displayTaskStatus);
   const recoveryBannerText = getRecoveryBannerText(displayTaskSnapshot);
   const taskStatusCardText = getTaskStatusCardText(restoreBannerMode, taskSnapshot, status);
@@ -970,11 +975,13 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   function stopPollingSession() {
     pollingAbortRef.current = true;
     pollTokenRef.current += 1;
+    pollFailureCountRef.current = 0;
   }
 
   function startPollingSession() {
     pollingAbortRef.current = false;
     pollTokenRef.current += 1;
+    pollFailureCountRef.current = 0;
     return pollTokenRef.current;
   }
 
@@ -1550,6 +1557,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       const resp = await api(`/api/lessons/tasks/${nextTaskId}`, {}, accessToken);
       const data = await parseResponse(resp);
       if (pollingAbortRef.current || pollToken !== pollTokenRef.current) return;
+      pollFailureCountRef.current = 0;
       if (!resp.ok) {
         if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING) {
           const nextStatus = "上次生成记录已失效，可重新开始或清空这次记录。";
@@ -1637,12 +1645,29 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         await persistSession({ taskId: "", phase: file ? "ready" : "idle", taskSnapshot: null, uploadPercent: 0, status: nextStatus });
         return;
       }
-      const message = `网络错误: ${String(error)}`;
+      const retryCount = pollFailureCountRef.current + 1;
+      pollFailureCountRef.current = retryCount;
+      if (retryCount <= POLL_RETRY_LIMIT) {
+        const retryMessage = `网络波动，正在重试任务状态（${retryCount}/${POLL_RETRY_LIMIT}）`;
+        setStatus(retryMessage);
+        setPhase("processing");
+        setLoading(true);
+        await persistSession({ phase: "processing", status: retryMessage });
+        if (!silentToast && retryCount === 1) {
+          toast.warning("网络波动，正在重试任务状态");
+        }
+        setTimeout(() => void pollTask(nextTaskId, true, pollToken), POLL_RETRY_DELAY_MS * retryCount);
+        return;
+      }
+      pollFailureCountRef.current = 0;
+      const message = "网络波动，任务状态暂时无法更新，可稍后继续查询或免上传继续生成。";
+      const nextPhase = file ? "ready" : "idle";
       setStatus(message);
-      setPhase("error");
+      setPhase(nextPhase);
       setLoading(false);
-      await persistSession({ phase: "error", status: message });
-      if (!silentToast) toast.error(message);
+      setRestoreBannerMode(RESTORE_BANNER_MODES.INTERRUPTED);
+      await persistSession({ phase: nextPhase, status: message });
+      if (!silentToast) toast.warning(message);
     }
   }
 
@@ -2310,6 +2335,19 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
   }
 
+  async function reconnectTaskPolling() {
+    if (!taskId) return;
+    stopPollingSession();
+    const pollToken = startPollingSession();
+    const nextStatus = "正在重新连接任务状态";
+    setLoading(true);
+    setStatus(nextStatus);
+    setPhase("processing");
+    setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
+    await persistSession({ phase: "processing", status: nextStatus, uploadPercent: 100 });
+    void pollTask(taskId, false, pollToken);
+  }
+
   async function requestServerTaskControl(action) {
     if (!taskId) return;
     const normalizedAction = action === "terminate" ? "terminate" : "pause";
@@ -2596,11 +2634,15 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {(restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED || restoreBannerMode === RESTORE_BANNER_MODES.NONE) &&
-              (taskPaused || Boolean(taskSnapshot?.resume_available)) ? (
-                <Button type="button" className={getUploadToneStyles("recoverable").button} onClick={() => void resumeTask()}>
+              {((restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED || restoreBannerMode === RESTORE_BANNER_MODES.NONE) && canResumeServerTask) ||
+              canReconnectInterruptedTask ? (
+                <Button
+                  type="button"
+                  className={getUploadToneStyles("recoverable").button}
+                  onClick={() => void (canReconnectInterruptedTask ? reconnectTaskPolling() : resumeTask())}
+                >
                   <RefreshCcw className="size-4" />
-                  继续生成
+                  {canReconnectInterruptedTask ? "继续查询" : "继续生成"}
                 </Button>
               ) : null}
               <Button
