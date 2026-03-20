@@ -10,6 +10,7 @@ from dashscope.audio.qwen_asr import QwenTranscription
 from dashscope.files import Files
 
 from app.core.config import ASR_TASK_POLL_SECONDS
+from app.services.asr_model_registry import QWEN_ASR_MODEL, get_supported_transcribe_asr_model_keys
 from app.services.faster_whisper_asr import (
     FASTER_WHISPER_ASR_MODEL,
     FasterWhisperModelNotReadyError,
@@ -20,8 +21,8 @@ from app.services.sensevoice import SENSEVOICE_ASR_MODEL, get_sensevoice_setting
 
 
 DEFAULT_MODEL = SENSEVOICE_ASR_MODEL
-QWEN_DEFAULT_MODEL = "qwen3-asr-flash-filetrans"
-SUPPORTED_MODELS = {DEFAULT_MODEL, QWEN_DEFAULT_MODEL, FASTER_WHISPER_ASR_MODEL}
+QWEN_DEFAULT_MODEL = QWEN_ASR_MODEL
+SUPPORTED_MODELS = set(get_supported_transcribe_asr_model_keys())
 
 
 class AsrError(RuntimeError):

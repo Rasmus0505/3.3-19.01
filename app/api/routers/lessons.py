@@ -40,8 +40,9 @@ from app.schemas import (
     LessonTaskResumeResponse,
     LessonTaskResponse,
 )
-from app.services.asr_dashscope import AsrError, SUPPORTED_MODELS
-from app.services.billing_service import BillingError, LOCAL_BROWSER_ASR_MODELS, get_default_asr_model
+from app.services.asr_model_registry import get_supported_local_browser_asr_model_keys, get_supported_upload_asr_model_keys
+from app.services.asr_dashscope import AsrError
+from app.services.billing_service import BillingError, get_default_asr_model
 from app.services.lesson_command_service import (
     create_lesson_task_from_local_asr,
     create_lesson_task_from_upload,
@@ -139,8 +140,13 @@ async def create_lesson(
     current_user: User = Depends(get_current_user),
 ):
     selected_model = (asr_model or "").strip() or get_default_asr_model(db)
-    if selected_model not in SUPPORTED_MODELS:
-        return error_response(400, "INVALID_MODEL", "不支持的模型", {"supported_models": sorted(SUPPORTED_MODELS), "input_model": selected_model})
+    if selected_model not in set(get_supported_upload_asr_model_keys()):
+        return error_response(
+            400,
+            "INVALID_MODEL",
+            "不支持的模型",
+            {"supported_models": sorted(get_supported_upload_asr_model_keys()), "input_model": selected_model},
+        )
 
     req_dir = create_request_dir(BASE_TMP_DIR)
     try:
@@ -189,8 +195,13 @@ async def create_lesson_task(
     current_user: User = Depends(get_current_user),
 ):
     selected_model = (asr_model or "").strip() or get_default_asr_model(db)
-    if selected_model not in SUPPORTED_MODELS:
-        return error_response(400, "INVALID_MODEL", "不支持的模型", {"supported_models": sorted(SUPPORTED_MODELS), "input_model": selected_model})
+    if selected_model not in set(get_supported_upload_asr_model_keys()):
+        return error_response(
+            400,
+            "INVALID_MODEL",
+            "不支持的模型",
+            {"supported_models": sorted(get_supported_upload_asr_model_keys()), "input_model": selected_model},
+        )
     try:
         payload = create_lesson_task_from_upload(
             video_file=video_file,
@@ -259,12 +270,12 @@ def create_local_asr_lesson_task(
     current_user: User = Depends(get_current_user),
 ):
     selected_model = str(payload.asr_model or "").strip()
-    if selected_model not in set(LOCAL_BROWSER_ASR_MODELS):
+    if selected_model not in set(get_supported_local_browser_asr_model_keys()):
         return error_response(
             400,
             "INVALID_LOCAL_ASR_MODEL",
             "不支持的本地模型",
-            {"supported_models": list(LOCAL_BROWSER_ASR_MODELS), "input_model": selected_model},
+            {"supported_models": list(get_supported_local_browser_asr_model_keys()), "input_model": selected_model},
         )
     try:
         task_payload = create_lesson_task_from_local_asr(

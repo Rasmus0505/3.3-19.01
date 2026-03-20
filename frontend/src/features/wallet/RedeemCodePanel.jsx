@@ -4,7 +4,9 @@ import { toast } from "sonner";
 
 import { ENDPOINTS } from "../../shared/api/endpoints";
 import { formatMoneyCents } from "../../shared/lib/money";
-import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input } from "../../shared/ui";
+import { Alert, AlertDescription, Button, Card, CardContent, CardHeader, CardTitle, Input } from "../../shared/ui";
+
+const PURCHASE_REDEEM_CODE_URL = "https://m.tb.cn/h.iT16n9h?tk=qFDFUz9cEn8 MF278";
 
 async function jsonOrEmpty(resp) {
   try {
@@ -61,27 +63,41 @@ export function RedeemCodePanel({ apiCall, onWalletChanged }) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Gift className="size-4" />
-          兑换码充值
-        </CardTitle>
-        <CardDescription>输入兑换码为账户充值金额</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <form className="space-y-3" onSubmit={submitRedeem}>
-          <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="例如 ABCD-EFGH-IJKL-MNPQ" />
-          <Button type="submit" disabled={loading} className="h-11 w-full">
-            {loading ? "兑换中..." : "立即兑换"}
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Gift className="size-4" />
+            兑换码充值
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <form className="space-y-3" onSubmit={submitRedeem}>
+            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="例如 ABCD-EFGH-IJKL-MNPQ" />
+            <Button type="submit" disabled={loading} className="h-11 w-full">
+              {loading ? "兑换中..." : "立即兑换"}
+            </Button>
+          </form>
+          {status ? (
+            <Alert>
+              <AlertDescription>{status}</AlertDescription>
+            </Alert>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card className="border-primary/20 bg-primary/[0.03]">
+        <CardHeader>
+          <CardTitle className="text-base">获取兑换码</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Button asChild className="h-12 w-full text-base font-semibold shadow-sm">
+            <a href={PURCHASE_REDEEM_CODE_URL} target="_blank" rel="noreferrer">
+              获取兑换码
+            </a>
           </Button>
-        </form>
-        {status ? (
-          <Alert>
-            <AlertDescription>{status}</AlertDescription>
-          </Alert>
-        ) : null}
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

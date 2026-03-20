@@ -4,14 +4,12 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import { AdminLessonTaskLogsTab } from "../admin-logs/AdminLessonTaskLogsTab";
 import { AdminTranslationLogsTab } from "../admin-logs/AdminTranslationLogsTab";
-import { AdminSubtitleSettingsTab } from "../admin-subtitle-settings/AdminSubtitleSettingsTab";
 import { mergeSearchParams, readStringParam } from "../../shared/lib/adminSearchParams";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Tabs, TabsContent, TabsList, TabsTrigger } from "../../shared/ui";
 
 export const PIPELINE_TABS = [
-  { value: "task-failures", label: "生成失败", description: "按任务、课程和错误阶段定位生成问题。", component: AdminLessonTaskLogsTab },
-  { value: "translations", label: "翻译记录", description: "接着查翻译请求是否失败、失败在哪一段。", component: AdminTranslationLogsTab },
-  { value: "subtitle-policy", label: "字幕策略", description: "确认分句与翻译批次默认策略，再决定是否调整。", component: AdminSubtitleSettingsTab },
+  { value: "task-failures", label: "鐢熸垚澶辫触", description: "鎸変换鍔°€佽绋嬪拰閿欒闃舵瀹氫綅鐢熸垚闂銆?", component: AdminLessonTaskLogsTab },
+  { value: "translations", label: "缈昏瘧璁板綍", description: "鎺ョ潃鏌ョ炕璇戣姹傛槸鍚﹀け璐ャ€佸け璐ュ湪鍝竴娈点€?", component: AdminTranslationLogsTab },
 ];
 
 export function AdminPipelineWorkspace({ apiCall, showTabsNavigation = true }) {
@@ -37,28 +35,28 @@ export function AdminPipelineWorkspace({ apiCall, showTabsNavigation = true }) {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <CardTitle className="text-lg">生成链路工作台</CardTitle>
-                <Badge variant="outline">查异常优先</Badge>
+                <CardTitle className="text-lg">鐢熸垚閾捐矾宸ヤ綔鍙?</CardTitle>
+                <Badge variant="outline">鏌ュ紓甯镐紭鍏?</Badge>
               </div>
-              <CardDescription>把课程生成、翻译记录和字幕策略放在一条处理链里，避免排查时来回跳页。</CardDescription>
+              <CardDescription>鎶婅绋嬬敓鎴愩€佺炕璇戣褰曞拰瀛楀箷绛栫暐鏀惧湪涓€鏉″鐞嗛摼閲岋紝閬垮厤鎺掓煡鏃舵潵鍥炶烦椤点€?</CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" asChild>
                 <Link to="/admin/pipeline?tab=task-failures&status=error">
                   <Bug className="size-4" />
-                  仅看失败任务
+                  浠呯湅澶辫触浠诲姟
                 </Link>
               </Button>
               <Button variant="outline" size="sm" asChild>
                 <Link to="/admin/pipeline?tab=translations&success=false">
                   <Sparkles className="size-4" />
-                  仅看失败翻译
+                  浠呯湅澶辫触缈昏瘧
                 </Link>
               </Button>
               <Button variant="outline" size="sm" asChild>
-                <Link to="/admin/pipeline?tab=subtitle-policy">
+                <Link to="/admin/models?tab=billing">
                   <Settings2 className="size-4" />
-                  打开字幕策略
+                  鏌ョ湅妯″瀷璁¤垂
                 </Link>
               </Button>
             </div>
@@ -67,20 +65,20 @@ export function AdminPipelineWorkspace({ apiCall, showTabsNavigation = true }) {
         <CardContent className="grid gap-3 md:grid-cols-3">
           <Card className="border-dashed">
             <CardHeader>
-              <CardTitle className="text-base">共享筛选</CardTitle>
-              <CardDescription>`user_email`、`task_id`、`lesson_id`、时间范围会跟着 URL 走，切换标签页仍可保留。</CardDescription>
+              <CardTitle className="text-base">鍏变韩绛涢€?</CardTitle>
+              <CardDescription>`user_email`銆乣task_id`銆乣lesson_id`銆佹椂闂磋寖鍥翠細璺熺潃 URL 璧帮紝鍒囨崲鏍囩椤典粛鍙繚鐣欍€?</CardDescription>
             </CardHeader>
           </Card>
           <Card className="border-dashed">
             <CardHeader>
-              <CardTitle className="text-base">排查顺序</CardTitle>
-              <CardDescription>建议先查生成失败，再核对翻译记录，最后决定是否调整默认分句策略。</CardDescription>
+              <CardTitle className="text-base">鎺掓煡椤哄簭</CardTitle>
+              <CardDescription>寤鸿鍏堟煡鐢熸垚澶辫触锛屽啀鏍稿缈昏瘧璁板綍锛屾渶鍚庡喅瀹氭槸鍚﹁皟鏁撮粯璁ゅ垎鍙ョ瓥鐣ャ€?</CardDescription>
             </CardHeader>
           </Card>
           <Card className="border-dashed">
             <CardHeader>
-              <CardTitle className="text-base">保持契约</CardTitle>
-              <CardDescription>本轮只整合后台信息架构，不改 `/api/admin/*` 与 `/api/transcribe/file` 契约。</CardDescription>
+              <CardTitle className="text-base">淇濇寔濂戠害</CardTitle>
+              <CardDescription>鏈疆鍙暣鍚堝悗鍙颁俊鎭灦鏋勶紝涓嶆敼 `/api/admin/*` 涓?`/api/transcribe/file` 濂戠害銆?</CardDescription>
             </CardHeader>
           </Card>
         </CardContent>
@@ -112,3 +110,4 @@ export function AdminPipelineWorkspace({ apiCall, showTabsNavigation = true }) {
     </div>
   );
 }
+

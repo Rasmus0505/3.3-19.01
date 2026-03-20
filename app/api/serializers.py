@@ -19,6 +19,7 @@ from app.schemas import (
     SubtitleCacheSeedResponse,
     UserResponse,
 )
+from app.services.asr_model_registry import get_asr_display_meta
 from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
 
 
@@ -32,21 +33,11 @@ def _compat_cents_from_yuan(value: Decimal) -> int:
     return rate_yuan_to_compat_cents(value)
 
 
-LOCAL_ASR_MODEL_META: dict[str, tuple[str, str]] = {
-    "local-sensevoice-small": ("SenseVoice Small · 本地", "local"),
-}
-
-
 def _rate_display_meta(model_name: str) -> tuple[str, str]:
     normalized = str(model_name or "").strip()
-    if normalized == "sensevoice-small":
-        return "SenseVoice Small · 服务端 ASR", "cloud"
-    if normalized == "faster-whisper-medium":
-        return "Faster Whisper Medium · 服务端 ASR", "cloud"
-    if normalized == "qwen3-asr-flash-filetrans":
-        return "高速 · 云端 ASR", "cloud"
-    if normalized in LOCAL_ASR_MODEL_META:
-        return LOCAL_ASR_MODEL_META[normalized]
+    display_name, runtime_kind = get_asr_display_meta(normalized)
+    if normalized in {"sensevoice-small", "faster-whisper-medium", "qwen3-asr-flash-filetrans", "local-sensevoice-small"}:
+        return display_name, runtime_kind
     if normalized == "qwen-mt-flash":
         return "翻译成本参考", "internal"
     return normalized or "未命名模型", "cloud"

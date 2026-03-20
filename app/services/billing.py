@@ -17,6 +17,13 @@ from sqlalchemy.orm import Session
 from app.core.config import LESSON_DEFAULT_ASR_MODEL, REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_DEFAULT_VALID_DAYS
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
 from app.repositories.billing_rates import list_billing_rates as query_billing_rates
+from app.services.asr_model_registry import (
+    FASTER_WHISPER_ASR_MODEL as FASTER_WHISPER_SERVER_MODEL,
+    LOCAL_BROWSER_ASR_MODEL_KEYS,
+    LOCAL_SENSEVOICE_ASR_MODEL as LOCAL_SENSEVOICE_SMALL_MODEL,
+    QWEN_ASR_MODEL as FAST_CLOUD_MODEL,
+    SENSEVOICE_ASR_MODEL as SENSEVOICE_CLOUD_MODEL,
+)
 from app.models import (
     AdminOperationLog,
     BillingModelRate,
@@ -61,10 +68,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_MT_COST_PER_1K_TOKENS_CENTS = 15
 MT_FLASH_MODEL = "qwen-mt-flash"
 MT_MODEL_PREFIX = "qwen-mt-"
-SENSEVOICE_CLOUD_MODEL = "sensevoice-small"
-FAST_CLOUD_MODEL = "qwen3-asr-flash-filetrans"
-FASTER_WHISPER_SERVER_MODEL = "faster-whisper-medium"
-LOCAL_SENSEVOICE_SMALL_MODEL = "local-sensevoice-small"
 ADMIN_BILLING_MODEL_ORDER: tuple[str, ...] = (
     SENSEVOICE_CLOUD_MODEL,
     FAST_CLOUD_MODEL,
@@ -76,9 +79,7 @@ PUBLIC_BILLING_MODEL_ORDER: tuple[str, ...] = (
     FAST_CLOUD_MODEL,
     FASTER_WHISPER_SERVER_MODEL,
 )
-LOCAL_BROWSER_ASR_MODELS: tuple[str, ...] = (
-    LOCAL_SENSEVOICE_SMALL_MODEL,
-)
+LOCAL_BROWSER_ASR_MODELS: tuple[str, ...] = LOCAL_BROWSER_ASR_MODEL_KEYS
 
 DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
     {

@@ -2,11 +2,11 @@ import { Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
+import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { formatDateTimeBeijing } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
 import { formatMoneyYuanPerMinute } from "../../shared/lib/money";
-import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
+import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import {
   Alert,
   AlertDescription,
@@ -18,7 +18,6 @@ import {
   CardHeader,
   CardTitle,
   Input,
-  ScrollArea,
   Skeleton,
   Switch,
   Table,
@@ -71,14 +70,26 @@ function formatDraftSummary(item, draft) {
   if (isTokenBilling(item) || isTokenBilling(draft)) {
     return `${Number(draft.points_per_1k_tokens || 0)} / 1k Tokens`;
   }
-  return `${formatMoneyYuanPerMinute(draft.price_per_minute_yuan, { minimumFractionDigits: 4, maximumFractionDigits: 4 })} / ${formatMoneyYuanPerMinute(draft.cost_per_minute_yuan, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+  return `${formatMoneyYuanPerMinute(draft.price_per_minute_yuan, {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  })} / ${formatMoneyYuanPerMinute(draft.cost_per_minute_yuan, {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  })}`;
 }
 
 function formatItemSummary(item) {
   if (isTokenBilling(item)) {
     return `${Number(item.points_per_1k_tokens || 0)} / 1k Tokens`;
   }
-  return `${formatMoneyYuanPerMinute(item.price_per_minute_yuan, { minimumFractionDigits: 4, maximumFractionDigits: 4 })} / ${formatMoneyYuanPerMinute(item.cost_per_minute_yuan, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+  return `${formatMoneyYuanPerMinute(item.price_per_minute_yuan, {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  })} / ${formatMoneyYuanPerMinute(item.cost_per_minute_yuan, {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  })}`;
 }
 
 function buildDraftMap(list) {
@@ -105,6 +116,7 @@ export function AdminRatesTab({ apiCall }) {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [savingModel, setSavingModel] = useState("");
+  const [savingAll, setSavingAll] = useState(false);
   const { error, clearError, captureError } = useErrorHandler();
 
   async function loadRates() {
@@ -146,16 +158,16 @@ export function AdminRatesTab({ apiCall }) {
   }
 
   useEffect(() => {
-    loadRates();
+    void loadRates();
   }, []);
 
   async function saveRate(modelName) {
     const draft = drafts[modelName];
-    if (!draft) return;
+    if (!draft) return false;
     const validationMessage = getRateDraftValidationMessage(draft);
     if (validationMessage) {
       setStatus(validationMessage);
-      return;
+      return false;
     }
 
     setSavingModel(modelName);
@@ -190,12 +202,13 @@ export function AdminRatesTab({ apiCall }) {
           }),
         );
         setStatus(formattedError.displayMessage);
-        return;
+        return false;
       }
-      const message = `模型 ${modelName} 已更新`;
+      const message = `模型 ${modelName} 的计费配置已更新`;
       setStatus(message);
       toast.success(message);
       await loadRates();
+      return true;
     } catch (requestError) {
       const formattedError = captureError(
         formatNetworkError(requestError, {
@@ -207,6 +220,7 @@ export function AdminRatesTab({ apiCall }) {
         }),
       );
       setStatus(formattedError.displayMessage);
+      return false;
     } finally {
       setSavingModel("");
     }
@@ -234,6 +248,31 @@ export function AdminRatesTab({ apiCall }) {
     }))
     .filter(({ validationMessage }) => Boolean(validationMessage));
 
+  async function saveAllRates() {
+    if (invalidModels.length > 0) {
+      setStatus("请先修正所有非法的费率字段，再尝试一次保存全部更改。");
+      return;
+    }
+    if (dirtyModels.length === 0) {
+      setStatus("当前没有需要保存的计费变更。");
+      return;
+    }
+
+    setSavingAll(true);
+    setStatus("");
+    clearError();
+    try {
+      for (const { item } of dirtyModels) {
+        const ok = await saveRate(item.model_name);
+        if (!ok) {
+          break;
+        }
+      }
+    } finally {
+      setSavingAll(false);
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -247,7 +286,7 @@ export function AdminRatesTab({ apiCall }) {
         {dirtyModels.length > 0 ? (
           <Alert>
             <AlertDescription className="space-y-2">
-              <p>当前有 {dirtyModels.length} 个模型存在未保存变更。</p>
+              <p>当前有 {dirtyModels.length} 个模型存在未保存的计费变更。</p>
               <div className="flex flex-wrap gap-2">
                 {dirtyModels.map(({ item, draft }) => (
                   <Badge key={item.model_name} variant="outline">
@@ -274,22 +313,31 @@ export function AdminRatesTab({ apiCall }) {
           </Alert>
         ) : null}
 
+        {dirtyModels.length > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            <p>已修改 {dirtyModels.length} 个模型，仅同步到页面草稿，保存后才会真正生效。</p>
+            <Button size="sm" onClick={saveAllRates} disabled={savingAll || loading || savingModel || invalidModels.length > 0}>
+              {savingAll ? "正在保存全部..." : "保存全部更改"}
+            </Button>
+          </div>
+        ) : null}
+
         {loading ? <Skeleton className="h-10 w-full" /> : null}
 
-        <ScrollArea className="w-full rounded-md border">
+        <div className="w-full overflow-x-auto rounded-md border">
           <Table className="min-w-[1640px]">
             <TableHeader>
               <TableRow>
                 <TableHead>模型</TableHead>
                 <TableHead>计费单位</TableHead>
-                <TableHead>售价(元/分钟)</TableHead>
-                <TableHead>售价/1k Tokens</TableHead>
-                <TableHead>成本(元/分钟)</TableHead>
+                <TableHead>售价（元/分钟）</TableHead>
+                <TableHead>售价 / 1k Tokens</TableHead>
+                <TableHead>成本（元/分钟）</TableHead>
                 <TableHead>毛利</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead>并发开关</TableHead>
-                <TableHead>并发阈值(秒)</TableHead>
-                <TableHead>分段时长(秒)</TableHead>
+                <TableHead>并发阈值（秒）</TableHead>
+                <TableHead>切片时长（秒）</TableHead>
                 <TableHead>并发上限</TableHead>
                 <TableHead>更新时间</TableHead>
                 <TableHead>操作</TableHead>
@@ -302,9 +350,9 @@ export function AdminRatesTab({ apiCall }) {
                 const validationMessage = getRateDraftValidationMessage(draft);
                 const tokenBilling = isTokenBilling(draft);
                 const invalidFields = getInvalidRateFieldLabels(draft);
-                const priceInvalid = invalidFields.includes("售价(元/分钟)");
-                const tokenInvalid = invalidFields.includes("售价/1k Tokens");
-                const costInvalid = invalidFields.includes("成本(元/分钟)");
+                const priceInvalid = invalidFields.includes("售价（元/分钟）");
+                const tokenInvalid = invalidFields.includes("售价 / 1k Tokens");
+                const costInvalid = invalidFields.includes("成本（元/分钟）");
                 const draftGrossProfit = parseDraftNumber(draft.price_per_minute_yuan) - parseDraftNumber(draft.cost_per_minute_yuan);
 
                 return (
@@ -331,10 +379,13 @@ export function AdminRatesTab({ apiCall }) {
                       />
                       <p className={`mt-1 text-xs ${priceInvalid ? "text-destructive" : "text-muted-foreground"}`}>
                         {tokenBilling
-                          ? "仅 ASR 模型使用"
+                          ? "仅 MT 模型使用上方字段"
                           : priceInvalid
                             ? RATE_DECIMAL_YUAN_MESSAGE
-                            : formatMoneyYuanPerMinute(draft.price_per_minute_yuan, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
+                            : formatMoneyYuanPerMinute(draft.price_per_minute_yuan, {
+                                minimumFractionDigits: 4,
+                                maximumFractionDigits: 4,
+                              })}
                       </p>
                     </TableCell>
                     <TableCell>
@@ -369,7 +420,10 @@ export function AdminRatesTab({ apiCall }) {
                           ? "仅 ASR 模型使用"
                           : costInvalid
                             ? RATE_DECIMAL_YUAN_MESSAGE
-                            : formatMoneyYuanPerMinute(draft.cost_per_minute_yuan, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
+                            : formatMoneyYuanPerMinute(draft.cost_per_minute_yuan, {
+                                minimumFractionDigits: 4,
+                                maximumFractionDigits: 4,
+                              })}
                       </p>
                     </TableCell>
                     <TableCell>
@@ -378,12 +432,18 @@ export function AdminRatesTab({ apiCall }) {
                           ? "请先修正费率"
                           : tokenBilling
                             ? `${Number(draft.points_per_1k_tokens || 0)} / 1k Tokens`
-                            : formatMoneyYuanPerMinute(draftGrossProfit, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
+                            : formatMoneyYuanPerMinute(draftGrossProfit, {
+                                minimumFractionDigits: 4,
+                                maximumFractionDigits: 4,
+                              })}
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Switch checked={Boolean(draft.is_active)} onCheckedChange={(checked) => updateDraft(item.model_name, { is_active: checked })} />
+                        <Switch
+                          checked={Boolean(draft.is_active)}
+                          onCheckedChange={(checked) => updateDraft(item.model_name, { is_active: checked })}
+                        />
                         <span className="text-xs text-muted-foreground">{draft.is_active ? "启用" : "停用"}</span>
                       </div>
                     </TableCell>
@@ -397,7 +457,9 @@ export function AdminRatesTab({ apiCall }) {
                           }}
                           disabled={tokenBilling}
                         />
-                        <span className="text-xs text-muted-foreground">{tokenBilling ? "MT 模型忽略" : draft.parallel_enabled ? "启用" : "关闭"}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {tokenBilling ? "MT 模型忽略" : draft.parallel_enabled ? "已开启" : "已关闭"}
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -441,7 +503,11 @@ export function AdminRatesTab({ apiCall }) {
                     </TableCell>
                     <TableCell>{formatDateTimeBeijing(item.updated_at)}</TableCell>
                     <TableCell>
-                      <Button size="sm" onClick={() => saveRate(item.model_name)} disabled={savingModel === item.model_name || Boolean(validationMessage)}>
+                      <Button
+                        size="sm"
+                        onClick={() => saveRate(item.model_name)}
+                        disabled={savingAll || savingModel === item.model_name || Boolean(validationMessage)}
+                      >
                         {savingModel === item.model_name ? "保存中..." : "保存"}
                       </Button>
                     </TableCell>
@@ -458,7 +524,7 @@ export function AdminRatesTab({ apiCall }) {
               ) : null}
             </TableBody>
           </Table>
-        </ScrollArea>
+        </div>
 
         {error ? (
           <AdminErrorNotice error={error} />
@@ -471,3 +537,4 @@ export function AdminRatesTab({ apiCall }) {
     </Card>
   );
 }
+
