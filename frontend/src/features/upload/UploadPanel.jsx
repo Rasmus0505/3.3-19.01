@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { cn } from "../../lib/utils";
 import { api, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
-import { formatMoneyCents, formatMoneyPerMinute } from "../../shared/lib/money";
+import { formatMoneyCents, formatMoneyYuanPerMinute } from "../../shared/lib/money";
 import {
   bindLocalAsrModelDirectory,
   ensureLocalAsrModel,
@@ -115,9 +115,23 @@ function isServerRuntimeModel(rate) {
   return Boolean(rate) && String(rate.runtime_kind || "cloud") !== "local" && String(rate.billing_unit || "minute") === "minute";
 }
 
-function calculatePointsBySeconds(seconds, pointsPerMinute) {
-  if (!Number.isFinite(seconds) || seconds <= 0 || !Number.isFinite(pointsPerMinute) || pointsPerMinute <= 0) return 0;
-  return Math.ceil((Math.ceil(seconds) * pointsPerMinute) / 60);
+function getRatePricePerMinuteYuan(rate) {
+  const directYuan = Number(rate?.price_per_minute_yuan ?? 0);
+  if (Number.isFinite(directYuan) && directYuan > 0) {
+    return directYuan;
+  }
+  const fallbackCents = Number(rate?.price_per_minute_cents ?? rate?.points_per_minute ?? 0);
+  if (!Number.isFinite(fallbackCents) || fallbackCents <= 0) {
+    return 0;
+  }
+  return fallbackCents / 100;
+}
+
+function calculateChargeCentsBySeconds(seconds, pricePerMinuteYuan) {
+  if (!Number.isFinite(seconds) || seconds <= 0 || !Number.isFinite(pricePerMinuteYuan) || pricePerMinuteYuan <= 0) return 0;
+  const roundedSeconds = Math.ceil(seconds);
+  const yuanPerMinuteScaled = Math.round(pricePerMinuteYuan * 10000);
+  return Math.ceil((roundedSeconds * yuanPerMinuteScaled) / 6000);
 }
 
 function getLocalModelMeta(modelKey) {
@@ -649,7 +663,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const selectedUploadModelMeta = getUploadModelMeta(selectedUploadModel);
   const selectedAsrModel = mode === "balanced" ? selectedBalancedModel : selectedFastModel;
   const selectedRate = getRateByModel(billingRates, selectedAsrModel) || getRateByModel(billingRates, selectedFastModel);
-  const estimatedChargeCents = selectedRate ? calculatePointsBySeconds(durationSec || 0, selectedRate.price_per_minute_cents) : 0;
+  const selectedRatePricePerMinuteYuan = selectedRate ? getRatePricePerMinuteYuan(selectedRate) : 0;
+  const estimatedChargeCents = selectedRate ? calculateChargeCentsBySeconds(durationSec || 0, selectedRatePricePerMinuteYuan) : 0;
   const likelyInsufficient = Number.isFinite(normalizedBalanceAmountCents) && estimatedChargeCents > 0 && normalizedBalanceAmountCents < estimatedChargeCents;
   const localWorkerReady = Boolean(localWorkerReadyMap.sensevoice);
   const balancedPerformanceWarning = useMemo(
@@ -2320,7 +2335,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 </TooltipTrigger>
                 <TooltipContent>按素材秒数折算分钟后计费，金额统一按分存储、按元展示。</TooltipContent>
               </Tooltip>
-              ：{selectedRate ? (durationSec != null ? `${formatMoneyCents(estimatedChargeCents)}（${formatMoneyPerMinute(selectedRate.price_per_minute_cents)}）` : "选择文件后显示") : "该模型未配置单价"}
+              ：{selectedRate ? (durationSec != null ? `${formatMoneyCents(estimatedChargeCents)}（${formatMoneyYuanPerMinute(selectedRatePricePerMinuteYuan)}）` : "选择文件后显示") : "该模型未配置单价"}
             </p>
             <p className="text-muted-foreground">当前模型：{selectedUploadModelMeta.title}</p>
             {likelyInsufficient ? <p className="mt-1 text-destructive">余额可能不足，提交将被拒绝。</p> : null}

@@ -19,6 +19,7 @@ from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, schema_n
 from app.models import LessonGenerationTask
 from app.services.admin_bootstrap import ensure_admin_users
 from app.services.asr_dashscope import setup_dashscope
+from app.services.billing_service import ensure_default_billing_rates
 from app.services.faster_whisper_asr import ensure_default_faster_whisper_settings, schedule_faster_whisper_model_prefetch
 from app.services.media import get_media_runtime_status
 from app.services.user_activity import ensure_user_activity_schema
@@ -42,6 +43,8 @@ READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "billing_unit",
         "points_per_1k_tokens",
         "cost_per_minute_cents",
+        "price_per_minute_yuan",
+        "cost_per_minute_yuan",
         "parallel_enabled",
         "parallel_threshold_seconds",
         "segment_seconds",
@@ -209,6 +212,7 @@ async def _bootstrap_runtime_state(app: FastAPI) -> None:
     db = SessionLocal()
     try:
         ensure_user_activity_schema(db)
+        ensure_default_billing_rates(db)
         ensure_default_faster_whisper_settings(db)
     finally:
         db.close()

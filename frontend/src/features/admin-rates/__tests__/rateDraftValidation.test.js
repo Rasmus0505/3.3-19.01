@@ -2,43 +2,61 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  RATE_DECIMAL_YUAN_MESSAGE,
   RATE_INTEGER_CENTS_MESSAGE,
-  getInvalidMinuteCentsFieldLabels,
+  getInvalidMinuteYuanFieldLabels,
+  getInvalidRateFieldLabels,
   getRateDraftValidationMessage,
 } from "../rateDraftValidation.js";
 
-test("valid integer cents draft passes validation", () => {
+test("valid yuan minute draft passes validation", () => {
   const draft = {
-    price_per_minute_cents: 1,
-    cost_per_minute_cents: 0,
+    billing_unit: "minute",
+    price_per_minute_yuan: "1.3000",
+    cost_per_minute_yuan: "0.0132",
   };
 
-  assert.deepEqual(getInvalidMinuteCentsFieldLabels(draft), []);
+  assert.deepEqual(getInvalidMinuteYuanFieldLabels(draft), []);
   assert.equal(getRateDraftValidationMessage(draft), "");
 });
 
-test("fractional cost per minute is rejected with explicit integer cents hint", () => {
+test("minute yuan draft rejects more than four decimals", () => {
   const draft = {
-    price_per_minute_cents: 1,
-    cost_per_minute_cents: 0.0132,
+    billing_unit: "minute",
+    price_per_minute_yuan: "1.30001",
+    cost_per_minute_yuan: "0.0132",
   };
 
-  assert.deepEqual(getInvalidMinuteCentsFieldLabels(draft), ["成本/分钟"]);
+  assert.deepEqual(getInvalidMinuteYuanFieldLabels(draft), ["售价(元/分钟)"]);
   assert.equal(
     getRateDraftValidationMessage(draft),
-    `成本/分钟 ${RATE_INTEGER_CENTS_MESSAGE}`,
+    `售价(元/分钟) ${RATE_DECIMAL_YUAN_MESSAGE}`,
   );
 });
 
-test("fractional price and cost are both called out", () => {
+test("minute yuan draft rejects non-numeric cost", () => {
   const draft = {
-    price_per_minute_cents: 1.5,
-    cost_per_minute_cents: 0.0132,
+    billing_unit: "minute",
+    price_per_minute_yuan: "1.3000",
+    cost_per_minute_yuan: "abc",
   };
 
-  assert.deepEqual(getInvalidMinuteCentsFieldLabels(draft), ["售价/分钟", "成本/分钟"]);
+  assert.deepEqual(getInvalidRateFieldLabels(draft), ["成本(元/分钟)"]);
   assert.equal(
     getRateDraftValidationMessage(draft),
-    `售价/分钟、成本/分钟 ${RATE_INTEGER_CENTS_MESSAGE}`,
+    `成本(元/分钟) ${RATE_DECIMAL_YUAN_MESSAGE}`,
+  );
+});
+
+test("token billing still requires non-negative integers", () => {
+  const draft = {
+    billing_unit: "1k_tokens",
+    points_per_1k_tokens: 1.5,
+  };
+
+  assert.deepEqual(getInvalidRateFieldLabels(draft), ["售价/1k Tokens"]);
+  assert.equal(
+    getRateDraftValidationMessage(draft),
+    `售价/1k Tokens ${RATE_INTEGER_CENTS_MESSAGE}`,
   );
 });

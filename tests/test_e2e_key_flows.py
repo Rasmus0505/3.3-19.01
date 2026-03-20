@@ -182,7 +182,8 @@ def test_e2e_admin_update_rate_visible_in_public_api(e2e_client):
         "/api/admin/billing-rates/qwen3-asr-flash-filetrans",
         headers=admin_headers,
         json={
-            "points_per_minute": 222,
+            "price_per_minute_yuan": "2.2200",
+            "cost_per_minute_yuan": "0.0132",
             "points_per_1k_tokens": 0,
             "billing_unit": "minute",
             "is_active": True,
@@ -195,6 +196,8 @@ def test_e2e_admin_update_rate_visible_in_public_api(e2e_client):
     assert update_resp.status_code == 200
     rate = update_resp.json()["rates"][0]
     assert rate["model_name"] == "qwen3-asr-flash-filetrans"
+    assert rate["price_per_minute_yuan"] == "2.2200"
+    assert rate["cost_per_minute_yuan"] == "0.0132"
     assert rate["points_per_minute"] == 222
     assert rate["points_per_1k_tokens"] == 0
     assert rate["billing_unit"] == "minute"
@@ -207,6 +210,8 @@ def test_e2e_admin_update_rate_visible_in_public_api(e2e_client):
     assert public_resp.status_code == 200
     assert public_resp.json()["subtitle_settings"]["semantic_split_default_enabled"] is False
     target = next(item for item in public_resp.json()["rates"] if item["model_name"] == "qwen3-asr-flash-filetrans")
+    assert target["price_per_minute_yuan"] == "2.2200"
+    assert target["cost_per_minute_yuan"] == "0.0132"
     assert target["points_per_minute"] == 222
     assert target["points_per_1k_tokens"] == 0
     assert target["billing_unit"] == "minute"

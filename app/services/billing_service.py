@@ -32,6 +32,7 @@ from app.services.billing import (
     list_admin_rates,
     list_public_rates,
     manual_adjust,
+    normalize_rate_yuan,
     mask_redeem_code,
     normalize_redeem_code_input,
     record_consume,
@@ -41,6 +42,7 @@ from app.services.billing import (
     settle_reserved_points,
     set_redeem_batch_status,
     update_redeem_code_status,
+    yuan_to_compat_cents,
 )
 
 __all__ = [
@@ -75,6 +77,7 @@ __all__ = [
     "list_admin_rates",
     "list_public_rates",
     "manual_adjust",
+    "normalize_rate_yuan",
     "mask_redeem_code",
     "normalize_redeem_code_input",
     "record_consume",
@@ -84,4 +87,5 @@ __all__ = [
     "settle_reserved_points",
     "set_redeem_batch_status",
     "update_redeem_code_status",
+    "yuan_to_compat_cents",
 ]

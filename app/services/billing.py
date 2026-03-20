@@ -6,6 +6,7 @@ import logging
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from decimal import Decimal, ROUND_CEILING
 from math import ceil
 from typing import Iterable
 
@@ -27,6 +28,7 @@ from app.models import (
     WalletAccount,
     WalletLedger,
 )
+from app.models.billing import cents_to_rate_yuan, normalize_rate_yuan as model_normalize_rate_yuan, rate_yuan_to_compat_cents
 
 
 EVENT_RESERVE = "reserve"
@@ -56,7 +58,6 @@ REDEEM_FAIL_NOT_ACTIVE = "not_active"
 _REDEEM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 logger = logging.getLogger(__name__)
 
-
 DEFAULT_MT_COST_PER_1K_TOKENS_CENTS = 15
 MT_FLASH_MODEL = "qwen-mt-flash"
 MT_MODEL_PREFIX = "qwen-mt-"
@@ -83,8 +84,10 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
     {
         "model_name": SENSEVOICE_CLOUD_MODEL,
         "points_per_minute": 130,
+        "price_per_minute_yuan": Decimal("1.3000"),
         "points_per_1k_tokens": 0,
         "cost_per_minute_cents": 0,
+        "cost_per_minute_yuan": Decimal("0.0000"),
         "billing_unit": "minute",
         "parallel_enabled": False,
         "parallel_threshold_seconds": 600,
@@ -94,8 +97,10 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
     {
         "model_name": FAST_CLOUD_MODEL,
         "points_per_minute": 130,
+        "price_per_minute_yuan": Decimal("1.3000"),
         "points_per_1k_tokens": 0,
         "cost_per_minute_cents": 0,
+        "cost_per_minute_yuan": Decimal("0.0132"),
         "billing_unit": "minute",
         "parallel_enabled": True,
         "parallel_threshold_seconds": 600,
@@ -105,8 +110,10 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
     {
         "model_name": FASTER_WHISPER_SERVER_MODEL,
         "points_per_minute": 130,
+        "price_per_minute_yuan": Decimal("1.3000"),
         "points_per_1k_tokens": 0,
         "cost_per_minute_cents": 0,
+        "cost_per_minute_yuan": Decimal("0.0000"),
         "billing_unit": "minute",
         "parallel_enabled": True,
         "parallel_threshold_seconds": 480,
@@ -116,8 +123,10 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
     {
         "model_name": MT_FLASH_MODEL,
         "points_per_minute": 0,
+        "price_per_minute_yuan": Decimal("0.0000"),
         "points_per_1k_tokens": DEFAULT_MT_COST_PER_1K_TOKENS_CENTS,
         "cost_per_minute_cents": 0,
+        "cost_per_minute_yuan": Decimal("0.0000"),
         "billing_unit": "1k_tokens",
         "parallel_enabled": False,
         "parallel_threshold_seconds": 600,
@@ -175,6 +184,119 @@ class SubtitleSettingsSnapshot:
 
 def _now() -> datetime:
     return now_shanghai_naive()
+
+
+def normalize_rate_yuan(value: object, *, fallback_cents: int = 0) -> Decimal:
+    if value not in (None, ""):
+        normalized = model_normalize_rate_yuan(value)
+        if normalized > 0 or int(fallback_cents or 0) <= 0:
+            return normalized
+    fallback = max(0, int(fallback_cents or 0))
+    return cents_to_rate_yuan(fallback)
+
+
+def yuan_to_compat_cents(value: object) -> int:
+    return rate_yuan_to_compat_cents(value)
+
+
+def build_rate_payload(item: dict[str, object]) -> dict[str, object]:
+    price_per_minute_cents = max(0, int(item.get("points_per_minute") or item.get("price_per_minute_cents") or 0))
+    cost_per_minute_cents = max(0, int(item.get("cost_per_minute_cents") or 0))
+    price_per_minute_yuan = normalize_rate_yuan(item.get("price_per_minute_yuan"), fallback_cents=price_per_minute_cents)
+    cost_per_minute_yuan = normalize_rate_yuan(item.get("cost_per_minute_yuan"), fallback_cents=cost_per_minute_cents)
+    return {
+        "model_name": str(item.get("model_name") or "").strip(),
+        "price_per_minute_cents": yuan_to_compat_cents(price_per_minute_yuan),
+        "price_per_minute_yuan": price_per_minute_yuan,
+        "points_per_1k_tokens": max(0, int(item.get("points_per_1k_tokens") or 0)),
+        "cost_per_minute_cents": yuan_to_compat_cents(cost_per_minute_yuan),
+        "cost_per_minute_yuan": cost_per_minute_yuan,
+        "billing_unit": str(item.get("billing_unit") or "minute").strip() or "minute",
+        "parallel_enabled": bool(item.get("parallel_enabled")),
+        "parallel_threshold_seconds": max(1, int(item.get("parallel_threshold_seconds") or 600)),
+        "segment_seconds": max(1, int(item.get("segment_seconds") or 300)),
+        "max_concurrency": max(1, int(item.get("max_concurrency") or 2)),
+    }
+def _qualified_billing_rates_table(db: Session) -> str:
+    bind = db.get_bind()
+    if bind is None or bind.dialect.name == "sqlite":
+        return BillingModelRate.__tablename__
+    schema = BillingModelRate.__table__.schema
+    return f"{schema}.{BillingModelRate.__tablename__}" if schema else BillingModelRate.__tablename__
+
+
+def _backfill_billing_rate_yuan_columns(db: Session) -> bool:
+    column_names = _billing_model_rates_columns(db)
+    if not column_names:
+        return False
+    table_name = _qualified_billing_rates_table(db)
+    changed = False
+    if "price_per_minute_yuan" in column_names and "points_per_minute" in column_names:
+        result = db.execute(
+            text(
+                f"""
+                UPDATE {table_name}
+                SET price_per_minute_yuan = ROUND(COALESCE(points_per_minute, 0) / 100.0, 4)
+                WHERE price_per_minute_yuan IS NULL
+                   OR price_per_minute_yuan < 0
+                   OR (price_per_minute_yuan = 0 AND COALESCE(points_per_minute, 0) > 0)
+                """
+            )
+        )
+        changed = changed or bool(getattr(result, "rowcount", 0))
+    if "cost_per_minute_yuan" in column_names and "cost_per_minute_cents" in column_names:
+        result = db.execute(
+            text(
+                f"""
+                UPDATE {table_name}
+                SET cost_per_minute_yuan = ROUND(COALESCE(cost_per_minute_cents, 0) / 100.0, 4)
+                WHERE cost_per_minute_yuan IS NULL
+                   OR cost_per_minute_yuan < 0
+                """
+            )
+        )
+        changed = changed or bool(getattr(result, "rowcount", 0))
+    if changed:
+        db.commit()
+        logger.warning("[DEBUG] billing_rates.yuan_backfill applied=true")
+    return changed
+
+
+def _ensure_billing_rate_yuan_columns(db: Session) -> None:
+    bind = db.get_bind()
+    if bind is None:
+        return
+    schema = None if bind.dialect.name == "sqlite" else BillingModelRate.__table__.schema
+    inspector = inspect(bind)
+    if not inspector.has_table(BillingModelRate.__tablename__, schema=schema):
+        return
+
+    existing_columns = {
+        str(item.get("name") or "").strip()
+        for item in inspector.get_columns(BillingModelRate.__tablename__, schema=schema)
+    }
+    table_name = _qualified_billing_rates_table(db)
+    alter_sql: list[str] = []
+    if "price_per_minute_yuan" not in existing_columns:
+        alter_sql.append(f"ALTER TABLE {table_name} ADD COLUMN price_per_minute_yuan NUMERIC(12,4) NOT NULL DEFAULT 0")
+    if "cost_per_minute_yuan" not in existing_columns:
+        alter_sql.append(f"ALTER TABLE {table_name} ADD COLUMN cost_per_minute_yuan NUMERIC(12,4) NOT NULL DEFAULT 0")
+
+    if alter_sql:
+        for sql in alter_sql:
+            db.execute(text(sql))
+        db.commit()
+        logger.warning(
+            "[DEBUG] billing_rates.yuan_columns_added missing=%s",
+            ",".join(
+                [
+                    name
+                    for name in ("price_per_minute_yuan", "cost_per_minute_yuan")
+                    if name not in existing_columns
+                ]
+            ),
+        )
+    _backfill_billing_rate_yuan_columns(db)
 
 
 def _ensure_legacy_sqlite_billing_columns(db: Session) -> None:
@@ -266,6 +388,8 @@ def _sqlite_billing_rates_requires_rebuild(db: Session) -> bool:
         "points_per_minute > 0" in ddl
         or "ck_billing_rate_token_non_negative" not in ddl
         or "ck_billing_rate_cost_non_negative" not in ddl
+        or "ck_billing_rate_price_yuan_non_negative" not in ddl
+        or "ck_billing_rate_cost_yuan_non_negative" not in ddl
         or "ck_billing_parallel_threshold_positive" not in ddl
         or "ck_billing_segment_seconds_positive" not in ddl
         or "ck_billing_max_concurrency_positive" not in ddl
@@ -296,6 +420,8 @@ def _rebuild_legacy_sqlite_billing_rates(db: Session) -> None:
                     points_per_minute,
                     points_per_1k_tokens,
                     cost_per_minute_cents,
+                    price_per_minute_yuan,
+                    cost_per_minute_yuan,
                     billing_unit,
                     is_active,
                     parallel_enabled,
@@ -319,6 +445,22 @@ def _rebuild_legacy_sqlite_billing_rates(db: Session) -> None:
                         WHEN COALESCE(cost_per_minute_cents, 0) < 0 THEN 0
                         ELSE COALESCE(cost_per_minute_cents, 0)
                     END AS cost_per_minute_cents,
+                    ROUND(
+                        CASE
+                            WHEN COALESCE(price_per_minute_yuan, 0) > 0 THEN COALESCE(price_per_minute_yuan, 0)
+                            WHEN COALESCE(points_per_minute, 0) < 0 THEN 0
+                            ELSE COALESCE(points_per_minute, 0) / 100.0
+                        END,
+                        4
+                    ) AS price_per_minute_yuan,
+                    ROUND(
+                        CASE
+                            WHEN COALESCE(cost_per_minute_yuan, 0) > 0 THEN COALESCE(cost_per_minute_yuan, 0)
+                            WHEN COALESCE(cost_per_minute_cents, 0) < 0 THEN 0
+                            ELSE COALESCE(cost_per_minute_cents, 0) / 100.0
+                        END,
+                        4
+                    ) AS cost_per_minute_yuan,
                     CASE
                         WHEN TRIM(COALESCE(billing_unit, '')) <> '' THEN TRIM(billing_unit)
                         WHEN COALESCE(points_per_1k_tokens, 0) > 0 THEN '1k_tokens'
@@ -525,8 +667,10 @@ def _flash_mt_default_payload() -> dict[str, object]:
     return {
         "model_name": MT_FLASH_MODEL,
         "points_per_minute": 0,
+        "price_per_minute_yuan": Decimal("0.0000"),
         "points_per_1k_tokens": DEFAULT_MT_COST_PER_1K_TOKENS_CENTS,
         "cost_per_minute_cents": 0,
+        "cost_per_minute_yuan": Decimal("0.0000"),
         "billing_unit": "1k_tokens",
         "parallel_enabled": False,
         "parallel_threshold_seconds": 600,
@@ -552,6 +696,8 @@ def _cleanup_non_flash_mt_rates(db: Session, *, ensure_flash: bool) -> tuple[int
         "points_per_minute",
         "points_per_1k_tokens",
         "cost_per_minute_cents",
+        "price_per_minute_yuan",
+        "cost_per_minute_yuan",
         "billing_unit",
         "is_active",
         "parallel_enabled",
@@ -585,13 +731,15 @@ def _cleanup_non_flash_mt_rates(db: Session, *, ensure_flash: bool) -> tuple[int
     seeded_flash = False
     flash_row = db.get(BillingModelRate, MT_FLASH_MODEL) if ensure_flash else object()
     if flash_row is None:
-        seed = _flash_mt_default_payload()
+        seed = build_rate_payload(_flash_mt_default_payload())
         db.add(
             BillingModelRate(
                 model_name=MT_FLASH_MODEL,
-                points_per_minute=int(seed.get("points_per_minute") or 0),
+                price_per_minute_cents_legacy=int(seed.get("price_per_minute_cents") or 0),
+                price_per_minute_yuan=seed["price_per_minute_yuan"],
                 points_per_1k_tokens=int(seed.get("points_per_1k_tokens") or 0),
-                cost_per_minute_cents=int(seed.get("cost_per_minute_cents") or 0),
+                cost_per_minute_cents_legacy=int(seed.get("cost_per_minute_cents") or 0),
+                cost_per_minute_yuan=seed["cost_per_minute_yuan"],
                 billing_unit=str(seed.get("billing_unit") or "1k_tokens"),
                 is_active=True,
                 parallel_enabled=bool(seed.get("parallel_enabled")),
@@ -670,6 +818,7 @@ def ensure_default_billing_rates(
     db: Session,
     defaults: Iterable[dict[str, object]] = DEFAULT_MODEL_RATES,
 ) -> None:
+    _ensure_billing_rate_yuan_columns(db)
     _ensure_legacy_sqlite_billing_columns(db)
     _ensure_legacy_sqlite_wallet_ledger_event_types(db)
     ensure_default_subtitle_settings(db)
@@ -687,38 +836,45 @@ def ensure_default_billing_rates(
         changed = True
 
     for item in defaults:
-        model_name = str(item.get("model_name") or "").strip()
-        points_per_minute = int(item.get("points_per_minute") or 0)
-        points_per_1k_tokens = int(item.get("points_per_1k_tokens") or 0)
-        billing_unit = str(item.get("billing_unit") or "minute").strip() or "minute"
-        parallel_enabled = bool(item.get("parallel_enabled"))
-        parallel_threshold_seconds = int(item.get("parallel_threshold_seconds") or 600)
-        segment_seconds = int(item.get("segment_seconds") or 300)
-        max_concurrency = int(item.get("max_concurrency") or 2)
-        cost_per_minute_cents = int(item.get("cost_per_minute_cents") or 0)
+        seed = build_rate_payload(dict(item))
+        model_name = str(seed.get("model_name") or "").strip()
         exists = db.get(BillingModelRate, model_name)
         if exists:
             row_changed = False
             if int(getattr(exists, "points_per_1k_tokens", 0) or 0) < 0:
-                exists.points_per_1k_tokens = points_per_1k_tokens
+                exists.points_per_1k_tokens = int(seed.get("points_per_1k_tokens") or 0)
                 row_changed = True
             if not str(getattr(exists, "billing_unit", "") or "").strip():
-                exists.billing_unit = billing_unit
+                exists.billing_unit = str(seed.get("billing_unit") or "minute")
                 row_changed = True
             if exists.parallel_enabled is None:
-                exists.parallel_enabled = bool(parallel_enabled)
+                exists.parallel_enabled = bool(seed.get("parallel_enabled"))
                 row_changed = True
             if int(exists.parallel_threshold_seconds or 0) <= 0:
-                exists.parallel_threshold_seconds = int(parallel_threshold_seconds)
+                exists.parallel_threshold_seconds = int(seed.get("parallel_threshold_seconds") or 600)
                 row_changed = True
             if int(exists.segment_seconds or 0) <= 0:
-                exists.segment_seconds = int(segment_seconds)
+                exists.segment_seconds = int(seed.get("segment_seconds") or 300)
                 row_changed = True
             if int(exists.max_concurrency or 0) <= 0:
-                exists.max_concurrency = int(max_concurrency)
+                exists.max_concurrency = int(seed.get("max_concurrency") or 2)
                 row_changed = True
-            if int(getattr(exists, "cost_per_minute_cents", 0) or 0) < 0:
-                exists.cost_per_minute_cents = cost_per_minute_cents
+            if int(getattr(exists, "cost_per_minute_cents_legacy", 0) or 0) < 0:
+                exists.cost_per_minute_cents_legacy = int(seed.get("cost_per_minute_cents") or 0)
+                row_changed = True
+            if normalize_rate_yuan(getattr(exists, "price_per_minute_yuan", None), fallback_cents=0) <= 0 and seed["price_per_minute_yuan"] > 0:
+                exists.price_per_minute_yuan = seed["price_per_minute_yuan"]
+                row_changed = True
+            if normalize_rate_yuan(getattr(exists, "cost_per_minute_yuan", None), fallback_cents=0) <= 0 and seed["cost_per_minute_yuan"] > 0:
+                exists.cost_per_minute_yuan = seed["cost_per_minute_yuan"]
+                row_changed = True
+            expected_price_cents = yuan_to_compat_cents(getattr(exists, "price_per_minute_yuan", None))
+            if int(getattr(exists, "price_per_minute_cents_legacy", 0) or 0) != expected_price_cents:
+                exists.price_per_minute_cents_legacy = expected_price_cents
+                row_changed = True
+            expected_cost_cents = yuan_to_compat_cents(getattr(exists, "cost_per_minute_yuan", None))
+            if int(getattr(exists, "cost_per_minute_cents_legacy", 0) or 0) != expected_cost_cents:
+                exists.cost_per_minute_cents_legacy = expected_cost_cents
                 row_changed = True
             if row_changed:
                 db.add(exists)
@@ -727,15 +883,17 @@ def ensure_default_billing_rates(
         db.add(
             BillingModelRate(
                 model_name=model_name,
-                points_per_minute=points_per_minute,
-                points_per_1k_tokens=points_per_1k_tokens,
-                cost_per_minute_cents=cost_per_minute_cents,
-                billing_unit=billing_unit,
+                price_per_minute_cents_legacy=int(seed.get("price_per_minute_cents") or 0),
+                price_per_minute_yuan=seed["price_per_minute_yuan"],
+                points_per_1k_tokens=int(seed.get("points_per_1k_tokens") or 0),
+                cost_per_minute_cents_legacy=int(seed.get("cost_per_minute_cents") or 0),
+                cost_per_minute_yuan=seed["cost_per_minute_yuan"],
+                billing_unit=str(seed.get("billing_unit") or "minute"),
                 is_active=True,
-                parallel_enabled=parallel_enabled,
-                parallel_threshold_seconds=parallel_threshold_seconds,
-                segment_seconds=segment_seconds,
-                max_concurrency=max_concurrency,
+                parallel_enabled=bool(seed.get("parallel_enabled")),
+                parallel_threshold_seconds=int(seed.get("parallel_threshold_seconds") or 600),
+                segment_seconds=int(seed.get("segment_seconds") or 300),
+                max_concurrency=int(seed.get("max_concurrency") or 2),
             )
         )
         changed = True
@@ -899,6 +1057,7 @@ def _ensure_subtitle_settings_schema(db: Session) -> bool:
 
     if not inspector.has_table(SubtitleSetting.__tablename__, schema=schema):
         logger.warning("[DEBUG] subtitle_settings.schema_repair_create_table")
+        db.rollback()
         SubtitleSetting.__table__.create(bind=bind, checkfirst=True)
         db.commit()
         changed = True
@@ -1040,11 +1199,20 @@ def list_public_rates(db: Session) -> list[BillingModelRate]:
     return _sort_rates_by_model_order(filtered_rows, PUBLIC_BILLING_MODEL_ORDER)
 
 
-def calculate_amount_by_duration_ms(duration_ms: int, price_per_minute_cents: int) -> int:
-    if duration_ms <= 0 or price_per_minute_cents <= 0:
+def calculate_amount_by_duration_ms(
+    duration_ms: int,
+    price_per_minute_cents: int | None = None,
+    *,
+    price_per_minute_yuan: object | None = None,
+) -> int:
+    if duration_ms <= 0:
+        return 0
+    rate_yuan = normalize_rate_yuan(price_per_minute_yuan, fallback_cents=max(0, int(price_per_minute_cents or 0)))
+    if rate_yuan <= 0:
         return 0
     seconds = ceil(duration_ms / 1000)
-    return ceil((seconds * price_per_minute_cents) / 60)
+    amount_yuan = (Decimal(seconds) * rate_yuan) / Decimal("60")
+    return int((amount_yuan * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_CEILING))
 
 
 def calculate_cost_by_tokens(total_tokens: int, cost_per_1k_tokens_cents: int) -> int:
@@ -1053,8 +1221,17 @@ def calculate_cost_by_tokens(total_tokens: int, cost_per_1k_tokens_cents: int) -
     return ceil((int(total_tokens) * int(cost_per_1k_tokens_cents)) / 1000)
 
 
-def calculate_points(duration_ms: int, points_per_minute: int) -> int:
-    return calculate_amount_by_duration_ms(duration_ms, points_per_minute)
+def calculate_points(
+    duration_ms: int,
+    points_per_minute: int | None = None,
+    *,
+    price_per_minute_yuan: object | None = None,
+) -> int:
+    return calculate_amount_by_duration_ms(
+        duration_ms,
+        points_per_minute,
+        price_per_minute_yuan=price_per_minute_yuan,
+    )
 
 
 def calculate_token_points(total_tokens: int, points_per_1k_tokens: int) -> int:

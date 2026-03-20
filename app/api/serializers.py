@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from app.core.timezone import to_shanghai_aware
 from app.models import BillingModelRate, FasterWhisperSetting, Lesson, LessonSentence, SenseVoiceSetting, SubtitleSetting, User
+from app.models.billing import cents_to_rate_yuan, normalize_rate_yuan, rate_yuan_to_compat_cents
 from app.schemas import (
     AdminSubtitleSettingsItem,
     BillingRateItem,
@@ -17,6 +20,16 @@ from app.schemas import (
     UserResponse,
 )
 from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
+
+
+def _quantize_rate_yuan(value: object, *, fallback_cents: int = 0) -> Decimal:
+    if value not in (None, ""):
+        return normalize_rate_yuan(value)
+    return cents_to_rate_yuan(int(fallback_cents or 0))
+
+
+def _compat_cents_from_yuan(value: Decimal) -> int:
+    return rate_yuan_to_compat_cents(value)
 
 
 LOCAL_ASR_MODEL_META: dict[str, tuple[str, str]] = {
@@ -153,14 +166,28 @@ def to_lesson_detail_response(lesson: Lesson, sentences: list[LessonSentence]) -
 
 def to_rate_item(rate: BillingModelRate) -> BillingRateItem:
     display_name, runtime_kind = _rate_display_meta(rate.model_name)
+    price_per_minute_yuan = _quantize_rate_yuan(
+        getattr(rate, "price_per_minute_yuan", None),
+        fallback_cents=int(getattr(rate, "price_per_minute_cents", 0) or getattr(rate, "points_per_minute", 0) or 0),
+    )
+    cost_per_minute_yuan = _quantize_rate_yuan(
+        getattr(rate, "cost_per_minute_yuan", None),
+        fallback_cents=int(getattr(rate, "cost_per_minute_cents", 0) or 0),
+    )
+    gross_profit_per_minute_yuan = normalize_rate_yuan(price_per_minute_yuan - cost_per_minute_yuan)
+    price_per_minute_cents = _compat_cents_from_yuan(price_per_minute_yuan)
+    cost_per_minute_cents = _compat_cents_from_yuan(cost_per_minute_yuan)
     return BillingRateItem(
         model_name=rate.model_name,
         display_name=display_name,
-        price_per_minute_cents=int(getattr(rate, "price_per_minute_cents", 0) or 0),
-        points_per_minute=int(getattr(rate, "price_per_minute_cents", 0) or 0),
+        price_per_minute_yuan=price_per_minute_yuan,
+        cost_per_minute_yuan=cost_per_minute_yuan,
+        gross_profit_per_minute_yuan=gross_profit_per_minute_yuan,
+        price_per_minute_cents=price_per_minute_cents,
+        points_per_minute=price_per_minute_cents,
         points_per_1k_tokens=int(getattr(rate, "points_per_1k_tokens", 0) or 0),
-        cost_per_minute_cents=int(getattr(rate, "cost_per_minute_cents", 0) or 0),
-        gross_profit_per_minute_cents=int(getattr(rate, "gross_profit_per_minute_cents", 0) or 0),
+        cost_per_minute_cents=cost_per_minute_cents,
+        gross_profit_per_minute_cents=price_per_minute_cents - cost_per_minute_cents,
         billing_unit=str(getattr(rate, "billing_unit", "minute") or "minute"),
         is_active=rate.is_active,
         parallel_enabled=bool(rate.parallel_enabled),

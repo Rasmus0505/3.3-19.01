@@ -430,7 +430,7 @@ export function GettingStartedHelpPage() {
 
   useEffect(() => {
     const previousTitle = document.title;
-    document.title = "新手教程 | English Trainer";
+    document.title = "新手教程 | Bottle English";
     console.debug("[DEBUG] help.getting-started.view", {
       hasSession,
       hasStoredToken,

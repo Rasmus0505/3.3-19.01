@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
@@ -30,6 +31,9 @@ class PublicSubtitleSettings(BaseModel):
 class BillingRateItem(BaseModel):
     model_name: str
     display_name: str = ""
+    price_per_minute_yuan: Decimal
+    cost_per_minute_yuan: Decimal
+    gross_profit_per_minute_yuan: Decimal
     price_per_minute_cents: int
     points_per_minute: int
     points_per_1k_tokens: int
