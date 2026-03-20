@@ -1,7 +1,9 @@
 export const RATE_INTEGER_CENTS_MESSAGE = "1k Tokens 费率必须填写为非负整数。";
 export const RATE_DECIMAL_YUAN_MESSAGE = "元/分钟费率必须填写为非负数字，且最多保留 4 位小数。";
+export const TOKEN_COST_DECIMAL_MESSAGE = "1k Tokens 成本必须填写为非负数字，且最多保留 4 位小数。";
 
 export const TOKEN_RATE_LABEL = "售价/1k Tokens";
+export const TOKEN_COST_LABEL = "成本/1k Tokens";
 export const PRICE_PER_MINUTE_YUAN_LABEL = "售价(元/分钟)";
 export const COST_PER_MINUTE_YUAN_LABEL = "成本(元/分钟)";
 
@@ -35,7 +37,14 @@ export function getInvalidMinuteYuanFieldLabels(draft) {
 
 export function getInvalidRateFieldLabels(draft) {
   if (isTokenBillingDraft(draft)) {
-    return isNonNegativeInteger(draft?.points_per_1k_tokens) ? [] : [TOKEN_RATE_LABEL];
+    const invalidLabels = [];
+    if (!isNonNegativeInteger(draft?.points_per_1k_tokens)) {
+      invalidLabels.push(TOKEN_RATE_LABEL);
+    }
+    if (!isNonNegativeDecimalWithScale(draft?.cost_per_minute_yuan, 4)) {
+      invalidLabels.push(TOKEN_COST_LABEL);
+    }
+    return invalidLabels;
   }
   return getInvalidMinuteYuanFieldLabels(draft);
 }
@@ -45,6 +54,15 @@ export function getRateDraftValidationMessage(draft) {
   if (!invalidLabels.length) {
     return "";
   }
-  const suffix = isTokenBillingDraft(draft) ? RATE_INTEGER_CENTS_MESSAGE : RATE_DECIMAL_YUAN_MESSAGE;
-  return `${invalidLabels.join("、")} ${suffix}`;
+  if (isTokenBillingDraft(draft)) {
+    const messageParts = [];
+    if (invalidLabels.includes(TOKEN_RATE_LABEL)) {
+      messageParts.push(`${TOKEN_RATE_LABEL} ${RATE_INTEGER_CENTS_MESSAGE}`);
+    }
+    if (invalidLabels.includes(TOKEN_COST_LABEL)) {
+      messageParts.push(`${TOKEN_COST_LABEL} ${TOKEN_COST_DECIMAL_MESSAGE}`);
+    }
+    return messageParts.join(" ");
+  }
+  return `${invalidLabels.join("、")} ${RATE_DECIMAL_YUAN_MESSAGE}`;
 }

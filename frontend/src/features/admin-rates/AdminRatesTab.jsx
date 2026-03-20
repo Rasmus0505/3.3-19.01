@@ -30,6 +30,9 @@ import {
 import {
   RATE_DECIMAL_YUAN_MESSAGE,
   RATE_INTEGER_CENTS_MESSAGE,
+  TOKEN_COST_DECIMAL_MESSAGE,
+  TOKEN_COST_LABEL,
+  TOKEN_RATE_LABEL,
   getInvalidRateFieldLabels,
   getRateDraftValidationMessage,
 } from "./rateDraftValidation";
@@ -52,6 +55,19 @@ function parseDraftNumber(value) {
   return Number.isFinite(normalized) ? normalized : 0;
 }
 
+function formatTokenYuanValue(value) {
+  const normalized = Number(value);
+  return Number.isFinite(normalized) ? normalized.toFixed(4) : "0.0000";
+}
+
+function getTokenPriceYuan(draft) {
+  return Number(draft?.points_per_1k_tokens || 0) / 100;
+}
+
+function getTokenCostYuan(draft) {
+  return parseDraftNumber(draft?.cost_per_minute_yuan);
+}
+
 function isDraftChanged(item, draft) {
   return (
     String(toMinuteRateDraftValue(item, "price_per_minute_yuan", "price_per_minute_cents")) !== String(draft.price_per_minute_yuan || "") ||
@@ -68,7 +84,7 @@ function isDraftChanged(item, draft) {
 
 function formatDraftSummary(item, draft) {
   if (isTokenBilling(item) || isTokenBilling(draft)) {
-    return `${Number(draft.points_per_1k_tokens || 0)} / 1k Tokens`;
+    return `售价 ${Number(draft.points_per_1k_tokens || 0)} / 1k Tokens · 成本 ${formatTokenYuanValue(draft.cost_per_minute_yuan)} 元 / 1k Tokens`;
   }
   return `${formatMoneyYuanPerMinute(draft.price_per_minute_yuan, {
     minimumFractionDigits: 4,
@@ -81,7 +97,7 @@ function formatDraftSummary(item, draft) {
 
 function formatItemSummary(item) {
   if (isTokenBilling(item)) {
-    return `${Number(item.points_per_1k_tokens || 0)} / 1k Tokens`;
+    return `售价 ${Number(item.points_per_1k_tokens || 0)} / 1k Tokens · 成本 ${formatTokenYuanValue(item.cost_per_minute_yuan)} 元 / 1k Tokens`;
   }
   return `${formatMoneyYuanPerMinute(item.price_per_minute_yuan, {
     minimumFractionDigits: 4,
@@ -280,7 +296,7 @@ export function AdminRatesTab({ apiCall }) {
           <Settings2 className="size-4" />
           计费配置
         </CardTitle>
-        <CardDescription>ASR 行统一按元/分钟编辑与显示，MT 行继续使用 1k Tokens 费率。</CardDescription>
+        <CardDescription>ASR 行统一按元/分钟编辑与显示，MT 行按 1k Tokens 维护售价与参考成本。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {dirtyModels.length > 0 ? (
@@ -351,9 +367,11 @@ export function AdminRatesTab({ apiCall }) {
                 const tokenBilling = isTokenBilling(draft);
                 const invalidFields = getInvalidRateFieldLabels(draft);
                 const priceInvalid = invalidFields.includes("售价（元/分钟）");
-                const tokenInvalid = invalidFields.includes("售价 / 1k Tokens");
-                const costInvalid = invalidFields.includes("成本（元/分钟）");
-                const draftGrossProfit = parseDraftNumber(draft.price_per_minute_yuan) - parseDraftNumber(draft.cost_per_minute_yuan);
+                const tokenInvalid = invalidFields.includes(TOKEN_RATE_LABEL);
+                const costInvalid = invalidFields.includes(TOKEN_COST_LABEL) || invalidFields.includes("成本(元/分钟)");
+                const draftGrossProfit = tokenBilling
+                  ? getTokenPriceYuan(draft) - getTokenCostYuan(draft)
+                  : parseDraftNumber(draft.price_per_minute_yuan) - parseDraftNumber(draft.cost_per_minute_yuan);
 
                 return (
                   <TableRow key={item.model_name}>
@@ -413,11 +431,12 @@ export function AdminRatesTab({ apiCall }) {
                         onChange={(event) => updateDraft(item.model_name, { cost_per_minute_yuan: event.target.value })}
                         aria-invalid={costInvalid}
                         className="max-w-[180px]"
-                        disabled={tokenBilling}
                       />
                       <p className={`mt-1 text-xs ${costInvalid ? "text-destructive" : "text-muted-foreground"}`}>
                         {tokenBilling
-                          ? "仅 ASR 模型使用"
+                          ? costInvalid
+                            ? TOKEN_COST_DECIMAL_MESSAGE
+                            : `${formatTokenYuanValue(draft.cost_per_minute_yuan)} 元 / 1k Tokens`
                           : costInvalid
                             ? RATE_DECIMAL_YUAN_MESSAGE
                             : formatMoneyYuanPerMinute(draft.cost_per_minute_yuan, {
@@ -431,7 +450,7 @@ export function AdminRatesTab({ apiCall }) {
                         {validationMessage
                           ? "请先修正费率"
                           : tokenBilling
-                            ? `${Number(draft.points_per_1k_tokens || 0)} / 1k Tokens`
+                            ? `${formatTokenYuanValue(draftGrossProfit)} 元 / 1k Tokens`
                             : formatMoneyYuanPerMinute(draftGrossProfit, {
                                 minimumFractionDigits: 4,
                                 maximumFractionDigits: 4,
@@ -537,4 +556,3 @@ export function AdminRatesTab({ apiCall }) {
     </Card>
   );
 }
-

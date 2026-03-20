@@ -1956,9 +1956,54 @@ def test_single_faster_whisper_progress_keeps_waiting_after_segments(monkeypatch
     )
 
     assert result["progress_counters"]["segment_total"] == 13
+    assert result["progress_counters"]["asr_done"] == 13
+    assert result["progress_counters"]["asr_estimated"] == 13
     assert any(item["current_text"] == "识别中，已识别 13 段" for item in progress_events)
     assert any(item["current_text"] == "识别中，已识别 13 段，已等待 13 秒" for item in progress_events)
     assert progress_events[-1]["current_text"] == "识别完成 13/13"
+
+
+def test_single_faster_whisper_stall_raises_media_error(monkeypatch, tmp_path):
+    from app.services import lesson_service as lesson_service_module
+    from app.services.media import MediaError
+
+    opus_path = tmp_path / "sample.opus"
+    opus_path.write_bytes(b"opus")
+    req_dir = tmp_path / "req"
+    req_dir.mkdir(parents=True, exist_ok=True)
+    release_event = threading.Event()
+
+    def fake_transcribe(audio_path, *, model, progress_callback=None, requests_timeout=120):
+        if progress_callback:
+            progress_callback({"segment_done": 2, "segment_total": 0, "elapsed_seconds": 11})
+        release_event.wait(5)
+        return {
+            "asr_result_json": {"transcripts": [{"sentences": [{"text": "late", "begin_time": 0, "end_time": 1000}]}]},
+            "usage_seconds": 1,
+            "raw_generate_result": {"segment_count": 2},
+        }
+
+    monkeypatch.setattr(lesson_service_module, "transcribe_audio_file", fake_transcribe)
+    monkeypatch.setattr(lesson_service_module, "_single_faster_whisper_stall_timeout_seconds", lambda source_duration_ms: 1)
+
+    try:
+        with pytest.raises(MediaError) as exc_info:
+            lesson_service_module.LessonService._transcribe_with_optional_parallel(
+                opus_path=opus_path,
+                req_dir=req_dir,
+                asr_model="faster-whisper-medium",
+                source_duration_ms=240000,
+                parallel_enabled=False,
+                parallel_threshold_seconds=600,
+                segment_target_seconds=300,
+                max_concurrency=1,
+                progress_callback=None,
+            )
+    finally:
+        release_event.set()
+
+    assert exc_info.value.code == "ASR_PROGRESS_STALLED"
+    assert "2 segments" in exc_info.value.detail
 
 
 def test_transcribe_file_endpoint_with_stubbed_service(test_client, monkeypatch, tmp_path):
@@ -2374,7 +2419,7 @@ def test_admin_update_billing_rate_rejects_non_flash_mt_model(test_client):
 
 
 def test_admin_update_billing_rate_accepts_mt_flash_token_pricing(test_client):
-    client, _, monkeypatch = test_client
+    client, session_factory, monkeypatch = test_client
     token = _register_and_login(client, email="billing-flash-admin@example.com")
     monkeypatch.setenv("ADMIN_EMAILS", "billing-flash-admin@example.com")
     headers = {"Authorization": f"Bearer {token}"}
@@ -2384,6 +2429,7 @@ def test_admin_update_billing_rate_accepts_mt_flash_token_pricing(test_client):
         headers=headers,
         json={
             "points_per_1k_tokens": 19,
+            "cost_per_minute_yuan": "0.0110",
             "billing_unit": "1k_tokens",
             "is_active": True,
             "parallel_enabled": False,
@@ -2397,7 +2443,17 @@ def test_admin_update_billing_rate_accepts_mt_flash_token_pricing(test_client):
     assert rate["model_name"] == "qwen-mt-flash"
     assert rate["billing_unit"] == "1k_tokens"
     assert rate["points_per_1k_tokens"] == 19
+    assert rate["cost_per_minute_yuan"] == "0.0110"
     assert rate["points_per_minute"] == 0
+
+    session = session_factory()
+    try:
+        saved_rate = session.get(BillingModelRate, "qwen-mt-flash")
+        assert saved_rate is not None
+        assert saved_rate.points_per_1k_tokens == 19
+        assert saved_rate.cost_per_minute_yuan == Decimal("0.0110")
+    finally:
+        session.close()
 
 
 def test_admin_update_billing_rate_accepts_minute_yuan_pricing(test_client):

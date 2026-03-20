@@ -720,7 +720,9 @@ def admin_update_billing_rate(
         cost_per_minute_yuan = normalize_rate_yuan(payload.cost_per_minute_yuan)
     else:
         price_per_minute_yuan = normalize_rate_yuan(0)
-        cost_per_minute_yuan = normalize_rate_yuan(0)
+        # MT continues to charge by token, while this compatibility field stores
+        # the admin-only reference cost in yuan / 1k tokens.
+        cost_per_minute_yuan = normalize_rate_yuan(payload.cost_per_minute_yuan)
     rate.price_per_minute_yuan = price_per_minute_yuan
     rate.price_per_minute_cents_legacy = yuan_to_compat_cents(price_per_minute_yuan)
     rate.points_per_1k_tokens = payload.points_per_1k_tokens if expected_unit == "1k_tokens" else 0
