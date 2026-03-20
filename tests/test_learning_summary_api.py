@@ -121,6 +121,11 @@ def test_learning_summary_empty_state(learning_summary_client):
     assert data["continue_lesson"] is None
     assert data["stalled_lesson"] is None
     assert data["primary_recommendation"]["kind"] == "start-first-upload"
+    assert data["hero"]["stage_label"] == "点火学徒"
+    assert data["summary"]["growth_points_in_range"] == 0
+    assert data["summary"]["total_growth_points"] == 0
+    assert data["today_tasks"][0]["key"] == "start-first-course"
+    assert data["risk_cards"][0]["key"] == "start-chain"
     assert len(data["focus_cards"]) == 4
 
 
@@ -171,6 +176,12 @@ def test_learning_summary_progress_delta_and_check_attempts(learning_summary_cli
     assert summary["lesson_total"] == 1
     assert summary["sentence_total"] == 2
     assert summary["sentence_completed_total"] == 1
+    assert summary["growth_points_in_range"] == 17
+    assert summary["total_growth_points"] == 17
+
+    payload = summary_resp.json()
+    assert payload["hero"]["growth_points"] == 17
+    assert payload["today_tasks"][0]["status"] == "done"
 
 
 def test_learning_summary_streak_and_user_isolation(learning_summary_client):
@@ -194,6 +205,8 @@ def test_learning_summary_streak_and_user_isolation(learning_summary_client):
                     completed_sentences=completed,
                     check_attempts=completed,
                     check_passes=completed,
+                    growth_points=completed * 10,
+                    completed_lessons=0,
                     last_learning_at=(now - timedelta(days=offset)),
                 )
             )
@@ -204,6 +217,8 @@ def test_learning_summary_streak_and_user_isolation(learning_summary_client):
                 completed_sentences=99,
                 check_attempts=99,
                 check_passes=99,
+                growth_points=990,
+                completed_lessons=0,
                 last_learning_at=now,
             )
         )
@@ -220,6 +235,7 @@ def test_learning_summary_streak_and_user_isolation(learning_summary_client):
     assert data["completed_sentences_in_range"] == 6
     assert data["check_attempts_in_range"] == 6
     assert data["check_passes_in_range"] == 6
+    assert data["growth_points_in_range"] == 60
     assert data["recent_learning_at"].endswith("+08:00")
 
 
@@ -253,3 +269,27 @@ def test_learning_summary_course_diagnosis_prefers_stalled_lesson(learning_summa
     assert data["stalled_lesson"]["lesson_id"] == stalled_lesson_id
     assert data["primary_recommendation"]["kind"] == "resume-stalled"
     assert data["primary_recommendation"]["lesson_id"] == stalled_lesson_id
+    assert any(item["key"] == "resume-stalled" for item in data["today_tasks"])
+    assert any(item["key"] == "unfinished-backlog" for item in data["risk_cards"])
+
+
+def test_learning_summary_completed_lesson_grants_growth_and_milestone(learning_summary_client):
+    client, session_factory = learning_summary_client
+    user_email = "summary-finish@example.com"
+    token = _register_and_login(client, user_email)
+    headers = {"Authorization": f"Bearer {token}"}
+    lesson_id = _seed_lesson(session_factory, user_email=user_email, title="Finish", sentence_count=2, completed_indexes=[0])
+
+    progress_resp = client.post(
+        f"/api/lessons/{lesson_id}/progress",
+        headers=headers,
+        json={"current_sentence_index": 1, "completed_sentence_indexes": [0, 1], "last_played_at_ms": 0},
+    )
+    assert progress_resp.status_code == 200
+
+    resp = client.get("/api/lessons/progress/summary?range_days=7", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["summary"]["lesson_completed_total"] == 1
+    assert data["summary"]["growth_points_in_range"] == 36
+    assert data["milestones"][2]["achieved"] is True

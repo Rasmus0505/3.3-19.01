@@ -34,6 +34,7 @@ from app.schemas import (
     LessonSubtitleVariantRequest,
     LessonSubtitleVariantResponse,
     LessonTaskCreateResponse,
+    LessonTaskDebugReportResponse,
     LessonTaskControlResponse,
     LessonTaskBatchTerminateResponse,
     LocalAsrLessonTaskCreateRequest,
@@ -59,6 +60,7 @@ from app.services.lesson_query_service import get_lesson_catalog_payload, get_le
 from app.services.lesson_service import LessonService
 from app.services.lesson_task_manager import (
     LessonTaskStorageNotReadyError,
+    build_task_debug_report,
     ensure_lesson_task_storage_ready,
     get_task,
 )
@@ -98,6 +100,11 @@ def _build_task_lesson_response(task: dict, db: Session) -> LessonDetailResponse
 
 
 def _to_task_response(task: dict, db: Session) -> LessonTaskResponse:
+    result_kind = str(task.get("result_kind") or "full_success").strip().lower()
+    completion_kind = "partial" if result_kind == "asr_only" else "full"
+    response_message = str(task.get("message") or "")
+    if not response_message and str(task.get("status") or "").strip().lower() == "succeeded":
+        response_message = str(task.get("result_message") or "")
     return LessonTaskResponse(
         ok=True,
         task_id=task["task_id"],
@@ -105,6 +112,13 @@ def _to_task_response(task: dict, db: Session) -> LessonTaskResponse:
         effective_asr_model=str(task.get("effective_asr_model") or ""),
         model_fallback_applied=bool(task.get("model_fallback_applied")),
         model_fallback_reason=str(task.get("model_fallback_reason") or ""),
+        completion_kind=completion_kind,
+        result_kind=result_kind if result_kind in {"full_success", "asr_only"} else "full_success",
+        result_label=str(task.get("result_label") or ""),
+        result_message=str(task.get("result_message") or ""),
+        partial_failure_stage=str(task.get("partial_failure_stage") or ""),
+        partial_failure_code=str(task.get("partial_failure_code") or ""),
+        partial_failure_message=str(task.get("partial_failure_message") or ""),
         status=task["status"],
         overall_percent=int(task.get("overall_percent", 0)),
         current_text=str(task.get("current_text", "")),
@@ -115,7 +129,7 @@ def _to_task_response(task: dict, db: Session) -> LessonTaskResponse:
         translation_debug=task.get("translation_debug"),
         failure_debug=task.get("failure_debug"),
         error_code=str(task.get("error_code", "")),
-        message=str(task.get("message", "")),
+        message=response_message,
         resume_available=bool(task.get("resume_available")),
         resume_stage=str(task.get("resume_stage") or ""),
         artifact_expires_at=task.get("artifact_expires_at"),
@@ -317,6 +331,29 @@ def get_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: U
     if not task or int(task.get("owner_user_id", 0)) != current_user.id:
         return error_response(404, "TASK_NOT_FOUND", "任务不存在")
     return _to_task_response(task, db)
+
+
+@router.get(
+    "/tasks/{task_id}/debug-report",
+    response_model=LessonTaskDebugReportResponse,
+    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+)
+def get_lesson_task_debug_report(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        ensure_lesson_task_storage_ready(db)
+    except LessonTaskStorageNotReadyError as exc:
+        return error_response(503, exc.code, exc.message, exc.detail)
+    task = get_task(task_id, db=db)
+    if not task or int(task.get("owner_user_id", 0)) != current_user.id:
+        return error_response(404, "TASK_NOT_FOUND", "任务不存在")
+    result_kind = str(task.get("result_kind") or "full_success").strip().lower()
+    completion_kind = "partial" if result_kind == "asr_only" else "full"
+    return LessonTaskDebugReportResponse(
+        ok=True,
+        task_id=task_id,
+        completion_kind=completion_kind,
+        report_text=build_task_debug_report(task),
+    )
 
 
 @router.post(

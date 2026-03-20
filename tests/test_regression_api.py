@@ -3833,6 +3833,160 @@ def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path)
 
 
 
+def test_lesson_task_partial_success_and_debug_report(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="task-partial-success@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from app.api.routers import lessons as lesson_router
+
+    monkeypatch.setattr(lesson_router, "BASE_TMP_DIR", tmp_path)
+    monkeypatch.setattr(lesson_router, "SessionLocal", session_factory)
+
+    class InlineThread:
+        def __init__(self, *, target, kwargs=None, daemon=None):
+            self._target = target
+            self._kwargs = kwargs or {}
+
+        def start(self):
+            self._target(**self._kwargs)
+
+    monkeypatch.setattr(lesson_router.threading, "Thread", InlineThread)
+
+    def fake_generate_from_saved_file(
+        *,
+        source_path,
+        source_filename,
+        req_dir,
+        owner_id,
+        asr_model,
+        db,
+        progress_callback=None,
+        task_id=None,
+        semantic_split_enabled=None,
+    ):
+        if progress_callback:
+            progress_callback({"stage_key": "convert_audio", "stage_status": "completed", "overall_percent": 15, "current_text": "抽音频完成"})
+            progress_callback({"stage_key": "asr_transcribe", "stage_status": "completed", "overall_percent": 45, "current_text": "识别字幕 3/3", "counters": {"asr_done": 3, "asr_estimated": 3}})
+            progress_callback({"stage_key": "build_lesson", "stage_status": "completed", "overall_percent": 60, "current_text": "生成课程结构完成"})
+            progress_callback(
+                {
+                    "stage_key": "translate_zh",
+                    "stage_status": "completed",
+                    "overall_percent": 85,
+                    "current_text": "翻译阶段部分失败，已保留原文字幕",
+                    "counters": {"translate_done": 2, "translate_total": 3},
+                    "translation_debug": {
+                        "total_sentences": 3,
+                        "failed_sentences": 1,
+                        "request_count": 2,
+                        "success_request_count": 1,
+                        "usage": {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30, "charged_points": 1},
+                        "latest_error_summary": "第2句失败：REQUEST_FAILED rate limit",
+                    },
+                }
+            )
+
+        lesson = Lesson(
+            user_id=owner_id,
+            title="partial lesson",
+            source_filename=source_filename,
+            asr_model=asr_model,
+            duration_ms=1200,
+            media_storage="client_indexeddb",
+            source_duration_ms=1200,
+            status="partial_ready",
+        )
+        db.add(lesson)
+        db.flush()
+        db.add(
+            LessonSentence(
+                lesson_id=lesson.id,
+                idx=0,
+                begin_ms=0,
+                end_ms=900,
+                text_en="hello world",
+                text_zh="",
+                tokens_json=["hello", "world"],
+                audio_clip_path=None,
+            )
+        )
+        db.add(
+            LessonProgress(
+                lesson_id=lesson.id,
+                user_id=owner_id,
+                current_sentence_idx=0,
+                completed_indexes_json=[],
+                last_played_at_ms=0,
+            )
+        )
+        db.commit()
+        db.refresh(lesson)
+        lesson.subtitle_cache_seed = {
+            "semantic_split_enabled": False,
+            "split_mode": "word_level_split",
+            "source_word_count": 2,
+            "asr_payload": {"transcripts": [{"words": [_word_entry("hello", 0, 300), _word_entry("world", 300, 900)]}]},
+            "sentences": [
+                {
+                    "idx": 0,
+                    "begin_ms": 0,
+                    "end_ms": 900,
+                    "text_en": "hello world",
+                    "text_zh": "",
+                    "tokens": ["hello", "world"],
+                    "audio_url": None,
+                }
+            ],
+        }
+        lesson.translation_debug = {
+            "total_sentences": 3,
+            "failed_sentences": 1,
+            "request_count": 2,
+            "success_request_count": 1,
+            "usage": {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30, "charged_points": 1},
+            "latest_error_summary": "第2句失败：REQUEST_FAILED rate limit",
+        }
+        lesson.task_result_meta = {
+            "result_kind": "asr_only",
+            "result_message": "课程已生成，翻译失败，可先使用原文字幕学习。",
+            "partial_failure_stage": "translate_zh",
+            "partial_failure_code": "TRANSLATION_PARTIAL",
+            "partial_failure_message": "第2句失败：REQUEST_FAILED rate limit",
+        }
+        return lesson
+
+    monkeypatch.setattr(lesson_router.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+
+    create_resp = client.post(
+        "/api/lessons/tasks",
+        headers=headers,
+        files={"video_file": ("partial.mp4", io.BytesIO(b"dummy"), "video/mp4")},
+        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+    )
+    assert create_resp.status_code == 200
+    task_id = create_resp.json()["task_id"]
+
+    poll_resp = client.get(f"/api/lessons/tasks/{task_id}", headers=headers)
+    assert poll_resp.status_code == 200
+    payload = poll_resp.json()
+    assert payload["status"] == "succeeded"
+    assert payload["completion_kind"] == "partial"
+    assert payload["result_message"] == "课程已生成，翻译失败，可先使用原文字幕学习。"
+    assert payload["partial_failure_stage"] == "translate_zh"
+    assert payload["partial_failure_code"] == "TRANSLATION_PARTIAL"
+    assert payload["partial_failure_message"] == "第2句失败：REQUEST_FAILED rate limit"
+    assert payload["lesson"]["status"] == "partial_ready"
+
+    report_resp = client.get(f"/api/lessons/tasks/{task_id}/debug-report", headers=headers)
+    assert report_resp.status_code == 200
+    report_payload = report_resp.json()
+    assert report_payload["completion_kind"] == "partial"
+    assert "task_id" in report_payload["report_text"]
+    assert "TRANSLATION_PARTIAL" in report_payload["report_text"]
+    assert "translate_zh" in report_payload["report_text"]
+
+
 def test_generate_from_saved_file_records_mt_usage_and_consume(test_client, monkeypatch, tmp_path):
     client, session_factory, _ = test_client
     _register_and_login(client, email="billing-user@example.com")

@@ -28,6 +28,8 @@ TASK_STATUS_TERMINATED = "terminated"
 TASK_STATUS_PENDING = "pending"
 TASK_STATUS_FAILED = "failed"
 TASK_STATUS_SUCCEEDED = "succeeded"
+TASK_RESULT_FULL_SUCCESS = "full_success"
+TASK_RESULT_ASR_ONLY = "asr_only"
 TASK_ACTIVE_CONTROL_STATUSES = {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING, TASK_STATUS_TERMINATING}
 TASK_TERMINATE_REQUESTABLE_STATUSES = {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING, TASK_STATUS_TERMINATING}
 ORPHANED_TASK_RECOVERY_MESSAGE = "上次生成已中断，可继续生成或重新开始。"
@@ -40,6 +42,13 @@ _STAGE_LABELS: tuple[tuple[str, str], ...] = (
 )
 
 logger = logging.getLogger(__name__)
+_STAGE_LABELS = (
+    ("convert_audio", "转换音频格式"),
+    ("asr_transcribe", "ASR转写字幕"),
+    ("build_lesson", "生成课程结构"),
+    ("translate_zh", "翻译中文字幕"),
+    ("write_lesson", "写入课程"),
+)
 LESSON_TASK_REQUIRED_COLUMNS: tuple[str, ...] = tuple(str(column.name) for column in LessonGenerationTask.__table__.columns)
 _ACTIVE_TASK_PROBE: Callable[[str], bool] | None = None
 _PROCESS_STARTED_AT = now_shanghai_naive()
@@ -123,6 +132,12 @@ def _default_artifacts(
         "effective_asr_model": str(effective_asr_model or requested_asr_model or "").strip(),
         "model_fallback_applied": bool(model_fallback_applied),
         "model_fallback_reason": str(model_fallback_reason or "").strip(),
+        "result_kind": TASK_RESULT_FULL_SUCCESS,
+        "result_label": "",
+        "result_message": "",
+        "partial_failure_stage": "",
+        "partial_failure_code": "",
+        "partial_failure_message": "",
     }
 
 
@@ -177,6 +192,30 @@ def _infer_resume_stage(stages: list[dict]) -> str:
         if str(item.get("status") or "") != "completed":
             return str(item.get("key") or "")
     return ""
+
+
+def _normalize_result_kind(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized == TASK_RESULT_ASR_ONLY:
+        return TASK_RESULT_ASR_ONLY
+    return TASK_RESULT_FULL_SUCCESS
+
+
+def _build_result_label(result_kind: str) -> str:
+    normalized_kind = _normalize_result_kind(result_kind)
+    if normalized_kind == TASK_RESULT_ASR_ONLY:
+        return "仅原文字幕"
+    return "完整成功"
+
+
+def _build_result_message(result_kind: str, result_message: str | None = None) -> str:
+    normalized_message = str(result_message or "").strip()
+    if normalized_message:
+        return normalized_message
+    normalized_kind = _normalize_result_kind(result_kind)
+    if normalized_kind == TASK_RESULT_ASR_ONLY:
+        return "课程已生成，翻译失败，可先使用原文字幕学习。"
+    return "课程已生成完成"
 
 
 SessionFactory = Callable[[], Session]
@@ -273,6 +312,8 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
     artifacts = _copy_dict(task.artifacts_json)
     status = str(task.status or "")
     control_action = _get_control_action(artifacts)
+    result_kind = _normalize_result_kind(artifacts.get("result_kind"))
+    result_message = _build_result_message(result_kind, artifacts.get("result_message"))
     return {
         "task_id": task.task_id,
         "owner_user_id": int(task.owner_user_id),
@@ -296,6 +337,12 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
         "subtitle_cache_seed": _copy_dict(task.subtitle_cache_seed_json) if isinstance(task.subtitle_cache_seed_json, dict) else None,
         "error_code": str(task.error_code or ""),
         "message": str(task.message or ""),
+        "result_kind": result_kind,
+        "result_label": _build_result_label(result_kind),
+        "result_message": result_message,
+        "partial_failure_stage": str(artifacts.get("partial_failure_stage") or ""),
+        "partial_failure_code": str(artifacts.get("partial_failure_code") or ""),
+        "partial_failure_message": str(artifacts.get("partial_failure_message") or ""),
         "resume_available": bool(task.resume_available),
         "resume_stage": str(task.resume_stage or ""),
         "artifacts": artifacts,
@@ -456,10 +503,16 @@ def update_task_progress(
         if asr_raw is not None:
             task.asr_raw_json = dict(asr_raw)
             task.raw_debug_purged_at = None
+        merged_artifacts = _copy_dict(task.artifacts_json)
+        merged_artifacts["result_kind"] = TASK_RESULT_FULL_SUCCESS
+        merged_artifacts["result_label"] = ""
+        merged_artifacts["result_message"] = ""
+        merged_artifacts["partial_failure_stage"] = ""
+        merged_artifacts["partial_failure_code"] = ""
+        merged_artifacts["partial_failure_message"] = ""
         if artifacts_patch:
-            merged_artifacts = _copy_dict(task.artifacts_json)
             merged_artifacts.update(artifacts_patch)
-            task.artifacts_json = merged_artifacts
+        task.artifacts_json = merged_artifacts
         task.failure_debug_json = None
         task.failed_at = None
         task.error_code = ""
@@ -557,6 +610,12 @@ def mark_task_succeeded(
     *,
     lesson_id: int,
     subtitle_cache_seed: dict | None = None,
+    translation_debug: dict | None = None,
+    result_kind: str = TASK_RESULT_FULL_SUCCESS,
+    result_message: str = "",
+    partial_failure_stage: str = "",
+    partial_failure_code: str = "",
+    partial_failure_message: str = "",
     db: Session | None = None,
     session_factory: SessionFactory | None = None,
 ) -> None:
@@ -567,24 +626,78 @@ def mark_task_succeeded(
         if not task:
             return
         stages = _copy_list(task.stages_json)
+        normalized_result_kind = _normalize_result_kind(result_kind)
+        normalized_partial_stage = str(partial_failure_stage or "").strip()
         for stage in stages:
-            stage["status"] = "completed"
+            stage["status"] = "failed" if normalized_partial_stage and stage.get("key") == normalized_partial_stage else "completed"
         task.stages_json = stages
         task.status = TASK_STATUS_SUCCEEDED
         task.lesson_id = int(lesson_id)
         task.overall_percent = 100
-        task.current_text = "课程生成完成"
+        task.current_text = _build_result_message(normalized_result_kind, result_message)
         task.failure_debug_json = None
+        task.translation_debug_json = dict(translation_debug) if isinstance(translation_debug, dict) else task.translation_debug_json
         task.subtitle_cache_seed_json = dict(subtitle_cache_seed) if isinstance(subtitle_cache_seed, dict) else None
         task.resume_available = False
         task.resume_stage = ""
         task.artifact_expires_at = now_shanghai_naive()
         task.failed_at = None
-        task.artifacts_json = _clear_control_fields(task.artifacts_json)
+        next_artifacts = _clear_control_fields(task.artifacts_json)
+        next_artifacts["result_kind"] = normalized_result_kind
+        next_artifacts["result_label"] = _build_result_label(normalized_result_kind)
+        next_artifacts["result_message"] = _build_result_message(normalized_result_kind, result_message)
+        next_artifacts["partial_failure_stage"] = normalized_partial_stage
+        next_artifacts["partial_failure_code"] = str(partial_failure_code or "").strip()
+        next_artifacts["partial_failure_message"] = str(partial_failure_message or "").strip()
+        task.artifacts_json = next_artifacts
         session.commit()
     finally:
         if owns_session:
             session.close()
+
+
+def build_task_debug_report(task: dict) -> str:
+    normalized_task = dict(task or {})
+    failure_debug = dict(normalized_task.get("failure_debug") or {})
+    translation_debug = dict(normalized_task.get("translation_debug") or {})
+    counters = dict(normalized_task.get("counters") or {})
+    stage_items: list[str] = []
+    for item in list(normalized_task.get("stages") or []):
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or item.get("key") or "").strip()
+        status = str(item.get("status") or "").strip() or "pending"
+        if label:
+            stage_items.append(f"{label}:{status}")
+    return "\n".join(
+        [
+            "请根据下面的任务信息排查素材生成链路：",
+            f"task_id: {str(normalized_task.get('task_id') or '').strip()}",
+            f"status: {str(normalized_task.get('status') or '').strip()}",
+            f"result_kind: {str(normalized_task.get('result_kind') or TASK_RESULT_FULL_SUCCESS).strip()}",
+            f"result_message: {str(normalized_task.get('result_message') or normalized_task.get('current_text') or '').strip()}",
+            f"source_filename: {str(normalized_task.get('source_filename') or '').strip()}",
+            f"requested_asr_model: {str(normalized_task.get('requested_asr_model') or normalized_task.get('asr_model') or '').strip()}",
+            f"effective_asr_model: {str(normalized_task.get('effective_asr_model') or normalized_task.get('asr_model') or '').strip()}",
+            f"overall_percent: {int(normalized_task.get('overall_percent') or 0)}%",
+            f"stages: {' | '.join(stage_items) if stage_items else '无'}",
+            f"failed_stage: {str(normalized_task.get('partial_failure_stage') or failure_debug.get('failed_stage') or '').strip() or '无'}",
+            f"error_code: {str(normalized_task.get('partial_failure_code') or normalized_task.get('error_code') or '').strip() or '无'}",
+            f"error_message: {str(normalized_task.get('partial_failure_message') or normalized_task.get('message') or '').strip() or '无'}",
+            f"last_progress_text: {str(normalized_task.get('current_text') or failure_debug.get('last_progress_text') or '').strip() or '无'}",
+            f"asr_progress: {int(counters.get('asr_done', 0) or 0)}/{int(counters.get('asr_estimated', 0) or 0)}",
+            f"segment_progress: {int(counters.get('segment_done', 0) or 0)}/{int(counters.get('segment_total', 0) or 0)}",
+            f"translate_progress: {int(counters.get('translate_done', 0) or 0)}/{int(counters.get('translate_total', 0) or 0)}",
+            f"translation_failed_sentences: {int(translation_debug.get('failed_sentences', 0) or 0)}",
+            f"translation_request_count: {int(translation_debug.get('request_count', 0) or 0)}",
+            f"translation_latest_error: {str(translation_debug.get('latest_error_summary') or '').strip() or '无'}",
+            f"exception_type: {str(failure_debug.get('exception_type') or '').strip() or '无'}",
+            f"detail_excerpt: {str(failure_debug.get('detail_excerpt') or '').strip() or '无'}",
+            f"lesson_id: {str(normalized_task.get('lesson_id') or '').strip() or '无'}",
+            f"created_at: {str(normalized_task.get('created_at') or '').strip() or '无'}",
+            f"updated_at: {str(normalized_task.get('updated_at') or '').strip() or '无'}",
+        ]
+    )
 
 
 def purge_task_raw_debug(

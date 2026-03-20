@@ -245,13 +245,15 @@ def _call_translate_sentences_to_zh(
 def _progress_percent_by_stage(stage_key: str, ratio: float = 1.0) -> int:
     ratio = max(0.0, min(1.0, ratio))
     if stage_key == "convert_audio":
-        return int(20 * ratio)
+        return int(12 * ratio)
     if stage_key == "asr_transcribe":
-        return int(20 + 40 * ratio)
+        return int(12 + 36 * ratio)
+    if stage_key == "build_lesson":
+        return int(48 + 20 * ratio)
     if stage_key == "translate_zh":
-        return int(60 + 30 * ratio)
+        return int(68 + 24 * ratio)
     if stage_key == "write_lesson":
-        return int(90 + 10 * ratio)
+        return int(92 + 8 * ratio)
     return 0
 
 
@@ -701,6 +703,25 @@ def _emit_subtitle_variant_progress(
 
 class LessonService:
     @staticmethod
+    def _attach_task_result_metadata(
+        lesson: Lesson,
+        *,
+        translation_debug: dict[str, Any] | None = None,
+        result_kind: str = "full_success",
+        result_message: str = "",
+        partial_failure_stage: str = "",
+        partial_failure_code: str = "",
+        partial_failure_message: str = "",
+    ) -> Lesson:
+        lesson.task_translation_debug = dict(translation_debug) if isinstance(translation_debug, dict) else None
+        lesson.task_result_kind = str(result_kind or "full_success").strip() or "full_success"
+        lesson.task_result_message = str(result_message or "").strip()
+        lesson.task_partial_failure_stage = str(partial_failure_stage or "").strip()
+        lesson.task_partial_failure_code = str(partial_failure_code or "").strip()
+        lesson.task_partial_failure_message = str(partial_failure_message or "").strip()
+        return lesson
+
+    @staticmethod
     def _normalize_runtime_sentences(sentences: list[dict[str, Any]], zh_list: list[str]) -> list[dict[str, Any]]:
         normalized_sentences: list[dict[str, Any]] = []
         for idx, sentence in enumerate(sentences):
@@ -726,6 +747,7 @@ class LessonService:
         db: Session,
         task_id: str | None = None,
         semantic_split_enabled: bool | None = None,
+        allow_partial_translation: bool = False,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
         before_translate_callback: Callable[[int], None] | None = None,
         translation_progress_callback: Callable[[int, int], None] | None = None,
@@ -901,7 +923,7 @@ class LessonService:
                 resume_state=translation_resume_state,
                 checkpoint_callback=_on_translation_checkpoint,
             )
-        if int(translation_result.failed_count or 0) > 0:
+        if int(translation_result.failed_count or 0) > 0 and not allow_partial_translation:
             latest_error_summary = str(translation_result.latest_error_summary or "").strip() or "翻译存在失败句子"
             raise TranslationError(
                 "翻译阶段失败，请重试",
@@ -917,6 +939,13 @@ class LessonService:
                     completion_tokens=int(translation_result.success_completion_tokens or 0),
                     total_tokens=int(translation_result.success_total_tokens or 0),
                 ),
+            )
+        if int(translation_result.failed_count or 0) > 0 and allow_partial_translation:
+            logger.warning(
+                "[DEBUG] lesson.subtitle_variant.partial_translation task_id=%s failed_count=%s latest_error=%s",
+                task_id,
+                int(translation_result.failed_count or 0),
+                str(translation_result.latest_error_summary or "")[:240],
             )
         normalized_sentences = LessonService._normalize_runtime_sentences(sentences, translation_result.texts)
         _emit_subtitle_variant_progress(
@@ -956,6 +985,26 @@ class LessonService:
             "strategy_version": int(variant.get("strategy_version", 1)),
             "asr_payload": dict(asr_payload or {}),
             "sentences": [dict(item) for item in list(variant.get("sentences") or []) if isinstance(item, dict)],
+        }
+
+    @staticmethod
+    def _build_task_result_meta(*, variant: dict[str, Any], translation_debug: dict[str, Any]) -> dict[str, Any]:
+        failed_sentences = int(translation_debug.get("failed_sentences", 0) or 0)
+        latest_error_summary = str(translation_debug.get("latest_error_summary") or "").strip()
+        if failed_sentences > 0:
+            return {
+                "result_kind": "asr_only",
+                "result_message": "课程已生成，翻译失败，可先使用原文字幕学习。",
+                "partial_failure_stage": "translate_zh",
+                "partial_failure_code": "TRANSLATION_INCOMPLETE",
+                "partial_failure_message": latest_error_summary or "翻译阶段失败",
+            }
+        return {
+            "result_kind": "full_success",
+            "result_message": "课程已生成完成",
+            "partial_failure_stage": "",
+            "partial_failure_code": "",
+            "partial_failure_message": "",
         }
 
     @staticmethod
@@ -1010,6 +1059,17 @@ class LessonService:
                 subtitle_cache_seed = lesson_checkpoint.get("subtitle_cache_seed")
                 if isinstance(subtitle_cache_seed, dict):
                     existing_lesson.subtitle_cache_seed = dict(subtitle_cache_seed)
+                task_result_meta = lesson_checkpoint.get("task_result_meta")
+                if isinstance(task_result_meta, dict):
+                    LessonService._attach_task_result_metadata(
+                        existing_lesson,
+                        translation_debug=getattr(existing_lesson, "task_translation_debug", None),
+                        result_kind=str(task_result_meta.get("result_kind") or "full_success"),
+                        result_message=str(task_result_meta.get("result_message") or ""),
+                        partial_failure_stage=str(task_result_meta.get("partial_failure_stage") or ""),
+                        partial_failure_code=str(task_result_meta.get("partial_failure_code") or ""),
+                        partial_failure_message=str(task_result_meta.get("partial_failure_message") or ""),
+                    )
                 return existing_lesson
         if task_id:
             existing_lesson_id = db.scalar(
@@ -1119,9 +1179,40 @@ class LessonService:
             runtime_sentences: list[dict[str, Any]] = []
             translate_total = 0
 
+            _emit_progress(
+                progress_callback,
+                stage_key="build_lesson",
+                stage_status="running",
+                overall_percent=_progress_percent_by_stage("build_lesson", 0.08),
+                current_text="生成课程结构",
+                counters={
+                    "asr_done": asr_progress_counters["asr_done"],
+                    "asr_estimated": asr_progress_counters["asr_estimated"],
+                    "translate_done": 0,
+                    "translate_total": 0,
+                    "segment_done": asr_progress_counters["segment_done"],
+                    "segment_total": asr_progress_counters["segment_total"],
+                },
+            )
+
             def _on_before_translation(total: int) -> None:
                 nonlocal translate_total
                 translate_total = max(0, int(total))
+                _emit_progress(
+                    progress_callback,
+                    stage_key="build_lesson",
+                    stage_status="completed",
+                    overall_percent=_progress_percent_by_stage("build_lesson", 1.0),
+                    current_text="生成课程结构完成",
+                    counters={
+                        "asr_done": asr_progress_counters["asr_done"],
+                        "asr_estimated": asr_progress_counters["asr_estimated"],
+                        "translate_done": 0,
+                        "translate_total": translate_total,
+                        "segment_done": asr_progress_counters["segment_done"],
+                        "segment_total": asr_progress_counters["segment_total"],
+                    },
+                )
                 _emit_progress(
                     progress_callback,
                     stage_key="translate_zh",
@@ -1168,6 +1259,7 @@ class LessonService:
                     db=db,
                     task_id=task_id,
                     semantic_split_enabled=semantic_split_enabled,
+                    allow_partial_translation=True,
                     before_translate_callback=_on_before_translation,
                     translation_progress_callback=_on_translation_progress,
                     translation_checkpoint_path=translation_checkpoint_path,
@@ -1192,7 +1284,10 @@ class LessonService:
                 "usage": translation_usage,
                 "latest_error_summary": str(variant.get("latest_translate_error_summary") or ""),
             }
-            if int(translation_debug["failed_sentences"] or 0) > 0:
+            failed_count = int(variant.get("translate_failed_count", 0))
+            partial_translation = failed_count > 0
+            partial_translation = failed_count > 0
+            if False and int(translation_debug["failed_sentences"] or 0) > 0:
                 raise TranslationError(
                     "翻译阶段失败，请重试",
                     code="TRANSLATION_INCOMPLETE",
@@ -1202,13 +1297,13 @@ class LessonService:
             _emit_progress(
                 progress_callback,
                 stage_key="translate_zh",
-                stage_status="completed",
+                stage_status="failed" if failed_count > 0 else "completed",
                 overall_percent=_progress_percent_by_stage("translate_zh", 1.0),
-                current_text=f"翻译字幕 {translate_total}/{translate_total}",
+                current_text="翻译阶段部分失败，已保留原文字幕" if partial_translation else f"翻译字幕 {translate_total}/{translate_total}",
                 counters={
                     "asr_done": asr_progress_counters["asr_done"],
                     "asr_estimated": asr_progress_counters["asr_estimated"],
-                    "translate_done": translate_total,
+                    "translate_done": max(0, translate_total - failed_count),
                     "translate_total": translate_total,
                     "segment_done": asr_progress_counters["segment_done"],
                     "segment_total": asr_progress_counters["segment_total"],
@@ -1216,9 +1311,7 @@ class LessonService:
                 translation_debug=translation_debug,
             )
 
-            failed_count = int(variant.get("translate_failed_count", 0))
-            failed_ratio = failed_count / max(translate_total, 1)
-            lesson_status = "partial_ready" if failed_ratio >= 0.3 else "ready"
+            lesson_status = "partial_ready" if failed_count > 0 else "ready"
             duration_ms = estimate_duration_ms(asr_payload, runtime_sentences)
             actual_duration_ms = reserved_duration_ms
             actual_points = calculate_points(
@@ -1238,6 +1331,7 @@ class LessonService:
             translation_debug["gross_profit_amount_cents"] = int(gross_profit_amount_cents)
             translation_usage["actual_revenue_amount_cents"] = int(actual_points) + int(translation_cost_amount_cents)
             translation_usage["gross_profit_amount_cents"] = int(gross_profit_amount_cents)
+            task_result_meta = LessonService._build_task_result_meta(variant=variant, translation_debug=translation_debug)
             points_diff = int(actual_points) - int(reserved_points)
 
             _emit_progress(
@@ -1249,7 +1343,7 @@ class LessonService:
                 counters={
                     "asr_done": asr_progress_counters["asr_done"],
                     "asr_estimated": asr_progress_counters["asr_estimated"],
-                    "translate_done": translate_total,
+                    "translate_done": max(0, translate_total - failed_count),
                     "translate_total": translate_total,
                     "segment_done": asr_progress_counters["segment_done"],
                     "segment_total": asr_progress_counters["segment_total"],
@@ -1327,12 +1421,15 @@ class LessonService:
             db.commit()
             db.refresh(lesson)
             lesson.subtitle_cache_seed = LessonService.build_subtitle_cache_seed(asr_payload=asr_payload, variant=variant)
+            lesson.task_result_meta = dict(task_result_meta)
+            lesson.translation_debug = dict(translation_debug)
             try:
                 _write_json_file(
                     lesson_result_path,
                     {
                         "lesson_id": int(lesson.id),
                         "subtitle_cache_seed": lesson.subtitle_cache_seed,
+                        "task_result_meta": dict(task_result_meta),
                     },
                 )
             except Exception:
@@ -1347,7 +1444,7 @@ class LessonService:
                 counters={
                     "asr_done": asr_progress_counters["asr_done"],
                     "asr_estimated": asr_progress_counters["asr_estimated"],
-                    "translate_done": translate_total,
+                    "translate_done": max(0, translate_total - failed_count),
                     "translate_total": translate_total,
                     "segment_done": asr_progress_counters["segment_done"],
                     "segment_total": asr_progress_counters["segment_total"],
@@ -1927,6 +2024,17 @@ class LessonService:
                 subtitle_cache_seed = lesson_checkpoint.get("subtitle_cache_seed")
                 if isinstance(subtitle_cache_seed, dict):
                     existing_lesson.subtitle_cache_seed = dict(subtitle_cache_seed)
+                task_result_meta = lesson_checkpoint.get("task_result_meta")
+                if isinstance(task_result_meta, dict):
+                    LessonService._attach_task_result_metadata(
+                        existing_lesson,
+                        translation_debug=getattr(existing_lesson, "task_translation_debug", None),
+                        result_kind=str(task_result_meta.get("result_kind") or "full_success"),
+                        result_message=str(task_result_meta.get("result_message") or ""),
+                        partial_failure_stage=str(task_result_meta.get("partial_failure_stage") or ""),
+                        partial_failure_code=str(task_result_meta.get("partial_failure_code") or ""),
+                        partial_failure_message=str(task_result_meta.get("partial_failure_message") or ""),
+                    )
                 return existing_lesson
         if task_id:
             existing_lesson_id = db.scalar(
@@ -2077,11 +2185,28 @@ class LessonService:
                     db=db,
                     task_id=task_id,
                     semantic_split_enabled=semantic_split_enabled,
+                    allow_partial_translation=True,
                     before_translate_callback=_on_before_translation,
                     translation_progress_callback=_on_translation_progress,
                     translation_checkpoint_path=translation_checkpoint_path,
                 )
                 _write_json_file(variant_result_path, variant)
+            else:
+                _emit_progress(
+                    progress_callback,
+                    stage_key="build_lesson",
+                    stage_status="completed",
+                    overall_percent=_progress_percent_by_stage("build_lesson", 1.0),
+                    current_text="生成课程结构完成",
+                    counters={
+                        "asr_done": asr_progress_counters["asr_done"],
+                        "asr_estimated": asr_progress_counters["asr_estimated"],
+                        "translate_done": 0,
+                        "translate_total": 0,
+                        "segment_done": asr_progress_counters["segment_done"],
+                        "segment_total": asr_progress_counters["segment_total"],
+                    },
+                )
             runtime_sentences = list(variant["sentences"])
             translate_total = len(runtime_sentences)
             translation_rate = get_model_rate(db, MT_MODEL)
@@ -2101,7 +2226,9 @@ class LessonService:
                 "usage": translation_usage,
                 "latest_error_summary": str(variant.get("latest_translate_error_summary") or ""),
             }
-            if int(translation_debug["failed_sentences"] or 0) > 0:
+            failed_count = int(variant.get("translate_failed_count", 0))
+            partial_translation = failed_count > 0
+            if False and int(translation_debug["failed_sentences"] or 0) > 0:
                 raise TranslationError(
                     "翻译阶段失败，请重试",
                     code="TRANSLATION_INCOMPLETE",
@@ -2111,13 +2238,13 @@ class LessonService:
             _emit_progress(
                 progress_callback,
                 stage_key="translate_zh",
-                stage_status="completed",
+                stage_status="failed" if failed_count > 0 else "completed",
                 overall_percent=_progress_percent_by_stage("translate_zh", 1.0),
                 current_text=f"翻译字幕 {translate_total}/{translate_total}",
                 counters={
                     "asr_done": asr_progress_counters["asr_done"],
                     "asr_estimated": asr_progress_counters["asr_estimated"],
-                    "translate_done": translate_total,
+                    "translate_done": max(0, translate_total - failed_count),
                     "translate_total": translate_total,
                     "segment_done": asr_progress_counters["segment_done"],
                     "segment_total": asr_progress_counters["segment_total"],
@@ -2126,8 +2253,8 @@ class LessonService:
             )
 
             failed_count = int(variant.get("translate_failed_count", 0))
-            failed_ratio = failed_count / max(translate_total, 1)
-            lesson_status = "partial_ready" if failed_ratio >= 0.3 else "ready"
+            partial_translation = failed_count > 0
+            lesson_status = "partial_ready" if partial_translation else "ready"
             duration_ms = estimate_duration_ms(asr_payload, runtime_sentences)
             usage_hit = isinstance(usage_seconds, int) and usage_seconds > 0
             actual_duration_ms = int(usage_seconds * 1000) if usage_hit else int(duration_ms)
@@ -2148,6 +2275,7 @@ class LessonService:
             translation_debug["gross_profit_amount_cents"] = int(gross_profit_amount_cents)
             translation_usage["actual_revenue_amount_cents"] = int(actual_points) + int(translation_cost_amount_cents)
             translation_usage["gross_profit_amount_cents"] = int(gross_profit_amount_cents)
+            task_result_meta = LessonService._build_task_result_meta(variant=variant, translation_debug=translation_debug)
             points_diff = int(actual_points) - int(reserved_points)
             logger.info(
                 "[DEBUG] lesson.generate settle owner_id=%s model=%s usage_hit=%s reserved_amount_cents=%s actual_amount_cents=%s diff=%s actual_cost_amount_cents=%s",
@@ -2169,7 +2297,7 @@ class LessonService:
                 counters={
                     "asr_done": asr_progress_counters["asr_done"],
                     "asr_estimated": asr_progress_counters["asr_estimated"],
-                    "translate_done": translate_total,
+                    "translate_done": max(0, translate_total - failed_count),
                     "translate_total": translate_total,
                     "segment_done": asr_progress_counters["segment_done"],
                     "segment_total": asr_progress_counters["segment_total"],
@@ -2262,12 +2390,15 @@ class LessonService:
             db.commit()
             db.refresh(lesson)
             lesson.subtitle_cache_seed = LessonService.build_subtitle_cache_seed(asr_payload=asr_payload, variant=variant)
+            lesson.task_result_meta = dict(task_result_meta)
+            lesson.translation_debug = dict(translation_debug)
             try:
                 _write_json_file(
                     lesson_result_path,
                     {
                         "lesson_id": int(lesson.id),
                         "subtitle_cache_seed": lesson.subtitle_cache_seed,
+                        "task_result_meta": dict(task_result_meta),
                     },
                 )
             except Exception:

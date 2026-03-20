@@ -80,10 +80,11 @@ const UPLOAD_MODEL_OPTIONS = [
   },
 ];
 const DISPLAY_STAGES = [
-  { key: "convert_audio", label: "转换" },
-  { key: "asr_transcribe", label: "识别" },
+  { key: "convert_audio", label: "抽音频" },
+  { key: "asr_transcribe", label: "识别字幕" },
+  { key: "build_lesson", label: "生成课程结构" },
   { key: "translate_zh", label: "翻译" },
-  { key: "write_lesson", label: "生成" },
+  { key: "write_lesson", label: "保存完成" },
 ];
 function getStageLabelByKey(stageKey) {
   if (!stageKey) return "";
@@ -91,10 +92,11 @@ function getStageLabelByKey(stageKey) {
   return stage ? stage.label : stageKey;
 }
 const STAGE_PROGRESS_BOUNDS = {
-  convert_audio: { start: 0, end: 20 },
-  asr_transcribe: { start: 20, end: 60 },
-  translate_zh: { start: 60, end: 90 },
-  write_lesson: { start: 90, end: 100 },
+  convert_audio: { start: 0, end: 15 },
+  asr_transcribe: { start: 15, end: 45 },
+  build_lesson: { start: 45, end: 60 },
+  translate_zh: { start: 60, end: 85 },
+  write_lesson: { start: 85, end: 100 },
 };
 const SERVER_PREPARABLE_MODELS = new Set([FASTER_WHISPER_MODEL, ASR_MODEL_KEYS.sensevoiceServer]);
 const ACTIVE_SERVER_TASK_STATUSES = new Set(["pending", "running", "pausing", "terminating"]);
@@ -439,10 +441,11 @@ function getStageStatusText(taskSnapshot, stageKey, stageStatus, currentStageKey
   if (stageStatus === "failed") return currentText || "执行失败";
   if (stageStatus === "running") {
     if (stageKey === currentStageKey && currentText) return currentText;
-    if (stageKey === "convert_audio") return "音频处理中";
-    if (stageKey === "asr_transcribe") return "识别中";
+    if (stageKey === "convert_audio") return "抽音频中";
+    if (stageKey === "asr_transcribe") return "识别字幕中";
+    if (stageKey === "build_lesson") return "生成课程结构中";
     if (stageKey === "translate_zh") return "翻译中";
-    if (stageKey === "write_lesson") return "生成中";
+    if (stageKey === "write_lesson") return "保存中";
   }
   return "等待开始";
 }
@@ -452,7 +455,7 @@ function getStageDisplayMeta(taskSnapshot, stageKey, stageStatus, currentStageKe
   const fallbackRatio = stageStatus === "completed" ? 1 : stageStatus === "pending" ? 0 : getStageProgressRatioFromOverall(stageKey, taskSnapshot?.overall_percent);
   let progressMeta;
 
-  if (stageKey === "convert_audio") {
+  if (stageKey === "convert_audio" || stageKey === "build_lesson" || stageKey === "write_lesson") {
     progressMeta = buildStageCounterDisplay(stageStatus === "completed" ? 1 : 0, 1, fallbackRatio, 1);
   } else if (stageKey === "asr_transcribe") {
     const segmentDone = Math.max(0, Number(counters.segment_done || 0));
@@ -506,13 +509,14 @@ function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
     if (done > 0 && total > 0) return `识别中 ${done}/${total}`;
     return sanitizeUserFacingText(taskSnapshot.current_text || "识别中");
   }
+  if (stageKey === "build_lesson") return sanitizeUserFacingText(taskSnapshot.current_text || "生成课程结构");
   if (stageKey === "translate_zh") {
     const done = Math.max(0, Number(counters.translate_done || 0));
     const total = Math.max(done, Number(counters.translate_total || 0));
     return total > 0 ? `翻译字幕 ${done}/${total}` : sanitizeUserFacingText(taskSnapshot.current_text || "翻译字幕");
   }
-  if (stageKey === "convert_audio") return sanitizeUserFacingText(taskSnapshot.current_text || "转换音频");
-  if (stageKey === "write_lesson") return sanitizeUserFacingText(taskSnapshot.current_text || "生成课程");
+  if (stageKey === "convert_audio") return sanitizeUserFacingText(taskSnapshot.current_text || "抽音频");
+  if (stageKey === "write_lesson") return sanitizeUserFacingText(taskSnapshot.current_text || "保存完成");
   return sanitizeUserFacingText(taskSnapshot.current_text || "等待处理");
 }
 
@@ -528,10 +532,11 @@ function getVisualProgress(phase, uploadPercent, taskSnapshot) {
 
 function getStageProgressPercent(stageKey, ratio = 1) {
   const safeRatio = Math.max(0, Math.min(1, Number(ratio) || 0));
-  if (stageKey === "convert_audio") return Math.round(20 * safeRatio);
-  if (stageKey === "asr_transcribe") return Math.round(20 + 40 * safeRatio);
-  if (stageKey === "translate_zh") return Math.round(60 + 30 * safeRatio);
-  if (stageKey === "write_lesson") return Math.round(90 + 10 * safeRatio);
+  if (stageKey === "convert_audio") return Math.round(15 * safeRatio);
+  if (stageKey === "asr_transcribe") return Math.round(15 + 30 * safeRatio);
+  if (stageKey === "build_lesson") return Math.round(45 + 15 * safeRatio);
+  if (stageKey === "translate_zh") return Math.round(60 + 25 * safeRatio);
+  if (stageKey === "write_lesson") return Math.round(85 + 15 * safeRatio);
   return 0;
 }
 
@@ -727,6 +732,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const displayTaskSnapshot = localTranscribing ? localProgressSnapshot : taskSnapshot;
   const hasLocalFile = Boolean(file);
   const displayTaskStatus = String(displayTaskSnapshot?.status || "").toLowerCase();
+  const taskCompletionKind = String(taskSnapshot?.completion_kind || displayTaskSnapshot?.completion_kind || "full").toLowerCase();
+  const taskResultMessage = sanitizeUserFacingText(String(taskSnapshot?.result_message || displayTaskSnapshot?.result_message || ""));
+  const taskPartialFailureStageKey = String(taskSnapshot?.partial_failure_stage || "").trim();
+  const taskPartialFailureStageLabel = taskPartialFailureStageKey ? getStageLabelByKey(taskPartialFailureStageKey) : "";
+  const taskPartialFailureSummary = sanitizeUserFacingText(String(taskSnapshot?.partial_failure_message || "")).slice(0, 160);
+  const taskSucceededPartially = !localTranscribing && displayTaskStatus === "succeeded" && taskCompletionKind === "partial";
   const failureDebug = taskSnapshot?.failure_debug;
   const failureStageKey = String(failureDebug?.failed_stage || taskSnapshot?.resume_stage || "").trim();
   const failureStageLabel = failureStageKey ? getStageLabelByKey(failureStageKey) : "";
@@ -1515,6 +1526,35 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     toast.success("已停止生成");
   }
 
+  async function copyTaskDebugReport(targetTaskId = taskId) {
+    const normalizedTaskId = String(targetTaskId || "").trim();
+    if (!normalizedTaskId) {
+      toast.error("当前没有可复制的任务排错信息");
+      return;
+    }
+    try {
+      const resp = await api(`/api/lessons/tasks/${normalizedTaskId}/debug-report`, {}, accessToken);
+      const data = await parseResponse(resp);
+      if (!resp.ok) {
+        toast.error(toErrorText(data, "获取排错信息失败"));
+        return;
+      }
+      const reportText = String(data?.report_text || "").trim();
+      if (!reportText) {
+        toast.error("当前任务暂无可复制的排错信息");
+        return;
+      }
+      if (!navigator?.clipboard?.writeText) {
+        toast.error("当前浏览器不支持直接复制，请换用桌面端 Chrome 或 Edge");
+        return;
+      }
+      await navigator.clipboard.writeText(reportText);
+      toast.success("已复制排错信息，可直接粘贴给编程 AI");
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : "复制排错信息失败");
+    }
+  }
+
   async function finalizeSuccess(data, sourceFile = file, silentToast = false) {
     resetUploadPersistState();
     clearLocalStageProgressTimer();
@@ -1522,7 +1562,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setLocalProgressSnapshot(null);
     let mediaPersisted = false;
     let mediaPreview = null;
-    let successMessage = "";
+    const partialSuccess = String(data?.completion_kind || "full").toLowerCase() === "partial";
+    const successMessages = [];
+    if (String(data?.result_message || data?.message || "").trim()) {
+      successMessages.push(String(data.result_message || data.message).trim());
+    }
     if (data.lesson?.id && sourceFile && data.lesson.media_storage === "client_indexeddb" && !bindingCompleted) {
       try {
         await requestPersistentStorage();
@@ -1533,7 +1577,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         mediaPreview = { lessonId: Number(data.lesson.id || 0), hasMedia: false, mediaType: String(sourceFile?.type || ""), coverDataUrl, aspectRatio: coverAspectRatio, fileName: String(sourceFile?.name || data.lesson.source_filename || "") };
       }
     }
-    if (data.lesson?.media_storage === "client_indexeddb" && !mediaPersisted) successMessage = "课程已生成，但当前浏览器未保存视频，请在历史记录中恢复视频后再开始学习。";
+    if (data.lesson?.media_storage === "client_indexeddb" && !mediaPersisted) {
+      successMessages.push("课程已生成，但当前浏览器未保存视频，请在历史记录中恢复视频后再开始学习。");
+    }
+    const successMessage = successMessages.join(" ");
     setTaskSnapshot(data);
     setPhase("success");
     setStatus(successMessage);
@@ -1548,7 +1595,13 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
     await onWalletChanged?.();
     if (data.lesson) await onCreated?.({ lesson: data.lesson, mediaPreview, mediaPersisted });
-    if (!silentToast) (successMessage ? toast.warning(successMessage) : toast.success("课程已生成"));
+    if (!silentToast) {
+      if (partialSuccess || successMessage) {
+        toast.warning(successMessage || "课程已生成，但翻译阶段存在失败，可先使用原文字幕学习。");
+      } else {
+        toast.success("课程已生成");
+      }
+    }
   }
 
   async function pollTask(nextTaskId, silentToast = false, pollToken = pollTokenRef.current) {
@@ -2816,14 +2869,27 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             <div className="flex items-start gap-3">
               <CheckCircle2 className={cn("mt-0.5 size-5", getUploadToneStyles("success").text)} />
               <div className="space-y-1">
-                <p className={cn("text-sm font-semibold", getUploadToneStyles("success").text)}>生成成功</p>
-                <p className={cn("text-sm", getUploadToneStyles("success").text)}>{status || "课程已写入历史记录，你可以现在开始学习，或继续上传下一份素材。"}</p>
+                <p className={cn("text-sm font-semibold", getUploadToneStyles("success").text)}>{taskSucceededPartially ? "生成成功（仅原文字幕）" : "生成成功"}</p>
+                <p className={cn("text-sm", getUploadToneStyles("success").text)}>
+                  {status || taskResultMessage || "课程已写入历史记录，你可以现在开始学习，或继续上传下一份素材。"}
+                </p>
+                {taskSucceededPartially && (taskPartialFailureStageLabel || taskPartialFailureSummary) ? (
+                  <div className="space-y-1">
+                    {taskPartialFailureStageLabel ? <p className="text-xs font-semibold">未完成阶段：{taskPartialFailureStageLabel}</p> : null}
+                    {taskPartialFailureSummary ? <p className="text-xs opacity-85 break-words">{taskPartialFailureSummary}</p> : null}
+                  </div>
+                ) : null}
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" className={getUploadToneStyles("success").button} onClick={() => onNavigateToLesson?.(taskSnapshot.lesson.id)}>
                 去学习
               </Button>
+              {taskSucceededPartially ? (
+                <Button type="button" variant="outline" className={getUploadToneStyles("selected").buttonSubtle} onClick={() => void copyTaskDebugReport(taskId || taskSnapshot?.task_id)}>
+                  复制排错信息
+                </Button>
+              ) : null}
               <Button type="button" variant="outline" className={getUploadToneStyles("selected").buttonSubtle} onClick={() => void resetSession()}>
                 继续上传
               </Button>
@@ -2845,6 +2911,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               </div>
             )}
             <div className="flex flex-wrap gap-2">
+              {taskId ? (
+                <Button type="button" variant="outline" onClick={() => void copyTaskDebugReport(taskId)}>
+                  复制排错信息
+                </Button>
+              ) : null}
               {canRetryWithoutUpload ? (
                 <Button type="button" className={getUploadToneStyles(taskSnapshot?.resume_available ? "recoverable" : "selected").button} onClick={() => void resumeTask()}>
                   <RefreshCcw className="size-4" />
