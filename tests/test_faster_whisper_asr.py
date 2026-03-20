@@ -276,12 +276,26 @@ def test_asr_model_routes_report_status_and_prepare(monkeypatch):
 
     app = create_app(enable_lifespan=False)
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1, email="user@example.com")
+    monkeypatch.setattr(asr_models, "get_supported_asr_model_keys", lambda: ("sensevoice-small", "faster-whisper-medium", "qwen3-asr-flash-filetrans", "local-sensevoice-small"))
     monkeypatch.setattr(
         asr_models,
-        "get_faster_whisper_model_status",
-        lambda: {
+        "get_asr_model_status",
+        lambda _model_key: {
             "model_key": "faster-whisper-medium",
+            "display_name": "Faster Whisper Medium",
+            "subtitle": "服务端缓存模型，首次使用时按需准备。",
+            "note": "",
+            "runtime_kind": "server_cached",
+            "runtime_label": "Server Cached Model",
+            "prepare_mode": "auto_on_demand",
+            "cache_scope": "server",
+            "supports_upload": True,
+            "supports_preview": False,
+            "supports_transcribe_api": True,
+            "source_model_id": "pengzhendong/faster-whisper-medium",
+            "deploy_path": "/data/modelscope_whisper/faster-whisper-medium",
             "status": "missing",
+            "available": False,
             "download_required": True,
             "preparing": False,
             "cached": False,
@@ -289,14 +303,28 @@ def test_asr_model_routes_report_status_and_prepare(monkeypatch):
             "last_error": "",
             "model_dir": "/data/modelscope_whisper/faster-whisper-medium",
             "missing_files": ["model.bin"],
+            "actions": [{"key": "prepare", "label": "准备模型", "enabled": True, "primary": True}],
         },
     )
     monkeypatch.setattr(
         asr_models,
-        "prepare_faster_whisper_model",
-        lambda force_refresh=False: {
+        "prepare_registered_asr_model",
+        lambda _model_key, force_refresh=False: {
             "model_key": "faster-whisper-medium",
+            "display_name": "Faster Whisper Medium",
+            "subtitle": "服务端缓存模型，首次使用时按需准备。",
+            "note": "",
+            "runtime_kind": "server_cached",
+            "runtime_label": "Server Cached Model",
+            "prepare_mode": "auto_on_demand",
+            "cache_scope": "server",
+            "supports_upload": True,
+            "supports_preview": False,
+            "supports_transcribe_api": True,
+            "source_model_id": "pengzhendong/faster-whisper-medium",
+            "deploy_path": "/data/modelscope_whisper/faster-whisper-medium",
             "status": "preparing",
+            "available": False,
             "download_required": True,
             "preparing": True,
             "cached": False,
@@ -304,14 +332,50 @@ def test_asr_model_routes_report_status_and_prepare(monkeypatch):
             "last_error": "",
             "model_dir": "/data/modelscope_whisper/faster-whisper-medium",
             "missing_files": ["model.bin"],
+            "actions": [{"key": "prepare", "label": "准备模型", "enabled": False, "primary": True}],
         },
+    )
+    monkeypatch.setattr(
+        asr_models,
+        "list_asr_models_with_status",
+        lambda: [
+            {
+                "model_key": "local-sensevoice-small",
+                "display_name": "SenseVoice Small",
+                "subtitle": "浏览器本地模型，首次使用时在当前浏览器中下载或校验。",
+                "note": "",
+                "runtime_kind": "browser_local",
+                "runtime_label": "Browser WASM",
+                "prepare_mode": "auto_on_demand",
+                "cache_scope": "browser",
+                "supports_upload": True,
+                "supports_preview": True,
+                "supports_transcribe_api": False,
+                "source_model_id": "",
+                "deploy_path": "",
+                "status": "missing",
+                "available": False,
+                "download_required": True,
+                "preparing": False,
+                "cached": False,
+                "message": "需要在当前浏览器中校验或下载模型",
+                "last_error": "",
+                "model_dir": "",
+                "missing_files": [],
+                "actions": [{"key": "download", "label": "下载模型", "enabled": True, "primary": True}],
+            }
+        ],
     )
 
     with TestClient(app) as client:
+        list_resp = client.get("/api/asr-models")
         status_resp = client.get("/api/asr-models/faster-whisper-medium/status")
         prepare_resp = client.post("/api/asr-models/faster-whisper-medium/prepare")
 
+    assert list_resp.status_code == 200
+    assert list_resp.json()["models"][0]["runtime_kind"] == "browser_local"
     assert status_resp.status_code == 200
+    assert status_resp.json()["display_name"] == "Faster Whisper Medium"
     assert status_resp.json()["status"] == "missing"
     assert status_resp.json()["download_required"] is True
     assert prepare_resp.status_code == 200

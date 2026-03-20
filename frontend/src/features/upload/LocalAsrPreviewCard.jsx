@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { cn } from "../../lib/utils";
+import { getAsrModelStatusLabel } from "../../shared/lib/asrModels";
 import { getLocalAsrPreviewState, saveLocalAsrPreviewState } from "../../shared/media/localAsrPreviewStore";
 import { Button, ScrollArea } from "../../shared/ui";
 import { buildLocalAsrLongAudioWarning, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS, LOCAL_ASR_TARGET_SAMPLE_RATE, preprocessLocalAsrFile } from "./localAsrAudioPreprocess";
@@ -34,15 +35,6 @@ function detectLocalAsrPreviewSupport() {
     return { supported: false, reason: "当前仅支持桌面 Chrome / Edge 试玩本地 ASR", browserName: "", webgpuSupported };
   }
   return { supported: true, reason: "", browserName, webgpuSupported };
-}
-
-function getLocalModelStatusLabel(status) {
-  if (status === "loading") return "下载中";
-  if (status === "ready") return "已就绪";
-  if (status === "cached") return "已缓存";
-  if (status === "error") return "下载失败";
-  if (status === "unsupported") return "不可用";
-  return "未下载";
 }
 
 function formatRuntimeLabel(runtime) {
@@ -448,7 +440,10 @@ export function LocalAsrPreviewCard({ disabled = false }) {
                     : "bg-muted text-muted-foreground",
             )}
           >
-            {getLocalModelStatusLabel(localModelStatus)}
+            {getAsrModelStatusLabel(
+              { status: localModelStatus, preparing: localModelStatus === "loading", cached: localModelStatus === "cached" },
+              { readyLabel: "已就绪", missingLabel: "未下载", loadingLabel: "准备中", errorLabel: "异常", unsupportedLabel: "不可用" },
+            )}
           </span>
         </div>
         <p className="text-xs text-muted-foreground">{localModelStatusText}</p>

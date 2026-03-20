@@ -4,7 +4,6 @@ import { useSearchParams } from "react-router-dom";
 import { AdminFasterWhisperSettingsTab } from "../admin-faster-whisper-settings/AdminFasterWhisperSettingsTab";
 import { AdminRatesTab } from "../admin-rates/AdminRatesTab";
 import { AdminSenseVoiceSettingsTab } from "../admin-sensevoice-settings/AdminSenseVoiceSettingsTab";
-import { AdminSubtitleSettingsTab } from "../admin-subtitle-settings/AdminSubtitleSettingsTab";
 import { mergeSearchParams, readStringParam } from "../../shared/lib/adminSearchParams";
 import { CardDescription, CardTitle, Tabs, TabsContent, TabsList, TabsTrigger } from "../../shared/ui";
 
@@ -16,21 +15,15 @@ const MODEL_TABS = [
     component: AdminRatesTab,
   },
   {
-    value: "strategy",
-    label: "默认策略",
-    description: "统一配置默认 ASR、语义分句和翻译批次策略。",
-    component: AdminSubtitleSettingsTab,
-  },
-  {
     value: "sensevoice",
     label: "SenseVoice",
-    description: "调整服务端 SenseVoice 的加载与推理参数集合。",
+    description: "调整服务端 SenseVoice 的加载与推理参数组合。",
     component: AdminSenseVoiceSettingsTab,
   },
   {
     value: "faster-whisper",
     label: "Faster Whisper",
-    description: "配置 Faster Whisper 的设备、线程、VAD 与状态参数。",
+    description: "配置 Faster Whisper 的设备、线程数和推理参数。",
     component: AdminFasterWhisperSettingsTab,
   },
 ];
@@ -67,13 +60,13 @@ export function AdminModelsPage({ apiCall }) {
             {MODEL_TABS.map((tab) => {
               const Component = tab.component;
               return (
-              <TabsContent key={tab.value} value={tab.value} className="space-y-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">{tab.label}</p>
-                  <p className="text-xs text-muted-foreground">{tab.description}</p>
-                </div>
-                <Component apiCall={apiCall} />
-              </TabsContent>
+                <TabsContent key={tab.value} value={tab.value} className="space-y-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">{tab.label}</p>
+                    <p className="text-xs text-muted-foreground">{tab.description}</p>
+                  </div>
+                  <Component apiCall={apiCall} />
+                </TabsContent>
               );
             })}
           </div>
@@ -82,3 +75,4 @@ export function AdminModelsPage({ apiCall }) {
     </div>
   );
 }
+

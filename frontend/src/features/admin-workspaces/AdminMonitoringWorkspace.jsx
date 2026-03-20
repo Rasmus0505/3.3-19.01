@@ -7,24 +7,22 @@ import { AdminTranslationLogsTab } from "../admin-logs/AdminTranslationLogsTab";
 import { AdminOperationLogsTab } from "../admin-operation-logs/AdminOperationLogsTab";
 import { AdminOverviewTab } from "../admin-overview/AdminOverviewTab";
 import { AdminSqlConsoleTab } from "../admin-sql-console/AdminSqlConsoleTab";
-import { AdminSubtitleSettingsTab } from "../admin-subtitle-settings/AdminSubtitleSettingsTab";
 import { AdminSystemTab } from "../admin-system/AdminSystemTab";
 import { mergeSearchParams, readStringParam } from "../../shared/lib/adminSearchParams";
 import { CardDescription, CardTitle } from "../../shared/ui";
 
 const SECTION_PANELS = {
   health: [
-    { value: "overview", label: "运行总览", description: "先看业务与告警概况。", component: AdminOverviewTab },
-    { value: "system", label: "系统检查", description: "再看服务、数据库和依赖是否就绪。", component: AdminSystemTab },
+    { value: "overview", label: "杩愯鎬昏", description: "鍏堢湅涓氬姟涓庡憡璀︽鍐点€?", component: AdminOverviewTab },
+    { value: "system", label: "绯荤粺妫€鏌?", description: "鍐嶇湅鏈嶅姟銆佹暟鎹簱鍜屼緷璧栨槸鍚﹀氨缁€?", component: AdminSystemTab },
   ],
   tasks: [
-    { value: "task-failures", label: "生成失败", description: "追任务、课程和阶段错误。", component: AdminLessonTaskLogsTab },
-    { value: "translations", label: "翻译记录", description: "补看翻译成功率和失败明细。", component: AdminTranslationLogsTab },
+    { value: "task-failures", label: "鐢熸垚澶辫触", description: "杩戒换鍔°€佽绋嬪拰闃舵閿欒銆?", component: AdminLessonTaskLogsTab },
+    { value: "translations", label: "缈昏瘧璁板綍", description: "琛ョ湅缈昏瘧鎴愬姛鐜囧拰澶辫触鏄庣粏銆?", component: AdminTranslationLogsTab },
   ],
   operations: [
-    { value: "operations", label: "操作审计", description: "检查后台敏感操作留痕。", component: AdminOperationLogsTab },
-    { value: "sql-console", label: "SQL 控台", description: "执行受控 SQL 查询与 DML 写操作。", component: AdminSqlConsoleTab },
-    { value: "subtitle-policy", label: "策略配置", description: "集中维护字幕与翻译默认策略。", component: AdminSubtitleSettingsTab },
+    { value: "operations", label: "鎿嶄綔瀹¤", description: "妫€鏌ュ悗鍙版晱鎰熸搷浣滅暀鐥曘€?", component: AdminOperationLogsTab },
+    { value: "sql-console", label: "SQL 鎺у彴", description: "鎵ц鍙楁帶 SQL 鏌ヨ涓� DML 鍐欐搷浣溿€?", component: AdminSqlConsoleTab },
   ],
 };
 
@@ -35,7 +33,6 @@ const TAB_ALIASES = {
   translations: "tasks",
   operations: "operations",
   "sql-console": "operations",
-  "subtitle-policy": "operations",
 };
 
 const PANEL_DEFAULTS = {
@@ -53,13 +50,12 @@ const PANEL_ALIASES = {
   "task-failures": "task-failures",
   translations: "translations",
   "sql-console": "sql-console",
-  "subtitle-policy": "subtitle-policy",
 };
 
 export const MONITORING_TABS = [
-  { value: "health", label: "系统健康", description: "总览与系统检查合并成一个入口。", icon: ShieldCheck },
-  { value: "tasks", label: "任务监控", description: "生成失败与翻译记录放在同一条排查链。", icon: AlertTriangle },
-  { value: "operations", label: "操作审计", description: "操作留痕与策略配置合并查看。", icon: ClipboardList },
+  { value: "health", label: "绯荤粺鍋ュ悍", description: "鎬昏涓庣郴缁熸鏌ュ悎骞舵垚涓� 涓叆鍙ｃ€?", icon: ShieldCheck },
+  { value: "tasks", label: "浠诲姟鐩戞帶", description: "鐢熸垚澶辫触涓庣炕璇戣褰曟斁鍦ㄥ悓涓� 鏉℃帓鏌ラ摼銆?", icon: AlertTriangle },
+  { value: "operations", label: "鎿嶄綔瀹¤", description: "鎿嶄綔鐣欑棔涓庣瓥鐣ラ厤缃悎骞舵煡鐪嬨€?", icon: ClipboardList },
 ];
 
 function scrollToPanel(panelValue) {
@@ -115,3 +111,4 @@ export function AdminMonitoringWorkspace({ apiCall }) {
     </div>
   );
 }
+

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { cn } from "../../lib/utils";
 import { api, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
+import { ASR_MODEL_KEYS, buildAsrModelCatalogMap, getAsrModelCatalogItem, getAsrModelStatusLabel, isAsrModelPreparing, isAsrModelReady } from "../../shared/lib/asrModels";
 import { formatMoneyCents, formatMoneyYuanPerMinute } from "../../shared/lib/money";
 import {
   bindLocalAsrModelDirectory,
@@ -29,6 +30,7 @@ import {
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, MediaCover, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
 import { useAppStore } from "../../store";
 import { buildLocalAsrLongAudioWarning, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS, LOCAL_ASR_TARGET_SAMPLE_RATE, preprocessLocalAsrFile } from "./localAsrAudioPreprocess";
+import { getUploadModelTone, getUploadRestoreTone, getUploadStageTone, getUploadTaskTone, getUploadToneStyles } from "./uploadStatusTheme";
 
 const QWEN_MODEL = "qwen3-asr-flash-filetrans";
 const FASTER_WHISPER_MODEL = "faster-whisper-medium";
@@ -40,10 +42,11 @@ const DEFAULT_LOCAL_ASR_ASSET_BASE_URL = "/api/local-asr-assets";
 const LOCAL_ASR_ASSET_BASE_URL = (import.meta.env.VITE_LOCAL_ASR_MODEL_BASE_URL || DEFAULT_LOCAL_ASR_ASSET_BASE_URL).trim().replace(/\/+$/, "");
 const ASR_MODELS_API_BASE = "/api/asr-models";
 const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止生成，可重新开始。";
+const DEFAULT_ASR_MODEL_CATALOG_MAP = buildAsrModelCatalogMap();
 const LOCAL_MODEL_OPTIONS = [
   {
-    key: "local-sensevoice-small",
-    workerModelId: "local-sensevoice-small",
+    key: ASR_MODEL_KEYS.sensevoiceBrowser,
+    workerModelId: ASR_MODEL_KEYS.sensevoiceBrowser,
     title: "SenseVoice Small",
     subtitle: "官方 SenseVoice 小模型，适合先试跑字幕识别。",
     uploadEnabled: true,
@@ -52,7 +55,7 @@ const LOCAL_MODEL_OPTIONS = [
 ];
 const UPLOAD_MODEL_OPTIONS = [
   {
-    key: "sensevoice-small",
+    key: ASR_MODEL_KEYS.sensevoiceServer,
     title: "SenseVoice Small",
     subtitle: "浏览器本地均衡模式，先准备模型再生成。",
     mode: "balanced",
@@ -91,7 +94,7 @@ const STAGE_PROGRESS_BOUNDS = {
   translate_zh: { start: 60, end: 90 },
   write_lesson: { start: 90, end: 100 },
 };
-const SERVER_PREPARABLE_MODELS = new Set([FASTER_WHISPER_MODEL]);
+const SERVER_PREPARABLE_MODELS = new Set([FASTER_WHISPER_MODEL, ASR_MODEL_KEYS.sensevoiceServer]);
 const ACTIVE_SERVER_TASK_STATUSES = new Set(["pending", "running", "pausing", "terminating"]);
 const STOPPABLE_SERVER_TASK_STATUSES = new Set(["pending", "running"]);
 const RECOVERABLE_SERVER_TASK_STATUSES = new Set(["paused", "terminated"]);
@@ -153,13 +156,13 @@ function getDefaultFastUploadModelKey(configuredModel = "") {
   if (normalizedConfiguredModel === FASTER_WHISPER_MODEL || normalizedConfiguredModel === QWEN_MODEL) {
     return normalizedConfiguredModel;
   }
-  return "sensevoice-small";
+  return ASR_MODEL_KEYS.sensevoiceServer;
 }
 
 function getDefaultUploadModelKey(configuredModel = "") {
   const normalizedConfiguredModel = String(configuredModel || "").trim();
-  if (normalizedConfiguredModel === "local-sensevoice-small" || normalizedConfiguredModel === "sensevoice-small") {
-    return "sensevoice-small";
+  if (normalizedConfiguredModel === ASR_MODEL_KEYS.sensevoiceBrowser || normalizedConfiguredModel === ASR_MODEL_KEYS.sensevoiceServer) {
+    return ASR_MODEL_KEYS.sensevoiceServer;
   }
   if (normalizedConfiguredModel === FASTER_WHISPER_MODEL || normalizedConfiguredModel === QWEN_MODEL) {
     return normalizedConfiguredModel;
@@ -200,19 +203,6 @@ function simplifyLongAudioWarning(text) {
     .trim();
 }
 
-function getLocalModelStatusLabel(status) {
-  if (status === "ready" || status === "cached") return "已下载";
-  return "未下载";
-}
-
-function getServerModelStatusLabel(modelState) {
-  const status = String(modelState?.status || "").trim().toLowerCase();
-  if (Boolean(modelState?.preparing) || ["loading", "preparing", "downloading"].includes(status)) return "模型预热中";
-  if (Boolean(modelState?.cached) || ["ready", "cached"].includes(status)) return "已下载";
-  if (Boolean(modelState) && modelState.downloadRequired === false && !modelState.preparing && status !== "error") return "已下载";
-  return "未准备";
-}
-
 function getUploadModelPriceLabel(item, rates, selectedBalancedModel) {
   const pricingModelKey = item.mode === "balanced" ? selectedBalancedModel : item.key;
   const rate = getRateByModel(rates, pricingModelKey) || getRateByModel(rates, item.key);
@@ -220,10 +210,22 @@ function getUploadModelPriceLabel(item, rates, selectedBalancedModel) {
   return pricePerMinuteYuan > 0 ? formatMoneyYuanPerMinute(pricePerMinuteYuan) : "未设置价格";
 }
 
-function isServerModelReady(modelState) {
-  const status = String(modelState?.status || "").trim().toLowerCase();
-  if (Boolean(modelState?.cached) || ["ready", "cached"].includes(status)) return true;
-  return Boolean(modelState) && modelState.downloadRequired === false && !modelState.preparing && status !== "error";
+function mergeCatalogIntoUploadModelMeta(modelKey, catalogMap) {
+  const fallback = getUploadModelMeta(modelKey);
+  const actualCatalogKey = modelKey === ASR_MODEL_KEYS.sensevoiceServer ? ASR_MODEL_KEYS.sensevoiceBrowser : modelKey;
+  const catalogItem = getAsrModelCatalogItem(actualCatalogKey, catalogMap);
+  if (!catalogItem) return fallback;
+  return {
+    ...fallback,
+    title: String(catalogItem.display_name || fallback.title || ""),
+    subtitle: String(catalogItem.subtitle || fallback.subtitle || ""),
+    note: String(catalogItem.note || fallback.note || ""),
+    sourceModelId: String(catalogItem.source_model_id || fallback.sourceModelId || ""),
+    deployPath: String(catalogItem.deploy_path || fallback.deployPath || ""),
+    runtimeKind: String(catalogItem.runtime_kind || ""),
+    runtimeLabel: String(catalogItem.runtime_label || ""),
+    prepareMode: String(catalogItem.prepare_mode || ""),
+  };
 }
 
 function formatDurationLabel(seconds) {
@@ -563,6 +565,11 @@ function buildTaskState({ phase, taskId, taskSnapshot, uploadPercent, status }) 
   return {
     taskId: String(taskId || taskSnapshot?.task_id || ""),
     phase,
+    tone: getUploadTaskTone({
+      phase,
+      resumeAvailable: Boolean(taskSnapshot?.resume_available),
+      taskStatus: taskSnapshot?.status,
+    }),
     headline: sanitizeUserFacingText(getProgressHeadline(phase, uploadPercent, taskSnapshot)),
     progressPercent: getVisualProgress(phase, uploadPercent, taskSnapshot),
     statusText: sanitizeUserFacingText(status),
@@ -627,6 +634,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [bindingCompleted, setBindingCompleted] = useState(false);
   const [selectedUploadModel, setSelectedUploadModel] = useState(() => getDefaultUploadModelKey(configuredDefaultAsrModel));
   const [mode, setMode] = useState(() => getUploadModelMeta(getDefaultUploadModelKey(configuredDefaultAsrModel)).mode);
+  const [asrModelCatalogMap, setAsrModelCatalogMap] = useState(DEFAULT_ASR_MODEL_CATALOG_MAP);
   const [localWorkerEpoch, setLocalWorkerEpoch] = useState(0);
   const [localWorkerReadyMap, setLocalWorkerReadyMap] = useState({ sensevoice: false });
   const [selectedBalancedModel, setSelectedBalancedModel] = useState(() => {
@@ -666,7 +674,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
     return getDefaultFastUploadModelKey(configuredDefaultAsrModel);
   }, [configuredDefaultAsrModel, selectedUploadModel]);
-  const selectedUploadModelMeta = getUploadModelMeta(selectedUploadModel);
+  const selectedUploadModelMeta = mergeCatalogIntoUploadModelMeta(selectedUploadModel, asrModelCatalogMap);
   const selectedAsrModel = mode === "balanced" ? selectedBalancedModel : selectedFastModel;
   const selectedRate = getRateByModel(billingRates, selectedAsrModel) || getRateByModel(billingRates, selectedFastModel);
   const selectedRatePricePerMinuteYuan = selectedRate ? getRatePricePerMinuteYuan(selectedRate) : 0;
@@ -677,9 +685,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     [durationSec, mode],
   );
   const selectedServerModelState = serverModelStateMap[selectedUploadModel] || {};
-  const selectedServerModelReady = isServerModelReady(selectedServerModelState);
-  const selectedServerModelPreparing =
-    Boolean(selectedServerModelState.preparing) || ["loading", "preparing", "downloading"].includes(String(selectedServerModelState.status || ""));
+  const selectedServerModelReady = isAsrModelReady(selectedServerModelState);
+  const selectedServerModelPreparing = isAsrModelPreparing(selectedServerModelState);
   const selectedFastModelNeedsPreparation = mode === "fast" && SERVER_PREPARABLE_MODELS.has(selectedUploadModel);
   const localTranscribing = phase === "local_transcribing";
   const displayTaskSnapshot = localTranscribing ? localProgressSnapshot : taskSnapshot;
@@ -730,6 +737,18 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     phase === "success" ||
     (loading && !localTranscribing && !serviceTaskStopActionsVisible) ||
     (mode === "balanced" && !localTranscribing && (!localAsrSupport.supported || !localWorkerReady || Boolean(localBusyModelKey)));
+  const taskTone = getUploadTaskTone({
+    phase,
+    resumeAvailable: Boolean(displayTaskSnapshot?.resume_available) || taskPaused,
+    taskStatus: displayTaskStatus,
+  });
+  const taskToneStyles = getUploadToneStyles(taskTone);
+  const taskStatusTone = showRestoreInfoCard
+    ? getUploadRestoreTone(restoreBannerMode)
+    : showRecoveryBanner
+      ? "recoverable"
+      : taskTone;
+  const taskStatusToneStyles = getUploadToneStyles(taskStatusTone);
 
   function maybeShowModelFallbackToast(payload) {
     const taskIdForToast = String(payload?.task_id || "");
@@ -768,6 +787,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     const preparing = Boolean(overrides.preparing ?? payload?.preparing);
     const cached = Boolean(overrides.cached ?? payload?.cached);
     const downloadRequired = Boolean(overrides.downloadRequired ?? payload?.download_required ?? payload?.downloadRequired);
+    const runtimeKind = String(overrides.runtimeKind || payload?.runtime_kind || "");
+    const runtimeLabel = String(overrides.runtimeLabel || payload?.runtime_label || "");
+    const prepareMode = String(overrides.prepareMode || payload?.prepare_mode || "");
     updateServerModelState(modelKey, {
       status,
       message,
@@ -775,6 +797,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       preparing,
       cached,
       downloadRequired,
+      runtimeKind,
+      runtimeLabel,
+      prepareMode,
     });
   }
 
@@ -944,7 +969,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   useEffect(() => {
     if (mode === "balanced") {
-      setSelectedUploadModel((prev) => (prev === "sensevoice-small" ? prev : "sensevoice-small"));
+      setSelectedUploadModel((prev) => (prev === ASR_MODEL_KEYS.sensevoiceServer ? prev : ASR_MODEL_KEYS.sensevoiceServer));
       return;
     }
     setSelectedUploadModel((prev) => (getUploadModelMeta(prev).mode === "fast" ? prev : getDefaultFastUploadModelKey(configuredDefaultAsrModel)));
@@ -1143,27 +1168,58 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   useEffect(() => {
     let canceled = false;
     async function restoreServerModelState() {
-      const entries = await Promise.all(
-        Array.from(SERVER_PREPARABLE_MODELS).map(async (modelKey) => {
-          const payload = await fetchServerModelStatus(modelKey, { silent: true });
-          if (payload) {
-            return [
-              modelKey,
-              {
-                status: String(payload.status || "idle"),
-                message: String(payload.message || ""),
-                lastError: String(payload.last_error || ""),
-                preparing: Boolean(payload.preparing),
-                cached: Boolean(payload.cached),
-                downloadRequired: Boolean(payload.download_required),
-              },
-            ];
-          }
-          return [modelKey, { status: "error", lastError: "检查模型状态失败" }];
-        }),
-      );
-      if (canceled) return;
-      setServerModelStateMap((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+      try {
+        const response = await api(ASR_MODELS_API_BASE, { method: "GET" }, accessToken);
+        const payload = await parseResponse(response);
+        if (!response.ok) {
+          throw new Error(toErrorText(payload, "加载模型目录失败"));
+        }
+        const models = Array.isArray(payload?.models) ? payload.models : [];
+        if (canceled) return;
+        setAsrModelCatalogMap(buildAsrModelCatalogMap(models));
+        const nextServerStateMap = {};
+        for (const item of models) {
+          const modelKey = String(item?.model_key || "").trim();
+          if (!modelKey || String(item?.runtime_kind || "") === "browser_local") continue;
+          nextServerStateMap[modelKey] = {
+            status: String(item.status || "idle"),
+            message: String(item.message || ""),
+            lastError: String(item.last_error || ""),
+            preparing: Boolean(item.preparing),
+            cached: Boolean(item.cached),
+            downloadRequired: Boolean(item.download_required),
+            runtimeKind: String(item.runtime_kind || ""),
+            runtimeLabel: String(item.runtime_label || ""),
+            prepareMode: String(item.prepare_mode || ""),
+          };
+        }
+        setServerModelStateMap((prev) => ({ ...prev, ...nextServerStateMap }));
+      } catch (_) {
+        const entries = await Promise.all(
+          Array.from(SERVER_PREPARABLE_MODELS).map(async (modelKey) => {
+            const payload = await fetchServerModelStatus(modelKey, { silent: true });
+            if (payload) {
+              return [
+                modelKey,
+                {
+                  status: String(payload.status || "idle"),
+                  message: String(payload.message || ""),
+                  lastError: String(payload.last_error || ""),
+                  preparing: Boolean(payload.preparing),
+                  cached: Boolean(payload.cached),
+                  downloadRequired: Boolean(payload.download_required),
+                  runtimeKind: String(payload.runtime_kind || ""),
+                  runtimeLabel: String(payload.runtime_label || ""),
+                  prepareMode: String(payload.prepare_mode || ""),
+                },
+              ];
+            }
+            return [modelKey, { status: "error", lastError: "检查模型状态失败" }];
+          }),
+        );
+        if (canceled) return;
+        setServerModelStateMap((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+      }
     }
     void restoreServerModelState();
     return () => {
@@ -1653,6 +1709,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       if (!resp.ok) {
         throw new Error(toErrorText(payload, "检查模型状态失败"));
       }
+      setAsrModelCatalogMap((prev) => buildAsrModelCatalogMap([...(Object.values(prev || {})), payload]));
       applyServerModelState(modelKey, payload);
       return payload;
     } catch (error) {
@@ -2262,7 +2319,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         <CardDescription>自动识别、翻译并生成学习课程。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <Alert>
+        <Alert className={cn("border", getUploadToneStyles("idle").surface)}>
           <AlertDescription>
             <p className="text-muted-foreground">余额：{formatMoneyCents(normalizedBalanceAmountCents)}</p>
             <p className="text-muted-foreground">
@@ -2275,6 +2332,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               ：{selectedRate ? (durationSec != null ? `${formatMoneyCents(estimatedChargeCents)}（${formatMoneyYuanPerMinute(selectedRatePricePerMinuteYuan)}）` : "选择文件后显示") : "该模型未配置单价"}
             </p>
             <p className="text-muted-foreground">生成方式：{selectedUploadModelMeta.title}</p>
+            {likelyInsufficient ? <p className={cn("mt-1", getUploadToneStyles("error").text)}>余额可能不足，提交将被拒绝。</p> : null}
           </AlertDescription>
         </Alert>
 
@@ -2288,21 +2346,33 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               const selected = selectedUploadModel === item.key;
               const isSenseVoice = item.mode === "balanced";
               const isFasterWhisper = item.key === FASTER_WHISPER_MODEL;
-              const localCardState = localModelStateMap[selectedBalancedModel] || {};
+              const localCardModelKey = selectedBalancedModel;
+              const uploadCardMeta = mergeCatalogIntoUploadModelMeta(item.key, asrModelCatalogMap);
+              const localCardState = localModelStateMap[localCardModelKey] || {};
               const localCardDownloaded = ["ready", "cached"].includes(String(localCardState.status || ""));
-              const localCardBusy = localBusyModelKey === selectedBalancedModel;
+              const localCardBusy = localBusyModelKey === localCardModelKey;
               const fasterModelState = serverModelStateMap[item.key] || {};
-              const fasterModelReady = isServerModelReady(fasterModelState);
+              const fasterModelReady = isAsrModelReady(fasterModelState);
               const fasterModelBusy = serverBusyModelKey === item.key;
-              const fasterModelPreparing =
-                Boolean(fasterModelState.preparing) || ["loading", "preparing", "downloading"].includes(String(fasterModelState.status || "").trim().toLowerCase());
+              const fasterModelPreparing = isAsrModelPreparing(fasterModelState);
               const cardStatusLabel = isSenseVoice
-                ? getLocalModelStatusLabel(localCardState.status)
+                ? getAsrModelStatusLabel(localCardState, { readyLabel: "已就绪", missingLabel: "未下载", loadingLabel: "准备中", errorLabel: "异常", unsupportedLabel: "不可用" })
                 : isFasterWhisper
-                  ? getServerModelStatusLabel(fasterModelState)
-                  : "免下载";
+                  ? getAsrModelStatusLabel(fasterModelState, { readyLabel: "已就绪", missingLabel: "未准备", loadingLabel: "准备中", errorLabel: "异常", unsupportedLabel: "不可用" })
+                  : getAsrModelStatusLabel({ status: "ready", downloadRequired: false }, { readyLabel: "可用" });
               const cardPriceLabel = getUploadModelPriceLabel(item, billingRates, selectedBalancedModel);
-              const highlightStatus = cardStatusLabel === "已下载" || cardStatusLabel === "免下载";
+              const highlightStatus = isSenseVoice ? localCardDownloaded : isFasterWhisper ? fasterModelReady : true;
+              const modelCardHasError = isSenseVoice
+                ? ["error", "unsupported"].includes(String(localCardState.status || "").trim().toLowerCase())
+                : Boolean(fasterModelState.lastError) || String(fasterModelState.status || "").trim().toLowerCase() === "error";
+              const modelCardTone = getUploadModelTone({
+                selected,
+                ready: highlightStatus,
+                busy: (isSenseVoice && localCardBusy) || (isFasterWhisper && (fasterModelBusy || fasterModelPreparing)),
+                error: modelCardHasError,
+              });
+              const modelCardToneStyles = getUploadToneStyles(modelCardTone);
+              const modelBadgeToneStyles = getUploadToneStyles(highlightStatus ? "success" : modelCardTone === "running" ? "running" : "idle");
 
               return (
                 <div
@@ -2311,7 +2381,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                   tabIndex={0}
                   className={cn(
                     "space-y-3 rounded-2xl border p-4 text-left transition-colors",
-                    selected ? "border-primary bg-primary/5" : "border-border bg-background/80",
+                    modelCardToneStyles.surface,
+                    selected ? "shadow-sm" : "bg-background/80",
                     uploadActionBusy ? "cursor-not-allowed opacity-80" : "cursor-pointer",
                   )}
                   onClick={() => {
@@ -2329,15 +2400,16 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1">
-                      <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                      <p className="text-sm font-semibold text-foreground">{uploadCardMeta.title}</p>
                       <p className="text-sm text-muted-foreground">{cardPriceLabel}</p>
+                      <p className="text-xs text-muted-foreground">{uploadCardMeta.subtitle}</p>
                     </div>
                     <Badge
-                      variant={highlightStatus ? "default" : "outline"}
-                      className={cn(highlightStatus ? "border-emerald-500 bg-emerald-500 text-white" : "")}
+                      variant="outline"
+                      className={cn(highlightStatus ? modelBadgeToneStyles.badgeSolid : modelBadgeToneStyles.badge)}
                     >
                       {isFasterWhisper ? (
-                        cardStatusLabel === "已下载" ? (
+                        fasterModelReady ? (
                           <CheckCircle2 className="mr-1 size-3.5" />
                         ) : fasterModelPreparing ? (
                           <Loader2 className="mr-1 size-3.5 animate-spin" />
@@ -2350,15 +2422,15 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                   {isSenseVoice &&
                   localCardBusy &&
                   String(localCardState.status || "") === "loading" &&
-                  Number.isFinite(Number(localModelVisualProgressMap[selectedBalancedModel])) ? (
+                  Number.isFinite(Number(localModelVisualProgressMap[localCardModelKey])) ? (
                     <div className="space-y-1">
                       <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                         <div
-                          className="h-full rounded-full bg-primary transition-[width] duration-200"
-                          style={{ width: `${clampPercent(localModelVisualProgressMap[selectedBalancedModel])}%` }}
+                          className={cn("h-full rounded-full transition-[width] duration-200", getUploadToneStyles("running").progress)}
+                          style={{ width: `${clampPercent(localModelVisualProgressMap[localCardModelKey])}%` }}
                         />
                       </div>
-                      <p className="text-xs text-muted-foreground">准备进度：{clampPercent(localModelVisualProgressMap[selectedBalancedModel])}%</p>
+                      <p className={cn("text-xs", getUploadToneStyles("running").text)}>准备进度：{clampPercent(localModelVisualProgressMap[localCardModelKey])}%</p>
                     </div>
                   ) : null}
 
@@ -2373,7 +2445,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                         disabled={uploadActionBusy || fasterModelBusy || localTranscribing}
                       >
                         {fasterModelBusy || fasterModelPreparing ? <Loader2 className="size-4 animate-spin" /> : null}
-                        {fasterModelPreparing ? "模型预热中" : "开始预热"}
+                        {fasterModelPreparing ? "准备中" : "准备模型"}
                       </Button>
                     </div>
                   ) : null}
@@ -2384,12 +2456,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
-                          void (localCardDownloaded ? handleLocalModelRemove(selectedBalancedModel) : handleLocalModelDownload(selectedBalancedModel));
+                          void (localCardDownloaded ? handleLocalModelRemove(localCardModelKey) : handleLocalModelDownload(localCardModelKey));
                         }}
                         disabled={!localAsrSupport.supported || !localWorkerReady || uploadActionBusy || localCardBusy}
                       >
                         {localCardBusy ? <Loader2 className="size-4 animate-spin" /> : null}
-                        {localCardDownloaded ? "卸载模型" : "下载模型"}
+                        {localCardDownloaded ? "卸载模型" : "准备模型"}
                       </Button>
                     </div>
                   ) : null}
@@ -2428,20 +2500,22 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             {sourceDisplayName ? <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{sourceDisplayName}</p> : null}
           </div>
         ) : null}
-        {mode === "balanced" && balancedPerformanceWarning ? <p className="text-xs text-amber-700">{simplifyLongAudioWarning(balancedPerformanceWarning)}</p> : null}
+        {mode === "balanced" && balancedPerformanceWarning ? (
+          <p className={cn("text-xs", getUploadToneStyles("recoverable").text)}>{simplifyLongAudioWarning(balancedPerformanceWarning)}</p>
+        ) : null}
 
         {showTaskStatusCard ? (
-          <div className="space-y-3 rounded-2xl border border-border bg-muted/15 p-4">
+          <div className={cn("space-y-3 rounded-2xl border p-4", taskStatusToneStyles.surface)}>
             <div className="space-y-1">
               <p className="text-sm font-medium">任务状态</p>
-              <p className="text-sm text-muted-foreground">
+              <p className={cn("text-sm", taskStatusToneStyles.text)}>
                 {restoreBannerMode === RESTORE_BANNER_MODES.NONE ? recoveryBannerText || taskStatusCardText : taskStatusCardText}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               {(restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED || restoreBannerMode === RESTORE_BANNER_MODES.NONE) &&
               (taskPaused || Boolean(taskSnapshot?.resume_available)) ? (
-                <Button type="button" onClick={() => void resumeTask()}>
+                <Button type="button" className={getUploadToneStyles("recoverable").button} onClick={() => void resumeTask()}>
                   <RefreshCcw className="size-4" />
                   继续生成
                 </Button>
@@ -2449,6 +2523,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               <Button
                 type="button"
                 variant={(restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED || restoreBannerMode === RESTORE_BANNER_MODES.NONE) && taskPaused ? "outline" : "default"}
+                className={
+                  (restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED || restoreBannerMode === RESTORE_BANNER_MODES.NONE) && taskPaused
+                    ? getUploadToneStyles("selected").buttonSubtle
+                    : getUploadToneStyles("selected").button
+                }
                 onClick={() => void clearTaskRuntime("已保留素材，可重新开始。")}
               >
                 <RefreshCcw className="size-4" />
@@ -2540,7 +2619,14 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             <Button
               type={localTranscribing ? "button" : "submit"}
               disabled={primaryActionDisabled}
-              className="h-11 w-full"
+              className={cn(
+                "h-11 w-full",
+                phase === "upload_paused"
+                  ? getUploadToneStyles("recoverable").button
+                  : phase === "success"
+                    ? getUploadToneStyles("success").buttonSubtle
+                    : getUploadToneStyles("selected").button,
+              )}
               data-guide-id="upload-submit"
               onClick={localTranscribing ? () => void stopLocalRecognition() : undefined}
             >
@@ -2569,78 +2655,51 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         </form>
 
         {showProgress ? (
-          <div className="space-y-3 rounded-2xl border bg-muted/15 p-4">
+          <div className={cn("space-y-3 rounded-2xl border p-4", taskToneStyles.surface)}>
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
                 <p className="text-sm font-medium">{getProgressHeadline(phase, uploadPercent, displayTaskSnapshot)}</p>
-                <p className="text-xs text-muted-foreground">总进度</p>
+                <p className={cn("text-xs", taskToneStyles.text)}>总进度</p>
               </div>
-              <span className="text-sm font-semibold tabular-nums text-muted-foreground">{progressPercent}%</span>
+              <span className={cn("text-sm font-semibold tabular-nums", taskToneStyles.text)}>{progressPercent}%</span>
             </div>
             <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className={cn(
-                  "h-full rounded-full transition-[width,background-color] duration-300",
-                  phase === "success" ? "bg-emerald-500" : phase === "error" ? "bg-red-500" : phase === "uploading" ? "bg-sky-500" : "bg-amber-500",
-                )}
-                style={{ width: `${progressPercent}%` }}
-              />
+              <div className={cn("h-full rounded-full transition-[width,background-color] duration-300", taskToneStyles.progress)} style={{ width: `${progressPercent}%` }} />
             </div>
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              {stageItems.map((item) => (
-                <div
-                  key={item.key}
-                  className={cn(
-                    "space-y-2 rounded-xl border px-3 py-3",
-                    item.status === "completed"
-                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
-                      : item.status === "running"
-                        ? "border-amber-500/40 bg-amber-500/10 text-amber-700"
-                        : item.status === "failed"
-                          ? "border-red-500/30 bg-red-500/10 text-red-600"
-                          : "border-border bg-muted/30 text-muted-foreground",
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm font-semibold">{item.label}</p>
-                    <span className="text-xs font-semibold tabular-nums">{item.detailText}</span>
+              {stageItems.map((item) => {
+                const stageToneStyles = getUploadToneStyles(getUploadStageTone(item.status));
+                return (
+                  <div key={item.key} className={cn("space-y-2 rounded-xl border px-3 py-3", stageToneStyles.surface)}>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-semibold">{item.label}</p>
+                      <span className="text-xs font-semibold tabular-nums">{item.detailText}</span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-background/60">
+                      <div className={cn("h-full rounded-full transition-[width,background-color] duration-300", stageToneStyles.progress)} style={{ width: `${item.progressPercent}%` }} />
+                    </div>
+                    <p className="text-xs leading-5 opacity-85">{item.statusText}</p>
                   </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-background/60">
-                    <div
-                      className={cn(
-                        "h-full rounded-full transition-[width,background-color] duration-300",
-                        item.status === "completed"
-                          ? "bg-emerald-500"
-                          : item.status === "running"
-                            ? "bg-amber-500"
-                            : item.status === "failed"
-                              ? "bg-red-500"
-                              : "bg-muted-foreground/30",
-                      )}
-                      style={{ width: `${item.progressPercent}%` }}
-                    />
-                  </div>
-                  <p className="text-xs leading-5 opacity-85">{item.statusText}</p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ) : null}
 
         {phase === "success" && taskSnapshot?.lesson ? (
-          <div className="space-y-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
+          <div className={cn("space-y-3 rounded-2xl border p-4", getUploadToneStyles("success").surface)}>
             <div className="flex items-start gap-3">
-              <CheckCircle2 className="mt-0.5 size-5 text-emerald-600" />
+              <CheckCircle2 className={cn("mt-0.5 size-5", getUploadToneStyles("success").text)} />
               <div className="space-y-1">
-                <p className="text-sm font-semibold text-emerald-700">生成成功</p>
-                <p className="text-sm text-emerald-700/80">{status || "课程已写入历史记录，你可以现在开始学习，或继续上传下一份素材。"}</p>
+                <p className={cn("text-sm font-semibold", getUploadToneStyles("success").text)}>生成成功</p>
+                <p className={cn("text-sm", getUploadToneStyles("success").text)}>{status || "课程已写入历史记录，你可以现在开始学习，或继续上传下一份素材。"}</p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" onClick={() => onNavigateToLesson?.(taskSnapshot.lesson.id)}>
+              <Button type="button" className={getUploadToneStyles("success").button} onClick={() => onNavigateToLesson?.(taskSnapshot.lesson.id)}>
                 去学习
               </Button>
-              <Button type="button" variant="outline" onClick={() => void resetSession()}>
+              <Button type="button" variant="outline" className={getUploadToneStyles("selected").buttonSubtle} onClick={() => void resetSession()}>
                 继续上传
               </Button>
             </div>
@@ -2648,12 +2707,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         ) : null}
 
         {phase === "error" && status ? (
-          <div className="space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
-            <p className="text-sm text-destructive">{status}</p>
+          <div className={cn("space-y-3 rounded-2xl border p-4", getUploadToneStyles(taskTone).surface)}>
+            <p className={cn("text-sm", getUploadToneStyles(taskTone).text)}>{status}</p>
             {(failureStageLabel || failureSummary) && (
               <div className="space-y-1">
                 {failureStageLabel ? (
-                  <p className="text-xs font-semibold text-destructive">失败阶段：{failureStageLabel}</p>
+                  <p className={cn("text-xs font-semibold", getUploadToneStyles(taskTone).text)}>失败阶段：{failureStageLabel}</p>
                 ) : null}
                 {failureSummary ? (
                   <p className="text-xs text-muted-foreground break-words">{failureSummary}</p>
@@ -2662,13 +2721,13 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             )}
             <div className="flex flex-wrap gap-2">
               {canRetryWithoutUpload ? (
-                <Button type="button" onClick={() => void resumeTask()}>
+                <Button type="button" className={getUploadToneStyles(taskSnapshot?.resume_available ? "recoverable" : "selected").button} onClick={() => void resumeTask()}>
                   <RefreshCcw className="size-4" />
                   {taskSnapshot?.resume_available ? "免上传继续生成" : "免上传重新生成"}
                 </Button>
               ) : null}
               {hasLocalFile ? (
-                <Button type="button" variant="secondary" onClick={() => void submit()}>
+                <Button type="button" variant="secondary" className={getUploadToneStyles("selected").button} onClick={() => void submit()}>
                   <RefreshCcw className="size-4" />
                   重新上传当前素材
                 </Button>
@@ -2686,11 +2745,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         ) : null}
 
         {phase === "upload_paused" ? (
-          <div className="space-y-3 rounded-2xl border border-border bg-muted/15 p-4">
-            <p className="text-sm text-muted-foreground">{status || "上传已暂停，可继续上传当前素材。"}</p>
+          <div className={cn("space-y-3 rounded-2xl border p-4", getUploadToneStyles("recoverable").surface)}>
+            <p className={cn("text-sm", getUploadToneStyles("recoverable").text)}>{status || "上传已暂停，可继续上传当前素材。"}</p>
             <div className="flex flex-wrap gap-2">
               {hasLocalFile ? (
-                <Button type="button" onClick={() => void submit()}>
+                <Button type="button" className={getUploadToneStyles("recoverable").button} onClick={() => void submit()}>
                   <RefreshCcw className="size-4" />
                   继续上传当前素材
                 </Button>
