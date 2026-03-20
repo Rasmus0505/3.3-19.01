@@ -267,6 +267,7 @@ def run_lesson_generation_task(
             detail_excerpt=detail_excerpt,
             traceback_excerpt=traceback.format_exc(),
             failed_stage="translate_zh",
+            translation_debug=getattr(exc, "translation_debug", None),
             session_factory=session_factory,
         )
         logger.warning("[DEBUG] lessons.task.translation_failed task_id=%s code=%s detail=%s", task_id, error_code, detail_excerpt[:240])

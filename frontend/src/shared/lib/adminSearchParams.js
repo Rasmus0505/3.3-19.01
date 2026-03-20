@@ -71,25 +71,25 @@ export const ADMIN_NAV_ITEMS = [
   {
     key: "health",
     label: "系统健康",
-    description: "主要看数据库和关键接口状态。",
+    description: "",
     href: "/admin/health",
   },
   {
     key: "users",
     label: "用户活跃",
-    description: "查看活跃趋势、用户列表和余额流水。",
+    description: "",
     href: "/admin/users",
   },
   {
     key: "models",
     label: "模型管理",
-    description: "维护模型计费、默认策略以及 SenseVoice / Faster Whisper 参数。",
+    description: "",
     href: "/admin/models",
   },
   {
     key: "redeem",
     label: "活动兑换",
-    description: "管理批次、兑换码和兑换审计。",
+    description: "",
     href: "/admin/redeem",
   },
 ];

@@ -9,7 +9,7 @@ import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { readStringParam } from "../../shared/lib/adminSearchParams";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
 import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
-import { Button, CardDescription, CardTitle, MetricCard } from "../../shared/ui";
+import { Button, CardTitle, MetricCard } from "../../shared/ui";
 
 function scrollIntoSection(sectionId) {
   const target = document.getElementById(sectionId);
@@ -129,26 +129,17 @@ export function AdminRedeemPage({ apiCall }) {
       </div>
 
       <section id="admin-redeem-batches" className="scroll-mt-24 space-y-3">
-        <div className="space-y-1">
-          <CardTitle className="text-base">批次</CardTitle>
-          <CardDescription>先看活动批次是否还在正常发放，再处理复制参数和状态调整。</CardDescription>
-        </div>
+        <CardTitle className="text-base">批次</CardTitle>
         <AdminRedeemBatchesTab apiCall={apiCall} queryPrefix="batches" />
       </section>
 
       <section id="admin-redeem-codes" className="scroll-mt-24 space-y-3 border-t pt-6">
-        <div className="space-y-1">
-          <CardTitle className="text-base">兑换码</CardTitle>
-          <CardDescription>同页继续看兑换码状态、批量停用和导出。</CardDescription>
-        </div>
+        <CardTitle className="text-base">兑换码</CardTitle>
         <AdminRedeemCodesTab apiCall={apiCall} queryPrefix="codes" />
       </section>
 
       <section id="admin-redeem-audit" className="scroll-mt-24 space-y-3 border-t pt-6">
-        <div className="space-y-1">
-          <CardTitle className="text-base">审计</CardTitle>
-          <CardDescription>最后核对兑换成功、失败和导出记录。</CardDescription>
-        </div>
+        <CardTitle className="text-base">审计</CardTitle>
         <AdminRedeemAuditTab apiCall={apiCall} queryPrefix="audit" />
       </section>
 
