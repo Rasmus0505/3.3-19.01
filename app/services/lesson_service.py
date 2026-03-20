@@ -54,6 +54,7 @@ from app.services.media import MediaError, extract_audio_for_asr, probe_audio_du
 from app.services.translation_qwen_mt import (
     MT_MODEL,
     SemanticSplitError,
+    TranslationError,
     split_sentence_by_semantic,
     translate_sentences_to_zh,
     translation_batch_chars_scope,
@@ -65,6 +66,8 @@ logger = logging.getLogger(__name__)
 ProgressCallback = Callable[[dict[str, Any]], None]
 _SILENCE_START_RE = re.compile(r"silence_start:\s*(?P<value>-?\d+(?:\.\d+)?)")
 _SILENCE_END_RE = re.compile(r"silence_end:\s*(?P<value>-?\d+(?:\.\d+)?)\s*\|\s*silence_duration:\s*(?P<duration>-?\d+(?:\.\d+)?)")
+_TRANSLATION_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
+_TRANSLATION_ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200D\uFEFF]")
 _ASR_RESULT_FILE = "asr_result.json"
 _VARIANT_RESULT_FILE = "variant_result.json"
 _TRANSLATION_CHECKPOINT_FILE = "translation_checkpoint.json"
@@ -104,6 +107,54 @@ def _emit_progress(callback: ProgressCallback | None, **payload: Any) -> None:
         callback(payload)
     except Exception:
         logger.exception("[DEBUG] lesson.progress.emit_failed payload=%s", payload)
+
+
+def _sanitize_translation_text(text: str) -> str:
+    normalized = str(text or "")
+    normalized = _TRANSLATION_ZERO_WIDTH_RE.sub("", normalized)
+    normalized = _TRANSLATION_CONTROL_CHAR_RE.sub(" ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _prepare_translation_sentences(sentences: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    cleaned_sentences: list[dict[str, Any]] = []
+    dropped_count = 0
+    for sentence in sentences:
+        cleaned = dict(sentence)
+        cleaned_text = _sanitize_translation_text(str(sentence.get("text") or ""))
+        if not cleaned_text:
+            dropped_count += 1
+            continue
+        cleaned["text"] = cleaned_text
+        cleaned_sentences.append(cleaned)
+    return cleaned_sentences, dropped_count
+
+
+def _build_translation_failure_debug(
+    *,
+    total_sentences: int,
+    failed_sentences: int,
+    request_count: int,
+    success_request_count: int,
+    latest_error_summary: str,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    total_tokens: int = 0,
+) -> dict[str, Any]:
+    return {
+        "total_sentences": int(total_sentences),
+        "failed_sentences": int(failed_sentences),
+        "request_count": int(request_count),
+        "success_request_count": int(success_request_count),
+        "usage": {
+            "prompt_tokens": int(prompt_tokens),
+            "completion_tokens": int(completion_tokens),
+            "total_tokens": int(total_tokens),
+            "charged_points": 0,
+        },
+        "latest_error_summary": str(latest_error_summary or "").strip(),
+    }
 
 
 def _append_translation_request_logs_safe(
@@ -750,6 +801,29 @@ class LessonService:
         ):
             logger.warning("[DEBUG] lesson.subtitle_variant split_fallback mode=%s output_sentences=%s", split_mode, len(sentences))
 
+        prepared_sentences, dropped_translation_sentences = _prepare_translation_sentences(sentences)
+        if not prepared_sentences:
+            raise TranslationError(
+                "翻译阶段失败，请重试",
+                code="TRANSLATION_INPUT_EMPTY",
+                detail="识别结果清洗后没有可翻译内容",
+                translation_debug={
+                    "total_sentences": 0,
+                    "failed_sentences": 0,
+                    "request_count": 0,
+                    "success_request_count": 0,
+                    "latest_error_summary": "识别结果清洗后没有可翻译内容",
+                },
+            )
+        if dropped_translation_sentences:
+            logger.warning(
+                "[DEBUG] lesson.translation_input.dropped count=%s before=%s after=%s",
+                dropped_translation_sentences,
+                len(sentences),
+                len(prepared_sentences),
+            )
+        sentences = prepared_sentences
+
         if before_translate_callback:
             before_translate_callback(len(sentences))
         _emit_subtitle_variant_progress(
@@ -813,6 +887,23 @@ class LessonService:
                 progress_callback=_on_translation_progress,
                 resume_state=translation_resume_state,
                 checkpoint_callback=_on_translation_checkpoint,
+            )
+        if int(translation_result.failed_count or 0) > 0:
+            latest_error_summary = str(translation_result.latest_error_summary or "").strip() or "翻译存在失败句子"
+            raise TranslationError(
+                "翻译阶段失败，请重试",
+                code="TRANSLATION_INCOMPLETE",
+                detail=latest_error_summary,
+                translation_debug=_build_translation_failure_debug(
+                    total_sentences=len(sentences),
+                    failed_sentences=int(translation_result.failed_count or 0),
+                    request_count=int(translation_result.total_requests or 0),
+                    success_request_count=int(translation_result.success_request_count or 0),
+                    latest_error_summary=latest_error_summary,
+                    prompt_tokens=int(translation_result.success_prompt_tokens or 0),
+                    completion_tokens=int(translation_result.success_completion_tokens or 0),
+                    total_tokens=int(translation_result.success_total_tokens or 0),
+                ),
             )
         normalized_sentences = LessonService._normalize_runtime_sentences(sentences, translation_result.texts)
         _emit_subtitle_variant_progress(
@@ -1088,6 +1179,13 @@ class LessonService:
                 "usage": translation_usage,
                 "latest_error_summary": str(variant.get("latest_translate_error_summary") or ""),
             }
+            if int(translation_debug["failed_sentences"] or 0) > 0:
+                raise TranslationError(
+                    "翻译阶段失败，请重试",
+                    code="TRANSLATION_INCOMPLETE",
+                    detail=str(translation_debug.get("latest_error_summary") or "翻译存在失败句子"),
+                    translation_debug=translation_debug,
+                )
             _emit_progress(
                 progress_callback,
                 stage_key="translate_zh",
@@ -1802,6 +1900,13 @@ class LessonService:
                 "usage": translation_usage,
                 "latest_error_summary": str(variant.get("latest_translate_error_summary") or ""),
             }
+            if int(translation_debug["failed_sentences"] or 0) > 0:
+                raise TranslationError(
+                    "翻译阶段失败，请重试",
+                    code="TRANSLATION_INCOMPLETE",
+                    detail=str(translation_debug.get("latest_error_summary") or "翻译存在失败句子"),
+                    translation_debug=translation_debug,
+                )
             _emit_progress(
                 progress_callback,
                 stage_key="translate_zh",

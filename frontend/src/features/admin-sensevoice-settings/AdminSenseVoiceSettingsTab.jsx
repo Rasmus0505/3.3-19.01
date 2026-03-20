@@ -27,7 +27,7 @@ const FIELD_GROUPS = [
   {
     id: "common",
     title: "常用参数",
-    description: "常用的模型路径、运行设备和分句策略，调整频率最高。",
+    description: "常用的模型路径、运行设备和分句策略，和上传页“SenseVoice Small” 的默认策略一一对应。",
     fields: [
       { key: "model_dir", label: "模型路径", hint: "model_dir（模型名称或上线磁盘路径）", type: "text" },
       { key: "device", label: "运行设备", hint: "device（常见值：cuda:0 / cpu；如需自动判断请明确填写 auto）", type: "text" },
@@ -41,7 +41,7 @@ const FIELD_GROUPS = [
   {
     id: "advanced",
     title: "高级/危险设置",
-    description: "高级 tuning 选项默认折叠，仅在排查或有特定需求时打开。",
+    description: "高级 tuning 选项默认折叠，仅在排查或有特定需求时打开；不会改变上传页可见的模型名称。",
     fields: [
       { key: "trust_remote_code", label: "远程代码", hint: "trust_remote_code（允许 remote_code 覆盖模型实现，关闭时 remote_code 无效）", type: "bool" },
       { key: "remote_code", label: "代码位置", hint: "remote_code（示例：../custom/sensevoice.py；仅 trust_remote_code=true 时可编辑）", type: "text" },
@@ -251,7 +251,7 @@ export function AdminSenseVoiceSettingsTab({ apiCall }) {
       <CardHeader className="space-y-3">
         <div className="space-y-1">
           <CardTitle className="text-lg">SenseVoice 参数</CardTitle>
-          <CardDescription>这里单独维护服务端 SenseVoice 推理参数。每个字段括号里都写了“改这个参数是干嘛的”，管理员直接按用途调整即可。</CardDescription>
+          <CardDescription>这里维护 SenseVoice Small 的服务端运行参数。上传页里它对应“先稳定开始”的那张卡，模型准备好后会按当前配置直接运行。</CardDescription>
         </div>
         {currentMeta?.updated_at ? (
           <CardDescription>

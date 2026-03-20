@@ -38,11 +38,19 @@ _BATCH_MAX_CHARS_CTX: contextvars.ContextVar[int] = contextvars.ContextVar(
 
 
 class TranslationError(RuntimeError):
-    def __init__(self, message: str, *, code: str = "TRANSLATION_FAILED", detail: str = ""):
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "TRANSLATION_FAILED",
+        detail: str = "",
+        translation_debug: dict[str, object] | None = None,
+    ):
         super().__init__(message)
         self.code = str(code or "TRANSLATION_FAILED").strip() or "TRANSLATION_FAILED"
         self.message = str(message or "translation failed").strip() or "translation failed"
         self.detail = str(detail or "").strip()
+        self.translation_debug = dict(translation_debug) if isinstance(translation_debug, dict) else None
 
 
 class SemanticSplitError(RuntimeError):
@@ -593,10 +601,24 @@ def _translate_batch_recursive(items: list[tuple[int, str]], *, api_key: str) ->
             detail_parts.append(f"sentence_idx={int(items[0][0]) + 1}")
             detail_parts.append(f"size={len(items)}")
             detail_parts.append(f"preview={_preview_batch(items)}")
+        translation_debug = {
+            "total_sentences": len(items),
+            "failed_sentences": len(items),
+            "request_count": len(attempt_records),
+            "success_request_count": sum(1 for record in attempt_records if record.success),
+            "usage": {
+                "prompt_tokens": sum(int(record.prompt_tokens or 0) for record in attempt_records if record.success),
+                "completion_tokens": sum(int(record.completion_tokens or 0) for record in attempt_records if record.success),
+                "total_tokens": sum(int(record.total_tokens or 0) for record in attempt_records if record.success),
+                "charged_points": 0,
+            },
+            "latest_error_summary": str(error_message or error_code or "translation response parse failed").strip(),
+        }
         raise TranslationError(
             "翻译结果解析失败",
             code="TRANSLATION_RESPONSE_INVALID",
             detail="; ".join(part for part in detail_parts if part),
+            translation_debug=translation_debug,
         )
 
     if len(items) > 1:

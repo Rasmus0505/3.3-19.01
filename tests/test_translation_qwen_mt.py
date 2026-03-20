@@ -250,3 +250,5 @@ def test_translate_sentences_to_zh_invalid_json_response(monkeypatch):
     assert exc.message == "翻译结果解析失败"
     assert "Invalid control character" in exc.detail
     assert "sentence_idx=1" in exc.detail
+    assert exc.translation_debug["failed_sentences"] == 1
+    assert exc.translation_debug["latest_error_summary"].startswith("invalid JSON fallback")

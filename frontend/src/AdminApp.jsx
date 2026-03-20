@@ -23,7 +23,7 @@ export function AdminApp({ apiCall }) {
           <Badge variant="outline">Ctrl+Shift+C 复制最近错误</Badge>
         </div>
         <h2 className="text-xl font-semibold">{activeItem.label}</h2>
-        <p className="text-sm text-muted-foreground">{activeItem.description}</p>
+        {activeItem.description ? <p className="text-sm text-muted-foreground">{activeItem.description}</p> : null}
       </section>
 
       <Routes>

@@ -4114,6 +4114,97 @@ def test_regenerate_lesson_subtitle_variant_returns_asr_sentences_when_semantic_
     assert [item["text_zh"] for item in body["sentences"]] == ["中:Hello there", "中:General Kenobi"]
 
 
+def test_build_subtitle_variant_sanitizes_translation_inputs(test_client, monkeypatch):
+    _, session_factory, _ = test_client
+    session = session_factory()
+    captured: dict[str, object] = {}
+    try:
+        from app.services import lesson_service as lesson_service_module
+
+        def fake_translate(texts, api_key, progress_callback=None, resume_state=None, checkpoint_callback=None):
+            captured["texts"] = list(texts)
+            return _translation_batch_result([f"中:{text}" for text in texts], total_tokens=24)
+
+        monkeypatch.setattr(lesson_service_module, "translate_sentences_to_zh", fake_translate)
+
+        variant = LessonService.build_subtitle_variant(
+            asr_payload={
+                "transcripts": [
+                    {
+                        "sentences": [
+                            {"text": "  Hello\x07   world  ", "begin_time": 0, "end_time": 900},
+                            {"text": "Second\u200b line", "begin_time": 900, "end_time": 1600},
+                        ],
+                        "words": [
+                            _word_entry("Hello", 0, 400),
+                            _word_entry("world", 400, 900),
+                            _word_entry("Second", 900, 1200),
+                            _word_entry("line", 1200, 1600),
+                        ],
+                    }
+                ]
+            },
+            db=session,
+            semantic_split_enabled=False,
+        )
+
+        assert captured["texts"] == ["Hello world", "Second line"]
+        assert variant["translate_failed_count"] == 0
+        assert variant["sentences"][0]["text_en"] == "Hello world"
+        assert variant["sentences"][1]["text_en"] == "Second line"
+    finally:
+        session.close()
+
+
+def test_build_subtitle_variant_raises_when_translation_incomplete(test_client, monkeypatch):
+    _, session_factory, _ = test_client
+    session = session_factory()
+    try:
+        from app.services import lesson_service as lesson_service_module
+
+        monkeypatch.setattr(
+            lesson_service_module,
+            "translate_sentences_to_zh",
+            lambda texts, api_key, progress_callback=None, resume_state=None, checkpoint_callback=None: _translation_batch_result(
+                ["中:Hello world", ""],
+                failed_count=1,
+                total_tokens=24,
+                latest_error_summary="第2句失败：REQUEST_FAILED rate limit",
+            ),
+        )
+
+        with pytest.raises(TranslationError) as exc_info:
+            LessonService.build_subtitle_variant(
+                asr_payload={
+                    "transcripts": [
+                        {
+                            "sentences": [
+                                {"text": "Hello world", "begin_time": 0, "end_time": 900},
+                                {"text": "Second line", "begin_time": 900, "end_time": 1600},
+                            ],
+                            "words": [
+                                _word_entry("Hello", 0, 400),
+                                _word_entry("world", 400, 900),
+                                _word_entry("Second", 900, 1200),
+                                _word_entry("line", 1200, 1600),
+                            ],
+                        }
+                    ]
+                },
+                db=session,
+                semantic_split_enabled=False,
+            )
+
+        exc = exc_info.value
+        assert exc.code == "TRANSLATION_INCOMPLETE"
+        assert exc.message == "翻译阶段失败，请重试"
+        assert exc.detail == "第2句失败：REQUEST_FAILED rate limit"
+        assert exc.translation_debug["failed_sentences"] == 1
+        assert exc.translation_debug["latest_error_summary"] == "第2句失败：REQUEST_FAILED rate limit"
+    finally:
+        session.close()
+
+
 def test_regenerate_lesson_subtitle_variant_stream_endpoint(test_client, monkeypatch):
     client, session_factory, _ = test_client
     token = _register_and_login(client, email="variant-stream-user@example.com")

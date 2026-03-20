@@ -30,6 +30,7 @@ import {
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, MediaCover, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
 import { useAppStore } from "../../store";
 import { buildLocalAsrLongAudioWarning, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS, LOCAL_ASR_TARGET_SAMPLE_RATE, preprocessLocalAsrFile } from "./localAsrAudioPreprocess";
+import { runLocalAsrWithAutoParallelism } from "./localAsrParallelRuntime";
 import { getUploadModelTone, getUploadRestoreTone, getUploadStageTone, getUploadTaskTone, getUploadToneStyles } from "./uploadStatusTheme";
 
 const QWEN_MODEL = "qwen3-asr-flash-filetrans";
@@ -48,7 +49,7 @@ const LOCAL_MODEL_OPTIONS = [
     key: ASR_MODEL_KEYS.sensevoiceBrowser,
     workerModelId: ASR_MODEL_KEYS.sensevoiceBrowser,
     title: "SenseVoice Small",
-    subtitle: "官方 SenseVoice 小模型，适合先试跑字幕识别。",
+    subtitle: "先准备模型，再开始生成。",
     uploadEnabled: true,
     sizeEstimateMb: { wasm: 180 },
   },
@@ -57,24 +58,25 @@ const UPLOAD_MODEL_OPTIONS = [
   {
     key: ASR_MODEL_KEYS.sensevoiceServer,
     title: "SenseVoice Small",
-    subtitle: "浏览器本地均衡模式，先准备模型再生成。",
+    subtitle: "先准备模型，再开始生成。",
     mode: "balanced",
+    note: "模型准备完成后可直接开始生成；模型缓存在当前浏览器。",
   },
   {
     key: FASTER_WHISPER_MODEL,
     title: "Faster Whisper Medium",
-    subtitle: "服务端识别，适合不想在浏览器里准备本地模型的场景。",
+    subtitle: "先准备模型，再开始生成。",
     mode: "fast",
-    note: "首次使用前需要先准备服务端模型。",
+    note: "模型准备完成后可直接开始生成；模型缓存在服务端。",
     sourceModelId: "pengzhendong/faster-whisper-medium",
     deployPath: "/data/modelscope_whisper/faster-whisper-medium",
   },
   {
     key: QWEN_MODEL,
     title: "Qwen ASR Flash",
-    subtitle: "云端文件转写，启动最快，无需下载服务端模型。",
+    subtitle: "直接开始生成，无需准备模型。",
     mode: "fast",
-    note: "沿用现有高速生成链路，适合想直接开始的场景。",
+    note: "无需准备模型，选中文件后可直接开始。",
   },
 ];
 const DISPLAY_STAGES = [
@@ -204,7 +206,7 @@ function simplifyLongAudioWarning(text) {
 }
 
 function getUploadModelPriceLabel(item, rates, selectedBalancedModel) {
-  const pricingModelKey = item.mode === "balanced" ? selectedBalancedModel : item.key;
+  const pricingModelKey = item.mode === "balanced" ? ASR_MODEL_KEYS.sensevoiceServer : item.key;
   const rate = getRateByModel(rates, pricingModelKey) || getRateByModel(rates, item.key);
   const pricePerMinuteYuan = getRatePricePerMinuteYuan(rate);
   return pricePerMinuteYuan > 0 ? formatMoneyYuanPerMinute(pricePerMinuteYuan) : "未设置价格";
@@ -225,6 +227,36 @@ function mergeCatalogIntoUploadModelMeta(modelKey, catalogMap) {
     runtimeKind: String(catalogItem.runtime_kind || ""),
     runtimeLabel: String(catalogItem.runtime_label || ""),
     prepareMode: String(catalogItem.prepare_mode || ""),
+  };
+}
+
+function getUploadCardActionMeta({
+  item,
+  uploadActionBusy,
+  localTranscribing,
+  localAsrSupport,
+  localWorkerReady,
+  localCardBusy,
+  localCardDownloaded,
+  fasterModelReady,
+  fasterModelPreparing,
+  fasterModelBusy,
+}) {
+  if (item.mode === "balanced") {
+    return {
+      label: localCardDownloaded ? "卸载模型" : localCardBusy ? "准备中" : "准备模型",
+      disabled: !localAsrSupport.supported || !localWorkerReady || uploadActionBusy || localCardBusy,
+    };
+  }
+  if (item.key === FASTER_WHISPER_MODEL) {
+    return {
+      label: fasterModelReady ? "重新准备" : fasterModelPreparing || fasterModelBusy ? "准备中" : "准备模型",
+      disabled: uploadActionBusy || fasterModelBusy || fasterModelPreparing || localTranscribing,
+    };
+  }
+  return {
+    label: "无需准备",
+    disabled: true,
   };
 }
 
@@ -674,22 +706,18 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
     return getDefaultFastUploadModelKey(configuredDefaultAsrModel);
   }, [configuredDefaultAsrModel, selectedUploadModel]);
-  const selectedUploadModelMeta = mergeCatalogIntoUploadModelMeta(selectedUploadModel, asrModelCatalogMap);
   const selectedAsrModel = mode === "balanced" ? selectedBalancedModel : selectedFastModel;
-  const selectedRate = getRateByModel(billingRates, selectedAsrModel) || getRateByModel(billingRates, selectedFastModel);
+  const selectedUploadModelMeta = mergeCatalogIntoUploadModelMeta(selectedUploadModel, asrModelCatalogMap);
+  const pricingModelKey = mode === "balanced" ? ASR_MODEL_KEYS.sensevoiceServer : selectedFastModel;
+  const selectedRate = getRateByModel(billingRates, pricingModelKey);
   const selectedRatePricePerMinuteYuan = selectedRate ? getRatePricePerMinuteYuan(selectedRate) : 0;
   const estimatedChargeCents = selectedRate ? calculateChargeCentsBySeconds(durationSec || 0, selectedRatePricePerMinuteYuan) : 0;
-  const canEstimateCharge =
-    Boolean(selectedRate) && durationSec != null && durationSec > 0 && estimatedChargeCents > 0;
-  const likelyInsufficient =
-    canEstimateCharge && estimatedChargeCents > normalizedBalanceAmountCents;
   const localWorkerReady = Boolean(localWorkerReadyMap.sensevoice);
   const balancedPerformanceWarning = useMemo(
     () => (mode === "balanced" ? buildLocalAsrLongAudioWarning(durationSec, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS) : ""),
     [durationSec, mode],
   );
   const selectedServerModelState = serverModelStateMap[selectedUploadModel] || {};
-  const selectedServerModelReady = isAsrModelReady(selectedServerModelState);
   const selectedServerModelPreparing = isAsrModelPreparing(selectedServerModelState);
   const selectedFastModelNeedsPreparation = mode === "fast" && SERVER_PREPARABLE_MODELS.has(selectedUploadModel);
   const localTranscribing = phase === "local_transcribing";
@@ -1989,27 +2017,42 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       if (isVideoFile) {
         setLocalProgress("convert_audio", "completed", 1, "转换音频格式完成");
       }
-      startLocalAsrVisualProgress(runToken, localAsrStatus, preprocessDurationSec || durationSec);
       await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: localAsrStatus, bindingCompleted: false });
-      const workerStart = nowMs();
-      const localResult = await createWorkerRequest(
-        "transcribe-audio",
-        selectedBalancedModel,
-        {
-          audioData,
-          samplingRate: LOCAL_ASR_TARGET_SAMPLE_RATE,
-          fileName: String(file?.name || ""),
+      const transcribeAbortController = new AbortController();
+      localRunAbortRef.current = transcribeAbortController;
+      const localResult = await runLocalAsrWithAutoParallelism({
+        modelKey: selectedBalancedModel,
+        audioData,
+        samplingRate: LOCAL_ASR_TARGET_SAMPLE_RATE,
+        durationSec: preprocessDurationSec || durationSec || 0,
+        assetBaseUrl: LOCAL_ASR_ASSET_BASE_URL,
+        signal: transcribeAbortController.signal,
+        onProgress: (event) => {
+          if (runToken !== localRunTokenRef.current) return;
+          const completedSegments = Math.max(0, Number(event?.completedSegments || 0));
+          const totalSegments = Math.max(completedSegments, Number(event?.totalSegments || 0));
+          const ratio = totalSegments > 0 ? Math.min(1, completedSegments / totalSegments) : 0;
+          const currentText = String(event?.currentText || localAsrStatus);
+          setStatus(currentText);
+          setLocalProgress("asr_transcribe", "running", ratio, currentText, event?.counters || {
+            asr_done: completedSegments,
+            asr_estimated: totalSegments,
+            translate_done: 0,
+            translate_total: 0,
+            segment_done: completedSegments,
+            segment_total: totalSegments,
+          });
         },
-        [audioData.buffer],
-      );
+      });
       if (runToken !== localRunTokenRef.current) return;
-      const workerDecodeMs = Math.max(0, Math.round(nowMs() - workerStart));
+      localRunAbortRef.current = null;
       const postprocessStart = nowMs();
       clearLocalStageProgressTimer();
       if (!Array.isArray(localResult?.asr_payload?.transcripts?.[0]?.sentences) || localResult.asr_payload.transcripts[0].sentences.length === 0) {
         throw new Error("当前模型未识别出可用字幕，请换一个模型或更换素材");
       }
       const sentenceCount = localResult.asr_payload.transcripts[0].sentences.length;
+      const parallelSegmentCount = Math.max(0, Number(localResult?.segmentCount || localResult?.raw_result?.segment_count || 0));
       const postprocessMs = Math.max(0, Math.round(nowMs() - postprocessStart));
       logUploadLocalAsrDebug("run.done", {
         file_name: String(file?.name || ""),
@@ -2018,7 +2061,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         audio_extract_ms: preprocessMetrics.audio_extract_ms,
         decode_ms: preprocessMetrics.decode_ms,
         resample_ms: preprocessMetrics.resample_ms,
-        worker_decode_ms: workerDecodeMs,
+        worker_decode_ms: Math.max(0, Number(localResult?.raw_result?.total_parallel_asr_ms || 0)),
         postprocess_ms: postprocessMs,
         total_local_asr_ms: Math.max(0, Math.round(nowMs() - totalStart)),
         sample_count: preprocessMetrics.sample_count,
@@ -2027,14 +2070,17 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         channel_count: preprocessMetrics.channel_count,
         resample_strategy: preprocessMetrics.resample_strategy,
         sentence_count: sentenceCount,
+        segment_count: parallelSegmentCount,
+        planned_concurrency: Math.max(0, Number(localResult?.plannedConcurrency || localResult?.raw_result?.planned_concurrency || 0)),
+        actual_concurrency: Math.max(0, Number(localResult?.actualConcurrency || localResult?.raw_result?.actual_concurrency || 0)),
       });
       setLocalProgress("asr_transcribe", "completed", 1, `识别完成，共 ${sentenceCount} 段字幕`, {
         asr_done: sentenceCount,
         asr_estimated: sentenceCount,
         translate_done: 0,
         translate_total: 0,
-        segment_done: 0,
-        segment_total: 0,
+        segment_done: parallelSegmentCount || sentenceCount,
+        segment_total: parallelSegmentCount || sentenceCount,
       });
       const createTaskAbortController = new AbortController();
       localRunAbortRef.current = createTaskAbortController;
@@ -2336,7 +2382,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               ：{selectedRate ? (durationSec != null ? `${formatMoneyCents(estimatedChargeCents)}（${formatMoneyYuanPerMinute(selectedRatePricePerMinuteYuan)}）` : "选择文件后显示") : "该模型未配置单价"}
             </p>
             <p className="text-muted-foreground">生成方式：{selectedUploadModelMeta.title}</p>
-            {likelyInsufficient ? <p className={cn("mt-1", getUploadToneStyles("error").text)}>余额可能不足，提交将被拒绝。</p> : null}
           </AlertDescription>
         </Alert>
 
@@ -2350,6 +2395,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               const selected = selectedUploadModel === item.key;
               const isSenseVoice = item.mode === "balanced";
               const isFasterWhisper = item.key === FASTER_WHISPER_MODEL;
+              const isQwen = item.key === QWEN_MODEL;
               const localCardModelKey = selectedBalancedModel;
               const uploadCardMeta = mergeCatalogIntoUploadModelMeta(item.key, asrModelCatalogMap);
               const localCardState = localModelStateMap[localCardModelKey] || {};
@@ -2359,6 +2405,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               const fasterModelReady = isAsrModelReady(fasterModelState);
               const fasterModelBusy = serverBusyModelKey === item.key;
               const fasterModelPreparing = isAsrModelPreparing(fasterModelState);
+              const localCardStatus = String(localCardState.status || "").trim().toLowerCase();
+              const fasterCardStatus = String(fasterModelState.status || "").trim().toLowerCase();
               const cardStatusLabel = isSenseVoice
                 ? getAsrModelStatusLabel(localCardState, { readyLabel: "已就绪", missingLabel: "未下载", loadingLabel: "准备中", errorLabel: "异常", unsupportedLabel: "不可用" })
                 : isFasterWhisper
@@ -2377,6 +2425,47 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               });
               const modelCardToneStyles = getUploadToneStyles(modelCardTone);
               const modelBadgeToneStyles = getUploadToneStyles(highlightStatus ? "success" : modelCardTone === "running" ? "running" : "idle");
+              const localCardProgress = Number(localModelVisualProgressMap[localCardModelKey]);
+              const hasNumericLocalProgress = Number.isFinite(localCardProgress);
+              const showCardProgress = isSenseVoice ? localCardStatus === "loading" : isFasterWhisper ? fasterModelPreparing || fasterModelBusy : false;
+              const cardProgressValue = isSenseVoice && hasNumericLocalProgress ? clampPercent(localCardProgress) : null;
+              const cardProgressText = cardProgressValue != null ? `准备进度 ${cardProgressValue}%` : String(serverBusyText || fasterModelState.message || "准备中");
+              const cardErrorText = isSenseVoice ? String(localCardState.error || "") : isFasterWhisper ? String(fasterModelState.lastError || "") : "";
+              const cardStatusText = isSenseVoice
+                ? sanitizeUserFacingText(
+                    localCardState.message ||
+                      (localCardDownloaded
+                        ? "当前浏览器已准备好，可直接生成。"
+                        : localCardStatus === "loading"
+                          ? "正在准备当前浏览器中的模型缓存。"
+                          : localAsrSupport.supported
+                            ? String(uploadCardMeta.note || uploadCardMeta.subtitle || "")
+                            : localAsrSupport.reason),
+                  )
+                : isFasterWhisper
+                  ? sanitizeUserFacingText(
+                      fasterModelState.message ||
+                        (fasterModelReady
+                          ? "服务端模型已就绪，可直接生成。"
+                          : fasterCardStatus === "error"
+                            ? "服务端模型暂未就绪，请重新准备。"
+                            : String(uploadCardMeta.note || uploadCardMeta.subtitle || "")),
+                    )
+                  : sanitizeUserFacingText(String(uploadCardMeta.note || uploadCardMeta.subtitle || ""));
+              const actionMeta = getUploadCardActionMeta({
+                item,
+                uploadActionBusy,
+                localTranscribing,
+                localAsrSupport,
+                localWorkerReady,
+                localCardBusy,
+                localCardDownloaded,
+                fasterModelReady,
+                fasterModelPreparing,
+                fasterModelBusy,
+              });
+              const showReadyIcon = !isQwen && highlightStatus;
+              const showLoadingIcon = !isQwen && ((isSenseVoice && localCardBusy) || (isFasterWhisper && (fasterModelBusy || fasterModelPreparing)));
 
               return (
                 <div
@@ -2384,7 +2473,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                   role="button"
                   tabIndex={0}
                   className={cn(
-                    "space-y-3 rounded-2xl border p-4 text-left transition-colors",
+                    "flex min-h-[220px] flex-col gap-3 rounded-2xl border p-4 text-left transition-colors",
                     modelCardToneStyles.surface,
                     selected ? "shadow-sm" : "bg-background/80",
                     uploadActionBusy ? "cursor-not-allowed opacity-80" : "cursor-pointer",
@@ -2412,63 +2501,53 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                       variant="outline"
                       className={cn(highlightStatus ? modelBadgeToneStyles.badgeSolid : modelBadgeToneStyles.badge)}
                     >
-                      {isFasterWhisper ? (
-                        fasterModelReady ? (
-                          <CheckCircle2 className="mr-1 size-3.5" />
-                        ) : fasterModelPreparing ? (
-                          <Loader2 className="mr-1 size-3.5 animate-spin" />
-                        ) : null
-                      ) : null}
+                      {showReadyIcon ? <CheckCircle2 className="mr-1 size-3.5" /> : null}
+                      {showLoadingIcon ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : null}
                       {cardStatusLabel}
                     </Badge>
                   </div>
 
-                  {isSenseVoice &&
-                  localCardBusy &&
-                  String(localCardState.status || "") === "loading" &&
-                  Number.isFinite(Number(localModelVisualProgressMap[localCardModelKey])) ? (
+                  <div className="rounded-xl border bg-background/70 p-3">
+                    <p className="text-xs leading-5 text-muted-foreground">{cardStatusText || "选择后即可开始。"}</p>
+                    {cardErrorText ? <p className="mt-2 text-xs leading-5 text-destructive break-all">{cardErrorText}</p> : null}
+                  </div>
+
+                  {showCardProgress ? (
                     <div className="space-y-1">
                       <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                        <div
-                          className={cn("h-full rounded-full transition-[width] duration-200", getUploadToneStyles("running").progress)}
-                          style={{ width: `${clampPercent(localModelVisualProgressMap[localCardModelKey])}%` }}
-                        />
+                        {cardProgressValue != null ? (
+                          <div
+                            className={cn("h-full rounded-full transition-[width] duration-200", getUploadToneStyles("running").progress)}
+                            style={{ width: `${cardProgressValue}%` }}
+                          />
+                        ) : (
+                          <div className={cn("h-full w-1/2 rounded-full animate-pulse", getUploadToneStyles("running").progress)} />
+                        )}
                       </div>
-                      <p className={cn("text-xs", getUploadToneStyles("running").text)}>准备进度：{clampPercent(localModelVisualProgressMap[localCardModelKey])}%</p>
+                      <p className={cn("text-xs", getUploadToneStyles("running").text)}>{cardProgressText}</p>
                     </div>
                   ) : null}
 
-                  {isFasterWhisper && !fasterModelReady ? (
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void handleServerModelPrepare(item.key);
-                        }}
-                        disabled={uploadActionBusy || fasterModelBusy || localTranscribing}
-                      >
-                        {fasterModelBusy || fasterModelPreparing ? <Loader2 className="size-4 animate-spin" /> : null}
-                        {fasterModelPreparing ? "准备中" : "准备模型"}
-                      </Button>
-                    </div>
-                  ) : null}
-
-                  {isSenseVoice ? (
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
+                  <div className="mt-auto flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant={isQwen ? "outline" : "default"}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (isSenseVoice) {
                           void (localCardDownloaded ? handleLocalModelRemove(localCardModelKey) : handleLocalModelDownload(localCardModelKey));
-                        }}
-                        disabled={!localAsrSupport.supported || !localWorkerReady || uploadActionBusy || localCardBusy}
-                      >
-                        {localCardBusy ? <Loader2 className="size-4 animate-spin" /> : null}
-                        {localCardDownloaded ? "卸载模型" : "准备模型"}
-                      </Button>
-                    </div>
-                  ) : null}
+                          return;
+                        }
+                        if (isFasterWhisper) {
+                          void handleServerModelPrepare(item.key);
+                        }
+                      }}
+                      disabled={actionMeta.disabled}
+                    >
+                      {showLoadingIcon ? <Loader2 className="size-4 animate-spin" /> : null}
+                      {actionMeta.label}
+                    </Button>
+                  </div>
                 </div>
               );
             })}

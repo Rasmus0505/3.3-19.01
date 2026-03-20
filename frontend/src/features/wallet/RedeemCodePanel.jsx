@@ -63,41 +63,33 @@ export function RedeemCodePanel({ apiCall, onWalletChanged }) {
   }
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Gift className="size-4" />
-            兑换码充值
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <form className="space-y-3" onSubmit={submitRedeem}>
-            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="例如 ABCD-EFGH-IJKL-MNPQ" />
-            <Button type="submit" disabled={loading} className="h-11 w-full">
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Gift className="size-4" />
+          兑换码充值
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <form className="space-y-3" onSubmit={submitRedeem}>
+          <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="例如 ABCD-EFGH-IJKL-MNPQ" />
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" disabled={loading} className="h-9 px-4">
               {loading ? "兑换中..." : "立即兑换"}
             </Button>
-          </form>
-          {status ? (
-            <Alert>
-              <AlertDescription>{status}</AlertDescription>
-            </Alert>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <Card className="border-primary/20 bg-primary/[0.03]">
-        <CardHeader>
-          <CardTitle className="text-base">获取兑换码</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Button asChild className="h-12 w-full text-base font-semibold shadow-sm">
-            <a href={PURCHASE_REDEEM_CODE_URL} target="_blank" rel="noreferrer">
-              获取兑换码
-            </a>
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+            <Button asChild variant="outline" className="h-9 px-4">
+              <a href={PURCHASE_REDEEM_CODE_URL} target="_blank" rel="noreferrer">
+                获取兑换码
+              </a>
+            </Button>
+          </div>
+        </form>
+        {status ? (
+          <Alert>
+            <AlertDescription>{status}</AlertDescription>
+          </Alert>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }

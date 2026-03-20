@@ -22,7 +22,7 @@ const FIELD_GROUPS = [
   {
     id: "common",
     title: "常用参数",
-    description: "关键设备、 CPU/worker 与 beam size 参数，默认即可满足大多数场景。",
+    description: "关键设备、 CPU/worker 与 beam size 参数，和上传页“Faster Whisper Medium” 的默认策略保持一致。",
     fields: [
       { key: "device", label: "运行设备", hint: "device（推荐 auto；强制指定时请写 cuda:0 / cpu）", type: "text" },
       { key: "cpu_threads", label: "CPU 线程数", hint: "cpu_threads（仅 CPU 推理时生效；过高会抢占同机资源）", type: "number" },
@@ -229,7 +229,7 @@ export function AdminFasterWhisperSettingsTab({ apiCall }) {
       <CardHeader className="space-y-3">
         <div className="space-y-1">
           <CardTitle className="text-lg">Faster Whisper 参数</CardTitle>
-          <CardDescription>这里单独维护服务端 Faster Whisper 的设备、线程和推理参数，适合本机优先提速时细调。</CardDescription>
+          <CardDescription>这里维护 Faster Whisper Medium 的服务端缓存与推理参数。上传页里它对应“更快开始”的那张卡，准备完成后可直接生成。</CardDescription>
         </div>
         {currentMeta?.updated_at ? (
           <CardDescription>

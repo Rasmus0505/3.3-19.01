@@ -61,10 +61,6 @@ export function AdminHealthPage({ apiCall }) {
   return (
     <div className="space-y-4">
       <section className="flex flex-col gap-3 rounded-3xl border bg-card px-5 py-4 shadow-sm md:flex-row md:items-center md:justify-between">
-        <div className="space-y-1">
-          <p className="text-sm font-medium">主要看数据库和关键接口是否正常</p>
-          <p className="text-sm text-muted-foreground">这里不再展示失败任务、翻译失败和后台审计，只保留系统是否能正常运行的快照。</p>
-        </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => copyHealthPackage("zeabur")} disabled={!snapshot}>
             <Copy className="size-4" />
