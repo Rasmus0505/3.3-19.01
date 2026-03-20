@@ -1084,6 +1084,101 @@ def test_lesson_task_terminate_marks_task_as_terminated(test_client, monkeypatch
     assert resume_resp.json()["error_code"] == "TASK_RESUME_UNAVAILABLE"
 
 
+def test_terminate_active_lesson_tasks_only_targets_current_user(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="terminate-active@example.com")
+    other_token = _register_and_login(client, email="terminate-active-other@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+
+    from app.services import lesson_command_service as lesson_command_service_module
+    from app.services.lesson_task_manager import get_task_control_action
+
+    started_ids: set[str] = set()
+    started_all = threading.Event()
+
+    def fake_generate_from_saved_file(*, progress_callback=None, task_id=None, **kwargs):
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage_key": "convert_audio",
+                    "stage_status": "completed",
+                    "overall_percent": 20,
+                    "current_text": "转换音频格式完成",
+                    "counters": {"asr_done": 0, "asr_estimated": 0, "translate_done": 0, "translate_total": 0, "segment_done": 0, "segment_total": 0},
+                }
+            )
+        normalized_task_id = str(task_id or "")
+        started_ids.add(normalized_task_id)
+        if len(started_ids) >= 3:
+            started_all.set()
+        deadline = time.time() + 5
+        while get_task_control_action(normalized_task_id, session_factory=session_factory) != "terminate":
+            if time.time() >= deadline:
+                raise AssertionError(f"terminate request was not observed for {normalized_task_id}")
+            time.sleep(0.02)
+        progress_callback(
+            {
+                "stage_key": "translate_zh",
+                "stage_status": "running",
+                "overall_percent": 72,
+                "current_text": "翻译字幕 1/2",
+                "counters": {"asr_done": 2, "asr_estimated": 2, "translate_done": 1, "translate_total": 2, "segment_done": 2, "segment_total": 2},
+            }
+        )
+        raise AssertionError("terminate control should interrupt generation")
+
+    monkeypatch.setattr(lesson_command_service_module.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+
+    def create_task(current_headers, filename):
+        response = client.post(
+            "/api/lessons/tasks",
+            headers=current_headers,
+            files={"video_file": (filename, io.BytesIO(b"video"), "video/mp4")},
+            data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+        )
+        assert response.status_code == 200
+        return str(response.json()["task_id"])
+
+    task_id_1 = create_task(headers, "terminate-active-1.mp4")
+    task_id_2 = create_task(headers, "terminate-active-2.mp4")
+    other_task_id = create_task(other_headers, "terminate-active-3.mp4")
+
+    assert started_all.wait(3)
+
+    terminate_resp = client.post("/api/lessons/tasks/terminate-active", headers=headers)
+    assert terminate_resp.status_code == 200
+    terminate_payload = terminate_resp.json()
+    assert terminate_payload["ok"] is True
+    assert terminate_payload["requested_count"] == 2
+    assert set(terminate_payload["requested_task_ids"]) == {task_id_1, task_id_2}
+
+    def wait_for_status(task_id, current_headers, expected_status):
+        deadline = time.time() + 3
+        while time.time() < deadline:
+            check = client.get(f"/api/lessons/tasks/{task_id}", headers=current_headers)
+            assert check.status_code == 200
+            payload = check.json()
+            if payload["status"] == expected_status:
+                return payload
+            time.sleep(0.05)
+        raise AssertionError(f"task {task_id} did not reach status {expected_status}")
+
+    terminated_1 = wait_for_status(task_id_1, headers, "terminated")
+    terminated_2 = wait_for_status(task_id_2, headers, "terminated")
+    assert terminated_1["terminated_at"]
+    assert terminated_2["terminated_at"]
+
+    other_check = client.get(f"/api/lessons/tasks/{other_task_id}", headers=other_headers)
+    assert other_check.status_code == 200
+    assert other_check.json()["status"] in {"pending", "running"}
+
+    other_terminate_resp = client.post("/api/lessons/tasks/terminate-active", headers=other_headers)
+    assert other_terminate_resp.status_code == 200
+    assert other_terminate_resp.json()["requested_task_ids"] == [other_task_id]
+    wait_for_status(other_task_id, other_headers, "terminated")
+
+
 def test_lesson_task_resume_marks_missing_artifacts_as_non_resumable(test_client, monkeypatch, tmp_path):
     client, session_factory, _ = test_client
     token = _register_and_login(client, email="resume-missing@example.com")

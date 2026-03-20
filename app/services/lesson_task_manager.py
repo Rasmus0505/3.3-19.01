@@ -29,6 +29,7 @@ TASK_STATUS_PENDING = "pending"
 TASK_STATUS_FAILED = "failed"
 TASK_STATUS_SUCCEEDED = "succeeded"
 TASK_ACTIVE_CONTROL_STATUSES = {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING, TASK_STATUS_TERMINATING}
+TASK_TERMINATE_REQUESTABLE_STATUSES = {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING, TASK_STATUS_TERMINATING}
 ORPHANED_TASK_RECOVERY_MESSAGE = "上次生成已中断，可继续生成或重新开始。"
 
 _STAGE_LABELS: tuple[tuple[str, str], ...] = (
@@ -722,7 +723,7 @@ def request_task_control(
         status = str(task.status or "").strip().lower()
         if normalized_action == "pause" and status not in {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING}:
             return None
-        if normalized_action == "terminate" and status not in {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING, TASK_STATUS_TERMINATING}:
+        if normalized_action == "terminate" and status not in TASK_TERMINATE_REQUESTABLE_STATUSES:
             return None
         requested_at = now_shanghai_naive()
         task.status = TASK_STATUS_PAUSING if normalized_action == "pause" else TASK_STATUS_TERMINATING
@@ -735,6 +736,53 @@ def request_task_control(
         session.commit()
         session.refresh(task)
         return _task_to_dict(task)
+    finally:
+        if owns_session:
+            session.close()
+
+
+def request_active_tasks_terminate_for_owner(
+    owner_user_id: int,
+    *,
+    db: Session | None = None,
+    session_factory: SessionFactory | None = None,
+) -> dict[str, object]:
+    normalized_owner_user_id = int(owner_user_id or 0)
+    if normalized_owner_user_id <= 0:
+        return {"requested_task_ids": [], "requested_count": 0}
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
+    try:
+        ensure_lesson_task_storage_ready(session)
+        tasks = list(
+            session.scalars(
+                select(LessonGenerationTask)
+                .where(
+                    LessonGenerationTask.owner_user_id == normalized_owner_user_id,
+                    LessonGenerationTask.status.in_(tuple(TASK_TERMINATE_REQUESTABLE_STATUSES)),
+                )
+                .order_by(LessonGenerationTask.updated_at.desc(), LessonGenerationTask.id.desc())
+            ).all()
+        )
+        requested_task_ids: list[str] = []
+        requested_at = now_shanghai_naive()
+        for task in tasks:
+            task = _recover_orphaned_task_if_needed(task, session)
+            if not task:
+                continue
+            status = str(task.status or "").strip().lower()
+            if status not in TASK_TERMINATE_REQUESTABLE_STATUSES:
+                continue
+            task.status = TASK_STATUS_TERMINATING
+            task.current_text = "正在终止，当前步骤完成后会停止生成"
+            task.message = ""
+            task.error_code = ""
+            task.resume_available = False
+            task.artifact_expires_at = None
+            task.artifacts_json = _set_control_fields(task.artifacts_json, action="terminate", requested_at=requested_at)
+            requested_task_ids.append(str(task.task_id))
+        if requested_task_ids:
+            session.commit()
+        return {"requested_task_ids": requested_task_ids, "requested_count": len(requested_task_ids)}
     finally:
         if owns_session:
             session.close()

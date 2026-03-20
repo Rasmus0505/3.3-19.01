@@ -129,3 +129,7 @@ export async function clearUploadPanelSuccessSnapshot(ownerUserId) {
   if (!snapshotKey) return;
   await withStore("readwrite", (store) => store.delete(snapshotKey));
 }
+
+export async function clearUploadPanelTaskSnapshots(ownerUserId) {
+  await Promise.all([clearActiveGenerationTask(ownerUserId), clearUploadPanelSuccessSnapshot(ownerUserId)]);
+}

@@ -35,6 +35,7 @@ from app.schemas import (
     LessonSubtitleVariantResponse,
     LessonTaskCreateResponse,
     LessonTaskControlResponse,
+    LessonTaskBatchTerminateResponse,
     LocalAsrLessonTaskCreateRequest,
     LessonTaskResumeResponse,
     LessonTaskResponse,
@@ -50,6 +51,7 @@ from app.services.lesson_command_service import (
     request_lesson_task_control_for_user,
     rename_lesson_for_user,
     resume_lesson_task_for_user,
+    terminate_active_lesson_tasks_for_user,
     run_lesson_generation_task as _run_lesson_generation_task,
 )
 from app.services.lesson_query_service import get_lesson_catalog_payload, get_lesson_detail_payload
@@ -304,6 +306,23 @@ def get_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: U
     if not task or int(task.get("owner_user_id", 0)) != current_user.id:
         return error_response(404, "TASK_NOT_FOUND", "任务不存在")
     return _to_task_response(task, db)
+
+
+@router.post(
+    "/tasks/terminate-active",
+    response_model=LessonTaskBatchTerminateResponse,
+    responses={401: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+)
+def terminate_active_lesson_tasks(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        payload = terminate_active_lesson_tasks_for_user(user_id=current_user.id, db=db)
+    except LessonTaskStorageNotReadyError as exc:
+        return error_response(503, exc.code, exc.message, exc.detail)
+    return LessonTaskBatchTerminateResponse(
+        ok=True,
+        requested_task_ids=[str(item) for item in payload.get("requested_task_ids") or []],
+        requested_count=int(payload.get("requested_count") or 0),
+    )
 
 
 @router.post(
