@@ -195,6 +195,12 @@ class LessonTaskControlResponse(BaseModel):
     status: Literal["pending", "running", "pausing", "paused", "terminating", "terminated", "succeeded", "failed"]
 
 
+class LessonTaskBatchTerminateResponse(BaseModel):
+    ok: bool = True
+    requested_task_ids: list[str] = Field(default_factory=list)
+    requested_count: int = 0
+
+
 class LessonSubtitleVariantRequest(BaseModel):
     asr_payload: dict[str, Any]
     semantic_split_enabled: bool

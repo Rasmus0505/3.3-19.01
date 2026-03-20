@@ -34,6 +34,7 @@ from app.services.lesson_task_manager import (
     mark_task_succeeded,
     mark_task_terminated,
     patch_task_artifacts,
+    request_active_tasks_terminate_for_owner,
     request_task_control,
     reset_failed_task_for_restart,
     reset_task_for_resume,
@@ -525,6 +526,11 @@ def request_lesson_task_control_for_user(*, task_id: str, user_id: int, action: 
         return None
     requested = request_task_control(task_id, action=action, db=db)
     return {"task": task, "requested": requested}
+
+
+def terminate_active_lesson_tasks_for_user(*, user_id: int, db: Session) -> dict[str, object]:
+    ensure_lesson_task_storage_ready(db)
+    return request_active_tasks_terminate_for_owner(owner_user_id=user_id, db=db)
 
 
 def rename_lesson_for_user(*, db: Session, lesson_id: int, user_id: int, title: str):

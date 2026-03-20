@@ -21,9 +21,8 @@ import {
 import { extractMediaCoverPreview, getLessonMediaPreview, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import {
   clearActiveGenerationTask,
+  clearUploadPanelTaskSnapshots,
   clearUploadPanelSuccessSnapshot,
-  getActiveGenerationTask,
-  getUploadPanelSuccessSnapshot,
   saveActiveGenerationTask,
   saveUploadPanelSuccessSnapshot,
 } from "../../shared/media/localTaskStore";
@@ -59,13 +58,6 @@ const UPLOAD_MODEL_OPTIONS = [
     mode: "balanced",
   },
   {
-    key: QWEN_MODEL,
-    title: "Qwen ASR Flash",
-    subtitle: "云端文件转写，启动最快，无需下载服务端模型。",
-    mode: "fast",
-    note: "沿用现有高速生成链路，适合想直接开始的场景。",
-  },
-  {
     key: FASTER_WHISPER_MODEL,
     title: "Faster Whisper Medium",
     subtitle: "服务端识别，适合不想在浏览器里准备本地模型的场景。",
@@ -73,6 +65,13 @@ const UPLOAD_MODEL_OPTIONS = [
     note: "首次使用前需要先准备服务端模型。",
     sourceModelId: "pengzhendong/faster-whisper-medium",
     deployPath: "/data/modelscope_whisper/faster-whisper-medium",
+  },
+  {
+    key: QWEN_MODEL,
+    title: "Qwen ASR Flash",
+    subtitle: "云端文件转写，启动最快，无需下载服务端模型。",
+    mode: "fast",
+    note: "沿用现有高速生成链路，适合想直接开始的场景。",
   },
 ];
 const DISPLAY_STAGES = [
@@ -212,6 +211,13 @@ function getServerModelStatusLabel(modelState) {
   if (Boolean(modelState?.cached) || ["ready", "cached"].includes(status)) return "已下载";
   if (Boolean(modelState) && modelState.downloadRequired === false && !modelState.preparing && status !== "error") return "已下载";
   return "未准备";
+}
+
+function getUploadModelPriceLabel(item, rates, selectedBalancedModel) {
+  const pricingModelKey = item.mode === "balanced" ? selectedBalancedModel : item.key;
+  const rate = getRateByModel(rates, pricingModelKey) || getRateByModel(rates, item.key);
+  const pricePerMinuteYuan = getRatePricePerMinuteYuan(rate);
+  return pricePerMinuteYuan > 0 ? formatMoneyYuanPerMinute(pricePerMinuteYuan) : "未设置价格";
 }
 
 function isServerModelReady(modelState) {
@@ -645,7 +651,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const localStageProgressTimerRef = useRef(null);
   const localStageProgressMetaRef = useRef({ runToken: 0, startedAt: 0, durationSec: 0, statusText: "" });
   const fileInputRef = useRef(null);
-  const previousPanelActiveRef = useRef(Boolean(isActivePanel));
+  const freshEntryInitKeyRef = useRef("");
   const successStateOriginRef = useRef("none");
   const fallbackToastTaskRef = useRef("");
   const localSenseWorkerRef = useRef(null);
@@ -665,7 +671,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const selectedRate = getRateByModel(billingRates, selectedAsrModel) || getRateByModel(billingRates, selectedFastModel);
   const selectedRatePricePerMinuteYuan = selectedRate ? getRatePricePerMinuteYuan(selectedRate) : 0;
   const estimatedChargeCents = selectedRate ? calculateChargeCentsBySeconds(durationSec || 0, selectedRatePricePerMinuteYuan) : 0;
-  const likelyInsufficient = Number.isFinite(normalizedBalanceAmountCents) && estimatedChargeCents > 0 && normalizedBalanceAmountCents < estimatedChargeCents;
   const localWorkerReady = Boolean(localWorkerReadyMap.sensevoice);
   const balancedPerformanceWarning = useMemo(
     () => (mode === "balanced" ? buildLocalAsrLongAudioWarning(durationSec, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS) : ""),
@@ -1554,105 +1559,37 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }
 
   useEffect(() => {
+    if (!isActivePanel) return undefined;
+    const initKey = ownerUserId > 0 ? `user:${ownerUserId}` : accessToken ? "authed" : "guest";
+    if (freshEntryInitKeyRef.current === initKey) return undefined;
+    freshEntryInitKeyRef.current = initKey;
     let canceled = false;
-    resetLocalSessionState();
-    previousPanelActiveRef.current = Boolean(isActivePanel);
 
-    async function restoreSession() {
+    async function prepareFreshEntry() {
+      resetLocalSessionState();
       if (!ownerUserId) return;
-      const saved = await getActiveGenerationTask(ownerUserId);
-      if (saved && !canceled) {
-        const savedPhase = String(saved.phase || "").toLowerCase();
-        const savedTaskStatus = String(saved.task_snapshot?.status || "").toLowerCase();
-        if (savedPhase === "success" || savedTaskStatus === "succeeded") {
-          await clearActiveGenerationTask(ownerUserId);
-          return;
+      try {
+        await clearUploadPanelTaskSnapshots(ownerUserId);
+        if (!accessToken) return;
+        const resp = await api("/api/lessons/tasks/terminate-active", { method: "POST" }, accessToken);
+        const data = await parseResponse(resp);
+        if (!resp.ok) {
+          throw new Error(toErrorText(data, "终止旧任务失败"));
         }
-
-        const restoredFile = createFileFromBlob(saved.file_blob, saved.file_name, saved.media_type);
-        const wasLocalTranscribing = savedPhase === "local_transcribing";
-        const isRecoverableServerTask = ["paused", "terminated"].includes(savedTaskStatus);
-        const restoredPhase = wasLocalTranscribing
-          ? restoredFile
-            ? "ready"
-            : "idle"
-          : isRecoverableServerTask
-            ? restoredFile
-              ? "ready"
-              : "idle"
-          : !saved.task_id && savedPhase === "uploading"
-            ? "upload_paused"
-            : savedPhase;
-        const restoredStatus = wasLocalTranscribing
-          ? getInterruptedLocalAsrStatus(Boolean(restoredFile))
-          : isRecoverableServerTask
-            ? String(saved.task_snapshot?.current_text || saved.status_text || "")
-          : !saved.task_id && savedPhase === "uploading"
-            ? String(saved.status_text || "检测到上次上传中断，可继续上传当前素材")
-            : String(saved.status_text || "");
-        const savedTaskId = String(saved.task_id || "").trim();
-        const savedSnapshotExists = Boolean(saved.task_snapshot);
-        const nextRestoreBannerMode = savedTaskId
-          ? RESTORE_BANNER_MODES.VERIFYING
-          : savedSnapshotExists
-            ? RESTORE_BANNER_MODES.STALE
-            : RESTORE_BANNER_MODES.NONE;
-        const nextStatus =
-          nextRestoreBannerMode === RESTORE_BANNER_MODES.VERIFYING
-            ? "正在检查上次任务状态..."
-            : nextRestoreBannerMode === RESTORE_BANNER_MODES.STALE
-              ? "上次生成记录已失效，可重新开始或清空这次记录。"
-              : restoredStatus;
-        setFile(restoredFile);
-        setTaskId(savedTaskId);
-        setStatus(nextStatus);
-        setDurationSec(Number(saved.duration_seconds || 0) || null);
-        setPhase(restoredPhase || "idle");
-        setMode(String(saved.generation_mode || "").toLowerCase() === "fast" ? "fast" : "balanced");
-        setSelectedUploadModel(getDefaultUploadModelKey(String(saved.selected_upload_model || configuredDefaultAsrModel)));
-        setCoverDataUrl(String(saved.cover_data_url || ""));
-        setCoverWidth(Number(saved.cover_width || 0));
-        setCoverHeight(Number(saved.cover_height || 0));
-        setCoverAspectRatio(Number(saved.aspect_ratio || 0));
-        setIsVideoSource(Boolean(saved.is_video_source));
-        setTaskSnapshot(nextRestoreBannerMode === RESTORE_BANNER_MODES.NONE && isRecoverableServerTask ? saved.task_snapshot || null : null);
-        setUploadPercent(Number(saved.upload_percent || 0));
-        uploadPersistRef.current.latestPercent = Number(saved.upload_percent || 0);
-        setBindingCompleted(Boolean(saved.binding_completed));
-        setLocalBusyModelKey("");
-        setLocalBusyText("");
-        successStateOriginRef.current = "none";
-        setRestoreBannerMode(nextRestoreBannerMode);
-        setLoading(["processing"].includes(restoredPhase) && ACTIVE_SERVER_TASK_STATUSES.has(savedTaskStatus || "running"));
-        if (savedTaskId && (ACTIVE_SERVER_TASK_STATUSES.has(savedTaskStatus) || ["processing", "uploading"].includes(savedPhase))) {
-          const pollToken = startPollingSession();
-          void pollTask(savedTaskId, true, pollToken);
-        }
-        return;
-      }
-
-      const savedSuccess = await getUploadPanelSuccessSnapshot(ownerUserId);
-      if (savedSuccess && !canceled) {
-        await restoreSuccessSnapshot(savedSuccess);
+      } catch (error) {
+        if (canceled) return;
+        const message = error instanceof Error && error.message ? error.message : String(error);
+        toast.error(message);
+      } finally {
+        await clearUploadPanelTaskSnapshots(ownerUserId);
       }
     }
 
-    void restoreSession();
+    void prepareFreshEntry();
     return () => {
       canceled = true;
     };
-  }, [ownerUserId]);
-
-  useEffect(() => {
-    const wasActivePanel = previousPanelActiveRef.current;
-    if (wasActivePanel && !isActivePanel && phase === "success") {
-      if (successStateOriginRef.current === "live" && taskSnapshot?.lesson?.id) {
-        void saveSuccessSnapshot(file, taskSnapshot, status);
-      }
-      resetLocalSessionState();
-    }
-    previousPanelActiveRef.current = Boolean(isActivePanel);
-  }, [file, isActivePanel, phase, status, taskSnapshot]);
+  }, [accessToken, isActivePanel, ownerUserId]);
 
   async function onSelectFile(nextFile) {
     stopPollingSession();
@@ -2327,25 +2264,23 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       <CardContent className="space-y-4">
         <Alert>
           <AlertDescription>
-            <p className="text-muted-foreground">当前余额：{formatMoneyCents(normalizedBalanceAmountCents)}</p>
+            <p className="text-muted-foreground">余额：{formatMoneyCents(normalizedBalanceAmountCents)}</p>
             <p className="text-muted-foreground">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="cursor-help underline decoration-dotted underline-offset-2">预估扣费</span>
+                  <span className="cursor-help underline decoration-dotted underline-offset-2">预估价格</span>
                 </TooltipTrigger>
                 <TooltipContent>按素材秒数折算分钟后计费，金额统一按分存储、按元展示。</TooltipContent>
               </Tooltip>
               ：{selectedRate ? (durationSec != null ? `${formatMoneyCents(estimatedChargeCents)}（${formatMoneyYuanPerMinute(selectedRatePricePerMinuteYuan)}）` : "选择文件后显示") : "该模型未配置单价"}
             </p>
-            <p className="text-muted-foreground">当前模型：{selectedUploadModelMeta.title}</p>
-            {likelyInsufficient ? <p className="mt-1 text-destructive">余额可能不足，提交将被拒绝。</p> : null}
+            <p className="text-muted-foreground">生成方式：{selectedUploadModelMeta.title}</p>
           </AlertDescription>
         </Alert>
 
         <div className="space-y-3">
           <div className="space-y-1">
-            <p className="text-sm font-medium">选择模型</p>
-            <p className="text-xs text-muted-foreground">先选一个模型，再上传素材开始生成。</p>
+            <p className="text-base font-semibold text-foreground">选择生成方式</p>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -2356,28 +2291,18 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               const localCardState = localModelStateMap[selectedBalancedModel] || {};
               const localCardDownloaded = ["ready", "cached"].includes(String(localCardState.status || ""));
               const localCardBusy = localBusyModelKey === selectedBalancedModel;
-              const localSupportReason = sanitizeUserFacingText(localAsrSupport.reason || "");
-              const localCardError = sanitizeUserFacingText(localCardState.error || "");
-              const localCardHint =
-                localSupportReason ||
-                localCardError ||
-                (localCardBusy ? sanitizeUserFacingText(localBusyText || (localCardDownloaded ? "正在卸载模型" : "正在下载模型")) : "");
               const fasterModelState = serverModelStateMap[item.key] || {};
               const fasterModelReady = isServerModelReady(fasterModelState);
               const fasterModelBusy = serverBusyModelKey === item.key;
               const fasterModelPreparing =
                 Boolean(fasterModelState.preparing) || ["loading", "preparing", "downloading"].includes(String(fasterModelState.status || "").trim().toLowerCase());
-              const fasterModelError = sanitizeUserFacingText(fasterModelState.lastError || "");
-              const fasterModelMessage = fasterModelBusy
-                ? sanitizeUserFacingText(serverBusyText || "模型预热中")
-                : fasterModelPreparing
-                  ? "模型预热中"
-                  : sanitizeUserFacingText(fasterModelError || "");
               const cardStatusLabel = isSenseVoice
                 ? getLocalModelStatusLabel(localCardState.status)
                 : isFasterWhisper
                   ? getServerModelStatusLabel(fasterModelState)
-                  : "已下载";
+                  : "免下载";
+              const cardPriceLabel = getUploadModelPriceLabel(item, billingRates, selectedBalancedModel);
+              const highlightStatus = cardStatusLabel === "已下载" || cardStatusLabel === "免下载";
 
               return (
                 <div
@@ -2404,12 +2329,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1">
-                      <p className="text-sm font-semibold">{item.title}</p>
-                      <p className="text-xs text-muted-foreground">{item.subtitle}</p>
+                      <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                      <p className="text-sm text-muted-foreground">{cardPriceLabel}</p>
                     </div>
                     <Badge
-                      variant={cardStatusLabel === "已下载" ? "default" : "outline"}
-                      className={cn(cardStatusLabel === "已下载" ? "border-emerald-500 bg-emerald-500 text-white" : "")}
+                      variant={highlightStatus ? "default" : "outline"}
+                      className={cn(highlightStatus ? "border-emerald-500 bg-emerald-500 text-white" : "")}
                     >
                       {isFasterWhisper ? (
                         cardStatusLabel === "已下载" ? (
@@ -2421,8 +2346,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                       {cardStatusLabel}
                     </Badge>
                   </div>
-                  {isSenseVoice && localCardHint ? <p className={cn("text-xs", localSupportReason || localCardError ? "text-destructive" : "text-muted-foreground")}>{localCardHint}</p> : null}
-                  {isFasterWhisper && fasterModelMessage ? <p className={cn("text-xs", fasterModelError ? "text-destructive" : "text-muted-foreground")}>{fasterModelMessage}</p> : null}
 
                   {isSenseVoice &&
                   localCardBusy &&
