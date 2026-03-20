@@ -679,6 +679,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const selectedRate = getRateByModel(billingRates, selectedAsrModel) || getRateByModel(billingRates, selectedFastModel);
   const selectedRatePricePerMinuteYuan = selectedRate ? getRatePricePerMinuteYuan(selectedRate) : 0;
   const estimatedChargeCents = selectedRate ? calculateChargeCentsBySeconds(durationSec || 0, selectedRatePricePerMinuteYuan) : 0;
+  const canEstimateCharge =
+    Boolean(selectedRate) && durationSec != null && durationSec > 0 && estimatedChargeCents > 0;
+  const likelyInsufficient =
+    canEstimateCharge && estimatedChargeCents > normalizedBalanceAmountCents;
   const localWorkerReady = Boolean(localWorkerReadyMap.sensevoice);
   const balancedPerformanceWarning = useMemo(
     () => (mode === "balanced" ? buildLocalAsrLongAudioWarning(durationSec, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS) : ""),
