@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db import APP_SCHEMA
 from app.models import BillingModelRate
+from app.models.billing import cents_to_rate_yuan, normalize_rate_yuan, rate_yuan_to_compat_cents
 
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,12 @@ def _legacy_select_expr(column_names: set[str], column_name: str, fallback_sql: 
     return column_name if column_name in column_names else f"{fallback_sql} AS {column_name}"
 
 
+def _quantize_rate_yuan(value: object, *, fallback_cents: int = 0):
+    if value not in (None, ""):
+        return normalize_rate_yuan(value)
+    return cents_to_rate_yuan(int(fallback_cents or 0))
+
+
 def list_billing_rates(db: Session, *, active_only: bool = False) -> list[BillingModelRate | SimpleNamespace]:
     bind = db.get_bind()
     inspector = inspect(bind)
@@ -46,6 +53,8 @@ def list_billing_rates(db: Session, *, active_only: bool = False) -> list[Billin
     required_columns = {
         "points_per_1k_tokens",
         "cost_per_minute_cents",
+        "price_per_minute_yuan",
+        "cost_per_minute_yuan",
         "billing_unit",
         "parallel_enabled",
         "parallel_threshold_seconds",
@@ -72,6 +81,8 @@ def list_billing_rates(db: Session, *, active_only: bool = False) -> list[Billin
                 points_per_minute,
                 {_legacy_select_expr(column_names, "points_per_1k_tokens", "0")},
                 {_legacy_select_expr(column_names, "cost_per_minute_cents", "0")},
+                {_legacy_select_expr(column_names, "price_per_minute_yuan", "ROUND(COALESCE(points_per_minute, 0) / 100.0, 4)")},
+                {_legacy_select_expr(column_names, "cost_per_minute_yuan", "ROUND(COALESCE(cost_per_minute_cents, 0) / 100.0, 4)")},
                 {_legacy_select_expr(column_names, "billing_unit", "'minute'")},
                 {_legacy_select_expr(column_names, "is_active", "TRUE")},
                 {_legacy_select_expr(column_names, "parallel_enabled", "FALSE")},
@@ -88,8 +99,21 @@ def list_billing_rates(db: Session, *, active_only: bool = False) -> list[Billin
     items: list[SimpleNamespace] = []
     for row in rows:
         payload = dict(row)
-        payload["price_per_minute_cents"] = int(payload.get("points_per_minute", 0) or 0)
+        price_per_minute_yuan = _quantize_rate_yuan(
+            payload.get("price_per_minute_yuan"),
+            fallback_cents=int(payload.get("points_per_minute", 0) or 0),
+        )
+        cost_per_minute_yuan = _quantize_rate_yuan(
+            payload.get("cost_per_minute_yuan"),
+            fallback_cents=int(payload.get("cost_per_minute_cents", 0) or 0),
+        )
+        payload["price_per_minute_yuan"] = price_per_minute_yuan
+        payload["cost_per_minute_yuan"] = cost_per_minute_yuan
+        payload["price_per_minute_cents"] = rate_yuan_to_compat_cents(price_per_minute_yuan)
+        payload["points_per_minute"] = payload["price_per_minute_cents"]
         payload["cost_per_1k_tokens_cents"] = int(payload.get("points_per_1k_tokens", 0) or 0)
+        payload["cost_per_minute_cents"] = rate_yuan_to_compat_cents(cost_per_minute_yuan)
+        payload["gross_profit_per_minute_yuan"] = normalize_rate_yuan(price_per_minute_yuan - cost_per_minute_yuan)
         payload["gross_profit_per_minute_cents"] = int(payload["price_per_minute_cents"]) - int(payload.get("cost_per_minute_cents", 0) or 0)
         updated_at = payload.get("updated_at")
         if isinstance(updated_at, str):

@@ -1,12 +1,49 @@
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_HALF_UP
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.timezone import now_shanghai_naive
 from app.db import Base, schema_fk, table_args
+
+
+_RATE_YUAN_QUANTIZER = Decimal("0.0001")
+_RATE_CENT_QUANTIZER = Decimal("0.01")
+
+
+def normalize_rate_yuan(value: int | float | Decimal | str | None) -> Decimal:
+    if value in (None, ""):
+        return Decimal("0.0000")
+    try:
+        decimal_value = Decimal(str(value).strip() or "0")
+    except (InvalidOperation, ValueError):
+        decimal_value = Decimal("0")
+    if decimal_value < 0:
+        decimal_value = Decimal("0")
+    return decimal_value.quantize(_RATE_YUAN_QUANTIZER, rounding=ROUND_HALF_UP)
+
+
+def cents_to_rate_yuan(value: int | float | Decimal | str | None) -> Decimal:
+    if value in (None, ""):
+        return Decimal("0.0000")
+    try:
+        normalized_cents = max(0, int(value))
+    except (TypeError, ValueError):
+        normalized_cents = 0
+    if normalized_cents <= 0:
+        return Decimal("0.0000")
+    return (Decimal(normalized_cents) / Decimal("100")).quantize(_RATE_YUAN_QUANTIZER, rounding=ROUND_HALF_UP)
+
+
+def rate_yuan_to_compat_cents(value: int | float | Decimal | str | None) -> int:
+    normalized_yuan = normalize_rate_yuan(value)
+    if normalized_yuan <= 0:
+        return 0
+    normalized_cents = (normalized_yuan * Decimal("100")).quantize(_RATE_CENT_QUANTIZER, rounding=ROUND_HALF_UP)
+    return int(normalized_cents.to_integral_value(rounding=ROUND_CEILING))
 
 
 class WalletAccount(Base):
@@ -89,15 +126,19 @@ class BillingModelRate(Base):
         CheckConstraint("points_per_minute >= 0", name="ck_billing_rate_positive"),
         CheckConstraint("points_per_1k_tokens >= 0", name="ck_billing_rate_token_non_negative"),
         CheckConstraint("cost_per_minute_cents >= 0", name="ck_billing_rate_cost_non_negative"),
+        CheckConstraint("price_per_minute_yuan >= 0", name="ck_billing_rate_price_yuan_non_negative"),
+        CheckConstraint("cost_per_minute_yuan >= 0", name="ck_billing_rate_cost_yuan_non_negative"),
         CheckConstraint("parallel_threshold_seconds > 0", name="ck_billing_parallel_threshold_positive"),
         CheckConstraint("segment_seconds > 0", name="ck_billing_segment_seconds_positive"),
         CheckConstraint("max_concurrency > 0", name="ck_billing_max_concurrency_positive"),
     )
 
     model_name: Mapped[str] = mapped_column(String(100), primary_key=True)
-    price_per_minute_cents: Mapped[int] = mapped_column("points_per_minute", Integer, nullable=False)
+    price_per_minute_cents_legacy: Mapped[int] = mapped_column("points_per_minute", Integer, nullable=False)
     cost_per_1k_tokens_cents: Mapped[int] = mapped_column("points_per_1k_tokens", Integer, default=0, nullable=False)
-    cost_per_minute_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    cost_per_minute_cents_legacy: Mapped[int] = mapped_column("cost_per_minute_cents", Integer, default=0, nullable=False)
+    price_per_minute_yuan: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0.0000"), nullable=False)
+    cost_per_minute_yuan: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0.0000"), nullable=False)
     billing_unit: Mapped[str] = mapped_column(String(32), default="minute", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     parallel_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -109,6 +150,16 @@ class BillingModelRate(Base):
         ForeignKey(schema_fk("users.id"), ondelete="SET NULL"),
         nullable=True,
     )
+
+    @property
+    def price_per_minute_cents(self) -> int:
+        return rate_yuan_to_compat_cents(self.price_per_minute_yuan)
+
+    @price_per_minute_cents.setter
+    def price_per_minute_cents(self, value: int) -> None:
+        normalized_cents = max(0, int(value or 0))
+        self.price_per_minute_cents_legacy = normalized_cents
+        self.price_per_minute_yuan = cents_to_rate_yuan(normalized_cents)
 
     @property
     def points_per_minute(self) -> int:
@@ -127,8 +178,25 @@ class BillingModelRate(Base):
         self.cost_per_1k_tokens_cents = int(value or 0)
 
     @property
+    def cost_per_minute_cents(self) -> int:
+        return rate_yuan_to_compat_cents(self.cost_per_minute_yuan)
+
+    @cost_per_minute_cents.setter
+    def cost_per_minute_cents(self, value: int) -> None:
+        normalized_cents = max(0, int(value or 0))
+        self.cost_per_minute_cents_legacy = normalized_cents
+        self.cost_per_minute_yuan = cents_to_rate_yuan(normalized_cents)
+
+    @property
     def gross_profit_per_minute_cents(self) -> int:
         return int(self.price_per_minute_cents or 0) - int(self.cost_per_minute_cents or 0)
+
+    @property
+    def gross_profit_per_minute_yuan(self) -> Decimal:
+        return normalize_rate_yuan(
+            normalize_rate_yuan(getattr(self, "price_per_minute_yuan", Decimal("0.0000")))
+            - normalize_rate_yuan(getattr(self, "cost_per_minute_yuan", Decimal("0.0000")))
+        )
 
 
 class SubtitleSetting(Base):

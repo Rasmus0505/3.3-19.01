@@ -2,12 +2,11 @@ import { Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
+import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import { formatDateTimeBeijing } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
-import { formatMoneyCents, formatMoneyPerMinute } from "../../shared/lib/money";
-import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
-import { getRateDraftValidationMessage, RATE_INTEGER_CENTS_MESSAGE } from "./rateDraftValidation";
+import { formatMoneyYuanPerMinute } from "../../shared/lib/money";
+import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import {
   Alert,
   AlertDescription,
@@ -29,16 +28,36 @@ import {
   TableHeader,
   TableRow,
 } from "../../shared/ui";
+import {
+  RATE_DECIMAL_YUAN_MESSAGE,
+  RATE_INTEGER_CENTS_MESSAGE,
+  getInvalidRateFieldLabels,
+  getRateDraftValidationMessage,
+} from "./rateDraftValidation";
 
 function isTokenBilling(item) {
   return String(item?.billing_unit || "minute") === "1k_tokens";
 }
 
+function toMinuteRateDraftValue(item, yuanField, centsField) {
+  const yuanValue = item?.[yuanField];
+  if (yuanValue !== undefined && yuanValue !== null && String(yuanValue).trim() !== "") {
+    return String(yuanValue);
+  }
+  const centsValue = Number(item?.[centsField] || (centsField === "price_per_minute_cents" ? item?.points_per_minute : 0));
+  return (Number.isFinite(centsValue) ? centsValue / 100 : 0).toFixed(4);
+}
+
+function parseDraftNumber(value) {
+  const normalized = Number(value);
+  return Number.isFinite(normalized) ? normalized : 0;
+}
+
 function isDraftChanged(item, draft) {
   return (
-    Number(item.price_per_minute_cents || 0) !== Number(draft.price_per_minute_cents || 0) ||
+    String(toMinuteRateDraftValue(item, "price_per_minute_yuan", "price_per_minute_cents")) !== String(draft.price_per_minute_yuan || "") ||
     Number(item.points_per_1k_tokens || 0) !== Number(draft.points_per_1k_tokens || 0) ||
-    Number(item.cost_per_minute_cents || 0) !== Number(draft.cost_per_minute_cents || 0) ||
+    String(toMinuteRateDraftValue(item, "cost_per_minute_yuan", "cost_per_minute_cents")) !== String(draft.cost_per_minute_yuan || "") ||
     String(item.billing_unit || "minute") !== String(draft.billing_unit || "minute") ||
     Boolean(item.is_active) !== Boolean(draft.is_active) ||
     Boolean(item.parallel_enabled) !== Boolean(draft.parallel_enabled) ||
@@ -52,14 +71,32 @@ function formatDraftSummary(item, draft) {
   if (isTokenBilling(item) || isTokenBilling(draft)) {
     return `${Number(draft.points_per_1k_tokens || 0)} / 1k Tokens`;
   }
-  return `${formatMoneyCents(draft.price_per_minute_cents)} / ${formatMoneyCents(draft.cost_per_minute_cents)}`;
+  return `${formatMoneyYuanPerMinute(draft.price_per_minute_yuan, { minimumFractionDigits: 4, maximumFractionDigits: 4 })} / ${formatMoneyYuanPerMinute(draft.cost_per_minute_yuan, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
 }
 
 function formatItemSummary(item) {
   if (isTokenBilling(item)) {
     return `${Number(item.points_per_1k_tokens || 0)} / 1k Tokens`;
   }
-  return `${formatMoneyCents(item.price_per_minute_cents)} / ${formatMoneyCents(item.cost_per_minute_cents)}`;
+  return `${formatMoneyYuanPerMinute(item.price_per_minute_yuan, { minimumFractionDigits: 4, maximumFractionDigits: 4 })} / ${formatMoneyYuanPerMinute(item.cost_per_minute_yuan, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+}
+
+function buildDraftMap(list) {
+  const draftMap = {};
+  list.forEach((item) => {
+    draftMap[item.model_name] = {
+      price_per_minute_yuan: toMinuteRateDraftValue(item, "price_per_minute_yuan", "price_per_minute_cents"),
+      points_per_1k_tokens: Number(item.points_per_1k_tokens || 0),
+      cost_per_minute_yuan: toMinuteRateDraftValue(item, "cost_per_minute_yuan", "cost_per_minute_cents"),
+      billing_unit: String(item.billing_unit || "minute"),
+      is_active: Boolean(item.is_active),
+      parallel_enabled: Boolean(item.parallel_enabled),
+      parallel_threshold_seconds: Number(item.parallel_threshold_seconds || 600),
+      segment_seconds: Number(item.segment_seconds || 300),
+      max_concurrency: Number(item.max_concurrency || 1),
+    };
+  });
+  return draftMap;
 }
 
 export function AdminRatesTab({ apiCall }) {
@@ -92,21 +129,7 @@ export function AdminRatesTab({ apiCall }) {
       }
       const list = Array.isArray(data.rates) ? data.rates : [];
       setRates(list);
-      const draftMap = {};
-      list.forEach((item) => {
-        draftMap[item.model_name] = {
-          price_per_minute_cents: Number(item.price_per_minute_cents || item.points_per_minute || 0),
-          points_per_1k_tokens: Number(item.points_per_1k_tokens || 0),
-          cost_per_minute_cents: Number(item.cost_per_minute_cents || 0),
-          billing_unit: String(item.billing_unit || "minute"),
-          is_active: Boolean(item.is_active),
-          parallel_enabled: Boolean(item.parallel_enabled),
-          parallel_threshold_seconds: Number(item.parallel_threshold_seconds || 600),
-          segment_seconds: Number(item.segment_seconds || 300),
-          max_concurrency: Number(item.max_concurrency || 1),
-        };
-      });
-      setDrafts(draftMap);
+      setDrafts(buildDraftMap(list));
     } catch (requestError) {
       const formattedError = captureError(
         formatNetworkError(requestError, {
@@ -131,13 +154,10 @@ export function AdminRatesTab({ apiCall }) {
     if (!draft) return;
     const validationMessage = getRateDraftValidationMessage(draft);
     if (validationMessage) {
-      console.debug("[DEBUG] admin billing rate save blocked by integer validation", {
-        modelName,
-        draft,
-      });
       setStatus(validationMessage);
       return;
     }
+
     setSavingModel(modelName);
     setStatus("");
     clearError();
@@ -146,9 +166,9 @@ export function AdminRatesTab({ apiCall }) {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          price_per_minute_cents: Number(draft.price_per_minute_cents || 0),
+          price_per_minute_yuan: parseDraftNumber(draft.price_per_minute_yuan),
           points_per_1k_tokens: Number(draft.points_per_1k_tokens || 0),
-          cost_per_minute_cents: Number(draft.cost_per_minute_cents || 0),
+          cost_per_minute_yuan: parseDraftNumber(draft.cost_per_minute_yuan),
           billing_unit: String(draft.billing_unit || "minute"),
           is_active: Boolean(draft.is_active),
           parallel_enabled: Boolean(draft.parallel_enabled),
@@ -203,10 +223,15 @@ export function AdminRatesTab({ apiCall }) {
   }
 
   const dirtyModels = rates
-    .map((item) => ({ item, draft: drafts[item.model_name] || item }))
+    .map((item) => ({ item, draft: drafts[item.model_name] || buildDraftMap([item])[item.model_name] }))
     .filter(({ item, draft }) => isDraftChanged(item, draft));
+
   const invalidModels = rates
-    .map((item) => ({ item, draft: drafts[item.model_name] || item, validationMessage: getRateDraftValidationMessage(drafts[item.model_name] || item) }))
+    .map((item) => ({
+      item,
+      draft: drafts[item.model_name] || buildDraftMap([item])[item.model_name],
+      validationMessage: getRateDraftValidationMessage(drafts[item.model_name] || buildDraftMap([item])[item.model_name]),
+    }))
     .filter(({ validationMessage }) => Boolean(validationMessage));
 
   return (
@@ -216,7 +241,7 @@ export function AdminRatesTab({ apiCall }) {
           <Settings2 className="size-4" />
           计费配置
         </CardTitle>
-        <CardDescription>这里只维护 3 个 ASR 模型和 1 个 MT 翻译模型（如 qwen-mt-flash），MT 行只使用 Token 计费字段，其他并发配置对它无效。</CardDescription>
+        <CardDescription>ASR 行统一按元/分钟编辑与显示，MT 行继续使用 1k Tokens 费率。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {dirtyModels.length > 0 ? (
@@ -233,6 +258,7 @@ export function AdminRatesTab({ apiCall }) {
             </AlertDescription>
           </Alert>
         ) : null}
+
         {invalidModels.length > 0 ? (
           <Alert variant="destructive">
             <AlertDescription className="space-y-2">
@@ -247,16 +273,18 @@ export function AdminRatesTab({ apiCall }) {
             </AlertDescription>
           </Alert>
         ) : null}
+
         {loading ? <Skeleton className="h-10 w-full" /> : null}
+
         <ScrollArea className="w-full rounded-md border">
-          <Table className="min-w-[1560px]">
+          <Table className="min-w-[1640px]">
             <TableHeader>
               <TableRow>
                 <TableHead>模型</TableHead>
                 <TableHead>计费单位</TableHead>
-                <TableHead>售价/分钟</TableHead>
+                <TableHead>售价(元/分钟)</TableHead>
                 <TableHead>售价/1k Tokens</TableHead>
-                <TableHead>成本/分钟</TableHead>
+                <TableHead>成本(元/分钟)</TableHead>
                 <TableHead>毛利</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead>并发开关</TableHead>
@@ -269,12 +297,16 @@ export function AdminRatesTab({ apiCall }) {
             </TableHeader>
             <TableBody>
               {rates.map((item) => {
-                const draft = drafts[item.model_name] || item;
+                const fallbackDraft = buildDraftMap([item])[item.model_name];
+                const draft = drafts[item.model_name] || fallbackDraft;
                 const validationMessage = getRateDraftValidationMessage(draft);
                 const tokenBilling = isTokenBilling(draft);
-                const priceInvalid = !tokenBilling && Number.isFinite(Number(draft.price_per_minute_cents)) && !Number.isInteger(Number(draft.price_per_minute_cents || 0));
-                const tokenInvalid = tokenBilling && Number.isFinite(Number(draft.points_per_1k_tokens)) && !Number.isInteger(Number(draft.points_per_1k_tokens || 0));
-                const costInvalid = !tokenBilling && Number.isFinite(Number(draft.cost_per_minute_cents)) && !Number.isInteger(Number(draft.cost_per_minute_cents || 0));
+                const invalidFields = getInvalidRateFieldLabels(draft);
+                const priceInvalid = invalidFields.includes("售价(元/分钟)");
+                const tokenInvalid = invalidFields.includes("售价/1k Tokens");
+                const costInvalid = invalidFields.includes("成本(元/分钟)");
+                const draftGrossProfit = parseDraftNumber(draft.price_per_minute_yuan) - parseDraftNumber(draft.cost_per_minute_yuan);
+
                 return (
                   <TableRow key={item.model_name}>
                     <TableCell className="font-medium">
@@ -290,15 +322,19 @@ export function AdminRatesTab({ apiCall }) {
                       <Input
                         type="number"
                         min={0}
-                        step={1}
-                        value={draft.price_per_minute_cents}
-                        onChange={(e) => updateDraft(item.model_name, { price_per_minute_cents: Number(e.target.value || 0) })}
+                        step="0.0001"
+                        value={draft.price_per_minute_yuan}
+                        onChange={(event) => updateDraft(item.model_name, { price_per_minute_yuan: event.target.value })}
                         aria-invalid={priceInvalid}
-                        className="max-w-[150px]"
+                        className="max-w-[180px]"
                         disabled={tokenBilling}
                       />
                       <p className={`mt-1 text-xs ${priceInvalid ? "text-destructive" : "text-muted-foreground"}`}>
-                        {tokenBilling ? "仅 ASR 模型使用" : priceInvalid ? RATE_INTEGER_CENTS_MESSAGE : formatMoneyPerMinute(draft.price_per_minute_cents)}
+                        {tokenBilling
+                          ? "仅 ASR 模型使用"
+                          : priceInvalid
+                            ? RATE_DECIMAL_YUAN_MESSAGE
+                            : formatMoneyYuanPerMinute(draft.price_per_minute_yuan, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
                       </p>
                     </TableCell>
                     <TableCell>
@@ -307,28 +343,33 @@ export function AdminRatesTab({ apiCall }) {
                         min={0}
                         step={1}
                         value={draft.points_per_1k_tokens}
-                        onChange={(e) => updateDraft(item.model_name, { points_per_1k_tokens: Number(e.target.value || 0) })}
+                        onChange={(event) => updateDraft(item.model_name, { points_per_1k_tokens: Number(event.target.value || 0) })}
                         aria-invalid={tokenInvalid}
                         className="max-w-[150px]"
                         disabled={!tokenBilling}
                       />
                       <p className={`mt-1 text-xs ${tokenInvalid ? "text-destructive" : "text-muted-foreground"}`}>
                         {tokenBilling ? `${Number(draft.points_per_1k_tokens || 0)} / 1k Tokens` : "仅 MT 模型使用"}
+                        {tokenInvalid ? ` ${RATE_INTEGER_CENTS_MESSAGE}` : ""}
                       </p>
                     </TableCell>
                     <TableCell>
                       <Input
                         type="number"
                         min={0}
-                        step={1}
-                        value={draft.cost_per_minute_cents}
-                        onChange={(e) => updateDraft(item.model_name, { cost_per_minute_cents: Number(e.target.value || 0) })}
+                        step="0.0001"
+                        value={draft.cost_per_minute_yuan}
+                        onChange={(event) => updateDraft(item.model_name, { cost_per_minute_yuan: event.target.value })}
                         aria-invalid={costInvalid}
-                        className="max-w-[150px]"
+                        className="max-w-[180px]"
                         disabled={tokenBilling}
                       />
                       <p className={`mt-1 text-xs ${costInvalid ? "text-destructive" : "text-muted-foreground"}`}>
-                        {tokenBilling ? "仅 ASR 模型使用" : costInvalid ? RATE_INTEGER_CENTS_MESSAGE : formatMoneyPerMinute(draft.cost_per_minute_cents)}
+                        {tokenBilling
+                          ? "仅 ASR 模型使用"
+                          : costInvalid
+                            ? RATE_DECIMAL_YUAN_MESSAGE
+                            : formatMoneyYuanPerMinute(draft.cost_per_minute_yuan, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
                       </p>
                     </TableCell>
                     <TableCell>
@@ -337,7 +378,7 @@ export function AdminRatesTab({ apiCall }) {
                           ? "请先修正费率"
                           : tokenBilling
                             ? `${Number(draft.points_per_1k_tokens || 0)} / 1k Tokens`
-                            : formatMoneyPerMinute(Number(draft.price_per_minute_cents || 0) - Number(draft.cost_per_minute_cents || 0))}
+                            : formatMoneyYuanPerMinute(draftGrossProfit, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -364,56 +405,50 @@ export function AdminRatesTab({ apiCall }) {
                         type="number"
                         min={1}
                         value={draft.parallel_threshold_seconds}
-                        onChange={(e) => {
+                        onChange={(event) => {
                           if (tokenBilling) return;
-                          updateDraft(item.model_name, { parallel_threshold_seconds: Number(e.target.value || 1) });
+                          updateDraft(item.model_name, { parallel_threshold_seconds: Number(event.target.value || 1) });
                         }}
                         className="max-w-[150px]"
                         disabled={tokenBilling}
                       />
-                      {tokenBilling ? <p className="text-xs text-muted-foreground mt-1">仅 ASR 有效</p> : null}
                     </TableCell>
                     <TableCell>
                       <Input
                         type="number"
                         min={1}
                         value={draft.segment_seconds}
-                        onChange={(e) => {
+                        onChange={(event) => {
                           if (tokenBilling) return;
-                          updateDraft(item.model_name, { segment_seconds: Number(e.target.value || 1) });
+                          updateDraft(item.model_name, { segment_seconds: Number(event.target.value || 1) });
                         }}
                         className="max-w-[150px]"
                         disabled={tokenBilling}
                       />
-                      {tokenBilling ? <p className="text-xs text-muted-foreground mt-1">仅 ASR 有效</p> : null}
                     </TableCell>
                     <TableCell>
                       <Input
                         type="number"
                         min={1}
                         value={draft.max_concurrency}
-                        onChange={(e) => {
+                        onChange={(event) => {
                           if (tokenBilling) return;
-                          updateDraft(item.model_name, { max_concurrency: Number(e.target.value || 1) });
+                          updateDraft(item.model_name, { max_concurrency: Number(event.target.value || 1) });
                         }}
                         className="max-w-[140px]"
                         disabled={tokenBilling}
                       />
-                      {tokenBilling ? <p className="text-xs text-muted-foreground mt-1">仅 ASR 有效</p> : null}
                     </TableCell>
                     <TableCell>{formatDateTimeBeijing(item.updated_at)}</TableCell>
                     <TableCell>
-                      <Button
-                        size="sm"
-                        onClick={() => saveRate(item.model_name)}
-                        disabled={savingModel === item.model_name || Boolean(validationMessage)}
-                      >
+                      <Button size="sm" onClick={() => saveRate(item.model_name)} disabled={savingModel === item.model_name || Boolean(validationMessage)}>
                         {savingModel === item.model_name ? "保存中..." : "保存"}
                       </Button>
                     </TableCell>
                   </TableRow>
                 );
               })}
+
               {rates.length === 0 && !loading ? (
                 <TableRow>
                   <TableCell colSpan={13} className="text-muted-foreground">

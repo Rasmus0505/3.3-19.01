@@ -112,8 +112,9 @@ export function LearningShellSidebar({
             <Sparkles className="size-5" />
           </div>
           {expanded ? (
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">English Trainer</p>
+            <div className="min-w-0 space-y-2">
+              <p className="truncate text-sm font-semibold">Bottle English</p>
+              {accessToken ? <WalletBadge accessToken={accessToken} balancePoints={walletBalance} /> : null}
             </div>
           ) : null}
         </div>
@@ -233,11 +234,6 @@ export function LearningShellSidebar({
       </SidebarContent>
 
       <SidebarFooter className="space-y-2">
-        {accessToken && expanded ? (
-          <div className="rounded-2xl border bg-muted/30 p-3">
-            <WalletBadge accessToken={accessToken} balancePoints={walletBalance} />
-          </div>
-        ) : null}
         {!accessToken ? (
           <div className="rounded-2xl border bg-muted/30 p-3">
             <div className="flex items-start gap-2">
@@ -249,9 +245,6 @@ export function LearningShellSidebar({
               )}
             </div>
           </div>
-        ) : null}
-        {expanded ? (
-          <p className="text-xs text-muted-foreground">学习页和管理台共用这一套左侧导航，进入管理台后只在这里展开子项。</p>
         ) : null}
       </SidebarFooter>
     </>

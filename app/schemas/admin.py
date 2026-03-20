@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -101,8 +102,10 @@ class AdminWalletLogsResponse(BaseModel):
 class AdminBillingRateUpdateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
+    price_per_minute_yuan: Decimal = Field(default=Decimal("0"), ge=0, decimal_places=4)
     price_per_minute_cents: int = Field(default=0, ge=0)
     points_per_1k_tokens: int = Field(default=0, ge=0)
+    cost_per_minute_yuan: Decimal = Field(default=Decimal("0"), ge=0, decimal_places=4)
     cost_per_minute_cents: int = Field(default=0, ge=0)
     billing_unit: str = Field(default="minute", min_length=1, max_length=32)
     is_active: bool
@@ -121,6 +124,14 @@ class AdminBillingRateUpdateRequest(BaseModel):
             payload["price_per_minute_cents"] = payload.get("points_per_minute")
         if "points_per_1k_tokens" not in payload and "points_per_1k_tokens_cents" in payload:
             payload["points_per_1k_tokens"] = payload.get("points_per_1k_tokens_cents")
+        if "price_per_minute_yuan" not in payload:
+            payload["price_per_minute_yuan"] = Decimal(str(payload.get("price_per_minute_cents", 0) or 0)) / Decimal("100")
+        if "cost_per_minute_yuan" not in payload:
+            payload["cost_per_minute_yuan"] = Decimal(str(payload.get("cost_per_minute_cents", 0) or 0)) / Decimal("100")
+        if "price_per_minute_cents" not in payload and "price_per_minute_yuan" in payload:
+            payload["price_per_minute_cents"] = int((Decimal(str(payload.get("price_per_minute_yuan") or 0)) * Decimal("100")).quantize(Decimal("1")))
+        if "cost_per_minute_cents" not in payload and "cost_per_minute_yuan" in payload:
+            payload["cost_per_minute_cents"] = int((Decimal(str(payload.get("cost_per_minute_yuan") or 0)) * Decimal("100")).quantize(Decimal("1")))
         return payload
 
 

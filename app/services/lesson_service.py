@@ -938,7 +938,11 @@ class LessonService:
 
         try:
             rate = get_model_rate(db, asr_model)
-            reserved_points = calculate_points(reserved_duration_ms, rate.points_per_minute)
+            reserved_points = calculate_points(
+                reserved_duration_ms,
+                rate.points_per_minute,
+                price_per_minute_yuan=getattr(rate, "price_per_minute_yuan", None),
+            )
             logger.info(
                 "[DEBUG] lesson.generate.local reserve owner_id=%s model=%s duration_ms=%s amount_cents=%s",
                 owner_id,
@@ -1073,8 +1077,8 @@ class LessonService:
                 int(translation_usage.get("total_tokens", 0) or 0),
                 int(getattr(translation_rate, "points_per_1k_tokens", 0) or 0),
             )
-            translation_usage["charged_points"] = 0
-            translation_usage["charged_amount_cents"] = 0
+            translation_usage["charged_points"] = translation_cost_amount_cents
+            translation_usage["charged_amount_cents"] = translation_cost_amount_cents
             translation_usage["actual_cost_amount_cents"] = translation_cost_amount_cents
             translation_debug = {
                 "total_sentences": translate_total,
@@ -1106,14 +1110,22 @@ class LessonService:
             lesson_status = "partial_ready" if failed_ratio >= 0.3 else "ready"
             duration_ms = estimate_duration_ms(asr_payload, runtime_sentences)
             actual_duration_ms = reserved_duration_ms
-            actual_points = calculate_points(actual_duration_ms, rate.points_per_minute)
-            actual_cost_amount_cents = calculate_points(actual_duration_ms, int(getattr(rate, "cost_per_minute_cents", 0) or 0)) + translation_cost_amount_cents
+            actual_points = calculate_points(
+                actual_duration_ms,
+                rate.points_per_minute,
+                price_per_minute_yuan=getattr(rate, "price_per_minute_yuan", None),
+            )
+            actual_cost_amount_cents = calculate_points(
+                actual_duration_ms,
+                int(getattr(rate, "cost_per_minute_cents", 0) or 0),
+                price_per_minute_yuan=getattr(rate, "cost_per_minute_yuan", None),
+            ) + translation_cost_amount_cents
             gross_profit_amount_cents = int(actual_points) - int(actual_cost_amount_cents)
-            translation_debug["estimated_charge_amount_cents"] = int(reserved_points)
-            translation_debug["actual_charge_amount_cents"] = int(actual_points)
+            translation_debug["estimated_charge_amount_cents"] = int(reserved_points) + int(translation_cost_amount_cents)
+            translation_debug["actual_charge_amount_cents"] = int(actual_points) + int(translation_cost_amount_cents)
             translation_debug["actual_cost_amount_cents"] = int(actual_cost_amount_cents)
             translation_debug["gross_profit_amount_cents"] = int(gross_profit_amount_cents)
-            translation_usage["actual_revenue_amount_cents"] = int(actual_points)
+            translation_usage["actual_revenue_amount_cents"] = int(actual_points) + int(translation_cost_amount_cents)
             translation_usage["gross_profit_amount_cents"] = int(gross_profit_amount_cents)
             points_diff = int(actual_points) - int(reserved_points)
 
@@ -1180,6 +1192,15 @@ class LessonService:
                     f"本地均衡生成结算，预扣流水#{reserve_ledger_id}，预扣金额={reserved_points}分，实耗金额={actual_points}分，差额={points_diff}分，"
                     f"usage_seconds={usage_seconds}"
                 ),
+            )
+            consume_points(
+                db,
+                user_id=owner_id,
+                points=int(translation_cost_amount_cents),
+                model_name=MT_MODEL,
+                lesson_id=lesson.id,
+                event_type=EVENT_CONSUME_TRANSLATE,
+                note=f"本地课程生成翻译扣费，total_tokens={int(translation_usage.get('total_tokens', 0) or 0)}",
             )
             record_consume(
                 db,
@@ -1665,7 +1686,11 @@ class LessonService:
         try:
             reserved_duration_ms = probe_audio_duration_ms(opus_path)
             rate = get_model_rate(db, asr_model)
-            reserved_points = calculate_points(reserved_duration_ms, rate.points_per_minute)
+            reserved_points = calculate_points(
+                reserved_duration_ms,
+                rate.points_per_minute,
+                price_per_minute_yuan=getattr(rate, "price_per_minute_yuan", None),
+            )
             logger.info(
                 "[DEBUG] lesson.generate reserve owner_id=%s model=%s duration_ms=%s points=%s",
                 owner_id,
@@ -1766,8 +1791,8 @@ class LessonService:
                 int(translation_usage.get("total_tokens", 0) or 0),
                 int(getattr(translation_rate, "points_per_1k_tokens", 0) or 0),
             )
-            translation_usage["charged_points"] = 0
-            translation_usage["charged_amount_cents"] = 0
+            translation_usage["charged_points"] = translation_cost_amount_cents
+            translation_usage["charged_amount_cents"] = translation_cost_amount_cents
             translation_usage["actual_cost_amount_cents"] = translation_cost_amount_cents
             translation_debug = {
                 "total_sentences": translate_total,
@@ -1800,14 +1825,22 @@ class LessonService:
             duration_ms = estimate_duration_ms(asr_payload, runtime_sentences)
             usage_hit = isinstance(usage_seconds, int) and usage_seconds > 0
             actual_duration_ms = int(usage_seconds * 1000) if usage_hit else int(duration_ms)
-            actual_points = calculate_points(actual_duration_ms, rate.points_per_minute)
-            actual_cost_amount_cents = calculate_points(actual_duration_ms, int(getattr(rate, "cost_per_minute_cents", 0) or 0)) + translation_cost_amount_cents
+            actual_points = calculate_points(
+                actual_duration_ms,
+                rate.points_per_minute,
+                price_per_minute_yuan=getattr(rate, "price_per_minute_yuan", None),
+            )
+            actual_cost_amount_cents = calculate_points(
+                actual_duration_ms,
+                int(getattr(rate, "cost_per_minute_cents", 0) or 0),
+                price_per_minute_yuan=getattr(rate, "cost_per_minute_yuan", None),
+            ) + translation_cost_amount_cents
             gross_profit_amount_cents = int(actual_points) - int(actual_cost_amount_cents)
-            translation_debug["estimated_charge_amount_cents"] = int(reserved_points)
-            translation_debug["actual_charge_amount_cents"] = int(actual_points)
+            translation_debug["estimated_charge_amount_cents"] = int(reserved_points) + int(translation_cost_amount_cents)
+            translation_debug["actual_charge_amount_cents"] = int(actual_points) + int(translation_cost_amount_cents)
             translation_debug["actual_cost_amount_cents"] = int(actual_cost_amount_cents)
             translation_debug["gross_profit_amount_cents"] = int(gross_profit_amount_cents)
-            translation_usage["actual_revenue_amount_cents"] = int(actual_points)
+            translation_usage["actual_revenue_amount_cents"] = int(actual_points) + int(translation_cost_amount_cents)
             translation_usage["gross_profit_amount_cents"] = int(gross_profit_amount_cents)
             points_diff = int(actual_points) - int(reserved_points)
             logger.info(
@@ -1889,6 +1922,15 @@ class LessonService:
                     f"课程生成结算，预扣流水#{reserve_ledger_id}，预扣金额={reserved_points}分，实耗金额={actual_points}分，差额={points_diff}分，"
                     f"usage_seconds={usage_seconds if usage_hit else 'fallback'}"
                 ),
+            )
+            consume_points(
+                db,
+                user_id=owner_id,
+                points=int(translation_cost_amount_cents),
+                model_name=MT_MODEL,
+                lesson_id=lesson.id,
+                event_type=EVENT_CONSUME_TRANSLATE,
+                note=f"课程生成翻译扣费，total_tokens={int(translation_usage.get('total_tokens', 0) or 0)}",
             )
             logger.info(
                 "[DEBUG] lesson.generate translate_cost owner_id=%s lesson_id=%s model=%s total_tokens=%s actual_cost_amount_cents=%s failed=%s requests=%s",

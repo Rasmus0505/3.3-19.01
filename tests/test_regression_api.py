@@ -9,6 +9,7 @@ import sys
 import time
 import threading
 from datetime import datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,7 +24,7 @@ from app.db import Base, create_database_engine, get_db
 from app.infra.translation_qwen_mt import TranslationError
 from app.main import create_app
 from app.models import BillingModelRate, FasterWhisperSetting, Lesson, LessonGenerationTask, LessonProgress, LessonSentence, MediaAsset, SubtitleSetting, TranslationRequestLog, User, WalletLedger
-from app.services.billing_service import ensure_default_billing_rates, get_or_create_wallet_account, get_subtitle_settings, settle_reserved_points
+from app.services.billing_service import calculate_points, ensure_default_billing_rates, get_or_create_wallet_account, get_subtitle_settings, settle_reserved_points
 from app.services.lesson_service import LessonService
 from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
 from app.services.query_cache import clear_query_caches
@@ -380,12 +381,20 @@ def test_ensure_default_billing_rates_rebuilds_legacy_sqlite_constraint(tmp_path
         mt_rate = conn.execute(
             text(
                 """
-                SELECT model_name, points_per_minute, points_per_1k_tokens, billing_unit
+                SELECT
+                    model_name,
+                    points_per_minute,
+                    cost_per_minute_cents,
+                    price_per_minute_yuan,
+                    cost_per_minute_yuan,
+                    points_per_1k_tokens,
+                    billing_unit
                 FROM billing_model_rates
-                WHERE model_name = 'qwen-mt-flash'
+                WHERE model_name IN ('qwen-mt-flash', 'qwen3-asr-flash-filetrans')
+                ORDER BY model_name ASC
                 """
             )
-        ).mappings().one()
+        ).mappings().all()
         non_flash_mt_count = int(
             conn.execute(
                 text(
@@ -405,10 +414,13 @@ def test_ensure_default_billing_rates_rebuilds_legacy_sqlite_constraint(tmp_path
     assert "ck_billing_rate_token_non_negative" in ddl
     assert "consume_translate" in wallet_ddl
     assert "refund_translate" in wallet_ddl
-    assert mt_rate["model_name"] == "qwen-mt-flash"
-    assert mt_rate["points_per_minute"] == 0
-    assert mt_rate["points_per_1k_tokens"] > 0
-    assert mt_rate["billing_unit"] == "1k_tokens"
+    mt_rate_by_name = {row["model_name"]: row for row in mt_rate}
+    assert mt_rate_by_name["qwen-mt-flash"]["points_per_minute"] == 0
+    assert mt_rate_by_name["qwen-mt-flash"]["points_per_1k_tokens"] > 0
+    assert mt_rate_by_name["qwen-mt-flash"]["billing_unit"] == "1k_tokens"
+    assert Decimal(str(mt_rate_by_name["qwen3-asr-flash-filetrans"]["price_per_minute_yuan"])) == Decimal("1.3000")
+    assert Decimal(str(mt_rate_by_name["qwen3-asr-flash-filetrans"]["cost_per_minute_yuan"])) == Decimal("0.0132")
+    assert int(mt_rate_by_name["qwen3-asr-flash-filetrans"]["cost_per_minute_cents"]) == 2
     assert non_flash_mt_count == 0
 
 
@@ -1349,10 +1361,13 @@ def test_admin_billing_rates_endpoint_handles_legacy_schema_defaults(tmp_path):
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["ok"] is True
-    assert payload["rates"][0]["price_per_minute_cents"] == 130
-    assert payload["rates"][0]["cost_per_minute_cents"] == 0
-    assert payload["rates"][0]["billing_unit"] == "minute"
-    assert payload["rates"][0]["parallel_enabled"] is False
+    target = next(item for item in payload["rates"] if item["model_name"] == "qwen3-asr-flash-filetrans")
+    assert target["price_per_minute_cents"] == 130
+    assert target["price_per_minute_yuan"] == "1.3000"
+    assert target["cost_per_minute_cents"] == 2
+    assert target["cost_per_minute_yuan"] == "0.0132"
+    assert target["billing_unit"] == "minute"
+    assert target["parallel_enabled"] is False
 
 
 def test_admin_translation_logs_endpoint_returns_empty_when_table_missing(tmp_path):
@@ -1471,6 +1486,8 @@ def test_probe_database_ready_reports_missing_critical_columns(monkeypatch):
     assert ready is False
     assert error.startswith("missing critical columns:")
     assert "billing_model_rates.billing_unit" in error
+    assert "billing_model_rates.price_per_minute_yuan" in error
+    assert "billing_model_rates.cost_per_minute_yuan" in error
 
 
 def test_probe_database_ready_reports_missing_subtitle_settings_table(monkeypatch):
@@ -1503,6 +1520,8 @@ def test_probe_database_ready_reports_missing_subtitle_settings_table(monkeypatc
                 {"name": "points_per_minute"},
                 {"name": "points_per_1k_tokens"},
                 {"name": "billing_unit"},
+                {"name": "price_per_minute_yuan"},
+                {"name": "cost_per_minute_yuan"},
                 {"name": "is_active"},
                 {"name": "parallel_enabled"},
                 {"name": "parallel_threshold_seconds"},
@@ -1551,6 +1570,8 @@ def test_probe_database_ready_reports_missing_learning_stats_table(monkeypatch):
                     {"name": "points_per_minute"},
                     {"name": "points_per_1k_tokens"},
                     {"name": "billing_unit"},
+                    {"name": "price_per_minute_yuan"},
+                    {"name": "cost_per_minute_yuan"},
                     {"name": "is_active"},
                     {"name": "parallel_enabled"},
                     {"name": "parallel_threshold_seconds"},
@@ -2010,7 +2031,13 @@ def test_wallet_and_admin_endpoints(test_client):
     rates = client.get("/api/admin/billing-rates", headers=headers)
     assert rates.status_code == 200
     assert isinstance(rates.json().get("rates"), list)
-    assert any("price_per_minute_cents" in item and "cost_per_minute_cents" in item for item in rates.json().get("rates", []))
+    assert any(
+        "price_per_minute_yuan" in item
+        and "cost_per_minute_yuan" in item
+        and "price_per_minute_cents" in item
+        and "cost_per_minute_cents" in item
+        for item in rates.json().get("rates", [])
+    )
     admin_model_names = [str(item.get("model_name") or "") for item in rates.json().get("rates", [])]
     admin_mt_models = [name for name in admin_model_names if name.startswith("qwen-mt-")]
     assert admin_mt_models == ["qwen-mt-flash"]
@@ -2032,7 +2059,13 @@ def test_wallet_and_admin_endpoints(test_client):
     assert public_rates.status_code == 200
     assert "subtitle_settings" in public_rates.json()
     assert public_rates.json()["subtitle_settings"]["semantic_split_default_enabled"] is False
-    assert all("price_per_minute_cents" in item and "cost_per_minute_cents" in item for item in public_rates.json()["rates"])
+    assert all(
+        "price_per_minute_yuan" in item
+        and "cost_per_minute_yuan" in item
+        and "price_per_minute_cents" in item
+        and "cost_per_minute_cents" in item
+        for item in public_rates.json()["rates"]
+    )
     public_model_names = [str(item.get("model_name") or "") for item in public_rates.json().get("rates", [])]
     public_mt_models = [name for name in public_model_names if name.startswith("qwen-mt-")]
     assert public_mt_models == []
@@ -2272,6 +2305,80 @@ def test_admin_update_billing_rate_accepts_mt_flash_token_pricing(test_client):
     assert rate["points_per_minute"] == 0
 
 
+def test_admin_update_billing_rate_accepts_minute_yuan_pricing(test_client):
+    client, session_factory, monkeypatch = test_client
+    token = _register_and_login(client, email="billing-yuan-admin@example.com")
+    monkeypatch.setenv("ADMIN_EMAILS", "billing-yuan-admin@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.put(
+        "/api/admin/billing-rates/qwen3-asr-flash-filetrans",
+        headers=headers,
+        json={
+            "price_per_minute_yuan": "2.2200",
+            "cost_per_minute_yuan": "0.0132",
+            "points_per_1k_tokens": 0,
+            "billing_unit": "minute",
+            "is_active": True,
+            "parallel_enabled": True,
+            "parallel_threshold_seconds": 900,
+            "segment_seconds": 240,
+            "max_concurrency": 3,
+        },
+    )
+
+    assert resp.status_code == 200
+    rate = resp.json()["rates"][0]
+    assert rate["model_name"] == QWEN_ASR_MODEL
+    assert rate["price_per_minute_yuan"] == "2.2200"
+    assert rate["cost_per_minute_yuan"] == "0.0132"
+    assert rate["price_per_minute_cents"] == 222
+    assert rate["points_per_minute"] == 222
+    assert rate["cost_per_minute_cents"] == 2
+
+    session = session_factory()
+    try:
+        saved_rate = session.get(BillingModelRate, QWEN_ASR_MODEL)
+        assert saved_rate is not None
+        assert saved_rate.price_per_minute_yuan == Decimal("2.2200")
+        assert saved_rate.cost_per_minute_yuan == Decimal("0.0132")
+        assert saved_rate.price_per_minute_cents_legacy == 222
+        assert saved_rate.cost_per_minute_cents_legacy == 2
+    finally:
+        session.close()
+
+
+def test_admin_update_billing_rate_accepts_legacy_minute_cents_payload(test_client):
+    client, _, monkeypatch = test_client
+    token = _register_and_login(client, email="billing-legacy-cents-admin@example.com")
+    monkeypatch.setenv("ADMIN_EMAILS", "billing-legacy-cents-admin@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.put(
+        "/api/admin/billing-rates/faster-whisper-medium",
+        headers=headers,
+        json={
+            "points_per_minute": 180,
+            "cost_per_minute_cents": 7,
+            "points_per_1k_tokens": 0,
+            "billing_unit": "minute",
+            "is_active": True,
+            "parallel_enabled": True,
+            "parallel_threshold_seconds": 480,
+            "segment_seconds": 240,
+            "max_concurrency": 2,
+        },
+    )
+
+    assert resp.status_code == 200
+    rate = resp.json()["rates"][0]
+    assert rate["model_name"] == "faster-whisper-medium"
+    assert rate["price_per_minute_yuan"] == "1.8000"
+    assert rate["cost_per_minute_yuan"] == "0.0700"
+    assert rate["price_per_minute_cents"] == 180
+    assert rate["cost_per_minute_cents"] == 7
+
+
 def test_admin_update_billing_rate_rejects_local_browser_model(test_client):
     client, _, monkeypatch = test_client
     token = _register_and_login(client, email="billing-local-admin@example.com")
@@ -2294,6 +2401,11 @@ def test_admin_update_billing_rate_rejects_local_browser_model(test_client):
     assert resp.status_code == 400
     payload = resp.json()
     assert payload["error_code"] == "BILLING_RATE_NOT_MANAGEABLE"
+
+
+def test_calculate_points_uses_decimal_yuan_and_rounds_up_to_cents():
+    assert calculate_points(60_000, price_per_minute_yuan=Decimal("0.0132")) == 2
+    assert calculate_points(30_000, price_per_minute_yuan=Decimal("0.0132")) == 1
 
 
 def test_admin_subtitle_settings_roundtrip(test_client):

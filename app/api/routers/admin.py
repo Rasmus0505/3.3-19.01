@@ -96,8 +96,10 @@ from app.services.billing_service import (
     get_subtitle_settings,
     list_admin_rates,
     manual_adjust,
+    normalize_rate_yuan,
     set_redeem_batch_status,
     update_redeem_code_status,
+    yuan_to_compat_cents,
 )
 from app.services.faster_whisper_asr import (
     get_faster_whisper_model_status,
@@ -703,7 +705,7 @@ def admin_update_billing_rate(
     rate = db.get(BillingModelRate, model_name)
     if not rate:
         return error_response(404, "BILLING_RATE_NOT_FOUND", "计费模型不存在", model_name)
-    if payload.price_per_minute_cents < 0 or payload.cost_per_minute_cents < 0:
+    if payload.price_per_minute_yuan < 0 or payload.cost_per_minute_yuan < 0:
         return error_response(400, "INVALID_BILLING_RATE", "分钟售价和分钟成本不能为负数")
     if payload.points_per_1k_tokens < 0:
         return error_response(400, "INVALID_BILLING_RATE", "1k Tokens 费率不能为负数")
@@ -713,9 +715,17 @@ def admin_update_billing_rate(
     expected_unit = "1k_tokens" if normalized_model_name == "qwen-mt-flash" else "minute"
     if normalized_unit != expected_unit:
         return error_response(400, "INVALID_BILLING_UNIT", f"模型 {model_name} 仅支持 {expected_unit} 计费", payload.billing_unit)
-    rate.price_per_minute_cents = payload.price_per_minute_cents if expected_unit == "minute" else 0
+    if expected_unit == "minute":
+        price_per_minute_yuan = normalize_rate_yuan(payload.price_per_minute_yuan)
+        cost_per_minute_yuan = normalize_rate_yuan(payload.cost_per_minute_yuan)
+    else:
+        price_per_minute_yuan = normalize_rate_yuan(0)
+        cost_per_minute_yuan = normalize_rate_yuan(0)
+    rate.price_per_minute_yuan = price_per_minute_yuan
+    rate.price_per_minute_cents_legacy = yuan_to_compat_cents(price_per_minute_yuan)
     rate.points_per_1k_tokens = payload.points_per_1k_tokens if expected_unit == "1k_tokens" else 0
-    rate.cost_per_minute_cents = payload.cost_per_minute_cents if expected_unit == "minute" else 0
+    rate.cost_per_minute_yuan = cost_per_minute_yuan
+    rate.cost_per_minute_cents_legacy = yuan_to_compat_cents(cost_per_minute_yuan)
     rate.billing_unit = expected_unit
     rate.is_active = payload.is_active
     rate.parallel_enabled = payload.parallel_enabled
