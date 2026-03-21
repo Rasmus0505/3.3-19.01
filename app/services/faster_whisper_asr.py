@@ -27,14 +27,14 @@ logger = logging.getLogger(__name__)
 FASTER_WHISPER_ASR_MODEL = "faster-whisper-medium"
 FASTER_WHISPER_REQUIRED_FILES: tuple[str, ...] = (
     "config.json",
-    "configuration.json",
     "model.bin",
+    "preprocessor_config.json",
     "tokenizer.json",
-    "vocabulary.txt",
+    "vocabulary.json",
 )
 FASTER_WHISPER_META_FILE = ".modelscope_meta.json"
 DEFAULT_FASTER_WHISPER_SETTINGS = {
-    "device": "auto",
+    "device": "cpu",
     "compute_type": "",
     "cpu_threads": 4,
     "num_workers": 2,
@@ -43,7 +43,7 @@ DEFAULT_FASTER_WHISPER_SETTINGS = {
     "condition_on_previous_text": False,
 }
 _FASTER_WHISPER_SETTINGS_REQUIRED_COLUMN_SQL: tuple[tuple[str, str, str], ...] = (
-    ("device", "VARCHAR(32) NOT NULL DEFAULT 'auto'", "VARCHAR(32) NOT NULL DEFAULT 'auto'"),
+    ("device", "VARCHAR(32) NOT NULL DEFAULT 'cpu'", "VARCHAR(32) NOT NULL DEFAULT 'cpu'"),
     ("compute_type", "VARCHAR(32) NOT NULL DEFAULT ''", "VARCHAR(32) NOT NULL DEFAULT ''"),
     ("cpu_threads", "INTEGER NOT NULL DEFAULT 4", "INTEGER NOT NULL DEFAULT 4"),
     ("num_workers", "INTEGER NOT NULL DEFAULT 2", "INTEGER NOT NULL DEFAULT 2"),
@@ -393,14 +393,6 @@ def faster_whisper_prefetch_needed() -> bool:
     return not has_faster_whisper_model_cache() or not _model_cache_matches_current_config()
 
 
-def _load_snapshot_download():
-    try:
-        from modelscope import snapshot_download
-    except Exception as exc:  # pragma: no cover - import depends on runtime env
-        raise RuntimeError(f"modelscope import failed: {str(exc)[:400]}") from exc
-    return snapshot_download
-
-
 def _load_whisper_model_symbol():
     try:
         from faster_whisper import WhisperModel
@@ -579,6 +571,123 @@ def _prepare_model_worker(*, force_refresh: bool) -> None:
     global _PREPARE_THREAD
     try:
         ensure_faster_whisper_model_downloaded(force_refresh=force_refresh)
+        logger.info("[DEBUG] faster_whisper.prepare_done model_dir=%s force_refresh=%s", FASTER_WHISPER_MODEL_DIR, force_refresh)
+    except Exception as exc:
+        logger.exception("[DEBUG] faster_whisper.prepare_failed detail=%s", str(exc)[:400])
+    finally:
+        with _PREPARE_LOCK:
+            _PREPARE_THREAD = None
+
+
+def _verify_local_faster_whisper_bundle(*, force_refresh: bool = False) -> Path:
+    with _MODEL_LOCK:
+        if not force_refresh and has_faster_whisper_model_cache() and _model_cache_matches_current_config():
+            return FASTER_WHISPER_MODEL_DIR
+
+        _set_download_runtime(in_progress=True, last_error="")
+        try:
+            FASTER_WHISPER_MODEL_DIR.parent.mkdir(parents=True, exist_ok=True)
+            missing = _missing_model_files()
+            if missing:
+                error_text = (
+                    f"faster-whisper local bundle incomplete in {FASTER_WHISPER_MODEL_DIR}: "
+                    f"{', '.join(missing)}"
+                )
+                _set_download_runtime(last_error=error_text)
+                raise RuntimeError(error_text)
+            _write_meta()
+            _set_download_runtime(last_error="")
+            logger.info(
+                "[DEBUG] faster_whisper.bundle_verified model_id=%s model_dir=%s",
+                FASTER_WHISPER_MODELSCOPE_MODEL_ID,
+                FASTER_WHISPER_MODEL_DIR,
+            )
+            return FASTER_WHISPER_MODEL_DIR
+        except Exception as exc:
+            _set_download_runtime(last_error=str(exc)[:1200])
+            raise
+        finally:
+            _set_download_runtime(in_progress=False)
+
+
+def get_faster_whisper_model_status() -> dict[str, Any]:
+    missing_files = _missing_model_files()
+    cached = not missing_files
+    cache_matches = _model_cache_matches_current_config()
+    download_required = (not cached) or (not cache_matches)
+    downloading, last_error = _download_runtime_snapshot()
+    preparing = downloading or _prefetch_running() or _prepare_running()
+
+    if preparing:
+        status = "preparing"
+        message = "Model bundle is warming up."
+    elif download_required and last_error:
+        status = "error"
+        message = "Model bundle check failed."
+    elif download_required:
+        status = "missing"
+        message = "Local model bundle is missing required files." if not cached else "Local model bundle metadata is stale."
+    else:
+        status = "ready"
+        message = "Local model bundle is ready."
+
+    return {
+        "model_key": FASTER_WHISPER_ASR_MODEL,
+        "status": status,
+        "download_required": bool(download_required),
+        "preparing": bool(preparing),
+        "cached": bool(cached and cache_matches),
+        "message": message,
+        "last_error": str(last_error or ""),
+        "model_dir": str(FASTER_WHISPER_MODEL_DIR),
+        "missing_files": list(missing_files),
+    }
+
+
+def prepare_faster_whisper_model(*, force_refresh: bool = False) -> dict[str, Any]:
+    current_status = get_faster_whisper_model_status()
+    if not force_refresh and current_status["cached"] and not current_status["download_required"]:
+        return current_status
+
+    scheduled = schedule_faster_whisper_model_prepare(force_refresh=force_refresh)
+    next_status = get_faster_whisper_model_status()
+    if scheduled or next_status["preparing"]:
+        next_status.update(
+            {
+                "status": "preparing",
+                "preparing": True,
+                "message": "Model bundle is warming up.",
+                "last_error": "",
+            }
+        )
+    return next_status
+
+
+def ensure_faster_whisper_model_downloaded(*, force_refresh: bool = False) -> Path:
+    return _verify_local_faster_whisper_bundle(force_refresh=force_refresh)
+
+
+def _prefetch_model_worker() -> None:
+    global _PREFETCH_THREAD
+    try:
+        if not faster_whisper_prefetch_needed():
+            logger.info("[DEBUG] faster_whisper.prefetch_skip reason=cache_ready")
+            return
+        _verify_local_faster_whisper_bundle(force_refresh=False)
+        _get_or_create_model()
+        logger.info("[DEBUG] faster_whisper.prefetch_done model_dir=%s", FASTER_WHISPER_MODEL_DIR)
+    except Exception as exc:
+        logger.exception("[DEBUG] faster_whisper.prefetch_failed detail=%s", str(exc)[:400])
+    finally:
+        with _PREFETCH_LOCK:
+            _PREFETCH_THREAD = None
+
+
+def _prepare_model_worker(*, force_refresh: bool) -> None:
+    global _PREPARE_THREAD
+    try:
+        _verify_local_faster_whisper_bundle(force_refresh=force_refresh)
+        _get_or_create_model()
         logger.info("[DEBUG] faster_whisper.prepare_done model_dir=%s force_refresh=%s", FASTER_WHISPER_MODEL_DIR, force_refresh)
     except Exception as exc:
         logger.exception("[DEBUG] faster_whisper.prepare_failed detail=%s", str(exc)[:400])

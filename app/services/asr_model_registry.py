@@ -4,13 +4,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from app.core.config import FASTER_WHISPER_MODEL_DIR, SENSEVOICE_MODEL_DIR
 from app.services.faster_whisper_asr import (
     FASTER_WHISPER_ASR_MODEL,
-    FASTER_WHISPER_MODEL_DIR,
     get_faster_whisper_model_status,
     prepare_faster_whisper_model as prepare_faster_whisper_runtime_model,
 )
-from app.services.sensevoice import SENSEVOICE_ASR_MODEL
+from app.services.sensevoice import (
+    SENSEVOICE_ASR_MODEL,
+    get_pinned_sensevoice_model_dir,
+    get_sensevoice_missing_files,
+    get_sensevoice_settings_snapshot,
+    has_sensevoice_model_cache,
+)
 
 
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
@@ -22,13 +28,8 @@ UPLOAD_ASR_MODEL_KEYS: tuple[str, ...] = (
     QWEN_ASR_MODEL,
 )
 TRANSCRIBE_ASR_MODEL_KEYS: tuple[str, ...] = UPLOAD_ASR_MODEL_KEYS
-LOCAL_BROWSER_ASR_MODEL_KEYS: tuple[str, ...] = (
-    LOCAL_SENSEVOICE_ASR_MODEL,
-)
-ALL_ASR_MODEL_KEYS: tuple[str, ...] = (
-    *UPLOAD_ASR_MODEL_KEYS,
-    *LOCAL_BROWSER_ASR_MODEL_KEYS,
-)
+LOCAL_BROWSER_ASR_MODEL_KEYS: tuple[str, ...] = ()
+ALL_ASR_MODEL_KEYS: tuple[str, ...] = UPLOAD_ASR_MODEL_KEYS
 
 STATUS_READY = "ready"
 STATUS_PREPARING = "preparing"
@@ -55,6 +56,24 @@ class AsrModelDescriptor:
     status_loader: Callable[[], dict[str, Any]] | None = None
     prepare_loader: Callable[[bool], dict[str, Any]] | None = None
     verify_loader: Callable[[], dict[str, Any]] | None = None
+
+
+def _build_actions(state: dict[str, Any]) -> list[dict[str, Any]]:
+    prepare_mode = str(state.get("prepare_mode") or "none")
+    status = str(state.get("status") or "").lower()
+    preparing = bool(state.get("preparing"))
+    actions: list[dict[str, Any]] = []
+    if prepare_mode != "none":
+        actions.append(
+            {
+                "key": "prepare",
+                "label": "Prepare",
+                "enabled": not preparing,
+                "primary": status in {STATUS_MISSING, STATUS_ERROR},
+            }
+        )
+    actions.append({"key": "verify", "label": "Verify", "enabled": status != STATUS_UNSUPPORTED, "primary": False})
+    return actions
 
 
 def _base_state(descriptor: AsrModelDescriptor, **overrides: Any) -> dict[str, Any]:
@@ -96,97 +115,31 @@ def _base_state(descriptor: AsrModelDescriptor, **overrides: Any) -> dict[str, A
     return payload
 
 
-def _build_actions(state: dict[str, Any]) -> list[dict[str, Any]]:
-    model_key = str(state.get("model_key") or "")
-    runtime_kind = str(state.get("runtime_kind") or "")
-    prepare_mode = str(state.get("prepare_mode") or "none")
-    status = str(state.get("status") or "").lower()
-    preparing = bool(state.get("preparing"))
-    available = bool(state.get("available"))
-    actions: list[dict[str, Any]] = []
-
-    if runtime_kind == "browser_local":
-        actions.append(
-            {
-                "key": "download",
-                "label": "下载模型",
-                "enabled": True,
-                "primary": True,
-            }
-        )
-        actions.append(
-            {
-                "key": "verify",
-                "label": "重新校验",
-                "enabled": True,
-                "primary": False,
-            }
-        )
-        return actions
-
-    if prepare_mode != "none":
-        actions.append(
-            {
-                "key": "prepare",
-                "label": "准备模型",
-                "enabled": not preparing,
-                "primary": not available,
-            }
-        )
-
-    actions.append(
-        {
-            "key": "verify",
-            "label": "检查状态",
-            "enabled": status != STATUS_UNSUPPORTED,
-            "primary": False,
-        }
-    )
-    return actions
-
-
-def _sensevoice_model_dir() -> str:
-    try:
-        from app.db import SessionLocal
-        from app.services.sensevoice import get_sensevoice_settings_snapshot
-
-        db = SessionLocal()
-        try:
-            snapshot = get_sensevoice_settings_snapshot(db)
-            return str(snapshot.model_dir or "").strip()
-        finally:
-            db.close()
-    except Exception:
-        return ""
-
-
 def _get_sensevoice_model_status() -> dict[str, Any]:
     descriptor = get_asr_model_descriptor(SENSEVOICE_ASR_MODEL)
-    model_dir = _sensevoice_model_dir()
-    resolved_path = Path(model_dir) if model_dir else None
-    cached = bool(resolved_path and resolved_path.exists())
-    message = "按当前服务端配置运行"
-    if cached:
-        message = "服务端模型路径已就绪"
-    elif model_dir:
-        message = "模型将按当前配置在服务端运行时加载"
+    model_dir = get_pinned_sensevoice_model_dir()
+    missing_files = get_sensevoice_missing_files(model_dir)
+    cached = has_sensevoice_model_cache(model_dir)
+    status = STATUS_READY if cached else STATUS_MISSING
+    message = "Local SenseVoice bundle is ready." if cached else "Local SenseVoice bundle is missing required files."
     return _base_state(
         descriptor,
-        status=STATUS_READY,
-        available=bool(model_dir or True),
+        status=status,
+        available=cached,
         cached=cached,
+        download_required=not cached,
         message=message,
         model_dir=model_dir,
+        missing_files=missing_files,
     )
 
 
 def _prepare_sensevoice_model(force_refresh: bool = False) -> dict[str, Any]:
     _ = force_refresh
     descriptor = get_asr_model_descriptor(SENSEVOICE_ASR_MODEL)
-    model_dir = _sensevoice_model_dir()
     try:
         from app.db import SessionLocal
-        from app.services.sensevoice import _get_or_create_model, get_sensevoice_settings_snapshot
+        from app.services.sensevoice import _get_or_create_model
 
         db = SessionLocal()
         try:
@@ -199,8 +152,8 @@ def _prepare_sensevoice_model(force_refresh: bool = False) -> dict[str, Any]:
             status=STATUS_READY,
             available=True,
             cached=True,
-            message="服务端模型已就绪",
-            model_dir=model_dir,
+            message="Local SenseVoice bundle is ready.",
+            model_dir=str(SENSEVOICE_MODEL_DIR),
         )
     except Exception as exc:
         return _base_state(
@@ -208,9 +161,11 @@ def _prepare_sensevoice_model(force_refresh: bool = False) -> dict[str, Any]:
             status=STATUS_ERROR,
             available=False,
             cached=False,
-            message="服务端模型校验失败",
+            download_required=True,
+            message="Local SenseVoice bundle check failed.",
             last_error=str(exc)[:1200],
-            model_dir=model_dir,
+            model_dir=str(SENSEVOICE_MODEL_DIR),
+            missing_files=get_sensevoice_missing_files(SENSEVOICE_MODEL_DIR),
         )
 
 
@@ -258,51 +213,43 @@ def _get_qwen_status() -> dict[str, Any]:
         status=STATUS_READY,
         available=True,
         cached=False,
-        message="云端接口可直接使用",
-    )
-
-
-def _get_local_browser_sensevoice_status() -> dict[str, Any]:
-    return _base_state(
-        get_asr_model_descriptor(LOCAL_SENSEVOICE_ASR_MODEL),
-        status=STATUS_MISSING,
-        available=False,
-        download_required=True,
-        cached=False,
-        message="需要在当前浏览器中校验或下载模型",
+        message="Cloud API is ready.",
     )
 
 
 _ASR_MODEL_REGISTRY: tuple[AsrModelDescriptor, ...] = (
     AsrModelDescriptor(
         model_key=SENSEVOICE_ASR_MODEL,
-        display_name="SenseVoice Small",
-        subtitle="服务端均衡模式，按当前服务端模型配置运行。",
+        display_name="bottle0.1",
+        subtitle="快速识别字幕",
         runtime_kind="server_local",
-        runtime_label="Server Runtime",
+        runtime_label="Server Local",
         prepare_mode="auto_on_demand",
         cache_scope="server",
         supports_upload=True,
         supports_preview=False,
         supports_transcribe_api=True,
+        source_model_id="iic/SenseVoiceSmall",
+        deploy_path=str(SENSEVOICE_MODEL_DIR),
+        note="Fixed local bundle path.",
         status_loader=_get_sensevoice_model_status,
         prepare_loader=_prepare_sensevoice_model,
         verify_loader=_get_sensevoice_model_status,
     ),
     AsrModelDescriptor(
         model_key=FASTER_WHISPER_ASR_MODEL,
-        display_name="Faster Whisper Medium",
-        subtitle="服务端缓存模型，首次使用时按需准备。",
+        display_name="bottle.1.0",
+        subtitle="识别字幕更精准/耗时加长",
         runtime_kind="server_cached",
-        runtime_label="Server Cached Model",
+        runtime_label="Server Cached",
         prepare_mode="auto_on_demand",
         cache_scope="server",
         supports_upload=True,
         supports_preview=False,
         supports_transcribe_api=True,
-        source_model_id="pengzhendong/faster-whisper-medium",
+        source_model_id="Systran/faster-distil-whisper-small.en",
         deploy_path=str(FASTER_WHISPER_MODEL_DIR),
-        note="首次使用前会按需准备服务端模型缓存。",
+        note="Fixed local bundle path.",
         status_loader=_get_faster_whisper_status,
         prepare_loader=_prepare_faster_whisper_model,
         verify_loader=_get_faster_whisper_status,
@@ -310,7 +257,7 @@ _ASR_MODEL_REGISTRY: tuple[AsrModelDescriptor, ...] = (
     AsrModelDescriptor(
         model_key=QWEN_ASR_MODEL,
         display_name="Qwen ASR Flash",
-        subtitle="云端文件转写，启动最快，无需准备服务端缓存。",
+        subtitle="直接开始生成",
         runtime_kind="cloud_api",
         runtime_label="Cloud API",
         prepare_mode="none",
@@ -318,25 +265,10 @@ _ASR_MODEL_REGISTRY: tuple[AsrModelDescriptor, ...] = (
         supports_upload=True,
         supports_preview=False,
         supports_transcribe_api=True,
+        note="Cloud transcription route.",
         status_loader=_get_qwen_status,
         prepare_loader=lambda force_refresh=False: _get_qwen_status(),
         verify_loader=_get_qwen_status,
-    ),
-    AsrModelDescriptor(
-        model_key=LOCAL_SENSEVOICE_ASR_MODEL,
-        display_name="SenseVoice Small",
-        subtitle="浏览器本地模型，首次使用时在当前浏览器中下载或校验。",
-        runtime_kind="browser_local",
-        runtime_label="Browser WASM",
-        prepare_mode="auto_on_demand",
-        cache_scope="browser",
-        supports_upload=True,
-        supports_preview=True,
-        supports_transcribe_api=False,
-        note="浏览器本地缓存与服务端部署缓存互不共享。",
-        status_loader=_get_local_browser_sensevoice_status,
-        prepare_loader=lambda force_refresh=False: _get_local_browser_sensevoice_status(),
-        verify_loader=_get_local_browser_sensevoice_status,
     ),
 )
 _REGISTRY_BY_KEY = {item.model_key: item for item in _ASR_MODEL_REGISTRY}
@@ -356,7 +288,7 @@ def get_asr_model_status(model_key: str) -> dict[str, Any]:
         raise KeyError(str(model_key or "").strip())
     loader = descriptor.status_loader or descriptor.verify_loader
     if loader is None:
-        return _base_state(descriptor, status=STATUS_UNSUPPORTED, available=False, message="模型状态不可用")
+        return _base_state(descriptor, status=STATUS_UNSUPPORTED, available=False, message="Unsupported model.")
     return loader()
 
 
@@ -366,7 +298,7 @@ def prepare_asr_model(model_key: str, *, force_refresh: bool = False) -> dict[st
         raise KeyError(str(model_key or "").strip())
     loader = descriptor.prepare_loader or descriptor.status_loader
     if loader is None:
-        return _base_state(descriptor, status=STATUS_UNSUPPORTED, available=False, message="模型不支持准备")
+        return _base_state(descriptor, status=STATUS_UNSUPPORTED, available=False, message="Unsupported model.")
     return loader(bool(force_refresh))
 
 
@@ -376,7 +308,7 @@ def verify_asr_model(model_key: str) -> dict[str, Any]:
         raise KeyError(str(model_key or "").strip())
     loader = descriptor.verify_loader or descriptor.status_loader
     if loader is None:
-        return _base_state(descriptor, status=STATUS_UNSUPPORTED, available=False, message="模型不支持校验")
+        return _base_state(descriptor, status=STATUS_UNSUPPORTED, available=False, message="Unsupported model.")
     return loader()
 
 
@@ -403,19 +335,8 @@ def get_supported_asr_model_keys() -> tuple[str, ...]:
 def get_asr_display_meta(model_key: str) -> tuple[str, str]:
     descriptor = get_asr_model_descriptor(model_key)
     if descriptor is None:
-        return str(model_key or "").strip() or "未命名模型", "cloud"
-    normalized_model_key = str(model_key or "").strip()
-    if normalized_model_key == LOCAL_SENSEVOICE_ASR_MODEL:
-        return f"{descriptor.display_name} · 本地", "local"
-    if normalized_model_key == SENSEVOICE_ASR_MODEL:
-        return f"{descriptor.display_name} · 服务端 ASR", "cloud"
-    if normalized_model_key == FASTER_WHISPER_ASR_MODEL:
-        return f"{descriptor.display_name} · 服务端 ASR", "cloud"
-    if normalized_model_key == QWEN_ASR_MODEL:
-        return "高速 · 云端 ASR", "cloud"
+        return str(model_key or "").strip() or "Unnamed model", "cloud"
     runtime_kind = descriptor.runtime_kind
-    if runtime_kind == "browser_local":
-        return descriptor.display_name, "local"
     if runtime_kind == "cloud_api":
         return descriptor.display_name, "cloud"
     return descriptor.display_name, "cloud"

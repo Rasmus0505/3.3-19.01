@@ -1,0 +1,3066 @@
+{
+  "status_code": 200,
+  "elapsed_seconds": 59.38311314582825,
+  "json": {
+    "ok": true,
+    "source_type": "file",
+    "model": "sensevoice-small",
+    "task_id": "",
+    "task_status": "SUCCEEDED",
+    "transcription_url": "",
+    "preview_text": "Okay, the truth. I sometimes feel like you don't like me.ow makes' Gloria right I'm really angry at Phil let's respect the process. Gloria I don't know why you think don't like sometimes when god is so No not just the face from the beginning feel like family is so crazy Nos not so's how I feel I am sorry if you feel that way I really am because from the moment I met you I have tried to make you feel comfortable with us you think it's only my head No kind I don't know I mean really love having you and manny in our family you don't to be so defensive. I do that though't I I'm feeling a hug was thinking grew if I could like God this's hug He get off the did you out my godre a girl dad I was coming to get a beer anyway apology can so from the children silly for having the for every' momhe was my listen Gloria was a and are makeous enough to someone10 year old Well she's pissed she wouldn't even come out did you really have to call her that a gold digger you know what dad it was a year ago and it was a natural to ask a beautiful woman not Not exactly what Mitchell No you are doing great No see this is exactly why we sweep things under the rug. so people don't get hurt until you too much rug lumpy a tripping hazard. open yourself to lawsuits. you can go a really without blinking Gloria' can I talk to you for a second Claire likes to say you can be part of the problem or part of the solution. I happen to believe that you can be both Listen Claire feels terrible why don't you talk to her why I know what she thinks a you know she saying gold Well I know she said that. but that was a long time go before by me nice things of course on beautiful things. Look at these yellow think to without these them away Gloria we all know you'd be without underwear I mean it' not about that' about accepted by my new is not Gloriare a beautiful woman fact you probably one of those beautiful woman who doesn't even know know it's natural about you dad family is very of other the first brought me think enough but over time you realize that as as by then brought was just needs a little time. trust me should' be the most loyal youve ever had.",
+    "asr_result_json": {
+      "source": "sensevoice_server",
+      "engine": "sensevoice_funasr",
+      "transcripts": [
+        {
+          "text": "Okay, the truth. I sometimes feel like you don't like me.ow makes' Gloria right I'm really angry at Phil let's respect the process. Gloria I don't know why you think don't like sometimes when god is so No not just the face from the beginning feel like family is so crazy Nos not so's how I feel I am sorry if you feel that way I really am because from the moment I met you I have tried to make you feel comfortable with us you think it's only my head No kind I don't know I mean really love having you and manny in our family you don't to be so defensive. I do that though't I I'm feeling a hug was thinking grew if I could like God this's hug He get off the did you out my godre a girl dad I was coming to get a beer anyway apology can so from the children silly for having the for every' momhe was my listen Gloria was a and are makeous enough to someone10 year old Well she's pissed she wouldn't even come out did you really have to call her that a gold digger you know what dad it was a year ago and it was a natural to ask a beautiful woman not Not exactly what Mitchell No you are doing great No see this is exactly why we sweep things under the rug. so people don't get hurt until you too much rug lumpy a tripping hazard. open yourself to lawsuits. you can go a really without blinking Gloria' can I talk to you for a second Claire likes to say you can be part of the problem or part of the solution. I happen to believe that you can be both Listen Claire feels terrible why don't you talk to her why I know what she thinks a you know she saying gold Well I know she said that. but that was a long time go before by me nice things of course on beautiful things. Look at these yellow think to without these them away Gloria we all know you'd be without underwear I mean it' not about that' about accepted by my new is not Gloriare a beautiful woman fact you probably one of those beautiful woman who doesn't even know know it's natural about you dad family is very of other the first brought me think enough but over time you realize that as as by then brought was just needs a little time. trust me should' be the most loyal youve ever had.",
+          "lang": "auto",
+          "emotion": "",
+          "event": "",
+          "words": [
+            {
+              "text": "Okay",
+              "surface": "Okay,",
+              "punctuation": ",",
+              "begin_time": 0,
+              "end_time": 773
+            },
+            {
+              "text": "the",
+              "surface": "the",
+              "punctuation": "",
+              "begin_time": 773,
+              "end_time": 1353
+            },
+            {
+              "text": "truth",
+              "surface": "truth.",
+              "punctuation": ".",
+              "begin_time": 1353,
+              "end_time": 2319
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 2319,
+              "end_time": 2512
+            },
+            {
+              "text": "sometimes",
+              "surface": "sometimes",
+              "punctuation": "",
+              "begin_time": 2512,
+              "end_time": 4251
+            },
+            {
+              "text": "feel",
+              "surface": "feel",
+              "punctuation": "",
+              "begin_time": 4251,
+              "end_time": 5024
+            },
+            {
+              "text": "like",
+              "surface": "like",
+              "punctuation": "",
+              "begin_time": 5024,
+              "end_time": 5797
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 5797,
+              "end_time": 6377
+            },
+            {
+              "text": "don't",
+              "surface": "don't",
+              "punctuation": "",
+              "begin_time": 6377,
+              "end_time": 7343
+            },
+            {
+              "text": "like",
+              "surface": "like",
+              "punctuation": "",
+              "begin_time": 7343,
+              "end_time": 8116
+            },
+            {
+              "text": "me.ow",
+              "surface": "me.ow",
+              "punctuation": "",
+              "begin_time": 8116,
+              "end_time": 9082
+            },
+            {
+              "text": "makes",
+              "surface": "makes'",
+              "punctuation": "'",
+              "begin_time": 9082,
+              "end_time": 10048
+            },
+            {
+              "text": "Gloria",
+              "surface": "Gloria",
+              "punctuation": "",
+              "begin_time": 10048,
+              "end_time": 11207
+            },
+            {
+              "text": "right",
+              "surface": "right",
+              "punctuation": "",
+              "begin_time": 11207,
+              "end_time": 12173
+            },
+            {
+              "text": "I'm",
+              "surface": "I'm",
+              "punctuation": "",
+              "begin_time": 12173,
+              "end_time": 12753
+            },
+            {
+              "text": "really",
+              "surface": "really",
+              "punctuation": "",
+              "begin_time": 12753,
+              "end_time": 13912
+            },
+            {
+              "text": "angry",
+              "surface": "angry",
+              "punctuation": "",
+              "begin_time": 13912,
+              "end_time": 14878
+            },
+            {
+              "text": "at",
+              "surface": "at",
+              "punctuation": "",
+              "begin_time": 14878,
+              "end_time": 15264
+            },
+            {
+              "text": "Phil",
+              "surface": "Phil",
+              "punctuation": "",
+              "begin_time": 15264,
+              "end_time": 16037
+            },
+            {
+              "text": "let's",
+              "surface": "let's",
+              "punctuation": "",
+              "begin_time": 16037,
+              "end_time": 17003
+            },
+            {
+              "text": "respect",
+              "surface": "respect",
+              "punctuation": "",
+              "begin_time": 17003,
+              "end_time": 18355
+            },
+            {
+              "text": "the",
+              "surface": "the",
+              "punctuation": "",
+              "begin_time": 18355,
+              "end_time": 18935
+            },
+            {
+              "text": "process",
+              "surface": "process.",
+              "punctuation": ".",
+              "begin_time": 18935,
+              "end_time": 20287
+            },
+            {
+              "text": "Gloria",
+              "surface": "Gloria",
+              "punctuation": "",
+              "begin_time": 20287,
+              "end_time": 21446
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 21446,
+              "end_time": 21639
+            },
+            {
+              "text": "don't",
+              "surface": "don't",
+              "punctuation": "",
+              "begin_time": 21639,
+              "end_time": 22605
+            },
+            {
+              "text": "know",
+              "surface": "know",
+              "punctuation": "",
+              "begin_time": 22605,
+              "end_time": 23378
+            },
+            {
+              "text": "why",
+              "surface": "why",
+              "punctuation": "",
+              "begin_time": 23378,
+              "end_time": 23958
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 23958,
+              "end_time": 24538
+            },
+            {
+              "text": "think",
+              "surface": "think",
+              "punctuation": "",
+              "begin_time": 24538,
+              "end_time": 25504
+            },
+            {
+              "text": "don't",
+              "surface": "don't",
+              "punctuation": "",
+              "begin_time": 25504,
+              "end_time": 26470
+            },
+            {
+              "text": "like",
+              "surface": "like",
+              "punctuation": "",
+              "begin_time": 26470,
+              "end_time": 27243
+            },
+            {
+              "text": "sometimes",
+              "surface": "sometimes",
+              "punctuation": "",
+              "begin_time": 27243,
+              "end_time": 28982
+            },
+            {
+              "text": "when",
+              "surface": "when",
+              "punctuation": "",
+              "begin_time": 28982,
+              "end_time": 29755
+            },
+            {
+              "text": "god",
+              "surface": "god",
+              "punctuation": "",
+              "begin_time": 29755,
+              "end_time": 30335
+            },
+            {
+              "text": "is",
+              "surface": "is",
+              "punctuation": "",
+              "begin_time": 30335,
+              "end_time": 30721
+            },
+            {
+              "text": "so",
+              "surface": "so",
+              "punctuation": "",
+              "begin_time": 30721,
+              "end_time": 31107
+            },
+            {
+              "text": "No",
+              "surface": "No",
+              "punctuation": "",
+              "begin_time": 31107,
+              "end_time": 31493
+            },
+            {
+              "text": "not",
+              "surface": "not",
+              "punctuation": "",
+              "begin_time": 31493,
+              "end_time": 32073
+            },
+            {
+              "text": "just",
+              "surface": "just",
+              "punctuation": "",
+              "begin_time": 32073,
+              "end_time": 32846
+            },
+            {
+              "text": "the",
+              "surface": "the",
+              "punctuation": "",
+              "begin_time": 32846,
+              "end_time": 33426
+            },
+            {
+              "text": "face",
+              "surface": "face",
+              "punctuation": "",
+              "begin_time": 33426,
+              "end_time": 34199
+            },
+            {
+              "text": "from",
+              "surface": "from",
+              "punctuation": "",
+              "begin_time": 34199,
+              "end_time": 34972
+            },
+            {
+              "text": "the",
+              "surface": "the",
+              "punctuation": "",
+              "begin_time": 34972,
+              "end_time": 35552
+            },
+            {
+              "text": "beginning",
+              "surface": "beginning",
+              "punctuation": "",
+              "begin_time": 35552,
+              "end_time": 37291
+            },
+            {
+              "text": "feel",
+              "surface": "feel",
+              "punctuation": "",
+              "begin_time": 37291,
+              "end_time": 38064
+            },
+            {
+              "text": "like",
+              "surface": "like",
+              "punctuation": "",
+              "begin_time": 38064,
+              "end_time": 38837
+            },
+            {
+              "text": "family",
+              "surface": "family",
+              "punctuation": "",
+              "begin_time": 38837,
+              "end_time": 39996
+            },
+            {
+              "text": "is",
+              "surface": "is",
+              "punctuation": "",
+              "begin_time": 39996,
+              "end_time": 40382
+            },
+            {
+              "text": "so",
+              "surface": "so",
+              "punctuation": "",
+              "begin_time": 40382,
+              "end_time": 40768
+            },
+            {
+              "text": "crazy",
+              "surface": "crazy",
+              "punctuation": "",
+              "begin_time": 40768,
+              "end_time": 41734
+            },
+            {
+              "text": "Nos",
+              "surface": "Nos",
+              "punctuation": "",
+              "begin_time": 41734,
+              "end_time": 42314
+            },
+            {
+              "text": "not",
+              "surface": "not",
+              "punctuation": "",
+              "begin_time": 42314,
+              "end_time": 42894
+            },
+            {
+              "text": "so's",
+              "surface": "so's",
+              "punctuation": "",
+              "begin_time": 42894,
+              "end_time": 43667
+            },
+            {
+              "text": "how",
+              "surface": "how",
+              "punctuation": "",
+              "begin_time": 43667,
+              "end_time": 44247
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 44247,
+              "end_time": 44440
+            },
+            {
+              "text": "feel",
+              "surface": "feel",
+              "punctuation": "",
+              "begin_time": 44440,
+              "end_time": 45213
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 45213,
+              "end_time": 45406
+            },
+            {
+              "text": "am",
+              "surface": "am",
+              "punctuation": "",
+              "begin_time": 45406,
+              "end_time": 45792
+            },
+            {
+              "text": "sorry",
+              "surface": "sorry",
+              "punctuation": "",
+              "begin_time": 45792,
+              "end_time": 46758
+            },
+            {
+              "text": "if",
+              "surface": "if",
+              "punctuation": "",
+              "begin_time": 46758,
+              "end_time": 47144
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 47144,
+              "end_time": 47724
+            },
+            {
+              "text": "feel",
+              "surface": "feel",
+              "punctuation": "",
+              "begin_time": 47724,
+              "end_time": 48497
+            },
+            {
+              "text": "that",
+              "surface": "that",
+              "punctuation": "",
+              "begin_time": 48497,
+              "end_time": 49270
+            },
+            {
+              "text": "way",
+              "surface": "way",
+              "punctuation": "",
+              "begin_time": 49270,
+              "end_time": 49850
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 49850,
+              "end_time": 50043
+            },
+            {
+              "text": "really",
+              "surface": "really",
+              "punctuation": "",
+              "begin_time": 50043,
+              "end_time": 51202
+            },
+            {
+              "text": "am",
+              "surface": "am",
+              "punctuation": "",
+              "begin_time": 51202,
+              "end_time": 51588
+            },
+            {
+              "text": "because",
+              "surface": "because",
+              "punctuation": "",
+              "begin_time": 51588,
+              "end_time": 52940
+            },
+            {
+              "text": "from",
+              "surface": "from",
+              "punctuation": "",
+              "begin_time": 52940,
+              "end_time": 53713
+            },
+            {
+              "text": "the",
+              "surface": "the",
+              "punctuation": "",
+              "begin_time": 53713,
+              "end_time": 54293
+            },
+            {
+              "text": "moment",
+              "surface": "moment",
+              "punctuation": "",
+              "begin_time": 54293,
+              "end_time": 55452
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 55452,
+              "end_time": 55645
+            },
+            {
+              "text": "met",
+              "surface": "met",
+              "punctuation": "",
+              "begin_time": 55645,
+              "end_time": 56225
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 56225,
+              "end_time": 56805
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 56805,
+              "end_time": 56998
+            },
+            {
+              "text": "have",
+              "surface": "have",
+              "punctuation": "",
+              "begin_time": 56998,
+              "end_time": 57771
+            },
+            {
+              "text": "tried",
+              "surface": "tried",
+              "punctuation": "",
+              "begin_time": 57771,
+              "end_time": 58737
+            },
+            {
+              "text": "to",
+              "surface": "to",
+              "punctuation": "",
+              "begin_time": 58737,
+              "end_time": 59123
+            },
+            {
+              "text": "make",
+              "surface": "make",
+              "punctuation": "",
+              "begin_time": 59123,
+              "end_time": 59896
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 59896,
+              "end_time": 60476
+            },
+            {
+              "text": "feel",
+              "surface": "feel",
+              "punctuation": "",
+              "begin_time": 60476,
+              "end_time": 61249
+            },
+            {
+              "text": "comfortable",
+              "surface": "comfortable",
+              "punctuation": "",
+              "begin_time": 61249,
+              "end_time": 63374
+            },
+            {
+              "text": "with",
+              "surface": "with",
+              "punctuation": "",
+              "begin_time": 63374,
+              "end_time": 64147
+            },
+            {
+              "text": "us",
+              "surface": "us",
+              "punctuation": "",
+              "begin_time": 64147,
+              "end_time": 64533
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 64533,
+              "end_time": 65113
+            },
+            {
+              "text": "think",
+              "surface": "think",
+              "punctuation": "",
+              "begin_time": 65113,
+              "end_time": 66079
+            },
+            {
+              "text": "it's",
+              "surface": "it's",
+              "punctuation": "",
+              "begin_time": 66079,
+              "end_time": 66852
+            },
+            {
+              "text": "only",
+              "surface": "only",
+              "punctuation": "",
+              "begin_time": 66852,
+              "end_time": 67625
+            },
+            {
+              "text": "my",
+              "surface": "my",
+              "punctuation": "",
+              "begin_time": 67625,
+              "end_time": 68011
+            },
+            {
+              "text": "head",
+              "surface": "head",
+              "punctuation": "",
+              "begin_time": 68011,
+              "end_time": 68784
+            },
+            {
+              "text": "No",
+              "surface": "No",
+              "punctuation": "",
+              "begin_time": 68784,
+              "end_time": 69170
+            },
+            {
+              "text": "kind",
+              "surface": "kind",
+              "punctuation": "",
+              "begin_time": 69170,
+              "end_time": 69943
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 69943,
+              "end_time": 70136
+            },
+            {
+              "text": "don't",
+              "surface": "don't",
+              "punctuation": "",
+              "begin_time": 70136,
+              "end_time": 71102
+            },
+            {
+              "text": "know",
+              "surface": "know",
+              "punctuation": "",
+              "begin_time": 71102,
+              "end_time": 71875
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 71875,
+              "end_time": 72068
+            },
+            {
+              "text": "mean",
+              "surface": "mean",
+              "punctuation": "",
+              "begin_time": 72068,
+              "end_time": 72841
+            },
+            {
+              "text": "really",
+              "surface": "really",
+              "punctuation": "",
+              "begin_time": 72841,
+              "end_time": 74000
+            },
+            {
+              "text": "love",
+              "surface": "love",
+              "punctuation": "",
+              "begin_time": 74000,
+              "end_time": 74773
+            },
+            {
+              "text": "having",
+              "surface": "having",
+              "punctuation": "",
+              "begin_time": 74773,
+              "end_time": 75932
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 75932,
+              "end_time": 76512
+            },
+            {
+              "text": "and",
+              "surface": "and",
+              "punctuation": "",
+              "begin_time": 76512,
+              "end_time": 77092
+            },
+            {
+              "text": "manny",
+              "surface": "manny",
+              "punctuation": "",
+              "begin_time": 77092,
+              "end_time": 78058
+            },
+            {
+              "text": "in",
+              "surface": "in",
+              "punctuation": "",
+              "begin_time": 78058,
+              "end_time": 78444
+            },
+            {
+              "text": "our",
+              "surface": "our",
+              "punctuation": "",
+              "begin_time": 78444,
+              "end_time": 79024
+            },
+            {
+              "text": "family",
+              "surface": "family",
+              "punctuation": "",
+              "begin_time": 79024,
+              "end_time": 80183
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 80183,
+              "end_time": 80763
+            },
+            {
+              "text": "don't",
+              "surface": "don't",
+              "punctuation": "",
+              "begin_time": 80763,
+              "end_time": 81729
+            },
+            {
+              "text": "to",
+              "surface": "to",
+              "punctuation": "",
+              "begin_time": 81729,
+              "end_time": 82115
+            },
+            {
+              "text": "be",
+              "surface": "be",
+              "punctuation": "",
+              "begin_time": 82115,
+              "end_time": 82501
+            },
+            {
+              "text": "so",
+              "surface": "so",
+              "punctuation": "",
+              "begin_time": 82501,
+              "end_time": 82887
+            },
+            {
+              "text": "defensive",
+              "surface": "defensive.",
+              "punctuation": ".",
+              "begin_time": 82887,
+              "end_time": 84626
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 84626,
+              "end_time": 84819
+            },
+            {
+              "text": "do",
+              "surface": "do",
+              "punctuation": "",
+              "begin_time": 84819,
+              "end_time": 85205
+            },
+            {
+              "text": "that",
+              "surface": "that",
+              "punctuation": "",
+              "begin_time": 85205,
+              "end_time": 85978
+            },
+            {
+              "text": "though't",
+              "surface": "though't",
+              "punctuation": "",
+              "begin_time": 85978,
+              "end_time": 87524
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 87524,
+              "end_time": 87717
+            },
+            {
+              "text": "I'm",
+              "surface": "I'm",
+              "punctuation": "",
+              "begin_time": 87717,
+              "end_time": 88297
+            },
+            {
+              "text": "feeling",
+              "surface": "feeling",
+              "punctuation": "",
+              "begin_time": 88297,
+              "end_time": 89649
+            },
+            {
+              "text": "a",
+              "surface": "a",
+              "punctuation": "",
+              "begin_time": 89649,
+              "end_time": 89842
+            },
+            {
+              "text": "hug",
+              "surface": "hug",
+              "punctuation": "",
+              "begin_time": 89842,
+              "end_time": 90422
+            },
+            {
+              "text": "was",
+              "surface": "was",
+              "punctuation": "",
+              "begin_time": 90422,
+              "end_time": 91002
+            },
+            {
+              "text": "thinking",
+              "surface": "thinking",
+              "punctuation": "",
+              "begin_time": 91002,
+              "end_time": 92548
+            },
+            {
+              "text": "grew",
+              "surface": "grew",
+              "punctuation": "",
+              "begin_time": 92548,
+              "end_time": 93321
+            },
+            {
+              "text": "if",
+              "surface": "if",
+              "punctuation": "",
+              "begin_time": 93321,
+              "end_time": 93707
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 93707,
+              "end_time": 93900
+            },
+            {
+              "text": "could",
+              "surface": "could",
+              "punctuation": "",
+              "begin_time": 93900,
+              "end_time": 94866
+            },
+            {
+              "text": "like",
+              "surface": "like",
+              "punctuation": "",
+              "begin_time": 94866,
+              "end_time": 95639
+            },
+            {
+              "text": "God",
+              "surface": "God",
+              "punctuation": "",
+              "begin_time": 95639,
+              "end_time": 96219
+            },
+            {
+              "text": "this's",
+              "surface": "this's",
+              "punctuation": "",
+              "begin_time": 96219,
+              "end_time": 97378
+            },
+            {
+              "text": "hug",
+              "surface": "hug",
+              "punctuation": "",
+              "begin_time": 97378,
+              "end_time": 97958
+            },
+            {
+              "text": "He",
+              "surface": "He",
+              "punctuation": "",
+              "begin_time": 97958,
+              "end_time": 98344
+            },
+            {
+              "text": "get",
+              "surface": "get",
+              "punctuation": "",
+              "begin_time": 98344,
+              "end_time": 98924
+            },
+            {
+              "text": "off",
+              "surface": "off",
+              "punctuation": "",
+              "begin_time": 98924,
+              "end_time": 99504
+            },
+            {
+              "text": "the",
+              "surface": "the",
+              "punctuation": "",
+              "begin_time": 99504,
+              "end_time": 100084
+            },
+            {
+              "text": "did",
+              "surface": "did",
+              "punctuation": "",
+              "begin_time": 100084,
+              "end_time": 100664
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 100664,
+              "end_time": 101244
+            },
+            {
+              "text": "out",
+              "surface": "out",
+              "punctuation": "",
+              "begin_time": 101244,
+              "end_time": 101824
+            },
+            {
+              "text": "my",
+              "surface": "my",
+              "punctuation": "",
+              "begin_time": 101824,
+              "end_time": 102210
+            },
+            {
+              "text": "godre",
+              "surface": "godre",
+              "punctuation": "",
+              "begin_time": 102210,
+              "end_time": 103176
+            },
+            {
+              "text": "a",
+              "surface": "a",
+              "punctuation": "",
+              "begin_time": 103176,
+              "end_time": 103369
+            },
+            {
+              "text": "girl",
+              "surface": "girl",
+              "punctuation": "",
+              "begin_time": 103369,
+              "end_time": 104142
+            },
+            {
+              "text": "dad",
+              "surface": "dad",
+              "punctuation": "",
+              "begin_time": 104142,
+              "end_time": 104722
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 104722,
+              "end_time": 104915
+            },
+            {
+              "text": "was",
+              "surface": "was",
+              "punctuation": "",
+              "begin_time": 104915,
+              "end_time": 105495
+            },
+            {
+              "text": "coming",
+              "surface": "coming",
+              "punctuation": "",
+              "begin_time": 105495,
+              "end_time": 106654
+            },
+            {
+              "text": "to",
+              "surface": "to",
+              "punctuation": "",
+              "begin_time": 106654,
+              "end_time": 107040
+            },
+            {
+              "text": "get",
+              "surface": "get",
+              "punctuation": "",
+              "begin_time": 107040,
+              "end_time": 107620
+            },
+            {
+              "text": "a",
+              "surface": "a",
+              "punctuation": "",
+              "begin_time": 107620,
+              "end_time": 107813
+            },
+            {
+              "text": "beer",
+              "surface": "beer",
+              "punctuation": "",
+              "begin_time": 107813,
+              "end_time": 108586
+            },
+            {
+              "text": "anyway",
+              "surface": "anyway",
+              "punctuation": "",
+              "begin_time": 108586,
+              "end_time": 109745
+            },
+            {
+              "text": "apology",
+              "surface": "apology",
+              "punctuation": "",
+              "begin_time": 109745,
+              "end_time": 111097
+            },
+            {
+              "text": "can",
+              "surface": "can",
+              "punctuation": "",
+              "begin_time": 111097,
+              "end_time": 111677
+            },
+            {
+              "text": "so",
+              "surface": "so",
+              "punctuation": "",
+              "begin_time": 111677,
+              "end_time": 112063
+            },
+            {
+              "text": "from",
+              "surface": "from",
+              "punctuation": "",
+              "begin_time": 112063,
+              "end_time": 112836
+            },
+            {
+              "text": "the",
+              "surface": "the",
+              "punctuation": "",
+              "begin_time": 112836,
+              "end_time": 113416
+            },
+            {
+              "text": "children",
+              "surface": "children",
+              "punctuation": "",
+              "begin_time": 113416,
+              "end_time": 114962
+            },
+            {
+              "text": "silly",
+              "surface": "silly",
+              "punctuation": "",
+              "begin_time": 114962,
+              "end_time": 115928
+            },
+            {
+              "text": "for",
+              "surface": "for",
+              "punctuation": "",
+              "begin_time": 115928,
+              "end_time": 116508
+            },
+            {
+              "text": "having",
+              "surface": "having",
+              "punctuation": "",
+              "begin_time": 116508,
+              "end_time": 117667
+            },
+            {
+              "text": "the",
+              "surface": "the",
+              "punctuation": "",
+              "begin_time": 117667,
+              "end_time": 118247
+            },
+            {
+              "text": "for",
+              "surface": "for",
+              "punctuation": "",
+              "begin_time": 118247,
+              "end_time": 118827
+            },
+            {
+              "text": "every",
+              "surface": "every'",
+              "punctuation": "'",
+              "begin_time": 118827,
+              "end_time": 119793
+            },
+            {
+              "text": "momhe",
+              "surface": "momhe",
+              "punctuation": "",
+              "begin_time": 119793,
+              "end_time": 120759
+            },
+            {
+              "text": "was",
+              "surface": "was",
+              "punctuation": "",
+              "begin_time": 120759,
+              "end_time": 121339
+            },
+            {
+              "text": "my",
+              "surface": "my",
+              "punctuation": "",
+              "begin_time": 121339,
+              "end_time": 121725
+            },
+            {
+              "text": "listen",
+              "surface": "listen",
+              "punctuation": "",
+              "begin_time": 121725,
+              "end_time": 122884
+            },
+            {
+              "text": "Gloria",
+              "surface": "Gloria",
+              "punctuation": "",
+              "begin_time": 122884,
+              "end_time": 124043
+            },
+            {
+              "text": "was",
+              "surface": "was",
+              "punctuation": "",
+              "begin_time": 124043,
+              "end_time": 124623
+            },
+            {
+              "text": "a",
+              "surface": "a",
+              "punctuation": "",
+              "begin_time": 124623,
+              "end_time": 124816
+            },
+            {
+              "text": "and",
+              "surface": "and",
+              "punctuation": "",
+              "begin_time": 124816,
+              "end_time": 125396
+            },
+            {
+              "text": "are",
+              "surface": "are",
+              "punctuation": "",
+              "begin_time": 125396,
+              "end_time": 125976
+            },
+            {
+              "text": "makeous",
+              "surface": "makeous",
+              "punctuation": "",
+              "begin_time": 125976,
+              "end_time": 127328
+            },
+            {
+              "text": "enough",
+              "surface": "enough",
+              "punctuation": "",
+              "begin_time": 127328,
+              "end_time": 128487
+            },
+            {
+              "text": "to",
+              "surface": "to",
+              "punctuation": "",
+              "begin_time": 128487,
+              "end_time": 128873
+            },
+            {
+              "text": "someone10",
+              "surface": "someone10",
+              "punctuation": "",
+              "begin_time": 128873,
+              "end_time": 130612
+            },
+            {
+              "text": "year",
+              "surface": "year",
+              "punctuation": "",
+              "begin_time": 130612,
+              "end_time": 131385
+            },
+            {
+              "text": "old",
+              "surface": "old",
+              "punctuation": "",
+              "begin_time": 131385,
+              "end_time": 131965
+            },
+            {
+              "text": "Well",
+              "surface": "Well",
+              "punctuation": "",
+              "begin_time": 131965,
+              "end_time": 132738
+            },
+            {
+              "text": "she's",
+              "surface": "she's",
+              "punctuation": "",
+              "begin_time": 132738,
+              "end_time": 133704
+            },
+            {
+              "text": "pissed",
+              "surface": "pissed",
+              "punctuation": "",
+              "begin_time": 133704,
+              "end_time": 134863
+            },
+            {
+              "text": "she",
+              "surface": "she",
+              "punctuation": "",
+              "begin_time": 134863,
+              "end_time": 135443
+            },
+            {
+              "text": "wouldn't",
+              "surface": "wouldn't",
+              "punctuation": "",
+              "begin_time": 135443,
+              "end_time": 136989
+            },
+            {
+              "text": "even",
+              "surface": "even",
+              "punctuation": "",
+              "begin_time": 136989,
+              "end_time": 137762
+            },
+            {
+              "text": "come",
+              "surface": "come",
+              "punctuation": "",
+              "begin_time": 137762,
+              "end_time": 138535
+            },
+            {
+              "text": "out",
+              "surface": "out",
+              "punctuation": "",
+              "begin_time": 138535,
+              "end_time": 139115
+            },
+            {
+              "text": "did",
+              "surface": "did",
+              "punctuation": "",
+              "begin_time": 139115,
+              "end_time": 139695
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 139695,
+              "end_time": 140275
+            },
+            {
+              "text": "really",
+              "surface": "really",
+              "punctuation": "",
+              "begin_time": 140275,
+              "end_time": 141434
+            },
+            {
+              "text": "have",
+              "surface": "have",
+              "punctuation": "",
+              "begin_time": 141434,
+              "end_time": 142207
+            },
+            {
+              "text": "to",
+              "surface": "to",
+              "punctuation": "",
+              "begin_time": 142207,
+              "end_time": 142593
+            },
+            {
+              "text": "call",
+              "surface": "call",
+              "punctuation": "",
+              "begin_time": 142593,
+              "end_time": 143366
+            },
+            {
+              "text": "her",
+              "surface": "her",
+              "punctuation": "",
+              "begin_time": 143366,
+              "end_time": 143946
+            },
+            {
+              "text": "that",
+              "surface": "that",
+              "punctuation": "",
+              "begin_time": 143946,
+              "end_time": 144719
+            },
+            {
+              "text": "a",
+              "surface": "a",
+              "punctuation": "",
+              "begin_time": 144719,
+              "end_time": 144912
+            },
+            {
+              "text": "gold",
+              "surface": "gold",
+              "punctuation": "",
+              "begin_time": 144912,
+              "end_time": 145685
+            },
+            {
+              "text": "digger",
+              "surface": "digger",
+              "punctuation": "",
+              "begin_time": 145685,
+              "end_time": 146844
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 146844,
+              "end_time": 147424
+            },
+            {
+              "text": "know",
+              "surface": "know",
+              "punctuation": "",
+              "begin_time": 147424,
+              "end_time": 148197
+            },
+            {
+              "text": "what",
+              "surface": "what",
+              "punctuation": "",
+              "begin_time": 148197,
+              "end_time": 148970
+            },
+            {
+              "text": "dad",
+              "surface": "dad",
+              "punctuation": "",
+              "begin_time": 148970,
+              "end_time": 149550
+            },
+            {
+              "text": "it",
+              "surface": "it",
+              "punctuation": "",
+              "begin_time": 149550,
+              "end_time": 149936
+            },
+            {
+              "text": "was",
+              "surface": "was",
+              "punctuation": "",
+              "begin_time": 149936,
+              "end_time": 150516
+            },
+            {
+              "text": "a",
+              "surface": "a",
+              "punctuation": "",
+              "begin_time": 150516,
+              "end_time": 150709
+            },
+            {
+              "text": "year",
+              "surface": "year",
+              "punctuation": "",
+              "begin_time": 150709,
+              "end_time": 151482
+            },
+            {
+              "text": "ago",
+              "surface": "ago",
+              "punctuation": "",
+              "begin_time": 151482,
+              "end_time": 152062
+            },
+            {
+              "text": "and",
+              "surface": "and",
+              "punctuation": "",
+              "begin_time": 152062,
+              "end_time": 152642
+            },
+            {
+              "text": "it",
+              "surface": "it",
+              "punctuation": "",
+              "begin_time": 152642,
+              "end_time": 153028
+            },
+            {
+              "text": "was",
+              "surface": "was",
+              "punctuation": "",
+              "begin_time": 153028,
+              "end_time": 153608
+            },
+            {
+              "text": "a",
+              "surface": "a",
+              "punctuation": "",
+              "begin_time": 153608,
+              "end_time": 153801
+            },
+            {
+              "text": "natural",
+              "surface": "natural",
+              "punctuation": "",
+              "begin_time": 153801,
+              "end_time": 155153
+            },
+            {
+              "text": "to",
+              "surface": "to",
+              "punctuation": "",
+              "begin_time": 155153,
+              "end_time": 155539
+            },
+            {
+              "text": "ask",
+              "surface": "ask",
+              "punctuation": "",
+              "begin_time": 155539,
+              "end_time": 156119
+            },
+            {
+              "text": "a",
+              "surface": "a",
+              "punctuation": "",
+              "begin_time": 156119,
+              "end_time": 156312
+            },
+            {
+              "text": "beautiful",
+              "surface": "beautiful",
+              "punctuation": "",
+              "begin_time": 156312,
+              "end_time": 158051
+            },
+            {
+              "text": "woman",
+              "surface": "woman",
+              "punctuation": "",
+              "begin_time": 158051,
+              "end_time": 159017
+            },
+            {
+              "text": "not",
+              "surface": "not",
+              "punctuation": "",
+              "begin_time": 159017,
+              "end_time": 159597
+            },
+            {
+              "text": "Not",
+              "surface": "Not",
+              "punctuation": "",
+              "begin_time": 159597,
+              "end_time": 160177
+            },
+            {
+              "text": "exactly",
+              "surface": "exactly",
+              "punctuation": "",
+              "begin_time": 160177,
+              "end_time": 161529
+            },
+            {
+              "text": "what",
+              "surface": "what",
+              "punctuation": "",
+              "begin_time": 161529,
+              "end_time": 162302
+            },
+            {
+              "text": "Mitchell",
+              "surface": "Mitchell",
+              "punctuation": "",
+              "begin_time": 162302,
+              "end_time": 163848
+            },
+            {
+              "text": "No",
+              "surface": "No",
+              "punctuation": "",
+              "begin_time": 163848,
+              "end_time": 164234
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 164234,
+              "end_time": 164814
+            },
+            {
+              "text": "are",
+              "surface": "are",
+              "punctuation": "",
+              "begin_time": 164814,
+              "end_time": 165394
+            },
+            {
+              "text": "doing",
+              "surface": "doing",
+              "punctuation": "",
+              "begin_time": 165394,
+              "end_time": 166360
+            },
+            {
+              "text": "great",
+              "surface": "great",
+              "punctuation": "",
+              "begin_time": 166360,
+              "end_time": 167326
+            },
+            {
+              "text": "No",
+              "surface": "No",
+              "punctuation": "",
+              "begin_time": 167326,
+              "end_time": 167712
+            },
+            {
+              "text": "see",
+              "surface": "see",
+              "punctuation": "",
+              "begin_time": 167712,
+              "end_time": 168292
+            },
+            {
+              "text": "this",
+              "surface": "this",
+              "punctuation": "",
+              "begin_time": 168292,
+              "end_time": 169065
+            },
+            {
+              "text": "is",
+              "surface": "is",
+              "punctuation": "",
+              "begin_time": 169065,
+              "end_time": 169451
+            },
+            {
+              "text": "exactly",
+              "surface": "exactly",
+              "punctuation": "",
+              "begin_time": 169451,
+              "end_time": 170803
+            },
+            {
+              "text": "why",
+              "surface": "why",
+              "punctuation": "",
+              "begin_time": 170803,
+              "end_time": 171383
+            },
+            {
+              "text": "we",
+              "surface": "we",
+              "punctuation": "",
+              "begin_time": 171383,
+              "end_time": 171769
+            },
+            {
+              "text": "sweep",
+              "surface": "sweep",
+              "punctuation": "",
+              "begin_time": 171769,
+              "end_time": 172735
+            },
+            {
+              "text": "things",
+              "surface": "things",
+              "punctuation": "",
+              "begin_time": 172735,
+              "end_time": 173894
+            },
+            {
+              "text": "under",
+              "surface": "under",
+              "punctuation": "",
+              "begin_time": 173894,
+              "end_time": 174860
+            },
+            {
+              "text": "the",
+              "surface": "the",
+              "punctuation": "",
+              "begin_time": 174860,
+              "end_time": 175440
+            },
+            {
+              "text": "rug",
+              "surface": "rug.",
+              "punctuation": ".",
+              "begin_time": 175440,
+              "end_time": 176020
+            },
+            {
+              "text": "so",
+              "surface": "so",
+              "punctuation": "",
+              "begin_time": 176020,
+              "end_time": 176406
+            },
+            {
+              "text": "people",
+              "surface": "people",
+              "punctuation": "",
+              "begin_time": 176406,
+              "end_time": 177565
+            },
+            {
+              "text": "don't",
+              "surface": "don't",
+              "punctuation": "",
+              "begin_time": 177565,
+              "end_time": 178531
+            },
+            {
+              "text": "get",
+              "surface": "get",
+              "punctuation": "",
+              "begin_time": 178531,
+              "end_time": 179111
+            },
+            {
+              "text": "hurt",
+              "surface": "hurt",
+              "punctuation": "",
+              "begin_time": 179111,
+              "end_time": 179884
+            },
+            {
+              "text": "until",
+              "surface": "until",
+              "punctuation": "",
+              "begin_time": 179884,
+              "end_time": 180850
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 180850,
+              "end_time": 181430
+            },
+            {
+              "text": "too",
+              "surface": "too",
+              "punctuation": "",
+              "begin_time": 181430,
+              "end_time": 182010
+            },
+            {
+              "text": "much",
+              "surface": "much",
+              "punctuation": "",
+              "begin_time": 182010,
+              "end_time": 182783
+            },
+            {
+              "text": "rug",
+              "surface": "rug",
+              "punctuation": "",
+              "begin_time": 182783,
+              "end_time": 183363
+            },
+            {
+              "text": "lumpy",
+              "surface": "lumpy",
+              "punctuation": "",
+              "begin_time": 183363,
+              "end_time": 184329
+            },
+            {
+              "text": "a",
+              "surface": "a",
+              "punctuation": "",
+              "begin_time": 184329,
+              "end_time": 184522
+            },
+            {
+              "text": "tripping",
+              "surface": "tripping",
+              "punctuation": "",
+              "begin_time": 184522,
+              "end_time": 186068
+            },
+            {
+              "text": "hazard",
+              "surface": "hazard.",
+              "punctuation": ".",
+              "begin_time": 186068,
+              "end_time": 187227
+            },
+            {
+              "text": "open",
+              "surface": "open",
+              "punctuation": "",
+              "begin_time": 187227,
+              "end_time": 188000
+            },
+            {
+              "text": "yourself",
+              "surface": "yourself",
+              "punctuation": "",
+              "begin_time": 188000,
+              "end_time": 189546
+            },
+            {
+              "text": "to",
+              "surface": "to",
+              "punctuation": "",
+              "begin_time": 189546,
+              "end_time": 189932
+            },
+            {
+              "text": "lawsuits",
+              "surface": "lawsuits.",
+              "punctuation": ".",
+              "begin_time": 189932,
+              "end_time": 191478
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 191478,
+              "end_time": 192058
+            },
+            {
+              "text": "can",
+              "surface": "can",
+              "punctuation": "",
+              "begin_time": 192058,
+              "end_time": 192638
+            },
+            {
+              "text": "go",
+              "surface": "go",
+              "punctuation": "",
+              "begin_time": 192638,
+              "end_time": 193024
+            },
+            {
+              "text": "a",
+              "surface": "a",
+              "punctuation": "",
+              "begin_time": 193024,
+              "end_time": 193217
+            },
+            {
+              "text": "really",
+              "surface": "really",
+              "punctuation": "",
+              "begin_time": 193217,
+              "end_time": 194376
+            },
+            {
+              "text": "without",
+              "surface": "without",
+              "punctuation": "",
+              "begin_time": 194376,
+              "end_time": 195728
+            },
+            {
+              "text": "blinking",
+              "surface": "blinking",
+              "punctuation": "",
+              "begin_time": 195728,
+              "end_time": 197274
+            },
+            {
+              "text": "Gloria",
+              "surface": "Gloria'",
+              "punctuation": "'",
+              "begin_time": 197274,
+              "end_time": 198433
+            },
+            {
+              "text": "can",
+              "surface": "can",
+              "punctuation": "",
+              "begin_time": 198433,
+              "end_time": 199013
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 199013,
+              "end_time": 199206
+            },
+            {
+              "text": "talk",
+              "surface": "talk",
+              "punctuation": "",
+              "begin_time": 199206,
+              "end_time": 199979
+            },
+            {
+              "text": "to",
+              "surface": "to",
+              "punctuation": "",
+              "begin_time": 199979,
+              "end_time": 200365
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 200365,
+              "end_time": 200945
+            },
+            {
+              "text": "for",
+              "surface": "for",
+              "punctuation": "",
+              "begin_time": 200945,
+              "end_time": 201525
+            },
+            {
+              "text": "a",
+              "surface": "a",
+              "punctuation": "",
+              "begin_time": 201525,
+              "end_time": 201718
+            },
+            {
+              "text": "second",
+              "surface": "second",
+              "punctuation": "",
+              "begin_time": 201718,
+              "end_time": 202877
+            },
+            {
+              "text": "Claire",
+              "surface": "Claire",
+              "punctuation": "",
+              "begin_time": 202877,
+              "end_time": 204036
+            },
+            {
+              "text": "likes",
+              "surface": "likes",
+              "punctuation": "",
+              "begin_time": 204036,
+              "end_time": 205002
+            },
+            {
+              "text": "to",
+              "surface": "to",
+              "punctuation": "",
+              "begin_time": 205002,
+              "end_time": 205388
+            },
+            {
+              "text": "say",
+              "surface": "say",
+              "punctuation": "",
+              "begin_time": 205388,
+              "end_time": 205968
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 205968,
+              "end_time": 206548
+            },
+            {
+              "text": "can",
+              "surface": "can",
+              "punctuation": "",
+              "begin_time": 206548,
+              "end_time": 207128
+            },
+            {
+              "text": "be",
+              "surface": "be",
+              "punctuation": "",
+              "begin_time": 207128,
+              "end_time": 207514
+            },
+            {
+              "text": "part",
+              "surface": "part",
+              "punctuation": "",
+              "begin_time": 207514,
+              "end_time": 208287
+            },
+            {
+              "text": "of",
+              "surface": "of",
+              "punctuation": "",
+              "begin_time": 208287,
+              "end_time": 208673
+            },
+            {
+              "text": "the",
+              "surface": "the",
+              "punctuation": "",
+              "begin_time": 208673,
+              "end_time": 209253
+            },
+            {
+              "text": "problem",
+              "surface": "problem",
+              "punctuation": "",
+              "begin_time": 209253,
+              "end_time": 210605
+            },
+            {
+              "text": "or",
+              "surface": "or",
+              "punctuation": "",
+              "begin_time": 210605,
+              "end_time": 210991
+            },
+            {
+              "text": "part",
+              "surface": "part",
+              "punctuation": "",
+              "begin_time": 210991,
+              "end_time": 211764
+            },
+            {
+              "text": "of",
+              "surface": "of",
+              "punctuation": "",
+              "begin_time": 211764,
+              "end_time": 212150
+            },
+            {
+              "text": "the",
+              "surface": "the",
+              "punctuation": "",
+              "begin_time": 212150,
+              "end_time": 212730
+            },
+            {
+              "text": "solution",
+              "surface": "solution.",
+              "punctuation": ".",
+              "begin_time": 212730,
+              "end_time": 214276
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 214276,
+              "end_time": 214469
+            },
+            {
+              "text": "happen",
+              "surface": "happen",
+              "punctuation": "",
+              "begin_time": 214469,
+              "end_time": 215628
+            },
+            {
+              "text": "to",
+              "surface": "to",
+              "punctuation": "",
+              "begin_time": 215628,
+              "end_time": 216014
+            },
+            {
+              "text": "believe",
+              "surface": "believe",
+              "punctuation": "",
+              "begin_time": 216014,
+              "end_time": 217366
+            },
+            {
+              "text": "that",
+              "surface": "that",
+              "punctuation": "",
+              "begin_time": 217366,
+              "end_time": 218139
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 218139,
+              "end_time": 218719
+            },
+            {
+              "text": "can",
+              "surface": "can",
+              "punctuation": "",
+              "begin_time": 218719,
+              "end_time": 219299
+            },
+            {
+              "text": "be",
+              "surface": "be",
+              "punctuation": "",
+              "begin_time": 219299,
+              "end_time": 219685
+            },
+            {
+              "text": "both",
+              "surface": "both",
+              "punctuation": "",
+              "begin_time": 219685,
+              "end_time": 220458
+            },
+            {
+              "text": "Listen",
+              "surface": "Listen",
+              "punctuation": "",
+              "begin_time": 220458,
+              "end_time": 221617
+            },
+            {
+              "text": "Claire",
+              "surface": "Claire",
+              "punctuation": "",
+              "begin_time": 221617,
+              "end_time": 222776
+            },
+            {
+              "text": "feels",
+              "surface": "feels",
+              "punctuation": "",
+              "begin_time": 222776,
+              "end_time": 223742
+            },
+            {
+              "text": "terrible",
+              "surface": "terrible",
+              "punctuation": "",
+              "begin_time": 223742,
+              "end_time": 225288
+            },
+            {
+              "text": "why",
+              "surface": "why",
+              "punctuation": "",
+              "begin_time": 225288,
+              "end_time": 225868
+            },
+            {
+              "text": "don't",
+              "surface": "don't",
+              "punctuation": "",
+              "begin_time": 225868,
+              "end_time": 226834
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 226834,
+              "end_time": 227414
+            },
+            {
+              "text": "talk",
+              "surface": "talk",
+              "punctuation": "",
+              "begin_time": 227414,
+              "end_time": 228187
+            },
+            {
+              "text": "to",
+              "surface": "to",
+              "punctuation": "",
+              "begin_time": 228187,
+              "end_time": 228573
+            },
+            {
+              "text": "her",
+              "surface": "her",
+              "punctuation": "",
+              "begin_time": 228573,
+              "end_time": 229153
+            },
+            {
+              "text": "why",
+              "surface": "why",
+              "punctuation": "",
+              "begin_time": 229153,
+              "end_time": 229733
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 229733,
+              "end_time": 229926
+            },
+            {
+              "text": "know",
+              "surface": "know",
+              "punctuation": "",
+              "begin_time": 229926,
+              "end_time": 230699
+            },
+            {
+              "text": "what",
+              "surface": "what",
+              "punctuation": "",
+              "begin_time": 230699,
+              "end_time": 231472
+            },
+            {
+              "text": "she",
+              "surface": "she",
+              "punctuation": "",
+              "begin_time": 231472,
+              "end_time": 232052
+            },
+            {
+              "text": "thinks",
+              "surface": "thinks",
+              "punctuation": "",
+              "begin_time": 232052,
+              "end_time": 233211
+            },
+            {
+              "text": "a",
+              "surface": "a",
+              "punctuation": "",
+              "begin_time": 233211,
+              "end_time": 233404
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 233404,
+              "end_time": 233984
+            },
+            {
+              "text": "know",
+              "surface": "know",
+              "punctuation": "",
+              "begin_time": 233984,
+              "end_time": 234757
+            },
+            {
+              "text": "she",
+              "surface": "she",
+              "punctuation": "",
+              "begin_time": 234757,
+              "end_time": 235337
+            },
+            {
+              "text": "saying",
+              "surface": "saying",
+              "punctuation": "",
+              "begin_time": 235337,
+              "end_time": 236496
+            },
+            {
+              "text": "gold",
+              "surface": "gold",
+              "punctuation": "",
+              "begin_time": 236496,
+              "end_time": 237269
+            },
+            {
+              "text": "Well",
+              "surface": "Well",
+              "punctuation": "",
+              "begin_time": 237269,
+              "end_time": 238042
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 238042,
+              "end_time": 238235
+            },
+            {
+              "text": "know",
+              "surface": "know",
+              "punctuation": "",
+              "begin_time": 238235,
+              "end_time": 239008
+            },
+            {
+              "text": "she",
+              "surface": "she",
+              "punctuation": "",
+              "begin_time": 239008,
+              "end_time": 239588
+            },
+            {
+              "text": "said",
+              "surface": "said",
+              "punctuation": "",
+              "begin_time": 239588,
+              "end_time": 240361
+            },
+            {
+              "text": "that",
+              "surface": "that.",
+              "punctuation": ".",
+              "begin_time": 240361,
+              "end_time": 241134
+            },
+            {
+              "text": "but",
+              "surface": "but",
+              "punctuation": "",
+              "begin_time": 241134,
+              "end_time": 241714
+            },
+            {
+              "text": "that",
+              "surface": "that",
+              "punctuation": "",
+              "begin_time": 241714,
+              "end_time": 242487
+            },
+            {
+              "text": "was",
+              "surface": "was",
+              "punctuation": "",
+              "begin_time": 242487,
+              "end_time": 243067
+            },
+            {
+              "text": "a",
+              "surface": "a",
+              "punctuation": "",
+              "begin_time": 243067,
+              "end_time": 243260
+            },
+            {
+              "text": "long",
+              "surface": "long",
+              "punctuation": "",
+              "begin_time": 243260,
+              "end_time": 244033
+            },
+            {
+              "text": "time",
+              "surface": "time",
+              "punctuation": "",
+              "begin_time": 244033,
+              "end_time": 244806
+            },
+            {
+              "text": "go",
+              "surface": "go",
+              "punctuation": "",
+              "begin_time": 244806,
+              "end_time": 245192
+            },
+            {
+              "text": "before",
+              "surface": "before",
+              "punctuation": "",
+              "begin_time": 245192,
+              "end_time": 246351
+            },
+            {
+              "text": "by",
+              "surface": "by",
+              "punctuation": "",
+              "begin_time": 246351,
+              "end_time": 246737
+            },
+            {
+              "text": "me",
+              "surface": "me",
+              "punctuation": "",
+              "begin_time": 246737,
+              "end_time": 247123
+            },
+            {
+              "text": "nice",
+              "surface": "nice",
+              "punctuation": "",
+              "begin_time": 247123,
+              "end_time": 247896
+            },
+            {
+              "text": "things",
+              "surface": "things",
+              "punctuation": "",
+              "begin_time": 247896,
+              "end_time": 249055
+            },
+            {
+              "text": "of",
+              "surface": "of",
+              "punctuation": "",
+              "begin_time": 249055,
+              "end_time": 249441
+            },
+            {
+              "text": "course",
+              "surface": "course",
+              "punctuation": "",
+              "begin_time": 249441,
+              "end_time": 250600
+            },
+            {
+              "text": "on",
+              "surface": "on",
+              "punctuation": "",
+              "begin_time": 250600,
+              "end_time": 250986
+            },
+            {
+              "text": "beautiful",
+              "surface": "beautiful",
+              "punctuation": "",
+              "begin_time": 250986,
+              "end_time": 252725
+            },
+            {
+              "text": "things",
+              "surface": "things.",
+              "punctuation": ".",
+              "begin_time": 252725,
+              "end_time": 253884
+            },
+            {
+              "text": "Look",
+              "surface": "Look",
+              "punctuation": "",
+              "begin_time": 253884,
+              "end_time": 254657
+            },
+            {
+              "text": "at",
+              "surface": "at",
+              "punctuation": "",
+              "begin_time": 254657,
+              "end_time": 255043
+            },
+            {
+              "text": "these",
+              "surface": "these",
+              "punctuation": "",
+              "begin_time": 255043,
+              "end_time": 256009
+            },
+            {
+              "text": "yellow",
+              "surface": "yellow",
+              "punctuation": "",
+              "begin_time": 256009,
+              "end_time": 257168
+            },
+            {
+              "text": "think",
+              "surface": "think",
+              "punctuation": "",
+              "begin_time": 257168,
+              "end_time": 258134
+            },
+            {
+              "text": "to",
+              "surface": "to",
+              "punctuation": "",
+              "begin_time": 258134,
+              "end_time": 258520
+            },
+            {
+              "text": "without",
+              "surface": "without",
+              "punctuation": "",
+              "begin_time": 258520,
+              "end_time": 259872
+            },
+            {
+              "text": "these",
+              "surface": "these",
+              "punctuation": "",
+              "begin_time": 259872,
+              "end_time": 260838
+            },
+            {
+              "text": "them",
+              "surface": "them",
+              "punctuation": "",
+              "begin_time": 260838,
+              "end_time": 261611
+            },
+            {
+              "text": "away",
+              "surface": "away",
+              "punctuation": "",
+              "begin_time": 261611,
+              "end_time": 262384
+            },
+            {
+              "text": "Gloria",
+              "surface": "Gloria",
+              "punctuation": "",
+              "begin_time": 262384,
+              "end_time": 263543
+            },
+            {
+              "text": "we",
+              "surface": "we",
+              "punctuation": "",
+              "begin_time": 263543,
+              "end_time": 263929
+            },
+            {
+              "text": "all",
+              "surface": "all",
+              "punctuation": "",
+              "begin_time": 263929,
+              "end_time": 264509
+            },
+            {
+              "text": "know",
+              "surface": "know",
+              "punctuation": "",
+              "begin_time": 264509,
+              "end_time": 265282
+            },
+            {
+              "text": "you'd",
+              "surface": "you'd",
+              "punctuation": "",
+              "begin_time": 265282,
+              "end_time": 266248
+            },
+            {
+              "text": "be",
+              "surface": "be",
+              "punctuation": "",
+              "begin_time": 266248,
+              "end_time": 266634
+            },
+            {
+              "text": "without",
+              "surface": "without",
+              "punctuation": "",
+              "begin_time": 266634,
+              "end_time": 267986
+            },
+            {
+              "text": "underwear",
+              "surface": "underwear",
+              "punctuation": "",
+              "begin_time": 267986,
+              "end_time": 269725
+            },
+            {
+              "text": "I",
+              "surface": "I",
+              "punctuation": "",
+              "begin_time": 269725,
+              "end_time": 269918
+            },
+            {
+              "text": "mean",
+              "surface": "mean",
+              "punctuation": "",
+              "begin_time": 269918,
+              "end_time": 270691
+            },
+            {
+              "text": "it",
+              "surface": "it'",
+              "punctuation": "'",
+              "begin_time": 270691,
+              "end_time": 271077
+            },
+            {
+              "text": "not",
+              "surface": "not",
+              "punctuation": "",
+              "begin_time": 271077,
+              "end_time": 271657
+            },
+            {
+              "text": "about",
+              "surface": "about",
+              "punctuation": "",
+              "begin_time": 271657,
+              "end_time": 272623
+            },
+            {
+              "text": "that",
+              "surface": "that'",
+              "punctuation": "'",
+              "begin_time": 272623,
+              "end_time": 273396
+            },
+            {
+              "text": "about",
+              "surface": "about",
+              "punctuation": "",
+              "begin_time": 273396,
+              "end_time": 274362
+            },
+            {
+              "text": "accepted",
+              "surface": "accepted",
+              "punctuation": "",
+              "begin_time": 274362,
+              "end_time": 275908
+            },
+            {
+              "text": "by",
+              "surface": "by",
+              "punctuation": "",
+              "begin_time": 275908,
+              "end_time": 276294
+            },
+            {
+              "text": "my",
+              "surface": "my",
+              "punctuation": "",
+              "begin_time": 276294,
+              "end_time": 276680
+            },
+            {
+              "text": "new",
+              "surface": "new",
+              "punctuation": "",
+              "begin_time": 276680,
+              "end_time": 277260
+            },
+            {
+              "text": "is",
+              "surface": "is",
+              "punctuation": "",
+              "begin_time": 277260,
+              "end_time": 277646
+            },
+            {
+              "text": "not",
+              "surface": "not",
+              "punctuation": "",
+              "begin_time": 277646,
+              "end_time": 278226
+            },
+            {
+              "text": "Gloriare",
+              "surface": "Gloriare",
+              "punctuation": "",
+              "begin_time": 278226,
+              "end_time": 279772
+            },
+            {
+              "text": "a",
+              "surface": "a",
+              "punctuation": "",
+              "begin_time": 279772,
+              "end_time": 279965
+            },
+            {
+              "text": "beautiful",
+              "surface": "beautiful",
+              "punctuation": "",
+              "begin_time": 279965,
+              "end_time": 281704
+            },
+            {
+              "text": "woman",
+              "surface": "woman",
+              "punctuation": "",
+              "begin_time": 281704,
+              "end_time": 282670
+            },
+            {
+              "text": "fact",
+              "surface": "fact",
+              "punctuation": "",
+              "begin_time": 282670,
+              "end_time": 283443
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 283443,
+              "end_time": 284023
+            },
+            {
+              "text": "probably",
+              "surface": "probably",
+              "punctuation": "",
+              "begin_time": 284023,
+              "end_time": 285569
+            },
+            {
+              "text": "one",
+              "surface": "one",
+              "punctuation": "",
+              "begin_time": 285569,
+              "end_time": 286149
+            },
+            {
+              "text": "of",
+              "surface": "of",
+              "punctuation": "",
+              "begin_time": 286149,
+              "end_time": 286535
+            },
+            {
+              "text": "those",
+              "surface": "those",
+              "punctuation": "",
+              "begin_time": 286535,
+              "end_time": 287501
+            },
+            {
+              "text": "beautiful",
+              "surface": "beautiful",
+              "punctuation": "",
+              "begin_time": 287501,
+              "end_time": 289240
+            },
+            {
+              "text": "woman",
+              "surface": "woman",
+              "punctuation": "",
+              "begin_time": 289240,
+              "end_time": 290206
+            },
+            {
+              "text": "who",
+              "surface": "who",
+              "punctuation": "",
+              "begin_time": 290206,
+              "end_time": 290786
+            },
+            {
+              "text": "doesn't",
+              "surface": "doesn't",
+              "punctuation": "",
+              "begin_time": 290786,
+              "end_time": 292138
+            },
+            {
+              "text": "even",
+              "surface": "even",
+              "punctuation": "",
+              "begin_time": 292138,
+              "end_time": 292911
+            },
+            {
+              "text": "know",
+              "surface": "know",
+              "punctuation": "",
+              "begin_time": 292911,
+              "end_time": 293684
+            },
+            {
+              "text": "know",
+              "surface": "know",
+              "punctuation": "",
+              "begin_time": 293684,
+              "end_time": 294457
+            },
+            {
+              "text": "it's",
+              "surface": "it's",
+              "punctuation": "",
+              "begin_time": 294457,
+              "end_time": 295230
+            },
+            {
+              "text": "natural",
+              "surface": "natural",
+              "punctuation": "",
+              "begin_time": 295230,
+              "end_time": 296582
+            },
+            {
+              "text": "about",
+              "surface": "about",
+              "punctuation": "",
+              "begin_time": 296582,
+              "end_time": 297548
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 297548,
+              "end_time": 298128
+            },
+            {
+              "text": "dad",
+              "surface": "dad",
+              "punctuation": "",
+              "begin_time": 298128,
+              "end_time": 298708
+            },
+            {
+              "text": "family",
+              "surface": "family",
+              "punctuation": "",
+              "begin_time": 298708,
+              "end_time": 299867
+            },
+            {
+              "text": "is",
+              "surface": "is",
+              "punctuation": "",
+              "begin_time": 299867,
+              "end_time": 300253
+            },
+            {
+              "text": "very",
+              "surface": "very",
+              "punctuation": "",
+              "begin_time": 300253,
+              "end_time": 301026
+            },
+            {
+              "text": "of",
+              "surface": "of",
+              "punctuation": "",
+              "begin_time": 301026,
+              "end_time": 301412
+            },
+            {
+              "text": "other",
+              "surface": "other",
+              "punctuation": "",
+              "begin_time": 301412,
+              "end_time": 302378
+            },
+            {
+              "text": "the",
+              "surface": "the",
+              "punctuation": "",
+              "begin_time": 302378,
+              "end_time": 302958
+            },
+            {
+              "text": "first",
+              "surface": "first",
+              "punctuation": "",
+              "begin_time": 302958,
+              "end_time": 303924
+            },
+            {
+              "text": "brought",
+              "surface": "brought",
+              "punctuation": "",
+              "begin_time": 303924,
+              "end_time": 305276
+            },
+            {
+              "text": "me",
+              "surface": "me",
+              "punctuation": "",
+              "begin_time": 305276,
+              "end_time": 305662
+            },
+            {
+              "text": "think",
+              "surface": "think",
+              "punctuation": "",
+              "begin_time": 305662,
+              "end_time": 306628
+            },
+            {
+              "text": "enough",
+              "surface": "enough",
+              "punctuation": "",
+              "begin_time": 306628,
+              "end_time": 307787
+            },
+            {
+              "text": "but",
+              "surface": "but",
+              "punctuation": "",
+              "begin_time": 307787,
+              "end_time": 308367
+            },
+            {
+              "text": "over",
+              "surface": "over",
+              "punctuation": "",
+              "begin_time": 308367,
+              "end_time": 309140
+            },
+            {
+              "text": "time",
+              "surface": "time",
+              "punctuation": "",
+              "begin_time": 309140,
+              "end_time": 309913
+            },
+            {
+              "text": "you",
+              "surface": "you",
+              "punctuation": "",
+              "begin_time": 309913,
+              "end_time": 310493
+            },
+            {
+              "text": "realize",
+              "surface": "realize",
+              "punctuation": "",
+              "begin_time": 310493,
+              "end_time": 311845
+            },
+            {
+              "text": "that",
+              "surface": "that",
+              "punctuation": "",
+              "begin_time": 311845,
+              "end_time": 312618
+            },
+            {
+              "text": "as",
+              "surface": "as",
+              "punctuation": "",
+              "begin_time": 312618,
+              "end_time": 313004
+            },
+            {
+              "text": "as",
+              "surface": "as",
+              "punctuation": "",
+              "begin_time": 313004,
+              "end_time": 313390
+            },
+            {
+              "text": "by",
+              "surface": "by",
+              "punctuation": "",
+              "begin_time": 313390,
+              "end_time": 313776
+            },
+            {
+              "text": "then",
+              "surface": "then",
+              "punctuation": "",
+              "begin_time": 313776,
+              "end_time": 314549
+            },
+            {
+              "text": "brought",
+              "surface": "brought",
+              "punctuation": "",
+              "begin_time": 314549,
+              "end_time": 315901
+            },
+            {
+              "text": "was",
+              "surface": "was",
+              "punctuation": "",
+              "begin_time": 315901,
+              "end_time": 316481
+            },
+            {
+              "text": "just",
+              "surface": "just",
+              "punctuation": "",
+              "begin_time": 316481,
+              "end_time": 317254
+            },
+            {
+              "text": "needs",
+              "surface": "needs",
+              "punctuation": "",
+              "begin_time": 317254,
+              "end_time": 318220
+            },
+            {
+              "text": "a",
+              "surface": "a",
+              "punctuation": "",
+              "begin_time": 318220,
+              "end_time": 318413
+            },
+            {
+              "text": "little",
+              "surface": "little",
+              "punctuation": "",
+              "begin_time": 318413,
+              "end_time": 319572
+            },
+            {
+              "text": "time",
+              "surface": "time.",
+              "punctuation": ".",
+              "begin_time": 319572,
+              "end_time": 320345
+            },
+            {
+              "text": "trust",
+              "surface": "trust",
+              "punctuation": "",
+              "begin_time": 320345,
+              "end_time": 321311
+            },
+            {
+              "text": "me",
+              "surface": "me",
+              "punctuation": "",
+              "begin_time": 321311,
+              "end_time": 321697
+            },
+            {
+              "text": "should",
+              "surface": "should'",
+              "punctuation": "'",
+              "begin_time": 321697,
+              "end_time": 322856
+            },
+            {
+              "text": "be",
+              "surface": "be",
+              "punctuation": "",
+              "begin_time": 322856,
+              "end_time": 323242
+            },
+            {
+              "text": "the",
+              "surface": "the",
+              "punctuation": "",
+              "begin_time": 323242,
+              "end_time": 323822
+            },
+            {
+              "text": "most",
+              "surface": "most",
+              "punctuation": "",
+              "begin_time": 323822,
+              "end_time": 324595
+            },
+            {
+              "text": "loyal",
+              "surface": "loyal",
+              "punctuation": "",
+              "begin_time": 324595,
+              "end_time": 325561
+            },
+            {
+              "text": "youve",
+              "surface": "youve",
+              "punctuation": "",
+              "begin_time": 325561,
+              "end_time": 326527
+            },
+            {
+              "text": "ever",
+              "surface": "ever",
+              "punctuation": "",
+              "begin_time": 326527,
+              "end_time": 327300
+            },
+            {
+              "text": "had",
+              "surface": "had.",
+              "punctuation": ".",
+              "begin_time": 327300,
+              "end_time": 327840
+            }
+          ]
+        }
+      ]
+    },
+    "elapsed_ms": 59093
+  }
+}

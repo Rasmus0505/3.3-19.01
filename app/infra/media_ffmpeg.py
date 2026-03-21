@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import re
 from functools import lru_cache
 from pathlib import Path
 from uuid import uuid4
+
+from app.core.config import PROJECT_DIR
 
 
 class MediaError(RuntimeError):
@@ -30,6 +34,20 @@ ALLOWED_EXTENSIONS = {
 }
 
 SUBPROCESS_TIMEOUT_SECONDS = 300
+LOCAL_MEDIA_BIN_DIR = PROJECT_DIR / "tools" / "ffmpeg" / "bin"
+_DURATION_RE = re.compile(r"Duration:\s*(?P<hours>\d+):(?P<minutes>\d+):(?P<seconds>\d+(?:\.\d+)?)")
+
+
+def ensure_local_media_bin_on_path() -> None:
+    if not LOCAL_MEDIA_BIN_DIR.exists():
+        return
+    current_path = os.environ.get("PATH", "")
+    local_bin = str(LOCAL_MEDIA_BIN_DIR)
+    parts = current_path.split(os.pathsep) if current_path else []
+    normalized_parts = {part.lower() for part in parts if part}
+    if local_bin.lower() in normalized_parts:
+        return
+    os.environ["PATH"] = local_bin if not current_path else f"{local_bin}{os.pathsep}{current_path}"
 
 
 def create_request_dir(base_tmp_dir: Path) -> Path:
@@ -55,17 +73,29 @@ def validate_suffix(file_name: str) -> str:
     return suffix
 
 
-def _ensure_command_exists(cmd: str) -> None:
-    if shutil.which(cmd) is None:
+def resolve_media_command(cmd: str) -> str:
+    ensure_local_media_bin_on_path()
+    normalized = str(cmd or "").strip()
+    if normalized in {"ffmpeg", "ffprobe"}:
+        local_match = shutil.which(normalized, path=str(LOCAL_MEDIA_BIN_DIR))
+        if local_match:
+            return local_match
+    return normalized
+
+
+def _ensure_command_exists(cmd: str) -> str:
+    resolved = resolve_media_command(cmd)
+    if shutil.which(resolved) is None:
         raise MediaError("COMMAND_MISSING", "媒体处理依赖缺失", f"{cmd} 未安装或不可执行")
+    return resolved
 
 
 @lru_cache(maxsize=1)
 def ensure_ffmpeg_for_transcribe() -> None:
-    _ensure_command_exists("ffmpeg")
+    ffmpeg_executable = _ensure_command_exists("ffmpeg")
     try:
         proc = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-encoders"],
+            [ffmpeg_executable, "-hide_banner", "-encoders"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -82,7 +112,11 @@ def ensure_ffmpeg_for_transcribe() -> None:
 
 @lru_cache(maxsize=1)
 def ensure_ffprobe_available() -> None:
-    _ensure_command_exists("ffprobe")
+    try:
+        _ensure_command_exists("ffprobe")
+        return
+    except MediaError:
+        _ensure_command_exists("ffmpeg")
 
 
 def get_media_runtime_status() -> dict[str, str | bool]:
@@ -105,9 +139,12 @@ def get_media_runtime_status() -> dict[str, str | bool]:
 
 
 def run_cmd(cmd: list[str], *, timeout_seconds: int = SUBPROCESS_TIMEOUT_SECONDS, cwd: Path | None = None) -> None:
+    resolved_cmd = list(cmd)
+    if resolved_cmd:
+        resolved_cmd[0] = resolve_media_command(resolved_cmd[0])
     try:
         proc = subprocess.run(
-            cmd,
+            resolved_cmd,
             cwd=str(cwd) if cwd else None,
             capture_output=True,
             text=True,
@@ -171,10 +208,17 @@ def extract_audio_for_asr(input_path: Path, output_audio: Path) -> None:
 
 def probe_audio_duration_ms(audio_path: Path) -> int:
     ensure_ffprobe_available()
+    ffprobe_executable = resolve_media_command("ffprobe")
+    if shutil.which(ffprobe_executable) is not None:
+        return _probe_audio_duration_with_ffprobe(audio_path, ffprobe_executable=ffprobe_executable)
+    return _probe_audio_duration_with_ffmpeg(audio_path, ffmpeg_executable=resolve_media_command("ffmpeg"))
+
+
+def _probe_audio_duration_with_ffprobe(audio_path: Path, *, ffprobe_executable: str) -> int:
     try:
         proc = subprocess.run(
             [
-                "ffprobe",
+                ffprobe_executable,
                 "-v",
                 "error",
                 "-show_entries",
@@ -203,3 +247,30 @@ def probe_audio_duration_ms(audio_path: Path) -> int:
     if seconds < 0:
         return 0
     return int(seconds * 1000)
+
+
+def _probe_audio_duration_with_ffmpeg(audio_path: Path, *, ffmpeg_executable: str) -> int:
+    try:
+        proc = subprocess.run(
+            [ffmpeg_executable, "-hide_banner", "-i", str(audio_path)],
+            capture_output=True,
+            text=True,
+            timeout=SUBPROCESS_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError as exc:
+        raise MediaError("COMMAND_MISSING", "媒体处理依赖缺失", str(exc)[:1000]) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise MediaError("COMMAND_TIMEOUT", "媒体时长探测超时", str(exc)[:1000]) from exc
+
+    output = "\n".join(part for part in (proc.stdout, proc.stderr) if part)
+    match = _DURATION_RE.search(output)
+    if not match:
+        raise MediaError("FFPROBE_FAILED", "媒体时长探测失败", output[:1000])
+    hours = int(match.group("hours"))
+    minutes = int(match.group("minutes"))
+    seconds = float(match.group("seconds"))
+    total_seconds = (hours * 3600) + (minutes * 60) + seconds
+    return max(0, int(total_seconds * 1000))
+
+
+ensure_local_media_bin_on_path()

@@ -159,6 +159,24 @@ _SUBTITLE_SETTINGS_REQUIRED_COLUMN_SQL: tuple[tuple[str, str, str], ...] = (
     ("updated_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP", "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"),
     ("updated_by_user_id", "INTEGER", "INTEGER"),
 )
+_TRANSLATION_REQUEST_LOG_REQUIRED_COLUMN_SQL: tuple[tuple[str, str, str], ...] = (
+    ("input_text_preview", "VARCHAR(300) NOT NULL DEFAULT ''", "VARCHAR(300) NOT NULL DEFAULT ''"),
+    ("provider_request_id", "VARCHAR(128)", "VARCHAR(128)"),
+    ("status_code", "INTEGER", "INTEGER"),
+    ("finish_reason", "VARCHAR(64)", "VARCHAR(64)"),
+    ("prompt_tokens", "INTEGER NOT NULL DEFAULT 0", "INTEGER NOT NULL DEFAULT 0"),
+    ("completion_tokens", "INTEGER NOT NULL DEFAULT 0", "INTEGER NOT NULL DEFAULT 0"),
+    ("total_tokens", "INTEGER NOT NULL DEFAULT 0", "INTEGER NOT NULL DEFAULT 0"),
+    ("success", "BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("error_code", "VARCHAR(120)", "VARCHAR(120)"),
+    ("error_message", "TEXT NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"),
+    ("raw_request_text", "TEXT NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"),
+    ("raw_response_text", "TEXT NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"),
+    ("raw_error_text", "TEXT NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"),
+    ("started_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP", "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"),
+    ("finished_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP", "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"),
+    ("created_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP", "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"),
+)
 
 
 @dataclass
@@ -373,6 +391,64 @@ def _ensure_legacy_sqlite_wallet_ledger_event_types(db: Session) -> None:
         _cleanup_stale_sqlite_legacy_table(db, f"{table_name}__legacy")
         return
     _rebuild_legacy_sqlite_wallet_ledger(db)
+
+
+def _translation_request_logs_schema_name(db: Session) -> str | None:
+    bind = db.get_bind()
+    if bind is None or bind.dialect.name == "sqlite":
+        return None
+    return TranslationRequestLog.__table__.schema
+
+
+def _translation_request_logs_column_names(db: Session) -> set[str]:
+    bind = db.get_bind()
+    if bind is None:
+        return set()
+    schema = _translation_request_logs_schema_name(db)
+    inspector = inspect(bind)
+    if not inspector.has_table(TranslationRequestLog.__tablename__, schema=schema):
+        return set()
+    return {str(item.get("name") or "").strip() for item in inspector.get_columns(TranslationRequestLog.__tablename__, schema=schema)}
+
+
+def _qualified_translation_request_logs_table(db: Session) -> str:
+    schema = _translation_request_logs_schema_name(db)
+    return f"{schema}.{TranslationRequestLog.__tablename__}" if schema else TranslationRequestLog.__tablename__
+
+
+def _ensure_translation_request_logs_schema(db: Session) -> bool:
+    bind = db.get_bind()
+    if bind is None:
+        raise RuntimeError("translation_request_logs schema repair missing bind")
+
+    schema = _translation_request_logs_schema_name(db)
+    inspector = inspect(bind)
+    changed = False
+
+    if bind.dialect.name != "sqlite":
+        db.execute(text("CREATE SCHEMA IF NOT EXISTS app"))
+        db.commit()
+
+    if not inspector.has_table(TranslationRequestLog.__tablename__, schema=schema):
+        TranslationRequestLog.__table__.create(bind=bind, checkfirst=True)
+        db.commit()
+        return True
+
+    existing_columns = _translation_request_logs_column_names(db)
+    table_name = _qualified_translation_request_logs_table(db)
+    dialect_name = bind.dialect.name
+    missing_columns = [item for item in _TRANSLATION_REQUEST_LOG_REQUIRED_COLUMN_SQL if item[0] not in existing_columns]
+    for column_name, sqlite_sql, default_sql in missing_columns:
+        column_sql = sqlite_sql if dialect_name == "sqlite" else default_sql
+        db.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}"))
+        changed = True
+    if missing_columns:
+        db.commit()
+        logger.warning(
+            "[DEBUG] translation_request_logs.schema_repair_add_columns missing=%s",
+            ",".join(item[0] for item in missing_columns),
+        )
+    return changed
 
 
 def _sqlite_billing_rates_requires_rebuild(db: Session) -> bool:
@@ -822,6 +898,7 @@ def ensure_default_billing_rates(
     _ensure_billing_rate_yuan_columns(db)
     _ensure_legacy_sqlite_billing_columns(db)
     _ensure_legacy_sqlite_wallet_ledger_event_types(db)
+    _ensure_translation_request_logs_schema(db)
     ensure_default_subtitle_settings(db)
 
     changed = False
@@ -1097,29 +1174,38 @@ def _backfill_subtitle_settings_values(db: Session) -> bool:
         if column_name not in column_names:
             continue
         if isinstance(default_value, bool):
-            update_sql = text(f"UPDATE {table_name} SET {column_name} = :default_value WHERE {column_name} IS NULL")
+            where_sql = f"{column_name} IS NULL"
+            update_sql = text(f"UPDATE {table_name} SET {column_name} = :default_value WHERE {where_sql}")
             params = {"default_value": int(default_value) if dialect_name == "sqlite" else bool(default_value)}
         elif column_name == "default_asr_model":
-            update_sql = text(f"UPDATE {table_name} SET {column_name} = :default_value WHERE {column_name} IS NULL OR TRIM({column_name}) = ''")
+            where_sql = f"{column_name} IS NULL OR TRIM({column_name}) = ''"
+            update_sql = text(f"UPDATE {table_name} SET {column_name} = :default_value WHERE {where_sql}")
             params = {"default_value": str(default_value or LESSON_DEFAULT_ASR_MODEL)}
         elif column_name == "translation_batch_max_chars":
+            where_sql = f"{column_name} IS NULL OR {column_name} <= 0 OR {column_name} > 12000"
             update_sql = text(
                 f"UPDATE {table_name} SET {column_name} = {int(default_value)} "
-                f"WHERE {column_name} IS NULL OR {column_name} <= 0 OR {column_name} > 12000"
+                f"WHERE {where_sql}"
             )
             params = None
         else:
+            where_sql = f"{column_name} IS NULL OR {column_name} <= 0"
             update_sql = text(
                 f"UPDATE {table_name} SET {column_name} = {int(default_value)} "
-                f"WHERE {column_name} IS NULL OR {column_name} <= 0"
+                f"WHERE {where_sql}"
             )
             params = None
+        needs_backfill = db.execute(text(f"SELECT 1 FROM {table_name} WHERE {where_sql} LIMIT 1")).scalar()
+        if not needs_backfill:
+            continue
         result = db.execute(update_sql, params or {})
         changed = changed or bool(getattr(result, "rowcount", 0))
 
     if "updated_at" in column_names:
-        result = db.execute(text(f"UPDATE {table_name} SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))
-        changed = changed or bool(getattr(result, "rowcount", 0))
+        needs_updated_at_backfill = db.execute(text(f"SELECT 1 FROM {table_name} WHERE updated_at IS NULL LIMIT 1")).scalar()
+        if needs_updated_at_backfill:
+            result = db.execute(text(f"UPDATE {table_name} SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))
+            changed = changed or bool(getattr(result, "rowcount", 0))
 
     if changed:
         db.commit()

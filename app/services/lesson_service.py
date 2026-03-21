@@ -52,7 +52,7 @@ from app.services.lesson_builder import (
     tokenize_learning_sentence,
     tokenize_sentence,
 )
-from app.services.media import MediaError, extract_audio_for_asr, probe_audio_duration_ms, run_cmd, save_upload_file_stream, validate_suffix
+from app.services.media import MediaError, extract_audio_for_asr, probe_audio_duration_ms, resolve_media_command, run_cmd, save_upload_file_stream, validate_suffix
 from app.services.translation_qwen_mt import (
     MT_MODEL,
     SemanticSplitError,
@@ -170,22 +170,35 @@ def _append_translation_request_logs_safe(
     lesson_id: int | None,
     records: list[dict[str, Any]] | None,
 ) -> None:
+    bind = db.get_bind()
+    log_session = None
     try:
+        target_db = db
+        if bind is not None:
+            log_session = Session(bind=bind)
+            target_db = log_session
         append_translation_request_logs(
-            db,
+            target_db,
             trace_id=trace_id,
             user_id=user_id,
             task_id=task_id,
             lesson_id=lesson_id,
             records=list(records or []),
         )
+        if log_session is not None:
+            log_session.commit()
     except Exception as exc:
+        if log_session is not None:
+            log_session.rollback()
         logger.exception(
             "[DEBUG] lesson.translation_logs.persist_failed task_id=%s lesson_id=%s detail=%s",
             task_id,
             lesson_id,
             str(exc)[:400],
         )
+    finally:
+        if log_session is not None:
+            log_session.close()
 
 
 def _call_transcribe_audio_file(
@@ -334,10 +347,11 @@ def _build_parallel_payload(
 def _detect_silence_ranges(source_audio: Path, search_start_sec: float, search_end_sec: float) -> list[tuple[float, float]]:
     if search_end_sec <= search_start_sec:
         return []
+    ffmpeg_executable = resolve_media_command("ffmpeg")
     try:
         proc = subprocess.run(
             [
-                "ffmpeg",
+                ffmpeg_executable,
                 "-hide_banner",
                 "-ss",
                 f"{search_start_sec:.3f}",
@@ -687,13 +701,39 @@ def _emit_subtitle_variant_progress(
 ) -> None:
     if not callback:
         return
+    if stage in {"prepare", "semantic_split"}:
+        stage_key = "build_lesson"
+        stage_status = "running"
+        stage_ratio = 0.08 if stage == "prepare" else 0.55
+        overall_percent = _progress_percent_by_stage("build_lesson", stage_ratio)
+    elif stage == "translate":
+        stage_key = "translate_zh"
+        stage_status = "running"
+        stage_ratio = 0.0 if translate_total <= 0 else max(0.0, min(1.0, translate_done / max(translate_total, 1)))
+        overall_percent = _progress_percent_by_stage("translate_zh", stage_ratio)
+    elif stage == "completed":
+        stage_key = "translate_zh"
+        stage_status = "completed"
+        overall_percent = _progress_percent_by_stage("translate_zh", 1.0)
+    else:
+        stage_key = ""
+        stage_status = ""
+        overall_percent = None
     try:
         callback(
             {
                 "stage": stage,
+                "stage_key": stage_key,
+                "stage_status": stage_status,
                 "message": message,
+                "current_text": message,
+                "overall_percent": overall_percent,
                 "translate_done": max(0, int(translate_done)),
                 "translate_total": max(0, int(translate_total)),
+                "counters": {
+                    "translate_done": max(0, int(translate_done)),
+                    "translate_total": max(0, int(translate_total)),
+                },
                 "semantic_split_enabled": bool(semantic_split_enabled),
             }
         )

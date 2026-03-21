@@ -7,6 +7,7 @@ from typing import Callable
 from uuid import uuid4
 
 from sqlalchemy import func, inspect, select, update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.timezone import now_shanghai_naive
@@ -52,6 +53,11 @@ _STAGE_LABELS = (
 LESSON_TASK_REQUIRED_COLUMNS: tuple[str, ...] = tuple(str(column.name) for column in LessonGenerationTask.__table__.columns)
 _ACTIVE_TASK_PROBE: Callable[[str], bool] | None = None
 _PROCESS_STARTED_AT = now_shanghai_naive()
+
+
+def _is_sqlite_database_locked_error(exc: Exception) -> bool:
+    detail = str(exc or "").strip().lower()
+    return "database is locked" in detail and "sqlite" in detail
 
 
 class LessonTaskStorageNotReadyError(Exception):
@@ -520,6 +526,12 @@ def update_task_progress(
         task.resume_available = False
         task.artifact_expires_at = None
         session.commit()
+    except OperationalError as exc:
+        session.rollback()
+        if _is_sqlite_database_locked_error(exc):
+            logger.warning("[DEBUG] lesson_task.progress_skip reason=sqlite_database_locked task_id=%s", task_id)
+            return
+        raise
     finally:
         if owns_session:
             session.close()

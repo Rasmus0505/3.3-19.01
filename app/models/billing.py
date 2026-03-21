@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.config import SENSEVOICE_MODEL_DIR
 from app.core.timezone import now_shanghai_naive
 from app.db import Base, schema_fk, table_args
 
@@ -237,16 +238,16 @@ class SenseVoiceSetting(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    model_dir: Mapped[str] = mapped_column(String(255), default="iic/SenseVoiceSmall", nullable=False)
+    model_dir: Mapped[str] = mapped_column(String(255), default=str(SENSEVOICE_MODEL_DIR), nullable=False)
     trust_remote_code: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     remote_code: Mapped[str] = mapped_column(String(500), default="", nullable=False)
-    device: Mapped[str] = mapped_column(String(64), default="cuda:0", nullable=False)
+    device: Mapped[str] = mapped_column(String(64), default="cpu", nullable=False)
     language: Mapped[str] = mapped_column(String(32), default="auto", nullable=False)
-    vad_model: Mapped[str] = mapped_column(String(100), default="fsmn-vad", nullable=False)
+    vad_model: Mapped[str] = mapped_column(String(100), default="", nullable=False)
     vad_max_single_segment_time: Mapped[int] = mapped_column(Integer, default=30000, nullable=False)
     use_itn: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     batch_size_s: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
-    merge_vad: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    merge_vad: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     merge_length_s: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
     ban_emo_unk: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
@@ -265,7 +266,7 @@ class FasterWhisperSetting(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    device: Mapped[str] = mapped_column(String(32), default="auto", nullable=False)
+    device: Mapped[str] = mapped_column(String(32), default="cpu", nullable=False)
     compute_type: Mapped[str] = mapped_column(String(32), default="", nullable=False)
     cpu_threads: Mapped[int] = mapped_column(Integer, default=4, nullable=False)
     num_workers: Mapped[int] = mapped_column(Integer, default=2, nullable=False)

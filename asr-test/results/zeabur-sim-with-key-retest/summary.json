@@ -1,0 +1,43 @@
+{
+  "health_ok": true,
+  "ready_ok": true,
+  "zero_balance": {
+    "status_code": 400,
+    "body": {
+      "ok": false,
+      "error_code": "INSUFFICIENT_BALANCE",
+      "message": "余额不足，无法创建课程",
+      "detail": "balance=0, required=711, duration_ms=327850, model=sensevoice-small"
+    }
+  },
+  "models": {
+    "sensevoice-small": {
+      "create_status_code": 200,
+      "status": "succeeded",
+      "result_kind": "full_success",
+      "completion_kind": "full",
+      "partial_failure_stage": "",
+      "partial_failure_code": "",
+      "message": "课程已生成完成",
+      "result_message": "课程已生成完成",
+      "lesson_id": null,
+      "elapsed_seconds": 75.41,
+      "error": "",
+      "failure_debug": null
+    },
+    "faster-whisper-medium": {
+      "create_status_code": 200,
+      "status": "succeeded",
+      "result_kind": "full_success",
+      "completion_kind": "full",
+      "partial_failure_stage": "",
+      "partial_failure_code": "",
+      "message": "课程已生成完成",
+      "result_message": "课程已生成完成",
+      "lesson_id": null,
+      "elapsed_seconds": 72.56,
+      "error": "",
+      "failure_debug": null
+    }
+  }
+}

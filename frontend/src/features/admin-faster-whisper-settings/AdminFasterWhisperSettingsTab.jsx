@@ -8,6 +8,8 @@ import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../
 import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Skeleton, Switch } from "../../shared/ui";
 
+const PINNED_MODEL_DIR = "D:\\3.3-19.01\\asr-test\\models\\faster-distil-small.en";
+
 const defaultDraft = {
   device: "auto",
   compute_type: "",
@@ -22,22 +24,22 @@ const FIELD_GROUPS = [
   {
     id: "common",
     title: "常用参数",
-    description: "关键设备、 CPU/worker 与 beam size 参数，和上传页“Faster Whisper Medium” 的默认策略保持一致。",
+    description: "对应 bottle.1.0 的服务端推理配置。",
     fields: [
-      { key: "device", label: "运行设备", hint: "device（推荐 auto；强制指定时请写 cuda:0 / cpu）", type: "text" },
-      { key: "cpu_threads", label: "CPU 线程数", hint: "cpu_threads（仅 CPU 推理时生效；过高会抢占同机资源）", type: "number" },
-      { key: "num_workers", label: "模型并发 worker", hint: "num_workers（同一模型的并发请求数；越高越吃内存）", type: "number" },
-      { key: "beam_size", label: "Beam Size", hint: "beam_size（越大越准越慢；推荐值 5）", type: "number" },
+      { key: "device", label: "运行设备", hint: "例如 auto / cuda:0 / cpu", type: "text" },
+      { key: "cpu_threads", label: "CPU 线程数", hint: "仅 CPU 推理时生效", type: "number" },
+      { key: "num_workers", label: "并发 worker", hint: "控制并发加载", type: "number" },
+      { key: "beam_size", label: "Beam Size", hint: "越大越准也越慢", type: "number" },
     ],
   },
   {
     id: "advanced",
-    title: "高级/危险设置",
-    description: "这些参数影响底层推理引擎，建议在有明确问题或要调优时才展开。",
+    title: "高级设置",
+    description: `固定模型目录：${PINNED_MODEL_DIR}`,
     fields: [
-      { key: "compute_type", label: "计算精度", hint: "compute_type（空值自动选择：GPU= float16 / CPU= int8；覆盖时请与设备匹配）", type: "text" },
-      { key: "vad_filter", label: "启用 VAD", hint: "vad_filter（开启则先做 VAD，可能减速但更稳；保持默认即可）", type: "bool" },
-      { key: "condition_on_previous_text", label: "使用上文条件", hint: "condition_on_previous_text（开启后上下文依赖更强，长音频建议关闭）", type: "bool" },
+      { key: "compute_type", label: "计算精度", hint: "留空时自动选择", type: "text" },
+      { key: "vad_filter", label: "启用 VAD", hint: "默认开启", type: "bool" },
+      { key: "condition_on_previous_text", label: "使用上文条件", hint: "长音频通常建议关闭", type: "bool" },
     ],
   },
 ];
@@ -110,10 +112,10 @@ export function AdminFasterWhisperSettingsTab({ apiCall }) {
         const formattedError = captureError(
           formatResponseError(resp, data, {
             component: "AdminFasterWhisperSettingsTab",
-            action: "加载 Faster Whisper 参数",
+            action: "加载 bottle.1.0 参数",
             endpoint: "/api/admin/faster-whisper-settings/history",
             method: "GET",
-            fallbackMessage: "加载 Faster Whisper 参数失败",
+            fallbackMessage: "加载 bottle.1.0 参数失败",
           }),
         );
         setStatus(formattedError.displayMessage);
@@ -128,7 +130,7 @@ export function AdminFasterWhisperSettingsTab({ apiCall }) {
       const formattedError = captureError(
         formatNetworkError(requestError, {
           component: "AdminFasterWhisperSettingsTab",
-          action: "加载 Faster Whisper 参数",
+          action: "加载 bottle.1.0 参数",
           endpoint: "/api/admin/faster-whisper-settings/history",
           method: "GET",
         }),
@@ -141,7 +143,6 @@ export function AdminFasterWhisperSettingsTab({ apiCall }) {
 
   useEffect(() => {
     void loadSettings();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function saveSettings() {
@@ -159,23 +160,23 @@ export function AdminFasterWhisperSettingsTab({ apiCall }) {
         const formattedError = captureError(
           formatResponseError(resp, data, {
             component: "AdminFasterWhisperSettingsTab",
-            action: "保存 Faster Whisper 参数",
+            action: "保存 bottle.1.0 参数",
             endpoint: "/api/admin/faster-whisper-settings",
             method: "PUT",
-            fallbackMessage: "保存 Faster Whisper 参数失败",
+            fallbackMessage: "保存 bottle.1.0 参数失败",
           }),
         );
         setStatus(formattedError.displayMessage);
         return;
       }
-      setStatus("Faster Whisper 参数已保存");
-      toast.success("Faster Whisper 参数已保存");
+      setStatus("bottle.1.0 参数已保存");
+      toast.success("bottle.1.0 参数已保存");
       await loadSettings();
     } catch (requestError) {
       const formattedError = captureError(
         formatNetworkError(requestError, {
           component: "AdminFasterWhisperSettingsTab",
-          action: "保存 Faster Whisper 参数",
+          action: "保存 bottle.1.0 参数",
           endpoint: "/api/admin/faster-whisper-settings",
           method: "PUT",
         }),
@@ -197,23 +198,23 @@ export function AdminFasterWhisperSettingsTab({ apiCall }) {
         const formattedError = captureError(
           formatResponseError(resp, data, {
             component: "AdminFasterWhisperSettingsTab",
-            action: "回滚 Faster Whisper 参数",
+            action: "回滚 bottle.1.0 参数",
             endpoint: "/api/admin/faster-whisper-settings/rollback-last",
             method: "POST",
-            fallbackMessage: "回滚上一版 Faster Whisper 参数失败",
+            fallbackMessage: "回滚上一版 bottle.1.0 参数失败",
           }),
         );
         setStatus(formattedError.displayMessage);
         return;
       }
-      setStatus("已回滚到上一版 Faster Whisper 参数");
-      toast.success("已回滚到上一版 Faster Whisper 参数");
+      setStatus("已回滚到上一版 bottle.1.0 参数");
+      toast.success("已回滚到上一版 bottle.1.0 参数");
       await loadSettings();
     } catch (requestError) {
       const formattedError = captureError(
         formatNetworkError(requestError, {
           component: "AdminFasterWhisperSettingsTab",
-          action: "回滚 Faster Whisper 参数",
+          action: "回滚 bottle.1.0 参数",
           endpoint: "/api/admin/faster-whisper-settings/rollback-last",
           method: "POST",
         }),
@@ -228,8 +229,8 @@ export function AdminFasterWhisperSettingsTab({ apiCall }) {
     <Card className="rounded-3xl border shadow-sm">
       <CardHeader className="space-y-3">
         <div className="space-y-1">
-          <CardTitle className="text-lg">Faster Whisper 参数</CardTitle>
-          <CardDescription>这里维护 Faster Whisper Medium 的服务端缓存与推理参数。上传页里它对应“更快开始”的那张卡，准备完成后可直接生成。</CardDescription>
+          <CardTitle className="text-lg">bottle.1.0 参数</CardTitle>
+          <CardDescription>这里维护 bottle.1.0 的服务端推理参数，模型目录固定到 asr-test\\models\\faster-distil-small.en。</CardDescription>
         </div>
         {currentMeta?.updated_at ? (
           <CardDescription>
@@ -258,17 +259,11 @@ export function AdminFasterWhisperSettingsTab({ apiCall }) {
                 </div>
                 {group.id === "advanced" ? (
                   <details className="rounded-2xl border border-dashed bg-muted/10" open={false}>
-                    <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-muted-foreground">
-                      高级 / 危险设置（默认折叠）
-                    </summary>
-                    <div className="grid gap-3 p-4 md:grid-cols-2">
-                      {group.fields.map((field) => renderField(field))}
-                    </div>
+                    <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-muted-foreground">高级设置（默认折叠）</summary>
+                    <div className="grid gap-3 p-4 md:grid-cols-2">{group.fields.map((field) => renderField(field))}</div>
                   </details>
                 ) : (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {group.fields.map((field) => renderField(field))}
-                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">{group.fields.map((field) => renderField(field))}</div>
                 )}
               </div>
             ))}
