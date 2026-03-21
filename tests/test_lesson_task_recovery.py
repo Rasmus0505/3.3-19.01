@@ -14,7 +14,7 @@ from app.main import create_app
 from app.models import LessonGenerationTask, User
 from app.services import lesson_command_service
 from app.services.billing_service import ensure_default_billing_rates
-from app.services.lesson_task_manager import configure_task_runtime_probe, create_task, update_task_progress
+from app.services.lesson_task_manager import configure_task_runtime_probe, create_task, mark_task_failed, update_task_progress
 from app.services.query_cache import clear_query_caches
 from app.core.timezone import now_shanghai_naive
 
@@ -227,3 +227,68 @@ def test_active_task_probe_prevents_orphan_recovery(test_client):
     assert payload["status"] == "running"
     assert payload["current_text"] == "翻译中"
     assert payload["resume_available"] is False
+
+
+def test_failed_task_ignores_late_progress_updates(test_client, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="recovery-failed-progress@example.com")
+    user_id = _get_user_id(session_factory, email="recovery-failed-progress@example.com")
+
+    req_dir = tmp_path / "failed-progress"
+    req_dir.mkdir(parents=True, exist_ok=True)
+    source_path = req_dir / "source.mp4"
+    source_path.write_bytes(b"video")
+
+    task_id = "lesson_task_recovery_failed_progress"
+    session = session_factory()
+    try:
+        create_task(
+            task_id=task_id,
+            owner_user_id=user_id,
+            source_filename="source.mp4",
+            asr_model="faster-whisper-medium",
+            semantic_split_enabled=False,
+            work_dir=str(req_dir),
+            source_path=str(source_path),
+            db=session,
+        )
+        update_task_progress(
+            task_id,
+            stage_key="asr_transcribe",
+            stage_status="running",
+            overall_percent=42,
+            current_text="识别中，已识别 6 段，已等待 82 秒",
+            counters={"asr_done": 6, "asr_estimated": 0, "segment_done": 6, "segment_total": 0},
+            db=session,
+        )
+        mark_task_failed(
+            task_id,
+            error_code="ASR_PROGRESS_STALLED",
+            message="ASR 转写长时间无进展",
+            exception_type="MediaError",
+            detail_excerpt="faster-whisper stalled",
+            db=session,
+        )
+        update_task_progress(
+            task_id,
+            stage_key="asr_transcribe",
+            stage_status="running",
+            overall_percent=55,
+            current_text="识别中，已识别 20 段",
+            counters={"asr_done": 20, "asr_estimated": 0, "segment_done": 20, "segment_total": 0},
+            db=session,
+        )
+    finally:
+        session.close()
+
+    response = client.get(f"/api/lessons/tasks/{task_id}", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "failed"
+    assert payload["current_text"] == "ASR 转写长时间无进展"
+    assert payload["message"] == "ASR 转写长时间无进展"
+    assert payload["error_code"] == "ASR_PROGRESS_STALLED"
+    assert payload["counters"]["asr_done"] == 6
+    assert payload["result_kind"] == ""
+    assert payload["result_message"] == ""

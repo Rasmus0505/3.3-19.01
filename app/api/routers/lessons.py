@@ -100,11 +100,15 @@ def _build_task_lesson_response(task: dict, db: Session) -> LessonDetailResponse
 
 
 def _to_task_response(task: dict, db: Session) -> LessonTaskResponse:
-    result_kind = str(task.get("result_kind") or "full_success").strip().lower()
+    status = str(task.get("status") or "").strip().lower()
+    result_kind = str(task.get("result_kind") or "").strip().lower()
     completion_kind = "partial" if result_kind == "asr_only" else "full"
     response_message = str(task.get("message") or "")
-    if not response_message and str(task.get("status") or "").strip().lower() == "succeeded":
+    if not response_message and status == "succeeded":
         response_message = str(task.get("result_message") or "")
+    response_result_kind = result_kind if status == "succeeded" and result_kind in {"full_success", "asr_only"} else ""
+    response_result_label = str(task.get("result_label") or "") if status == "succeeded" else ""
+    response_result_message = str(task.get("result_message") or "") if status == "succeeded" else ""
     return LessonTaskResponse(
         ok=True,
         task_id=task["task_id"],
@@ -113,9 +117,9 @@ def _to_task_response(task: dict, db: Session) -> LessonTaskResponse:
         model_fallback_applied=bool(task.get("model_fallback_applied")),
         model_fallback_reason=str(task.get("model_fallback_reason") or ""),
         completion_kind=completion_kind,
-        result_kind=result_kind if result_kind in {"full_success", "asr_only"} else "full_success",
-        result_label=str(task.get("result_label") or ""),
-        result_message=str(task.get("result_message") or ""),
+        result_kind=response_result_kind,
+        result_label=response_result_label,
+        result_message=response_result_message,
         partial_failure_stage=str(task.get("partial_failure_stage") or ""),
         partial_failure_code=str(task.get("partial_failure_code") or ""),
         partial_failure_message=str(task.get("partial_failure_message") or ""),
