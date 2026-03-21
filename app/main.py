@@ -211,6 +211,30 @@ def _refresh_optional_runtime_status(app: FastAPI) -> None:
     runtime_status.media_detail = str(media_status["detail"] or "")
 
 
+def _log_downloadable_model_bundle_status() -> None:
+    for summary in local_asr_assets.get_downloadable_model_bundle_summaries():
+        model_key = str(summary.get("model_key") or "")
+        bundle_dir = str(summary.get("bundle_dir") or "")
+        file_count = int(summary.get("file_count") or 0)
+        available = bool(summary.get("available"))
+        missing_reason = str(summary.get("missing_reason") or "")
+        log_payload = {
+            "model_key": model_key,
+            "bundle_dir": bundle_dir,
+            "file_count": file_count,
+            "available": available,
+        }
+        if available:
+            logger.info("[DEBUG] startup.downloadable_model ready=%s detail=%s", available, log_payload)
+            continue
+        logger.warning(
+            "[DEBUG] startup.downloadable_model ready=%s detail=%s missing_reason=%s",
+            available,
+            log_payload,
+            missing_reason,
+        )
+
+
 async def _bootstrap_runtime_state(app: FastAPI) -> None:
     runtime_status = _ensure_runtime_status(app)
     db = SessionLocal()
@@ -288,6 +312,7 @@ async def app_lifespan(app: FastAPI):
         PERSISTENT_DATA_DIR,
         FASTER_WHISPER_MODEL_DIR,
     )
+    _log_downloadable_model_bundle_status()
     _refresh_optional_runtime_status(app)
     await _bootstrap_runtime_state(app)
     if local_asr_assets.schedule_local_asr_asset_prefetch():

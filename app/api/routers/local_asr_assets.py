@@ -87,18 +87,33 @@ def _bundle_files(bundle_dir: Path) -> list[dict[str, object]]:
     return files
 
 
+def _bundle_missing_reason(bundle_dir: Path, files: list[dict[str, object]]) -> str:
+    if not bundle_dir.exists():
+        return "bundle directory does not exist"
+    if not bundle_dir.is_dir():
+        return "bundle path is not a directory"
+    if not files:
+        return "bundle directory is empty"
+    return ""
+
+
 def _bundle_summary(spec: dict[str, object]) -> dict[str, object]:
     bundle_dir = _bundle_dir(spec)
     files = _bundle_files(bundle_dir)
     total_size_bytes = sum(int(item["size_bytes"]) for item in files)
     model_key = str(spec["model_key"])
+    missing_reason = _bundle_missing_reason(bundle_dir, files)
     return {
         "model_key": model_key,
         "display_name": str(spec["display_name"]),
         "subtitle": str(spec["subtitle"]),
         "source_model_id": str(spec["source_model_id"]),
         "bundle_dir": str(bundle_dir),
+        "archive_name": str(spec["archive_name"]),
+        "directory_exists": bundle_dir.exists(),
+        "directory_is_dir": bundle_dir.is_dir(),
         "available": bool(files),
+        "missing_reason": missing_reason,
         "file_count": len(files),
         "total_size_bytes": total_size_bytes,
         "download_url": f"/api/local-asr-assets/download-models/{model_key}/download",
@@ -110,7 +125,8 @@ def _build_bundle_zip(spec: dict[str, object]) -> Path:
     bundle_dir = _bundle_dir(spec)
     files = _bundle_files(bundle_dir)
     if not files:
-        raise HTTPException(status_code=404, detail=f"Model bundle missing: {bundle_dir}")
+        missing_reason = _bundle_missing_reason(bundle_dir, files)
+        raise HTTPException(status_code=404, detail=f"Model bundle missing: {bundle_dir} ({missing_reason})")
 
     DOWNLOAD_BUILD_ROOT.mkdir(parents=True, exist_ok=True)
     temp_dir = Path(tempfile.mkdtemp(prefix="asr_bundle_", dir=str(DOWNLOAD_BUILD_ROOT)))
@@ -135,6 +151,10 @@ def list_downloadable_model_bundles():
         "bundle_root_dir": str(ASR_BUNDLE_ROOT_DIR),
         "models": [_bundle_summary(spec) for spec in DOWNLOADABLE_MODELS.values()],
     }
+
+
+def get_downloadable_model_bundle_summaries() -> list[dict[str, object]]:
+    return [_bundle_summary(spec) for spec in DOWNLOADABLE_MODELS.values()]
 
 
 @router.get("/download-models/{model_key}")

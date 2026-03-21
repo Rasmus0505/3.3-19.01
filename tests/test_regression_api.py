@@ -2218,89 +2218,68 @@ def test_wallet_and_admin_endpoints(test_client):
         verify_clean.close()
 
 
-def test_local_asr_asset_route_serves_cached_asset(test_client, tmp_path, monkeypatch):
+def test_local_asr_asset_route_returns_disabled_response(test_client):
     client, _, _ = test_client
-    cache_dir = tmp_path / "local_asr_assets"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    asset_path = cache_dir / "sherpa-onnx-asr.js"
-    asset_path.write_text("console.log('sensevoice');", encoding="utf-8")
-
-    monkeypatch.setattr(local_asr_assets_router, "LOCAL_ASR_CACHE_DIR", cache_dir)
-    monkeypatch.setattr(local_asr_assets_router, "_ensure_asset_cache_populated", lambda: None)
 
     resp = client.get("/api/local-asr-assets/sherpa-onnx-asr.js")
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Browser-local ASR assets are disabled"
+
+
+def test_downloadable_model_bundle_summary_reports_missing_directory(test_client, tmp_path, monkeypatch):
+    client, _, _ = test_client
+    missing_bundle_dir = tmp_path / "missing-bundle"
+
+    monkeypatch.setitem(
+        local_asr_assets_router.DOWNLOADABLE_MODELS,
+        "test-missing-model",
+        {
+            "model_key": "test-missing-model",
+            "display_name": "Test Missing Model",
+            "subtitle": "missing",
+            "source_model_id": "example/missing",
+            "bundle_dir": missing_bundle_dir,
+            "archive_name": "test-missing-model.zip",
+        },
+    )
+
+    resp = client.get("/api/local-asr-assets/download-models/test-missing-model")
+
     assert resp.status_code == 200
-    assert "console.log('sensevoice');" in resp.text
-    assert resp.headers["content-type"].startswith("application/javascript")
+    payload = resp.json()
+    assert payload["available"] is False
+    assert payload["directory_exists"] is False
+    assert payload["directory_is_dir"] is False
+    assert payload["missing_reason"] == "bundle directory does not exist"
+    assert payload["archive_name"] == "test-missing-model.zip"
 
 
-def test_local_asr_asset_route_installs_git_when_missing(monkeypatch):
-    commands: list[list[str]] = []
-    installed = {"git": False}
+def test_downloadable_model_bundle_download_returns_zip(test_client, tmp_path, monkeypatch):
+    client, _, _ = test_client
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    (bundle_dir / "config.json").write_text('{"name":"demo"}', encoding="utf-8")
+    (bundle_dir / "weights.bin").write_bytes(b"binary")
 
-    def fake_command_available(name: str) -> bool:
-        if name == "apt-get":
-            return True
-        if name == "git":
-            return installed["git"]
-        return False
+    monkeypatch.setitem(
+        local_asr_assets_router.DOWNLOADABLE_MODELS,
+        "test-download-model",
+        {
+            "model_key": "test-download-model",
+            "display_name": "Test Download Model",
+            "subtitle": "download",
+            "source_model_id": "example/download",
+            "bundle_dir": bundle_dir,
+            "archive_name": "test-download-model.zip",
+        },
+    )
 
-    def fake_run(cmd, **kwargs):
-        commands.append(list(cmd))
-        if cmd[:3] == ["apt-get", "install", "-y"]:
-            installed["git"] = True
+    resp = client.get("/api/local-asr-assets/download-models/test-download-model/download")
 
-    monkeypatch.setattr(local_asr_assets_router, "_command_available", fake_command_available)
-    monkeypatch.setattr(local_asr_assets_router, "_git_lfs_ready", lambda: installed["git"])
-    monkeypatch.setattr(local_asr_assets_router, "_run_local_asr_cmd", fake_run)
-    monkeypatch.setattr(local_asr_assets_router.os, "geteuid", lambda: 0, raising=False)
-
-    local_asr_assets_router._ensure_git_dependencies()
-
-    assert commands == [
-        ["apt-get", "update"],
-        ["apt-get", "install", "-y", "--no-install-recommends", "git", "git-lfs"],
-        ["git", "lfs", "install", "--skip-repo"],
-    ]
-
-
-def test_local_asr_asset_prefetch_needed_when_cache_version_is_stale(tmp_path, monkeypatch):
-    cache_dir = tmp_path / "local_asr_assets"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    for name in local_asr_assets_router.LOCAL_ASR_ALLOWED_FILES:
-        (cache_dir / name).write_bytes(name.encode("utf-8"))
-    (cache_dir / local_asr_assets_router.LOCAL_ASR_CACHE_VERSION_FILE).write_text("old-version", encoding="utf-8")
-
-    monkeypatch.setattr(local_asr_assets_router, "LOCAL_ASR_CACHE_DIR", cache_dir)
-
-    assert local_asr_assets_router.has_local_asr_asset_cache() is True
-    assert local_asr_assets_router.is_local_asr_asset_cache_current() is False
-    assert local_asr_assets_router.local_asr_asset_prefetch_needed() is True
-
-
-def test_local_asr_asset_download_refreshes_cache_version(tmp_path, monkeypatch):
-    cache_dir = tmp_path / "local_asr_assets"
-    download_root = tmp_path / "downloads"
-
-    monkeypatch.setattr(local_asr_assets_router, "LOCAL_ASR_CACHE_DIR", cache_dir)
-    monkeypatch.setattr(local_asr_assets_router, "LOCAL_ASR_DOWNLOAD_ROOT", download_root)
-    monkeypatch.setattr(local_asr_assets_router, "_ensure_git_dependencies", lambda: None)
-
-    def fake_run(cmd, **kwargs):
-        if cmd[:2] == ["git", "clone"]:
-            target_dir = Path(cmd[-1])
-            target_dir.mkdir(parents=True, exist_ok=True)
-            for name in local_asr_assets_router.LOCAL_ASR_ALLOWED_FILES:
-                (target_dir / name).write_text(f"asset:{name}", encoding="utf-8")
-
-    monkeypatch.setattr(local_asr_assets_router, "_run_local_asr_cmd", fake_run)
-
-    local_asr_assets_router._download_asset_cache(force_refresh=True)
-
-    assert cache_dir.exists()
-    assert (cache_dir / local_asr_assets_router.LOCAL_ASR_CACHE_VERSION_FILE).read_text(encoding="utf-8").strip() == local_asr_assets_router.LOCAL_ASR_CACHE_VERSION
-    for name in local_asr_assets_router.LOCAL_ASR_ALLOWED_FILES:
-        assert (cache_dir / name).read_text(encoding="utf-8") == f"asset:{name}"
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/zip")
+    assert resp.headers["content-disposition"] == 'attachment; filename="test-download-model.zip"'
 
 
 def test_extract_local_asr_audio_route_returns_file(test_client, monkeypatch, tmp_path):

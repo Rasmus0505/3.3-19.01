@@ -44,6 +44,7 @@ const LOCAL_ASR_ASSET_BASE_URL = (import.meta.env.VITE_LOCAL_ASR_MODEL_BASE_URL 
 const ASR_MODELS_API_BASE = "/api/asr-models";
 const DOWNLOADABLE_MODEL_BUNDLES_API = "/api/local-asr-assets/download-models";
 const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止生成，可重新开始。";
+const LOCAL_BROWSER_ASR_ENABLED = false;
 const DEFAULT_ASR_MODEL_CATALOG_MAP = buildAsrModelCatalogMap();
 const LOCAL_MODEL_OPTIONS = [
   {
@@ -662,8 +663,14 @@ function getTaskStatusCardText(restoreBannerMode, taskSnapshot, statusText = "")
 export function UploadPanel({ accessToken, isActivePanel = true, onCreated, balanceAmountCents = 0, balancePoints, billingRates, subtitleSettings, onWalletChanged, onTaskStateChange, onNavigateToLesson }) {
   const currentUser = useAppStore((state) => state.currentUser);
   const normalizedBalanceAmountCents = Number(balanceAmountCents ?? balancePoints ?? 0);
-  const localAsrSupport = useMemo(() => detectLocalAsrSupport(), []);
-  const localDirectoryBindingAvailable = useMemo(() => localAsrDirectoryBindingSupported(), []);
+  const localAsrSupport = useMemo(
+    () =>
+      LOCAL_BROWSER_ASR_ENABLED
+        ? detectLocalAsrSupport()
+        : { supported: false, reason: "浏览器本地 ASR 已下线", browserName: "", webgpuSupported: false },
+    [],
+  );
+  const localDirectoryBindingAvailable = useMemo(() => (LOCAL_BROWSER_ASR_ENABLED ? localAsrDirectoryBindingSupported() : false), []);
   const configuredDefaultAsrModel = String(subtitleSettings?.default_asr_model || "").trim();
   const [file, setFile] = useState(null);
   const [taskId, setTaskId] = useState("");
@@ -681,7 +688,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [bindingCompleted, setBindingCompleted] = useState(false);
   const [selectedUploadModel, setSelectedUploadModel] = useState(() => getDefaultUploadModelKey(configuredDefaultAsrModel));
-  const [mode, setMode] = useState(() => getUploadModelMeta(getDefaultUploadModelKey(configuredDefaultAsrModel)).mode);
+  const [mode, setMode] = useState("fast");
   const [asrModelCatalogMap, setAsrModelCatalogMap] = useState(DEFAULT_ASR_MODEL_CATALOG_MAP);
   const [localWorkerEpoch, setLocalWorkerEpoch] = useState(0);
   const [localWorkerReadyMap, setLocalWorkerReadyMap] = useState({ sensevoice: false });
@@ -1037,6 +1044,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }, [configuredDefaultAsrModel, mode]);
 
   useEffect(() => {
+    if (!LOCAL_BROWSER_ASR_ENABLED) {
+      setLocalWorkerReadyMap({ sensevoice: false });
+      setLocalModelStateMap({});
+      return undefined;
+    }
     if (!localAsrSupport.supported) {
       setLocalWorkerReadyMap({ sensevoice: false });
       const unsupportedMap = Object.fromEntries(
@@ -1175,6 +1187,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }, [localModelStateMap]);
 
   useEffect(() => {
+    if (!LOCAL_BROWSER_ASR_ENABLED) {
+      setLocalModelStateMap({});
+      return undefined;
+    }
     let canceled = false;
     async function restoreLocalModelState() {
       const nextEntries = await Promise.all(
@@ -2522,11 +2538,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               const isSenseVoice = item.key === ASR_MODEL_KEYS.sensevoiceServer;
               const isFasterWhisper = item.key === FASTER_WHISPER_MODEL;
               const isQwen = item.key === QWEN_MODEL;
-              const localCardModelKey = selectedBalancedModel;
               const uploadCardMeta = mergeCatalogIntoUploadModelMeta(item.key, asrModelCatalogMap);
-              const localCardState = localModelStateMap[localCardModelKey] || {};
-              const localCardDownloaded = ["ready", "cached"].includes(String(localCardState.status || ""));
-              const localCardBusy = localBusyModelKey === localCardModelKey;
               const sensevoiceModelState = serverModelStateMap[item.key] || {};
               const sensevoiceModelReady = isAsrModelReady(sensevoiceModelState);
               const sensevoiceModelBusy = serverBusyModelKey === item.key;
@@ -2556,15 +2568,13 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               });
               const modelCardToneStyles = getUploadToneStyles(modelCardTone);
               const modelBadgeToneStyles = getUploadToneStyles(highlightStatus ? "success" : modelCardTone === "running" ? "running" : "idle");
-              const localCardProgress = Number(localModelVisualProgressMap[localCardModelKey]);
-              const hasNumericLocalProgress = Number.isFinite(localCardProgress);
               const showCardProgress = isSenseVoice
                 ? sensevoiceModelPreparing || sensevoiceModelBusy
                 : isFasterWhisper
                   ? fasterModelPreparing || fasterModelBusy
                   : false;
-              const cardProgressValue = isSenseVoice && hasNumericLocalProgress && localCardBusy ? clampPercent(localCardProgress) : null;
-              const cardProgressText = cardProgressValue != null ? `准备进度 ${cardProgressValue}%` : String(serverBusyText || (isSenseVoice ? sensevoiceModelState.message : fasterModelState.message) || "准备中");
+              const cardProgressValue = null;
+              const cardProgressText = String(serverBusyText || (isSenseVoice ? sensevoiceModelState.message : fasterModelState.message) || "准备中");
               const cardErrorText = isSenseVoice ? String(sensevoiceModelState.lastError || "") : isFasterWhisper ? String(fasterModelState.lastError || "") : "";
               const cardStatusText = isSenseVoice
                 ? sanitizeUserFacingText(
@@ -2591,8 +2601,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 localTranscribing,
                 localAsrSupport,
                 localWorkerReady,
-                localCardBusy,
-                localCardDownloaded,
+                localCardBusy: false,
+                localCardDownloaded: false,
                 sensevoiceModelReady,
                 sensevoiceModelPreparing,
                 sensevoiceModelBusy,
@@ -2709,11 +2719,14 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                   </div>
                   <div className="mt-3 rounded-xl border bg-muted/10 p-3">
                     <p className="text-xs text-muted-foreground break-all">{String(item.bundle_dir || "")}</p>
+                    {!item.available && item.missing_reason ? (
+                      <p className="mt-2 text-xs text-destructive break-all">当前不可下载：{String(item.missing_reason || "")}</p>
+                    ) : null}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button asChild type="button" variant="outline" disabled={!item.available}>
                       <a href={String(item.download_url || "#")} download>
-                        下载整包 zip
+                        下载 {String(item.archive_name || "整包 zip")}
                       </a>
                     </Button>
                   </div>
