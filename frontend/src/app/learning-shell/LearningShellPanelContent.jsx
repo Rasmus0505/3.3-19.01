@@ -69,6 +69,90 @@ export function LearningShellPanelContent({
     </Alert>
   ) : null;
 
+  function renderActivePanelContent() {
+    if (activePanel === "getting-started") {
+      return (
+        <GettingStartedPanel
+          accessToken={accessToken}
+          currentUser={currentUser}
+          isMobileViewport={isMobileViewport}
+          progressState={gettingStartedProgress}
+          showWelcomePrompt={showGettingStartedWelcome}
+          onDismissWelcome={onDismissGettingStartedWelcome}
+          onStartGuide={onStartGettingStartedGuide}
+          onGoLogin={onGoToLogin}
+          onGoUpload={() => onSwitchToUpload?.()}
+          onGoHistory={onGoToHistory}
+        />
+      );
+    }
+
+    if (activePanel === "history") {
+      return (
+        <Suspense fallback={<PanelFallback />}>
+          <LessonList
+            lessons={lessons}
+            totalLessons={totalLessons}
+            currentLessonId={currentLesson?.id}
+            currentLessonNeedsBinding={currentLessonNeedsBinding}
+            lessonCardMetaMap={lessonCardMetaMap}
+            lessonMediaMetaMap={lessonMediaMetaMap}
+            guideTargetLessonId={guideTargetLessonId}
+            onStartLesson={onStartLesson}
+            onRename={onRenameLesson}
+            onDelete={onDeleteLesson}
+            onBulkDelete={onBulkDeleteLessons}
+            onRestoreMedia={onRestoreLessonMedia}
+            onSwitchToUpload={onSwitchToUpload}
+            loading={loadingLessons}
+            hasMore={hasMoreLessons}
+            loadingMore={loadingMoreLessons}
+            onLoadMore={onLoadMoreLessons}
+          />
+        </Suspense>
+      );
+    }
+
+    if (activePanel === "stats") {
+      return (
+        <LearningStatsPanel
+          accessToken={accessToken}
+          onStartLesson={onStartLesson}
+          onSwitchToUpload={onSwitchToUpload}
+          onGoToHistory={onGoToHistory}
+        />
+      );
+    }
+
+    if (activePanel === "upload") {
+      return (
+        <Suspense fallback={<PanelFallback />}>
+          <UploadPanel
+            accessToken={accessToken}
+            isActivePanel
+            onCreated={onCreatedLesson}
+            balancePoints={walletBalance}
+            billingRates={billingRates}
+            subtitleSettings={subtitleSettings}
+            onWalletChanged={onWalletChanged}
+            onTaskStateChange={onTaskStateChange}
+            onNavigateToLesson={onNavigateToGeneratedLesson}
+          />
+        </Suspense>
+      );
+    }
+
+    if (activePanel === "redeem") {
+      return (
+        <Suspense fallback={<PanelFallback />}>
+          <RedeemCodePanel apiCall={apiCall} onWalletChanged={onWalletChanged} />
+        </Suspense>
+      );
+    }
+
+    return null;
+  }
+
   if (immersiveLayoutActive) {
     return (
       <section className="min-w-0 space-y-4">
@@ -90,80 +174,14 @@ export function LearningShellPanelContent({
   }
 
   return (
-      <section className="min-w-0 space-y-4">
+    <section className="min-w-0 space-y-4">
       {contentAlert}
       {!accessToken && !publicPanels.has(activePanel) ? (
         <div className="mx-auto max-w-md">
           <AuthPanel onAuthed={onAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
         </div>
       ) : (
-        <>
-          <div className={activePanel === "getting-started" ? "block" : "hidden"}>
-            <GettingStartedPanel
-              accessToken={accessToken}
-              currentUser={currentUser}
-              isMobileViewport={isMobileViewport}
-              progressState={gettingStartedProgress}
-              showWelcomePrompt={showGettingStartedWelcome}
-              onDismissWelcome={onDismissGettingStartedWelcome}
-              onStartGuide={onStartGettingStartedGuide}
-              onGoLogin={onGoToLogin}
-              onGoUpload={() => onSwitchToUpload?.()}
-              onGoHistory={onGoToHistory}
-            />
-          </div>
-          <div className={activePanel === "history" ? "block" : "hidden"}>
-            <Suspense fallback={<PanelFallback />}>
-              <LessonList
-                lessons={lessons}
-                totalLessons={totalLessons}
-                currentLessonId={currentLesson?.id}
-                currentLessonNeedsBinding={currentLessonNeedsBinding}
-                lessonCardMetaMap={lessonCardMetaMap}
-                lessonMediaMetaMap={lessonMediaMetaMap}
-                guideTargetLessonId={guideTargetLessonId}
-                onStartLesson={onStartLesson}
-                onRename={onRenameLesson}
-                onDelete={onDeleteLesson}
-                onBulkDelete={onBulkDeleteLessons}
-                onRestoreMedia={onRestoreLessonMedia}
-                onSwitchToUpload={onSwitchToUpload}
-                loading={loadingLessons}
-                hasMore={hasMoreLessons}
-                loadingMore={loadingMoreLessons}
-                onLoadMore={onLoadMoreLessons}
-              />
-            </Suspense>
-          </div>
-          <div className={activePanel === "stats" ? "block" : "hidden"}>
-            <LearningStatsPanel
-              accessToken={accessToken}
-              onStartLesson={onStartLesson}
-              onSwitchToUpload={onSwitchToUpload}
-              onGoToHistory={onGoToHistory}
-            />
-          </div>
-          <div className={activePanel === "upload" ? "block" : "hidden"}>
-            <Suspense fallback={<PanelFallback />}>
-              <UploadPanel
-                accessToken={accessToken}
-                isActivePanel={activePanel === "upload"}
-                onCreated={onCreatedLesson}
-                balancePoints={walletBalance}
-                billingRates={billingRates}
-                subtitleSettings={subtitleSettings}
-                onWalletChanged={onWalletChanged}
-                onTaskStateChange={onTaskStateChange}
-                onNavigateToLesson={onNavigateToGeneratedLesson}
-              />
-            </Suspense>
-          </div>
-          <div className={activePanel === "redeem" ? "block" : "hidden"}>
-            <Suspense fallback={<PanelFallback />}>
-              <RedeemCodePanel apiCall={apiCall} onWalletChanged={onWalletChanged} />
-            </Suspense>
-          </div>
-        </>
+        renderActivePanelContent()
       )}
     </section>
   );

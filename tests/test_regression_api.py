@@ -2071,6 +2071,71 @@ def test_faster_whisper_emits_waiting_progress_before_first_segment(monkeypatch)
     assert any(item.get("segment_done") == 1 for item in progress_events)
 
 
+def test_faster_whisper_retries_without_vad_when_first_pass_is_empty(monkeypatch):
+    from app.services import faster_whisper_asr as faster_whisper_module
+
+    snapshot = faster_whisper_module.FasterWhisperSettingsSnapshot(
+        device="cpu",
+        compute_type="",
+        cpu_threads=4,
+        num_workers=2,
+        beam_size=5,
+        vad_filter=True,
+        condition_on_previous_text=False,
+        resolved_device="cpu",
+        resolved_device_index=0,
+        resolved_compute_type="int8",
+    )
+
+    transcribe_calls: list[bool] = []
+
+    class FakeModel:
+        def transcribe(self, audio_path, *, beam_size, word_timestamps, vad_filter, condition_on_previous_text):
+            transcribe_calls.append(bool(vad_filter))
+
+            if vad_filter:
+                info = SimpleNamespace(
+                    duration=1.0,
+                    duration_after_vad=0.0,
+                    language="en",
+                    language_probability=1.0,
+                    all_language_probs=[],
+                )
+                return iter(()), info
+
+            def _segments():
+                yield SimpleNamespace(
+                    text="short sample",
+                    start=0.0,
+                    end=1.0,
+                    words=[
+                        SimpleNamespace(word="short", start=0.0, end=0.4, probability=0.9),
+                        SimpleNamespace(word="sample", start=0.4, end=1.0, probability=0.9),
+                    ],
+                )
+
+            info = SimpleNamespace(
+                duration=1.0,
+                duration_after_vad=1.0,
+                language="en",
+                language_probability=1.0,
+                all_language_probs=[],
+            )
+            return _segments(), info
+
+    monkeypatch.setattr(faster_whisper_module, "_runtime_settings_snapshot", lambda: snapshot)
+    monkeypatch.setattr(faster_whisper_module, "ensure_faster_whisper_model_ready_for_transcribe", lambda: {"status": "ready"})
+    monkeypatch.setattr(faster_whisper_module, "_get_or_create_model", lambda settings=None: FakeModel())
+
+    result = faster_whisper_module.transcribe_audio_file_with_faster_whisper("dummy.opus")
+
+    assert transcribe_calls == [True, False]
+    assert result["preview_text"] == "short sample"
+    assert result["raw_generate_result"]["segment_count"] == 1
+    assert result["settings_summary"]["vad_filter"] is False
+    assert result["asr_result_json"]["transcripts"][0]["sentences"][0]["text"] == "short sample"
+
+
 def test_single_faster_whisper_progress_keeps_waiting_after_segments(monkeypatch, tmp_path):
     from app.services import lesson_service as lesson_service_module
 
