@@ -22,8 +22,9 @@ import {
 import { extractMediaCoverPreview, getLessonMediaPreview, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import {
   clearActiveGenerationTask,
-  clearUploadPanelTaskSnapshots,
   clearUploadPanelSuccessSnapshot,
+  getActiveGenerationTask,
+  getUploadPanelSuccessSnapshot,
   saveActiveGenerationTask,
   saveUploadPanelSuccessSnapshot,
 } from "../../shared/media/localTaskStore";
@@ -421,6 +422,8 @@ function buildStageCounterDisplay(done, total, fallbackRatio, fallbackTotal = 0)
 
 function sanitizeUserFacingText(text) {
   return String(text || "")
+    .replace(/(?:funasr|faster-whisper|ctranslate2) import failed:[^\n]*/gi, "当前模型运行环境未就绪，请联系管理员检查服务端依赖。")
+    .replace(/No module named ['"][^'"]+['"]/gi, "服务端依赖未安装")
     .replace(/本地识别/g, "识别")
     .replace(/本地模型/g, "模型")
     .replace(/本地 SenseVoice/g, "SenseVoice")
@@ -660,7 +663,7 @@ function getTaskStatusCardText(restoreBannerMode, taskSnapshot, statusText = "")
   return "";
 }
 
-export function UploadPanel({ accessToken, isActivePanel = true, onCreated, balanceAmountCents = 0, balancePoints, billingRates, subtitleSettings, onWalletChanged, onTaskStateChange, onNavigateToLesson }) {
+export function UploadPanel({ accessToken, isActivePanel = true, onCreated, balanceAmountCents, balancePoints, billingRates, subtitleSettings, onWalletChanged, onTaskStateChange, onNavigateToLesson }) {
   const currentUser = useAppStore((state) => state.currentUser);
   const normalizedBalanceAmountCents = Number(balanceAmountCents ?? balancePoints ?? 0);
   const localAsrSupport = useMemo(
@@ -718,6 +721,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const localStageProgressMetaRef = useRef({ runToken: 0, startedAt: 0, durationSec: 0, statusText: "" });
   const fileInputRef = useRef(null);
   const freshEntryInitKeyRef = useRef("");
+  const restoreVerificationTaskRef = useRef("");
   const successStateOriginRef = useRef("none");
   const fallbackToastTaskRef = useRef("");
   const localSenseWorkerRef = useRef(null);
@@ -1410,6 +1414,72 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     });
   }
 
+  async function applyTaskViewState({
+    nextTaskId = taskId,
+    nextTaskSnapshot = taskSnapshot,
+    nextPhase = phase,
+    nextStatus = status,
+    nextUploadPercent = uploadPercent,
+    nextLoading = loading,
+    nextRestoreBannerMode = restoreBannerMode,
+    nextBindingCompleted = bindingCompleted,
+    persistState = true,
+  } = {}) {
+    const normalizedTaskId = String(nextTaskId || "");
+    const normalizedStatus = String(nextStatus || "");
+    const normalizedUploadPercent = clampPercent(nextUploadPercent);
+    const normalizedTaskSnapshot = nextTaskSnapshot ?? null;
+    setTaskId(normalizedTaskId);
+    setTaskSnapshot(normalizedTaskSnapshot);
+    setPhase(nextPhase);
+    setStatus(normalizedStatus);
+    setLoading(Boolean(nextLoading));
+    setUploadPercent(normalizedUploadPercent);
+    setRestoreBannerMode(nextRestoreBannerMode);
+    setBindingCompleted(Boolean(nextBindingCompleted));
+    if (persistState) {
+      await persistSession({
+        taskId: normalizedTaskId,
+        phase: nextPhase,
+        taskSnapshot: normalizedTaskSnapshot,
+        uploadPercent: normalizedUploadPercent,
+        status: normalizedStatus,
+        bindingCompleted: Boolean(nextBindingCompleted),
+      });
+    }
+  }
+
+  async function handleTaskFailureState({
+    message,
+    nextTaskId = taskId,
+    nextTaskSnapshot = taskSnapshot,
+    nextUploadPercent = uploadPercent,
+    nextRestoreBannerMode = restoreBannerMode,
+    nextBindingCompleted = bindingCompleted,
+    showToast = true,
+    refreshWallet = false,
+    persistState = true,
+  } = {}) {
+    const normalizedMessage = String(message || "").trim() || "生成失败";
+    await applyTaskViewState({
+      nextTaskId,
+      nextTaskSnapshot,
+      nextPhase: "error",
+      nextStatus: normalizedMessage,
+      nextUploadPercent,
+      nextLoading: false,
+      nextRestoreBannerMode,
+      nextBindingCompleted,
+      persistState,
+    });
+    if (refreshWallet) {
+      await onWalletChanged?.();
+    }
+    if (showToast) {
+      toast.error(normalizedMessage);
+    }
+  }
+
   async function resetSession() {
     resetLocalSessionState();
     if (!ownerUserId) return;
@@ -1441,14 +1511,17 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   async function restoreSuccessSnapshot(saved) {
     const restoredFile = createFileFromBlob(saved?.file_blob, saved?.file_name, saved?.media_type);
+    const restoredMode = String(saved?.generation_mode || "").trim().toLowerCase() === "balanced" ? "balanced" : "fast";
+    const restoredModelKey = String(saved?.selected_upload_model || configuredDefaultAsrModel || "");
     setFile(restoredFile);
     setTaskId("");
     setLoading(false);
     setStatus(String(saved?.status_text || ""));
     setDurationSec(Number(saved?.duration_seconds || 0) || null);
     setPhase("success");
-    setMode("fast");
-    setSelectedUploadModel(getDefaultUploadModelKey(String(saved?.selected_upload_model || configuredDefaultAsrModel)));
+    setMode(restoredMode);
+    setSelectedUploadModel(getDefaultUploadModelKey(restoredModelKey));
+    setSelectedBalancedModel(getDefaultBalancedModelKey(restoredModelKey));
     setCoverDataUrl(String(saved?.cover_data_url || ""));
     setCoverWidth(Number(saved?.cover_width || 0));
     setCoverHeight(Number(saved?.cover_height || 0));
@@ -1462,8 +1535,141 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setLocalBusyText("");
     successStateOriginRef.current = "revisit";
     if (ownerUserId) {
+      await clearActiveGenerationTask(ownerUserId);
       await clearUploadPanelSuccessSnapshot(ownerUserId);
     }
+  }
+
+  function applyRestoredMediaState(saved, restoredFile) {
+    setFile(restoredFile);
+    setCoverDataUrl(String(saved?.cover_data_url || ""));
+    setCoverWidth(Number(saved?.cover_width || 0));
+    setCoverHeight(Number(saved?.cover_height || 0));
+    setCoverAspectRatio(Number(saved?.aspect_ratio || 0));
+    setDurationSec(Number(saved?.duration_seconds || 0) || null);
+    setIsVideoSource(Boolean(saved?.is_video_source));
+  }
+
+  async function restorePersistedTaskSnapshot(saved) {
+    const restoredFile = createFileFromBlob(saved?.file_blob, saved?.file_name, saved?.media_type);
+    const restoredMode = String(saved?.generation_mode || "").trim().toLowerCase() === "balanced" ? "balanced" : "fast";
+    const restoredModelKey = String(saved?.selected_upload_model || configuredDefaultAsrModel || "");
+    const restoredTaskId = String(saved?.task_id || saved?.task_snapshot?.task_id || "");
+    const restoredTaskSnapshot = saved?.task_snapshot || null;
+    const restoredPhase = String(saved?.phase || "").trim().toLowerCase();
+    const restoredStatus = String(saved?.status_text || "").trim();
+    const restoredUploadPercent = clampPercent(saved?.upload_percent || 0);
+    const restoredBindingCompleted = Boolean(saved?.binding_completed);
+    const hasRestoredFile = Boolean(restoredFile);
+
+    applyRestoredMediaState(saved, restoredFile);
+    setMode(restoredMode);
+    setSelectedUploadModel(getDefaultUploadModelKey(restoredModelKey));
+    setSelectedBalancedModel(getDefaultBalancedModelKey(restoredModelKey));
+    setLocalProgressSnapshot(null);
+    setLocalBusyModelKey("");
+    setLocalBusyText("");
+    setServerBusyModelKey("");
+    setServerBusyText("");
+    successStateOriginRef.current = "revisit";
+    fallbackToastTaskRef.current = "";
+
+    if (restoredTaskSnapshot?.lesson?.id && String(restoredTaskSnapshot?.status || "").trim().toLowerCase() === "succeeded") {
+      if (ownerUserId) {
+        await clearActiveGenerationTask(ownerUserId);
+      }
+      await restoreSuccessSnapshot(saved);
+      return;
+    }
+
+    if (restoredPhase === "processing" && restoredTaskId) {
+      setTaskId(restoredTaskId);
+      setTaskSnapshot(restoredTaskSnapshot);
+      setPhase("processing");
+      setStatus(restoredStatus);
+      setLoading(true);
+      setUploadPercent(100);
+      uploadPersistRef.current.latestPercent = 100;
+      setBindingCompleted(restoredBindingCompleted);
+      setRestoreBannerMode(RESTORE_BANNER_MODES.VERIFYING);
+      await persistSession({
+        file: restoredFile,
+        taskId: restoredTaskId,
+        phase: "processing",
+        taskSnapshot: restoredTaskSnapshot,
+        selectedUploadModel: getDefaultUploadModelKey(restoredModelKey),
+        durationSec: Number(saved?.duration_seconds || 0) || null,
+        coverDataUrl: String(saved?.cover_data_url || ""),
+        coverWidth: Number(saved?.cover_width || 0),
+        coverHeight: Number(saved?.cover_height || 0),
+        aspectRatio: Number(saved?.aspect_ratio || 0),
+        isVideoSource: Boolean(saved?.is_video_source),
+        uploadPercent: 100,
+        status: restoredStatus,
+        bindingCompleted: restoredBindingCompleted,
+      });
+      return;
+    }
+
+    if ((restoredPhase === "uploading" || restoredPhase === "upload_paused") && hasRestoredFile) {
+      const nextStatus = restoredStatus || "上次上传已中断，可继续上传当前素材。";
+      setTaskId("");
+      setTaskSnapshot(null);
+      setPhase("upload_paused");
+      setStatus(nextStatus);
+      setLoading(false);
+      setUploadPercent(restoredUploadPercent);
+      uploadPersistRef.current.latestPercent = restoredUploadPercent;
+      setBindingCompleted(false);
+      setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
+      await persistSession({
+        file: restoredFile,
+        taskId: "",
+        phase: "upload_paused",
+        taskSnapshot: null,
+        selectedUploadModel: getDefaultUploadModelKey(restoredModelKey),
+        durationSec: Number(saved?.duration_seconds || 0) || null,
+        coverDataUrl: String(saved?.cover_data_url || ""),
+        coverWidth: Number(saved?.cover_width || 0),
+        coverHeight: Number(saved?.cover_height || 0),
+        aspectRatio: Number(saved?.aspect_ratio || 0),
+        isVideoSource: Boolean(saved?.is_video_source),
+        uploadPercent: restoredUploadPercent,
+        status: nextStatus,
+        bindingCompleted: false,
+      });
+      return;
+    }
+
+    setTaskId(restoredTaskId);
+    setTaskSnapshot(restoredTaskSnapshot);
+    setPhase(hasRestoredFile ? (restoredPhase === "error" ? "error" : "ready") : "idle");
+    setStatus(restoredStatus);
+    setLoading(false);
+    setUploadPercent(restoredPhase === "error" ? restoredUploadPercent : 0);
+    uploadPersistRef.current.latestPercent = restoredPhase === "error" ? restoredUploadPercent : 0;
+    setBindingCompleted(restoredBindingCompleted);
+    setRestoreBannerMode(
+      restoredPhase === "error" && restoredTaskId && Boolean(restoredTaskSnapshot?.resume_available)
+        ? RESTORE_BANNER_MODES.INTERRUPTED
+        : RESTORE_BANNER_MODES.NONE,
+    );
+    await persistSession({
+      file: restoredFile,
+      taskId: restoredTaskId,
+      phase: hasRestoredFile ? (restoredPhase === "error" ? "error" : "ready") : "idle",
+      taskSnapshot: restoredTaskSnapshot,
+      selectedUploadModel: getDefaultUploadModelKey(restoredModelKey),
+      durationSec: Number(saved?.duration_seconds || 0) || null,
+      coverDataUrl: String(saved?.cover_data_url || ""),
+      coverWidth: Number(saved?.cover_width || 0),
+      coverHeight: Number(saved?.cover_height || 0),
+      aspectRatio: Number(saved?.aspect_ratio || 0),
+      isVideoSource: Boolean(saved?.is_video_source),
+      uploadPercent: restoredPhase === "error" ? restoredUploadPercent : 0,
+      status: restoredStatus,
+      bindingCompleted: restoredBindingCompleted,
+    });
   }
 
   function persistUploadProgress(nextPercent) {
@@ -1642,7 +1848,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     successStateOriginRef.current = "live";
     if (ownerUserId) {
       await clearActiveGenerationTask(ownerUserId);
-      await clearUploadPanelSuccessSnapshot(ownerUserId);
+      await saveSuccessSnapshot(sourceFile, data, successMessage);
     }
     await onWalletChanged?.();
     if (data.lesson) await onCreated?.({ lesson: data.lesson, mediaPreview, mediaPersisted });
@@ -1665,98 +1871,128 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       if (!resp.ok) {
         if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING) {
           const nextStatus = "上次生成记录已失效，可重新开始或清空这次记录。";
-          setTaskId("");
-          setTaskSnapshot(null);
-          setRestoreBannerMode(RESTORE_BANNER_MODES.STALE);
-          setStatus(nextStatus);
-          setPhase(file ? "ready" : "idle");
-          setLoading(false);
-          await persistSession({ taskId: "", phase: file ? "ready" : "idle", taskSnapshot: null, uploadPercent: 0, status: nextStatus });
+          await applyTaskViewState({
+            nextTaskId: "",
+            nextTaskSnapshot: null,
+            nextPhase: file ? "ready" : "idle",
+            nextStatus,
+            nextUploadPercent: 0,
+            nextLoading: false,
+            nextRestoreBannerMode: RESTORE_BANNER_MODES.STALE,
+            nextBindingCompleted: false,
+          });
           return;
         }
         const message = toErrorText(data, "查询任务失败");
-        setStatus(message);
-        setPhase("error");
-        setLoading(false);
-        await persistSession({ phase: "error", status: message });
-        if (!silentToast) toast.error(message);
+        await handleTaskFailureState({
+          message,
+          nextTaskId,
+          nextTaskSnapshot: taskSnapshot,
+          nextUploadPercent: uploadPercent,
+          showToast: !silentToast,
+        });
         return;
       }
-      setTaskId(String(data.task_id || nextTaskId));
-      setTaskSnapshot(data);
+      const resolvedTaskId = String(data.task_id || nextTaskId);
       maybeShowModelFallbackToast(data);
       const taskStatus = String(data.status || "").toLowerCase();
+      let nextRestoreMode = restoreBannerMode;
       if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING) {
         if (ACTIVE_SERVER_TASK_STATUSES.has(taskStatus)) {
-          setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
+          nextRestoreMode = RESTORE_BANNER_MODES.NONE;
         } else if (RECOVERABLE_SERVER_TASK_STATUSES.has(taskStatus)) {
-          setRestoreBannerMode(RESTORE_BANNER_MODES.INTERRUPTED);
+          nextRestoreMode = RESTORE_BANNER_MODES.INTERRUPTED;
         } else if (taskStatus === "failed") {
-          setRestoreBannerMode(RESTORE_BANNER_MODES.STALE);
+          nextRestoreMode = RESTORE_BANNER_MODES.STALE;
         }
       }
       if (taskStatus === "succeeded") {
+        setTaskId(resolvedTaskId);
+        setTaskSnapshot(data);
         await finalizeSuccess(data, file, silentToast);
         return;
       }
       if (taskStatus === "paused" || taskStatus === "terminated") {
-        setRestoreBannerMode(RESTORE_BANNER_MODES.INTERRUPTED);
         const nextPhase = file ? "ready" : "idle";
         const nextStatus = String(data.current_text || data.message || "");
-        setStatus(nextStatus);
-        setPhase(nextPhase);
-        setLoading(false);
         resetUploadPersistState();
-        await persistSession({ phase: nextPhase, taskSnapshot: data, uploadPercent: 100, status: nextStatus });
+        await applyTaskViewState({
+          nextTaskId: resolvedTaskId,
+          nextTaskSnapshot: data,
+          nextPhase,
+          nextStatus,
+          nextUploadPercent: 100,
+          nextLoading: false,
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.INTERRUPTED,
+        });
         return;
       }
       if (taskStatus === "failed") {
         if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING && !Boolean(data.resume_available)) {
-          setTaskId("");
-          setTaskSnapshot(null);
-          setRestoreBannerMode(RESTORE_BANNER_MODES.STALE);
           const nextStatus = "上次生成记录已失效，可重新开始或清空这次记录。";
-          setStatus(nextStatus);
-          setPhase(file ? "ready" : "idle");
-          setLoading(false);
-          await persistSession({ taskId: "", phase: file ? "ready" : "idle", taskSnapshot: null, uploadPercent: 0, status: nextStatus });
+          await applyTaskViewState({
+            nextTaskId: "",
+            nextTaskSnapshot: null,
+            nextPhase: file ? "ready" : "idle",
+            nextStatus,
+            nextUploadPercent: 0,
+            nextLoading: false,
+            nextRestoreBannerMode: RESTORE_BANNER_MODES.STALE,
+            nextBindingCompleted: false,
+          });
           return;
         }
         const message = `${data.error_code || "ERROR"}: ${data.message || "生成失败"}`;
-        setStatus(message);
-        setPhase("error");
-        setLoading(false);
-        await persistSession({ phase: "error", taskSnapshot: data, status: message });
-        await onWalletChanged?.();
-        if (!silentToast) toast.error(message);
+        await handleTaskFailureState({
+          message,
+          nextTaskId: resolvedTaskId,
+          nextTaskSnapshot: data,
+          nextUploadPercent: 100,
+          nextRestoreBannerMode: nextRestoreMode,
+          showToast: !silentToast,
+          refreshWallet: true,
+        });
         return;
       }
-      setPhase("processing");
-      setLoading(true);
       resetUploadPersistState();
-      await persistSession({ phase: "processing", taskSnapshot: data, uploadPercent: 100, status: String(data.current_text || "") });
+      await applyTaskViewState({
+        nextTaskId: resolvedTaskId,
+        nextTaskSnapshot: data,
+        nextPhase: "processing",
+        nextStatus: String(data.current_text || ""),
+        nextUploadPercent: 100,
+        nextLoading: true,
+        nextRestoreBannerMode: nextRestoreMode,
+      });
       setTimeout(() => void pollTask(nextTaskId, silentToast, pollToken), 1000);
     } catch (error) {
       if (pollingAbortRef.current || pollToken !== pollTokenRef.current || error?.name === "AbortError") return;
       if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING) {
         const nextStatus = "检查上次任务状态失败，可重新开始或稍后重试。";
-        setTaskId("");
-        setTaskSnapshot(null);
-        setRestoreBannerMode(RESTORE_BANNER_MODES.STALE);
-        setStatus(nextStatus);
-        setPhase(file ? "ready" : "idle");
-        setLoading(false);
-        await persistSession({ taskId: "", phase: file ? "ready" : "idle", taskSnapshot: null, uploadPercent: 0, status: nextStatus });
+        await applyTaskViewState({
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextPhase: file ? "ready" : "idle",
+          nextStatus,
+          nextUploadPercent: 0,
+          nextLoading: false,
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.STALE,
+          nextBindingCompleted: false,
+        });
         return;
       }
       const retryCount = pollFailureCountRef.current + 1;
       pollFailureCountRef.current = retryCount;
       if (retryCount <= POLL_RETRY_LIMIT) {
         const retryMessage = `网络波动，正在重试任务状态（${retryCount}/${POLL_RETRY_LIMIT}）`;
-        setStatus(retryMessage);
-        setPhase("processing");
-        setLoading(true);
-        await persistSession({ phase: "processing", status: retryMessage });
+        await applyTaskViewState({
+          nextTaskId,
+          nextTaskSnapshot: taskSnapshot,
+          nextPhase: "processing",
+          nextStatus: retryMessage,
+          nextUploadPercent: 100,
+          nextLoading: true,
+        });
         if (!silentToast && retryCount === 1) {
           toast.warning("网络波动，正在重试任务状态");
         }
@@ -1766,11 +2002,15 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       pollFailureCountRef.current = 0;
       const message = "网络波动，任务状态暂时无法更新，可稍后继续查询或免上传继续生成。";
       const nextPhase = file ? "ready" : "idle";
-      setStatus(message);
-      setPhase(nextPhase);
-      setLoading(false);
-      setRestoreBannerMode(RESTORE_BANNER_MODES.INTERRUPTED);
-      await persistSession({ phase: nextPhase, status: message });
+      await applyTaskViewState({
+        nextTaskId,
+        nextTaskSnapshot: taskSnapshot,
+        nextPhase,
+        nextStatus: message,
+        nextUploadPercent: 100,
+        nextLoading: false,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.INTERRUPTED,
+      });
       if (!silentToast) toast.warning(message);
     }
   }
@@ -1782,31 +2022,47 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     freshEntryInitKeyRef.current = initKey;
     let canceled = false;
 
-    async function prepareFreshEntry() {
+    async function restorePersistedSession() {
       resetLocalSessionState();
       if (!ownerUserId) return;
       try {
-        await clearUploadPanelTaskSnapshots(ownerUserId);
-        if (!accessToken) return;
-        const resp = await api("/api/lessons/tasks/terminate-active", { method: "POST" }, accessToken);
-        const data = await parseResponse(resp);
-        if (!resp.ok) {
-          throw new Error(toErrorText(data, "终止旧任务失败"));
+        const [savedSuccessSnapshot, savedTaskSnapshot] = await Promise.all([
+          getUploadPanelSuccessSnapshot(ownerUserId),
+          getActiveGenerationTask(ownerUserId),
+        ]);
+        if (canceled) return;
+        if (savedSuccessSnapshot?.task_snapshot?.lesson?.id) {
+          await restoreSuccessSnapshot(savedSuccessSnapshot);
+          return;
+        }
+        if (savedTaskSnapshot) {
+          await restorePersistedTaskSnapshot(savedTaskSnapshot);
         }
       } catch (error) {
         if (canceled) return;
         const message = error instanceof Error && error.message ? error.message : String(error);
-        toast.error(message);
-      } finally {
-        await clearUploadPanelTaskSnapshots(ownerUserId);
+        toast.warning(`恢复上次上传状态失败: ${message}`);
       }
     }
 
-    void prepareFreshEntry();
+    void restorePersistedSession();
     return () => {
       canceled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, isActivePanel, ownerUserId]);
+
+  useEffect(() => {
+    if (!isActivePanel || !accessToken || restoreBannerMode !== RESTORE_BANNER_MODES.VERIFYING || !taskId) {
+      restoreVerificationTaskRef.current = "";
+      return;
+    }
+    if (restoreVerificationTaskRef.current === taskId) return;
+    restoreVerificationTaskRef.current = taskId;
+    const pollToken = startPollingSession();
+    void pollTask(taskId, true, pollToken);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken, isActivePanel, restoreBannerMode, taskId]);
 
   async function onSelectFile(nextFile) {
     stopPollingSession();
@@ -2046,35 +2302,52 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   async function submitBalanced(pollToken) {
     if (!localAsrSupport.supported) {
       const message = sanitizeUserFacingText(localAsrSupport.reason || "当前浏览器暂不支持这个模型");
-      setStatus(message);
-      setPhase("error");
-      setLoading(false);
-      toast.error(message);
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+        persistState: false,
+      });
       return;
     }
     if (!localWorkerReady) {
       const message = "识别组件正在重置，请稍后再试。";
-      setStatus(message);
-      setPhase("error");
-      setLoading(false);
-      toast.error(message);
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+      });
       return;
     }
     if (!isLocalBalancedModelUploadEnabled(selectedBalancedModel)) {
       const message = getLocalBalancedModelUnavailableReason(selectedBalancedModel) || "当前模型暂未开放";
-      setStatus(message);
-      setPhase("error");
-      setLoading(false);
-      toast.error(message);
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+      });
       return;
     }
     const modelState = localModelStateMap[selectedBalancedModel] || {};
     if (!["ready", "cached"].includes(String(modelState.status || ""))) {
       const message = "请先下载并就绪模型";
-      setStatus(message);
-      setPhase("error");
-      setLoading(false);
-      toast.error(message);
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+      });
       return;
     }
     const runToken = localRunTokenRef.current + 1;
@@ -2234,12 +2507,15 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       if (!resp.ok) {
         setLocalProgressSnapshot(null);
         const message = toErrorText(data, "创建识别任务失败");
-        setStatus(message);
-        setPhase("error");
-        setLoading(false);
-        toast.error(message);
-        await persistSession({ phase: "error", status: message });
-        await onWalletChanged?.();
+        await handleTaskFailureState({
+          message,
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: 0,
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+          refreshWallet: true,
+        });
         return;
       }
       const nextTaskId = String(data.task_id || "");
@@ -2265,20 +2541,28 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       });
       setLocalProgressSnapshot(null);
       const message = error instanceof Error && error.message ? error.message : `网络错误: ${String(error)}`;
-      setStatus(message);
-      setPhase("error");
-      setLoading(false);
-      toast.error(message);
-      await persistSession({ phase: "error", status: message });
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+      });
     }
   }
 
   async function submit() {
     if (!file) {
       const message = "请先选择文件";
-      setStatus(message);
-      setPhase("error");
-      toast.error(message);
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+      });
       return;
     }
     if (ownerUserId) {
@@ -2331,22 +2615,28 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       uploadAbortRef.current = null;
       if (!ok) {
         const message = toErrorText(data, "创建上传任务失败");
-        setStatus(message);
-        setPhase("error");
-        setLoading(false);
-        toast.error(message);
-        await persistSession({ phase: "error", status: message });
-        await onWalletChanged?.();
+        await handleTaskFailureState({
+          message,
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: clampPercent(uploadPersistRef.current.latestPercent || uploadPercent),
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+          refreshWallet: true,
+        });
         return;
       }
       const nextTaskId = String(data.task_id || "");
       if (!nextTaskId) {
         const message = "任务创建成功但缺少 task_id";
-        setStatus(message);
-        setPhase("error");
-        setLoading(false);
-        toast.error(message);
-        await persistSession({ phase: "error", status: message });
+        await handleTaskFailureState({
+          message,
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: clampPercent(uploadPersistRef.current.latestPercent || uploadPercent),
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+        });
         return;
       }
       if (Boolean(data.model_fallback_applied)) {
@@ -2364,18 +2654,21 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       uploadPersistRef.current.latestPercent = 100;
       setPhase("processing");
       resetUploadPersistState();
-      await persistSession({ taskId: nextTaskId, phase: "processing", uploadPercent: 100 });
+      await persistSession({ taskId: nextTaskId, phase: "processing", taskSnapshot: null, uploadPercent: 100, status: "", bindingCompleted: false });
       void pollTask(nextTaskId, false, pollToken);
     } catch (error) {
       uploadAbortRef.current = null;
       if (error?.name === "AbortError") return;
       resetUploadPersistState();
       const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      setPhase("error");
-      setLoading(false);
-      toast.error(message);
-      await persistSession({ phase: "error", status: message });
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: clampPercent(uploadPersistRef.current.latestPercent || uploadPercent),
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+      });
     }
   }
 
@@ -2404,17 +2697,27 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 resume_available: false,
               }
             : taskSnapshot;
-        setStatus(message);
-        setPhase("error");
-        setLoading(false);
-        toast.error(message);
-        if (nextTaskSnapshot) {
-          setTaskSnapshot(nextTaskSnapshot);
-        }
-        await persistSession({ phase: "error", status: message, taskSnapshot: nextTaskSnapshot });
+        await handleTaskFailureState({
+          message,
+          nextTaskId: taskId,
+          nextTaskSnapshot,
+          nextUploadPercent: 100,
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        });
         return;
       }
       setPhase("processing");
+      const nextTaskSnapshot =
+        taskSnapshot != null
+          ? {
+              ...taskSnapshot,
+              status: "pending",
+              error_code: "",
+              message: "",
+              current_text: "准备重新生成",
+              resume_available: false,
+            }
+          : null;
       setTaskSnapshot((prev) =>
         prev
           ? {
@@ -2427,15 +2730,17 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             }
           : prev,
       );
-      await persistSession({ phase: "processing", uploadPercent: 100, status: "" });
+      await persistSession({ taskId, phase: "processing", taskSnapshot: nextTaskSnapshot, uploadPercent: 100, status: "" });
       void pollTask(taskId, false, pollToken);
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      setPhase("error");
-      setLoading(false);
-      toast.error(message);
-      await persistSession({ phase: "error", status: message });
+      await handleTaskFailureState({
+        message,
+        nextTaskId: taskId,
+        nextTaskSnapshot: taskSnapshot,
+        nextUploadPercent: 100,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+      });
     }
   }
 
@@ -2444,11 +2749,15 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     stopPollingSession();
     const pollToken = startPollingSession();
     const nextStatus = "正在重新连接任务状态";
-    setLoading(true);
-    setStatus(nextStatus);
-    setPhase("processing");
-    setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
-    await persistSession({ phase: "processing", status: nextStatus, uploadPercent: 100 });
+    await applyTaskViewState({
+      nextTaskId: taskId,
+      nextTaskSnapshot: taskSnapshot,
+      nextPhase: "processing",
+      nextStatus,
+      nextUploadPercent: 100,
+      nextLoading: true,
+      nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+    });
     void pollTask(taskId, false, pollToken);
   }
 
@@ -2458,6 +2767,19 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     const endpoint = normalizedAction === "terminate" ? "terminate" : "pause";
     const pendingStatus = normalizedAction === "terminate" ? "terminating" : "pausing";
     const pendingText = normalizedAction === "terminate" ? "正在终止，当前步骤完成后会停止生成" : "正在暂停，当前步骤完成后会保留进度";
+    const previousTaskSnapshot = taskSnapshot ? { ...taskSnapshot } : null;
+    const pendingTaskSnapshot =
+      previousTaskSnapshot != null
+        ? {
+            ...previousTaskSnapshot,
+            status: pendingStatus,
+            current_text: pendingText,
+            message: "",
+            control_action: normalizedAction,
+            can_pause: false,
+            can_terminate: normalizedAction === "terminate",
+          }
+        : null;
     try {
       stopPollingSession();
       setLoading(true);
@@ -2476,16 +2798,18 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             }
           : prev,
       );
-      await persistSession({ phase: "processing", status: pendingText });
+      await persistSession({ taskId, phase: "processing", taskSnapshot: pendingTaskSnapshot, uploadPercent: 100, status: pendingText });
       const resp = await api(`/api/lessons/tasks/${taskId}/${endpoint}`, { method: "POST" }, accessToken);
       const data = await parseResponse(resp);
       if (!resp.ok) {
         const message = toErrorText(data, normalizedAction === "terminate" ? "终止生成失败" : "暂停生成失败");
-        setStatus(message);
-        setPhase("error");
-        setLoading(false);
-        toast.error(message);
-        await persistSession({ phase: "error", status: message });
+        await handleTaskFailureState({
+          message,
+          nextTaskId: taskId,
+          nextTaskSnapshot: previousTaskSnapshot,
+          nextUploadPercent: 100,
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        });
         return;
       }
       const pollToken = startPollingSession();
@@ -2493,11 +2817,13 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       toast.success(normalizedAction === "terminate" ? "已提交终止请求" : "已提交暂停请求");
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      setPhase("error");
-      setLoading(false);
-      toast.error(message);
-      await persistSession({ phase: "error", status: message });
+      await handleTaskFailureState({
+        message,
+        nextTaskId: taskId,
+        nextTaskSnapshot: previousTaskSnapshot,
+        nextUploadPercent: 100,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+      });
     }
   }
 
@@ -2574,7 +2900,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                   : false;
               const cardProgressValue = null;
               const cardProgressText = String(serverBusyText || (isSenseVoice ? sensevoiceModelState.message : fasterModelState.message) || "准备中");
-              const cardErrorText = isSenseVoice ? String(sensevoiceModelState.lastError || "") : isFasterWhisper ? String(fasterModelState.lastError || "") : "";
+              const cardErrorText = isSenseVoice
+                ? sanitizeUserFacingText(String(sensevoiceModelState.lastError || ""))
+                : isFasterWhisper
+                  ? sanitizeUserFacingText(String(fasterModelState.lastError || ""))
+                  : "";
               const cardStatusText = isSenseVoice
                 ? sanitizeUserFacingText(
                     sensevoiceModelState.message ||

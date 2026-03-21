@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-export function useLearningShellBootstrap({ accessToken, loadCatalog, loadWallet, loadBillingRates, detectAdmin }) {
+export function useLearningShellBootstrap({ accessToken, loadCatalog, loadWallet, loadBillingRates }) {
   useEffect(() => {
     if (!accessToken) {
       void loadCatalog();
@@ -9,6 +9,5 @@ export function useLearningShellBootstrap({ accessToken, loadCatalog, loadWallet
     void loadCatalog();
     void loadWallet();
     void loadBillingRates();
-    void detectAdmin();
-  }, [accessToken, detectAdmin, loadBillingRates, loadCatalog, loadWallet]);
+  }, [accessToken, loadBillingRates, loadCatalog, loadWallet]);
 }

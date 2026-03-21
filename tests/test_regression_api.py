@@ -637,6 +637,17 @@ def test_health_ready_endpoint(test_client, monkeypatch):
     from app import main as app_main
 
     monkeypatch.setattr(app_main, "_probe_database_ready", lambda: (True, ""))
+    monkeypatch.setattr(
+        app_main,
+        "_refresh_optional_runtime_status",
+        lambda app: (
+            setattr(app_main._ensure_runtime_status(app), "dashscope_configured", True),
+            setattr(app_main._ensure_runtime_status(app), "ffmpeg_ready", True),
+            setattr(app_main._ensure_runtime_status(app), "ffprobe_ready", True),
+            setattr(app_main._ensure_runtime_status(app), "upload_asr_ready", True),
+            setattr(app_main._ensure_runtime_status(app), "upload_asr_detail", "ready upload ASR models: Qwen ASR Flash"),
+        ),
+    )
     client, _, _ = test_client
     resp = client.get("/health/ready")
     assert resp.status_code == 200
@@ -1427,7 +1438,7 @@ def test_startup_without_dashscope_key_keeps_health_alive(monkeypatch, tmp_path)
         resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
-    assert resp.json()["ready"] is True
+    assert resp.json()["ready"] is False
     assert prefetch_called["count"] == 1
 
 
@@ -1435,6 +1446,17 @@ def test_health_ready_returns_503_when_database_unavailable(monkeypatch):
     from app import main as app_main
 
     monkeypatch.setattr(app_main, "_probe_database_ready", lambda: (False, "db offline"))
+    monkeypatch.setattr(
+        app_main,
+        "_refresh_optional_runtime_status",
+        lambda app: (
+            setattr(app_main._ensure_runtime_status(app), "dashscope_configured", True),
+            setattr(app_main._ensure_runtime_status(app), "ffmpeg_ready", True),
+            setattr(app_main._ensure_runtime_status(app), "ffprobe_ready", True),
+            setattr(app_main._ensure_runtime_status(app), "upload_asr_ready", True),
+            setattr(app_main._ensure_runtime_status(app), "upload_asr_detail", "ready upload ASR models: Qwen ASR Flash"),
+        ),
+    )
 
     app = app_main.create_app(enable_lifespan=False)
     with TestClient(app) as client:
@@ -1447,6 +1469,73 @@ def test_health_ready_returns_503_when_database_unavailable(monkeypatch):
     payload = ready.json()
     assert payload["ok"] is False
     assert payload["status"]["db_ready"] is False
+
+
+def test_health_ready_returns_503_when_dashscope_is_missing(monkeypatch):
+    from app import main as app_main
+
+    monkeypatch.setattr(app_main, "_probe_database_ready", lambda: (True, ""))
+
+    def fake_refresh(app):
+        runtime_status = app_main._ensure_runtime_status(app)
+        runtime_status.dashscope_configured = False
+        runtime_status.ffmpeg_ready = True
+        runtime_status.ffprobe_ready = True
+        runtime_status.media_detail = ""
+        runtime_status.upload_asr_ready = False
+        runtime_status.upload_asr_detail = "no upload-capable ASR model is ready"
+
+    monkeypatch.setattr(app_main, "_refresh_optional_runtime_status", fake_refresh)
+
+    app = app_main.create_app(enable_lifespan=False)
+    with TestClient(app) as client:
+        resp = client.get("/health/ready")
+
+    assert resp.status_code == 503
+    payload = resp.json()
+    assert payload["ok"] is False
+    assert payload["status"]["db_ready"] is True
+    assert payload["status"]["dashscope_configured"] is False
+    assert "DASHSCOPE_API_KEY is not configured" in payload["status"]["readiness_issues"]
+
+
+def test_auth_register_returns_db_migration_required_when_runtime_not_ready(test_client):
+    from app.main import RuntimeStatus
+
+    client, _, _ = test_client
+    client.app.state.runtime_status = RuntimeStatus(
+        db_ready=False,
+        db_error="missing critical columns: users.is_admin",
+        checked_at="2026-03-21T00:00:00+00:00",
+    )
+
+    resp = client.post("/api/auth/register", json={"email": "blocked@example.com", "password": "123456"})
+
+    assert resp.status_code == 503
+    payload = resp.json()
+    assert payload["error_code"] == "DB_MIGRATION_REQUIRED"
+    assert "users.is_admin" in str(payload["detail"])
+
+
+def test_qwen_asr_model_status_requires_dashscope_api_key(test_client, monkeypatch):
+    from app.services import asr_model_registry
+
+    client, _, _ = test_client
+    token = _register_and_login(client, email="qwen-status@example.com")
+
+    monkeypatch.setattr(asr_model_registry, "DASHSCOPE_API_KEY", "")
+
+    resp = client.get(
+        "/api/asr-models/qwen3-asr-flash-filetrans/status",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["ok"] is True
+    assert payload["status"] == "missing"
+    assert payload["available"] is False
+    assert payload["message"] == "DASHSCOPE_API_KEY 未配置，云转写不可用。"
 
 
 def test_admin_billing_rates_endpoint_handles_legacy_schema_defaults(tmp_path):

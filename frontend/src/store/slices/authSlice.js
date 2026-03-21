@@ -1,9 +1,15 @@
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
-import { clearAuthStorage, TOKEN_KEY, USER_EMAIL_KEY, USER_ID_KEY } from "../../app/authStorage";
+import { clearAuthStorage, TOKEN_KEY, USER_EMAIL_KEY, USER_ID_KEY, USER_IS_ADMIN_KEY } from "../../app/authStorage";
 
 function readStoredAccessToken() {
   if (typeof localStorage === "undefined") return "";
   return localStorage.getItem(TOKEN_KEY) || "";
+}
+
+function normalizeAdminFlag(value) {
+  if (typeof value === "boolean") return value;
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "true" || normalized === "1" || normalized === "yes";
 }
 
 function normalizeStoredUser(user) {
@@ -12,7 +18,7 @@ function normalizeStoredUser(user) {
   if (!Number.isFinite(id) || id <= 0 || !email) {
     return null;
   }
-  return { id, email };
+  return { id, email, is_admin: normalizeAdminFlag(user?.is_admin) };
 }
 
 function readStoredCurrentUser() {
@@ -20,6 +26,7 @@ function readStoredCurrentUser() {
   return normalizeStoredUser({
     id: localStorage.getItem(USER_ID_KEY),
     email: localStorage.getItem(USER_EMAIL_KEY),
+    is_admin: localStorage.getItem(USER_IS_ADMIN_KEY),
   });
 }
 
@@ -32,7 +39,7 @@ function buildAuthInitialState() {
     hasStoredToken: Boolean(accessToken),
     authStatus: accessToken ? "active" : "anonymous",
     authStatusMessage: "",
-    isAdminUser: false,
+    isAdminUser: Boolean(accessToken && currentUser?.is_admin),
     adminAuthState: "idle",
   };
 }
@@ -52,25 +59,30 @@ export function createAuthSlice(set, get) {
         hasStoredToken: Boolean(accessToken),
         authStatus: accessToken ? "active" : "anonymous",
         authStatusMessage: "",
-        isAdminUser: false,
+        isAdminUser: Boolean(accessToken && currentUser?.is_admin),
         adminAuthState: "idle",
       });
       return accessToken;
     },
     setAccessToken: (accessToken) => {
       const nextAccessToken = String(accessToken || "");
+      const currentUser = nextAccessToken ? readStoredCurrentUser() : null;
       set({
         accessToken: nextAccessToken,
-        currentUser: nextAccessToken ? readStoredCurrentUser() : null,
+        currentUser,
         hasStoredToken: Boolean(nextAccessToken || readStoredAccessToken()),
         authStatus: nextAccessToken ? "active" : "anonymous",
         authStatusMessage: "",
-        isAdminUser: false,
+        isAdminUser: Boolean(nextAccessToken && currentUser?.is_admin),
         adminAuthState: "idle",
       });
     },
     setCurrentUser: (currentUser) => {
-      set({ currentUser: normalizeStoredUser(currentUser) });
+      const normalizedUser = normalizeStoredUser(currentUser);
+      set({
+        currentUser: normalizedUser,
+        isAdminUser: Boolean(get().accessToken && normalizedUser?.is_admin),
+      });
     },
     markAuthExpired: (message = "登录已失效，请重新登录") => {
       const nextMessage = String(message || "登录已失效，请重新登录");

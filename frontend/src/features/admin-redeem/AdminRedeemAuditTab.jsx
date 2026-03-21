@@ -87,8 +87,10 @@ export function AdminRedeemAuditTab({ apiCall, queryPrefix = "" }) {
         page: String(nextPage),
         page_size: String(pageSize),
         user_email: userEmail.trim(),
-        batch_id: batchId.trim(),
       });
+      if (batchId.trim()) {
+        query.set("batch_id", batchId.trim());
+      }
       const normalizedDateFrom = datetimeLocalToBeijingOffset(dateFrom);
       const normalizedDateTo = datetimeLocalToBeijingOffset(dateTo);
       if (normalizedDateFrom) query.set("date_from", normalizedDateFrom);

@@ -223,7 +223,6 @@ export function LearningShellContainer() {
     loadCatalog,
     loadWallet,
     loadBillingRates,
-    detectAdmin,
   });
   useLearningShellPrefetch({
     accessToken,
@@ -250,6 +249,11 @@ export function LearningShellContainer() {
     if (!isAdminRoute) return;
     setAdminNavExpanded(true);
   }, [isAdminRoute]);
+
+  useEffect(() => {
+    if (!accessToken || !isAdminRoute || adminAuthState !== "idle") return;
+    void detectAdmin();
+  }, [accessToken, adminAuthState, detectAdmin, isAdminRoute]);
 
   useEffect(() => {
     setMobileNavOpen(false);
