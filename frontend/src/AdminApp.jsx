@@ -4,6 +4,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AdminHealthPage } from "./features/admin-pages/AdminHealthPage";
 import { AdminModelsPage } from "./features/admin-pages/AdminModelsPage";
 import { AdminRedeemPage } from "./features/admin-pages/AdminRedeemPage";
+import { AdminSecurityPage } from "./features/admin-pages/AdminSecurityPage";
 import { AdminUsersPage } from "./features/admin-pages/AdminUsersPage";
 import { useErrorCopyShortcut } from "./shared/hooks/useErrorCopyShortcut";
 import { resolveAdminNavItem } from "./shared/lib/adminSearchParams";
@@ -29,6 +30,7 @@ export function AdminApp({ apiCall }) {
       <Routes>
         <Route index element={<Navigate to="health" replace />} />
         <Route path="health" element={<AdminHealthPage apiCall={apiCall} />} />
+        <Route path="security" element={<AdminSecurityPage apiCall={apiCall} />} />
         <Route path="users" element={<AdminUsersPage apiCall={apiCall} />} />
         <Route path="models" element={<AdminModelsPage apiCall={apiCall} />} />
         <Route path="redeem" element={<AdminRedeemPage apiCall={apiCall} />} />

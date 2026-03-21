@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta
 
 import pytest
@@ -31,6 +32,7 @@ def learning_summary_client(tmp_path):
         seed.close()
 
     app = create_app(enable_lifespan=False)
+    app.state.testing_session_factory = testing_session
 
     def override_get_db():
         db = testing_session()
@@ -48,6 +50,18 @@ def learning_summary_client(tmp_path):
 def _register_and_login(client: TestClient, email: str, password: str = "123456") -> str:
     register_resp = client.post("/api/auth/register", json={"email": email, "password": password})
     assert register_resp.status_code == 200
+    admin_emails = {item.strip().lower() for item in os.getenv("ADMIN_EMAILS", "").split(",") if item.strip()}
+    session_factory = getattr(client.app.state, "testing_session_factory", None)
+    if session_factory is not None and email.lower() in admin_emails:
+        session = session_factory()
+        try:
+            user = session.scalar(select(User).where(User.email == email.lower()))
+            assert user is not None
+            user.is_admin = True
+            session.add(user)
+            session.commit()
+        finally:
+            session.close()
     login_resp = client.post("/api/auth/login", json={"email": email, "password": password})
     assert login_resp.status_code == 200
     return login_resp.json()["access_token"]

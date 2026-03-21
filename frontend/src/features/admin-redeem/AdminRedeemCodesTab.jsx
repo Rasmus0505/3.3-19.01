@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
+import { buildExportProtectionPrompt, fetchAdminSecurityStatus } from "../../shared/lib/adminSecurity";
 import { copyCurrentUrl, mergeScopedSearchParams, readScopedIntParam, readScopedStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
@@ -40,8 +41,10 @@ export function AdminRedeemCodesTab({ apiCall, queryPrefix = "" }) {
   const [confirmBulkOpen, setConfirmBulkOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportConfirmText, setExportConfirmText] = useState("");
+  const [exportProtection, setExportProtection] = useState(null);
   const [actionDialog, setActionDialog] = useState(null);
   const { error, clearError, captureError } = useErrorHandler();
+  const exportPrompt = useMemo(() => buildExportProtectionPrompt(exportProtection), [exportProtection]);
 
   useEffect(() => {
     setSearchParams(
@@ -61,6 +64,25 @@ export function AdminRedeemCodesTab({ apiCall, queryPrefix = "" }) {
   }, [batchId, createdFrom, createdTo, page, pageSize, queryPrefix, redeemUserEmail, redeemedFrom, redeemedTo, searchParams, setSearchParams, statusFilter]);
 
   const pageCount = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadExportProtection() {
+      try {
+        const { response, data } = await fetchAdminSecurityStatus(apiCall);
+        if (!active || !response.ok) return;
+        setExportProtection(data?.export_protection || null);
+      } catch (_) {
+        if (!active) return;
+      }
+    }
+
+    loadExportProtection();
+    return () => {
+      active = false;
+    };
+  }, [apiCall]);
 
   async function loadCodes(nextPage = page) {
     setLoading(true);
@@ -445,16 +467,29 @@ export function AdminRedeemCodesTab({ apiCall, queryPrefix = "" }) {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+        <Dialog
+          open={exportDialogOpen}
+          onOpenChange={(open) => {
+            setExportDialogOpen(open);
+            if (!open) setExportConfirmText("");
+          }}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>确认导出未兑换码 CSV</DialogTitle>
-              <DialogDescription>请输入 `EXPORT` 以确认导出当前批次下的未兑换码。</DialogDescription>
+              <DialogDescription>
+                {batchId.trim() ? "本次将按当前批次筛选结果导出未兑换码。 " : "本次将导出当前筛选范围内的未兑换码。 "}
+                {exportPrompt.title}。{exportPrompt.description}
+              </DialogDescription>
             </DialogHeader>
-            <Input value={exportConfirmText} onChange={(event) => setExportConfirmText(event.target.value)} placeholder="输入 EXPORT" />
+            <Input
+              value={exportConfirmText}
+              onChange={(event) => setExportConfirmText(event.target.value)}
+              placeholder={exportPrompt.placeholder}
+            />
             <DialogFooter>
               <Button variant="outline" onClick={() => setExportDialogOpen(false)}>取消</Button>
-              <Button onClick={exportUnredeemedCsv} disabled={exporting || exportConfirmText.trim() !== "EXPORT"}>
+              <Button onClick={exportUnredeemedCsv} disabled={exporting || !exportConfirmText.trim()}>
                 {exporting ? "导出中..." : "确认导出"}
               </Button>
             </DialogFooter>

@@ -8,7 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 from uuid import uuid4
 
-from app.core.config import PROJECT_DIR
+from app.core.config import BASE_TMP_DIR, MEDIA_STORAGE_ROOT_DIR, PERSISTENT_DATA_DIR, PROJECT_DIR
 
 
 class MediaError(RuntimeError):
@@ -54,6 +54,50 @@ def create_request_dir(base_tmp_dir: Path) -> Path:
     req_dir = base_tmp_dir / f"req_{uuid4().hex}"
     req_dir.mkdir(parents=True, exist_ok=False)
     return req_dir
+
+
+def _path_is_within_root(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def get_controlled_media_roots() -> tuple[Path, ...]:
+    roots: list[Path] = []
+    for raw_root in (MEDIA_STORAGE_ROOT_DIR, BASE_TMP_DIR, PERSISTENT_DATA_DIR):
+        try:
+            resolved_root = Path(raw_root).resolve(strict=False)
+        except Exception:
+            continue
+        if resolved_root not in roots:
+            roots.append(resolved_root)
+    return tuple(roots)
+
+
+def resolve_controlled_media_path(raw_path: str | Path, *, field_name: str = "media_path") -> Path:
+    normalized = str(raw_path or "").strip()
+    if not normalized:
+        raise MediaError("INVALID_MEDIA_PATH", "媒体路径无效", f"{field_name} is empty")
+
+    configured_roots = get_controlled_media_roots()
+    stored_path = Path(normalized)
+    candidate_paths = [stored_path] if stored_path.is_absolute() else [root / stored_path for root in configured_roots]
+
+    for candidate_path in candidate_paths:
+        try:
+            resolved_candidate = candidate_path.resolve(strict=False)
+        except Exception:
+            continue
+        if any(_path_is_within_root(resolved_candidate, root) for root in configured_roots):
+            return resolved_candidate
+
+    raise MediaError(
+        "INVALID_MEDIA_PATH",
+        "媒体路径无效",
+        f"{field_name} is outside controlled media roots: {', '.join(str(root) for root in configured_roots)}",
+    )
 
 
 def cleanup_dir(path: Path) -> None:

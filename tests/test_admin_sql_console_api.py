@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -29,6 +31,7 @@ def sql_console_client(tmp_path, monkeypatch):
         seed.close()
 
     app = create_app(enable_lifespan=False)
+    app.state.testing_session_factory = TestingSessionLocal
 
     def override_get_db():
         db = TestingSessionLocal()
@@ -48,6 +51,18 @@ def sql_console_client(tmp_path, monkeypatch):
 def _register_and_login(client: TestClient, email: str = "sql-admin@example.com", password: str = "123456") -> str:
     reg = client.post("/api/auth/register", json={"email": email, "password": password})
     assert reg.status_code == 200
+    admin_emails = {item.strip().lower() for item in os.getenv("ADMIN_EMAILS", "").split(",") if item.strip()}
+    session_factory = getattr(client.app.state, "testing_session_factory", None)
+    if session_factory is not None and email.lower() in admin_emails:
+        session = session_factory()
+        try:
+            user = session.scalar(select(User).where(User.email == email.lower()))
+            assert user is not None
+            user.is_admin = True
+            session.add(user)
+            session.commit()
+        finally:
+            session.close()
     login = client.post("/api/auth/login", json={"email": email, "password": password})
     assert login.status_code == 200
     return login.json()["access_token"]

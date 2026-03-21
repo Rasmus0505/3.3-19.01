@@ -44,7 +44,12 @@ def _rate_display_meta(model_name: str) -> tuple[str, str]:
 
 
 def to_user_response(user: User) -> UserResponse:
-    return UserResponse(id=user.id, email=user.email, created_at=to_shanghai_aware(user.created_at))
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        is_admin=bool(getattr(user, "is_admin", False)),
+        created_at=to_shanghai_aware(user.created_at),
+    )
 
 
 def to_sentence_response(lesson: Lesson, sentence: LessonSentence) -> LessonSentenceResponse:

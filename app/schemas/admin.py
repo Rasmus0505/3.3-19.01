@@ -33,6 +33,7 @@ class AdminVisualChart(BaseModel):
 class AdminUserItem(BaseModel):
     id: int
     email: str
+    is_admin: bool = False
     created_at: datetime
     balance_points: int
     last_login_at: datetime | None = None
@@ -45,6 +46,73 @@ class AdminUsersResponse(BaseModel):
     total: int
     items: list[AdminUserItem]
     summary_cards: list[AdminVisualStat] = Field(default_factory=list)
+
+
+class AdminRoleChangeRequest(BaseModel):
+    confirm_text: str = Field(min_length=1, max_length=256)
+    confirm_email: str = Field(min_length=1, max_length=255)
+    reason: str = Field(default="", max_length=500)
+
+
+class AdminRoleChangeResponse(BaseModel):
+    ok: bool = True
+    user_id: int
+    email: str
+    is_admin: bool
+
+
+class AdminSecuritySectionStatus(BaseModel):
+    state: str
+    summary: str
+    detail: str = ""
+
+
+class AdminSecurityDatabaseStatus(BaseModel):
+    environment: str
+    database_url_present: bool
+    url_scheme: str
+    sqlite_in_use: bool
+    production_requires_external_db: bool
+    state: str
+    detail: str
+
+
+class AdminSecurityAdminStatus(BaseModel):
+    total_admin_users: int
+    runtime_authorization_mode: str
+    email_fallback_enabled: bool
+    admin_emails_configured_count: int
+    bootstrap_password_configured: bool
+    bootstrap_password_strong: bool
+    bootstrap_mode: str
+    state: str
+    detail: str
+
+
+class AdminSecurityExportStatus(BaseModel):
+    confirm_text_configured: bool
+    confirm_text_strong: bool
+    confirmation_mode: str
+    state: str
+    detail: str
+
+
+class AdminSecurityMediaStatus(BaseModel):
+    storage_root: str
+    path_policy: str
+    strict_read_validation: bool
+    root_exists: bool
+    state: str
+    detail: str
+
+
+class AdminSecurityStatusResponse(BaseModel):
+    ok: bool = True
+    sections: list[AdminSecuritySectionStatus] = Field(default_factory=list)
+    database: AdminSecurityDatabaseStatus
+    admin_access: AdminSecurityAdminStatus
+    export_protection: AdminSecurityExportStatus
+    media_storage: AdminSecurityMediaStatus
 
 
 class AdminUserDeleteResponse(BaseModel):
@@ -410,7 +478,7 @@ class AdminRedeemCodeBulkDisableResponse(BaseModel):
 
 class AdminRedeemCodeExportRequest(BaseModel):
     batch_id: int | None = None
-    confirm_text: str = Field(min_length=1, max_length=32)
+    confirm_text: str = Field(min_length=1, max_length=256)
 
 
 class AdminRedeemAuditItem(BaseModel):
@@ -436,7 +504,7 @@ class AdminRedeemAuditListResponse(BaseModel):
 
 
 class AdminRedeemAuditExportRequest(BaseModel):
-    confirm_text: str = Field(min_length=1, max_length=32)
+    confirm_text: str = Field(min_length=1, max_length=256)
     batch_id: int | None = None
     user_email: str = ""
     date_from: datetime | None = None

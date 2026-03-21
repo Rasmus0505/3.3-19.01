@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps.auth import get_admin_user
 from app.api.routers import local_asr_assets as local_asr_assets_router
+from app.core.config import MEDIA_STORAGE_ROOT_DIR
 from app.db import Base, create_database_engine, get_db
 from app.infra.translation_qwen_mt import TranslationError
 from app.main import create_app
@@ -29,7 +30,7 @@ from app.services.lesson_service import LessonService
 from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
 from app.services.query_cache import clear_query_caches
 from app.services.faster_whisper_asr import get_faster_whisper_settings
-from app.services.sensevoice import SENSEVOICE_ASR_MODEL, get_sensevoice_settings
+from app.services.sensevoice import SENSEVOICE_ASR_MODEL, get_pinned_sensevoice_model_dir, get_sensevoice_settings
 
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
 
@@ -286,6 +287,7 @@ def test_client(tmp_path, monkeypatch):
         seed.close()
 
     app = create_app(enable_lifespan=False)
+    app.state.testing_session_factory = TestingSessionLocal
 
     def override_get_db():
         db = TestingSessionLocal()
@@ -606,6 +608,17 @@ def test_lesson_generation_tasks_repair_migration_recreates_missing_table(tmp_pa
 def _register_and_login(client: TestClient, email: str = "admin@example.com", password: str = "123456") -> str:
     reg = client.post("/api/auth/register", json={"email": email, "password": password})
     assert reg.status_code == 200
+    admin_emails = {item.strip().lower() for item in os.getenv("ADMIN_EMAILS", "").split(",") if item.strip()}
+    session_factory = getattr(client.app.state, "testing_session_factory", None)
+    if session_factory is not None and email.lower() in admin_emails:
+        session = session_factory()
+        try:
+            user = session.query(User).filter(User.email == email.lower()).one()
+            user.is_admin = True
+            session.add(user)
+            session.commit()
+        finally:
+            session.close()
     login = client.post("/api/auth/login", json={"email": email, "password": password})
     assert login.status_code == 200
     return login.json()["access_token"]
@@ -2127,8 +2140,8 @@ def test_auth_register_and_login(test_client):
 
 def test_wallet_and_admin_endpoints(test_client):
     client, session_factory, monkeypatch = test_client
-    token = _register_and_login(client, email="admin@example.com")
     monkeypatch.setenv("ADMIN_EMAILS", "admin@example.com")
+    token = _register_and_login(client, email="admin@example.com")
 
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -2374,8 +2387,8 @@ def test_create_local_asr_lesson_task(test_client, monkeypatch, tmp_path):
 
 def test_admin_update_billing_rate_rejects_non_flash_mt_model(test_client):
     client, _, monkeypatch = test_client
-    token = _register_and_login(client, email="billing-admin@example.com")
     monkeypatch.setenv("ADMIN_EMAILS", "billing-admin@example.com")
+    token = _register_and_login(client, email="billing-admin@example.com")
     headers = {"Authorization": f"Bearer {token}"}
 
     resp = client.put(
@@ -2399,8 +2412,8 @@ def test_admin_update_billing_rate_rejects_non_flash_mt_model(test_client):
 
 def test_admin_update_billing_rate_accepts_mt_flash_token_pricing(test_client):
     client, session_factory, monkeypatch = test_client
-    token = _register_and_login(client, email="billing-flash-admin@example.com")
     monkeypatch.setenv("ADMIN_EMAILS", "billing-flash-admin@example.com")
+    token = _register_and_login(client, email="billing-flash-admin@example.com")
     headers = {"Authorization": f"Bearer {token}"}
 
     resp = client.put(
@@ -2437,8 +2450,8 @@ def test_admin_update_billing_rate_accepts_mt_flash_token_pricing(test_client):
 
 def test_admin_update_billing_rate_accepts_minute_yuan_pricing(test_client):
     client, session_factory, monkeypatch = test_client
-    token = _register_and_login(client, email="billing-yuan-admin@example.com")
     monkeypatch.setenv("ADMIN_EMAILS", "billing-yuan-admin@example.com")
+    token = _register_and_login(client, email="billing-yuan-admin@example.com")
     headers = {"Authorization": f"Bearer {token}"}
 
     resp = client.put(
@@ -2480,8 +2493,8 @@ def test_admin_update_billing_rate_accepts_minute_yuan_pricing(test_client):
 
 def test_admin_update_billing_rate_accepts_legacy_minute_cents_payload(test_client):
     client, _, monkeypatch = test_client
-    token = _register_and_login(client, email="billing-legacy-cents-admin@example.com")
     monkeypatch.setenv("ADMIN_EMAILS", "billing-legacy-cents-admin@example.com")
+    token = _register_and_login(client, email="billing-legacy-cents-admin@example.com")
     headers = {"Authorization": f"Bearer {token}"}
 
     resp = client.put(
@@ -2511,8 +2524,8 @@ def test_admin_update_billing_rate_accepts_legacy_minute_cents_payload(test_clie
 
 def test_admin_update_billing_rate_rejects_local_browser_model(test_client):
     client, _, monkeypatch = test_client
-    token = _register_and_login(client, email="billing-local-admin@example.com")
     monkeypatch.setenv("ADMIN_EMAILS", "billing-local-admin@example.com")
+    token = _register_and_login(client, email="billing-local-admin@example.com")
     headers = {"Authorization": f"Bearer {token}"}
 
     resp = client.put(
@@ -2835,14 +2848,14 @@ def test_admin_sensevoice_settings_self_heals_missing_table(test_client, monkeyp
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["settings"]["model_dir"] == "iic/SenseVoiceSmall"
+    assert body["settings"]["model_dir"] == get_pinned_sensevoice_model_dir()
     assert body["settings"]["device"] == "cuda:0"
 
     verify = session_factory()
     try:
         row = get_sensevoice_settings(verify)
         assert row.id == 1
-        assert row.model_dir == "iic/SenseVoiceSmall"
+        assert row.model_dir == get_pinned_sensevoice_model_dir()
     finally:
         verify.close()
 
@@ -3001,12 +3014,12 @@ def test_redeem_code_admin_and_wallet_flow(test_client):
 
     wallet_before = client.get("/api/wallet/me", headers=user_headers)
     assert wallet_before.status_code == 200
-    before_points = wallet_before.json()["balance_points"]
+    before_points = wallet_before.json()["balance_amount_cents"]
 
     redeem_ok = client.post("/api/wallet/redeem-code", headers=user_headers, json={"code": generated_codes[0]})
     assert redeem_ok.status_code == 200
-    assert redeem_ok.json()["redeemed_points"] == 66
-    assert redeem_ok.json()["balance_points"] == before_points + 66
+    assert redeem_ok.json()["redeemed_amount_cents"] == 66
+    assert redeem_ok.json()["balance_amount_cents"] == before_points + 66
 
     redeem_used = client.post("/api/wallet/redeem-code", headers=user_headers, json={"code": generated_codes[0]})
     assert redeem_used.status_code == 400
@@ -3574,7 +3587,9 @@ def test_lesson_media_prefers_source_filename_content_type(test_client, tmp_path
     token = _register_and_login(client, email="media-learner@example.com")
     headers = {"Authorization": f"Bearer {token}"}
 
-    media_path = tmp_path / "stored_media_without_ext"
+    media_root = Path(MEDIA_STORAGE_ROOT_DIR)
+    media_root.mkdir(parents=True, exist_ok=True)
+    media_path = media_root / f"stored_media_without_ext_{tmp_path.name}"
     media_path.write_bytes(b"fake-video-binary")
 
     session = session_factory()
@@ -3607,6 +3622,46 @@ def test_lesson_media_prefers_source_filename_content_type(test_client, tmp_path
     resp = client.get(f"/api/lessons/{lesson_id}/media", headers=headers)
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("video/mp4")
+
+
+def test_lesson_media_rejects_path_outside_controlled_root(test_client, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="media-outside@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    outside_path = tmp_path / "outside_media.mp4"
+    outside_path.write_bytes(b"fake-video-binary")
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "media-outside@example.com").one()
+        lesson = Lesson(
+            user_id=user.id,
+            title="media invalid path",
+            source_filename="lesson-video.mp4",
+            asr_model="qwen3-asr-flash-filetrans",
+            duration_ms=5000,
+            media_storage="server",
+            source_duration_ms=5000,
+            status="ready",
+        )
+        session.add(lesson)
+        session.flush()
+        session.add(
+            MediaAsset(
+                lesson_id=lesson.id,
+                original_path=str(outside_path),
+                opus_path=str(outside_path),
+            )
+        )
+        session.commit()
+        lesson_id = lesson.id
+    finally:
+        session.close()
+
+    resp = client.get(f"/api/lessons/{lesson_id}/media", headers=headers)
+    assert resp.status_code == 404
+    assert resp.json()["error_code"] == "MEDIA_PATH_INVALID"
 
 
 def test_local_media_mode_requires_client_binding(test_client):

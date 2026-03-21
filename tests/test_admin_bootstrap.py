@@ -18,7 +18,7 @@ def _build_session_factory(db_path: str):
 
 def test_admin_bootstrap_creates_missing_admin_user(tmp_path, monkeypatch):
     monkeypatch.setenv("ADMIN_EMAILS", "root@qq.com")
-    monkeypatch.delenv("ADMIN_BOOTSTRAP_PASSWORD", raising=False)
+    monkeypatch.setenv("ADMIN_BOOTSTRAP_PASSWORD", "Bootstrap-Admin-2026!")
 
     engine, factory = _build_session_factory(str(tmp_path / "admin_bootstrap_create.db"))
     session = factory()
@@ -28,7 +28,8 @@ def test_admin_bootstrap_creates_missing_admin_user(tmp_path, monkeypatch):
 
         admin = session.scalar(select(User).where(User.email == "root@qq.com"))
         assert admin is not None
-        assert verify_password("123123", admin.password_hash)
+        assert admin.is_admin is True
+        assert verify_password("Bootstrap-Admin-2026!", admin.password_hash)
 
         account = session.scalar(select(WalletAccount).where(WalletAccount.user_id == admin.id))
         assert account is not None
@@ -37,9 +38,27 @@ def test_admin_bootstrap_creates_missing_admin_user(tmp_path, monkeypatch):
         engine.dispose()
 
 
-def test_admin_bootstrap_is_idempotent_and_does_not_override_password(tmp_path, monkeypatch):
+def test_admin_bootstrap_requires_strong_password_for_missing_admin_user(tmp_path, monkeypatch):
     monkeypatch.setenv("ADMIN_EMAILS", "root@qq.com")
     monkeypatch.setenv("ADMIN_BOOTSTRAP_PASSWORD", "123123")
+
+    engine, factory = _build_session_factory(str(tmp_path / "admin_bootstrap_weak.db"))
+    session = factory()
+    try:
+        try:
+            ensure_admin_users(session)
+        except RuntimeError as exc:
+            assert "strong" in str(exc).lower()
+        else:
+            raise AssertionError("expected ensure_admin_users to reject a weak bootstrap password")
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_admin_bootstrap_is_idempotent_and_does_not_override_password(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADMIN_EMAILS", "root@qq.com")
+    monkeypatch.setenv("ADMIN_BOOTSTRAP_PASSWORD", "Bootstrap-Admin-2026!")
 
     engine, factory = _build_session_factory(str(tmp_path / "admin_bootstrap_idempotent.db"))
     session = factory()
@@ -50,17 +69,18 @@ def test_admin_bootstrap_is_idempotent_and_does_not_override_password(tmp_path, 
         admin = session.scalar(select(User).where(User.email == "root@qq.com"))
         assert admin is not None
         original_hash = admin.password_hash
-        assert verify_password("123123", original_hash)
+        assert admin.is_admin is True
+        assert verify_password("Bootstrap-Admin-2026!", original_hash)
 
-        monkeypatch.setenv("ADMIN_BOOTSTRAP_PASSWORD", "654321")
+        monkeypatch.setenv("ADMIN_BOOTSTRAP_PASSWORD", "Another-Strong-Admin-2026!")
         second = ensure_admin_users(session)
         assert second == 0
 
         admin_after = session.scalar(select(User).where(User.email == "root@qq.com"))
         assert admin_after is not None
         assert admin_after.password_hash == original_hash
-        assert verify_password("123123", admin_after.password_hash)
-        assert not verify_password("654321", admin_after.password_hash)
+        assert verify_password("Bootstrap-Admin-2026!", admin_after.password_hash)
+        assert not verify_password("Another-Strong-Admin-2026!", admin_after.password_hash)
     finally:
         session.close()
         engine.dispose()
@@ -68,7 +88,7 @@ def test_admin_bootstrap_is_idempotent_and_does_not_override_password(tmp_path, 
 
 def test_admin_bootstrap_skips_when_admin_emails_empty(tmp_path, monkeypatch):
     monkeypatch.setenv("ADMIN_EMAILS", "   ")
-    monkeypatch.setenv("ADMIN_BOOTSTRAP_PASSWORD", "123123")
+    monkeypatch.setenv("ADMIN_BOOTSTRAP_PASSWORD", "Bootstrap-Admin-2026!")
 
     engine, factory = _build_session_factory(str(tmp_path / "admin_bootstrap_empty.db"))
     session = factory()

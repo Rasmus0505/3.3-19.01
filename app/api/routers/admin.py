@@ -5,23 +5,32 @@ import io
 import json
 from datetime import datetime
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps.auth import get_admin_emails, get_admin_user
+from app.api.deps.auth import get_admin_user
 from app.api.serializers import (
     to_admin_subtitle_settings_item,
     to_faster_whisper_settings_item,
     to_rate_item,
     to_sensevoice_settings_item,
 )
-from app.core.config import LESSON_DEFAULT_ASR_MODEL, REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_EXPORT_CONFIRM_TEXT
+from app.core.config import (
+    BASE_DATA_DIR,
+    LESSON_DEFAULT_ASR_MODEL,
+    REDEEM_CODE_DEFAULT_DAILY_LIMIT,
+    get_app_environment,
+    get_redeem_code_export_confirm_text,
+    is_production_environment,
+    is_weak_confirm_text,
+)
 from app.core.errors import error_response, map_billing_error
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
-from app.db import get_db
+from app.db import DATABASE_URL, get_db, is_sqlite_url
 from app.models import AdminOperationLog, BillingModelRate, FasterWhisperSetting, RedeemCode, RedeemCodeBatch, SenseVoiceSetting, SubtitleSetting, User
 from app.repositories.admin import (
     list_admin_users,
@@ -67,6 +76,14 @@ from app.schemas import (
     AdminRedeemCodeItem,
     AdminRedeemCodeListResponse,
     AdminRedeemCodeStatusActionResponse,
+    AdminRoleChangeRequest,
+    AdminRoleChangeResponse,
+    AdminSecurityAdminStatus,
+    AdminSecurityDatabaseStatus,
+    AdminSecurityExportStatus,
+    AdminSecurityMediaStatus,
+    AdminSecuritySectionStatus,
+    AdminSecurityStatusResponse,
     AdminUserDeleteResponse,
     AdminUserItem,
     AdminUsersResponse,
@@ -79,6 +96,7 @@ from app.schemas import (
     WalletLedgerItem,
 )
 from app.services.admin_service import AdminUserDeleteError, delete_user_hard
+from app.services.admin_bootstrap import count_admin_users, get_admin_bootstrap_status
 from app.services.billing_service import (
     BillingError,
     REDEEM_BATCH_STATUS_ACTIVE,
@@ -106,6 +124,7 @@ from app.services.faster_whisper_asr import (
     get_faster_whisper_settings,
     prepare_faster_whisper_model,
 )
+from app.services.media import get_controlled_media_roots
 from app.services.sensevoice import get_pinned_sensevoice_model_dir, get_sensevoice_settings
 
 
@@ -147,6 +166,134 @@ def _effective_code_status(*, code_status: str, batch_status: str, expire_at: da
     if batch_status == REDEEM_BATCH_STATUS_EXPIRED or now >= expire_at_naive:
         return "expired"
     return "unredeemed"
+
+
+def _export_confirm_text() -> str:
+    return get_redeem_code_export_confirm_text()
+
+
+def _require_export_protection_ready():
+    confirm_text = _export_confirm_text()
+    if is_production_environment() and is_weak_confirm_text(confirm_text):
+        return error_response(
+            503,
+            "EXPORT_CONFIRM_NOT_CONFIGURED",
+            "生产环境尚未配置强导出确认词",
+            "请在 Zeabur 环境变量里把 REDEEM_CODE_EXPORT_CONFIRM_TEXT 设置为一个强随机短语",
+        )
+    return None
+
+
+def _mask_email(email: str) -> str:
+    local, _, domain = str(email or "").partition("@")
+    if not local or not domain:
+        return str(email or "")
+    if len(local) <= 2:
+        visible_local = f"{local[:1]}*"
+    else:
+        visible_local = f"{local[:2]}***"
+    return f"{visible_local}@{domain}"
+
+
+def _role_runtime_mode() -> str:
+    return "db_role"
+
+
+def _build_security_status_payload(db: Session, current_admin: User) -> AdminSecurityStatusResponse:
+    bootstrap_status = get_admin_bootstrap_status()
+    total_admin_users = count_admin_users(db)
+    database_url = str(DATABASE_URL or "").strip()
+    sqlite_in_use = is_sqlite_url(database_url)
+    db_state = "healthy"
+    db_detail = "生产环境已连接外部数据库。" if is_production_environment() and not sqlite_in_use else "当前运行配置允许。"
+    if not database_url:
+        db_state = "critical"
+        db_detail = "DATABASE_URL 未配置。"
+    elif is_production_environment() and sqlite_in_use:
+        db_state = "critical"
+        db_detail = "生产环境禁止使用 SQLite。"
+    elif sqlite_in_use:
+        db_state = "warning"
+        db_detail = "当前仍在使用 SQLite，仅适合本地开发或测试。"
+
+    export_confirm_text = _export_confirm_text()
+    export_strong = not is_weak_confirm_text(export_confirm_text)
+    export_state = "healthy"
+    export_detail = "危险导出操作需要环境确认词。"
+    if is_production_environment() and not export_strong:
+        export_state = "critical"
+        export_detail = "生产环境尚未配置强导出确认词，导出接口将被拒绝。"
+    elif not export_strong:
+        export_state = "warning"
+        export_detail = "当前确认词仍然偏弱，建议尽快改成强随机短语。"
+
+    media_roots = get_controlled_media_roots()
+    media_root = media_roots[0] if media_roots else BASE_DATA_DIR.resolve()
+    media_state = "healthy"
+    media_detail = "媒体读取已限制在受控目录内，并兼容旧绝对路径。"
+    if not media_root.exists():
+        media_state = "warning"
+        media_detail = "媒体根目录尚未创建；读取仍会做越界拦截。"
+
+    admin_emails = [str(item) for item in list(bootstrap_status.get("admin_emails") or [])]
+    bootstrap_password_configured = bool(bootstrap_status.get("bootstrap_password_configured"))
+    bootstrap_password_strong = bool(bootstrap_status.get("bootstrap_password_strong"))
+    bootstrap_state = "healthy"
+    bootstrap_detail = f"当前共有 {total_admin_users} 个管理员账号。"
+    if total_admin_users <= 0 and admin_emails:
+        if bootstrap_password_configured and bootstrap_password_strong:
+            bootstrap_state = "warning"
+            bootstrap_detail = f"尚无管理员落库；已配置首次引导，可创建 {len(admin_emails)} 个管理员。"
+        else:
+            bootstrap_state = "critical"
+            bootstrap_detail = "尚无管理员落库，且首次引导密码未安全配置。"
+    elif total_admin_users <= 0:
+        bootstrap_state = "critical"
+        bootstrap_detail = "当前没有任何管理员账号。"
+    return AdminSecurityStatusResponse(
+        ok=True,
+        sections=[
+            AdminSecuritySectionStatus(state=db_state, summary="数据库策略", detail=db_detail),
+            AdminSecuritySectionStatus(state=bootstrap_state, summary="管理员权限", detail=bootstrap_detail),
+            AdminSecuritySectionStatus(state=export_state, summary="导出保护", detail=export_detail),
+            AdminSecuritySectionStatus(state=media_state, summary="媒体路径安全", detail=media_detail),
+        ],
+        database=AdminSecurityDatabaseStatus(
+            environment=get_app_environment(),
+            database_url_present=bool(database_url),
+            url_scheme=database_url.split(":", 1)[0] if database_url else "",
+            sqlite_in_use=sqlite_in_use,
+            production_requires_external_db=True,
+            state=db_state,
+            detail=db_detail,
+        ),
+        admin_access=AdminSecurityAdminStatus(
+            total_admin_users=total_admin_users,
+            runtime_authorization_mode=_role_runtime_mode(),
+            email_fallback_enabled=False,
+            admin_emails_configured_count=len(admin_emails),
+            bootstrap_password_configured=bootstrap_password_configured,
+            bootstrap_password_strong=bootstrap_password_strong,
+            bootstrap_mode=str(bootstrap_status.get("bootstrap_mode") or ""),
+            state=bootstrap_state,
+            detail=bootstrap_detail,
+        ),
+        export_protection=AdminSecurityExportStatus(
+            confirm_text_configured=bool(export_confirm_text),
+            confirm_text_strong=export_strong,
+            confirmation_mode="env_phrase",
+            state=export_state,
+            detail=export_detail,
+        ),
+        media_storage=AdminSecurityMediaStatus(
+            storage_root=str(media_root),
+            path_policy="relative_preferred_with_legacy_absolute_compat",
+            strict_read_validation=True,
+            root_exists=media_root.exists(),
+            state=media_state,
+            detail=media_detail,
+        ),
+    )
 
 
 def _subtitle_settings_item_with_meta(
@@ -430,11 +577,12 @@ def admin_list_users(
         AdminUserItem(
             id=user_id,
             email=email,
+            is_admin=is_admin,
             created_at=to_shanghai_aware(created_at),
             balance_points=balance_points,
             last_login_at=to_shanghai_aware(last_login_at) if last_login_at else None,
         )
-        for user_id, email, created_at, balance_points, last_login_at in rows
+        for user_id, email, is_admin, created_at, balance_points, last_login_at in rows
     ]
     visible_balance_points = sum(int(item.balance_points or 0) for item in items)
     return AdminUsersResponse(
@@ -445,10 +593,109 @@ def admin_list_users(
         items=items,
         summary_cards=[
             {"label": "匹配用户", "value": total, "hint": "当前关键词筛中的总用户数", "tone": "info"},
+            {"label": "本页管理员", "value": sum(1 for item in items if item.is_admin), "hint": "仅统计当前页", "tone": "warning"},
             {"label": "本页余额合计", "value": visible_balance_points, "hint": "仅统计当前页，避免误读为全量", "tone": "success"},
-            {"label": "当前排序", "value": f"{sort_by}/{sort_dir}", "hint": "支持按最近登录排序", "tone": "default"},
+            {"label": "当前排序", "value": f"{sort_by}/{sort_dir}", "hint": "支持按最近登录与管理员状态排查", "tone": "default"},
         ],
     )
+
+
+@router.get(
+    "/security/status",
+    response_model=AdminSecurityStatusResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_security_status(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    return _build_security_status_payload(db, current_admin)
+
+
+@router.post(
+    "/users/{user_id}/grant-admin",
+    response_model=AdminRoleChangeResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+)
+def admin_grant_admin_role(
+    user_id: int,
+    payload: AdminRoleChangeRequest,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    protection_error = _require_export_protection_ready()
+    if protection_error is not None:
+        return protection_error
+
+    target_user = db.get(User, user_id)
+    if not target_user:
+        return error_response(404, "USER_NOT_FOUND", "用户不存在")
+    if payload.confirm_text.strip() != _export_confirm_text().strip():
+        return error_response(400, "CONFIRM_TEXT_INVALID", "确认词错误")
+    if payload.confirm_email.strip().lower() != target_user.email.lower():
+        return error_response(400, "CONFIRM_EMAIL_MISMATCH", "请再次输入目标用户邮箱以确认")
+    if bool(target_user.is_admin):
+        return AdminRoleChangeResponse(ok=True, user_id=target_user.id, email=target_user.email, is_admin=True)
+
+    target_user.is_admin = True
+    append_admin_operation_log(
+        db,
+        operator_user_id=current_admin.id,
+        action_type="admin_role_grant",
+        target_type="user",
+        target_id=str(target_user.id),
+        before_value={"user_email": target_user.email, "is_admin": False},
+        after_value={"user_email": target_user.email, "is_admin": True},
+        note=(payload.reason or "").strip(),
+    )
+    db.add(target_user)
+    db.commit()
+    return AdminRoleChangeResponse(ok=True, user_id=target_user.id, email=target_user.email, is_admin=True)
+
+
+@router.post(
+    "/users/{user_id}/revoke-admin",
+    response_model=AdminRoleChangeResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+)
+def admin_revoke_admin_role(
+    user_id: int,
+    payload: AdminRoleChangeRequest,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    protection_error = _require_export_protection_ready()
+    if protection_error is not None:
+        return protection_error
+
+    target_user = db.get(User, user_id)
+    if not target_user:
+        return error_response(404, "USER_NOT_FOUND", "用户不存在")
+    if payload.confirm_text.strip() != _export_confirm_text().strip():
+        return error_response(400, "CONFIRM_TEXT_INVALID", "确认词错误")
+    if payload.confirm_email.strip().lower() != target_user.email.lower():
+        return error_response(400, "CONFIRM_EMAIL_MISMATCH", "请再次输入目标用户邮箱以确认")
+    if current_admin.id == target_user.id and count_admin_users(db) <= 1:
+        return error_response(400, "LAST_ADMIN_PROTECTED", "不能移除系统最后一个管理员")
+    if bool(target_user.is_admin) and count_admin_users(db) <= 1:
+        return error_response(400, "LAST_ADMIN_PROTECTED", "不能移除系统最后一个管理员")
+    if not bool(target_user.is_admin):
+        return AdminRoleChangeResponse(ok=True, user_id=target_user.id, email=target_user.email, is_admin=False)
+
+    target_user.is_admin = False
+    append_admin_operation_log(
+        db,
+        operator_user_id=current_admin.id,
+        action_type="admin_role_revoke",
+        target_type="user",
+        target_id=str(target_user.id),
+        before_value={"user_email": target_user.email, "is_admin": True},
+        after_value={"user_email": target_user.email, "is_admin": False},
+        note=(payload.reason or "").strip(),
+    )
+    db.add(target_user)
+    db.commit()
+    return AdminRoleChangeResponse(ok=True, user_id=target_user.id, email=target_user.email, is_admin=False)
 
 
 @router.delete(
@@ -466,7 +713,6 @@ def admin_delete_user(
             db,
             target_user_id=user_id,
             current_admin=current_admin,
-            admin_emails=get_admin_emails(),
         )
         return AdminUserDeleteResponse(
             ok=True,
@@ -1523,7 +1769,10 @@ def admin_export_redeem_codes(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_admin_user),
 ):
-    if payload.confirm_text.strip().upper() != REDEEM_CODE_EXPORT_CONFIRM_TEXT.upper():
+    protection_error = _require_export_protection_ready()
+    if protection_error is not None:
+        return protection_error
+    if payload.confirm_text.strip() != _export_confirm_text().strip():
         return error_response(400, "EXPORT_CONFIRM_REQUIRED", "导出需要二次确认")
 
     now = _now()
@@ -1633,7 +1882,10 @@ def admin_export_redeem_audit(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_admin_user),
 ):
-    if payload.confirm_text.strip().upper() != REDEEM_CODE_EXPORT_CONFIRM_TEXT.upper():
+    protection_error = _require_export_protection_ready()
+    if protection_error is not None:
+        return protection_error
+    if payload.confirm_text.strip() != _export_confirm_text().strip():
         return error_response(400, "EXPORT_CONFIRM_REQUIRED", "导出需要二次确认")
 
     normalized_date_from = to_shanghai_naive(payload.date_from)

@@ -12,8 +12,20 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
-from app.api.routers import admin, admin_console, asr_models, auth, billing, lessons, local_asr_assets, media, practice, transcribe, wallet
-from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, DASHSCOPE_API_KEY, FASTER_WHISPER_MODEL_DIR, PERSISTENT_DATA_DIR, SERVICE_NAME, STATIC_DIR
+from app.api.routers import admin, admin_console, admin_sql_console, asr_models, auth, billing, lessons, local_asr_assets, media, practice, transcribe, wallet
+from app.core.config import (
+    BASE_DATA_DIR,
+    BASE_TMP_DIR,
+    DASHSCOPE_API_KEY,
+    FASTER_WHISPER_MODEL_DIR,
+    PERSISTENT_DATA_DIR,
+    SERVICE_NAME,
+    STATIC_DIR,
+    get_app_environment,
+    get_redeem_code_export_confirm_text,
+    is_production_environment,
+    is_weak_confirm_text,
+)
 from app.core.logging import setup_logging
 from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, schema_name_for_url
 from app.models import LessonGenerationTask
@@ -33,7 +45,7 @@ LESSON_TASK_REQUIRED_COLUMNS: tuple[str, ...] = tuple(str(column.name) for colum
 
 
 READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
-    "users": ("last_login_at",),
+    "users": ("is_admin", "last_login_at"),
     "user_login_events": (
         "user_id",
         "event_type",
@@ -124,6 +136,13 @@ HTML_NO_STORE_HEADERS: dict[str, str] = {
 class RuntimeStatus:
     db_ready: bool = False
     db_error: str = ""
+    environment: str = "development"
+    production_mode: bool = False
+    database_url_scheme: str = ""
+    database_policy_ok: bool = True
+    database_policy_error: str = ""
+    export_guard_ok: bool = True
+    export_guard_error: str = ""
     dashscope_configured: bool = False
     ffmpeg_ready: bool = False
     ffprobe_ready: bool = False
@@ -143,6 +162,35 @@ def _ensure_runtime_status(app: FastAPI) -> RuntimeStatus:
         status = RuntimeStatus()
         app.state.runtime_status = status
     return status
+
+
+def _database_url_scheme() -> str:
+    normalized = str(DATABASE_URL or "").strip().lower()
+    if normalized.startswith("postgresql"):
+        return "postgresql"
+    if normalized.startswith("mysql"):
+        return "mysql"
+    if normalized.startswith("sqlite"):
+        return "sqlite"
+    return normalized.split(":", 1)[0] if ":" in normalized else (normalized or "unknown")
+
+
+def _database_policy_status() -> tuple[bool, str]:
+    if not is_production_environment():
+        return True, ""
+    if not str(DATABASE_URL or "").strip():
+        return False, "production requires DATABASE_URL"
+    if _database_url_scheme() == "sqlite":
+        return False, "production requires an external PostgreSQL or MySQL database"
+    return True, ""
+
+
+def _export_guard_policy_status() -> tuple[bool, str]:
+    if not is_production_environment():
+        return True, ""
+    if is_weak_confirm_text(get_redeem_code_export_confirm_text()):
+        return False, "production requires a strong REDEEM_CODE_EXPORT_CONFIRM_TEXT"
+    return True, ""
 
 
 def _probe_database_ready() -> tuple[bool, str]:
@@ -193,6 +241,11 @@ def _bootstrap_admin_users() -> tuple[bool, str]:
 def _refresh_optional_runtime_status(app: FastAPI) -> None:
     runtime_status = _ensure_runtime_status(app)
     runtime_status.checked_at = _utc_iso()
+    runtime_status.environment = get_app_environment()
+    runtime_status.production_mode = is_production_environment()
+    runtime_status.database_url_scheme = _database_url_scheme()
+    runtime_status.database_policy_ok, runtime_status.database_policy_error = _database_policy_status()
+    runtime_status.export_guard_ok, runtime_status.export_guard_error = _export_guard_policy_status()
     runtime_status.dashscope_configured = bool(DASHSCOPE_API_KEY)
 
     if runtime_status.dashscope_configured:
@@ -263,6 +316,17 @@ def _runtime_status_payload(runtime_status: RuntimeStatus) -> dict:
     return asdict(runtime_status)
 
 
+def _enforce_runtime_security_policies(app: FastAPI) -> None:
+    runtime_status = _ensure_runtime_status(app)
+    blocking_errors: list[str] = []
+    if runtime_status.production_mode and not runtime_status.database_policy_ok:
+        blocking_errors.append(runtime_status.database_policy_error)
+    if runtime_status.production_mode and not runtime_status.export_guard_ok:
+        blocking_errors.append(runtime_status.export_guard_error)
+    if blocking_errors:
+        raise RuntimeError("; ".join(error for error in blocking_errors if error))
+
+
 @lru_cache(maxsize=1)
 def _read_frontend_build_marker() -> str:
     index_path = STATIC_DIR / "index.html"
@@ -314,6 +378,7 @@ async def app_lifespan(app: FastAPI):
     )
     _log_downloadable_model_bundle_status()
     _refresh_optional_runtime_status(app)
+    _enforce_runtime_security_policies(app)
     await _bootstrap_runtime_state(app)
     if local_asr_assets.schedule_local_asr_asset_prefetch():
         logger.info("[DEBUG] startup.local_asr_prefetch scheduled")
@@ -362,6 +427,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     @app.get("/health/ready")
     def health_ready():
         runtime_status = _ensure_runtime_status(app)
+        _refresh_optional_runtime_status(app)
         ready, error = _probe_database_ready()
         runtime_status.db_ready = ready
         runtime_status.db_error = error
@@ -380,6 +446,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(billing.router)
     app.include_router(admin.router)
     app.include_router(admin_console.router)
+    app.include_router(admin_sql_console.router)
     app.include_router(transcribe.router)
     app.include_router(lessons.router)
     app.include_router(asr_models.router)

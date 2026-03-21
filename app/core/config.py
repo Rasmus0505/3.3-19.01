@@ -8,12 +8,15 @@ from pathlib import Path
 SERVICE_NAME = "zeabur3.3-min-asr"
 REQUEST_TIMEOUT_SECONDS = 480
 UPLOAD_MAX_BYTES = 200 * 1024 * 1024
+PRODUCTION_ENV_NAMES = {"prod", "production"}
+WEAK_CONFIRM_TEXTS = {"EXPORT", "CONFIRM", "YES", "OK", "123456", "123123"}
 APP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 
 BASE_TMP_DIR = Path(os.getenv("TMP_WORK_DIR", "/tmp/zeabur3.3"))
 BASE_DATA_DIR = BASE_TMP_DIR / "data"
+MEDIA_STORAGE_ROOT_DIR = BASE_DATA_DIR
 
 
 def _default_persistent_data_dir() -> Path:
@@ -66,6 +69,83 @@ def _get_env_non_negative_int(name: str, default: int) -> int:
     return value if value >= 0 else default
 
 
+def _get_env_text(*names: str, default: str = "") -> str:
+    for name in names:
+        raw = os.getenv(name)
+        if raw is None:
+            continue
+        text = str(raw).strip()
+        if text:
+            return text
+    return str(default or "").strip()
+
+
+def _is_sqlite_url_text(database_url: str) -> bool:
+    return str(database_url or "").strip().lower().startswith("sqlite")
+
+
+def get_app_environment() -> str:
+    environment = _get_env_text("APP_ENV", "ENVIRONMENT", "RUN_ENV", "NODE_ENV", default="").lower()
+    if environment:
+        return environment
+    if os.getenv("PYTEST_CURRENT_TEST", "").strip():
+        return "test"
+    return "development"
+
+
+def get_app_environment_name() -> str:
+    return get_app_environment()
+
+
+def is_production_environment() -> bool:
+    environment = get_app_environment()
+    return environment in PRODUCTION_ENV_NAMES
+
+
+def is_strong_secret_phrase(value: str, *, min_length: int = 12) -> bool:
+    text = str(value or "").strip()
+    if len(text) < min_length:
+        return False
+    uppercase = any(ch.isupper() for ch in text)
+    lowercase = any(ch.islower() for ch in text)
+    digit = any(ch.isdigit() for ch in text)
+    symbol = any(not ch.isalnum() for ch in text)
+    return sum([uppercase, lowercase, digit, symbol]) >= 3
+
+
+def get_redeem_code_export_confirm_text() -> str:
+    return _get_env_text("REDEEM_CODE_EXPORT_CONFIRM_TEXT", default="EXPORT") or "EXPORT"
+
+
+def is_redeem_code_export_confirm_text_strong(value: str | None = None) -> bool:
+    text = str(value if value is not None else get_redeem_code_export_confirm_text()).strip()
+    if text.upper() in WEAK_CONFIRM_TEXTS:
+        return False
+    return is_strong_secret_phrase(text, min_length=10)
+
+
+def get_admin_bootstrap_password() -> str:
+    return _get_env_text("ADMIN_BOOTSTRAP_PASSWORD", default="")
+
+
+def is_admin_bootstrap_password_strong(value: str | None = None) -> bool:
+    text = str(value if value is not None else get_admin_bootstrap_password()).strip()
+    if text in {"", "123123"}:
+        return False
+    return is_strong_secret_phrase(text, min_length=12)
+
+
+def resolve_database_url(*, development_default: str = "sqlite:///./app.db") -> str:
+    configured = _get_env_text("DATABASE_URL", default="")
+    if configured:
+        if is_production_environment() and _is_sqlite_url_text(configured):
+            raise RuntimeError("DATABASE_URL must point to PostgreSQL/MySQL in production; SQLite is not allowed")
+        return configured
+    if is_production_environment():
+        raise RuntimeError("DATABASE_URL is required in production and cannot fall back to SQLite")
+    return development_default.strip()
+
+
 ASR_SEGMENT_TARGET_SECONDS = _get_env_int("ASR_SEGMENT_TARGET_SECONDS", 300)
 ASR_SEGMENT_SEARCH_WINDOW_SECONDS = _get_env_int("ASR_SEGMENT_SEARCH_WINDOW_SECONDS", 45)
 ASR_TASK_POLL_SECONDS = _get_env_int("ASR_TASK_POLL_SECONDS", 2)
@@ -96,4 +176,13 @@ FASTER_WHISPER_CPU_THREADS = _get_env_int("FASTER_WHISPER_CPU_THREADS", 4)
 
 REDEEM_CODE_DEFAULT_VALID_DAYS = _get_env_int("REDEEM_CODE_DEFAULT_VALID_DAYS", 30)
 REDEEM_CODE_DEFAULT_DAILY_LIMIT = _get_env_int("REDEEM_CODE_DEFAULT_DAILY_LIMIT", 5)
-REDEEM_CODE_EXPORT_CONFIRM_TEXT = os.getenv("REDEEM_CODE_EXPORT_CONFIRM_TEXT", "EXPORT").strip() or "EXPORT"
+REDEEM_CODE_EXPORT_CONFIRM_TEXT = get_redeem_code_export_confirm_text()
+
+
+def is_weak_confirm_text(value: str) -> bool:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return True
+    if normalized.upper() in WEAK_CONFIRM_TEXTS:
+        return True
+    return len(normalized) < 12
