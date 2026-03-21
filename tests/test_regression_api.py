@@ -1807,6 +1807,34 @@ def test_transcribe_audio_file_polls_until_success(monkeypatch, tmp_path):
     assert sleep_calls == [asr_dashscope.ASR_TASK_POLL_SECONDS]
 
 
+def test_asr_model_status_reports_sensevoice_runtime_import_failure(monkeypatch):
+    from app.services import asr_model_registry
+
+    monkeypatch.setattr(asr_model_registry, "has_sensevoice_model_cache", lambda model_dir=None: True)
+    monkeypatch.setattr(asr_model_registry, "get_sensevoice_missing_files", lambda model_dir=None: [])
+    monkeypatch.setattr(asr_model_registry, "_load_funasr_symbols", lambda: (_ for _ in ()).throw(RuntimeError("funasr import failed: No module named 'torch'")))
+
+    payload = asr_model_registry.get_asr_model_status("sensevoice-small")
+
+    assert payload["status"] == "error"
+    assert payload["available"] is False
+    assert payload["message"] == "Local SenseVoice runtime is unavailable."
+    assert "torch" in payload["last_error"]
+
+
+def test_asr_model_status_reports_qwen_disabled_by_env(monkeypatch):
+    from app.services import asr_model_registry
+
+    monkeypatch.setenv("QWEN_ASR_ENABLED", "0")
+
+    payload = asr_model_registry.get_asr_model_status("qwen3-asr-flash-filetrans")
+
+    assert payload["status"] == "error"
+    assert payload["available"] is False
+    assert payload["message"] == "Cloud API is disabled for this deployment."
+    assert payload["last_error"] == "qwen_asr_disabled"
+
+
 def test_single_asr_progress_emits_waiting_text_without_fake_counts(monkeypatch, tmp_path):
     from app.services import lesson_service as lesson_service_module
 
