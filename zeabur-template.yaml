@@ -31,7 +31,8 @@ spec:
     3. Deploy only `web` + `postgresql` for the first rollout
     4. Mount a persistent volume to `/data` for `web`
     5. Upload the exact local ASR bundles into `/data/asr-models/SenseVoiceSmall` and `/data/asr-models/faster-distil-small.en`
-    6. Run `python -m alembic -c alembic.ini upgrade head` manually in `web`
+    6. Set `AUTO_MIGRATE_ON_START=0` for `web`
+    7. Run `python scripts/run_prod_migration.py` from a local machine that has `PROD_DATABASE_URL`
 
     This template remains as a fallback import option.
   services:
@@ -129,6 +130,8 @@ spec:
             default: ${APP_ADMIN_EMAILS}
           APP_TIMEZONE:
             default: Asia/Shanghai
+          AUTO_MIGRATE_ON_START:
+            default: "0"
           TMP_WORK_DIR:
             default: /tmp/zeabur3.3
           PERSISTENT_DATA_DIR:

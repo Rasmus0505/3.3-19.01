@@ -2547,7 +2547,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               const fasterModelReady = isAsrModelReady(fasterModelState);
               const fasterModelBusy = serverBusyModelKey === item.key;
               const fasterModelPreparing = isAsrModelPreparing(fasterModelState);
-              const localCardStatus = String(localCardState.status || "").trim().toLowerCase();
               const sensevoiceCardStatus = String(sensevoiceModelState.status || "").trim().toLowerCase();
               const fasterCardStatus = String(fasterModelState.status || "").trim().toLowerCase();
               const cardStatusLabel = isSenseVoice

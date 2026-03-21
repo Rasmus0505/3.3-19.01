@@ -94,3 +94,21 @@
 
 - 当前阶段：MVP 验证期（以“跑通和稳定”为第一优先级）
 - 后续如进入运营期，再考虑账号、历史、任务队列、成本优化等能力
+
+---
+
+## Production Migration Rule
+
+- 如果任务涉及生产数据库迁移或 Alembic 迁移，默认不要再依赖 Zeabur 容器启动自动迁移。
+- 默认把 `AUTO_MIGRATE_ON_START` 视为应该在 Zeabur 中设置为字符串 `0`；除非用户明确要求恢复容器启动自动迁移，否则不要改回 `1`。
+- 本地 agent 执行生产迁移时，固定在仓库根目录运行：
+  - `python scripts/run_prod_migration.py`
+- 只检查生产 revision 时，固定运行：
+  - `python scripts/run_prod_migration.py --check-only`
+- 生产迁移脚本优先读取 `PROD_DATABASE_URL`，没有时才回退到 `DATABASE_URL`。
+- 如果 `PROD_DATABASE_URL` 和 `DATABASE_URL` 都不存在，必须直接报错停止，不要猜测连接串，不要私自改用 SQLite。
+- 如果用户提供了公网 PostgreSQL 地址并要求本地 agent 执行迁移，优先把连接串写入当前机器的 `PROD_DATABASE_URL`，然后再运行固定命令。
+- 执行完生产迁移后，至少回报这三项：
+  - 当前 Alembic revision
+  - 是否已经到 `head`
+  - 是否还需要用户去 Zeabur 重启 `web`
