@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -12,6 +13,7 @@ from app.services.faster_whisper_asr import (
 )
 from app.services.sensevoice import (
     SENSEVOICE_ASR_MODEL,
+    _load_funasr_symbols,
     get_pinned_sensevoice_model_dir,
     get_sensevoice_missing_files,
     get_sensevoice_settings_snapshot,
@@ -36,6 +38,8 @@ STATUS_PREPARING = "preparing"
 STATUS_MISSING = "missing"
 STATUS_ERROR = "error"
 STATUS_UNSUPPORTED = "unsupported"
+
+_FALSEY_ENV_VALUES = {"0", "false", "no", "off"}
 
 
 @dataclass(frozen=True)
@@ -120,15 +124,38 @@ def _get_sensevoice_model_status() -> dict[str, Any]:
     model_dir = get_pinned_sensevoice_model_dir()
     missing_files = get_sensevoice_missing_files(model_dir)
     cached = has_sensevoice_model_cache(model_dir)
-    status = STATUS_READY if cached else STATUS_MISSING
-    message = "Local SenseVoice bundle is ready." if cached else "Local SenseVoice bundle is missing required files."
+    if not cached:
+        return _base_state(
+            descriptor,
+            status=STATUS_MISSING,
+            available=False,
+            cached=False,
+            download_required=True,
+            message="Local SenseVoice bundle is missing required files.",
+            model_dir=model_dir,
+            missing_files=missing_files,
+        )
+    try:
+        _load_funasr_symbols()
+    except Exception as exc:
+        return _base_state(
+            descriptor,
+            status=STATUS_ERROR,
+            available=False,
+            cached=True,
+            download_required=False,
+            message="Local SenseVoice runtime is unavailable.",
+            last_error=str(exc)[:1200],
+            model_dir=model_dir,
+            missing_files=missing_files,
+        )
     return _base_state(
         descriptor,
-        status=status,
-        available=cached,
-        cached=cached,
-        download_required=not cached,
-        message=message,
+        status=STATUS_READY,
+        available=True,
+        cached=True,
+        download_required=False,
+        message="Local SenseVoice bundle is ready.",
         model_dir=model_dir,
         missing_files=missing_files,
     )
@@ -208,6 +235,16 @@ def _prepare_faster_whisper_model(force_refresh: bool = False) -> dict[str, Any]
 
 
 def _get_qwen_status() -> dict[str, Any]:
+    if str(os.getenv("QWEN_ASR_ENABLED", "1") or "1").strip().lower() in _FALSEY_ENV_VALUES:
+        return _base_state(
+            get_asr_model_descriptor(QWEN_ASR_MODEL),
+            status=STATUS_ERROR,
+            available=False,
+            cached=False,
+            download_required=False,
+            message="Cloud API is disabled for this deployment.",
+            last_error="qwen_asr_disabled",
+        )
     return _base_state(
         get_asr_model_descriptor(QWEN_ASR_MODEL),
         status=STATUS_READY,
