@@ -202,7 +202,22 @@ def _transcribe_audio_file_with_qwen(
     except Exception as exc:
         raise AsrError("ASR_TASK_CREATE_FAILED", "创建 ASR 任务失败", str(exc)[:1200]) from exc
 
+    task_status_code = int(getattr(task_resp, "status_code", 200) or 200)
     task_out = _to_dict(getattr(task_resp, "output", None))
+    if task_status_code >= 400:
+        raise AsrError(
+            "ASR_TASK_CREATE_FAILED",
+            "鍒涘缓 ASR 浠诲姟澶辫触",
+            json.dumps(
+                {
+                    "status_code": task_status_code,
+                    "code": getattr(task_resp, "code", ""),
+                    "message": getattr(task_resp, "message", ""),
+                    "output": task_out,
+                },
+                ensure_ascii=False,
+            )[:1200],
+        )
     task_id = str(task_out.get("task_id") or "").strip()
     if not task_id:
         raise AsrError("ASR_TASK_CREATE_FAILED", "ASR 任务创建成功但 task_id 为空", json.dumps(task_out, ensure_ascii=False)[:1200])

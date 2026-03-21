@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { USER_EMAIL_KEY, USER_ID_KEY } from "../../app/authStorage";
+import { USER_EMAIL_KEY, USER_ID_KEY, USER_IS_ADMIN_KEY } from "../../app/authStorage";
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import { ENDPOINTS } from "../../shared/api/endpoints";
 import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, Input, Label } from "../../shared/ui";
@@ -47,6 +47,7 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
       } else {
         localStorage.removeItem(USER_EMAIL_KEY);
       }
+      localStorage.setItem(USER_IS_ADMIN_KEY, data.user?.is_admin ? "true" : "false");
       setCurrentUser(data.user || null);
       setAccessToken(data.access_token);
       setStatus("登录成功，正在进入首页...");

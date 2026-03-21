@@ -3,14 +3,15 @@ from __future__ import annotations
 import logging
 import re
 from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.api.routers import admin, admin_console, admin_sql_console, asr_models, auth, billing, lessons, local_asr_assets, media, practice, transcribe, wallet
 from app.core.config import (
@@ -26,10 +27,12 @@ from app.core.config import (
     is_production_environment,
     is_weak_confirm_text,
 )
+from app.core.errors import error_response
 from app.core.logging import setup_logging
 from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, schema_name_for_url
 from app.models import LessonGenerationTask
 from app.services.admin_bootstrap import ensure_admin_users
+from app.services.asr_model_registry import list_asr_models_with_status
 from app.services.asr_dashscope import setup_dashscope
 from app.services.billing_service import ensure_default_billing_rates
 from app.services.faster_whisper_asr import ensure_default_faster_whisper_settings, schedule_faster_whisper_model_prefetch
@@ -147,9 +150,12 @@ class RuntimeStatus:
     ffmpeg_ready: bool = False
     ffprobe_ready: bool = False
     media_detail: str = ""
+    upload_asr_ready: bool = False
+    upload_asr_detail: str = ""
     admin_bootstrap_ok: bool = False
     admin_bootstrap_error: str = ""
     checked_at: str = ""
+    readiness_issues: list[str] = field(default_factory=list)
 
 
 def _utc_iso() -> str:
@@ -238,6 +244,35 @@ def _bootstrap_admin_users() -> tuple[bool, str]:
         return False, str(exc)[:1200]
 
 
+def _build_upload_asr_runtime_status() -> tuple[bool, str]:
+    try:
+        model_statuses = list_asr_models_with_status()
+    except Exception as exc:
+        detail = f"failed to evaluate upload ASR readiness: {str(exc)[:400]}"
+        logger.warning("[DEBUG] readiness.upload_asr.exception detail=%s", detail)
+        return False, detail
+
+    ready_models: list[str] = []
+    blocked_models: list[str] = []
+    for item in model_statuses:
+        if not bool(item.get("supports_upload")):
+            continue
+        display_name = str(item.get("display_name") or item.get("model_key") or "").strip() or "unknown"
+        status = str(item.get("status") or "").strip().lower() or "unknown"
+        if bool(item.get("available")):
+            ready_models.append(display_name)
+        else:
+            blocked_models.append(f"{display_name}={status}")
+
+    if ready_models:
+        return True, f"ready upload ASR models: {', '.join(ready_models)}"
+
+    detail = "no upload-capable ASR model is ready"
+    if blocked_models:
+        detail = f"{detail} ({'; '.join(blocked_models)})"
+    return False, detail
+
+
 def _refresh_optional_runtime_status(app: FastAPI) -> None:
     runtime_status = _ensure_runtime_status(app)
     runtime_status.checked_at = _utc_iso()
@@ -262,6 +297,64 @@ def _refresh_optional_runtime_status(app: FastAPI) -> None:
     runtime_status.ffmpeg_ready = bool(media_status["ffmpeg_ready"])
     runtime_status.ffprobe_ready = bool(media_status["ffprobe_ready"])
     runtime_status.media_detail = str(media_status["detail"] or "")
+    runtime_status.upload_asr_ready, runtime_status.upload_asr_detail = _build_upload_asr_runtime_status()
+
+
+def _build_runtime_readiness_issues(runtime_status: RuntimeStatus) -> list[str]:
+    issues: list[str] = []
+    if runtime_status.production_mode and not runtime_status.database_policy_ok:
+        issues.append(runtime_status.database_policy_error or "database policy is not satisfied")
+    if runtime_status.production_mode and not runtime_status.export_guard_ok:
+        issues.append(runtime_status.export_guard_error or "export guard policy is not satisfied")
+    if not runtime_status.db_ready:
+        issues.append(runtime_status.db_error or "database is not ready")
+    if not runtime_status.dashscope_configured:
+        issues.append("DASHSCOPE_API_KEY is not configured")
+    if not runtime_status.ffmpeg_ready or not runtime_status.ffprobe_ready:
+        issues.append(runtime_status.media_detail or "ffmpeg / ffprobe are not ready")
+    if not runtime_status.upload_asr_ready:
+        issues.append(runtime_status.upload_asr_detail or "no upload-capable ASR model is ready")
+    return issues
+
+
+def _update_runtime_readiness(runtime_status: RuntimeStatus) -> bool:
+    runtime_status.readiness_issues = _build_runtime_readiness_issues(runtime_status)
+    return not runtime_status.readiness_issues
+
+
+def _is_schema_migration_related_error(detail: str) -> bool:
+    normalized = str(detail or "").strip().lower()
+    if not normalized:
+        return False
+    markers = (
+        "missing business table",
+        "missing business tables",
+        "missing critical columns",
+        "no such table",
+        "no such column",
+        "undefined table",
+        "undefined column",
+        "does not exist",
+        "unknown column",
+    )
+    return any(marker in normalized for marker in markers)
+
+
+def _build_database_not_ready_response(runtime_status: RuntimeStatus) -> JSONResponse:
+    detail = str(runtime_status.db_error or "").strip()
+    if _is_schema_migration_related_error(detail):
+        return error_response(
+            503,
+            "DB_MIGRATION_REQUIRED",
+            "数据库迁移未完成，请先执行生产迁移",
+            detail or "请先执行 Alembic upgrade head",
+        )
+    return error_response(
+        503,
+        "DATABASE_NOT_READY",
+        "数据库未就绪，请稍后重试",
+        detail or "database readiness check failed",
+    )
 
 
 def _log_downloadable_model_bundle_status() -> None:
@@ -364,6 +457,7 @@ def _is_spa_fallback_path(full_path: str) -> bool:
 
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
+    runtime_status = _ensure_runtime_status(app)
     logger.info("[DEBUG] startup.begin")
     BASE_TMP_DIR.mkdir(parents=True, exist_ok=True)
     BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -388,7 +482,10 @@ async def app_lifespan(app: FastAPI):
         logger.info("[DEBUG] startup.faster_whisper_prefetch scheduled")
     else:
         logger.info("[DEBUG] startup.faster_whisper_prefetch skipped")
-    logger.info("[DEBUG] startup.ready")
+    if _update_runtime_readiness(runtime_status):
+        logger.info("[DEBUG] startup.ready")
+    else:
+        logger.warning("[DEBUG] startup.degraded issues=%s", runtime_status.readiness_issues)
     yield
 
 
@@ -396,6 +493,29 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app = FastAPI(title=SERVICE_NAME, version="0.3.0", lifespan=app_lifespan if enable_lifespan else None)
     app.state.runtime_status = RuntimeStatus()
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+    @app.middleware("http")
+    async def block_api_requests_when_database_not_ready(request: Request, call_next):
+        runtime_status = _ensure_runtime_status(app)
+        path = request.url.path
+        if path.startswith("/api/") and runtime_status.checked_at and not runtime_status.db_ready:
+            return _build_database_not_ready_response(runtime_status)
+        return await call_next(request)
+
+    @app.exception_handler(OperationalError)
+    @app.exception_handler(ProgrammingError)
+    async def handle_database_programming_errors(_request: Request, exc: Exception):
+        detail = str(exc)[:1200]
+        if _is_schema_migration_related_error(detail):
+            logger.warning("[DEBUG] db.schema_error detail=%s", detail[:400])
+            return error_response(
+                503,
+                "DB_MIGRATION_REQUIRED",
+                "数据库迁移未完成，请先执行生产迁移",
+                detail,
+            )
+        logger.exception("[DEBUG] db.unhandled_programming_error detail=%s", detail[:400])
+        return error_response(500, "DATABASE_ERROR", "数据库操作失败", detail)
 
     @app.get("/", include_in_schema=False)
     def root_page() -> FileResponse:
@@ -418,10 +538,11 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     @app.get("/health")
     def health() -> dict:
         runtime_status = _ensure_runtime_status(app)
+        ready = _update_runtime_readiness(runtime_status)
         return {
             "ok": True,
             "service": SERVICE_NAME,
-            "ready": runtime_status.db_ready,
+            "ready": ready,
         }
 
     @app.get("/health/ready")
@@ -432,6 +553,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
         runtime_status.db_ready = ready
         runtime_status.db_error = error
         runtime_status.checked_at = _utc_iso()
+        ready = _update_runtime_readiness(runtime_status)
         payload = {
             "ok": ready,
             "service": SERVICE_NAME,

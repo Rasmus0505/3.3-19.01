@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from app.core.config import FASTER_WHISPER_MODEL_DIR, SENSEVOICE_MODEL_DIR
+from app.core.config import DASHSCOPE_API_KEY, FASTER_WHISPER_MODEL_DIR, SENSEVOICE_MODEL_DIR
 from app.services.faster_whisper_asr import (
     FASTER_WHISPER_ASR_MODEL,
     get_faster_whisper_model_status,
@@ -235,9 +235,10 @@ def _prepare_faster_whisper_model(force_refresh: bool = False) -> dict[str, Any]
 
 
 def _get_qwen_status() -> dict[str, Any]:
+    descriptor = get_asr_model_descriptor(QWEN_ASR_MODEL)
     if str(os.getenv("QWEN_ASR_ENABLED", "1") or "1").strip().lower() in _FALSEY_ENV_VALUES:
         return _base_state(
-            get_asr_model_descriptor(QWEN_ASR_MODEL),
+            descriptor,
             status=STATUS_ERROR,
             available=False,
             cached=False,
@@ -245,8 +246,33 @@ def _get_qwen_status() -> dict[str, Any]:
             message="Cloud API is disabled for this deployment.",
             last_error="qwen_asr_disabled",
         )
+    api_key = str(DASHSCOPE_API_KEY or "").strip()
+    if not api_key:
+        return _base_state(
+            descriptor,
+            status=STATUS_MISSING,
+            available=False,
+            cached=False,
+            download_required=False,
+            message="DASHSCOPE_API_KEY 未配置，云转写不可用。",
+            last_error="DASHSCOPE_API_KEY is missing.",
+        )
+    try:
+        from app.services.asr_dashscope import setup_dashscope
+
+        setup_dashscope(api_key)
+    except Exception as exc:
+        return _base_state(
+            descriptor,
+            status=STATUS_ERROR,
+            available=False,
+            cached=False,
+            download_required=False,
+            message="DashScope 配置异常，云转写暂不可用。",
+            last_error=str(exc)[:1200],
+        )
     return _base_state(
-        get_asr_model_descriptor(QWEN_ASR_MODEL),
+        descriptor,
         status=STATUS_READY,
         available=True,
         cached=False,
