@@ -1,0 +1,7 @@
+fastapi==0.115.8
+uvicorn==0.34.0
+python-multipart==0.0.20
+faster-whisper==1.2.1
+huggingface_hub>=0.28,<1.0
+funasr==1.2.6
+modelscope==1.35.0

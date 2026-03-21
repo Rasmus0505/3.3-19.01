@@ -236,6 +236,8 @@ async def create_lesson_task(
         return map_media_error(exc)
     except LessonTaskStorageNotReadyError as exc:
         return error_response(503, exc.code, exc.message, exc.detail)
+    except BillingError as exc:
+        return map_billing_error(exc)
     except Exception as exc:
         return error_response(500, "INTERNAL_ERROR", "任务创建失败", str(exc)[:1200])
     finally:

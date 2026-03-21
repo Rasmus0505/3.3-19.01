@@ -1,0 +1,28 @@
+{
+  "health_ok": true,
+  "ready_ok": true,
+  "models": {
+    "sensevoice-small": {
+      "status": "failed",
+      "result_kind": "full_success",
+      "completion_kind": "full",
+      "partial_failure_stage": "",
+      "partial_failure_code": "",
+      "message": "课程生成失败",
+      "lesson_id": null,
+      "elapsed_seconds": 220.53,
+      "translation_debug": null
+    },
+    "faster-whisper-medium": {
+      "status": "failed",
+      "result_kind": "full_success",
+      "completion_kind": "full",
+      "partial_failure_stage": "",
+      "partial_failure_code": "",
+      "message": "课程生成失败",
+      "lesson_id": null,
+      "elapsed_seconds": 752.02,
+      "translation_debug": null
+    }
+  }
+}

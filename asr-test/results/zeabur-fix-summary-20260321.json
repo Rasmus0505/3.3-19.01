@@ -1,0 +1,41 @@
+{
+  "generated_at": "2026-03-21T05:24:30+08:00",
+  "base_url": "http://127.0.0.1:8080",
+  "health": {
+    "ok": true,
+    "ready": true
+  },
+  "ready_status": {
+    "db_ready": true,
+    "dashscope_configured": true,
+    "ffmpeg_ready": true,
+    "ffprobe_ready": true,
+    "admin_bootstrap_ok": true
+  },
+  "verified_video": "C:\\Users\\Administrator\\Downloads\\S01E05-03.mp4",
+  "successful_tasks": [
+    {
+      "task_id": "lesson_task_a0c6f2f4e58a4a75abe07bac9671e68d",
+      "user_id": 19,
+      "lesson_id": 6,
+      "asr_model": "sensevoice-small",
+      "status": "succeeded",
+      "lesson_status": "ready",
+      "source_duration_ms": 327840
+    },
+    {
+      "task_id": "lesson_task_ee42c1f965d946e79374d465b38d397d",
+      "user_id": 19,
+      "lesson_id": 7,
+      "asr_model": "faster-whisper-medium",
+      "status": "succeeded",
+      "lesson_status": "ready",
+      "source_duration_ms": 327840
+    }
+  ],
+  "remaining_risks": [
+    "Dockerfile does not embed local ASR bundles; Zeabur must mount /data and upload the two pinned model directories manually.",
+    "Old SQLite task rows created before these fixes may remain stuck in running state and are not evidence of current runtime health.",
+    "One targeted pytest case still fails because its InlineThread monkeypatch is incompatible with the current threading usage; this is a test harness issue, not a confirmed user-facing regression."
+  ]
+}

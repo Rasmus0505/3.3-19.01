@@ -17,7 +17,14 @@ from app.models import Lesson, LessonGenerationTask, WalletLedger
 from app.repositories.admin_console import invalidate_admin_overview_cache, invalidate_admin_user_activity_summary_cache
 from app.repositories.lessons import update_lesson_title_for_user
 from app.services.asr_dashscope import AsrError
-from app.services.billing_service import BillingError, ensure_default_billing_rates, get_default_asr_model
+from app.services.billing_service import (
+    BillingError,
+    calculate_points,
+    ensure_default_billing_rates,
+    get_default_asr_model,
+    get_model_rate,
+    get_or_create_wallet_account,
+)
 from app.services.faster_whisper_asr import FASTER_WHISPER_ASR_MODEL, get_faster_whisper_model_status, prepare_faster_whisper_model
 from app.services.lesson_query_service import invalidate_lesson_catalog_cache
 from app.services.lesson_service import LessonService
@@ -40,7 +47,7 @@ from app.services.lesson_task_manager import (
     reset_task_for_resume,
     update_task_progress,
 )
-from app.services.media import MediaError, cleanup_dir, save_upload_file_stream, validate_suffix
+from app.services.media import MediaError, cleanup_dir, probe_audio_duration_ms, save_upload_file_stream, validate_suffix
 from app.services.sensevoice import SENSEVOICE_ASR_MODEL
 
 
@@ -90,6 +97,32 @@ def _resolve_task_asr_models(requested_asr_model: str) -> dict[str, object]:
         }
     )
     return resolution
+
+
+def _ensure_sufficient_balance_for_model(
+    *,
+    db: Session,
+    owner_user_id: int,
+    asr_model: str,
+    source_duration_ms: int,
+) -> int:
+    normalized_duration_ms = max(0, int(source_duration_ms or 0))
+    if normalized_duration_ms <= 0:
+        return 0
+    rate = get_model_rate(db, asr_model)
+    required_points = calculate_points(
+        normalized_duration_ms,
+        rate.points_per_minute,
+        price_per_minute_yuan=getattr(rate, "price_per_minute_yuan", None),
+    )
+    account = get_or_create_wallet_account(db, owner_user_id, for_update=False)
+    if account.balance_points < required_points:
+        raise BillingError(
+            "INSUFFICIENT_BALANCE",
+            "余额不足，无法创建课程",
+            f"balance={account.balance_points}, required={required_points}, duration_ms={normalized_duration_ms}, model={asr_model}",
+        )
+    return required_points
 
 
 def is_task_active_in_current_process(task_id: str) -> bool:
@@ -151,6 +184,15 @@ def run_lesson_generation_task(
     db = session_factory()
     _register_active_task(task_id)
     try:
+        bind = getattr(session_factory, "kw", {}).get("bind")
+        sqlite_progress_mode = bool(bind is not None and getattr(bind.dialect, "name", "") == "sqlite")
+        last_progress_snapshot = {
+            "stage_key": "",
+            "stage_status": "",
+            "overall_percent": None,
+            "emitted_at": 0.0,
+        }
+
         logger.info(
             "[DEBUG] lessons.task.start task_id=%s owner_id=%s requested_model=%s effective_model=%s",
             task_id,
@@ -159,18 +201,46 @@ def run_lesson_generation_task(
             effective_asr_model,
         )
 
+        def _should_emit_progress(payload: dict) -> bool:
+            if not sqlite_progress_mode:
+                return True
+            stage_key = str(payload.get("stage_key") or "")
+            stage_status = str(payload.get("stage_status") or "")
+            overall_percent = payload.get("overall_percent")
+            now = time.monotonic()
+            if last_progress_snapshot["emitted_at"] <= 0:
+                return True
+            if stage_key != last_progress_snapshot["stage_key"] or stage_status != last_progress_snapshot["stage_status"]:
+                return True
+            if stage_status in {"completed", "failed"}:
+                return True
+            if isinstance(overall_percent, int):
+                last_percent = last_progress_snapshot["overall_percent"]
+                if isinstance(last_percent, int) and abs(overall_percent - last_percent) >= 15:
+                    return True
+            return (now - float(last_progress_snapshot["emitted_at"] or 0.0)) >= 20.0
+
         def _progress(payload: dict) -> None:
-            update_task_progress(
-                task_id,
-                stage_key=payload.get("stage_key"),
-                stage_status=payload.get("stage_status"),
-                overall_percent=payload.get("overall_percent"),
-                current_text=payload.get("current_text"),
-                counters=payload.get("counters"),
-                translation_debug=payload.get("translation_debug"),
-                asr_raw=payload.get("asr_raw"),
-                session_factory=session_factory,
-            )
+            if _should_emit_progress(payload):
+                update_task_progress(
+                    task_id,
+                    stage_key=payload.get("stage_key"),
+                    stage_status=payload.get("stage_status"),
+                    overall_percent=payload.get("overall_percent"),
+                    current_text=payload.get("current_text"),
+                    counters=payload.get("counters"),
+                    translation_debug=payload.get("translation_debug"),
+                    asr_raw=payload.get("asr_raw"),
+                    session_factory=session_factory,
+                )
+                last_progress_snapshot.update(
+                    {
+                        "stage_key": str(payload.get("stage_key") or ""),
+                        "stage_status": str(payload.get("stage_status") or ""),
+                        "overall_percent": payload.get("overall_percent"),
+                        "emitted_at": time.monotonic(),
+                    }
+                )
             _raise_if_task_control_requested(task_id, session_factory=session_factory)
 
         normalized_input_mode = str(input_mode or "upload").strip().lower()
@@ -318,6 +388,14 @@ def create_lesson_task_from_upload(
         source_path = req_dir / f"source{suffix}"
         save_upload_file_stream(video_file, source_path, max_bytes=UPLOAD_MAX_BYTES)
         model_resolution = _resolve_task_asr_models(asr_model)
+        effective_asr_model = str(model_resolution["effective_asr_model"])
+        source_duration_ms = probe_audio_duration_ms(source_path)
+        _ensure_sufficient_balance_for_model(
+            db=db,
+            owner_user_id=owner_user_id,
+            asr_model=effective_asr_model,
+            source_duration_ms=source_duration_ms,
+        )
 
         create_task(
             task_id=task_id,
@@ -325,7 +403,7 @@ def create_lesson_task_from_upload(
             source_filename=source_filename,
             asr_model=asr_model,
             requested_asr_model=str(model_resolution["requested_asr_model"]),
-            effective_asr_model=str(model_resolution["effective_asr_model"]),
+            effective_asr_model=effective_asr_model,
             model_fallback_applied=bool(model_resolution["model_fallback_applied"]),
             model_fallback_reason=str(model_resolution["model_fallback_reason"]),
             semantic_split_enabled=semantic_split_enabled,
@@ -342,10 +420,11 @@ def create_lesson_task_from_upload(
                 "source_path": source_path,
                 "req_dir": req_dir,
                 "requested_asr_model": str(model_resolution["requested_asr_model"]),
-                "effective_asr_model": str(model_resolution["effective_asr_model"]),
+                "effective_asr_model": effective_asr_model,
                 "semantic_split_enabled": semantic_split_enabled,
                 "session_factory": task_session_factory,
                 "input_mode": "upload",
+                "source_duration_ms": source_duration_ms,
             },
             daemon=True,
         )
@@ -374,12 +453,19 @@ def create_lesson_task_from_local_asr(
     try:
         ensure_default_billing_rates(db)
         ensure_lesson_task_storage_ready(db)
+        normalized_source_duration_ms = max(1, int(source_duration_ms or 0))
+        _ensure_sufficient_balance_for_model(
+            db=db,
+            owner_user_id=owner_user_id,
+            asr_model=asr_model,
+            source_duration_ms=normalized_source_duration_ms,
+        )
         payload_path = req_dir / "local_asr_payload.json"
         payload_path.write_text(
             json.dumps(
                 {
                     "asr_payload": dict(asr_payload or {}),
-                    "source_duration_ms": int(source_duration_ms or 0),
+                    "source_duration_ms": normalized_source_duration_ms,
                 },
                 ensure_ascii=False,
             ),
@@ -402,7 +488,7 @@ def create_lesson_task_from_local_asr(
             task_id,
             artifacts_patch={
                 "input_mode": "local_asr",
-                "source_duration_ms": int(source_duration_ms or 0),
+                "source_duration_ms": normalized_source_duration_ms,
                 "local_asr_payload_path": str(payload_path),
             },
             db=db,
@@ -420,7 +506,7 @@ def create_lesson_task_from_local_asr(
                 "semantic_split_enabled": semantic_split_enabled,
                 "session_factory": task_session_factory,
                 "input_mode": "local_asr",
-                "source_duration_ms": int(source_duration_ms or 0),
+                "source_duration_ms": normalized_source_duration_ms,
             },
             daemon=True,
         )

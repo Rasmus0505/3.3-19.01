@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ASR Test Lab</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">ASR Test Lab</p>
+          <h1>Distil model benchmark workstation</h1>
+          <p class="hero-copy">
+            Upload a local English video or audio file, watch streaming progress, inspect quality, and reopen saved runs later.
+          </p>
+        </div>
+        <button id="refreshButton" class="ghost-button" type="button">Refresh</button>
+      </header>
+
+      <main class="layout">
+        <section class="panel panel-form">
+          <h2>Start a run</h2>
+          <form id="runForm">
+            <label class="field">
+              <span>Model</span>
+              <select id="modelSelect" name="model_key"></select>
+            </label>
+            <label class="field file-field">
+              <span>Media file</span>
+              <input id="mediaInput" name="media_file" type="file" accept="audio/*,video/*" required />
+            </label>
+            <div class="button-row">
+              <button id="downloadModelsButton" class="secondary-button" type="button">Download models</button>
+              <button id="runButton" class="primary-button" type="submit">Run ASR</button>
+            </div>
+          </form>
+
+          <div class="panel-subsection">
+            <h3>Models</h3>
+            <div id="modelList" class="model-list"></div>
+          </div>
+        </section>
+
+        <section class="panel panel-live">
+          <div class="panel-heading">
+            <div>
+              <h2>Live progress</h2>
+              <p id="liveRunMeta" class="muted">No active run.</p>
+            </div>
+            <div class="metric-pill">
+              <span>Elapsed</span>
+              <strong id="elapsedValue">0.0s</strong>
+            </div>
+          </div>
+          <div class="progress-card">
+            <div class="progress-track">
+              <div id="progressBar" class="progress-fill"></div>
+            </div>
+            <div class="progress-meta">
+              <span id="progressLabel">Waiting</span>
+              <span id="progressPercent">0%</span>
+            </div>
+          </div>
+          <pre id="eventLog" class="event-log">Waiting for a run.</pre>
+        </section>
+
+        <section class="panel panel-result">
+          <div class="panel-heading">
+            <div>
+              <h2>Saved result</h2>
+              <p id="resultMeta" class="muted">Select a run from the history list.</p>
+            </div>
+            <div class="button-row">
+              <a id="downloadTranscriptLink" class="ghost-link disabled" href="#" target="_blank" rel="noreferrer">Transcript</a>
+              <a id="downloadSubtitleLink" class="ghost-link disabled" href="#" target="_blank" rel="noreferrer">SRT</a>
+              <a id="downloadMetricsLink" class="ghost-link disabled" href="#" target="_blank" rel="noreferrer">Metrics</a>
+            </div>
+          </div>
+          <div id="metricsGrid" class="metrics-grid"></div>
+          <div class="result-columns">
+            <section>
+              <h3>Transcript</h3>
+              <pre id="transcriptOutput" class="artifact-viewer"></pre>
+            </section>
+            <section>
+              <h3>Subtitle preview</h3>
+              <pre id="subtitleOutput" class="artifact-viewer"></pre>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel panel-history">
+          <div class="panel-heading">
+            <div>
+              <h2>Run history</h2>
+              <p class="muted">Saved locally under <code>asr-test/runs/</code>.</p>
+            </div>
+          </div>
+          <div id="historyList" class="history-list"></div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>

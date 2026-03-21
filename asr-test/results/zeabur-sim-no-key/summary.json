@@ -1,0 +1,37 @@
+{
+  "health_ok": true,
+  "ready_ok": true,
+  "zero_balance": {
+    "status_code": 200,
+    "body": {
+      "ok": true,
+      "task_id": "lesson_task_3a811141e099494b839df60fefb8d89b",
+      "requested_asr_model": "sensevoice-small",
+      "effective_asr_model": "sensevoice-small",
+      "model_fallback_applied": false,
+      "model_fallback_reason": ""
+    }
+  },
+  "models": {
+    "sensevoice-small": {
+      "status": "succeeded",
+      "result_kind": "asr_only",
+      "completion_kind": "partial",
+      "partial_failure_stage": "translate_zh",
+      "partial_failure_code": "TRANSLATION_INCOMPLETE",
+      "message": "课程已生成，翻译失败，可先使用原文字幕学习。",
+      "lesson_id": 3,
+      "elapsed_seconds": 65.22
+    },
+    "faster-whisper-medium": {
+      "status": "succeeded",
+      "result_kind": "asr_only",
+      "completion_kind": "partial",
+      "partial_failure_stage": "translate_zh",
+      "partial_failure_code": "TRANSLATION_INCOMPLETE",
+      "message": "课程已生成，翻译失败，可先使用原文字幕学习。",
+      "lesson_id": 4,
+      "elapsed_seconds": 55.18
+    }
+  }
+}

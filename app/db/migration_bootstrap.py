@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_LOCK_ID = 33190114
 DEFAULT_LOCK_TIMEOUT_SECONDS = 180
 DEFAULT_CONTINUE_ON_FAILURE = True
+DEFAULT_RETRY_ATTEMPTS = 6
+DEFAULT_RETRY_INTERVAL_SECONDS = 5
 
 
 @dataclass(frozen=True)
@@ -178,6 +180,48 @@ def _alembic_config() -> str:
     return os.getenv("ALEMBIC_CONFIG", "alembic.ini").strip() or "alembic.ini"
 
 
+def _is_retryable_migration_exception(exc: Exception) -> bool:
+    detail = f"{exc.__class__.__name__}: {str(exc or '').strip()}".lower()
+    retryable_markers = (
+        "could not connect",
+        "connection refused",
+        "connection reset",
+        "connection aborted",
+        "server closed the connection unexpectedly",
+        "the database system is starting up",
+        "temporary failure in name resolution",
+        "name or service not known",
+        "getaddrinfo failed",
+        "nodename nor servname provided",
+        "timed out",
+        "timeout",
+        "connection to server at",
+        "failed to establish a new connection",
+        "network is unreachable",
+        "could not translate host name",
+        "timed out waiting for postgresql migration lock",
+    )
+    return any(marker in detail for marker in retryable_markers)
+
+
+def _run_single_startup_migration(*, database_url: str, lock_id: int, lock_timeout_seconds: int) -> None:
+    if is_sqlite_url(database_url):
+        engine = create_database_engine(database_url)
+        try:
+            with engine.connect() as connection:
+                _repair_redundant_linear_version_rows(
+                    connection,
+                    database_url=database_url,
+                    repo_root=_repo_root(),
+                    alembic_config=_alembic_config(),
+                )
+        finally:
+            engine.dispose()
+        _run_alembic_upgrade(_repo_root(), _alembic_config())
+        return
+    _acquire_postgres_lock(database_url, lock_id, lock_timeout_seconds)
+
+
 def run_startup_migration() -> StartupMigrationResult:
     auto_migrate = _env_bool("AUTO_MIGRATE_ON_START", True)
     if not auto_migrate:
@@ -195,29 +239,40 @@ def run_startup_migration() -> StartupMigrationResult:
     lock_id = _env_int("AUTO_MIGRATE_LOCK_ID", DEFAULT_LOCK_ID)
     lock_timeout_seconds = _env_int("AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS", DEFAULT_LOCK_TIMEOUT_SECONDS)
     continue_on_failure = _env_bool("AUTO_MIGRATE_CONTINUE_ON_FAILURE", DEFAULT_CONTINUE_ON_FAILURE)
+    retry_attempts = max(1, _env_int("AUTO_MIGRATE_MAX_ATTEMPTS", DEFAULT_RETRY_ATTEMPTS))
+    retry_interval_seconds = max(1, _env_int("AUTO_MIGRATE_RETRY_INTERVAL_SECONDS", DEFAULT_RETRY_INTERVAL_SECONDS))
 
     _emit(
         "[DEBUG] boot.migrate enabled=true "
         f"continue_on_failure={str(continue_on_failure).lower()} "
-        f"lock_timeout_seconds={lock_timeout_seconds}"
+        f"lock_timeout_seconds={lock_timeout_seconds} "
+        f"retry_attempts={retry_attempts} "
+        f"retry_interval_seconds={retry_interval_seconds}"
     )
 
     try:
-        if is_sqlite_url(database_url):
-            engine = create_database_engine(database_url)
+        attempt_no = 0
+        while True:
+            attempt_no += 1
             try:
-                with engine.connect() as connection:
-                    _repair_redundant_linear_version_rows(
-                        connection,
-                        database_url=database_url,
-                        repo_root=_repo_root(),
-                        alembic_config=_alembic_config(),
-                    )
-            finally:
-                engine.dispose()
-            _run_alembic_upgrade(_repo_root(), _alembic_config())
-        else:
-            _acquire_postgres_lock(database_url, lock_id, lock_timeout_seconds)
+                _run_single_startup_migration(
+                    database_url=database_url,
+                    lock_id=lock_id,
+                    lock_timeout_seconds=lock_timeout_seconds,
+                )
+                break
+            except Exception as exc:
+                should_retry = attempt_no < retry_attempts and _is_retryable_migration_exception(exc)
+                if not should_retry:
+                    raise
+                _emit(
+                    "[DEBUG] boot.migrate retry_scheduled=true "
+                    f"attempt={attempt_no}/{retry_attempts} "
+                    f"delay_seconds={retry_interval_seconds} "
+                    f"detail={exc.__class__.__name__}: {str(exc)[:240]}",
+                    level="warning",
+                )
+                time.sleep(retry_interval_seconds)
         _emit("[DEBUG] boot.migrate success=true")
         return StartupMigrationResult(attempted=True, succeeded=True, allow_startup=True, reason="success")
     except Exception:

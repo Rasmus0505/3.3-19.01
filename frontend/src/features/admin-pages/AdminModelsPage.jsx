@@ -15,12 +15,12 @@ const MODEL_TABS = [
   },
   {
     value: "sensevoice",
-    label: "SenseVoice",
+    label: "bottle0.1",
     component: AdminSenseVoiceSettingsTab,
   },
   {
     value: "faster-whisper",
-    label: "Faster Whisper",
+    label: "bottle.1.0",
     component: AdminFasterWhisperSettingsTab,
   },
 ];

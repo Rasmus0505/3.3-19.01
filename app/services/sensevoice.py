@@ -13,36 +13,49 @@ from typing import Any
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
+from app.core.config import SENSEVOICE_MODEL_DIR
+from app.services.media import probe_audio_duration_ms
 from app.core.timezone import now_shanghai_naive
 from app.models import SenseVoiceSetting
 
 
 SENSEVOICE_ASR_MODEL = "sensevoice-small"
+SENSEVOICE_REQUIRED_FILES: tuple[str, ...] = (
+    "model.pt",
+    "config.yaml",
+    "configuration.json",
+    "tokens.json",
+    "chn_jpn_yue_eng_ko_spectok.bpe.model",
+)
 DEFAULT_SENSEVOICE_SETTINGS = {
-    "model_dir": "iic/SenseVoiceSmall",
+    "model_dir": str(SENSEVOICE_MODEL_DIR),
     "trust_remote_code": False,
     "remote_code": "",
-    "device": "cuda:0",
+    "device": "cpu",
     "language": "auto",
-    "vad_model": "fsmn-vad",
+    "vad_model": "",
     "vad_max_single_segment_time": 30000,
     "use_itn": True,
     "batch_size_s": 60,
-    "merge_vad": True,
+    "merge_vad": False,
     "merge_length_s": 15,
     "ban_emo_unk": False,
 }
 _SENSEVOICE_SETTINGS_REQUIRED_COLUMN_SQL: tuple[tuple[str, str, str], ...] = (
-    ("model_dir", "VARCHAR(255) NOT NULL DEFAULT 'iic/SenseVoiceSmall'", "VARCHAR(255) NOT NULL DEFAULT 'iic/SenseVoiceSmall'"),
+    (
+        "model_dir",
+        f"VARCHAR(255) NOT NULL DEFAULT '{str(SENSEVOICE_MODEL_DIR)}'",
+        f"VARCHAR(255) NOT NULL DEFAULT '{str(SENSEVOICE_MODEL_DIR)}'",
+    ),
     ("trust_remote_code", "BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("remote_code", "VARCHAR(500) NOT NULL DEFAULT ''", "VARCHAR(500) NOT NULL DEFAULT ''"),
-    ("device", "VARCHAR(64) NOT NULL DEFAULT 'cuda:0'", "VARCHAR(64) NOT NULL DEFAULT 'cuda:0'"),
+    ("device", "VARCHAR(64) NOT NULL DEFAULT 'cpu'", "VARCHAR(64) NOT NULL DEFAULT 'cpu'"),
     ("language", "VARCHAR(32) NOT NULL DEFAULT 'auto'", "VARCHAR(32) NOT NULL DEFAULT 'auto'"),
-    ("vad_model", "VARCHAR(100) NOT NULL DEFAULT 'fsmn-vad'", "VARCHAR(100) NOT NULL DEFAULT 'fsmn-vad'"),
+    ("vad_model", "VARCHAR(100) NOT NULL DEFAULT ''", "VARCHAR(100) NOT NULL DEFAULT ''"),
     ("vad_max_single_segment_time", "INTEGER NOT NULL DEFAULT 30000", "INTEGER NOT NULL DEFAULT 30000"),
     ("use_itn", "BOOLEAN NOT NULL DEFAULT 1", "BOOLEAN NOT NULL DEFAULT TRUE"),
     ("batch_size_s", "INTEGER NOT NULL DEFAULT 60", "INTEGER NOT NULL DEFAULT 60"),
-    ("merge_vad", "BOOLEAN NOT NULL DEFAULT 1", "BOOLEAN NOT NULL DEFAULT TRUE"),
+    ("merge_vad", "BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("merge_length_s", "INTEGER NOT NULL DEFAULT 15", "INTEGER NOT NULL DEFAULT 15"),
     ("ban_emo_unk", "BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("updated_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP", "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"),
@@ -69,6 +82,19 @@ class SenseVoiceSettingsSnapshot:
     merge_vad: bool
     merge_length_s: int
     ban_emo_unk: bool
+
+
+def get_pinned_sensevoice_model_dir() -> str:
+    return str(SENSEVOICE_MODEL_DIR)
+
+
+def get_sensevoice_missing_files(model_dir: str | Path | None = None) -> list[str]:
+    resolved_dir = Path(str(model_dir or SENSEVOICE_MODEL_DIR))
+    return [name for name in SENSEVOICE_REQUIRED_FILES if not (resolved_dir / name).exists()]
+
+
+def has_sensevoice_model_cache(model_dir: str | Path | None = None) -> bool:
+    return not get_sensevoice_missing_files(model_dir)
 
 
 def _sensevoice_settings_schema_name(db: Session) -> str | None:
@@ -167,6 +193,12 @@ def _normalize_sensevoice_settings_row(row: SenseVoiceSetting) -> bool:
     changed = False
     for key, value in DEFAULT_SENSEVOICE_SETTINGS.items():
         current = getattr(row, key)
+        if key == "model_dir":
+            normalized_value = str(SENSEVOICE_MODEL_DIR)
+            if normalized_value != str(current or ""):
+                setattr(row, key, normalized_value)
+                changed = True
+            continue
         if isinstance(value, bool):
             if current is None:
                 setattr(row, key, value)
@@ -217,7 +249,7 @@ def get_sensevoice_settings(db: Session) -> SenseVoiceSetting:
 def get_sensevoice_settings_snapshot(db: Session) -> SenseVoiceSettingsSnapshot:
     row = get_sensevoice_settings(db)
     return SenseVoiceSettingsSnapshot(
-        model_dir=str(getattr(row, "model_dir", "") or DEFAULT_SENSEVOICE_SETTINGS["model_dir"]),
+        model_dir=str(SENSEVOICE_MODEL_DIR),
         trust_remote_code=bool(getattr(row, "trust_remote_code", DEFAULT_SENSEVOICE_SETTINGS["trust_remote_code"])),
         remote_code=str(getattr(row, "remote_code", "") or ""),
         device=str(getattr(row, "device", "") or DEFAULT_SENSEVOICE_SETTINGS["device"]),
@@ -262,6 +294,8 @@ def _build_model_kwargs(snapshot: SenseVoiceSettingsSnapshot) -> dict[str, Any]:
         "model": snapshot.model_dir,
         "trust_remote_code": snapshot.trust_remote_code,
         "device": snapshot.device,
+        "disable_update": True,
+        "disable_pbar": True,
     }
     if snapshot.remote_code:
         kwargs["remote_code"] = snapshot.remote_code
@@ -279,6 +313,11 @@ def _get_or_create_model(snapshot: SenseVoiceSettingsSnapshot):
         if _CACHED_MODEL is not None and _CACHED_MODEL_SIGNATURE == signature:
             return _CACHED_MODEL
 
+        missing_files = get_sensevoice_missing_files(snapshot.model_dir)
+        if missing_files:
+            raise RuntimeError(
+                f"sensevoice model incomplete in {snapshot.model_dir}: {', '.join(missing_files)}"
+            )
         AutoModel, _ = _load_funasr_symbols()
         _CACHED_MODEL = AutoModel(**_build_model_kwargs(snapshot))
         _CACHED_MODEL_SIGNATURE = signature
@@ -333,29 +372,11 @@ def _build_fallback_sentences(text: str, duration_ms: int) -> list[dict[str, Any
 
 
 def _probe_audio_duration_ms(audio_path: Path) -> int:
-    proc = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            str(audio_path),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "").strip()
-        raise RuntimeError(detail[:1000] or "ffprobe failed")
     try:
-        seconds = float((proc.stdout or "").strip())
+        return probe_audio_duration_ms(audio_path)
     except Exception as exc:
-        raise RuntimeError(f"invalid duration output: {(proc.stdout or '').strip()[:120]}") from exc
-    return max(0, int(seconds * 1000))
+        detail = str(getattr(exc, "detail", "") or getattr(exc, "message", "") or str(exc)).strip()
+        raise RuntimeError(detail[:1000] or "duration probe failed") from exc
 
 
 def _normalize_generate_result(result: Any) -> dict[str, Any]:

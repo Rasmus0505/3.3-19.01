@@ -36,7 +36,7 @@ def _compat_cents_from_yuan(value: Decimal) -> int:
 def _rate_display_meta(model_name: str) -> tuple[str, str]:
     normalized = str(model_name or "").strip()
     display_name, runtime_kind = get_asr_display_meta(normalized)
-    if normalized in {"sensevoice-small", "faster-whisper-medium", "qwen3-asr-flash-filetrans", "local-sensevoice-small"}:
+    if normalized in {"sensevoice-small", "faster-whisper-medium", "qwen3-asr-flash-filetrans"}:
         return display_name, runtime_kind
     if normalized == "qwen-mt-flash":
         return "翻译成本参考", "internal"

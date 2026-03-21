@@ -378,7 +378,7 @@ def _retry_delay_seconds(attempt_no: int) -> float:
 
 
 def _is_fatal_batch_error(error_code: str) -> bool:
-    return str(error_code or "").strip().upper() == "INVALID_BATCH_JSON"
+    return False
 
 
 def _build_sentence_batches(items: list[tuple[int, str]]) -> list[list[tuple[int, str]]]:
@@ -667,6 +667,22 @@ def translate_sentences_to_zh(
     checkpoint_callback: Callable[[dict[str, object]], None] | None = None,
 ) -> TranslationBatchResult:
     total = len(sentences)
+    normalized_api_key = str(api_key or "").strip()
+    if not normalized_api_key:
+        latest_error_summary = "missing_api_key"
+        if progress_callback:
+            progress_callback(0, total)
+        return TranslationBatchResult(
+            texts=[""] * total,
+            failed_count=sum(1 for sentence in sentences if str(sentence or "").strip()),
+            attempt_records=[],
+            total_requests=0,
+            success_request_count=0,
+            success_prompt_tokens=0,
+            success_completion_tokens=0,
+            success_total_tokens=0,
+            latest_error_summary=latest_error_summary,
+        )
     translated_texts = [""] * total
     resume_payload = dict(resume_state or {})
     resume_texts = list(resume_payload.get("translated_texts") or [])
@@ -720,7 +736,7 @@ def translate_sentences_to_zh(
             batch_max_chars,
         )
 
-        batch_result = _translate_batch_recursive(batch, api_key=api_key)
+        batch_result = _translate_batch_recursive(batch, api_key=normalized_api_key)
         records.extend(batch_result.attempt_records)
         if batch_result.latest_error_summary:
             latest_error_summary = batch_result.latest_error_summary

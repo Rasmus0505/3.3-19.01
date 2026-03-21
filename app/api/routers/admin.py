@@ -106,7 +106,7 @@ from app.services.faster_whisper_asr import (
     get_faster_whisper_settings,
     prepare_faster_whisper_model,
 )
-from app.services.sensevoice import get_sensevoice_settings
+from app.services.sensevoice import get_pinned_sensevoice_model_dir, get_sensevoice_settings
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -207,7 +207,7 @@ def _sensevoice_settings_item_from_dict(
     updated_by_user_email: str | None = None,
 ) -> SenseVoiceSettingsItem:
     return SenseVoiceSettingsItem(
-        model_dir=str(payload.get("model_dir") or "iic/SenseVoiceSmall"),
+        model_dir=get_pinned_sensevoice_model_dir(),
         trust_remote_code=bool(payload.get("trust_remote_code")),
         remote_code=str(payload.get("remote_code") or ""),
         device=str(payload.get("device") or "cuda:0"),
@@ -906,7 +906,7 @@ def admin_update_sensevoice_settings(
 ):
     settings = get_sensevoice_settings(db)
     before = _sensevoice_settings_item_with_meta(settings).model_dump(mode="json")
-    settings.model_dir = payload.model_dir.strip()
+    settings.model_dir = get_pinned_sensevoice_model_dir()
     settings.trust_remote_code = payload.trust_remote_code
     settings.remote_code = payload.remote_code.strip()
     settings.device = payload.device.strip()
@@ -952,7 +952,7 @@ def admin_rollback_sensevoice_settings_last(
     settings = get_sensevoice_settings(db)
     before = _sensevoice_settings_item_with_meta(settings).model_dump(mode="json")
     previous = rollback_candidate.settings
-    settings.model_dir = previous.model_dir
+    settings.model_dir = get_pinned_sensevoice_model_dir()
     settings.trust_remote_code = previous.trust_remote_code
     settings.remote_code = previous.remote_code
     settings.device = previous.device

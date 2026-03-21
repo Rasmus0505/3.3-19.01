@@ -42,6 +42,7 @@ const LOCAL_STAGE_PROGRESS_INTERVAL_MS = 800;
 const DEFAULT_LOCAL_ASR_ASSET_BASE_URL = "/api/local-asr-assets";
 const LOCAL_ASR_ASSET_BASE_URL = (import.meta.env.VITE_LOCAL_ASR_MODEL_BASE_URL || DEFAULT_LOCAL_ASR_ASSET_BASE_URL).trim().replace(/\/+$/, "");
 const ASR_MODELS_API_BASE = "/api/asr-models";
+const DOWNLOADABLE_MODEL_BUNDLES_API = "/api/local-asr-assets/download-models";
 const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止生成，可重新开始。";
 const DEFAULT_ASR_MODEL_CATALOG_MAP = buildAsrModelCatalogMap();
 const LOCAL_MODEL_OPTIONS = [
@@ -57,24 +58,24 @@ const LOCAL_MODEL_OPTIONS = [
 const UPLOAD_MODEL_OPTIONS = [
   {
     key: ASR_MODEL_KEYS.sensevoiceServer,
-    title: "SenseVoice Small",
-    subtitle: "先准备模型，再开始生成。",
-    mode: "balanced",
-    note: "模型准备完成后可直接开始生成；模型缓存在当前浏览器。",
+    title: "bottle0.1",
+    subtitle: "快速识别字幕",
+    mode: "fast",
+    note: "固定本地目录。",
   },
   {
     key: FASTER_WHISPER_MODEL,
-    title: "Faster Whisper Medium",
-    subtitle: "先准备模型，再开始生成。",
+    title: "bottle.1.0",
+    subtitle: "识别字幕更精准/耗时加长",
     mode: "fast",
-    note: "模型准备完成后可直接开始生成；模型缓存在服务端。",
-    sourceModelId: "pengzhendong/faster-whisper-medium",
-    deployPath: "/data/modelscope_whisper/faster-whisper-medium",
+    note: "固定本地目录。",
+    sourceModelId: "Systran/faster-distil-whisper-small.en",
+    deployPath: "D:\\3.3-19.01\\asr-test\\models\\faster-distil-small.en",
   },
   {
     key: QWEN_MODEL,
     title: "Qwen ASR Flash",
-    subtitle: "直接开始生成，无需准备模型。",
+    subtitle: "直接开始生成",
     mode: "fast",
     note: "无需准备模型，选中文件后可直接开始。",
   },
@@ -218,8 +219,7 @@ function getUploadModelPriceLabel(item, rates, selectedBalancedModel) {
 
 function mergeCatalogIntoUploadModelMeta(modelKey, catalogMap) {
   const fallback = getUploadModelMeta(modelKey);
-  const actualCatalogKey = modelKey === ASR_MODEL_KEYS.sensevoiceServer ? ASR_MODEL_KEYS.sensevoiceBrowser : modelKey;
-  const catalogItem = getAsrModelCatalogItem(actualCatalogKey, catalogMap);
+  const catalogItem = getAsrModelCatalogItem(modelKey, catalogMap);
   if (!catalogItem) return fallback;
   return {
     ...fallback,
@@ -242,14 +242,17 @@ function getUploadCardActionMeta({
   localWorkerReady,
   localCardBusy,
   localCardDownloaded,
+  sensevoiceModelReady,
+  sensevoiceModelPreparing,
+  sensevoiceModelBusy,
   fasterModelReady,
   fasterModelPreparing,
   fasterModelBusy,
 }) {
-  if (item.mode === "balanced") {
+  if (item.key === ASR_MODEL_KEYS.sensevoiceServer) {
     return {
-      label: localCardDownloaded ? "卸载模型" : localCardBusy ? "准备中" : "准备模型",
-      disabled: !localAsrSupport.supported || !localWorkerReady || uploadActionBusy || localCardBusy,
+      label: sensevoiceModelReady ? "重新准备" : sensevoiceModelPreparing || sensevoiceModelBusy ? "准备中" : "准备模型",
+      disabled: uploadActionBusy || sensevoiceModelBusy || sensevoiceModelPreparing || localTranscribing,
     };
   }
   if (item.key === FASTER_WHISPER_MODEL) {
@@ -269,6 +272,12 @@ function formatDurationLabel(seconds) {
   const minutes = Math.floor(safeSeconds / 60);
   const remainSeconds = safeSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
+}
+
+function formatFileSizeMb(sizeBytes) {
+  const sizeMb = Number(sizeBytes || 0) / (1024 * 1024);
+  if (!Number.isFinite(sizeMb) || sizeMb <= 0) return "0 MB";
+  return `${sizeMb >= 1024 ? (sizeMb / 1024).toFixed(2) + " GB" : sizeMb.toFixed(2) + " MB"}`;
 }
 
 function createAbortError(message) {
@@ -687,6 +696,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [serverModelStateMap, setServerModelStateMap] = useState({});
   const [serverBusyModelKey, setServerBusyModelKey] = useState("");
   const [serverBusyText, setServerBusyText] = useState("");
+  const [downloadableModels, setDownloadableModels] = useState([]);
+  const [downloadableModelsError, setDownloadableModelsError] = useState("");
   const [localModelAdvancedOpen, setLocalModelAdvancedOpen] = useState(false);
   const [restoreBannerMode, setRestoreBannerMode] = useState(RESTORE_BANNER_MODES.NONE);
   const pollingAbortRef = useRef(false);
@@ -1278,6 +1289,30 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }, [accessToken]);
 
   useEffect(() => {
+    let canceled = false;
+    async function loadDownloadableModels() {
+      try {
+        const response = await api(DOWNLOADABLE_MODEL_BUNDLES_API, { method: "GET" }, accessToken);
+        const payload = await parseResponse(response);
+        if (!response.ok) {
+          throw new Error(toErrorText(payload, "加载模型下载列表失败"));
+        }
+        if (canceled) return;
+        setDownloadableModels(Array.isArray(payload?.models) ? payload.models : []);
+        setDownloadableModelsError("");
+      } catch (error) {
+        if (canceled) return;
+        setDownloadableModels([]);
+        setDownloadableModelsError(error instanceof Error && error.message ? error.message : String(error));
+      }
+    }
+    void loadDownloadableModels();
+    return () => {
+      canceled = true;
+    };
+  }, [accessToken]);
+
+  useEffect(() => {
     if (!selectedFastModelNeedsPreparation) return undefined;
     if (!selectedServerModelPreparing) return undefined;
     const timer = setInterval(() => {
@@ -1396,7 +1431,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setStatus(String(saved?.status_text || ""));
     setDurationSec(Number(saved?.duration_seconds || 0) || null);
     setPhase("success");
-    setMode(String(saved?.generation_mode || "").toLowerCase() === "fast" ? "fast" : "balanced");
+    setMode("fast");
     setSelectedUploadModel(getDefaultUploadModelKey(String(saved?.selected_upload_model || configuredDefaultAsrModel)));
     setCoverDataUrl(String(saved?.cover_data_url || ""));
     setCoverWidth(Number(saved?.cover_width || 0));
@@ -2484,7 +2519,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {UPLOAD_MODEL_OPTIONS.map((item) => {
               const selected = selectedUploadModel === item.key;
-              const isSenseVoice = item.mode === "balanced";
+              const isSenseVoice = item.key === ASR_MODEL_KEYS.sensevoiceServer;
               const isFasterWhisper = item.key === FASTER_WHISPER_MODEL;
               const isQwen = item.key === QWEN_MODEL;
               const localCardModelKey = selectedBalancedModel;
@@ -2492,46 +2527,53 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               const localCardState = localModelStateMap[localCardModelKey] || {};
               const localCardDownloaded = ["ready", "cached"].includes(String(localCardState.status || ""));
               const localCardBusy = localBusyModelKey === localCardModelKey;
+              const sensevoiceModelState = serverModelStateMap[item.key] || {};
+              const sensevoiceModelReady = isAsrModelReady(sensevoiceModelState);
+              const sensevoiceModelBusy = serverBusyModelKey === item.key;
+              const sensevoiceModelPreparing = isAsrModelPreparing(sensevoiceModelState);
               const fasterModelState = serverModelStateMap[item.key] || {};
               const fasterModelReady = isAsrModelReady(fasterModelState);
               const fasterModelBusy = serverBusyModelKey === item.key;
               const fasterModelPreparing = isAsrModelPreparing(fasterModelState);
               const localCardStatus = String(localCardState.status || "").trim().toLowerCase();
+              const sensevoiceCardStatus = String(sensevoiceModelState.status || "").trim().toLowerCase();
               const fasterCardStatus = String(fasterModelState.status || "").trim().toLowerCase();
               const cardStatusLabel = isSenseVoice
-                ? getAsrModelStatusLabel(localCardState, { readyLabel: "已就绪", missingLabel: "未下载", loadingLabel: "准备中", errorLabel: "异常", unsupportedLabel: "不可用" })
+                ? getAsrModelStatusLabel(sensevoiceModelState, { readyLabel: "已就绪", missingLabel: "未准备", loadingLabel: "准备中", errorLabel: "异常", unsupportedLabel: "不可用" })
                 : isFasterWhisper
                   ? getAsrModelStatusLabel(fasterModelState, { readyLabel: "已就绪", missingLabel: "未准备", loadingLabel: "准备中", errorLabel: "异常", unsupportedLabel: "不可用" })
                   : getAsrModelStatusLabel({ status: "ready", downloadRequired: false }, { readyLabel: "可用" });
               const cardPriceLabel = getUploadModelPriceLabel(item, billingRates, selectedBalancedModel);
-              const highlightStatus = isSenseVoice ? localCardDownloaded : isFasterWhisper ? fasterModelReady : true;
+              const highlightStatus = isSenseVoice ? sensevoiceModelReady : isFasterWhisper ? fasterModelReady : true;
               const modelCardHasError = isSenseVoice
-                ? ["error", "unsupported"].includes(String(localCardState.status || "").trim().toLowerCase())
+                ? Boolean(sensevoiceModelState.lastError) || ["error", "unsupported"].includes(sensevoiceCardStatus)
                 : Boolean(fasterModelState.lastError) || String(fasterModelState.status || "").trim().toLowerCase() === "error";
               const modelCardTone = getUploadModelTone({
                 selected,
                 ready: highlightStatus,
-                busy: (isSenseVoice && localCardBusy) || (isFasterWhisper && (fasterModelBusy || fasterModelPreparing)),
+                busy: (isSenseVoice && (sensevoiceModelBusy || sensevoiceModelPreparing)) || (isFasterWhisper && (fasterModelBusy || fasterModelPreparing)),
                 error: modelCardHasError,
               });
               const modelCardToneStyles = getUploadToneStyles(modelCardTone);
               const modelBadgeToneStyles = getUploadToneStyles(highlightStatus ? "success" : modelCardTone === "running" ? "running" : "idle");
               const localCardProgress = Number(localModelVisualProgressMap[localCardModelKey]);
               const hasNumericLocalProgress = Number.isFinite(localCardProgress);
-              const showCardProgress = isSenseVoice ? localCardStatus === "loading" : isFasterWhisper ? fasterModelPreparing || fasterModelBusy : false;
-              const cardProgressValue = isSenseVoice && hasNumericLocalProgress ? clampPercent(localCardProgress) : null;
-              const cardProgressText = cardProgressValue != null ? `准备进度 ${cardProgressValue}%` : String(serverBusyText || fasterModelState.message || "准备中");
-              const cardErrorText = isSenseVoice ? String(localCardState.error || "") : isFasterWhisper ? String(fasterModelState.lastError || "") : "";
+              const showCardProgress = isSenseVoice
+                ? sensevoiceModelPreparing || sensevoiceModelBusy
+                : isFasterWhisper
+                  ? fasterModelPreparing || fasterModelBusy
+                  : false;
+              const cardProgressValue = isSenseVoice && hasNumericLocalProgress && localCardBusy ? clampPercent(localCardProgress) : null;
+              const cardProgressText = cardProgressValue != null ? `准备进度 ${cardProgressValue}%` : String(serverBusyText || (isSenseVoice ? sensevoiceModelState.message : fasterModelState.message) || "准备中");
+              const cardErrorText = isSenseVoice ? String(sensevoiceModelState.lastError || "") : isFasterWhisper ? String(fasterModelState.lastError || "") : "";
               const cardStatusText = isSenseVoice
                 ? sanitizeUserFacingText(
-                    localCardState.message ||
-                      (localCardDownloaded
-                        ? "当前浏览器已准备好，可直接生成。"
-                        : localCardStatus === "loading"
-                          ? "正在准备当前浏览器中的模型缓存。"
-                          : localAsrSupport.supported
-                            ? String(uploadCardMeta.note || uploadCardMeta.subtitle || "")
-                            : localAsrSupport.reason),
+                    sensevoiceModelState.message ||
+                      (sensevoiceModelReady
+                        ? "服务端模型已就绪，可直接生成。"
+                        : sensevoiceCardStatus === "error"
+                          ? "服务端模型暂未就绪，请重新准备。"
+                          : String(uploadCardMeta.note || uploadCardMeta.subtitle || "")),
                   )
                 : isFasterWhisper
                   ? sanitizeUserFacingText(
@@ -2551,12 +2593,15 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 localWorkerReady,
                 localCardBusy,
                 localCardDownloaded,
+                sensevoiceModelReady,
+                sensevoiceModelPreparing,
+                sensevoiceModelBusy,
                 fasterModelReady,
                 fasterModelPreparing,
                 fasterModelBusy,
               });
               const showReadyIcon = !isQwen && highlightStatus;
-              const showLoadingIcon = !isQwen && ((isSenseVoice && localCardBusy) || (isFasterWhisper && (fasterModelBusy || fasterModelPreparing)));
+              const showLoadingIcon = !isQwen && ((isSenseVoice && (sensevoiceModelBusy || sensevoiceModelPreparing)) || (isFasterWhisper && (fasterModelBusy || fasterModelPreparing)));
 
               return (
                 <div
@@ -2626,7 +2671,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                       onClick={(event) => {
                         event.stopPropagation();
                         if (isSenseVoice) {
-                          void (localCardDownloaded ? handleLocalModelRemove(localCardModelKey) : handleLocalModelDownload(localCardModelKey));
+                          void handleServerModelPrepare(item.key);
                           return;
                         }
                         if (isFasterWhisper) {
@@ -2643,6 +2688,49 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               );
             })}
           </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <p className="text-base font-semibold text-foreground">下载本地模型</p>
+            <p className="text-sm text-muted-foreground">下载的是当前网站使用的同一份原始模型目录打包结果。</p>
+          </div>
+          {downloadableModelsError ? <p className="text-sm text-destructive">{downloadableModelsError}</p> : null}
+          {downloadableModels.length ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {downloadableModels.map((item) => (
+                <div key={String(item.model_key || "")} className="rounded-2xl border bg-background/80 p-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-foreground">{String(item.display_name || "")}</p>
+                    <p className="text-xs text-muted-foreground">{String(item.subtitle || "")}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {Number(item.file_count || 0)} 个文件，约 {formatFileSizeMb(item.total_size_bytes)}
+                    </p>
+                  </div>
+                  <div className="mt-3 rounded-xl border bg-muted/10 p-3">
+                    <p className="text-xs text-muted-foreground break-all">{String(item.bundle_dir || "")}</p>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button asChild type="button" variant="outline" disabled={!item.available}>
+                      <a href={String(item.download_url || "#")} download>
+                        下载整包 zip
+                      </a>
+                    </Button>
+                  </div>
+                  {Array.isArray(item.files) && item.files.length ? (
+                    <div className="mt-3 space-y-1 rounded-xl border border-dashed bg-muted/10 p-3">
+                      {item.files.slice(0, 5).map((fileItem) => (
+                        <p key={String(fileItem.name || "")} className="text-xs text-muted-foreground break-all">
+                          {String(fileItem.name || "")}
+                        </p>
+                      ))}
+                      {item.files.length > 5 ? <p className="text-xs text-muted-foreground">...</p> : null}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         {showMediaPreview ? (

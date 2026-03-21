@@ -1,0 +1,699 @@
+{
+  "health": {
+    "ok": true,
+    "service": "zeabur3.3-min-asr",
+    "ready": true
+  },
+  "ready": {
+    "ok": true,
+    "service": "zeabur3.3-min-asr",
+    "status": {
+      "db_ready": true,
+      "db_error": "",
+      "dashscope_configured": true,
+      "ffmpeg_ready": true,
+      "ffprobe_ready": true,
+      "media_detail": "",
+      "admin_bootstrap_ok": true,
+      "admin_bootstrap_error": "",
+      "checked_at": "2026-03-20T18:39:03.067576+00:00"
+    }
+  },
+  "register": {
+    "ok": true,
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1IiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc3NDAzMTk0MywiZXhwIjoxNzc0MDM5MTQzfQ.xkhP6FPI5KyZkk6hkxl-W5gFHbwqbTbiGhS4cKdh_o0",
+    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1IiwidHlwZSI6InJlZnJlc2giLCJpYXQiOjE3NzQwMzE5NDMsImV4cCI6MTc3NTMyNzk0M30.dQuMDqgiUixcIohEQFlouOp-ESQJyA6A0I6AOhv4s_8",
+    "token_type": "bearer",
+    "user": {
+      "id": 5,
+      "email": "zk_key_paid_1774031943@example.com",
+      "created_at": "2026-03-21T02:39:03.107992+08:00"
+    }
+  },
+  "asr_models": {
+    "ok": true,
+    "models": [
+      {
+        "ok": true,
+        "model_key": "sensevoice-small",
+        "display_name": "bottle0.1",
+        "subtitle": "快速识别字幕",
+        "note": "Fixed local bundle path.",
+        "runtime_kind": "server_local",
+        "runtime_label": "Server Local",
+        "prepare_mode": "auto_on_demand",
+        "cache_scope": "server",
+        "supports_upload": true,
+        "supports_preview": false,
+        "supports_transcribe_api": true,
+        "source_model_id": "iic/SenseVoiceSmall",
+        "deploy_path": "D:\\3.3-19.01\\asr-test\\models\\SenseVoiceSmall",
+        "status": "ready",
+        "available": true,
+        "download_required": false,
+        "preparing": false,
+        "cached": true,
+        "message": "Local SenseVoice bundle is ready.",
+        "last_error": "",
+        "model_dir": "D:\\3.3-19.01\\asr-test\\models\\SenseVoiceSmall",
+        "missing_files": [],
+        "actions": [
+          {
+            "key": "prepare",
+            "label": "Prepare",
+            "enabled": true,
+            "primary": false
+          },
+          {
+            "key": "verify",
+            "label": "Verify",
+            "enabled": true,
+            "primary": false
+          }
+        ]
+      },
+      {
+        "ok": true,
+        "model_key": "faster-whisper-medium",
+        "display_name": "bottle.1.0",
+        "subtitle": "识别字幕更精准/耗时加长",
+        "note": "Fixed local bundle path.",
+        "runtime_kind": "server_cached",
+        "runtime_label": "Server Cached",
+        "prepare_mode": "auto_on_demand",
+        "cache_scope": "server",
+        "supports_upload": true,
+        "supports_preview": false,
+        "supports_transcribe_api": true,
+        "source_model_id": "Systran/faster-distil-whisper-small.en",
+        "deploy_path": "D:\\3.3-19.01\\asr-test\\models\\faster-distil-small.en",
+        "status": "ready",
+        "available": true,
+        "download_required": false,
+        "preparing": false,
+        "cached": true,
+        "message": "Local model bundle is ready.",
+        "last_error": "",
+        "model_dir": "D:\\3.3-19.01\\asr-test\\models\\faster-distil-small.en",
+        "missing_files": [],
+        "actions": [
+          {
+            "key": "prepare",
+            "label": "Prepare",
+            "enabled": true,
+            "primary": false
+          },
+          {
+            "key": "verify",
+            "label": "Verify",
+            "enabled": true,
+            "primary": false
+          }
+        ]
+      },
+      {
+        "ok": true,
+        "model_key": "qwen3-asr-flash-filetrans",
+        "display_name": "Qwen ASR Flash",
+        "subtitle": "直接开始生成",
+        "note": "Cloud transcription route.",
+        "runtime_kind": "cloud_api",
+        "runtime_label": "Cloud API",
+        "prepare_mode": "none",
+        "cache_scope": "cloud",
+        "supports_upload": true,
+        "supports_preview": false,
+        "supports_transcribe_api": true,
+        "source_model_id": "",
+        "deploy_path": "",
+        "status": "ready",
+        "available": true,
+        "download_required": false,
+        "preparing": false,
+        "cached": false,
+        "message": "Cloud API is ready.",
+        "last_error": "",
+        "model_dir": "",
+        "missing_files": [],
+        "actions": [
+          {
+            "key": "verify",
+            "label": "Verify",
+            "enabled": true,
+            "primary": false
+          }
+        ]
+      }
+    ]
+  },
+  "tasks": {
+    "sensevoice-small": {
+      "create_status_code": 200,
+      "create_body": {
+        "ok": true,
+        "task_id": "lesson_task_2b8132dde8a542beb489f8c1d4249ca4",
+        "requested_asr_model": "sensevoice-small",
+        "effective_asr_model": "sensevoice-small",
+        "model_fallback_applied": false,
+        "model_fallback_reason": ""
+      },
+      "elapsed_seconds": 220.53,
+      "polls": [
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 1/1",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 1/1",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 1/1",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 1/1",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 1/1",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 1/1",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 1/1",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 1/1",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 1/1",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 1/1",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 1/1",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 1/1",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 1/1",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 1/1",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "failed",
+          "overall_percent": 48,
+          "current_text": "课程生成失败",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": "课程生成失败"
+        }
+      ],
+      "final": {
+        "ok": true,
+        "task_id": "lesson_task_2b8132dde8a542beb489f8c1d4249ca4",
+        "requested_asr_model": "sensevoice-small",
+        "effective_asr_model": "sensevoice-small",
+        "model_fallback_applied": false,
+        "model_fallback_reason": "",
+        "completion_kind": "full",
+        "result_kind": "full_success",
+        "result_label": "完整成功",
+        "result_message": "课程已生成完成",
+        "partial_failure_stage": "",
+        "partial_failure_code": "",
+        "partial_failure_message": "",
+        "status": "failed",
+        "overall_percent": 48,
+        "current_text": "课程生成失败",
+        "stages": [
+          {
+            "key": "convert_audio",
+            "label": "转换音频格式",
+            "status": "completed"
+          },
+          {
+            "key": "asr_transcribe",
+            "label": "ASR转写字幕",
+            "status": "completed"
+          },
+          {
+            "key": "build_lesson",
+            "label": "生成课程结构",
+            "status": "pending"
+          },
+          {
+            "key": "translate_zh",
+            "label": "翻译中文字幕",
+            "status": "pending"
+          },
+          {
+            "key": "write_lesson",
+            "label": "写入课程",
+            "status": "pending"
+          }
+        ],
+        "counters": {
+          "asr_done": 1,
+          "asr_estimated": 1,
+          "translate_done": 0,
+          "translate_total": 0,
+          "segment_done": 1,
+          "segment_total": 1
+        },
+        "lesson": null,
+        "subtitle_cache_seed": null,
+        "translation_debug": null,
+        "failure_debug": {
+          "failed_stage": "build_lesson",
+          "exception_type": "PendingRollbackError",
+          "detail_excerpt": "This Session's transaction has been rolled back due to a previous exception during flush. To begin a new transaction with this Session, first issue Session.rollback(). Original exception was: (sqlite3.OperationalError) table main.translation_request_logs has no column named raw_request_text\n[SQL: INSERT INTO main.translation_request_logs (trace_id, task_id, lesson_id, user_id, sentence_idx, attempt_no, provider, model_name, base_url, input_text_preview, provider_request_id, status_code, finish_reason, prompt_tokens, completion_tokens, total_tokens, success, error_code, error_message, raw_request_text, raw_response_text, raw_error_text, started_at, finished_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id]\n[parameters: ('f28f71dfecf14ca7a6719a5899ff0f05', 'lesson_task_2b8132dde8a542beb489f8c1d4249ca4', 5, 5, 0, 1, 'dashscope_compatible', 'qwen-mt-flash', 'https://dashscope.aliyuncs.com/compatible-mode/v1', \"Okay, the truth. | I sometimes feel like you don't like me.ow makes'Gloria right I'm really angry at Phil let's respect the process. | Gloria I don't know why you think don't like ...\", '7857562a-b008-9d22-bfbd-d6ed92",
+          "traceback_excerpt": "Traceback (most recent call last):\n  File \"D:\\3.3-19.01\\app\\services\\lesson_command_service.py\", line 193, in run_lesson_generation_task\n    lesson = LessonService.generate_from_saved_file(\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\3.3-19.01\\app\\services\\lesson_service.py\", line 2387, in generate_from_saved_file\n    consume_points(\n  File \"D:\\3.3-19.01\\app\\services\\billing.py\", line 1352, in consume_points\n    account = get_or_create_wallet_account(db, user_id, for_update=True)\n              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\3.3-19.01\\app\\services\\billing.py\", line 1173, in get_or_create_wallet_account\n    account = db.scalar(stmt)\n              ^^^^^^^^^^^^^^^\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\sqlalchemy\\orm\\session.py\", line 2413, in scalar\n    return self._execute_internal(\n           ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\sqlalchemy\\orm\\session.py\", line 2241, in _execute_internal\n    conn = self._connection_for_bind(bind)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\sqlalchemy\\orm\\session.py\", line 2110, in _connection_for_bind\n    return trans._connection_for_bind(engine, execution_options)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<string>\", line 2, in _connection_for_bind\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\sqlalchemy\\orm\\state_changes.py\", line 103, in _go\n    self._raise_for_prerequisite_state(fn.__name__, current_state)\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\sqlalchemy\\orm\\session.py\", line 973, in _raise_for_prerequisite_state\n    raise sa_exc.PendingRollbackError(\nsqlalchemy.exc.PendingRollbackError: This Session's transaction has been rolled back due to a previous exception during flush. To begin a new transaction with this Session, first issue Session.rollback(). Original exception was: (sqlite3.OperationalError) table main.translation_request_logs has no column named raw_request_text\n[SQL: INSERT INTO main.translation_request_logs (trace_id, task_id, lesson_id, user_id, sentence_idx, attempt_no, provider, model_name, base_url, input_text_preview, provider_request_id, status_code, finish_reason, prompt_tokens, completion_tokens, total_tokens, success, error_code, error_message, raw_request_text, raw_response_text, raw_error_text, started_at, finished_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id]\n[parameters: ('f28f71dfecf14ca7a6719a5899ff0f05', 'lesson_task_2b8132dde8a542beb489f8c1d4249ca4', 5, 5, 0, 1, 'dashscope_compatible', 'qwen-mt-flash', 'https://dashscope.aliyuncs.com/compatible-mode/v1', \"Okay, the truth. | I sometimes feel like you don't like me.ow makes'Gloria right I'm really angry at Phil let's respect the process. | Gloria I don't know why you think don't like ...\", '7857562a-b008-9d22-bfbd-d6ed920fb798', 200, 'stop', 602, 627, 1229, 0, 'INVALID_BATCH_COUNT', 'expected=30 actual=26', '{\\n  \"provider\": \"dashscope_compatible\",\\n  \"base_url\": \"https://dashscope.aliyuncs.com/compatible-mode/v1\",\\n  \"request\": {\\n    \"model\": \"qwen-mt-f ... (2675 characters truncated) ... eeds a little time.\\\\\", \\\\\"trust me should\\'be the most loyal youve ever had.\\\\\"]\"\\n      }\\n    ],\\n    \"temperature\": 0,\\n    \"timeout\": 20\\n  }\\n}', '{\\n  \"id\": \"chatcmpl-7857562a-b008-9d22-bfbd-d6ed920fb798\",\\n  \"choices\": [\\n    {\\n      \"finish_reason\": \"stop\",\\n      \"index\": 0,\\n      \"logprob ... (1601 characters truncated) ... okens\": 627,\\n    \"prompt_tokens\": 602,\\n    \"total_tokens\": 1229,\\n    \"completion_tokens_details\": null,\\n    \"prompt_tokens_details\": null\\n  }\\n}', '', '2026-03-21 02:39:41.779886', '2026-03-21 02:39:44.045050', '2026-03-21 02:39:44.…",
+          "last_progress_text": "识别完成 1/1",
+          "stages": [
+            {
+              "key": "convert_audio",
+              "label": "转换音频格式",
+              "status": "completed"
+            },
+            {
+              "key": "asr_transcribe",
+              "label": "ASR转写字幕",
+              "status": "completed"
+            },
+            {
+              "key": "build_lesson",
+              "label": "生成课程结构",
+              "status": "pending"
+            },
+            {
+              "key": "translate_zh",
+              "label": "翻译中文字幕",
+              "status": "pending"
+            },
+            {
+              "key": "write_lesson",
+              "label": "写入课程",
+              "status": "pending"
+            }
+          ],
+          "counters": {
+            "asr_done": 1,
+            "asr_estimated": 1,
+            "translate_done": 0,
+            "translate_total": 0,
+            "segment_done": 1,
+            "segment_total": 1
+          },
+          "translation_debug": null,
+          "failed_at": "2026-03-21T02:42:43.665837"
+        },
+        "error_code": "INTERNAL_ERROR",
+        "message": "课程生成失败",
+        "resume_available": true,
+        "resume_stage": "build_lesson",
+        "artifact_expires_at": "2026-03-22T02:42:43.665837",
+        "control_action": "",
+        "paused_at": null,
+        "terminated_at": null,
+        "can_pause": false,
+        "can_terminate": false
+      }
+    },
+    "faster-whisper-medium": {
+      "create_status_code": 200,
+      "create_body": {
+        "ok": true,
+        "task_id": "lesson_task_55cb5d0f26e6466bb1b66ad3fd364ef5",
+        "requested_asr_model": "faster-whisper-medium",
+        "effective_asr_model": "faster-whisper-medium",
+        "model_fallback_applied": false,
+        "model_fallback_reason": ""
+      },
+      "elapsed_seconds": 752.02,
+      "polls": [
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 2/2",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 2/2",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 2/2",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 2/2",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 2/2",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 2/2",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 2/2",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 2/2",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 2/2",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 2/2",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 2/2",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 2/2",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 2/2",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "running",
+          "overall_percent": 48,
+          "current_text": "识别完成 2/2",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": ""
+        },
+        {
+          "status": "failed",
+          "overall_percent": 48,
+          "current_text": "课程生成失败",
+          "result_kind": "full_success",
+          "completion_kind": "full",
+          "partial_failure_stage": "",
+          "partial_failure_code": "",
+          "message": "课程生成失败"
+        }
+      ],
+      "final": {
+        "ok": true,
+        "task_id": "lesson_task_55cb5d0f26e6466bb1b66ad3fd364ef5",
+        "requested_asr_model": "faster-whisper-medium",
+        "effective_asr_model": "faster-whisper-medium",
+        "model_fallback_applied": false,
+        "model_fallback_reason": "",
+        "completion_kind": "full",
+        "result_kind": "full_success",
+        "result_label": "完整成功",
+        "result_message": "课程已生成完成",
+        "partial_failure_stage": "",
+        "partial_failure_code": "",
+        "partial_failure_message": "",
+        "status": "failed",
+        "overall_percent": 48,
+        "current_text": "课程生成失败",
+        "stages": [
+          {
+            "key": "convert_audio",
+            "label": "转换音频格式",
+            "status": "completed"
+          },
+          {
+            "key": "asr_transcribe",
+            "label": "ASR转写字幕",
+            "status": "completed"
+          },
+          {
+            "key": "build_lesson",
+            "label": "生成课程结构",
+            "status": "pending"
+          },
+          {
+            "key": "translate_zh",
+            "label": "翻译中文字幕",
+            "status": "pending"
+          },
+          {
+            "key": "write_lesson",
+            "label": "写入课程",
+            "status": "pending"
+          }
+        ],
+        "counters": {
+          "asr_done": 2,
+          "asr_estimated": 2,
+          "translate_done": 0,
+          "translate_total": 0,
+          "segment_done": 2,
+          "segment_total": 2
+        },
+        "lesson": null,
+        "subtitle_cache_seed": null,
+        "translation_debug": null,
+        "failure_debug": {
+          "failed_stage": "build_lesson",
+          "exception_type": "PendingRollbackError",
+          "detail_excerpt": "This Session's transaction has been rolled back due to a previous exception during flush. To begin a new transaction with this Session, first issue Session.rollback(). Original exception was: (sqlite3.OperationalError) table main.translation_request_logs has no column named raw_request_text\n[SQL: INSERT INTO main.translation_request_logs (trace_id, task_id, lesson_id, user_id, sentence_idx, attempt_no, provider, model_name, base_url, input_text_preview, provider_request_id, status_code, finish_reason, prompt_tokens, completion_tokens, total_tokens, success, error_code, error_message, raw_request_text, raw_response_text, raw_error_text, started_at, finished_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id]\n[parameters: ('0525bc382c9e4dfa94b6febe80458a43', 'lesson_task_55cb5d0f26e6466bb1b66ad3fd364ef5', 5, 5, 0, 1, 'dashscope_compatible', 'qwen-mt-flash', 'https://dashscope.aliyuncs.com/compatible-mode/v1', \"Okay, the truth? | I sometimes feel like you don't like me. | Powerful, powerful stuff. | Claire, tell us how that makes you feel. | Right now I'm feeling a lot of anger. | No, no,...\", '92e3c070-d1cc-93a3-ad06-6aac70",
+          "traceback_excerpt": "Traceback (most recent call last):\n  File \"D:\\3.3-19.01\\app\\services\\lesson_command_service.py\", line 193, in run_lesson_generation_task\n    lesson = LessonService.generate_from_saved_file(\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\3.3-19.01\\app\\services\\lesson_service.py\", line 2375, in generate_from_saved_file\n    settle_reserved_points(\n  File \"D:\\3.3-19.01\\app\\services\\billing.py\", line 1460, in settle_reserved_points\n    account = get_or_create_wallet_account(db, user_id, for_update=True)\n              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\3.3-19.01\\app\\services\\billing.py\", line 1173, in get_or_create_wallet_account\n    account = db.scalar(stmt)\n              ^^^^^^^^^^^^^^^\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\sqlalchemy\\orm\\session.py\", line 2413, in scalar\n    return self._execute_internal(\n           ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\sqlalchemy\\orm\\session.py\", line 2241, in _execute_internal\n    conn = self._connection_for_bind(bind)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\sqlalchemy\\orm\\session.py\", line 2110, in _connection_for_bind\n    return trans._connection_for_bind(engine, execution_options)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<string>\", line 2, in _connection_for_bind\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\sqlalchemy\\orm\\state_changes.py\", line 103, in _go\n    self._raise_for_prerequisite_state(fn.__name__, current_state)\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\sqlalchemy\\orm\\session.py\", line 973, in _raise_for_prerequisite_state\n    raise sa_exc.PendingRollbackError(\nsqlalchemy.exc.PendingRollbackError: This Session's transaction has been rolled back due to a previous exception during flush. To begin a new transaction with this Session, first issue Session.rollback(). Original exception was: (sqlite3.OperationalError) table main.translation_request_logs has no column named raw_request_text\n[SQL: INSERT INTO main.translation_request_logs (trace_id, task_id, lesson_id, user_id, sentence_idx, attempt_no, provider, model_name, base_url, input_text_preview, provider_request_id, status_code, finish_reason, prompt_tokens, completion_tokens, total_tokens, success, error_code, error_message, raw_request_text, raw_response_text, raw_error_text, started_at, finished_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id]\n[parameters: ('0525bc382c9e4dfa94b6febe80458a43', 'lesson_task_55cb5d0f26e6466bb1b66ad3fd364ef5', 5, 5, 0, 1, 'dashscope_compatible', 'qwen-mt-flash', 'https://dashscope.aliyuncs.com/compatible-mode/v1', \"Okay, the truth? | I sometimes feel like you don't like me. | Powerful, powerful stuff. | Claire, tell us how that makes you feel. | Right now I'm feeling a lot of anger. | No, no,...\", '92e3c070-d1cc-93a3-ad06-6aac70a56c62', 200, 'stop', 853, 868, 1721, 1, None, '', '{\\n  \"provider\": \"dashscope_compatible\",\\n  \"base_url\": \"https://dashscope.aliyuncs.com/compatible-mode/v1\",\\n  \"request\": {\\n    \"model\": \"qwen-mt-f ... (3554 characters truncated) ... , dad?\\\\\", \\\\\"It was a year ago.\\\\\", \\\\\"And it was a natural question to ask.\\\\\"]\"\\n      }\\n    ],\\n    \"temperature\": 0,\\n    \"timeout\": 20\\n  }\\n}', '{\\n  \"id\": \"chatcmpl-92e3c070-d1cc-93a3-ad06-6aac70a56c62\",\\n  \"choices\": [\\n    {\\n      \"finish_reason\": \"stop\",\\n      \"index\": 0,\\n      \"logprob ... (2081 characters truncated) ... okens\": 868,\\n    \"prompt_tokens\": 853,\\n    \"total_tokens\": 1721,\\n    \"completion_tokens_details\": null,\\n    \"prompt_tokens_details\": null\\n  }\\n}', '', '2026-03-21 02:43:19.634687', '2026-03-21 02:43:22.566374', '2026-03-21 02:43:22.566374')]\n(Background …",
+          "last_progress_text": "识别完成 2/2",
+          "stages": [
+            {
+              "key": "convert_audio",
+              "label": "转换音频格式",
+              "status": "completed"
+            },
+            {
+              "key": "asr_transcribe",
+              "label": "ASR转写字幕",
+              "status": "completed"
+            },
+            {
+              "key": "build_lesson",
+              "label": "生成课程结构",
+              "status": "pending"
+            },
+            {
+              "key": "translate_zh",
+              "label": "翻译中文字幕",
+              "status": "pending"
+            },
+            {
+              "key": "write_lesson",
+              "label": "写入课程",
+              "status": "pending"
+            }
+          ],
+          "counters": {
+            "asr_done": 2,
+            "asr_estimated": 2,
+            "translate_done": 0,
+            "translate_total": 0,
+            "segment_done": 2,
+            "segment_total": 2
+          },
+          "translation_debug": null,
+          "failed_at": "2026-03-21T02:55:17.436741"
+        },
+        "error_code": "INTERNAL_ERROR",
+        "message": "课程生成失败",
+        "resume_available": true,
+        "resume_stage": "build_lesson",
+        "artifact_expires_at": "2026-03-22T02:55:17.437751",
+        "control_action": "",
+        "paused_at": null,
+        "terminated_at": null,
+        "can_pause": false,
+        "can_terminate": false
+      }
+    }
+  }
+}

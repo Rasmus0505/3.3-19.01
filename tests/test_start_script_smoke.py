@@ -15,7 +15,7 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
 
 from app.db import APP_SCHEMA, BUSINESS_TABLES, create_database_engine
-from app.db.migration_bootstrap import _repair_redundant_linear_version_rows
+from app.db.migration_bootstrap import _repair_redundant_linear_version_rows, run_startup_migration
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -360,3 +360,26 @@ def test_repair_redundant_linear_version_rows_skips_when_head_missing(tmp_path):
 
     assert repaired is False
     assert rows == sorted(ancestor_rows)
+
+
+def test_run_startup_migration_retries_transient_failures(tmp_path, monkeypatch):
+    database_url = f"sqlite:///{(tmp_path / 'retry-bootstrap.db').as_posix()}"
+    attempts = {"count": 0}
+
+    def flaky_upgrade(_repo_root, _alembic_config):
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            raise RuntimeError("could not connect to server: Connection refused")
+
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("AUTO_MIGRATE_ON_START", "1")
+    monkeypatch.setenv("AUTO_MIGRATE_CONTINUE_ON_FAILURE", "0")
+    monkeypatch.setenv("AUTO_MIGRATE_MAX_ATTEMPTS", "3")
+    monkeypatch.setenv("AUTO_MIGRATE_RETRY_INTERVAL_SECONDS", "1")
+    monkeypatch.setattr("app.db.migration_bootstrap._run_alembic_upgrade", flaky_upgrade)
+    monkeypatch.setattr("app.db.migration_bootstrap.time.sleep", lambda _seconds: None)
+
+    result = run_startup_migration()
+
+    assert result.succeeded is True
+    assert attempts["count"] == 3

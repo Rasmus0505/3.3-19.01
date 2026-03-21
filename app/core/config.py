@@ -9,6 +9,7 @@ SERVICE_NAME = "zeabur3.3-min-asr"
 REQUEST_TIMEOUT_SECONDS = 480
 UPLOAD_MAX_BYTES = 200 * 1024 * 1024
 APP_DIR = Path(__file__).resolve().parent.parent
+PROJECT_DIR = APP_DIR.parent
 STATIC_DIR = APP_DIR / "static"
 
 BASE_TMP_DIR = Path(os.getenv("TMP_WORK_DIR", "/tmp/zeabur3.3"))
@@ -23,9 +24,15 @@ def _default_persistent_data_dir() -> Path:
 
 
 def _default_faster_whisper_model_dir() -> Path:
-    if os.name == "nt":
-        return APP_DIR.parent / "modelscope_whisper" / "faster-whisper-medium"
-    return Path("/data") / "modelscope_whisper" / "faster-whisper-medium"
+    return _default_asr_bundle_root() / "faster-distil-small.en"
+
+
+def _default_sensevoice_model_dir() -> Path:
+    return _default_asr_bundle_root() / "SenseVoiceSmall"
+
+
+def _default_asr_bundle_root() -> Path:
+    return PROJECT_DIR / "asr-test" / "models"
 
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "").strip()
 LESSON_DEFAULT_ASR_MODEL = os.getenv("LESSON_DEFAULT_ASR_MODEL", "sensevoice-small").strip()
@@ -70,7 +77,16 @@ MT_RETRY_MAX_ATTEMPTS = _get_env_int("MT_RETRY_MAX_ATTEMPTS", 4)
 PERSISTENT_DATA_DIR = Path(
     os.getenv("PERSISTENT_DATA_DIR", str(_default_persistent_data_dir())).strip() or str(_default_persistent_data_dir())
 )
-FASTER_WHISPER_MODELSCOPE_MODEL_ID = os.getenv("FASTER_WHISPER_MODELSCOPE_MODEL_ID", "pengzhendong/faster-whisper-medium").strip() or "pengzhendong/faster-whisper-medium"
+ASR_BUNDLE_ROOT_DIR = Path(
+    os.getenv("ASR_BUNDLE_ROOT_DIR", str(_default_asr_bundle_root())).strip() or str(_default_asr_bundle_root())
+)
+SENSEVOICE_MODEL_DIR = Path(
+    os.getenv("SENSEVOICE_MODEL_DIR", str(_default_sensevoice_model_dir())).strip() or str(_default_sensevoice_model_dir())
+)
+FASTER_WHISPER_MODELSCOPE_MODEL_ID = (
+    os.getenv("FASTER_WHISPER_MODELSCOPE_MODEL_ID", "Systran/faster-distil-whisper-small.en").strip()
+    or "Systran/faster-distil-whisper-small.en"
+)
 FASTER_WHISPER_MODEL_DIR = Path(
     os.getenv("FASTER_WHISPER_MODEL_DIR", str(_default_faster_whisper_model_dir())).strip() or str(_default_faster_whisper_model_dir())
 )
