@@ -3,6 +3,7 @@ uvicorn==0.34.0
 dashscope==1.25.11
 faster-whisper==1.2.1
 funasr==1.2.6
+torch==2.10.0
 modelscope==1.35.0
 requests==2.32.3
 python-multipart==0.0.20

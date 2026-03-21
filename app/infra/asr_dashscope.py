@@ -207,7 +207,7 @@ def _transcribe_audio_file_with_qwen(
     if task_status_code >= 400:
         raise AsrError(
             "ASR_TASK_CREATE_FAILED",
-            "鍒涘缓 ASR 浠诲姟澶辫触",
+            "创建 ASR 任务失败",
             json.dumps(
                 {
                     "status_code": task_status_code,

@@ -884,46 +884,27 @@ def transcribe_audio_file_with_faster_whisper(
         snapshot.vad_filter,
         snapshot.condition_on_previous_text,
     )
-    try:
-        segments_iter, info = _transcribe_with_model_snapshot(audio_path, snapshot)
-    except Exception as exc:
-        if not _can_retry_on_cpu(snapshot, exc):
-            waiting_stop.set()
-            waiting_thread.join(timeout=0.2)
-            raise
-        fallback_snapshot = _cpu_retry_snapshot(snapshot)
-        logger.warning(
-            "[DEBUG] faster_whisper.cuda_runtime_fallback audio_path=%s requested_device=%s requested_compute_type=%s detail=%s fallback_device=%s fallback_compute_type=%s",
-            audio_path,
-            snapshot.resolved_device,
-            snapshot.resolved_compute_type,
-            str(exc)[:400],
-            fallback_snapshot.resolved_device,
-            fallback_snapshot.resolved_compute_type,
+
+    def _duration_hint_from_info(info_obj: Any) -> float:
+        return max(
+            0.0,
+            float(getattr(info_obj, "duration_after_vad", 0) or 0),
+            float(getattr(info_obj, "duration", 0) or 0),
         )
-        _clear_cached_model()
-        effective_snapshot = fallback_snapshot
-        try:
-            segments_iter, info = _transcribe_with_model_snapshot(audio_path, fallback_snapshot)
-        except Exception:
-            waiting_stop.set()
-            waiting_thread.join(timeout=0.2)
-            raise
-    duration_hint_seconds = max(
-        0.0,
-        float(getattr(info, "duration_after_vad", 0) or 0),
-        float(getattr(info, "duration", 0) or 0),
-    )
-    with progress_state_lock:
-        progress_state["duration_hint_seconds"] = duration_hint_seconds
 
-    transcript_words: list[dict[str, Any]] = []
-    transcript_sentences: list[dict[str, Any]] = []
-    preview_parts: list[str] = []
-    last_end_ms = 0
-    segment_done = 0
+    def _set_duration_hint(info_obj: Any) -> float:
+        duration_hint_seconds = _duration_hint_from_info(info_obj)
+        with progress_state_lock:
+            progress_state["duration_hint_seconds"] = duration_hint_seconds
+        return duration_hint_seconds
 
-    try:
+    def _consume_segments(segments_iter: Any, *, duration_hint_seconds: float) -> dict[str, Any]:
+        transcript_words: list[dict[str, Any]] = []
+        transcript_sentences: list[dict[str, Any]] = []
+        preview_parts: list[str] = []
+        last_end_ms = 0
+        segment_done = 0
+
         for segment in segments_iter:
             text = str(getattr(segment, "text", "") or "").strip()
             begin_ms = _seconds_to_ms(getattr(segment, "start", 0))
@@ -973,10 +954,78 @@ def transcribe_audio_file_with_faster_whisper(
                 sentence_payload["words"] = words_payload
             transcript_sentences.append(sentence_payload)
             preview_parts.append(text)
+
+        return {
+            "transcript_words": transcript_words,
+            "transcript_sentences": transcript_sentences,
+            "preview_text": " ".join(preview_parts).strip(),
+            "last_end_ms": last_end_ms,
+            "segment_count": segment_done,
+        }
+
+    try:
+        segments_iter, info = _transcribe_with_model_snapshot(audio_path, snapshot)
+    except Exception as exc:
+        if not _can_retry_on_cpu(snapshot, exc):
+            waiting_stop.set()
+            waiting_thread.join(timeout=0.2)
+            raise
+        fallback_snapshot = _cpu_retry_snapshot(snapshot)
+        logger.warning(
+            "[DEBUG] faster_whisper.cuda_runtime_fallback audio_path=%s requested_device=%s requested_compute_type=%s detail=%s fallback_device=%s fallback_compute_type=%s",
+            audio_path,
+            snapshot.resolved_device,
+            snapshot.resolved_compute_type,
+            str(exc)[:400],
+            fallback_snapshot.resolved_device,
+            fallback_snapshot.resolved_compute_type,
+        )
+        _clear_cached_model()
+        effective_snapshot = fallback_snapshot
+        try:
+            segments_iter, info = _transcribe_with_model_snapshot(audio_path, fallback_snapshot)
+        except Exception:
+            waiting_stop.set()
+            waiting_thread.join(timeout=0.2)
+            raise
+
+    try:
+        duration_hint_seconds = _set_duration_hint(info)
+        collected = _consume_segments(segments_iter, duration_hint_seconds=duration_hint_seconds)
+        transcription_empty = (
+            collected["segment_count"] <= 0
+            and not collected["preview_text"]
+            and not collected["transcript_words"]
+            and not collected["transcript_sentences"]
+        )
+
+        if transcription_empty and effective_snapshot.vad_filter:
+            retry_snapshot = replace(effective_snapshot, vad_filter=False)
+            logger.warning(
+                "[DEBUG] faster_whisper.empty_result_retry_without_vad audio_path=%s duration_hint_seconds=%.3f device=%s compute_type=%s",
+                audio_path,
+                duration_hint_seconds,
+                effective_snapshot.resolved_device,
+                effective_snapshot.resolved_compute_type,
+            )
+            with progress_state_lock:
+                progress_state["segment_done"] = 0
+                progress_state["first_segment_elapsed"] = None
+                progress_state["last_segment_elapsed"] = 0
+            effective_snapshot = retry_snapshot
+            retry_segments_iter, retry_info = _transcribe_with_model_snapshot(audio_path, retry_snapshot)
+            info = retry_info
+            duration_hint_seconds = _set_duration_hint(retry_info)
+            collected = _consume_segments(retry_segments_iter, duration_hint_seconds=duration_hint_seconds)
     finally:
         waiting_stop.set()
         waiting_thread.join(timeout=0.2)
 
+    transcript_words = list(collected["transcript_words"])
+    transcript_sentences = list(collected["transcript_sentences"])
+    preview_text = str(collected["preview_text"] or "")
+    last_end_ms = int(collected["last_end_ms"] or 0)
+    segment_done = int(collected["segment_count"] or 0)
     duration_seconds = max(
         1,
         math.ceil(
@@ -987,7 +1036,6 @@ def transcribe_audio_file_with_faster_whisper(
             )
         ),
     )
-    preview_text = " ".join(preview_parts).strip()
     language = str(getattr(info, "language", "") or "").strip()
 
     logger.info(
