@@ -148,7 +148,7 @@ class LessonTaskResponse(BaseModel):
     model_fallback_applied: bool = False
     model_fallback_reason: str = ""
     completion_kind: Literal["full", "partial"] = "full"
-    result_kind: Literal["full_success", "asr_only"] = "full_success"
+    result_kind: Literal["", "full_success", "asr_only"] = ""
     result_label: str = ""
     result_message: str = ""
     partial_failure_stage: str = ""
@@ -190,7 +190,7 @@ class LessonTaskResponse(BaseModel):
     model_fallback_applied: bool = False
     model_fallback_reason: str = ""
     completion_kind: Literal["full", "partial"] = "full"
-    result_kind: Literal["full_success", "asr_only"] = "full_success"
+    result_kind: Literal["", "full_success", "asr_only"] = ""
     result_label: str = ""
     result_message: str = ""
     partial_failure_stage: str = ""

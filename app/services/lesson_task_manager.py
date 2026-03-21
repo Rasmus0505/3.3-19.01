@@ -318,8 +318,14 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
     artifacts = _copy_dict(task.artifacts_json)
     status = str(task.status or "")
     control_action = _get_control_action(artifacts)
-    result_kind = _normalize_result_kind(artifacts.get("result_kind"))
-    result_message = _build_result_message(result_kind, artifacts.get("result_message"))
+    if status == TASK_STATUS_SUCCEEDED:
+        result_kind = _normalize_result_kind(artifacts.get("result_kind"))
+        result_label = _build_result_label(result_kind)
+        result_message = _build_result_message(result_kind, artifacts.get("result_message"))
+    else:
+        result_kind = ""
+        result_label = ""
+        result_message = ""
     return {
         "task_id": task.task_id,
         "owner_user_id": int(task.owner_user_id),
@@ -344,7 +350,7 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
         "error_code": str(task.error_code or ""),
         "message": str(task.message or ""),
         "result_kind": result_kind,
-        "result_label": _build_result_label(result_kind),
+        "result_label": result_label,
         "result_message": result_message,
         "partial_failure_stage": str(artifacts.get("partial_failure_stage") or ""),
         "partial_failure_code": str(artifacts.get("partial_failure_code") or ""),
@@ -487,7 +493,10 @@ def update_task_progress(
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         if not task:
             return
-        if str(task.status or "") in {TASK_STATUS_PENDING, TASK_STATUS_FAILED}:
+        current_status = str(task.status or "")
+        if current_status in {TASK_STATUS_FAILED, TASK_STATUS_SUCCEEDED, TASK_STATUS_TERMINATED}:
+            return
+        if current_status == TASK_STATUS_PENDING:
             task.status = TASK_STATUS_RUNNING
         stages = _copy_list(task.stages_json)
         if stage_key:
@@ -610,7 +619,14 @@ def mark_task_failed(
         task.resume_available = bool(resume_stage) if resume_available is None else bool(resume_available)
         task.failed_at = failed_at
         task.artifact_expires_at = now_shanghai_naive() + timedelta(hours=FAILURE_RETENTION_HOURS)
-        task.artifacts_json = _clear_control_fields(task.artifacts_json)
+        next_artifacts = _clear_control_fields(task.artifacts_json)
+        next_artifacts["result_kind"] = ""
+        next_artifacts["result_label"] = ""
+        next_artifacts["result_message"] = ""
+        next_artifacts["partial_failure_stage"] = ""
+        next_artifacts["partial_failure_code"] = ""
+        next_artifacts["partial_failure_message"] = ""
+        task.artifacts_json = next_artifacts
         session.commit()
     finally:
         if owns_session:
@@ -686,8 +702,8 @@ def build_task_debug_report(task: dict) -> str:
             "请根据下面的任务信息排查素材生成链路：",
             f"task_id: {str(normalized_task.get('task_id') or '').strip()}",
             f"status: {str(normalized_task.get('status') or '').strip()}",
-            f"result_kind: {str(normalized_task.get('result_kind') or TASK_RESULT_FULL_SUCCESS).strip()}",
-            f"result_message: {str(normalized_task.get('result_message') or normalized_task.get('current_text') or '').strip()}",
+            f"result_kind: {str(normalized_task.get('result_kind') or '').strip() or '无'}",
+            f"result_message: {str(normalized_task.get('result_message') or '').strip() or '无'}",
             f"source_filename: {str(normalized_task.get('source_filename') or '').strip()}",
             f"requested_asr_model: {str(normalized_task.get('requested_asr_model') or normalized_task.get('asr_model') or '').strip()}",
             f"effective_asr_model: {str(normalized_task.get('effective_asr_model') or normalized_task.get('asr_model') or '').strip()}",

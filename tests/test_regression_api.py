@@ -693,6 +693,7 @@ def test_lesson_task_resume_reuses_failed_task_artifacts(test_client, monkeypatc
     token = _register_and_login(client, email="resume-task@example.com")
 
     from app.api.routers import lessons as lessons_router
+    from app.services import lesson_command_service as lesson_command_service_module
 
     import threading as py_threading
 
@@ -755,8 +756,19 @@ def test_lesson_task_resume_reuses_failed_task_artifacts(test_client, monkeypatc
         }
         return lesson
 
+    session = session_factory()
+    try:
+        user = session.scalar(select(User).where(User.email == "resume-task@example.com"))
+        assert user is not None
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 500
+        session.commit()
+    finally:
+        session.close()
+
     monkeypatch.setattr(lessons_router.threading, "Thread", ImmediateThread)
     monkeypatch.setattr(lessons_router.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+    monkeypatch.setattr(lesson_command_service_module, "probe_audio_duration_ms", lambda _path: 1_000)
 
     create_resp = client.post(
         "/api/lessons/tasks",
@@ -774,6 +786,9 @@ def test_lesson_task_resume_reuses_failed_task_artifacts(test_client, monkeypatc
     assert failed_payload["resume_available"] is True
     assert failed_payload["resume_stage"] == "translate_zh"
     assert failed_payload["artifact_expires_at"]
+    assert failed_payload["result_kind"] == ""
+    assert failed_payload["result_label"] == ""
+    assert failed_payload["result_message"] == ""
     assert failed_payload["failure_debug"]["failed_stage"] == "translate_zh"
     assert failed_payload["failure_debug"]["exception_type"] == "RuntimeError"
     assert "translate failed" in failed_payload["failure_debug"]["detail_excerpt"]
@@ -798,6 +813,7 @@ def test_lesson_task_reports_translation_parse_failure_with_explicit_error(test_
     token = _register_and_login(client, email="translation-parse-task@example.com")
 
     from app.api.routers import lessons as lessons_router
+    from app.services import lesson_command_service as lesson_command_service_module
 
     import threading as py_threading
 
@@ -842,8 +858,19 @@ def test_lesson_task_reports_translation_parse_failure_with_explicit_error(test_
         error.detail = "翻译响应 JSON 非法控制字符：Invalid control character at line 21 column 27"
         raise error
 
+    session = session_factory()
+    try:
+        user = session.scalar(select(User).where(User.email == "translation-parse-task@example.com"))
+        assert user is not None
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 500
+        session.commit()
+    finally:
+        session.close()
+
     monkeypatch.setattr(lessons_router.threading, "Thread", ImmediateThread)
     monkeypatch.setattr(lessons_router.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+    monkeypatch.setattr(lesson_command_service_module, "probe_audio_duration_ms", lambda _path: 1_000)
 
     create_resp = client.post(
         "/api/lessons/tasks",
@@ -1976,20 +2003,18 @@ def test_single_faster_whisper_progress_keeps_waiting_after_segments(monkeypatch
     assert progress_events[-1]["current_text"] == "识别完成 13/13"
 
 
-def test_single_faster_whisper_stall_raises_media_error(monkeypatch, tmp_path):
+def test_single_faster_whisper_stall_keeps_waiting_instead_of_failing(monkeypatch, tmp_path):
     from app.services import lesson_service as lesson_service_module
-    from app.services.media import MediaError
 
     opus_path = tmp_path / "sample.opus"
     opus_path.write_bytes(b"opus")
     req_dir = tmp_path / "req"
     req_dir.mkdir(parents=True, exist_ok=True)
-    release_event = threading.Event()
 
     def fake_transcribe(audio_path, *, model, progress_callback=None, requests_timeout=120):
         if progress_callback:
             progress_callback({"segment_done": 2, "segment_total": 0, "elapsed_seconds": 11})
-        release_event.wait(5)
+            progress_callback({"segment_done": 2, "segment_total": 0, "elapsed_seconds": 12})
         return {
             "asr_result_json": {"transcripts": [{"sentences": [{"text": "late", "begin_time": 0, "end_time": 1000}]}]},
             "usage_seconds": 1,
@@ -1998,25 +2023,79 @@ def test_single_faster_whisper_stall_raises_media_error(monkeypatch, tmp_path):
 
     monkeypatch.setattr(lesson_service_module, "transcribe_audio_file", fake_transcribe)
     monkeypatch.setattr(lesson_service_module, "_single_faster_whisper_stall_timeout_seconds", lambda source_duration_ms: 1)
+    progress_events: list[dict] = []
 
-    try:
-        with pytest.raises(MediaError) as exc_info:
-            lesson_service_module.LessonService._transcribe_with_optional_parallel(
-                opus_path=opus_path,
-                req_dir=req_dir,
-                asr_model="faster-whisper-medium",
-                source_duration_ms=240000,
-                parallel_enabled=False,
-                parallel_threshold_seconds=600,
-                segment_target_seconds=300,
-                max_concurrency=1,
-                progress_callback=None,
-            )
-    finally:
-        release_event.set()
+    result = lesson_service_module.LessonService._transcribe_with_optional_parallel(
+        opus_path=opus_path,
+        req_dir=req_dir,
+        asr_model="faster-whisper-medium",
+        source_duration_ms=240000,
+        parallel_enabled=False,
+        parallel_threshold_seconds=600,
+        segment_target_seconds=300,
+        max_concurrency=1,
+        progress_callback=lambda payload: progress_events.append(dict(payload)),
+    )
 
-    assert exc_info.value.code == "ASR_PROGRESS_STALLED"
-    assert "2 segments" in exc_info.value.detail
+    assert result["progress_counters"]["segment_total"] == 2
+    assert any("当前段耗时较长，继续等待" in item["current_text"] for item in progress_events)
+    assert progress_events[-1]["current_text"] == "识别完成 2/2"
+
+
+def test_faster_whisper_legacy_single_profile_autofixes_to_parallel(monkeypatch, tmp_path):
+    from app.services import lesson_service as lesson_service_module
+
+    monkeypatch.setattr(
+        lesson_service_module,
+        "_split_audio_segments",
+        lambda source_audio, segments_dir, target_seconds, search_window_seconds, duration_ms: [
+            (0, 0, 160000, tmp_path / "seg0.opus"),
+            (1, 160000, 328000, tmp_path / "seg1.opus"),
+        ],
+    )
+    monkeypatch.setattr(
+        lesson_service_module,
+        "_call_transcribe_segment",
+        lambda segment_index, segment_start_ms, segment_end_ms, segment_path, asr_model, result_path: (
+            segment_index,
+            [
+                {
+                    "text": f"seg-{segment_index}",
+                    "surface": f"seg-{segment_index}",
+                    "punctuation": "",
+                    "begin_ms": segment_start_ms,
+                    "end_ms": segment_start_ms + 1000,
+                }
+            ],
+            [{"text": f"seg-{segment_index}", "begin_ms": segment_start_ms, "end_ms": segment_start_ms + 1000}],
+            None,
+            None,
+        ),
+    )
+
+    single_calls = {"count": 0}
+
+    def _unexpected_single(**kwargs):
+        single_calls["count"] += 1
+        raise AssertionError("legacy faster-whisper profile should auto-enable parallel mode")
+
+    monkeypatch.setattr(lesson_service_module.LessonService, "_transcribe_faster_whisper_single", staticmethod(_unexpected_single))
+
+    result = lesson_service_module.LessonService._transcribe_with_optional_parallel(
+        opus_path=tmp_path / "faster-whisper.opus",
+        req_dir=tmp_path / "fw-legacy",
+        asr_model="faster-whisper-medium",
+        source_duration_ms=328000,
+        parallel_enabled=False,
+        parallel_threshold_seconds=600,
+        segment_target_seconds=300,
+        max_concurrency=1,
+        progress_callback=None,
+    )
+
+    assert single_calls["count"] == 0
+    assert result["progress_counters"]["segment_total"] == 2
+    assert result["asr_payload"]["transcripts"][0]["words"][1]["begin_time"] == 160000
 
 
 def test_transcribe_file_endpoint_with_stubbed_service(test_client, monkeypatch, tmp_path):
