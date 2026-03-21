@@ -1,9 +1,10 @@
 import { Download, RefreshCcw, ScrollText } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
+import { buildExportProtectionPrompt, fetchAdminSecurityStatus } from "../../shared/lib/adminSecurity";
 import { copyCurrentUrl, mergeScopedSearchParams, readScopedIntParam, readScopedStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
@@ -40,7 +41,9 @@ export function AdminRedeemAuditTab({ apiCall, queryPrefix = "" }) {
   const [dateTo, setDateTo] = useState(() => readScopedStringParam(searchParams, queryPrefix, "date_to", toLocalDatetimeValue(now)));
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportConfirmText, setExportConfirmText] = useState("");
+  const [exportProtection, setExportProtection] = useState(null);
   const { error, clearError, captureError } = useErrorHandler();
+  const exportPrompt = useMemo(() => buildExportProtectionPrompt(exportProtection), [exportProtection]);
 
   useEffect(() => {
     setSearchParams(
@@ -55,6 +58,25 @@ export function AdminRedeemAuditTab({ apiCall, queryPrefix = "" }) {
       { replace: true }
     );
   }, [batchId, dateFrom, dateTo, page, pageSize, queryPrefix, searchParams, setSearchParams, userEmail]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadExportProtection() {
+      try {
+        const { response, data } = await fetchAdminSecurityStatus(apiCall);
+        if (!active || !response.ok) return;
+        setExportProtection(data?.export_protection || null);
+      } catch (_) {
+        if (!active) return;
+      }
+    }
+
+    loadExportProtection();
+    return () => {
+      active = false;
+    };
+  }, [apiCall]);
 
   async function loadAudit(nextPage = page) {
     setLoading(true);
@@ -305,16 +327,28 @@ export function AdminRedeemAuditTab({ apiCall, queryPrefix = "" }) {
 
         {error ? <AdminErrorNotice error={error} /> : status ? <Alert><AlertDescription>{status}</AlertDescription></Alert> : null}
 
-        <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+        <Dialog
+          open={exportDialogOpen}
+          onOpenChange={(open) => {
+            setExportDialogOpen(open);
+            if (!open) setExportConfirmText("");
+          }}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>确认导出审计 CSV</DialogTitle>
-              <DialogDescription>请输入 `EXPORT` 以确认导出当前筛选结果。</DialogDescription>
+              <DialogDescription>
+                本次将导出当前筛选范围内的兑换审计记录。{exportPrompt.title}。{exportPrompt.description}
+              </DialogDescription>
             </DialogHeader>
-            <Input value={exportConfirmText} onChange={(event) => setExportConfirmText(event.target.value)} placeholder="输入 EXPORT" />
+            <Input
+              value={exportConfirmText}
+              onChange={(event) => setExportConfirmText(event.target.value)}
+              placeholder={exportPrompt.placeholder}
+            />
             <DialogFooter>
               <Button variant="outline" onClick={() => setExportDialogOpen(false)}>取消</Button>
-              <Button onClick={exportCsv} disabled={exporting || exportConfirmText.trim() !== "EXPORT"}>
+              <Button onClick={exportCsv} disabled={exporting || !exportConfirmText.trim()}>
                 {exporting ? "导出中..." : "确认导出"}
               </Button>
             </DialogFooter>

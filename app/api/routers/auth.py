@@ -23,7 +23,7 @@ def register(payload: AuthRequest, db: Session = Depends(get_db)):
     exists = db.scalar(select(User).where(User.email == payload.email.lower()))
     if exists:
         return error_response(400, "EMAIL_EXISTS", "邮箱已注册")
-    user = User(email=payload.email.lower(), password_hash=hash_password(payload.password))
+    user = User(email=payload.email.lower(), password_hash=hash_password(payload.password), is_admin=False)
     db.add(user)
     db.flush()
     get_or_create_wallet_account(db, user.id, for_update=False)

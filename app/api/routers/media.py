@@ -16,6 +16,7 @@ from app.models import User
 from app.repositories.lessons import get_sentence
 from app.repositories.media_assets import get_media_asset_for_lesson
 from app.schemas import ErrorResponse
+from app.services.media import MediaError, resolve_controlled_media_path
 
 
 router = APIRouter(prefix="/api/lessons", tags=["media"])
@@ -25,6 +26,10 @@ LOCAL_MEDIA_REQUIRED_MESSAGE = "该课程仅支持本地绑定媒体，请先在
 
 def local_media_required_response():
     return error_response(409, "LOCAL_MEDIA_REQUIRED", LOCAL_MEDIA_REQUIRED_MESSAGE)
+
+
+def invalid_media_path_response():
+    return error_response(404, "MEDIA_PATH_INVALID", "课程媒体路径无效")
 
 
 def resolve_media_type(source_filename: str, media_path: Path) -> str:
@@ -55,7 +60,11 @@ def get_lesson_media(
     if not media_asset:
         return error_response(404, "MEDIA_NOT_FOUND", "课程媒体不存在")
 
-    media_path = Path(media_asset.original_path)
+    try:
+        media_path = resolve_controlled_media_path(media_asset.original_path, field_name="media_asset.original_path")
+    except MediaError as exc:
+        logger.warning("[DEBUG] media.main invalid_path lesson_id=%s detail=%s", lesson_id, exc.detail or exc.message)
+        return invalid_media_path_response()
     if not media_path.exists():
         return error_response(404, "MEDIA_FILE_MISSING", "课程媒体文件不存在")
 
@@ -82,7 +91,11 @@ def get_sentence_audio(
         if not sentence.audio_clip_path:
             logger.info("[DEBUG] media.clip local_required lesson_id=%s idx=%s", lesson_id, idx)
             return local_media_required_response()
-        clip_path = Path(sentence.audio_clip_path)
+        try:
+            clip_path = resolve_controlled_media_path(sentence.audio_clip_path, field_name="lesson_sentence.audio_clip_path")
+        except MediaError as exc:
+            logger.warning("[DEBUG] media.clip invalid_path lesson_id=%s idx=%s detail=%s", lesson_id, idx, exc.detail or exc.message)
+            return local_media_required_response()
         if not clip_path.exists():
             logger.info("[DEBUG] media.clip local_required_missing_file lesson_id=%s idx=%s", lesson_id, idx)
             return local_media_required_response()
@@ -91,7 +104,11 @@ def get_sentence_audio(
     if not sentence.audio_clip_path:
         return error_response(404, "AUDIO_CLIP_MISSING", "句级音频不存在")
 
-    clip_path = Path(sentence.audio_clip_path)
+    try:
+        clip_path = resolve_controlled_media_path(sentence.audio_clip_path, field_name="lesson_sentence.audio_clip_path")
+    except MediaError as exc:
+        logger.warning("[DEBUG] media.clip invalid_path lesson_id=%s idx=%s detail=%s", lesson_id, idx, exc.detail or exc.message)
+        return invalid_media_path_response()
     if not clip_path.exists():
         return error_response(404, "AUDIO_CLIP_MISSING", "句级音频不存在")
     return FileResponse(path=str(clip_path), media_type="audio/ogg")

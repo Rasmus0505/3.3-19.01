@@ -75,6 +75,12 @@ export const ADMIN_NAV_ITEMS = [
     href: "/admin/health",
   },
   {
+    key: "security",
+    label: "安全中心",
+    description: "数据库、权限与危险操作保护",
+    href: "/admin/security",
+  },
+  {
     key: "users",
     label: "用户活跃",
     description: "",
@@ -99,6 +105,7 @@ export function getAdminNavItemByKey(key) {
 }
 
 export function resolveAdminNavKey(pathname) {
+  if (pathname.startsWith("/admin/security")) return "security";
   if (pathname.startsWith("/admin/users") || pathname.startsWith("/admin/logs")) return "users";
   if (pathname.startsWith("/admin/models")) return "models";
   if (pathname.startsWith("/admin/redeem")) return "redeem";

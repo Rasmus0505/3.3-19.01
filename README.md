@@ -1,60 +1,64 @@
 # English Sentence Spelling Trainer
 
-这是一个部署在 Zeabur 上的英语句子练习 MVP。
+这是一个部署在 Zeabur 上的英语句子练习应用，当前阶段以“先跑通、再稳定、最后再扩展”为原则。
 
-你只需要做 3 件事：
+## 部署原则
 
-1. 上传音频或视频
-2. 等系统自动转写、翻译并生成课程
-3. 登录后继续学习、同步进度和点数
+- 默认部署路径：`GitHub 仓库 -> Zeabur -> 按仓库根目录 Dockerfile 构建`
+- 对外服务端口统一使用 `8080`
+- 首轮只部署两个服务：`web` 和 `postgresql`
+- 不要求你自己维护 `Nginx`、`PM2` 或 Linux 运维脚本
+- 生产环境不要使用 SQLite
 
-## 先知道这几点
+核心接口保持不变：
 
-- 部署方式默认是：`GitHub` 仓库 → `Zeabur` 读取代码 → 按根目录 `Dockerfile` 构建
-- 不需要自己处理 `Nginx`、`PM2` 或 Linux 运维
-- 对外主端口按项目规则统一使用 `8080`
-- 现有核心接口保持不变：
-  - `POST /api/transcribe/file`
-  - `GET /health`
-  - `GET /health/ready`
+- `POST /api/transcribe/file`
+- `GET /health`
+- `GET /health/ready`
 
-`/health` 只说明服务进程还活着。  
-`/health/ready` 用来判断数据库和业务表是否已经准备好。
+`/health` 只表示进程活着。  
+`/health/ready` 表示数据库、关键表结构和启动安全策略都已经就绪。
 
-## 在 Zeabur 上怎么部署
+## Zeabur 生产部署
 
-首轮只部署两个服务：
+### 1. 创建服务
 
-1. `web`
-2. `postgresql`
+在 Zeabur 中连接这个 GitHub 仓库，按仓库根目录的 `Dockerfile` 构建。
 
-先不要接 `metabase`。
+首轮只需要：
 
-### 第 1 步：连接 GitHub 仓库
+- `web`
+- `postgresql`
 
-- 在 Zeabur 新建服务
-- 选择当前 GitHub 仓库
-- 构建入口使用仓库根目录 `Dockerfile`
-- 启动命令使用镜像内默认入口 `scripts/start.sh`
+暂时不要先接 `metabase`。
 
-### 第 2 步：新建 Postgres
+### 2. 挂载持久卷
 
-- 直接使用 Zeabur 的 Postgres 模板
-- 用一个全新的空库
-- 把连接串填到 `web` 服务的 `DATABASE_URL`
+给 `web` 服务挂载持久卷到 `/data`。
 
-### 第 3 步：填写环境变量
+如果你要使用固定本地 ASR 模型，还需要把模型目录上传到：
 
-至少填写这 4 个：
+- `/data/asr-models/SenseVoiceSmall`
+- `/data/asr-models/faster-distil-small.en`
 
-- `DATABASE_URL`
-- `DASHSCOPE_API_KEY`
-- `JWT_SECRET`
-- `ADMIN_EMAILS`
+### 3. 必填环境变量
+
+生产环境至少要填写这些变量：
+
+- `APP_ENV=production`
+- `PORT=8080`
+- `DATABASE_URL=postgresql://...`
+- `DASHSCOPE_API_KEY=...`
+- `JWT_SECRET=...`
+- `ADMIN_EMAILS=admin1@example.com,admin2@example.com`
+- `ADMIN_BOOTSTRAP_PASSWORD=一段长度足够、不可猜测的随机短语`
+- `REDEEM_CODE_EXPORT_CONFIRM_TEXT=一段长度足够、不可猜测的随机短语`
 
 建议同时保留：
 
-- `PORT=8080`
+- `AUTO_MIGRATE_ON_START=0`
+- `AUTO_MIGRATE_CONTINUE_ON_FAILURE=1`
+- `AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS=180`
 - `TMP_WORK_DIR=/tmp/zeabur3.3`
 - `PERSISTENT_DATA_DIR=/data`
 - `ASR_BUNDLE_ROOT_DIR=/data/asr-models`
@@ -68,101 +72,116 @@
 - `MT_MODEL=qwen-mt-flash`
 - `ASR_SEGMENT_TARGET_SECONDS=300`
 - `ASR_SEGMENT_SEARCH_WINDOW_SECONDS=45`
-- `AUTO_MIGRATE_ON_START=1`
-- `AUTO_MIGRATE_CONTINUE_ON_FAILURE=1`
-- `AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS=180`
-- `web` 服务额外挂一个持久卷到 `/data`
-- 如果上传页要用固定本地 ASR 模型，请保留 `web` 的 `/data` 持久卷，并把两个模型目录上传到 `/data/asr-models/SenseVoiceSmall` 和 `/data/asr-models/faster-distil-small.en`；服务默认不会在启动时自动下载这些模型
-- 首次需要准备模型时，先调用 `POST /api/admin/faster-whisper-model/prepare`，再重试转写
 
-分句和翻译批次默认值不建议靠环境变量维护。  
-上线后请到后台的“字幕/分句设置”里调整。
+## 这次安全加固后的管理员模型
 
-### 第 4 步：先执行手动迁移
+- 运行时管理员权限现在依赖数据库里的 `users.is_admin`
+- `ADMIN_EMAILS` 只用于首次引导或补齐管理员，不再作为运行时鉴权依据
+- 如果配置了 `ADMIN_EMAILS`，首次部署还必须同时配置强 `ADMIN_BOOTSTRAP_PASSWORD`
+- 新用户注册默认不是管理员
+- 生产环境下，如果 `REDEEM_CODE_EXPORT_CONFIRM_TEXT` 太弱，应用会拒绝启动危险导出能力
 
-- 在 `web` 服务的终端里执行：
+## 生产迁移
 
-```text
-python -m alembic -c alembic.ini upgrade head
+生产环境默认建议：
+
+- `AUTO_MIGRATE_ON_START=0`
+- 在本地或受控机器手动执行迁移
+- 迁移完成后再回到 Zeabur 重启 `web`
+
+固定使用：
+
+```bash
+python scripts/run_prod_migration.py
 ```
 
-- `scripts/start.sh` 默认会在启动前自动执行这条 Alembic 迁移命令
-- PostgreSQL 默认会先拿 advisory lock，避免多实例重复跑迁移
-- 自动迁移失败时会保留完整报错，应用仍会启动，但 `/health/ready` 会继续返回 `503`
-- 如需临时改回手动迁移，建议设置 `AUTO_MIGRATE_ON_START=0`
-- 启动链路同时兼容 `AUTO_MIGRATE_ON_START=false/no/off`，但在 Zeabur 里优先使用明确字符串 `0` / `1`
+如果只想检查是否已经到最新 revision：
 
-- 如果 Zeabur AI 可以代执行，直接让它在 `web` 服务里执行这条命令
-- 迁移失败时保留完整报错，不要忽略
-- 迁移成功后，对 `web` 点一次 `Redeploy` 或 `Restart`
+```bash
+python scripts/run_prod_migration.py --check-only
+```
 
-## 部署后怎么验证
+脚本优先读取 `PROD_DATABASE_URL`，没有时才回退到 `DATABASE_URL`。
+
+如果 `users.is_admin` 这类新列还没有迁移到位，`/health/ready` 会返回失败。
+
+更多说明见 [migrations/README.md](./migrations/README.md)。
+
+## 部署后怎么验收
 
 按这个顺序检查：
 
-### 1）先看服务是否活着
+### 1. 进程存活
 
 ```text
 GET /health
 ```
 
-预期：返回 `200`，且 `ok=true`
+预期：
 
-### 2）再看数据库是否就绪
+- HTTP 200
+- `ok=true`
+
+### 2. 数据库与关键表结构就绪
 
 ```text
 GET /health/ready
 ```
 
-预期：返回 `200`，且 `ok=true`
+预期：
 
-### 3）最后验证核心业务
+- HTTP 200
+- `ok=true`
+
+### 3. 核心业务链路
+
+至少验证：
 
 1. 注册或登录成功
 2. `GET /api/wallet/me` 返回 `200`
-3. `GET /api/admin/billing-rates` 返回 `200`
-4. 上传媒体文件到 `POST /api/transcribe/file` 成功
+3. `GET /api/admin/security/status` 返回 `200`
+4. 上传一个媒体文件到 `POST /api/transcribe/file` 成功
 
-## 出问题先看哪里
+## 常见排查
 
-- `/health` 正常，但 `/health/ready` 返回 `503`
-  - 先检查 `DATABASE_URL`
-  - 再确认自动迁移日志是否报错；如果你关闭了自动迁移，再手动执行 `python -m alembic -c alembic.ini upgrade head`
-- 管理后台接口返回 `500`
-  - 先确认自动迁移或手动迁移是否真的执行成功
-  - 再检查数据库连接和权限
-- 上传转写失败
-  - 先确认 `DASHSCOPE_API_KEY` 已填写
-  - 再看服务日志里对应请求的错误信息
+### `/health` 正常，但 `/health/ready` 返回 `503`
 
-## 给 Zeabur AI 的提示词
+优先检查：
 
-```text
-请帮我在 Zeabur 上部署这个 GitHub 仓库，按仓库根目录 Dockerfile 构建。
-本次先只部署两个服务：web 和 postgresql，不要先部署 Metabase。
-请提醒我填写这些环境变量：PORT=8080、DATABASE_URL、DASHSCOPE_API_KEY、JWT_SECRET、ADMIN_EMAILS、ASR_BUNDLE_ROOT_DIR=/data/asr-models、SENSEVOICE_MODEL_DIR=/data/asr-models/SenseVoiceSmall、FASTER_WHISPER_MODELSCOPE_MODEL_ID=Systran/faster-distil-whisper-small.en、FASTER_WHISPER_MODEL_DIR=/data/asr-models/faster-distil-small.en、FASTER_WHISPER_PREFETCH_ON_START=0、FASTER_WHISPER_COMPUTE_TYPE=int8、FASTER_WHISPER_CPU_THREADS=4、ASR_SEGMENT_TARGET_SECONDS、ASR_SEGMENT_SEARCH_WINDOW_SECONDS、AUTO_MIGRATE_ON_START=1、AUTO_MIGRATE_CONTINUE_ON_FAILURE=1、AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS=180。
-字幕和分句默认值请不要通过环境变量调整，部署完成后提醒我去后台“字幕/分句设置”里修改。
-web 服务启动后，请先查看自动迁移日志是否成功；如果失败，请完整返回报错，不要省略。只有在我明确关闭 `AUTO_MIGRATE_ON_START` 时，才改为手动执行 `python -m alembic -c alembic.ini upgrade head`。如果要关闭自动迁移，请把 `AUTO_MIGRATE_ON_START` 明确填成字符串 `0`。
-如果上传页要使用固定本地 ASR 模型，请确认 `web` 已挂载持久卷 `/data`，并检查 `/data/asr-models/SenseVoiceSmall` 与 `/data/asr-models/faster-distil-small.en` 都已存在。
-web 服务启动后，请按顺序帮我验证：
-1. GET /health 返回 200
-2. GET /health/ready 返回 200
-3. POST /api/transcribe/file 上传一个媒体文件能成功
-如果 /health 正常但 /health/ready 不正常，请优先检查数据库连接和手动迁移日志。
-```
+- `APP_ENV` 是否真的是 `production`
+- `DATABASE_URL` 是否指向 PostgreSQL / MySQL，而不是 SQLite
+- 是否已经执行了 Alembic 迁移
+- `REDEEM_CODE_EXPORT_CONFIRM_TEXT` 是否仍然是弱默认值
+
+### 没有管理员能进后台
+
+优先检查：
+
+- `ADMIN_EMAILS` 是否配置正确
+- `ADMIN_BOOTSTRAP_PASSWORD` 是否存在且足够强
+- 数据库是否已迁移到包含 `users.is_admin`
+
+### 上传转写失败
+
+优先检查：
+
+- `DASHSCOPE_API_KEY` 是否正确
+- `/data/asr-models/...` 模型目录是否完整
+- 服务日志里的具体错误信息
 
 ## 本地开发
 
 ```powershell
-cd D:\GITHUB\英语产品\3.3-19.01
+cd D:\3.3-19.01
 python -m venv .venv
 . .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-本地 SQLite 手动迁移运行：
+本地 SQLite：
 
 ```powershell
+$env:APP_ENV="development"
 $env:PORT="8080"
 $env:DATABASE_URL="sqlite:///./app.db"
 $env:JWT_SECRET="change-me"
@@ -170,20 +189,13 @@ python -m alembic -c alembic.ini upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
-本地 Postgres 手动迁移运行：
+本地 PostgreSQL：
 
 ```powershell
+$env:APP_ENV="development"
 $env:PORT="8080"
 $env:DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/app_test"
 $env:JWT_SECRET="change-me"
 python -m alembic -c alembic.ini upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
-
-## 第二阶段再接什么
-
-等 `web + postgresql` 稳定后，再接：
-
-- `metabase`
-
-接回后只同步业务 `app` schema，避免系统表和业务表混在一起。

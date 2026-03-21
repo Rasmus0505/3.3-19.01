@@ -61,7 +61,6 @@ def delete_user_hard(
     *,
     target_user_id: int,
     current_admin: User,
-    admin_emails: set[str],
 ) -> AdminUserDeleteResult:
     target_user = db.get(User, target_user_id)
     if not target_user:
@@ -70,8 +69,7 @@ def delete_user_hard(
     if target_user.id == current_admin.id:
         raise AdminUserDeleteError(403, "SELF_DELETE_FORBIDDEN", "不允许删除当前登录管理员账号")
 
-    target_email_normalized = target_user.email.strip().lower()
-    if target_email_normalized in admin_emails:
+    if bool(getattr(target_user, "is_admin", False)):
         raise AdminUserDeleteError(403, "ADMIN_USER_DELETE_FORBIDDEN", "不允许删除管理员账号")
 
     lesson_ids = list_lesson_ids_for_user(db, target_user.id)

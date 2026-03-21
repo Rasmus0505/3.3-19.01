@@ -13,6 +13,7 @@ class AuthRequest(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: str
+    is_admin: bool = False
     created_at: datetime
 
 

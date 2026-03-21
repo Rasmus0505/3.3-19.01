@@ -1,15 +1,14 @@
 from __future__ import annotations
-
-import os
 from typing import Generator
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.config import resolve_database_url
 from app.db.base import is_sqlite_url, sqlite_schema_translate_map
 
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db").strip()
+DATABASE_URL = resolve_database_url()
 
 
 def create_database_engine(database_url: str, **kwargs):
