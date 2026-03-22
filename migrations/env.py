@@ -49,6 +49,8 @@ def run_migrations_online() -> None:
     with connectable.connect() as raw_connection:
         if schema_name and raw_connection.dialect.name == "postgresql":
             raw_connection.exec_driver_sql(f"CREATE SCHEMA IF NOT EXISTS {APP_SCHEMA}")
+            if raw_connection.in_transaction():
+                raw_connection.commit()
 
         connection = raw_connection
         if render_as_batch:
