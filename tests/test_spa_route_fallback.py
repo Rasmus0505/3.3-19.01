@@ -10,7 +10,7 @@ def test_learning_shell_routes_refresh_to_spa_shell():
     build_marker = _read_frontend_build_marker()
 
     with TestClient(app) as client:
-        for path in ("/upload", "/stats", "/redeem", "/getting-started"):
+        for path in ("/upload", "/stats", "/redeem", "/getting-started", "/wordbook"):
             resp = client.get(path)
             assert resp.status_code == 200
             assert "text/html" in resp.headers["content-type"].lower()

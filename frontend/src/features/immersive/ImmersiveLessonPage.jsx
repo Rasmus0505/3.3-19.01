@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { parseResponse, toErrorText } from "../../shared/api/client";
 import { getStorageEstimate, getLessonMedia, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import {
   Badge,
@@ -525,6 +526,7 @@ export function ImmersiveLessonPage({
   apiClient,
   onBack,
   onProgressSynced,
+  onWordbookChanged,
   immersiveActive = false,
   onExitImmersive,
   onStartImmersive,
@@ -553,6 +555,10 @@ export function ImmersiveLessonPage({
   const [sentencePlaybackRequired, setSentencePlaybackRequired] = useState(true);
   const [postAnswerReplayState, setPostAnswerReplayState] = useState("idle");
   const [translationDisplayMode, setTranslationDisplayMode] = useState("previous");
+  const [wordbookBusy, setWordbookBusy] = useState(false);
+  const [wordbookSelectionMode, setWordbookSelectionMode] = useState(false);
+  const [wordbookSelectionStart, setWordbookSelectionStart] = useState(null);
+  const [wordbookSelectionEnd, setWordbookSelectionEnd] = useState(null);
   const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
   const [isFullscreenFallback, setIsFullscreenFallback] = useState(false);
   const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(
@@ -648,6 +654,12 @@ export function ImmersiveLessonPage({
   const translationEn = translationDisplayMode === "current_answered" ? currentSentenceEn : previousSentenceEn;
   const translationZh = translationDisplayMode === "current_answered" ? currentSentenceZh : previousSentenceZh;
   const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens : []), [currentSentence?.tokens]);
+  const hasWordbookAccess = Boolean(accessToken && lesson?.id && currentSentence);
+  const hasPhraseSelection = Number.isInteger(wordbookSelectionStart) && Number.isInteger(wordbookSelectionEnd);
+  const selectedPhraseStart = hasPhraseSelection ? Math.min(wordbookSelectionStart, wordbookSelectionEnd) : -1;
+  const selectedPhraseEnd = hasPhraseSelection ? Math.max(wordbookSelectionStart, wordbookSelectionEnd) : -1;
+  const selectedPhraseTokens = hasPhraseSelection ? expectedTokens.slice(selectedPhraseStart, selectedPhraseEnd + 1) : [];
+  const selectedPhraseText = selectedPhraseTokens.join(" ");
   const sentenceWordTimingMap = useMemo(
     () => buildSentenceWordTimingMap(lesson?.sentences || [], lesson?.subtitle_cache_seed?.asr_payload || null),
     [lesson?.sentences, lesson?.subtitle_cache_seed?.asr_payload],
@@ -706,6 +718,70 @@ export function ImmersiveLessonPage({
     },
     [accessToken, apiClient, lesson],
   );
+
+  const clearWordbookSelection = useCallback(() => {
+    setWordbookSelectionStart(null);
+    setWordbookSelectionEnd(null);
+  }, []);
+
+  const collectWordbookEntry = useCallback(
+    async ({ entryType, entryText, startTokenIndex, endTokenIndex }) => {
+      if (!lesson?.id || !currentSentence || !accessToken) return;
+      setWordbookBusy(true);
+      try {
+        const resp = await apiClient(
+          "/api/wordbook/collect",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              lesson_id: lesson.id,
+              sentence_index: currentSentence.idx,
+              entry_text: entryText,
+              entry_type: entryType,
+              start_token_index: startTokenIndex,
+              end_token_index: endTokenIndex,
+            }),
+          },
+          accessToken,
+        );
+        const data = await parseResponse(resp);
+        if (!resp.ok) {
+          toast.error(toErrorText(data, "加入生词本失败"));
+          return;
+        }
+        toast.success(data.message || (data.created ? "已加入生词本" : "已更新到最新语境"));
+        onWordbookChanged?.();
+        clearWordbookSelection();
+        if (entryType === "phrase") {
+          setWordbookSelectionMode(false);
+        }
+      } catch (error) {
+        toast.error(`网络错误: ${String(error)}`);
+      } finally {
+        setWordbookBusy(false);
+      }
+    },
+    [accessToken, apiClient, clearWordbookSelection, currentSentence, lesson?.id, onWordbookChanged],
+  );
+
+  const handleSelectWordbookPhraseToken = useCallback(
+    (tokenIndex) => {
+      if (!wordbookSelectionMode) return;
+      if (!Number.isInteger(wordbookSelectionStart) || Number.isInteger(wordbookSelectionEnd)) {
+        setWordbookSelectionStart(tokenIndex);
+        setWordbookSelectionEnd(null);
+        return;
+      }
+      setWordbookSelectionEnd(tokenIndex);
+    },
+    [wordbookSelectionEnd, wordbookSelectionMode, wordbookSelectionStart],
+  );
+
+  useEffect(() => {
+    clearWordbookSelection();
+    setWordbookSelectionMode(false);
+  }, [clearWordbookSelection, currentSentence?.idx, lesson?.id]);
 
   const applyWordSnapshot = useCallback((snapshot) => {
     activeWordIndexRef.current = snapshot.activeWordIndex;
@@ -1886,6 +1962,114 @@ export function ImmersiveLessonPage({
 
               {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
               {waitingForInitialPlayback ? <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p> : null}
+
+              {hasWordbookAccess ? (
+                <div className="rounded-2xl border bg-muted/15 p-3">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-foreground">生词本收藏</p>
+                        <p className="text-xs text-muted-foreground">
+                          {wordbookSelectionMode ? "短语模式：先点起点，再点终点，然后收藏连续短语。" : "直接点单词即可收藏；需要短语时，先切到短语模式。"}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={wordbookSelectionMode ? "default" : "outline"}
+                          disabled={wordbookBusy || expectedTokens.length < 2}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setWordbookSelectionMode((current) => {
+                              if (current) {
+                                clearWordbookSelection();
+                                return false;
+                              }
+                              clearWordbookSelection();
+                              return true;
+                            });
+                          }}
+                        >
+                          {wordbookSelectionMode ? "退出短语模式" : "选择短语"}
+                        </Button>
+                        {wordbookSelectionMode ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={wordbookBusy}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              clearWordbookSelection();
+                            }}
+                          >
+                            清除选择
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {expectedTokens.map((token, index) => {
+                        const phraseSelected = hasPhraseSelection && index >= selectedPhraseStart && index <= selectedPhraseEnd;
+                        return (
+                          <Button
+                            key={`wordbook-token-${token}-${index}`}
+                            type="button"
+                            size="sm"
+                            variant={phraseSelected ? "default" : "outline"}
+                            className="h-auto min-h-9 rounded-full px-3 py-1.5"
+                            disabled={wordbookBusy}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              if (wordbookSelectionMode) {
+                                handleSelectWordbookPhraseToken(index);
+                                return;
+                              }
+                              void collectWordbookEntry({
+                                entryType: "word",
+                                entryText: token,
+                                startTokenIndex: index,
+                                endTokenIndex: index,
+                              });
+                            }}
+                          >
+                            {token}
+                          </Button>
+                        );
+                      })}
+                    </div>
+
+                    {wordbookSelectionMode ? (
+                      <div className="flex flex-col gap-2 rounded-2xl border bg-background/80 p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium text-foreground">短语预览</p>
+                          <p className="text-sm text-muted-foreground">
+                            {selectedPhraseTokens.length >= 2 ? selectedPhraseText : "请在本句中选择连续两个及以上单词。"}
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={wordbookBusy || selectedPhraseTokens.length < 2}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void collectWordbookEntry({
+                              entryType: "phrase",
+                              entryText: selectedPhraseText,
+                              startTokenIndex: selectedPhraseStart,
+                              endTokenIndex: selectedPhraseEnd,
+                            });
+                          }}
+                        >
+                          收藏短语
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
 
               <div className={cinemaFullscreenActive ? "immersive-word-row-frame immersive-word-row-frame--cinema" : ""}>
                 <div className={`immersive-word-row ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""}`}>

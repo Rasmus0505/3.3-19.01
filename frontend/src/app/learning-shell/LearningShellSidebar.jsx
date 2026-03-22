@@ -29,6 +29,12 @@ export const PANEL_ITEMS = [
     path: "/",
   },
   {
+    key: "wordbook",
+    title: "生词本",
+    icon: BookOpenText,
+    path: "/wordbook",
+  },
+  {
     key: "upload",
     title: "上传素材",
     icon: UploadCloud,
@@ -79,9 +85,10 @@ export function LearningShellSidebar({
   const showSearchAction = Boolean(accessToken && hasLessons);
   const showAdminAction = Boolean(accessToken && isAdminUser);
   const showLogoutAction = Boolean(hasStoredToken);
+  const visiblePanelItems = PANEL_ITEMS.filter((item) => item.key !== "wordbook" || Boolean(accessToken));
   const loginHint =
     authStatus === "expired"
-      ? authStatusMessage || "登录已失效，请重新登录后继续上传、同步和进入管理台。"
+      ? authStatusMessage || "登录已失效，请重新登录后继续上传、同步进度和进入管理台。"
       : "登录后可上传素材、同步进度，并在侧边栏进入管理台。";
 
   function handleAdminToggle() {
@@ -119,7 +126,7 @@ export function LearningShellSidebar({
           {expanded ? <SidebarGroupLabel>学习导航</SidebarGroupLabel> : null}
           <SidebarGroupContent>
             <SidebarMenu>
-              {PANEL_ITEMS.map((item) => {
+              {visiblePanelItems.map((item) => {
                 const Icon = item.icon;
                 const selected = activePanel === item.key;
                 const guideId =
@@ -216,11 +223,7 @@ export function LearningShellSidebar({
           <div className="rounded-2xl border bg-muted/30 p-3">
             <div className="flex items-start gap-2">
               <LogIn className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              {expanded ? (
-                <p className="text-xs leading-5 text-muted-foreground">{loginHint}</p>
-              ) : (
-                <span className="sr-only">{loginHint}</span>
-              )}
+              {expanded ? <p className="text-xs leading-5 text-muted-foreground">{loginHint}</p> : <span className="sr-only">{loginHint}</span>}
             </div>
           </div>
         ) : null}

@@ -216,6 +216,7 @@ export function LearningShellContainer() {
   const [gettingStartedGuideActive, setGettingStartedGuideActive] = useState(false);
   const [gettingStartedGuideStepIndex, setGettingStartedGuideStepIndex] = useState(0);
   const [latestGeneratedLessonId, setLatestGeneratedLessonId] = useState(0);
+  const [wordbookRefreshToken, setWordbookRefreshToken] = useState(0);
   const originalSubtitleRecoveryRef = useRef(new Map());
 
   useLearningShellBootstrap({
@@ -514,6 +515,10 @@ export function LearningShellContainer() {
     navigate(getPanelPath(lastNonImmersivePanelRef.current));
   }
 
+  function handleWordbookChanged() {
+    setWordbookRefreshToken((current) => current + 1);
+  }
+
   async function handleLessonCreated(payload) {
     const lesson = payload?.lesson || null;
     const lessonId = lesson?.id;
@@ -779,6 +784,8 @@ export function LearningShellContainer() {
                   onGoToLogin={handleGoToLogin}
                   onGoToHistory={handleGoToHistoryPanel}
                   guideTargetLessonId={latestGeneratedLessonId}
+                  wordbookRefreshToken={wordbookRefreshToken}
+                  onWordbookChanged={handleWordbookChanged}
                 />
               )}
             </div>

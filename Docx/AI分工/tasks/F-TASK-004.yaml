@@ -1,6 +1,6 @@
 task_id: TASK-004
 title: Add sidebar wordbook with in-learning collection and structured backend storage
-status: todo
+status: done
 priority: high
 project_root: D:/3.3-19.01
 base_ref: main
@@ -49,8 +49,34 @@ check_commands:
 depends_on: []
 blocked_by: []
 notes_for_after: Keep this as one closed-loop task. Do not split frontend, backend, migration, and verification across multiple agents. Reuse the existing shell and immersive-learning patterns where possible, but add new files under frontend/src/features/wordbook and backend wordbook modules if that keeps the implementation cleaner than overloading unrelated modules. The backend should introduce structured wordbook entry storage plus source-link rows, default to active-only listing, and leave full SRS scheduling out of scope while keeping field design extensible for later review features. Because this task adds database tables, you must use `$postgresql-update` after implementation and test verification so the live PostgreSQL schema is updated and directly verified instead of being left as a local-only migration.
-result_summary: ""
-changed_files: []
-tests_run: []
+result_summary: Added the logged-in sidebar wordbook panel and immersive single-word or phrase collection flow, introduced structured wordbook storage with deduped context-link tables plus APIs and regression coverage, synced checked-in static assets, and verified the live PostgreSQL schema reached revision 20260322_0027 with the new wordbook tables present.
+changed_files:
+  - frontend/src/app/learning-shell/LearningShellSidebar.jsx
+  - frontend/src/app/learning-shell/LearningShellPanelContent.jsx
+  - frontend/src/app/learning-shell/LearningShellContainer.jsx
+  - frontend/src/features/immersive/ImmersiveLessonPage.jsx
+  - frontend/src/features/wordbook/WordbookPanel.jsx
+  - app/api/routers/__init__.py
+  - app/api/routers/wordbook.py
+  - app/models/lesson.py
+  - app/models/__init__.py
+  - app/repositories/wordbook.py
+  - app/services/wordbook_service.py
+  - app/schemas/wordbook.py
+  - migrations/versions/20260322_0027_wordbook_storage.py
+  - tests/test_regression_api.py
+  - tests/test_e2e_key_flows.py
+  - tests/test_spa_route_fallback.py
+  - app/static/assets
+tests_run:
+  - 'pytest tests/test_regression_api.py -k "wordbook or spa or route"'
+  - 'pytest tests/test_e2e_key_flows.py -k "wordbook or immersive or history"'
+  - pytest tests/test_spa_route_fallback.py
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+  - python -m alembic -c alembic.ini heads
+  - python scripts/run_prod_migration.py --check-only
+  - python scripts/run_prod_migration.py
+  - direct SQL verification of app.alembic_version, app.wordbook_entries, and app.wordbook_entry_sources via PROD_DATABASE_URL
 blocked_reason: ""
-completed_at: ""
+completed_at: 2026-03-22T20:33:12.6033710+08:00

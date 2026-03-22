@@ -11,7 +11,7 @@ from app.models.billing import (
     WalletAccount,
     WalletLedger,
 )
-from app.models.lesson import Lesson, LessonGenerationTask, LessonProgress, LessonSentence, MediaAsset
+from app.models.lesson import Lesson, LessonGenerationTask, LessonProgress, LessonSentence, MediaAsset, WordbookEntry, WordbookEntrySource
 from app.models.user import User, UserLoginEvent
 
 __all__ = [
@@ -22,6 +22,8 @@ __all__ = [
     "LessonProgress",
     "LessonGenerationTask",
     "MediaAsset",
+    "WordbookEntry",
+    "WordbookEntrySource",
     "WalletAccount",
     "WalletLedger",
     "BillingModelRate",

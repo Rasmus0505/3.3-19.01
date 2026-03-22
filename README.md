@@ -16,6 +16,11 @@
 - `GET /health`
 - `GET /health/ready`
 
+当前生产支持两条上传转写线路：
+
+- `Bottle 1.0`：服务端本地 `faster-whisper-medium` 模型包
+- `Bottle 2.0`：DashScope 云端 `qwen3-asr-flash-filetrans`
+
 `/health` 只表示进程活着。  
 `/health/ready` 表示数据库、关键表结构和启动安全策略都已经就绪。
 
@@ -36,10 +41,11 @@
 
 给 `web` 服务挂载持久卷到 `/data`。
 
-如果你要使用固定本地 ASR 模型，还需要把模型目录上传到：
+如果你要启用服务端 `Bottle 1.0`，还需要把模型目录上传到：
 
-- `/data/asr-models/SenseVoiceSmall`
 - `/data/asr-models/faster-distil-small.en`
+
+`Bottle 2.0` 走 DashScope 云端接口，不需要本地模型目录。
 
 ### 3. 必填环境变量
 
@@ -62,7 +68,6 @@
 - `TMP_WORK_DIR=/tmp/zeabur3.3`
 - `PERSISTENT_DATA_DIR=/data`
 - `ASR_BUNDLE_ROOT_DIR=/data/asr-models`
-- `SENSEVOICE_MODEL_DIR=/data/asr-models/SenseVoiceSmall`
 - `FASTER_WHISPER_MODELSCOPE_MODEL_ID=Systran/faster-distil-whisper-small.en`
 - `FASTER_WHISPER_MODEL_DIR=/data/asr-models/faster-distil-small.en`
 - `FASTER_WHISPER_PREFETCH_ON_START=0`
@@ -166,7 +171,7 @@ GET /health/ready
 优先检查：
 
 - `DASHSCOPE_API_KEY` 是否正确
-- `/data/asr-models/...` 模型目录是否完整
+- 如果启用了 `Bottle 1.0`，`/data/asr-models/faster-distil-small.en` 是否完整
 - 服务日志里的具体错误信息
 
 ## 本地开发
@@ -175,8 +180,10 @@ GET /health/ready
 cd D:\3.3-19.01
 python -m venv .venv
 . .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
+
+其中 `requirements.txt` 只用于 Zeabur 运行时镜像，`requirements-dev.txt` 额外补齐本地测试依赖。
 
 本地 SQLite：
 
