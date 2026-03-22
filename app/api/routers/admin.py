@@ -136,6 +136,10 @@ def _now() -> datetime:
     return now_shanghai_naive()
 
 
+def _sensevoice_removed_response():
+    return error_response(404, "ASR_MODEL_REMOVED", "Bottle 0.1 已移除", {"model_key": "sensevoice-small"})
+
+
 def _parse_optional_lesson_id(raw_value: str | int | None):
     text_value = str(raw_value or "").strip()
     if not text_value:
@@ -1114,12 +1118,8 @@ def admin_rollback_subtitle_settings_last(
     responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
 )
 def admin_get_sensevoice_settings(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
-    settings = get_sensevoice_settings(db)
-    updated_by_user_email = None
-    if settings.updated_by_user_id:
-        updated_by_user = db.get(User, settings.updated_by_user_id)
-        updated_by_user_email = updated_by_user.email if updated_by_user is not None else None
-    return SenseVoiceSettingsResponse(ok=True, settings=_sensevoice_settings_item_with_meta(settings, updated_by_user_email=updated_by_user_email))
+    _ = db
+    return _sensevoice_removed_response()
 
 
 @router.get(
@@ -1128,16 +1128,8 @@ def admin_get_sensevoice_settings(db: Session = Depends(get_db), _: User = Depen
     responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
 )
 def admin_get_sensevoice_settings_history(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
-    settings = get_sensevoice_settings(db)
-    updated_by_user_email = None
-    if settings.updated_by_user_id:
-        updated_by_user = db.get(User, settings.updated_by_user_id)
-        updated_by_user_email = updated_by_user.email if updated_by_user is not None else None
-    return SenseVoiceSettingsHistoryResponse(
-        ok=True,
-        current=_sensevoice_settings_item_with_meta(settings, updated_by_user_email=updated_by_user_email),
-        rollback_candidate=_load_sensevoice_settings_rollback_candidate(db),
-    )
+    _ = db
+    return _sensevoice_removed_response()
 
 
 @router.put(
@@ -1150,36 +1142,8 @@ def admin_update_sensevoice_settings(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_admin_user),
 ):
-    settings = get_sensevoice_settings(db)
-    before = _sensevoice_settings_item_with_meta(settings).model_dump(mode="json")
-    settings.model_dir = get_pinned_sensevoice_model_dir()
-    settings.trust_remote_code = payload.trust_remote_code
-    settings.remote_code = payload.remote_code.strip()
-    settings.device = payload.device.strip()
-    settings.language = payload.language.strip()
-    settings.vad_model = payload.vad_model.strip()
-    settings.vad_max_single_segment_time = payload.vad_max_single_segment_time
-    settings.use_itn = payload.use_itn
-    settings.batch_size_s = payload.batch_size_s
-    settings.merge_vad = payload.merge_vad
-    settings.merge_length_s = payload.merge_length_s
-    settings.ban_emo_unk = payload.ban_emo_unk
-    settings.updated_by_user_id = current_admin.id
-    db.add(settings)
-    db.flush()
-    append_admin_operation_log(
-        db,
-        operator_user_id=current_admin.id,
-        action_type="sensevoice_settings_update",
-        target_type="sensevoice_settings",
-        target_id=str(getattr(settings, "id", 1)),
-        before_value=before,
-        after_value=_sensevoice_settings_item_with_meta(settings, updated_by_user_email=current_admin.email).model_dump(mode="json"),
-        note="sensevoice_settings",
-    )
-    db.commit()
-    db.refresh(settings)
-    return SenseVoiceSettingsResponse(ok=True, settings=_sensevoice_settings_item_with_meta(settings, updated_by_user_email=current_admin.email))
+    _ = (payload, db, current_admin)
+    return _sensevoice_removed_response()
 
 
 @router.post(
@@ -1191,41 +1155,8 @@ def admin_rollback_sensevoice_settings_last(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_admin_user),
 ):
-    rollback_candidate = _load_sensevoice_settings_rollback_candidate(db)
-    if rollback_candidate is None:
-        return error_response(400, "SENSEVOICE_SETTINGS_ROLLBACK_EMPTY", "暂无可回滚的上一版本")
-
-    settings = get_sensevoice_settings(db)
-    before = _sensevoice_settings_item_with_meta(settings).model_dump(mode="json")
-    previous = rollback_candidate.settings
-    settings.model_dir = get_pinned_sensevoice_model_dir()
-    settings.trust_remote_code = previous.trust_remote_code
-    settings.remote_code = previous.remote_code
-    settings.device = previous.device
-    settings.language = previous.language
-    settings.vad_model = previous.vad_model
-    settings.vad_max_single_segment_time = previous.vad_max_single_segment_time
-    settings.use_itn = previous.use_itn
-    settings.batch_size_s = previous.batch_size_s
-    settings.merge_vad = previous.merge_vad
-    settings.merge_length_s = previous.merge_length_s
-    settings.ban_emo_unk = previous.ban_emo_unk
-    settings.updated_by_user_id = current_admin.id
-    db.add(settings)
-    db.flush()
-    append_admin_operation_log(
-        db,
-        operator_user_id=current_admin.id,
-        action_type="sensevoice_settings_rollback",
-        target_type="sensevoice_settings",
-        target_id=str(getattr(settings, "id", 1)),
-        before_value=before,
-        after_value=_sensevoice_settings_item_with_meta(settings, updated_by_user_email=current_admin.email).model_dump(mode="json"),
-        note=f"sensevoice_settings_rollback_from:{rollback_candidate.action_id}",
-    )
-    db.commit()
-    db.refresh(settings)
-    return SenseVoiceSettingsResponse(ok=True, settings=_sensevoice_settings_item_with_meta(settings, updated_by_user_email=current_admin.email))
+    _ = (db, current_admin)
+    return _sensevoice_removed_response()
 
 
 @router.get(

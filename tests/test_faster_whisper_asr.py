@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from types import SimpleNamespace
-import time
 
 from fastapi.testclient import TestClient
 
@@ -20,7 +20,8 @@ def test_ensure_faster_whisper_download_skips_when_cache_ready(tmp_path, monkeyp
 
     monkeypatch.setattr(module, "FASTER_WHISPER_MODEL_DIR", model_dir)
     monkeypatch.setattr(module, "FASTER_WHISPER_MODELSCOPE_MODEL_ID", "pengzhendong/faster-whisper-medium")
-    monkeypatch.setattr(module, "_load_snapshot_download", lambda: (_ for _ in ()).throw(AssertionError("should not download")))
+    monkeypatch.setattr(module, "has_faster_whisper_model_cache", lambda model_dir=None: True)
+    monkeypatch.setattr(module, "_model_cache_matches_current_config", lambda: True)
 
     assert module.ensure_faster_whisper_model_downloaded(force_refresh=False) == model_dir
 
@@ -214,7 +215,7 @@ def test_prepare_faster_whisper_model_returns_preparing_when_scheduled(monkeypat
             "download_required": True,
             "preparing": False,
             "cached": False,
-            "message": "模型未下载，需要先准备",
+            "message": "model download required",
             "last_error": "old error",
             "model_dir": "D:/tmp/faster-whisper-medium",
             "missing_files": ["model.bin"],
@@ -276,14 +277,14 @@ def test_asr_model_routes_report_status_and_prepare(monkeypatch):
 
     app = create_app(enable_lifespan=False)
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1, email="user@example.com")
-    monkeypatch.setattr(asr_models, "get_supported_asr_model_keys", lambda: ("sensevoice-small", "faster-whisper-medium", "qwen3-asr-flash-filetrans", "local-sensevoice-small"))
+    monkeypatch.setattr(asr_models, "get_supported_asr_model_keys", lambda: ("faster-whisper-medium", "qwen3-asr-flash-filetrans"))
     monkeypatch.setattr(
         asr_models,
         "get_asr_model_status",
         lambda _model_key: {
             "model_key": "faster-whisper-medium",
-            "display_name": "Faster Whisper Medium",
-            "subtitle": "服务端缓存模型，首次使用时按需准备。",
+            "display_name": "Bottle 1.0",
+            "subtitle": "Higher accuracy, slower than Bottle 2.0.",
             "note": "",
             "runtime_kind": "server_cached",
             "runtime_label": "Server Cached Model",
@@ -299,11 +300,11 @@ def test_asr_model_routes_report_status_and_prepare(monkeypatch):
             "download_required": True,
             "preparing": False,
             "cached": False,
-            "message": "模型未下载，需要先准备",
+            "message": "Model download required.",
             "last_error": "",
             "model_dir": "/data/modelscope_whisper/faster-whisper-medium",
             "missing_files": ["model.bin"],
-            "actions": [{"key": "prepare", "label": "准备模型", "enabled": True, "primary": True}],
+            "actions": [{"key": "prepare", "label": "Prepare", "enabled": True, "primary": True}],
         },
     )
     monkeypatch.setattr(
@@ -311,8 +312,8 @@ def test_asr_model_routes_report_status_and_prepare(monkeypatch):
         "prepare_registered_asr_model",
         lambda _model_key, force_refresh=False: {
             "model_key": "faster-whisper-medium",
-            "display_name": "Faster Whisper Medium",
-            "subtitle": "服务端缓存模型，首次使用时按需准备。",
+            "display_name": "Bottle 1.0",
+            "subtitle": "Higher accuracy, slower than Bottle 2.0.",
             "note": "",
             "runtime_kind": "server_cached",
             "runtime_label": "Server Cached Model",
@@ -328,11 +329,11 @@ def test_asr_model_routes_report_status_and_prepare(monkeypatch):
             "download_required": True,
             "preparing": True,
             "cached": False,
-            "message": "模型准备中，请稍候",
+            "message": "Preparing model.",
             "last_error": "",
             "model_dir": "/data/modelscope_whisper/faster-whisper-medium",
             "missing_files": ["model.bin"],
-            "actions": [{"key": "prepare", "label": "准备模型", "enabled": False, "primary": True}],
+            "actions": [{"key": "prepare", "label": "Prepare", "enabled": False, "primary": True}],
         },
     )
     monkeypatch.setattr(
@@ -340,30 +341,55 @@ def test_asr_model_routes_report_status_and_prepare(monkeypatch):
         "list_asr_models_with_status",
         lambda: [
             {
-                "model_key": "local-sensevoice-small",
-                "display_name": "SenseVoice Small",
-                "subtitle": "浏览器本地模型，首次使用时在当前浏览器中下载或校验。",
+                "model_key": "faster-whisper-medium",
+                "display_name": "Bottle 1.0",
+                "subtitle": "Higher accuracy, slower than Bottle 2.0.",
                 "note": "",
-                "runtime_kind": "browser_local",
-                "runtime_label": "Browser WASM",
+                "runtime_kind": "server_cached",
+                "runtime_label": "Server Cached Model",
                 "prepare_mode": "auto_on_demand",
-                "cache_scope": "browser",
+                "cache_scope": "server",
                 "supports_upload": True,
-                "supports_preview": True,
-                "supports_transcribe_api": False,
-                "source_model_id": "",
-                "deploy_path": "",
+                "supports_preview": False,
+                "supports_transcribe_api": True,
+                "source_model_id": "pengzhendong/faster-whisper-medium",
+                "deploy_path": "/data/modelscope_whisper/faster-whisper-medium",
                 "status": "missing",
                 "available": False,
                 "download_required": True,
                 "preparing": False,
                 "cached": False,
-                "message": "需要在当前浏览器中校验或下载模型",
+                "message": "Model download required.",
+                "last_error": "",
+                "model_dir": "/data/modelscope_whisper/faster-whisper-medium",
+                "missing_files": ["model.bin"],
+                "actions": [{"key": "prepare", "label": "Prepare", "enabled": True, "primary": True}],
+            },
+            {
+                "model_key": "qwen3-asr-flash-filetrans",
+                "display_name": "Bottle 2.0",
+                "subtitle": "Fast cloud transcription.",
+                "note": "",
+                "runtime_kind": "cloud_api",
+                "runtime_label": "Cloud API",
+                "prepare_mode": "none",
+                "cache_scope": "cloud",
+                "supports_upload": True,
+                "supports_preview": False,
+                "supports_transcribe_api": True,
+                "source_model_id": "",
+                "deploy_path": "",
+                "status": "ready",
+                "available": True,
+                "download_required": False,
+                "preparing": False,
+                "cached": False,
+                "message": "Cloud API is ready.",
                 "last_error": "",
                 "model_dir": "",
                 "missing_files": [],
-                "actions": [{"key": "download", "label": "下载模型", "enabled": True, "primary": True}],
-            }
+                "actions": [{"key": "verify", "label": "Verify", "enabled": True, "primary": False}],
+            },
         ],
     )
 
@@ -371,16 +397,22 @@ def test_asr_model_routes_report_status_and_prepare(monkeypatch):
         list_resp = client.get("/api/asr-models")
         status_resp = client.get("/api/asr-models/faster-whisper-medium/status")
         prepare_resp = client.post("/api/asr-models/faster-whisper-medium/prepare")
+        invalid_resp = client.get("/api/asr-models/sensevoice-small/status")
 
     assert list_resp.status_code == 200
-    assert list_resp.json()["models"][0]["runtime_kind"] == "browser_local"
+    assert [item["model_key"] for item in list_resp.json()["models"]] == [
+        "faster-whisper-medium",
+        "qwen3-asr-flash-filetrans",
+    ]
     assert status_resp.status_code == 200
-    assert status_resp.json()["display_name"] == "Faster Whisper Medium"
+    assert status_resp.json()["display_name"] == "Bottle 1.0"
     assert status_resp.json()["status"] == "missing"
     assert status_resp.json()["download_required"] is True
     assert prepare_resp.status_code == 200
     assert prepare_resp.json()["status"] == "preparing"
     assert prepare_resp.json()["preparing"] is True
+    assert invalid_resp.status_code == 400
+    assert invalid_resp.json()["detail"]["supported_models"] == ["faster-whisper-medium", "qwen3-asr-flash-filetrans"]
 
 
 def test_asr_runtime_routes_faster_whisper_model(monkeypatch):

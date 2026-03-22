@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import math
-import re
 import shutil
 import threading
 import time
@@ -28,7 +26,6 @@ DEFAULT_CPU_THREADS = 4
 DEFAULT_BEAM_SIZE = 5
 DEFAULT_VAD_FILTER = True
 DEFAULT_CONDITION_ON_PREVIOUS_TEXT = False
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
 MODEL_SPECS: dict[str, dict[str, str]] = {
     "distil-small.en": {
@@ -55,14 +52,6 @@ MODEL_SPECS: dict[str, dict[str, str]] = {
         "description": "Turbo CT2 model used as the fast large-model slot.",
         "backend": "faster_whisper",
     },
-    "sensevoice-small": {
-        "key": "sensevoice-small",
-        "label": "SenseVoice Small",
-        "repo_id": "iic/SenseVoiceSmall",
-        "local_dir": "SenseVoiceSmall",
-        "description": "SenseVoiceSmall via FunASR.",
-        "backend": "sensevoice",
-    },
 }
 
 _MODEL_CACHE: dict[str, Any] = {}
@@ -78,24 +67,11 @@ def ensure_directories() -> None:
         path.mkdir(parents=True, exist_ok=True)
 
 
-def model_backend(model_key: str) -> str:
-    return str(MODEL_SPECS[model_key].get("backend") or "faster_whisper")
-
-
 def model_local_path(model_key: str) -> Path:
     return MODELS_DIR / MODEL_SPECS[model_key]["local_dir"]
 
 
 def model_required_files(model_key: str) -> tuple[str, ...]:
-    if model_backend(model_key) == "sensevoice":
-        return (
-            "am.mvn",
-            "config.yaml",
-            "configuration.json",
-            "model.pt",
-            "tokens.json",
-            "chn_jpn_yue_eng_ko_spectok.bpe.model",
-        )
     return ("config.json", "model.bin", "preprocessor_config.json", "tokenizer.json", "vocabulary.json")
 
 
@@ -125,13 +101,6 @@ def download_model(model_key: str, force: bool = False) -> Path:
     ensure_directories()
     local_dir = MODELS_DIR / MODEL_SPECS[model_key]["local_dir"]
     if model_is_downloaded(model_key) and not force:
-        return local_dir
-    if model_backend(model_key) == "sensevoice":
-        try:
-            from modelscope import snapshot_download as ms_snapshot_download
-        except Exception as exc:  # pragma: no cover - depends on runtime
-            raise RuntimeError(f"modelscope import failed: {str(exc)[:400]}") from exc
-        ms_snapshot_download(MODEL_SPECS[model_key]["repo_id"], local_dir=str(local_dir))
         return local_dir
     snapshot_download(
         repo_id=MODEL_SPECS[model_key]["repo_id"],
@@ -167,144 +136,6 @@ def _get_model(model_key: str, *, device: str, compute_type: str, cpu_threads: i
         )
         _MODEL_CACHE[cache_key] = model
         return model
-
-
-def _load_funasr_symbols():
-    try:
-        from funasr import AutoModel
-    except Exception as exc:  # pragma: no cover - runtime dependency
-        raise RuntimeError(f"funasr import failed: {str(exc)[:400]}") from exc
-
-    try:
-        from funasr.utils.postprocess_utils import rich_transcription_postprocess
-    except Exception:
-        rich_transcription_postprocess = None
-    return AutoModel, rich_transcription_postprocess
-
-
-def _probe_duration_seconds(source_path: Path) -> float:
-    try:
-        import av
-    except Exception:
-        return 0.0
-    try:
-        with av.open(str(source_path)) as container:
-            if container.duration:
-                return max(0.0, float(container.duration) / 1_000_000.0)
-    except Exception:
-        return 0.0
-    return 0.0
-
-
-def _load_audio_array(source_path: Path, sample_rate: int = 16000):
-    try:
-        import av
-        import numpy as np
-    except Exception as exc:
-        raise RuntimeError(f"audio decode dependencies unavailable: {str(exc)[:400]}") from exc
-
-    chunks = []
-    with av.open(str(source_path)) as container:
-        audio_stream = next((stream for stream in container.streams if stream.type == "audio"), None)
-        if audio_stream is None:
-            raise RuntimeError("No audio stream found in media file.")
-        resampler = av.audio.resampler.AudioResampler(format="s16", layout="mono", rate=sample_rate)
-        for frame in container.decode(audio_stream):
-            frame = resampler.resample(frame)
-            if frame is None:
-                continue
-            if isinstance(frame, list):
-                frames = frame
-            else:
-                frames = [frame]
-            for item in frames:
-                array = item.to_ndarray()
-                if array.ndim > 1:
-                    array = array[0]
-                chunks.append(array.astype("float32") / 32768.0)
-    if not chunks:
-        raise RuntimeError("Decoded audio is empty.")
-    return np.concatenate(chunks, axis=0)
-
-
-def _sentence_segments_from_text(text: str, duration_seconds: float) -> list[dict[str, Any]]:
-    clean_text = str(text or "").strip()
-    if not clean_text:
-        return []
-    parts = [item.strip() for item in _SENTENCE_SPLIT_RE.split(clean_text) if item.strip()]
-    if not parts:
-        parts = [clean_text]
-    total_weight = max(1, sum(max(1, len(part)) for part in parts))
-    cursor = 0.0
-    segments: list[dict[str, Any]] = []
-    for index, part in enumerate(parts, start=1):
-        weight = max(1, len(part))
-        start = cursor
-        if index == len(parts):
-            end = max(start + 0.05, duration_seconds or start + 0.05)
-        else:
-            end = start + ((duration_seconds or 0.0) * (weight / total_weight))
-        cursor = end
-        segments.append({"id": index, "start": round(start, 3), "end": round(end, 3), "text": part})
-    return segments
-
-
-def _transcribe_with_sensevoice(context: RunContext, publish, device: str) -> tuple[list[dict[str, Any]], str, float, dict[str, Any]]:
-    cache_key = json.dumps({"model_key": context.model_key, "device": device}, sort_keys=True)
-    model_dir = model_local_path(context.model_key)
-    with _MODEL_CACHE_LOCK:
-        model = _MODEL_CACHE.get(cache_key)
-        if model is None:
-            AutoModel, _ = _load_funasr_symbols()
-            model = AutoModel(
-                model=str(model_dir),
-                trust_remote_code=False,
-                device=device,
-                disable_update=True,
-                vad_model="fsmn-vad",
-                vad_kwargs={"max_single_segment_time": 30000},
-            )
-            _MODEL_CACHE[cache_key] = model
-
-    publish("transcribing", "SenseVoice transcription started.", 10.0)
-    started = time.monotonic()
-    audio_array = _load_audio_array(context.source_path, sample_rate=16000)
-    generate_result = model.generate(
-        input=audio_array,
-        fs=16000,
-        cache={},
-        language="en",
-        use_itn=True,
-        batch_size_s=60,
-        merge_vad=True,
-        merge_length_s=15,
-        ban_emo_unk=False,
-    )
-    _, rich_postprocess = _load_funasr_symbols()
-    payload = generate_result[0] if isinstance(generate_result, list) and generate_result else generate_result
-    if hasattr(payload, "to_dict"):
-        payload = payload.to_dict()
-    payload = dict(payload or {})
-    raw_text = str(payload.get("text") or "").strip()
-    transcript_text = rich_postprocess(raw_text) if callable(rich_postprocess) and raw_text else raw_text
-    duration_seconds = _probe_duration_seconds(context.source_path)
-    segments = _sentence_segments_from_text(transcript_text, duration_seconds)
-    publish(
-        "transcribing",
-        "SenseVoice transcription completed.",
-        90.0,
-        {
-            "language": str(payload.get("lang") or "en"),
-            "media_duration_seconds": round(duration_seconds, 3),
-            "elapsed_seconds": round(time.monotonic() - started, 3),
-        },
-    )
-    info = {
-        "language": str(payload.get("lang") or "en"),
-        "language_probability": 1.0,
-        "duration": duration_seconds,
-    }
-    return segments, transcript_text, duration_seconds, info
 
 
 def _format_timestamp(seconds: float) -> str:
@@ -412,8 +243,6 @@ def transcribe_run(
     condition_on_previous_text: bool = DEFAULT_CONDITION_ON_PREVIOUS_TEXT,
 ) -> dict[str, Any]:
     start_time = time.monotonic()
-    backend = model_backend(context.model_key)
-    transcript_text = ""
 
     def publish(event_type: str, message: str, percent: float | None = None, extra: dict[str, Any] | None = None) -> None:
         payload = emit_progress(
@@ -432,65 +261,61 @@ def transcribe_run(
         raise RuntimeError(f"Model is not downloaded: {context.model_key}")
     segments: list[dict[str, Any]] = []
     transcript_parts: list[str] = []
-    if backend == "sensevoice":
-        segments, transcript_text, media_duration, info = _transcribe_with_sensevoice(context, publish, device)
-        transcript_parts = [segment["text"] for segment in segments]
-    else:
-        model = _get_model(context.model_key, device=device, compute_type=compute_type, cpu_threads=cpu_threads)
-        publish("transcribing", "Transcription started.", 10.0)
-        segments_iter, info = model.transcribe(
-            str(context.source_path),
-            language="en",
-            beam_size=int(beam_size),
-            word_timestamps=True,
-            vad_filter=bool(vad_filter),
-            condition_on_previous_text=bool(condition_on_previous_text),
-        )
+    model = _get_model(context.model_key, device=device, compute_type=compute_type, cpu_threads=cpu_threads)
+    publish("transcribing", "Transcription started.", 10.0)
+    segments_iter, info = model.transcribe(
+        str(context.source_path),
+        language="en",
+        beam_size=int(beam_size),
+        word_timestamps=True,
+        vad_filter=bool(vad_filter),
+        condition_on_previous_text=bool(condition_on_previous_text),
+    )
 
-        media_duration = float(getattr(info, "duration", 0) or 0)
+    media_duration = float(getattr(info, "duration", 0) or 0)
+    publish(
+        "transcribing",
+        "Media metadata loaded.",
+        15.0,
+        {
+            "media_duration_seconds": round(media_duration, 3),
+            "language": str(getattr(info, "language", "") or ""),
+            "language_probability": round(float(getattr(info, "language_probability", 0) or 0), 4),
+        },
+    )
+
+    for index, segment in enumerate(segments_iter, start=1):
+        segment_payload = {
+            "id": index,
+            "start": round(float(getattr(segment, "start", 0) or 0), 3),
+            "end": round(float(getattr(segment, "end", 0) or 0), 3),
+            "text": str(getattr(segment, "text", "") or "").strip(),
+            "avg_logprob": round(float(getattr(segment, "avg_logprob", 0) or 0), 6),
+            "no_speech_prob": round(float(getattr(segment, "no_speech_prob", 0) or 0), 6),
+            "compression_ratio": round(float(getattr(segment, "compression_ratio", 0) or 0), 6),
+            "words": [],
+        }
+        for word in list(getattr(segment, "words", None) or []):
+            segment_payload["words"].append(
+                {
+                    "start": round(float(getattr(word, "start", 0) or 0), 3),
+                    "end": round(float(getattr(word, "end", 0) or 0), 3),
+                    "word": str(getattr(word, "word", "") or ""),
+                    "probability": round(float(getattr(word, "probability", 0) or 0), 6),
+                }
+            )
+        segments.append(segment_payload)
+        transcript_parts.append(segment_payload["text"])
+        segment_progress = min(segment_payload["end"] / media_duration, 0.98) if media_duration > 0 else min(0.15 + index * 0.02, 0.98)
         publish(
             "transcribing",
-            "Media metadata loaded.",
-            15.0,
-            {
-                "media_duration_seconds": round(media_duration, 3),
-                "language": str(getattr(info, "language", "") or ""),
-                "language_probability": round(float(getattr(info, "language_probability", 0) or 0), 4),
-            },
+            f"Processed segment {index}.",
+            15.0 + segment_progress * 75.0,
+            {"segment_index": index, "segment_end_seconds": segment_payload["end"], "segment_text": segment_payload["text"][:200]},
         )
 
-        for index, segment in enumerate(segments_iter, start=1):
-            segment_payload = {
-                "id": index,
-                "start": round(float(getattr(segment, "start", 0) or 0), 3),
-                "end": round(float(getattr(segment, "end", 0) or 0), 3),
-                "text": str(getattr(segment, "text", "") or "").strip(),
-                "avg_logprob": round(float(getattr(segment, "avg_logprob", 0) or 0), 6),
-                "no_speech_prob": round(float(getattr(segment, "no_speech_prob", 0) or 0), 6),
-                "compression_ratio": round(float(getattr(segment, "compression_ratio", 0) or 0), 6),
-                "words": [],
-            }
-            for word in list(getattr(segment, "words", None) or []):
-                segment_payload["words"].append(
-                    {
-                        "start": round(float(getattr(word, "start", 0) or 0), 3),
-                        "end": round(float(getattr(word, "end", 0) or 0), 3),
-                        "word": str(getattr(word, "word", "") or ""),
-                        "probability": round(float(getattr(word, "probability", 0) or 0), 6),
-                    }
-                )
-            segments.append(segment_payload)
-            transcript_parts.append(segment_payload["text"])
-            segment_progress = min(segment_payload["end"] / media_duration, 0.98) if media_duration > 0 else min(0.15 + index * 0.02, 0.98)
-            publish(
-                "transcribing",
-                f"Processed segment {index}.",
-                15.0 + segment_progress * 75.0,
-                {"segment_index": index, "segment_end_seconds": segment_payload["end"], "segment_text": segment_payload["text"][:200]},
-            )
-
     publish("writing_outputs", "Writing transcript artifacts.", 95.0)
-    transcript_text = (transcript_text if backend == "sensevoice" else "\n".join(part for part in transcript_parts if part).strip()) + "\n"
+    transcript_text = "\n".join(part for part in transcript_parts if part).strip() + "\n"
     subtitle_text = segments_to_srt(segments)
     elapsed_seconds = time.monotonic() - start_time
     audio_seconds = media_duration or max((segment["end"] for segment in segments), default=0.0)

@@ -7,9 +7,6 @@ Independent local test bench for English ASR model comparison.
 - `distil-small.en`
 - `distil-medium.en`
 - `large-v3-turbo`
-- `sensevoice-small`
-
-`sensevoice-small` is pinned to `D:\3.3-19.01\asr-test\models\SenseVoiceSmall`.
 
 ## Setup
 

@@ -9,50 +9,37 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
-from app.core.config import ASR_BUNDLE_ROOT_DIR, BASE_TMP_DIR, FASTER_WHISPER_MODEL_DIR, SENSEVOICE_MODEL_DIR
+from app.core.config import ASR_BUNDLE_ROOT_DIR, BASE_TMP_DIR, FASTER_WHISPER_MODEL_DIR
 
 
 router = APIRouter(prefix="/api/local-asr-assets", tags=["local-asr-assets"])
 
-LEGACY_LOCAL_ASR_CACHE_VERSION = "sensevoice-small-legacy-disabled"
-LEGACY_LOCAL_ASR_ALLOWED_FILES: tuple[str, ...] = (
-    "sherpa-onnx-asr.js",
-    "sherpa-onnx-vad.js",
-    "sherpa-onnx-wasm-main-vad-asr.js",
-    "sherpa-onnx-wasm-main-vad-asr.wasm",
-    "sherpa-onnx-wasm-main-vad-asr.data",
-)
+LEGACY_LOCAL_ASR_CACHE_VERSION = "browser-local-asr-disabled"
+LEGACY_LOCAL_ASR_ALLOWED_FILES: tuple[str, ...] = ()
 DOWNLOADABLE_MODELS: dict[str, dict[str, object]] = {
-    "sensevoice-small": {
-        "model_key": "sensevoice-small",
-        "display_name": "bottle0.1",
-        "subtitle": "快速识别字幕",
-        "source_model_id": "iic/SenseVoiceSmall",
-        "bundle_dir": SENSEVOICE_MODEL_DIR,
-        "archive_name": "bottle0.1.zip",
-    },
     "faster-whisper-medium": {
         "model_key": "faster-whisper-medium",
-        "display_name": "bottle.1.0",
-        "subtitle": "识别字幕更精准/耗时加长",
+        "display_name": "Bottle 1.0",
+        "subtitle": "Higher accuracy, slower than Bottle 2.0.",
         "source_model_id": "Systran/faster-distil-whisper-small.en",
         "bundle_dir": FASTER_WHISPER_MODEL_DIR,
-        "archive_name": "bottle.1.0.zip",
+        "archive_name": "Bottle-1.0.zip",
     },
 }
+ACTIVE_DOWNLOADABLE_MODEL_KEYS: tuple[str, ...] = ("faster-whisper-medium",)
 DOWNLOAD_BUILD_ROOT = BASE_TMP_DIR / "downloadable_asr_models"
 
 
 def _legacy_status_payload() -> dict[str, object]:
     return {
         "ok": True,
-        "model_key": "local-sensevoice-small",
+        "model_key": "",
         "cache_version": LEGACY_LOCAL_ASR_CACHE_VERSION,
         "allowed_files": list(LEGACY_LOCAL_ASR_ALLOWED_FILES),
         "cache_dir": str(BASE_TMP_DIR / "local_asr_assets_disabled"),
         "cached": False,
         "current": False,
-        "missing_files": list(LEGACY_LOCAL_ASR_ALLOWED_FILES),
+        "missing_files": [],
     }
 
 
@@ -61,7 +48,10 @@ def schedule_local_asr_asset_prefetch() -> bool:
 
 
 def _bundle_spec(model_key: str) -> dict[str, object]:
-    spec = DOWNLOADABLE_MODELS.get(str(model_key or "").strip())
+    normalized_model_key = str(model_key or "").strip()
+    if normalized_model_key not in ACTIVE_DOWNLOADABLE_MODEL_KEYS:
+        raise HTTPException(status_code=404, detail="Model bundle not found")
+    spec = DOWNLOADABLE_MODELS.get(normalized_model_key)
     if spec is None:
         raise HTTPException(status_code=404, detail="Model bundle not found")
     return spec
@@ -149,12 +139,12 @@ def list_downloadable_model_bundles():
     return {
         "ok": True,
         "bundle_root_dir": str(ASR_BUNDLE_ROOT_DIR),
-        "models": [_bundle_summary(spec) for spec in DOWNLOADABLE_MODELS.values()],
+        "models": [_bundle_summary(_bundle_spec(model_key)) for model_key in ACTIVE_DOWNLOADABLE_MODEL_KEYS],
     }
 
 
 def get_downloadable_model_bundle_summaries() -> list[dict[str, object]]:
-    return [_bundle_summary(spec) for spec in DOWNLOADABLE_MODELS.values()]
+    return [_bundle_summary(_bundle_spec(model_key)) for model_key in ACTIVE_DOWNLOADABLE_MODEL_KEYS]
 
 
 @router.get("/download-models/{model_key}")

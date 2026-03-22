@@ -22,7 +22,6 @@ from app.services.asr_model_registry import (
     LOCAL_BROWSER_ASR_MODEL_KEYS,
     LOCAL_SENSEVOICE_ASR_MODEL as LOCAL_SENSEVOICE_SMALL_MODEL,
     QWEN_ASR_MODEL as FAST_CLOUD_MODEL,
-    SENSEVOICE_ASR_MODEL as SENSEVOICE_CLOUD_MODEL,
 )
 from app.models import (
     AdminOperationLog,
@@ -69,32 +68,17 @@ DEFAULT_MT_COST_PER_1K_TOKENS_CENTS = 15
 MT_FLASH_MODEL = "qwen-mt-flash"
 MT_MODEL_PREFIX = "qwen-mt-"
 ADMIN_BILLING_MODEL_ORDER: tuple[str, ...] = (
-    SENSEVOICE_CLOUD_MODEL,
     FAST_CLOUD_MODEL,
     FASTER_WHISPER_SERVER_MODEL,
     MT_FLASH_MODEL,
 )
 PUBLIC_BILLING_MODEL_ORDER: tuple[str, ...] = (
-    SENSEVOICE_CLOUD_MODEL,
     FAST_CLOUD_MODEL,
     FASTER_WHISPER_SERVER_MODEL,
 )
 LOCAL_BROWSER_ASR_MODELS: tuple[str, ...] = LOCAL_BROWSER_ASR_MODEL_KEYS
 
 DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
-    {
-        "model_name": SENSEVOICE_CLOUD_MODEL,
-        "points_per_minute": 130,
-        "price_per_minute_yuan": Decimal("1.3000"),
-        "points_per_1k_tokens": 0,
-        "cost_per_minute_cents": 0,
-        "cost_per_minute_yuan": Decimal("0.0000"),
-        "billing_unit": "minute",
-        "parallel_enabled": False,
-        "parallel_threshold_seconds": 600,
-        "segment_seconds": 300,
-        "max_concurrency": 1,
-    },
     {
         "model_name": FAST_CLOUD_MODEL,
         "points_per_minute": 130,
@@ -842,6 +826,7 @@ def _cleanup_removed_admin_rates(db: Session) -> int:
             select(BillingModelRate).where(
                 BillingModelRate.model_name.in_(
                     [
+                        "sensevoice-small",
                         LOCAL_SENSEVOICE_SMALL_MODEL,
                     ]
                 )
@@ -1178,7 +1163,10 @@ def _backfill_subtitle_settings_values(db: Session) -> bool:
             update_sql = text(f"UPDATE {table_name} SET {column_name} = :default_value WHERE {where_sql}")
             params = {"default_value": int(default_value) if dialect_name == "sqlite" else bool(default_value)}
         elif column_name == "default_asr_model":
-            where_sql = f"{column_name} IS NULL OR TRIM({column_name}) = ''"
+            where_sql = (
+                f"{column_name} IS NULL OR TRIM({column_name}) = '' "
+                f"OR TRIM({column_name}) NOT IN ('{FAST_CLOUD_MODEL}', '{FASTER_WHISPER_SERVER_MODEL}')"
+            )
             update_sql = text(f"UPDATE {table_name} SET {column_name} = :default_value WHERE {where_sql}")
             params = {"default_value": str(default_value or LESSON_DEFAULT_ASR_MODEL)}
         elif column_name == "translation_batch_max_chars":
@@ -1224,6 +1212,8 @@ def _normalize_subtitle_settings_row(row: SubtitleSetting) -> bool:
             continue
         if key == "default_asr_model":
             normalized_value = str(current or "").strip() or str(value or LESSON_DEFAULT_ASR_MODEL)
+            if normalized_value not in {FAST_CLOUD_MODEL, FASTER_WHISPER_SERVER_MODEL}:
+                normalized_value = str(value or LESSON_DEFAULT_ASR_MODEL)
             if normalized_value != current:
                 setattr(row, key, normalized_value)
                 changed = True

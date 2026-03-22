@@ -152,8 +152,6 @@ spec:
             default: /data
           ASR_BUNDLE_ROOT_DIR:
             default: /data/asr-models
-          SENSEVOICE_MODEL_DIR:
-            default: /data/asr-models/SenseVoiceSmall
           FASTER_WHISPER_MODELSCOPE_MODEL_ID:
             default: Systran/faster-distil-whisper-small.en
           FASTER_WHISPER_MODEL_DIR:

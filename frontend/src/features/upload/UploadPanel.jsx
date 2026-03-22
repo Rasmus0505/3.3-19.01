@@ -47,6 +47,7 @@ const DOWNLOADABLE_MODEL_BUNDLES_API = "/api/local-asr-assets/download-models";
 const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止生成，可重新开始。";
 const LOCAL_BROWSER_ASR_ENABLED = false;
 const DEFAULT_ASR_MODEL_CATALOG_MAP = buildAsrModelCatalogMap();
+const DEFAULT_FAST_UPLOAD_MODEL = QWEN_MODEL;
 const LOCAL_MODEL_OPTIONS = [
   {
     key: ASR_MODEL_KEYS.sensevoiceBrowser,
@@ -59,15 +60,8 @@ const LOCAL_MODEL_OPTIONS = [
 ];
 const UPLOAD_MODEL_OPTIONS = [
   {
-    key: ASR_MODEL_KEYS.sensevoiceServer,
-    title: "bottle0.1",
-    subtitle: "快速识别字幕",
-    mode: "fast",
-    note: "固定本地目录。",
-  },
-  {
     key: FASTER_WHISPER_MODEL,
-    title: "bottle.1.0",
+    title: "Bottle 1.0",
     subtitle: "识别字幕更精准/耗时加长",
     mode: "fast",
     note: "固定本地目录。",
@@ -76,7 +70,7 @@ const UPLOAD_MODEL_OPTIONS = [
   },
   {
     key: QWEN_MODEL,
-    title: "Qwen ASR Flash",
+    title: "Bottle 2.0",
     subtitle: "直接开始生成",
     mode: "fast",
     note: "无需准备模型，选中文件后可直接开始。",
@@ -101,7 +95,7 @@ const STAGE_PROGRESS_BOUNDS = {
   translate_zh: { start: 60, end: 85 },
   write_lesson: { start: 85, end: 100 },
 };
-const SERVER_PREPARABLE_MODELS = new Set([FASTER_WHISPER_MODEL, ASR_MODEL_KEYS.sensevoiceServer]);
+const SERVER_PREPARABLE_MODELS = new Set([FASTER_WHISPER_MODEL]);
 const ACTIVE_SERVER_TASK_STATUSES = new Set(["pending", "running", "pausing", "terminating"]);
 const STOPPABLE_SERVER_TASK_STATUSES = new Set(["pending", "running"]);
 const RECOVERABLE_SERVER_TASK_STATUSES = new Set(["paused", "terminated"]);
@@ -165,13 +159,13 @@ function getDefaultFastUploadModelKey(configuredModel = "") {
   if (normalizedConfiguredModel === FASTER_WHISPER_MODEL || normalizedConfiguredModel === QWEN_MODEL) {
     return normalizedConfiguredModel;
   }
-  return ASR_MODEL_KEYS.sensevoiceServer;
+  return DEFAULT_FAST_UPLOAD_MODEL;
 }
 
 function getDefaultUploadModelKey(configuredModel = "") {
   const normalizedConfiguredModel = String(configuredModel || "").trim();
   if (normalizedConfiguredModel === ASR_MODEL_KEYS.sensevoiceBrowser || normalizedConfiguredModel === ASR_MODEL_KEYS.sensevoiceServer) {
-    return ASR_MODEL_KEYS.sensevoiceServer;
+    return DEFAULT_FAST_UPLOAD_MODEL;
   }
   if (normalizedConfiguredModel === FASTER_WHISPER_MODEL || normalizedConfiguredModel === QWEN_MODEL) {
     return normalizedConfiguredModel;
@@ -213,7 +207,7 @@ function simplifyLongAudioWarning(text) {
 }
 
 function getUploadModelPriceLabel(item, rates, selectedBalancedModel) {
-  const pricingModelKey = item.mode === "balanced" ? ASR_MODEL_KEYS.sensevoiceServer : item.key;
+  const pricingModelKey = item.mode === "balanced" ? DEFAULT_FAST_UPLOAD_MODEL : item.key;
   const rate = getRateByModel(rates, pricingModelKey) || getRateByModel(rates, item.key);
   const pricePerMinuteYuan = getRatePricePerMinuteYuan(rate);
   return pricePerMinuteYuan > 0 ? formatMoneyYuanPerMinute(pricePerMinuteYuan) : "未设置价格";
@@ -738,7 +732,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }, [configuredDefaultAsrModel, selectedUploadModel]);
   const selectedAsrModel = mode === "balanced" ? selectedBalancedModel : selectedFastModel;
   const selectedUploadModelMeta = mergeCatalogIntoUploadModelMeta(selectedUploadModel, asrModelCatalogMap);
-  const pricingModelKey = mode === "balanced" ? ASR_MODEL_KEYS.sensevoiceServer : selectedFastModel;
+  const pricingModelKey = mode === "balanced" ? DEFAULT_FAST_UPLOAD_MODEL : selectedFastModel;
   const selectedRate = getRateByModel(billingRates, pricingModelKey);
   const selectedRatePricePerMinuteYuan = selectedRate ? getRatePricePerMinuteYuan(selectedRate) : 0;
   const estimatedChargeCents = selectedRate ? calculateChargeCentsBySeconds(durationSec || 0, selectedRatePricePerMinuteYuan) : 0;
@@ -821,13 +815,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const taskStatusToneStyles = getUploadToneStyles(taskStatusTone);
 
   function maybeShowModelFallbackToast(payload) {
-    const taskIdForToast = String(payload?.task_id || "");
-    const requestedModel = String(payload?.requested_asr_model || "");
-    const effectiveModel = String(payload?.effective_asr_model || "");
-    if (!taskIdForToast || fallbackToastTaskRef.current === taskIdForToast) return;
-    if (requestedModel !== FASTER_WHISPER_MODEL || effectiveModel !== "sensevoice-small" || !payload?.model_fallback_applied) return;
-    fallbackToastTaskRef.current = taskIdForToast;
-    toast.warning("Faster Whisper 还在预热中，本次已自动切换到 SenseVoice Small，任务会继续处理。");
+    void payload;
   }
 
   function updateLocalModelState(modelKey, patch) {
@@ -1041,7 +1029,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   useEffect(() => {
     if (mode === "balanced") {
-      setSelectedUploadModel((prev) => (prev === ASR_MODEL_KEYS.sensevoiceServer ? prev : ASR_MODEL_KEYS.sensevoiceServer));
+      setSelectedUploadModel((prev) => (prev === getDefaultFastUploadModelKey(configuredDefaultAsrModel) ? prev : getDefaultFastUploadModelKey(configuredDefaultAsrModel)));
       return;
     }
     setSelectedUploadModel((prev) => (getUploadModelMeta(prev).mode === "fast" ? prev : getDefaultFastUploadModelKey(configuredDefaultAsrModel)));
