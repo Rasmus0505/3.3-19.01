@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { cn } from "../../lib/utils";
 import { api, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
 import { ASR_MODEL_KEYS, buildAsrModelCatalogMap, getAsrModelCatalogItem, getAsrModelStatusLabel, isAsrModelPreparing, isAsrModelReady } from "../../shared/lib/asrModels";
-import { formatMoneyCents, formatMoneyYuanPerMinute } from "../../shared/lib/money";
+import { formatMoneyCents, formatMoneyYuan, formatMoneyYuanPerMinute } from "../../shared/lib/money";
 import {
   bindLocalAsrModelDirectory,
   ensureLocalAsrModel,
@@ -36,6 +36,8 @@ import { getUploadModelTone, getUploadRestoreTone, getUploadStageTone, getUpload
 
 const QWEN_MODEL = "qwen3-asr-flash-filetrans";
 const FASTER_WHISPER_MODEL = "faster-whisper-medium";
+const MT_PRICE_MODEL = "qwen-mt-flash";
+const ESTIMATED_MT_TOKENS_PER_MINUTE = 320;
 const UPLOAD_PROGRESS_PERSIST_INTERVAL_MS = 800;
 const LOCAL_ASR_FILE_ACCEPT = "audio/*,video/mp4,.mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.opus";
 const LOCAL_MODEL_VISUAL_PROGRESS_INTERVAL_MS = 120;
@@ -43,7 +45,6 @@ const LOCAL_STAGE_PROGRESS_INTERVAL_MS = 800;
 const DEFAULT_LOCAL_ASR_ASSET_BASE_URL = "/api/local-asr-assets";
 const LOCAL_ASR_ASSET_BASE_URL = (import.meta.env.VITE_LOCAL_ASR_MODEL_BASE_URL || DEFAULT_LOCAL_ASR_ASSET_BASE_URL).trim().replace(/\/+$/, "");
 const ASR_MODELS_API_BASE = "/api/asr-models";
-const DOWNLOADABLE_MODEL_BUNDLES_API = "/api/local-asr-assets/download-models";
 const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止生成，可重新开始。";
 const LOCAL_BROWSER_ASR_ENABLED = false;
 const DEFAULT_ASR_MODEL_CATALOG_MAP = buildAsrModelCatalogMap();
@@ -132,11 +133,29 @@ function getRatePricePerMinuteYuan(rate) {
   return fallbackCents / 100;
 }
 
+function getRatePricePer1kTokensYuan(rate) {
+  const tokenCents = Number(rate?.points_per_1k_tokens ?? 0);
+  if (!Number.isFinite(tokenCents) || tokenCents <= 0) {
+    return 0;
+  }
+  return tokenCents / 100;
+}
+
 function calculateChargeCentsBySeconds(seconds, pricePerMinuteYuan) {
   if (!Number.isFinite(seconds) || seconds <= 0 || !Number.isFinite(pricePerMinuteYuan) || pricePerMinuteYuan <= 0) return 0;
   const roundedSeconds = Math.ceil(seconds);
   const yuanPerMinuteScaled = Math.round(pricePerMinuteYuan * 10000);
   return Math.ceil((roundedSeconds * yuanPerMinuteScaled) / 6000);
+}
+
+function calculateChargeCentsByTokens(totalTokens, centsPer1kTokens) {
+  if (!Number.isFinite(totalTokens) || totalTokens <= 0 || !Number.isFinite(centsPer1kTokens) || centsPer1kTokens <= 0) return 0;
+  return Math.ceil((Math.ceil(totalTokens) * Math.ceil(centsPer1kTokens)) / 1000);
+}
+
+function estimateMtTokensByDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return 0;
+  return Math.max(1, Math.ceil((Math.ceil(seconds) * ESTIMATED_MT_TOKENS_PER_MINUTE) / 60));
 }
 
 function getLocalModelMeta(modelKey) {
@@ -206,11 +225,11 @@ function simplifyLongAudioWarning(text) {
     .trim();
 }
 
-function getUploadModelPriceLabel(item, rates, selectedBalancedModel) {
+function getUploadModelPriceLabel(item, rates) {
   const pricingModelKey = item.mode === "balanced" ? DEFAULT_FAST_UPLOAD_MODEL : item.key;
   const rate = getRateByModel(rates, pricingModelKey) || getRateByModel(rates, item.key);
   const pricePerMinuteYuan = getRatePricePerMinuteYuan(rate);
-  return pricePerMinuteYuan > 0 ? formatMoneyYuanPerMinute(pricePerMinuteYuan) : "未设置价格";
+  return pricePerMinuteYuan > 0 ? `ASR ${formatMoneyYuanPerMinute(pricePerMinuteYuan)}` : "ASR 未设置价格";
 }
 
 function mergeCatalogIntoUploadModelMeta(modelKey, catalogMap) {
@@ -268,12 +287,6 @@ function formatDurationLabel(seconds) {
   const minutes = Math.floor(safeSeconds / 60);
   const remainSeconds = safeSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
-}
-
-function formatFileSizeMb(sizeBytes) {
-  const sizeMb = Number(sizeBytes || 0) / (1024 * 1024);
-  if (!Number.isFinite(sizeMb) || sizeMb <= 0) return "0 MB";
-  return `${sizeMb >= 1024 ? (sizeMb / 1024).toFixed(2) + " GB" : sizeMb.toFixed(2) + " MB"}`;
 }
 
 function createAbortError(message) {
@@ -700,9 +713,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [serverModelStateMap, setServerModelStateMap] = useState({});
   const [serverBusyModelKey, setServerBusyModelKey] = useState("");
   const [serverBusyText, setServerBusyText] = useState("");
-  const [downloadableModels, setDownloadableModels] = useState([]);
-  const [downloadableModelsError, setDownloadableModelsError] = useState("");
-  const [localModelAdvancedOpen, setLocalModelAdvancedOpen] = useState(false);
   const [restoreBannerMode, setRestoreBannerMode] = useState(RESTORE_BANNER_MODES.NONE);
   const pollingAbortRef = useRef(false);
   const pollTokenRef = useRef(0);
@@ -731,11 +741,16 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     return getDefaultFastUploadModelKey(configuredDefaultAsrModel);
   }, [configuredDefaultAsrModel, selectedUploadModel]);
   const selectedAsrModel = mode === "balanced" ? selectedBalancedModel : selectedFastModel;
-  const selectedUploadModelMeta = mergeCatalogIntoUploadModelMeta(selectedUploadModel, asrModelCatalogMap);
   const pricingModelKey = mode === "balanced" ? DEFAULT_FAST_UPLOAD_MODEL : selectedFastModel;
   const selectedRate = getRateByModel(billingRates, pricingModelKey);
   const selectedRatePricePerMinuteYuan = selectedRate ? getRatePricePerMinuteYuan(selectedRate) : 0;
-  const estimatedChargeCents = selectedRate ? calculateChargeCentsBySeconds(durationSec || 0, selectedRatePricePerMinuteYuan) : 0;
+  const estimatedAsrChargeCents = selectedRate ? calculateChargeCentsBySeconds(durationSec || 0, selectedRatePricePerMinuteYuan) : 0;
+  const mtRate = getRateByModel(billingRates, MT_PRICE_MODEL);
+  const mtRateCentsPer1kTokens = Number(mtRate?.points_per_1k_tokens || 0);
+  const mtRatePricePer1kTokensYuan = getRatePricePer1kTokensYuan(mtRate);
+  const estimatedMtTokens = estimateMtTokensByDuration(durationSec || 0);
+  const estimatedMtChargeCents = calculateChargeCentsByTokens(estimatedMtTokens, mtRateCentsPer1kTokens);
+  const estimatedTotalChargeCents = estimatedAsrChargeCents + estimatedMtChargeCents;
   const localWorkerReady = Boolean(localWorkerReadyMap.sensevoice);
   const balancedPerformanceWarning = useMemo(
     () => (mode === "balanced" ? buildLocalAsrLongAudioWarning(durationSec, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS) : ""),
@@ -1291,30 +1306,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       }
     }
     void restoreServerModelState();
-    return () => {
-      canceled = true;
-    };
-  }, [accessToken]);
-
-  useEffect(() => {
-    let canceled = false;
-    async function loadDownloadableModels() {
-      try {
-        const response = await api(DOWNLOADABLE_MODEL_BUNDLES_API, { method: "GET" }, accessToken);
-        const payload = await parseResponse(response);
-        if (!response.ok) {
-          throw new Error(toErrorText(payload, "加载模型下载列表失败"));
-        }
-        if (canceled) return;
-        setDownloadableModels(Array.isArray(payload?.models) ? payload.models : []);
-        setDownloadableModelsError("");
-      } catch (error) {
-        if (canceled) return;
-        setDownloadableModels([]);
-        setDownloadableModelsError(error instanceof Error && error.message ? error.message : String(error));
-      }
-    }
-    void loadDownloadableModels();
     return () => {
       canceled = true;
     };
@@ -2833,17 +2824,25 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 <TooltipTrigger asChild>
                   <span className="cursor-help underline decoration-dotted underline-offset-2">预估价格</span>
                 </TooltipTrigger>
-                <TooltipContent>按素材秒数折算分钟后计费，金额统一按分存储、按元展示。</TooltipContent>
+                <TooltipContent className="max-w-xs">ASR 按素材秒数折算分钟估算；MT 按 qwen-mt-flash 的 1k Tokens 费率与常见字幕量近似估算，最终以实际翻译 Tokens 结算。</TooltipContent>
               </Tooltip>
-              ：{selectedRate ? (durationSec != null ? `${formatMoneyCents(estimatedChargeCents)}（${formatMoneyYuanPerMinute(selectedRatePricePerMinuteYuan)}）` : "选择文件后显示") : "该模型未配置单价"}
+              ：
+              {selectedRate
+                ? durationSec != null
+                  ? `${formatMoneyCents(estimatedTotalChargeCents)}（ASR ${formatMoneyCents(estimatedAsrChargeCents)} + MT 约 ${formatMoneyCents(estimatedMtChargeCents)}）`
+                  : "选择文件后显示"
+                : "该模型未配置 ASR 单价"}
             </p>
-            <p className="text-muted-foreground">生成方式：{selectedUploadModelMeta.title}</p>
+            <p className="text-xs text-muted-foreground">
+              MT 估算：{mtRatePricePer1kTokensYuan > 0 ? `${formatMoneyYuan(mtRatePricePer1kTokensYuan)}/1k Tokens` : "未配置 MT 费率"}，按约{" "}
+              {ESTIMATED_MT_TOKENS_PER_MINUTE} Tokens/分钟折算，最终以实际翻译 Tokens 为准。
+            </p>
           </AlertDescription>
         </Alert>
 
         <div className="space-y-3">
           <div className="space-y-1">
-            <p className="text-base font-semibold text-foreground">选择生成方式</p>
+            <p className="text-base font-semibold text-foreground">选择字幕生成方式</p>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -2868,7 +2867,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 : isFasterWhisper
                   ? getAsrModelStatusLabel(fasterModelState, { readyLabel: "已就绪", missingLabel: "未准备", loadingLabel: "准备中", errorLabel: "异常", unsupportedLabel: "不可用" })
                   : getAsrModelStatusLabel({ status: "ready", downloadRequired: false }, { readyLabel: "可用" });
-              const cardPriceLabel = getUploadModelPriceLabel(item, billingRates, selectedBalancedModel);
+              const cardPriceLabel = getUploadModelPriceLabel(item, billingRates);
               const highlightStatus = isSenseVoice ? sensevoiceModelReady : isFasterWhisper ? fasterModelReady : true;
               const modelCardHasError = isSenseVoice
                 ? Boolean(sensevoiceModelState.lastError) || ["error", "unsupported"].includes(sensevoiceCardStatus)
@@ -3015,52 +3014,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               );
             })}
           </div>
-        </div>
-
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <p className="text-base font-semibold text-foreground">下载本地模型</p>
-            <p className="text-sm text-muted-foreground">下载的是当前网站使用的同一份原始模型目录打包结果。</p>
-          </div>
-          {downloadableModelsError ? <p className="text-sm text-destructive">{downloadableModelsError}</p> : null}
-          {downloadableModels.length ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              {downloadableModels.map((item) => (
-                <div key={String(item.model_key || "")} className="rounded-2xl border bg-background/80 p-4">
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-foreground">{String(item.display_name || "")}</p>
-                    <p className="text-xs text-muted-foreground">{String(item.subtitle || "")}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {Number(item.file_count || 0)} 个文件，约 {formatFileSizeMb(item.total_size_bytes)}
-                    </p>
-                  </div>
-                  <div className="mt-3 rounded-xl border bg-muted/10 p-3">
-                    <p className="text-xs text-muted-foreground break-all">{String(item.bundle_dir || "")}</p>
-                    {!item.available && item.missing_reason ? (
-                      <p className="mt-2 text-xs text-destructive break-all">当前不可下载：{String(item.missing_reason || "")}</p>
-                    ) : null}
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button asChild type="button" variant="outline" disabled={!item.available}>
-                      <a href={String(item.download_url || "#")} download>
-                        下载 {String(item.archive_name || "整包 zip")}
-                      </a>
-                    </Button>
-                  </div>
-                  {Array.isArray(item.files) && item.files.length ? (
-                    <div className="mt-3 space-y-1 rounded-xl border border-dashed bg-muted/10 p-3">
-                      {item.files.slice(0, 5).map((fileItem) => (
-                        <p key={String(fileItem.name || "")} className="text-xs text-muted-foreground break-all">
-                          {String(fileItem.name || "")}
-                        </p>
-                      ))}
-                      {item.files.length > 5 ? <p className="text-xs text-muted-foreground">...</p> : null}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : null}
         </div>
 
         {showMediaPreview ? (

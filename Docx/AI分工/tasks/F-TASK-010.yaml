@@ -1,7 +1,7 @@
 schema_version: 1
 task_id: TASK-010
 title: 精简上传页服务端生成文案并补齐 MT 价格预估
-status: todo
+status: done
 priority: high
 project_root: D:/3.3-19.01
 base_ref: main
@@ -28,8 +28,13 @@ depends_on: []
 dependency_reason: ""
 blocked_by: []
 notes_for_after: 代码核对显示，`/api/lessons` 与 `/api/lessons/tasks` 只接受服务端上传 ASR 模型 `faster-whisper-medium` 和 `qwen3-asr-flash-filetrans`，`LessonService.generate_from_upload` 也在服务端执行；当前 `/api/local-asr-assets/download-models` 只是额外的模型包下载接口，不是主上传流程的前置条件。实现 MT 价格展示时优先复用前端已加载的 `billingRates` 中 `qwen-mt-flash` 费率，不要新增后端接口；同时把估算口径写清楚，避免把近似值伪装成精确扣费。
-result_summary: ""
-changed_files: []
-tests_run: []
+result_summary: 已精简上传页主流程文案，移除普通服务端流程的模型下载区块，并补充 ASR+MT 预估价格展示与说明。
+changed_files:
+  - frontend/src/features/upload/UploadPanel.jsx
+  - app/static/assets
+tests_run:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+  - 'if ((Select-String -Path D:\3.3-19.01\frontend\src\features\upload\UploadPanel.jsx -Pattern "生成方式：") -or -not (Select-String -Path D:\3.3-19.01\frontend\src\features\upload\UploadPanel.jsx -Pattern "选择字幕生成方式")) { exit 1 }'
 blocked_reason: ""
-completed_at: ""
+completed_at: 2026-03-22T20:48:35+08:00
