@@ -1,0 +1,43 @@
+schema_version: 1
+task_id: TASK-006
+title: Add Windows gray pilot for local Bottle 1.0 runner with result upload
+status: todo
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: Ship a Windows-only gray-test path that lets allowlisted users download Bottle 1.0 plus a local runner, execute faster-whisper on their own machine, and upload only the ASR result back to the existing local-ASR lesson pipeline so the server no longer performs Bottle 1.0 transcription for those pilot users.
+scope:
+  - Gray gating and capability exposure for selected Windows users
+  - Downloadable Bottle 1.0 bundle metadata and runner packaging
+  - Local-ASR task contract expansion to accept Bottle 1.0 runner results
+  - Upload page gray-entry UX and instructions for the pilot path
+  - Regression coverage for allowlist gating, bundle listing, and local result task creation
+allowed_paths:
+  - app/core/config.py
+  - app/api/routers/local_asr_assets.py
+  - app/api/routers/lessons.py
+  - app/schemas/lesson.py
+  - app/services/asr_model_registry.py
+  - frontend/src/features/upload/UploadPanel.jsx
+  - frontend/src/shared/lib/asrModels.js
+  - tools/local-bottle1-runner
+  - tests/test_regression_api.py
+acceptance:
+  - The backend exposes a Windows gray pilot only for explicitly configured users, and non-allowlisted users do not see or cannot invoke the local Bottle 1.0 path.
+  - The downloadable model listing for Bottle 1.0 includes the local runner package or metadata needed for the Windows pilot, not just the raw model directory zip.
+  - The local-ASR task creation endpoint accepts a Bottle 1.0 runner result payload for allowlisted users and routes it through the existing post-ASR lesson pipeline without server-side Bottle 1.0 transcription.
+  - The upload UI shows a clearly separate gray-test entry for eligible Windows users, with download plus result-upload guidance, while leaving the normal server-side upload flow intact for everyone else.
+  - The uploaded local runner result keeps the existing downstream behavior: lesson build, translation, billing settlement, history persistence, and task polling still happen on the server.
+  - Regression tests cover allowlisted success, non-allowlisted rejection, and bundle listing behavior for the pilot path.
+check_commands:
+  - 'pytest tests/test_regression_api.py -k "local_asr or downloadable_model or bottle_1 or gray or allowlist"'
+  - npm --prefix frontend run build
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+notes_for_after: Do not try to force Bottle 1.0 into the existing browser-WASM path. Reuse the existing faster-whisper Python stack to build a Windows local runner under tools/local-bottle1-runner, and treat the server as a result-ingestion plus lesson-building service for this pilot. Use explicit env-driven gating in app/core/config.py, require Windows eligibility in the surfaced pilot UX, and keep the normal upload pipeline unchanged for users outside the gray group.
+result_summary: ""
+changed_files: []
+tests_run: []
+blocked_reason: ""
+completed_at: ""

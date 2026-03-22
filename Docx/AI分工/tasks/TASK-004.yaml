@@ -1,0 +1,56 @@
+task_id: TASK-004
+title: Add sidebar wordbook with in-learning collection and structured backend storage
+status: todo
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: Add a logged-in sidebar "生词本" panel below history, let users collect words or phrases directly during immersive learning, store those entries with deduped structured context on the backend, and ship the required migration, API, UI state handling, and verification in one self-contained task.
+scope:
+  - Learning shell sidebar navigation and panel routing for the new wordbook panel
+  - Wordbook panel UI with active/mastered filtering, source-course filtering, sorting, and item actions
+  - Immersive learning interactions for single-word collect and phrase selection collect
+  - Backend SQLAlchemy models, Alembic migration, repositories, services, schemas, and routers for wordbook storage
+  - Backend and integration regression coverage for wordbook CRUD, dedupe, permissions, and route behavior
+  - Frontend build output sync if this repo expects app static assets to stay checked in
+allowed_paths:
+  - frontend/src/app/learning-shell/LearningShellSidebar.jsx
+  - frontend/src/app/learning-shell/LearningShellPanelContent.jsx
+  - frontend/src/app/learning-shell/LearningShellContainer.jsx
+  - frontend/src/features/immersive/ImmersiveLessonPage.jsx
+  - frontend/src/features/wordbook
+  - frontend/src/shared/ui
+  - app/api/routers/__init__.py
+  - app/api/routers/wordbook.py
+  - app/models/lesson.py
+  - app/models/__init__.py
+  - app/repositories/wordbook.py
+  - app/services/wordbook_service.py
+  - app/schemas/wordbook.py
+  - migrations/versions
+  - tests/test_regression_api.py
+  - tests/test_e2e_key_flows.py
+  - tests/test_spa_route_fallback.py
+  - app/static/assets
+acceptance:
+  - The learning sidebar shows a logged-in "生词本" entry directly below "历史记录", and the app can open the new panel from its own route without breaking existing history, upload, redeem, or immersive flows.
+  - The immersive learning page lets the user collect a single word by direct interaction and collect a phrase by selecting a continuous span from the current English sentence, with clear success feedback for both create and duplicate-update cases.
+  - The wordbook panel lists structured entries with entry text, entry type, latest English sentence, latest Chinese sentence, source lesson, latest collected time, and actions for mark mastered, restore active, and delete.
+  - Active entries are the default list, mastered entries are hidden by default but available through an explicit filter, and source-course filtering plus recent-first sorting work in the same panel.
+  - Backend storage deduplicates by the same user plus normalized text plus entry type, updates the latest context when a duplicate is collected again, and retains source linkage data instead of creating duplicate primary entries.
+  - The backend rejects collection attempts for lessons the user does not own, missing sentence indexes, and invalid selected text that is not a valid continuous fragment of the sentence.
+  - The task includes the required Alembic migration and keeps local and live PostgreSQL schema in sync by running and verifying `$postgresql-update` when the new tables are introduced.
+  - The tests and builds touched by this task pass within the same task, without depending on another task to add API coverage, migration verification, or frontend route/build verification.
+check_commands:
+  - 'pytest tests/test_regression_api.py -k "wordbook or spa or route"'
+  - 'pytest tests/test_e2e_key_flows.py -k "wordbook or immersive or history"'
+  - pytest tests/test_spa_route_fallback.py
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+depends_on: []
+blocked_by: []
+notes_for_after: Keep this as one closed-loop task. Do not split frontend, backend, migration, and verification across multiple agents. Reuse the existing shell and immersive-learning patterns where possible, but add new files under frontend/src/features/wordbook and backend wordbook modules if that keeps the implementation cleaner than overloading unrelated modules. The backend should introduce structured wordbook entry storage plus source-link rows, default to active-only listing, and leave full SRS scheduling out of scope while keeping field design extensible for later review features. Because this task adds database tables, you must use `$postgresql-update` after implementation and test verification so the live PostgreSQL schema is updated and directly verified instead of being left as a local-only migration.
+result_summary: ""
+changed_files: []
+tests_run: []
+blocked_reason: ""
+completed_at: ""

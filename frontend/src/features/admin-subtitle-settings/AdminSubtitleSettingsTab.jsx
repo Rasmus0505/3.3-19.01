@@ -102,12 +102,30 @@ function draftsEqual(left, right) {
 function pickAvailableAsrModels(rates, currentModel = "") {
   const models = (Array.isArray(rates) ? rates : [])
     .filter((item) => item?.billing_unit === "minute" && item?.is_active)
-    .map((item) => String(item.model_name || "").trim())
-    .filter(Boolean);
-  if (currentModel && !models.includes(currentModel)) {
-    models.unshift(currentModel);
+    .map((item) => ({
+      modelName: String(item.model_name || "").trim(),
+      displayName: String(item.display_name || item.model_name || "").trim(),
+    }))
+    .filter((item) => item.modelName);
+  if (currentModel && !models.some((item) => item.modelName === currentModel)) {
+    models.unshift({ modelName: currentModel, displayName: currentModel });
   }
-  return Array.from(new Set(models));
+  const deduped = new Map();
+  for (const item of models) {
+    if (!deduped.has(item.modelName)) {
+      deduped.set(item.modelName, item);
+    }
+  }
+  return Array.from(deduped.values());
+}
+
+function getFallbackAsrModel(options, currentModel = "") {
+  return options[0]?.modelName || String(currentModel || "");
+}
+
+function getAsrModelDisplayName(options, modelName = "") {
+  const normalizedModelName = String(modelName || "");
+  return options.find((item) => item.modelName === normalizedModelName)?.displayName || normalizedModelName || "未配置";
 }
 
 export function AdminSubtitleSettingsTab({ apiCall }) {
@@ -152,7 +170,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
 
       const currentSource = historyData.current || historyData.settings || defaultDraft;
       const availableModels = pickAvailableAsrModels(ratesData.rates, String(currentSource?.default_asr_model || ""));
-      const fallbackAsrModel = availableModels[0] || String(currentSource?.default_asr_model || "");
+      const fallbackAsrModel = getFallbackAsrModel(availableModels, String(currentSource?.default_asr_model || ""));
       const current = normalizeDraft(currentSource, fallbackAsrModel);
 
       setAvailableAsrModels(availableModels);
@@ -181,7 +199,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
   }, []);
 
   function applyPreset(settings) {
-    setDraft((prev) => normalizeDraft({ ...settings, default_asr_model: prev.default_asr_model || availableAsrModels[0] || "" }));
+    setDraft((prev) => normalizeDraft({ ...settings, default_asr_model: prev.default_asr_model || getFallbackAsrModel(availableAsrModels) }));
   }
 
   async function saveSettings() {
@@ -192,7 +210,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
       const resp = await apiCall("/api/admin/subtitle-settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(normalizeDraft(draft, availableAsrModels[0] || "")),
+        body: JSON.stringify(normalizeDraft(draft, getFallbackAsrModel(availableAsrModels))),
       });
       const data = await parseJsonSafely(resp);
       if (!resp.ok) {
@@ -202,7 +220,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
             action: "保存字幕配置",
             endpoint: "/api/admin/subtitle-settings",
             method: "PUT",
-            meta: { draft: normalizeDraft(draft, availableAsrModels[0] || "") },
+            meta: { draft: normalizeDraft(draft, getFallbackAsrModel(availableAsrModels)) },
             fallbackMessage: "保存字幕配置失败",
           }),
         );
@@ -307,7 +325,7 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
             <div className="space-y-2">
               <p className="text-sm font-medium">默认 ASR 模型</p>
               <Select
-                value={draft.default_asr_model || availableAsrModels[0] || ""}
+                value={draft.default_asr_model || getFallbackAsrModel(availableAsrModels)}
                 onValueChange={(value) => setDraft((prev) => ({ ...prev, default_asr_model: value }))}
                 disabled={saving || rollbacking || availableAsrModels.length === 0}
               >
@@ -315,9 +333,9 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
                   <SelectValue placeholder={availableAsrModels.length ? "选择默认 ASR 模型" : "当前没有可用的 ASR 模型"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableAsrModels.map((modelName) => (
-                    <SelectItem key={modelName} value={modelName}>
-                      {modelName}
+                  {availableAsrModels.map((model) => (
+                    <SelectItem key={model.modelName} value={model.modelName}>
+                      {model.displayName}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -355,14 +373,14 @@ export function AdminSubtitleSettingsTab({ apiCall }) {
               <p className="text-sm font-medium">当前生效版本</p>
               <p className="text-xs text-muted-foreground">最近更新时间：{formatDateTimeBeijing(currentMeta?.updated_at)}</p>
               <p className="text-xs text-muted-foreground">最近修改人：{currentMeta?.updated_by_user_email || "未知 / 尚无记录"}</p>
-              <p className="text-xs text-muted-foreground">当前默认 ASR：{draft.default_asr_model || "未配置"}</p>
+              <p className="text-xs text-muted-foreground">当前默认 ASR：{getAsrModelDisplayName(availableAsrModels, draft.default_asr_model)}</p>
               <p className="text-xs text-muted-foreground">
                 可回滚版本：
                 {rollbackCandidate ? ` ${rollbackCandidate.operator_user_email || "未知操作员"} / ${formatDateTimeBeijing(rollbackCandidate.created_at)}` : " 暂无"}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => setDraft(normalizeDraft(loadedSettings, availableAsrModels[0] || ""))} disabled={!dirty || saving || rollbacking}>
+              <Button variant="outline" size="sm" onClick={() => setDraft(normalizeDraft(loadedSettings, getFallbackAsrModel(availableAsrModels)))} disabled={!dirty || saving || rollbacking}>
                 <RefreshCcw className="size-4" />
                 恢复当前生效值
               </Button>

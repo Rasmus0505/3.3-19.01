@@ -6,25 +6,10 @@ export const ASR_MODEL_KEYS = {
 };
 
 export const FALLBACK_ASR_MODEL_CATALOG = {
-  [ASR_MODEL_KEYS.sensevoiceServer]: {
-    model_key: ASR_MODEL_KEYS.sensevoiceServer,
-    display_name: "bottle0.1",
-    subtitle: "快速识别字幕",
-    runtime_kind: "server_local",
-    runtime_label: "Server Local",
-    prepare_mode: "auto_on_demand",
-    cache_scope: "server",
-    supports_upload: true,
-    supports_preview: false,
-    supports_transcribe_api: true,
-    source_model_id: "iic/SenseVoiceSmall",
-    deploy_path: "D:\\3.3-19.01\\asr-test\\models\\SenseVoiceSmall",
-    note: "固定本地目录。",
-  },
   [ASR_MODEL_KEYS.fasterWhisper]: {
     model_key: ASR_MODEL_KEYS.fasterWhisper,
-    display_name: "bottle.1.0",
-    subtitle: "识别字幕更精准/耗时加长",
+    display_name: "Bottle 1.0",
+    subtitle: "More accurate subtitles, slower than Bottle 2.0.",
     runtime_kind: "server_cached",
     runtime_label: "Server Cached",
     prepare_mode: "auto_on_demand",
@@ -34,12 +19,12 @@ export const FALLBACK_ASR_MODEL_CATALOG = {
     supports_transcribe_api: true,
     source_model_id: "Systran/faster-distil-whisper-small.en",
     deploy_path: "D:\\3.3-19.01\\asr-test\\models\\faster-distil-small.en",
-    note: "固定本地目录。",
+    note: "Fixed local bundle path.",
   },
   [ASR_MODEL_KEYS.qwen]: {
     model_key: ASR_MODEL_KEYS.qwen,
-    display_name: "Qwen ASR Flash",
-    subtitle: "直接开始生成",
+    display_name: "Bottle 2.0",
+    subtitle: "Start immediately with cloud transcription.",
     runtime_kind: "cloud_api",
     runtime_label: "Cloud API",
     prepare_mode: "none",
@@ -47,7 +32,7 @@ export const FALLBACK_ASR_MODEL_CATALOG = {
     supports_upload: true,
     supports_preview: false,
     supports_transcribe_api: true,
-    note: "无需本地模型。",
+    note: "No local model preparation required.",
   },
 };
 
@@ -82,11 +67,11 @@ export function isAsrModelReady(modelState) {
 
 export function getAsrModelStatusLabel(modelState, options = {}) {
   const {
-    readyLabel = "可用",
-    missingLabel = "未准备",
-    loadingLabel = "准备中",
-    errorLabel = "异常",
-    unsupportedLabel = "不可用",
+    readyLabel = "Available",
+    missingLabel = "Not ready",
+    loadingLabel = "Preparing",
+    errorLabel = "Error",
+    unsupportedLabel = "Unavailable",
   } = options;
   const status = String(modelState?.status || "").trim().toLowerCase();
   if (status === "unsupported") return unsupportedLabel;

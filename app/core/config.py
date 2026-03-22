@@ -38,7 +38,7 @@ def _default_asr_bundle_root() -> Path:
     return PROJECT_DIR / "asr-test" / "models"
 
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "").strip()
-LESSON_DEFAULT_ASR_MODEL = os.getenv("LESSON_DEFAULT_ASR_MODEL", "sensevoice-small").strip()
+LESSON_DEFAULT_ASR_MODEL = os.getenv("LESSON_DEFAULT_ASR_MODEL", "qwen3-asr-flash-filetrans").strip() or "qwen3-asr-flash-filetrans"
 APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Asia/Shanghai").strip() or "Asia/Shanghai"
 
 

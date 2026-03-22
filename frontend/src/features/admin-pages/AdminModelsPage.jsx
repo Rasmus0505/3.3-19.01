@@ -3,7 +3,6 @@ import { useSearchParams } from "react-router-dom";
 
 import { AdminFasterWhisperSettingsTab } from "../admin-faster-whisper-settings/AdminFasterWhisperSettingsTab";
 import { AdminRatesTab } from "../admin-rates/AdminRatesTab";
-import { AdminSenseVoiceSettingsTab } from "../admin-sensevoice-settings/AdminSenseVoiceSettingsTab";
 import { mergeSearchParams, readStringParam } from "../../shared/lib/adminSearchParams";
 import { CardTitle, Tabs, TabsContent, TabsList, TabsTrigger } from "../../shared/ui";
 
@@ -14,13 +13,8 @@ const MODEL_TABS = [
     component: AdminRatesTab,
   },
   {
-    value: "sensevoice",
-    label: "bottle0.1",
-    component: AdminSenseVoiceSettingsTab,
-  },
-  {
     value: "faster-whisper",
-    label: "bottle.1.0",
+    label: "Bottle 1.0",
     component: AdminFasterWhisperSettingsTab,
   },
 ];

@@ -49,7 +49,6 @@ from app.services.lesson_task_manager import (
     update_task_progress,
 )
 from app.services.media import MediaError, cleanup_dir, probe_audio_duration_ms, save_upload_file_stream, validate_suffix
-from app.services.sensevoice import SENSEVOICE_ASR_MODEL
 
 
 logger = logging.getLogger(__name__)
@@ -89,14 +88,6 @@ def _resolve_task_asr_models(requested_asr_model: str) -> dict[str, object]:
         prepare_faster_whisper_model(force_refresh=False)
     except Exception as exc:
         logger.warning("[DEBUG] lessons.task.faster_whisper.prepare_schedule_failed detail=%s", str(exc)[:400])
-
-    resolution.update(
-        {
-            "effective_asr_model": SENSEVOICE_ASR_MODEL,
-            "model_fallback_applied": True,
-            "model_fallback_reason": "faster_whisper_model_not_ready",
-        }
-    )
     return resolution
 
 

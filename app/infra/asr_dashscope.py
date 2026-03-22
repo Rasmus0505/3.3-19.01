@@ -17,10 +17,9 @@ from app.services.faster_whisper_asr import (
     get_faster_whisper_model_status,
     transcribe_audio_file_with_faster_whisper,
 )
-from app.services.sensevoice import SENSEVOICE_ASR_MODEL, get_sensevoice_settings_snapshot, transcribe_audio_file_with_sensevoice
 
 
-DEFAULT_MODEL = SENSEVOICE_ASR_MODEL
+DEFAULT_MODEL = QWEN_ASR_MODEL
 QWEN_DEFAULT_MODEL = QWEN_ASR_MODEL
 SUPPORTED_MODELS = set(get_supported_transcribe_asr_model_keys())
 
@@ -306,27 +305,6 @@ def _transcribe_audio_file_with_qwen(
     }
 
 
-def _transcribe_audio_file_with_sensevoice(audio_path: str, *, known_duration_ms: int | None = None, progress_callback=None) -> dict[str, Any]:
-    try:
-        from app.db import SessionLocal
-
-        db = SessionLocal()
-        try:
-            settings = get_sensevoice_settings_snapshot(db)
-        finally:
-            db.close()
-        return transcribe_audio_file_with_sensevoice(
-            audio_path,
-            settings=settings,
-            known_duration_ms=known_duration_ms,
-            progress_callback=progress_callback,
-        )
-    except AsrError:
-        raise
-    except Exception as exc:
-        raise AsrError("SENSEVOICE_TRANSCRIBE_FAILED", "SenseVoice transcribe failed", str(exc)[:1200]) from exc
-
-
 def _transcribe_audio_file_with_faster_whisper(audio_path: str, *, known_duration_ms: int | None = None, progress_callback=None) -> dict[str, Any]:
     try:
         return transcribe_audio_file_with_faster_whisper(audio_path, progress_callback=progress_callback)
@@ -354,12 +332,6 @@ def transcribe_audio_file(
     model_name = (model or "").strip()
     if model_name not in SUPPORTED_MODELS:
         raise AsrError("INVALID_MODEL", "不支持的模型", model_name)
-    if model_name == SENSEVOICE_ASR_MODEL:
-        return _transcribe_audio_file_with_sensevoice(
-            audio_path,
-            known_duration_ms=known_duration_ms,
-            progress_callback=progress_callback,
-        )
     if model_name == FASTER_WHISPER_ASR_MODEL:
         return _transcribe_audio_file_with_faster_whisper(
             audio_path,

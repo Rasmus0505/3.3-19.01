@@ -2,30 +2,19 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Callable
 
-from app.core.config import DASHSCOPE_API_KEY, FASTER_WHISPER_MODEL_DIR, SENSEVOICE_MODEL_DIR
+from app.core.config import DASHSCOPE_API_KEY, FASTER_WHISPER_MODEL_DIR
 from app.services.faster_whisper_asr import (
     FASTER_WHISPER_ASR_MODEL,
     get_faster_whisper_model_status,
     prepare_faster_whisper_model as prepare_faster_whisper_runtime_model,
 )
-from app.services.sensevoice import (
-    SENSEVOICE_ASR_MODEL,
-    _load_funasr_symbols,
-    get_pinned_sensevoice_model_dir,
-    get_sensevoice_missing_files,
-    get_sensevoice_settings_snapshot,
-    has_sensevoice_model_cache,
-)
-
 
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
 LOCAL_SENSEVOICE_ASR_MODEL = "local-sensevoice-small"
 
 UPLOAD_ASR_MODEL_KEYS: tuple[str, ...] = (
-    SENSEVOICE_ASR_MODEL,
     FASTER_WHISPER_ASR_MODEL,
     QWEN_ASR_MODEL,
 )
@@ -119,85 +108,15 @@ def _base_state(descriptor: AsrModelDescriptor, **overrides: Any) -> dict[str, A
     return payload
 
 
-def _get_sensevoice_model_status() -> dict[str, Any]:
-    descriptor = get_asr_model_descriptor(SENSEVOICE_ASR_MODEL)
-    model_dir = get_pinned_sensevoice_model_dir()
-    missing_files = get_sensevoice_missing_files(model_dir)
-    cached = has_sensevoice_model_cache(model_dir)
-    if not cached:
-        return _base_state(
-            descriptor,
-            status=STATUS_MISSING,
-            available=False,
-            cached=False,
-            download_required=True,
-            message="Local SenseVoice bundle is missing required files.",
-            model_dir=model_dir,
-            missing_files=missing_files,
-        )
-    try:
-        _load_funasr_symbols()
-    except Exception as exc:
-        return _base_state(
-            descriptor,
-            status=STATUS_ERROR,
-            available=False,
-            cached=True,
-            download_required=False,
-            message="Local SenseVoice runtime is unavailable.",
-            last_error=str(exc)[:1200],
-            model_dir=model_dir,
-            missing_files=missing_files,
-        )
-    return _base_state(
-        descriptor,
-        status=STATUS_READY,
-        available=True,
-        cached=True,
-        download_required=False,
-        message="Local SenseVoice bundle is ready.",
-        model_dir=model_dir,
-        missing_files=missing_files,
-    )
-
-
-def _prepare_sensevoice_model(force_refresh: bool = False) -> dict[str, Any]:
-    _ = force_refresh
-    descriptor = get_asr_model_descriptor(SENSEVOICE_ASR_MODEL)
-    try:
-        from app.db import SessionLocal
-        from app.services.sensevoice import _get_or_create_model
-
-        db = SessionLocal()
-        try:
-            snapshot = get_sensevoice_settings_snapshot(db)
-        finally:
-            db.close()
-        _get_or_create_model(snapshot)
-        return _base_state(
-            descriptor,
-            status=STATUS_READY,
-            available=True,
-            cached=True,
-            message="Local SenseVoice bundle is ready.",
-            model_dir=str(SENSEVOICE_MODEL_DIR),
-        )
-    except Exception as exc:
-        return _base_state(
-            descriptor,
-            status=STATUS_ERROR,
-            available=False,
-            cached=False,
-            download_required=True,
-            message="Local SenseVoice bundle check failed.",
-            last_error=str(exc)[:1200],
-            model_dir=str(SENSEVOICE_MODEL_DIR),
-            missing_files=get_sensevoice_missing_files(SENSEVOICE_MODEL_DIR),
-        )
+def _require_descriptor(model_key: str) -> AsrModelDescriptor:
+    descriptor = get_asr_model_descriptor(model_key)
+    if descriptor is None:
+        raise KeyError(str(model_key or "").strip())
+    return descriptor
 
 
 def _get_faster_whisper_status() -> dict[str, Any]:
-    descriptor = get_asr_model_descriptor(FASTER_WHISPER_ASR_MODEL)
+    descriptor = _require_descriptor(FASTER_WHISPER_ASR_MODEL)
     payload = get_faster_whisper_model_status()
     normalized_status = str(payload.get("status") or STATUS_MISSING).strip().lower()
     available = bool(payload.get("cached")) or normalized_status in {STATUS_READY}
@@ -216,7 +135,7 @@ def _get_faster_whisper_status() -> dict[str, Any]:
 
 
 def _prepare_faster_whisper_model(force_refresh: bool = False) -> dict[str, Any]:
-    descriptor = get_asr_model_descriptor(FASTER_WHISPER_ASR_MODEL)
+    descriptor = _require_descriptor(FASTER_WHISPER_ASR_MODEL)
     payload = prepare_faster_whisper_runtime_model(force_refresh=force_refresh)
     normalized_status = str(payload.get("status") or STATUS_MISSING).strip().lower()
     available = bool(payload.get("cached")) or normalized_status in {STATUS_READY}
@@ -235,7 +154,7 @@ def _prepare_faster_whisper_model(force_refresh: bool = False) -> dict[str, Any]
 
 
 def _get_qwen_status() -> dict[str, Any]:
-    descriptor = get_asr_model_descriptor(QWEN_ASR_MODEL)
+    descriptor = _require_descriptor(QWEN_ASR_MODEL)
     if str(os.getenv("QWEN_ASR_ENABLED", "1") or "1").strip().lower() in _FALSEY_ENV_VALUES:
         return _base_state(
             descriptor,
@@ -254,21 +173,21 @@ def _get_qwen_status() -> dict[str, Any]:
             available=False,
             cached=False,
             download_required=False,
-            message="DASHSCOPE_API_KEY 未配置，云转写不可用。",
+            message="DASHSCOPE_API_KEY is missing.",
             last_error="DASHSCOPE_API_KEY is missing.",
         )
     try:
-        from app.services.asr_dashscope import setup_dashscope
+        from app.infra.asr_dashscope import setup_dashscope
 
         setup_dashscope(api_key)
-    except Exception as exc:
+    except Exception as exc:  # pragma: no cover - defensive configuration check
         return _base_state(
             descriptor,
             status=STATUS_ERROR,
             available=False,
             cached=False,
             download_required=False,
-            message="DashScope 配置异常，云转写暂不可用。",
+            message="DashScope configuration is invalid.",
             last_error=str(exc)[:1200],
         )
     return _base_state(
@@ -282,27 +201,9 @@ def _get_qwen_status() -> dict[str, Any]:
 
 _ASR_MODEL_REGISTRY: tuple[AsrModelDescriptor, ...] = (
     AsrModelDescriptor(
-        model_key=SENSEVOICE_ASR_MODEL,
-        display_name="bottle0.1",
-        subtitle="快速识别字幕",
-        runtime_kind="server_local",
-        runtime_label="Server Local",
-        prepare_mode="auto_on_demand",
-        cache_scope="server",
-        supports_upload=True,
-        supports_preview=False,
-        supports_transcribe_api=True,
-        source_model_id="iic/SenseVoiceSmall",
-        deploy_path=str(SENSEVOICE_MODEL_DIR),
-        note="Fixed local bundle path.",
-        status_loader=_get_sensevoice_model_status,
-        prepare_loader=_prepare_sensevoice_model,
-        verify_loader=_get_sensevoice_model_status,
-    ),
-    AsrModelDescriptor(
         model_key=FASTER_WHISPER_ASR_MODEL,
-        display_name="bottle.1.0",
-        subtitle="识别字幕更精准/耗时加长",
+        display_name="Bottle 1.0",
+        subtitle="Higher accuracy, slower than Bottle 2.0.",
         runtime_kind="server_cached",
         runtime_label="Server Cached",
         prepare_mode="auto_on_demand",
@@ -319,8 +220,8 @@ _ASR_MODEL_REGISTRY: tuple[AsrModelDescriptor, ...] = (
     ),
     AsrModelDescriptor(
         model_key=QWEN_ASR_MODEL,
-        display_name="Qwen ASR Flash",
-        subtitle="直接开始生成",
+        display_name="Bottle 2.0",
+        subtitle="Fast cloud transcription.",
         runtime_kind="cloud_api",
         runtime_label="Cloud API",
         prepare_mode="none",
@@ -338,11 +239,14 @@ _REGISTRY_BY_KEY = {item.model_key: item for item in _ASR_MODEL_REGISTRY}
 
 
 def list_asr_model_descriptors() -> list[AsrModelDescriptor]:
-    return list(_ASR_MODEL_REGISTRY)
+    return [item for item in _ASR_MODEL_REGISTRY if item.model_key in ALL_ASR_MODEL_KEYS]
 
 
 def get_asr_model_descriptor(model_key: str) -> AsrModelDescriptor | None:
-    return _REGISTRY_BY_KEY.get(str(model_key or "").strip())
+    normalized_model_key = str(model_key or "").strip()
+    if normalized_model_key not in ALL_ASR_MODEL_KEYS:
+        return None
+    return _REGISTRY_BY_KEY.get(normalized_model_key)
 
 
 def get_asr_model_status(model_key: str) -> dict[str, Any]:
@@ -376,7 +280,7 @@ def verify_asr_model(model_key: str) -> dict[str, Any]:
 
 
 def list_asr_models_with_status() -> list[dict[str, Any]]:
-    return [get_asr_model_status(item.model_key) for item in _ASR_MODEL_REGISTRY]
+    return [get_asr_model_status(item.model_key) for item in list_asr_model_descriptors()]
 
 
 def get_supported_upload_asr_model_keys() -> tuple[str, ...]:
@@ -399,7 +303,10 @@ def get_asr_display_meta(model_key: str) -> tuple[str, str]:
     descriptor = get_asr_model_descriptor(model_key)
     if descriptor is None:
         return str(model_key or "").strip() or "Unnamed model", "cloud"
-    runtime_kind = descriptor.runtime_kind
-    if runtime_kind == "cloud_api":
+    if descriptor.runtime_kind == "cloud_api":
         return descriptor.display_name, "cloud"
-    return descriptor.display_name, "cloud"
+    if descriptor.runtime_kind.startswith("server"):
+        return descriptor.display_name, "server"
+    if descriptor.runtime_kind.startswith("browser"):
+        return descriptor.display_name, "browser"
+    return descriptor.display_name, descriptor.runtime_kind

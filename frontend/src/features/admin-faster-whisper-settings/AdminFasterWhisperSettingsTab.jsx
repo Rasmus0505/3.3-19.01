@@ -2,10 +2,8 @@ import { RefreshCcw, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { formatDateTimeBeijing } from "../../shared/lib/datetime";
-import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
-import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
+import { parseJsonSafely } from "../../shared/lib/errorFormatter";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Skeleton, Switch } from "../../shared/ui";
 
 const PINNED_MODEL_DIR = "D:\\3.3-19.01\\asr-test\\models\\faster-distil-small.en";
@@ -20,34 +18,20 @@ const defaultDraft = {
   condition_on_previous_text: false,
 };
 
-const FIELD_GROUPS = [
-  {
-    id: "common",
-    title: "常用参数",
-    description: "对应 bottle.1.0 的服务端推理配置。",
-    fields: [
-      { key: "device", label: "运行设备", hint: "例如 auto / cuda:0 / cpu", type: "text" },
-      { key: "cpu_threads", label: "CPU 线程数", hint: "仅 CPU 推理时生效", type: "number" },
-      { key: "num_workers", label: "并发 worker", hint: "控制并发加载", type: "number" },
-      { key: "beam_size", label: "Beam Size", hint: "越大越准也越慢", type: "number" },
-    ],
-  },
-  {
-    id: "advanced",
-    title: "高级设置",
-    description: `固定模型目录：${PINNED_MODEL_DIR}`,
-    fields: [
-      { key: "compute_type", label: "计算精度", hint: "留空时自动选择", type: "text" },
-      { key: "vad_filter", label: "启用 VAD", hint: "默认开启", type: "bool" },
-      { key: "condition_on_previous_text", label: "使用上文条件", hint: "长音频通常建议关闭", type: "bool" },
-    ],
-  },
+const FIELDS = [
+  { key: "device", label: "运行设备", hint: "例如 auto / cuda:0 / cpu", type: "text" },
+  { key: "compute_type", label: "计算精度", hint: "留空时由运行时自动选择", type: "text" },
+  { key: "cpu_threads", label: "CPU 线程数", hint: "CPU 推理时生效", type: "number" },
+  { key: "num_workers", label: "并发 worker", hint: "控制模型并发加载", type: "number" },
+  { key: "beam_size", label: "Beam Size", hint: "越大越准，也越慢", type: "number" },
+  { key: "vad_filter", label: "启用 VAD", hint: "默认开启", type: "bool" },
+  { key: "condition_on_previous_text", label: "使用上文", hint: "长音频通常建议关闭", type: "bool" },
 ];
 
 function normalizeDraft(source) {
   return {
     device: String(source?.device || defaultDraft.device),
-    compute_type: String(source?.compute_type || ""),
+    compute_type: String(source?.compute_type || defaultDraft.compute_type),
     cpu_threads: Number(source?.cpu_threads || defaultDraft.cpu_threads),
     num_workers: Number(source?.num_workers || defaultDraft.num_workers),
     beam_size: Number(source?.beam_size || defaultDraft.beam_size),
@@ -60,6 +44,10 @@ function draftsEqual(left, right) {
   return JSON.stringify(normalizeDraft(left)) === JSON.stringify(normalizeDraft(right));
 }
 
+function getErrorMessage(resp, payload, fallback) {
+  return String(payload?.message || payload?.detail?.message || payload?.detail || fallback || "请求失败");
+}
+
 export function AdminFasterWhisperSettingsTab({ apiCall }) {
   const [draft, setDraft] = useState(defaultDraft);
   const [loadedSettings, setLoadedSettings] = useState(defaultDraft);
@@ -69,9 +57,78 @@ export function AdminFasterWhisperSettingsTab({ apiCall }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [rollbacking, setRollbacking] = useState(false);
-  const { error, clearError, captureError } = useErrorHandler();
 
   const dirty = useMemo(() => !draftsEqual(draft, loadedSettings), [draft, loadedSettings]);
+
+  async function loadSettings() {
+    setLoading(true);
+    setStatus("");
+    try {
+      const resp = await apiCall("/api/admin/faster-whisper-settings/history");
+      const data = await parseJsonSafely(resp);
+      if (!resp.ok) {
+        setStatus(getErrorMessage(resp, data, "加载 Bottle 1.0 设置失败"));
+        return;
+      }
+      const current = normalizeDraft(data.current || data.settings || defaultDraft);
+      setDraft(current);
+      setLoadedSettings(current);
+      setCurrentMeta(data.current || data.settings || null);
+      setRollbackCandidate(data.rollback_candidate || null);
+    } catch (error) {
+      setStatus(error instanceof Error && error.message ? error.message : "加载 Bottle 1.0 设置失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadSettings();
+  }, []);
+
+  async function saveSettings() {
+    setSaving(true);
+    setStatus("");
+    try {
+      const resp = await apiCall("/api/admin/faster-whisper-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(normalizeDraft(draft)),
+      });
+      const data = await parseJsonSafely(resp);
+      if (!resp.ok) {
+        setStatus(getErrorMessage(resp, data, "保存 Bottle 1.0 设置失败"));
+        return;
+      }
+      setStatus("Bottle 1.0 设置已保存");
+      toast.success("Bottle 1.0 设置已保存");
+      await loadSettings();
+    } catch (error) {
+      setStatus(error instanceof Error && error.message ? error.message : "保存 Bottle 1.0 设置失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function rollbackLast() {
+    setRollbacking(true);
+    setStatus("");
+    try {
+      const resp = await apiCall("/api/admin/faster-whisper-settings/rollback-last", { method: "POST" });
+      const data = await parseJsonSafely(resp);
+      if (!resp.ok) {
+        setStatus(getErrorMessage(resp, data, "回滚上一版 Bottle 1.0 设置失败"));
+        return;
+      }
+      setStatus("已回滚到上一版 Bottle 1.0 设置");
+      toast.success("已回滚到上一版 Bottle 1.0 设置");
+      await loadSettings();
+    } catch (error) {
+      setStatus(error instanceof Error && error.message ? error.message : "回滚上一版 Bottle 1.0 设置失败");
+    } finally {
+      setRollbacking(false);
+    }
+  }
 
   function renderField(field) {
     const value = draft[field.key];
@@ -101,136 +158,12 @@ export function AdminFasterWhisperSettingsTab({ apiCall }) {
     );
   }
 
-  async function loadSettings() {
-    setLoading(true);
-    setStatus("");
-    clearError();
-    try {
-      const resp = await apiCall("/api/admin/faster-whisper-settings/history");
-      const data = await parseJsonSafely(resp);
-      if (!resp.ok) {
-        const formattedError = captureError(
-          formatResponseError(resp, data, {
-            component: "AdminFasterWhisperSettingsTab",
-            action: "加载 bottle.1.0 参数",
-            endpoint: "/api/admin/faster-whisper-settings/history",
-            method: "GET",
-            fallbackMessage: "加载 bottle.1.0 参数失败",
-          }),
-        );
-        setStatus(formattedError.displayMessage);
-        return;
-      }
-      const current = normalizeDraft(data.current || data.settings || defaultDraft);
-      setDraft(current);
-      setLoadedSettings(current);
-      setCurrentMeta(data.current || data.settings || null);
-      setRollbackCandidate(data.rollback_candidate || null);
-    } catch (requestError) {
-      const formattedError = captureError(
-        formatNetworkError(requestError, {
-          component: "AdminFasterWhisperSettingsTab",
-          action: "加载 bottle.1.0 参数",
-          endpoint: "/api/admin/faster-whisper-settings/history",
-          method: "GET",
-        }),
-      );
-      setStatus(formattedError.displayMessage);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void loadSettings();
-  }, []);
-
-  async function saveSettings() {
-    setSaving(true);
-    setStatus("");
-    clearError();
-    try {
-      const resp = await apiCall("/api/admin/faster-whisper-settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(normalizeDraft(draft)),
-      });
-      const data = await parseJsonSafely(resp);
-      if (!resp.ok) {
-        const formattedError = captureError(
-          formatResponseError(resp, data, {
-            component: "AdminFasterWhisperSettingsTab",
-            action: "保存 bottle.1.0 参数",
-            endpoint: "/api/admin/faster-whisper-settings",
-            method: "PUT",
-            fallbackMessage: "保存 bottle.1.0 参数失败",
-          }),
-        );
-        setStatus(formattedError.displayMessage);
-        return;
-      }
-      setStatus("bottle.1.0 参数已保存");
-      toast.success("bottle.1.0 参数已保存");
-      await loadSettings();
-    } catch (requestError) {
-      const formattedError = captureError(
-        formatNetworkError(requestError, {
-          component: "AdminFasterWhisperSettingsTab",
-          action: "保存 bottle.1.0 参数",
-          endpoint: "/api/admin/faster-whisper-settings",
-          method: "PUT",
-        }),
-      );
-      setStatus(formattedError.displayMessage);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function rollbackLast() {
-    setRollbacking(true);
-    setStatus("");
-    clearError();
-    try {
-      const resp = await apiCall("/api/admin/faster-whisper-settings/rollback-last", { method: "POST" });
-      const data = await parseJsonSafely(resp);
-      if (!resp.ok) {
-        const formattedError = captureError(
-          formatResponseError(resp, data, {
-            component: "AdminFasterWhisperSettingsTab",
-            action: "回滚 bottle.1.0 参数",
-            endpoint: "/api/admin/faster-whisper-settings/rollback-last",
-            method: "POST",
-            fallbackMessage: "回滚上一版 bottle.1.0 参数失败",
-          }),
-        );
-        setStatus(formattedError.displayMessage);
-        return;
-      }
-      setStatus("已回滚到上一版 bottle.1.0 参数");
-      toast.success("已回滚到上一版 bottle.1.0 参数");
-      await loadSettings();
-    } catch (requestError) {
-      const formattedError = captureError(
-        formatNetworkError(requestError, {
-          component: "AdminFasterWhisperSettingsTab",
-          action: "回滚 bottle.1.0 参数",
-          endpoint: "/api/admin/faster-whisper-settings/rollback-last",
-          method: "POST",
-        }),
-      );
-      setStatus(formattedError.displayMessage);
-    } finally {
-      setRollbacking(false);
-    }
-  }
-
   return (
     <Card className="rounded-3xl border shadow-sm">
       <CardHeader className="space-y-3">
         <div className="space-y-1">
-          <CardTitle className="text-lg">bottle.1.0 参数</CardTitle>
-          <CardDescription>这里维护 bottle.1.0 的服务端推理参数，模型目录固定到 asr-test\\models\\faster-distil-small.en。</CardDescription>
+          <CardTitle className="text-lg">Bottle 1.0 设置</CardTitle>
+          <CardDescription>这里维护 Bottle 1.0 的服务端推理参数，模型目录固定到 {PINNED_MODEL_DIR}。</CardDescription>
         </div>
         {currentMeta?.updated_at ? (
           <CardDescription>
@@ -240,7 +173,6 @@ export function AdminFasterWhisperSettingsTab({ apiCall }) {
         ) : null}
       </CardHeader>
       <CardContent className="space-y-4">
-        {error ? <AdminErrorNotice error={error} className="rounded-2xl" /> : null}
         {status ? <p className="text-sm text-muted-foreground">{status}</p> : null}
 
         {loading ? (
@@ -250,24 +182,7 @@ export function AdminFasterWhisperSettingsTab({ apiCall }) {
             ))}
           </div>
         ) : (
-          <>
-            {FIELD_GROUPS.map((group) => (
-              <div key={group.id} className="space-y-3">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">{group.title}</p>
-                  <p className="text-xs text-muted-foreground">{group.description}</p>
-                </div>
-                {group.id === "advanced" ? (
-                  <details className="rounded-2xl border border-dashed bg-muted/10" open={false}>
-                    <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-muted-foreground">高级设置（默认折叠）</summary>
-                    <div className="grid gap-3 p-4 md:grid-cols-2">{group.fields.map((field) => renderField(field))}</div>
-                  </details>
-                ) : (
-                  <div className="grid gap-3 md:grid-cols-2">{group.fields.map((field) => renderField(field))}</div>
-                )}
-              </div>
-            ))}
-          </>
+          <div className="grid gap-3 md:grid-cols-2">{FIELDS.map((field) => renderField(field))}</div>
         )}
 
         {rollbackCandidate ? (
@@ -287,7 +202,7 @@ export function AdminFasterWhisperSettingsTab({ apiCall }) {
             回滚上一版
           </Button>
           <Button onClick={() => void saveSettings()} disabled={loading || saving || rollbacking || !dirty}>
-            保存参数
+            保存设置
           </Button>
         </div>
       </CardContent>
