@@ -1,0 +1,68 @@
+schema_version: 1
+task_id: TASK-011
+title: 新增与 Zeabur 部署隔离的 Windows Electron 客户端工程
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: 在不改坏现有网站与 Zeabur 部署链路的前提下，为当前项目新增一个仅面向 Windows 的 Electron 客户端工程，客户端可在开发态和打包态启动本地后端并加载现有前端界面，同时保留网站入口继续独立构建和部署。
+scope:
+  - Electron 客户端工程、主进程与 preload 安全边界
+  - Windows 本地后端启动脚本、健康检查与退出清理
+  - 客户端构建与网站构建的目录隔离、忽略规则与契约测试
+  - 面向后续灰度测试的开发说明、打包说明与 Zeabur 不受影响的操作说明
+allowed_paths:
+  - desktop-client
+  - scripts/run_desktop_backend.py
+  - requirements-dev.txt
+  - .dockerignore
+  - tests/test_build_context_contract.py
+  - tests/test_start_script_smoke.py
+  - README.md
+acceptance:
+  - 仓库新增独立的 `desktop-client` 工程，客户端入口、打包配置、主进程与 preload 文件均位于该目录内，不替换现有网站入口，也不要求修改 Zeabur 的现有 Dockerfile。
+  - Electron 开发模式可从仓库根目录按文档启动：客户端窗口能够拉起本地后端、等待健康检查成功后再显示界面，并能在关闭客户端时正确清理后端子进程。
+  - Electron 打包模式可生成仅面向 Windows 的桌面应用或安装包；打包后的客户端打开后无需用户先手动运行浏览器或命令行即可进入现有应用界面。
+  - 客户端运行所需的日志、缓存和本地数据目录通过客户端启动脚本显式落到 Windows 用户目录下的应用专属位置，不依赖仓库工作目录，也不要求修改 Zeabur 的 `/data` 约定。
+  - 网站原有前端构建、`build:app-static` 同步流程与 FastAPI 静态托管仍保持可用；新增客户端工程不会改变网站部署入口、不会把 Electron 产物卷入 `app/static`，也不会要求 Zeabur 构建客户端。
+  - `.dockerignore` 与相关契约测试显式覆盖客户端工程和其产物，确保 Zeabur 或 Docker 构建上下文不会因为新增 `desktop-client` 而膨胀或失效。
+  - README 新增一节中文说明，明确区分“网站继续按当前方式部署到 Zeabur”和“客户端单独在本地开发/灰度测试/打包”的操作步骤，并说明如何并行开发而不影响线上网站。
+  - 至少提供一条可执行的灰度验证路径：开发者可以只在本机运行 Electron 客户端试用，而不需要把客户端代码接入 Zeabur，也不会让普通网站用户看到未完成的客户端能力。
+check_commands:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+  - pytest tests/test_build_context_contract.py tests/test_start_script_smoke.py
+  - npm --prefix desktop-client run build
+  - npm --prefix desktop-client run package:win
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with: []
+notes_for_after: 客户端首期只解决“把现有网站封装成 Windows 客户端并安全并行开发”的问题，不顺手改上传页、Bottle 1.0/2.0 业务分流或 Zeabur 生产部署逻辑。优先复用现有 FastAPI 根页面与 `/api/*` 契约，让 Electron 负责启动本地后端、等待 `/health`、打开窗口、退出清理与错误提示。为避免影响线上，桌面端相关依赖与脚本全部收敛到 `desktop-client` 和少量根级文档/忽略规则中；不要把 Electron 构建接入现有 Dockerfile，也不要让 `frontend/scripts/sync-app-static.mjs` 感知桌面端产物。README 里应写清后续人工操作：开发者如何仅在本机灰度测试客户端、如何继续正常推送网站到 Zeabur、以及什么时候才需要手动打包 Windows 客户端给小范围试用。
+result_summary: 完成 Windows Electron 客户端工程，新增本地 FastAPI 启动脚本、桌面端主进程与 preload、安全的本地缓存和日志目录约定、客户端打包脚本与本地灰度文档，并通过 `.dockerignore` 与契约测试保证 Zeabur 网站部署链路不接入桌面端产物；`npm --prefix desktop-client run package:win` 现可生成同步到 `desktop-client/dist` 的 Windows portable 分发产物。
+changed_files:
+  - .dockerignore
+  - README.md
+  - desktop-client/.gitignore
+  - desktop-client/electron/main.mjs
+  - desktop-client/electron/preload.mjs
+  - desktop-client/package-lock.json
+  - desktop-client/package.json
+  - desktop-client/scripts/build.mjs
+  - desktop-client/scripts/package-win.mjs
+  - scripts/run_desktop_backend.py
+  - tests/test_build_context_contract.py
+  - tests/test_start_script_smoke.py
+tests_run:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+  - pytest tests/test_build_context_contract.py tests/test_start_script_smoke.py
+  - npm --prefix desktop-client run build
+  - npm --prefix desktop-client run package:win
+blocked_reason: ""
+completed_at: 2026-03-22T23:47:00.6018650+08:00
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

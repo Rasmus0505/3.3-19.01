@@ -1,7 +1,7 @@
 schema_version: 1
 task_id: TASK-005
 title: Add server-side admission control and backpressure for lesson generation
-status: todo
+status: done
 priority: high
 project_root: D:/3.3-19.01
 base_ref: main
@@ -30,8 +30,14 @@ depends_on: []
 dependency_reason: ""
 blocked_by: []
 notes_for_after: Implement the cap in backend admission, not only in UI. Use config-driven defaults in app/core/config.py, count task states from lesson_generation_tasks, and only spawn the worker thread when the task is admitted to run now. If queued tasks are introduced, make the queue semantics explicit in the stored task status and API detail so the frontend can reason about them later even if this task does not change the UI copy.
-result_summary: ""
-changed_files: []
-tests_run: []
+result_summary: Added config-driven lesson task admission caps and queue backpressure across upload plus local-ASR creation, exposed machine-readable admission metadata in create and task polling responses, and covered admitted, queued, rejected, pause/resume, terminate, and local-ASR regression paths.
+changed_files:
+  - app/core/config.py
+  - app/api/routers/lessons.py
+  - app/services/lesson_command_service.py
+  - app/services/lesson_task_manager.py
+  - tests/test_regression_api.py
+tests_run:
+  - 'pytest tests/test_regression_api.py -k "lesson_task or local_asr or pause or terminate or resume or busy or queue"'
 blocked_reason: ""
-completed_at: ""
+completed_at: "2026-03-22T22:28:44.2430558+08:00"
