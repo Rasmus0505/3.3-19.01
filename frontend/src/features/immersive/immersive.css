@@ -422,6 +422,76 @@
   color: var(--color-muted-foreground);
 }
 
+.immersive-previous-sentence--mask-active {
+  position: relative;
+  min-height: 92px;
+}
+
+.immersive-translation-mask {
+  position: absolute;
+  z-index: 3;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  backdrop-filter: blur(18px) saturate(1.08);
+  -webkit-backdrop-filter: blur(18px) saturate(1.08);
+}
+
+.immersive-translation-mask:active {
+  cursor: grabbing;
+}
+
+.immersive-translation-mask--peek {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(2px) saturate(1);
+  -webkit-backdrop-filter: blur(2px) saturate(1);
+}
+
+.immersive-translation-mask__glass {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.18), transparent 42%);
+  pointer-events: none;
+}
+
+.immersive-translation-mask__label {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.46);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 11px;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.immersive-translation-mask__resize-handle {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, transparent 20%, rgba(255, 255, 255, 0.8) 20%, rgba(255, 255, 255, 0.8) 36%, transparent 36%),
+    rgba(15, 23, 42, 0.45);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
 .immersive-page--cinema {
   gap: 0;
   min-height: 100%;
@@ -552,6 +622,22 @@
   .immersive-typing-toolbar-meta {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .immersive-translation-mask {
+    border-radius: 16px;
+  }
+
+  .immersive-translation-mask__label {
+    top: 8px;
+    left: 10px;
+  }
+
+  .immersive-translation-mask__resize-handle {
+    right: 6px;
+    bottom: 6px;
+    width: 26px;
+    height: 26px;
   }
 
   .immersive-word-row {
