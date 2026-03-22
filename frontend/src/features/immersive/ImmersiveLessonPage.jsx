@@ -25,6 +25,7 @@ const CINEMA_CONTROLS_IDLE_MS = 3000;
 const MIN_PERCEPTIBLE_SLOWDOWN_WINDOW_MS = 900;
 const WORD_TIMING_TOLERANCE_MS = 140;
 const PROGRAMMATIC_FULLSCREEN_EXIT_RESET_MS = 1000;
+const WORDBOOK_LONG_PRESS_MS = 260;
 const MEDIA_TYPE_BY_EXTENSION = {
   ".mp4": "video/mp4",
   ".mov": "video/quicktime",
@@ -164,6 +165,16 @@ function createWordState(tokens) {
     wordInputs: safeTokens.map(() => ""),
     wordStatuses: safeTokens.map((_, idx) => (idx === 0 ? "active" : "pending")),
   };
+}
+
+function buildSelectableSentenceTokens(sentence) {
+  if (Array.isArray(sentence?.tokens) && sentence.tokens.length) {
+    return sentence.tokens;
+  }
+  return String(sentence?.text_en || "")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
 }
 
 function cloneWordSnapshot(activeWordIndex, currentWordInput, wordInputs, wordStatuses) {
@@ -556,7 +567,6 @@ export function ImmersiveLessonPage({
   const [postAnswerReplayState, setPostAnswerReplayState] = useState("idle");
   const [translationDisplayMode, setTranslationDisplayMode] = useState("previous");
   const [wordbookBusy, setWordbookBusy] = useState(false);
-  const [wordbookSelectionMode, setWordbookSelectionMode] = useState(false);
   const [wordbookSelectionStart, setWordbookSelectionStart] = useState(null);
   const [wordbookSelectionEnd, setWordbookSelectionEnd] = useState(null);
   const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
@@ -577,6 +587,12 @@ export function ImmersiveLessonPage({
   const wordInputsRef = useRef([]);
   const wordStatusesRef = useRef([]);
   const sentenceAdvanceLockedRef = useRef(false);
+  const wordbookPointerGestureRef = useRef({
+    pointerId: null,
+    anchorIndex: null,
+    longPressActive: false,
+    longPressTimerId: null,
+  });
   const playbackKindRef = useRef("initial");
   const replayAssistStageRef = useRef(0);
   const replayProgressAnchorRef = useRef(0);
@@ -584,6 +600,7 @@ export function ImmersiveLessonPage({
   const programmaticFullscreenExitRef = useRef(false);
   const programmaticFullscreenExitTimerRef = useRef(null);
   const cinemaFullscreenActive = isCinemaFullscreen || isFullscreenFallback;
+  const showPreviousSentenceBlock = !cinemaFullscreenActive || showFullscreenPreviousSentence;
   const hasExitHandler = typeof onExitImmersive === "function" || typeof onBack === "function";
   const typingEnabled =
     immersiveActive && Boolean(lesson?.sentences?.[currentSentenceIndex]) && phase !== "transition" && phase !== "lesson_completed";
@@ -654,12 +671,23 @@ export function ImmersiveLessonPage({
   const translationEn = translationDisplayMode === "current_answered" ? currentSentenceEn : previousSentenceEn;
   const translationZh = translationDisplayMode === "current_answered" ? currentSentenceZh : previousSentenceZh;
   const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens : []), [currentSentence?.tokens]);
-  const hasWordbookAccess = Boolean(accessToken && lesson?.id && currentSentence);
-  const hasPhraseSelection = Number.isInteger(wordbookSelectionStart) && Number.isInteger(wordbookSelectionEnd);
-  const selectedPhraseStart = hasPhraseSelection ? Math.min(wordbookSelectionStart, wordbookSelectionEnd) : -1;
-  const selectedPhraseEnd = hasPhraseSelection ? Math.max(wordbookSelectionStart, wordbookSelectionEnd) : -1;
-  const selectedPhraseTokens = hasPhraseSelection ? expectedTokens.slice(selectedPhraseStart, selectedPhraseEnd + 1) : [];
-  const selectedPhraseText = selectedPhraseTokens.join(" ");
+  const previousSentenceTokens = useMemo(
+    () => buildSelectableSentenceTokens(previousSentence),
+    [previousSentence?.text_en, previousSentence?.tokens],
+  );
+  const hasWordbookAccess = Boolean(accessToken && lesson?.id);
+  const canRenderInteractiveWordbook = Boolean(
+    hasWordbookAccess &&
+      previousSentence &&
+      previousSentenceTokens.length > 0 &&
+      translationDisplayMode === "previous" &&
+      showPreviousSentenceBlock,
+  );
+  const hasWordbookSelection = Number.isInteger(wordbookSelectionStart) && Number.isInteger(wordbookSelectionEnd);
+  const selectedWordbookStart = hasWordbookSelection ? Math.min(wordbookSelectionStart, wordbookSelectionEnd) : -1;
+  const selectedWordbookEnd = hasWordbookSelection ? Math.max(wordbookSelectionStart, wordbookSelectionEnd) : -1;
+  const selectedWordbookTokens = hasWordbookSelection ? previousSentenceTokens.slice(selectedWordbookStart, selectedWordbookEnd + 1) : [];
+  const selectedWordbookText = selectedWordbookTokens.join(" ");
   const sentenceWordTimingMap = useMemo(
     () => buildSentenceWordTimingMap(lesson?.sentences || [], lesson?.subtitle_cache_seed?.asr_payload || null),
     [lesson?.sentences, lesson?.subtitle_cache_seed?.asr_payload],
@@ -724,9 +752,32 @@ export function ImmersiveLessonPage({
     setWordbookSelectionEnd(null);
   }, []);
 
+  const clearWordbookGestureTimer = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const gesture = wordbookPointerGestureRef.current;
+    if (gesture.longPressTimerId !== null) {
+      window.clearTimeout(gesture.longPressTimerId);
+      gesture.longPressTimerId = null;
+    }
+  }, []);
+
+  const resetWordbookPointerGesture = useCallback(() => {
+    clearWordbookGestureTimer();
+    const gesture = wordbookPointerGestureRef.current;
+    gesture.pointerId = null;
+    gesture.anchorIndex = null;
+    gesture.longPressActive = false;
+  }, [clearWordbookGestureTimer]);
+
+  const applyWordbookSelection = useCallback((startTokenIndex, endTokenIndex = startTokenIndex) => {
+    if (!Number.isInteger(startTokenIndex) || !Number.isInteger(endTokenIndex)) return;
+    setWordbookSelectionStart(startTokenIndex);
+    setWordbookSelectionEnd(endTokenIndex);
+  }, []);
+
   const collectWordbookEntry = useCallback(
-    async ({ entryType, entryText, startTokenIndex, endTokenIndex }) => {
-      if (!lesson?.id || !currentSentence || !accessToken) return;
+    async ({ sentence, entryType, entryText, startTokenIndex, endTokenIndex }) => {
+      if (!lesson?.id || !sentence || !accessToken) return;
       setWordbookBusy(true);
       try {
         const resp = await apiClient(
@@ -736,7 +787,7 @@ export function ImmersiveLessonPage({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               lesson_id: lesson.id,
-              sentence_index: currentSentence.idx,
+              sentence_index: sentence.idx,
               entry_text: entryText,
               entry_type: entryType,
               start_token_index: startTokenIndex,
@@ -753,35 +804,92 @@ export function ImmersiveLessonPage({
         toast.success(data.message || (data.created ? "已加入生词本" : "已更新到最新语境"));
         onWordbookChanged?.();
         clearWordbookSelection();
-        if (entryType === "phrase") {
-          setWordbookSelectionMode(false);
-        }
       } catch (error) {
         toast.error(`网络错误: ${String(error)}`);
       } finally {
         setWordbookBusy(false);
       }
     },
-    [accessToken, apiClient, clearWordbookSelection, currentSentence, lesson?.id, onWordbookChanged],
+    [accessToken, apiClient, clearWordbookSelection, lesson?.id, onWordbookChanged],
   );
 
-  const handleSelectWordbookPhraseToken = useCallback(
-    (tokenIndex) => {
-      if (!wordbookSelectionMode) return;
-      if (!Number.isInteger(wordbookSelectionStart) || Number.isInteger(wordbookSelectionEnd)) {
-        setWordbookSelectionStart(tokenIndex);
-        setWordbookSelectionEnd(null);
-        return;
-      }
-      setWordbookSelectionEnd(tokenIndex);
+  const handleWordbookTokenPointerDown = useCallback(
+    (event, tokenIndex) => {
+      if (!canRenderInteractiveWordbook || wordbookBusy) return;
+      if (typeof event.button === "number" && event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const pointerId = event.pointerId;
+      clearWordbookGestureTimer();
+      const gesture = wordbookPointerGestureRef.current;
+      gesture.pointerId = pointerId;
+      gesture.anchorIndex = tokenIndex;
+      gesture.longPressActive = false;
+      gesture.longPressTimerId = window.setTimeout(() => {
+        const nextGesture = wordbookPointerGestureRef.current;
+        if (nextGesture.pointerId !== pointerId || nextGesture.anchorIndex !== tokenIndex) return;
+        nextGesture.longPressActive = true;
+        applyWordbookSelection(tokenIndex, tokenIndex);
+      }, WORDBOOK_LONG_PRESS_MS);
     },
-    [wordbookSelectionEnd, wordbookSelectionMode, wordbookSelectionStart],
+    [applyWordbookSelection, canRenderInteractiveWordbook, clearWordbookGestureTimer, wordbookBusy],
   );
 
   useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return undefined;
+
+    const handlePointerMove = (event) => {
+      const gesture = wordbookPointerGestureRef.current;
+      if (gesture.pointerId === null || gesture.pointerId !== event.pointerId || !gesture.longPressActive) {
+        return;
+      }
+      const tokenElement = document.elementFromPoint(event.clientX, event.clientY)?.closest?.("[data-wordbook-token-index]");
+      if (!tokenElement) return;
+      const nextTokenIndex = Number(tokenElement.getAttribute("data-wordbook-token-index"));
+      if (!Number.isInteger(nextTokenIndex)) return;
+      setWordbookSelectionStart((current) => (current === gesture.anchorIndex ? current : gesture.anchorIndex));
+      setWordbookSelectionEnd((current) => (current === nextTokenIndex ? current : nextTokenIndex));
+    };
+
+    const handlePointerUp = (event) => {
+      const gesture = wordbookPointerGestureRef.current;
+      if (gesture.pointerId === null || gesture.pointerId !== event.pointerId) return;
+      const anchorIndex = gesture.anchorIndex;
+      const longPressActive = gesture.longPressActive;
+      resetWordbookPointerGesture();
+      if (!Number.isInteger(anchorIndex)) return;
+      if (!longPressActive) {
+        applyWordbookSelection(anchorIndex, anchorIndex);
+      }
+    };
+
+    const handlePointerCancel = (event) => {
+      const gesture = wordbookPointerGestureRef.current;
+      if (gesture.pointerId === null || gesture.pointerId !== event.pointerId) return;
+      resetWordbookPointerGesture();
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+      resetWordbookPointerGesture();
+    };
+  }, [applyWordbookSelection, resetWordbookPointerGesture]);
+
+  useEffect(() => {
     clearWordbookSelection();
-    setWordbookSelectionMode(false);
-  }, [clearWordbookSelection, currentSentence?.idx, lesson?.id]);
+    resetWordbookPointerGesture();
+  }, [clearWordbookSelection, currentSentence?.idx, lesson?.id, resetWordbookPointerGesture]);
+
+  useEffect(() => {
+    if (canRenderInteractiveWordbook) return;
+    clearWordbookSelection();
+    resetWordbookPointerGesture();
+  }, [canRenderInteractiveWordbook, clearWordbookSelection, resetWordbookPointerGesture]);
 
   const applyWordSnapshot = useCallback((snapshot) => {
     activeWordIndexRef.current = snapshot.activeWordIndex;
@@ -1963,114 +2071,6 @@ export function ImmersiveLessonPage({
               {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
               {waitingForInitialPlayback ? <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p> : null}
 
-              {hasWordbookAccess ? (
-                <div className="rounded-2xl border bg-muted/15 p-3">
-                  <div className="flex flex-col gap-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-foreground">生词本收藏</p>
-                        <p className="text-xs text-muted-foreground">
-                          {wordbookSelectionMode ? "短语模式：先点起点，再点终点，然后收藏连续短语。" : "直接点单词即可收藏；需要短语时，先切到短语模式。"}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={wordbookSelectionMode ? "default" : "outline"}
-                          disabled={wordbookBusy || expectedTokens.length < 2}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setWordbookSelectionMode((current) => {
-                              if (current) {
-                                clearWordbookSelection();
-                                return false;
-                              }
-                              clearWordbookSelection();
-                              return true;
-                            });
-                          }}
-                        >
-                          {wordbookSelectionMode ? "退出短语模式" : "选择短语"}
-                        </Button>
-                        {wordbookSelectionMode ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={wordbookBusy}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              clearWordbookSelection();
-                            }}
-                          >
-                            清除选择
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      {expectedTokens.map((token, index) => {
-                        const phraseSelected = hasPhraseSelection && index >= selectedPhraseStart && index <= selectedPhraseEnd;
-                        return (
-                          <Button
-                            key={`wordbook-token-${token}-${index}`}
-                            type="button"
-                            size="sm"
-                            variant={phraseSelected ? "default" : "outline"}
-                            className="h-auto min-h-9 rounded-full px-3 py-1.5"
-                            disabled={wordbookBusy}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              if (wordbookSelectionMode) {
-                                handleSelectWordbookPhraseToken(index);
-                                return;
-                              }
-                              void collectWordbookEntry({
-                                entryType: "word",
-                                entryText: token,
-                                startTokenIndex: index,
-                                endTokenIndex: index,
-                              });
-                            }}
-                          >
-                            {token}
-                          </Button>
-                        );
-                      })}
-                    </div>
-
-                    {wordbookSelectionMode ? (
-                      <div className="flex flex-col gap-2 rounded-2xl border bg-background/80 p-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="space-y-1">
-                          <p className="text-xs font-medium text-foreground">短语预览</p>
-                          <p className="text-sm text-muted-foreground">
-                            {selectedPhraseTokens.length >= 2 ? selectedPhraseText : "请在本句中选择连续两个及以上单词。"}
-                          </p>
-                        </div>
-                        <Button
-                          type="button"
-                          size="sm"
-                          disabled={wordbookBusy || selectedPhraseTokens.length < 2}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void collectWordbookEntry({
-                              entryType: "phrase",
-                              entryText: selectedPhraseText,
-                              startTokenIndex: selectedPhraseStart,
-                              endTokenIndex: selectedPhraseEnd,
-                            });
-                          }}
-                        >
-                          收藏短语
-                        </Button>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-
               <div className={cinemaFullscreenActive ? "immersive-word-row-frame immersive-word-row-frame--cinema" : ""}>
                 <div className={`immersive-word-row ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""}`}>
                   {expectedTokens.map((token, index) => {
@@ -2099,10 +2099,65 @@ export function ImmersiveLessonPage({
                 </div>
               </div>
 
-              {!cinemaFullscreenActive || showFullscreenPreviousSentence ? (
+              {showPreviousSentenceBlock ? (
                 <div className={`immersive-previous-sentence ${cinemaFullscreenActive ? "immersive-previous-sentence--cinema" : ""}`}>
-                  <p>{translationHeading}：{translationEn}</p>
-                  <p className="pl-[4.5em]">{translationZh}</p>
+                  {canRenderInteractiveWordbook ? (
+                    <>
+                      <div className="flex flex-wrap items-start gap-2 sm:flex-nowrap sm:items-center">
+                        <div className="min-w-0 flex flex-1 flex-wrap items-center gap-x-1 gap-y-2">
+                          <span className="shrink-0 text-foreground">上一句：</span>
+                          {previousSentenceTokens.map((token, index) => {
+                            const tokenSelected = hasWordbookSelection && index >= selectedWordbookStart && index <= selectedWordbookEnd;
+                            return (
+                              <button
+                                key={`previous-wordbook-token-${token}-${index}`}
+                                type="button"
+                                data-wordbook-token-index={index}
+                                aria-pressed={tokenSelected}
+                                className={`min-h-0 rounded-md px-1.5 py-0.5 text-left text-sm leading-6 transition-colors select-none touch-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                                  tokenSelected ? "bg-primary text-primary-foreground shadow-sm" : "text-foreground hover:bg-muted"
+                                } ${wordbookBusy ? "opacity-60" : ""}`}
+                                disabled={wordbookBusy}
+                                onContextMenu={(event) => {
+                                  event.preventDefault();
+                                }}
+                                onPointerDown={(event) => {
+                                  handleWordbookTokenPointerDown(event, index);
+                                }}
+                              >
+                                {token}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="shrink-0"
+                          disabled={wordbookBusy || selectedWordbookTokens.length === 0}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (!previousSentence) return;
+                            void collectWordbookEntry({
+                              sentence: previousSentence,
+                              entryType: selectedWordbookTokens.length > 1 ? "phrase" : "word",
+                              entryText: selectedWordbookText,
+                              startTokenIndex: selectedWordbookStart,
+                              endTokenIndex: selectedWordbookEnd,
+                            });
+                          }}
+                        >
+                          {wordbookBusy ? "加入中..." : "加入生词本"}
+                        </Button>
+                      </div>
+                      <p className="pl-[4.5em]">{previousSentenceZh}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p>{translationHeading}：{translationEn}</p>
+                      <p className="pl-[4.5em]">{translationZh}</p>
+                    </>
+                  )}
                 </div>
               ) : null}
               {!cinemaFullscreenActive ? (
