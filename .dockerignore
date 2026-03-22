@@ -3,9 +3,40 @@ __pycache__/
 *.pyo
 *.pyd
 *.log
+*.db
+*.sqlite
+*.sqlite3
+
 .git/
 .gitignore
+.pytest_cache/
+.venv/
+
+# Local docs and coordination assets
+Docx/
+教学/
+AGENTS.md
+README.md
+patch.diff
+zeabur ai能力介绍.md
+项目结构.md
+
+# Non-runtime labs and local-only tooling
+admin-web/
+asr-test/
+config/
+modelscope_whisper/
+ops/
+tests/
+tools/
+
+# Local temp files and ad hoc runtime outputs
 tmp/
 tmp_filetrans/
+tmp_*
+
+# Frontend local build and verification outputs
 frontend/node_modules/
 frontend/dist/
+frontend/tmp-admin-verify/
+frontend/tmp-admin-verify-2/

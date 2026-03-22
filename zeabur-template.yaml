@@ -38,11 +38,13 @@ spec:
     2. Build from the repository Dockerfile
     3. Deploy only `web` + `postgresql` for the first rollout
     4. Mount a persistent volume to `/data` for `web`
-    5. Upload the exact local ASR bundles into `/data/asr-models/SenseVoiceSmall` and `/data/asr-models/faster-distil-small.en`
-    6. Set `APP_ENV=production` for `web`
-    7. Set `AUTO_MIGRATE_ON_START=0` for `web`
-    8. Configure strong `ADMIN_BOOTSTRAP_PASSWORD` and `REDEEM_CODE_EXPORT_CONFIRM_TEXT`
-    9. Run `python scripts/run_prod_migration.py` from a local machine that has `PROD_DATABASE_URL`
+    5. Supported ASR stack is `Bottle 1.0` plus `Bottle 2.0`
+    6. If you need server-side `Bottle 1.0`, upload the local bundle into `/data/asr-models/faster-distil-small.en`
+    7. `Bottle 2.0` uses DashScope and does not need a local model bundle
+    8. Set `APP_ENV=production` for `web`
+    9. Set `AUTO_MIGRATE_ON_START=0` for `web`
+    10. Configure strong `ADMIN_BOOTSTRAP_PASSWORD` and `REDEEM_CODE_EXPORT_CONFIRM_TEXT`
+    11. Run `python scripts/run_prod_migration.py` from a local machine that has `PROD_DATABASE_URL`
 
     This template remains as a fallback import option.
   services:
