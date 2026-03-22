@@ -1,7 +1,7 @@
 schema_version: 1
 task_id: TASK-007
 title: Add flowing water progress state to main history lesson cards
-status: in_progress
+status: done
 priority: high
 project_root: D:/3.3-19.01
 base_ref: main
@@ -27,8 +27,14 @@ depends_on: []
 dependency_reason: ""
 blocked_by: []
 notes_for_after: Keep this task limited to the main history list, not LessonListLocalSubtitles. Reuse the existing lessonCardMetaMap catalog data instead of adding a backend API change. Prefer a CSS-based implementation with lightweight layered gradients or masks rather than introducing a liquid-gauge dependency. Preserve mobile readability and keep the primary emphasis on the continue-learning action; the water effect is supporting feedback, not the main interaction surface.
-result_summary: ""
+result_summary: Added derived lesson progress states to the main history cards, rendered a subtle flowing blue water bar with sentence-count copy for in-progress lessons, switched fully completed cards to a green completion state, and synced the generated frontend static assets within the allowed assets directory.
 changed_files: []
-tests_run: []
+changed_files:
+  - frontend/src/features/lessons/LessonList.jsx
+  - frontend/src/index.css
+  - app/static/assets
+tests_run:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
 blocked_reason: ""
-completed_at: ""
+completed_at: 2026-03-22T19:54:44.9942197+08:00
