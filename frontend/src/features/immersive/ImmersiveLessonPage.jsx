@@ -177,6 +177,19 @@ function buildSelectableSentenceTokens(sentence) {
     .filter(Boolean);
 }
 
+function toggleWordbookTokenIndex(selectedIndexes, tokenIndex) {
+  if (!Number.isInteger(tokenIndex)) {
+    return Array.isArray(selectedIndexes) ? selectedIndexes : [];
+  }
+  const nextSelection = new Set(Array.isArray(selectedIndexes) ? selectedIndexes.filter(Number.isInteger) : []);
+  if (nextSelection.has(tokenIndex)) {
+    nextSelection.delete(tokenIndex);
+  } else {
+    nextSelection.add(tokenIndex);
+  }
+  return Array.from(nextSelection).sort((left, right) => left - right);
+}
+
 function cloneWordSnapshot(activeWordIndex, currentWordInput, wordInputs, wordStatuses) {
   return {
     activeWordIndex: Math.max(0, Number(activeWordIndex || 0)),
@@ -567,8 +580,7 @@ export function ImmersiveLessonPage({
   const [postAnswerReplayState, setPostAnswerReplayState] = useState("idle");
   const [translationDisplayMode, setTranslationDisplayMode] = useState("previous");
   const [wordbookBusy, setWordbookBusy] = useState(false);
-  const [wordbookSelectionStart, setWordbookSelectionStart] = useState(null);
-  const [wordbookSelectionEnd, setWordbookSelectionEnd] = useState(null);
+  const [wordbookSelectedTokenIndexes, setWordbookSelectedTokenIndexes] = useState([]);
   const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
   const [isFullscreenFallback, setIsFullscreenFallback] = useState(false);
   const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(
@@ -589,9 +601,10 @@ export function ImmersiveLessonPage({
   const sentenceAdvanceLockedRef = useRef(false);
   const wordbookPointerGestureRef = useRef({
     pointerId: null,
-    anchorIndex: null,
+    pressTokenIndex: null,
     longPressActive: false,
     longPressTimerId: null,
+    sweepTokenIndex: null,
   });
   const playbackKindRef = useRef("initial");
   const replayAssistStageRef = useRef(0);
@@ -683,10 +696,16 @@ export function ImmersiveLessonPage({
       translationDisplayMode === "previous" &&
       showPreviousSentenceBlock,
   );
-  const hasWordbookSelection = Number.isInteger(wordbookSelectionStart) && Number.isInteger(wordbookSelectionEnd);
-  const selectedWordbookStart = hasWordbookSelection ? Math.min(wordbookSelectionStart, wordbookSelectionEnd) : -1;
-  const selectedWordbookEnd = hasWordbookSelection ? Math.max(wordbookSelectionStart, wordbookSelectionEnd) : -1;
-  const selectedWordbookTokens = hasWordbookSelection ? previousSentenceTokens.slice(selectedWordbookStart, selectedWordbookEnd + 1) : [];
+  const hasWordbookSelection = wordbookSelectedTokenIndexes.length > 0;
+  const selectedWordbookStart = hasWordbookSelection ? wordbookSelectedTokenIndexes[0] : -1;
+  const selectedWordbookEnd = hasWordbookSelection ? wordbookSelectedTokenIndexes[wordbookSelectedTokenIndexes.length - 1] : -1;
+  const selectedWordbookTokens = useMemo(
+    () =>
+      wordbookSelectedTokenIndexes
+        .map((tokenIndex) => previousSentenceTokens[tokenIndex])
+        .filter((token) => typeof token === "string" && token.length > 0),
+    [previousSentenceTokens, wordbookSelectedTokenIndexes],
+  );
   const selectedWordbookText = selectedWordbookTokens.join(" ");
   const sentenceWordTimingMap = useMemo(
     () => buildSentenceWordTimingMap(lesson?.sentences || [], lesson?.subtitle_cache_seed?.asr_payload || null),
@@ -748,8 +767,7 @@ export function ImmersiveLessonPage({
   );
 
   const clearWordbookSelection = useCallback(() => {
-    setWordbookSelectionStart(null);
-    setWordbookSelectionEnd(null);
+    setWordbookSelectedTokenIndexes([]);
   }, []);
 
   const clearWordbookGestureTimer = useCallback(() => {
@@ -765,14 +783,14 @@ export function ImmersiveLessonPage({
     clearWordbookGestureTimer();
     const gesture = wordbookPointerGestureRef.current;
     gesture.pointerId = null;
-    gesture.anchorIndex = null;
+    gesture.pressTokenIndex = null;
     gesture.longPressActive = false;
+    gesture.sweepTokenIndex = null;
   }, [clearWordbookGestureTimer]);
 
-  const applyWordbookSelection = useCallback((startTokenIndex, endTokenIndex = startTokenIndex) => {
-    if (!Number.isInteger(startTokenIndex) || !Number.isInteger(endTokenIndex)) return;
-    setWordbookSelectionStart(startTokenIndex);
-    setWordbookSelectionEnd(endTokenIndex);
+  const toggleWordbookTokenSelection = useCallback((tokenIndex) => {
+    if (!Number.isInteger(tokenIndex)) return;
+    setWordbookSelectedTokenIndexes((current) => toggleWordbookTokenIndex(current, tokenIndex));
   }, []);
 
   const collectWordbookEntry = useCallback(
@@ -820,19 +838,24 @@ export function ImmersiveLessonPage({
       event.preventDefault();
       event.stopPropagation();
       const pointerId = event.pointerId;
-      clearWordbookGestureTimer();
       const gesture = wordbookPointerGestureRef.current;
+      if (gesture.pointerId !== null && gesture.pointerId !== pointerId) {
+        return;
+      }
+      clearWordbookGestureTimer();
       gesture.pointerId = pointerId;
-      gesture.anchorIndex = tokenIndex;
+      gesture.pressTokenIndex = tokenIndex;
       gesture.longPressActive = false;
+      gesture.sweepTokenIndex = null;
       gesture.longPressTimerId = window.setTimeout(() => {
         const nextGesture = wordbookPointerGestureRef.current;
-        if (nextGesture.pointerId !== pointerId || nextGesture.anchorIndex !== tokenIndex) return;
+        if (nextGesture.pointerId !== pointerId || nextGesture.pressTokenIndex !== tokenIndex) return;
         nextGesture.longPressActive = true;
-        applyWordbookSelection(tokenIndex, tokenIndex);
+        nextGesture.sweepTokenIndex = tokenIndex;
+        toggleWordbookTokenSelection(tokenIndex);
       }, WORDBOOK_LONG_PRESS_MS);
     },
-    [applyWordbookSelection, canRenderInteractiveWordbook, clearWordbookGestureTimer, wordbookBusy],
+    [canRenderInteractiveWordbook, clearWordbookGestureTimer, toggleWordbookTokenSelection, wordbookBusy],
   );
 
   useEffect(() => {
@@ -844,22 +867,26 @@ export function ImmersiveLessonPage({
         return;
       }
       const tokenElement = document.elementFromPoint(event.clientX, event.clientY)?.closest?.("[data-wordbook-token-index]");
-      if (!tokenElement) return;
+      if (!tokenElement) {
+        gesture.sweepTokenIndex = null;
+        return;
+      }
       const nextTokenIndex = Number(tokenElement.getAttribute("data-wordbook-token-index"));
       if (!Number.isInteger(nextTokenIndex)) return;
-      setWordbookSelectionStart((current) => (current === gesture.anchorIndex ? current : gesture.anchorIndex));
-      setWordbookSelectionEnd((current) => (current === nextTokenIndex ? current : nextTokenIndex));
+      if (gesture.sweepTokenIndex === nextTokenIndex) return;
+      gesture.sweepTokenIndex = nextTokenIndex;
+      toggleWordbookTokenSelection(nextTokenIndex);
     };
 
     const handlePointerUp = (event) => {
       const gesture = wordbookPointerGestureRef.current;
       if (gesture.pointerId === null || gesture.pointerId !== event.pointerId) return;
-      const anchorIndex = gesture.anchorIndex;
+      const pressTokenIndex = gesture.pressTokenIndex;
       const longPressActive = gesture.longPressActive;
       resetWordbookPointerGesture();
-      if (!Number.isInteger(anchorIndex)) return;
+      if (!Number.isInteger(pressTokenIndex)) return;
       if (!longPressActive) {
-        applyWordbookSelection(anchorIndex, anchorIndex);
+        toggleWordbookTokenSelection(pressTokenIndex);
       }
     };
 
@@ -878,7 +905,7 @@ export function ImmersiveLessonPage({
       window.removeEventListener("pointercancel", handlePointerCancel);
       resetWordbookPointerGesture();
     };
-  }, [applyWordbookSelection, resetWordbookPointerGesture]);
+  }, [resetWordbookPointerGesture, toggleWordbookTokenSelection]);
 
   useEffect(() => {
     clearWordbookSelection();
@@ -2107,15 +2134,17 @@ export function ImmersiveLessonPage({
                         <div className="min-w-0 flex flex-1 flex-wrap items-center gap-x-1 gap-y-2">
                           <span className="shrink-0 text-foreground">上一句：</span>
                           {previousSentenceTokens.map((token, index) => {
-                            const tokenSelected = hasWordbookSelection && index >= selectedWordbookStart && index <= selectedWordbookEnd;
+                            const tokenSelected = wordbookSelectedTokenIndexes.includes(index);
                             return (
                               <button
                                 key={`previous-wordbook-token-${token}-${index}`}
                                 type="button"
                                 data-wordbook-token-index={index}
                                 aria-pressed={tokenSelected}
-                                className={`min-h-0 rounded-md px-1.5 py-0.5 text-left text-sm leading-6 transition-colors select-none touch-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-                                  tokenSelected ? "bg-primary text-primary-foreground shadow-sm" : "text-foreground hover:bg-muted"
+                                className={`min-h-0 cursor-pointer rounded-md border border-transparent px-1.5 py-0.5 text-left text-sm leading-6 transition-colors select-none touch-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                                  tokenSelected
+                                    ? "bg-slate-200 text-foreground shadow-sm"
+                                    : "bg-slate-100/80 text-foreground hover:bg-slate-200/70"
                                 } ${wordbookBusy ? "opacity-60" : ""}`}
                                 disabled={wordbookBusy}
                                 onContextMenu={(event) => {

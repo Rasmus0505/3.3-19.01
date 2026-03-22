@@ -1,47 +1,59 @@
 schema_version: 1
 task_id: TASK-004
-title: 修正沉浸式生词选择入口与交互方式
+title: 修复沉浸学习生词本的多选切换与拖动翻转交互
 status: done
 priority: high
 project_root: D:/3.3-19.01
 base_ref: main
-goal: 在不改变现有答题区尺寸的前提下，修正沉浸式学习里的生词选择入口，把选词能力并入“上一句”现有展示区域，移除答题区上方额外收藏区和短语模式开关，并让单击选词、长按拖选连续词配合右侧常驻按钮完成加入生词本。
+goal: 修复沉浸学习里上一句生词选择交互，使用户可以通过单击和长按拖动按 token 维度逐个切换选中状态，并把当前所有已选 token 按原句顺序拼成一条记录加入生词本。
 scope:
-  - 沉浸式学习页“上一句”区域的选词与短语选择交互
-  - 沉浸式学习页“加入生词本”按钮布局与首句隐藏逻辑
-  - 与新交互一致的前端回归与端到端验证
+  - 沉浸学习页上一句区域的生词选择状态模型与指针手势
+  - 生词本加入按钮的提交语义与选中文本拼接规则
+  - 上一句 token 的可点击视觉提示与轻量样式反馈
 allowed_paths:
   - frontend/src/features/immersive/ImmersiveLessonPage.jsx
-  - tests/test_e2e_key_flows.py
-  - tests/test_regression_api.py
+  - app/static/assets
 acceptance:
-  - 沉浸式学习页不再在答题区上方新增任何“生词本收藏”区域，也不再出现“选择短语/退出短语模式/清除选择”等额外控制，答题区高度与现有效果保持一致。
-  - 选词入口只出现在现有“上一句”展示区域内；第 1 句因为没有上一句时，整个选词入口与右侧“加入生词本”按钮都不显示。
-  - 用户在“上一句”英文句子中单击单个单词时，只选中该词；右侧常驻“加入生词本”按钮可将当前选中的单词加入生词本，并给出成功或重复更新反馈。
-  - 用户在“上一句”英文句子中长按后拖过连续单词时，可形成连续短语选择；右侧常驻“加入生词本”按钮可将当前连续选区加入生词本，不需要任何短语模式开关。
-  - 中文译文仍用于展示，不承担选词交互；上一句区域与按钮布局应尽量保持单行右侧按钮结构，不得通过新增上方块级区域挤压答题区。
-  - 原有生词本后端、侧栏页、收藏去重、状态切换与删除能力保持不变；本次修复不引入新的收藏类型、数据库结构或额外后端接口变更。
-  - 本任务涉及的回归测试覆盖首句隐藏入口、单击选词、长按连续选词、按钮触发收藏以及原有生词本 API 不回退。
+  - 单击某个未选中的 token 时，只切换该 token 为选中，且不清空此前已经选中的其他 token。
+  - 单击某个已选中的 token 时，只取消该 token 的选中状态，其他已选 token 保持不变。
+  - 长按进入拖动手势后，指针每次经过一个 token 都立即翻转该 token 的当前选中状态；同一次拖动中如果再次经过同一个 token，需要再次翻转，而不是忽略重复经过。
+  - 当前选区不再受连续区间限制，允许同时保留多个离散 token；加入生词本时把所有已选 token 按它们在原句中的先后顺序用空格拼成一条 `entry_text`，不按点击先后重排。
+  - 点击“加入生词本”时始终只提交一条记录；仅选中 1 个 token 时提交 `word`，选中多个 token 时无论是否连续都提交 `phrase`。
+  - 第一句没有上一句时，整套上一句选词入口继续隐藏；原有“加入生词本”按钮显隐、成功提示、重复更新提示和加入后清空选择的行为保持可用。
+  - 上一句 token 默认呈现极淡的灰色底座并显示手型光标，用户能明显感知“这里可点”，但不能把视觉重点抢走或明显抬高答题区的存在感。
+  - 鼠标、触屏和触控板等 pointer 输入设备尽量遵循同一套切换语义，不再出现桌面可点而触屏失效或行为明显不同的情况。
 check_commands:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
   - 'pytest tests/test_regression_api.py -k "wordbook"'
-  - 'pytest tests/test_e2e_key_flows.py -k "wordbook or immersive"'
-  - 'npm --prefix frontend run build'
 depends_on: []
 dependency_reason: ""
 blocked_by: []
 conflicts_with: []
-notes_for_after: 这是对已交付错误交互的定向返工，不要重做后端存储和侧栏生词本页面。优先复用现有 wordbook collect API 与已有上一句展示区域，只调整沉浸式页面内的交互承载位置、手势语义和按钮布局。以“解决用户在复习上一句时顺手收词”为目标，而不是保留此前那套额外收藏面板。按钮应放在上一句区域右侧，避免新增垂直高度；单击用于选择一个词，长按拖动用于形成连续短语选择；不再保留任何短语模式切换心智。首句没有上一句时直接隐藏整套入口，不做回退到当前句的兜底。
-result_summary: Reworked immersive wordbook collection into the existing previous-sentence row, removed the extra collection panel and phrase-mode controls, and switched collection to button-triggered single-click or long-press range selection without changing backend wordbook APIs.
+notes_for_after: 这是对已交付 TASK-004 的第二轮返工，不要沿用当前 `start/end` 连续区间模型。实现应改为按 token 维度维护选中集合或等价结构，使单击成为单 token toggle，长按拖动成为“按经过顺序逐词翻转”的 sweep toggle。拖动过程中不要偷偷退化成连续高亮区间；如果轨迹再次扫过同一个 token，就再次翻转，结果以用户真实轨迹为准。提交时把所有已选 token 按原句 index 升序拼接为一条记录，`entry_type` 规则固定为 1 个 token=word，多于 1 个 token=phrase。继续复用现有 `/api/wordbook/collect` 接口，不新增后端接口或数据结构。视觉上只做非常轻的可点击提示：手型光标和比白底略灰一点的 token 底座即可，不要引入明显色块、额外工具栏或占用更多垂直空间。
+result_summary: Reworked previous-sentence wordbook selection into per-token toggle state with discrete multi-select submission while keeping the existing collect API and hidden first-sentence entry behavior.
 changed_files:
   - frontend/src/features/immersive/ImmersiveLessonPage.jsx
+  - app/static/assets/AdminPage-BLzmuIMx.js
+  - app/static/assets/ImmersiveLessonPage-CI7wkNpM.js
+  - app/static/assets/LearningPage-C4mVNxlA.js
+  - app/static/assets/LearningShell-C3UOIvfw.js
+  - app/static/assets/LessonList-CN08K7NR.js
+  - app/static/assets/MediaCover-CqYw3v36.js
+  - app/static/assets/RedeemCodePanel-7vm89XZ0.js
+  - app/static/assets/UploadPanel-CsOzMTaK.js
+  - app/static/assets/WordbookPanel-Zipp6Hgr.js
+  - app/static/assets/index-WyLaT2Fi.js
+  - app/static/assets/index-kwJ73S0R.css
+  - app/static/assets/loader-circle-BUNEbMmR.js
 tests_run:
-  - 'pytest tests/test_regression_api.py -k "wordbook"'
-  - 'pytest tests/test_e2e_key_flows.py -k "wordbook or immersive"'
   - 'npm --prefix frontend run build'
+  - 'npm --prefix frontend run build:app-static'
+  - 'pytest tests/test_regression_api.py -k "wordbook"'
 blocked_reason: ""
-completed_at: 2026-03-22T21:52:54+08:00
-fix_request: 用户反馈 004 的沉浸式收藏交互方向做错了：不要在答题区上方额外增加生词选择区域；应把选词能力并入答题区对应的“上一句”现有展示区域，在那一行里完成选择。不要再有短语模式开关，而是改成单击选择单词、长按拖选连续单词，并在右侧保留常驻“加入生词本”按钮；同时不能影响当前答题区大小。第 1 句没有上一句时隐藏整套入口。
-fix_reason: 已交付版本虽然完成了生词本存储与管理能力，但沉浸式页面的交互承载位置、心智模型和空间占用都偏离真实使用目标。当前额外收藏区和短语模式增加了界面负担，也破坏了用户认可的答题区尺寸，需要按“借助上一句顺手收词”的真实使用路径返工。
-fix_round: 1
-fix_result_summary: Removed the immersive top collection panel, embedded selection into the previous-sentence row, added single-click and long-press range selection, and kept the persistent add button hidden on the first sentence.
-fix_updated_at: 2026-03-22T21:52:54+08:00
+completed_at: 2026-03-23T00:48:00+08:00
+fix_request: 用户反馈当前沉浸学习生词本交互仍然不符合真实采词方式：单击其他单词不应清空之前已选项，单击已选单词应只取消该词；长按拖动时应按经过轨迹逐个翻转 token，允许一次手势中多次经过同一 token 并再次翻转。最终要把当前所有已选 token 按原句顺序拼成一条记录提交，而不是只支持连续区间或只保留最后一个单词。
+fix_reason: 已完成版本仍然建立在连续区间选择模型上，只能表达单点或一段连续短语，无法表达用户在复习上一句时更自然的“看到哪个词就点哪个、扫到哪个就切哪个”的采词行为，因此交互方向仍然偏离真实目标，需要在不改后端接口的前提下重做前端状态模型与指针语义。
+fix_round: 2
+fix_result_summary: Replaced the continuous range model with per-token toggle and sweep-flip behavior, then submitted selected tokens in sentence index order as one word or phrase entry.
+fix_updated_at: 2026-03-23T00:48:00+08:00

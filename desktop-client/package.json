@@ -1,8 +1,8 @@
 {
-  "name": "english-trainer-desktop-client",
+  "name": "bottle-desktop-client",
   "private": true,
-  "version": "0.1.0",
-  "description": "Windows Electron shell for the English Sentence Spelling Trainer",
+  "version": "0.2.0",
+  "description": "Bottle Windows desktop client for the English Sentence Spelling Trainer",
   "type": "module",
   "main": "electron/main.mjs",
   "scripts": {
@@ -15,10 +15,14 @@
     "electron-builder": "^26.0.12"
   },
   "build": {
-    "appId": "com.englishtrainer.desktop",
-    "productName": "English Trainer Desktop",
+    "appId": "com.bottle.desktop",
+    "productName": "Bottle",
     "asar": false,
     "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": ".cache/package-output",
+      "buildResources": "build"
+    },
     "files": [
       "electron/**/*",
       "scripts/**/*",
@@ -42,10 +46,8 @@
         "to": "backend/scripts/run_desktop_backend.py"
       }
     ],
-    "directories": {
-      "output": ".cache/package-output"
-    },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "portable"
       ]
