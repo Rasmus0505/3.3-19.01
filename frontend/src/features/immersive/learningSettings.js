@@ -1,5 +1,6 @@
 const LEARNING_SETTINGS_STORAGE_KEY = "immersive_learning_settings_v2";
 const LEGACY_LEARNING_SETTINGS_STORAGE_KEY = "immersive_learning_settings_v1";
+export const LEARNING_SETTINGS_UPDATED_EVENT = "immersive-learning-settings-updated";
 
 const RESERVED_SHORTCUT_KEYS = new Set(["escape", "tab", "backspace", "delete"]);
 const MODIFIER_ONLY_KEYS = new Set(["shift", "control", "ctrl", "alt", "meta", "os"]);
@@ -52,6 +53,7 @@ const LEGACY_SHORTCUT_BINDINGS = {
   "shift+arrowleft": { code: "ArrowLeft", key: "arrowleft", shift: true, ctrl: false, alt: false, meta: false },
   "shift+arrowright": { code: "ArrowRight", key: "arrowright", shift: true, ctrl: false, alt: false, meta: false },
   "shift+r": { code: "KeyR", key: "r", shift: true, ctrl: false, alt: false, meta: false },
+  "shift+b": { code: "KeyB", key: "b", shift: true, ctrl: false, alt: false, meta: false },
   "shift+n": { code: "KeyN", key: "n", shift: true, ctrl: false, alt: false, meta: false },
   "shift+p": { code: "KeyP", key: "p", shift: true, ctrl: false, alt: false, meta: false },
   "shift+k": { code: "KeyK", key: "k", shift: true, ctrl: false, alt: false, meta: false },
@@ -64,6 +66,7 @@ export const SHORTCUT_ACTIONS = [
   { id: "next_sentence", label: "下一句" },
   { id: "replay_sentence", label: "重播" },
   { id: "toggle_pause_playback", label: "暂停/继续播放" },
+  { id: "peek_translation_mask", label: "涓存椂閫忓嚭涓枃" },
 ];
 
 export const DEFAULT_SHORTCUTS = {
@@ -73,6 +76,7 @@ export const DEFAULT_SHORTCUTS = {
   next_sentence: LEGACY_SHORTCUT_BINDINGS["shift+w"],
   replay_sentence: LEGACY_SHORTCUT_BINDINGS["shift+r"],
   toggle_pause_playback: LEGACY_SHORTCUT_BINDINGS.space,
+  peek_translation_mask: LEGACY_SHORTCUT_BINDINGS["shift+b"],
 };
 
 export const REPLAY_PRESET_OPTIONS = [
@@ -92,6 +96,13 @@ export const DEFAULT_CUSTOM_REPLAY_CONFIG = {
 
 export const DEFAULT_UI_PREFERENCES = {
   showFullscreenPreviousSentence: false,
+  translationMask: {
+    enabled: true,
+    x: null,
+    y: null,
+    width: null,
+    height: null,
+  },
 };
 
 export const DEFAULT_PLAYBACK_PREFERENCES = {
@@ -413,8 +424,10 @@ export function readLearningSettings() {
 
 export function writeLearningSettings(settings) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(LEARNING_SETTINGS_STORAGE_KEY, JSON.stringify(sanitizeLearningSettings(settings)));
+  const sanitized = sanitizeLearningSettings(settings);
+  window.localStorage.setItem(LEARNING_SETTINGS_STORAGE_KEY, JSON.stringify(sanitized));
   window.localStorage.removeItem(LEGACY_LEARNING_SETTINGS_STORAGE_KEY);
+  window.dispatchEvent(new CustomEvent(LEARNING_SETTINGS_UPDATED_EVENT, { detail: sanitized }));
 }
 
 export function getPresetSummaryLines(learningSettings) {
@@ -538,11 +551,28 @@ export function captureShortcutFromKeyboardEvent(event) {
 }
 
 export function sanitizeUiPreferences(rawPreferences = {}) {
+  const rawTranslationMask = rawPreferences?.translationMask;
+  const normalizeMaskValue = (value) => {
+    if (value == null || value === "") return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    return Number(Math.min(1, Math.max(0, parsed)).toFixed(4));
+  };
   return {
     showFullscreenPreviousSentence:
       typeof rawPreferences?.showFullscreenPreviousSentence === "boolean"
         ? rawPreferences.showFullscreenPreviousSentence
         : DEFAULT_UI_PREFERENCES.showFullscreenPreviousSentence,
+    translationMask: {
+      enabled:
+        typeof rawTranslationMask?.enabled === "boolean"
+          ? rawTranslationMask.enabled
+          : DEFAULT_UI_PREFERENCES.translationMask.enabled,
+      x: normalizeMaskValue(rawTranslationMask?.x),
+      y: normalizeMaskValue(rawTranslationMask?.y),
+      width: normalizeMaskValue(rawTranslationMask?.width),
+      height: normalizeMaskValue(rawTranslationMask?.height),
+    },
   };
 }
 
