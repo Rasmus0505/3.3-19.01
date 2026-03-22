@@ -2,7 +2,6 @@ import { Suspense, lazy } from "react";
 
 import { AuthPanel } from "../../features/auth/AuthPanel";
 import { GettingStartedPanel } from "../../features/getting-started/GettingStartedPanel";
-import { LearningStatsPanel } from "../../features/learning-stats/LearningStatsPanel";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui";
 import { REFRESH_KEY, TOKEN_KEY } from "../authStorage";
 
@@ -110,17 +109,6 @@ export function LearningShellPanelContent({
             onLoadMore={onLoadMoreLessons}
           />
         </Suspense>
-      );
-    }
-
-    if (activePanel === "stats") {
-      return (
-        <LearningStatsPanel
-          accessToken={accessToken}
-          onStartLesson={onStartLesson}
-          onSwitchToUpload={onSwitchToUpload}
-          onGoToHistory={onGoToHistory}
-        />
       );
     }
 
