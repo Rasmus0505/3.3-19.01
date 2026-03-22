@@ -65,6 +65,38 @@ function hasProgressSnapshot(progress) {
   return currentIndex > 0 || completedCount > 0 || lastPlayedAtMs > 0;
 }
 
+function getCompletedSentenceCount(progress) {
+  if (!progress || !Array.isArray(progress.completed_sentence_indexes)) return 0;
+  return progress.completed_sentence_indexes.length;
+}
+
+function buildLessonProgressState(progress, sentenceCount) {
+  const normalizedTotal = Number(sentenceCount || 0);
+  const totalCount = Number.isFinite(normalizedTotal) && normalizedTotal > 0 ? Math.max(0, Math.trunc(normalizedTotal)) : 0;
+  const rawCompletedCount = Math.max(0, getCompletedSentenceCount(progress));
+  const completedCount = totalCount > 0 ? Math.min(totalCount, rawCompletedCount) : rawCompletedCount;
+  const ratio = totalCount > 0 ? completedCount / totalCount : 0;
+  const clampedPercent = Math.max(0, Math.min(100, ratio * 100));
+
+  return {
+    completedCount,
+    totalCount,
+    width: `${clampedPercent}%`,
+    progressLabel: totalCount > 0 ? `${completedCount}\u53e5/${totalCount}\u53e5` : "\u53e5\u6570\u5f85\u540c\u6b65",
+    statusLabel:
+      totalCount <= 0
+        ? "\u5b66\u4e60\u8fdb\u5ea6"
+        : completedCount >= totalCount
+          ? "\u5df2\u5b8c\u6210"
+          : completedCount > 0
+            ? "\u5b66\u4e60\u8fdb\u5ea6"
+            : "\u5c1a\u672a\u5f00\u59cb",
+    isComplete: totalCount > 0 && completedCount >= totalCount,
+    isActive: totalCount > 0 && completedCount > 0 && completedCount < totalCount,
+    hasTrack: totalCount > 0,
+  };
+}
+
 function getCoverAssistiveText(lesson) {
   const title = String(lesson?.title || "").trim();
   return title ? `${title} 默认封面` : "课程默认封面";
@@ -159,12 +191,14 @@ export function LessonList({
         const meta = lessonCardMetaMap[lesson.id] || {};
         const mediaMeta = lessonMediaMetaMap[lesson.id] || {};
         const sentenceCount = Number(meta.sentenceCount || lesson.sentences?.length || 0);
+        const progressState = buildLessonProgressState(meta.progress, sentenceCount);
         const actionLabel = hasProgressSnapshot(meta.progress) ? "继续学习" : "开始学习";
         const needsBinding = lesson.media_storage === "client_indexeddb" && !mediaMeta.hasMedia;
         return {
           lesson,
           mediaMeta,
           sentenceCount,
+          progressState,
           actionLabel,
           needsBinding,
           createdAtLabel: formatCreatedAt(lesson.created_at),
@@ -573,15 +607,21 @@ export function LessonList({
 
         {!loading ? (
           <div className="space-y-3">
-            {cards.map(({ lesson, mediaMeta, sentenceCount, actionLabel, needsBinding, createdAtLabel }) => {
+            {cards.map(({ lesson, mediaMeta, sentenceCount, progressState, actionLabel, needsBinding, createdAtLabel }) => {
               const selected = currentLessonId === lesson.id;
               const isGuideTarget = Number(guideTargetLessonId || 0) > 0 ? Number(guideTargetLessonId) === Number(lesson.id) : lesson.id === cards[0]?.lesson.id;
               return (
                 <div
                   key={lesson.id}
                   className={cn(
-                    "overflow-hidden rounded-2xl border bg-background transition-all",
-                    selected ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-primary/30 hover:bg-muted/10",
+                    "overflow-hidden rounded-2xl border transition-all",
+                    progressState.isComplete
+                      ? selected
+                        ? "border-emerald-500 bg-emerald-50/95 shadow-sm"
+                        : "border-emerald-200 bg-[linear-gradient(180deg,rgba(236,253,245,0.92),rgba(240,253,250,0.96))] hover:border-emerald-300 hover:bg-[linear-gradient(180deg,rgba(220,252,231,0.96),rgba(236,253,245,0.98))]"
+                      : selected
+                        ? "border-primary bg-primary/5 shadow-sm"
+                        : "border-border bg-background hover:border-primary/30 hover:bg-muted/10",
                   )}
                 >
                   <div className="flex flex-col gap-4 p-4 md:flex-row">
@@ -609,7 +649,7 @@ export function LessonList({
                       />
 
                       <div className="flex min-w-0 flex-1 flex-col justify-between gap-3">
-                        <div className="space-y-2">
+                        <div className="space-y-3">
                           <div className="flex flex-wrap items-center gap-2">
                             <div className="truncate text-lg font-semibold">{lesson.title}</div>
                             {selected ? <Badge variant="outline">当前课程</Badge> : null}
@@ -617,6 +657,48 @@ export function LessonList({
                             {selected && currentLessonNeedsBinding ? <Badge variant="secondary">需绑定本地视频</Badge> : null}
                           </div>
                           <p className="line-clamp-2 text-sm text-muted-foreground">{lesson.source_filename || "未命名素材"}</p>
+                          <div
+                            className={cn(
+                              "rounded-2xl border px-3 py-3",
+                              progressState.isComplete ? "border-emerald-200/80 bg-white/65" : "border-sky-100/80 bg-white/72",
+                            )}
+                          >
+                            <div className="mb-2 flex items-center justify-between gap-3">
+                              <span
+                                className={cn(
+                                  "text-xs font-medium",
+                                  progressState.isComplete
+                                    ? "text-emerald-700"
+                                    : progressState.isActive
+                                      ? "text-sky-700"
+                                      : "text-muted-foreground",
+                                )}
+                              >
+                                {progressState.statusLabel}
+                              </span>
+                              <span className={cn("text-sm font-semibold tabular-nums", progressState.isComplete ? "text-emerald-700" : "text-foreground")}>
+                                {progressState.progressLabel}
+                              </span>
+                            </div>
+                            {progressState.hasTrack ? (
+                              <div
+                                className={cn(
+                                  "history-lesson-progress",
+                                  progressState.isComplete && "history-lesson-progress--complete",
+                                  progressState.isActive && "history-lesson-progress--animated",
+                                )}
+                                style={{ "--history-progress-width": progressState.width }}
+                              >
+                                <div className="history-lesson-progress__fill" />
+                                <div className="history-lesson-progress__wave" />
+                                <div className="history-lesson-progress__gloss" />
+                              </div>
+                            ) : (
+                              <div className="rounded-full border border-dashed border-border/80 bg-background/80 px-3 py-2 text-xs text-muted-foreground">
+                                {"\u53e5\u6570\u5f85\u540c\u6b65"}
+                              </div>
+                            )}
+                          </div>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
