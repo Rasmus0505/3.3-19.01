@@ -520,7 +520,7 @@ def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
     finally:
         verify_engine.dispose()
 
-    assert version == "20260310_0014"
+    assert version == "20260322_0026"
     assert subtitle_row is not None
     assert int(subtitle_row["id"]) == 1
     assert bool(subtitle_row["subtitle_split_enabled"]) is True
@@ -1744,6 +1744,7 @@ def test_probe_database_ready_reports_missing_subtitle_settings_table(monkeypatc
                 {"name": "points_per_minute"},
                 {"name": "points_per_1k_tokens"},
                 {"name": "billing_unit"},
+                {"name": "cost_per_minute_cents"},
                 {"name": "price_per_minute_yuan"},
                 {"name": "cost_per_minute_yuan"},
                 {"name": "is_active"},
@@ -1765,7 +1766,7 @@ def test_probe_database_ready_reports_missing_subtitle_settings_table(monkeypatc
     assert error == "missing business tables: subtitle_settings"
 
 
-def test_probe_database_ready_reports_missing_learning_stats_table(monkeypatch):
+def test_probe_database_ready_no_longer_requires_learning_stats_table(monkeypatch):
     from app import main as app_main
 
     class DummyConnection:
@@ -1794,6 +1795,7 @@ def test_probe_database_ready_reports_missing_learning_stats_table(monkeypatch):
                     {"name": "points_per_minute"},
                     {"name": "points_per_1k_tokens"},
                     {"name": "billing_unit"},
+                    {"name": "cost_per_minute_cents"},
                     {"name": "price_per_minute_yuan"},
                     {"name": "cost_per_minute_yuan"},
                     {"name": "is_active"},
@@ -1823,15 +1825,11 @@ def test_probe_database_ready_reports_missing_learning_stats_table(monkeypatch):
     monkeypatch.setattr(app_main, "schema_name_for_url", lambda _url: "app")
     monkeypatch.setattr(app_main, "engine", DummyEngine())
     monkeypatch.setattr(app_main, "inspect", lambda _conn: DummyInspector())
-    monkeypatch.setattr(
-        app_main,
-        "BUSINESS_TABLES",
-        ("billing_model_rates", "subtitle_settings", "user_learning_daily_stats"),
-    )
+    monkeypatch.setattr(app_main, "BUSINESS_TABLES", ("billing_model_rates", "subtitle_settings"))
 
     ready, error = app_main._probe_database_ready()
-    assert ready is False
-    assert error == "missing business tables: user_learning_daily_stats"
+    assert ready is True
+    assert error == ""
 
 
 def test_transcribe_audio_requires_dashscope_api_key(monkeypatch, tmp_path):
@@ -3380,6 +3378,9 @@ def test_lessons_progress_and_check(test_client):
     )
     assert check.status_code == 200
     assert check.json()["passed"] is True
+
+    summary = client.get("/api/lessons/progress/summary", headers=headers)
+    assert summary.status_code == 404
 
 
 def test_legacy_lesson_detail_and_check_spell_usd_amounts(test_client):

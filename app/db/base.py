@@ -9,7 +9,6 @@ APP_SCHEMA = "app"
 BUSINESS_TABLES = (
     "users",
     "user_login_events",
-    "user_learning_daily_stats",
     "lessons",
     "lesson_sentences",
     "lesson_progress",

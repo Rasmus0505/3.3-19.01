@@ -1,0 +1,43 @@
+site:
+  name: "351636 preview site"
+  base_url: "https://351636.preview.aliyun-zeabur.cn/"
+  category: "saas-learning"
+
+accounts:
+  self_signup_allowed: true
+  returning_user_account:
+    email: ""
+    password: ""
+  admin_access_method: "Log in with root@qq.com / 123123, then open /admin/health."
+  low_risk_admin_account:
+    email: "root@qq.com"
+    password: "123123"
+    entry_path: "/admin/health"
+
+test_assets:
+  min_safe_upload_path: "C:/Users/Administrator/Videos/测试.mp4"
+  upload_assets:
+    - label: "short-safe-video"
+      path: "C:/Users/Administrator/Videos/测试.mp4"
+      use_case: "core-flow"
+    - label: "long-five-minute-video"
+      path: "C:/Users/Administrator/Downloads/S01E05-03.mp4"
+      use_case: "extended-generation-and-recovery"
+  safe_redeem_codes: []
+  redeem_code_strategy:
+    allow_generate_if_missing: true
+    generation_notes: "If no safe code is prefilled, generate a long-lived unlimited-use test redeem code in the admin UI and redeem it with the audit account."
+
+constraints:
+  extra_notes: "User explicitly allows broad testing on this preview environment. Registration, login, upload, generation, rename, delete, admin exploration, and admin-generated test redeem codes are allowed. Use the short video for the first pass, then use the five-minute video for duration-sensitive checks. Avoid unrelated user data, real-money payments, or irreversible system-wide changes unless they become the direct test target."
+  write_policy: "extended"
+  forbidden_actions:
+    - "real-money payments"
+    - "destructive changes to unrelated production users"
+    - "irreversible system-wide configuration changes"
+
+report:
+  output_language: "zh-CN"
+  include_console: true
+  include_network: true
+  include_screenshots: true

@@ -1,4 +1,4 @@
-import { BookOpenText, ChevronDown, Gift, History, LogIn, LogOut, Search, Shield, Sparkles, TrendingUp, UploadCloud } from "lucide-react";
+import { BookOpenText, ChevronDown, Gift, History, LogIn, LogOut, Search, Shield, Sparkles, UploadCloud } from "lucide-react";
 
 import {
   SidebarContent,
@@ -12,8 +12,8 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "../../shared/ui";
-import { ADMIN_NAV_ITEMS } from "../../shared/lib/adminSearchParams";
 import { WalletBadge } from "../../features/wallet/WalletBadge";
+import { ADMIN_NAV_ITEMS } from "../../shared/lib/adminSearchParams";
 
 export const PANEL_ITEMS = [
   {
@@ -27,12 +27,6 @@ export const PANEL_ITEMS = [
     title: "历史记录",
     icon: History,
     path: "/",
-  },
-  {
-    key: "stats",
-    title: "学习数据",
-    icon: TrendingUp,
-    path: "/stats",
   },
   {
     key: "upload",
@@ -161,12 +155,7 @@ export function LearningShellSidebar({
               <SidebarMenu>
                 {showSearchAction ? (
                   <SidebarMenuItem>
-                    <SidebarMenuButton
-                      collapsed={!expanded}
-                      onClick={onOpenSearch}
-                      title="查找课程"
-                      aria-label="查找课程"
-                    >
+                    <SidebarMenuButton collapsed={!expanded} onClick={onOpenSearch} title="查找课程" aria-label="查找课程">
                       <Search className="size-5 shrink-0" />
                       {expanded ? <span className="truncate font-medium">查找课程</span> : null}
                     </SidebarMenuButton>
@@ -175,13 +164,7 @@ export function LearningShellSidebar({
                 {showAdminAction ? (
                   <>
                     <SidebarMenuItem>
-                      <SidebarMenuButton
-                        active={isAdminRoute}
-                        collapsed={!expanded}
-                        onClick={handleAdminToggle}
-                        title="管理台"
-                        aria-label="管理台"
-                      >
+                      <SidebarMenuButton active={isAdminRoute} collapsed={!expanded} onClick={handleAdminToggle} title="管理台" aria-label="管理台">
                         <Shield className="size-5 shrink-0" />
                         {expanded ? (
                           <>
@@ -216,12 +199,7 @@ export function LearningShellSidebar({
                 ) : null}
                 {showLogoutAction ? (
                   <SidebarMenuItem>
-                    <SidebarMenuButton
-                      collapsed={!expanded}
-                      onClick={onLogout}
-                      title="退出登录"
-                      aria-label="退出登录"
-                    >
+                    <SidebarMenuButton collapsed={!expanded} onClick={onLogout} title="退出登录" aria-label="退出登录">
                       <LogOut className="size-5 shrink-0" />
                       {expanded ? <span className="truncate font-medium">退出登录</span> : null}
                     </SidebarMenuButton>
