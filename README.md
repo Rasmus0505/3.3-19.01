@@ -206,3 +206,69 @@ $env:JWT_SECRET="change-me"
 python -m alembic -c alembic.ini upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
+
+## Windows Electron 客户端并行开发
+
+桌面客户端与网站继续并行开发，默认原则是“网站照常部署到 Zeabur，客户端只在本地或小范围灰度测试，不接入当前 Dockerfile”。
+
+### 1. 不影响 Zeabur 的边界
+
+- Zeabur 继续只使用仓库根目录 `Dockerfile`
+- 网站前端继续通过 `frontend` 构建后同步到 `app/static`
+- 新增的 `desktop-client/` 仅用于 Electron 客户端，本目录已通过 `.dockerignore` 从 Docker 和 Zeabur 构建上下文排除
+- 不要把 Electron 打包脚本接到 Zeabur 构建命令里，也不要让客户端产物进入 `app/static`
+
+### 2. 本地灰度测试客户端
+
+首次准备：
+
+```powershell
+cd D:\3.3-19.01
+npm --prefix frontend install
+npm --prefix frontend run build:app-static
+npm --prefix desktop-client install
+```
+
+启动本地客户端灰度测试：
+
+```powershell
+cd D:\3.3-19.01
+npm --prefix desktop-client run dev
+```
+
+说明：
+
+- Electron 会先启动本地 FastAPI，再等待 `GET /health` 成功后打开窗口
+- 默认本地数据目录使用 Windows 用户目录，不依赖仓库工作目录
+- 如果机器上的 Python 3.11 不在默认路径，可先设置 `DESKTOP_PYTHON_EXECUTABLE`
+- 这条灰度路径只影响你本机，不会改变网站用户看到的内容，也不会触发 Zeabur 重新构建客户端
+
+### 3. 打包 Windows 客户端
+
+先确保网站静态资源已经同步到 `app/static`：
+
+```powershell
+cd D:\3.3-19.01
+npm --prefix frontend run build:app-static
+npm --prefix desktop-client run package:win
+```
+
+当前打包策略适合内部灰度：
+
+- 当前默认输出 Windows 便携版分发产物到 `desktop-client/dist`
+- 客户端会携带后端源码和启动脚本，但仍默认依赖本机可用的 Python 3.11 运行时
+- 这一步不会修改 Zeabur 服务，也不会替换线上网站入口
+
+### 4. 继续正常部署网站到 Zeabur
+
+网站部署流程不变：
+
+- 正常提交网站代码
+- 由 GitHub 触发 Zeabur 按根目录 `Dockerfile` 重新构建
+- 客户端代码即使合并到仓库，只要不修改 Dockerfile 和 Zeabur 构建命令，就不会参与线上部署
+
+如果你只想试客户端，不想影响线上，保持以下做法即可：
+
+- 客户端开发只改 `desktop-client/`、客户端启动脚本和文档
+- 网站功能仍按原流程在浏览器和 Zeabur 上验证
+- 只有准备给小范围 Windows 用户试用时，才手动运行 `npm --prefix desktop-client run package:win`

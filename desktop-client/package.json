@@ -1,0 +1,54 @@
+{
+  "name": "english-trainer-desktop-client",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Windows Electron shell for the English Sentence Spelling Trainer",
+  "type": "module",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "dev": "electron .",
+    "build": "node ./scripts/build.mjs",
+    "package:win": "node ./scripts/package-win.mjs"
+  },
+  "devDependencies": {
+    "electron": "^37.4.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.englishtrainer.desktop",
+    "productName": "English Trainer Desktop",
+    "asar": false,
+    "electronDist": "node_modules/electron/dist",
+    "files": [
+      "electron/**/*",
+      "scripts/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../app",
+        "to": "backend/app"
+      },
+      {
+        "from": "../migrations",
+        "to": "backend/migrations"
+      },
+      {
+        "from": "../alembic.ini",
+        "to": "backend/alembic.ini"
+      },
+      {
+        "from": "../scripts/run_desktop_backend.py",
+        "to": "backend/scripts/run_desktop_backend.py"
+      }
+    ],
+    "directories": {
+      "output": ".cache/package-output"
+    },
+    "win": {
+      "target": [
+        "portable"
+      ]
+    }
+  }
+}

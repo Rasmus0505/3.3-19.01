@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
@@ -45,6 +45,7 @@ from app.services.asr_model_registry import get_supported_local_browser_asr_mode
 from app.services.asr_dashscope import AsrError
 from app.services.billing_service import BillingError, get_default_asr_model
 from app.services.lesson_command_service import (
+    LessonTaskAdmissionError,
     create_lesson_task_from_local_asr,
     create_lesson_task_from_upload,
     bulk_delete_lessons_for_user,
@@ -203,7 +204,7 @@ async def create_lesson(
 @router.post(
     "/tasks",
     response_model=LessonTaskCreateResponse,
-    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
 async def create_lesson_task(
     video_file: UploadFile = File(...),
@@ -228,18 +229,26 @@ async def create_lesson_task(
             semantic_split_enabled=semantic_split_enabled,
             db=db,
         )
-        return LessonTaskCreateResponse(
+        response_payload = LessonTaskCreateResponse(
             ok=True,
             task_id=str(payload["task_id"]),
             requested_asr_model=str(payload.get("requested_asr_model") or ""),
             effective_asr_model=str(payload.get("effective_asr_model") or ""),
             model_fallback_applied=bool(payload.get("model_fallback_applied")),
             model_fallback_reason=str(payload.get("model_fallback_reason") or ""),
-        )
+        ).model_dump(mode="json")
+        admission = dict(payload.get("admission") or {})
+        if admission:
+            response_payload["admission"] = admission
+            response_payload["queued"] = str(admission.get("state") or "") == "queued"
+            response_payload["status"] = "pending"
+        return JSONResponse(status_code=200, content=response_payload)
     except MediaError as exc:
         return map_media_error(exc)
     except LessonTaskStorageNotReadyError as exc:
         return error_response(503, exc.code, exc.message, exc.detail)
+    except LessonTaskAdmissionError as exc:
+        return error_response(429, exc.code, exc.message, exc.detail)
     except BillingError as exc:
         return map_billing_error(exc)
     except Exception as exc:
@@ -282,7 +291,7 @@ async def extract_local_asr_audio(
 @router.post(
     "/tasks/local-asr",
     response_model=LessonTaskCreateResponse,
-    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
 def create_local_asr_lesson_task(
     payload: LocalAsrLessonTaskCreateRequest,
@@ -307,16 +316,24 @@ def create_local_asr_lesson_task(
             semantic_split_enabled=False,
             db=db,
         )
-        return LessonTaskCreateResponse(
+        response_payload = LessonTaskCreateResponse(
             ok=True,
             task_id=str(task_payload["task_id"]),
             requested_asr_model=str(task_payload.get("requested_asr_model") or ""),
             effective_asr_model=str(task_payload.get("effective_asr_model") or ""),
             model_fallback_applied=bool(task_payload.get("model_fallback_applied")),
             model_fallback_reason=str(task_payload.get("model_fallback_reason") or ""),
-        )
+        ).model_dump(mode="json")
+        admission = dict(task_payload.get("admission") or {})
+        if admission:
+            response_payload["admission"] = admission
+            response_payload["queued"] = str(admission.get("state") or "") == "queued"
+            response_payload["status"] = "pending"
+        return JSONResponse(status_code=200, content=response_payload)
     except LessonTaskStorageNotReadyError as exc:
         return error_response(503, exc.code, exc.message, exc.detail)
+    except LessonTaskAdmissionError as exc:
+        return error_response(429, exc.code, exc.message, exc.detail)
     except BillingError as exc:
         return map_billing_error(exc)
     except Exception as exc:
@@ -336,7 +353,11 @@ def get_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: U
     task = get_task(task_id, db=db)
     if not task or int(task.get("owner_user_id", 0)) != current_user.id:
         return error_response(404, "TASK_NOT_FOUND", "任务不存在")
-    return _to_task_response(task, db)
+    response_payload = _to_task_response(task, db).model_dump(mode="json")
+    admission = _build_task_admission_detail(task)
+    if admission:
+        response_payload["admission"] = admission
+    return JSONResponse(status_code=200, content=response_payload)
 
 
 @router.get(
@@ -362,6 +383,21 @@ def get_lesson_task_debug_report(task_id: str, db: Session = Depends(get_db), cu
     )
 
 
+def _build_task_admission_detail(task: dict | None) -> dict[str, object] | None:
+    artifacts = dict((task or {}).get("artifacts") or {})
+    state = str(artifacts.get("admission_state") or "").strip().lower()
+    if state not in {"admitted", "queued"}:
+        return None
+    return {
+        "state": state,
+        "active_task_count": int(artifacts.get("active_task_count") or 0),
+        "queued_task_count": int(artifacts.get("queued_task_count") or 0),
+        "max_active_tasks": int(artifacts.get("max_active_tasks") or 0),
+        "max_queued_tasks": int(artifacts.get("max_queued_tasks") or 0),
+        "queue_position": int(artifacts.get("queue_position") or 0),
+    }
+
+
 @router.post(
     "/tasks/terminate-active",
     response_model=LessonTaskBatchTerminateResponse,
@@ -382,20 +418,28 @@ def terminate_active_lesson_tasks(db: Session = Depends(get_db), current_user: U
 @router.post(
     "/tasks/{task_id}/resume",
     response_model=LessonTaskResumeResponse,
-    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
 def resume_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
         payload = resume_lesson_task_for_user(task_id=task_id, user_id=current_user.id, db=db)
     except LessonTaskStorageNotReadyError as exc:
         return error_response(503, exc.code, exc.message, exc.detail)
+    except LessonTaskAdmissionError as exc:
+        return error_response(429, exc.code, exc.message, exc.detail)
     if payload is None:
         return error_response(404, "TASK_NOT_FOUND", "任务不存在")
     if payload.get("resumed") is None:
         return error_response(400, "TASK_RESUME_UNAVAILABLE", "当前任务不可继续生成")
     if payload.get("artifact_missing"):
         return error_response(400, "TASK_ARTIFACT_MISSING", "素材已过期，请重新上传素材")
-    return LessonTaskResumeResponse(ok=True, task_id=task_id)
+    response_payload = LessonTaskResumeResponse(ok=True, task_id=task_id).model_dump(mode="json")
+    admission = dict(payload.get("admission") or {})
+    if admission:
+        response_payload["admission"] = admission
+        response_payload["queued"] = str(admission.get("state") or "") == "queued"
+        response_payload["status"] = "pending"
+    return JSONResponse(status_code=200, content=response_payload)
 
 
 @router.post(

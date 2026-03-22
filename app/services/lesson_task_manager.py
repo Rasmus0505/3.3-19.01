@@ -29,6 +29,9 @@ TASK_STATUS_TERMINATED = "terminated"
 TASK_STATUS_PENDING = "pending"
 TASK_STATUS_FAILED = "failed"
 TASK_STATUS_SUCCEEDED = "succeeded"
+TASK_ADMISSION_STATE_NONE = ""
+TASK_ADMISSION_STATE_ADMITTED = "admitted"
+TASK_ADMISSION_STATE_QUEUED = "queued"
 TASK_RESULT_FULL_SUCCESS = "full_success"
 TASK_RESULT_ASR_ONLY = "asr_only"
 TASK_ACTIVE_CONTROL_STATUSES = {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING, TASK_STATUS_TERMINATING}
@@ -144,6 +147,13 @@ def _default_artifacts(
         "partial_failure_stage": "",
         "partial_failure_code": "",
         "partial_failure_message": "",
+        "admission_state": "",
+        "queue_position": 0,
+        "active_task_count": 0,
+        "queued_task_count": 0,
+        "max_active_tasks": 0,
+        "max_queued_tasks": 0,
+        "queued_at": "",
     }
 
 
@@ -165,6 +175,50 @@ def _trim_text(value: str | None, limit: int) -> str:
 def _get_control_action(artifacts: dict | None) -> str:
     action = str((artifacts or {}).get("control_action") or "").strip().lower()
     return action if action in TASK_CONTROL_ACTIONS else ""
+
+
+def _normalize_admission_state(artifacts: dict | None) -> str:
+    state = str((artifacts or {}).get("admission_state") or "").strip().lower()
+    if state in {TASK_ADMISSION_STATE_ADMITTED, TASK_ADMISSION_STATE_QUEUED}:
+        return state
+    return TASK_ADMISSION_STATE_NONE
+
+
+def _clear_admission_fields(artifacts: dict | None) -> dict:
+    next_artifacts = _copy_dict(artifacts)
+    next_artifacts["admission_state"] = ""
+    next_artifacts["queue_position"] = 0
+    next_artifacts["active_task_count"] = 0
+    next_artifacts["queued_task_count"] = 0
+    next_artifacts["max_active_tasks"] = 0
+    next_artifacts["max_queued_tasks"] = 0
+    next_artifacts["queued_at"] = ""
+    return next_artifacts
+
+
+def _set_admission_fields(
+    artifacts: dict | None,
+    *,
+    state: str = "",
+    queue_position: int = 0,
+    active_task_count: int = 0,
+    queued_task_count: int = 0,
+    max_active_tasks: int = 0,
+    max_queued_tasks: int = 0,
+    queued_at=None,
+) -> dict:
+    next_artifacts = _clear_admission_fields(artifacts)
+    normalized_state = str(state or "").strip().lower()
+    if normalized_state not in {TASK_ADMISSION_STATE_ADMITTED, TASK_ADMISSION_STATE_QUEUED}:
+        return next_artifacts
+    next_artifacts["admission_state"] = normalized_state
+    next_artifacts["queue_position"] = max(0, int(queue_position or 0))
+    next_artifacts["active_task_count"] = max(0, int(active_task_count or 0))
+    next_artifacts["queued_task_count"] = max(0, int(queued_task_count or 0))
+    next_artifacts["max_active_tasks"] = max(0, int(max_active_tasks or 0))
+    next_artifacts["max_queued_tasks"] = max(0, int(max_queued_tasks or 0))
+    next_artifacts["queued_at"] = queued_at.isoformat() if queued_at else ""
+    return next_artifacts
 
 
 def _clear_control_fields(artifacts: dict | None) -> dict:
@@ -263,6 +317,8 @@ def _should_recover_orphaned_task(task: LessonGenerationTask) -> bool:
     status = str(task.status or "").strip().lower()
     if status not in TASK_ACTIVE_CONTROL_STATUSES:
         return False
+    if status == TASK_STATUS_PENDING and _normalize_admission_state(task.artifacts_json) != TASK_ADMISSION_STATE_ADMITTED:
+        return False
     updated_at = task.updated_at
     if updated_at is None or updated_at >= _PROCESS_STARTED_AT:
         return False
@@ -277,7 +333,9 @@ def _recover_orphaned_task(task: LessonGenerationTask) -> None:
     if running_stage:
         running_stage["status"] = "pending"
     resume_stage = _infer_resume_stage(stages) or str(task.resume_stage or "convert_audio") or "convert_audio"
-    next_artifacts = _set_control_fields(task.artifacts_json, action="", requested_at=None, paused_at=recovered_at, terminated_at=None)
+    next_artifacts = _clear_admission_fields(
+        _set_control_fields(task.artifacts_json, action="", requested_at=None, paused_at=recovered_at, terminated_at=None)
+    )
     next_artifacts["interrupted_recovery_at"] = recovered_at.isoformat()
     next_artifacts["interrupted_recovery_from_status"] = previous_status
 
@@ -619,7 +677,7 @@ def mark_task_failed(
         task.resume_available = bool(resume_stage) if resume_available is None else bool(resume_available)
         task.failed_at = failed_at
         task.artifact_expires_at = now_shanghai_naive() + timedelta(hours=FAILURE_RETENTION_HOURS)
-        next_artifacts = _clear_control_fields(task.artifacts_json)
+        next_artifacts = _clear_admission_fields(_clear_control_fields(task.artifacts_json))
         next_artifacts["result_kind"] = ""
         next_artifacts["result_label"] = ""
         next_artifacts["result_message"] = ""
@@ -670,7 +728,7 @@ def mark_task_succeeded(
         task.resume_stage = ""
         task.artifact_expires_at = now_shanghai_naive()
         task.failed_at = None
-        next_artifacts = _clear_control_fields(task.artifacts_json)
+        next_artifacts = _clear_admission_fields(_clear_control_fields(task.artifacts_json))
         next_artifacts["result_kind"] = normalized_result_kind
         next_artifacts["result_label"] = _build_result_label(normalized_result_kind)
         next_artifacts["result_message"] = _build_result_message(normalized_result_kind, result_message)
@@ -792,7 +850,9 @@ def reset_failed_task_for_restart(
         task.resume_stage = "convert_audio"
         task.artifact_expires_at = None
         task.failed_at = None
-        task.artifacts_json = _set_control_fields(task.artifacts_json, action="", requested_at=None, paused_at=None, terminated_at=None)
+        task.artifacts_json = _clear_admission_fields(
+            _set_control_fields(task.artifacts_json, action="", requested_at=None, paused_at=None, terminated_at=None)
+        )
         session.commit()
         session.refresh(task)
         return _task_to_dict(task)
@@ -833,13 +893,51 @@ def reset_task_for_resume(
         task.resume_available = False
         task.artifact_expires_at = None
         task.failed_at = None
-        task.artifacts_json = _set_control_fields(task.artifacts_json, action="", requested_at=None, paused_at=None, terminated_at=None)
+        task.artifacts_json = _clear_admission_fields(
+            _set_control_fields(task.artifacts_json, action="", requested_at=None, paused_at=None, terminated_at=None)
+        )
         session.commit()
         session.refresh(task)
         return _task_to_dict(task)
     finally:
         if owns_session:
             session.close()
+
+
+def _apply_waiting_task_control(task: LessonGenerationTask, *, action: str, requested_at: datetime) -> None:
+    normalized_action = str(action or "").strip().lower()
+    if normalized_action not in TASK_CONTROL_ACTIONS:
+        return
+    stages = _copy_list(task.stages_json)
+    resume_stage = _infer_resume_stage(stages) or str(task.resume_stage or "convert_audio") or "convert_audio"
+    next_artifacts = _clear_admission_fields(
+        _set_control_fields(
+            task.artifacts_json,
+            action="",
+            requested_at=None,
+            paused_at=requested_at if normalized_action == "pause" else None,
+            terminated_at=requested_at if normalized_action == "terminate" else None,
+        )
+    )
+    task.stages_json = stages
+    task.error_code = ""
+    task.failure_debug_json = None
+    task.failed_at = None
+    if normalized_action == "pause":
+        task.status = TASK_STATUS_PAUSED
+        task.current_text = "已暂停排队，可继续生成"
+        task.message = ""
+        task.resume_available = bool(resume_stage)
+        task.resume_stage = resume_stage
+        task.artifact_expires_at = None
+    else:
+        task.status = TASK_STATUS_TERMINATED
+        task.current_text = "已取消排队，素材仍保留"
+        task.message = task.current_text
+        task.resume_available = False
+        task.resume_stage = resume_stage
+        task.artifact_expires_at = now_shanghai_naive()
+    task.artifacts_json = next_artifacts
 
 
 def request_task_control(
@@ -862,11 +960,16 @@ def request_task_control(
         if not task:
             return None
         status = str(task.status or "").strip().lower()
+        requested_at = now_shanghai_naive()
+        if status == TASK_STATUS_PENDING and _normalize_admission_state(task.artifacts_json) == TASK_ADMISSION_STATE_QUEUED:
+            _apply_waiting_task_control(task, action=normalized_action, requested_at=requested_at)
+            session.commit()
+            session.refresh(task)
+            return _task_to_dict(task)
         if normalized_action == "pause" and status not in {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING}:
             return None
         if normalized_action == "terminate" and status not in TASK_TERMINATE_REQUESTABLE_STATUSES:
             return None
-        requested_at = now_shanghai_naive()
         task.status = TASK_STATUS_PAUSING if normalized_action == "pause" else TASK_STATUS_TERMINATING
         task.current_text = "正在暂停，当前步骤完成后会保留进度" if normalized_action == "pause" else "正在终止，当前步骤完成后会停止生成"
         task.message = ""
@@ -912,6 +1015,10 @@ def request_active_tasks_terminate_for_owner(
                 continue
             status = str(task.status or "").strip().lower()
             if status not in TASK_TERMINATE_REQUESTABLE_STATUSES:
+                continue
+            if status == TASK_STATUS_PENDING and _normalize_admission_state(task.artifacts_json) == TASK_ADMISSION_STATE_QUEUED:
+                _apply_waiting_task_control(task, action="terminate", requested_at=requested_at)
+                requested_task_ids.append(str(task.task_id))
                 continue
             task.status = TASK_STATUS_TERMINATING
             task.current_text = "正在终止，当前步骤完成后会停止生成"
@@ -976,7 +1083,9 @@ def mark_task_paused(
         task.resume_stage = resume_stage
         task.resume_available = bool(resume_stage)
         task.artifact_expires_at = None
-        task.artifacts_json = _set_control_fields(task.artifacts_json, action="", requested_at=None, paused_at=paused_at)
+        task.artifacts_json = _clear_admission_fields(
+            _set_control_fields(task.artifacts_json, action="", requested_at=None, paused_at=paused_at)
+        )
         session.commit()
     finally:
         if owns_session:
@@ -1011,7 +1120,9 @@ def mark_task_terminated(
         task.resume_available = False
         task.resume_stage = _infer_resume_stage(stages) or str(task.resume_stage or "")
         task.artifact_expires_at = now_shanghai_naive()
-        task.artifacts_json = _set_control_fields(task.artifacts_json, action="", requested_at=None, terminated_at=terminated_at)
+        task.artifacts_json = _clear_admission_fields(
+            _set_control_fields(task.artifacts_json, action="", requested_at=None, terminated_at=terminated_at)
+        )
         session.commit()
     finally:
         if owns_session:

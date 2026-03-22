@@ -20,6 +20,7 @@ from app.db.migration_bootstrap import _repair_redundant_linear_version_rows, ru
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 START_SCRIPT_PATH = REPO_ROOT / "scripts" / "start.sh"
+DESKTOP_BACKEND_SCRIPT_PATH = REPO_ROOT / "scripts" / "run_desktop_backend.py"
 
 
 def _pick_free_port() -> int:
@@ -110,6 +111,34 @@ def _start_process(env: dict[str, str]) -> subprocess.Popen[str]:
     )
 
 
+def _start_desktop_backend_process(tmp_path: Path, port: int) -> subprocess.Popen[str]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "DESKTOP_BACKEND_ROOT": str(REPO_ROOT),
+            "DESKTOP_USER_DATA_DIR": str(tmp_path / "desktop-user-data"),
+            "DESKTOP_CACHE_DIR": str(tmp_path / "desktop-cache"),
+            "DESKTOP_LOG_DIR": str(tmp_path / "desktop-logs"),
+            "DESKTOP_TEMP_DIR": str(tmp_path / "desktop-tmp"),
+            "JWT_SECRET": "desktop-test-secret",
+            "PYTHONUNBUFFERED": "1",
+        }
+    )
+    log_path = tmp_path / "desktop-backend-subprocess.log"
+    log_handle = open(log_path, "w+", encoding="utf-8")
+    process = subprocess.Popen(
+        [sys.executable, str(DESKTOP_BACKEND_SCRIPT_PATH), "--host", "127.0.0.1", "--port", str(port)],
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=log_handle,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    process._codex_log_handle = log_handle  # type: ignore[attr-defined]
+    process._codex_log_path = log_path  # type: ignore[attr-defined]
+    return process
+
+
 def _wait_for_status(process: subprocess.Popen[str], port: int, ready_status_code: int) -> tuple[dict, dict]:
     health_payload = None
     ready_payload = None
@@ -144,6 +173,15 @@ def _stop_process(process: subprocess.Popen[str]) -> str:
             logs, _ = process.communicate(timeout=10)
     else:
         logs, _ = process.communicate(timeout=10)
+    log_handle = getattr(process, "_codex_log_handle", None)
+    log_path = getattr(process, "_codex_log_path", None)
+    if log_handle is not None:
+        log_handle.flush()
+        log_handle.seek(0)
+        logs = log_handle.read()
+        log_handle.close()
+    elif log_path and Path(log_path).exists():
+        logs = Path(log_path).read_text(encoding="utf-8")
     return logs
 
 
@@ -263,6 +301,27 @@ def test_start_script_runs_auto_migration_before_boot(tmp_path):
     if process.returncode not in (0, -15):
         raise AssertionError(f"start script exited with {process.returncode}\n{logs}")
     assert "[DEBUG] boot.migrate success=true" in logs
+
+
+def test_run_desktop_backend_boots_with_local_sqlite_and_user_dirs(tmp_path):
+    port = _pick_free_port()
+    process = _start_desktop_backend_process(tmp_path, port)
+    try:
+        health_payload, _ready_payload = _wait_for_status(process, port, 503)
+        assert health_payload["ok"] is True
+
+        root_resp = requests.get(f"http://127.0.0.1:{port}/", timeout=3)
+        assert root_resp.status_code == 200
+        assert "text/html" in root_resp.headers.get("content-type", "")
+    finally:
+        logs = _stop_process(process)
+
+    if process.returncode not in (0, 1, -15):
+        raise AssertionError(f"desktop backend exited with {process.returncode}\n{logs}")
+    assert (tmp_path / "desktop-user-data" / "app.db").exists()
+    assert (tmp_path / "desktop-user-data" / "data").exists()
+    assert (tmp_path / "desktop-logs").exists()
+    assert "[desktop] backend_root=" in logs
 
 
 @pytest.mark.parametrize("manual_value", ["0", "false", "no", "off"])

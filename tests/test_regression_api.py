@@ -638,6 +638,44 @@ def _register_and_login(client: TestClient, email: str = "admin@example.com", pa
     return login.json()["access_token"]
 
 
+def _seed_wallet_balance(session_factory, *, email: str, balance_points: int = 10_000) -> None:
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == email.lower()).one()
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = balance_points
+        session.add(account)
+        session.commit()
+    finally:
+        session.close()
+
+
+def _enable_upload_task_prereqs(monkeypatch, *, duration_ms: int = 1_000):
+    from app.services import lesson_command_service as lesson_command_service_module
+
+    monkeypatch.setattr(lesson_command_service_module, "probe_audio_duration_ms", lambda _path: duration_ms)
+    return lesson_command_service_module
+
+
+def _enable_local_asr_model(monkeypatch):
+    from app.api.routers import lessons as lesson_router
+    from app.services import lesson_command_service as lesson_command_service_module
+    from app.services import lesson_service as lesson_service_module
+
+    monkeypatch.setattr(lesson_router, "get_supported_local_browser_asr_model_keys", lambda: ("local-sensevoice-small",))
+    monkeypatch.setattr(lesson_command_service_module, "_ensure_sufficient_balance_for_model", lambda *args, **kwargs: 0)
+
+    original_get_model_rate = lesson_service_module.get_model_rate
+
+    def fake_get_model_rate(db, model):
+        if model == "local-sensevoice-small":
+            return SimpleNamespace(points_per_minute=0, price_per_minute_yuan=0, segment_seconds=300, max_concurrency=1)
+        return original_get_model_rate(db, model)
+
+    monkeypatch.setattr(lesson_service_module, "get_model_rate", fake_get_model_rate)
+    return lesson_router
+
+
 def test_health_endpoint(test_client):
     client, _, _ = test_client
     resp = client.get("/health")
@@ -1226,6 +1264,9 @@ def test_lesson_task_pause_and_resume_from_safe_point(test_client, monkeypatch, 
     from app.services import lesson_command_service as lesson_command_service_module
     from app.services.lesson_task_manager import get_task_control_action
 
+    monkeypatch.setattr(lesson_command_service_module, "probe_audio_duration_ms", lambda _path: 1_000)
+    _seed_wallet_balance(session_factory, email="pause-task@example.com")
+
     started = threading.Event()
     attempts = {"count": 0}
 
@@ -1247,6 +1288,15 @@ def test_lesson_task_pause_and_resume_from_safe_point(test_client, monkeypatch, 
                     "stage_status": "completed",
                     "overall_percent": 60,
                     "current_text": "识别字幕 2/2",
+                    "counters": {"asr_done": 2, "asr_estimated": 2, "translate_done": 0, "translate_total": 0, "segment_done": 2, "segment_total": 2},
+                }
+            )
+            progress_callback(
+                {
+                    "stage_key": "build_lesson",
+                    "stage_status": "completed",
+                    "overall_percent": 68,
+                    "current_text": "生成课程结构完成",
                     "counters": {"asr_done": 2, "asr_estimated": 2, "translate_done": 0, "translate_total": 0, "segment_done": 2, "segment_total": 2},
                 }
             )
@@ -1379,6 +1429,9 @@ def test_lesson_task_terminate_marks_task_as_terminated(test_client, monkeypatch
     from app.services import lesson_command_service as lesson_command_service_module
     from app.services.lesson_task_manager import get_task_control_action
 
+    monkeypatch.setattr(lesson_command_service_module, "probe_audio_duration_ms", lambda _path: 1_000)
+    _seed_wallet_balance(session_factory, email="terminate-task@example.com")
+
     started = threading.Event()
 
     def fake_generate_from_saved_file(*, progress_callback=None, task_id=None, **kwargs):
@@ -1456,6 +1509,10 @@ def test_terminate_active_lesson_tasks_only_targets_current_user(test_client, mo
 
     from app.services import lesson_command_service as lesson_command_service_module
     from app.services.lesson_task_manager import get_task_control_action
+
+    monkeypatch.setattr(lesson_command_service_module, "probe_audio_duration_ms", lambda _path: 1_000)
+    _seed_wallet_balance(session_factory, email="terminate-active@example.com")
+    _seed_wallet_balance(session_factory, email="terminate-active-other@example.com")
 
     started_ids: set[str] = set()
     started_all = threading.Event()
@@ -1547,6 +1604,7 @@ def test_lesson_task_resume_marks_missing_artifacts_as_non_resumable(test_client
     token = _register_and_login(client, email="resume-missing@example.com")
 
     from app.api.routers import lessons as lessons_router
+    from app.services import lesson_command_service as lesson_command_service_module
 
     import threading as py_threading
 
@@ -1556,6 +1614,9 @@ def test_lesson_task_resume_marks_missing_artifacts_as_non_resumable(test_client
                 self.run()
                 return
             super().start()
+
+    monkeypatch.setattr(lesson_command_service_module, "probe_audio_duration_ms", lambda _path: 1_000)
+    _seed_wallet_balance(session_factory, email="resume-missing@example.com")
 
     def fake_generate_from_saved_file(*, req_dir, progress_callback=None, **kwargs):
         progress_callback(
@@ -1616,6 +1677,7 @@ def test_lesson_task_resume_restarts_failed_task_when_resume_unavailable(test_cl
     token = _register_and_login(client, email="restart-task@example.com")
 
     from app.api.routers import lessons as lessons_router
+    from app.services import lesson_command_service as lesson_command_service_module
 
     import threading as py_threading
 
@@ -1625,6 +1687,9 @@ def test_lesson_task_resume_restarts_failed_task_when_resume_unavailable(test_cl
                 self.run()
                 return
             super().start()
+
+    monkeypatch.setattr(lesson_command_service_module, "probe_audio_duration_ms", lambda _path: 1_000)
+    _seed_wallet_balance(session_factory, email="restart-task@example.com")
 
     attempts = {"count": 0}
 
@@ -2879,6 +2944,8 @@ def test_create_local_asr_lesson_task(test_client, monkeypatch, tmp_path):
 
     from app.services import lesson_service as lesson_service_module
     from app.services import lesson_command_service as lesson_command_service_module
+
+    _enable_local_asr_model(monkeypatch)
 
     monkeypatch.setattr(
         lesson_service_module,
@@ -4281,9 +4348,12 @@ def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path)
     headers = {"Authorization": f"Bearer {token}"}
 
     from app.api.routers import lessons as lesson_router
+    from app.services import lesson_command_service as lesson_command_service_module
 
     monkeypatch.setattr(lesson_router, "BASE_TMP_DIR", tmp_path)
     monkeypatch.setattr(lesson_router, "SessionLocal", session_factory)
+    monkeypatch.setattr(lesson_command_service_module, "probe_audio_duration_ms", lambda _path: 1_000)
+    _seed_wallet_balance(session_factory, email="task-user@example.com")
 
     class InlineThread:
         def __init__(self, *, target, kwargs=None, daemon=None):
@@ -4416,15 +4486,184 @@ def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path)
 
 
 
+def test_lesson_task_admission_control_queues_and_rejects_across_entrypoints(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="task-queue@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from app.services import lesson_command_service as lesson_command_service_module
+
+    hold_event = threading.Event()
+    started_sources: list[str] = []
+
+    monkeypatch.setattr(lesson_command_service_module, "BASE_TMP_DIR", tmp_path)
+    monkeypatch.setattr(lesson_command_service_module, "LESSON_TASK_MAX_ACTIVE", 1)
+    monkeypatch.setattr(lesson_command_service_module, "LESSON_TASK_MAX_QUEUED", 1)
+    monkeypatch.setattr(lesson_command_service_module, "probe_audio_duration_ms", lambda _path: 1_000)
+    _enable_local_asr_model(monkeypatch)
+    _seed_wallet_balance(session_factory, email="task-queue@example.com")
+
+    def fake_generate_from_saved_file(
+        *,
+        source_path,
+        source_filename,
+        req_dir,
+        owner_id,
+        asr_model,
+        db,
+        progress_callback=None,
+        task_id=None,
+        semantic_split_enabled=None,
+    ):
+        _ = (source_path, req_dir, task_id, semantic_split_enabled)
+        started_sources.append(source_filename)
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage_key": "convert_audio",
+                    "stage_status": "running",
+                    "overall_percent": 10,
+                    "current_text": "processing",
+                }
+            )
+        if source_filename.startswith("hold"):
+            assert hold_event.wait(timeout=5), "hold task did not release in time"
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage_key": "write_lesson",
+                    "stage_status": "completed",
+                    "overall_percent": 100,
+                    "current_text": "课程生成完成",
+                }
+            )
+
+        lesson = Lesson(
+            user_id=owner_id,
+            title=source_filename,
+            source_filename=source_filename,
+            asr_model=asr_model,
+            duration_ms=1200,
+            media_storage="client_indexeddb",
+            source_duration_ms=1200,
+            status="ready",
+        )
+        db.add(lesson)
+        db.flush()
+        db.add(
+            LessonSentence(
+                lesson_id=lesson.id,
+                idx=0,
+                begin_ms=0,
+                end_ms=900,
+                text_en="hello world",
+                text_zh="你好世界",
+                tokens_json=["hello", "world"],
+                audio_clip_path=None,
+            )
+        )
+        db.add(
+            LessonProgress(
+                lesson_id=lesson.id,
+                user_id=owner_id,
+                current_sentence_idx=0,
+                completed_indexes_json=[],
+                last_played_at_ms=0,
+            )
+        )
+        db.commit()
+        db.refresh(lesson)
+        return lesson
+
+    monkeypatch.setattr(lesson_command_service_module.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+
+    first_resp = client.post(
+        "/api/lessons/tasks",
+        headers=headers,
+        files={"video_file": ("hold.mp4", io.BytesIO(b"hold"), "video/mp4")},
+        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+    )
+    assert first_resp.status_code == 200
+    first_payload = first_resp.json()
+    assert first_payload["admission"]["state"] == "admitted"
+    assert first_payload["queued"] is False
+
+    second_resp = client.post(
+        "/api/lessons/tasks",
+        headers=headers,
+        files={"video_file": ("queued.mp4", io.BytesIO(b"queued"), "video/mp4")},
+        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+    )
+    assert second_resp.status_code == 200
+    second_payload = second_resp.json()
+    assert second_payload["admission"]["state"] == "queued"
+    assert second_payload["queued"] is True
+    queued_task_id = second_payload["task_id"]
+
+    assert started_sources == ["hold.mp4"]
+
+    queued_task_resp = client.get(f"/api/lessons/tasks/{queued_task_id}", headers=headers)
+    assert queued_task_resp.status_code == 200
+    queued_task_payload = queued_task_resp.json()
+    assert queued_task_payload["status"] == "pending"
+    assert queued_task_payload["admission"]["state"] == "queued"
+    assert "排队" in queued_task_payload["current_text"]
+
+    local_asr_busy_resp = client.post(
+        "/api/lessons/tasks/local-asr",
+        headers=headers,
+        json={
+            "asr_model": "local-sensevoice-small",
+            "source_filename": "busy.wav",
+            "source_duration_ms": 12_000,
+            "asr_payload": {
+                "transcripts": [
+                    {
+                        "sentences": [
+                            {"text": "Hello world", "begin_time": 0, "end_time": 1400},
+                        ]
+                    }
+                ]
+            },
+        },
+    )
+    assert local_asr_busy_resp.status_code == 429
+    busy_payload = local_asr_busy_resp.json()
+    assert busy_payload["error_code"] == "LESSON_TASK_BUSY"
+    assert busy_payload["detail"]["state"] == "rejected"
+    assert busy_payload["detail"]["active_task_count"] == 1
+    assert busy_payload["detail"]["queued_task_count"] == 1
+
+    hold_event.set()
+
+    final_payload = None
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        poll_resp = client.get(f"/api/lessons/tasks/{queued_task_id}", headers=headers)
+        assert poll_resp.status_code == 200
+        candidate = poll_resp.json()
+        if candidate["status"] == "succeeded":
+            final_payload = candidate
+            break
+        time.sleep(0.05)
+
+    assert final_payload is not None
+    assert started_sources == ["hold.mp4", "queued.mp4"]
+    assert final_payload["lesson"]["title"] == "queued.mp4"
+
+
 def test_lesson_task_partial_success_and_debug_report(test_client, monkeypatch, tmp_path):
     client, session_factory, _ = test_client
     token = _register_and_login(client, email="task-partial-success@example.com")
     headers = {"Authorization": f"Bearer {token}"}
 
     from app.api.routers import lessons as lesson_router
+    from app.services import lesson_command_service as lesson_command_service_module
 
     monkeypatch.setattr(lesson_router, "BASE_TMP_DIR", tmp_path)
     monkeypatch.setattr(lesson_router, "SessionLocal", session_factory)
+    monkeypatch.setattr(lesson_command_service_module, "probe_audio_duration_ms", lambda _path: 1_000)
+    _seed_wallet_balance(session_factory, email="task-partial-success@example.com")
 
     class InlineThread:
         def __init__(self, *, target, kwargs=None, daemon=None):

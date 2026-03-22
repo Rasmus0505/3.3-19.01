@@ -12,6 +12,7 @@ DOCKERFILE_PATH = REPO_ROOT / "Dockerfile"
 REQUIRED_EXCLUSIONS = {
     "asr-test/",
     "Docx/",
+    "desktop-client/",
     "tools/",
     "tests/",
     "tmp/",
@@ -25,6 +26,7 @@ REQUIRED_EXCLUSIONS = {
 REQUIRED_IGNORED_PATHS = (
     "asr-test/README.md",
     "Docx/AI分工/after.md",
+    "desktop-client/package.json",
     "tools/local-bottle1-runner/README.md",
     "tests/test_regression_api.py",
     "tmp_uvicorn.log",

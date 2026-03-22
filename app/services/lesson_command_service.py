@@ -6,12 +6,13 @@ import shutil
 import threading
 import time
 import traceback
+from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, UPLOAD_MAX_BYTES
+from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, LESSON_TASK_MAX_ACTIVE, LESSON_TASK_MAX_QUEUED, UPLOAD_MAX_BYTES
 from app.core.timezone import now_shanghai_naive
 from app.infra.translation_qwen_mt import TranslationError
 from app.models import Lesson, LessonGenerationTask, WalletLedger
@@ -31,6 +32,12 @@ from app.services.lesson_query_service import invalidate_lesson_catalog_cache
 from app.services.lesson_service import LessonService
 from app.services.lesson_task_manager import (
     LessonTaskStorageNotReadyError,
+    TASK_ADMISSION_STATE_ADMITTED,
+    TASK_ADMISSION_STATE_QUEUED,
+    TASK_STATUS_PAUSING,
+    TASK_STATUS_PENDING,
+    TASK_STATUS_RUNNING,
+    TASK_STATUS_TERMINATING,
     build_task_id,
     configure_task_runtime_probe,
     create_task,
@@ -55,6 +62,7 @@ logger = logging.getLogger(__name__)
 PROCESS_STARTED_AT = now_shanghai_naive()
 _ACTIVE_TASK_IDS: set[str] = set()
 _ACTIVE_TASK_IDS_LOCK = threading.Lock()
+_TASK_ADMISSION_LOCK = threading.Lock()
 
 
 class LessonTaskPauseRequested(RuntimeError):
@@ -63,6 +71,15 @@ class LessonTaskPauseRequested(RuntimeError):
 
 class LessonTaskTerminateRequested(RuntimeError):
     pass
+
+
+class LessonTaskAdmissionError(RuntimeError):
+    code = "LESSON_TASK_BUSY"
+    message = "当前生成任务繁忙，请稍后重试"
+
+    def __init__(self, detail: dict[str, object]):
+        self.detail = dict(detail or {})
+        super().__init__(self.message)
 
 
 def _resolve_task_asr_models(requested_asr_model: str) -> dict[str, object]:
@@ -139,6 +156,221 @@ def _unregister_active_task(task_id: str) -> None:
         return
     with _ACTIVE_TASK_IDS_LOCK:
         _ACTIVE_TASK_IDS.discard(normalized_task_id)
+
+
+def _normalized_admission_state(artifacts: dict | None) -> str:
+    state = str((artifacts or {}).get("admission_state") or "").strip().lower()
+    return state if state in {TASK_ADMISSION_STATE_ADMITTED, TASK_ADMISSION_STATE_QUEUED} else ""
+
+
+def _task_uses_active_budget(task: LessonGenerationTask) -> bool:
+    status = str(task.status or "").strip().lower()
+    if status in {TASK_STATUS_RUNNING, TASK_STATUS_PAUSING, TASK_STATUS_TERMINATING}:
+        return True
+    if status == TASK_STATUS_PENDING and _normalized_admission_state(task.artifacts_json) == TASK_ADMISSION_STATE_ADMITTED:
+        return True
+    return False
+
+
+def _task_is_waiting_for_admission(task: LessonGenerationTask) -> bool:
+    return (
+        str(task.status or "").strip().lower() == TASK_STATUS_PENDING
+        and _normalized_admission_state(task.artifacts_json) == TASK_ADMISSION_STATE_QUEUED
+    )
+
+
+def _lesson_task_capacity_limits() -> tuple[int, int]:
+    return max(1, int(LESSON_TASK_MAX_ACTIVE or 1)), max(0, int(LESSON_TASK_MAX_QUEUED or 0))
+
+
+def _build_admission_detail(
+    *,
+    state: str,
+    active_task_count: int,
+    queued_task_count: int,
+    max_active_tasks: int,
+    max_queued_tasks: int,
+    queue_position: int = 0,
+) -> dict[str, object]:
+    return {
+        "state": str(state or "").strip().lower(),
+        "active_task_count": max(0, int(active_task_count or 0)),
+        "queued_task_count": max(0, int(queued_task_count or 0)),
+        "max_active_tasks": max(0, int(max_active_tasks or 0)),
+        "max_queued_tasks": max(0, int(max_queued_tasks or 0)),
+        "queue_position": max(0, int(queue_position or 0)),
+    }
+
+
+def _queued_current_text(detail: dict[str, object]) -> str:
+    ahead = max(0, int(detail.get("queue_position") or 0) - 1)
+    if ahead > 0:
+        return f"任务排队中，前方还有 {ahead} 个任务"
+    return "任务排队中，等待可用处理槽位"
+
+
+def _apply_task_admission_state(
+    task: LessonGenerationTask,
+    *,
+    state: str,
+    detail: dict[str, object],
+    queued_at: datetime | None = None,
+    current_text: str | None = None,
+) -> None:
+    artifacts = dict(task.artifacts_json or {})
+    normalized_state = str(state or "").strip().lower()
+    if normalized_state in {TASK_ADMISSION_STATE_ADMITTED, TASK_ADMISSION_STATE_QUEUED}:
+        artifacts["admission_state"] = normalized_state
+        artifacts["queue_position"] = max(0, int(detail.get("queue_position") or 0))
+        artifacts["active_task_count"] = max(0, int(detail.get("active_task_count") or 0))
+        artifacts["queued_task_count"] = max(0, int(detail.get("queued_task_count") or 0))
+        artifacts["max_active_tasks"] = max(0, int(detail.get("max_active_tasks") or 0))
+        artifacts["max_queued_tasks"] = max(0, int(detail.get("max_queued_tasks") or 0))
+        artifacts["queued_at"] = queued_at.isoformat() if queued_at else ""
+    else:
+        artifacts["admission_state"] = ""
+        artifacts["queue_position"] = 0
+        artifacts["active_task_count"] = 0
+        artifacts["queued_task_count"] = 0
+        artifacts["max_active_tasks"] = 0
+        artifacts["max_queued_tasks"] = 0
+        artifacts["queued_at"] = ""
+    task.artifacts_json = artifacts
+    task.message = ""
+    if current_text is not None:
+        task.current_text = current_text
+
+
+def _build_task_start_kwargs(task: LessonGenerationTask) -> dict[str, object]:
+    artifacts = dict(task.artifacts_json or {})
+    source_path = Path(str(artifacts.get("source_path") or task.source_path or "").strip())
+    req_dir = Path(str(artifacts.get("work_dir") or task.work_dir or "").strip())
+    return {
+        "task_id": str(task.task_id),
+        "owner_id": int(task.owner_user_id),
+        "source_filename": str(task.source_filename or source_path.name),
+        "source_path": source_path,
+        "req_dir": req_dir,
+        "requested_asr_model": str(artifacts.get("requested_asr_model") or task.asr_model or ""),
+        "effective_asr_model": str(artifacts.get("effective_asr_model") or task.asr_model or ""),
+        "semantic_split_enabled": bool(task.semantic_split_enabled),
+        "input_mode": str(artifacts.get("input_mode") or "upload").strip().lower() or "upload",
+        "source_duration_ms": int(artifacts.get("source_duration_ms") or 0),
+    }
+
+
+def _start_lesson_generation_thread(*, session_factory: sessionmaker[Session], task_kwargs: dict[str, object]) -> None:
+    thread = threading.Thread(
+        target=run_lesson_generation_task,
+        kwargs={**task_kwargs, "session_factory": session_factory},
+        daemon=True,
+    )
+    thread.start()
+
+
+def _list_open_lesson_tasks(db: Session) -> list[LessonGenerationTask]:
+    return list(
+        db.scalars(
+            select(LessonGenerationTask)
+            .where(LessonGenerationTask.status.in_((TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING, TASK_STATUS_TERMINATING)))
+            .order_by(LessonGenerationTask.created_at.asc(), LessonGenerationTask.id.asc())
+        ).all()
+    )
+
+
+def _admit_or_queue_task_locked(
+    *,
+    task: LessonGenerationTask,
+    db: Session,
+    reject_when_queue_full: bool = True,
+) -> tuple[dict[str, object], dict[str, object] | None]:
+    max_active_tasks, max_queued_tasks = _lesson_task_capacity_limits()
+    open_tasks = _list_open_lesson_tasks(db)
+    active_task_count = sum(1 for item in open_tasks if _task_uses_active_budget(item))
+    queued_tasks = [item for item in open_tasks if _task_is_waiting_for_admission(item)]
+    queued_task_count = len(queued_tasks)
+
+    if active_task_count < max_active_tasks:
+        detail = _build_admission_detail(
+            state=TASK_ADMISSION_STATE_ADMITTED,
+            active_task_count=active_task_count + 1,
+            queued_task_count=queued_task_count,
+            max_active_tasks=max_active_tasks,
+            max_queued_tasks=max_queued_tasks,
+        )
+        _apply_task_admission_state(task, state=TASK_ADMISSION_STATE_ADMITTED, detail=detail, current_text=str(task.current_text or "等待处理"))
+        db.commit()
+        db.refresh(task)
+        return detail, _build_task_start_kwargs(task)
+
+    if queued_task_count < max_queued_tasks or not reject_when_queue_full:
+        queued_at = now_shanghai_naive()
+        detail = _build_admission_detail(
+            state=TASK_ADMISSION_STATE_QUEUED,
+            active_task_count=active_task_count,
+            queued_task_count=queued_task_count + 1,
+            max_active_tasks=max_active_tasks,
+            max_queued_tasks=max_queued_tasks,
+            queue_position=queued_task_count + 1,
+        )
+        _apply_task_admission_state(
+            task,
+            state=TASK_ADMISSION_STATE_QUEUED,
+            detail=detail,
+            queued_at=queued_at,
+            current_text=_queued_current_text(detail),
+        )
+        db.commit()
+        db.refresh(task)
+        return detail, None
+
+    raise LessonTaskAdmissionError(
+        _build_admission_detail(
+            state="rejected",
+            active_task_count=active_task_count,
+            queued_task_count=queued_task_count,
+            max_active_tasks=max_active_tasks,
+            max_queued_tasks=max_queued_tasks,
+        )
+    )
+
+
+def _schedule_queued_lesson_tasks(*, session_factory: sessionmaker[Session]) -> None:
+    start_queue: list[dict[str, object]] = []
+    with _TASK_ADMISSION_LOCK:
+        db = session_factory()
+        try:
+            ensure_lesson_task_storage_ready(db)
+            max_active_tasks, max_queued_tasks = _lesson_task_capacity_limits()
+            while True:
+                open_tasks = _list_open_lesson_tasks(db)
+                active_task_count = sum(1 for item in open_tasks if _task_uses_active_budget(item))
+                if active_task_count >= max_active_tasks:
+                    break
+                queued_tasks = [item for item in open_tasks if _task_is_waiting_for_admission(item)]
+                if not queued_tasks:
+                    break
+                next_task = queued_tasks[0]
+                detail = _build_admission_detail(
+                    state=TASK_ADMISSION_STATE_ADMITTED,
+                    active_task_count=active_task_count + 1,
+                    queued_task_count=max(0, len(queued_tasks) - 1),
+                    max_active_tasks=max_active_tasks,
+                    max_queued_tasks=max_queued_tasks,
+                )
+                _apply_task_admission_state(
+                    next_task,
+                    state=TASK_ADMISSION_STATE_ADMITTED,
+                    detail=detail,
+                    current_text="等待处理",
+                )
+                db.commit()
+                db.refresh(next_task)
+                start_queue.append(_build_task_start_kwargs(next_task))
+        finally:
+            db.close()
+    for task_kwargs in start_queue:
+        _start_lesson_generation_thread(session_factory=session_factory, task_kwargs=task_kwargs)
 
 
 def build_lesson_task_session_factory(bind) -> sessionmaker[Session]:
@@ -358,6 +590,10 @@ def run_lesson_generation_task(
     finally:
         _unregister_active_task(task_id)
         db.close()
+        try:
+            _schedule_queued_lesson_tasks(session_factory=session_factory)
+        except Exception:
+            logger.exception("[DEBUG] lessons.task.queue_schedule_failed task_id=%s", task_id)
 
 
 def create_lesson_task_from_upload(
@@ -389,40 +625,36 @@ def create_lesson_task_from_upload(
             source_duration_ms=source_duration_ms,
         )
 
-        create_task(
-            task_id=task_id,
-            owner_user_id=owner_user_id,
-            source_filename=source_filename,
-            asr_model=asr_model,
-            requested_asr_model=str(model_resolution["requested_asr_model"]),
-            effective_asr_model=effective_asr_model,
-            model_fallback_applied=bool(model_resolution["model_fallback_applied"]),
-            model_fallback_reason=str(model_resolution["model_fallback_reason"]),
-            semantic_split_enabled=semantic_split_enabled,
-            work_dir=str(req_dir),
-            source_path=str(source_path),
-            db=db,
-        )
-        thread = threading.Thread(
-            target=run_lesson_generation_task,
-            kwargs={
-                "task_id": task_id,
-                "owner_id": owner_user_id,
-                "source_filename": source_filename,
-                "source_path": source_path,
-                "req_dir": req_dir,
-                "requested_asr_model": str(model_resolution["requested_asr_model"]),
-                "effective_asr_model": effective_asr_model,
-                "semantic_split_enabled": semantic_split_enabled,
-                "session_factory": task_session_factory,
-                "input_mode": "upload",
-                "source_duration_ms": source_duration_ms,
-            },
-            daemon=True,
-        )
-        thread.start()
-        logger.info("[DEBUG] lessons.task.create.started task_id=%s user_id=%s", task_id, owner_user_id)
-        return {"task_id": task_id, **model_resolution}
+        with _TASK_ADMISSION_LOCK:
+            create_task(
+                task_id=task_id,
+                owner_user_id=owner_user_id,
+                source_filename=source_filename,
+                asr_model=asr_model,
+                requested_asr_model=str(model_resolution["requested_asr_model"]),
+                effective_asr_model=effective_asr_model,
+                model_fallback_applied=bool(model_resolution["model_fallback_applied"]),
+                model_fallback_reason=str(model_resolution["model_fallback_reason"]),
+                semantic_split_enabled=semantic_split_enabled,
+                work_dir=str(req_dir),
+                source_path=str(source_path),
+                db=db,
+            )
+            task = db.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+            if task is None:
+                raise RuntimeError(f"lesson task missing after create: {task_id}")
+            try:
+                admission, start_kwargs = _admit_or_queue_task_locked(task=task, db=db)
+            except LessonTaskAdmissionError:
+                db.delete(task)
+                db.commit()
+                raise
+        if start_kwargs is not None:
+            _start_lesson_generation_thread(session_factory=task_session_factory, task_kwargs=start_kwargs)
+            logger.info("[DEBUG] lessons.task.create.started task_id=%s user_id=%s", task_id, owner_user_id)
+        else:
+            logger.info("[DEBUG] lessons.task.create.queued task_id=%s user_id=%s", task_id, owner_user_id)
+        return {"task_id": task_id, **model_resolution, "admission": admission}
     except Exception:
         cleanup_dir(req_dir)
         raise
@@ -464,52 +696,49 @@ def create_lesson_task_from_local_asr(
             encoding="utf-8",
         )
 
-        create_task(
-            task_id=task_id,
-            owner_user_id=owner_user_id,
-            source_filename=(source_filename or "local_asr.json")[:255],
-            asr_model=asr_model,
-            requested_asr_model=asr_model,
-            effective_asr_model=asr_model,
-            semantic_split_enabled=semantic_split_enabled,
-            work_dir=str(req_dir),
-            source_path=str(payload_path),
-            db=db,
-        )
-        patch_task_artifacts(
-            task_id,
-            artifacts_patch={
-                "input_mode": "local_asr",
-                "source_duration_ms": normalized_source_duration_ms,
-                "local_asr_payload_path": str(payload_path),
-            },
-            db=db,
-        )
-        thread = threading.Thread(
-            target=run_lesson_generation_task,
-            kwargs={
-                "task_id": task_id,
-                "owner_id": owner_user_id,
-                "source_filename": (source_filename or "local_asr.json")[:255],
-                "source_path": payload_path,
-                "req_dir": req_dir,
-                "requested_asr_model": asr_model,
-                "effective_asr_model": asr_model,
-                "semantic_split_enabled": semantic_split_enabled,
-                "session_factory": task_session_factory,
-                "input_mode": "local_asr",
-                "source_duration_ms": normalized_source_duration_ms,
-            },
-            daemon=True,
-        )
-        thread.start()
-        logger.info("[DEBUG] lessons.task.local_asr.started task_id=%s user_id=%s", task_id, owner_user_id)
+        with _TASK_ADMISSION_LOCK:
+            create_task(
+                task_id=task_id,
+                owner_user_id=owner_user_id,
+                source_filename=(source_filename or "local_asr.json")[:255],
+                asr_model=asr_model,
+                requested_asr_model=asr_model,
+                effective_asr_model=asr_model,
+                semantic_split_enabled=semantic_split_enabled,
+                work_dir=str(req_dir),
+                source_path=str(payload_path),
+                db=db,
+            )
+            patch_task_artifacts(
+                task_id,
+                artifacts_patch={
+                    "input_mode": "local_asr",
+                    "source_duration_ms": normalized_source_duration_ms,
+                    "local_asr_payload_path": str(payload_path),
+                },
+                db=db,
+            )
+            task = db.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+            if task is None:
+                raise RuntimeError(f"lesson task missing after create: {task_id}")
+            try:
+                admission, start_kwargs = _admit_or_queue_task_locked(task=task, db=db)
+            except LessonTaskAdmissionError:
+                db.delete(task)
+                db.commit()
+                raise
+        if start_kwargs is not None:
+            _start_lesson_generation_thread(session_factory=task_session_factory, task_kwargs=start_kwargs)
+            logger.info("[DEBUG] lessons.task.local_asr.started task_id=%s user_id=%s", task_id, owner_user_id)
+        else:
+            logger.info("[DEBUG] lessons.task.local_asr.queued task_id=%s user_id=%s", task_id, owner_user_id)
         return {
             "task_id": task_id,
             "requested_asr_model": asr_model,
             "effective_asr_model": asr_model,
             "model_fallback_applied": False,
             "model_fallback_reason": "",
+            "admission": admission,
         }
     except Exception:
         cleanup_dir(req_dir)
@@ -582,27 +811,17 @@ def resume_lesson_task_for_user(*, task_id: str, user_id: int, db: Session) -> d
         }
 
     task_session_factory = build_lesson_task_session_factory(db.get_bind())
-    input_mode = str(artifacts.get("input_mode") or "upload").strip().lower() or "upload"
-    thread = threading.Thread(
-        target=run_lesson_generation_task,
-        kwargs={
-            "task_id": task_id,
-            "owner_id": user_id,
-            "source_filename": str(resumed.get("source_filename") or source_path.name),
-            "source_path": source_path,
-            "req_dir": req_dir,
-            "requested_asr_model": str(artifacts.get("requested_asr_model") or resumed.get("asr_model") or get_default_asr_model(db)),
-            "effective_asr_model": str(artifacts.get("effective_asr_model") or resumed.get("asr_model") or get_default_asr_model(db)),
-            "semantic_split_enabled": bool(resumed.get("semantic_split_enabled")),
-            "session_factory": task_session_factory,
-            "input_mode": input_mode,
-            "source_duration_ms": int(artifacts.get("source_duration_ms") or 0),
-        },
-        daemon=True,
-    )
-    thread.start()
-    logger.info("[DEBUG] lessons.task.retry.started task_id=%s user_id=%s mode=%s", task_id, user_id, retry_mode or "unknown")
-    return {"task": task, "resumed": resumed, "retry_mode": retry_mode, "task_id": task_id}
+    with _TASK_ADMISSION_LOCK:
+        latest_task = db.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        if latest_task is None:
+            return {"task": task, "resumed": resumed, "retry_mode": retry_mode, "task_id": task_id}
+        admission, start_kwargs = _admit_or_queue_task_locked(task=latest_task, db=db, reject_when_queue_full=False)
+    if start_kwargs is not None:
+        _start_lesson_generation_thread(session_factory=task_session_factory, task_kwargs=start_kwargs)
+        logger.info("[DEBUG] lessons.task.retry.started task_id=%s user_id=%s mode=%s", task_id, user_id, retry_mode or "unknown")
+    else:
+        logger.info("[DEBUG] lessons.task.retry.queued task_id=%s user_id=%s mode=%s", task_id, user_id, retry_mode or "unknown")
+    return {"task": task, "resumed": resumed, "retry_mode": retry_mode, "task_id": task_id, "admission": admission}
 
 
 def request_lesson_task_control_for_user(*, task_id: str, user_id: int, action: str, db: Session) -> dict[str, object] | None:

@@ -1,82 +1,47 @@
+schema_version: 1
 task_id: TASK-004
-title: Add sidebar wordbook with in-learning collection and structured backend storage
+title: 修正沉浸式生词选择入口与交互方式
 status: done
 priority: high
 project_root: D:/3.3-19.01
 base_ref: main
-goal: Add a logged-in sidebar "生词本" panel below history, let users collect words or phrases directly during immersive learning, store those entries with deduped structured context on the backend, and ship the required migration, API, UI state handling, and verification in one self-contained task.
+goal: 在不改变现有答题区尺寸的前提下，修正沉浸式学习里的生词选择入口，把选词能力并入“上一句”现有展示区域，移除答题区上方额外收藏区和短语模式开关，并让单击选词、长按拖选连续词配合右侧常驻按钮完成加入生词本。
 scope:
-  - Learning shell sidebar navigation and panel routing for the new wordbook panel
-  - Wordbook panel UI with active/mastered filtering, source-course filtering, sorting, and item actions
-  - Immersive learning interactions for single-word collect and phrase selection collect
-  - Backend SQLAlchemy models, Alembic migration, repositories, services, schemas, and routers for wordbook storage
-  - Backend and integration regression coverage for wordbook CRUD, dedupe, permissions, and route behavior
-  - Frontend build output sync if this repo expects app static assets to stay checked in
+  - 沉浸式学习页“上一句”区域的选词与短语选择交互
+  - 沉浸式学习页“加入生词本”按钮布局与首句隐藏逻辑
+  - 与新交互一致的前端回归与端到端验证
 allowed_paths:
-  - frontend/src/app/learning-shell/LearningShellSidebar.jsx
-  - frontend/src/app/learning-shell/LearningShellPanelContent.jsx
-  - frontend/src/app/learning-shell/LearningShellContainer.jsx
   - frontend/src/features/immersive/ImmersiveLessonPage.jsx
-  - frontend/src/features/wordbook
-  - frontend/src/shared/ui
-  - app/api/routers/__init__.py
-  - app/api/routers/wordbook.py
-  - app/models/lesson.py
-  - app/models/__init__.py
-  - app/repositories/wordbook.py
-  - app/services/wordbook_service.py
-  - app/schemas/wordbook.py
-  - migrations/versions
-  - tests/test_regression_api.py
   - tests/test_e2e_key_flows.py
-  - tests/test_spa_route_fallback.py
-  - app/static/assets
+  - tests/test_regression_api.py
 acceptance:
-  - The learning sidebar shows a logged-in "生词本" entry directly below "历史记录", and the app can open the new panel from its own route without breaking existing history, upload, redeem, or immersive flows.
-  - The immersive learning page lets the user collect a single word by direct interaction and collect a phrase by selecting a continuous span from the current English sentence, with clear success feedback for both create and duplicate-update cases.
-  - The wordbook panel lists structured entries with entry text, entry type, latest English sentence, latest Chinese sentence, source lesson, latest collected time, and actions for mark mastered, restore active, and delete.
-  - Active entries are the default list, mastered entries are hidden by default but available through an explicit filter, and source-course filtering plus recent-first sorting work in the same panel.
-  - Backend storage deduplicates by the same user plus normalized text plus entry type, updates the latest context when a duplicate is collected again, and retains source linkage data instead of creating duplicate primary entries.
-  - The backend rejects collection attempts for lessons the user does not own, missing sentence indexes, and invalid selected text that is not a valid continuous fragment of the sentence.
-  - The task includes the required Alembic migration and keeps local and live PostgreSQL schema in sync by running and verifying `$postgresql-update` when the new tables are introduced.
-  - The tests and builds touched by this task pass within the same task, without depending on another task to add API coverage, migration verification, or frontend route/build verification.
+  - 沉浸式学习页不再在答题区上方新增任何“生词本收藏”区域，也不再出现“选择短语/退出短语模式/清除选择”等额外控制，答题区高度与现有效果保持一致。
+  - 选词入口只出现在现有“上一句”展示区域内；第 1 句因为没有上一句时，整个选词入口与右侧“加入生词本”按钮都不显示。
+  - 用户在“上一句”英文句子中单击单个单词时，只选中该词；右侧常驻“加入生词本”按钮可将当前选中的单词加入生词本，并给出成功或重复更新反馈。
+  - 用户在“上一句”英文句子中长按后拖过连续单词时，可形成连续短语选择；右侧常驻“加入生词本”按钮可将当前连续选区加入生词本，不需要任何短语模式开关。
+  - 中文译文仍用于展示，不承担选词交互；上一句区域与按钮布局应尽量保持单行右侧按钮结构，不得通过新增上方块级区域挤压答题区。
+  - 原有生词本后端、侧栏页、收藏去重、状态切换与删除能力保持不变；本次修复不引入新的收藏类型、数据库结构或额外后端接口变更。
+  - 本任务涉及的回归测试覆盖首句隐藏入口、单击选词、长按连续选词、按钮触发收藏以及原有生词本 API 不回退。
 check_commands:
-  - 'pytest tests/test_regression_api.py -k "wordbook or spa or route"'
-  - 'pytest tests/test_e2e_key_flows.py -k "wordbook or immersive or history"'
-  - pytest tests/test_spa_route_fallback.py
-  - npm --prefix frontend run build
-  - npm --prefix frontend run build:app-static
+  - 'pytest tests/test_regression_api.py -k "wordbook"'
+  - 'pytest tests/test_e2e_key_flows.py -k "wordbook or immersive"'
+  - 'npm --prefix frontend run build'
 depends_on: []
+dependency_reason: ""
 blocked_by: []
-notes_for_after: Keep this as one closed-loop task. Do not split frontend, backend, migration, and verification across multiple agents. Reuse the existing shell and immersive-learning patterns where possible, but add new files under frontend/src/features/wordbook and backend wordbook modules if that keeps the implementation cleaner than overloading unrelated modules. The backend should introduce structured wordbook entry storage plus source-link rows, default to active-only listing, and leave full SRS scheduling out of scope while keeping field design extensible for later review features. Because this task adds database tables, you must use `$postgresql-update` after implementation and test verification so the live PostgreSQL schema is updated and directly verified instead of being left as a local-only migration.
-result_summary: Added the logged-in sidebar wordbook panel and immersive single-word or phrase collection flow, introduced structured wordbook storage with deduped context-link tables plus APIs and regression coverage, synced checked-in static assets, and verified the live PostgreSQL schema reached revision 20260322_0027 with the new wordbook tables present.
+conflicts_with: []
+notes_for_after: 这是对已交付错误交互的定向返工，不要重做后端存储和侧栏生词本页面。优先复用现有 wordbook collect API 与已有上一句展示区域，只调整沉浸式页面内的交互承载位置、手势语义和按钮布局。以“解决用户在复习上一句时顺手收词”为目标，而不是保留此前那套额外收藏面板。按钮应放在上一句区域右侧，避免新增垂直高度；单击用于选择一个词，长按拖动用于形成连续短语选择；不再保留任何短语模式切换心智。首句没有上一句时直接隐藏整套入口，不做回退到当前句的兜底。
+result_summary: Reworked immersive wordbook collection into the existing previous-sentence row, removed the extra collection panel and phrase-mode controls, and switched collection to button-triggered single-click or long-press range selection without changing backend wordbook APIs.
 changed_files:
-  - frontend/src/app/learning-shell/LearningShellSidebar.jsx
-  - frontend/src/app/learning-shell/LearningShellPanelContent.jsx
-  - frontend/src/app/learning-shell/LearningShellContainer.jsx
   - frontend/src/features/immersive/ImmersiveLessonPage.jsx
-  - frontend/src/features/wordbook/WordbookPanel.jsx
-  - app/api/routers/__init__.py
-  - app/api/routers/wordbook.py
-  - app/models/lesson.py
-  - app/models/__init__.py
-  - app/repositories/wordbook.py
-  - app/services/wordbook_service.py
-  - app/schemas/wordbook.py
-  - migrations/versions/20260322_0027_wordbook_storage.py
-  - tests/test_regression_api.py
-  - tests/test_e2e_key_flows.py
-  - tests/test_spa_route_fallback.py
-  - app/static/assets
 tests_run:
-  - 'pytest tests/test_regression_api.py -k "wordbook or spa or route"'
-  - 'pytest tests/test_e2e_key_flows.py -k "wordbook or immersive or history"'
-  - pytest tests/test_spa_route_fallback.py
-  - npm --prefix frontend run build
-  - npm --prefix frontend run build:app-static
-  - python -m alembic -c alembic.ini heads
-  - python scripts/run_prod_migration.py --check-only
-  - python scripts/run_prod_migration.py
-  - direct SQL verification of app.alembic_version, app.wordbook_entries, and app.wordbook_entry_sources via PROD_DATABASE_URL
+  - 'pytest tests/test_regression_api.py -k "wordbook"'
+  - 'pytest tests/test_e2e_key_flows.py -k "wordbook or immersive"'
+  - 'npm --prefix frontend run build'
 blocked_reason: ""
-completed_at: 2026-03-22T20:33:12.6033710+08:00
+completed_at: 2026-03-22T21:52:54+08:00
+fix_request: 用户反馈 004 的沉浸式收藏交互方向做错了：不要在答题区上方额外增加生词选择区域；应把选词能力并入答题区对应的“上一句”现有展示区域，在那一行里完成选择。不要再有短语模式开关，而是改成单击选择单词、长按拖选连续单词，并在右侧保留常驻“加入生词本”按钮；同时不能影响当前答题区大小。第 1 句没有上一句时隐藏整套入口。
+fix_reason: 已交付版本虽然完成了生词本存储与管理能力，但沉浸式页面的交互承载位置、心智模型和空间占用都偏离真实使用目标。当前额外收藏区和短语模式增加了界面负担，也破坏了用户认可的答题区尺寸，需要按“借助上一句顺手收词”的真实使用路径返工。
+fix_round: 1
+fix_result_summary: Removed the immersive top collection panel, embedded selection into the previous-sentence row, added single-click and long-press range selection, and kept the persistent add button hidden on the first sentence.
+fix_updated_at: 2026-03-22T21:52:54+08:00

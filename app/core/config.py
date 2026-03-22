@@ -153,6 +153,8 @@ ASR_TASK_POLL_SECONDS = _get_env_int("ASR_TASK_POLL_SECONDS", 2)
 MT_BATCH_MAX_CHARS = _get_env_int("MT_BATCH_MAX_CHARS", 2600)
 MT_MIN_REQUEST_INTERVAL_MS = _get_env_non_negative_int("MT_MIN_REQUEST_INTERVAL_MS", 600)
 MT_RETRY_MAX_ATTEMPTS = _get_env_int("MT_RETRY_MAX_ATTEMPTS", 4)
+LESSON_TASK_MAX_ACTIVE = _get_env_int("LESSON_TASK_MAX_ACTIVE", 4)
+LESSON_TASK_MAX_QUEUED = _get_env_non_negative_int("LESSON_TASK_MAX_QUEUED", 8)
 
 PERSISTENT_DATA_DIR = Path(
     os.getenv("PERSISTENT_DATA_DIR", str(_default_persistent_data_dir())).strip() or str(_default_persistent_data_dir())
