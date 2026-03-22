@@ -489,6 +489,9 @@ export function LearningShellContainer() {
   }
 
   function handlePanelChange(nextPanel) {
+    if (immersiveLayoutActive) {
+      setImmersiveActive(false);
+    }
     navigate(getPanelPath(nextPanel));
     setMobileNavOpen(false);
   }
