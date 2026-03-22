@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const currentFile = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFile);
+const iconPath = path.join(path.resolve(currentDir, ".."), "build", "icon.ico");
 
 let mainWindow = null;
 let backendProcess = null;
@@ -162,11 +163,13 @@ async function createMainWindow() {
     throw new Error("The local backend port has not been initialized.");
   }
   mainWindow = new BrowserWindow({
+    title: "Bottle",
     width: 1440,
     height: 960,
     minWidth: 1200,
     minHeight: 760,
     backgroundColor: "#111827",
+    icon: iconPath,
     show: false,
     webPreferences: {
       contextIsolation: true,
