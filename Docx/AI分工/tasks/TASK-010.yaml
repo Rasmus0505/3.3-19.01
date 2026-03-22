@@ -1,0 +1,35 @@
+schema_version: 1
+task_id: TASK-010
+title: 精简上传页服务端生成文案并补齐 MT 价格预估
+status: todo
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: 调整上传页主流程文案和价格说明，删除当前普通服务端流程中冗余的本地模型下载区块与重复“生成方式”摘要，将模型选择区改名为“选择字幕生成方式”，并让“预估价格”同时体现 ASR 与 MT 翻译的估算口径。
+scope:
+  - 上传页主流程信息卡与模型选择区文案
+  - 上传前价格估算展示逻辑
+  - 前端静态产物同步
+allowed_paths:
+  - frontend/src/features/upload/UploadPanel.jsx
+  - app/static/assets
+acceptance:
+  - 上传页顶部摘要不再单独显示“生成方式：...”这一行，避免与下方模型选择区重复表达同一信息。
+  - 上传页当前面向普通服务端流程的“下载本地模型”整块被移除，不再暗示用户必须先下载站点同款模型目录才能开始上传生成。
+  - 下方模型选择区标题改为“选择字幕生成方式”，并保留 Bottle 1.0 与 Bottle 2.0 的现有选择交互、状态徽标和准备状态提示。
+  - “预估价格”不再只显示 ASR 分钟价，而是基于现有 `billingRates` 中的 ASR 与 `qwen-mt-flash` 费率展示总预估金额或清晰拆分的 ASR + MT 估算，并明确 MT 为估算值而非最终扣费。
+  - 如果 TASK-006 后续已引入灰度本地 Bottle 1.0 入口，本任务不得误删该灰度入口；只移除当前这块面向普通服务端流程的通用下载区块。
+  - 前端构建通过，且若仓库要求同步静态产物，`app/static/assets` 与源码保持一致。
+check_commands:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+  - 'if ((Select-String -Path D:\3.3-19.01\frontend\src\features\upload\UploadPanel.jsx -Pattern "生成方式：") -or -not (Select-String -Path D:\3.3-19.01\frontend\src\features\upload\UploadPanel.jsx -Pattern "选择字幕生成方式")) { exit 1 }'
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+notes_for_after: 代码核对显示，`/api/lessons` 与 `/api/lessons/tasks` 只接受服务端上传 ASR 模型 `faster-whisper-medium` 和 `qwen3-asr-flash-filetrans`，`LessonService.generate_from_upload` 也在服务端执行；当前 `/api/local-asr-assets/download-models` 只是额外的模型包下载接口，不是主上传流程的前置条件。实现 MT 价格展示时优先复用前端已加载的 `billingRates` 中 `qwen-mt-flash` 费率，不要新增后端接口；同时把估算口径写清楚，避免把近似值伪装成精确扣费。
+result_summary: ""
+changed_files: []
+tests_run: []
+blocked_reason: ""
+completed_at: ""

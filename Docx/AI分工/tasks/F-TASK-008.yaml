@@ -1,0 +1,33 @@
+schema_version: 1
+task_id: TASK-008
+title: Slim Zeabur Docker build context
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: Reduce Zeabur build upload and Docker context size by excluding non-runtime artifacts, especially the large local ASR lab assets, without breaking the current frontend and backend Docker build inputs.
+scope:
+  - Root Docker build context for Zeabur
+  - Non-runtime lab assets, temp outputs, local docs, and local-only tooling directories
+  - Automated contract coverage for required .dockerignore exclusions
+allowed_paths:
+  - .dockerignore
+  - tests/test_build_context_contract.py
+acceptance:
+  - .dockerignore excludes large non-runtime paths that are not copied into the production image, including asr-test/, Docx/, tools/, tests/, local databases and log or tmp artifacts, and frontend temporary verification directories, while keeping the current Dockerfile build inputs available.
+  - The ignore rules do not block the paths required by the current root Dockerfile for npm install, frontend build, Alembic files, runtime startup scripts, or backend source copy.
+  - A repo-level automated check fails if the required high-volume non-runtime paths stop being ignored in future commits.
+check_commands:
+  - pytest tests/test_build_context_contract.py
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+notes_for_after: Keep this task limited to build-context slimming and its automated contract. Repo inspection showed asr-test/ alone is over 1GB and is not currently excluded by .dockerignore, so prioritize high-volume non-runtime paths first and do not change runtime dependency manifests in this task.
+result_summary: Added a stricter Zeabur-focused .dockerignore that excludes large non-runtime directories and local artifacts, and added a Docker build-context contract test that protects required exclusions without hiding current Dockerfile inputs.
+changed_files:
+  - .dockerignore
+  - tests/test_build_context_contract.py
+tests_run:
+  - pytest tests/test_build_context_contract.py
+blocked_reason: ""
+completed_at: 2026-03-22T20:16:24.3766433+08:00

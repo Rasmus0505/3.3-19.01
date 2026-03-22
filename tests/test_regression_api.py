@@ -24,7 +24,21 @@ from app.core.config import MEDIA_STORAGE_ROOT_DIR
 from app.db import Base, create_database_engine, get_db
 from app.infra.translation_qwen_mt import TranslationError
 from app.main import create_app
-from app.models import BillingModelRate, FasterWhisperSetting, Lesson, LessonGenerationTask, LessonProgress, LessonSentence, MediaAsset, SubtitleSetting, TranslationRequestLog, User, WalletLedger
+from app.models import (
+    BillingModelRate,
+    FasterWhisperSetting,
+    Lesson,
+    LessonGenerationTask,
+    LessonProgress,
+    LessonSentence,
+    MediaAsset,
+    SubtitleSetting,
+    TranslationRequestLog,
+    User,
+    WalletLedger,
+    WordbookEntry,
+    WordbookEntrySource,
+)
 from app.services.billing_service import calculate_points, ensure_default_billing_rates, get_or_create_wallet_account, get_subtitle_settings, settle_reserved_points
 from app.services.lesson_service import LessonService
 from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
@@ -817,6 +831,304 @@ def test_lesson_task_resume_reuses_failed_task_artifacts(test_client, monkeypatc
     assert success_payload["resume_available"] is False
     assert success_payload["lesson"]["title"] == "resume"
     assert attempts["count"] == 2
+
+
+def test_wordbook_collect_dedupes_and_filters_by_source_course(test_client):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="wordbook-owner@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "wordbook-owner@example.com").one()
+        owner_user_id = user.id
+        lesson_primary = Lesson(
+            user_id=user.id,
+            title="Primary Context",
+            source_filename="primary.mp4",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=2400,
+            source_duration_ms=2400,
+            status="ready",
+        )
+        lesson_secondary = Lesson(
+            user_id=user.id,
+            title="Secondary Context",
+            source_filename="secondary.mp4",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=2800,
+            source_duration_ms=2800,
+            status="ready",
+        )
+        session.add_all([lesson_primary, lesson_secondary])
+        session.flush()
+        session.add_all(
+            [
+                LessonSentence(
+                    lesson_id=lesson_primary.id,
+                    idx=0,
+                    begin_ms=0,
+                    end_ms=1200,
+                    text_en="hello world again",
+                    text_zh="你好 世界 再次",
+                    tokens_json=["hello", "world", "again"],
+                    audio_clip_path=None,
+                ),
+                LessonSentence(
+                    lesson_id=lesson_secondary.id,
+                    idx=0,
+                    begin_ms=0,
+                    end_ms=1200,
+                    text_en="hello world again",
+                    text_zh="新的 你好 世界 再次",
+                    tokens_json=["hello", "world", "again"],
+                    audio_clip_path=None,
+                ),
+            ]
+        )
+        session.commit()
+        primary_id = lesson_primary.id
+        secondary_id = lesson_secondary.id
+    finally:
+        session.close()
+
+    first_collect = client.post(
+        "/api/wordbook/collect",
+        headers=headers,
+        json={
+            "lesson_id": primary_id,
+            "sentence_index": 0,
+            "entry_text": "hello",
+            "entry_type": "word",
+            "start_token_index": 0,
+            "end_token_index": 0,
+        },
+    )
+    assert first_collect.status_code == 200
+    assert first_collect.json()["created"] is True
+
+    duplicate_collect = client.post(
+        "/api/wordbook/collect",
+        headers=headers,
+        json={
+            "lesson_id": secondary_id,
+            "sentence_index": 0,
+            "entry_text": "hello",
+            "entry_type": "word",
+            "start_token_index": 0,
+            "end_token_index": 0,
+        },
+    )
+    assert duplicate_collect.status_code == 200
+    duplicate_data = duplicate_collect.json()
+    assert duplicate_data["created"] is False
+    assert duplicate_data["updated_context"] is True
+    assert duplicate_data["entry"]["source_lesson_id"] == secondary_id
+    assert duplicate_data["entry"]["latest_sentence_zh"] == "新的 你好 世界 再次"
+
+    phrase_collect = client.post(
+        "/api/wordbook/collect",
+        headers=headers,
+        json={
+            "lesson_id": primary_id,
+            "sentence_index": 0,
+            "entry_text": "hello world",
+            "entry_type": "phrase",
+            "start_token_index": 0,
+            "end_token_index": 1,
+        },
+    )
+    assert phrase_collect.status_code == 200
+    assert phrase_collect.json()["created"] is True
+
+    list_resp = client.get("/api/wordbook", headers=headers)
+    assert list_resp.status_code == 200
+    list_data = list_resp.json()
+    assert list_data["status"] == "active"
+    assert list_data["sort"] == "recent"
+    assert list_data["total"] == 2
+    assert {item["title"] for item in list_data["available_lessons"]} == {"Primary Context", "Secondary Context"}
+
+    word_item = next(item for item in list_data["items"] if item["entry_type"] == "word")
+    phrase_item = next(item for item in list_data["items"] if item["entry_type"] == "phrase")
+    assert word_item["source_count"] == 2
+    assert word_item["source_lesson_title"] == "Secondary Context"
+    assert phrase_item["source_count"] == 1
+
+    filtered_resp = client.get("/api/wordbook", headers=headers, params={"source_lesson_id": secondary_id})
+    assert filtered_resp.status_code == 200
+    filtered_data = filtered_resp.json()
+    assert filtered_data["total"] == 1
+    assert filtered_data["items"][0]["entry_type"] == "word"
+
+    session = session_factory()
+    try:
+        entries = session.query(WordbookEntry).filter(WordbookEntry.user_id == owner_user_id).all()
+        sources = session.query(WordbookEntrySource).all()
+        assert len(entries) == 2
+        assert len(sources) == 3
+    finally:
+        session.close()
+
+
+def test_wordbook_collect_rejects_invalid_fragment_missing_sentence_and_foreign_lesson(test_client):
+    client, session_factory, _ = test_client
+    owner_token = _register_and_login(client, email="wordbook-invalid-owner@example.com")
+    other_token = _register_and_login(client, email="wordbook-invalid-other@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+
+    session = session_factory()
+    try:
+        owner = session.query(User).filter(User.email == "wordbook-invalid-owner@example.com").one()
+        lesson = Lesson(
+            user_id=owner.id,
+            title="Validation Lesson",
+            source_filename="validation.mp4",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=2000,
+            source_duration_ms=2000,
+            status="ready",
+        )
+        session.add(lesson)
+        session.flush()
+        session.add(
+            LessonSentence(
+                lesson_id=lesson.id,
+                idx=0,
+                begin_ms=0,
+                end_ms=1200,
+                text_en="hello world again",
+                text_zh="你好 世界 再次",
+                tokens_json=["hello", "world", "again"],
+                audio_clip_path=None,
+            )
+        )
+        session.commit()
+        lesson_id = lesson.id
+    finally:
+        session.close()
+
+    invalid_fragment = client.post(
+        "/api/wordbook/collect",
+        headers=owner_headers,
+        json={
+            "lesson_id": lesson_id,
+            "sentence_index": 0,
+            "entry_text": "hello again",
+            "entry_type": "phrase",
+            "start_token_index": 0,
+            "end_token_index": 2,
+        },
+    )
+    assert invalid_fragment.status_code == 400
+
+    missing_sentence = client.post(
+        "/api/wordbook/collect",
+        headers=owner_headers,
+        json={
+            "lesson_id": lesson_id,
+            "sentence_index": 9,
+            "entry_text": "hello",
+            "entry_type": "word",
+            "start_token_index": 0,
+            "end_token_index": 0,
+        },
+    )
+    assert missing_sentence.status_code == 404
+
+    foreign_lesson = client.post(
+        "/api/wordbook/collect",
+        headers=other_headers,
+        json={
+            "lesson_id": lesson_id,
+            "sentence_index": 0,
+            "entry_text": "hello",
+            "entry_type": "word",
+            "start_token_index": 0,
+            "end_token_index": 0,
+        },
+    )
+    assert foreign_lesson.status_code == 404
+
+
+def test_wordbook_update_status_and_delete_entry(test_client):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="wordbook-status@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "wordbook-status@example.com").one()
+        lesson = Lesson(
+            user_id=user.id,
+            title="Status Lesson",
+            source_filename="status.mp4",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=1800,
+            source_duration_ms=1800,
+            status="ready",
+        )
+        session.add(lesson)
+        session.flush()
+        session.add(
+            LessonSentence(
+                lesson_id=lesson.id,
+                idx=0,
+                begin_ms=0,
+                end_ms=900,
+                text_en="alpha beta",
+                text_zh="阿尔法 贝塔",
+                tokens_json=["alpha", "beta"],
+                audio_clip_path=None,
+            )
+        )
+        session.commit()
+        lesson_id = lesson.id
+    finally:
+        session.close()
+
+    collect_resp = client.post(
+        "/api/wordbook/collect",
+        headers=headers,
+        json={
+            "lesson_id": lesson_id,
+            "sentence_index": 0,
+            "entry_text": "alpha",
+            "entry_type": "word",
+            "start_token_index": 0,
+            "end_token_index": 0,
+        },
+    )
+    assert collect_resp.status_code == 200
+    entry_id = collect_resp.json()["entry"]["id"]
+
+    mastered_resp = client.patch(f"/api/wordbook/{entry_id}", headers=headers, json={"status": "mastered"})
+    assert mastered_resp.status_code == 200
+    assert mastered_resp.json()["entry"]["status"] == "mastered"
+
+    active_list = client.get("/api/wordbook", headers=headers)
+    assert active_list.status_code == 200
+    assert active_list.json()["total"] == 0
+
+    mastered_list = client.get("/api/wordbook", headers=headers, params={"status": "mastered"})
+    assert mastered_list.status_code == 200
+    assert mastered_list.json()["total"] == 1
+
+    restore_resp = client.patch(f"/api/wordbook/{entry_id}", headers=headers, json={"status": "active"})
+    assert restore_resp.status_code == 200
+    assert restore_resp.json()["entry"]["status"] == "active"
+
+    delete_resp = client.delete(f"/api/wordbook/{entry_id}", headers=headers)
+    assert delete_resp.status_code == 200
+    assert delete_resp.json()["entry_id"] == entry_id
+
+    session = session_factory()
+    try:
+        assert session.query(WordbookEntry).filter(WordbookEntry.id == entry_id).one_or_none() is None
+        assert session.query(WordbookEntrySource).filter(WordbookEntrySource.entry_id == entry_id).count() == 0
+    finally:
+        session.close()
 
 
 def test_lesson_task_reports_translation_parse_failure_with_explicit_error(test_client, monkeypatch):

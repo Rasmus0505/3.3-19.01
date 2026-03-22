@@ -9,6 +9,7 @@ const ImmersiveLessonPage = lazy(() =>
   import("../../features/immersive/ImmersiveLessonPage").then((module) => ({ default: module.ImmersiveLessonPage })),
 );
 const LessonList = lazy(() => import("../../features/lessons/LessonList").then((module) => ({ default: module.LessonList })));
+const WordbookPanel = lazy(() => import("../../features/wordbook/WordbookPanel").then((module) => ({ default: module.WordbookPanel })));
 const UploadPanel = lazy(() => import("../../features/upload/UploadPanel").then((module) => ({ default: module.UploadPanel })));
 const RedeemCodePanel = lazy(() => import("../../features/wallet/RedeemCodePanel").then((module) => ({ default: module.RedeemCodePanel })));
 
@@ -59,6 +60,8 @@ export function LearningShellPanelContent({
   onGoToLogin,
   onGoToHistory,
   guideTargetLessonId,
+  wordbookRefreshToken = 0,
+  onWordbookChanged,
 }) {
   const publicPanels = new Set(["getting-started"]);
   const contentAlert = globalStatus ? (
@@ -112,6 +115,14 @@ export function LearningShellPanelContent({
       );
     }
 
+    if (activePanel === "wordbook") {
+      return (
+        <Suspense fallback={<PanelFallback />}>
+          <WordbookPanel apiCall={apiCall} refreshToken={wordbookRefreshToken} />
+        </Suspense>
+      );
+    }
+
     if (activePanel === "upload") {
       return (
         <Suspense fallback={<PanelFallback />}>
@@ -151,6 +162,7 @@ export function LearningShellPanelContent({
             accessToken={accessToken}
             apiClient={apiCall}
             onProgressSynced={onProgressSynced}
+            onWordbookChanged={onWordbookChanged}
             immersiveActive={immersiveLayoutActive}
             onExitImmersive={onExitImmersive}
             onStartImmersive={onStartImmersive}

@@ -109,3 +109,49 @@ class MediaAsset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
 
     lesson: Mapped[Lesson] = relationship(back_populates="media_assets")
+
+
+class WordbookEntry(Base):
+    __tablename__ = "wordbook_entries"
+    __table_args__ = table_args(
+        UniqueConstraint("user_id", "normalized_text", "entry_type", name="uq_wordbook_entry_user_text_type"),
+        Index("ix_wordbook_entries_user_status_collected_at", "user_id", "status", "latest_collected_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey(schema_fk("users.id")), nullable=False, index=True)
+    latest_lesson_id: Mapped[int | None] = mapped_column(ForeignKey(schema_fk("lessons.id")), nullable=True, index=True)
+    entry_text: Mapped[str] = mapped_column(String(255), nullable=False)
+    normalized_text: Mapped[str] = mapped_column(String(255), nullable=False)
+    entry_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="active", nullable=False, index=True)
+    latest_sentence_idx: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    latest_sentence_en: Mapped[str] = mapped_column(String(1200), nullable=False, default="")
+    latest_sentence_zh: Mapped[str] = mapped_column(String(1200), nullable=False, default="")
+    latest_collected_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
+
+    latest_lesson: Mapped[Lesson | None] = relationship(foreign_keys=[latest_lesson_id])
+    source_links: Mapped[list["WordbookEntrySource"]] = relationship(back_populates="entry", cascade="all, delete-orphan")
+
+
+class WordbookEntrySource(Base):
+    __tablename__ = "wordbook_entry_sources"
+    __table_args__ = table_args(
+        UniqueConstraint("entry_id", "lesson_id", "sentence_idx", name="uq_wordbook_entry_source_context"),
+        Index("ix_wordbook_entry_sources_entry_collected_at", "entry_id", "last_collected_at"),
+        Index("ix_wordbook_entry_sources_lesson_id", "lesson_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    entry_id: Mapped[int] = mapped_column(ForeignKey(schema_fk("wordbook_entries.id")), nullable=False, index=True)
+    lesson_id: Mapped[int] = mapped_column(ForeignKey(schema_fk("lessons.id")), nullable=False)
+    sentence_idx: Mapped[int] = mapped_column(Integer, nullable=False)
+    sentence_en: Mapped[str] = mapped_column(String(1200), nullable=False, default="")
+    sentence_zh: Mapped[str] = mapped_column(String(1200), nullable=False, default="")
+    first_collected_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
+    last_collected_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False, index=True)
+
+    entry: Mapped[WordbookEntry] = relationship(back_populates="source_links")
+    lesson: Mapped[Lesson] = relationship()

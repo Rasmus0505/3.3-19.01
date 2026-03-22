@@ -149,6 +149,106 @@ def test_e2e_login_create_lesson_practice_progress(e2e_client):
     assert get_resp.json()["completed_sentence_indexes"] == [0]
 
 
+def test_e2e_wordbook_collect_and_manage_entries(e2e_client):
+    client, session_factory, _ = e2e_client
+    token = _register_and_login(client, email="wordbook-e2e@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "wordbook-e2e@example.com").one()
+        lesson = Lesson(
+            user_id=user.id,
+            title="wordbook lesson",
+            source_filename="wordbook.mp4",
+            asr_model="qwen3-asr-flash-filetrans",
+            duration_ms=1200,
+            media_storage="client_indexeddb",
+            source_duration_ms=1200,
+            status="ready",
+        )
+        session.add(lesson)
+        session.flush()
+        session.add(
+            LessonSentence(
+                lesson_id=lesson.id,
+                idx=0,
+                begin_ms=0,
+                end_ms=900,
+                text_en="hello brave world",
+                text_zh="你好 勇敢 世界",
+                tokens_json=["hello", "brave", "world"],
+                audio_clip_path=None,
+            )
+        )
+        session.add(
+            LessonProgress(
+                lesson_id=lesson.id,
+                user_id=user.id,
+                current_sentence_idx=0,
+                completed_indexes_json=[],
+                last_played_at_ms=0,
+            )
+        )
+        session.commit()
+        lesson_id = lesson.id
+    finally:
+        session.close()
+
+    word_resp = client.post(
+        "/api/wordbook/collect",
+        headers=headers,
+        json={
+            "lesson_id": lesson_id,
+            "sentence_index": 0,
+            "entry_text": "hello",
+            "entry_type": "word",
+            "start_token_index": 0,
+            "end_token_index": 0,
+        },
+    )
+    assert word_resp.status_code == 200
+    word_entry_id = word_resp.json()["entry"]["id"]
+
+    phrase_resp = client.post(
+        "/api/wordbook/collect",
+        headers=headers,
+        json={
+            "lesson_id": lesson_id,
+            "sentence_index": 0,
+            "entry_text": "brave world",
+            "entry_type": "phrase",
+            "start_token_index": 1,
+            "end_token_index": 2,
+        },
+    )
+    assert phrase_resp.status_code == 200
+    phrase_entry_id = phrase_resp.json()["entry"]["id"]
+
+    active_list = client.get("/api/wordbook", headers=headers)
+    assert active_list.status_code == 200
+    assert active_list.json()["total"] == 2
+
+    mastered_resp = client.patch(f"/api/wordbook/{word_entry_id}", headers=headers, json={"status": "mastered"})
+    assert mastered_resp.status_code == 200
+    assert mastered_resp.json()["entry"]["status"] == "mastered"
+
+    active_after_master = client.get("/api/wordbook", headers=headers)
+    assert active_after_master.status_code == 200
+    assert active_after_master.json()["total"] == 1
+
+    mastered_list = client.get("/api/wordbook", headers=headers, params={"status": "mastered"})
+    assert mastered_list.status_code == 200
+    assert mastered_list.json()["total"] == 1
+
+    delete_phrase = client.delete(f"/api/wordbook/{phrase_entry_id}", headers=headers)
+    assert delete_phrase.status_code == 200
+
+    active_after_delete = client.get("/api/wordbook", headers=headers)
+    assert active_after_delete.status_code == 200
+    assert active_after_delete.json()["total"] == 0
+
+
 def test_e2e_admin_adjust_wallet_and_logs(e2e_client):
     client, _, monkeypatch = e2e_client
     monkeypatch.setenv("ADMIN_EMAILS", "admin-e2e@example.com")
