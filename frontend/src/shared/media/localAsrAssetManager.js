@@ -42,6 +42,57 @@ function buildAssetUrl(assetBaseUrl, fileName) {
   return `${normalizeAssetBaseUrl(assetBaseUrl)}/${String(fileName || "").replace(/^\/+/, "")}`;
 }
 
+function hasDesktopLocalHelper() {
+  return typeof window !== "undefined" && typeof window.desktopRuntime?.requestLocalHelper === "function";
+}
+
+function decodeBase64Bytes(base64Text) {
+  const safeText = String(base64Text || "").trim();
+  if (!safeText) {
+    return new Uint8Array();
+  }
+  const decoded = typeof atob === "function" ? atob(safeText) : "";
+  const bytes = new Uint8Array(decoded.length);
+  for (let index = 0; index < decoded.length; index += 1) {
+    bytes[index] = decoded.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function normalizeDesktopHelperPath(assetPath) {
+  if (!hasDesktopLocalHelper()) {
+    return "";
+  }
+  try {
+    const parsed = new URL(String(assetPath || ""), "http://desktop.local");
+    const isSyntheticRelative = parsed.origin === "http://desktop.local";
+    const isLoopbackOrigin = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+    if (!isSyntheticRelative && !isLoopbackOrigin) {
+      return "";
+    }
+    return `${parsed.pathname}${parsed.search}`.trim();
+  } catch (_) {
+    return "";
+  }
+}
+
+async function requestDesktopLocalHelper(pathname, responseType = "json", options = {}) {
+  const helperPath = normalizeDesktopHelperPath(pathname);
+  if (!helperPath) {
+    throw new Error("Desktop local helper path is invalid");
+  }
+  const response = await window.desktopRuntime.requestLocalHelper({
+    path: helperPath,
+    method: String(options.method || "GET").toUpperCase(),
+    responseType,
+    body: options.body,
+  });
+  if (!response?.ok) {
+    throw new Error(`desktop helper request failed: ${response?.status || "unknown"}`);
+  }
+  return response;
+}
+
 function toErrorMessage(error) {
   if (error instanceof Error && error.message) {
     return error.message;
@@ -69,6 +120,11 @@ function normalizeManifest(statusPayload, assetBaseUrl) {
 async function fetchLocalAsrAssetStatus(assetBaseUrl) {
   const normalizedBaseUrl = normalizeAssetBaseUrl(assetBaseUrl);
   try {
+    const desktopHelperPath = normalizeDesktopHelperPath(`${normalizedBaseUrl}/status`);
+    if (desktopHelperPath) {
+      const response = await requestDesktopLocalHelper(desktopHelperPath, "json");
+      return normalizeManifest(response.data, normalizedBaseUrl);
+    }
     const response = await fetch(`${normalizedBaseUrl}/status`, {
       method: "GET",
       cache: "no-store",
@@ -81,6 +137,78 @@ async function fetchLocalAsrAssetStatus(assetBaseUrl) {
   } catch (_) {
     return normalizeManifest(FALLBACK_STATUS, normalizedBaseUrl);
   }
+}
+
+/*
+function normalizeDesktopBundledModelSummary(payload) {
+  const modelKey = normalizeModelId(payload?.model_key || FALLBACK_STATUS.model_key);
+  const available = Boolean(payload?.available);
+  const installAvailable = Boolean(payload?.install_available);
+  const sourceAvailable = Boolean(payload?.source_available);
+  const message = available
+    ? "桌面端本机 Bottle 1.0 资源已预装。"
+    : installAvailable
+      ? "桌面端本机 Bottle 1.0 资源未预装，可在安装后继续准备。"
+      : "安装包未携带可复制的 Bottle 1.0 本机资源。";
+  return {
+    modelKey,
+    available,
+    installAvailable,
+    sourceAvailable,
+    sourceBundleDir: String(payload?.source_bundle_dir || ""),
+    targetBundleDir: String(payload?.bundle_dir || ""),
+    fileCount: Number(payload?.file_count || 0),
+    message,
+  };
+}
+*/
+
+function normalizeDesktopBundledModelSummary(payload) {
+  const modelKey = normalizeModelId(payload?.model_key || FALLBACK_STATUS.model_key);
+  const available = Boolean(payload?.available);
+  const installAvailable = Boolean(payload?.install_available);
+  const sourceAvailable = Boolean(payload?.source_available);
+  const installSelected = typeof payload?.install_selected === "boolean" ? payload.install_selected : null;
+  const installChoice = String(payload?.install_choice || "").trim();
+  const preinstalled = Boolean(payload?.preinstalled);
+  const runtimeSource = String(payload?.runtime_source || "").trim() || "user_data";
+  const message = available
+    ? "Bottle 1.0 is ready on this desktop client."
+    : installAvailable
+      ? "Bottle 1.0 was not preinstalled. You can prepare it later from the desktop client."
+      : "This installer does not contain a reusable Bottle 1.0 local bundle.";
+  return {
+    modelKey,
+    available,
+    installAvailable,
+    sourceAvailable,
+    installSelected,
+    installChoice,
+    preinstalled,
+    runtimeSource,
+    sourceBundleDir: String(payload?.source_bundle_dir || ""),
+    targetBundleDir: String(payload?.bundle_dir || ""),
+    fileCount: Number(payload?.file_count || 0),
+    message,
+  };
+}
+
+export async function getDesktopBundledAsrModelSummary(modelKey) {
+  if (!hasDesktopLocalHelper()) {
+    throw new Error("Desktop local helper is unavailable");
+  }
+  const helperModelKey = encodeURIComponent(normalizeModelId(modelKey));
+  const response = await requestDesktopLocalHelper(`/api/local-asr-assets/download-models/${helperModelKey}`, "json");
+  return normalizeDesktopBundledModelSummary(response.data);
+}
+
+export async function installDesktopBundledAsrModel(modelKey) {
+  if (!hasDesktopLocalHelper()) {
+    throw new Error("Desktop local helper is unavailable");
+  }
+  const helperModelKey = encodeURIComponent(normalizeModelId(modelKey));
+  const response = await requestDesktopLocalHelper(`/api/local-asr-assets/download-models/${helperModelKey}/install`, "json", { method: "POST" });
+  return normalizeDesktopBundledModelSummary(response.data);
 }
 
 function directoryBindingSupported() {
@@ -155,6 +283,14 @@ async function clearOldBrowserCaches(modelId, keepCacheName = "") {
 }
 
 async function fetchBlobWithProgress(url, onProgress) {
+  const desktopHelperPath = normalizeDesktopHelperPath(url);
+  if (desktopHelperPath) {
+    const response = await requestDesktopLocalHelper(desktopHelperPath, "arrayBuffer");
+    const bytes = decodeBase64Bytes(response.bodyBase64);
+    const blob = new Blob([bytes], { type: String(response.contentType || "application/octet-stream") });
+    onProgress?.(blob.size, blob.size);
+    return blob;
+  }
   const response = await fetch(url, { method: "GET", cache: "no-store" });
   if (!response.ok) {
     throw new Error(`下载失败: ${response.status}`);

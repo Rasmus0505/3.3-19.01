@@ -1,6 +1,6 @@
 schema_version: 1
 task_id: TASK-007
-title: Add flowing water progress state to main history lesson cards
+title: 为主历史课程卡片增加流水进度状态
 status: done
 priority: high
 project_root: D:/3.3-19.01

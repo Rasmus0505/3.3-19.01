@@ -1,4 +1,6 @@
 const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const ENV_API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").trim();
+let desktopRuntimeInfoPromise = null;
 
 function withBase(path, baseUrl = "") {
   const safeBase = String(baseUrl || "").trim();
@@ -6,6 +8,36 @@ function withBase(path, baseUrl = "") {
   if (String(path).startsWith("http://") || String(path).startsWith("https://")) return path;
   if (!String(path).startsWith("/")) return `${safeBase}/${path}`;
   return `${safeBase}${path}`;
+}
+
+function hasDesktopRuntime() {
+  return typeof window !== "undefined" && typeof window.desktopRuntime?.getRuntimeInfo === "function";
+}
+
+async function getDesktopRuntimeInfo() {
+  if (!hasDesktopRuntime()) {
+    return null;
+  }
+  if (!desktopRuntimeInfoPromise) {
+    desktopRuntimeInfoPromise = Promise.resolve(window.desktopRuntime.getRuntimeInfo()).catch(() => null);
+  }
+  return desktopRuntimeInfoPromise;
+}
+
+async function resolveApiBaseUrl(baseUrl = "") {
+  const configuredBase = String(baseUrl || "").trim();
+  if (configuredBase) {
+    return configuredBase;
+  }
+  if (ENV_API_BASE_URL) {
+    return ENV_API_BASE_URL;
+  }
+  const runtimeInfo = await getDesktopRuntimeInfo();
+  const runtimeApiBaseUrl = String(runtimeInfo?.cloud?.apiBaseUrl || "").trim();
+  if (runtimeApiBaseUrl) {
+    return runtimeApiBaseUrl;
+  }
+  return String(runtimeInfo?.cloud?.appBaseUrl || "").trim();
 }
 
 function normalizeMethod(options = {}) {
@@ -40,10 +72,11 @@ function buildHeaders(options = {}, accessToken = "") {
 async function runFetch(path, options = {}, accessToken = "", baseUrl = "") {
   const method = normalizeMethod(options);
   const { retries, retryDelayMs = 250, onAuthError, ...fetchOptions } = options;
+  const resolvedBaseUrl = await resolveApiBaseUrl(baseUrl);
   let attempt = 0;
   while (true) {
     try {
-      const response = await fetch(withBase(path, baseUrl), {
+      const response = await fetch(withBase(path, resolvedBaseUrl), {
         ...fetchOptions,
         method,
         headers: buildHeaders(fetchOptions, accessToken),
@@ -70,10 +103,11 @@ export function createApiClient({ baseUrl = "" } = {}) {
   };
 }
 
-export const api = createApiClient();
+export const api = createApiClient({ baseUrl: ENV_API_BASE_URL });
 
-export function uploadWithProgress(path, options = {}, accessToken = "", baseUrl = "") {
+export async function uploadWithProgress(path, options = {}, accessToken = "", baseUrl = "") {
   const { body, headers: rawHeaders, method = "POST", onUploadProgress, signal } = options;
+  const resolvedBaseUrl = await resolveApiBaseUrl(baseUrl);
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -119,7 +153,7 @@ export function uploadWithProgress(path, options = {}, accessToken = "", baseUrl
       signal.addEventListener("abort", abortHandler, { once: true });
     }
 
-    xhr.open(method, withBase(path, baseUrl), true);
+    xhr.open(method, withBase(path, resolvedBaseUrl), true);
     headers.forEach((value, key) => {
       if (value != null) {
         xhr.setRequestHeader(key, value);

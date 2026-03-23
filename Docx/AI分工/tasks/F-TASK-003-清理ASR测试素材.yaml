@@ -1,5 +1,5 @@
 task_id: TASK-003
-title: Remove bottle0.1 from auxiliary asr-test lab assets
+title: 从辅助 asr-test 实验素材中移除 bottle0.1
 status: done
 priority: high
 project_root: D:/3.3-19.01

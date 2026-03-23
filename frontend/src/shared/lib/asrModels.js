@@ -19,7 +19,7 @@ export const FALLBACK_ASR_MODEL_CATALOG = {
     supports_transcribe_api: true,
     source_model_id: "Systran/faster-distil-whisper-small.en",
     deploy_path: "D:\\3.3-19.01\\asr-test\\models\\faster-distil-small.en",
-    note: "Fixed local bundle path.",
+    note: "安装版客户端可选预装本机 Bottle 1.0 资源，云端业务仍继续连接现有 Zeabur web。",
   },
   [ASR_MODEL_KEYS.qwen]: {
     model_key: ASR_MODEL_KEYS.qwen,

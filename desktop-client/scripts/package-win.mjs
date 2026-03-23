@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 const currentFile = fileURLToPath(import.meta.url);
 const scriptsDir = path.dirname(currentFile);
 const desktopRoot = path.resolve(scriptsDir, "..");
+const repoRoot = path.resolve(desktopRoot, "..");
 const distDir = path.join(desktopRoot, "dist");
 const localCacheRoot = path.join(desktopRoot, ".cache");
 const electronRuntimeCacheDir = path.join(localCacheRoot, "electron-runtime");
@@ -17,8 +18,11 @@ const nsisResourcesArchivePath = path.join(builderCacheDir, `nsis-resources-${ns
 const nsisResourcesDir = path.join(builderCacheDir, "nsis-resources");
 const sevenZipPath = path.join(desktopRoot, "node_modules", "7zip-bin", "win", "x64", "7za.exe");
 const buildScriptPath = path.join(scriptsDir, "build.mjs");
+const buildHelperRuntimeScriptPath = path.join(scriptsDir, "build-helper-runtime.mjs");
+const writeRuntimeDefaultsScriptPath = path.join(scriptsDir, "write-runtime-defaults.mjs");
 const builderCliPath = path.join(desktopRoot, "node_modules", "electron-builder", "cli.js");
 const electronInstallScriptPath = path.join(desktopRoot, "node_modules", "electron", "install.js");
+const bundledModelSourceDir = path.join(repoRoot, "asr-test", "models", "faster-distil-small.en");
 
 function resolveElectronCacheDir() {
   const configured = String(process.env.ELECTRON_CACHE || "").trim();
@@ -110,9 +114,26 @@ async function syncArtifactsToDist(packageOutputDir) {
   }
 }
 
+async function verifyInstallerArtifacts(outputDir) {
+  const entries = await fsp.readdir(outputDir);
+  const portableArtifacts = entries.filter((entry) => /portable/i.test(entry));
+  if (portableArtifacts.length > 0) {
+    throw new Error(`portable artifacts must not be produced: ${portableArtifacts.join(", ")}`);
+  }
+  const setupArtifacts = entries.filter((entry) => /setup.*\.exe$/i.test(entry) || /-setup-.*\.exe$/i.test(entry));
+  if (setupArtifacts.length === 0) {
+    throw new Error("NSIS setup executable was not produced.");
+  }
+}
+
 async function main() {
   const packageOutputDir = path.join(localCacheRoot, `package-output-${Date.now()}`);
   await runNodeScript(buildScriptPath, ["--clean-dist"]);
+  if (!fs.existsSync(bundledModelSourceDir)) {
+    throw new Error(`Bottle 1.0 bundled model directory is missing: ${bundledModelSourceDir}`);
+  }
+  await runNodeScript(writeRuntimeDefaultsScriptPath);
+  await runNodeScript(buildHelperRuntimeScriptPath);
   await preparePackageWorkspace();
   await ensureNsisResources();
   await runNodeScript(electronInstallScriptPath, [], {
@@ -121,7 +142,7 @@ async function main() {
   });
   await runNodeScript(
     builderCliPath,
-    ["--win", "portable", "--x64", `--config.directories.output=${packageOutputDir}`, `--config.electronDist=${path.join("node_modules", "electron", "dist")}`],
+    ["--win", "nsis", "--x64", `--config.directories.output=${packageOutputDir}`, `--config.electronDist=${path.join("node_modules", "electron", "dist")}`],
     {
       CSC_IDENTITY_AUTO_DISCOVERY: "false",
       ELECTRON_CACHE: resolveElectronCacheDir(),
@@ -130,7 +151,9 @@ async function main() {
       ELECTRON_BUILDER_NSIS_RESOURCES_DIR: nsisResourcesDir,
     }
   );
+  await verifyInstallerArtifacts(packageOutputDir);
   await syncArtifactsToDist(packageOutputDir);
+  await verifyInstallerArtifacts(distDir);
 }
 
 main().catch((error) => {

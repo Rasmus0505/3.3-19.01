@@ -1,5 +1,5 @@
 task_id: TASK-001
-title: Remove sensevoice upload support and backend fallbacks
+title: 移除 SenseVoice 上传支持与后端兜底逻辑
 status: done
 priority: high
 project_root: D:/3.3-19.01

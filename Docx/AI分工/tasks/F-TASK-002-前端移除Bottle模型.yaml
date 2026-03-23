@@ -1,5 +1,5 @@
 task_id: TASK-002
-title: Remove bottle0.1 from frontend surfaces and rename remaining models
+title: 从前端界面移除 bottle0.1 并重命名剩余模型
 status: done
 priority: high
 project_root: D:/3.3-19.01
