@@ -41,7 +41,11 @@ from app.schemas import (
     LessonTaskResumeResponse,
     LessonTaskResponse,
 )
-from app.services.asr_model_registry import get_supported_local_browser_asr_model_keys, get_supported_upload_asr_model_keys
+from app.services.asr_model_registry import (
+    get_supported_local_browser_asr_model_keys,
+    get_supported_local_desktop_asr_model_keys,
+    get_supported_upload_asr_model_keys,
+)
 from app.services.asr_dashscope import AsrError
 from app.services.billing_service import BillingError, get_default_asr_model
 from app.services.lesson_command_service import (
@@ -299,17 +303,19 @@ def create_local_asr_lesson_task(
     current_user: User = Depends(get_current_user),
 ):
     selected_model = str(payload.asr_model or "").strip()
-    if selected_model not in set(get_supported_local_browser_asr_model_keys()):
+    supported_local_models = set(get_supported_local_browser_asr_model_keys()) | set(get_supported_local_desktop_asr_model_keys())
+    if selected_model not in supported_local_models:
         return error_response(
             400,
             "INVALID_LOCAL_ASR_MODEL",
             "不支持的本地模型",
-            {"supported_models": list(get_supported_local_browser_asr_model_keys()), "input_model": selected_model},
+            {"supported_models": sorted(supported_local_models), "input_model": selected_model},
         )
     try:
         task_payload = create_lesson_task_from_local_asr(
             source_filename=str(payload.source_filename or "").strip(),
             source_duration_ms=int(payload.source_duration_ms or 0),
+            runtime_kind=str(payload.runtime_kind or "").strip() or "local_browser",
             asr_payload=dict(payload.asr_payload or {}),
             owner_user_id=current_user.id,
             asr_model=selected_model,

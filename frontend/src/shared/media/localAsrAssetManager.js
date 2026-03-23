@@ -88,7 +88,11 @@ async function requestDesktopLocalHelper(pathname, responseType = "json", option
     body: options.body,
   });
   if (!response?.ok) {
-    throw new Error(`desktop helper request failed: ${response?.status || "unknown"}`);
+    const detail =
+      String(response?.data?.message || "").trim() ||
+      String(response?.data?.detail || "").trim() ||
+      String(response?.status || "unknown").trim();
+    throw new Error(detail || "Desktop local helper request failed");
   }
   return response;
 }
@@ -209,6 +213,46 @@ export async function installDesktopBundledAsrModel(modelKey) {
   const helperModelKey = encodeURIComponent(normalizeModelId(modelKey));
   const response = await requestDesktopLocalHelper(`/api/local-asr-assets/download-models/${helperModelKey}/install`, "json", { method: "POST" });
   return normalizeDesktopBundledModelSummary(response.data);
+}
+
+function resolveDesktopLocalSourcePath(fileLike) {
+  const candidatePath =
+    String(fileLike?.path || "").trim() ||
+    String(fileLike?.filePath || "").trim();
+  return candidatePath;
+}
+
+function normalizeDesktopLocalTranscriptionResult(payload) {
+  return {
+    modelKey: normalizeModelId(payload?.model_key || FALLBACK_STATUS.model_key),
+    runtimeKind: String(payload?.runtime_kind || "desktop_local"),
+    sourceFilename: String(payload?.source_filename || ""),
+    sourcePath: String(payload?.source_path || ""),
+    sourceDurationMs: Math.max(0, Number(payload?.source_duration_ms || 0)),
+    previewText: String(payload?.preview_text || ""),
+    taskStatus: String(payload?.task_status || ""),
+    usageSeconds: Math.max(0, Number(payload?.usage_seconds || 0)),
+    asrPayload: payload?.asr_result_json && typeof payload.asr_result_json === "object" ? payload.asr_result_json : {},
+  };
+}
+
+export async function transcribeDesktopLocalAsr(modelKey, sourceFile) {
+  if (!hasDesktopLocalHelper()) {
+    throw new Error("Desktop local helper is unavailable");
+  }
+  const sourcePath = resolveDesktopLocalSourcePath(sourceFile);
+  if (!sourcePath) {
+    throw new Error("当前桌面端无法读取本机文件路径，请改用云端运行。");
+  }
+  const response = await requestDesktopLocalHelper("/api/desktop-asr/transcribe", "json", {
+    method: "POST",
+    body: {
+      model_key: normalizeModelId(modelKey),
+      source_path: sourcePath,
+      source_filename: String(sourceFile?.name || ""),
+    },
+  });
+  return normalizeDesktopLocalTranscriptionResult(response.data);
 }
 
 function directoryBindingSupported() {

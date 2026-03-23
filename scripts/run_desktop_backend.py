@@ -80,11 +80,17 @@ def _load_local_asr_assets_module():
     return importlib.import_module("app.api.routers.local_asr_assets")
 
 
+def _load_desktop_asr_module():
+    return importlib.import_module("app.api.routers.desktop_asr")
+
+
 def create_desktop_helper_app(runtime_paths: dict[str, str]) -> FastAPI:
     local_asr_assets = _load_local_asr_assets_module()
+    desktop_asr = _load_desktop_asr_module()
 
     app = FastAPI(title="Bottle Desktop Local Helper")
     app.include_router(local_asr_assets.router)
+    app.include_router(desktop_asr.router)
 
     @app.get("/")
     def root() -> dict[str, object]:

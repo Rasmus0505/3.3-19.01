@@ -136,6 +136,8 @@ async function main() {
     "--hidden-import",
     "app.api.routers.local_asr_assets",
     "--hidden-import",
+    "app.api.routers.desktop_asr",
+    "--hidden-import",
     "app.core.config",
     "--hidden-import",
     "uvicorn.logging",

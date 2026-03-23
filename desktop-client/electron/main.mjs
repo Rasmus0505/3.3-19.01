@@ -16,7 +16,7 @@ import { resolvePackagedDesktopRuntime, selectDesktopModelDir } from "./helper-r
 const currentFile = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFile);
 const iconPath = path.join(path.resolve(currentDir, ".."), "build", "icon.ico");
-const LOCAL_HELPER_ALLOWED_PREFIXES = ["/api/local-asr-assets", "/health", "/health/ready"];
+const LOCAL_HELPER_ALLOWED_PREFIXES = ["/api/local-asr-assets", "/api/desktop-asr", "/health", "/health/ready"];
 
 let mainWindow = null;
 let backendProcess = null;

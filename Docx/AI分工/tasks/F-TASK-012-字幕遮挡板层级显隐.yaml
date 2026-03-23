@@ -1,0 +1,42 @@
+schema_version: 1
+task_id: TASK-012
+title: 字幕遮挡板层级显隐
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: 让影院全屏中的字幕遮挡板允许落到答题区上缘附近的遮挡带，同时始终保持在答题区层级之下、视频层之上，并在鼠标离开 1.2 秒后自动收起编辑控件与文案，只保留毛玻璃遮挡效果
+scope:
+  - 沉浸学习影院全屏中的字幕遮挡板可活动区域与视频、答题区层级关系
+  - 字幕遮挡板悬停态、闲置态的文案与四角缩放控件显隐
+  - 遮挡板拖动缩放、毛玻璃样式与影院全屏交互回归验证
+allowed_paths:
+  - frontend/src/features/immersive/ImmersiveLessonPage.jsx
+  - frontend/src/features/immersive/immersive.css
+acceptance:
+  - 遮挡板不再因为答题区边界被硬性裁到更高位置，用户可以把它放到答题区上缘附近的遮挡带；但最终层级必须始终保持为视频在最下、遮挡板在中间、答题区在最上，答题区现有按钮和输入交互不得被遮挡板抢占
+  - 鼠标位于遮挡板上方时显示“字幕遮挡板”文案与四个角拉伸控件；鼠标离开遮挡板 1.2 秒后自动隐藏这些编辑辅助元素，仅保留毛玻璃遮挡效果；鼠标重新进入后立即恢复显示
+  - 编辑辅助元素隐藏后，遮挡板原有整块拖动、四角缩放和再次进入后继续编辑的能力仍然可用，不得因为闲置态收起而丢失操作入口
+  - 遮挡板逻辑仍只在影院全屏视频里生效，现有播放、上一句、下一句、重播、暂停继续、生词本和答题流程不得因本轮层级与显隐调整回归失效
+check_commands:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with: []
+notes_for_after: 当前实现已经有单块 translationMask、四角缩放、位置尺寸持久化和毛玻璃样式；本轮不要重做这些基础能力，而是修正“可放置区域”和“层级遮挡”被绑死的问题。现有 `updateTranslationMaskMetrics` 通过 `typingPanelRef` 把可活动高度直接裁到答题区上沿之前，这与用户真实目标相反；需要让遮挡板几何仍可落到答题区上缘附近，但改用层级顺序保证答题区始终压在遮挡板之上、遮挡板再压在视频之上。悬停显隐只做临时 UI 状态，不要写入学习设置；鼠标离开遮挡板 1.2 秒后隐藏板内文案和四角拉伸控件，重新进入立即恢复。隐藏态只收起编辑 chrome，毛玻璃遮挡本体必须继续存在，且再次悬停后仍能继续拖动与缩放。本轮仍只影响影院全屏，不扩展到普通沉浸页。
+result_summary: 已解除字幕遮挡板对答题区上缘的活动范围硬裁剪，改为通过层级让答题区始终压在遮挡板之上，并补上闲置 1.2 秒后仅保留毛玻璃效果、重新悬停立即恢复编辑控件的交互。
+changed_files:
+  - frontend/src/features/immersive/ImmersiveLessonPage.jsx
+  - frontend/src/features/immersive/immersive.css
+tests_run:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+blocked_reason: ""
+completed_at: 2026-03-23T12:53:11.9309882+08:00
+fix_request: 用户要求继续返工 TASK-012：遮挡板可以放到答题区上缘附近那段区域，但层级必须保持在答题区下方、视频上方；鼠标离开遮挡板 1.2 秒后隐藏四角拉伸控件和“字幕遮挡板”文案，只保留毛玻璃效果，鼠标重新回到遮挡板上方后再恢复这些编辑辅助元素。
+fix_reason: 当前交付把遮挡板可活动区域继续与答题区边界硬绑定，导致用户无法把遮挡板放到真实想遮住字幕的位置；同时文案和四角控件常驻，视觉干扰仍然过强。用户真正要的是一块能靠近答题区上缘但不挡住答题区交互、闲置时只保留模糊效果、再次悬停才显出编辑控件的字幕遮挡板。
+fix_round: 3
+fix_result_summary: 已让遮挡板可拖入答题区上缘附近但保持在答题区下层，并实现鼠标离开 1.2 秒后隐藏文案与四角控件、重新悬停立即恢复的闲置显隐逻辑。
+fix_updated_at: 2026-03-23T12:53:11.9309882+08:00

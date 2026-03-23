@@ -19,6 +19,7 @@ import {
   releaseLocalAsrWorkerAssetPayload,
   removeLocalAsrModel,
   switchLocalAsrStorageMode,
+  transcribeDesktopLocalAsr,
   verifyLocalAsrModel,
 } from "../../shared/media/localAsrAssetManager";
 import { extractMediaCoverPreview, getLessonMediaPreview, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
@@ -51,8 +52,19 @@ const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止生成，可重新开始。"
 const LOCAL_BROWSER_ASR_ENABLED = false;
 const DEFAULT_ASR_MODEL_CATALOG_MAP = buildAsrModelCatalogMap();
 const DEFAULT_FAST_UPLOAD_MODEL = QWEN_MODEL;
+const FAST_RUNTIME_TRACK_CLOUD = "cloud";
+const FAST_RUNTIME_TRACK_DESKTOP_LOCAL = "desktop_local";
+const DESKTOP_LOCAL_TRANSCRIBING_PHASE = "desktop_local_transcribing";
 function hasDesktopRuntimeBridge() {
   return typeof window !== "undefined" && typeof window.desktopRuntime?.requestLocalHelper === "function";
+}
+
+function getDefaultFasterWhisperRuntimeTrack() {
+  return hasDesktopRuntimeBridge() ? FAST_RUNTIME_TRACK_DESKTOP_LOCAL : FAST_RUNTIME_TRACK_CLOUD;
+}
+
+function getFastRuntimeTrackLabel(track) {
+  return track === FAST_RUNTIME_TRACK_DESKTOP_LOCAL ? "本机运行" : "云端运行";
 }
 
 const LOCAL_MODEL_OPTIONS = [
@@ -548,7 +560,7 @@ function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
 
 function getVisualProgress(phase, uploadPercent, taskSnapshot) {
   if (phase === "success") return 100;
-  if (phase === "local_transcribing") {
+  if (phase === "local_transcribing" || phase === DESKTOP_LOCAL_TRANSCRIBING_PHASE) {
     return taskSnapshot ? clampPercent(taskSnapshot?.overall_percent) : 28;
   }
   if (phase === "processing" || taskSnapshot) return Math.round(42 + clampPercent(taskSnapshot?.overall_percent) * 0.58);
@@ -704,6 +716,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [bindingCompleted, setBindingCompleted] = useState(false);
   const [selectedUploadModel, setSelectedUploadModel] = useState(() => getDefaultUploadModelKey(configuredDefaultAsrModel));
+  const [fasterWhisperRuntimeTrack, setFasterWhisperRuntimeTrack] = useState(() => getDefaultFasterWhisperRuntimeTrack());
   const [mode, setMode] = useState("fast");
   const [asrModelCatalogMap, setAsrModelCatalogMap] = useState(DEFAULT_ASR_MODEL_CATALOG_MAP);
   const [localWorkerEpoch, setLocalWorkerEpoch] = useState(0);
@@ -749,8 +762,15 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     return getDefaultFastUploadModelKey(configuredDefaultAsrModel);
   }, [configuredDefaultAsrModel, selectedUploadModel]);
   const selectedAsrModel = mode === "balanced" ? selectedBalancedModel : selectedFastModel;
+  const selectedFastRuntimeTrack =
+    selectedFastModel === FASTER_WHISPER_MODEL && hasDesktopRuntimeBridge() ? fasterWhisperRuntimeTrack : FAST_RUNTIME_TRACK_CLOUD;
+  const fasterWhisperDesktopLocalSelected =
+    mode === "fast" &&
+    selectedFastModel === FASTER_WHISPER_MODEL &&
+    selectedFastRuntimeTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL &&
+    hasDesktopRuntimeBridge();
   const pricingModelKey = mode === "balanced" ? DEFAULT_FAST_UPLOAD_MODEL : selectedFastModel;
-  const selectedRate = getRateByModel(billingRates, pricingModelKey);
+  const selectedRate = fasterWhisperDesktopLocalSelected ? null : getRateByModel(billingRates, pricingModelKey);
   const selectedRatePricePerMinuteYuan = selectedRate ? getRatePricePerMinuteYuan(selectedRate) : 0;
   const estimatedAsrChargeCents = selectedRate ? calculateChargeCentsBySeconds(durationSec || 0, selectedRatePricePerMinuteYuan) : 0;
   const mtRate = getRateByModel(billingRates, MT_PRICE_MODEL);
@@ -758,7 +778,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const mtRatePricePer1kTokensYuan = getRatePricePer1kTokensYuan(mtRate);
   const estimatedMtTokens = estimateMtTokensByDuration(durationSec || 0);
   const estimatedMtChargeCents = calculateChargeCentsByTokens(estimatedMtTokens, mtRateCentsPer1kTokens);
-  const estimatedTotalChargeCents = estimatedAsrChargeCents + estimatedMtChargeCents;
+  const estimatedTotalChargeCents = (fasterWhisperDesktopLocalSelected ? 0 : estimatedAsrChargeCents) + estimatedMtChargeCents;
   const localWorkerReady = Boolean(localWorkerReadyMap.sensevoice);
   const balancedPerformanceWarning = useMemo(
     () => (mode === "balanced" ? buildLocalAsrLongAudioWarning(durationSec, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS) : ""),
@@ -766,9 +786,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   );
   const selectedServerModelState = serverModelStateMap[selectedUploadModel] || {};
   const selectedServerModelPreparing = isAsrModelPreparing(selectedServerModelState);
-  const selectedFastModelNeedsPreparation = mode === "fast" && SERVER_PREPARABLE_MODELS.has(selectedUploadModel);
+  const selectedFastModelNeedsPreparation =
+    mode === "fast" && SERVER_PREPARABLE_MODELS.has(selectedUploadModel) && !fasterWhisperDesktopLocalSelected;
   const localTranscribing = phase === "local_transcribing";
-  const displayTaskSnapshot = localTranscribing ? localProgressSnapshot : taskSnapshot;
+  const desktopLocalTranscribing = phase === DESKTOP_LOCAL_TRANSCRIBING_PHASE;
+  const useLocalProgressSnapshot = localTranscribing || desktopLocalTranscribing;
+  const displayTaskSnapshot = useLocalProgressSnapshot ? localProgressSnapshot : taskSnapshot;
   const hasLocalFile = Boolean(file);
   const displayTaskStatus = String(displayTaskSnapshot?.status || "").toLowerCase();
   const taskCompletionKind = String(taskSnapshot?.completion_kind || displayTaskSnapshot?.completion_kind || "full").toLowerCase();
@@ -818,7 +841,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const canRetryWithoutUpload = Boolean(taskId) && (Boolean(taskSnapshot?.resume_available) || phase === "error");
   const showMediaPreview = Boolean(file || coverDataUrl);
   const sourceDisplayName = String(file?.name || taskSnapshot?.lesson?.source_filename || "");
-  const uploadActionBusy = loading && ["uploading", "processing", "local_transcribing"].includes(String(phase || ""));
+  const uploadActionBusy = loading && ["uploading", "processing", "local_transcribing", DESKTOP_LOCAL_TRANSCRIBING_PHASE].includes(String(phase || ""));
   const localModeBusy = Boolean(localBusyModelKey || serverBusyModelKey) || localTranscribing;
   const primaryActionDisabled =
     phase === "success" ||
@@ -1398,9 +1421,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     const nextTaskId = overrides.taskId ?? taskId;
     const nextPhase = overrides.phase ?? phase;
     const nextMode = overrides.mode ?? mode;
-    const restorablePhase = nextPhase === "local_transcribing" ? (nextFile ? "ready" : "idle") : nextPhase;
+    const restorablePhase =
+      nextPhase === "local_transcribing" || nextPhase === DESKTOP_LOCAL_TRANSCRIBING_PHASE ? (nextFile ? "ready" : "idle") : nextPhase;
     const restorableStatus =
-      nextPhase === "local_transcribing"
+      nextPhase === "local_transcribing" || nextPhase === DESKTOP_LOCAL_TRANSCRIBING_PHASE
         ? getInterruptedLocalAsrStatus(Boolean(nextFile))
         : String(overrides.status ?? status ?? "");
     if (!ownerUserId) return;
@@ -2218,6 +2242,18 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
   }
 
+  function handleSelectFasterWhisperRuntimeTrack(nextTrack) {
+    const normalizedTrack = nextTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL ? FAST_RUNTIME_TRACK_DESKTOP_LOCAL : FAST_RUNTIME_TRACK_CLOUD;
+    setFasterWhisperRuntimeTrack(normalizedTrack);
+    if (normalizedTrack === FAST_RUNTIME_TRACK_CLOUD) {
+      void fetchServerModelStatus(FASTER_WHISPER_MODEL, { silent: true });
+      return;
+    }
+    if (hasDesktopRuntimeBridge()) {
+      void fetchDesktopBundleStatus(FASTER_WHISPER_MODEL, { silent: true });
+    }
+  }
+
   async function handleServerModelPrepare(modelKey) {
     setServerBusyModelKey(modelKey);
     setServerBusyText("模型预热中");
@@ -2363,6 +2399,136 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     } finally {
       setLocalBusyModelKey("");
       setLocalBusyText("");
+    }
+  }
+
+  async function submitDesktopLocalFast(pollToken, runToken) {
+    if (!hasDesktopRuntimeBridge()) {
+      await handleTaskFailureState({
+        message: "当前环境不支持 Bottle 1.0 本机运行，请改用云端运行。",
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+      });
+      return;
+    }
+
+    const currentBundleState = desktopBundleStateMap[FASTER_WHISPER_MODEL] || {};
+    let bundleSummary = currentBundleState;
+    if (!bundleSummary?.available) {
+      bundleSummary = (await fetchDesktopBundleStatus(FASTER_WHISPER_MODEL, { silent: true })) || currentBundleState;
+    }
+    if (!bundleSummary?.available) {
+      const message = bundleSummary?.installAvailable
+        ? "Bottle 1.0 本机资源未就绪，请先点“准备本机资源”。"
+        : "当前安装包未提供可用的 Bottle 1.0 本机资源，请改用云端运行。";
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+        persistState: false,
+      });
+      return;
+    }
+
+    const startStatus = "正在通过本机 Bottle 1.0 识别字幕";
+    setPhase(DESKTOP_LOCAL_TRANSCRIBING_PHASE);
+    setStatus(startStatus);
+    setTaskId("");
+    setTaskSnapshot(null);
+    setUploadPercent(0);
+    setLocalProgressSnapshot(null);
+    startLocalAsrVisualProgress(runToken, startStatus, durationSec || 0);
+    await persistSession({ taskId: "", phase: DESKTOP_LOCAL_TRANSCRIBING_PHASE, taskSnapshot: null, uploadPercent: 0, status: startStatus, bindingCompleted: false });
+
+    try {
+      const localResult = await transcribeDesktopLocalAsr(FASTER_WHISPER_MODEL, file);
+      if (runToken !== localRunTokenRef.current) return;
+      clearLocalStageProgressTimer();
+      const localSentences = localResult?.asrPayload?.transcripts?.[0]?.sentences;
+      if (!Array.isArray(localSentences) || localSentences.length === 0) {
+        throw new Error("当前本机 Bottle 1.0 未识别出可用字幕，请改用云端运行或更换素材。");
+      }
+      const sentenceCount = localSentences.length;
+      setLocalProgress("asr_transcribe", "completed", 1, `本机识别完成，共 ${sentenceCount} 段字幕`, {
+        asr_done: sentenceCount,
+        asr_estimated: sentenceCount,
+        translate_done: 0,
+        translate_total: 0,
+        segment_done: sentenceCount,
+        segment_total: sentenceCount,
+      });
+      setStatus("正在提交本机字幕并创建课程任务");
+
+      const resp = await api(
+        "/api/lessons/tasks/local-asr",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            asr_model: FASTER_WHISPER_MODEL,
+            source_filename: String(file?.name || localResult?.sourceFilename || "desktop-local-source"),
+            source_duration_ms: Math.max(1, Number(localResult?.sourceDurationMs || 0) || Math.round(Number(durationSec || 0) * 1000) || 1),
+            runtime_kind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
+            asr_payload: localResult?.asrPayload || {},
+          }),
+        },
+        accessToken,
+      );
+      if (runToken !== localRunTokenRef.current) return;
+      const data = await parseResponse(resp);
+      if (!resp.ok) {
+        setLocalProgressSnapshot(null);
+        await handleTaskFailureState({
+          message: toErrorText(data, "创建本机字幕任务失败"),
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: 0,
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+          refreshWallet: true,
+        });
+        return;
+      }
+      const nextTaskId = String(data.task_id || "");
+      if (!nextTaskId) {
+        setLocalProgressSnapshot(null);
+        await handleTaskFailureState({
+          message: "本机字幕任务创建成功但缺少 task_id",
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: 0,
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+        });
+        return;
+      }
+      setTaskId(nextTaskId);
+      setTaskSnapshot(null);
+      setLocalProgressSnapshot(null);
+      setPhase("processing");
+      setLoading(true);
+      setStatus("");
+      await persistSession({ taskId: nextTaskId, phase: "processing", taskSnapshot: null, uploadPercent: 100, status: "", bindingCompleted: false });
+      void pollTask(nextTaskId, false, pollToken);
+    } catch (error) {
+      clearLocalStageProgressTimer();
+      setLocalProgressSnapshot(null);
+      if (error?.name === "AbortError") return;
+      const message = error instanceof Error && error.message ? error.message : `网络错误: ${String(error)}`;
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+      });
     }
   }
 
@@ -2642,6 +2808,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     localRunAbortRef.current = null;
     clearLocalStageProgressTimer();
     localRunTokenRef.current += 1;
+    const runToken = localRunTokenRef.current;
     const pollToken = startPollingSession();
     uploadAbortRef.current?.abort();
     setLoading(true);
@@ -2653,6 +2820,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setLocalProgressSnapshot(null);
     if (mode === "balanced") {
       await submitBalanced(pollToken);
+      return;
+    }
+    if (fasterWhisperDesktopLocalSelected) {
+      await submitDesktopLocalFast(pollToken, runToken);
       return;
     }
     setPhase("uploading");
@@ -2915,7 +3086,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 <TooltipContent className="max-w-xs">ASR 按素材秒数折算分钟估算；MT 按 qwen-mt-flash 的 1k Tokens 费率与常见字幕量近似估算，最终以实际翻译 Tokens 结算。</TooltipContent>
               </Tooltip>
               ：
-              {selectedRate
+              {fasterWhisperDesktopLocalSelected
+                ? "Bottle 1.0 当前走本机运行，暂不展示 ASR 价格估算。"
+                : selectedRate
                 ? durationSec != null
                   ? `${formatMoneyCents(estimatedTotalChargeCents)}（ASR ${formatMoneyCents(estimatedAsrChargeCents)} + MT 约 ${formatMoneyCents(estimatedMtChargeCents)}）`
                   : "选择文件后显示"
@@ -2952,22 +3125,38 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               const desktopBundleAvailable = Boolean(desktopBundleState.available);
               const desktopBundleInstallAvailable = Boolean(desktopBundleState.installAvailable);
               const desktopBundleBusy = desktopBundleBusyModelKey === item.key;
+              const fasterWhisperCardTrack =
+                isFasterWhisper && hasDesktopRuntimeBridge() ? fasterWhisperRuntimeTrack : FAST_RUNTIME_TRACK_CLOUD;
+              const fasterWhisperDesktopTrack = fasterWhisperCardTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL;
               const sensevoiceCardStatus = String(sensevoiceModelState.status || "").trim().toLowerCase();
               const fasterCardStatus = String(fasterModelState.status || "").trim().toLowerCase();
               const cardStatusLabel = isSenseVoice
                 ? getAsrModelStatusLabel(sensevoiceModelState, { readyLabel: "已就绪", missingLabel: "未准备", loadingLabel: "准备中", errorLabel: "异常", unsupportedLabel: "不可用" })
                 : isFasterWhisper
-                  ? getAsrModelStatusLabel(fasterModelState, { readyLabel: "已就绪", missingLabel: "未准备", loadingLabel: "准备中", errorLabel: "异常", unsupportedLabel: "不可用" })
+                  ? fasterWhisperDesktopTrack
+                    ? desktopBundleBusy
+                      ? "本机准备中"
+                      : desktopBundleAvailable
+                        ? "本机可用"
+                        : "本机未就绪"
+                    : getAsrModelStatusLabel(fasterModelState, { readyLabel: "云端已就绪", missingLabel: "云端未准备", loadingLabel: "云端准备中", errorLabel: "云端异常", unsupportedLabel: "不可用" })
                   : getAsrModelStatusLabel({ status: "ready", downloadRequired: false }, { readyLabel: "可用" });
-              const cardPriceLabel = getUploadModelPriceLabel(item, billingRates);
-              const highlightStatus = isSenseVoice ? sensevoiceModelReady : isFasterWhisper ? fasterModelReady : true;
+              const cardPriceLabel =
+                isFasterWhisper && fasterWhisperDesktopTrack ? "本机运行" : getUploadModelPriceLabel(item, billingRates);
+              const highlightStatus = isSenseVoice ? sensevoiceModelReady : isFasterWhisper ? (fasterWhisperDesktopTrack ? desktopBundleAvailable : fasterModelReady) : true;
               const modelCardHasError = isSenseVoice
                 ? Boolean(sensevoiceModelState.lastError) || ["error", "unsupported"].includes(sensevoiceCardStatus)
-                : Boolean(fasterModelState.lastError) || String(fasterModelState.status || "").trim().toLowerCase() === "error";
+                : isFasterWhisper
+                  ? fasterWhisperDesktopTrack
+                    ? Boolean(desktopBundleState.lastError)
+                    : Boolean(fasterModelState.lastError) || String(fasterModelState.status || "").trim().toLowerCase() === "error"
+                  : false;
               const modelCardTone = getUploadModelTone({
                 selected,
                 ready: highlightStatus,
-                busy: (isSenseVoice && (sensevoiceModelBusy || sensevoiceModelPreparing)) || (isFasterWhisper && (fasterModelBusy || fasterModelPreparing)),
+                busy:
+                  (isSenseVoice && (sensevoiceModelBusy || sensevoiceModelPreparing)) ||
+                  (isFasterWhisper && (fasterWhisperDesktopTrack ? desktopBundleBusy : fasterModelBusy || fasterModelPreparing)),
                 error: modelCardHasError,
               });
               const modelCardToneStyles = getUploadToneStyles(modelCardTone);
@@ -2975,14 +3164,20 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               const showCardProgress = isSenseVoice
                 ? sensevoiceModelPreparing || sensevoiceModelBusy
                 : isFasterWhisper
-                  ? fasterModelPreparing || fasterModelBusy
+                  ? fasterWhisperDesktopTrack
+                    ? desktopBundleBusy
+                    : fasterModelPreparing || fasterModelBusy
                   : false;
               const cardProgressValue = null;
-              const cardProgressText = String(serverBusyText || (isSenseVoice ? sensevoiceModelState.message : fasterModelState.message) || "准备中");
+              const cardProgressText = String(
+                isFasterWhisper && fasterWhisperDesktopTrack
+                  ? desktopBundleState.message || "正在准备本机资源"
+                  : serverBusyText || (isSenseVoice ? sensevoiceModelState.message : fasterModelState.message) || "准备中",
+              );
               const cardErrorText = isSenseVoice
                 ? sanitizeUserFacingText(String(sensevoiceModelState.lastError || ""))
                 : isFasterWhisper
-                  ? sanitizeUserFacingText(String(fasterModelState.lastError || ""))
+                  ? sanitizeUserFacingText(String(fasterWhisperDesktopTrack ? desktopBundleState.lastError || "" : fasterModelState.lastError || ""))
                   : "";
               const desktopBundleStatusText =
                 isFasterWhisper && hasDesktopRuntimeBridge()
@@ -3008,14 +3203,23 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                           : String(uploadCardMeta.note || uploadCardMeta.subtitle || "")),
                   )
                 : isFasterWhisper
-                  ? sanitizeUserFacingText(
-                      fasterModelState.message ||
-                        (fasterModelReady
-                          ? "服务端模型已就绪，可直接生成。"
-                          : fasterCardStatus === "error"
-                            ? "服务端模型暂未就绪，请重新准备。"
-                            : String(uploadCardMeta.note || uploadCardMeta.subtitle || "")),
-                    )
+                  ? fasterWhisperDesktopTrack
+                    ? sanitizeUserFacingText(
+                        desktopBundleState.message ||
+                          (desktopBundleAvailable
+                            ? "Bottle 1.0 将在本机 helper 中运行，浏览器不再承载模型推理。"
+                            : desktopBundleInstallAvailable
+                              ? "请先准备本机资源，随后即可用本机 Bottle 1.0 识别字幕。"
+                              : "当前安装包未提供可用的 Bottle 1.0 本机资源，请改用云端运行。"),
+                      )
+                    : sanitizeUserFacingText(
+                        fasterModelState.message ||
+                          (fasterModelReady
+                            ? "服务端模型已就绪，可直接生成。"
+                            : fasterCardStatus === "error"
+                              ? "服务端模型暂未就绪，请重新准备。"
+                              : String(uploadCardMeta.note || uploadCardMeta.subtitle || "")),
+                      )
                   : sanitizeUserFacingText(String(uploadCardMeta.note || uploadCardMeta.subtitle || ""));
               const actionMeta = getUploadCardActionMeta({
                 item,
@@ -3032,8 +3236,18 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 fasterModelPreparing,
                 fasterModelBusy,
               });
+              const fasterWhisperActionMeta = fasterWhisperDesktopTrack
+                ? {
+                    label: desktopBundleBusy ? "准备中" : desktopBundleAvailable ? "本机已就绪" : "准备本机资源",
+                    disabled: uploadActionBusy || desktopBundleBusy || (!desktopBundleInstallAvailable && !desktopBundleAvailable),
+                  }
+                : actionMeta;
+              const effectiveActionMeta = isFasterWhisper ? fasterWhisperActionMeta : actionMeta;
               const showReadyIcon = !isQwen && highlightStatus;
-              const showLoadingIcon = !isQwen && ((isSenseVoice && (sensevoiceModelBusy || sensevoiceModelPreparing)) || (isFasterWhisper && (fasterModelBusy || fasterModelPreparing)));
+              const showLoadingIcon =
+                !isQwen &&
+                ((isSenseVoice && (sensevoiceModelBusy || sensevoiceModelPreparing)) ||
+                  (isFasterWhisper && (fasterWhisperDesktopTrack ? desktopBundleBusy : fasterModelBusy || fasterModelPreparing)));
 
               return (
                 <div
@@ -3075,12 +3289,44 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                     </Badge>
                   </div>
 
-                    <div className="rounded-xl border bg-background/70 p-3">
-                      <p className="text-xs leading-5 text-muted-foreground">{cardStatusText || "选择后即可开始。"}</p>
-                      {desktopBundleStatusText ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{desktopBundleStatusText}</p> : null}
-                      {cardErrorText ? <p className="mt-2 text-xs leading-5 text-destructive break-all">{cardErrorText}</p> : null}
-                      {desktopBundleErrorText ? <p className="mt-2 text-xs leading-5 text-destructive break-all">{desktopBundleErrorText}</p> : null}
+                  {isFasterWhisper && hasDesktopRuntimeBridge() ? (
+                    <div className="flex flex-wrap gap-2 rounded-xl border bg-background/70 p-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={fasterWhisperDesktopTrack ? "default" : "outline"}
+                        className={fasterWhisperDesktopTrack ? getUploadToneStyles("selected").button : getUploadToneStyles("selected").buttonSubtle}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleSelectFasterWhisperRuntimeTrack(FAST_RUNTIME_TRACK_DESKTOP_LOCAL);
+                        }}
+                        disabled={uploadActionBusy}
+                      >
+                        本机运行
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={!fasterWhisperDesktopTrack ? "default" : "outline"}
+                        className={!fasterWhisperDesktopTrack ? getUploadToneStyles("selected").button : getUploadToneStyles("selected").buttonSubtle}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleSelectFasterWhisperRuntimeTrack(FAST_RUNTIME_TRACK_CLOUD);
+                        }}
+                        disabled={uploadActionBusy}
+                      >
+                        云端运行
+                      </Button>
+                      <p className="w-full px-1 text-xs text-muted-foreground">当前轨道：{getFastRuntimeTrackLabel(fasterWhisperCardTrack)}</p>
                     </div>
+                  ) : null}
+
+                  <div className="rounded-xl border bg-background/70 p-3">
+                    <p className="text-xs leading-5 text-muted-foreground">{cardStatusText || "选择后即可开始。"}</p>
+                    {desktopBundleStatusText ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{desktopBundleStatusText}</p> : null}
+                    {cardErrorText ? <p className="mt-2 text-xs leading-5 text-destructive break-all">{cardErrorText}</p> : null}
+                    {desktopBundleErrorText && fasterWhisperDesktopTrack ? <p className="mt-2 text-xs leading-5 text-destructive break-all">{desktopBundleErrorText}</p> : null}
+                  </div>
 
                   {showCardProgress ? (
                     <div className="space-y-1">
@@ -3109,15 +3355,19 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                           return;
                         }
                         if (isFasterWhisper) {
+                          if (fasterWhisperDesktopTrack) {
+                            void handleDesktopBundlePrepare(item.key);
+                            return;
+                          }
                           void handleServerModelPrepare(item.key);
                         }
                       }}
-                      disabled={actionMeta.disabled}
+                      disabled={effectiveActionMeta.disabled}
                     >
                       {showLoadingIcon ? <Loader2 className="size-4 animate-spin" /> : null}
-                      {actionMeta.label}
+                      {effectiveActionMeta.label}
                     </Button>
-                    {isFasterWhisper && hasDesktopRuntimeBridge() ? (
+                    {isFasterWhisper && hasDesktopRuntimeBridge() && !fasterWhisperDesktopTrack ? (
                       <Button
                         type="button"
                         variant={desktopBundleAvailable ? "outline" : "secondary"}
