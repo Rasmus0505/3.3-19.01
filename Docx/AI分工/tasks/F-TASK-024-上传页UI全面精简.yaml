@@ -1,0 +1,71 @@
+schema_version: 1
+task_id: TASK-024
+title: 上传页UI全面精简
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+task_context: |
+  当前上传页存在多处冗余信息：价格估算包含详细 MT 成本构成说明；模型卡片有 ASR 说明文字、状态说明、"重新准备"按钮、"当前轨道"文字；暂停/终止按钮文案冗长；进度条分成两行显示；"链接生成视频"按钮文案待优化。本次精简为只展示关键信息，参考 SOP 讲解时间 00:00-04:50。
+goal: |
+  全面精简上传页 UI：
+  1. 删除价格估算 Alert 中的"MT 估算：... Tokens/分钟折算，最终以实际翻译 Tokens 为准"说明文字
+  2. 模型卡片只展示模型名称（"Bottle 1.0" / "Bottle 2.0"）和价格，移除 subtitle 说明文字和云端状态说明文案
+  3. 删除"重新准备"按钮（对应 getUploadCardActionMeta 中的 label）
+  4. 模型状态统一为绿色"可用"或红色"不可用"简洁徽章，移除冗长状态标签（如"服务端模型已就绪，可直接生成"、"服务器跑"等）
+  5. 移除"当前轨道：服务器跑"等说明文字
+  6. 把"链接生成视频"改名为"提取视频"，样式改为蓝色（variant="default"）
+  7. 所有操作按钮改为紧凑尺寸（移除全宽 w-full 和 h-11，改为 h-9）
+  8. 进度条阶段从 sm:grid-cols-2 xl:grid-cols-4 改为 grid-cols-5 单行横向排列
+scope:
+  - 上传页价格估算卡片
+  - 上传页模型选择卡片区
+  - 上传页控制按钮区
+  - 上传页进度条布局
+allowed_paths:
+  - frontend/src/features/upload/UploadPanel.jsx
+acceptance:
+  - 价格估算 Alert 中不再显示 MT 成本构成详细说明文字（"MT 估算：... Tokens/分钟折算，最终以实际翻译 Tokens 为准"）
+  - 模型卡片只显示"模型名称"+"价格"（如"Bottle 1.0 ¥0.05/分钟"），不再显示 ASR 说明、subtitle 或云端状态说明文案
+  - "重新准备"按钮不再出现
+  - 模型状态统一为简洁"可用"/"不可用"徽章，不再显示"服务端模型已就绪"、"服务器跑"等冗长文字
+  - 不再显示"当前轨道：..."文字
+  - "链接生成视频"已改名为"提取视频"，颜色为蓝色
+  - 操作按钮为紧凑小按钮，不再全宽占满整行
+  - 进度条 5 个阶段（抽音频、识别字幕、生成课程结构、翻译、保存完成）单行横向紧凑排列（grid-cols-5）
+  - npm --prefix frontend run build 通过
+check_commands:
+  - npm --prefix frontend run build
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  代码参考位置（以行号为准，请在修改前先通读这些区域的完整代码）：
+  - 价格估算 Alert：lines 3459-3483，包含 <Alert> 组件和 MT 估算说明段落（line 3479-3481）
+  - 模型卡片渲染：lines 3490-3900，UPLOAD_MODEL_OPTIONS.map 中的卡片 UI
+  - 模型标题+价格：line 3681（<p className="text-sm font-semibold text-foreground">{uploadCardMeta.title}</p>）
+  - 模型价格标签：line 3682（cardPriceLabel 包含运行时轨道名+价格）
+  - 模型 subtitle：line 3683（<p className="text-xs text-muted-foreground">{uploadCardMeta.subtitle}</p>）
+  - 模型状态徽章：lines 3685-3692（Badge 组件，cardStatusLabel）
+  - 运行时轨道按钮区：lines 3696-3742，包含"本地电脑跑/本地网站跑/服务器跑"三个按钮和"当前轨道"说明文字
+  - 模型状态说明文字：lines 3744-3749（cardStatusText，包含"服务端模型已就绪，可直接生成"等）
+  - "重新准备"按钮逻辑：line 325（getUploadCardActionMeta 中的 label: "重新准备"）
+  - "重新开始"按钮：lines 3882-3886（<Button><RefreshCcw />重新开始</Button>）
+  - 停止按钮区：lines 3934-3968（serviceTaskStopActionsVisible 条件分支）
+  - "链接生成视频"按钮：line 3928（variant="secondary"），改为 variant="default"
+  - "选择文件"按钮：line 3914（className="h-11"），改为 h-9
+  - 进度条布局：line 4020（className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4"），改为 grid-cols-5
+  精简原则：模型卡只保留标题+价格，其他文字全删；状态用简洁徽章；按钮紧凑化；进度单行排列。
+result_summary: 上传页已按要求精简模型卡、按钮和进度区，移除冗余文案并完成构建验证。
+changed_files:
+  - frontend/src/features/upload/UploadPanel.jsx
+tests_run:
+  - npm --prefix D:/3.3-19.01/frontend run build
+blocked_reason: ""
+completed_at: 2026-03-23T23:58:30+08:00
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

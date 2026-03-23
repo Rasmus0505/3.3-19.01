@@ -20,6 +20,7 @@ from app.core.config import (
 )
 from app.core.timezone import now_shanghai_naive
 from app.models import FasterWhisperSetting
+from app.services.lesson_task_manager import is_task_terminate_requested
 
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,10 @@ class FasterWhisperModelNotReadyError(RuntimeError):
     def __init__(self, status_payload: dict[str, Any]):
         self.status_payload = dict(status_payload or {})
         super().__init__(str(self.status_payload.get("message") or "Faster Whisper model is not ready"))
+
+
+class FasterWhisperCancellationRequested(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -544,13 +549,17 @@ def ensure_faster_whisper_model_downloaded(*, force_refresh: bool = False) -> Pa
             _set_download_runtime(in_progress=False)
 
 
-def _emit_faster_whisper_progress(progress_callback, payload: dict[str, Any]) -> None:
+def _raise_if_cancel_requested(*, audio_path: str | None = None) -> None:
+    if is_task_terminate_requested(path=audio_path):
+        raise FasterWhisperCancellationRequested("terminate requested")
+
+
+def _emit_faster_whisper_progress(progress_callback, payload: dict[str, Any], *, audio_path: str | None = None) -> None:
+    _raise_if_cancel_requested(audio_path=audio_path)
     if not progress_callback:
         return
-    try:
-        progress_callback(payload)
-    except Exception:
-        pass
+    progress_callback(payload)
+    _raise_if_cancel_requested(audio_path=audio_path)
 
 
 def _prefetch_model_worker() -> None:
@@ -822,9 +831,14 @@ def transcribe_audio_file_with_faster_whisper(
     progress_callback=None,
 ) -> dict[str, Any]:
     snapshot = settings or _runtime_settings_snapshot()
+    _raise_if_cancel_requested(audio_path=audio_path)
     ensure_faster_whisper_model_ready_for_transcribe()
     started = time.monotonic()
-    _emit_faster_whisper_progress(progress_callback, {"elapsed_seconds": 0, "segment_done": 0, "segment_total": 0})
+    _emit_faster_whisper_progress(
+        progress_callback,
+        {"elapsed_seconds": 0, "segment_done": 0, "segment_total": 0},
+        audio_path=audio_path,
+    )
 
     waiting_stop = threading.Event()
     progress_state = {
@@ -839,20 +853,26 @@ def transcribe_audio_file_with_faster_whisper(
     def _emit_waiting_progress() -> None:
         last_logged_bucket = -1
         while not waiting_stop.wait(1.0):
+            if is_task_terminate_requested(path=audio_path):
+                return
             elapsed_seconds = max(0, int(round(time.monotonic() - started)))
             with progress_state_lock:
                 segment_done = int(progress_state["segment_done"])
                 first_segment_elapsed = progress_state["first_segment_elapsed"]
                 last_segment_elapsed = int(progress_state["last_segment_elapsed"])
                 duration_hint_seconds = float(progress_state["duration_hint_seconds"])
-            _emit_faster_whisper_progress(
-                progress_callback,
-                {
-                    "elapsed_seconds": elapsed_seconds,
-                    "segment_done": segment_done,
-                    "segment_total": 0,
-                },
-            )
+            try:
+                _emit_faster_whisper_progress(
+                    progress_callback,
+                    {
+                        "elapsed_seconds": elapsed_seconds,
+                        "segment_done": segment_done,
+                        "segment_total": 0,
+                    },
+                    audio_path=audio_path,
+                )
+            except Exception:
+                return
             current_bucket = elapsed_seconds // 10
             if elapsed_seconds >= 10 and current_bucket != last_logged_bucket:
                 last_logged_bucket = current_bucket
@@ -907,6 +927,7 @@ def transcribe_audio_file_with_faster_whisper(
         segment_done = 0
 
         for segment in segments_iter:
+            _raise_if_cancel_requested(audio_path=audio_path)
             text = str(getattr(segment, "text", "") or "").strip()
             begin_ms = _seconds_to_ms(getattr(segment, "start", 0))
             end_ms = _seconds_to_ms(getattr(segment, "end", 0))
@@ -937,7 +958,9 @@ def transcribe_audio_file_with_faster_whisper(
                     "segment_done": segment_done,
                     "segment_total": 0,
                 },
+                audio_path=audio_path,
             )
+            _raise_if_cancel_requested(audio_path=audio_path)
 
             words_payload = []
             for word in list(getattr(segment, "words", None) or []):
@@ -966,6 +989,7 @@ def transcribe_audio_file_with_faster_whisper(
 
     try:
         segments_iter, info = _transcribe_with_model_snapshot(audio_path, snapshot)
+        _raise_if_cancel_requested(audio_path=audio_path)
     except Exception as exc:
         if not _can_retry_on_cpu(snapshot, exc):
             waiting_stop.set()
@@ -985,6 +1009,7 @@ def transcribe_audio_file_with_faster_whisper(
         effective_snapshot = fallback_snapshot
         try:
             segments_iter, info = _transcribe_with_model_snapshot(audio_path, fallback_snapshot)
+            _raise_if_cancel_requested(audio_path=audio_path)
         except Exception:
             waiting_stop.set()
             waiting_thread.join(timeout=0.2)
@@ -992,6 +1017,7 @@ def transcribe_audio_file_with_faster_whisper(
 
     try:
         duration_hint_seconds = _set_duration_hint(info)
+        _raise_if_cancel_requested(audio_path=audio_path)
         collected = _consume_segments(segments_iter, duration_hint_seconds=duration_hint_seconds)
         transcription_empty = (
             collected["segment_count"] <= 0
@@ -1001,6 +1027,7 @@ def transcribe_audio_file_with_faster_whisper(
         )
 
         if transcription_empty and effective_snapshot.vad_filter:
+            _raise_if_cancel_requested(audio_path=audio_path)
             retry_snapshot = replace(effective_snapshot, vad_filter=False)
             logger.warning(
                 "[DEBUG] faster_whisper.empty_result_retry_without_vad audio_path=%s duration_hint_seconds=%.3f device=%s compute_type=%s",
@@ -1017,6 +1044,7 @@ def transcribe_audio_file_with_faster_whisper(
             retry_segments_iter, retry_info = _transcribe_with_model_snapshot(audio_path, retry_snapshot)
             info = retry_info
             duration_hint_seconds = _set_duration_hint(retry_info)
+            _raise_if_cancel_requested(audio_path=audio_path)
             collected = _consume_segments(retry_segments_iter, duration_hint_seconds=duration_hint_seconds)
     finally:
         waiting_stop.set()
@@ -1055,6 +1083,7 @@ def transcribe_audio_file_with_faster_whisper(
             "segment_done": segment_done,
             "segment_total": segment_done,
         },
+        audio_path=audio_path,
     )
 
     asr_payload = {
@@ -1069,6 +1098,7 @@ def transcribe_audio_file_with_faster_whisper(
             }
         ],
     }
+    _raise_if_cancel_requested(audio_path=audio_path)
 
     return {
         "model": FASTER_WHISPER_ASR_MODEL,

@@ -14,11 +14,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, LESSON_TASK_MAX_ACTIVE, LESSON_TASK_MAX_QUEUED, UPLOAD_MAX_BYTES
 from app.core.timezone import now_shanghai_naive
-from app.infra.translation_qwen_mt import TranslationError
 from app.models import Lesson, LessonGenerationTask, WalletLedger
 from app.repositories.admin_console import invalidate_admin_overview_cache, invalidate_admin_user_activity_summary_cache
 from app.repositories.lessons import update_lesson_title_for_user
-from app.services.asr_dashscope import AsrError
+from app.services.asr_dashscope import AsrCancellationRequested, AsrError
 from app.services.billing_service import (
     BillingError,
     calculate_points,
@@ -39,11 +38,14 @@ from app.services.lesson_task_manager import (
     TASK_STATUS_RUNNING,
     TASK_STATUS_TERMINATING,
     build_task_id,
+    bind_task_terminate_runtime,
+    clear_task_terminate_runtime,
     configure_task_runtime_probe,
     create_task,
     ensure_lesson_task_storage_ready,
     get_task,
     get_task_control_action,
+    is_task_terminate_requested,
     mark_task_failed,
     mark_task_paused,
     mark_task_succeeded,
@@ -53,9 +55,11 @@ from app.services.lesson_task_manager import (
     request_task_control,
     reset_failed_task_for_restart,
     reset_task_for_resume,
+    signal_task_terminate,
     update_task_progress,
 )
 from app.services.media import MediaError, cleanup_dir, probe_audio_duration_ms, save_upload_file_stream, validate_suffix
+from app.services.translation_qwen_mt import TranslationCancellationRequested, TranslationError
 
 
 logger = logging.getLogger(__name__)
@@ -384,10 +388,13 @@ def invalidate_lesson_related_queries(user_id: int) -> None:
 
 
 def _raise_if_task_control_requested(task_id: str, *, session_factory: sessionmaker[Session]) -> None:
+    if is_task_terminate_requested(task_id):
+        raise LessonTaskTerminateRequested("terminate requested")
     action = get_task_control_action(task_id, session_factory=session_factory)
     if action == "pause":
         raise LessonTaskPauseRequested("pause requested")
     if action == "terminate":
+        signal_task_terminate(task_id)
         raise LessonTaskTerminateRequested("terminate requested")
 
 
@@ -407,6 +414,7 @@ def run_lesson_generation_task(
 ) -> None:
     db = session_factory()
     _register_active_task(task_id)
+    bind_task_terminate_runtime(task_id, req_dir, source_path)
     try:
         bind = getattr(session_factory, "kw", {}).get("bind")
         sqlite_progress_mode = bool(bind is not None and getattr(bind.dialect, "name", "") == "sqlite")
@@ -445,6 +453,7 @@ def run_lesson_generation_task(
             return (now - float(last_progress_snapshot["emitted_at"] or 0.0)) >= 20.0
 
         def _progress(payload: dict) -> None:
+            _raise_if_task_control_requested(task_id, session_factory=session_factory)
             if _should_emit_progress(payload):
                 update_task_progress(
                     task_id,
@@ -516,7 +525,7 @@ def run_lesson_generation_task(
         db.rollback()
         mark_task_paused(task_id, session_factory=session_factory)
         logger.info("[DEBUG] lessons.task.paused task_id=%s", task_id)
-    except LessonTaskTerminateRequested:
+    except (LessonTaskTerminateRequested, AsrCancellationRequested, TranslationCancellationRequested):
         db.rollback()
         mark_task_terminated(task_id, session_factory=session_factory)
         logger.info("[DEBUG] lessons.task.terminated task_id=%s", task_id)
@@ -589,6 +598,7 @@ def run_lesson_generation_task(
         )
         logger.exception("[DEBUG] lessons.task.failed task_id=%s detail=%s", task_id, str(exc)[:400])
     finally:
+        clear_task_terminate_runtime(task_id)
         _unregister_active_task(task_id)
         db.close()
         try:

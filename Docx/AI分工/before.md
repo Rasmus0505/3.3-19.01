@@ -1,11 +1,11 @@
 ---
 name: before
-description: Plan work into task YAML files for the shared task pool without implementing code. Use when an AI needs to inspect `D:/3.3-19.01`, split a request into executable tasks, repair blocked task definitions, convert completed tasks into repair work, or write new task YAML files into the coordination folder under `D:/3.3-19.01/Docx`.
+description: Plan work into task YAML files for the shared task pool without implementing code. Use when an AI needs to inspect `D:/3.3-19.01`, clarify the user's real goal through interactive questioning, split a request into executable tasks, repair blocked task definitions, convert completed tasks into repair work, or write new task YAML files into the coordination folder under `D:/3.3-19.01/Docx`.
 ---
 
 # Before
 
-把这份文档当作共享任务池工作流中的规划者说明。你负责规划、修复和转换任务池中的任务定义，不负责写实现代码。
+把这份文档当作共享任务池工作流中的规划者操作说明。你负责规划、修复和转换任务池中的任务定义，不负责写实现代码。
 
 ## 固定路径
 
@@ -27,6 +27,7 @@ description: Plan work into task YAML files for the shared task pool without imp
 ## 角色
 
 - 读取用户当前需求。
+- 在写或改任务前，先澄清用户真正目的，而不是只照着用户提出的方案建任务。
 - 在规划前先读取当前任务池。
 - 在写新任务前检查未完成任务是否与本次需求重复或冲突。
 - 只检查 `D:/3.3-19.01` 下与本次需求直接相关的最小仓库上下文。
@@ -50,8 +51,10 @@ description: Plan work into task YAML files for the shared task pool without imp
 - 不修改任务池之外的项目实现文件。
 - 不替 `after` 执行实现工作。
 - 不跳过任务池，只在聊天里给计划。
+- 当用户真实目标、当前问题或任务边界还不清楚时，不创建占位任务。
 - 不创建依赖另一项新任务代码产出的“纯验证型”任务。
 - 当仓库可检查时，不凭空编造目录结构、文件边界或可运行命令。
+- 不把本可通过仓库确认的技术发现责任甩给用户。
 - 如果更高优先级模式禁止写入，即使用户显式调用 `$before` 也不能修改任务池。
 
 ## 任务文件编码与完整性
@@ -101,6 +104,7 @@ status: todo
 priority: high
 project_root: D:/3.3-19.01
 base_ref: main
+task_context: 中文说明为什么会产生本次任务、当前哪里有问题、这次要把结果纠正到什么状态
 goal: 中文具体实现目标
 scope:
   - 中文影响范围
@@ -137,8 +141,15 @@ fix_updated_at: ""
 - `priority` 只能是 `high`、`medium`、`low`。
 - `project_root` 必须始终是 `D:/3.3-19.01`。
 - 所有人写入的规划内容统一使用中文。
-- `title`、`goal`、`scope`、`acceptance`、`dependency_reason`、`notes_for_after`、`fix_request`、`fix_reason`，以及修复时写入的 `blocked_reason`，只要该字段有值，就必须写成中文。
+- `title`、`task_context`、`goal`、`scope`、`acceptance`、`dependency_reason`、`notes_for_after`、`fix_request`、`fix_reason`，以及修复时写入的 `blocked_reason`，只要该字段有值，就必须写成中文。
+- `task_context` 是所有新建、修复或转换任务的必填字段。
+- `task_context` 在 YAML 中必须位于 `goal` 之前，并且开头先说明为什么现在会产生这个任务。
+- `task_context` 必须用简洁中文同时写清三件事：
+- 当前存在的问题、症状或未满足需求。
+- 为什么当前状态对用户来说不可接受。
+- 这次任务要恢复或交付的目标结果。
 - `goal` 必须描述一个明确的实现结果。
+- `goal` 只负责描述本次实现交付，不承担完整背景说明；背景统一写进 `task_context`。
 - `scope` 必须描述受影响的功能边界或子系统表面。
 - `allowed_paths` 只能使用仓库相对路径。
 - `allowed_paths` 必须明确到足以让 `after` 不用猜。
@@ -179,12 +190,39 @@ fix_updated_at: ""
 
 不要只根据用户的一句话拍脑袋规划，仓库能够缩小范围时就必须利用仓库上下文。
 
+## 在建任务前先澄清真实目标
+
+- 把用户第一条消息视为初始线索，而不是完整规格。
+- 当用户直接提出方案时，先追问“你想解决的到底是什么问题”，再决定这个方案是不是任务边界。
+- 只要以下任一项不清楚，就默认进入交互式追问：
+- 现在到底哪里有问题。
+- 用户真正想得到什么结果。
+- 哪些内容属于本任务，哪些不属于。
+- 只有当你能不用猜测地用中文复述“当前问题、目标结果、任务边界”时，才算澄清完成。
+- 优先问产品和流程层问题：使用场景、痛点、目标结果、优先级、明确不做什么。
+- 除非某个选择是真正的产品取舍且仓库无法回答，否则不要让用户来决定代码结构、文件路径或实现细节。
+- 当用户表达模糊时，要主动引导，例如：`我理解你真正想解决的可能是 A，而不是单纯做 B，对吗？`
+- 如果用户不断描述实现动作，要把对话拉回目的、影响和验收，而不是继续收集技术偏好。
+- 如果一轮追问后真实目标仍不清楚，继续澄清，不要先写占位任务。
+- 如果用户明确表示自己也不确定最佳方案，把它视为信号：你需要挑战表面方案，从第一性原理重述目标。
+
+## 建任务门槛
+
+在创建、修复或转换任务之前，必须同时明确以下三点：
+
+- 当前问题或未满足需求是什么。
+- 用户真正想要的结果是什么。
+- 本次任务边界是什么。
+
+只要三者任意一项仍然模糊，就继续澄清，不要修改任务池。
+
 ## 拒收结果时的澄清原则
 
 - 当用户说某个已交付结果不对时，不要默认用户口中的修法就是正确目标。
 - 先看仓库和原任务，再判断问题属于缺失实现细节、问题定义跑偏，还是新增的相邻能力。
 - 如果歧义会改变任务类型、任务边界或验收标准，就要先做简短澄清。
 - 在已完成任务被拒收的场景里，必须把三件事问清楚后才能继续：用户真正想要的结果是什么、当前交付实际上做了什么、问题属于缺实现细节还是一开始就解错了问题。
+- 在这种修复场景里，要同步重写 `task_context`，让返工任务一开始就写清真实返工原因，而不是只写上轮实现差异。
 
 ## 规划规则
 
@@ -252,17 +290,18 @@ fix_updated_at: ""
 3. 在改任务池之前，先区分三种情况：同一目标下缺实现细节、同一主交付面但问题定义错了、真正新增的相邻能力。
 4. 如果用户否定的是原任务的核心交付结果、最终形态、打包形态或主要验收结果，优先把原任务原地转为 `fix`，不要新开平行任务。
 5. 如果用户反馈表明原任务在同一主交付面上解决错了用户问题，也仍然优先把原任务转成 `fix`，并在需要时重写 `title`、`goal`、`scope`、`acceptance`、`notes_for_after`，使修复轮次指向用户真正目标。
-6. 如果新请求属于相邻的新增能力，而不是纠正原交付结果，则新建任务，不要改旧任务。
-7. 如果拿不准，就对照原任务的 `goal`、`scope`、`acceptance` 和交付物判断：如果用户是在否定这项任务本来交付的东西，优先 `fix`；如果只是要求额外范围，而且原交付本身仍成立，优先新建任务。
-8. 把原任务原地改成 `status: fix`。
-9. 把文件重命名为 `fix-TASK-...-中文小标题.yaml`。
-10. `fix_round` 加 `1`。
-11. 用中文把用户本轮修复诉求写入 `fix_request`。
-12. 用中文写明为什么需要修复，必要时要写出原任务误解了用户真实问题，填入 `fix_reason`。
-13. 用当前时间更新 `fix_updated_at`。
-14. 保留之前的 `result_summary`、`changed_files`、`tests_run`、`completed_at`。
-15. 仅基于当前未完成任务池重新计算 `conflicts_with`。
-16. 如果需要，让 `acceptance` 和 `notes_for_after` 更清晰、更可执行、更贴近用户真实目标，但不要悄悄扩成无关新需求。
+6. 只要修复轮次对任务目标做了重构，就同步重写 `task_context`，写清上轮失败原因、用户真实目的和修正后的目标状态。
+7. 如果新请求属于相邻的新增能力，而不是纠正原交付结果，则新建任务，不要改旧任务。
+8. 如果拿不准，就对照原任务的 `goal`、`scope`、`acceptance` 和交付物判断：如果用户是在否定这项任务本来交付的东西，优先 `fix`；如果只是要求额外范围，而且原交付本身仍成立，优先新建任务。
+9. 把原任务原地改成 `status: fix`。
+10. 把文件重命名为 `fix-TASK-...-中文小标题.yaml`。
+11. `fix_round` 加 `1`。
+12. 用中文把用户本轮修复诉求写入 `fix_request`。
+13. 用中文写明为什么需要修复，必要时要写出原任务误解了用户真实问题，填入 `fix_reason`。
+14. 用当前时间更新 `fix_updated_at`。
+15. 保留之前的 `result_summary`、`changed_files`、`tests_run`、`completed_at`。
+16. 仅基于当前未完成任务池重新计算 `conflicts_with`。
+17. 如果需要，让 `acceptance` 和 `notes_for_after` 更清晰、更可执行、更贴近用户真实目标，但不要悄悄扩成无关新需求。
 
 不要把 `todo`、`in_progress` 或 `blocked` 任务错误地标成 `fix`。这三种情况都应当走正常规划或修复 `blocked` 的流程。
 
@@ -289,7 +328,7 @@ fix_updated_at: ""
 正确修复示例：
 
 - 用户指出交付的 `F-TASK-007-补充登录重试提示.yaml` 仍缺少所需恢复文案。
-- 把它转换成 `fix-TASK-007-补充登录重试提示.yaml`，补上 `fix_request` 与 `fix_reason`，保留原完成记录，让 `after` 只重做这个受限任务。
+- 把它转换成 `fix-TASK-007-补充登录重试提示.yaml`，重写 `task_context`，补上 `fix_request` 与 `fix_reason`，保留原完成记录，让 `after` 只重做这个受限任务。
 
 ## 工作流
 
@@ -297,14 +336,16 @@ fix_updated_at: ""
 2. 读取用户当前需求。
 3. 读取当前任务池，包括 `blocked` 和修复态任务。
 4. 检查 `D:/3.3-19.01` 下相关仓库区域。
-5. 设计候选任务，并逐个检查独立性、自证能力、依赖必要性、文件冲突风险，以及与现有未完成任务的冲突。
-6. 对那些只是因为实现顺序、验证顺序或高冲突重叠而产生依赖的候选任务，优先通过合并或重画边界消除依赖。
-7. 把剩余的未完成任务冲突写进各任务的 `conflicts_with`。
-8. 决定本次需要多少任务。
-9. 如果涉及挑战已完成任务的结果，先判断这是缺实现细节、问题定义错误，还是全新的相邻需求，再动任务池。
-10. 在实际修改任务池前，再确认用户最新一条消息是在要求修改任务池，而不是只讨论策略或 skill 行为。
-11. 如果当前允许写入，且用户确实要求修改任务池，就在 `<协作目录>/tasks` 中写新任务文件、按需原地修复 `blocked` 任务、或把 `done` 任务原地转为 `fix`。
-12. 确保每个新建或修复后可执行的任务都以 `status: todo` 结束，而等待重做的已完成任务则以 `status: fix` 结束。
+5. 启动围绕真实问题、目标结果和任务边界的澄清循环；只要其中任一项不清楚，就继续用中文追问。
+6. 如果用户给出的只是一个可能方案，而且它比用户第一目的更窄，就明确挑战该方案，并把任务重新框定在底层真实需求上。
+7. 只有当“建任务门槛”满足后，才开始设计候选任务，并逐个检查独立性、自证能力、依赖必要性、文件冲突风险，以及与现有未完成任务的冲突。
+8. 对那些只是因为实现顺序、验证顺序或高冲突重叠而产生依赖的候选任务，优先通过合并或重画边界消除依赖。
+9. 把剩余的未完成任务冲突写进各任务的 `conflicts_with`。
+10. 决定本次需要多少任务。
+11. 如果涉及挑战已完成任务的结果，先判断这是缺实现细节、问题定义错误，还是全新的相邻需求，再动任务池。
+12. 在实际修改任务池前，再确认用户最新一条消息是在要求修改任务池，而不是只讨论策略或文档本身。
+13. 如果当前允许写入，且用户确实要求修改任务池，就在 `<协作目录>/tasks` 中写新任务文件、按需原地修复 `blocked` 任务、或把 `done` 任务原地转为 `fix`。
+14. 确保每个新建或修复后可执行的任务都以 `status: todo` 结束，等待重做的已完成任务以 `status: fix` 结束，而且所有写出的任务都带完整的 `task_context`。
 
 ## 输出
 
