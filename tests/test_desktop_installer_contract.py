@@ -12,6 +12,7 @@ PACKAGE_JSON_PATH = DESKTOP_ROOT / "package.json"
 PACKAGE_WIN_SCRIPT_PATH = DESKTOP_ROOT / "scripts" / "package-win.mjs"
 MAIN_PROCESS_PATH = DESKTOP_ROOT / "electron" / "main.mjs"
 HELPER_RUNTIME_PATH = DESKTOP_ROOT / "electron" / "helper-runtime.mjs"
+MODEL_UPDATER_PATH = DESKTOP_ROOT / "electron" / "model-updater.mjs"
 INSTALLER_SCRIPT_PATH = DESKTOP_ROOT / "build" / "installer.nsh"
 RUNTIME_CONFIG_MODULE = (DESKTOP_ROOT / "electron" / "runtime-config.mjs").resolve().as_uri()
 
@@ -62,13 +63,19 @@ def test_package_win_script_builds_runtime_defaults_and_helper_before_nsis():
 def test_main_process_uses_bundled_helper_runtime_and_packaged_defaults():
     main_text = MAIN_PROCESS_PATH.read_text(encoding="utf-8")
     helper_runtime_text = HELPER_RUNTIME_PATH.read_text(encoding="utf-8")
+    model_updater_text = MODEL_UPDATER_PATH.read_text(encoding="utf-8")
 
     assert "resolvePackagedDesktopRuntime" in main_text
     assert "selectDesktopModelDir" in main_text
+    assert "desktop:check-model-update" in main_text
+    assert "desktop:start-model-update" in main_text
     assert '"/api/desktop-asr"' in main_text
     assert "runtime-defaults.json" in main_text
     assert "DESKTOP_PREINSTALLED_MODEL_DIR" in main_text
     assert 'helperMode: app.isPackaged ? "bundled-runtime" : "system-python"' in main_text
+    assert "computeModelUpdateDelta" in model_updater_text
+    assert ".model-version.json" in model_updater_text
+    assert ".backup" in model_updater_text
     assert "BottleLocalHelper.exe" in helper_runtime_text
     assert "desktop-helper-runtime" in helper_runtime_text
     assert "preinstalled-models" in helper_runtime_text

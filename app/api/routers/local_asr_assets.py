@@ -5,6 +5,7 @@ import os
 import shutil
 import tempfile
 import zipfile
+from hashlib import sha256
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -30,6 +31,66 @@ DOWNLOADABLE_MODELS: dict[str, dict[str, object]] = {
 }
 ACTIVE_DOWNLOADABLE_MODEL_KEYS: tuple[str, ...] = ("faster-whisper-medium",)
 DOWNLOAD_BUILD_ROOT = BASE_TMP_DIR / "downloadable_asr_models"
+MODEL_VERSION_FILE_NAME = ".model-version.json"
+
+
+def _sha256_file(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _read_model_version_payload(bundle_dir: Path) -> dict[str, object]:
+    version_path = bundle_dir / MODEL_VERSION_FILE_NAME
+    if not version_path.exists() or not version_path.is_file():
+        return {}
+    try:
+        payload = json.loads(version_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _resolve_model_version(spec: dict[str, object], bundle_dir: Path, files: list[dict[str, object]]) -> str:
+    payload = _read_model_version_payload(bundle_dir)
+    explicit_version = str(payload.get("model_version") or "").strip()
+    if explicit_version:
+        return explicit_version
+    latest_mtime_ns = 0
+    for item in files:
+        candidate = bundle_dir / str(item["name"])
+        try:
+            latest_mtime_ns = max(latest_mtime_ns, int(candidate.stat().st_mtime_ns))
+        except Exception:
+            continue
+    model_id = str(spec.get("source_model_id") or spec.get("model_key") or "unknown-model").strip() or "unknown-model"
+    if latest_mtime_ns <= 0:
+        return f"{model_id}-unversioned"
+    return f"{model_id}-{latest_mtime_ns}"
+
+
+def _build_model_manifest(spec: dict[str, object], bundle_dir: Path, files: list[dict[str, object]] | None = None) -> dict[str, object]:
+    manifest_files = list(files) if files is not None else _bundle_files(bundle_dir)
+    return {
+        "model_key": str(spec["model_key"]),
+        "model_version": _resolve_model_version(spec, bundle_dir, manifest_files),
+        "bundle_dir": str(bundle_dir),
+        "file_count": len(manifest_files),
+        "total_size_bytes": sum(int(item["size_bytes"]) for item in manifest_files),
+        "files": manifest_files,
+    }
+
+
+def _write_model_version_file(spec: dict[str, object], bundle_dir: Path, files: list[dict[str, object]] | None = None) -> dict[str, object]:
+    manifest = _build_model_manifest(spec, bundle_dir, files)
+    version_path = bundle_dir / MODEL_VERSION_FILE_NAME
+    version_path.parent.mkdir(parents=True, exist_ok=True)
+    version_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return manifest
 
 
 def _legacy_status_payload() -> dict[str, object]:
@@ -88,10 +149,13 @@ def _bundle_files(bundle_dir: Path) -> list[dict[str, object]]:
     for path in sorted(bundle_dir.rglob("*")):
         if not path.is_file():
             continue
+        if path.name == MODEL_VERSION_FILE_NAME:
+            continue
         files.append(
             {
                 "name": str(path.relative_to(bundle_dir)).replace("\\", "/"),
                 "size_bytes": int(path.stat().st_size),
+                "sha256": _sha256_file(path),
             }
         )
     return files
@@ -113,8 +177,8 @@ def _bundle_summary(spec: dict[str, object]) -> dict[str, object]:
     source_bundle_dir = _source_bundle_dir()
     source_files = _bundle_files(source_bundle_dir)
     install_state = _desktop_install_state()
-    total_size_bytes = sum(int(item["size_bytes"]) for item in files)
     model_key = str(spec["model_key"])
+    manifest = _build_model_manifest(spec, bundle_dir, files)
     missing_reason = _bundle_missing_reason(bundle_dir, files)
     source_missing_reason = _bundle_missing_reason(source_bundle_dir, source_files)
     install_selected = install_state.get("bottle1Preinstalled")
@@ -126,6 +190,7 @@ def _bundle_summary(spec: dict[str, object]) -> dict[str, object]:
         "source_model_id": str(spec["source_model_id"]),
         "bundle_dir": str(bundle_dir),
         "archive_name": str(spec["archive_name"]),
+        "model_version": str(manifest["model_version"]),
         "directory_exists": bundle_dir.exists(),
         "directory_is_dir": bundle_dir.is_dir(),
         "available": bool(files),
@@ -138,10 +203,18 @@ def _bundle_summary(spec: dict[str, object]) -> dict[str, object]:
         "install_choice": str(install_state.get("bottle1InstallChoice") or "").strip() or None,
         "preinstalled": bool(files) and runtime_source == "installer_bundle",
         "runtime_source": runtime_source,
-        "file_count": len(files),
-        "total_size_bytes": total_size_bytes,
+        "file_count": int(manifest["file_count"]),
+        "total_size_bytes": int(manifest["total_size_bytes"]),
         "download_url": f"/api/local-asr-assets/download-models/{model_key}/download",
         "files": files,
+    }
+
+
+def _bundle_manifest(spec: dict[str, object]) -> dict[str, object]:
+    summary = _bundle_summary(spec)
+    return {
+        "ok": True,
+        **_build_model_manifest(spec, _bundle_dir(spec), list(summary["files"])),
     }
 
 
@@ -155,11 +228,16 @@ def _build_bundle_zip(spec: dict[str, object]) -> Path:
     DOWNLOAD_BUILD_ROOT.mkdir(parents=True, exist_ok=True)
     temp_dir = Path(tempfile.mkdtemp(prefix="asr_bundle_", dir=str(DOWNLOAD_BUILD_ROOT)))
     archive_path = temp_dir / str(spec["archive_name"])
+    manifest_payload = _build_model_manifest(spec, bundle_dir, files)
     with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
         for item in files:
             relative_name = str(item["name"])
             source_path = bundle_dir / relative_name
             archive.write(source_path, arcname=f"{bundle_dir.name}/{relative_name}")
+        archive.writestr(
+            f"{bundle_dir.name}/{MODEL_VERSION_FILE_NAME}",
+            json.dumps(manifest_payload, ensure_ascii=False, indent=2) + "\n",
+        )
     return archive_path
 
 
@@ -171,9 +249,12 @@ def _install_bundle_from_source(spec: dict[str, object]) -> dict[str, object]:
         raise HTTPException(status_code=404, detail=f"Bundled model source missing: {source_bundle_dir} ({source_missing_reason})")
 
     target_bundle_dir = _bundle_dir(spec)
+    if target_bundle_dir.resolve() == source_bundle_dir.resolve():
+        return _bundle_summary(spec)
     target_bundle_dir.parent.mkdir(parents=True, exist_ok=True)
     shutil.rmtree(target_bundle_dir, ignore_errors=True)
     shutil.copytree(source_bundle_dir, target_bundle_dir)
+    _write_model_version_file(spec, target_bundle_dir)
     return _bundle_summary(spec)
 
 
@@ -198,6 +279,11 @@ def get_downloadable_model_bundle_summaries() -> list[dict[str, object]]:
 @router.get("/download-models/{model_key}")
 def get_downloadable_model_bundle(model_key: str):
     return {"ok": True, **_bundle_summary(_bundle_spec(model_key))}
+
+
+@router.get("/download-models/{model_key}/manifest")
+def get_downloadable_model_bundle_manifest(model_key: str):
+    return _bundle_manifest(_bundle_spec(model_key))
 
 
 @router.get("/download-models/{model_key}/download")

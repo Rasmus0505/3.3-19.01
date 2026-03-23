@@ -1,4 +1,4 @@
-﻿import { CheckCircle2, Loader2, RefreshCcw, UploadCloud } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCcw, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -7,6 +7,9 @@ import { api, parseResponse, toErrorText, uploadWithProgress } from "../../share
 import { ASR_MODEL_KEYS, buildAsrModelCatalogMap, getAsrModelCatalogItem, getAsrModelStatusLabel, isAsrModelPreparing, isAsrModelReady } from "../../shared/lib/asrModels";
 import { formatMoneyCents, formatMoneyYuan, formatMoneyYuanPerMinute } from "../../shared/lib/money";
 import {
+  cancelDesktopModelUpdate,
+  checkDesktopModelUpdate,
+  desktopModelUpdateSupported,
   bindLocalAsrModelDirectory,
   ensureLocalAsrModel,
   getDesktopBundledAsrModelSummary,
@@ -15,9 +18,11 @@ import {
   localAsrDirectoryBindingSupported,
   LOCAL_ASR_STORAGE_MODE_BROWSER,
   LOCAL_ASR_STORAGE_MODE_DIRECTORY,
+  onDesktopModelUpdateProgress,
   releaseAllLocalAsrWorkerAssetPayloads,
   releaseLocalAsrWorkerAssetPayload,
   removeLocalAsrModel,
+  startDesktopModelUpdate,
   switchLocalAsrStorageMode,
   transcribeDesktopLocalAsr,
   verifyLocalAsrModel,
@@ -33,6 +38,7 @@ import {
 } from "../../shared/media/localTaskStore";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, MediaCover, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
 import { useAppStore } from "../../store";
+import { ASR_STRATEGY_CLOUD, resolveAsrStrategy, mapCloudAsrFailureToMessage } from "./asrStrategy";
 import { buildLocalAsrLongAudioWarning, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS, LOCAL_ASR_TARGET_SAMPLE_RATE, preprocessLocalAsrFile } from "./localAsrAudioPreprocess";
 import { runLocalAsrWithAutoParallelism } from "./localAsrParallelRuntime";
 import { getUploadModelTone, getUploadRestoreTone, getUploadStageTone, getUploadTaskTone, getUploadToneStyles } from "./uploadStatusTheme";
@@ -59,12 +65,34 @@ function hasDesktopRuntimeBridge() {
   return typeof window !== "undefined" && typeof window.desktopRuntime?.requestLocalHelper === "function";
 }
 
+function hasDesktopModelUpdateBridge() {
+  return desktopModelUpdateSupported();
+}
+
 function getDefaultFasterWhisperRuntimeTrack() {
   return hasDesktopRuntimeBridge() ? FAST_RUNTIME_TRACK_DESKTOP_LOCAL : FAST_RUNTIME_TRACK_CLOUD;
 }
 
 function getFastRuntimeTrackLabel(track) {
   return track === FAST_RUNTIME_TRACK_DESKTOP_LOCAL ? "本机运行" : "云端运行";
+}
+
+function normalizeServerStatus(payload = {}) {
+  return {
+    reachable: payload?.reachable !== false,
+    lastCheckedAt: String(payload?.lastCheckedAt || ""),
+    latencyMs: payload?.latencyMs == null ? null : Math.max(0, Number(payload.latencyMs || 0)),
+  };
+}
+
+function getOfflineBannerText(serverStatus) {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return "当前处于离线模式，部分功能不可用";
+  }
+  if (serverStatus?.reachable === false) {
+    return "云端服务当前不可达，请稍后重试";
+  }
+  return "";
 }
 
 const LOCAL_MODEL_OPTIONS = [
@@ -734,6 +762,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [serverBusyText, setServerBusyText] = useState("");
   const [desktopBundleStateMap, setDesktopBundleStateMap] = useState({});
   const [desktopBundleBusyModelKey, setDesktopBundleBusyModelKey] = useState("");
+  const [desktopServerStatus, setDesktopServerStatus] = useState({ reachable: true, lastCheckedAt: "", latencyMs: null });
+  const [desktopHelperStatus, setDesktopHelperStatus] = useState({ healthy: false, modelReady: false, modelStatus: "" });
+  const [offlineBannerMessage, setOfflineBannerMessage] = useState("");
   const [restoreBannerMode, setRestoreBannerMode] = useState(RESTORE_BANNER_MODES.NONE);
   const pollingAbortRef = useRef(false);
   const pollTokenRef = useRef(0);
@@ -752,6 +783,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const localSenseWorkerRef = useRef(null);
   const localAsrRequestSequenceRef = useRef(0);
   const localAsrPendingRequestsRef = useRef(new Map());
+  const desktopModelUpdatePromptRef = useRef("");
+  const fasterWhisperTrackTouchedRef = useRef(false);
+  const desktopLocalFailureCountRef = useRef(0);
   const ownerUserId = Number(currentUser?.id || 0);
 
   const selectedFastModel = useMemo(() => {
@@ -902,6 +936,14 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       sourceBundleDir: String(overrides.sourceBundleDir || summary?.sourceBundleDir || ""),
       targetBundleDir: String(overrides.targetBundleDir || summary?.targetBundleDir || ""),
       fileCount: Number(overrides.fileCount ?? summary?.fileCount ?? 0),
+      updateAvailable: Boolean(overrides.updateAvailable ?? summary?.updateAvailable),
+      updating: Boolean(overrides.updating ?? summary?.updating),
+      cancellable: Boolean(overrides.cancellable ?? summary?.cancellable),
+      localVersion: String(overrides.localVersion || summary?.localVersion || ""),
+      remoteVersion: String(overrides.remoteVersion || summary?.remoteVersion || ""),
+      totalFiles: Number(overrides.totalFiles ?? summary?.totalFiles ?? 0),
+      completedFiles: Number(overrides.completedFiles ?? summary?.completedFiles ?? 0),
+      currentFile: String(overrides.currentFile || summary?.currentFile || ""),
       message: String(overrides.message || summary?.message || ""),
       lastError: String(overrides.lastError || ""),
     });
@@ -1370,6 +1412,86 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       canceled = true;
     };
   }, [accessToken]);
+
+  useEffect(() => {
+    if (!hasDesktopModelUpdateBridge() || !hasDesktopRuntimeBridge()) {
+      return undefined;
+    }
+    const unsubscribe = onDesktopModelUpdateProgress((payload) => {
+      const modelKey = String(payload?.modelKey || FASTER_WHISPER_MODEL);
+      const merged = mergeDesktopBundleSummaryWithUpdate(desktopBundleStateMap[modelKey] || {}, payload);
+      applyDesktopBundleState(modelKey, merged, {
+        lastError: String(payload?.lastError || ""),
+      });
+      if (payload?.updateAvailable && !payload?.updating) {
+        const promptKey = `${String(payload?.remoteVersion || "")}:${String(payload?.localVersion || "")}`;
+        if (desktopModelUpdatePromptRef.current !== promptKey) {
+          desktopModelUpdatePromptRef.current = promptKey;
+          toast.message("发现新的 Bottle 1.0 模型版本，可点击更新");
+        }
+      }
+    });
+    return () => {
+      if (typeof unsubscribe === "function") {
+        unsubscribe();
+      }
+    };
+  }, [desktopBundleStateMap]);
+
+  useEffect(() => {
+    if (!hasDesktopRuntimeBridge()) {
+      return undefined;
+    }
+    let cancelled = false;
+    const syncStatus = async () => {
+      try {
+        const [serverStatus, helperStatus] = await Promise.all([
+          window.desktopRuntime.getServerStatus?.(),
+          window.desktopRuntime.getHelperStatus?.(),
+        ]);
+        if (cancelled) return;
+        setDesktopServerStatus(serverStatus || { reachable: true, lastCheckedAt: "", latencyMs: null });
+        setDesktopHelperStatus(helperStatus || { healthy: false, modelReady: false, modelStatus: "" });
+        const bannerMessage =
+          typeof navigator !== "undefined" && navigator.onLine === false
+            ? "当前处于离线模式"
+            : serverStatus?.reachable === false
+              ? "云端服务暂不可用"
+              : "";
+        setOfflineBannerMessage(bannerMessage);
+      } catch (_) {
+        if (!cancelled) {
+          setOfflineBannerMessage(typeof navigator !== "undefined" && navigator.onLine === false ? "当前处于离线模式" : "");
+        }
+      }
+    };
+    void syncStatus();
+    void window.desktopRuntime.probeServerNow?.().catch(() => null);
+    const onOnlineChange = () => {
+      void syncStatus();
+    };
+    window.addEventListener("online", onOnlineChange);
+    window.addEventListener("offline", onOnlineChange);
+    const unsubscribe = window.desktopRuntime.onServerStatusChanged?.((payload) => {
+      if (cancelled) return;
+      setDesktopServerStatus(payload || { reachable: true, lastCheckedAt: "", latencyMs: null });
+      setOfflineBannerMessage(
+        typeof navigator !== "undefined" && navigator.onLine === false
+          ? "当前处于离线模式"
+          : payload?.reachable === false
+            ? "云端服务暂不可用"
+            : "",
+      );
+    });
+    return () => {
+      cancelled = true;
+      window.removeEventListener("online", onOnlineChange);
+      window.removeEventListener("offline", onOnlineChange);
+      if (typeof unsubscribe === "function") {
+        unsubscribe();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectedFastModelNeedsPreparation) return undefined;
@@ -2158,21 +2280,75 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
   }
 
+  async function fetchDesktopModelUpdate(modelKey, options = {}) {
+    const { silent = false } = options;
+    if (!hasDesktopModelUpdateBridge() || modelKey !== FASTER_WHISPER_MODEL) {
+      return null;
+    }
+    try {
+      return await checkDesktopModelUpdate(modelKey);
+    } catch (error) {
+      if (!silent) {
+        toast.error(error instanceof Error && error.message ? error.message : String(error));
+      }
+      return null;
+    }
+  }
+
+  function mergeDesktopBundleSummaryWithUpdate(summary, updateState) {
+    if (!updateState || typeof updateState !== "object") {
+      return summary;
+    }
+    const totalFiles = Math.max(0, Number(updateState.totalFiles || 0));
+    const completedFiles = Math.max(0, Number(updateState.completedFiles || 0));
+    const currentFile = String(updateState.currentFile || "");
+    const updating = Boolean(updateState.updating);
+    const updateAvailable = Boolean(updateState.updateAvailable);
+    const message =
+      String(updateState.message || "").trim() ||
+      (updating
+        ? currentFile
+          ? `正在更新 ${currentFile}（${completedFiles}/${Math.max(totalFiles, 1)}）`
+          : "正在更新 Bottle 1.0 本机模型"
+        : updateAvailable
+          ? "发现新的 Bottle 1.0 模型版本，可立即更新"
+          : String(summary?.message || ""));
+    return {
+      ...(summary || {}),
+      updateAvailable,
+      updating,
+      cancellable: Boolean(updateState.cancellable),
+      localVersion: String(updateState.localVersion || ""),
+      remoteVersion: String(updateState.remoteVersion || ""),
+      totalFiles,
+      completedFiles,
+      currentFile,
+      message,
+      lastError: String(updateState.lastError || summary?.lastError || ""),
+    };
+  }
+
   async function fetchDesktopBundleStatus(modelKey, options = {}) {
     const { silent = false } = options;
     if (!hasDesktopRuntimeBridge() || modelKey !== FASTER_WHISPER_MODEL) {
       return null;
     }
     try {
-      const summary = await getDesktopBundledAsrModelSummary(modelKey);
-      applyDesktopBundleState(modelKey, summary, { lastError: "" });
-      return summary;
+      const [summary, updateState] = await Promise.all([
+        getDesktopBundledAsrModelSummary(modelKey),
+        fetchDesktopModelUpdate(modelKey, { silent: true }),
+      ]);
+      const mergedSummary = mergeDesktopBundleSummaryWithUpdate(summary, updateState);
+      applyDesktopBundleState(modelKey, mergedSummary, { lastError: "" });
+      return mergedSummary;
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : String(error);
       updateDesktopBundleState(modelKey, {
         available: false,
         installAvailable: false,
         sourceAvailable: false,
+        updateAvailable: false,
+        updating: false,
         message: "",
         lastError: message,
       });
@@ -2180,6 +2356,53 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         toast.error(message);
       }
       return null;
+    }
+  }
+
+  async function handleDesktopBundleModelUpdate(modelKey) {
+    if (!hasDesktopModelUpdateBridge() || modelKey !== FASTER_WHISPER_MODEL) {
+      return;
+    }
+    setDesktopBundleBusyModelKey(modelKey);
+    updateDesktopBundleState(modelKey, {
+      lastError: "",
+      updating: true,
+      cancellable: true,
+      message: "正在更新 Bottle 1.0 本机模型",
+    });
+    try {
+      const payload = await startDesktopModelUpdate(modelKey);
+      applyDesktopBundleState(modelKey, mergeDesktopBundleSummaryWithUpdate(desktopBundleStateMap[modelKey] || {}, payload), {
+        lastError: "",
+      });
+      if (!payload?.updating) {
+        toast.success(payload?.message || "Bottle 1.0 本机模型已更新");
+      }
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : String(error);
+      updateDesktopBundleState(modelKey, {
+        updating: false,
+        cancellable: false,
+        lastError: message,
+        message: "模型更新失败，已回滚到上一版本",
+      });
+      toast.error(message);
+    } finally {
+      setDesktopBundleBusyModelKey("");
+    }
+  }
+
+  async function handleCancelDesktopBundleModelUpdate(modelKey) {
+    if (!hasDesktopModelUpdateBridge() || modelKey !== FASTER_WHISPER_MODEL) {
+      return;
+    }
+    try {
+      const payload = await cancelDesktopModelUpdate();
+      applyDesktopBundleState(modelKey, mergeDesktopBundleSummaryWithUpdate(desktopBundleStateMap[modelKey] || {}, payload), {
+        lastError: "",
+      });
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : String(error));
     }
   }
 
@@ -2244,6 +2467,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   function handleSelectFasterWhisperRuntimeTrack(nextTrack) {
     const normalizedTrack = nextTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL ? FAST_RUNTIME_TRACK_DESKTOP_LOCAL : FAST_RUNTIME_TRACK_CLOUD;
+    fasterWhisperTrackTouchedRef.current = true;
     setFasterWhisperRuntimeTrack(normalizedTrack);
     if (normalizedTrack === FAST_RUNTIME_TRACK_CLOUD) {
       void fetchServerModelStatus(FASTER_WHISPER_MODEL, { silent: true });
@@ -2739,7 +2963,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       const data = await parseResponse(resp);
       if (!resp.ok) {
         setLocalProgressSnapshot(null);
-        const message = toErrorText(data, "创建识别任务失败");
+        const message = mapCloudAsrFailureToMessage(toErrorText(data, "创建识别任务失败"), desktopServerStatus);
         await handleTaskFailureState({
           message,
           nextTaskId: "",
@@ -2766,6 +2990,21 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       if (error?.name === "AbortError") {
         return;
       }
+      const canAutoFallbackToCloud = !fasterWhisperTrackTouchedRef.current && desktopServerStatus?.reachable !== false;
+      if (canAutoFallbackToCloud) {
+        desktopLocalFailureCountRef.current += 1;
+        if (desktopLocalFailureCountRef.current < 2) {
+          toast.message("本地识别失败，正在重试一次");
+          await submitDesktopLocalFast(pollToken, runToken);
+          return;
+        }
+        desktopLocalFailureCountRef.current = 0;
+        setFasterWhisperRuntimeTrack(FAST_RUNTIME_TRACK_CLOUD);
+        toast.message("本地识别连续失败，已切换到云端模式");
+        await submit();
+        return;
+      }
+      desktopLocalFailureCountRef.current = 0;
       logUploadLocalAsrDebug("run.failed", {
         file_name: String(file?.name || ""),
         model: selectedBalancedModel,
@@ -2818,12 +3057,42 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setUploadPercent(0);
     uploadPersistRef.current.latestPercent = 0;
     setLocalProgressSnapshot(null);
+    desktopLocalFailureCountRef.current = 0;
+    let shouldUseDesktopLocalFast = fasterWhisperDesktopLocalSelected;
     if (mode === "balanced") {
       await submitBalanced(pollToken);
       return;
     }
-    if (fasterWhisperDesktopLocalSelected) {
+    if (selectedFastModel === FASTER_WHISPER_MODEL && hasDesktopRuntimeBridge()) {
+      const strategy = resolveAsrStrategy({
+        runtimeTrack: fasterWhisperRuntimeTrack,
+        userExplicitTrack: fasterWhisperTrackTouchedRef.current,
+        localHelperStatus: desktopHelperStatus,
+        serverStatus: desktopServerStatus,
+        localFailureCount: 0,
+      });
+      if (strategy.degraded && strategy.strategy === ASR_STRATEGY_CLOUD && !fasterWhisperTrackTouchedRef.current) {
+        shouldUseDesktopLocalFast = false;
+        setFasterWhisperRuntimeTrack(FAST_RUNTIME_TRACK_CLOUD);
+        if (strategy.message) {
+          setOfflineBannerMessage(strategy.message);
+          toast.message(strategy.message);
+        }
+      }
+    }
+    if (shouldUseDesktopLocalFast) {
       await submitDesktopLocalFast(pollToken, runToken);
+      return;
+    }
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      await handleTaskFailureState({
+        message: offlineBannerMessage || "当前处于离线模式，部分功能不可用",
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+      });
       return;
     }
     setPhase("uploading");
@@ -2852,7 +3121,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       );
       uploadAbortRef.current = null;
       if (!ok) {
-        const message = toErrorText(data, "创建上传任务失败");
+        const message = mapCloudAsrFailureToMessage(toErrorText(data, "创建上传任务失败"), desktopServerStatus);
         await handleTaskFailureState({
           message,
           nextTaskId: "",
@@ -3124,7 +3393,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               const desktopBundleState = desktopBundleStateMap[item.key] || {};
               const desktopBundleAvailable = Boolean(desktopBundleState.available);
               const desktopBundleInstallAvailable = Boolean(desktopBundleState.installAvailable);
-              const desktopBundleBusy = desktopBundleBusyModelKey === item.key;
+              const desktopBundleUpdating = Boolean(desktopBundleState.updating);
+              const desktopBundleUpdateAvailable = Boolean(desktopBundleState.updateAvailable);
+              const desktopBundleBusy = desktopBundleBusyModelKey === item.key || desktopBundleUpdating;
               const fasterWhisperCardTrack =
                 isFasterWhisper && hasDesktopRuntimeBridge() ? fasterWhisperRuntimeTrack : FAST_RUNTIME_TRACK_CLOUD;
               const fasterWhisperDesktopTrack = fasterWhisperCardTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL;
@@ -3168,7 +3439,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                     ? desktopBundleBusy
                     : fasterModelPreparing || fasterModelBusy
                   : false;
-              const cardProgressValue = null;
+              const cardProgressValue =
+                desktopBundleUpdating && Number(desktopBundleState.totalFiles || 0) > 0
+                  ? clampPercent((Number(desktopBundleState.completedFiles || 0) / Number(desktopBundleState.totalFiles || 1)) * 100)
+                  : null;
               const cardProgressText = String(
                 isFasterWhisper && fasterWhisperDesktopTrack
                   ? desktopBundleState.message || "正在准备本机资源"
@@ -3236,13 +3510,35 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 fasterModelPreparing,
                 fasterModelBusy,
               });
+              const desktopBundleActionLabel = desktopBundleUpdating
+                ? "取消更新"
+                : desktopBundleUpdateAvailable && desktopBundleAvailable
+                  ? "更新模型"
+                  : desktopBundleBusy
+                    ? "准备中"
+                    : desktopBundleAvailable
+                      ? "本机已就绪"
+                      : "准备本机资源";
+              const desktopBundleActionDisabled =
+                desktopBundleUpdating
+                  ? false
+                  : uploadActionBusy || desktopBundleBusy || (!desktopBundleInstallAvailable && !desktopBundleAvailable && !desktopBundleUpdateAvailable);
               const fasterWhisperActionMeta = fasterWhisperDesktopTrack
                 ? {
                     label: desktopBundleBusy ? "准备中" : desktopBundleAvailable ? "本机已就绪" : "准备本机资源",
                     disabled: uploadActionBusy || desktopBundleBusy || (!desktopBundleInstallAvailable && !desktopBundleAvailable),
                   }
                 : actionMeta;
-              const effectiveActionMeta = isFasterWhisper ? fasterWhisperActionMeta : actionMeta;
+              const effectiveActionMeta =
+                isFasterWhisper && fasterWhisperDesktopTrack
+                  ? {
+                      ...fasterWhisperActionMeta,
+                      label: desktopBundleActionLabel,
+                      disabled: desktopBundleActionDisabled,
+                    }
+                  : isFasterWhisper
+                    ? fasterWhisperActionMeta
+                    : actionMeta;
               const showReadyIcon = !isQwen && highlightStatus;
               const showLoadingIcon =
                 !isQwen &&
@@ -3356,6 +3652,14 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                         }
                         if (isFasterWhisper) {
                           if (fasterWhisperDesktopTrack) {
+                            if (desktopBundleUpdating) {
+                              void handleCancelDesktopBundleModelUpdate(item.key);
+                              return;
+                            }
+                            if (desktopBundleUpdateAvailable && desktopBundleAvailable) {
+                              void handleDesktopBundleModelUpdate(item.key);
+                              return;
+                            }
                             void handleDesktopBundlePrepare(item.key);
                             return;
                           }
@@ -3387,6 +3691,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             })}
           </div>
         </div>
+
+        {offlineBannerMessage ? (
+          <Alert className="border-destructive/30 bg-destructive/5 text-destructive">
+            <AlertDescription>{offlineBannerMessage}</AlertDescription>
+          </Alert>
+        ) : null}
 
         {showMediaPreview ? (
           <div className="relative overflow-hidden rounded-2xl border bg-muted/10 p-1">

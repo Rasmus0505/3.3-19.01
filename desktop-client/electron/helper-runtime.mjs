@@ -87,8 +87,12 @@ export function resolvePackagedDesktopRuntime(resourcesPath) {
 
 export function selectDesktopModelDir(resourcesPath, fallbackModelDir) {
   const packagedRuntime = resolvePackagedDesktopRuntime(resourcesPath);
+  const resolvedFallbackModelDir = resolveAbsolutePath(fallbackModelDir);
+  if (directoryHasFiles(resolvedFallbackModelDir)) {
+    return resolvedFallbackModelDir;
+  }
   if (packagedRuntime.bottle1UseAsRuntime) {
     return packagedRuntime.bottle1ModelDir;
   }
-  return resolveAbsolutePath(fallbackModelDir);
+  return resolvedFallbackModelDir;
 }
