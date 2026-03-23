@@ -1,7 +1,7 @@
 schema_version: 1
 task_id: TASK-021
 title: 移动端软键盘学习页适配
-status: todo
+status: done
 priority: high
 project_root: D:/3.3-19.01
 base_ref: main
@@ -48,11 +48,15 @@ notes_for_after: |
   4. 回归保护：
      - 不改变字幕遮挡板、视频播放同步和桌面端沉浸式学习的核心交互语义。
      - 若为移动端加入额外样式类或 data 属性，保持 JSX 结构改动最小化。
-result_summary: ""
-changed_files: []
-tests_run: []
+result_summary: 完成沉浸式学习页移动端软键盘适配，补齐触屏设备焦点恢复、visualViewport 重排与键盘遮挡补偿，并修正横竖屏切换时的视口基线判断。
+changed_files:
+  - frontend/src/features/immersive/ImmersiveLessonPage.jsx
+  - frontend/src/features/immersive/immersive.css
+tests_run:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
 blocked_reason: ""
-completed_at: ""
+completed_at: 2026-03-23T19:46:30.0744440+08:00
 fix_request: ""
 fix_reason: ""
 fix_round: 0

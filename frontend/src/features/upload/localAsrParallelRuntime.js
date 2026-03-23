@@ -1,6 +1,6 @@
 import { getLocalAsrWorkerAssetPayload } from "../../shared/media/localAsrAssetManager";
 
-const DEFAULT_MODEL_ID = "local-sensevoice-small";
+const DEFAULT_MODEL_ID = "faster-whisper-medium";
 const DEFAULT_ASSET_BASE_URL = "/api/local-asr-assets";
 const DEFAULT_SAMPLE_RATE = 16000;
 const DEFAULT_OVERLAP_MS = 800;
@@ -177,7 +177,7 @@ function buildAsrPayload(words, sentences, rawResult) {
   );
   return {
     source: "local_browser_asr",
-    engine: "sherpa_onnx_sensevoice",
+    engine: "browser_local_asr",
     transcripts: [
       {
         text: transcriptText,

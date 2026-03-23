@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from app.core.timezone import to_shanghai_aware
-from app.models import BillingModelRate, FasterWhisperSetting, Lesson, LessonSentence, SenseVoiceSetting, SubtitleSetting, User
+from app.models import BillingModelRate, FasterWhisperSetting, Lesson, LessonSentence, SubtitleSetting, User
 from app.models.billing import cents_to_rate_yuan, normalize_rate_yuan, rate_yuan_to_compat_cents
 from app.schemas import (
     AdminSubtitleSettingsItem,
@@ -15,7 +15,6 @@ from app.schemas import (
     LessonItemResponse,
     LessonSentenceResponse,
     PublicSubtitleSettings,
-    SenseVoiceSettingsItem,
     SubtitleCacheSeedResponse,
     UserResponse,
 )
@@ -212,24 +211,6 @@ def to_admin_subtitle_settings_item(item: SubtitleSetting) -> AdminSubtitleSetti
         semantic_split_max_words_threshold=int(item.semantic_split_max_words_threshold),
         semantic_split_timeout_seconds=int(item.semantic_split_timeout_seconds),
         translation_batch_max_chars=max(1, min(12000, int(getattr(item, "translation_batch_max_chars", 2600) or 2600))),
-        updated_at=to_shanghai_aware(item.updated_at),
-    )
-
-
-def to_sensevoice_settings_item(item: SenseVoiceSetting) -> SenseVoiceSettingsItem:
-    return SenseVoiceSettingsItem(
-        model_dir=str(getattr(item, "model_dir", "") or ""),
-        trust_remote_code=bool(getattr(item, "trust_remote_code", False)),
-        remote_code=str(getattr(item, "remote_code", "") or ""),
-        device=str(getattr(item, "device", "") or ""),
-        language=str(getattr(item, "language", "") or ""),
-        vad_model=str(getattr(item, "vad_model", "") or ""),
-        vad_max_single_segment_time=int(getattr(item, "vad_max_single_segment_time", 30000) or 30000),
-        use_itn=bool(getattr(item, "use_itn", True)),
-        batch_size_s=int(getattr(item, "batch_size_s", 60) or 60),
-        merge_vad=bool(getattr(item, "merge_vad", True)),
-        merge_length_s=int(getattr(item, "merge_length_s", 15) or 15),
-        ban_emo_unk=bool(getattr(item, "ban_emo_unk", False)),
         updated_at=to_shanghai_aware(item.updated_at),
     )
 

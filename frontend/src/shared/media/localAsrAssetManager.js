@@ -9,8 +9,8 @@ const DIRECTORY_MANIFEST_FILE = ".local-asr-manifest.json";
 const BROWSER_CACHE_PREFIX = "english-trainer-local-asr-assets";
 const MATERIALIZED_URLS = new Map();
 const FALLBACK_STATUS = {
-  model_key: "local-sensevoice-small",
-  cache_version: "sensevoice-small-20260318-v1",
+  model_key: "faster-whisper-medium",
+  cache_version: "faster-whisper-medium-20260323-v1",
   allowed_files: [
     "sherpa-onnx-asr.js",
     "sherpa-onnx-vad.js",

@@ -2,7 +2,7 @@ import { AlertTriangle } from "lucide-react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../shared/ui";
 
-export function AdminSenseVoiceSettingsTab() {
+export function AdminLegacyAsrRemovedTab() {
   return (
     <Card className="rounded-3xl border shadow-sm">
       <CardHeader className="space-y-3">
@@ -11,7 +11,7 @@ export function AdminSenseVoiceSettingsTab() {
             <AlertTriangle className="size-4" />
             Legacy ASR Removed
           </CardTitle>
-          <CardDescription>This legacy model has been removed from the product and is no longer configurable.</CardDescription>
+          <CardDescription>The retired upload model has been removed from the product and is no longer configurable.</CardDescription>
         </div>
       </CardHeader>
       <CardContent>

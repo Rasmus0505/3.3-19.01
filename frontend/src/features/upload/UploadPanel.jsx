@@ -113,9 +113,9 @@ function getOfflineBannerText(serverStatus) {
 
 const LOCAL_MODEL_OPTIONS = [
   {
-    key: ASR_MODEL_KEYS.sensevoiceBrowser,
-    workerModelId: ASR_MODEL_KEYS.sensevoiceBrowser,
-    title: "SenseVoice Small",
+    key: ASR_MODEL_KEYS.fasterWhisper,
+    workerModelId: ASR_MODEL_KEYS.fasterWhisper,
+    title: "Bottle 1.0",
     subtitle: "先准备模型，再开始生成。",
     uploadEnabled: true,
     sizeEstimateMb: { wasm: 180 },
@@ -245,9 +245,6 @@ function getDefaultFastUploadModelKey(configuredModel = "") {
 
 function getDefaultUploadModelKey(configuredModel = "") {
   const normalizedConfiguredModel = String(configuredModel || "").trim();
-  if (normalizedConfiguredModel === ASR_MODEL_KEYS.sensevoiceBrowser || normalizedConfiguredModel === ASR_MODEL_KEYS.sensevoiceServer) {
-    return DEFAULT_FAST_UPLOAD_MODEL;
-  }
   if (normalizedConfiguredModel === FASTER_WHISPER_MODEL || normalizedConfiguredModel === QWEN_MODEL) {
     return normalizedConfiguredModel;
   }
@@ -319,19 +316,10 @@ function getUploadCardActionMeta({
   localWorkerReady,
   localCardBusy,
   localCardDownloaded,
-  sensevoiceModelReady,
-  sensevoiceModelPreparing,
-  sensevoiceModelBusy,
   fasterModelReady,
   fasterModelPreparing,
   fasterModelBusy,
 }) {
-  if (item.key === ASR_MODEL_KEYS.sensevoiceServer) {
-    return {
-      label: sensevoiceModelReady ? "重新准备" : sensevoiceModelPreparing || sensevoiceModelBusy ? "准备中" : "准备模型",
-      disabled: uploadActionBusy || sensevoiceModelBusy || sensevoiceModelPreparing || localTranscribing,
-    };
-  }
   if (item.key === FASTER_WHISPER_MODEL) {
     return {
       label: fasterModelReady ? "重新准备" : fasterModelPreparing || fasterModelBusy ? "准备中" : "准备模型",
@@ -495,7 +483,7 @@ function sanitizeUserFacingText(text) {
     .replace(/No module named ['"][^'"]+['"]/gi, "服务端依赖未安装")
     .replace(/本地识别/g, "识别")
     .replace(/本地模型/g, "模型")
-    .replace(/本地 SenseVoice/g, "SenseVoice")
+    .replace(/本地 Bottle 1\.0/g, "Bottle 1.0")
     .replace(/本地字幕/g, "字幕")
     .replace(/本地音频/g, "音频")
     .replace(/本地视频/g, "视频")
@@ -770,7 +758,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [mode, setMode] = useState("fast");
   const [asrModelCatalogMap, setAsrModelCatalogMap] = useState(DEFAULT_ASR_MODEL_CATALOG_MAP);
   const [localWorkerEpoch, setLocalWorkerEpoch] = useState(0);
-  const [localWorkerReadyMap, setLocalWorkerReadyMap] = useState({ sensevoice: false });
+  const [localWorkerReadyMap, setLocalWorkerReadyMap] = useState({ browserLocal: false });
   const [selectedBalancedModel, setSelectedBalancedModel] = useState(() => {
     return getDefaultBalancedModelKey(configuredDefaultAsrModel);
   });
@@ -848,7 +836,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const estimatedMtTokens = estimateMtTokensByDuration(durationSec || 0);
   const estimatedMtChargeCents = calculateChargeCentsByTokens(estimatedMtTokens, mtRateCentsPer1kTokens);
   const estimatedTotalChargeCents = (fasterWhisperDesktopLocalSelected ? 0 : estimatedAsrChargeCents) + estimatedMtChargeCents;
-  const localWorkerReady = Boolean(localWorkerReadyMap.sensevoice);
+  const localWorkerReady = Boolean(localWorkerReadyMap.browserLocal);
   const balancedPerformanceWarning = useMemo(
     () => (mode === "balanced" ? buildLocalAsrLongAudioWarning(durationSec, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS) : ""),
     [durationSec, mode],
@@ -1086,7 +1074,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     rejectPendingLocalRequests(message, errorName);
     localRunAbortRef.current?.abort();
     localRunAbortRef.current = null;
-    setLocalWorkerReadyMap({ sensevoice: false });
+    setLocalWorkerReadyMap({ browserLocal: false });
     if (localSenseWorkerRef.current) {
       localSenseWorkerRef.current.terminate?.();
       localSenseWorkerRef.current = null;
@@ -1183,12 +1171,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   useEffect(() => {
     if (!LOCAL_BROWSER_ASR_ENABLED) {
-      setLocalWorkerReadyMap({ sensevoice: false });
+      setLocalWorkerReadyMap({ browserLocal: false });
       setLocalModelStateMap({});
       return undefined;
     }
     if (!localAsrSupport.supported) {
-      setLocalWorkerReadyMap({ sensevoice: false });
+      setLocalWorkerReadyMap({ browserLocal: false });
       const unsupportedMap = Object.fromEntries(
         LOCAL_MODEL_OPTIONS.map((item) => [
           item.key,
@@ -1205,7 +1193,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
     const senseWorker = new Worker(new URL("./localAsrPreviewWorker.js", import.meta.url));
     localSenseWorkerRef.current = senseWorker;
-    setLocalWorkerReadyMap({ sensevoice: true });
+    setLocalWorkerReadyMap({ browserLocal: true });
 
     const handleMessage = (event) => {
       const payload = event?.data || {};
@@ -1256,7 +1244,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       setLocalModelStateMap((prev) => {
         const next = { ...prev };
         LOCAL_MODEL_OPTIONS.forEach((item) => {
-          if (workerKind !== "sensevoice") return;
+          if (workerKind !== "browserLocal") return;
           next[item.key] = {
             ...(next[item.key] || {}),
             status: "error",
@@ -1266,7 +1254,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         return next;
       });
     };
-    const handleSenseWorkerError = buildWorkerErrorHandler("sensevoice");
+    const handleSenseWorkerError = buildWorkerErrorHandler("browserLocal");
 
     senseWorker.addEventListener("message", handleMessage);
     senseWorker.addEventListener("error", handleSenseWorkerError);
@@ -1274,7 +1262,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       senseWorker.removeEventListener("message", handleMessage);
       senseWorker.removeEventListener("error", handleSenseWorkerError);
       rejectPendingLocalRequests("识别组件已关闭");
-      setLocalWorkerReadyMap({ sensevoice: false });
+      setLocalWorkerReadyMap({ browserLocal: false });
       senseWorker.terminate();
       releaseAllLocalAsrWorkerAssetPayloads();
       if (localSenseWorkerRef.current === senseWorker) localSenseWorkerRef.current = null;
@@ -3502,14 +3490,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {UPLOAD_MODEL_OPTIONS.map((item) => {
               const selected = selectedUploadModel === item.key;
-              const isSenseVoice = item.key === ASR_MODEL_KEYS.sensevoiceServer;
               const isFasterWhisper = item.key === FASTER_WHISPER_MODEL;
               const isQwen = item.key === QWEN_MODEL;
               const uploadCardMeta = mergeCatalogIntoUploadModelMeta(item.key, asrModelCatalogMap);
-              const sensevoiceModelState = serverModelStateMap[item.key] || {};
-              const sensevoiceModelReady = isAsrModelReady(sensevoiceModelState);
-              const sensevoiceModelBusy = serverBusyModelKey === item.key;
-              const sensevoiceModelPreparing = isAsrModelPreparing(sensevoiceModelState);
               const fasterModelState = serverModelStateMap[item.key] || {};
               const fasterModelReady = isAsrModelReady(fasterModelState);
               const fasterModelBusy = serverBusyModelKey === item.key;
@@ -3524,62 +3507,51 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 isFasterWhisper && (hasDesktopRuntimeBridge() || hasBrowserLocalRuntimeBridge()) ? fasterWhisperRuntimeTrack : FAST_RUNTIME_TRACK_CLOUD;
               const fasterWhisperDesktopTrack = fasterWhisperCardTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL;
               const fasterWhisperBrowserTrack = fasterWhisperCardTrack === FAST_RUNTIME_TRACK_BROWSER_LOCAL;
-              const sensevoiceCardStatus = String(sensevoiceModelState.status || "").trim().toLowerCase();
               const fasterCardStatus = String(fasterModelState.status || "").trim().toLowerCase();
-              const cardStatusLabel = isSenseVoice
-                ? getAsrModelStatusLabel(sensevoiceModelState, { readyLabel: "已就绪", missingLabel: "未准备", loadingLabel: "准备中", errorLabel: "异常", unsupportedLabel: "不可用" })
-                : isFasterWhisper
-                  ? fasterWhisperDesktopTrack
-                    ? desktopBundleBusy
-                      ? "本机准备中"
-                      : desktopBundleAvailable
-                        ? "本机可用"
-                        : "本机未就绪"
-                    : fasterWhisperBrowserTrack
-                      ? browserLocalRuntimeAvailable
-                        ? "本地网站可用"
-                        : "本地网站未就绪"
-                    : getAsrModelStatusLabel(fasterModelState, { readyLabel: "云端已就绪", missingLabel: "云端未准备", loadingLabel: "云端准备中", errorLabel: "云端异常", unsupportedLabel: "不可用" })
-                  : getAsrModelStatusLabel({ status: "ready", downloadRequired: false }, { readyLabel: "可用" });
+              const cardStatusLabel = isFasterWhisper
+                ? fasterWhisperDesktopTrack
+                  ? desktopBundleBusy
+                    ? "本机准备中"
+                    : desktopBundleAvailable
+                      ? "本机可用"
+                      : "本机未就绪"
+                  : fasterWhisperBrowserTrack
+                    ? browserLocalRuntimeAvailable
+                      ? "本地网站可用"
+                      : "本地网站未就绪"
+                  : getAsrModelStatusLabel(fasterModelState, { readyLabel: "云端已就绪", missingLabel: "云端未准备", loadingLabel: "云端准备中", errorLabel: "云端异常", unsupportedLabel: "不可用" })
+                : getAsrModelStatusLabel({ status: "ready", downloadRequired: false }, { readyLabel: "可用" });
               const cardPriceLabel =
                 isFasterWhisper && (fasterWhisperDesktopTrack || fasterWhisperBrowserTrack)
                   ? `${getFastRuntimeTrackLabel(fasterWhisperCardTrack)} / ${getUploadModelPriceLabel(item, billingRates)}`
                   : getUploadModelPriceLabel(item, billingRates);
-              const highlightStatus = isSenseVoice
-                ? sensevoiceModelReady
-                : isFasterWhisper
-                  ? fasterWhisperDesktopTrack
-                    ? desktopBundleAvailable
-                    : fasterWhisperBrowserTrack
-                      ? browserLocalRuntimeAvailable
-                      : fasterModelReady
-                  : true;
-              const modelCardHasError = isSenseVoice
-                ? Boolean(sensevoiceModelState.lastError) || ["error", "unsupported"].includes(sensevoiceCardStatus)
-                : isFasterWhisper
-                  ? fasterWhisperDesktopTrack
-                    ? Boolean(desktopBundleState.lastError)
-                    : fasterWhisperBrowserTrack
-                      ? !browserLocalRuntimeAvailable
+              const highlightStatus = isFasterWhisper
+                ? fasterWhisperDesktopTrack
+                  ? desktopBundleAvailable
+                  : fasterWhisperBrowserTrack
+                    ? browserLocalRuntimeAvailable
+                    : fasterModelReady
+                : true;
+              const modelCardHasError = isFasterWhisper
+                ? fasterWhisperDesktopTrack
+                  ? Boolean(desktopBundleState.lastError)
+                  : fasterWhisperBrowserTrack
+                    ? !browserLocalRuntimeAvailable
                     : Boolean(fasterModelState.lastError) || String(fasterModelState.status || "").trim().toLowerCase() === "error"
-                  : false;
+                : false;
               const modelCardTone = getUploadModelTone({
                 selected,
                 ready: highlightStatus,
-                busy:
-                  (isSenseVoice && (sensevoiceModelBusy || sensevoiceModelPreparing)) ||
-                  (isFasterWhisper && (fasterWhisperDesktopTrack ? desktopBundleBusy : fasterModelBusy || fasterModelPreparing)),
+                busy: isFasterWhisper && (fasterWhisperDesktopTrack ? desktopBundleBusy : fasterModelBusy || fasterModelPreparing),
                 error: modelCardHasError,
               });
               const modelCardToneStyles = getUploadToneStyles(modelCardTone);
               const modelBadgeToneStyles = getUploadToneStyles(highlightStatus ? "success" : modelCardTone === "running" ? "running" : "idle");
-              const showCardProgress = isSenseVoice
-                ? sensevoiceModelPreparing || sensevoiceModelBusy
-                : isFasterWhisper
-                  ? fasterWhisperDesktopTrack
-                    ? desktopBundleBusy
-                    : fasterModelPreparing || fasterModelBusy
-                  : false;
+              const showCardProgress = isFasterWhisper
+                ? fasterWhisperDesktopTrack
+                  ? desktopBundleBusy
+                  : fasterModelPreparing || fasterModelBusy
+                : false;
               const cardProgressValue =
                 desktopBundleUpdating && Number(desktopBundleState.totalFiles || 0) > 0
                   ? clampPercent((Number(desktopBundleState.completedFiles || 0) / Number(desktopBundleState.totalFiles || 1)) * 100)
@@ -3587,13 +3559,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               const cardProgressText = String(
                 isFasterWhisper && fasterWhisperDesktopTrack
                   ? desktopBundleState.message || "正在准备本机资源"
-                  : serverBusyText || (isSenseVoice ? sensevoiceModelState.message : fasterModelState.message) || "准备中",
+                  : serverBusyText || fasterModelState.message || "准备中",
               );
-              const cardErrorText = isSenseVoice
-                ? sanitizeUserFacingText(String(sensevoiceModelState.lastError || ""))
-                : isFasterWhisper
-                  ? sanitizeUserFacingText(String(fasterWhisperDesktopTrack ? desktopBundleState.lastError || "" : fasterModelState.lastError || ""))
-                  : "";
+              const cardErrorText = isFasterWhisper
+                ? sanitizeUserFacingText(String(fasterWhisperDesktopTrack ? desktopBundleState.lastError || "" : fasterModelState.lastError || ""))
+                : "";
               const desktopBundleStatusText =
                 isFasterWhisper && hasDesktopRuntimeBridge()
                   ? sanitizeUserFacingText(
@@ -3608,40 +3578,31 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                     )
                   : "";
               const desktopBundleErrorText = isFasterWhisper && hasDesktopRuntimeBridge() ? sanitizeUserFacingText(String(desktopBundleState.lastError || "")) : "";
-              const cardStatusText = isSenseVoice
-                ? sanitizeUserFacingText(
-                    sensevoiceModelState.message ||
-                      (sensevoiceModelReady
-                        ? "服务端模型已就绪，可直接生成。"
-                        : sensevoiceCardStatus === "error"
-                          ? "服务端模型暂未就绪，请重新准备。"
-                          : String(uploadCardMeta.note || uploadCardMeta.subtitle || "")),
-                  )
-                : isFasterWhisper
-                  ? fasterWhisperDesktopTrack
+              const cardStatusText = isFasterWhisper
+                ? fasterWhisperDesktopTrack
+                  ? sanitizeUserFacingText(
+                      desktopBundleState.message ||
+                        (desktopBundleAvailable
+                          ? "Bottle 1.0 将在本地电脑 helper 中运行，云端只负责保存课程结果。"
+                          : desktopBundleInstallAvailable
+                            ? "请先准备本地电脑资源，随后即可用本地电脑 Bottle 1.0 生成课程。"
+                            : "当前安装包未提供可用的 Bottle 1.0 本机资源，请改用云端运行。"),
+                    )
+                  : fasterWhisperBrowserTrack
                     ? sanitizeUserFacingText(
-                        desktopBundleState.message ||
-                          (desktopBundleAvailable
-                            ? "Bottle 1.0 将在本地电脑 helper 中运行，云端只负责保存课程结果。"
-                            : desktopBundleInstallAvailable
-                              ? "请先准备本地电脑资源，随后即可用本地电脑 Bottle 1.0 生成课程。"
-                              : "当前安装包未提供可用的 Bottle 1.0 本机资源，请改用云端运行。"),
+                        browserLocalRuntimeAvailable
+                          ? "Bottle 1.0 将在本地网站运行时中完成抽音频、识别和课程结构生成，云端只负责保存。"
+                          : browserLocalRuntimeBlockedMessage,
                       )
-                    : fasterWhisperBrowserTrack
-                      ? sanitizeUserFacingText(
-                          browserLocalRuntimeAvailable
-                            ? "Bottle 1.0 将在本地网站运行时中完成抽音频、识别和课程结构生成，云端只负责保存。"
-                            : browserLocalRuntimeBlockedMessage,
-                        )
-                    : sanitizeUserFacingText(
-                        fasterModelState.message ||
-                          (fasterModelReady
-                            ? "服务端模型已就绪，可直接生成。"
-                            : fasterCardStatus === "error"
-                              ? "服务端模型暂未就绪，请重新准备。"
-                              : String(uploadCardMeta.note || uploadCardMeta.subtitle || "")),
-                      )
-                  : sanitizeUserFacingText(String(uploadCardMeta.note || uploadCardMeta.subtitle || ""));
+                  : sanitizeUserFacingText(
+                      fasterModelState.message ||
+                        (fasterModelReady
+                          ? "服务端模型已就绪，可直接生成。"
+                          : fasterCardStatus === "error"
+                            ? "服务端模型暂未就绪，请重新准备。"
+                            : String(uploadCardMeta.note || uploadCardMeta.subtitle || "")),
+                    )
+                : sanitizeUserFacingText(String(uploadCardMeta.note || uploadCardMeta.subtitle || ""));
               const actionMeta = getUploadCardActionMeta({
                 item,
                 uploadActionBusy,
@@ -3650,9 +3611,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 localWorkerReady,
                 localCardBusy: false,
                 localCardDownloaded: false,
-                sensevoiceModelReady,
-                sensevoiceModelPreparing,
-                sensevoiceModelBusy,
                 fasterModelReady,
                 fasterModelPreparing,
                 fasterModelBusy,
@@ -3692,10 +3650,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                     ? fasterWhisperActionMeta
                     : actionMeta;
               const showReadyIcon = !isQwen && highlightStatus;
-              const showLoadingIcon =
-                !isQwen &&
-                ((isSenseVoice && (sensevoiceModelBusy || sensevoiceModelPreparing)) ||
-                  (isFasterWhisper && (fasterWhisperDesktopTrack ? desktopBundleBusy : fasterModelBusy || fasterModelPreparing)));
+              const showLoadingIcon = !isQwen && isFasterWhisper && (fasterWhisperDesktopTrack ? desktopBundleBusy : fasterModelBusy || fasterModelPreparing);
 
               return (
                 <div
@@ -3815,10 +3770,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                       variant={isQwen ? "outline" : "default"}
                       onClick={(event) => {
                         event.stopPropagation();
-                        if (isSenseVoice) {
-                          void handleServerModelPrepare(item.key);
-                          return;
-                        }
                         if (isFasterWhisper) {
                           if (fasterWhisperDesktopTrack) {
                             if (desktopBundleUpdating) {

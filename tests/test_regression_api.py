@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import io
+import importlib
 import json
 import os
 import re
@@ -662,13 +663,13 @@ def _enable_local_asr_model(monkeypatch):
     from app.services import lesson_command_service as lesson_command_service_module
     from app.services import lesson_service as lesson_service_module
 
-    monkeypatch.setattr(lesson_router, "get_supported_local_browser_asr_model_keys", lambda: ("local-sensevoice-small",))
+    monkeypatch.setattr(lesson_router, "get_supported_local_browser_asr_model_keys", lambda: (FASTER_WHISPER_ASR_MODEL,))
     monkeypatch.setattr(lesson_command_service_module, "_ensure_sufficient_balance_for_model", lambda *args, **kwargs: 0)
 
     original_get_model_rate = lesson_service_module.get_model_rate
 
     def fake_get_model_rate(db, model):
-        if model == "local-sensevoice-small":
+        if model == FASTER_WHISPER_ASR_MODEL:
             return SimpleNamespace(points_per_minute=0, price_per_minute_yuan=0, segment_seconds=300, max_concurrency=1)
         return original_get_model_rate(db, model)
 
@@ -2685,44 +2686,9 @@ def test_transcribe_audio_file_rejects_removed_sensevoice_model():
     assert exc_info.value.detail == "sensevoice-small"
 
 
-def test_sensevoice_uses_known_duration_without_ffprobe(monkeypatch):
-    from app.services import sensevoice as sensevoice_module
-
-    class DummyModel:
-        def generate(self, **kwargs):
-            return [{"text": "hello from sensevoice"}]
-
-    snapshot = sensevoice_module.SenseVoiceSettingsSnapshot(
-        model_dir="iic/SenseVoiceSmall",
-        trust_remote_code=False,
-        remote_code="",
-        device="cpu",
-        language="auto",
-        vad_model="fsmn-vad",
-        vad_max_single_segment_time=30000,
-        use_itn=True,
-        batch_size_s=60,
-        merge_vad=True,
-        merge_length_s=15,
-        ban_emo_unk=False,
-    )
-
-    monkeypatch.setattr(sensevoice_module, "_get_or_create_model", lambda settings: DummyModel())
-    monkeypatch.setattr(sensevoice_module, "_load_funasr_symbols", lambda: (None, None))
-    monkeypatch.setattr(
-        sensevoice_module,
-        "_probe_audio_duration_ms",
-        lambda _path: (_ for _ in ()).throw(AssertionError("ffprobe should be skipped when known duration is provided")),
-    )
-
-    result = sensevoice_module.transcribe_audio_file_with_sensevoice(
-        "demo.wav",
-        settings=snapshot,
-        known_duration_ms=2100,
-    )
-
-    assert result["usage_seconds"] == 3
-    assert result["preview_text"] == "hello from sensevoice"
+def test_removed_sensevoice_module_cannot_be_imported():
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("app.services.sensevoice")
 
 
 def test_create_lesson_rejects_para_model(test_client):
@@ -2975,7 +2941,7 @@ def test_create_local_asr_lesson_task(test_client, monkeypatch, tmp_path):
         session.close()
 
     payload = {
-        "asr_model": "local-sensevoice-small",
+        "asr_model": FASTER_WHISPER_ASR_MODEL,
         "source_filename": "demo.wav",
         "source_duration_ms": 12_000,
         "asr_payload": {
@@ -2999,7 +2965,7 @@ def test_create_local_asr_lesson_task(test_client, monkeypatch, tmp_path):
     assert task_resp.status_code == 200
     task_payload = task_resp.json()
     assert task_payload["status"] == "succeeded"
-    assert task_payload["lesson"]["asr_model"] == "local-sensevoice-small"
+    assert task_payload["lesson"]["asr_model"] == FASTER_WHISPER_ASR_MODEL
 
 
 def test_create_desktop_local_asr_lesson_task_preserves_runtime_kind(test_client, monkeypatch, tmp_path):
@@ -3016,7 +2982,7 @@ def test_create_desktop_local_asr_lesson_task_preserves_runtime_kind(test_client
     original_get_model_rate = lesson_service_module.get_model_rate
 
     def fake_get_model_rate(db, model):
-        if model in {"local-sensevoice-small", FASTER_WHISPER_ASR_MODEL}:
+        if model == FASTER_WHISPER_ASR_MODEL:
             return SimpleNamespace(points_per_minute=0, price_per_minute_yuan=0, segment_seconds=300, max_concurrency=1)
         return original_get_model_rate(db, model)
 
@@ -3412,7 +3378,7 @@ def test_admin_subtitle_settings_roundtrip(test_client):
     assert fetch_resp.json()["settings"]["translation_batch_max_chars"] == 3200
 
 
-def test_admin_sensevoice_settings_endpoints_report_removed(test_client):
+def test_admin_removed_sensevoice_settings_endpoints_are_not_found(test_client):
     client, _, monkeypatch = test_client
     monkeypatch.setenv("ADMIN_EMAILS", "sensevoice-admin@example.com")
     admin_token = _register_and_login(client, email="sensevoice-admin@example.com")
@@ -3443,10 +3409,8 @@ def test_admin_sensevoice_settings_endpoints_report_removed(test_client):
     ]
 
     for response in responses:
-        assert response.status_code == 404
-        payload = response.json()
-        assert payload["error_code"] == "ASR_MODEL_REMOVED"
-        assert payload["detail"]["model_key"] == "sensevoice-small"
+        assert response.status_code in {404, 405}
+        assert response.json()["detail"] in {"Not Found", "Method Not Allowed"}
 
 
 def test_admin_faster_whisper_settings_roundtrip_and_rollback(test_client):
@@ -3640,43 +3604,6 @@ def test_public_billing_rates_self_heals_missing_subtitle_settings_table(test_cl
         assert row.id == 1
     finally:
         verify.close()
-
-
-def test_admin_sensevoice_settings_returns_removed_even_if_table_missing(test_client, monkeypatch):
-    client, session_factory, monkeypatch = test_client
-    monkeypatch.setenv("ADMIN_EMAILS", "sensevoice-heal-admin@example.com")
-    admin_token = _register_and_login(client, email="sensevoice-heal-admin@example.com")
-    headers = {"Authorization": f"Bearer {admin_token}"}
-
-    session = session_factory()
-    try:
-        session.execute(text("DROP TABLE IF EXISTS sensevoice_settings"))
-        session.commit()
-    finally:
-        session.close()
-
-    resp = client.put(
-        "/api/admin/sensevoice-settings",
-        headers=headers,
-        json={
-            "model_dir": "iic/SenseVoiceSmall",
-            "trust_remote_code": False,
-            "remote_code": "",
-            "device": "cuda:0",
-            "language": "auto",
-            "vad_model": "fsmn-vad",
-            "vad_max_single_segment_time": 30000,
-            "use_itn": True,
-            "batch_size_s": 60,
-            "merge_vad": True,
-            "merge_length_s": 15,
-            "ban_emo_unk": False,
-        },
-    )
-    assert resp.status_code == 404
-    body = resp.json()
-    assert body["error_code"] == "ASR_MODEL_REMOVED"
-    assert body["detail"]["model_key"] == "sensevoice-small"
 
 
 def test_admin_faster_whisper_settings_self_heals_missing_table(test_client, monkeypatch):
@@ -4825,7 +4752,7 @@ def test_lesson_task_admission_control_queues_and_rejects_across_entrypoints(tes
         "/api/lessons/tasks/local-asr",
         headers=headers,
         json={
-            "asr_model": "local-sensevoice-small",
+            "asr_model": FASTER_WHISPER_ASR_MODEL,
             "source_filename": "busy.wav",
             "source_duration_ms": 12_000,
             "asr_payload": {

@@ -17,7 +17,6 @@ from app.api.serializers import (
     to_admin_subtitle_settings_item,
     to_faster_whisper_settings_item,
     to_rate_item,
-    to_sensevoice_settings_item,
 )
 from app.core.config import (
     BASE_DATA_DIR,
@@ -31,7 +30,7 @@ from app.core.config import (
 from app.core.errors import error_response, map_billing_error
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
 from app.db import DATABASE_URL, get_db, is_sqlite_url
-from app.models import AdminOperationLog, BillingModelRate, FasterWhisperSetting, RedeemCode, RedeemCodeBatch, SenseVoiceSetting, SubtitleSetting, User
+from app.models import AdminOperationLog, BillingModelRate, FasterWhisperSetting, RedeemCode, RedeemCodeBatch, SubtitleSetting, User
 from app.repositories.admin import (
     list_admin_users,
     list_all_redeem_audit_rows,
@@ -54,11 +53,6 @@ from app.schemas import (
     FasterWhisperSettingsItem,
     FasterWhisperSettingsResponse,
     FasterWhisperSettingsUpdateRequest,
-    SenseVoiceSettingsHistoryItem,
-    SenseVoiceSettingsHistoryResponse,
-    SenseVoiceSettingsItem,
-    SenseVoiceSettingsResponse,
-    SenseVoiceSettingsUpdateRequest,
     AdminTranslationLogItem,
     AdminTranslationLogsResponse,
     AdminRedeemAuditExportRequest,
@@ -125,7 +119,6 @@ from app.services.faster_whisper_asr import (
     prepare_faster_whisper_model,
 )
 from app.services.media import get_controlled_media_roots
-from app.services.sensevoice import get_pinned_sensevoice_model_dir, get_sensevoice_settings
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -134,10 +127,6 @@ logger = logging.getLogger(__name__)
 
 def _now() -> datetime:
     return now_shanghai_naive()
-
-
-def _sensevoice_removed_response():
-    return error_response(404, "ASR_MODEL_REMOVED", "Bottle 0.1 已移除", {"model_key": "sensevoice-small"})
 
 
 def _parse_optional_lesson_id(raw_value: str | int | None):
@@ -336,46 +325,6 @@ def _subtitle_settings_item_from_dict(
     )
 
 
-def _sensevoice_settings_item_with_meta(
-    settings: SenseVoiceSetting,
-    *,
-    updated_by_user_email: str | None = None,
-) -> SenseVoiceSettingsItem:
-    item = to_sensevoice_settings_item(settings)
-    return item.model_copy(
-        update={
-            "updated_by_user_id": settings.updated_by_user_id,
-            "updated_by_user_email": updated_by_user_email,
-        }
-    )
-
-
-def _sensevoice_settings_item_from_dict(
-    payload: dict[str, object],
-    *,
-    updated_at: datetime,
-    updated_by_user_id: int | None = None,
-    updated_by_user_email: str | None = None,
-) -> SenseVoiceSettingsItem:
-    return SenseVoiceSettingsItem(
-        model_dir=get_pinned_sensevoice_model_dir(),
-        trust_remote_code=bool(payload.get("trust_remote_code")),
-        remote_code=str(payload.get("remote_code") or ""),
-        device=str(payload.get("device") or "cuda:0"),
-        language=str(payload.get("language") or "auto"),
-        vad_model=str(payload.get("vad_model") or "fsmn-vad"),
-        vad_max_single_segment_time=max(1, int(payload.get("vad_max_single_segment_time", 30000) or 30000)),
-        use_itn=bool(payload.get("use_itn", True)),
-        batch_size_s=max(1, int(payload.get("batch_size_s", 60) or 60)),
-        merge_vad=bool(payload.get("merge_vad", True)),
-        merge_length_s=max(1, int(payload.get("merge_length_s", 15) or 15)),
-        ban_emo_unk=bool(payload.get("ban_emo_unk", False)),
-        updated_at=to_shanghai_aware(updated_at),
-        updated_by_user_id=updated_by_user_id,
-        updated_by_user_email=updated_by_user_email,
-    )
-
-
 def _faster_whisper_settings_item_with_meta(
     settings: FasterWhisperSetting,
     *,
@@ -440,43 +389,6 @@ def _load_subtitle_settings_rollback_candidate(db: Session) -> AdminSubtitleSett
         operator_user_id=row[0].operator_user_id,
         operator_user_email=row.operator_email,
         settings=_subtitle_settings_item_from_dict(
-            payload,
-            updated_at=row[0].created_at,
-            updated_by_user_id=row[0].operator_user_id,
-            updated_by_user_email=row.operator_email,
-        ),
-    )
-
-
-def _load_sensevoice_settings_rollback_candidate(db: Session) -> SenseVoiceSettingsHistoryItem | None:
-    operator_user = User.__table__.alias("sensevoice_settings_operator")
-    row = db.execute(
-        select(AdminOperationLog, operator_user.c.email.label("operator_email"))
-        .outerjoin(operator_user, operator_user.c.id == AdminOperationLog.operator_user_id)
-        .where(
-            AdminOperationLog.target_type == "sensevoice_settings",
-            AdminOperationLog.action_type.in_(["sensevoice_settings_update", "sensevoice_settings_rollback"]),
-        )
-        .order_by(AdminOperationLog.created_at.desc(), AdminOperationLog.id.desc())
-        .limit(1)
-    ).first()
-    if row is None:
-        return None
-
-    raw_before = getattr(row[0], "before_value", "") or ""
-    try:
-        payload = json.loads(raw_before)
-    except Exception:
-        payload = {}
-    if not isinstance(payload, dict) or not payload:
-        return None
-
-    return SenseVoiceSettingsHistoryItem(
-        action_id=int(row[0].id),
-        created_at=to_shanghai_aware(row[0].created_at),
-        operator_user_id=row[0].operator_user_id,
-        operator_user_email=row.operator_email,
-        settings=_sensevoice_settings_item_from_dict(
             payload,
             updated_at=row[0].created_at,
             updated_by_user_id=row[0].operator_user_id,
@@ -1110,53 +1022,6 @@ def admin_rollback_subtitle_settings_last(
     db.commit()
     db.refresh(settings)
     return AdminSubtitleSettingsResponse(ok=True, settings=_subtitle_settings_item_with_meta(settings, updated_by_user_email=current_admin.email))
-
-
-@router.get(
-    "/sensevoice-settings",
-    response_model=SenseVoiceSettingsResponse,
-    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
-)
-def admin_get_sensevoice_settings(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
-    _ = db
-    return _sensevoice_removed_response()
-
-
-@router.get(
-    "/sensevoice-settings/history",
-    response_model=SenseVoiceSettingsHistoryResponse,
-    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
-)
-def admin_get_sensevoice_settings_history(db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
-    _ = db
-    return _sensevoice_removed_response()
-
-
-@router.put(
-    "/sensevoice-settings",
-    response_model=SenseVoiceSettingsResponse,
-    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
-)
-def admin_update_sensevoice_settings(
-    payload: SenseVoiceSettingsUpdateRequest,
-    db: Session = Depends(get_db),
-    current_admin: User = Depends(get_admin_user),
-):
-    _ = (payload, db, current_admin)
-    return _sensevoice_removed_response()
-
-
-@router.post(
-    "/sensevoice-settings/rollback-last",
-    response_model=SenseVoiceSettingsResponse,
-    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
-)
-def admin_rollback_sensevoice_settings_last(
-    db: Session = Depends(get_db),
-    current_admin: User = Depends(get_admin_user),
-):
-    _ = (db, current_admin)
-    return _sensevoice_removed_response()
 
 
 @router.get(

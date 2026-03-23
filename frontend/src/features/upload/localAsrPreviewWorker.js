@@ -1,5 +1,5 @@
 const TARGET_SAMPLE_RATE = 16000;
-const DEFAULT_MODEL_ID = "local-sensevoice-small";
+const DEFAULT_MODEL_ID = "faster-whisper-medium";
 const DEFAULT_ASSET_BASE_URL = "/api/local-asr-assets";
 
 const RUNTIME_FILES = {
@@ -116,10 +116,10 @@ function createRecognizer(Module) {
     throw new Error("sherpa-onnx OfflineRecognizer 未加载成功");
   }
   if (fileExists("sense-voice.onnx") !== 1) {
-    throw new Error("SenseVoice 模型文件未就绪");
+    throw new Error("本地字幕模型文件未就绪");
   }
   if (fileExists("tokens.txt") !== 1) {
-    throw new Error("SenseVoice tokens 文件未就绪");
+    throw new Error("本地字幕 tokens 文件未就绪");
   }
   const config = {
     modelConfig: {
@@ -166,8 +166,8 @@ function handleModuleStatus(requestId, modelId, status) {
       modelId,
       runtime: "wasm",
       progress: 100,
-      status: "模型资源已下载，正在初始化 SenseVoice",
-      status_text: "模型资源已下载，正在初始化 SenseVoice",
+      status: "模型资源已下载，正在初始化本地字幕模型",
+      status_text: "模型资源已下载，正在初始化本地字幕模型",
       file: RUNTIME_FILES.runtimeData,
     });
     return;
@@ -185,8 +185,8 @@ function handleModuleStatus(requestId, modelId, status) {
       loaded,
       total,
       progress,
-      status: progress == null ? "正在下载本地 SenseVoice 资源" : `正在下载本地 SenseVoice 资源 ${progress}%`,
-      status_text: progress == null ? "正在下载本地 SenseVoice 资源" : `正在下载本地 SenseVoice 资源 ${progress}%`,
+      status: progress == null ? "正在下载本地字幕资源" : `正在下载本地字幕资源 ${progress}%`,
+      status_text: progress == null ? "正在下载本地字幕资源" : `正在下载本地字幕资源 ${progress}%`,
     });
     return;
   }
@@ -224,7 +224,7 @@ async function ensureRuntime(requestId, modelId, assetBaseUrl, assetUrls) {
   postProgress(requestId, "model-load-start", {
     modelId: normalizedModelId,
     runtime: "wasm",
-    status_text: "正在检查并下载本地 SenseVoice 资源",
+    status_text: "正在检查并下载本地字幕资源",
   });
 
   runtimePromise = new Promise((resolve, reject) => {
@@ -246,7 +246,7 @@ async function ensureRuntime(requestId, modelId, assetBaseUrl, assetUrls) {
               modelId: normalizedModelId,
               runtime: "wasm",
               progress: 100,
-              status_text: "本地 SenseVoice 模型已就绪",
+              status_text: "本地字幕模型已就绪",
             });
             resolve({ runtime: "wasm", modelId: normalizedModelId });
           } catch (error) {
@@ -474,7 +474,7 @@ function buildAsrPayload(result, words, sentences) {
   );
   return {
     source: "local_browser_asr",
-    engine: "sherpa_onnx_sensevoice",
+    engine: "browser_local_asr",
     transcripts: [
       {
         text: transcriptText,
