@@ -20,6 +20,10 @@ UPLOAD_ASR_MODEL_KEYS: tuple[str, ...] = (
 )
 TRANSCRIBE_ASR_MODEL_KEYS: tuple[str, ...] = UPLOAD_ASR_MODEL_KEYS
 LOCAL_BROWSER_ASR_MODEL_KEYS: tuple[str, ...] = ()
+LOCAL_DESKTOP_ASR_MODEL_KEYS: tuple[str, ...] = (
+    FASTER_WHISPER_ASR_MODEL,
+)
+LOCAL_TASK_ASR_MODEL_KEYS: tuple[str, ...] = tuple(dict.fromkeys((*LOCAL_BROWSER_ASR_MODEL_KEYS, *LOCAL_DESKTOP_ASR_MODEL_KEYS)))
 ALL_ASR_MODEL_KEYS: tuple[str, ...] = UPLOAD_ASR_MODEL_KEYS
 
 STATUS_READY = "ready"
@@ -204,16 +208,16 @@ _ASR_MODEL_REGISTRY: tuple[AsrModelDescriptor, ...] = (
         model_key=FASTER_WHISPER_ASR_MODEL,
         display_name="Bottle 1.0",
         subtitle="Higher accuracy, slower than Bottle 2.0.",
-        runtime_kind="server_cached",
-        runtime_label="Server Cached",
-        prepare_mode="auto_on_demand",
-        cache_scope="server",
+        runtime_kind="hybrid_local_cloud",
+        runtime_label="Desktop Local / Cloud",
+        prepare_mode="desktop_local_or_cloud",
+        cache_scope="desktop_and_server",
         supports_upload=True,
         supports_preview=False,
         supports_transcribe_api=True,
         source_model_id="Systran/faster-distil-whisper-small.en",
         deploy_path=str(FASTER_WHISPER_MODEL_DIR),
-        note="Fixed local bundle path.",
+        note="Desktop can switch Bottle 1.0 between local helper runtime and cloud runtime.",
         status_loader=_get_faster_whisper_status,
         prepare_loader=_prepare_faster_whisper_model,
         verify_loader=_get_faster_whisper_status,
@@ -293,6 +297,14 @@ def get_supported_transcribe_asr_model_keys() -> tuple[str, ...]:
 
 def get_supported_local_browser_asr_model_keys() -> tuple[str, ...]:
     return LOCAL_BROWSER_ASR_MODEL_KEYS
+
+
+def get_supported_local_desktop_asr_model_keys() -> tuple[str, ...]:
+    return LOCAL_DESKTOP_ASR_MODEL_KEYS
+
+
+def get_supported_local_task_asr_model_keys() -> tuple[str, ...]:
+    return LOCAL_TASK_ASR_MODEL_KEYS
 
 
 def get_supported_asr_model_keys() -> tuple[str, ...]:

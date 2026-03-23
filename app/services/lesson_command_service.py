@@ -475,6 +475,7 @@ def run_lesson_generation_task(
                 asr_payload=dict(local_payload.get("asr_payload") or {}),
                 source_filename=source_filename,
                 source_duration_ms=int(local_payload.get("source_duration_ms") or source_duration_ms or 0),
+                runtime_kind=str(local_payload.get("runtime_kind") or artifacts.get("local_runtime_kind") or "local_browser"),
                 req_dir=req_dir,
                 owner_id=owner_id,
                 asr_model=effective_asr_model,
@@ -664,6 +665,7 @@ def create_lesson_task_from_local_asr(
     *,
     source_filename: str,
     source_duration_ms: int,
+    runtime_kind: str,
     asr_payload: dict,
     owner_user_id: int,
     asr_model: str,
@@ -690,6 +692,7 @@ def create_lesson_task_from_local_asr(
                 {
                     "asr_payload": dict(asr_payload or {}),
                     "source_duration_ms": normalized_source_duration_ms,
+                    "runtime_kind": str(runtime_kind or "").strip() or "local_browser",
                 },
                 ensure_ascii=False,
             ),
@@ -714,6 +717,7 @@ def create_lesson_task_from_local_asr(
                 artifacts_patch={
                     "input_mode": "local_asr",
                     "source_duration_ms": normalized_source_duration_ms,
+                    "local_runtime_kind": str(runtime_kind or "").strip() or "local_browser",
                     "local_asr_payload_path": str(payload_path),
                 },
                 db=db,

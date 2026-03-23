@@ -3002,6 +3002,90 @@ def test_create_local_asr_lesson_task(test_client, monkeypatch, tmp_path):
     assert task_payload["lesson"]["asr_model"] == "local-sensevoice-small"
 
 
+def test_create_desktop_local_asr_lesson_task_preserves_runtime_kind(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="desktop-local-asr@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from app.services import lesson_service as lesson_service_module
+    from app.services import lesson_command_service as lesson_command_service_module
+
+    lesson_router = _enable_local_asr_model(monkeypatch)
+    monkeypatch.setattr(lesson_router, "get_supported_local_desktop_asr_model_keys", lambda: (FASTER_WHISPER_ASR_MODEL,))
+
+    original_get_model_rate = lesson_service_module.get_model_rate
+
+    def fake_get_model_rate(db, model):
+        if model in {"local-sensevoice-small", FASTER_WHISPER_ASR_MODEL}:
+            return SimpleNamespace(points_per_minute=0, price_per_minute_yuan=0, segment_seconds=300, max_concurrency=1)
+        return original_get_model_rate(db, model)
+
+    monkeypatch.setattr(lesson_service_module, "get_model_rate", fake_get_model_rate)
+    monkeypatch.setattr(
+        lesson_service_module,
+        "translate_sentences_to_zh",
+        lambda texts, api_key, progress_callback=None: _translation_batch_result(["你好"] * len(texts), total_tokens=18),
+    )
+
+    class ImmediateThread:
+        def __init__(self, target=None, kwargs=None, daemon=None):
+            self._target = target
+            self._kwargs = kwargs or {}
+
+        def start(self):
+            if self._target:
+                self._target(**self._kwargs)
+
+    monkeypatch.setattr(lesson_command_service_module.threading, "Thread", ImmediateThread)
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "desktop-local-asr@example.com").one()
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 10_000
+        session.add(account)
+        session.commit()
+    finally:
+        session.close()
+
+    payload = {
+        "asr_model": FASTER_WHISPER_ASR_MODEL,
+        "source_filename": "desktop-local.wav",
+        "source_duration_ms": 9_000,
+        "runtime_kind": "desktop_local",
+        "asr_payload": {
+            "transcripts": [
+                {
+                    "sentences": [
+                        {"text": "Desktop helper result", "begin_time": 0, "end_time": 1600},
+                    ]
+                }
+            ]
+        },
+    }
+
+    create_task_resp = client.post("/api/lessons/tasks/local-asr", headers=headers, json=payload)
+    assert create_task_resp.status_code == 200
+    task_id = create_task_resp.json()["task_id"]
+    assert task_id
+
+    task_resp = client.get(f"/api/lessons/tasks/{task_id}", headers=headers)
+    assert task_resp.status_code == 200
+    task_payload = task_resp.json()
+    assert task_payload["status"] == "succeeded"
+    assert task_payload["lesson"]["asr_model"] == FASTER_WHISPER_ASR_MODEL
+
+    verify_session = session_factory()
+    try:
+        task_row = verify_session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        assert task_row is not None
+        assert task_row.artifacts_json["local_runtime_kind"] == "desktop_local"
+        assert task_row.asr_raw_json["mode"] == "desktop_local"
+        assert task_row.asr_raw_json["model_name"] == FASTER_WHISPER_ASR_MODEL
+    finally:
+        verify_session.close()
+
+
 def test_admin_update_billing_rate_rejects_non_flash_mt_model(test_client):
     client, _, monkeypatch = test_client
     monkeypatch.setenv("ADMIN_EMAILS", "billing-admin@example.com")

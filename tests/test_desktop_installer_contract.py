@@ -65,6 +65,7 @@ def test_main_process_uses_bundled_helper_runtime_and_packaged_defaults():
 
     assert "resolvePackagedDesktopRuntime" in main_text
     assert "selectDesktopModelDir" in main_text
+    assert '"/api/desktop-asr"' in main_text
     assert "runtime-defaults.json" in main_text
     assert "DESKTOP_PREINSTALLED_MODEL_DIR" in main_text
     assert 'helperMode: app.isPackaged ? "bundled-runtime" : "system-python"' in main_text

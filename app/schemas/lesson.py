@@ -237,6 +237,7 @@ class LocalAsrLessonTaskCreateRequest(BaseModel):
     asr_model: str = Field(min_length=1, max_length=100)
     source_filename: str = Field(min_length=1, max_length=255)
     source_duration_ms: int = Field(gt=0)
+    runtime_kind: str = Field(default="local_browser", min_length=1, max_length=64)
     asr_payload: dict[str, Any]
 
 

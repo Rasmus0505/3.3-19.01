@@ -1125,6 +1125,7 @@ class LessonService:
         asr_payload: dict[str, Any],
         source_filename: str,
         source_duration_ms: int,
+        runtime_kind: str = "local_browser",
         req_dir: Path,
         owner_id: int,
         asr_model: str,
@@ -1185,6 +1186,7 @@ class LessonService:
         reserved_duration_ms = max(1, int(source_duration_ms or 0))
         reserve_ledger_id: int | None = None
         translation_trace_id = uuid4().hex
+        local_runtime_kind = str(runtime_kind or "local_browser").strip().lower() or "local_browser"
 
         try:
             rate = get_model_rate(db, asr_model)
@@ -1225,7 +1227,7 @@ class LessonService:
                         "asr_payload": dict(asr_payload),
                         "usage_seconds": max(1, math.ceil(reserved_duration_ms / 1000)),
                         "raw_result": {
-                            "mode": "local_browser",
+                            "mode": local_runtime_kind,
                             "model_name": asr_model,
                             "source_duration_ms": reserved_duration_ms,
                             "asr_result_json": dict(asr_payload),
@@ -1258,7 +1260,7 @@ class LessonService:
                     "segment_done": 0,
                     "segment_total": 0,
                 },
-                asr_raw={"mode": "local_browser", "model_name": asr_model},
+                asr_raw={"mode": local_runtime_kind, "model_name": asr_model},
             )
 
             usage_seconds = max(1, math.ceil(reserved_duration_ms / 1000))
