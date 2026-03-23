@@ -102,89 +102,6 @@
   @apply mx-auto w-full max-w-[1600px] px-4 lg:px-6;
 }
 
-@keyframes history-water-flow {
-  from {
-    background-position: 0 0;
-  }
-
-  to {
-    background-position: 160px 0;
-  }
-}
-
-@layer components {
-  .history-lesson-progress {
-    position: relative;
-    height: 0.95rem;
-    overflow: hidden;
-    border-radius: 9999px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(219, 234, 254, 0.76));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78), inset 0 0 0 1px rgba(148, 163, 184, 0.18);
-  }
-
-  .history-lesson-progress__fill,
-  .history-lesson-progress__wave,
-  .history-lesson-progress__gloss {
-    position: absolute;
-    inset: 0 auto 0 0;
-    width: var(--history-progress-width, 0%);
-    border-radius: inherit;
-  }
-
-  .history-lesson-progress__fill {
-    background: linear-gradient(90deg, rgba(59, 130, 246, 0.84), rgba(14, 165, 233, 0.95) 58%, rgba(37, 99, 235, 0.88));
-  }
-
-  .history-lesson-progress__wave {
-    opacity: 0.72;
-    background: linear-gradient(
-      110deg,
-      rgba(255, 255, 255, 0.02) 0%,
-      rgba(255, 255, 255, 0.22) 18%,
-      rgba(147, 197, 253, 0.18) 36%,
-      rgba(255, 255, 255, 0.28) 54%,
-      rgba(59, 130, 246, 0.12) 72%,
-      rgba(255, 255, 255, 0.08) 100%
-    );
-    background-size: 160px 100%;
-    mix-blend-mode: screen;
-  }
-
-  .history-lesson-progress__gloss {
-    top: 1px;
-    bottom: auto;
-    height: calc(50% - 1px);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0));
-    pointer-events: none;
-  }
-
-  .history-lesson-progress--animated .history-lesson-progress__wave {
-    animation: history-water-flow 4.8s linear infinite;
-  }
-
-  .history-lesson-progress--complete {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(220, 252, 231, 0.86));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82), inset 0 0 0 1px rgba(34, 197, 94, 0.18);
-  }
-
-  .history-lesson-progress--complete .history-lesson-progress__fill {
-    background: linear-gradient(90deg, rgba(74, 222, 128, 0.86), rgba(22, 163, 74, 0.95) 58%, rgba(21, 128, 61, 0.9));
-  }
-
-  .history-lesson-progress--complete .history-lesson-progress__wave {
-    opacity: 0.58;
-    background: linear-gradient(
-      110deg,
-      rgba(255, 255, 255, 0.05) 0%,
-      rgba(255, 255, 255, 0.26) 20%,
-      rgba(134, 239, 172, 0.18) 46%,
-      rgba(255, 255, 255, 0.24) 68%,
-      rgba(34, 197, 94, 0.14) 100%
-    );
-    background-size: 180px 100%;
-  }
-}
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -210,11 +127,5 @@
   button,
   a {
     @apply active:opacity-80 md:active:opacity-100;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .history-lesson-progress--animated .history-lesson-progress__wave {
-    animation: none;
   }
 }

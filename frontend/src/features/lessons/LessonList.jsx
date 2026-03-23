@@ -31,6 +31,7 @@ import {
   PopoverTrigger,
   MediaCover,
   Skeleton,
+  Progress,
   Switch,
 } from "../../shared/ui";
 import {
@@ -81,7 +82,7 @@ function buildLessonProgressState(progress, sentenceCount) {
   return {
     completedCount,
     totalCount,
-    width: `${clampedPercent}%`,
+    percent: clampedPercent,
     progressLabel: totalCount > 0 ? `${completedCount}\u53e5/${totalCount}\u53e5` : "\u53e5\u6570\u5f85\u540c\u6b65",
     statusLabel:
       totalCount <= 0
@@ -660,7 +661,11 @@ export function LessonList({
                           <div
                             className={cn(
                               "rounded-2xl border px-3 py-3",
-                              progressState.isComplete ? "border-emerald-200/80 bg-white/65" : "border-sky-100/80 bg-white/72",
+                              progressState.isComplete
+                                ? "border-emerald-200/80 bg-emerald-50/70"
+                                : progressState.isActive
+                                  ? "border-border/80 bg-background/90"
+                                  : "border-border/70 bg-background/80",
                             )}
                           >
                             <div className="mb-2 flex items-center justify-between gap-3">
@@ -670,29 +675,33 @@ export function LessonList({
                                   progressState.isComplete
                                     ? "text-emerald-700"
                                     : progressState.isActive
-                                      ? "text-sky-700"
+                                      ? "text-foreground"
                                       : "text-muted-foreground",
                                 )}
                               >
                                 {progressState.statusLabel}
                               </span>
-                              <span className={cn("text-sm font-semibold tabular-nums", progressState.isComplete ? "text-emerald-700" : "text-foreground")}>
+                              <span
+                                className={cn(
+                                  "text-sm font-semibold tabular-nums",
+                                  progressState.isComplete ? "text-emerald-700" : "text-foreground",
+                                )}
+                              >
                                 {progressState.progressLabel}
                               </span>
                             </div>
                             {progressState.hasTrack ? (
-                              <div
+                              <Progress
+                                value={progressState.percent}
                                 className={cn(
-                                  "history-lesson-progress",
-                                  progressState.isComplete && "history-lesson-progress--complete",
-                                  progressState.isActive && "history-lesson-progress--animated",
+                                  "h-2.5 rounded-full",
+                                  progressState.isComplete
+                                    ? "bg-emerald-100/90 [&>[data-slot=progress-indicator]]:bg-emerald-500"
+                                    : progressState.isActive
+                                      ? "bg-muted/90 [&>[data-slot=progress-indicator]]:bg-primary"
+                                      : "bg-muted/80 [&>[data-slot=progress-indicator]]:bg-primary/70",
                                 )}
-                                style={{ "--history-progress-width": progressState.width }}
-                              >
-                                <div className="history-lesson-progress__fill" />
-                                <div className="history-lesson-progress__wave" />
-                                <div className="history-lesson-progress__gloss" />
-                              </div>
+                              />
                             ) : (
                               <div className="rounded-full border border-dashed border-border/80 bg-background/80 px-3 py-2 text-xs text-muted-foreground">
                                 {"\u53e5\u6570\u5f85\u540c\u6b65"}
