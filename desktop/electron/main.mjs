@@ -76,9 +76,95 @@ let lastCloudServerStatus = {
   lastCheckedAt: "",
   latencyMs: null,
 };
+let preloadDiagnostics = {
+  preloadPath: "",
+  exists: false,
+  size: 0,
+  mtime: "",
+  inspectError: "",
+  appPath: "",
+  resourcesPath: "",
+  lastResolvedAt: "",
+  sandbox: true,
+  contextIsolation: true,
+  lastNavigationAt: "",
+  lastNavigationUrl: "",
+  lastDidFinishLoadAt: "",
+  lastPreloadReadyAt: "",
+  lastPreloadStage: "",
+  lastPreloadHref: "",
+  lastPreloadError: "",
+  lastPreloadErrorAt: "",
+  lastBridgeProbeAt: "",
+  lastBridgeProbeReason: "",
+  lastBridgeProbeError: "",
+  lastBridgeSnapshot: null,
+};
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function serializeError(error) {
+  if (error instanceof Error) {
+    return {
+      name: error.name || "Error",
+      message: error.message || "Unknown error",
+      stack: error.stack || "",
+    };
+  }
+  return {
+    name: "Error",
+    message: String(error || "Unknown error"),
+    stack: "",
+  };
+}
+
+function inspectFile(filePath) {
+  const resolvedPath = String(filePath || "").trim();
+  if (!resolvedPath) {
+    return {
+      preloadPath: "",
+      exists: false,
+      size: 0,
+      mtime: "",
+      inspectError: "preload path is empty",
+    };
+  }
+  try {
+    const stat = fs.statSync(resolvedPath);
+    return {
+      preloadPath: resolvedPath,
+      exists: stat.isFile(),
+      size: stat.size,
+      mtime: stat.mtime.toISOString(),
+      inspectError: "",
+    };
+  } catch (error) {
+    return {
+      preloadPath: resolvedPath,
+      exists: false,
+      size: 0,
+      mtime: "",
+      inspectError: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function updatePreloadDiagnostics(nextPatch = {}) {
+  preloadDiagnostics = {
+    ...preloadDiagnostics,
+    ...nextPatch,
+  };
+  return preloadDiagnostics;
+}
+
+function appendDesktopDiagnostic(eventName, payload = {}) {
+  const serializedPayload = Object.entries(payload)
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+    .join(" ");
+  appendBackendLog(`[desktop] ${eventName}${serializedPayload ? ` ${serializedPayload}` : ""}`);
 }
 
 function ensureIsoString(value) {
@@ -773,6 +859,7 @@ function buildRuntimeInfo() {
     configPath: desktopConfigPath,
     helperBaseUrl: backendPort ? `http://127.0.0.1:${backendPort}` : "",
     helperStatus: lastHelperHealth,
+    preload: preloadDiagnostics,
     modelUpdate: desktopModelUpdateState,
     serverStatus: lastCloudServerStatus,
     cloud: desktopRuntimeConfig?.cloud || {},
@@ -787,6 +874,130 @@ function buildRuntimeInfo() {
         }
       : {},
   };
+}
+
+async function probeDesktopRuntimeBridge(reason = "unspecified") {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return null;
+  }
+  try {
+    const snapshot = await mainWindow.webContents.executeJavaScript(
+      `(() => {
+        const runtime = window.desktopRuntime;
+        return {
+          href: window.location.href,
+          title: document.title,
+          runtimeType: typeof runtime,
+          keys: runtime ? Object.keys(runtime) : [],
+          hasRequestLocalHelper: typeof runtime?.requestLocalHelper,
+          hasGetRuntimeInfo: typeof runtime?.getRuntimeInfo,
+        };
+      })()`,
+      true,
+    );
+    updatePreloadDiagnostics({
+      lastBridgeProbeAt: nowIso(),
+      lastBridgeProbeReason: reason,
+      lastBridgeProbeError: "",
+      lastBridgeSnapshot: snapshot,
+    });
+    appendDesktopDiagnostic("runtime-bridge-probe", {
+      reason,
+      href: snapshot?.href || "",
+      runtimeType: snapshot?.runtimeType || "",
+      hasRequestLocalHelper: snapshot?.hasRequestLocalHelper || "",
+      keys: Array.isArray(snapshot?.keys) ? snapshot.keys : [],
+    });
+    return snapshot;
+  } catch (error) {
+    const serialized = serializeError(error);
+    updatePreloadDiagnostics({
+      lastBridgeProbeAt: nowIso(),
+      lastBridgeProbeReason: reason,
+      lastBridgeProbeError: serialized.message,
+    });
+    appendDesktopDiagnostic("runtime-bridge-probe-failed", {
+      reason,
+      error: serialized.message,
+    });
+    return null;
+  }
+}
+
+function attachMainWindowDiagnostics(windowRef) {
+  const contents = windowRef.webContents;
+  contents.on("preload-error", (_event, preloadPath, error) => {
+    const serialized = serializeError(error);
+    updatePreloadDiagnostics({
+      lastPreloadError: serialized.message,
+      lastPreloadErrorAt: nowIso(),
+    });
+    appendDesktopDiagnostic("preload-error", {
+      preloadPath,
+      error: serialized.message,
+      stack: serialized.stack,
+    });
+  });
+  contents.on("console-message", (_event, level, message, line, sourceId) => {
+    const text = String(message || "");
+    if (Number(level || 0) < 2 && !/preload|desktopRuntime|desktop:/i.test(text)) {
+      return;
+    }
+    appendDesktopDiagnostic("renderer-console", {
+      level,
+      message: text,
+      line,
+      sourceId,
+    });
+  });
+  contents.on("did-start-navigation", (_event, url, isInPlace, isMainFrame) => {
+    if (!isMainFrame) {
+      return;
+    }
+    updatePreloadDiagnostics({
+      lastNavigationAt: nowIso(),
+      lastNavigationUrl: String(url || ""),
+    });
+    appendDesktopDiagnostic("navigation-start", {
+      url,
+      isInPlace: Boolean(isInPlace),
+    });
+  });
+  contents.on("did-navigate", (_event, url, httpResponseCode, httpStatusText) => {
+    updatePreloadDiagnostics({
+      lastNavigationAt: nowIso(),
+      lastNavigationUrl: String(url || ""),
+    });
+    appendDesktopDiagnostic("navigation-finish", {
+      url,
+      httpResponseCode,
+      httpStatusText,
+    });
+    void probeDesktopRuntimeBridge("did-navigate");
+  });
+  contents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame) {
+      return;
+    }
+    appendDesktopDiagnostic("load-failed", {
+      errorCode,
+      errorDescription,
+      validatedURL,
+    });
+  });
+  contents.on("did-finish-load", () => {
+    updatePreloadDiagnostics({
+      lastDidFinishLoadAt: nowIso(),
+    });
+    appendDesktopDiagnostic("did-finish-load", {
+      url: contents.getURL(),
+      title: contents.getTitle(),
+    });
+    void probeDesktopRuntimeBridge("did-finish-load");
+  });
+  contents.on("render-process-gone", (_event, details) => {
+    appendDesktopDiagnostic("render-process-gone", details || {});
+  });
 }
 
 function normalizeLocalHelperPath(requestPath) {
@@ -862,6 +1073,34 @@ async function createMainWindow() {
   if (!appBaseUrl) {
     throw new Error(`Desktop cloud app URL is empty. Update ${desktopConfigPath}.`);
   }
+  const preloadPath = path.join(currentDir, "preload.mjs");
+  const preloadFile = inspectFile(preloadPath);
+  const windowWebPreferences = {
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: true,
+    preload: preloadPath,
+  };
+  updatePreloadDiagnostics({
+    ...preloadFile,
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    lastResolvedAt: nowIso(),
+    sandbox: windowWebPreferences.sandbox,
+    contextIsolation: windowWebPreferences.contextIsolation,
+  });
+  appendDesktopDiagnostic("preload-configured", {
+    preloadPath,
+    exists: preloadFile.exists,
+    size: preloadFile.size,
+    mtime: preloadFile.mtime,
+    inspectError: preloadFile.inspectError,
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    sandbox: windowWebPreferences.sandbox,
+    contextIsolation: windowWebPreferences.contextIsolation,
+    isPackaged: app.isPackaged,
+  });
   mainWindow = new BrowserWindow({
     title: "Bottle",
     width: 1440,
@@ -872,11 +1111,10 @@ async function createMainWindow() {
     icon: iconPath,
     show: false,
     webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      preload: path.join(currentDir, "preload.mjs"),
+      ...windowWebPreferences,
     },
   });
+  attachMainWindowDiagnostics(mainWindow);
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url).catch(() => null);
     return { action: "deny" };
@@ -945,6 +1183,39 @@ ipcMain.handle("desktop:open-logs-directory", async () => {
 });
 
 ipcMain.handle("desktop:request-local-helper", async (_event, request) => requestLocalHelper(request));
+
+ipcMain.on("desktop:preload-ready", (_event, payload = {}) => {
+  const safePayload = payload && typeof payload === "object" ? payload : {};
+  updatePreloadDiagnostics({
+    lastPreloadReadyAt: ensureIsoString(safePayload.emittedAt),
+    lastPreloadStage: String(safePayload.stage || "ready"),
+    lastPreloadHref: String(safePayload.href || ""),
+    lastPreloadError: "",
+  });
+  appendDesktopDiagnostic("preload-ready", {
+    stage: safePayload.stage,
+    href: safePayload.href,
+    sandboxed: safePayload.sandboxed,
+    contextIsolation: safePayload.contextIsolation,
+    electronVersion: safePayload.electronVersion,
+  });
+  void probeDesktopRuntimeBridge(`ipc:${String(safePayload.stage || "ready")}`);
+});
+
+ipcMain.on("desktop:preload-error", (_event, payload = {}) => {
+  const safePayload = payload && typeof payload === "object" ? payload : {};
+  const serialized = serializeError(safePayload.error);
+  updatePreloadDiagnostics({
+    lastPreloadError: serialized.message,
+    lastPreloadErrorAt: ensureIsoString(safePayload.failedAt),
+  });
+  appendDesktopDiagnostic("preload-runtime-error", {
+    stage: safePayload.stage,
+    href: safePayload.href,
+    error: serialized.message,
+    stack: serialized.stack,
+  });
+});
 
 app.whenReady().then(async () => {
   await bootstrapDesktopApp();
