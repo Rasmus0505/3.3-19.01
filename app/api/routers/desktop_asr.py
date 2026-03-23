@@ -121,6 +121,30 @@ def _build_local_generation_response(*, source_path: Path, source_filename: str,
         cleanup_dir(req_dir)
 
 
+def _build_local_transcribe_response(*, source_path: Path, source_filename: str, selected_model: str, runtime_kind: str) -> dict[str, object]:
+    req_dir = create_request_dir(BASE_TMP_DIR)
+    audio_path = req_dir / "desktop_input.opus"
+    try:
+        validate_suffix(source_filename or source_path.name)
+        source_duration_ms = max(1, probe_audio_duration_ms(source_path))
+        extract_audio_for_asr(source_path, audio_path)
+        asr_result = transcribe_audio_file(str(audio_path), model=selected_model, known_duration_ms=source_duration_ms)
+        return {
+            "ok": True,
+            "model_key": selected_model,
+            "runtime_kind": str(runtime_kind or "desktop_local").strip() or "desktop_local",
+            "source_filename": source_filename,
+            "source_path": str(source_path),
+            "source_duration_ms": source_duration_ms,
+            "preview_text": str(asr_result.get("preview_text") or ""),
+            "task_status": str(asr_result.get("task_status") or "SUCCEEDED"),
+            "usage_seconds": int(asr_result.get("usage_seconds") or 0),
+            "asr_result_json": dict(asr_result.get("asr_result_json") or {}),
+        }
+    finally:
+        cleanup_dir(req_dir)
+
+
 def _build_url_import_task_snapshot(record: dict[str, object]) -> dict[str, object]:
     return {
         "ok": True,
@@ -233,25 +257,13 @@ def transcribe_desktop_local_asr(payload: DesktopAsrTranscribeRequest):
     source_path = _resolve_local_source_path(payload.source_path)
     source_filename = str(payload.source_filename or "").strip() or source_path.name
 
-    req_dir = create_request_dir(BASE_TMP_DIR)
-    audio_path = req_dir / "desktop_input.opus"
     try:
-        validate_suffix(source_filename or source_path.name)
-        source_duration_ms = max(1, probe_audio_duration_ms(source_path))
-        extract_audio_for_asr(source_path, audio_path)
-        asr_result = transcribe_audio_file(str(audio_path), model=selected_model, known_duration_ms=source_duration_ms)
-        return {
-            "ok": True,
-            "model_key": selected_model,
-            "runtime_kind": "desktop_local",
-            "source_filename": source_filename,
-            "source_path": str(source_path),
-            "source_duration_ms": source_duration_ms,
-            "preview_text": str(asr_result.get("preview_text") or ""),
-            "task_status": str(asr_result.get("task_status") or "SUCCEEDED"),
-            "usage_seconds": int(asr_result.get("usage_seconds") or 0),
-            "asr_result_json": dict(asr_result.get("asr_result_json") or {}),
-        }
+        return _build_local_transcribe_response(
+            source_path=source_path,
+            source_filename=source_filename,
+            selected_model=selected_model,
+            runtime_kind="desktop_local",
+        )
     except MediaError as exc:
         return map_media_error(exc)
     except AsrError as exc:
@@ -262,8 +274,6 @@ def transcribe_desktop_local_asr(payload: DesktopAsrTranscribeRequest):
         return error_response(502, exc.code, exc.message, exc.detail)
     except Exception as exc:
         return error_response(500, "DESKTOP_LOCAL_ASR_FAILED", "本机 Bottle 1.0 转写失败", str(exc)[:1200])
-    finally:
-        cleanup_dir(req_dir)
 
 
 @router.post("/generate")
@@ -319,6 +329,39 @@ async def generate_browser_local_lesson(
         return error_response(502, exc.code, exc.message, exc.detail)
     except Exception as exc:
         return error_response(500, "BROWSER_LOCAL_GENERATE_FAILED", "本地网站 Bottle 1.0 生成失败", str(exc)[:1200])
+    finally:
+        cleanup_dir(req_dir)
+        await video_file.close()
+
+
+@router.post("/transcribe-upload")
+async def transcribe_browser_local_asr(
+    video_file: UploadFile = File(...),
+    model_key: str = Form(...),
+    runtime_kind: str = Form("browser_local"),
+):
+    req_dir = create_request_dir(BASE_TMP_DIR)
+    source_suffix = Path(video_file.filename or "").suffix or ".bin"
+    source_path = req_dir / f"source{source_suffix}"
+    try:
+        save_upload_file_stream(video_file, source_path, max_bytes=UPLOAD_MAX_BYTES)
+        source_filename = str(video_file.filename or "").strip() or source_path.name
+        return _build_local_transcribe_response(
+            source_path=source_path,
+            source_filename=source_filename,
+            selected_model=str(model_key or "").strip(),
+            runtime_kind=str(runtime_kind or "browser_local").strip() or "browser_local",
+        )
+    except MediaError as exc:
+        return map_media_error(exc)
+    except AsrError as exc:
+        if exc.code == "INVALID_MODEL":
+            return error_response(400, exc.code, exc.message, {"input_model": str(model_key or "").strip()})
+        if exc.code == "ASR_MODEL_NOT_READY":
+            return error_response(409, exc.code, exc.message, exc.detail)
+        return error_response(502, exc.code, exc.message, exc.detail)
+    except Exception as exc:
+        return error_response(500, "BROWSER_LOCAL_ASR_FAILED", "本地网站 Bottle 1.0 转写失败", str(exc)[:1200])
     finally:
         cleanup_dir(req_dir)
         await video_file.close()

@@ -2970,6 +2970,8 @@ def test_create_local_asr_lesson_task(test_client, monkeypatch, tmp_path):
     assert task_payload["workspace"]["task_id"] == task_id
     assert task_payload["workspace"]["lesson_id"] == task_payload["lesson"]["id"]
     assert task_payload["workspace"]["latest_subtitle_snapshot"]["preview_text"].startswith("Hello world")
+    assert task_payload["workspace"]["latest_subtitle_snapshot"]["items"][0]["text_en"] == "Hello world"
+    assert task_payload["workspace"]["latest_subtitle_snapshot"]["items"][0]["is_final"] is True
     assert task_payload["workspace"]["restore_pointer"]["task_id"] == task_id
 
     verify_session = session_factory()
@@ -2985,6 +2987,7 @@ def test_create_local_asr_lesson_task(test_client, monkeypatch, tmp_path):
         assert workspace_payload["workspace_id"] == task_id
         assert workspace_payload["summary_path"] == str(workspace_path)
         assert workspace_payload["restore_pointer"]["lesson_id"] == int(task_row.lesson_id)
+        assert workspace_payload["latest_subtitle_snapshot"]["items"][0]["text_en"] == "Hello world"
         assert workspace_payload["log_summary"]["events"][-1]["stage"] == "write_lesson"
         assert lesson_workspace_payload["workspace_id"] == task_id
         assert lesson_workspace_payload["lesson_id"] == int(task_row.lesson_id)
@@ -3035,6 +3038,7 @@ def test_create_local_asr_lesson_task_persists_task_workspace_pointer(test_clien
     assert create_payload["workspace"]["task_id"] == create_payload["task_id"]
     assert create_payload["workspace"]["lesson_id"] is None
     assert create_payload["workspace"]["source"]["source_filename"] == "workspace.wav"
+    assert create_payload["workspace"]["latest_subtitle_snapshot"]["items"][0]["text_en"] == "Workspace preview"
 
     task_resp = client.get(f"/api/lessons/tasks/{create_payload['task_id']}", headers=headers)
     assert task_resp.status_code == 200
@@ -3042,6 +3046,7 @@ def test_create_local_asr_lesson_task_persists_task_workspace_pointer(test_clien
     assert task_payload["workspace"]["scope"] == "task"
     assert task_payload["workspace"]["task_id"] == create_payload["task_id"]
     assert task_payload["workspace"]["lesson_id"] is None
+    assert task_payload["workspace"]["latest_subtitle_snapshot"]["items"][0]["text_en"] == "Workspace preview"
     assert task_payload["workspace"]["restore_pointer"]["task_id"] == create_payload["task_id"]
 
     verify_session = session_factory()
@@ -3055,6 +3060,7 @@ def test_create_local_asr_lesson_task_persists_task_workspace_pointer(test_clien
         assert workspace_payload["summary_path"] == str(workspace_path)
         assert workspace_payload["source"]["source_filename"] == "workspace.wav"
         assert workspace_payload["source"]["runtime_kind"] == "local_browser"
+        assert workspace_payload["latest_subtitle_snapshot"]["items"][0]["text_en"] == "Workspace preview"
         assert workspace_payload["restore_pointer"]["task_id"] == create_payload["task_id"]
         assert workspace_payload["restore_pointer"]["lesson_id"] is None
     finally:
@@ -3136,6 +3142,7 @@ def test_create_desktop_local_asr_lesson_task_preserves_runtime_kind(test_client
     assert task_payload["workspace"]["scope"] == "lesson"
     assert task_payload["workspace"]["lesson_id"] == task_payload["lesson"]["id"]
     assert task_payload["workspace"]["source"]["runtime_kind"] == "desktop_local"
+    assert task_payload["workspace"]["latest_subtitle_snapshot"]["items"][0]["text_en"] == "Desktop helper result"
 
     verify_session = session_factory()
     try:
@@ -3149,6 +3156,7 @@ def test_create_desktop_local_asr_lesson_task_preserves_runtime_kind(test_client
         workspace_payload = json.loads(workspace_path.read_text(encoding="utf-8"))
         assert workspace_payload["lesson_id"] == task_row.lesson_id
         assert workspace_payload["source"]["runtime_kind"] == "desktop_local"
+        assert workspace_payload["latest_subtitle_snapshot"]["items"][0]["text_en"] == "Desktop helper result"
     finally:
         verify_session.close()
 
@@ -3282,6 +3290,8 @@ def test_create_local_generated_lesson_persists_completed_result(test_client, mo
     assert body["workspace"]["scope"] == "lesson"
     assert body["workspace"]["lesson_id"] == body["lesson"]["id"]
     assert body["workspace"]["latest_subtitle_snapshot"]["preview_text"].startswith("Desktop helper result")
+    assert body["workspace"]["latest_subtitle_snapshot"]["items"][0]["text_en"] == "Desktop helper result"
+    assert body["workspace"]["latest_subtitle_snapshot"]["items"][0]["text_zh"] == "桌面端结果"
     assert body["workspace"]["restore_pointer"]["lesson_id"] == body["lesson"]["id"]
 
     workspace_path = Path(body["workspace"]["summary_path"])
@@ -3289,6 +3299,7 @@ def test_create_local_generated_lesson_persists_completed_result(test_client, mo
     workspace_payload = json.loads(workspace_path.read_text(encoding="utf-8"))
     assert workspace_payload["restore_pointer"]["task_id"] == ""
     assert workspace_payload["restore_pointer"]["lesson_id"] == body["lesson"]["id"]
+    assert workspace_payload["latest_subtitle_snapshot"]["items"][0]["source"] == "final_subtitle_seed"
     assert len(workspace_payload["log_summary"]["events"]) == 1
 
 

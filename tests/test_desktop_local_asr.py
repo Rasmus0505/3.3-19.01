@@ -133,6 +133,53 @@ def test_desktop_helper_generate_route_returns_local_generation_result(tmp_path,
     assert payload["local_generation_result"]["variant"]["sentences"][0]["text_en"] == "hello from local generate"
 
 
+def test_desktop_helper_transcribe_upload_route_returns_browser_local_asr_payload(tmp_path, monkeypatch):
+    from app.api.routers import desktop_asr as desktop_asr_router
+
+    monkeypatch.setattr(desktop_asr_router, "probe_audio_duration_ms", lambda _path: 7654)
+    monkeypatch.setattr(desktop_asr_router, "extract_audio_for_asr", lambda _src, dst: dst.write_bytes(b"opus"))
+    monkeypatch.setattr(
+        desktop_asr_router,
+        "transcribe_audio_file",
+        lambda audio_path, *, model, known_duration_ms=None: {
+            "model": model,
+            "task_status": "SUCCEEDED",
+            "preview_text": "hello from browser local",
+            "usage_seconds": 7,
+            "asr_result_json": {
+                "transcripts": [
+                    {
+                        "sentences": [
+                            {"text": "hello from browser local", "begin_time": 0, "end_time": 1500},
+                        ]
+                    }
+                ]
+            },
+        },
+    )
+
+    app = create_desktop_helper_app({"model_dir": str(tmp_path / "models")})
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/desktop-asr/transcribe-upload",
+            data={
+                "model_key": "faster-whisper-medium",
+                "runtime_kind": "browser_local",
+            },
+            files={
+                "video_file": ("sample.wav", b"fake-audio", "audio/wav"),
+            },
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["ok"] is True
+    assert payload["runtime_kind"] == "browser_local"
+    assert payload["source_duration_ms"] == 7654
+    assert payload["preview_text"] == "hello from browser local"
+    assert payload["asr_result_json"]["transcripts"][0]["sentences"][0]["text"] == "hello from browser local"
+
+
 def test_desktop_helper_url_import_task_downloads_public_media_and_exposes_file(tmp_path, monkeypatch):
     from app.api.routers import desktop_asr as desktop_asr_router
 
