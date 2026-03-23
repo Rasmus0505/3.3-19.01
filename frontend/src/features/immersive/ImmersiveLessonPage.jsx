@@ -34,6 +34,7 @@ const MIN_PERCEPTIBLE_SLOWDOWN_WINDOW_MS = 900;
 const WORD_TIMING_TOLERANCE_MS = 140;
 const PROGRAMMATIC_FULLSCREEN_EXIT_RESET_MS = 1000;
 const WORDBOOK_LONG_PRESS_MS = 260;
+const MOBILE_KEYBOARD_MIN_INSET_PX = 120;
 const TRANSLATION_MASK_MIN_WIDTH_PX = 120;
 const TRANSLATION_MASK_MIN_HEIGHT_PX = 52;
 const TRANSLATION_MASK_DEFAULT_WIDTH_RATIO = 0.58;
@@ -274,6 +275,14 @@ function isIpadSafariBrowser() {
   const isAppleTablet = /iPad/i.test(userAgent) || (platform === "MacIntel" && touchPoints > 1);
   if (!isAppleTablet) return false;
   return /Safari/i.test(userAgent) && !/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo/i.test(userAgent);
+}
+
+function isTouchPrimaryInputDevice() {
+  if (typeof navigator === "undefined") return false;
+  const touchPoints = Number(navigator.maxTouchPoints || 0);
+  if (touchPoints > 0) return true;
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia("(pointer: coarse)").matches;
 }
 
 function getFullscreenElement() {
@@ -827,6 +836,11 @@ export function ImmersiveLessonPage({
   );
   const [translationMaskMetrics, setTranslationMaskMetrics] = useState(null);
   const [translationMaskChromeVisible, setTranslationMaskChromeVisible] = useState(true);
+  const [mobileViewportState, setMobileViewportState] = useState({
+    height: 0,
+    keyboardInset: 0,
+    keyboardOpen: false,
+  });
 
   const immersiveContainerRef = useRef(null);
   const immersiveMediaRef = useRef(null);
@@ -856,6 +870,10 @@ export function ImmersiveLessonPage({
   const autoFullscreenAttemptKeyRef = useRef("");
   const programmaticFullscreenExitRef = useRef(false);
   const programmaticFullscreenExitTimerRef = useRef(null);
+  const focusRestoreTimerRef = useRef(null);
+  const viewportSyncFrameRef = useRef(null);
+  const viewportBaselineHeightRef = useRef(0);
+  const viewportOrientationRef = useRef("");
   const translationMaskGestureRef = useRef({
     pointerId: null,
     mode: "",
@@ -867,6 +885,7 @@ export function ImmersiveLessonPage({
   });
   const cinemaFullscreenActive = isCinemaFullscreen || isFullscreenFallback;
   const isIpadSafari = useMemo(() => isIpadSafariBrowser(), []);
+  const isTouchDevice = useMemo(() => isTouchPrimaryInputDevice(), []);
   const showPreviousSentenceBlock = !cinemaFullscreenActive || showFullscreenPreviousSentence;
   const hasExitHandler = typeof onExitImmersive === "function" || typeof onBack === "function";
   const typingEnabled =
@@ -903,9 +922,27 @@ export function ImmersiveLessonPage({
     }, TRANSLATION_MASK_CHROME_IDLE_MS);
   }, [clearTranslationMaskChromeIdleTimer]);
 
-  const focusTypingInput = useCallback(() => {
-    if (!typingEnabled) return;
-    requestAnimationFrame(() => {
+  const clearFocusRestoreTimer = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (focusRestoreTimerRef.current === null) return;
+    window.clearTimeout(focusRestoreTimerRef.current);
+    focusRestoreTimerRef.current = null;
+  }, []);
+
+  const scrollTypingPanelIntoView = useCallback(() => {
+    const typingPanel = typingPanelRef.current;
+    if (!typingPanel) return;
+    typingPanel.scrollIntoView({
+      block: cinemaFullscreenActive ? "end" : "nearest",
+      inline: "nearest",
+      behavior: "auto",
+    });
+  }, [cinemaFullscreenActive]);
+
+  const focusTypingInput = useCallback((restoreKeyboard = false) => {
+    if (!typingEnabled || typeof window === "undefined") return;
+    clearFocusRestoreTimer();
+    window.requestAnimationFrame(() => {
       const input = typingInputRef.current;
       if (!input) return;
       input.focus({ preventScroll: true });
@@ -915,8 +952,66 @@ export function ImmersiveLessonPage({
       } catch (_) {
         // Ignore selection errors for unsupported input types/browsers.
       }
+      if (isTouchDevice) {
+        scrollTypingPanelIntoView();
+      }
+      if (restoreKeyboard && isTouchDevice) {
+        focusRestoreTimerRef.current = window.setTimeout(() => {
+          focusRestoreTimerRef.current = null;
+          const nextInput = typingInputRef.current;
+          if (!nextInput || !typingEnabled) return;
+          nextInput.focus({ preventScroll: true });
+          scrollTypingPanelIntoView();
+        }, 180);
+      }
     });
-  }, [typingEnabled]);
+  }, [clearFocusRestoreTimer, isTouchDevice, scrollTypingPanelIntoView, typingEnabled]);
+
+  const syncMobileViewportLayout = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const container = immersiveContainerRef.current;
+    const visualViewport = window.visualViewport;
+    const fallbackWidth = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0);
+    const fallbackHeight = Math.max(window.innerHeight || 0, document.documentElement?.clientHeight || 0);
+    const visualWidth = Math.max(0, Math.round(visualViewport?.width || fallbackWidth));
+    const visualHeight = Math.max(0, Math.round(visualViewport?.height || fallbackHeight));
+    const offsetTop = Math.max(0, Math.round(visualViewport?.offsetTop || 0));
+    const nextOrientation = visualWidth >= visualHeight ? "landscape" : "portrait";
+    const baselineCandidate = Math.max(fallbackHeight, visualHeight + offsetTop);
+
+    if (viewportOrientationRef.current !== nextOrientation) {
+      viewportOrientationRef.current = nextOrientation;
+      viewportBaselineHeightRef.current = baselineCandidate;
+    } else if (
+      baselineCandidate > viewportBaselineHeightRef.current ||
+      viewportBaselineHeightRef.current - baselineCandidate <= MOBILE_KEYBOARD_MIN_INSET_PX / 2
+    ) {
+      viewportBaselineHeightRef.current = baselineCandidate;
+    }
+
+    const currentBaseline = viewportBaselineHeightRef.current;
+    viewportBaselineHeightRef.current = currentBaseline;
+    const keyboardInset = isTouchDevice ? Math.max(0, currentBaseline - visualHeight - offsetTop) : 0;
+    const keyboardOpen = isTouchDevice && keyboardInset >= MOBILE_KEYBOARD_MIN_INSET_PX;
+    const nextState = {
+      height: visualHeight,
+      keyboardInset,
+      keyboardOpen,
+    };
+
+    setMobileViewportState((prev) =>
+      prev.height === nextState.height &&
+      prev.keyboardInset === nextState.keyboardInset &&
+      prev.keyboardOpen === nextState.keyboardOpen
+        ? prev
+        : nextState,
+    );
+
+    if (!container) return;
+    container.style.setProperty("--immersive-shell-height", `${currentBaseline}px`);
+    container.style.setProperty("--immersive-visual-viewport-height", `${visualHeight}px`);
+    container.style.setProperty("--immersive-keyboard-offset", `${keyboardInset}px`);
+  }, [isTouchDevice]);
 
   const wakeCinemaControls = useCallback(() => {
     if (!cinemaFullscreenActive || typeof window === "undefined") return;
@@ -1817,8 +1912,8 @@ export function ImmersiveLessonPage({
 
   useEffect(() => {
     if (!typingEnabled) return;
-    focusTypingInput();
-  }, [activeWordIndex, currentSentenceIndex, focusTypingInput, typingEnabled]);
+    focusTypingInput(isTouchDevice);
+  }, [activeWordIndex, currentSentenceIndex, focusTypingInput, isTouchDevice, typingEnabled]);
 
   useEffect(() => {
     if (!typingEnabled || !immersiveActive) return undefined;
@@ -1826,7 +1921,7 @@ export function ImmersiveLessonPage({
 
     const onPointerDownCapture = () => {
       setTimeout(() => {
-        focusTypingInput();
+        focusTypingInput(isTouchDevice);
       }, 0);
     };
 
@@ -1834,7 +1929,57 @@ export function ImmersiveLessonPage({
     return () => {
       window.removeEventListener("pointerdown", onPointerDownCapture, true);
     };
-  }, [focusTypingInput, immersiveActive, typingEnabled]);
+  }, [focusTypingInput, immersiveActive, isTouchDevice, typingEnabled]);
+
+  useEffect(() => {
+    if (!immersiveActive || typeof window === "undefined") return undefined;
+
+    const scheduleViewportSync = () => {
+      if (viewportSyncFrameRef.current !== null) {
+        window.cancelAnimationFrame(viewportSyncFrameRef.current);
+      }
+      viewportSyncFrameRef.current = window.requestAnimationFrame(() => {
+        viewportSyncFrameRef.current = null;
+        syncMobileViewportLayout();
+      });
+    };
+
+    scheduleViewportSync();
+    const visualViewport = window.visualViewport;
+    visualViewport?.addEventListener("resize", scheduleViewportSync);
+    visualViewport?.addEventListener("scroll", scheduleViewportSync);
+    window.addEventListener("resize", scheduleViewportSync);
+    window.addEventListener("orientationchange", scheduleViewportSync);
+
+    return () => {
+      visualViewport?.removeEventListener("resize", scheduleViewportSync);
+      visualViewport?.removeEventListener("scroll", scheduleViewportSync);
+      window.removeEventListener("resize", scheduleViewportSync);
+      window.removeEventListener("orientationchange", scheduleViewportSync);
+      if (viewportSyncFrameRef.current !== null) {
+        window.cancelAnimationFrame(viewportSyncFrameRef.current);
+        viewportSyncFrameRef.current = null;
+      }
+      const container = immersiveContainerRef.current;
+      if (container) {
+        container.style.removeProperty("--immersive-shell-height");
+        container.style.removeProperty("--immersive-visual-viewport-height");
+        container.style.removeProperty("--immersive-keyboard-offset");
+      }
+      viewportBaselineHeightRef.current = 0;
+      viewportOrientationRef.current = "";
+    };
+  }, [immersiveActive, syncMobileViewportLayout]);
+
+  useEffect(() => {
+    if (!typingEnabled || !isTouchDevice || !mobileViewportState.keyboardOpen) return;
+    focusTypingInput(true);
+  }, [focusTypingInput, isTouchDevice, mobileViewportState.keyboardOpen, typingEnabled]);
+
+  useEffect(() => {
+    if (!isTouchDevice || !mobileViewportState.keyboardOpen) return;
+    scrollTypingPanelIntoView();
+  }, [isTouchDevice, mobileViewportState.keyboardOpen, scrollTypingPanelIntoView]);
 
   useEffect(() => {
     if (!immersiveActive) return;
@@ -2305,6 +2450,12 @@ export function ImmersiveLessonPage({
   }, [clearProgrammaticFullscreenExit]);
 
   useEffect(() => {
+    return () => {
+      clearFocusRestoreTimer();
+    };
+  }, [clearFocusRestoreTimer]);
+
+  useEffect(() => {
     if (!cinemaFullscreenActive || typeof window === "undefined") {
       clearCinemaControlsIdleTimer();
       setCinemaControlsIdle(false);
@@ -2341,8 +2492,8 @@ export function ImmersiveLessonPage({
 
   useEffect(() => {
     if (!typingEnabled || !cinemaFullscreenActive) return;
-    focusTypingInput();
-  }, [cinemaFullscreenActive, focusTypingInput, typingEnabled]);
+    focusTypingInput(isTouchDevice);
+  }, [cinemaFullscreenActive, focusTypingInput, isTouchDevice, typingEnabled]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -2631,13 +2782,25 @@ export function ImmersiveLessonPage({
     .filter(Boolean)
     .join(" ");
 
+  const immersivePageShellClassName = [
+    "immersive-page-shell",
+    cinemaFullscreenActive ? "immersive-page-shell--cinema" : "",
+    isFullscreenFallback ? "immersive-page-shell--fallback" : "",
+    isTouchDevice ? "immersive-page-shell--touch" : "",
+    mobileViewportState.keyboardOpen ? "immersive-page-shell--keyboard-open" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const typingInputClassName = [
+    "immersive-hidden-input",
+    isTouchDevice ? "immersive-hidden-input--touch" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div
-      ref={immersiveContainerRef}
-      className={`immersive-page-shell ${cinemaFullscreenActive ? "immersive-page-shell--cinema" : ""} ${
-        isFullscreenFallback ? "immersive-page-shell--fallback" : ""
-      }`}
-    >
+    <div ref={immersiveContainerRef} className={immersivePageShellClassName}>
       <Card
         className={`immersive-page ${immersiveActive ? "immersive-page--immersive" : ""} ${
           cinemaFullscreenActive ? "immersive-page--cinema" : ""
@@ -2925,18 +3088,21 @@ export function ImmersiveLessonPage({
 
           <input
             ref={typingInputRef}
-            className="immersive-hidden-input"
+            className={typingInputClassName}
             value={currentWordInput}
             onChange={() => {}}
             onKeyDown={handleKeyDown}
             onBlur={() => {
               if (typingEnabled) {
                 setTimeout(() => {
-                  focusTypingInput();
+                  focusTypingInput(isTouchDevice);
                 }, 0);
               }
             }}
             autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+            inputMode="text"
             spellCheck={false}
             readOnly={!typingEnabled}
           />
