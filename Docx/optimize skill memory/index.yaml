@@ -24,3 +24,11 @@ cards:
     confidence: high
     path: cards/OPT-003-先问真实目标.md
     summary: before 容易顺着用户提出的方案直接建任务，缺少围绕现状问题、真实目标和任务边界的持续追问，也没有把任务起因固化进 YAML。
+  - card_id: OPT-004
+    title: 主动告知生效差异
+    target_skill: after
+    created_at: 2026-03-23T23:25:35.7798723+08:00
+    problem_type: output
+    confidence: high
+    path: cards/OPT-004-主动告知生效差异.md
+    summary: after 原先缺少专门的行为差异与生效条件告知区块，容易让用户沿用旧的启动、验证或交付方式，误判本次改动没有生效。

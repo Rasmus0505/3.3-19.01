@@ -13,10 +13,12 @@ from app.core.config import ASR_TASK_POLL_SECONDS
 from app.services.asr_model_registry import QWEN_ASR_MODEL, get_supported_transcribe_asr_model_keys
 from app.services.faster_whisper_asr import (
     FASTER_WHISPER_ASR_MODEL,
+    FasterWhisperCancellationRequested,
     FasterWhisperModelNotReadyError,
     get_faster_whisper_model_status,
     transcribe_audio_file_with_faster_whisper,
 )
+from app.services.lesson_task_manager import is_task_terminate_requested, wait_for_task_terminate_request
 
 
 DEFAULT_MODEL = QWEN_ASR_MODEL
@@ -30,6 +32,10 @@ class AsrError(RuntimeError):
         self.code = code
         self.message = message
         self.detail = detail
+
+
+class AsrCancellationRequested(RuntimeError):
+    pass
 
 
 def setup_dashscope(api_key: str) -> None:
@@ -132,37 +138,62 @@ def _extract_usage_seconds(wait_out: dict[str, Any], wait_resp: Any) -> int | No
     return None
 
 
-def _create_task(model: str, signed_url: str) -> Any:
+def _raise_if_cancel_requested(*, audio_path: str | None = None) -> None:
+    if is_task_terminate_requested(path=audio_path):
+        raise AsrCancellationRequested("terminate requested")
+
+
+def _call_with_optional_request_timeout(func, /, *args, request_timeout: int | None = None, **kwargs):
+    if request_timeout is None:
+        return func(*args, **kwargs)
+    try:
+        return func(*args, request_timeout=request_timeout, **kwargs)
+    except TypeError as exc:
+        if "unexpected keyword argument" not in str(exc):
+            raise
+        return func(*args, **kwargs)
+
+
+def _create_task(model: str, signed_url: str, *, request_timeout: int | None = None) -> Any:
     if model == QWEN_DEFAULT_MODEL:
-        return QwenTranscription.async_call(
+        return _call_with_optional_request_timeout(
+            QwenTranscription.async_call,
             model=model,
             file_url=signed_url,
             enable_words=True,
             enable_itn=False,
+            request_timeout=request_timeout,
         )
     raise AsrError("INVALID_MODEL", "不支持的模型", model)
 
 
-def _fetch_task(model: str, task_id: str) -> Any:
+def _fetch_task(model: str, task_id: str, *, request_timeout: int | None = None) -> Any:
     if model == QWEN_DEFAULT_MODEL:
-        return QwenTranscription.fetch(task=task_id)
+        return _call_with_optional_request_timeout(QwenTranscription.fetch, task=task_id, request_timeout=request_timeout)
     raise AsrError("INVALID_MODEL", "不支持的模型", model)
 
 
-def _emit_task_progress(progress_callback, *, task_id: str, task_status: str, elapsed_seconds: int, poll_count: int) -> None:
+def _emit_task_progress(
+    progress_callback,
+    *,
+    task_id: str,
+    task_status: str,
+    elapsed_seconds: int,
+    poll_count: int,
+    audio_path: str | None = None,
+) -> None:
+    _raise_if_cancel_requested(audio_path=audio_path)
     if not progress_callback:
         return
-    try:
-        progress_callback(
-            {
-                "task_id": task_id,
-                "task_status": str(task_status or "").strip().upper(),
-                "elapsed_seconds": max(0, int(elapsed_seconds or 0)),
-                "poll_count": max(0, int(poll_count or 0)),
-            }
-        )
-    except Exception:
-        pass
+    progress_callback(
+        {
+            "task_id": task_id,
+            "task_status": str(task_status or "").strip().upper(),
+            "elapsed_seconds": max(0, int(elapsed_seconds or 0)),
+            "poll_count": max(0, int(poll_count or 0)),
+        }
+    )
+    _raise_if_cancel_requested(audio_path=audio_path)
 
 
 def _transcribe_audio_file_with_qwen(
@@ -173,11 +204,19 @@ def _transcribe_audio_file_with_qwen(
     progress_callback=None,
 ) -> dict[str, Any]:
     _ensure_dashscope_api_key()
+    request_timeout = max(5, int(requests_timeout or 120))
+    _raise_if_cancel_requested(audio_path=audio_path)
 
     try:
-        upload_resp = Files.upload(file_path=audio_path, purpose="inference")
+        upload_resp = _call_with_optional_request_timeout(
+            Files.upload,
+            file_path=audio_path,
+            purpose="inference",
+            request_timeout=request_timeout,
+        )
     except Exception as exc:
         raise AsrError("ASR_UPLOAD_FAILED", "上传音频到 DashScope 失败", str(exc)[:1200]) from exc
+    _raise_if_cancel_requested(audio_path=audio_path)
     upload_out = _to_dict(getattr(upload_resp, "output", None))
 
     file_id = _resolve_file_id(upload_out)
@@ -185,9 +224,10 @@ def _transcribe_audio_file_with_qwen(
         raise AsrError("ASR_UPLOAD_FAILED", "上传音频成功但 file_id 为空", json.dumps(upload_out, ensure_ascii=False)[:1200])
 
     try:
-        meta_resp = Files.get(file_id=file_id)
+        meta_resp = _call_with_optional_request_timeout(Files.get, file_id=file_id, request_timeout=request_timeout)
     except Exception as exc:
         raise AsrError("ASR_FILE_META_FAILED", "查询 DashScope 文件失败", str(exc)[:1200]) from exc
+    _raise_if_cancel_requested(audio_path=audio_path)
     meta_out = _to_dict(getattr(meta_resp, "output", None))
 
     signed_url = _resolve_signed_url(meta_out)
@@ -195,11 +235,17 @@ def _transcribe_audio_file_with_qwen(
         raise AsrError("ASR_FILE_META_FAILED", "查询文件成功但签名 URL 为空", json.dumps(meta_out, ensure_ascii=False)[:1200])
 
     try:
-        task_resp = _create_task(model, signed_url)
+        task_resp = _call_with_optional_request_timeout(
+            _create_task,
+            model,
+            signed_url,
+            request_timeout=request_timeout,
+        )
     except AsrError:
         raise
     except Exception as exc:
         raise AsrError("ASR_TASK_CREATE_FAILED", "创建 ASR 任务失败", str(exc)[:1200]) from exc
+    _raise_if_cancel_requested(audio_path=audio_path)
 
     task_status_code = int(getattr(task_resp, "status_code", 200) or 200)
     task_out = _to_dict(getattr(task_resp, "output", None))
@@ -224,15 +270,29 @@ def _transcribe_audio_file_with_qwen(
     poll_interval_seconds = max(1, int(ASR_TASK_POLL_SECONDS))
     poll_count = 0
     started_monotonic = time.monotonic()
-    _emit_task_progress(progress_callback, task_id=task_id, task_status="SUBMITTED", elapsed_seconds=0, poll_count=poll_count)
+    _emit_task_progress(
+        progress_callback,
+        task_id=task_id,
+        task_status="SUBMITTED",
+        elapsed_seconds=0,
+        poll_count=poll_count,
+        audio_path=audio_path,
+    )
 
     while True:
+        _raise_if_cancel_requested(audio_path=audio_path)
         try:
-            fetch_resp = _fetch_task(model, task_id)
+            fetch_resp = _call_with_optional_request_timeout(
+                _fetch_task,
+                model,
+                task_id,
+                request_timeout=request_timeout,
+            )
         except AsrError:
             raise
         except Exception as exc:
             raise AsrError("ASR_TASK_WAIT_FAILED", "轮询 ASR 任务失败", str(exc)[:1200]) from exc
+        _raise_if_cancel_requested(audio_path=audio_path)
 
         response_status_code = int(getattr(fetch_resp, "status_code", 200) or 200)
         fetch_out = _to_dict(getattr(fetch_resp, "output", None))
@@ -260,6 +320,7 @@ def _transcribe_audio_file_with_qwen(
             task_status=task_status or "RUNNING",
             elapsed_seconds=elapsed_seconds,
             poll_count=poll_count,
+            audio_path=audio_path,
         )
         if task_status == "SUCCEEDED":
             break
@@ -271,7 +332,8 @@ def _transcribe_audio_file_with_qwen(
                 "ASR 任务失败",
                 json.dumps({"task_status": task_status, "subtask_code": sub_code, "subtask_message": sub_msg}, ensure_ascii=False),
             )
-        time.sleep(poll_interval_seconds)
+        if wait_for_task_terminate_request(poll_interval_seconds, path=audio_path):
+            _raise_if_cancel_requested(audio_path=audio_path)
 
     usage_seconds = _extract_usage_seconds(fetch_out, fetch_resp)
     transcription_url = _extract_transcription_url(fetch_out)
@@ -282,6 +344,7 @@ def _transcribe_audio_file_with_qwen(
         result_resp = requests.get(transcription_url, timeout=requests_timeout)
     except Exception as exc:
         raise AsrError("ASR_RESULT_DOWNLOAD_FAILED", "下载转写结果失败", str(exc)[:1200]) from exc
+    _raise_if_cancel_requested(audio_path=audio_path)
     if result_resp.status_code != 200:
         raise AsrError("ASR_RESULT_DOWNLOAD_FAILED", f"下载转写结果失败（HTTP {result_resp.status_code}）", result_resp.text[:800])
 
@@ -289,6 +352,7 @@ def _transcribe_audio_file_with_qwen(
         result_payload = result_resp.json()
     except Exception as exc:
         raise AsrError("ASR_RESULT_JSON_INVALID", "转写结果不是合法 JSON", str(exc)[:1200]) from exc
+    _raise_if_cancel_requested(audio_path=audio_path)
 
     preview_text = ""
     transcripts = result_payload.get("transcripts")
@@ -308,6 +372,8 @@ def _transcribe_audio_file_with_qwen(
 def _transcribe_audio_file_with_faster_whisper(audio_path: str, *, known_duration_ms: int | None = None, progress_callback=None) -> dict[str, Any]:
     try:
         return transcribe_audio_file_with_faster_whisper(audio_path, progress_callback=progress_callback)
+    except FasterWhisperCancellationRequested as exc:
+        raise AsrCancellationRequested(str(exc) or "terminate requested") from exc
     except FasterWhisperModelNotReadyError as exc:
         status_payload = dict(getattr(exc, "status_payload", None) or get_faster_whisper_model_status())
         raise AsrError(
