@@ -1,7 +1,7 @@
 schema_version: 1
 task_id: TASK-027
 title: 落地每课课程工作区底座
-status: todo
+status: done
 priority: high
 project_root: D:/3.3-19.01
 base_ref: main
@@ -31,11 +31,21 @@ dependency_reason: ""
 blocked_by: []
 conflicts_with: []
 notes_for_after: 这项任务是后续“生成工作台”和“流式字幕”要踩的底座，不要顺手做上传页视觉改版。优先把工作区设计成统一抽象，而不是分裂成 cloud/local 两套：至少要能承接来源素材信息、运行位点、最新字幕草稿、阶段日志和最终 lesson 绑定。若任务开始时还没有 lesson_id，可先用 task 维度工作区，成功后再补 lesson 绑定。持久化主副本优先落在现有服务端可写持久目录与任务产物体系中，`localTaskStore.js` 只保留恢复指针和最小快照，不要把前端 IndexedDB 扩成第二套权威工作区存储；同时保持对未来 `TASK-026` 链接导入进入同一工作区的兼容余地。
-result_summary: ""
-changed_files: []
-tests_run: []
+result_summary: >-
+  为课程生成链路补齐服务端 workspace summary 持久化，任务与直出课程都会生成可追踪工作区摘要，
+  任务接口与本地快照同步只保留最小恢复指针，并在任务成功后把工作区绑定到最终 lesson。
+changed_files:
+  - app/core/config.py
+  - app/api/routers/lessons.py
+  - app/services/lesson_service.py
+  - app/services/lesson_task_manager.py
+  - frontend/src/shared/media/localTaskStore.js
+  - tests/test_regression_api.py
+tests_run:
+  - pytest tests/test_regression_api.py -q
+  - npm --prefix frontend run build
 blocked_reason: ""
-completed_at: ""
+completed_at: "2026-03-24T01:36:00.5580345+08:00"
 fix_request: ""
 fix_reason: ""
 fix_round: 0

@@ -489,6 +489,7 @@ function createParallelProgressEvent({
   plannedConcurrency = 1,
   activeConcurrency = 1,
   loadProgress = null,
+  draftSubtitles = null,
 } = {}) {
   return {
     stage,
@@ -498,6 +499,7 @@ function createParallelProgressEvent({
     plannedConcurrency: Math.max(1, Number(plannedConcurrency || 1)),
     activeConcurrency: Math.max(1, Number(activeConcurrency || 1)),
     loadProgress: Number.isFinite(Number(loadProgress)) ? clamp(Number(loadProgress), 0, 100) : null,
+    draftSubtitles: Array.isArray(draftSubtitles) ? draftSubtitles.map((item) => ({ ...item })) : null,
     counters: createProgressCounters(completedSegments, totalSegments),
   };
 }
@@ -769,6 +771,7 @@ export async function runLocalAsrWithAutoParallelism({
           isLastSegment: segment.index === plan.segmentCount - 1,
         });
         completedSegments += 1;
+        const mergedDraft = mergeParallelSegmentResults(completed, plan.totalDurationMs);
         onProgress?.(
           createParallelProgressEvent({
             currentText:
@@ -780,6 +783,7 @@ export async function runLocalAsrWithAutoParallelism({
             plannedConcurrency: plan.plannedConcurrency,
             activeConcurrency: plan.actualConcurrency,
             loadProgress: 100,
+            draftSubtitles: mergedDraft.sentences,
           }),
         );
         onProgress?.(
@@ -791,6 +795,7 @@ export async function runLocalAsrWithAutoParallelism({
             plannedConcurrency: plan.plannedConcurrency,
             activeConcurrency: plan.actualConcurrency,
             loadProgress: 100,
+            draftSubtitles: mergedDraft.sentences,
           }),
         );
       }
