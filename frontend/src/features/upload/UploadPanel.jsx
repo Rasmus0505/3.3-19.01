@@ -12,7 +12,6 @@ import {
   desktopModelUpdateSupported,
   bindLocalAsrModelDirectory,
   ensureLocalAsrModel,
-  generateDesktopLocalLesson,
   getDesktopBundledAsrModelSummary,
   getLocalAsrWorkerAssetPayload,
   installDesktopBundledAsrModel,
@@ -376,6 +375,42 @@ function formatDurationLabel(seconds) {
   const minutes = Math.floor(safeSeconds / 60);
   const remainSeconds = safeSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
+}
+
+function formatSubtitleTimestamp(ms) {
+  const safeSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+  if (hours > 0) {
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatSubtitleTimeRange(beginMs, endMs) {
+  const safeBeginMs = Math.max(0, Number(beginMs || 0));
+  const safeEndMs = Math.max(safeBeginMs, Number(endMs || 0));
+  if (safeBeginMs <= 0 && safeEndMs <= 0) {
+    return "";
+  }
+  return `${formatSubtitleTimestamp(safeBeginMs)} - ${formatSubtitleTimestamp(safeEndMs)}`;
+}
+
+function formatDateTimeLabel(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 function createAbortError(message) {
@@ -1260,11 +1295,45 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }));
   }, [subtitleDraftEdits, subtitleDraftSnapshot]);
   const subtitleDraftLogEvents = Array.isArray(subtitleDraftSnapshot?.logs) ? subtitleDraftSnapshot.logs.slice(-5).reverse() : [];
-  const showWorkbenchLayout = showMediaPreview || showProgress || showTaskStatusCard || phase === "success" || phase === "error" || phase === "upload_paused";
+  const showWorkbenchLayout = true;
+  const subtitleDraftHasContent = renderedSubtitleDraftItems.length > 0;
+  const subtitleDraftUpdatedLabel = formatDateTimeLabel(subtitleDraftSnapshot?.updatedAt);
+  const subtitleDraftToneStyles = getUploadToneStyles(
+    subtitleDraftSnapshot?.isFinal ? "success" : subtitleDraftHasContent ? "running" : "idle",
+  );
+  const subtitleDraftHintText = subtitleDraftSnapshot?.isFinal
+    ? "最终字幕已确定覆盖草稿，你可以继续微调阅读内容，然后直接开始沉浸式学习。"
+    : subtitleDraftHasContent
+      ? "当前是可回改的字幕草稿，后续识别与课程生成结果可能继续修正；任务成功后会自动切换到最终态。"
+      : "选择素材并开始生成后，这里会按句或按段持续刷新字幕草稿，刷新页面后也会从工作区恢复。";
+  const processLogEvents =
+    subtitleDraftLogEvents.length > 0
+      ? subtitleDraftLogEvents
+      : status || subtitleDraftSnapshot?.previewText
+        ? [
+            {
+              at: subtitleDraftSnapshot?.updatedAt || "",
+              stage: getCurrentTaskStageKey(displayTaskSnapshot),
+              overall_percent: progressPercent,
+              message: String(status || subtitleDraftSnapshot?.previewText || "").trim(),
+              status: displayTaskStatus || phase,
+            },
+          ]
+        : [];
 
   useEffect(() => {
     setSubtitleDraftEdits({});
   }, [subtitleDraftKey]);
+
+  function handleSubtitleDraftEditChange(itemId, field, value) {
+    const normalizedId = String(itemId || "").trim();
+    if (!normalizedId) return;
+    const key = field === "textZh" ? `${normalizedId}:zh` : normalizedId;
+    setSubtitleDraftEdits((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  }
 
   function maybeShowModelFallbackToast(payload) {
     void payload;
@@ -3400,7 +3469,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       return;
     }
 
-    const startStatus = "正在通过本地网站 Bottle 1.0 生成课程";
+    const startStatus = "正在通过本地网站 Bottle 1.0 识别字幕";
     setPhase("local_transcribing");
     setStatus(startStatus);
     setTaskId("");
@@ -3424,7 +3493,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       form.append("model_key", FASTER_WHISPER_MODEL);
       form.append("runtime_kind", FAST_RUNTIME_TRACK_BROWSER_LOCAL);
       const { ok, data } = await uploadWithProgress(
-        "/api/desktop-asr/generate-upload",
+        "/api/desktop-asr/transcribe-upload",
         {
           method: "POST",
           body: form,
@@ -3438,30 +3507,78 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         LOCAL_BROWSER_RUNTIME_BASE_URL,
       );
       if (!ok) {
-        throw new Error(toErrorText(data, "本地网站 Bottle 1.0 生成失败"));
+        throw new Error(toErrorText(data, "本地网站 Bottle 1.0 字幕识别失败"));
       }
       const localResult = data || {};
+      const localSentences = localResult?.asr_result_json?.transcripts?.[0]?.sentences;
+      if (!Array.isArray(localSentences) || localSentences.length === 0) {
+        throw new Error("本地网站 Bottle 1.0 未识别出可用字幕，请改用云端运行或更换素材。");
+      }
       setStreamingSubtitleDraft(
         buildSubtitleDraftSnapshotFromAsrPayload(localResult?.asr_result_json, { title: "生成中的字幕草稿", source: "browser_local_asr" }),
       );
-      const localGenerationResult =
-        localResult?.local_generation_result && typeof localResult.local_generation_result === "object"
-          ? localResult.local_generation_result
-          : null;
-      if (!localGenerationResult) {
-        throw new Error("本地网站运行完成，但缺少课程生成结果。");
+      setUploadPercent(100);
+      const createTaskAbortController = new AbortController();
+      localRunAbortRef.current = createTaskAbortController;
+      const resp = await api(
+        "/api/lessons/tasks/local-asr",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: createTaskAbortController.signal,
+          body: JSON.stringify({
+            asr_model: FASTER_WHISPER_MODEL,
+            source_filename: String(sourceFile?.name || localResult?.source_filename || "browser-local-source"),
+            source_duration_ms: Math.max(1, Number(localResult?.source_duration_ms || 0) || Math.round(Number(durationSec || 0) * 1000) || 1),
+            runtime_kind: FAST_RUNTIME_TRACK_BROWSER_LOCAL,
+            asr_payload: localResult?.asr_result_json || {},
+          }),
+        },
+        accessToken,
+      );
+      localRunAbortRef.current = null;
+      const taskData = await parseResponse(resp);
+      if (!resp.ok) {
+        const message = mapCloudAsrFailureToMessage(toErrorText(taskData, "创建识别任务失败"), desktopServerStatus);
+        await handleTaskFailureState({
+          message,
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: 100,
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+          refreshWallet: true,
+        });
+        return;
       }
-      setUploadPercent(80);
-      setStatus("正在保存本地已完成课程");
-      const persistedLesson = await persistCompletedLocalLesson({
-        asrModel: FASTER_WHISPER_MODEL,
-        runtimeKind: FAST_RUNTIME_TRACK_BROWSER_LOCAL,
-        sourceFilename: String(sourceFile?.name || localResult?.source_filename || "browser-local-source"),
-        sourceDurationMs: Math.max(1, Number(localResult?.source_duration_ms || 0) || Math.round(Number(durationSec || 0) * 1000) || 1),
-        asrPayload: localResult?.asr_result_json || {},
-        localGenerationResult,
+      const nextTaskId = String(taskData?.task_id || "");
+      if (!nextTaskId) {
+        throw new Error("任务创建成功但缺少 task_id");
+      }
+      const pendingText = String(taskData?.admission?.state || "").trim().toLowerCase() === "queued" ? "本地字幕已提交，正在排队生成课程" : "本地字幕已提交，正在生成课程";
+      const pendingTaskSnapshot = {
+        task_id: nextTaskId,
+        status: "pending",
+        current_text: pendingText,
+        workspace: taskData?.workspace || null,
+      };
+      setTaskId(nextTaskId);
+      setTaskSnapshot(pendingTaskSnapshot);
+      setLocalProgressSnapshot(null);
+      setStreamingSubtitleDraft(null);
+      setPhase("processing");
+      setLoading(true);
+      setStatus(pendingText);
+      await persistSession({
+        taskId: nextTaskId,
+        phase: "processing",
+        taskSnapshot: pendingTaskSnapshot,
+        uploadPercent: 100,
+        status: pendingText,
+        bindingCompleted: false,
       });
-      await finalizeSuccess(persistedLesson, sourceFile);
+      const nextPollToken = startPollingSession();
+      void pollTask(nextTaskId, false, nextPollToken);
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : `网络错误: ${String(error)}`;
       await handleTaskFailureState({
@@ -3530,7 +3647,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     });
 
     try {
-      const localResult = await generateDesktopLocalLesson(FASTER_WHISPER_MODEL, sourceFile, FAST_RUNTIME_TRACK_DESKTOP_LOCAL);
+      const localResult = await transcribeDesktopLocalAsr(FASTER_WHISPER_MODEL, sourceFile);
       if (runToken !== localRunTokenRef.current) return;
       clearLocalStageProgressTimer();
       setStreamingSubtitleDraft(
@@ -3549,25 +3666,68 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         segment_done: sentenceCount,
         segment_total: sentenceCount,
       });
-      setStatus("正在保存本地已完成课程");
-      const localGenerationResult =
-        localResult?.localGenerationResult && typeof localResult.localGenerationResult === "object" ? localResult.localGenerationResult : null;
-      if (!localGenerationResult) {
-        throw new Error("本机生成完成，但缺少课程生成结果。");
+      const createTaskAbortController = new AbortController();
+      localRunAbortRef.current = createTaskAbortController;
+      const resp = await api(
+        "/api/lessons/tasks/local-asr",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: createTaskAbortController.signal,
+          body: JSON.stringify({
+            asr_model: FASTER_WHISPER_MODEL,
+            source_filename: String(sourceFile?.name || localResult?.sourceFilename || "desktop-local-source"),
+            source_duration_ms: Math.max(1, Number(localResult?.sourceDurationMs || 0) || Math.round(Number(sourceDurationSec || 0) * 1000) || 1),
+            runtime_kind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
+            asr_payload: localResult?.asrPayload || {},
+          }),
+        },
+        accessToken,
+      );
+      if (runToken !== localRunTokenRef.current) return;
+      localRunAbortRef.current = null;
+      const data = await parseResponse(resp);
+      if (!resp.ok) {
+        setLocalProgressSnapshot(null);
+        const message = mapCloudAsrFailureToMessage(toErrorText(data, "创建识别任务失败"), desktopServerStatus);
+        await handleTaskFailureState({
+          message,
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: 100,
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+          refreshWallet: true,
+        });
+        return;
       }
-      const persistedLesson = await persistCompletedLocalLesson({
-        asrModel: FASTER_WHISPER_MODEL,
-        runtimeKind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
-        sourceFilename: String(sourceFile?.name || localResult?.sourceFilename || "desktop-local-source"),
-        sourceDurationMs: Math.max(1, Number(localResult?.sourceDurationMs || 0) || Math.round(Number(sourceDurationSec || 0) * 1000) || 1),
-        asrPayload: localResult?.asrPayload || {},
-        localGenerationResult,
-      });
-      if (runToken !== localRunTokenRef.current) return;
+      const nextTaskId = String(data?.task_id || "");
+      if (!nextTaskId) {
+        throw new Error("任务创建成功但缺少 task_id");
+      }
+      const pendingText = String(data?.admission?.state || "").trim().toLowerCase() === "queued" ? "本地字幕已提交，正在排队生成课程" : "本地字幕已提交，正在生成课程";
+      const pendingTaskSnapshot = {
+        task_id: nextTaskId,
+        status: "pending",
+        current_text: pendingText,
+        workspace: data?.workspace || null,
+      };
+      setTaskId(nextTaskId);
+      setTaskSnapshot(pendingTaskSnapshot);
       setLocalProgressSnapshot(null);
-      const finalSourceFile = await ensureBlobBackedSourceFile(sourceFile);
-      if (runToken !== localRunTokenRef.current) return;
-      await finalizeSuccess(persistedLesson, finalSourceFile);
+      setStreamingSubtitleDraft(null);
+      setPhase("processing");
+      setLoading(true);
+      setStatus(pendingText);
+      await persistSession({
+        taskId: nextTaskId,
+        phase: "processing",
+        taskSnapshot: pendingTaskSnapshot,
+        uploadPercent: 100,
+        status: pendingText,
+        bindingCompleted: false,
+      });
+      void pollTask(nextTaskId, false, pollToken);
     } catch (error) {
       clearLocalStageProgressTimer();
       setLocalProgressSnapshot(null);
@@ -4252,9 +4412,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <UploadCloud className="size-4" />
-          上传素材
+          生成工作台
         </CardTitle>
-        <CardDescription>自动识别、翻译并生成学习课程。</CardDescription>
+        <CardDescription>左侧查看素材与生成流程，右侧持续查看并回改字幕草稿。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <Alert className={cn("border", getUploadToneStyles("idle").surface)}>
