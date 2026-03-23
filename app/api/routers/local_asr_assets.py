@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 import zipfile
@@ -61,6 +62,13 @@ def _bundle_dir(spec: dict[str, object]) -> Path:
     return Path(str(spec["bundle_dir"]))
 
 
+def _source_bundle_dir() -> Path:
+    configured = os.getenv("DESKTOP_BUNDLED_MODEL_DIR", "").strip()
+    if configured:
+        return Path(configured)
+    return Path("__desktop_bundled_model_missing__")
+
+
 def _bundle_files(bundle_dir: Path) -> list[dict[str, object]]:
     if not bundle_dir.exists() or not bundle_dir.is_dir():
         return []
@@ -90,9 +98,12 @@ def _bundle_missing_reason(bundle_dir: Path, files: list[dict[str, object]]) -> 
 def _bundle_summary(spec: dict[str, object]) -> dict[str, object]:
     bundle_dir = _bundle_dir(spec)
     files = _bundle_files(bundle_dir)
+    source_bundle_dir = _source_bundle_dir()
+    source_files = _bundle_files(source_bundle_dir)
     total_size_bytes = sum(int(item["size_bytes"]) for item in files)
     model_key = str(spec["model_key"])
     missing_reason = _bundle_missing_reason(bundle_dir, files)
+    source_missing_reason = _bundle_missing_reason(source_bundle_dir, source_files)
     return {
         "model_key": model_key,
         "display_name": str(spec["display_name"]),
@@ -104,6 +115,10 @@ def _bundle_summary(spec: dict[str, object]) -> dict[str, object]:
         "directory_is_dir": bundle_dir.is_dir(),
         "available": bool(files),
         "missing_reason": missing_reason,
+        "source_bundle_dir": str(source_bundle_dir),
+        "source_available": bool(source_files),
+        "source_missing_reason": source_missing_reason,
+        "install_available": bool(source_files),
         "file_count": len(files),
         "total_size_bytes": total_size_bytes,
         "download_url": f"/api/local-asr-assets/download-models/{model_key}/download",
@@ -127,6 +142,20 @@ def _build_bundle_zip(spec: dict[str, object]) -> Path:
             source_path = bundle_dir / relative_name
             archive.write(source_path, arcname=f"{bundle_dir.name}/{relative_name}")
     return archive_path
+
+
+def _install_bundle_from_source(spec: dict[str, object]) -> dict[str, object]:
+    source_bundle_dir = _source_bundle_dir()
+    source_files = _bundle_files(source_bundle_dir)
+    if not source_files:
+        source_missing_reason = _bundle_missing_reason(source_bundle_dir, source_files)
+        raise HTTPException(status_code=404, detail=f"Bundled model source missing: {source_bundle_dir} ({source_missing_reason})")
+
+    target_bundle_dir = _bundle_dir(spec)
+    target_bundle_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(target_bundle_dir, ignore_errors=True)
+    shutil.copytree(source_bundle_dir, target_bundle_dir)
+    return _bundle_summary(spec)
 
 
 @router.get("/status")
@@ -163,6 +192,17 @@ def download_model_bundle(model_key: str):
         filename=str(spec["archive_name"]),
         background=BackgroundTask(lambda: shutil.rmtree(cleanup_dir, ignore_errors=True)),
     )
+
+
+@router.post("/download-models/{model_key}/install")
+def install_downloadable_model_bundle(model_key: str):
+    spec = _bundle_spec(model_key)
+    summary = _install_bundle_from_source(spec)
+    return {
+        "ok": True,
+        "installed": True,
+        **summary,
+    }
 
 
 @router.get("/download-models/{model_key}/files/{file_path:path}")

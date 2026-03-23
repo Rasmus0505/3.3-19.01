@@ -53,7 +53,6 @@ const LEGACY_SHORTCUT_BINDINGS = {
   "shift+arrowleft": { code: "ArrowLeft", key: "arrowleft", shift: true, ctrl: false, alt: false, meta: false },
   "shift+arrowright": { code: "ArrowRight", key: "arrowright", shift: true, ctrl: false, alt: false, meta: false },
   "shift+r": { code: "KeyR", key: "r", shift: true, ctrl: false, alt: false, meta: false },
-  "shift+b": { code: "KeyB", key: "b", shift: true, ctrl: false, alt: false, meta: false },
   "shift+n": { code: "KeyN", key: "n", shift: true, ctrl: false, alt: false, meta: false },
   "shift+p": { code: "KeyP", key: "p", shift: true, ctrl: false, alt: false, meta: false },
   "shift+k": { code: "KeyK", key: "k", shift: true, ctrl: false, alt: false, meta: false },
@@ -66,7 +65,6 @@ export const SHORTCUT_ACTIONS = [
   { id: "next_sentence", label: "下一句" },
   { id: "replay_sentence", label: "重播" },
   { id: "toggle_pause_playback", label: "暂停/继续播放" },
-  { id: "peek_translation_mask", label: "涓存椂閫忓嚭涓枃" },
 ];
 
 export const DEFAULT_SHORTCUTS = {
@@ -76,7 +74,6 @@ export const DEFAULT_SHORTCUTS = {
   next_sentence: LEGACY_SHORTCUT_BINDINGS["shift+w"],
   replay_sentence: LEGACY_SHORTCUT_BINDINGS["shift+r"],
   toggle_pause_playback: LEGACY_SHORTCUT_BINDINGS.space,
-  peek_translation_mask: LEGACY_SHORTCUT_BINDINGS["shift+b"],
 };
 
 export const REPLAY_PRESET_OPTIONS = [

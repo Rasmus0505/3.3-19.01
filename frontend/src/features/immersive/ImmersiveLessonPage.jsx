@@ -35,9 +35,9 @@ const PROGRAMMATIC_FULLSCREEN_EXIT_RESET_MS = 1000;
 const WORDBOOK_LONG_PRESS_MS = 260;
 const TRANSLATION_MASK_MIN_WIDTH_PX = 120;
 const TRANSLATION_MASK_MIN_HEIGHT_PX = 52;
-const TRANSLATION_MASK_DEFAULT_PADDING_X_PX = 12;
-const TRANSLATION_MASK_DEFAULT_PADDING_Y_PX = 8;
-const TRANSLATION_MASK_PEEK_HOLD_MS = 180;
+const TRANSLATION_MASK_DEFAULT_WIDTH_RATIO = 0.44;
+const TRANSLATION_MASK_DEFAULT_HEIGHT_RATIO = 0.16;
+const TRANSLATION_MASK_DEFAULT_BOTTOM_OFFSET_RATIO = 0.08;
 const TRANSLATION_MASK_EMPTY_RECT = Object.freeze({ x: null, y: null, width: null, height: null });
 const MEDIA_TYPE_BY_EXTENSION = {
   ".mp4": "video/mp4",
@@ -104,20 +104,50 @@ function buildTranslationMaskUiPreference(enabled, rect) {
   };
 }
 
-function buildDefaultTranslationMaskRect(containerRect, targetRect) {
-  const safeWidth = Math.max(1, Number(containerRect?.width || 0));
-  const safeHeight = Math.max(1, Number(containerRect?.height || 0));
+function buildDefaultTranslationMaskRect(metrics) {
+  const safeWidth = Math.max(1, Number(metrics?.width || 0));
+  const safeHeight = Math.max(1, Number(metrics?.height || 0));
   const minWidth = Math.min(TRANSLATION_MASK_MIN_WIDTH_PX, safeWidth);
   const minHeight = Math.min(TRANSLATION_MASK_MIN_HEIGHT_PX, safeHeight);
-  const rawLeft = Number(targetRect?.left || 0) - Number(containerRect?.left || 0) - TRANSLATION_MASK_DEFAULT_PADDING_X_PX;
-  const rawTop = Number(targetRect?.top || 0) - Number(containerRect?.top || 0) - TRANSLATION_MASK_DEFAULT_PADDING_Y_PX;
-  const rawWidth = Number(targetRect?.width || 0) + TRANSLATION_MASK_DEFAULT_PADDING_X_PX * 2;
-  const rawHeight = Number(targetRect?.height || 0) + TRANSLATION_MASK_DEFAULT_PADDING_Y_PX * 2;
-  const width = clampNumber(rawWidth, minWidth, safeWidth);
-  const height = clampNumber(rawHeight, minHeight, safeHeight);
-  const left = clampNumber(rawLeft, 0, Math.max(0, safeWidth - width));
-  const top = clampNumber(rawTop, 0, Math.max(0, safeHeight - height));
+  const width = clampNumber(safeWidth * TRANSLATION_MASK_DEFAULT_WIDTH_RATIO, minWidth, safeWidth);
+  const height = clampNumber(safeHeight * TRANSLATION_MASK_DEFAULT_HEIGHT_RATIO, minHeight, safeHeight);
+  const bottomOffset = Math.max(12, safeHeight * TRANSLATION_MASK_DEFAULT_BOTTOM_OFFSET_RATIO);
+  const left = clampNumber((safeWidth - width) / 2, 0, Math.max(0, safeWidth - width));
+  const top = clampNumber(safeHeight - height - bottomOffset, 0, Math.max(0, safeHeight - height));
   return convertTranslationMaskRectToStored({ left, top, width, height }, { width: safeWidth, height: safeHeight });
+}
+
+function measureContainedVideoRect(containerRect, videoElement) {
+  const safeContainerWidth = Math.max(0, Number(containerRect?.width || 0));
+  const safeContainerHeight = Math.max(0, Number(containerRect?.height || 0));
+  const intrinsicWidth = Math.max(0, Number(videoElement?.videoWidth || 0));
+  const intrinsicHeight = Math.max(0, Number(videoElement?.videoHeight || 0));
+  if (safeContainerWidth <= 0 || safeContainerHeight <= 0 || intrinsicWidth <= 0 || intrinsicHeight <= 0) {
+    return null;
+  }
+
+  const containerAspectRatio = safeContainerWidth / safeContainerHeight;
+  const videoAspectRatio = intrinsicWidth / intrinsicHeight;
+
+  if (videoAspectRatio >= containerAspectRatio) {
+    const width = safeContainerWidth;
+    const height = width / videoAspectRatio;
+    return {
+      left: 0,
+      top: (safeContainerHeight - height) / 2,
+      width,
+      height,
+    };
+  }
+
+  const height = safeContainerHeight;
+  const width = height * videoAspectRatio;
+  return {
+    left: (safeContainerWidth - width) / 2,
+    top: 0,
+    width,
+    height,
+  };
 }
 
 function resolveTranslationMaskRect(maskRect, metrics) {
@@ -691,16 +721,14 @@ export function ImmersiveLessonPage({
   const [translationMaskRect, setTranslationMaskRect] = useState(() =>
     normalizeTranslationMaskRect(readLearningSettings().uiPreferences?.translationMask),
   );
-  const [translationMaskPeekActive, setTranslationMaskPeekActive] = useState(false);
   const [translationMaskMetrics, setTranslationMaskMetrics] = useState(null);
 
   const immersiveContainerRef = useRef(null);
+  const immersiveMediaRef = useRef(null);
   const mediaElementRef = useRef(null);
   const clipAudioRef = useRef(null);
   const typingInputRef = useRef(null);
   const bindingInputRef = useRef(null);
-  const previousSentenceBlockRef = useRef(null);
-  const translationZhRowRef = useRef(null);
   const cinemaControlsIdleTimerRef = useRef(null);
   const currentWordInputRef = useRef("");
   const activeWordIndexRef = useRef(0);
@@ -728,9 +756,6 @@ export function ImmersiveLessonPage({
     startRect: null,
     latestRect: null,
   });
-  const translationMaskPeekShortcutActiveRef = useRef(false);
-  const translationMaskButtonHoldTimerRef = useRef(null);
-  const translationMaskButtonLongPressRef = useRef(false);
   const cinemaFullscreenActive = isCinemaFullscreen || isFullscreenFallback;
   const showPreviousSentenceBlock = !cinemaFullscreenActive || showFullscreenPreviousSentence;
   const hasExitHandler = typeof onExitImmersive === "function" || typeof onBack === "function";
@@ -799,7 +824,6 @@ export function ImmersiveLessonPage({
     ? previousSentence.text_zh || "(翻译失败，暂缺)"
     : "(暂无上一句中文翻译)";
   const autoReplayAnsweredSentence = learningSettings.playbackPreferences?.autoReplayAnsweredSentence !== false;
-  const translationMaskShortcutLabel = getShortcutLabel(learningSettings.shortcuts.peek_translation_mask);
   const translationHeading = translationDisplayMode === "current_answered" ? "本句" : "上一句";
   const translationEn = translationDisplayMode === "current_answered" ? currentSentenceEn : previousSentenceEn;
   const translationZh = translationDisplayMode === "current_answered" ? currentSentenceZh : previousSentenceZh;
@@ -839,16 +863,16 @@ export function ImmersiveLessonPage({
     [translationMaskMetrics, translationMaskRect],
   );
   const translationMaskStyle = useMemo(() => {
-    if (!resolvedTranslationMaskRect) return null;
+    if (!resolvedTranslationMaskRect || !translationMaskMetrics) return null;
     return {
-      left: `${resolvedTranslationMaskRect.left}px`,
-      top: `${resolvedTranslationMaskRect.top}px`,
+      left: `${translationMaskMetrics.offsetLeft + resolvedTranslationMaskRect.left}px`,
+      top: `${translationMaskMetrics.offsetTop + resolvedTranslationMaskRect.top}px`,
       width: `${resolvedTranslationMaskRect.width}px`,
       height: `${resolvedTranslationMaskRect.height}px`,
     };
-  }, [resolvedTranslationMaskRect]);
+  }, [resolvedTranslationMaskRect, translationMaskMetrics]);
   const canShowTranslationMask = Boolean(
-    cinemaFullscreenActive && showPreviousSentenceBlock && translationMaskMetrics && resolvedTranslationMaskRect,
+    cinemaFullscreenActive && mediaMode === "video" && translationMaskMetrics && resolvedTranslationMaskRect,
   );
 
   const { playKeySound, playWrongSound, playCorrectSound } = useTypingFeedbackSounds();
@@ -887,18 +911,6 @@ export function ImmersiveLessonPage({
     }));
   }, [persistUiPreferences]);
 
-  const clearTranslationMaskButtonHoldTimer = useCallback(() => {
-    if (typeof window === "undefined") return;
-    if (translationMaskButtonHoldTimerRef.current !== null) {
-      window.clearTimeout(translationMaskButtonHoldTimerRef.current);
-      translationMaskButtonHoldTimerRef.current = null;
-    }
-  }, []);
-
-  const setTranslationMaskPeekActiveSafe = useCallback((nextActive) => {
-    setTranslationMaskPeekActive(Boolean(nextActive));
-  }, []);
-
   const persistTranslationMaskPreference = useCallback(
     (nextEnabled, nextRect) => {
       const nextPreference = buildTranslationMaskUiPreference(nextEnabled, nextRect);
@@ -922,48 +934,31 @@ export function ImmersiveLessonPage({
   }, []);
 
   const updateTranslationMaskMetrics = useCallback(() => {
-    const container = previousSentenceBlockRef.current;
-    const target = translationZhRowRef.current;
-    if (!container || !target || !cinemaFullscreenActive || !showPreviousSentenceBlock) {
+    const container = immersiveMediaRef.current;
+    const videoElement = mediaElementRef.current;
+    if (!container || !videoElement || !cinemaFullscreenActive || mediaMode !== "video") {
       setTranslationMaskMetrics(null);
       return;
     }
     const containerRect = container.getBoundingClientRect();
-    const targetRect = target.getBoundingClientRect();
-    if (containerRect.width <= 0 || containerRect.height <= 0 || targetRect.width <= 0 || targetRect.height <= 0) {
+    const videoRect = measureContainedVideoRect(containerRect, videoElement);
+    if (!videoRect || videoRect.width <= 0 || videoRect.height <= 0) {
       setTranslationMaskMetrics(null);
       return;
     }
-    const defaultRect = buildDefaultTranslationMaskRect(containerRect, targetRect);
+    const defaultRect = buildDefaultTranslationMaskRect(videoRect);
     setTranslationMaskMetrics({
-      width: containerRect.width,
-      height: containerRect.height,
+      width: videoRect.width,
+      height: videoRect.height,
+      offsetLeft: videoRect.left,
+      offsetTop: videoRect.top,
       defaultRect,
     });
-  }, [cinemaFullscreenActive, showPreviousSentenceBlock]);
+  }, [cinemaFullscreenActive, mediaMode]);
 
   const toggleTranslationMask = useCallback(() => {
     persistTranslationMaskPreference(!translationMaskEnabled, translationMaskRect);
   }, [persistTranslationMaskPreference, translationMaskEnabled, translationMaskRect]);
-
-  const beginTranslationMaskPeekFromButton = useCallback(() => {
-    translationMaskButtonLongPressRef.current = false;
-    clearTranslationMaskButtonHoldTimer();
-    if (!translationMaskEnabled) return;
-    if (typeof window === "undefined") return;
-    translationMaskButtonHoldTimerRef.current = window.setTimeout(() => {
-      translationMaskButtonHoldTimerRef.current = null;
-      translationMaskButtonLongPressRef.current = true;
-      setTranslationMaskPeekActiveSafe(true);
-    }, TRANSLATION_MASK_PEEK_HOLD_MS);
-  }, [clearTranslationMaskButtonHoldTimer, setTranslationMaskPeekActiveSafe, translationMaskEnabled]);
-
-  const endTranslationMaskPeekFromButton = useCallback(() => {
-    clearTranslationMaskButtonHoldTimer();
-    if (translationMaskButtonLongPressRef.current) {
-      setTranslationMaskPeekActiveSafe(false);
-    }
-  }, [clearTranslationMaskButtonHoldTimer, setTranslationMaskPeekActiveSafe]);
 
   const resetSentenceGate = useCallback((playbackRequired = true) => {
     sentenceAdvanceLockedRef.current = false;
@@ -1522,24 +1517,35 @@ export function ImmersiveLessonPage({
   useEffect(() => {
     updateTranslationMaskMetrics();
     if (typeof window === "undefined") return undefined;
+    const resizeObserver =
+      typeof window.ResizeObserver === "function"
+        ? new window.ResizeObserver(() => {
+            updateTranslationMaskMetrics();
+          })
+        : null;
+    if (resizeObserver && immersiveMediaRef.current) {
+      resizeObserver.observe(immersiveMediaRef.current);
+    }
+    if (resizeObserver && mediaElementRef.current) {
+      resizeObserver.observe(mediaElementRef.current);
+    }
     window.addEventListener("resize", updateTranslationMaskMetrics);
     return () => {
+      resizeObserver?.disconnect();
       window.removeEventListener("resize", updateTranslationMaskMetrics);
     };
-  }, [updateTranslationMaskMetrics, currentSentenceIndex, translationDisplayMode]);
+  }, [mediaMode, mediaReady, mediaReloadKey, updateTranslationMaskMetrics]);
 
   useEffect(() => {
-    if (!showPreviousSentenceBlock || !cinemaFullscreenActive) {
-      setTranslationMaskPeekActive(false);
+    if (!cinemaFullscreenActive || mediaMode !== "video") {
       resetTranslationMaskGesture();
       return;
     }
     updateTranslationMaskMetrics();
-  }, [cinemaFullscreenActive, resetTranslationMaskGesture, showPreviousSentenceBlock, translationDisplayMode, updateTranslationMaskMetrics]);
+  }, [cinemaFullscreenActive, mediaMode, resetTranslationMaskGesture, updateTranslationMaskMetrics]);
 
   useEffect(() => {
     if (!canShowTranslationMask) {
-      setTranslationMaskPeekActive(false);
       resetTranslationMaskGesture();
     }
   }, [canShowTranslationMask, resetTranslationMaskGesture]);
@@ -1931,10 +1937,6 @@ export function ImmersiveLessonPage({
   );
 
   const handleTranslationMaskButtonClick = useCallback(() => {
-    if (translationMaskButtonLongPressRef.current) {
-      translationMaskButtonLongPressRef.current = false;
-      return;
-    }
     toggleTranslationMask();
   }, [toggleTranslationMask]);
 
@@ -2006,12 +2008,6 @@ export function ImmersiveLessonPage({
       clearCinemaControlsIdleTimer();
     };
   }, [clearCinemaControlsIdleTimer]);
-
-  useEffect(() => {
-    return () => {
-      clearTranslationMaskButtonHoldTimer();
-    };
-  }, [clearTranslationMaskButtonHoldTimer]);
 
   useEffect(() => {
     return () => {
@@ -2126,13 +2122,6 @@ export function ImmersiveLessonPage({
         void exitImmersive("shortcut_esc");
         return;
       }
-      if (isShortcutPressed(event, learningSettings.shortcuts.peek_translation_mask)) {
-        event.preventDefault();
-        event.stopPropagation();
-        translationMaskPeekShortcutActiveRef.current = true;
-        setTranslationMaskPeekActiveSafe(true);
-        return;
-      }
       if (isShortcutPressed(event, learningSettings.shortcuts.replay_sentence)) {
         event.preventDefault();
         event.stopPropagation();
@@ -2184,29 +2173,7 @@ export function ImmersiveLessonPage({
     replayCurrentSentence,
     revealCurrentLetter,
     revealCurrentWord,
-    setTranslationMaskPeekActiveSafe,
   ]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-
-    const releasePeek = () => {
-      if (!translationMaskPeekShortcutActiveRef.current) return;
-      translationMaskPeekShortcutActiveRef.current = false;
-      setTranslationMaskPeekActiveSafe(false);
-    };
-
-    const onWindowKeyUp = () => {
-      releasePeek();
-    };
-
-    window.addEventListener("keyup", onWindowKeyUp);
-    window.addEventListener("blur", releasePeek);
-    return () => {
-      window.removeEventListener("keyup", onWindowKeyUp);
-      window.removeEventListener("blur", releasePeek);
-    };
-  }, [setTranslationMaskPeekActiveSafe]);
 
   const handleKeyDown = useCallback(
     (event) => {
@@ -2217,13 +2184,6 @@ export function ImmersiveLessonPage({
         event.preventDefault();
         event.stopPropagation();
         void exitImmersive("shortcut_esc");
-        return;
-      }
-      if (isShortcutPressed(event, learningSettings.shortcuts.peek_translation_mask)) {
-        event.preventDefault();
-        event.stopPropagation();
-        translationMaskPeekShortcutActiveRef.current = true;
-        setTranslationMaskPeekActiveSafe(true);
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.replay_sentence)) {
@@ -2345,7 +2305,6 @@ export function ImmersiveLessonPage({
       replayCurrentSentence,
       revealCurrentLetter,
       revealCurrentWord,
-      setTranslationMaskPeekActiveSafe,
       typingEnabled,
     ],
   );
@@ -2372,9 +2331,9 @@ export function ImmersiveLessonPage({
     .join(" ");
   const cinemaButtonClassName = cinemaFullscreenActive ? "immersive-cinema-button" : undefined;
   const showPlaybackRateBadge = cinemaFullscreenActive && currentPlaybackRate < 0.999;
+  const showTranslationMaskToggle = cinemaFullscreenActive && mediaMode === "video" && !needsBinding;
   const playbackRateLabel = formatPlaybackRateLabel(currentPlaybackRate);
   const translationMaskVisible = canShowTranslationMask && translationMaskEnabled;
-  const translationMaskPeeked = translationMaskPeekActive && translationMaskVisible;
 
   return (
     <div
@@ -2412,20 +2371,18 @@ export function ImmersiveLessonPage({
                   >
                     {showFullscreenPreviousSentence ? "隐藏上一句" : "显示上一句"}
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className={cinemaButtonClassName}
-                    aria-pressed={translationMaskEnabled}
-                    onClick={handleTranslationMaskButtonClick}
-                    onPointerDown={beginTranslationMaskPeekFromButton}
-                    onPointerUp={endTranslationMaskPeekFromButton}
-                    onPointerCancel={endTranslationMaskPeekFromButton}
-                    onPointerLeave={endTranslationMaskPeekFromButton}
-                  >
-                    <Eye className="size-4" />
-                    {translationMaskEnabled ? "关闭字幕遮挡" : "开启字幕遮挡"}
-                  </Button>
+                  {showTranslationMaskToggle ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={cinemaButtonClassName}
+                      aria-pressed={translationMaskEnabled}
+                      onClick={handleTranslationMaskButtonClick}
+                    >
+                      <Eye className="size-4" />
+                      {translationMaskEnabled ? "关闭字幕遮挡" : "开启字幕遮挡"}
+                    </Button>
+                  ) : null}
                 </>
               ) : null}
             </div>
@@ -2438,7 +2395,7 @@ export function ImmersiveLessonPage({
         </CardHeader>
 
         <CardContent className={`immersive-card-content ${cinemaFullscreenActive ? "immersive-card-content--cinema" : "space-y-4"}`}>
-          <div className={`immersive-media ${cinemaFullscreenActive ? "immersive-media--cinema" : ""}`}>
+          <div ref={immersiveMediaRef} className={`immersive-media ${cinemaFullscreenActive ? "immersive-media--cinema" : ""}`}>
           {!needsBinding && mediaMode === "video" ? (
             <video
               ref={mediaElementRef}
@@ -2493,6 +2450,26 @@ export function ImmersiveLessonPage({
             </div>
           ) : null}
 
+          {translationMaskVisible && translationMaskStyle ? (
+            <div className="immersive-media-mask-layer">
+              <div
+                className="immersive-translation-mask"
+                style={translationMaskStyle}
+                data-translation-mask="true"
+                onPointerDown={(event) => handleTranslationMaskPointerDown(event, "move")}
+              >
+                <div className="immersive-translation-mask__glass" />
+                <div className="immersive-translation-mask__label">中文字幕遮挡</div>
+                <button
+                  type="button"
+                  aria-label="调整字幕遮挡尺寸"
+                  className="immersive-translation-mask__resize-handle"
+                  onPointerDown={(event) => handleTranslationMaskPointerDown(event, "resize")}
+                />
+              </div>
+            </div>
+          ) : null}
+
           </div>
 
           {!immersiveActive ? (
@@ -2543,10 +2520,7 @@ export function ImmersiveLessonPage({
 
               {showPreviousSentenceBlock ? (
                 <div
-                  ref={previousSentenceBlockRef}
-                  className={`immersive-previous-sentence ${cinemaFullscreenActive ? "immersive-previous-sentence--cinema" : ""} ${
-                    translationMaskVisible ? "immersive-previous-sentence--mask-active" : ""
-                  }`}
+                  className={`immersive-previous-sentence ${cinemaFullscreenActive ? "immersive-previous-sentence--cinema" : ""}`}
                 >
                   {canRenderInteractiveWordbook ? (
                     <>
@@ -2599,35 +2573,18 @@ export function ImmersiveLessonPage({
                           {wordbookBusy ? "加入中..." : "加入生词本"}
                         </Button>
                       </div>
-                      <p ref={translationZhRowRef} className="pl-[4.5em]">
+                      <p className="pl-[4.5em]">
                         {previousSentenceZh}
                       </p>
                     </>
                   ) : (
                     <>
                       <p>{translationHeading}：{translationEn}</p>
-                      <p ref={translationZhRowRef} className="pl-[4.5em]">
+                      <p className="pl-[4.5em]">
                         {translationZh}
                       </p>
                     </>
                   )}
-                  {translationMaskVisible && translationMaskStyle ? (
-                    <div
-                      className={`immersive-translation-mask ${translationMaskPeeked ? "immersive-translation-mask--peek" : ""}`}
-                      style={translationMaskStyle}
-                      data-translation-mask="true"
-                      onPointerDown={(event) => handleTranslationMaskPointerDown(event, "move")}
-                    >
-                      <div className="immersive-translation-mask__glass" />
-                      <div className="immersive-translation-mask__label">中文字幕遮挡</div>
-                      <button
-                        type="button"
-                        aria-label="调整字幕遮挡尺寸"
-                        className="immersive-translation-mask__resize-handle"
-                        onPointerDown={(event) => handleTranslationMaskPointerDown(event, "resize")}
-                      />
-                    </div>
-                  ) : null}
                 </div>
               ) : null}
               {!cinemaFullscreenActive ? (
@@ -2637,8 +2594,7 @@ export function ImmersiveLessonPage({
                   {getShortcutLabel(learningSettings.shortcuts.previous_sentence)} 上一句，
                   {getShortcutLabel(learningSettings.shortcuts.next_sentence)} 下一句，
                   {getShortcutLabel(learningSettings.shortcuts.replay_sentence)} 重播，
-                  {getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)} 暂停/继续播放，
-                  {translationMaskShortcutLabel} 临时透出中文字幕。
+                  {getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)} 暂停/继续播放。
                 </p>
               ) : null}
               {!cinemaFullscreenActive && phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
