@@ -534,7 +534,7 @@ def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
     finally:
         verify_engine.dispose()
 
-    assert version == "20260322_0026"
+    assert version == "20260322_0027"
     assert subtitle_row is not None
     assert int(subtitle_row["id"]) == 1
     assert bool(subtitle_row["subtitle_split_enabled"]) is True
@@ -608,7 +608,7 @@ def test_lesson_generation_tasks_repair_migration_recreates_missing_table(tmp_pa
     finally:
         verify_engine.dispose()
 
-    assert version == "20260314_0018"
+    assert version == "20260322_0027"
     assert table_count == 1
     assert {"task_id", "owner_user_id", "failure_debug_json", "failed_at", "asr_raw_json", "raw_debug_purged_at"}.issubset(column_names)
     assert {"raw_request_text", "raw_response_text", "raw_error_text"}.issubset(translation_log_columns)
@@ -2331,12 +2331,12 @@ def test_single_asr_progress_emits_waiting_text_without_fake_counts(monkeypatch,
     )
 
     assert result["progress_counters"]["asr_done"] == 1
-    assert result["progress_counters"]["segment_total"] == 0
+    assert result["progress_counters"]["segment_total"] == 1
     assert progress_events[0]["current_text"] == "识别中"
     assert progress_events[0]["counters"]["asr_done"] == 0
     assert progress_events[0]["counters"]["asr_estimated"] == 0
     assert any(item["current_text"] == "识别中，已等待 4 秒" for item in progress_events)
-    assert progress_events[-1]["current_text"] == "识别完成"
+    assert progress_events[-1]["current_text"] == "识别完成 1/1"
     assert progress_events[-1]["counters"]["asr_done"] == 1
     assert progress_events[-1]["counters"]["asr_estimated"] == 1
 
@@ -3084,6 +3084,134 @@ def test_create_desktop_local_asr_lesson_task_preserves_runtime_kind(test_client
         assert task_row.asr_raw_json["model_name"] == FASTER_WHISPER_ASR_MODEL
     finally:
         verify_session.close()
+
+
+def test_create_local_generated_lesson_persists_completed_result(test_client, monkeypatch):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="local-generated@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from app.api.routers import lessons as lesson_router
+    from app.services import lesson_service as lesson_service_module
+
+    _enable_local_asr_model(monkeypatch)
+    monkeypatch.setattr(lesson_router, "get_supported_local_desktop_asr_model_keys", lambda: (FASTER_WHISPER_ASR_MODEL,))
+
+    original_get_model_rate = lesson_service_module.get_model_rate
+
+    def fake_get_model_rate(db, model):
+        if model == FASTER_WHISPER_ASR_MODEL:
+            return SimpleNamespace(
+                points_per_minute=0,
+                price_per_minute_yuan=0,
+                cost_per_minute_cents=0,
+                cost_per_minute_yuan=0,
+                segment_seconds=300,
+                max_concurrency=1,
+            )
+        return original_get_model_rate(db, model)
+
+    monkeypatch.setattr(lesson_service_module, "get_model_rate", fake_get_model_rate)
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "local-generated@example.com").one()
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 10_000
+        session.add(account)
+        session.commit()
+    finally:
+        session.close()
+
+    payload = {
+        "asr_model": FASTER_WHISPER_ASR_MODEL,
+        "source_filename": "desktop-local.wav",
+        "source_duration_ms": 9_000,
+        "runtime_kind": "desktop_local",
+        "asr_payload": {
+            "transcripts": [
+                {
+                    "sentences": [
+                        {"text": "Desktop helper result", "begin_time": 0, "end_time": 1600},
+                    ]
+                }
+            ],
+            "__local_generation_result__": {
+                "runtime_kind": "desktop_local",
+                "lesson_status": "ready",
+                "duration_ms": 1600,
+                "variant": {
+                    "semantic_split_enabled": False,
+                    "split_mode": "asr_sentences",
+                    "source_word_count": 3,
+                    "strategy_version": 2,
+                    "sentences": [
+                        {
+                            "idx": 0,
+                            "begin_ms": 0,
+                            "end_ms": 1600,
+                            "text_en": "Desktop helper result",
+                            "text_zh": "桌面端结果",
+                            "tokens": ["Desktop", "helper", "result"],
+                            "audio_url": None,
+                        }
+                    ],
+                    "translate_failed_count": 0,
+                },
+                "translation_debug": {
+                    "total_sentences": 1,
+                    "failed_sentences": 0,
+                    "request_count": 0,
+                    "success_request_count": 0,
+                    "usage": {"total_tokens": 0},
+                    "latest_error_summary": "",
+                },
+                "task_result_meta": {
+                    "result_kind": "full_success",
+                    "result_message": "课程已生成完成",
+                    "partial_failure_stage": "",
+                    "partial_failure_code": "",
+                    "partial_failure_message": "",
+                },
+                "subtitle_cache_seed": {
+                    "semantic_split_enabled": False,
+                    "split_mode": "asr_sentences",
+                    "source_word_count": 3,
+                    "strategy_version": 2,
+                    "runtime_kind": "desktop_local",
+                    "asr_payload": {
+                        "transcripts": [
+                            {
+                                "sentences": [
+                                    {"text": "Desktop helper result", "begin_time": 0, "end_time": 1600},
+                                ]
+                            }
+                        ]
+                    },
+                    "sentences": [
+                        {
+                            "idx": 0,
+                            "begin_ms": 0,
+                            "end_ms": 1600,
+                            "text_en": "Desktop helper result",
+                            "text_zh": "桌面端结果",
+                            "tokens": ["Desktop", "helper", "result"],
+                            "audio_url": None,
+                        }
+                    ],
+                },
+            },
+        },
+    }
+
+    resp = client.post("/api/lessons/local-asr/complete", headers=headers, json=payload)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["runtime_kind"] == "desktop_local"
+    assert body["lesson"]["asr_model"] == FASTER_WHISPER_ASR_MODEL
+    assert body["subtitle_cache_seed"]["runtime_kind"] == "desktop_local"
+    assert body["lesson"]["sentences"][0]["text_en"] == "Desktop helper result"
 
 
 def test_admin_update_billing_rate_rejects_non_flash_mt_model(test_client):

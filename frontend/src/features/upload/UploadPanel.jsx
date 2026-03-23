@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { cn } from "../../lib/utils";
-import { api, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
+import { api, createApiClient, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
 import { ASR_MODEL_KEYS, buildAsrModelCatalogMap, getAsrModelCatalogItem, getAsrModelStatusLabel, isAsrModelPreparing, isAsrModelReady } from "../../shared/lib/asrModels";
 import { formatMoneyCents, formatMoneyYuan, formatMoneyYuanPerMinute } from "../../shared/lib/money";
 import {
@@ -12,6 +12,7 @@ import {
   desktopModelUpdateSupported,
   bindLocalAsrModelDirectory,
   ensureLocalAsrModel,
+  generateDesktopLocalLesson,
   getDesktopBundledAsrModelSummary,
   getLocalAsrWorkerAssetPayload,
   installDesktopBundledAsrModel,
@@ -53,16 +54,23 @@ const LOCAL_MODEL_VISUAL_PROGRESS_INTERVAL_MS = 120;
 const LOCAL_STAGE_PROGRESS_INTERVAL_MS = 800;
 const DEFAULT_LOCAL_ASR_ASSET_BASE_URL = "/api/local-asr-assets";
 const LOCAL_ASR_ASSET_BASE_URL = (import.meta.env.VITE_LOCAL_ASR_MODEL_BASE_URL || DEFAULT_LOCAL_ASR_ASSET_BASE_URL).trim().replace(/\/+$/, "");
+const LOCAL_BROWSER_RUNTIME_BASE_URL = (import.meta.env.VITE_LOCAL_RUNTIME_BASE_URL || "").trim().replace(/\/+$/, "");
 const ASR_MODELS_API_BASE = "/api/asr-models";
 const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止生成，可重新开始。";
 const LOCAL_BROWSER_ASR_ENABLED = false;
 const DEFAULT_ASR_MODEL_CATALOG_MAP = buildAsrModelCatalogMap();
 const DEFAULT_FAST_UPLOAD_MODEL = QWEN_MODEL;
 const FAST_RUNTIME_TRACK_CLOUD = "cloud";
+const FAST_RUNTIME_TRACK_BROWSER_LOCAL = "browser_local";
 const FAST_RUNTIME_TRACK_DESKTOP_LOCAL = "desktop_local";
 const DESKTOP_LOCAL_TRANSCRIBING_PHASE = "desktop_local_transcribing";
+const browserLocalRuntimeApi = LOCAL_BROWSER_RUNTIME_BASE_URL ? createApiClient({ baseUrl: LOCAL_BROWSER_RUNTIME_BASE_URL }) : null;
 function hasDesktopRuntimeBridge() {
   return typeof window !== "undefined" && typeof window.desktopRuntime?.requestLocalHelper === "function";
+}
+
+function hasBrowserLocalRuntimeBridge() {
+  return Boolean(browserLocalRuntimeApi);
 }
 
 function hasDesktopModelUpdateBridge() {
@@ -70,11 +78,19 @@ function hasDesktopModelUpdateBridge() {
 }
 
 function getDefaultFasterWhisperRuntimeTrack() {
-  return hasDesktopRuntimeBridge() ? FAST_RUNTIME_TRACK_DESKTOP_LOCAL : FAST_RUNTIME_TRACK_CLOUD;
+  if (hasDesktopRuntimeBridge()) {
+    return FAST_RUNTIME_TRACK_DESKTOP_LOCAL;
+  }
+  if (hasBrowserLocalRuntimeBridge() && !isMobileUploadViewport()) {
+    return FAST_RUNTIME_TRACK_BROWSER_LOCAL;
+  }
+  return FAST_RUNTIME_TRACK_CLOUD;
 }
 
 function getFastRuntimeTrackLabel(track) {
-  return track === FAST_RUNTIME_TRACK_DESKTOP_LOCAL ? "本机运行" : "云端运行";
+  if (track === FAST_RUNTIME_TRACK_DESKTOP_LOCAL) return "本地电脑跑";
+  if (track === FAST_RUNTIME_TRACK_BROWSER_LOCAL) return "本地网站跑";
+  return "服务器跑";
 }
 
 function normalizeServerStatus(payload = {}) {
@@ -716,6 +732,12 @@ function getTaskStatusCardText(restoreBannerMode, taskSnapshot, statusText = "")
   return "";
 }
 
+function isMobileUploadViewport() {
+  if (typeof navigator === "undefined") return false;
+  const userAgent = String(navigator.userAgent || "");
+  return Boolean(navigator.userAgentData?.mobile) || /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent);
+}
+
 export function UploadPanel({ accessToken, isActivePanel = true, onCreated, balanceAmountCents, balancePoints, billingRates, subtitleSettings, onWalletChanged, onTaskStateChange, onNavigateToLesson }) {
   const currentUser = useAppStore((state) => state.currentUser);
   const normalizedBalanceAmountCents = Number(balanceAmountCents ?? balancePoints ?? 0);
@@ -796,15 +818,28 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     return getDefaultFastUploadModelKey(configuredDefaultAsrModel);
   }, [configuredDefaultAsrModel, selectedUploadModel]);
   const selectedAsrModel = mode === "balanced" ? selectedBalancedModel : selectedFastModel;
+  const browserLocalRuntimeAvailable = hasBrowserLocalRuntimeBridge() && !isMobileUploadViewport();
+  const browserLocalRuntimeBlockedMessage = hasBrowserLocalRuntimeBridge()
+    ? "本地网站模式仅支持桌面浏览器，不支持手机和平板直接运行。"
+    : "请先通过 preview-local.bat 启动本地网站运行时。";
   const selectedFastRuntimeTrack =
-    selectedFastModel === FASTER_WHISPER_MODEL && hasDesktopRuntimeBridge() ? fasterWhisperRuntimeTrack : FAST_RUNTIME_TRACK_CLOUD;
+    selectedFastModel === FASTER_WHISPER_MODEL
+      ? hasDesktopRuntimeBridge() || hasBrowserLocalRuntimeBridge()
+        ? fasterWhisperRuntimeTrack
+        : FAST_RUNTIME_TRACK_CLOUD
+      : FAST_RUNTIME_TRACK_CLOUD;
   const fasterWhisperDesktopLocalSelected =
     mode === "fast" &&
     selectedFastModel === FASTER_WHISPER_MODEL &&
     selectedFastRuntimeTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL &&
     hasDesktopRuntimeBridge();
+  const fasterWhisperBrowserLocalSelected =
+    mode === "fast" &&
+    selectedFastModel === FASTER_WHISPER_MODEL &&
+    selectedFastRuntimeTrack === FAST_RUNTIME_TRACK_BROWSER_LOCAL &&
+    browserLocalRuntimeAvailable;
   const pricingModelKey = mode === "balanced" ? DEFAULT_FAST_UPLOAD_MODEL : selectedFastModel;
-  const selectedRate = fasterWhisperDesktopLocalSelected ? null : getRateByModel(billingRates, pricingModelKey);
+  const selectedRate = getRateByModel(billingRates, pricingModelKey);
   const selectedRatePricePerMinuteYuan = selectedRate ? getRatePricePerMinuteYuan(selectedRate) : 0;
   const estimatedAsrChargeCents = selectedRate ? calculateChargeCentsBySeconds(durationSec || 0, selectedRatePricePerMinuteYuan) : 0;
   const mtRate = getRateByModel(billingRates, MT_PRICE_MODEL);
@@ -2466,14 +2501,19 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }
 
   function handleSelectFasterWhisperRuntimeTrack(nextTrack) {
-    const normalizedTrack = nextTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL ? FAST_RUNTIME_TRACK_DESKTOP_LOCAL : FAST_RUNTIME_TRACK_CLOUD;
+    let normalizedTrack = FAST_RUNTIME_TRACK_CLOUD;
+    if (nextTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL) {
+      normalizedTrack = FAST_RUNTIME_TRACK_DESKTOP_LOCAL;
+    } else if (nextTrack === FAST_RUNTIME_TRACK_BROWSER_LOCAL) {
+      normalizedTrack = FAST_RUNTIME_TRACK_BROWSER_LOCAL;
+    }
     fasterWhisperTrackTouchedRef.current = true;
     setFasterWhisperRuntimeTrack(normalizedTrack);
     if (normalizedTrack === FAST_RUNTIME_TRACK_CLOUD) {
       void fetchServerModelStatus(FASTER_WHISPER_MODEL, { silent: true });
       return;
     }
-    if (hasDesktopRuntimeBridge()) {
+    if (normalizedTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL && hasDesktopRuntimeBridge()) {
       void fetchDesktopBundleStatus(FASTER_WHISPER_MODEL, { silent: true });
     }
   }
@@ -2626,6 +2666,116 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
   }
 
+  async function persistCompletedLocalLesson({
+    asrModel,
+    runtimeKind,
+    sourceFilename,
+    sourceDurationMs,
+    asrPayload,
+    localGenerationResult,
+  }) {
+    const resp = await api(
+      "/api/lessons/local-asr/complete",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          asr_model: asrModel,
+          source_filename: sourceFilename,
+          source_duration_ms: Math.max(1, Number(sourceDurationMs || 0) || 1),
+          runtime_kind: runtimeKind,
+          asr_payload: {
+            ...(asrPayload && typeof asrPayload === "object" ? asrPayload : {}),
+            __local_generation_result__: localGenerationResult && typeof localGenerationResult === "object" ? localGenerationResult : {},
+          },
+        }),
+      },
+      accessToken,
+    );
+    const data = await parseResponse(resp);
+    if (!resp.ok) {
+      throw new Error(toErrorText(data, "保存本地生成课程失败"));
+    }
+    return data;
+  }
+
+  async function submitBrowserLocalFast() {
+    if (!browserLocalRuntimeApi || !browserLocalRuntimeAvailable) {
+      await handleTaskFailureState({
+        message: browserLocalRuntimeBlockedMessage,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+        persistState: false,
+      });
+      return;
+    }
+
+    const startStatus = "正在通过本地网站 Bottle 1.0 生成课程";
+    setPhase("local_transcribing");
+    setStatus(startStatus);
+    setTaskId("");
+    setTaskSnapshot(null);
+    setUploadPercent(0);
+    setLocalProgressSnapshot(null);
+    await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: startStatus, bindingCompleted: false });
+
+    try {
+      const form = new FormData();
+      form.append("video_file", file);
+      form.append("model_key", FASTER_WHISPER_MODEL);
+      form.append("runtime_kind", FAST_RUNTIME_TRACK_BROWSER_LOCAL);
+      const { ok, data } = await uploadWithProgress(
+        "/api/desktop-asr/generate-upload",
+        {
+          method: "POST",
+          body: form,
+          onUploadProgress: ({ percent }) => {
+            const nextPercent = clampPercent(Math.round(Number(percent || 0) * 0.35));
+            setUploadPercent(nextPercent);
+            setStatus(nextPercent > 5 ? "正在把素材发给本地网站运行时" : startStatus);
+          },
+        },
+        "",
+        LOCAL_BROWSER_RUNTIME_BASE_URL,
+      );
+      if (!ok) {
+        throw new Error(toErrorText(data, "本地网站 Bottle 1.0 生成失败"));
+      }
+      const localResult = data || {};
+      const localGenerationResult =
+        localResult?.local_generation_result && typeof localResult.local_generation_result === "object"
+          ? localResult.local_generation_result
+          : null;
+      if (!localGenerationResult) {
+        throw new Error("本地网站运行完成，但缺少课程生成结果。");
+      }
+      setUploadPercent(80);
+      setStatus("正在保存本地已完成课程");
+      const persistedLesson = await persistCompletedLocalLesson({
+        asrModel: FASTER_WHISPER_MODEL,
+        runtimeKind: FAST_RUNTIME_TRACK_BROWSER_LOCAL,
+        sourceFilename: String(file?.name || localResult?.source_filename || "browser-local-source"),
+        sourceDurationMs: Math.max(1, Number(localResult?.source_duration_ms || 0) || Math.round(Number(durationSec || 0) * 1000) || 1),
+        asrPayload: localResult?.asr_result_json || {},
+        localGenerationResult,
+      });
+      await finalizeSuccess(persistedLesson, file);
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : `网络错误: ${String(error)}`;
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+      });
+    }
+  }
+
   async function submitDesktopLocalFast(pollToken, runToken) {
     if (!hasDesktopRuntimeBridge()) {
       await handleTaskFailureState({
@@ -2671,7 +2821,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     await persistSession({ taskId: "", phase: DESKTOP_LOCAL_TRANSCRIBING_PHASE, taskSnapshot: null, uploadPercent: 0, status: startStatus, bindingCompleted: false });
 
     try {
-      const localResult = await transcribeDesktopLocalAsr(FASTER_WHISPER_MODEL, file);
+      const localResult = await generateDesktopLocalLesson(FASTER_WHISPER_MODEL, file, FAST_RUNTIME_TRACK_DESKTOP_LOCAL);
       if (runToken !== localRunTokenRef.current) return;
       clearLocalStageProgressTimer();
       const localSentences = localResult?.asrPayload?.transcripts?.[0]?.sentences;
@@ -2687,59 +2837,23 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         segment_done: sentenceCount,
         segment_total: sentenceCount,
       });
-      setStatus("正在提交本机字幕并创建课程任务");
-
-      const resp = await api(
-        "/api/lessons/tasks/local-asr",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            asr_model: FASTER_WHISPER_MODEL,
-            source_filename: String(file?.name || localResult?.sourceFilename || "desktop-local-source"),
-            source_duration_ms: Math.max(1, Number(localResult?.sourceDurationMs || 0) || Math.round(Number(durationSec || 0) * 1000) || 1),
-            runtime_kind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
-            asr_payload: localResult?.asrPayload || {},
-          }),
-        },
-        accessToken,
-      );
+      setStatus("正在保存本地已完成课程");
+      const localGenerationResult =
+        localResult?.localGenerationResult && typeof localResult.localGenerationResult === "object" ? localResult.localGenerationResult : null;
+      if (!localGenerationResult) {
+        throw new Error("本机生成完成，但缺少课程生成结果。");
+      }
+      const persistedLesson = await persistCompletedLocalLesson({
+        asrModel: FASTER_WHISPER_MODEL,
+        runtimeKind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
+        sourceFilename: String(file?.name || localResult?.sourceFilename || "desktop-local-source"),
+        sourceDurationMs: Math.max(1, Number(localResult?.sourceDurationMs || 0) || Math.round(Number(durationSec || 0) * 1000) || 1),
+        asrPayload: localResult?.asrPayload || {},
+        localGenerationResult,
+      });
       if (runToken !== localRunTokenRef.current) return;
-      const data = await parseResponse(resp);
-      if (!resp.ok) {
-        setLocalProgressSnapshot(null);
-        await handleTaskFailureState({
-          message: toErrorText(data, "创建本机字幕任务失败"),
-          nextTaskId: "",
-          nextTaskSnapshot: null,
-          nextUploadPercent: 0,
-          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
-          nextBindingCompleted: false,
-          refreshWallet: true,
-        });
-        return;
-      }
-      const nextTaskId = String(data.task_id || "");
-      if (!nextTaskId) {
-        setLocalProgressSnapshot(null);
-        await handleTaskFailureState({
-          message: "本机字幕任务创建成功但缺少 task_id",
-          nextTaskId: "",
-          nextTaskSnapshot: null,
-          nextUploadPercent: 0,
-          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
-          nextBindingCompleted: false,
-        });
-        return;
-      }
-      setTaskId(nextTaskId);
-      setTaskSnapshot(null);
       setLocalProgressSnapshot(null);
-      setPhase("processing");
-      setLoading(true);
-      setStatus("");
-      await persistSession({ taskId: nextTaskId, phase: "processing", taskSnapshot: null, uploadPercent: 100, status: "", bindingCompleted: false });
-      void pollTask(nextTaskId, false, pollToken);
+      await finalizeSuccess(persistedLesson, file);
     } catch (error) {
       clearLocalStageProgressTimer();
       setLocalProgressSnapshot(null);
@@ -3059,6 +3173,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setLocalProgressSnapshot(null);
     desktopLocalFailureCountRef.current = 0;
     let shouldUseDesktopLocalFast = fasterWhisperDesktopLocalSelected;
+    let shouldUseBrowserLocalFast = fasterWhisperBrowserLocalSelected;
     if (mode === "balanced") {
       await submitBalanced(pollToken);
       return;
@@ -3080,8 +3195,17 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         }
       }
     }
+    if (selectedFastModel === FASTER_WHISPER_MODEL && selectedFastRuntimeTrack === FAST_RUNTIME_TRACK_BROWSER_LOCAL && !browserLocalRuntimeAvailable) {
+      shouldUseBrowserLocalFast = false;
+      setFasterWhisperRuntimeTrack(FAST_RUNTIME_TRACK_CLOUD);
+      toast.message(browserLocalRuntimeBlockedMessage);
+    }
     if (shouldUseDesktopLocalFast) {
       await submitDesktopLocalFast(pollToken, runToken);
+      return;
+    }
+    if (shouldUseBrowserLocalFast) {
+      await submitBrowserLocalFast();
       return;
     }
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
@@ -3397,8 +3521,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               const desktopBundleUpdateAvailable = Boolean(desktopBundleState.updateAvailable);
               const desktopBundleBusy = desktopBundleBusyModelKey === item.key || desktopBundleUpdating;
               const fasterWhisperCardTrack =
-                isFasterWhisper && hasDesktopRuntimeBridge() ? fasterWhisperRuntimeTrack : FAST_RUNTIME_TRACK_CLOUD;
+                isFasterWhisper && (hasDesktopRuntimeBridge() || hasBrowserLocalRuntimeBridge()) ? fasterWhisperRuntimeTrack : FAST_RUNTIME_TRACK_CLOUD;
               const fasterWhisperDesktopTrack = fasterWhisperCardTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL;
+              const fasterWhisperBrowserTrack = fasterWhisperCardTrack === FAST_RUNTIME_TRACK_BROWSER_LOCAL;
               const sensevoiceCardStatus = String(sensevoiceModelState.status || "").trim().toLowerCase();
               const fasterCardStatus = String(fasterModelState.status || "").trim().toLowerCase();
               const cardStatusLabel = isSenseVoice
@@ -3410,16 +3535,32 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                       : desktopBundleAvailable
                         ? "本机可用"
                         : "本机未就绪"
+                    : fasterWhisperBrowserTrack
+                      ? browserLocalRuntimeAvailable
+                        ? "本地网站可用"
+                        : "本地网站未就绪"
                     : getAsrModelStatusLabel(fasterModelState, { readyLabel: "云端已就绪", missingLabel: "云端未准备", loadingLabel: "云端准备中", errorLabel: "云端异常", unsupportedLabel: "不可用" })
                   : getAsrModelStatusLabel({ status: "ready", downloadRequired: false }, { readyLabel: "可用" });
               const cardPriceLabel =
-                isFasterWhisper && fasterWhisperDesktopTrack ? "本机运行" : getUploadModelPriceLabel(item, billingRates);
-              const highlightStatus = isSenseVoice ? sensevoiceModelReady : isFasterWhisper ? (fasterWhisperDesktopTrack ? desktopBundleAvailable : fasterModelReady) : true;
+                isFasterWhisper && (fasterWhisperDesktopTrack || fasterWhisperBrowserTrack)
+                  ? `${getFastRuntimeTrackLabel(fasterWhisperCardTrack)} / ${getUploadModelPriceLabel(item, billingRates)}`
+                  : getUploadModelPriceLabel(item, billingRates);
+              const highlightStatus = isSenseVoice
+                ? sensevoiceModelReady
+                : isFasterWhisper
+                  ? fasterWhisperDesktopTrack
+                    ? desktopBundleAvailable
+                    : fasterWhisperBrowserTrack
+                      ? browserLocalRuntimeAvailable
+                      : fasterModelReady
+                  : true;
               const modelCardHasError = isSenseVoice
                 ? Boolean(sensevoiceModelState.lastError) || ["error", "unsupported"].includes(sensevoiceCardStatus)
                 : isFasterWhisper
                   ? fasterWhisperDesktopTrack
                     ? Boolean(desktopBundleState.lastError)
+                    : fasterWhisperBrowserTrack
+                      ? !browserLocalRuntimeAvailable
                     : Boolean(fasterModelState.lastError) || String(fasterModelState.status || "").trim().toLowerCase() === "error"
                   : false;
               const modelCardTone = getUploadModelTone({
@@ -3481,11 +3622,17 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                     ? sanitizeUserFacingText(
                         desktopBundleState.message ||
                           (desktopBundleAvailable
-                            ? "Bottle 1.0 将在本机 helper 中运行，浏览器不再承载模型推理。"
+                            ? "Bottle 1.0 将在本地电脑 helper 中运行，云端只负责保存课程结果。"
                             : desktopBundleInstallAvailable
-                              ? "请先准备本机资源，随后即可用本机 Bottle 1.0 识别字幕。"
+                              ? "请先准备本地电脑资源，随后即可用本地电脑 Bottle 1.0 生成课程。"
                               : "当前安装包未提供可用的 Bottle 1.0 本机资源，请改用云端运行。"),
                       )
+                    : fasterWhisperBrowserTrack
+                      ? sanitizeUserFacingText(
+                          browserLocalRuntimeAvailable
+                            ? "Bottle 1.0 将在本地网站运行时中完成抽音频、识别和课程结构生成，云端只负责保存。"
+                            : browserLocalRuntimeBlockedMessage,
+                        )
                     : sanitizeUserFacingText(
                         fasterModelState.message ||
                           (fasterModelReady
@@ -3528,6 +3675,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                     label: desktopBundleBusy ? "准备中" : desktopBundleAvailable ? "本机已就绪" : "准备本机资源",
                     disabled: uploadActionBusy || desktopBundleBusy || (!desktopBundleInstallAvailable && !desktopBundleAvailable),
                   }
+                : fasterWhisperBrowserTrack
+                  ? {
+                      label: browserLocalRuntimeAvailable ? "本地网站已就绪" : "本地网站未就绪",
+                      disabled: true,
+                    }
                 : actionMeta;
               const effectiveActionMeta =
                 isFasterWhisper && fasterWhisperDesktopTrack
@@ -3585,7 +3737,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                     </Badge>
                   </div>
 
-                  {isFasterWhisper && hasDesktopRuntimeBridge() ? (
+                  {isFasterWhisper ? (
                     <div className="flex flex-wrap gap-2 rounded-xl border bg-background/70 p-2">
                       <Button
                         type="button"
@@ -3598,22 +3750,39 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                         }}
                         disabled={uploadActionBusy}
                       >
-                        本机运行
+                        本地电脑跑
                       </Button>
                       <Button
                         type="button"
                         size="sm"
-                        variant={!fasterWhisperDesktopTrack ? "default" : "outline"}
-                        className={!fasterWhisperDesktopTrack ? getUploadToneStyles("selected").button : getUploadToneStyles("selected").buttonSubtle}
+                        variant={fasterWhisperCardTrack === FAST_RUNTIME_TRACK_BROWSER_LOCAL ? "default" : "outline"}
+                        className={fasterWhisperCardTrack === FAST_RUNTIME_TRACK_BROWSER_LOCAL ? getUploadToneStyles("selected").button : getUploadToneStyles("selected").buttonSubtle}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleSelectFasterWhisperRuntimeTrack(FAST_RUNTIME_TRACK_BROWSER_LOCAL);
+                        }}
+                        disabled={uploadActionBusy || !hasBrowserLocalRuntimeBridge()}
+                        title={browserLocalRuntimeAvailable ? "" : browserLocalRuntimeBlockedMessage}
+                      >
+                        本地网站跑
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={fasterWhisperCardTrack === FAST_RUNTIME_TRACK_CLOUD ? "default" : "outline"}
+                        className={fasterWhisperCardTrack === FAST_RUNTIME_TRACK_CLOUD ? getUploadToneStyles("selected").button : getUploadToneStyles("selected").buttonSubtle}
                         onClick={(event) => {
                           event.stopPropagation();
                           handleSelectFasterWhisperRuntimeTrack(FAST_RUNTIME_TRACK_CLOUD);
                         }}
                         disabled={uploadActionBusy}
                       >
-                        云端运行
+                        服务器跑
                       </Button>
                       <p className="w-full px-1 text-xs text-muted-foreground">当前轨道：{getFastRuntimeTrackLabel(fasterWhisperCardTrack)}</p>
+                      {fasterWhisperCardTrack === FAST_RUNTIME_TRACK_BROWSER_LOCAL && !browserLocalRuntimeAvailable ? (
+                        <p className="w-full px-1 text-xs text-muted-foreground">{browserLocalRuntimeBlockedMessage}</p>
+                      ) : null}
                     </div>
                   ) : null}
 

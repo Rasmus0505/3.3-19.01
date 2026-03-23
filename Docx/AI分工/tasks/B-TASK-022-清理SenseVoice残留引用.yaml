@@ -1,0 +1,108 @@
+schema_version: 1
+task_id: TASK-022
+title: 清理 SenseVoice 残留引用
+status: blocked
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: 将仓库内所有 sensevoice 相关残留引用彻底清除，使代码库与"无 sensevoice"的事实完全对齐，并确保相关后端测试能正确反映已移除状态。
+scope:
+  - 后端 sensevoice 服务文件删除及所有模块级引用清理
+  - 前端浏览器端 ASR 模型常量与 Worker 默认 model ID 修正
+  - 后端回归测试中 sensevoice 相关的错误验证用例更新
+  - 前端上传与资源管理中 sensevoice 默认值的替换
+allowed_paths:
+  - app/services/sensevoice.py
+  - app/services/asr_model_registry.py
+  - app/api/serializers.py
+  - app/api/routers/admin.py
+  - app/core/config.py
+  - app/services/billing.py
+  - app/models/billing.py
+  - app/main.py
+  - frontend/src/shared/lib/asrModels.js
+  - frontend/src/features/upload/localAsrPreviewWorker.js
+  - frontend/src/features/upload/localAsrParallelRuntime.js
+  - frontend/src/shared/media/localAsrAssetManager.js
+  - tests/test_regression_api.py
+  - tests/test_faster_whisper_asr.py
+acceptance:
+  - app/services/sensevoice.py 文件已删除，app/ 下任何文件不再 import sensevoice 或引用 sensevoice 相关常量。
+  - app/services/asr_model_registry.py 中 LOCAL_SENSEVOICE_ASR_MODEL 常量已删除。
+  - app/api/serializers.py 中 to_sensevoice_settings_item 函数及 SenseVoiceSetting 相关序列化逻辑已删除。
+  - app/api/routers/admin.py 中的 sensevoice-settings 相关端点函数已删除。
+  - app/core/config.py 中 SENSEVOICE_MODEL_DIR 及 _default_sensevoice_model_dir 相关逻辑已删除。
+  - app/services/billing.py 中 sensevoice-small 引用已删除。
+  - app/models/billing.py 中 SenseVoiceSetting 模型类已删除。
+  - app/main.py 中 sensevoice_settings 的 startup 引用已删除。
+  - frontend/src/shared/lib/asrModels.js 中 sensevoiceServer 和 sensevoiceBrowser 条目已删除。
+  - frontend/src/features/upload/localAsrPreviewWorker.js 和 localAsrParallelRuntime.js 中的 DEFAULT_MODEL_ID 已改为现有有效模型（faster-whisper-medium）。
+  - frontend/src/shared/media/localAsrAssetManager.js 中 FALLBACK_STATUS 的 model_key 已改为现有有效模型。
+  - tests/test_regression_api.py 中直接调用 sensevoice 模块或 mock sensevoice 行为的测试用例已更新为验证"已移除"状态的正确形式。
+  - tests/test_faster_whisper_asr.py 中对 /api/asr-models/sensevoice-small/status 的无效请求测试已移除或替换。
+  - pytest tests/test_regression_api.py 和 pytest tests/test_faster_whisper_asr.py 均通过。
+check_commands:
+  - pytest tests/test_regression_api.py
+  - pytest tests/test_faster_whisper_asr.py
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  本任务核心是"清干净"，不要在这里新增任何 ASR 能力，也不要改变 faster-whisper-medium 和 qwen3-asr-flash-filetrans 的现有配置。
+
+  1. app/services/sensevoice.py：
+     - 整文件删除即可。
+     - 删除后检查所有 import sensevoice 的地方并一并清理。
+
+  2. app/models/billing.py：
+     - SenseVoiceSetting 模型类整块删除。
+     - 检查是否在 Base.metadata 里仍有引用，若有则清理。
+
+  3. app/api/routers/admin.py：
+     - 删除 sensevoice-settings 相关端点函数，以及 _sensevoice_removed_response、_sensevoice_settings_item_with_meta、_sensevoice_settings_item_from_dict、_load_sensevoice_settings_rollback_candidate 等内部函数。
+     - 删除 from app.services.sensevoice 相关的 import 行。
+
+  4. app/api/serializers.py：
+     - 删除 to_sensevoice_settings_item 及所有 SenseVoiceSetting 相关的序列化器。
+
+  5. app/core/config.py：
+     - 删除 SENSEVOICE_MODEL_DIR 环境变量解析和 _default_sensevoice_model_dir 函数。
+
+  6. app/services/billing.py：
+     - 清理 sensevoice-small 相关逻辑，保持其他计费逻辑不变。
+
+  7. app/services/asr_model_registry.py：
+     - 删除 LOCAL_SENSEVOICE_ASR_MODEL 常量。
+
+  8. app/main.py：
+     - 删除 sensevoice_settings startup 注册行。
+
+  9. 前端文件：
+     - asrModels.js：删除 sensevoiceServer 和 sensevoiceBrowser，保留 fasterWhisper。
+     - localAsrPreviewWorker.js 和 localAsrParallelRuntime.js：将 DEFAULT_MODEL_ID 从 "local-sensevoice-small" 改为 "faster-whisper-medium"。
+     - localAsrAssetManager.js：将 FALLBACK_STATUS.model_key 改为 "faster-whisper-medium"，cache_version 改为对应版本。
+
+  10. tests/test_regression_api.py：
+      - 保留验证 sensevoice"已移除"的测试（如 test_asr_model_status_rejects_removed_sensevoice_model、test_transcribe_audio_file_rejects_removed_sensevoice_model），删除直接 mock sensevoice 模块的测试（如 test_sensevoice_uses_known_duration_without_ffprobe）。
+      - 清理所有 "local-sensevoice-small" 在测试数据 fixture 中作为正常模型名称出现的位置，改为 faster-whisper-medium。
+
+  11. tests/test_faster_whisper_asr.py：
+      - 删除对 /api/asr-models/sensevoice-small/status 的无效请求测试行。
+
+  12. migrations/versions/20260318_0022_sensevoice_settings.py：
+      - 本任务不触碰迁移文件；sensevoice_settings 表的数据库处理由数据库迁移技能单独处理。
+result_summary: ""
+changed_files: []
+tests_run: []
+blocked_reason: >
+  当前任务的 goal/acceptance 要求清理仓库内全部 SenseVoice 残留，但 allowed_paths 缺少多个必需耦合文件，无法在边界内安全完成。
+  已确认至少包括 app/models/__init__.py、app/schemas/__init__.py、app/schemas/admin.py、app/db/base.py、frontend/src/features/upload/UploadPanel.jsx、frontend/src/features/upload/LocalAsrPreviewCard.jsx、frontend/src/features/admin-sensevoice-settings/AdminSenseVoiceSettingsTab.jsx。
+  这些文件仍直接导出、引用或展示 SenseVoice；若只修改当前 allowed_paths 内文件，会留下残留引用，且删除模型/Schema 后还可能导致导入链失效。
+  需要 before 先修订任务边界与 acceptance，使其覆盖上述耦合文件，或明确收缩目标到仅处理当前 allowed_paths 内的残留。
+completed_at: ""
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

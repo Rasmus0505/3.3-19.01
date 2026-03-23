@@ -172,35 +172,23 @@ def _append_translation_request_logs_safe(
     lesson_id: int | None,
     records: list[dict[str, Any]] | None,
 ) -> None:
-    bind = db.get_bind()
-    log_session = None
     try:
-        target_db = db
-        if bind is not None:
-            log_session = Session(bind=bind)
-            target_db = log_session
-        append_translation_request_logs(
-            target_db,
-            trace_id=trace_id,
-            user_id=user_id,
-            task_id=task_id,
-            lesson_id=lesson_id,
-            records=list(records or []),
-        )
-        if log_session is not None:
-            log_session.commit()
+        with db.begin_nested():
+            append_translation_request_logs(
+                db,
+                trace_id=trace_id,
+                user_id=user_id,
+                task_id=task_id,
+                lesson_id=lesson_id,
+                records=list(records or []),
+            )
     except Exception as exc:
-        if log_session is not None:
-            log_session.rollback()
         logger.exception(
             "[DEBUG] lesson.translation_logs.persist_failed task_id=%s lesson_id=%s detail=%s",
             task_id,
             lesson_id,
             str(exc)[:400],
         )
-    finally:
-        if log_session is not None:
-            log_session.close()
 
 
 def _call_transcribe_audio_file(
@@ -1063,8 +1051,8 @@ class LessonService:
         }
 
     @staticmethod
-    def build_subtitle_cache_seed(*, asr_payload: dict[str, Any], variant: dict[str, Any]) -> dict[str, Any]:
-        return {
+    def build_subtitle_cache_seed(*, asr_payload: dict[str, Any], variant: dict[str, Any], runtime_kind: str = "") -> dict[str, Any]:
+        payload = {
             "semantic_split_enabled": bool(variant.get("semantic_split_enabled")),
             "split_mode": str(variant.get("split_mode") or ""),
             "source_word_count": int(variant.get("source_word_count", 0)),
@@ -1072,6 +1060,244 @@ class LessonService:
             "asr_payload": dict(asr_payload or {}),
             "sentences": [dict(item) for item in list(variant.get("sentences") or []) if isinstance(item, dict)],
         }
+        normalized_runtime_kind = str(runtime_kind or "").strip().lower()
+        if normalized_runtime_kind:
+            payload["runtime_kind"] = normalized_runtime_kind
+        return payload
+
+    @staticmethod
+    def build_local_generation_result(
+        *,
+        asr_payload: dict[str, Any],
+        runtime_kind: str,
+        asr_model: str,
+        source_duration_ms: int,
+        db: Session,
+        task_id: str | None = None,
+        semantic_split_enabled: bool | None = None,
+        progress_callback: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        normalized_runtime_kind = str(runtime_kind or "local_browser").strip().lower() or "local_browser"
+        variant = LessonService.build_subtitle_variant(
+            asr_payload=asr_payload,
+            db=db,
+            task_id=task_id,
+            semantic_split_enabled=semantic_split_enabled,
+            allow_partial_translation=True,
+            progress_callback=progress_callback,
+        )
+        runtime_sentences = [dict(item) for item in list(variant.get("sentences") or []) if isinstance(item, dict)]
+        translation_usage = dict(variant.get("translation_usage") or {})
+        translation_usage["charged_points"] = 0
+        translation_usage["charged_amount_cents"] = 0
+        translation_usage["actual_cost_amount_cents"] = 0
+        failed_count = int(variant.get("translate_failed_count", 0) or 0)
+        translation_debug = {
+            "total_sentences": len(runtime_sentences),
+            "failed_sentences": failed_count,
+            "request_count": int(variant.get("translation_request_count", 0) or 0),
+            "success_request_count": int(variant.get("translation_success_request_count", 0) or 0),
+            "usage": translation_usage,
+            "latest_error_summary": str(variant.get("latest_translate_error_summary") or ""),
+        }
+        return {
+            "runtime_kind": normalized_runtime_kind,
+            "lesson_status": "partial_ready" if failed_count > 0 else "ready",
+            "duration_ms": estimate_duration_ms(asr_payload, runtime_sentences),
+            "source_duration_ms": max(1, int(source_duration_ms or 0)),
+            "variant": dict(variant),
+            "translation_debug": translation_debug,
+            "task_result_meta": LessonService._build_task_result_meta(variant=variant, translation_debug=translation_debug),
+            "subtitle_cache_seed": LessonService.build_subtitle_cache_seed(
+                asr_payload=asr_payload,
+                variant=variant,
+                runtime_kind=normalized_runtime_kind,
+            ),
+            "asr_model": str(asr_model or "").strip(),
+        }
+
+    @staticmethod
+    def create_lesson_from_local_generation_result(
+        *,
+        asr_payload: dict[str, Any],
+        source_filename: str,
+        source_duration_ms: int,
+        runtime_kind: str = "local_browser",
+        owner_id: int,
+        asr_model: str,
+        local_generation_result: dict[str, Any],
+        db: Session,
+    ) -> Lesson:
+        if not isinstance(asr_payload, dict):
+            raise MediaError("ASR_PAYLOAD_INVALID", "本地 ASR 结果无效", "asr_payload 必须是对象")
+        if not isinstance(local_generation_result, dict):
+            raise MediaError("LOCAL_GENERATION_RESULT_INVALID", "本地生成结果无效", "local_generation_result 必须是对象")
+
+        variant = dict(local_generation_result.get("variant") or {})
+        runtime_sentences = [dict(item) for item in list(variant.get("sentences") or []) if isinstance(item, dict)]
+        if not runtime_sentences:
+            raise MediaError("LOCAL_GENERATION_RESULT_EMPTY", "本地生成结果缺少字幕", "variant.sentences is empty")
+
+        reserved_duration_ms = max(1, int(source_duration_ms or local_generation_result.get("source_duration_ms") or 0))
+        normalized_runtime_kind = str(
+            local_generation_result.get("runtime_kind") or runtime_kind or "local_browser"
+        ).strip().lower() or "local_browser"
+        translation_debug = dict(local_generation_result.get("translation_debug") or {})
+        translation_usage = dict(translation_debug.get("usage") or {})
+        translation_debug["usage"] = translation_usage
+        failed_count = int(translation_debug.get("failed_sentences", variant.get("translate_failed_count", 0)) or 0)
+        translation_debug["failed_sentences"] = failed_count
+        translation_debug["total_sentences"] = int(translation_debug.get("total_sentences", len(runtime_sentences)) or len(runtime_sentences))
+        translation_debug["request_count"] = int(translation_debug.get("request_count", variant.get("translation_request_count", 0)) or 0)
+        translation_debug["success_request_count"] = int(
+            translation_debug.get("success_request_count", variant.get("translation_success_request_count", 0)) or 0
+        )
+        translation_debug["latest_error_summary"] = str(
+            translation_debug.get("latest_error_summary") or variant.get("latest_translate_error_summary") or ""
+        )
+        task_result_meta = dict(local_generation_result.get("task_result_meta") or {})
+        if not task_result_meta:
+            task_result_meta = LessonService._build_task_result_meta(variant=variant, translation_debug=translation_debug)
+        subtitle_cache_seed = dict(local_generation_result.get("subtitle_cache_seed") or {})
+        if not subtitle_cache_seed:
+            subtitle_cache_seed = LessonService.build_subtitle_cache_seed(
+                asr_payload=asr_payload,
+                variant=variant,
+                runtime_kind=normalized_runtime_kind,
+            )
+
+        reserved_points = 0
+        reserve_ledger_id: int | None = None
+        try:
+            rate = get_model_rate(db, asr_model)
+            reserved_points = calculate_points(
+                reserved_duration_ms,
+                rate.points_per_minute,
+                price_per_minute_yuan=getattr(rate, "price_per_minute_yuan", None),
+            )
+            reserve_ledger = reserve_points(
+                db,
+                user_id=owner_id,
+                points=reserved_points,
+                model_name=asr_model,
+                duration_ms=reserved_duration_ms,
+                note=f"本地生成结果入库预扣，模型={asr_model}，runtime={normalized_runtime_kind}",
+            )
+            reserve_ledger_id = reserve_ledger.id
+            db.commit()
+
+            duration_ms = max(1, int(local_generation_result.get("duration_ms") or estimate_duration_ms(asr_payload, runtime_sentences)))
+            translation_rate = get_model_rate(db, MT_MODEL)
+            translation_total_tokens = int(translation_usage.get("total_tokens", 0) or 0)
+            translation_cost_amount_cents = calculate_token_points(
+                translation_total_tokens,
+                int(getattr(translation_rate, "points_per_1k_tokens", 0) or 0),
+            )
+            translation_usage["charged_points"] = translation_cost_amount_cents
+            translation_usage["charged_amount_cents"] = translation_cost_amount_cents
+            translation_usage["actual_cost_amount_cents"] = translation_cost_amount_cents
+
+            actual_points = calculate_points(
+                reserved_duration_ms,
+                rate.points_per_minute,
+                price_per_minute_yuan=getattr(rate, "price_per_minute_yuan", None),
+            )
+            actual_cost_amount_cents = calculate_points(
+                reserved_duration_ms,
+                int(getattr(rate, "cost_per_minute_cents", 0) or 0),
+                price_per_minute_yuan=getattr(rate, "cost_per_minute_yuan", None),
+            ) + translation_cost_amount_cents
+            gross_profit_amount_cents = int(actual_points) - int(actual_cost_amount_cents)
+            translation_debug["estimated_charge_amount_cents"] = int(reserved_points) + int(translation_cost_amount_cents)
+            translation_debug["actual_charge_amount_cents"] = int(actual_points) + int(translation_cost_amount_cents)
+            translation_debug["actual_cost_amount_cents"] = int(actual_cost_amount_cents)
+            translation_debug["gross_profit_amount_cents"] = int(gross_profit_amount_cents)
+            translation_usage["actual_revenue_amount_cents"] = int(actual_points) + int(translation_cost_amount_cents)
+            translation_usage["gross_profit_amount_cents"] = int(gross_profit_amount_cents)
+
+            lesson = Lesson(
+                user_id=owner_id,
+                title=Path(source_filename or "lesson").stem[:200] or "lesson",
+                source_filename=source_filename,
+                asr_model=asr_model,
+                duration_ms=duration_ms,
+                media_storage="client_indexeddb",
+                source_duration_ms=reserved_duration_ms,
+                status="partial_ready" if failed_count > 0 else "ready",
+            )
+            db.add(lesson)
+            db.flush()
+
+            for sentence in runtime_sentences:
+                db.add(
+                    LessonSentence(
+                        lesson_id=lesson.id,
+                        idx=int(sentence["idx"]),
+                        begin_ms=int(sentence["begin_ms"]),
+                        end_ms=int(sentence["end_ms"]),
+                        text_en=str(sentence["text_en"]),
+                        text_zh=str(sentence["text_zh"]),
+                        tokens_json=[str(item) for item in list(sentence.get("tokens") or [])],
+                        audio_clip_path=None,
+                    )
+                )
+
+            create_progress(db, lesson_id=lesson.id, user_id=owner_id)
+            points_diff = int(actual_points) - int(reserved_points)
+            settle_reserved_points(
+                db,
+                user_id=owner_id,
+                model_name=asr_model,
+                reserved_points=reserved_points,
+                actual_points=actual_points,
+                duration_ms=reserved_duration_ms,
+                note=(
+                    f"本地生成结果入库结算，预扣流水#{reserve_ledger_id}，预扣金额={reserved_points}分，实耗金额={actual_points}分，差额={points_diff}分，"
+                    f"runtime={normalized_runtime_kind}"
+                ),
+            )
+            consume_points(
+                db,
+                user_id=owner_id,
+                points=int(translation_cost_amount_cents),
+                model_name=MT_MODEL,
+                lesson_id=lesson.id,
+                event_type=EVENT_CONSUME_TRANSLATE,
+                note=f"本地课程生成翻译扣费，total_tokens={translation_total_tokens}",
+            )
+            record_consume(
+                db,
+                user_id=owner_id,
+                model_name=asr_model,
+                duration_ms=reserved_duration_ms,
+                lesson_id=lesson.id,
+                note=(
+                    f"本地生成结果入库完成，预扣流水#{reserve_ledger_id}，预扣金额={reserved_points}分，实耗金额={actual_points}分，差额={points_diff}分，"
+                    f"runtime={normalized_runtime_kind}"
+                ),
+            )
+            db.commit()
+            db.refresh(lesson)
+            lesson.subtitle_cache_seed = subtitle_cache_seed
+            lesson.task_result_meta = dict(task_result_meta)
+            lesson.translation_debug = dict(translation_debug)
+            return lesson
+        except Exception:
+            db.rollback()
+            if reserve_ledger_id is not None:
+                try:
+                    refund_points(
+                        db,
+                        user_id=owner_id,
+                        points=reserved_points,
+                        model_name=asr_model,
+                        duration_ms=reserved_duration_ms,
+                        note=f"本地生成结果入库失败，退回预扣金额，预扣流水#{reserve_ledger_id}",
+                    )
+                    db.commit()
+                except Exception:
+                    db.rollback()
+            raise
 
     @staticmethod
     def _build_task_result_meta(*, variant: dict[str, Any], translation_debug: dict[str, Any]) -> dict[str, Any]:
@@ -1176,6 +1402,7 @@ class LessonService:
                         existing_lesson.subtitle_cache_seed = LessonService.build_subtitle_cache_seed(
                             asr_payload=dict(cached_asr.get("asr_payload") or {}),
                             variant=dict(cached_variant),
+                            runtime_kind=str(runtime_kind or "local_browser"),
                         )
                     return existing_lesson
 
@@ -1508,7 +1735,11 @@ class LessonService:
             )
             db.commit()
             db.refresh(lesson)
-            lesson.subtitle_cache_seed = LessonService.build_subtitle_cache_seed(asr_payload=asr_payload, variant=variant)
+            lesson.subtitle_cache_seed = LessonService.build_subtitle_cache_seed(
+                asr_payload=asr_payload,
+                variant=variant,
+                runtime_kind=local_runtime_kind,
+            )
             lesson.task_result_meta = dict(task_result_meta)
             lesson.translation_debug = dict(translation_debug)
             try:

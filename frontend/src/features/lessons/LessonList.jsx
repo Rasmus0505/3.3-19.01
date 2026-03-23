@@ -557,7 +557,7 @@ export function LessonList({
         </section>
 
         {Number(totalLessons || cards.length || 0) > 0 ? (
-          <div className="sticky top-16 z-10 rounded-2xl border bg-background/95 px-4 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85">
+          <div className="sticky top-14 z-10 rounded-2xl border bg-background/95 px-3 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85 md:top-16 md:px-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="flex flex-wrap items-center gap-2">
                 {allHistorySelected ? (
@@ -578,7 +578,7 @@ export function LessonList({
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" variant="destructive" disabled={!hasSelection || deleteBusy || !onBulkDelete} onClick={() => setBulkDeleteOpen(true)}>
+                <Button type="button" variant="destructive" className="min-h-11 w-full sm:w-auto" disabled={!hasSelection || deleteBusy || !onBulkDelete} onClick={() => setBulkDeleteOpen(true)}>
                   <Trash2 className="size-4" />
                   批量删除
                 </Button>
@@ -625,7 +625,7 @@ export function LessonList({
                         : "border-border bg-background hover:border-primary/30 hover:bg-muted/10",
                   )}
                 >
-                  <div className="flex flex-col gap-4 p-4 md:flex-row">
+                  <div className="flex flex-col gap-4 p-3 sm:p-4 md:flex-row">
                     <label className="flex shrink-0 items-start pt-1">
                       <input
                         type="checkbox"
@@ -639,14 +639,14 @@ export function LessonList({
                     </label>
                     <button
                       type="button"
-                      className="flex min-w-0 flex-1 items-stretch gap-4 text-left"
+                      className="flex min-w-0 flex-1 flex-col items-stretch gap-4 text-left sm:flex-row"
                       onClick={() => startLessonFromHistory(lesson.id)}
                     >
                       <MediaCover
                         coverDataUrl={mediaMeta.coverDataUrl}
                         alt={getCoverAssistiveText(lesson)}
                         aspectRatio={mediaMeta.aspectRatio}
-                        className="shrink-0 md:w-44"
+                        className="w-full shrink-0 sm:max-w-[11rem] md:w-44"
                       />
 
                       <div className="flex min-w-0 flex-1 flex-col justify-between gap-3">
@@ -720,10 +720,10 @@ export function LessonList({
                       </div>
                     </button>
 
-                    <div className="flex shrink-0 flex-col gap-2 md:w-40">
+                    <div className="flex shrink-0 flex-row gap-2 md:w-40 md:flex-col">
                       <Button
                         type="button"
-                        className="w-full"
+                        className="min-h-11 flex-1 md:w-full"
                         onClick={() => startLessonFromHistory(lesson.id)}
                         data-guide-id={isGuideTarget ? "history-start-latest" : undefined}
                       >
@@ -741,14 +741,14 @@ export function LessonList({
                             type="button"
                             size="icon-sm"
                             variant="outline"
-                            className="self-end"
+                            className="min-h-11 w-11 shrink-0 self-stretch md:w-auto md:self-end"
                             aria-label="open-lesson-menu"
                             disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
                           >
                             <MoreVertical className="size-4" />
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent align="end" sideOffset={8} className="w-56 p-2">
+                        <PopoverContent align="end" sideOffset={8} className="w-[min(92vw,14rem)] p-2">
                           <div className="flex flex-col gap-1">
                             <Button
                               type="button"

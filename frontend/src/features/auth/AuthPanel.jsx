@@ -72,14 +72,14 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
     : "登录后即可开始上传和学习。";
 
   return (
-    <Card>
+    <Card className="mx-auto w-full max-w-md overflow-hidden">
       <CardHeader>
-        <CardTitle>{isExpired ? "登录已失效" : "登录"}</CardTitle>
+        <CardTitle className="text-lg">{isExpired ? "登录已失效" : "登录"}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
         <form
-          className="space-y-3"
+          className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
             submit(ENDPOINTS.auth.login);
@@ -87,7 +87,17 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
         >
           <div className="grid gap-2">
             <Label htmlFor="email">邮箱</Label>
-            <Input id="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} required />
+            <Input
+              id="email"
+              inputMode="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              autoComplete="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="password">密码</Label>
@@ -95,23 +105,26 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
               id="password"
               placeholder="至少 6 位"
               type="password"
+              autoCapitalize="none"
+              autoCorrect="off"
+              autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               minLength={6}
               required
             />
           </div>
-          <div className="flex gap-2">
-            <Button type="submit" disabled={loading}>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button type="submit" disabled={loading} className="min-h-11 flex-1">
               登录
             </Button>
-            <Button type="button" variant="outline" disabled={loading} onClick={() => submit(ENDPOINTS.auth.register)}>
+            <Button type="button" variant="outline" disabled={loading} onClick={() => submit(ENDPOINTS.auth.register)} className="min-h-11 flex-1">
               注册
             </Button>
           </div>
         </form>
       </CardContent>
-      <CardFooter>
+      <CardFooter className="pt-0">
         {status ? (
           <Alert className="w-full py-2">
             <AlertDescription>{status}</AlertDescription>

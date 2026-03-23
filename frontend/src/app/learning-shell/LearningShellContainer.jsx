@@ -690,7 +690,7 @@ export function LearningShellContainer() {
 
   return (
     <SidebarProvider storageKey={SIDEBAR_STORAGE_KEY}>
-      <div className="section-soft min-h-screen bg-background md:flex">
+      <div className="section-soft min-h-screen overflow-x-clip bg-background md:flex">
         {!immersiveLayoutActive ? (
           <Sidebar className="bg-background/95">
             <LearningShellSidebar
@@ -714,7 +714,7 @@ export function LearningShellContainer() {
           </Sidebar>
         ) : null}
 
-        <SidebarInset>
+        <SidebarInset className="min-w-0">
           {!immersiveLayoutActive ? (
             <LearningShellHeader
               currentPanel={currentPanel}
@@ -739,7 +739,7 @@ export function LearningShellContainer() {
             />
           ) : null}
 
-          <main className="container-wrapper py-4 md:py-6">
+          <main className="container-wrapper min-w-0 py-3 md:py-6">
             <div className="container">
               {isAdminRoute ? (
                 renderAdminContent()
