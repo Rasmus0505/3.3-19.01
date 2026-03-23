@@ -1,4 +1,4 @@
-const RUNNING_PHASES = new Set(["probing", "uploading", "processing", "local_transcribing", "desktop_local_transcribing"]);
+const RUNNING_PHASES = new Set(["probing", "uploading", "processing", "local_transcribing", "desktop_local_transcribing", "desktop_link_importing"]);
 const ACTIONABLE_PHASES = new Set(["ready"]);
 const RECOVERABLE_PHASES = new Set(["upload_paused"]);
 const ACTIVE_TASK_STATUSES = new Set(["pending", "running", "pausing", "terminating"]);

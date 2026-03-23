@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DESKTOP_ROOT = REPO_ROOT / "desktop-client"
+DESKTOP_ROOT = REPO_ROOT / "desktop"
 PACKAGE_JSON_PATH = DESKTOP_ROOT / "package.json"
 PACKAGE_WIN_SCRIPT_PATH = DESKTOP_ROOT / "scripts" / "package-win.mjs"
 MAIN_PROCESS_PATH = DESKTOP_ROOT / "electron" / "main.mjs"
@@ -70,6 +70,7 @@ def test_main_process_uses_bundled_helper_runtime_and_packaged_defaults():
     assert "desktop:check-model-update" in main_text
     assert "desktop:start-model-update" in main_text
     assert '"/api/desktop-asr"' in main_text
+    assert '"/api/desktop-asr/url-import"' in main_text
     assert "runtime-defaults.json" in main_text
     assert "DESKTOP_PREINSTALLED_MODEL_DIR" in main_text
     assert 'helperMode: app.isPackaged ? "bundled-runtime" : "system-python"' in main_text

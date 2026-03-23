@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from fastapi.testclient import TestClient
 
 from scripts.run_desktop_backend import create_desktop_helper_app
@@ -129,3 +131,134 @@ def test_desktop_helper_generate_route_returns_local_generation_result(tmp_path,
     assert payload["runtime_kind"] == "desktop_local"
     assert payload["local_generation_result"]["lesson_status"] == "ready"
     assert payload["local_generation_result"]["variant"]["sentences"][0]["text_en"] == "hello from local generate"
+
+
+def test_desktop_helper_url_import_task_downloads_public_media_and_exposes_file(tmp_path, monkeypatch):
+    from app.api.routers import desktop_asr as desktop_asr_router
+
+    desktop_asr_router._URL_IMPORT_TASKS.clear()
+
+    def fake_download(source_url, output_dir, *, progress_callback=None, cancel_event=None):
+        assert source_url == "https://example.com/watch?v=demo"
+        assert cancel_event is not None
+        if callable(progress_callback):
+            progress_callback(
+                {
+                    "status": "running",
+                    "progress_percent": 48,
+                    "status_text": "正在下载素材",
+                    "downloaded_bytes": 480,
+                    "total_bytes": 1000,
+                    "source_filename": "lesson.mp4",
+                }
+            )
+        source_path = output_dir / "lesson.mp4"
+        source_path.write_bytes(b"downloaded-video")
+        return {
+            "source_url": source_url,
+            "source_path": str(source_path),
+            "source_filename": "lesson.mp4",
+            "content_type": "video/mp4",
+            "extractor_key": "Generic",
+            "webpage_url": source_url,
+            "duration_seconds": 37,
+        }
+
+    monkeypatch.setattr(desktop_asr_router, "download_public_media", fake_download)
+
+    app = create_desktop_helper_app({"model_dir": str(tmp_path / "models")})
+    with TestClient(app) as client:
+        create_resp = client.post(
+            "/api/desktop-asr/url-import/tasks",
+            json={"source_url": "https://example.com/watch?v=demo"},
+        )
+
+        assert create_resp.status_code == 200
+        create_payload = create_resp.json()
+        assert create_payload["ok"] is True
+        task_id = create_payload["task_id"]
+
+        task_payload = None
+        for _ in range(50):
+            task_resp = client.get(f"/api/desktop-asr/url-import/tasks/{task_id}")
+            assert task_resp.status_code == 200
+            task_payload = task_resp.json()
+            if task_payload["status"] == "succeeded":
+                break
+            time.sleep(0.02)
+
+        assert task_payload is not None
+        assert task_payload["status"] == "succeeded"
+        assert task_payload["source_filename"] == "lesson.mp4"
+        assert task_payload["content_type"] == "video/mp4"
+        assert task_payload["duration_seconds"] == 37
+
+        file_resp = client.get(f"/api/desktop-asr/url-import/tasks/{task_id}/file")
+
+    assert file_resp.status_code == 200
+    assert file_resp.content == b"downloaded-video"
+
+
+def test_desktop_helper_url_import_task_can_be_cancelled(tmp_path, monkeypatch):
+    from app.api.routers import desktop_asr as desktop_asr_router
+
+    desktop_asr_router._URL_IMPORT_TASKS.clear()
+
+    def fake_download(source_url, output_dir, *, progress_callback=None, cancel_event=None):
+        assert source_url == "https://example.com/watch?v=cancel"
+        assert cancel_event is not None
+        if callable(progress_callback):
+            progress_callback(
+                {
+                    "status": "running",
+                    "progress_percent": 12,
+                    "status_text": "正在下载素材",
+                    "downloaded_bytes": 120,
+                    "total_bytes": 1000,
+                    "source_filename": "cancel.mp4",
+                }
+            )
+        while not cancel_event.is_set():
+            time.sleep(0.01)
+        raise desktop_asr_router.MediaError("URL_IMPORT_CANCELLED", "已取消链接下载", "cancelled in test")
+
+    monkeypatch.setattr(desktop_asr_router, "download_public_media", fake_download)
+
+    app = create_desktop_helper_app({"model_dir": str(tmp_path / "models")})
+    with TestClient(app) as client:
+        create_resp = client.post(
+            "/api/desktop-asr/url-import/tasks",
+            json={"source_url": "https://example.com/watch?v=cancel"},
+        )
+
+        assert create_resp.status_code == 200
+        task_id = create_resp.json()["task_id"]
+
+        running_payload = None
+        for _ in range(50):
+            task_resp = client.get(f"/api/desktop-asr/url-import/tasks/{task_id}")
+            assert task_resp.status_code == 200
+            running_payload = task_resp.json()
+            if running_payload["status"] in {"running", "cancelling", "cancelled"}:
+                break
+            time.sleep(0.02)
+
+        assert running_payload is not None
+
+        cancel_resp = client.post(f"/api/desktop-asr/url-import/tasks/{task_id}/cancel")
+        assert cancel_resp.status_code == 200
+        assert cancel_resp.json()["status"] in {"cancelling", "cancelled"}
+
+        cancelled_payload = None
+        for _ in range(50):
+            task_resp = client.get(f"/api/desktop-asr/url-import/tasks/{task_id}")
+            assert task_resp.status_code == 200
+            cancelled_payload = task_resp.json()
+            if cancelled_payload["status"] == "cancelled":
+                break
+            time.sleep(0.02)
+
+        assert cancelled_payload is not None
+        assert cancelled_payload["status"] == "cancelled"
+        assert cancelled_payload["error_code"] == "URL_IMPORT_CANCELLED"
+        assert cancelled_payload["error_message"] == "已取消链接下载"
