@@ -3,4 +3,5 @@
 pyinstaller==6.16.0
 pytest==8.3.5
 httpx==0.28.1
+yt-dlp>=2025.2.19,<2027
 pyinstaller==6.13.0

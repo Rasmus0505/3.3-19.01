@@ -64,6 +64,9 @@ const FAST_RUNTIME_TRACK_CLOUD = "cloud";
 const FAST_RUNTIME_TRACK_BROWSER_LOCAL = "browser_local";
 const FAST_RUNTIME_TRACK_DESKTOP_LOCAL = "desktop_local";
 const DESKTOP_LOCAL_TRANSCRIBING_PHASE = "desktop_local_transcribing";
+const DESKTOP_LINK_IMPORTING_PHASE = "desktop_link_importing";
+const DESKTOP_UPLOAD_SOURCE_MODE_FILE = "file";
+const DESKTOP_UPLOAD_SOURCE_MODE_LINK = "link";
 const browserLocalRuntimeApi = LOCAL_BROWSER_RUNTIME_BASE_URL ? createApiClient({ baseUrl: LOCAL_BROWSER_RUNTIME_BASE_URL }) : null;
 function hasDesktopRuntimeBridge() {
   return typeof window !== "undefined" && typeof window.desktopRuntime?.requestLocalHelper === "function";
@@ -75,6 +78,40 @@ function hasBrowserLocalRuntimeBridge() {
 
 function hasDesktopModelUpdateBridge() {
   return desktopModelUpdateSupported();
+}
+
+function decodeBase64Bytes(base64Text) {
+  const safeText = String(base64Text || "").trim();
+  if (!safeText || typeof atob !== "function") {
+    return new Uint8Array();
+  }
+  const decoded = atob(safeText);
+  const bytes = new Uint8Array(decoded.length);
+  for (let index = 0; index < decoded.length; index += 1) {
+    bytes[index] = decoded.charCodeAt(index);
+  }
+  return bytes;
+}
+
+async function requestDesktopLocalHelper(pathname, responseType = "json", options = {}) {
+  if (!hasDesktopRuntimeBridge()) {
+    throw new Error("Desktop local helper is unavailable");
+  }
+  const response = await window.desktopRuntime.requestLocalHelper({
+    path: String(pathname || ""),
+    method: String(options.method || "GET").toUpperCase(),
+    responseType,
+    body: options.body,
+  });
+  if (!response?.ok) {
+    const detail =
+      String(response?.data?.message || "").trim() ||
+      String(response?.data?.error_message || "").trim() ||
+      String(response?.data?.detail || "").trim() ||
+      String(response?.status || "").trim();
+    throw new Error(detail || "Desktop local helper request failed");
+  }
+  return response;
 }
 
 function getDefaultFasterWhisperRuntimeTrack() {
@@ -556,6 +593,10 @@ function getStageDisplayItems(taskSnapshot) {
 function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
   if (phase === "uploading") return `上传素材 ${clampPercent(uploadPercent)}%`;
   if (phase === "upload_paused") return `上传素材 ${clampPercent(uploadPercent)}%`;
+  if (phase === DESKTOP_LINK_IMPORTING_PHASE) {
+    const nextPercent = taskSnapshot ? clampPercent(taskSnapshot?.overall_percent) : clampPercent(uploadPercent);
+    return `下载素材 ${nextPercent}%`;
+  }
   if (!taskSnapshot) return phase === "success" ? "生成课程完成" : phase === "error" ? "生成课程失败" : "等待上传";
   if (phase === "success") return "生成课程完成";
   const taskStatus = String(taskSnapshot.status || "").toLowerCase();
@@ -586,6 +627,9 @@ function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
 
 function getVisualProgress(phase, uploadPercent, taskSnapshot) {
   if (phase === "success") return 100;
+  if (phase === DESKTOP_LINK_IMPORTING_PHASE) {
+    return taskSnapshot ? clampPercent(taskSnapshot?.overall_percent) : clampPercent(uploadPercent);
+  }
   if (phase === "local_transcribing" || phase === DESKTOP_LOCAL_TRANSCRIBING_PHASE) {
     return taskSnapshot ? clampPercent(taskSnapshot?.overall_percent) : 28;
   }
@@ -738,6 +782,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [status, setStatus] = useState("");
   const [durationSec, setDurationSec] = useState(null);
   const [phase, setPhase] = useState("idle");
+  const [desktopSourceMode, setDesktopSourceMode] = useState(DESKTOP_UPLOAD_SOURCE_MODE_FILE);
+  const [desktopLinkInput, setDesktopLinkInput] = useState("");
+  const [desktopLinkTaskId, setDesktopLinkTaskId] = useState("");
   const [coverDataUrl, setCoverDataUrl] = useState("");
   const [coverAspectRatio, setCoverAspectRatio] = useState(0);
   const [coverWidth, setCoverWidth] = useState(0);
@@ -790,7 +837,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const desktopModelUpdatePromptRef = useRef("");
   const fasterWhisperTrackTouchedRef = useRef(false);
   const desktopLocalFailureCountRef = useRef(0);
+  const desktopLinkPollTokenRef = useRef(0);
+  const desktopLinkTaskIdRef = useRef("");
   const ownerUserId = Number(currentUser?.id || 0);
+  const desktopRuntimeAvailable = hasDesktopRuntimeBridge();
 
   const selectedFastModel = useMemo(() => {
     const selectedMeta = getUploadModelMeta(selectedUploadModel);
@@ -841,7 +891,20 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     mode === "fast" && SERVER_PREPARABLE_MODELS.has(selectedUploadModel) && !fasterWhisperDesktopLocalSelected;
   const localTranscribing = phase === "local_transcribing";
   const desktopLocalTranscribing = phase === DESKTOP_LOCAL_TRANSCRIBING_PHASE;
-  const useLocalProgressSnapshot = localTranscribing || desktopLocalTranscribing;
+  const desktopLinkImporting = phase === DESKTOP_LINK_IMPORTING_PHASE;
+  const desktopLinkModeActive = desktopRuntimeAvailable && desktopSourceMode === DESKTOP_UPLOAD_SOURCE_MODE_LINK;
+  const trimmedDesktopLinkInput = String(desktopLinkInput || "").trim();
+  const desktopLinkModeSupported =
+    desktopLinkModeActive &&
+    mode === "fast" &&
+    selectedFastModel === FASTER_WHISPER_MODEL &&
+    selectedFastRuntimeTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL;
+  const desktopLinkModeBlockedMessage = desktopLinkModeActive
+    ? desktopRuntimeAvailable
+      ? "链接导入当前仅支持桌面端 Bottle 1.0 本机运行，不支持云端、网页本地模式或均衡模式。"
+      : "当前环境不支持桌面端本地 helper，无法使用链接导入。"
+    : "";
+  const useLocalProgressSnapshot = localTranscribing || desktopLocalTranscribing || desktopLinkImporting;
   const displayTaskSnapshot = useLocalProgressSnapshot ? localProgressSnapshot : taskSnapshot;
   const hasLocalFile = Boolean(file);
   const displayTaskStatus = String(displayTaskSnapshot?.status || "").toLowerCase();
@@ -850,7 +913,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const taskPartialFailureStageKey = String(taskSnapshot?.partial_failure_stage || "").trim();
   const taskPartialFailureStageLabel = taskPartialFailureStageKey ? getStageLabelByKey(taskPartialFailureStageKey) : "";
   const taskPartialFailureSummary = sanitizeUserFacingText(String(taskSnapshot?.partial_failure_message || "")).slice(0, 160);
-  const taskSucceededPartially = !localTranscribing && displayTaskStatus === "succeeded" && taskCompletionKind === "partial";
+  const taskSucceededPartially = !localTranscribing && !desktopLinkImporting && displayTaskStatus === "succeeded" && taskCompletionKind === "partial";
   const failureDebug = taskSnapshot?.failure_debug;
   const failureStageKey = String(failureDebug?.failed_stage || taskSnapshot?.resume_stage || "").trim();
   const failureStageLabel = failureStageKey ? getStageLabelByKey(failureStageKey) : "";
@@ -865,6 +928,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const showRestoreInfoCard = restoreBannerMode !== RESTORE_BANNER_MODES.NONE;
   const serviceTaskActive =
     !localTranscribing &&
+    !desktopLinkImporting &&
     !isRestoreVerifying &&
     Boolean(taskId) &&
     ACTIVE_SERVER_TASK_STATUSES.has(displayTaskStatus || (phase === "processing" ? "running" : ""));
@@ -892,12 +956,15 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const canRetryWithoutUpload = Boolean(taskId) && (Boolean(taskSnapshot?.resume_available) || phase === "error");
   const showMediaPreview = Boolean(file || coverDataUrl);
   const sourceDisplayName = String(file?.name || taskSnapshot?.lesson?.source_filename || "");
-  const uploadActionBusy = loading && ["uploading", "processing", "local_transcribing", DESKTOP_LOCAL_TRANSCRIBING_PHASE].includes(String(phase || ""));
+  const uploadActionBusy =
+    loading && ["uploading", "processing", "local_transcribing", DESKTOP_LOCAL_TRANSCRIBING_PHASE, DESKTOP_LINK_IMPORTING_PHASE].includes(String(phase || ""));
   const localModeBusy = Boolean(localBusyModelKey || serverBusyModelKey) || localTranscribing;
+  const cancelablePrimaryAction = localTranscribing || desktopLinkImporting;
   const primaryActionDisabled =
     phase === "success" ||
-    (loading && !localTranscribing && !serviceTaskStopActionsVisible) ||
-    (mode === "balanced" && !localTranscribing && (!localAsrSupport.supported || !localWorkerReady || Boolean(localBusyModelKey)));
+    (loading && !cancelablePrimaryAction && !serviceTaskStopActionsVisible) ||
+    (mode === "balanced" && !localTranscribing && (!localAsrSupport.supported || !localWorkerReady || Boolean(localBusyModelKey))) ||
+    (desktopLinkModeActive && !desktopLinkImporting && (!desktopLinkModeSupported || !trimmedDesktopLinkInput));
   const taskTone = getUploadTaskTone({
     phase,
     resumeAvailable: Boolean(displayTaskSnapshot?.resume_available) || taskPaused,
@@ -913,6 +980,84 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   function maybeShowModelFallbackToast(payload) {
     void payload;
+  }
+
+  function clearDesktopLinkTaskTracking(invalidatePoll = true) {
+    if (invalidatePoll) {
+      desktopLinkPollTokenRef.current += 1;
+    }
+    desktopLinkTaskIdRef.current = "";
+    setDesktopLinkTaskId("");
+  }
+
+  function updateDesktopLinkProgressState(progressPercent, statusText = "正在下载素材") {
+    const nextPercent = clampPercent(progressPercent);
+    const ratio = nextPercent > 0 ? nextPercent / 100 : 0.04;
+    setUploadPercent(nextPercent);
+    setLocalProgressSnapshot(
+      buildLocalProgressSnapshot({
+        stageKey: "convert_audio",
+        stageStatus: nextPercent >= 100 ? "completed" : "running",
+        ratio,
+        currentText: statusText,
+      }),
+    );
+  }
+
+  function attachDesktopSourcePath(fileLike, sourcePath) {
+    if (!fileLike || !sourcePath) return fileLike;
+    try {
+      Object.defineProperty(fileLike, "filePath", { value: sourcePath, configurable: true });
+    } catch (_) {
+      try {
+        fileLike.filePath = sourcePath;
+      } catch (_) {
+        void 0;
+      }
+    }
+    try {
+      Object.defineProperty(fileLike, "path", { value: sourcePath, configurable: true });
+    } catch (_) {
+      try {
+        fileLike.path = sourcePath;
+      } catch (_) {
+        void 0;
+      }
+    }
+    return fileLike;
+  }
+
+  async function loadDesktopImportedSourceFile(taskPayload = {}) {
+    const taskToken = encodeURIComponent(String(taskPayload?.task_id || ""));
+    if (!taskToken) {
+      throw new Error("链接下载任务缺少 task_id");
+    }
+    const response = await requestDesktopLocalHelper(`/api/desktop-asr/url-import/tasks/${taskToken}/file`, "arrayBuffer");
+    const bytes = decodeBase64Bytes(response.bodyBase64);
+    if (bytes.byteLength <= 0) {
+      throw new Error("已下载素材为空，无法继续生成");
+    }
+    const contentType = String(response.contentType || taskPayload?.content_type || "application/octet-stream");
+    const blob = new Blob([bytes], { type: contentType });
+    const nextFile = createFileFromBlob(blob, String(taskPayload?.source_filename || "desktop-link-source"), contentType);
+    if (!nextFile) {
+      throw new Error("无法载入已下载素材");
+    }
+    return attachDesktopSourcePath(nextFile, String(taskPayload?.source_path || ""));
+  }
+
+  async function handleDesktopSourceModeChange(nextMode) {
+    const normalizedMode = nextMode === DESKTOP_UPLOAD_SOURCE_MODE_LINK ? DESKTOP_UPLOAD_SOURCE_MODE_LINK : DESKTOP_UPLOAD_SOURCE_MODE_FILE;
+    if (normalizedMode === desktopSourceMode) {
+      return;
+    }
+    resetLocalSessionState();
+    setDesktopSourceMode(normalizedMode);
+    setDesktopLinkInput("");
+    if (ownerUserId) {
+      await clearUploadPanelSuccessSnapshot(ownerUserId);
+      await clearActiveGenerationTask(ownerUserId);
+    }
   }
 
   function updateLocalModelState(modelKey, patch) {
@@ -1521,12 +1666,21 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   function resetLocalSessionState(options = {}) {
     const { clearFileInput = true } = options;
+    const activeDesktopLinkTaskId = desktopLinkTaskIdRef.current || desktopLinkTaskId;
     stopPollingSession();
     resetUploadPersistState();
     uploadAbortRef.current?.abort();
     uploadAbortRef.current = null;
     localRunAbortRef.current?.abort();
     localRunAbortRef.current = null;
+    if (activeDesktopLinkTaskId && hasDesktopRuntimeBridge()) {
+      void requestDesktopLocalHelper(`/api/desktop-asr/url-import/tasks/${encodeURIComponent(activeDesktopLinkTaskId)}/cancel`, "json", {
+        method: "POST",
+      }).catch(() => null);
+    }
+    desktopLinkPollTokenRef.current += 1;
+    desktopLinkTaskIdRef.current = "";
+    setDesktopLinkTaskId("");
     clearLocalStageProgressTimer();
     localRunTokenRef.current += 1;
     if (clearFileInput && fileInputRef.current) {
@@ -1661,9 +1815,219 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   async function resetSession() {
     resetLocalSessionState();
+    setDesktopLinkInput("");
     if (!ownerUserId) return;
     await clearUploadPanelSuccessSnapshot(ownerUserId);
     await clearActiveGenerationTask(ownerUserId);
+  }
+
+  async function cancelDesktopLinkImport(options = {}) {
+    const { showToast = true } = options;
+    const activeTaskId = desktopLinkTaskIdRef.current || desktopLinkTaskId;
+    if (!activeTaskId) {
+      clearDesktopLinkTaskTracking(true);
+      return;
+    }
+    try {
+      await requestDesktopLocalHelper(`/api/desktop-asr/url-import/tasks/${encodeURIComponent(activeTaskId)}/cancel`, "json", {
+        method: "POST",
+      });
+      setStatus("正在取消下载");
+      setLoading(true);
+      updateDesktopLinkProgressState(uploadPercent, "正在取消下载");
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : String(error);
+      if (showToast) {
+        toast.error(message);
+      }
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+        persistState: false,
+      });
+    }
+  }
+
+  async function pollDesktopLinkImportTask(linkTaskId, pollToken) {
+    if (!linkTaskId || pollToken !== desktopLinkPollTokenRef.current) {
+      return;
+    }
+    try {
+      const response = await requestDesktopLocalHelper(`/api/desktop-asr/url-import/tasks/${encodeURIComponent(linkTaskId)}`, "json");
+      if (pollToken !== desktopLinkPollTokenRef.current) {
+        return;
+      }
+      const payload = response.data || {};
+      const nextStatus = String(payload.status || "").trim().toLowerCase();
+      const nextMessage = sanitizeUserFacingText(String(payload.status_text || "正在下载素材"));
+      setLoading(true);
+      setPhase(DESKTOP_LINK_IMPORTING_PHASE);
+      setStatus(nextMessage);
+      updateDesktopLinkProgressState(Number(payload.progress_percent || 0), nextMessage);
+
+      if (nextStatus === "succeeded") {
+        setStatus("素材下载完成，正在载入文件");
+        updateDesktopLinkProgressState(100, "素材下载完成，正在载入文件");
+        const sourceFile = await loadDesktopImportedSourceFile(payload);
+        if (pollToken !== desktopLinkPollTokenRef.current) {
+          return;
+        }
+        clearDesktopLinkTaskTracking(false);
+        const selectionMeta = await onSelectFile(sourceFile);
+        const sourceDurationSeconds = Number(selectionMeta?.durationSec || payload.duration_seconds || 0);
+        const runToken = localRunTokenRef.current + 1;
+        localRunTokenRef.current = runToken;
+        const generationPollToken = startPollingSession();
+        await submitDesktopLocalFast(generationPollToken, runToken, sourceFile, sourceDurationSeconds);
+        return;
+      }
+
+      if (nextStatus === "failed") {
+        clearDesktopLinkTaskTracking(false);
+        setLocalProgressSnapshot(null);
+        await handleTaskFailureState({
+          message: nextMessage || String(payload.error_message || "下载链接素材失败"),
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: 0,
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+          persistState: false,
+        });
+        return;
+      }
+
+      if (nextStatus === "cancelled") {
+        clearDesktopLinkTaskTracking(false);
+        setLocalProgressSnapshot(null);
+        await handleTaskFailureState({
+          message: nextMessage || "已取消链接下载，可重新开始。",
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: 0,
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+          showToast: false,
+          persistState: false,
+        });
+        return;
+      }
+
+      setTimeout(() => {
+        void pollDesktopLinkImportTask(linkTaskId, pollToken);
+      }, 1000);
+    } catch (error) {
+      if (pollToken !== desktopLinkPollTokenRef.current) {
+        return;
+      }
+      clearDesktopLinkTaskTracking(false);
+      setLocalProgressSnapshot(null);
+      const message = error instanceof Error && error.message ? error.message : `网络错误: ${String(error)}`;
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+        persistState: false,
+      });
+    }
+  }
+
+  async function submitDesktopLinkImport() {
+    if (!desktopRuntimeAvailable) {
+      await handleTaskFailureState({
+        message: "当前环境不支持桌面端本地 helper，无法使用链接导入。",
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+        persistState: false,
+      });
+      return;
+    }
+    if (!desktopLinkModeSupported) {
+      await handleTaskFailureState({
+        message: desktopLinkModeBlockedMessage || "链接导入当前仅支持桌面端 Bottle 1.0 本机运行。",
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+        persistState: false,
+      });
+      return;
+    }
+    if (!trimmedDesktopLinkInput) {
+      await handleTaskFailureState({
+        message: "请输入公开视频链接",
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+        persistState: false,
+      });
+      return;
+    }
+
+    if (ownerUserId) {
+      await clearUploadPanelSuccessSnapshot(ownerUserId);
+    }
+    successStateOriginRef.current = "none";
+    stopPollingSession();
+    resetUploadPersistState();
+    uploadAbortRef.current?.abort();
+    uploadAbortRef.current = null;
+    localRunAbortRef.current?.abort();
+    localRunAbortRef.current = null;
+    clearLocalStageProgressTimer();
+    clearDesktopLinkTaskTracking(true);
+    setTaskId("");
+    setTaskSnapshot(null);
+    setUploadPercent(0);
+    setLoading(true);
+    setStatus("正在解析链接");
+    setPhase(DESKTOP_LINK_IMPORTING_PHASE);
+    setBindingCompleted(false);
+    updateDesktopLinkProgressState(0, "正在解析链接");
+
+    try {
+      const response = await requestDesktopLocalHelper("/api/desktop-asr/url-import/tasks", "json", {
+        method: "POST",
+        body: { source_url: trimmedDesktopLinkInput },
+      });
+      const payload = response.data || {};
+      const nextTaskId = String(payload.task_id || "");
+      if (!nextTaskId) {
+        throw new Error("链接下载任务创建成功但缺少 task_id");
+      }
+      const linkPollToken = desktopLinkPollTokenRef.current || 1;
+      desktopLinkTaskIdRef.current = nextTaskId;
+      setDesktopLinkTaskId(nextTaskId);
+      setStatus(sanitizeUserFacingText(String(payload.status_text || "正在下载素材")));
+      updateDesktopLinkProgressState(Number(payload.progress_percent || 0), sanitizeUserFacingText(String(payload.status_text || "正在下载素材")));
+      await pollDesktopLinkImportTask(nextTaskId, linkPollToken);
+    } catch (error) {
+      clearDesktopLinkTaskTracking(false);
+      setLocalProgressSnapshot(null);
+      const message = error instanceof Error && error.message ? error.message : `网络错误: ${String(error)}`;
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+        persistState: false,
+      });
+    }
   }
 
   async function saveSuccessSnapshot(sourceFile, data, nextStatus = "") {
@@ -2249,6 +2613,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     uploadAbortRef.current?.abort();
     localRunAbortRef.current?.abort();
     localRunAbortRef.current = null;
+    clearDesktopLinkTaskTracking(true);
     clearLocalStageProgressTimer();
     localRunTokenRef.current += 1;
     if (ownerUserId) {
@@ -2277,9 +2642,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       if (ownerUserId) {
         await clearActiveGenerationTask(ownerUserId);
       }
-      return;
+      return { durationSec: null, isVideoSource: false };
     }
     setPhase("probing");
+    const nextIsVideoSource = String(nextFile.type || "").startsWith("video/");
     try {
       const [seconds, cover] = await Promise.all([readMediaDurationSeconds(nextFile, nextFile.name || ""), extractMediaCoverPreview(nextFile, nextFile.name || "")]);
       setDurationSec(seconds);
@@ -2287,13 +2653,15 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       setCoverWidth(Number(cover.width || 0));
       setCoverHeight(Number(cover.height || 0));
       setCoverAspectRatio(Number(cover.aspectRatio || 0));
-      setIsVideoSource(String(nextFile.type || "").startsWith("video/"));
+      setIsVideoSource(nextIsVideoSource);
       setPhase("ready");
-      await persistSession({ file: nextFile, phase: "ready", durationSec: seconds, coverDataUrl: cover.coverDataUrl, coverWidth: cover.width, coverHeight: cover.height, aspectRatio: cover.aspectRatio, isVideoSource: String(nextFile.type || "").startsWith("video/") });
+      await persistSession({ file: nextFile, phase: "ready", durationSec: seconds, coverDataUrl: cover.coverDataUrl, coverWidth: cover.width, coverHeight: cover.height, aspectRatio: cover.aspectRatio, isVideoSource: nextIsVideoSource });
+      return { durationSec: seconds, isVideoSource: nextIsVideoSource };
     } catch (_) {
       setPhase("ready");
-      setIsVideoSource(String(nextFile.type || "").startsWith("video/"));
-      await persistSession({ file: nextFile, phase: "ready", isVideoSource: String(nextFile.type || "").startsWith("video/") });
+      setIsVideoSource(nextIsVideoSource);
+      await persistSession({ file: nextFile, phase: "ready", isVideoSource: nextIsVideoSource });
+      return { durationSec: null, isVideoSource: nextIsVideoSource };
     }
   }
 
@@ -2758,7 +3126,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
   }
 
-  async function submitDesktopLocalFast(pollToken, runToken) {
+  async function submitDesktopLocalFast(pollToken, runToken, sourceFile = file, sourceDurationSec = durationSec) {
     if (!hasDesktopRuntimeBridge()) {
       await handleTaskFailureState({
         message: "当前环境不支持 Bottle 1.0 本机运行，请改用云端运行。",
@@ -2799,11 +3167,20 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setTaskSnapshot(null);
     setUploadPercent(0);
     setLocalProgressSnapshot(null);
-    startLocalAsrVisualProgress(runToken, startStatus, durationSec || 0);
-    await persistSession({ taskId: "", phase: DESKTOP_LOCAL_TRANSCRIBING_PHASE, taskSnapshot: null, uploadPercent: 0, status: startStatus, bindingCompleted: false });
+    startLocalAsrVisualProgress(runToken, startStatus, sourceDurationSec || 0);
+    await persistSession({
+      file: sourceFile,
+      taskId: "",
+      phase: DESKTOP_LOCAL_TRANSCRIBING_PHASE,
+      taskSnapshot: null,
+      uploadPercent: 0,
+      status: startStatus,
+      durationSec: sourceDurationSec,
+      bindingCompleted: false,
+    });
 
     try {
-      const localResult = await generateDesktopLocalLesson(FASTER_WHISPER_MODEL, file, FAST_RUNTIME_TRACK_DESKTOP_LOCAL);
+      const localResult = await generateDesktopLocalLesson(FASTER_WHISPER_MODEL, sourceFile, FAST_RUNTIME_TRACK_DESKTOP_LOCAL);
       if (runToken !== localRunTokenRef.current) return;
       clearLocalStageProgressTimer();
       const localSentences = localResult?.asrPayload?.transcripts?.[0]?.sentences;
@@ -2828,14 +3205,14 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       const persistedLesson = await persistCompletedLocalLesson({
         asrModel: FASTER_WHISPER_MODEL,
         runtimeKind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
-        sourceFilename: String(file?.name || localResult?.sourceFilename || "desktop-local-source"),
-        sourceDurationMs: Math.max(1, Number(localResult?.sourceDurationMs || 0) || Math.round(Number(durationSec || 0) * 1000) || 1),
+        sourceFilename: String(sourceFile?.name || localResult?.sourceFilename || "desktop-local-source"),
+        sourceDurationMs: Math.max(1, Number(localResult?.sourceDurationMs || 0) || Math.round(Number(sourceDurationSec || 0) * 1000) || 1),
         asrPayload: localResult?.asrPayload || {},
         localGenerationResult,
       });
       if (runToken !== localRunTokenRef.current) return;
       setLocalProgressSnapshot(null);
-      await finalizeSuccess(persistedLesson, file);
+      await finalizeSuccess(persistedLesson, sourceFile);
     } catch (error) {
       clearLocalStageProgressTimer();
       setLocalProgressSnapshot(null);
@@ -3121,6 +3498,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }
 
   async function submit() {
+    if (desktopLinkModeActive) {
+      await submitDesktopLinkImport();
+      return;
+    }
     if (!file) {
       const message = "请先选择文件";
       await handleTaskFailureState({
@@ -3183,7 +3564,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       toast.message(browserLocalRuntimeBlockedMessage);
     }
     if (shouldUseDesktopLocalFast) {
-      await submitDesktopLocalFast(pollToken, runToken);
+      await submitDesktopLocalFast(pollToken, runToken, file, durationSec);
       return;
     }
     if (shouldUseBrowserLocalFast) {
@@ -3824,7 +4205,37 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             void submit();
           }}
         >
-          <div className="grid gap-2" data-guide-id="upload-select-file">
+          <div className="grid gap-3" data-guide-id="upload-select-file">
+            {desktopRuntimeAvailable ? (
+              <div className="inline-flex w-fit rounded-2xl border bg-muted/20 p-1">
+                <button
+                  type="button"
+                  className={cn(
+                    "rounded-xl px-3 py-1.5 text-sm transition-colors",
+                    desktopSourceMode === DESKTOP_UPLOAD_SOURCE_MODE_FILE
+                      ? getUploadToneStyles("selected").button
+                      : getUploadToneStyles("selected").buttonSubtle,
+                  )}
+                  onClick={() => void handleDesktopSourceModeChange(DESKTOP_UPLOAD_SOURCE_MODE_FILE)}
+                  disabled={loading || localModeBusy}
+                >
+                  文件
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "rounded-xl px-3 py-1.5 text-sm transition-colors",
+                    desktopSourceMode === DESKTOP_UPLOAD_SOURCE_MODE_LINK
+                      ? getUploadToneStyles("selected").button
+                      : getUploadToneStyles("selected").buttonSubtle,
+                  )}
+                  onClick={() => void handleDesktopSourceModeChange(DESKTOP_UPLOAD_SOURCE_MODE_LINK)}
+                  disabled={loading || localModeBusy}
+                >
+                  链接
+                </button>
+              </div>
+            ) : null}
             <input
               id="asr-file"
               ref={fileInputRef}
@@ -3836,25 +4247,45 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               }}
               disabled={loading || localModeBusy}
             />
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="h-9 px-4"
-                onClick={() => {
-                  if (fileInputRef.current) {
-                    fileInputRef.current.value = "";
-                    fileInputRef.current.click();
-                  }
-                }}
-                disabled={loading || localModeBusy}
-              >
-                选择文件
-              </Button>
-              <Button type="button" variant="default" className="h-9 px-4" onClick={() => setLinkDialogOpen(true)} disabled={loading || localModeBusy}>
-                提取视频
-              </Button>
-            </div>
+            {desktopLinkModeActive ? (
+              <div className="space-y-2">
+                <input
+                  type="url"
+                  inputMode="url"
+                  className="h-11 rounded-2xl border bg-background px-4 text-sm outline-none transition-colors focus:border-upload-brand/50"
+                  placeholder="粘贴公开单条视频链接，例如 https://www.youtube.com/watch?v=..."
+                  value={desktopLinkInput}
+                  onChange={(event) => setDesktopLinkInput(event.target.value)}
+                  disabled={loading || localModeBusy}
+                />
+                <p className="text-xs text-muted-foreground">仅支持公开单条视频链接，不支持 cookies、登录态、手动 cookie、播放列表或批量链接。</p>
+                {desktopLinkModeBlockedMessage ? (
+                  <p className={cn("text-xs", getUploadToneStyles("recoverable").text)}>{desktopLinkModeBlockedMessage}</p>
+                ) : null}
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 px-4"
+                  onClick={() => {
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = "";
+                      fileInputRef.current.click();
+                    }
+                  }}
+                  disabled={loading || localModeBusy}
+                >
+                  选择文件
+                </Button>
+                {!desktopRuntimeAvailable ? (
+                  <Button type="button" variant="default" className="h-9 px-4" onClick={() => setLinkDialogOpen(true)} disabled={loading || localModeBusy}>
+                    提取视频
+                  </Button>
+                ) : null}
+              </div>
+            )}
           </div>
 
           {serviceTaskStopActionsVisible ? (
@@ -3894,7 +4325,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             </div>
           ) : (
             <Button
-              type={localTranscribing ? "button" : "submit"}
+              type={cancelablePrimaryAction ? "button" : "submit"}
               disabled={primaryActionDisabled}
               className={cn(
                 "h-9 px-4",
@@ -3905,14 +4336,16 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                     : getUploadToneStyles("selected").button,
               )}
               data-guide-id="upload-submit"
-              onClick={localTranscribing ? () => void stopLocalRecognition() : undefined}
+              onClick={localTranscribing ? () => void stopLocalRecognition() : desktopLinkImporting ? () => void cancelDesktopLinkImport() : undefined}
             >
               {localTranscribing ? (
                 "停止生成"
+              ) : desktopLinkImporting ? (
+                "取消下载"
               ) : loading ? (
                 <span className="inline-flex items-center gap-2">
                   <Loader2 className="size-4 animate-spin" />
-                  {phase === "uploading" ? "上传中" : "生成中"}
+                  {phase === "uploading" ? "上传中" : desktopLinkModeActive ? "下载中" : "生成中"}
                 </span>
               ) : phase === "success" ? (
                 "已生成完成"
@@ -3946,10 +4379,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             <div className="grid grid-cols-5 gap-2 overflow-x-auto pb-1">
               {stageItems.map((item) => {
                 const stageToneStyles = getUploadToneStyles(getUploadStageTone(item.status));
+                const stageLabel = desktopLinkImporting && item.key === "convert_audio" ? "下载素材" : item.label;
                 return (
                   <div key={item.key} className={cn("min-w-[120px] space-y-2 rounded-xl border px-3 py-3", stageToneStyles.surface)}>
                     <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm font-semibold">{item.label}</p>
+                      <p className="text-sm font-semibold">{stageLabel}</p>
                       <span className="text-xs font-semibold tabular-nums">{item.detailText}</span>
                     </div>
                     <div className="h-1.5 w-full overflow-hidden rounded-full bg-background/60">

@@ -11,4 +11,5 @@ PyJWT==2.10.1
 openai==1.65.4
 alembic==1.14.1
 spacy==3.7.5
+yt-dlp>=2025.2.19,<2027
 https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
