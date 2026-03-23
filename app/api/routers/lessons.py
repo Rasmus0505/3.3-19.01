@@ -69,6 +69,7 @@ from app.services.lesson_task_manager import (
     build_task_debug_report,
     ensure_lesson_task_storage_ready,
     get_task,
+    upsert_lesson_workspace_summary,
 )
 from app.services.media import MediaError, cleanup_dir, create_request_dir, extract_audio_for_asr, save_upload_file_stream
 
@@ -247,6 +248,9 @@ async def create_lesson_task(
             response_payload["admission"] = admission
             response_payload["queued"] = str(admission.get("state") or "") == "queued"
             response_payload["status"] = "pending"
+        task_snapshot = get_task(str(payload["task_id"]), db=db)
+        if task_snapshot and task_snapshot.get("workspace"):
+            response_payload["workspace"] = task_snapshot["workspace"]
         return JSONResponse(status_code=200, content=response_payload)
     except MediaError as exc:
         return map_media_error(exc)
@@ -336,6 +340,9 @@ def create_local_asr_lesson_task(
             response_payload["admission"] = admission
             response_payload["queued"] = str(admission.get("state") or "") == "queued"
             response_payload["status"] = "pending"
+        task_snapshot = get_task(str(task_payload["task_id"]), db=db)
+        if task_snapshot and task_snapshot.get("workspace"):
+            response_payload["workspace"] = task_snapshot["workspace"]
         return JSONResponse(status_code=200, content=response_payload)
     except LessonTaskStorageNotReadyError as exc:
         return error_response(503, exc.code, exc.message, exc.detail)
@@ -391,6 +398,15 @@ def create_local_generated_lesson(
                 "runtime_kind": str((getattr(lesson, "subtitle_cache_seed", {}) or {}).get("runtime_kind") or payload.runtime_kind or ""),
             }
         )
+        response_payload["workspace"] = getattr(lesson, "workspace_summary", None) or upsert_lesson_workspace_summary(
+            owner_user_id=current_user.id,
+            lesson_id=int(lesson.id),
+            source_filename=str(payload.source_filename or ""),
+            source_duration_ms=int(payload.source_duration_ms or 0),
+            runtime_kind=str(payload.runtime_kind or ""),
+            subtitle_cache_seed=getattr(lesson, "subtitle_cache_seed", None),
+            translation_debug=getattr(lesson, "translation_debug", None),
+        )
         return JSONResponse(status_code=200, content=response_payload)
     except BillingError as exc:
         return map_billing_error(exc)
@@ -417,6 +433,8 @@ def get_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: U
     admission = _build_task_admission_detail(task)
     if admission:
         response_payload["admission"] = admission
+    if task.get("workspace"):
+        response_payload["workspace"] = task["workspace"]
     return JSONResponse(status_code=200, content=response_payload)
 
 

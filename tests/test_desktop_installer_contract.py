@@ -11,6 +11,7 @@ DESKTOP_ROOT = REPO_ROOT / "desktop"
 PACKAGE_JSON_PATH = DESKTOP_ROOT / "package.json"
 PACKAGE_WIN_SCRIPT_PATH = DESKTOP_ROOT / "scripts" / "package-win.mjs"
 MAIN_PROCESS_PATH = DESKTOP_ROOT / "electron" / "main.mjs"
+PRELOAD_PATH = DESKTOP_ROOT / "electron" / "preload.mjs"
 HELPER_RUNTIME_PATH = DESKTOP_ROOT / "electron" / "helper-runtime.mjs"
 MODEL_UPDATER_PATH = DESKTOP_ROOT / "electron" / "model-updater.mjs"
 INSTALLER_SCRIPT_PATH = DESKTOP_ROOT / "build" / "installer.nsh"
@@ -62,6 +63,7 @@ def test_package_win_script_builds_runtime_defaults_and_helper_before_nsis():
 
 def test_main_process_uses_bundled_helper_runtime_and_packaged_defaults():
     main_text = MAIN_PROCESS_PATH.read_text(encoding="utf-8")
+    preload_text = PRELOAD_PATH.read_text(encoding="utf-8")
     helper_runtime_text = HELPER_RUNTIME_PATH.read_text(encoding="utf-8")
     model_updater_text = MODEL_UPDATER_PATH.read_text(encoding="utf-8")
 
@@ -69,6 +71,11 @@ def test_main_process_uses_bundled_helper_runtime_and_packaged_defaults():
     assert "selectDesktopModelDir" in main_text
     assert "desktop:check-model-update" in main_text
     assert "desktop:start-model-update" in main_text
+    assert "desktop:check-client-update" in main_text
+    assert "desktop:open-client-update-link" in main_text
+    assert "desktop:client-update-status-changed" in main_text
+    assert "desktop:select-local-media-file" in main_text
+    assert "desktop:read-local-media-file" in main_text
     assert '"/api/desktop-asr"' in main_text
     assert '"/api/desktop-asr/url-import"' in main_text
     assert "runtime-defaults.json" in main_text
@@ -77,6 +84,11 @@ def test_main_process_uses_bundled_helper_runtime_and_packaged_defaults():
     assert "computeModelUpdateDelta" in model_updater_text
     assert ".model-version.json" in model_updater_text
     assert ".backup" in model_updater_text
+    assert "desktop:check-client-update" not in model_updater_text
+    assert 'ipcRenderer.invoke("desktop:select-local-media-file", options)' in preload_text
+    assert 'ipcRenderer.invoke("desktop:read-local-media-file", sourcePath)' in preload_text
+    assert "webUtils.getPathForFile(file)" in preload_text
+    assert 'ipcRenderer.invoke("desktop:request-local-helper", request)' in preload_text
     assert "BottleLocalHelper.exe" in helper_runtime_text
     assert "desktop-helper-runtime" in helper_runtime_text
     assert "preinstalled-models" in helper_runtime_text
@@ -101,6 +113,11 @@ def test_runtime_config_can_bootstrap_cloud_targets_from_packaged_defaults(tmp_p
                 "cloud": {
                     "appBaseUrl": "https://desktop.example.com/app",
                     "apiBaseUrl": "https://desktop.example.com",
+                },
+                "clientUpdate": {
+                    "metadataUrl": "https://updates.example.com/bottle/latest.json",
+                    "entryUrl": "https://updates.example.com/download",
+                    "checkOnLaunch": False,
                 },
             },
             ensure_ascii=False,
@@ -129,3 +146,6 @@ def test_runtime_config_can_bootstrap_cloud_targets_from_packaged_defaults(tmp_p
 
     assert payload["cloud"]["appBaseUrl"] == "https://desktop.example.com/app"
     assert payload["cloud"]["apiBaseUrl"] == "https://desktop.example.com"
+    assert payload["clientUpdate"]["metadataUrl"] == "https://updates.example.com/bottle/latest.json"
+    assert payload["clientUpdate"]["entryUrl"] == "https://updates.example.com/download"
+    assert payload["clientUpdate"]["checkOnLaunch"] is False

@@ -2966,6 +2966,99 @@ def test_create_local_asr_lesson_task(test_client, monkeypatch, tmp_path):
     task_payload = task_resp.json()
     assert task_payload["status"] == "succeeded"
     assert task_payload["lesson"]["asr_model"] == FASTER_WHISPER_ASR_MODEL
+    assert task_payload["workspace"]["scope"] == "lesson"
+    assert task_payload["workspace"]["task_id"] == task_id
+    assert task_payload["workspace"]["lesson_id"] == task_payload["lesson"]["id"]
+    assert task_payload["workspace"]["latest_subtitle_snapshot"]["preview_text"].startswith("Hello world")
+    assert task_payload["workspace"]["restore_pointer"]["task_id"] == task_id
+
+    verify_session = session_factory()
+    try:
+        task_row = verify_session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        assert task_row is not None
+        workspace_path = Path(task_row.artifacts_json["workspace_summary_path"])
+        lesson_workspace_path = workspace_path.parent / f"lesson_{int(task_row.lesson_id)}.json"
+        assert workspace_path.exists()
+        assert lesson_workspace_path.exists()
+        workspace_payload = json.loads(workspace_path.read_text(encoding="utf-8"))
+        lesson_workspace_payload = json.loads(lesson_workspace_path.read_text(encoding="utf-8"))
+        assert workspace_payload["workspace_id"] == task_id
+        assert workspace_payload["summary_path"] == str(workspace_path)
+        assert workspace_payload["restore_pointer"]["lesson_id"] == int(task_row.lesson_id)
+        assert workspace_payload["log_summary"]["events"][-1]["stage"] == "write_lesson"
+        assert lesson_workspace_payload["workspace_id"] == task_id
+        assert lesson_workspace_payload["lesson_id"] == int(task_row.lesson_id)
+    finally:
+        verify_session.close()
+
+
+def test_create_local_asr_lesson_task_persists_task_workspace_pointer(test_client, monkeypatch):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="local-asr-workspace@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from app.services import lesson_command_service as lesson_command_service_module
+
+    _enable_local_asr_model(monkeypatch)
+    _seed_wallet_balance(session_factory, email="local-asr-workspace@example.com")
+
+    class DeferredThread:
+        def __init__(self, target=None, kwargs=None, daemon=None):
+            self._target = target
+            self._kwargs = kwargs or {}
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr(lesson_command_service_module.threading, "Thread", DeferredThread)
+
+    payload = {
+        "asr_model": FASTER_WHISPER_ASR_MODEL,
+        "source_filename": "workspace.wav",
+        "source_duration_ms": 8_000,
+        "runtime_kind": "local_browser",
+        "asr_payload": {
+            "transcripts": [
+                {
+                    "sentences": [
+                        {"text": "Workspace preview", "begin_time": 0, "end_time": 1200},
+                    ]
+                }
+            ]
+        },
+    }
+
+    create_task_resp = client.post("/api/lessons/tasks/local-asr", headers=headers, json=payload)
+    assert create_task_resp.status_code == 200
+    create_payload = create_task_resp.json()
+    assert create_payload["workspace"]["scope"] == "task"
+    assert create_payload["workspace"]["task_id"] == create_payload["task_id"]
+    assert create_payload["workspace"]["lesson_id"] is None
+    assert create_payload["workspace"]["source"]["source_filename"] == "workspace.wav"
+
+    task_resp = client.get(f"/api/lessons/tasks/{create_payload['task_id']}", headers=headers)
+    assert task_resp.status_code == 200
+    task_payload = task_resp.json()
+    assert task_payload["workspace"]["scope"] == "task"
+    assert task_payload["workspace"]["task_id"] == create_payload["task_id"]
+    assert task_payload["workspace"]["lesson_id"] is None
+    assert task_payload["workspace"]["restore_pointer"]["task_id"] == create_payload["task_id"]
+
+    verify_session = session_factory()
+    try:
+        task_row = verify_session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == create_payload["task_id"]))
+        assert task_row is not None
+        workspace_path = Path(task_row.artifacts_json["workspace_summary_path"])
+        assert workspace_path.exists()
+        workspace_payload = json.loads(workspace_path.read_text(encoding="utf-8"))
+        assert workspace_payload["scope"] == "task"
+        assert workspace_payload["summary_path"] == str(workspace_path)
+        assert workspace_payload["source"]["source_filename"] == "workspace.wav"
+        assert workspace_payload["source"]["runtime_kind"] == "local_browser"
+        assert workspace_payload["restore_pointer"]["task_id"] == create_payload["task_id"]
+        assert workspace_payload["restore_pointer"]["lesson_id"] is None
+    finally:
+        verify_session.close()
 
 
 def test_create_desktop_local_asr_lesson_task_preserves_runtime_kind(test_client, monkeypatch, tmp_path):
@@ -3040,6 +3133,9 @@ def test_create_desktop_local_asr_lesson_task_preserves_runtime_kind(test_client
     task_payload = task_resp.json()
     assert task_payload["status"] == "succeeded"
     assert task_payload["lesson"]["asr_model"] == FASTER_WHISPER_ASR_MODEL
+    assert task_payload["workspace"]["scope"] == "lesson"
+    assert task_payload["workspace"]["lesson_id"] == task_payload["lesson"]["id"]
+    assert task_payload["workspace"]["source"]["runtime_kind"] == "desktop_local"
 
     verify_session = session_factory()
     try:
@@ -3048,6 +3144,11 @@ def test_create_desktop_local_asr_lesson_task_preserves_runtime_kind(test_client
         assert task_row.artifacts_json["local_runtime_kind"] == "desktop_local"
         assert task_row.asr_raw_json["mode"] == "desktop_local"
         assert task_row.asr_raw_json["model_name"] == FASTER_WHISPER_ASR_MODEL
+        workspace_path = Path(task_row.artifacts_json["workspace_summary_path"])
+        assert workspace_path.exists()
+        workspace_payload = json.loads(workspace_path.read_text(encoding="utf-8"))
+        assert workspace_payload["lesson_id"] == task_row.lesson_id
+        assert workspace_payload["source"]["runtime_kind"] == "desktop_local"
     finally:
         verify_session.close()
 
@@ -3178,6 +3279,17 @@ def test_create_local_generated_lesson_persists_completed_result(test_client, mo
     assert body["lesson"]["asr_model"] == FASTER_WHISPER_ASR_MODEL
     assert body["subtitle_cache_seed"]["runtime_kind"] == "desktop_local"
     assert body["lesson"]["sentences"][0]["text_en"] == "Desktop helper result"
+    assert body["workspace"]["scope"] == "lesson"
+    assert body["workspace"]["lesson_id"] == body["lesson"]["id"]
+    assert body["workspace"]["latest_subtitle_snapshot"]["preview_text"].startswith("Desktop helper result")
+    assert body["workspace"]["restore_pointer"]["lesson_id"] == body["lesson"]["id"]
+
+    workspace_path = Path(body["workspace"]["summary_path"])
+    assert workspace_path.exists()
+    workspace_payload = json.loads(workspace_path.read_text(encoding="utf-8"))
+    assert workspace_payload["restore_pointer"]["task_id"] == ""
+    assert workspace_payload["restore_pointer"]["lesson_id"] == body["lesson"]["id"]
+    assert len(workspace_payload["log_summary"]["events"]) == 1
 
 
 def test_admin_update_billing_rate_rejects_non_flash_mt_model(test_client):

@@ -8,11 +8,14 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_CONFIG_MODULE = (REPO_ROOT / "desktop-client" / "electron" / "runtime-config.mjs").resolve().as_uri()
-HELPER_RUNTIME_MODULE = (REPO_ROOT / "desktop-client" / "electron" / "helper-runtime.mjs").resolve().as_uri()
-MODEL_UPDATER_MODULE = (REPO_ROOT / "desktop-client" / "electron" / "model-updater.mjs").resolve().as_uri()
-PRELOAD_FILE = REPO_ROOT / "desktop-client" / "electron" / "preload.mjs"
+DESKTOP_ROOT = REPO_ROOT / "desktop"
+RUNTIME_CONFIG_MODULE = (DESKTOP_ROOT / "electron" / "runtime-config.mjs").resolve().as_uri()
+HELPER_RUNTIME_MODULE = (DESKTOP_ROOT / "electron" / "helper-runtime.mjs").resolve().as_uri()
+MODEL_UPDATER_MODULE = (DESKTOP_ROOT / "electron" / "model-updater.mjs").resolve().as_uri()
+PRELOAD_FILE = DESKTOP_ROOT / "electron" / "preload.mjs"
+MAIN_PROCESS_FILE = DESKTOP_ROOT / "electron" / "main.mjs"
 ASR_STRATEGY_MODULE = (REPO_ROOT / "frontend" / "src" / "features" / "upload" / "asrStrategy.js").resolve().as_uri()
+UPLOAD_PANEL_FILE = REPO_ROOT / "frontend" / "src" / "features" / "upload" / "UploadPanel.jsx"
 
 
 def _run_node_json(script: str) -> dict:
@@ -51,6 +54,9 @@ def test_runtime_config_persists_cloud_targets_and_local_paths(tmp_path):
           env: {{
             DESKTOP_CLOUD_APP_URL: "https://preview.example.com/app",
             DESKTOP_CLOUD_API_BASE_URL: "https://preview.example.com",
+            DESKTOP_CLIENT_UPDATE_METADATA_URL: "https://updates.example.com/bottle/latest.json",
+            DESKTOP_CLIENT_UPDATE_ENTRY_URL: "https://updates.example.com/download",
+            DESKTOP_CLIENT_UPDATE_CHECK_ON_LAUNCH: "false",
             DESKTOP_MODEL_DIR: {json.dumps(str(model_dir))},
           }},
         }});
@@ -69,6 +75,9 @@ def test_runtime_config_persists_cloud_targets_and_local_paths(tmp_path):
     assert payload["local"]["cacheDir"] == str(cache_dir.resolve())
     assert payload["local"]["logDir"] == str(log_dir.resolve())
     assert payload["local"]["tempDir"] == str(temp_dir.resolve())
+    assert payload["clientUpdate"]["metadataUrl"] == "https://updates.example.com/bottle/latest.json"
+    assert payload["clientUpdate"]["entryUrl"] == "https://updates.example.com/download"
+    assert payload["clientUpdate"]["checkOnLaunch"] is False
 
 
 def test_runtime_config_derives_app_origin_and_preserves_existing_local_overrides(tmp_path):
@@ -85,6 +94,11 @@ def test_runtime_config_derives_app_origin_and_preserves_existing_local_override
                 "local": {
                     "cacheDir": str(existing_local_cache),
                     "logDir": str(existing_local_logs),
+                },
+                "clientUpdate": {
+                    "metadataUrl": "https://release.example.com/bottle/latest.json",
+                    "entryUrl": "https://release.example.com/download",
+                    "checkOnLaunch": False,
                 },
             },
             ensure_ascii=False,
@@ -114,6 +128,9 @@ def test_runtime_config_derives_app_origin_and_preserves_existing_local_override
     assert payload["cloud"]["appBaseUrl"] == "https://prod.example.com"
     assert payload["local"]["cacheDir"] == str(existing_local_cache.resolve())
     assert payload["local"]["logDir"] == str(existing_local_logs.resolve())
+    assert payload["clientUpdate"]["metadataUrl"] == "https://release.example.com/bottle/latest.json"
+    assert payload["clientUpdate"]["entryUrl"] == "https://release.example.com/download"
+    assert payload["clientUpdate"]["checkOnLaunch"] is False
 
 
 def test_packaged_runtime_prefers_bundled_helper_and_respects_installer_state(tmp_path):
@@ -239,8 +256,21 @@ def test_preload_exposes_helper_status_bridge():
     assert 'getHelperStatus: () => ipcRenderer.invoke("desktop:get-helper-status")' in preload_source
     assert 'getServerStatus: () => ipcRenderer.invoke("desktop:get-server-status")' in preload_source
     assert 'probeServerNow: () => ipcRenderer.invoke("desktop:probe-server-now")' in preload_source
+    assert 'selectLocalMediaFile: (options) => ipcRenderer.invoke("desktop:select-local-media-file", options)' in preload_source
+    assert 'readLocalMediaFile: (sourcePath) => ipcRenderer.invoke("desktop:read-local-media-file", sourcePath)' in preload_source
+    assert "getPathForFile: (file) => {" in preload_source
+    assert "webUtils.getPathForFile(file)" in preload_source
     assert 'ipcRenderer.on("desktop:helper-restarting", handler)' in preload_source
     assert 'ipcRenderer.on("desktop:server-status-changed", handler)' in preload_source
+
+
+def test_preload_exposes_client_update_bridge():
+    preload_source = PRELOAD_FILE.read_text(encoding="utf-8")
+
+    assert 'getClientUpdateStatus: () => ipcRenderer.invoke("desktop:get-client-update-status")' in preload_source
+    assert 'checkClientUpdate: () => ipcRenderer.invoke("desktop:check-client-update")' in preload_source
+    assert 'openClientUpdateLink: (preferredUrl) => ipcRenderer.invoke("desktop:open-client-update-link", preferredUrl)' in preload_source
+    assert 'ipcRenderer.on("desktop:client-update-status-changed", handler)' in preload_source
 
 
 def test_preload_exposes_model_update_bridge():
@@ -251,6 +281,37 @@ def test_preload_exposes_model_update_bridge():
     assert 'startModelUpdate: (modelKey) => ipcRenderer.invoke("desktop:start-model-update", modelKey)' in preload_source
     assert 'cancelModelUpdate: () => ipcRenderer.invoke("desktop:cancel-model-update")' in preload_source
     assert 'ipcRenderer.on("desktop:model-update-progress", handler)' in preload_source
+
+
+def test_main_process_separates_client_update_from_model_update_channels():
+    main_source = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+
+    assert 'clientUpdate: desktopClientUpdateState' in main_source
+    assert 'modelUpdate: desktopModelUpdateState' in main_source
+    assert 'ipcMain.handle("desktop:get-client-update-status", () => desktopClientUpdateState)' in main_source
+    assert 'ipcMain.handle("desktop:check-client-update", async () => checkDesktopClientUpdate({ reason: "manual", notify: true }))' in main_source
+    assert 'ipcMain.handle("desktop:get-model-update-status", () => desktopModelUpdateState)' in main_source
+    assert 'ipcMain.handle("desktop:check-model-update", async (_event, modelKey = DESKTOP_MODEL_UPDATE_KEY) => checkDesktopModelUpdate(modelKey))' in main_source
+    assert 'mainWindow.webContents.send("desktop:client-update-status-changed", desktopClientUpdateState)' in main_source
+    assert 'mainWindow.webContents.send("desktop:model-update-progress", desktopModelUpdateState)' in main_source
+
+
+def test_main_process_exposes_desktop_file_bridge():
+    main_source = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+
+    assert 'ipcMain.handle("desktop:select-local-media-file", async (_event, options = {}) => selectLocalMediaFile(options))' in main_source
+    assert 'ipcMain.handle("desktop:read-local-media-file", async (_event, sourcePath = "") => readLocalMediaFile(sourcePath))' in main_source
+    assert "dialog.showOpenDialog" in main_source
+    assert "DESKTOP_MEDIA_FILE_FILTERS" in main_source
+
+
+def test_upload_panel_consumes_desktop_file_bridge_and_persists_source_path():
+    upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
+
+    assert "window.desktopRuntime.selectLocalMediaFile" in upload_panel_source
+    assert "desktop_source_path" in upload_panel_source
+    assert "restoreSavedSourceFile" in upload_panel_source
+    assert "ensureBlobBackedSourceFile" in upload_panel_source
 
 
 def test_preload_exposes_server_status_bridge():
