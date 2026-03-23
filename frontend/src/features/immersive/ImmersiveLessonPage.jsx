@@ -187,16 +187,18 @@ function resolveTranslationMaskRect(maskRect, metrics) {
   if (!metrics) return null;
   const safeWidth = Math.max(1, Number(metrics.width || 0));
   const safeHeight = Math.max(1, Number(metrics.height || 0));
-  const minWidth = Math.min(TRANSLATION_MASK_MIN_WIDTH_PX, safeWidth);
-  const minHeight = Math.min(TRANSLATION_MASK_MIN_HEIGHT_PX, safeHeight);
+  const maxWidth = Math.min(safeWidth, Math.max(1, Number(metrics.maxWidth || safeWidth)));
+  const maxHeight = Math.min(safeHeight, Math.max(1, Number(metrics.maxHeight || safeHeight)));
+  const minWidth = Math.min(Math.max(1, Number(metrics.minWidth || TRANSLATION_MASK_MIN_WIDTH_PX)), maxWidth);
+  const minHeight = Math.min(Math.max(1, Number(metrics.minHeight || TRANSLATION_MASK_MIN_HEIGHT_PX)), maxHeight);
   const normalizedRect = normalizeTranslationMaskRect(maskRect);
   const fallbackRect = normalizeTranslationMaskRect(metrics.defaultRect);
   const sourceRect =
     normalizedRect.x == null || normalizedRect.y == null || normalizedRect.width == null || normalizedRect.height == null
       ? fallbackRect
       : normalizedRect;
-  const width = clampNumber((sourceRect.width ?? fallbackRect.width ?? 1) * safeWidth, minWidth, safeWidth);
-  const height = clampNumber((sourceRect.height ?? fallbackRect.height ?? 1) * safeHeight, minHeight, safeHeight);
+  const width = clampNumber((sourceRect.width ?? fallbackRect.width ?? 1) * safeWidth, minWidth, maxWidth);
+  const height = clampNumber((sourceRect.height ?? fallbackRect.height ?? 1) * safeHeight, minHeight, maxHeight);
   const left = clampNumber((sourceRect.x ?? fallbackRect.x ?? 0) * safeWidth, 0, Math.max(0, safeWidth - width));
   const top = clampNumber((sourceRect.y ?? fallbackRect.y ?? 0) * safeHeight, 0, Math.max(0, safeHeight - height));
   return { left, top, width, height };
@@ -206,8 +208,10 @@ function resolveTranslationMaskResizeRect(startRect, mode, deltaX, deltaY, metri
   if (!startRect || !metrics) return null;
   const boundsWidth = Math.max(1, Number(metrics.width || 0));
   const boundsHeight = Math.max(1, Number(metrics.height || 0));
-  const minWidth = Math.min(TRANSLATION_MASK_MIN_WIDTH_PX, boundsWidth);
-  const minHeight = Math.min(TRANSLATION_MASK_MIN_HEIGHT_PX, boundsHeight);
+  const maxWidth = Math.min(boundsWidth, Math.max(1, Number(metrics.maxWidth || boundsWidth)));
+  const maxHeight = Math.min(boundsHeight, Math.max(1, Number(metrics.maxHeight || boundsHeight)));
+  const minWidth = Math.min(Math.max(1, Number(metrics.minWidth || TRANSLATION_MASK_MIN_WIDTH_PX)), maxWidth);
+  const minHeight = Math.min(Math.max(1, Number(metrics.minHeight || TRANSLATION_MASK_MIN_HEIGHT_PX)), maxHeight);
   const right = startRect.left + startRect.width;
   const bottom = startRect.top + startRect.height;
 
@@ -217,16 +221,16 @@ function resolveTranslationMaskResizeRect(startRect, mode, deltaX, deltaY, metri
       return {
         left: startRect.left,
         top: startRect.top,
-        width: clampNumber(startRect.width + deltaX, minWidth, boundsWidth - startRect.left),
-        height: clampNumber(startRect.height + deltaY, minHeight, boundsHeight - startRect.top),
+        width: clampNumber(startRect.width + deltaX, minWidth, Math.min(maxWidth, boundsWidth - startRect.left)),
+        height: clampNumber(startRect.height + deltaY, minHeight, Math.min(maxHeight, boundsHeight - startRect.top)),
       };
     case "resize-sw": {
       const left = clampNumber(startRect.left + deltaX, 0, Math.max(0, right - minWidth));
       return {
         left,
         top: startRect.top,
-        width: right - left,
-        height: clampNumber(startRect.height + deltaY, minHeight, boundsHeight - startRect.top),
+        width: clampNumber(right - left, minWidth, maxWidth),
+        height: clampNumber(startRect.height + deltaY, minHeight, Math.min(maxHeight, boundsHeight - startRect.top)),
       };
     }
     case "resize-ne": {
@@ -234,8 +238,8 @@ function resolveTranslationMaskResizeRect(startRect, mode, deltaX, deltaY, metri
       return {
         left: startRect.left,
         top,
-        width: clampNumber(startRect.width + deltaX, minWidth, boundsWidth - startRect.left),
-        height: bottom - top,
+        width: clampNumber(startRect.width + deltaX, minWidth, Math.min(maxWidth, boundsWidth - startRect.left)),
+        height: clampNumber(bottom - top, minHeight, maxHeight),
       };
     }
     case "resize-nw": {
@@ -244,8 +248,8 @@ function resolveTranslationMaskResizeRect(startRect, mode, deltaX, deltaY, metri
       return {
         left,
         top,
-        width: right - left,
-        height: bottom - top,
+        width: clampNumber(right - left, minWidth, maxWidth),
+        height: clampNumber(bottom - top, minHeight, maxHeight),
       };
     }
     default:
@@ -262,9 +266,25 @@ function formatPlaybackRateLabel(rate) {
   return `${Number(rate || 1).toFixed(2)}x`;
 }
 
+function isIpadSafariBrowser() {
+  if (typeof navigator === "undefined") return false;
+  const userAgent = String(navigator.userAgent || "");
+  const platform = String(navigator.platform || "");
+  const touchPoints = Number(navigator.maxTouchPoints || 0);
+  const isAppleTablet = /iPad/i.test(userAgent) || (platform === "MacIntel" && touchPoints > 1);
+  if (!isAppleTablet) return false;
+  return /Safari/i.test(userAgent) && !/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo/i.test(userAgent);
+}
+
 function getFullscreenElement() {
   if (typeof document === "undefined") return null;
-  return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null;
+  return (
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.msFullscreenElement ||
+    (document.webkitIsFullScreen ? document.documentElement : null) ||
+    null
+  );
 }
 
 async function requestElementFullscreen(element) {
@@ -846,6 +866,7 @@ export function ImmersiveLessonPage({
     captureElement: null,
   });
   const cinemaFullscreenActive = isCinemaFullscreen || isFullscreenFallback;
+  const isIpadSafari = useMemo(() => isIpadSafariBrowser(), []);
   const showPreviousSentenceBlock = !cinemaFullscreenActive || showFullscreenPreviousSentence;
   const hasExitHandler = typeof onExitImmersive === "function" || typeof onBack === "function";
   const typingEnabled =
@@ -1079,6 +1100,9 @@ export function ImmersiveLessonPage({
       return;
     }
     const typingRect = typingPanelRef.current?.getBoundingClientRect() || null;
+    const viewportWidth = Math.max(0, Number(window.innerWidth || containerRect.width || 0));
+    const viewportHeight = Math.max(0, Number(window.innerHeight || containerRect.height || 0));
+    const orientation = viewportWidth >= viewportHeight ? "landscape" : "portrait";
     const minPreferredBottom = Math.min(TRANSLATION_MASK_MIN_HEIGHT_PX, videoRect.height);
     const preferredBottom = typingRect
       ? clampNumber(
@@ -1092,12 +1116,29 @@ export function ImmersiveLessonPage({
       height: videoRect.height,
     };
     const defaultRect = buildDefaultTranslationMaskRect(maskViewportRect, { preferredBottom });
+    const isCompactPortrait = viewportWidth > 0 && viewportWidth < 768 && orientation === "portrait";
+    const isTabletLandscape = viewportWidth >= 768 && viewportWidth < 1024 && orientation === "landscape";
+    const isLargeLandscape = viewportWidth >= 1024 && orientation === "landscape";
+    const maxWidth = isLargeLandscape
+      ? Math.min(maskViewportRect.width, 680)
+      : isTabletLandscape
+        ? Math.min(maskViewportRect.width * 0.85, 560)
+        : isCompactPortrait
+          ? Math.min(maskViewportRect.width * 0.85, 400)
+          : maskViewportRect.width;
+    const minHeight = isCompactPortrait ? Math.min(maskViewportRect.height, 48) : TRANSLATION_MASK_MIN_HEIGHT_PX;
+    const maxHeight = isCompactPortrait
+      ? Math.min(maskViewportRect.height, Math.max(48, Math.min(viewportHeight * 0.15, 80)))
+      : maskViewportRect.height;
     setTranslationMaskMetrics({
       width: maskViewportRect.width,
       height: maskViewportRect.height,
       offsetLeft: videoRect.left,
       offsetTop: videoRect.top,
       defaultRect,
+      maxWidth,
+      maxHeight,
+      minHeight,
     });
   }, [cinemaFullscreenActive, mediaMode]);
 
@@ -1693,6 +1734,55 @@ export function ImmersiveLessonPage({
   }, [cinemaFullscreenActive, mediaMode, resetTranslationMaskGesture, updateTranslationMaskMetrics]);
 
   useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
+    const orientationMedia = window.matchMedia("(orientation: landscape)");
+    let timeoutId = null;
+    let frameId = null;
+    const syncOrientationLayout = () => {
+      if (!immersiveActive) return;
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null;
+        updateTranslationMaskMetrics();
+        if (cinemaFullscreenActive) {
+          wakeCinemaControls();
+        }
+      });
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+      timeoutId = window.setTimeout(() => {
+        timeoutId = null;
+        updateTranslationMaskMetrics();
+      }, 100);
+    };
+
+    if (typeof orientationMedia.addEventListener === "function") {
+      orientationMedia.addEventListener("change", syncOrientationLayout);
+    } else if (typeof orientationMedia.addListener === "function") {
+      orientationMedia.addListener(syncOrientationLayout);
+    }
+    window.addEventListener("orientationchange", syncOrientationLayout);
+
+    return () => {
+      if (typeof orientationMedia.removeEventListener === "function") {
+        orientationMedia.removeEventListener("change", syncOrientationLayout);
+      } else if (typeof orientationMedia.removeListener === "function") {
+        orientationMedia.removeListener(syncOrientationLayout);
+      }
+      window.removeEventListener("orientationchange", syncOrientationLayout);
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [cinemaFullscreenActive, immersiveActive, updateTranslationMaskMetrics, wakeCinemaControls]);
+
+  useEffect(() => {
     if (!canShowTranslationMask) {
       resetTranslationMaskGesture();
     }
@@ -1906,6 +1996,13 @@ export function ImmersiveLessonPage({
     if (!container) return { ok: false, reason: "fullscreen_target_missing" };
 
     debugImmersiveLog("cinema_fullscreen.request", { source, lessonId: lesson?.id });
+    if (isIpadSafari) {
+      setIsCinemaFullscreen(false);
+      setIsFullscreenFallback(true);
+      debugImmersiveLog("cinema_fullscreen.ipad_fallback", { source, lessonId: lesson?.id });
+      return { ok: true, reason: "ipad_css_fallback" };
+    }
+
     setIsFullscreenFallback(true);
     try {
       await requestElementFullscreen(container);
@@ -1926,7 +2023,7 @@ export function ImmersiveLessonPage({
       }
       return { ok: false, reason: "fallback_active", error };
     }
-  }, [immersiveActive, isCinemaFullscreen, isFullscreenFallback, lesson?.id]);
+  }, [immersiveActive, isCinemaFullscreen, isFullscreenFallback, isIpadSafari, lesson?.id]);
 
   const jumpToSentence = useCallback(
     async (targetIndex, source = "manual") => {
@@ -2124,8 +2221,15 @@ export function ImmersiveLessonPage({
 
     const syncFullscreenState = () => {
       const fullscreenElement = getFullscreenElement();
-      const nextIsCinemaFullscreen = Boolean(immersiveContainerRef.current && fullscreenElement === immersiveContainerRef.current);
-      const leftSystemFullscreen = isCinemaFullscreen && !nextIsCinemaFullscreen;
+      const nextIsNativeVideoFullscreen = Boolean(
+        isIpadSafari &&
+          mediaElementRef.current &&
+          (mediaElementRef.current.webkitDisplayingFullscreen || document.webkitIsFullScreen),
+      );
+      const nextIsCinemaFullscreen = Boolean(
+        nextIsNativeVideoFullscreen || (immersiveContainerRef.current && fullscreenElement === immersiveContainerRef.current),
+      );
+      const leftSystemFullscreen = isCinemaFullscreen && !nextIsCinemaFullscreen && !isFullscreenFallback;
       setIsCinemaFullscreen(nextIsCinemaFullscreen);
       if (!leftSystemFullscreen) {
         return;
@@ -2151,7 +2255,7 @@ export function ImmersiveLessonPage({
       document.removeEventListener("webkitfullscreenchange", syncFullscreenState);
       document.removeEventListener("MSFullscreenChange", syncFullscreenState);
     };
-  }, [clearProgrammaticFullscreenExit, exitImmersive, hasExitHandler, immersiveActive, isCinemaFullscreen, lesson?.id]);
+  }, [clearProgrammaticFullscreenExit, exitImmersive, hasExitHandler, immersiveActive, isCinemaFullscreen, isFullscreenFallback, isIpadSafari, lesson?.id]);
 
   useEffect(() => {
     if (!immersiveActive) {
@@ -2518,6 +2622,7 @@ export function ImmersiveLessonPage({
   const showPlaybackRateBadge = cinemaFullscreenActive && currentPlaybackRate < 0.999;
   const showTranslationMaskToggle = cinemaFullscreenActive && mediaMode === "video" && !needsBinding;
   const playbackRateLabel = formatPlaybackRateLabel(currentPlaybackRate);
+  const allowNativeVideoFullscreen = isIpadSafari && mediaMode === "video";
   const translationMaskVisible = canShowTranslationMask && translationMaskEnabled;
   const translationMaskClassName = [
     "immersive-translation-mask",
@@ -2592,6 +2697,7 @@ export function ImmersiveLessonPage({
           {!needsBinding && mediaMode === "video" ? (
             <video
               ref={mediaElementRef}
+              className={allowNativeVideoFullscreen ? "immersive-media-video immersive-media-video--allow-native-fullscreen" : "immersive-media-video"}
               src={mediaBlobUrl || undefined}
               preload="metadata"
               onLoadedMetadata={() => setMediaReady(true)}
@@ -2599,8 +2705,9 @@ export function ImmersiveLessonPage({
               onError={handleMainMediaError}
               onTimeUpdate={onMainMediaTimeUpdate}
               controls
-              controlsList="nofullscreen"
+              controlsList={allowNativeVideoFullscreen ? undefined : "nofullscreen"}
               playsInline
+              webkit-playsinline="true"
             />
           ) : null}
 
