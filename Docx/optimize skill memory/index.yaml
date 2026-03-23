@@ -1,2 +1,10 @@
 schema_version: 1
-cards: []
+cards:
+  - card_id: OPT-001
+    title: 定向执行歧义
+    target_skill: after
+    created_at: 2026-03-23T19:04:01.5449100+08:00
+    problem_type: workflow
+    confidence: high
+    path: cards/OPT-001-定向执行歧义.md
+    summary: after 未定义 $after 19 这类定向执行分支，导致执行器必须临时解释是点名任务还是继续全队列。

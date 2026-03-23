@@ -1,0 +1,120 @@
+schema_version: 1
+task_id: TASK-016
+title: 本地 ASR 模型增量更新机制
+status: done
+priority: medium
+project_root: D:/3.3-19.01
+base_ref: main
+goal: 为桌面客户端建立服务器端模型版本感知和客户端增量更新链路：客户端每次启动时检查服务器是否有新模型版本，若有则增量下载差异文件（而不是每次都下载整个 zip 包），并能回滚到上一个可用版本。
+scope:
+  - 服务器端模型版本元数据端点（manifest + hash）
+  - Electron 端增量更新检查（启动时 + 手动触发）
+  - 客户端文件级 diff 和增量下载
+  - 版本快照与回滚支持
+allowed_paths:
+  - desktop-client/electron/main.mjs
+  - desktop-client/electron/preload.mjs
+  - desktop-client/electron/helper-runtime.mjs
+  - desktop-client/electron/runtime-config.mjs
+  - desktop-client/electron/model-updater.mjs
+  - scripts/run_desktop_backend.py
+  - app/api/routers/local_asr_assets.py
+  - app/services/faster_whisper_asr.py
+  - frontend/src/features/upload/UploadPanel.jsx
+  - frontend/src/shared/media/localAsrAssetManager.js
+  - frontend/src/shared/lib/asrModels.js
+  - tests/test_desktop_runtime_contract.py
+  - tests/test_desktop_installer_contract.py
+  - tests/test_start_script_smoke.py
+acceptance:
+  - 服务器端现有模型下载摘要接口必须继续兼容旧客户端；同时新增单独的 manifest 能力，返回 `model_version`、文件列表及每个文件的 `sha256`，供桌面端做增量对比。
+  - 桌面客户端启动后必须能够非阻塞检查模型版本差异，并将“检查更新 / 开始更新”能力通过 Electron preload 暴露给前端。
+  - 增量更新时，客户端对比本地 manifest 和服务器 manifest，找出缺失文件（`missing_in_local`）和已变更文件（`changed`，通过 sha256 对比），只下载这些文件，而不是重新下载整个模型包；下载完成后更新本地 `.model-version.json`。
+  - 客户端应保留上一版本的模型快照（`model-dir/.backup/` 目录），更新失败时自动回滚到上一个可用版本，并把失败原因反馈给前端。
+  - 模型更新过程应显示文件级进度（总文件数、已下载文件数、当前文件），并可被用户主动取消且不破坏现有模型。
+  - 若用户在模型更新中途取消，客户端应能检测到下载不完整（通过 manifest 比对），并在下一次启动时自动重新下载缺失文件。
+check_commands:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+  - npm --prefix desktop-client run build
+  - pytest tests/test_desktop_runtime_contract.py tests/test_desktop_installer_contract.py
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with:
+  - TASK-014
+notes_for_after: |
+  本任务在服务器端只增加只读的模型 manifest 端点，不改变现有 ASR 转写逻辑。以下是需要实现的改进点：
+
+  1. 服务器端模型 manifest 增强（local_asr_assets.py + faster_whisper_asr.py）：
+     - 在 `_bundle_summary()` 中增加 `model_version` 字段：优先从 `FASTER_WHISPER_MODEL_DIR/.model-version.json` 读取，若无则用当前 `FASTER_WHISPER_MODELSCOPE_MODEL_ID` + 文件最后修改时间生成一个回退版本字符串
+     - 在 `_bundle_files()` 返回的每个文件条目中增加 `sha256` 字段（用 hashlib 计算文件 SHA256）
+     - 新增端点 `GET /api/local-asr-assets/download-models/{model_key}/manifest`，返回结构化的 manifest（model_version、total_size_bytes、file_count 和文件列表含 name/size_bytes/sha256），用于客户端增量对比
+
+  2. Electron 端增量更新检查（main.mjs）：
+     - 在 `bootstrapDesktopApp()` 成功后（非阻塞），调用服务器 `GET /api/local-asr-assets/download-models/faster-whisper-medium/manifest` 获取最新 manifest
+     - 若能读取本地 `model-dir/.model-version.json`，则对比 `model_version` 字段；若相同则跳过更新；若不同则触发增量更新
+     - 在 Electron 主进程的 `desktopRuntimeConfig.local.modelDir` 对应目录中读写 `.model-version.json`（通过 Node.js fs）
+     - 增量更新过程通过 Electron IPC 通知前端，前端弹出模态进度条显示更新状态；更新完成或失败后立即写回 `.model-version.json`
+     - 新增 IPC `desktop:check-model-update` 和 `desktop:start-model-update`，用于前端手动触发更新检查
+
+  3. 客户端增量下载逻辑（新增 `desktop-client/electron/model-updater.mjs`）：
+     - `computeModelUpdateDelta(localManifest, remoteManifest)`：对比两个 manifest，返回 { missing: [], changed: [] }（只含需要重新下载的文件）
+     - `downloadModelFile(modelKey, fileName, targetDir, onProgress)`：下载单个文件到目标目录，验证 sha256 后才写入磁盘
+     - `performIncrementalModelUpdate(modelKey, remoteManifest, targetModelDir, onProgress)`：按 delta 依次下载 missing 和 changed 文件到目标目录，下载完成后将 remote manifest 写入 `.model-version.json`，失败时从 `.backup/` 回滚
+     - `backupCurrentModel(targetModelDir)`：在更新前，将当前 `targetModelDir` 下的所有模型文件复制到 `.backup/` 子目录（只保留一个最新备份）
+
+  4. 回滚逻辑（model-updater.mjs）：
+     - 若 `performIncrementalModelUpdate` 任何一步失败（网络错误、sha256 不匹配、磁盘满），立即中止并调用 `rollbackFromBackup(targetModelDir)`：删除损坏文件，从 `.backup/` 恢复，上报更新失败原因
+     - 回滚成功后，将 `.model-version.json` 恢复为更新前的版本，并记录错误日志到桌面日志目录
+     - 若 `.backup/` 也不可用或损坏，则提示用户手动重新下载整个模型包
+
+  5. 前端集成（UploadPanel.jsx）：
+     - 前端在启动时（如组件 mount 时）通过 preload 调用 `desktop:check-model-update`，若检测到有新版本则弹出提示"发现新的 Bottle 1.0 模型，是否更新？"（可取消，默认不阻断用户操作）
+     - 若用户确认更新，调用 `desktop:start-model-update`，前端显示模态进度条，更新期间本地识别按钮仍可使用云端 Bottle 2.0，不因更新而阻断用户
+     - 更新完成后，前端收到完成通知，刷新模型状态显示
+
+  6. 回归保护：
+     - 不要改变现有 `/api/local-asr-assets/status` 的 legacy 返回格式（用于兼容旧客户端）
+     - 增量更新不应破坏现有安装版客户端的 Bottle 1.0 预装机制：安装时预装的模型目录中应同时包含 `.model-version.json`（含 installer 版本的 model_version）
+     - 模型更新失败不应导致客户端崩溃或进入不可恢复状态；若无法回滚则保持旧模型继续可用
+result_summary: 完成桌面端模型 manifest、增量更新器、Electron 更新 IPC 与上传页本机模型更新状态接入，支持差量下载、回滚与取消。
+changed_files:
+  - app/api/routers/local_asr_assets.py
+  - desktop-client/electron/main.mjs
+  - desktop-client/electron/preload.mjs
+  - desktop-client/electron/model-updater.mjs
+  - frontend/src/features/upload/UploadPanel.jsx
+  - tests/test_desktop_runtime_contract.py
+tests_run:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+  - npm --prefix desktop-client run build
+  - pytest tests/test_desktop_runtime_contract.py tests/test_desktop_installer_contract.py
+blocked_reason: ""
+completed_at: "2026-03-23T18:58:25.2557190+08:00"
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""
+result_summary: >-
+  完成本地 ASR manifest、增量更新器、Electron 更新 IPC 与上传页模型更新提示，
+  补齐从预装模型目录迁移到用户可写目录的增量更新链路，支持差异下载、取消、回滚与下次启动自动补齐。
+changed_files:
+  - app/api/routers/local_asr_assets.py
+  - desktop-client/electron/helper-runtime.mjs
+  - desktop-client/electron/main.mjs
+  - desktop-client/electron/preload.mjs
+  - desktop-client/electron/model-updater.mjs
+  - frontend/src/features/upload/UploadPanel.jsx
+  - frontend/src/shared/media/localAsrAssetManager.js
+  - tests/test_desktop_runtime_contract.py
+  - tests/test_desktop_installer_contract.py
+tests_run:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+  - npm --prefix desktop-client run build
+  - pytest tests/test_desktop_runtime_contract.py tests/test_desktop_installer_contract.py
+blocked_reason: ""
+completed_at: "2026-03-23T19:12:44.9401045+08:00"

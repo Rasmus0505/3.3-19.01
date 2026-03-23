@@ -416,5 +416,5 @@ def test_asr_strategy_degrades_to_cloud_when_local_helper_is_unhealthy():
 
     payload = _run_node_json(script)
 
-    assert payload["strategy"] == "cloud"
+    assert payload["strategy"] == "bottle2_cloud"
     assert payload["degraded"] is True

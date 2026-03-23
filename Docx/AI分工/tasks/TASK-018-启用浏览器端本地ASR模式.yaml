@@ -1,0 +1,80 @@
+schema_version: 1
+task_id: TASK-018
+title: 启用浏览器端本地 ASR 模式
+status: todo
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: 将浏览器端 SenseVoice WASM ASR 从禁用状态切换为启用状态，并在非 Electron 桌面（即普通浏览器访问本地部署网站）时正确路由到浏览器端 ASR，而不依赖服务器。
+scope:
+  - 上传页 ASR 模式路由逻辑（桌面本地 / 浏览器本地 / 云端三选一）
+  - 浏览器端 ASR Worker 生命周期与模型资产加载
+  - 前端进度反馈与识别结果回填
+  - 回归保护（不影响桌面客户端 Electron 的既有本地 Helper 路由）
+allowed_paths:
+  - frontend/src/features/upload/UploadPanel.jsx
+  - frontend/src/features/upload/localAsrPreviewWorker.js
+  - frontend/src/features/upload/localAsrParallelRuntime.js
+  - frontend/src/shared/media/localAsrAssetManager.js
+  - frontend/src/shared/media/localAsrPreviewStore.js
+  - frontend/src/shared/media/localAsrSupport.js
+acceptance:
+  - `LOCAL_BROWSER_ASR_ENABLED` 从 `false` 改为 `true`；UploadPanel 在 `hasDesktopRuntimeBridge()` 返回 false 时，必须能识别到浏览器本地 ASR 可用并渲染 SenseVoice 卡片，不得把浏览器环境误判为"无本地 ASR"。
+  - 在浏览器环境下（非 Electron），选择 Bottle 1.0 时路由必须指向浏览器端 Worker（`runLocalAsrWithAutoParallelism`），而不是云端 `/api/lessons/{id}/transcribe`。
+  - 在 Electron 环境下（`hasDesktopRuntimeBridge() === true`），Bottle 1.0 路由保持不变，走 `/api/desktop-asr/transcribe` 的桌面端 Helper，不受影响。
+  - 浏览器端 ASR 完成后，字幕必须能正确回填到 ImmersiveLessonPage；`asr_payload` 输出 schema 保持兼容。
+  - 前端 `npm run build` 和 `npm run build:app-static` 均通过。
+check_commands:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+depends_on:
+  - TASK-015
+dependency_reason: TASK-015 已完成浏览器端 ASR 多核并行运行时（localAsrParallelRuntime.js），本任务在其基础上启用浏览器端 ASR 路由开关。两者都是本地 ASR 能力，合并会导致单一任务过大。
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  本任务核心是"路由启用"而不是"重新实现 ASR"，TASK-015 的并行运行时已完整实现，直接复用。
+
+  1. 启用浏览器 ASR 开关（UploadPanel.jsx）：
+     - 将 `const LOCAL_BROWSER_ASR_ENABLED = false;` 改为 `true`
+     - 在 `LOCAL_MODEL_OPTIONS` 中，`sensevoiceBrowser` 的 `uploadEnabled` 已默认为 `true`，确认不需额外修改
+     - 检查 `localDirectoryBindingAvailable` 的计算逻辑：`hasDesktopRuntimeBridge()` 为 false 时应回退到浏览器缓存模式或目录绑定模式
+
+  2. 路由决策增强（UploadPanel.jsx）：
+     - 现有 `getDefaultFasterWhisperRuntimeTrack()` 只区分桌面 Helper 和云端，需要扩展为三路判断：
+       - `hasDesktopRuntimeBridge()` → `FAST_RUNTIME_TRACK_DESKTOP_LOCAL`
+       - `LOCAL_BROWSER_ASR_ENABLED && localAsrSupport.supported` → `FAST_RUNTIME_TRACK_BROWSER_LOCAL`
+       - 其他 → `FAST_RUNTIME_TRACK_CLOUD`
+     - 新增常量 `FAST_RUNTIME_TRACK_BROWSER_LOCAL = "browser_local"`
+     - 新增常量映射 `getFastRuntimeTrackLabel` 中增加对 `FAST_RUNTIME_TRACK_BROWSER_LOCAL` 的处理，返回"本地浏览器运行"
+     - 在 `handleUploadAndTranscribe` 的 `handleFasterWhisperUpload` 分支中，根据 `runtimeTrack` 值：
+       - `desktop_local` → 调用 `transcribeWithDesktopHelper()`
+       - `browser_local` → 调用 `runLocalAsrWithAutoParallelism()`（复用 `LocalAsrPreviewCard` 中的调用模式）
+       - `cloud` → 调用云端 `/api/lessons/{id}/transcribe`
+
+  3. 浏览器 ASR 调用接入（UploadPanel.jsx）：
+     - 从 `LocalAsrPreviewCard.jsx` 的调用模式中提取 `runLocalAsrWithAutoParallelism` 的用法（import 语句、音频提取方式、结果处理）
+     - 在 UploadPanel 中引入必要的 import：`runLocalAsrWithAutoParallelism` from `localAsrParallelRuntime.js`，`extractAudioFromFile` from `localAsrAssetManager.js`
+     - 浏览器 ASR 返回的 `asr_payload` 直接传给 `handleAsrResult()`，与云端路径一致
+     - 进度回调 `onProgress` 驱动 UploadPanel 内已有的进度条状态更新，与 `transcribeWithDesktopHelper` 共用同一套 UI 状态
+
+  4. 模型资产可用性检测（UploadPanel.jsx）：
+     - 确认 `localAsrSupport` 检测逻辑在浏览器环境下能正确判断：SharedArrayBuffer / cross-origin isolation 条件（某些浏览器可能不支持）
+     - 若 `localAsrSupport.supported === false`，浏览器 ASR 卡片仍渲染但显示不可用原因，不崩溃
+     - 检查 `verifyLocalAsrModel()` 在浏览器端通过 Cache API 获取模型资产是否正常（Cache API 在 localhost 和 HTTPS 下可用）
+
+  5. 回归保护：
+     - Electron 环境：`hasDesktopRuntimeBridge()` 为 true 时，路由行为完全不变
+     - 云端回退：`runLocalAsrWithAutoParallelism` 失败时，自动降级到云端（复用 TASK-017 的降级逻辑，但本任务只负责路由）
+     - 不改变 `asr_payload` schema
+     - 不修改 Electron 端 main.mjs / preload.mjs
+result_summary: ""
+changed_files: []
+tests_run: []
+blocked_reason: ""
+completed_at: ""
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

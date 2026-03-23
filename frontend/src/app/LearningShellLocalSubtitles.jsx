@@ -26,7 +26,7 @@ import {
   saveLessonSubtitleCacheSeed,
   saveLessonSubtitleVariant,
   setActiveLessonSubtitleVariant,
-} from "../shared/media/localSubtitleStore";
+} from "../shared/media/localSubtitleStore.js";
 import {
   Alert,
   AlertDescription,

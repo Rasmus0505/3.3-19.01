@@ -46,6 +46,16 @@ function hasDesktopLocalHelper() {
   return typeof window !== "undefined" && typeof window.desktopRuntime?.requestLocalHelper === "function";
 }
 
+function hasDesktopModelUpdateBridge() {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.desktopRuntime?.getModelUpdateStatus === "function" &&
+    typeof window.desktopRuntime?.checkModelUpdate === "function" &&
+    typeof window.desktopRuntime?.startModelUpdate === "function" &&
+    typeof window.desktopRuntime?.cancelModelUpdate === "function"
+  );
+}
+
 function decodeBase64Bytes(base64Text) {
   const safeText = String(base64Text || "").trim();
   if (!safeText) {
@@ -213,6 +223,49 @@ export async function installDesktopBundledAsrModel(modelKey) {
   const helperModelKey = encodeURIComponent(normalizeModelId(modelKey));
   const response = await requestDesktopLocalHelper(`/api/local-asr-assets/download-models/${helperModelKey}/install`, "json", { method: "POST" });
   return normalizeDesktopBundledModelSummary(response.data);
+}
+
+export function desktopModelUpdateSupported() {
+  return hasDesktopModelUpdateBridge();
+}
+
+export async function getDesktopModelUpdateStatus() {
+  if (!hasDesktopModelUpdateBridge()) {
+    throw new Error("Desktop model update bridge is unavailable");
+  }
+  return window.desktopRuntime.getModelUpdateStatus();
+}
+
+export async function checkDesktopModelUpdate(modelKey) {
+  if (!hasDesktopModelUpdateBridge()) {
+    throw new Error("Desktop model update bridge is unavailable");
+  }
+  return window.desktopRuntime.checkModelUpdate(normalizeModelId(modelKey));
+}
+
+export async function startDesktopModelUpdate(modelKey) {
+  if (!hasDesktopModelUpdateBridge()) {
+    throw new Error("Desktop model update bridge is unavailable");
+  }
+  return window.desktopRuntime.startModelUpdate(normalizeModelId(modelKey));
+}
+
+export async function cancelDesktopModelUpdate() {
+  if (!hasDesktopModelUpdateBridge()) {
+    throw new Error("Desktop model update bridge is unavailable");
+  }
+  return window.desktopRuntime.cancelModelUpdate();
+}
+
+export function onDesktopModelUpdateProgress(callback) {
+  if (!hasDesktopModelUpdateBridge()) {
+    return () => {};
+  }
+  return window.desktopRuntime.onModelUpdateProgress((payload) => {
+    if (typeof callback === "function") {
+      callback(payload || {});
+    }
+  });
 }
 
 function resolveDesktopLocalSourcePath(fileLike) {

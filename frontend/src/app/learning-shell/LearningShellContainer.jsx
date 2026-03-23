@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { AdminApp } from "../../AdminApp";
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import { getLessonMediaPreview, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
-import { getCachedLessonSubtitleVariant, getLessonSubtitleAvailability, getLessonSubtitleCache, saveLessonSubtitleCacheSeed, saveLessonSubtitleVariant, setActiveLessonSubtitleVariant } from "../../shared/media/localSubtitleStore";
+import { getCachedLessonSubtitleVariant, getLessonSubtitleAvailability, getLessonSubtitleCache, saveLessonSubtitleCacheSeed, saveLessonSubtitleVariant, setActiveLessonSubtitleVariant } from "../../shared/media/localSubtitleStore.js";
 import {
   Button,
   Card,
