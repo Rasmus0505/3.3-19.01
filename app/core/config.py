@@ -154,6 +154,7 @@ LESSON_TASK_MAX_QUEUED = _get_env_non_negative_int("LESSON_TASK_MAX_QUEUED", 8)
 PERSISTENT_DATA_DIR = Path(
     os.getenv("PERSISTENT_DATA_DIR", str(_default_persistent_data_dir())).strip() or str(_default_persistent_data_dir())
 )
+LESSON_WORKSPACE_ROOT_DIR = PERSISTENT_DATA_DIR / "lesson-workspaces"
 ASR_BUNDLE_ROOT_DIR = Path(
     os.getenv("ASR_BUNDLE_ROOT_DIR", str(_default_asr_bundle_root())).strip() or str(_default_asr_bundle_root())
 )

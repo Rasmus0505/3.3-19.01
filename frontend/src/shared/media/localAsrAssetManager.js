@@ -270,8 +270,11 @@ export function onDesktopModelUpdateProgress(callback) {
 
 function resolveDesktopLocalSourcePath(fileLike) {
   const candidatePath =
+    String(fileLike?.desktopSourcePath || "").trim() ||
+    String(fileLike?.sourcePath || "").trim() ||
     String(fileLike?.path || "").trim() ||
-    String(fileLike?.filePath || "").trim();
+    String(fileLike?.filePath || "").trim() ||
+    String((typeof window !== "undefined" ? window.desktopRuntime?.getPathForFile?.(fileLike) : "") || "").trim();
   return candidatePath;
 }
 

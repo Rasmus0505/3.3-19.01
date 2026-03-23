@@ -36,7 +36,7 @@ import {
   getUploadPanelSuccessSnapshot,
   saveActiveGenerationTask,
   saveUploadPanelSuccessSnapshot,
-} from "../../shared/media/localTaskStore";
+} from "../../shared/media/localTaskStore.js";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, MediaCover, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
 import { useAppStore } from "../../store";
 import { ASR_STRATEGY_CLOUD, resolveAsrStrategy, mapCloudAsrFailureToMessage } from "./asrStrategy";
@@ -70,6 +70,14 @@ const DESKTOP_UPLOAD_SOURCE_MODE_LINK = "link";
 const browserLocalRuntimeApi = LOCAL_BROWSER_RUNTIME_BASE_URL ? createApiClient({ baseUrl: LOCAL_BROWSER_RUNTIME_BASE_URL }) : null;
 function hasDesktopRuntimeBridge() {
   return typeof window !== "undefined" && typeof window.desktopRuntime?.requestLocalHelper === "function";
+}
+
+function hasDesktopFileSelectionBridge() {
+  return typeof window !== "undefined" && typeof window.desktopRuntime?.selectLocalMediaFile === "function";
+}
+
+function hasDesktopFileReadBridge() {
+  return typeof window !== "undefined" && typeof window.desktopRuntime?.readLocalMediaFile === "function";
 }
 
 function hasBrowserLocalRuntimeBridge() {
@@ -707,6 +715,154 @@ function createFileFromBlob(blob, fileName, mediaType) {
   }
 }
 
+function isBlobBackedSourceFile(fileLike) {
+  return fileLike instanceof Blob && fileLike?.desktopSelectionPlaceholder !== true;
+}
+
+function decorateDesktopSourcePath(fileLike, sourcePath) {
+  if (!fileLike || !sourcePath) return fileLike;
+  try {
+    Object.defineProperty(fileLike, "desktopSourcePath", { value: sourcePath, configurable: true });
+  } catch (_) {
+    try {
+      fileLike.desktopSourcePath = sourcePath;
+    } catch (_) {
+      void 0;
+    }
+  }
+  try {
+    Object.defineProperty(fileLike, "sourcePath", { value: sourcePath, configurable: true });
+  } catch (_) {
+    try {
+      fileLike.sourcePath = sourcePath;
+    } catch (_) {
+      void 0;
+    }
+  }
+  try {
+    Object.defineProperty(fileLike, "filePath", { value: sourcePath, configurable: true });
+  } catch (_) {
+    try {
+      fileLike.filePath = sourcePath;
+    } catch (_) {
+      void 0;
+    }
+  }
+  try {
+    Object.defineProperty(fileLike, "path", { value: sourcePath, configurable: true });
+  } catch (_) {
+    try {
+      fileLike.path = sourcePath;
+    } catch (_) {
+      void 0;
+    }
+  }
+  return fileLike;
+}
+
+function resolveDesktopSourcePathCandidate(payload = {}) {
+  return (
+    String(payload?.desktopSourcePath || "").trim() ||
+    String(payload?.sourcePath || "").trim() ||
+    String(payload?.path || "").trim() ||
+    String(payload?.filePath || "").trim()
+  );
+}
+
+function buildDesktopSelectedFile(selection = {}) {
+  const sourcePath = resolveDesktopSourcePathCandidate(selection);
+  if (!sourcePath) {
+    return null;
+  }
+  const fileName = String(selection?.name || sourcePath.split(/[\\/]/).pop() || "desktop-local-source").trim() || "desktop-local-source";
+  const mediaType = String(selection?.type || selection?.mediaType || "").trim();
+  const lastModified = Math.max(0, Number(selection?.lastModifiedMs || selection?.lastModified || Date.now()));
+  const size = Math.max(0, Number(selection?.size || selection?.sizeBytes || 0));
+  let nextFile;
+  try {
+    nextFile = new File([], fileName, { type: mediaType, lastModified });
+  } catch (_) {
+    nextFile = {
+      name: fileName,
+      type: mediaType,
+      lastModified,
+    };
+  }
+  if (!nextFile) {
+    return null;
+  }
+  try {
+    Object.defineProperty(nextFile, "size", { value: size, configurable: true });
+  } catch (_) {
+    void 0;
+  }
+  try {
+    Object.defineProperty(nextFile, "desktopSelectionPlaceholder", { value: true, configurable: true });
+  } catch (_) {
+    try {
+      nextFile.desktopSelectionPlaceholder = true;
+    } catch (_) {
+      void 0;
+    }
+  }
+  return decorateDesktopSourcePath(nextFile, sourcePath);
+}
+
+async function materializeDesktopSelectedFile(fileLike) {
+  const sourcePath = resolveDesktopSourcePathCandidate(fileLike);
+  if (!sourcePath || !hasDesktopFileReadBridge()) {
+    return fileLike;
+  }
+  const response = await window.desktopRuntime.readLocalMediaFile(sourcePath);
+  const filePayload = response?.file && typeof response.file === "object" ? response.file : response;
+  const bodyBase64 = String(filePayload?.bodyBase64 || "").trim();
+  if (!bodyBase64) {
+    return fileLike;
+  }
+  const bytes = decodeBase64Bytes(bodyBase64);
+  const mediaType = String(filePayload?.type || fileLike?.type || "application/octet-stream");
+  const blob = new Blob([bytes], { type: mediaType });
+  const nextFile =
+    createFileFromBlob(blob, String(filePayload?.name || fileLike?.name || "desktop-local-source"), mediaType) || fileLike;
+  if (!nextFile) {
+    return fileLike;
+  }
+  try {
+    Object.defineProperty(nextFile, "lastModified", {
+      value: Math.max(0, Number(filePayload?.lastModifiedMs || fileLike?.lastModified || Date.now())),
+      configurable: true,
+    });
+  } catch (_) {
+    void 0;
+  }
+  try {
+    Object.defineProperty(nextFile, "desktopSelectionPlaceholder", { value: false, configurable: true });
+  } catch (_) {
+    try {
+      nextFile.desktopSelectionPlaceholder = false;
+    } catch (_) {
+      void 0;
+    }
+  }
+  return decorateDesktopSourcePath(nextFile, sourcePath);
+}
+
+function restoreSavedSourceFile(saved = {}) {
+  const sourcePath = resolveDesktopSourcePathCandidate(saved);
+  const restoredBlobFile = createFileFromBlob(saved?.file_blob, saved?.file_name, saved?.media_type);
+  if (restoredBlobFile) {
+    return decorateDesktopSourcePath(restoredBlobFile, sourcePath);
+  }
+  const restoredDescriptor = buildDesktopSelectedFile({
+    name: saved?.file_name,
+    type: saved?.media_type,
+    size: saved?.file_size_bytes,
+    lastModifiedMs: saved?.file_last_modified_ms,
+    path: sourcePath,
+  });
+  return decorateDesktopSourcePath(restoredDescriptor, sourcePath);
+}
+
 function buildTaskState({ phase, taskId, taskSnapshot, uploadPercent, status }) {
   if (!taskId && !taskSnapshot && phase === "idle") return null;
   return {
@@ -756,6 +912,106 @@ function getTaskStatusCardText(restoreBannerMode, taskSnapshot, statusText = "")
     return String(statusText || "上次生成记录已失效，可重新开始或清空这次记录。");
   }
   return "";
+}
+
+function buildSubtitleDraftItems(sentences, { isFinal = false, source = "workspace" } = {}) {
+  return (Array.isArray(sentences) ? sentences : [])
+    .map((item, index) => {
+      if (!item || typeof item !== "object") return null;
+      const textEn = String(item.text_en || item.text || "").trim();
+      const textZh = String(item.text_zh || "").trim();
+      if (!textEn && !textZh) return null;
+      return {
+        id: String(item.id || item.sentence_id || item.idx || `${source}-${index}`),
+        beginMs: Math.max(0, Number(item.begin_ms || item.begin_time || 0)),
+        endMs: Math.max(0, Number(item.end_ms || item.end_time || 0)),
+        textEn,
+        textZh,
+        isFinal: Boolean(isFinal),
+        source,
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildSubtitleDraftSnapshotFromWorkspace(workspace) {
+  if (!workspace || typeof workspace !== "object") return null;
+  const latestSnapshot = workspace.latest_subtitle_snapshot && typeof workspace.latest_subtitle_snapshot === "object" ? workspace.latest_subtitle_snapshot : null;
+  if (!latestSnapshot) return null;
+  const items = buildSubtitleDraftItems(latestSnapshot.items, {
+    isFinal: Boolean(latestSnapshot.is_final),
+    source: String(latestSnapshot.kind || "workspace"),
+  });
+  const previewText = String(latestSnapshot.preview_text || workspace?.current?.current_text || "").trim();
+  return {
+    workspaceId: String(workspace.workspace_id || ""),
+    title: latestSnapshot.is_final ? "最终字幕" : "生成中的字幕草稿",
+    updatedAt: String(latestSnapshot.updated_at || workspace.updated_at || ""),
+    isFinal: Boolean(latestSnapshot.is_final),
+    previewText,
+    items:
+      items.length > 0
+        ? items
+        : previewText
+          ? [
+              {
+                id: `${String(workspace.workspace_id || "workspace")}-preview`,
+                beginMs: 0,
+                endMs: 0,
+                textEn: previewText,
+                textZh: "",
+                isFinal: Boolean(latestSnapshot.is_final),
+                source: String(latestSnapshot.kind || "workspace"),
+              },
+            ]
+          : [],
+    logs: Array.isArray(workspace?.log_summary?.events) ? workspace.log_summary.events : [],
+  };
+}
+
+function buildSubtitleDraftSnapshotFromTask(taskSnapshot) {
+  if (!taskSnapshot || typeof taskSnapshot !== "object") return null;
+  const workspaceDraft = buildSubtitleDraftSnapshotFromWorkspace(taskSnapshot.workspace);
+  if (workspaceDraft) return workspaceDraft;
+  const lessonSentences = buildSubtitleDraftItems(taskSnapshot?.lesson?.sentences, { isFinal: true, source: "lesson" });
+  if (lessonSentences.length > 0) {
+    return {
+      workspaceId: String(taskSnapshot?.lesson?.id || taskSnapshot?.task_id || ""),
+      title: "最终字幕",
+      updatedAt: "",
+      isFinal: true,
+      previewText: lessonSentences.map((item) => item.textEn).join(" "),
+      items: lessonSentences,
+      logs: [],
+    };
+  }
+  const cacheSeedSentences = buildSubtitleDraftItems(taskSnapshot?.subtitle_cache_seed?.sentences, { isFinal: true, source: "subtitle_cache_seed" });
+  if (cacheSeedSentences.length > 0) {
+    return {
+      workspaceId: String(taskSnapshot?.task_id || ""),
+      title: "最终字幕",
+      updatedAt: "",
+      isFinal: true,
+      previewText: cacheSeedSentences.map((item) => item.textEn).join(" "),
+      items: cacheSeedSentences,
+      logs: [],
+    };
+  }
+  return null;
+}
+
+function buildSubtitleDraftSnapshotFromAsrPayload(asrPayload, { title = "生成中的字幕草稿", source = "local_asr", isFinal = false } = {}) {
+  const transcriptSentences = buildSubtitleDraftItems(asrPayload?.transcripts?.[0]?.sentences, { isFinal, source });
+  if (transcriptSentences.length === 0) return null;
+  return {
+    workspaceId: "",
+    title,
+    updatedAt: "",
+    isFinal: Boolean(isFinal),
+    previewText: transcriptSentences.map((item) => item.textEn).join(" "),
+    items: transcriptSentences,
+    logs: [],
+  };
 }
 
 function isMobileUploadViewport() {
@@ -813,6 +1069,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [serverBusyText, setServerBusyText] = useState("");
   const [desktopBundleStateMap, setDesktopBundleStateMap] = useState({});
   const [desktopBundleBusyModelKey, setDesktopBundleBusyModelKey] = useState("");
+  const [streamingSubtitleDraft, setStreamingSubtitleDraft] = useState(null);
+  const [subtitleDraftEdits, setSubtitleDraftEdits] = useState({});
   const [desktopServerStatus, setDesktopServerStatus] = useState({ reachable: true, lastCheckedAt: "", latencyMs: null });
   const [desktopHelperStatus, setDesktopHelperStatus] = useState({ healthy: false, modelReady: false, modelStatus: "" });
   const [offlineBannerMessage, setOfflineBannerMessage] = useState("");
@@ -893,6 +1151,13 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const desktopLocalTranscribing = phase === DESKTOP_LOCAL_TRANSCRIBING_PHASE;
   const desktopLinkImporting = phase === DESKTOP_LINK_IMPORTING_PHASE;
   const desktopLinkModeActive = desktopRuntimeAvailable && desktopSourceMode === DESKTOP_UPLOAD_SOURCE_MODE_LINK;
+  const desktopNativeFileSelectionActive =
+    desktopRuntimeAvailable &&
+    desktopSourceMode === DESKTOP_UPLOAD_SOURCE_MODE_FILE &&
+    mode === "fast" &&
+    selectedFastModel === FASTER_WHISPER_MODEL &&
+    selectedFastRuntimeTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL &&
+    hasDesktopFileSelectionBridge();
   const trimmedDesktopLinkInput = String(desktopLinkInput || "").trim();
   const desktopLinkModeSupported =
     desktopLinkModeActive &&
@@ -977,6 +1242,29 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       ? "recoverable"
       : taskTone;
   const taskStatusToneStyles = getUploadToneStyles(taskStatusTone);
+  const subtitleDraftSnapshot = useMemo(() => {
+    return (
+      streamingSubtitleDraft ||
+      buildSubtitleDraftSnapshotFromTask(displayTaskSnapshot) ||
+      buildSubtitleDraftSnapshotFromTask(taskSnapshot) ||
+      null
+    );
+  }, [displayTaskSnapshot, streamingSubtitleDraft, taskSnapshot]);
+  const subtitleDraftKey = `${String(subtitleDraftSnapshot?.workspaceId || "")}:${String(subtitleDraftSnapshot?.updatedAt || "")}:${subtitleDraftSnapshot?.isFinal ? "final" : "draft"}`;
+  const renderedSubtitleDraftItems = useMemo(() => {
+    return (subtitleDraftSnapshot?.items || []).map((item, index) => ({
+      ...item,
+      id: String(item.id || `draft-${index}`),
+      textEn: String(subtitleDraftEdits[String(item.id || `draft-${index}`)] ?? item.textEn ?? ""),
+      textZh: String(subtitleDraftEdits[`${String(item.id || `draft-${index}`)}:zh`] ?? item.textZh ?? ""),
+    }));
+  }, [subtitleDraftEdits, subtitleDraftSnapshot]);
+  const subtitleDraftLogEvents = Array.isArray(subtitleDraftSnapshot?.logs) ? subtitleDraftSnapshot.logs.slice(-5).reverse() : [];
+  const showWorkbenchLayout = showMediaPreview || showProgress || showTaskStatusCard || phase === "success" || phase === "error" || phase === "upload_paused";
+
+  useEffect(() => {
+    setSubtitleDraftEdits({});
+  }, [subtitleDraftKey]);
 
   function maybeShowModelFallbackToast(payload) {
     void payload;
@@ -1005,26 +1293,52 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }
 
   function attachDesktopSourcePath(fileLike, sourcePath) {
-    if (!fileLike || !sourcePath) return fileLike;
+    return decorateDesktopSourcePath(fileLike, sourcePath);
+  }
+
+  function resolveDesktopSelectedSourcePath(fileLike) {
+    const existingPath = resolveDesktopSourcePathCandidate(fileLike);
+    if (existingPath) return existingPath;
+    if (!desktopRuntimeAvailable || !fileLike) return "";
     try {
-      Object.defineProperty(fileLike, "filePath", { value: sourcePath, configurable: true });
+      return String(window.desktopRuntime?.getPathForFile?.(fileLike) || "").trim();
     } catch (_) {
-      try {
-        fileLike.filePath = sourcePath;
-      } catch (_) {
-        void 0;
-      }
+      return "";
     }
-    try {
-      Object.defineProperty(fileLike, "path", { value: sourcePath, configurable: true });
-    } catch (_) {
-      try {
-        fileLike.path = sourcePath;
-      } catch (_) {
-        void 0;
-      }
+  }
+
+  async function ensureBlobBackedSourceFile(sourceFile) {
+    if (!sourceFile || isBlobBackedSourceFile(sourceFile)) {
+      return sourceFile;
     }
-    return fileLike;
+    const materializedFile = await materializeDesktopSelectedFile(sourceFile);
+    const resolvedMaterializedFile = attachDesktopSourcePath(materializedFile, resolveDesktopSelectedSourcePath(sourceFile));
+    if (file === sourceFile && resolvedMaterializedFile && resolvedMaterializedFile !== sourceFile) {
+      setFile(resolvedMaterializedFile);
+    }
+    return resolvedMaterializedFile;
+  }
+
+  async function selectDesktopLocalSourceFile() {
+    if (!hasDesktopFileSelectionBridge()) {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+        fileInputRef.current.click();
+      }
+      return;
+    }
+    const selection = await window.desktopRuntime.selectLocalMediaFile({
+      title: "选择本地媒体",
+      buttonLabel: "选择",
+    });
+    if (selection?.canceled) {
+      return;
+    }
+    const selectedFile = buildDesktopSelectedFile(selection?.file || selection);
+    if (!selectedFile) {
+      throw new Error("当前桌面端无法读取本机文件路径，请重新选择素材。");
+    }
+    await onSelectFile(selectedFile);
   }
 
   async function loadDesktopImportedSourceFile(taskPayload = {}) {
@@ -1700,6 +2014,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setTaskSnapshot(null);
     setUploadPercent(0);
     setLocalProgressSnapshot(null);
+    setStreamingSubtitleDraft(null);
     setBindingCompleted(false);
     setLocalBusyModelKey("");
     setLocalBusyText("");
@@ -1714,6 +2029,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     const nextTaskId = overrides.taskId ?? taskId;
     const nextPhase = overrides.phase ?? phase;
     const nextMode = overrides.mode ?? mode;
+    const nextDesktopSourcePath = resolveDesktopSelectedSourcePath(nextFile);
     const restorablePhase =
       nextPhase === "local_transcribing" || nextPhase === DESKTOP_LOCAL_TRANSCRIBING_PHASE ? (nextFile ? "ready" : "idle") : nextPhase;
     const restorableStatus =
@@ -1730,9 +2046,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       phase: restorablePhase,
       task_snapshot: overrides.taskSnapshot ?? taskSnapshot,
       selected_upload_model: String(overrides.selectedUploadModel ?? selectedUploadModel ?? ""),
-      file_blob: nextFile instanceof Blob ? nextFile : null,
+      file_blob: isBlobBackedSourceFile(nextFile) ? nextFile : null,
       file_name: String(nextFile?.name || ""),
       media_type: String(nextFile?.type || ""),
+      file_size_bytes: Math.max(0, Number(nextFile?.size || 0)),
+      file_last_modified_ms: Math.max(0, Number(nextFile?.lastModified || 0)),
+      desktop_source_path: nextDesktopSourcePath,
       cover_data_url: String(overrides.coverDataUrl ?? coverDataUrl ?? ""),
       cover_width: Number(overrides.coverWidth ?? coverWidth ?? 0),
       cover_height: Number(overrides.coverHeight ?? coverHeight ?? 0),
@@ -2036,9 +2355,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       phase: "success",
       task_snapshot: data,
       selected_upload_model: String(selectedUploadModel || ""),
-      file_blob: sourceFile instanceof Blob ? sourceFile : null,
+      file_blob: isBlobBackedSourceFile(sourceFile) ? sourceFile : null,
       file_name: String(sourceFile?.name || data.lesson.source_filename || ""),
       media_type: String(sourceFile?.type || ""),
+      file_size_bytes: Math.max(0, Number(sourceFile?.size || 0)),
+      file_last_modified_ms: Math.max(0, Number(sourceFile?.lastModified || 0)),
+      desktop_source_path: resolveDesktopSelectedSourcePath(sourceFile),
       cover_data_url: String(coverDataUrl || ""),
       cover_width: Number(coverWidth || 0),
       cover_height: Number(coverHeight || 0),
@@ -2053,7 +2375,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }
 
   async function restoreSuccessSnapshot(saved) {
-    const restoredFile = createFileFromBlob(saved?.file_blob, saved?.file_name, saved?.media_type);
+    const restoredFile = restoreSavedSourceFile(saved);
     const restoredMode = String(saved?.generation_mode || "").trim().toLowerCase() === "balanced" ? "balanced" : "fast";
     const restoredModelKey = String(saved?.selected_upload_model || configuredDefaultAsrModel || "");
     setFile(restoredFile);
@@ -2094,7 +2416,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }
 
   async function restorePersistedTaskSnapshot(saved) {
-    const restoredFile = createFileFromBlob(saved?.file_blob, saved?.file_name, saved?.media_type);
+    const restoredFile = restoreSavedSourceFile(saved);
     const restoredMode = String(saved?.generation_mode || "").trim().toLowerCase() === "balanced" ? "balanced" : "fast";
     const restoredModelKey = String(saved?.selected_upload_model || configuredDefaultAsrModel || "");
     const restoredTaskId = String(saved?.task_id || saved?.task_snapshot?.task_id || "");
@@ -2215,8 +2537,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     });
   }
 
-  function persistUploadProgress(nextPercent) {
-    if (!ownerUserId || !file) return;
+  function persistUploadProgress(nextPercent, sourceFileOverride = undefined) {
+    const persistedFile = sourceFileOverride ?? file;
+    if (!ownerUserId || !persistedFile) return;
     const normalizedPercent = clampPercent(nextPercent);
     uploadPersistRef.current.latestPercent = normalizedPercent;
     const now = Date.now();
@@ -2231,7 +2554,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     const flush = () => {
       uploadPersistRef.current.lastSavedAt = Date.now();
       uploadPersistRef.current.lastSavedPercent = normalizedPercent;
-      void persistSession({ phase: "uploading", uploadPercent: normalizedPercent, status: "" });
+      void persistSession({ file: persistedFile, phase: "uploading", uploadPercent: normalizedPercent, status: "" });
     };
 
     if (shouldPersistImmediately) {
@@ -2360,6 +2683,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     clearLocalStageProgressTimer();
     localRunAbortRef.current = null;
     setLocalProgressSnapshot(null);
+    setStreamingSubtitleDraft(buildSubtitleDraftSnapshotFromTask(data));
     let mediaPersisted = false;
     let mediaPreview = null;
     const partialSuccess = String(data?.completion_kind || "full").toLowerCase() === "partial";
@@ -2367,7 +2691,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     if (String(data?.result_message || data?.message || "").trim()) {
       successMessages.push(String(data.result_message || data.message).trim());
     }
-    if (data.lesson?.id && sourceFile && data.lesson.media_storage === "client_indexeddb" && !bindingCompleted) {
+    if (data.lesson?.id && isBlobBackedSourceFile(sourceFile) && data.lesson.media_storage === "client_indexeddb" && !bindingCompleted) {
       try {
         await requestPersistentStorage();
         await saveLessonMedia(data.lesson.id, sourceFile, { coverDataUrl, coverWidth, coverHeight, aspectRatio: coverAspectRatio });
@@ -2608,6 +2932,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }, [accessToken, isActivePanel, restoreBannerMode, taskId]);
 
   async function onSelectFile(nextFile) {
+    const resolvedFile = attachDesktopSourcePath(nextFile, resolveDesktopSelectedSourcePath(nextFile));
     stopPollingSession();
     resetUploadPersistState();
     uploadAbortRef.current?.abort();
@@ -2619,7 +2944,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     if (ownerUserId) {
       await clearUploadPanelSuccessSnapshot(ownerUserId);
     }
-    setFile(nextFile);
+    setFile(resolvedFile);
     setTaskId("");
     setLoading(false);
     setStatus("");
@@ -2637,7 +2962,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setLocalBusyModelKey("");
     setLocalBusyText("");
     successStateOriginRef.current = "none";
-    if (!nextFile) {
+    if (!resolvedFile) {
       setPhase("idle");
       if (ownerUserId) {
         await clearActiveGenerationTask(ownerUserId);
@@ -2645,9 +2970,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       return { durationSec: null, isVideoSource: false };
     }
     setPhase("probing");
-    const nextIsVideoSource = String(nextFile.type || "").startsWith("video/");
+    const nextIsVideoSource = String(resolvedFile.type || "").startsWith("video/");
     try {
-      const [seconds, cover] = await Promise.all([readMediaDurationSeconds(nextFile, nextFile.name || ""), extractMediaCoverPreview(nextFile, nextFile.name || "")]);
+      const [seconds, cover] = await Promise.all([
+        readMediaDurationSeconds(resolvedFile, resolvedFile.name || ""),
+        extractMediaCoverPreview(resolvedFile, resolvedFile.name || ""),
+      ]);
       setDurationSec(seconds);
       setCoverDataUrl(String(cover.coverDataUrl || ""));
       setCoverWidth(Number(cover.width || 0));
@@ -2655,12 +2983,21 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       setCoverAspectRatio(Number(cover.aspectRatio || 0));
       setIsVideoSource(nextIsVideoSource);
       setPhase("ready");
-      await persistSession({ file: nextFile, phase: "ready", durationSec: seconds, coverDataUrl: cover.coverDataUrl, coverWidth: cover.width, coverHeight: cover.height, aspectRatio: cover.aspectRatio, isVideoSource: nextIsVideoSource });
+      await persistSession({
+        file: resolvedFile,
+        phase: "ready",
+        durationSec: seconds,
+        coverDataUrl: cover.coverDataUrl,
+        coverWidth: cover.width,
+        coverHeight: cover.height,
+        aspectRatio: cover.aspectRatio,
+        isVideoSource: nextIsVideoSource,
+      });
       return { durationSec: seconds, isVideoSource: nextIsVideoSource };
     } catch (_) {
       setPhase("ready");
       setIsVideoSource(nextIsVideoSource);
-      await persistSession({ file: nextFile, phase: "ready", isVideoSource: nextIsVideoSource });
+      await persistSession({ file: resolvedFile, phase: "ready", isVideoSource: nextIsVideoSource });
       return { durationSec: null, isVideoSource: nextIsVideoSource };
     }
   }
@@ -3049,7 +3386,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     return data;
   }
 
-  async function submitBrowserLocalFast() {
+  async function submitBrowserLocalFast(sourceFile = file) {
     if (!browserLocalRuntimeApi || !browserLocalRuntimeAvailable) {
       await handleTaskFailureState({
         message: browserLocalRuntimeBlockedMessage,
@@ -3070,11 +3407,20 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setTaskSnapshot(null);
     setUploadPercent(0);
     setLocalProgressSnapshot(null);
-    await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: startStatus, bindingCompleted: false });
+    setStreamingSubtitleDraft(null);
+    await persistSession({
+      file: sourceFile,
+      taskId: "",
+      phase: "local_transcribing",
+      taskSnapshot: null,
+      uploadPercent: 0,
+      status: startStatus,
+      bindingCompleted: false,
+    });
 
     try {
       const form = new FormData();
-      form.append("video_file", file);
+      form.append("video_file", sourceFile);
       form.append("model_key", FASTER_WHISPER_MODEL);
       form.append("runtime_kind", FAST_RUNTIME_TRACK_BROWSER_LOCAL);
       const { ok, data } = await uploadWithProgress(
@@ -3095,6 +3441,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         throw new Error(toErrorText(data, "本地网站 Bottle 1.0 生成失败"));
       }
       const localResult = data || {};
+      setStreamingSubtitleDraft(
+        buildSubtitleDraftSnapshotFromAsrPayload(localResult?.asr_result_json, { title: "生成中的字幕草稿", source: "browser_local_asr" }),
+      );
       const localGenerationResult =
         localResult?.local_generation_result && typeof localResult.local_generation_result === "object"
           ? localResult.local_generation_result
@@ -3107,12 +3456,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       const persistedLesson = await persistCompletedLocalLesson({
         asrModel: FASTER_WHISPER_MODEL,
         runtimeKind: FAST_RUNTIME_TRACK_BROWSER_LOCAL,
-        sourceFilename: String(file?.name || localResult?.source_filename || "browser-local-source"),
+        sourceFilename: String(sourceFile?.name || localResult?.source_filename || "browser-local-source"),
         sourceDurationMs: Math.max(1, Number(localResult?.source_duration_ms || 0) || Math.round(Number(durationSec || 0) * 1000) || 1),
         asrPayload: localResult?.asr_result_json || {},
         localGenerationResult,
       });
-      await finalizeSuccess(persistedLesson, file);
+      await finalizeSuccess(persistedLesson, sourceFile);
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : `网络错误: ${String(error)}`;
       await handleTaskFailureState({
@@ -3167,6 +3516,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     setTaskSnapshot(null);
     setUploadPercent(0);
     setLocalProgressSnapshot(null);
+    setStreamingSubtitleDraft(null);
     startLocalAsrVisualProgress(runToken, startStatus, sourceDurationSec || 0);
     await persistSession({
       file: sourceFile,
@@ -3183,6 +3533,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       const localResult = await generateDesktopLocalLesson(FASTER_WHISPER_MODEL, sourceFile, FAST_RUNTIME_TRACK_DESKTOP_LOCAL);
       if (runToken !== localRunTokenRef.current) return;
       clearLocalStageProgressTimer();
+      setStreamingSubtitleDraft(
+        buildSubtitleDraftSnapshotFromAsrPayload(localResult?.asrPayload, { title: "生成中的字幕草稿", source: "desktop_local_asr" }),
+      );
       const localSentences = localResult?.asrPayload?.transcripts?.[0]?.sentences;
       if (!Array.isArray(localSentences) || localSentences.length === 0) {
         throw new Error("当前本机 Bottle 1.0 未识别出可用字幕，请改用云端运行或更换素材。");
@@ -3212,7 +3565,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       });
       if (runToken !== localRunTokenRef.current) return;
       setLocalProgressSnapshot(null);
-      await finalizeSuccess(persistedLesson, sourceFile);
+      const finalSourceFile = await ensureBlobBackedSourceFile(sourceFile);
+      if (runToken !== localRunTokenRef.current) return;
+      await finalizeSuccess(persistedLesson, finalSourceFile);
     } catch (error) {
       clearLocalStageProgressTimer();
       setLocalProgressSnapshot(null);
@@ -3229,7 +3584,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
   }
 
-  async function submitBalanced(pollToken) {
+  async function submitBalanced(pollToken, sourceFile = file) {
     if (!localAsrSupport.supported) {
       const message = sanitizeUserFacingText(localAsrSupport.reason || "当前浏览器暂不支持这个模型");
       await handleTaskFailureState({
@@ -3286,18 +3641,27 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     localRunAbortRef.current = null;
     clearLocalStageProgressTimer();
     setLocalProgressSnapshot(null);
+    setStreamingSubtitleDraft(null);
     setPhase("local_transcribing");
     setLoading(true);
     setStatus("正在识别字幕");
-    await persistSession({ taskId: "", phase: "local_transcribing", taskSnapshot: null, uploadPercent: 0, status: "正在识别字幕", bindingCompleted: false });
+    await persistSession({
+      file: sourceFile,
+      taskId: "",
+      phase: "local_transcribing",
+      taskSnapshot: null,
+      uploadPercent: 0,
+      status: "正在识别字幕",
+      bindingCompleted: false,
+    });
     const totalStart = nowMs();
     try {
-      const isVideoFile = String(file?.type || "").startsWith("video/");
+      const isVideoFile = String(sourceFile?.type || "").startsWith("video/");
       if (isVideoFile) {
         const extractingStatus = "正在从视频提取音轨";
         console.debug("[DEBUG] upload.local_asr.stage", {
           stage: "convert_audio",
-          fileName: String(file?.name || ""),
+          fileName: String(sourceFile?.name || ""),
           model: selectedBalancedModel,
         });
         setStatus(extractingStatus);
@@ -3308,7 +3672,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       }
       const prepareAbortController = new AbortController();
       localRunAbortRef.current = prepareAbortController;
-      const preprocessResult = await prepareAudioDataForLocalAsr(file, accessToken, {
+      const preprocessResult = await prepareAudioDataForLocalAsr(sourceFile, accessToken, {
         preferServerExtract: isVideoFile,
         signal: prepareAbortController.signal,
       });
@@ -3332,7 +3696,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         throw new Error("音频解析结果为空，无法继续生成");
       }
       logUploadLocalAsrDebug("preprocess.done", {
-        file_name: String(file?.name || ""),
+        file_name: String(sourceFile?.name || ""),
         model: selectedBalancedModel,
         duration_sec: preprocessDurationSec,
         warning: Boolean(buildLocalAsrLongAudioWarning(preprocessDurationSec, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS)),
@@ -3341,7 +3705,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       const localAsrStatus = "正在识别字幕";
       console.debug("[DEBUG] upload.local_asr.stage", {
         stage: "asr_transcribe",
-        fileName: String(file?.name || ""),
+        fileName: String(sourceFile?.name || ""),
         model: selectedBalancedModel,
         sampleCount: audioData.length,
       });
@@ -3374,6 +3738,25 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             segment_done: completedSegments,
             segment_total: totalSegments,
           });
+          if (Array.isArray(event?.draftSubtitles) && event.draftSubtitles.length > 0) {
+            setStreamingSubtitleDraft({
+              workspaceId: "",
+              title: "生成中的字幕草稿",
+              updatedAt: "",
+              isFinal: false,
+              previewText: event.draftSubtitles.map((item) => String(item?.text || "")).join(" "),
+              items: buildSubtitleDraftItems(
+                event.draftSubtitles.map((item) => ({
+                  id: item?.id,
+                  begin_ms: item?.begin_ms,
+                  end_ms: item?.end_ms,
+                  text: item?.text,
+                })),
+                { isFinal: false, source: "browser_local_asr" },
+              ),
+              logs: [],
+            });
+          }
         },
       });
       if (runToken !== localRunTokenRef.current) return;
@@ -3384,10 +3767,13 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         throw new Error("当前模型未识别出可用字幕，请换一个模型或更换素材");
       }
       const sentenceCount = localResult.asr_payload.transcripts[0].sentences.length;
+      setStreamingSubtitleDraft(
+        buildSubtitleDraftSnapshotFromAsrPayload(localResult?.asr_payload, { title: "生成中的字幕草稿", source: "browser_local_asr" }),
+      );
       const parallelSegmentCount = Math.max(0, Number(localResult?.segmentCount || localResult?.raw_result?.segment_count || 0));
       const postprocessMs = Math.max(0, Math.round(nowMs() - postprocessStart));
       logUploadLocalAsrDebug("run.done", {
-        file_name: String(file?.name || ""),
+        file_name: String(sourceFile?.name || ""),
         model: selectedBalancedModel,
         duration_sec: preprocessDurationSec,
         audio_extract_ms: preprocessMetrics.audio_extract_ms,
@@ -3424,7 +3810,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
           signal: createTaskAbortController.signal,
           body: JSON.stringify({
             asr_model: selectedBalancedModel,
-            source_filename: String(file?.name || "local-source"),
+            source_filename: String(sourceFile?.name || "local-source"),
             source_duration_ms: Math.max(1, Math.round(Number(durationSec || 0) * 1000)),
             asr_payload: localResult?.asr_payload || {},
           }),
@@ -3468,7 +3854,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         desktopLocalFailureCountRef.current += 1;
         if (desktopLocalFailureCountRef.current < 2) {
           toast.message("本地识别失败，正在重试一次");
-          await submitDesktopLocalFast(pollToken, runToken);
+          await submitDesktopLocalFast(pollToken, runToken, sourceFile, sourceDurationSec);
           return;
         }
         desktopLocalFailureCountRef.current = 0;
@@ -3479,7 +3865,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       }
       desktopLocalFailureCountRef.current = 0;
       logUploadLocalAsrDebug("run.failed", {
-        file_name: String(file?.name || ""),
+        file_name: String(sourceFile?.name || ""),
         model: selectedBalancedModel,
         total_local_asr_ms: Math.max(0, Math.round(nowMs() - totalStart)),
         message: error instanceof Error && error.message ? error.message : String(error),
@@ -3537,8 +3923,27 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     desktopLocalFailureCountRef.current = 0;
     let shouldUseDesktopLocalFast = fasterWhisperDesktopLocalSelected;
     let shouldUseBrowserLocalFast = fasterWhisperBrowserLocalSelected;
+    const ensureUploadableSourceFile = async () => {
+      const preparedFile = await ensureBlobBackedSourceFile(file);
+      if (isBlobBackedSourceFile(preparedFile)) {
+        return preparedFile;
+      }
+      throw new Error("当前素材仅保留了桌面本机路径。如需云端或网页本地运行，请重新选择一次文件。");
+    };
     if (mode === "balanced") {
-      await submitBalanced(pollToken);
+      try {
+        const preparedFile = await ensureUploadableSourceFile();
+        await submitBalanced(pollToken, preparedFile);
+      } catch (error) {
+        await handleTaskFailureState({
+          message: error instanceof Error && error.message ? error.message : String(error),
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: 0,
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+        });
+      }
       return;
     }
     if (selectedFastModel === FASTER_WHISPER_MODEL && hasDesktopRuntimeBridge()) {
@@ -3568,7 +3973,19 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       return;
     }
     if (shouldUseBrowserLocalFast) {
-      await submitBrowserLocalFast();
+      try {
+        const preparedFile = await ensureUploadableSourceFile();
+        await submitBrowserLocalFast(preparedFile);
+      } catch (error) {
+        await handleTaskFailureState({
+          message: error instanceof Error && error.message ? error.message : String(error),
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: 0,
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+        });
+      }
       return;
     }
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
@@ -3582,11 +3999,20 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       });
       return;
     }
-    setPhase("uploading");
-    await persistSession({ taskId: "", phase: "uploading", taskSnapshot: null, uploadPercent: 0, status: "", bindingCompleted: false });
     try {
+      const uploadSourceFile = await ensureUploadableSourceFile();
+      setPhase("uploading");
+      await persistSession({
+        file: uploadSourceFile,
+        taskId: "",
+        phase: "uploading",
+        taskSnapshot: null,
+        uploadPercent: 0,
+        status: "",
+        bindingCompleted: false,
+      });
       const form = new FormData();
-      form.append("video_file", file);
+      form.append("video_file", uploadSourceFile);
       form.append("asr_model", selectedAsrModel);
       form.append("semantic_split_enabled", "false");
       const abortController = new AbortController();
@@ -3601,7 +4027,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             const nextPercent = clampPercent(percent);
             uploadPersistRef.current.latestPercent = nextPercent;
             setUploadPercent(nextPercent);
-            persistUploadProgress(nextPercent);
+            persistUploadProgress(nextPercent, uploadSourceFile);
           },
         },
         accessToken,
@@ -4270,6 +4696,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                   variant="outline"
                   className="h-9 px-4"
                   onClick={() => {
+                    if (desktopNativeFileSelectionActive) {
+                      void selectDesktopLocalSourceFile().catch((error) => {
+                        toast.error(error instanceof Error && error.message ? error.message : "选择本地文件失败");
+                      });
+                      return;
+                    }
                     if (fileInputRef.current) {
                       fileInputRef.current.value = "";
                       fileInputRef.current.click();

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, Notification, dialog, ipcMain, shell } from "electron";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
@@ -19,6 +19,31 @@ const currentDir = path.dirname(currentFile);
 const iconPath = path.join(path.resolve(currentDir, ".."), "build", "icon.ico");
 const LOCAL_HELPER_ALLOWED_PREFIXES = ["/api/local-asr-assets", "/api/desktop-asr", "/api/desktop-asr/url-import", "/health", "/health/ready"];
 const DESKTOP_MODEL_UPDATE_KEY = "faster-whisper-medium";
+const DESKTOP_APP_ID = "com.bottle.desktop";
+const DESKTOP_MEDIA_FILE_FILTERS = [
+  {
+    name: "Media Files",
+    extensions: ["mp4", "mov", "mkv", "avi", "webm", "mp3", "wav", "m4a", "flac", "aac", "ogg"],
+  },
+  {
+    name: "All Files",
+    extensions: ["*"],
+  },
+];
+const DESKTOP_MEDIA_MIME_TYPES = {
+  ".aac": "audio/aac",
+  ".avi": "video/x-msvideo",
+  ".flac": "audio/flac",
+  ".m4a": "audio/mp4",
+  ".mkv": "video/x-matroska",
+  ".mov": "video/quicktime",
+  ".mp3": "audio/mpeg",
+  ".mp4": "video/mp4",
+  ".ogg": "audio/ogg",
+  ".wav": "audio/wav",
+  ".webm": "video/webm",
+};
+const DESKTOP_ALLOWED_MEDIA_EXTENSIONS = new Set(Object.keys(DESKTOP_MEDIA_MIME_TYPES));
 
 let mainWindow = null;
 let backendProcess = null;
@@ -36,6 +61,7 @@ let backendRestartInFlight = false;
 let backendShutdownExpected = false;
 let modelUpdateAbortController = null;
 let latestRemoteModelManifest = null;
+let lastClientUpdatePromptKey = "";
 
 let desktopModelUpdateState = {
   checking: false,
@@ -54,6 +80,23 @@ let desktopModelUpdateState = {
   lastCompletedAt: "",
   lastError: "",
   message: "",
+};
+
+let desktopClientUpdateState = {
+  checking: false,
+  available: false,
+  currentVersion: "",
+  latestVersion: "",
+  metadataUrl: "",
+  actionUrl: "",
+  checkOnLaunch: true,
+  checkedAt: "",
+  promptedAt: "",
+  lastError: "",
+  statusText: "",
+  releaseName: "",
+  releaseNotes: "",
+  publishedAt: "",
 };
 
 const MAX_BACKEND_RESTART_COUNT = 3;
@@ -103,6 +146,10 @@ let preloadDiagnostics = {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function trimText(value) {
+  return String(value ?? "").trim();
 }
 
 function serializeError(error) {
@@ -168,8 +215,44 @@ function appendDesktopDiagnostic(eventName, payload = {}) {
 }
 
 function ensureIsoString(value) {
-  const text = String(value || "").trim();
+  const text = trimText(value);
   return text || nowIso();
+}
+
+function normalizeOptionalIsoString(value, fallbackValue = "") {
+  const text = trimText(value);
+  return text || fallbackValue;
+}
+
+function safeNormalizeHttpUrl(value) {
+  const text = trimText(value);
+  if (!text) {
+    return "";
+  }
+  try {
+    const url = new URL(text);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return "";
+    }
+    url.hash = "";
+    return url.toString().replace(/\/+$/, "");
+  } catch (_) {
+    return "";
+  }
+}
+
+function pickFirstNonEmpty(...values) {
+  for (const value of values.flat()) {
+    const text = trimText(value);
+    if (text) {
+      return text;
+    }
+  }
+  return "";
+}
+
+function getDesktopClientVersion() {
+  return trimText(app.getVersion()) || "0.0.0";
 }
 
 function ensureLogFile(logPath) {
@@ -349,6 +432,348 @@ function updateDesktopModelUpdateState(nextPatch = {}, shouldBroadcast = true) {
   return desktopModelUpdateState;
 }
 
+function getDesktopClientUpdateConfig() {
+  const configured = desktopRuntimeConfig?.clientUpdate && typeof desktopRuntimeConfig.clientUpdate === "object" ? desktopRuntimeConfig.clientUpdate : {};
+  const legacyCloudConfig = desktopRuntimeConfig?.cloud && typeof desktopRuntimeConfig.cloud === "object" ? desktopRuntimeConfig.cloud : {};
+  return {
+    metadataUrl: safeNormalizeHttpUrl(configured.metadataUrl || legacyCloudConfig.clientUpdateManifestUrl),
+    entryUrl: safeNormalizeHttpUrl(
+      configured.entryUrl || legacyCloudConfig.clientUpdateDownloadUrl || legacyCloudConfig.appBaseUrl || "",
+    ),
+    checkOnLaunch: configured.checkOnLaunch !== false,
+  };
+}
+
+function normalizeClientUpdateState(nextPatch = {}) {
+  const metadataUrl = nextPatch.metadataUrl === undefined ? desktopClientUpdateState.metadataUrl : nextPatch.metadataUrl;
+  const actionUrl = nextPatch.actionUrl === undefined ? desktopClientUpdateState.actionUrl : nextPatch.actionUrl;
+  return {
+    ...desktopClientUpdateState,
+    ...nextPatch,
+    checking: Boolean(nextPatch.checking ?? desktopClientUpdateState.checking),
+    available: Boolean(nextPatch.available ?? desktopClientUpdateState.available),
+    currentVersion: trimText(nextPatch.currentVersion || desktopClientUpdateState.currentVersion || getDesktopClientVersion()),
+    latestVersion: trimText(nextPatch.latestVersion ?? desktopClientUpdateState.latestVersion),
+    metadataUrl: safeNormalizeHttpUrl(metadataUrl),
+    actionUrl: safeNormalizeHttpUrl(actionUrl),
+    checkOnLaunch: nextPatch.checkOnLaunch == null ? Boolean(desktopClientUpdateState.checkOnLaunch) : Boolean(nextPatch.checkOnLaunch),
+    checkedAt:
+      nextPatch.checkedAt === ""
+        ? ""
+        : normalizeOptionalIsoString(nextPatch.checkedAt, desktopClientUpdateState.checkedAt),
+    promptedAt:
+      nextPatch.promptedAt === ""
+        ? ""
+        : normalizeOptionalIsoString(nextPatch.promptedAt, desktopClientUpdateState.promptedAt),
+    lastError: trimText(nextPatch.lastError ?? desktopClientUpdateState.lastError),
+    statusText: trimText(nextPatch.statusText ?? desktopClientUpdateState.statusText),
+    releaseName: trimText(nextPatch.releaseName ?? desktopClientUpdateState.releaseName),
+    releaseNotes: trimText(nextPatch.releaseNotes ?? desktopClientUpdateState.releaseNotes),
+    publishedAt: trimText(nextPatch.publishedAt ?? desktopClientUpdateState.publishedAt),
+  };
+}
+
+function broadcastClientUpdateState() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("desktop:client-update-status-changed", desktopClientUpdateState);
+  }
+}
+
+function updateDesktopClientUpdateState(nextPatch = {}, shouldBroadcast = true) {
+  desktopClientUpdateState = normalizeClientUpdateState(nextPatch);
+  if (shouldBroadcast) {
+    broadcastClientUpdateState();
+  }
+  return desktopClientUpdateState;
+}
+
+function parseDesktopClientVersion(version) {
+  const normalizedVersion = trimText(version).replace(/^v/i, "");
+  if (!normalizedVersion) {
+    return {
+      core: [0],
+      prerelease: [],
+    };
+  }
+  const [corePart, prereleasePart = ""] = normalizedVersion.split("-", 2);
+  const core = corePart
+    .split(".")
+    .map((segment) => {
+      const parsed = Number.parseInt(segment, 10);
+      return Number.isFinite(parsed) ? parsed : 0;
+    })
+    .filter((segment, index, segments) => Number.isFinite(segment) || index < segments.length);
+  const prerelease = prereleasePart
+    ? prereleasePart
+        .split(".")
+        .filter(Boolean)
+        .map((segment) => {
+          if (/^\d+$/.test(segment)) {
+            return { numeric: true, value: Number.parseInt(segment, 10) };
+          }
+          return { numeric: false, value: segment.toLowerCase() };
+        })
+    : [];
+  return {
+    core: core.length > 0 ? core : [0],
+    prerelease,
+  };
+}
+
+function compareVersionIdentifiers(left, right) {
+  if (left.numeric && right.numeric) {
+    return left.value - right.value;
+  }
+  if (left.numeric && !right.numeric) {
+    return -1;
+  }
+  if (!left.numeric && right.numeric) {
+    return 1;
+  }
+  if (left.value === right.value) {
+    return 0;
+  }
+  return left.value > right.value ? 1 : -1;
+}
+
+function compareDesktopClientVersions(leftVersion, rightVersion) {
+  const left = parseDesktopClientVersion(leftVersion);
+  const right = parseDesktopClientVersion(rightVersion);
+  const coreLength = Math.max(left.core.length, right.core.length);
+  for (let index = 0; index < coreLength; index += 1) {
+    const leftValue = left.core[index] ?? 0;
+    const rightValue = right.core[index] ?? 0;
+    if (leftValue !== rightValue) {
+      return leftValue - rightValue;
+    }
+  }
+  if (left.prerelease.length === 0 && right.prerelease.length === 0) {
+    return 0;
+  }
+  if (left.prerelease.length === 0) {
+    return 1;
+  }
+  if (right.prerelease.length === 0) {
+    return -1;
+  }
+  const prereleaseLength = Math.max(left.prerelease.length, right.prerelease.length);
+  for (let index = 0; index < prereleaseLength; index += 1) {
+    const leftIdentifier = left.prerelease[index];
+    const rightIdentifier = right.prerelease[index];
+    if (!leftIdentifier) {
+      return -1;
+    }
+    if (!rightIdentifier) {
+      return 1;
+    }
+    const comparison = compareVersionIdentifiers(leftIdentifier, rightIdentifier);
+    if (comparison !== 0) {
+      return comparison;
+    }
+  }
+  return 0;
+}
+
+async function fetchDesktopClientReleaseMetadata(metadataUrl) {
+  const response = await fetch(metadataUrl, {
+    cache: "no-store",
+    headers: {
+      accept: "application/json",
+      "x-bottle-client-version": getDesktopClientVersion(),
+    },
+  });
+  const rawText = await response.text();
+  let payload = {};
+  if (rawText) {
+    try {
+      payload = JSON.parse(rawText);
+    } catch (_) {
+      throw new Error("Client update metadata is not valid JSON.");
+    }
+  }
+  if (!response.ok) {
+    throw new Error(pickFirstNonEmpty(payload?.detail, payload?.message, response.statusText) || `Client update metadata request failed with ${response.status}`);
+  }
+  return {
+    payload,
+    resolvedUrl: trimText(response.url) || metadataUrl,
+  };
+}
+
+function extractDesktopClientRelease(payload = {}, fallbackConfig = {}) {
+  const safePayload = payload && typeof payload === "object" ? payload : {};
+  const nestedRelease = safePayload.release && typeof safePayload.release === "object" ? safePayload.release : {};
+  const assets = Array.isArray(safePayload.assets) ? safePayload.assets : Array.isArray(nestedRelease.assets) ? nestedRelease.assets : [];
+  const firstAsset = assets.find((item) => item && typeof item === "object") || {};
+  const latestVersion = pickFirstNonEmpty(
+    safePayload.latestVersion,
+    safePayload.version,
+    safePayload.tag_name,
+    nestedRelease.latestVersion,
+    nestedRelease.version,
+    nestedRelease.tag_name,
+  );
+  if (!latestVersion) {
+    throw new Error("Client update metadata is missing version.");
+  }
+  return {
+    latestVersion: latestVersion.replace(/^v/i, ""),
+    actionUrl: safeNormalizeHttpUrl(
+      pickFirstNonEmpty(
+        safePayload.entryUrl,
+        safePayload.downloadUrl,
+        safePayload.html_url,
+        safePayload.releaseUrl,
+        nestedRelease.entryUrl,
+        nestedRelease.downloadUrl,
+        nestedRelease.html_url,
+        firstAsset.browser_download_url,
+        fallbackConfig.entryUrl,
+      ),
+    ),
+    releaseName: pickFirstNonEmpty(safePayload.name, safePayload.title, nestedRelease.name, nestedRelease.title),
+    releaseNotes: pickFirstNonEmpty(
+      safePayload.releaseNotes,
+      safePayload.notes,
+      safePayload.body,
+      nestedRelease.releaseNotes,
+      nestedRelease.notes,
+      nestedRelease.body,
+    ),
+    publishedAt: pickFirstNonEmpty(safePayload.publishedAt, safePayload.published_at, nestedRelease.publishedAt, nestedRelease.published_at),
+  };
+}
+
+async function openDesktopClientUpdateLink(preferredUrl = "") {
+  const config = getDesktopClientUpdateConfig();
+  const targetUrl = safeNormalizeHttpUrl(preferredUrl || desktopClientUpdateState.actionUrl || config.entryUrl);
+  if (!targetUrl) {
+    return false;
+  }
+  await shell.openExternal(targetUrl);
+  return true;
+}
+
+async function promptDesktopClientUpdate(clientUpdateState, reason = "manual") {
+  if (!clientUpdateState.available || !trimText(clientUpdateState.latestVersion)) {
+    return false;
+  }
+  const promptKey = `${trimText(clientUpdateState.latestVersion)}|${trimText(clientUpdateState.actionUrl)}`;
+  if (promptKey && lastClientUpdatePromptKey === promptKey && reason === "startup") {
+    return false;
+  }
+  lastClientUpdatePromptKey = promptKey;
+  const promptedState = updateDesktopClientUpdateState(
+    {
+      promptedAt: nowIso(),
+      statusText: `发现新的 Bottle 客户端版本 ${clientUpdateState.latestVersion}`,
+    },
+    true,
+  );
+  const notificationBody = [
+    `当前版本 ${promptedState.currentVersion}`,
+    `最新版本 ${promptedState.latestVersion}`,
+    promptedState.actionUrl ? "点击通知打开更新入口" : "",
+  ]
+    .filter(Boolean)
+    .join("，");
+  const notificationSupported = typeof Notification.isSupported === "function" ? Notification.isSupported() : true;
+  if (!notificationSupported) {
+    return false;
+  }
+  const notificationOptions = {
+    title: "Bottle 客户端有新版本",
+    body: notificationBody,
+  };
+  if (fs.existsSync(iconPath)) {
+    notificationOptions.icon = iconPath;
+  }
+  const notification = new Notification(notificationOptions);
+  notification.on("click", () => {
+    void openDesktopClientUpdateLink(promptedState.actionUrl);
+  });
+  notification.show();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.flashFrame(true);
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.flashFrame(false);
+      }
+    }, 5000);
+  }
+  return true;
+}
+
+async function checkDesktopClientUpdate({ reason = "manual", notify = true } = {}) {
+  const normalizedReason = trimText(reason) || "manual";
+  const clientUpdateConfig = getDesktopClientUpdateConfig();
+  updateDesktopClientUpdateState({
+    checking: true,
+    available: false,
+    currentVersion: getDesktopClientVersion(),
+    metadataUrl: clientUpdateConfig.metadataUrl,
+    actionUrl: clientUpdateConfig.entryUrl,
+    checkOnLaunch: clientUpdateConfig.checkOnLaunch,
+    lastError: "",
+    statusText: "正在检查客户端新版本",
+  });
+  if (!clientUpdateConfig.metadataUrl) {
+    return updateDesktopClientUpdateState({
+      checking: false,
+      available: false,
+      checkedAt: nowIso(),
+      lastError: "客户端更新元数据地址未配置",
+      statusText: "客户端更新元数据地址未配置",
+      latestVersion: "",
+      releaseName: "",
+      releaseNotes: "",
+      publishedAt: "",
+    });
+  }
+  try {
+    const metadata = await fetchDesktopClientReleaseMetadata(clientUpdateConfig.metadataUrl);
+    const release = extractDesktopClientRelease(metadata.payload, { entryUrl: clientUpdateConfig.entryUrl });
+    const currentVersion = getDesktopClientVersion();
+    const available = compareDesktopClientVersions(release.latestVersion, currentVersion) > 0;
+    const nextState = updateDesktopClientUpdateState({
+      checking: false,
+      available,
+      currentVersion,
+      latestVersion: release.latestVersion,
+      metadataUrl: metadata.resolvedUrl,
+      actionUrl: release.actionUrl || clientUpdateConfig.entryUrl,
+      checkOnLaunch: clientUpdateConfig.checkOnLaunch,
+      checkedAt: nowIso(),
+      lastError: "",
+      statusText: available ? "发现新的 Bottle 客户端版本" : "当前客户端已是最新版本",
+      releaseName: release.releaseName,
+      releaseNotes: release.releaseNotes,
+      publishedAt: release.publishedAt,
+    });
+    if (available && notify) {
+      await promptDesktopClientUpdate(nextState, normalizedReason);
+    }
+    return nextState;
+  } catch (error) {
+    appendBackendLog(`[desktop] client update check failed: ${error instanceof Error ? error.message : String(error)}`);
+    return updateDesktopClientUpdateState({
+      checking: false,
+      available: false,
+      currentVersion: getDesktopClientVersion(),
+      metadataUrl: clientUpdateConfig.metadataUrl,
+      actionUrl: clientUpdateConfig.entryUrl,
+      checkOnLaunch: clientUpdateConfig.checkOnLaunch,
+      checkedAt: nowIso(),
+      latestVersion: "",
+      releaseName: "",
+      releaseNotes: "",
+      publishedAt: "",
+      lastError: error instanceof Error ? error.message : String(error),
+      statusText: "检查客户端版本失败",
+    });
+  }
+}
+
 function buildCloudApiUrl(relativePath) {
   const apiBaseUrl = String(desktopRuntimeConfig?.cloud?.apiBaseUrl || "").trim();
   if (!apiBaseUrl) {
@@ -509,6 +934,10 @@ function cancelDesktopModelUpdate() {
   });
 }
 
+if (process.platform === "win32") {
+  app.setAppUserModelId(DESKTOP_APP_ID);
+}
+
 function getDesktopClientRoot() {
   return app.isPackaged ? app.getAppPath() : path.resolve(currentDir, "..");
 }
@@ -661,6 +1090,17 @@ function loadDesktopRuntimeConfigForApp() {
     defaultConfigPath: getPackagedRuntimeDefaultsPath(),
   });
   validateDesktopRuntimeConfig(desktopRuntimeConfig, desktopConfigPath);
+  const clientUpdateConfig = getDesktopClientUpdateConfig();
+  updateDesktopClientUpdateState(
+    {
+      currentVersion: getDesktopClientVersion(),
+      metadataUrl: clientUpdateConfig.metadataUrl,
+      actionUrl: clientUpdateConfig.entryUrl,
+      checkOnLaunch: clientUpdateConfig.checkOnLaunch,
+      statusText: clientUpdateConfig.checkOnLaunch ? "" : "客户端启动时版本检查已关闭",
+    },
+    false,
+  );
 }
 
 async function startBackend() {
@@ -860,10 +1300,12 @@ function buildRuntimeInfo() {
     helperBaseUrl: backendPort ? `http://127.0.0.1:${backendPort}` : "",
     helperStatus: lastHelperHealth,
     preload: preloadDiagnostics,
+    clientUpdate: desktopClientUpdateState,
     modelUpdate: desktopModelUpdateState,
     serverStatus: lastCloudServerStatus,
     cloud: desktopRuntimeConfig?.cloud || {},
     local: desktopRuntimeConfig?.local || {},
+    clientUpdateConfig: desktopRuntimeConfig?.clientUpdate || {},
     install: packagedRuntime
       ? {
           bottle1InstallChoice: packagedRuntime.bottle1InstallChoice,
@@ -1013,6 +1455,74 @@ function normalizeLocalHelperPath(requestPath) {
   return candidate;
 }
 
+function inferDesktopMediaMimeType(filePath) {
+  return DESKTOP_MEDIA_MIME_TYPES[String(path.extname(String(filePath || "")).toLowerCase())] || "application/octet-stream";
+}
+
+function inspectDesktopMediaFile(filePath) {
+  const normalizedPath = trimText(filePath);
+  if (!normalizedPath) {
+    throw new Error("Desktop media file path is required.");
+  }
+  const resolvedPath = path.resolve(normalizedPath);
+  const extension = String(path.extname(resolvedPath || "")).toLowerCase();
+  if (!DESKTOP_ALLOWED_MEDIA_EXTENSIONS.has(extension)) {
+    throw new Error(`Unsupported desktop media file type: ${extension || "unknown"}`);
+  }
+  const stat = fs.statSync(resolvedPath);
+  if (!stat.isFile()) {
+    throw new Error(`Desktop media path is not a file: ${resolvedPath}`);
+  }
+  return {
+    resolvedPath,
+    stat,
+  };
+}
+
+function buildDesktopMediaFilePayload(filePath, stat) {
+  const resolvedPath = path.resolve(String(filePath || ""));
+  return {
+    name: path.basename(resolvedPath),
+    path: resolvedPath,
+    filePath: resolvedPath,
+    size: Math.max(0, Number(stat?.size || 0)),
+    lastModifiedMs: Math.max(0, Number(stat?.mtimeMs || Date.now())),
+    type: inferDesktopMediaMimeType(resolvedPath),
+  };
+}
+
+async function selectLocalMediaFile(options = {}) {
+  const dialogResult = await dialog.showOpenDialog(mainWindow ?? undefined, {
+    title: trimText(options?.title) || "选择本地媒体",
+    buttonLabel: trimText(options?.buttonLabel) || "选择",
+    properties: ["openFile"],
+    filters: DESKTOP_MEDIA_FILE_FILTERS,
+  });
+  if (dialogResult.canceled || !Array.isArray(dialogResult.filePaths) || !dialogResult.filePaths[0]) {
+    return {
+      canceled: true,
+      file: null,
+    };
+  }
+  const { resolvedPath, stat } = inspectDesktopMediaFile(dialogResult.filePaths[0]);
+  return {
+    canceled: false,
+    file: buildDesktopMediaFilePayload(resolvedPath, stat),
+  };
+}
+
+async function readLocalMediaFile(sourcePath = "") {
+  const { resolvedPath, stat } = inspectDesktopMediaFile(sourcePath);
+  const bytes = await fs.promises.readFile(resolvedPath);
+  return {
+    ok: true,
+    file: {
+      ...buildDesktopMediaFilePayload(resolvedPath, stat),
+      bodyBase64: bytes.toString("base64"),
+    },
+  };
+}
+
 async function requestLocalHelper(request = {}) {
   if (!backendPort) {
     throw new Error("The local helper is not running.");
@@ -1132,6 +1642,9 @@ async function bootstrapDesktopApp() {
     startHealthPolling();
     await createMainWindow();
     startServerReachabilityPolling();
+    if (desktopClientUpdateState.checkOnLaunch) {
+      void checkDesktopClientUpdate({ reason: "startup", notify: true });
+    }
     void checkDesktopModelUpdate(DESKTOP_MODEL_UPDATE_KEY);
   } catch (error) {
     const detail = [
@@ -1165,6 +1678,12 @@ ipcMain.handle("desktop:get-server-status", () => lastCloudServerStatus);
 
 ipcMain.handle("desktop:probe-server-now", async () => probeCloudServerAndNotify());
 
+ipcMain.handle("desktop:get-client-update-status", () => desktopClientUpdateState);
+
+ipcMain.handle("desktop:check-client-update", async () => checkDesktopClientUpdate({ reason: "manual", notify: true }));
+
+ipcMain.handle("desktop:open-client-update-link", async (_event, preferredUrl = "") => openDesktopClientUpdateLink(preferredUrl));
+
 ipcMain.handle("desktop:get-model-update-status", () => desktopModelUpdateState);
 
 ipcMain.handle("desktop:check-model-update", async (_event, modelKey = DESKTOP_MODEL_UPDATE_KEY) => checkDesktopModelUpdate(modelKey));
@@ -1181,6 +1700,10 @@ ipcMain.handle("desktop:open-logs-directory", async () => {
   await shell.openPath(folder);
   return true;
 });
+
+ipcMain.handle("desktop:select-local-media-file", async (_event, options = {}) => selectLocalMediaFile(options));
+
+ipcMain.handle("desktop:read-local-media-file", async (_event, sourcePath = "") => readLocalMediaFile(sourcePath));
 
 ipcMain.handle("desktop:request-local-helper", async (_event, request) => requestLocalHelper(request));
 

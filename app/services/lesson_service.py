@@ -52,6 +52,7 @@ from app.services.lesson_builder import (
     tokenize_learning_sentence,
     tokenize_sentence,
 )
+from app.services.lesson_task_manager import persist_lesson_workspace_summary
 from app.services.media import MediaError, extract_audio_for_asr, probe_audio_duration_ms, resolve_media_command, run_cmd, save_upload_file_stream, validate_suffix
 from app.services.translation_qwen_mt import (
     MT_MODEL,
@@ -1281,6 +1282,19 @@ class LessonService:
             lesson.subtitle_cache_seed = subtitle_cache_seed
             lesson.task_result_meta = dict(task_result_meta)
             lesson.translation_debug = dict(translation_debug)
+            lesson.workspace_summary = persist_lesson_workspace_summary(
+                owner_user_id=owner_id,
+                lesson_id=int(lesson.id),
+                source_filename=source_filename,
+                source_duration_ms=reserved_duration_ms,
+                input_mode="local_asr_complete",
+                runtime_kind=normalized_runtime_kind,
+                task_id="",
+                status="succeeded",
+                current_text=str(task_result_meta.get("result_message") or "课程已生成完成"),
+                subtitle_cache_seed=subtitle_cache_seed,
+                translation_debug=translation_debug,
+            )
             return lesson
         except Exception:
             db.rollback()

@@ -7,6 +7,7 @@ const currentFile = fileURLToPath(import.meta.url);
 const scriptsDir = path.dirname(currentFile);
 const desktopRoot = path.resolve(scriptsDir, "..");
 const outputPath = path.join(desktopRoot, ".cache", "runtime-defaults.json");
+const DEFAULT_CLIENT_UPDATE_MANIFEST_PATH = "/desktop-client-version.json";
 
 function trimText(value) {
   return String(value ?? "").trim();
@@ -18,7 +19,7 @@ function normalizeHttpUrl(value, label) {
   let url;
   try {
     url = new URL(text);
-  } catch (error) {
+  } catch (_) {
     throw new Error(`${label} is not a valid URL: ${text}`);
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
@@ -35,10 +36,46 @@ function inferAppBaseUrl(apiBaseUrl) {
   return parsed.origin;
 }
 
+function deriveClientUpdateManifestUrl(appBaseUrl) {
+  const explicitValue = trimText(process.env.DESKTOP_CLIENT_UPDATE_MANIFEST_URL || process.env.DESKTOP_CLIENT_UPDATE_METADATA_URL);
+  if (explicitValue) {
+    return normalizeHttpUrl(explicitValue, "DESKTOP_CLIENT_UPDATE_MANIFEST_URL");
+  }
+  return new URL(
+    DEFAULT_CLIENT_UPDATE_MANIFEST_PATH,
+    appBaseUrl.endsWith("/") ? appBaseUrl : `${appBaseUrl}/`,
+  ).toString();
+}
+
+function deriveClientUpdateDownloadUrl(appBaseUrl) {
+  const explicitValue = trimText(process.env.DESKTOP_CLIENT_UPDATE_DOWNLOAD_URL || process.env.DESKTOP_CLIENT_UPDATE_ENTRY_URL);
+  return normalizeHttpUrl(explicitValue || appBaseUrl, "DESKTOP_CLIENT_UPDATE_DOWNLOAD_URL");
+}
+
+function normalizeBoolean(value, fallbackValue = true) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  const text = trimText(value).toLowerCase();
+  if (!text) {
+    return Boolean(fallbackValue);
+  }
+  if (["1", "true", "yes", "on"].includes(text)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(text)) {
+    return false;
+  }
+  return Boolean(fallbackValue);
+}
+
 const configuredAppBaseUrl = trimText(process.env.DESKTOP_CLOUD_APP_URL || process.env.DESKTOP_APP_URL || process.env.DESKTOP_WEB_BASE_URL);
 const configuredApiBaseUrl = trimText(process.env.DESKTOP_CLOUD_API_BASE_URL || process.env.DESKTOP_API_BASE_URL);
 const appBaseUrl = normalizeHttpUrl(configuredAppBaseUrl || inferAppBaseUrl(configuredApiBaseUrl), "DESKTOP_CLOUD_APP_URL");
 const apiBaseUrl = normalizeHttpUrl(configuredApiBaseUrl || appBaseUrl, "DESKTOP_CLOUD_API_BASE_URL");
+const clientUpdateManifestUrl = deriveClientUpdateManifestUrl(appBaseUrl);
+const clientUpdateDownloadUrl = deriveClientUpdateDownloadUrl(appBaseUrl);
+const clientUpdateCheckOnLaunch = normalizeBoolean(process.env.DESKTOP_CLIENT_UPDATE_CHECK_ON_LAUNCH, true);
 
 // The preinstalled model shipped inside the installer at resources/preinstalled-models/faster-distil-small.en.
 // This path is baked in at package time and read back at runtime by runtime-config.mjs
@@ -59,6 +96,13 @@ const payload = {
   cloud: {
     appBaseUrl,
     apiBaseUrl,
+    clientUpdateManifestUrl,
+    clientUpdateDownloadUrl,
+  },
+  clientUpdate: {
+    metadataUrl: clientUpdateManifestUrl,
+    entryUrl: clientUpdateDownloadUrl,
+    checkOnLaunch: clientUpdateCheckOnLaunch,
   },
   local: {
     preinstalledModelDir,

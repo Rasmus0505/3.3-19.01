@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 function nowIso() {
   return new Date().toISOString();
@@ -56,8 +56,20 @@ try {
     checkModelUpdate: (modelKey) => ipcRenderer.invoke("desktop:check-model-update", modelKey),
     startModelUpdate: (modelKey) => ipcRenderer.invoke("desktop:start-model-update", modelKey),
     cancelModelUpdate: () => ipcRenderer.invoke("desktop:cancel-model-update"),
+    getClientUpdateStatus: () => ipcRenderer.invoke("desktop:get-client-update-status"),
+    checkClientUpdate: () => ipcRenderer.invoke("desktop:check-client-update"),
+    openClientUpdateLink: (preferredUrl) => ipcRenderer.invoke("desktop:open-client-update-link", preferredUrl),
     openLogsDirectory: () => ipcRenderer.invoke("desktop:open-logs-directory"),
+    selectLocalMediaFile: (options) => ipcRenderer.invoke("desktop:select-local-media-file", options),
+    readLocalMediaFile: (sourcePath) => ipcRenderer.invoke("desktop:read-local-media-file", sourcePath),
     requestLocalHelper: (request) => ipcRenderer.invoke("desktop:request-local-helper", request),
+    getPathForFile: (file) => {
+      try {
+        return String(webUtils.getPathForFile(file) || "");
+      } catch (_) {
+        return "";
+      }
+    },
     onHelperRestarting: (callback) => {
       if (typeof callback !== "function") {
         return () => {};
@@ -86,6 +98,16 @@ try {
       ipcRenderer.on("desktop:model-update-progress", handler);
       return () => {
         ipcRenderer.removeListener("desktop:model-update-progress", handler);
+      };
+    },
+    onClientUpdateStatusChanged: (callback) => {
+      if (typeof callback !== "function") {
+        return () => {};
+      }
+      const handler = (_event, payload) => callback(payload);
+      ipcRenderer.on("desktop:client-update-status-changed", handler);
+      return () => {
+        ipcRenderer.removeListener("desktop:client-update-status-changed", handler);
       };
     },
   });
