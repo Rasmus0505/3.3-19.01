@@ -434,18 +434,20 @@
   position: absolute;
   z-index: 1;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 18px;
-  background: rgba(3, 7, 13, 0.9);
+  background: rgba(8, 14, 24, 0.14);
   box-shadow:
-    0 18px 34px rgba(0, 0, 0, 0.28),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    0 18px 34px rgba(0, 0, 0, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
   cursor: grab;
   touch-action: none;
   user-select: none;
   pointer-events: auto;
-  backdrop-filter: blur(10px) saturate(0.8);
-  -webkit-backdrop-filter: blur(10px) saturate(0.8);
+  isolation: isolate;
+  backdrop-filter: blur(18px) saturate(1.45) brightness(0.86);
+  -webkit-backdrop-filter: blur(18px) saturate(1.45) brightness(0.86);
+  will-change: left, top, width, height;
 }
 
 .immersive-translation-mask:active {
@@ -456,39 +458,95 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(10, 16, 25, 0.82), rgba(4, 8, 14, 0.94)),
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.08), transparent 42%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05) 34%, rgba(10, 16, 26, 0.12)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.22), transparent 44%);
+  backdrop-filter: blur(22px) saturate(1.6) brightness(0.78);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6) brightness(0.78);
   pointer-events: none;
 }
 
 .immersive-translation-mask__label {
   position: absolute;
   top: 10px;
-  left: 12px;
-  padding: 2px 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 10px;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.46);
-  color: rgba(255, 255, 255, 0.88);
+  background: rgba(8, 14, 24, 0.34);
+  color: rgba(255, 255, 255, 0.94);
   font-size: 11px;
   line-height: 1.2;
   letter-spacing: 0.02em;
+  white-space: nowrap;
   pointer-events: none;
 }
 
 .immersive-translation-mask__resize-handle {
   position: absolute;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  border-radius: 999px;
+  background: rgba(8, 14, 24, 0.48);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+  touch-action: none;
+}
+
+.immersive-translation-mask__resize-handle::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-top: 2px solid rgba(255, 255, 255, 0.92);
+  border-left: 2px solid rgba(255, 255, 255, 0.92);
+  border-top-left-radius: 4px;
+}
+
+.immersive-translation-mask__resize-handle--top-left {
+  top: 8px;
+  left: 8px;
+  cursor: nwse-resize;
+}
+
+.immersive-translation-mask__resize-handle--top-right {
+  top: 8px;
+  right: 8px;
+  cursor: nesw-resize;
+}
+
+.immersive-translation-mask__resize-handle--top-right::before {
+  transform: rotate(90deg);
+}
+
+.immersive-translation-mask__resize-handle--bottom-left {
+  bottom: 8px;
+  left: 8px;
+  cursor: nesw-resize;
+}
+
+.immersive-translation-mask__resize-handle--bottom-left::before {
+  transform: rotate(-90deg);
+}
+
+.immersive-translation-mask__resize-handle--bottom-right {
   right: 8px;
   bottom: 8px;
-  width: 22px;
-  height: 22px;
-  border: 0;
-  border-radius: 999px;
-  background:
-    linear-gradient(135deg, transparent 20%, rgba(255, 255, 255, 0.8) 20%, rgba(255, 255, 255, 0.8) 36%, transparent 36%),
-    rgba(15, 23, 42, 0.45);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
   cursor: nwse-resize;
-  touch-action: none;
+}
+
+.immersive-translation-mask__resize-handle--bottom-right::before {
+  transform: rotate(180deg);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .immersive-translation-mask {
+    background: rgba(8, 14, 24, 0.58);
+  }
+
+  .immersive-translation-mask__glass {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(8, 14, 24, 0.18) 34%, rgba(8, 14, 24, 0.38)),
+      radial-gradient(circle at top left, rgba(255, 255, 255, 0.12), transparent 44%);
+  }
 }
 
 .immersive-page--cinema {
@@ -629,14 +687,32 @@
 
   .immersive-translation-mask__label {
     top: 8px;
-    left: 10px;
+    left: 50%;
   }
 
   .immersive-translation-mask__resize-handle {
-    right: 6px;
-    bottom: 6px;
     width: 26px;
     height: 26px;
+  }
+
+  .immersive-translation-mask__resize-handle--top-left,
+  .immersive-translation-mask__resize-handle--top-right {
+    top: 6px;
+  }
+
+  .immersive-translation-mask__resize-handle--bottom-left,
+  .immersive-translation-mask__resize-handle--bottom-right {
+    bottom: 6px;
+  }
+
+  .immersive-translation-mask__resize-handle--top-left,
+  .immersive-translation-mask__resize-handle--bottom-left {
+    left: 6px;
+  }
+
+  .immersive-translation-mask__resize-handle--top-right,
+  .immersive-translation-mask__resize-handle--bottom-right {
+    right: 6px;
   }
 
   .immersive-word-row {
