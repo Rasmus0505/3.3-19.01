@@ -1,0 +1,59 @@
+schema_version: 1
+task_id: TASK-026
+title: 桌面端链接导入并直接生成素材
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+task_context: 当前桌面端“上传素材”面板只能从本地文件开始生成课程，用户想把公开视频链接直接嵌入素材生成流程中，避免先手动下载再选文件。继续维持只有文件上传的入口会让桌面端的本地生成链路少一个高价值素材来源，也无法复用现有本地 helper 与课程生成闭环。本任务要在不改网页端流程的前提下，为桌面端补齐“粘贴公开视频链接后下载媒体并直接开始生成课程”的完整链路。
+goal: 在桌面端上传页新增“文件/链接”切换，并通过本地 helper 完成公开视频链接下载后直接复用现有桌面本地生成流程。
+scope:
+  - 桌面端上传页的链接导入交互与状态展示
+  - 本地 helper 的公开视频链接下载与媒体落地
+  - Electron 本地 helper 路由放行与桌面契约回归
+allowed_paths:
+  - frontend/src/features/upload/UploadPanel.jsx
+  - frontend/src/features/upload/uploadStatusTheme.js
+  - app/api/routers/desktop_asr.py
+  - app/services/media_ffmpeg.py
+  - app/services/media_url_import.py
+  - desktop/electron/main.mjs
+  - requirements.txt
+  - requirements-dev.txt
+  - tests/test_desktop_local_asr.py
+  - tests/test_desktop_installer_contract.py
+acceptance:
+  - 桌面端上传页默认仍为文件模式，但可切换到链接模式；在链接模式输入一个公开可访问的单条视频链接后，界面会先显示下载进度，再自动进入现有课程生成进度，无需用户再手动选文件。
+  - 本地 helper 提供仅桌面端使用的链接下载任务接口，下载结果会落成现有媒体白名单支持的单个本地媒体文件，并把 `source_path`、`source_filename` 等信息返回给前端继续走现有桌面本地生成链路。
+  - 第一版明确只支持公开可访问的单条视频链接；遇到空链接、非法 URL、站点不支持、私有内容、播放列表、下载超时或用户取消时，会返回可读错误，不会误进入课程生成阶段。
+  - Electron 主进程允许前端访问新增的本地 helper 下载接口，相关桌面契约测试同步更新并通过。
+  - 网页端上传流程、现有本地文件上传生成流程、桌面端已有 `/api/desktop-asr/*` 行为不被破坏。
+check_commands:
+  - pytest tests/test_desktop_local_asr.py -q
+  - pytest tests/test_desktop_installer_contract.py -q
+  - npm --prefix frontend run build
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with: []
+notes_for_after: 第一版只做桌面端，不改网页端；在上传页内做“文件/链接”切换，不单开新页面。下载实现按 yt-dlp 思路落地，但第一版不要支持浏览器 cookies、登录态视频、手动 cookie、播放列表或批量链接。优先把本地 helper 下载接口放进现有 `app/api/routers/desktop_asr.py` 这个桌面专用入口里，避免额外引入新的 helper 注册面；如果必须拆新模块，也要同步把 Electron allowlist 与桌面 helper 装配链路补齐。若引入 Python 侧下载依赖，统一补到 `requirements.txt` 与 `requirements-dev.txt`，确保桌面 helper 打包与本地测试都能拿到同一依赖。
+result_summary: "桌面端上传面板已接入文件/链接切换，链接模式会调用本地 helper 下载公开单条视频并在下载完成后直接复用现有本机生成链路；同时补齐了 helper 下载任务接口、Electron allowlist 与桌面回归测试。"
+changed_files:
+  - frontend/src/features/upload/UploadPanel.jsx
+  - frontend/src/features/upload/uploadStatusTheme.js
+  - app/api/routers/desktop_asr.py
+  - app/services/media_url_import.py
+  - desktop/electron/main.mjs
+  - tests/test_desktop_local_asr.py
+  - tests/test_desktop_installer_contract.py
+tests_run:
+  - pytest tests/test_desktop_local_asr.py -q
+  - pytest tests/test_desktop_installer_contract.py -q
+  - npm --prefix frontend run build
+blocked_reason: ""
+completed_at: "2026-03-24T00:44:23.4128520+08:00"
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""
