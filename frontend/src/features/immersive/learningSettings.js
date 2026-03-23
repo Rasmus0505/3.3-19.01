@@ -91,13 +91,10 @@ export const DEFAULT_CUSTOM_REPLAY_CONFIG = {
   extraRevealWordsPerReplay: 1,
 };
 
-export const TRANSLATION_MASK_LAYOUT_VERSION = 3;
-
 export const DEFAULT_UI_PREFERENCES = {
   showFullscreenPreviousSentence: false,
   translationMask: {
     enabled: true,
-    layoutVersion: TRANSLATION_MASK_LAYOUT_VERSION,
     x: null,
     y: null,
     width: null,
@@ -552,8 +549,6 @@ export function captureShortcutFromKeyboardEvent(event) {
 
 export function sanitizeUiPreferences(rawPreferences = {}) {
   const rawTranslationMask = rawPreferences?.translationMask;
-  const storedMaskLayoutVersion = Number(rawTranslationMask?.layoutVersion || 0);
-  const shouldReuseStoredMaskRect = storedMaskLayoutVersion === TRANSLATION_MASK_LAYOUT_VERSION;
   const normalizeMaskValue = (value) => {
     if (value == null || value === "") return null;
     const parsed = Number(value);
@@ -570,11 +565,10 @@ export function sanitizeUiPreferences(rawPreferences = {}) {
         typeof rawTranslationMask?.enabled === "boolean"
           ? rawTranslationMask.enabled
           : DEFAULT_UI_PREFERENCES.translationMask.enabled,
-      layoutVersion: TRANSLATION_MASK_LAYOUT_VERSION,
-      x: shouldReuseStoredMaskRect ? normalizeMaskValue(rawTranslationMask?.x) : null,
-      y: shouldReuseStoredMaskRect ? normalizeMaskValue(rawTranslationMask?.y) : null,
-      width: shouldReuseStoredMaskRect ? normalizeMaskValue(rawTranslationMask?.width) : null,
-      height: shouldReuseStoredMaskRect ? normalizeMaskValue(rawTranslationMask?.height) : null,
+      x: normalizeMaskValue(rawTranslationMask?.x),
+      y: normalizeMaskValue(rawTranslationMask?.y),
+      width: normalizeMaskValue(rawTranslationMask?.width),
+      height: normalizeMaskValue(rawTranslationMask?.height),
     },
   };
 }
