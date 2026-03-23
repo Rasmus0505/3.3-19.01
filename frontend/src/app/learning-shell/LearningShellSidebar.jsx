@@ -144,6 +144,7 @@ export function LearningShellSidebar({
                       collapsed={!expanded}
                       onClick={() => onPanelSelect(item.key)}
                       data-guide-id={guideId}
+                      className="min-h-11 rounded-xl px-3 py-3"
                     >
                       <Icon className="size-5 shrink-0" />
                       {expanded ? <span className="truncate font-medium">{item.title}</span> : null}
@@ -162,7 +163,7 @@ export function LearningShellSidebar({
               <SidebarMenu>
                 {showSearchAction ? (
                   <SidebarMenuItem>
-                    <SidebarMenuButton collapsed={!expanded} onClick={onOpenSearch} title="查找课程" aria-label="查找课程">
+                    <SidebarMenuButton collapsed={!expanded} onClick={onOpenSearch} title="查找课程" aria-label="查找课程" className="min-h-11 rounded-xl px-3 py-3">
                       <Search className="size-5 shrink-0" />
                       {expanded ? <span className="truncate font-medium">查找课程</span> : null}
                     </SidebarMenuButton>
@@ -171,7 +172,7 @@ export function LearningShellSidebar({
                 {showAdminAction ? (
                   <>
                     <SidebarMenuItem>
-                      <SidebarMenuButton active={isAdminRoute} collapsed={!expanded} onClick={handleAdminToggle} title="管理台" aria-label="管理台">
+                      <SidebarMenuButton active={isAdminRoute} collapsed={!expanded} onClick={handleAdminToggle} title="管理台" aria-label="管理台" className="min-h-11 rounded-xl px-3 py-3">
                         <Shield className="size-5 shrink-0" />
                         {expanded ? (
                           <>
@@ -206,7 +207,7 @@ export function LearningShellSidebar({
                 ) : null}
                 {showLogoutAction ? (
                   <SidebarMenuItem>
-                    <SidebarMenuButton collapsed={!expanded} onClick={onLogout} title="退出登录" aria-label="退出登录">
+                    <SidebarMenuButton collapsed={!expanded} onClick={onLogout} title="退出登录" aria-label="退出登录" className="min-h-11 rounded-xl px-3 py-3">
                       <LogOut className="size-5 shrink-0" />
                       {expanded ? <span className="truncate font-medium">退出登录</span> : null}
                     </SidebarMenuButton>

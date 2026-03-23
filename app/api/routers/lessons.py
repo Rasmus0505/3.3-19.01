@@ -50,6 +50,7 @@ from app.services.asr_dashscope import AsrError
 from app.services.billing_service import BillingError, get_default_asr_model
 from app.services.lesson_command_service import (
     LessonTaskAdmissionError,
+    create_completed_lesson_from_local_generation,
     create_lesson_task_from_local_asr,
     create_lesson_task_from_upload,
     bulk_delete_lessons_for_user,
@@ -344,6 +345,59 @@ def create_local_asr_lesson_task(
         return map_billing_error(exc)
     except Exception as exc:
         return error_response(500, "INTERNAL_ERROR", "本地 ASR 任务创建失败", str(exc)[:1200])
+
+
+@router.post(
+    "/local-asr/complete",
+    response_model=LessonCreateResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def create_local_generated_lesson(
+    payload: LocalAsrLessonTaskCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    selected_model = str(payload.asr_model or "").strip()
+    supported_local_models = set(get_supported_local_browser_asr_model_keys()) | set(get_supported_local_desktop_asr_model_keys())
+    if selected_model not in supported_local_models:
+        return error_response(
+            400,
+            "INVALID_LOCAL_ASR_MODEL",
+            "不支持的本地模型",
+            {"supported_models": sorted(supported_local_models), "input_model": selected_model},
+        )
+    try:
+        lesson = create_completed_lesson_from_local_generation(
+            source_filename=str(payload.source_filename or "").strip(),
+            source_duration_ms=int(payload.source_duration_ms or 0),
+            runtime_kind=str(payload.runtime_kind or "").strip() or "local_browser",
+            asr_payload=dict(payload.asr_payload or {}),
+            owner_user_id=current_user.id,
+            asr_model=selected_model,
+            db=db,
+        )
+        sentences = get_lesson_sentences(db, lesson.id)
+        response_payload = LessonCreateResponse(ok=True, lesson=to_lesson_detail_response(lesson, sentences)).model_dump(mode="json")
+        response_payload.update(
+            {
+                "completion_kind": "partial" if str(getattr(lesson, "task_result_kind", "") or "") == "asr_only" else "full",
+                "result_kind": str(getattr(lesson, "task_result_kind", "") or ""),
+                "result_message": str(getattr(lesson, "task_result_message", "") or ""),
+                "partial_failure_stage": str(getattr(lesson, "task_partial_failure_stage", "") or ""),
+                "partial_failure_code": str(getattr(lesson, "task_partial_failure_code", "") or ""),
+                "partial_failure_message": str(getattr(lesson, "task_partial_failure_message", "") or ""),
+                "subtitle_cache_seed": getattr(lesson, "subtitle_cache_seed", None),
+                "translation_debug": getattr(lesson, "translation_debug", None),
+                "runtime_kind": str((getattr(lesson, "subtitle_cache_seed", {}) or {}).get("runtime_kind") or payload.runtime_kind or ""),
+            }
+        )
+        return JSONResponse(status_code=200, content=response_payload)
+    except BillingError as exc:
+        return map_billing_error(exc)
+    except MediaError as exc:
+        return map_media_error(exc)
+    except Exception as exc:
+        return error_response(500, "INTERNAL_ERROR", "本地生成课程保存失败", str(exc)[:1200])
 
 
 @router.get(

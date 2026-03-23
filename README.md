@@ -207,6 +207,40 @@ python -m alembic -c alembic.ini upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
+### 本地网站 Bottle 1.0 运行时
+
+`preview-local.bat` 现在会同时拉起两部分：
+
+- 本机 Python runtime：默认 `http://127.0.0.1:18080`
+- 本地网站前端：默认 `http://127.0.0.1:4173`
+
+其中：
+
+- `服务器跑` 继续走 `VITE_API_BASE_URL` 指向的云端或本地业务后端
+- `本地网站跑` 会把素材交给 `VITE_LOCAL_RUNTIME_BASE_URL` 对应的本机 runtime，在本机完成抽音频、ASR 和课程结构生成，再把已完成结果回传云端保存
+- 手机和平板会自动禁用 `本地网站跑`，避免误选到不可用路径
+
+常用启动方式：
+
+```powershell
+$env:BOTTLE_CLOUD_API_BASE_URL="https://your-web.example.com"
+.\preview-local.bat
+```
+
+如果你本地也跑了一套业务后端，可以直接把 `BOTTLE_CLOUD_API_BASE_URL` 指到本机：
+
+```powershell
+$env:BOTTLE_CLOUD_API_BASE_URL="http://127.0.0.1:8080"
+.\preview-local.bat
+```
+
+可选变量：
+
+- `BOTTLE_LOCAL_RUNTIME_PORT`：本机 runtime 端口，默认 `18080`
+- `BOTTLE_LOCAL_RUNTIME_BASE_URL`：覆盖本机 runtime 地址，默认 `http://127.0.0.1:%BOTTLE_LOCAL_RUNTIME_PORT%`
+
+如果本机设置了 `DASHSCOPE_API_KEY`，本地网站 / 本地电脑运行位点会尝试在本机完成翻译；如果没有，仍会生成保留原文字幕的 `partial_ready` 课程并继续入库。
+
 ## Windows Electron 正式版客户端
 
 桌面客户端现在采用“云端主系统 + 本地轻量助手”的正式版架构：

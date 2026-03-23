@@ -39,15 +39,15 @@ export function LearningShellHeader({
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className="container-wrapper">
-        <div className="container flex min-h-16 items-center gap-3 py-3">
-          <SidebarTrigger />
+        <div className="container flex min-h-14 items-center gap-2 py-2.5 md:min-h-16 md:gap-3 md:py-3">
+          <SidebarTrigger className="hidden md:inline-flex" />
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger asChild>
               <Button variant="outline" size="icon-sm" className="md:hidden" aria-label="open-learning-sidebar">
                 <Menu className="size-4" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-[320px] p-0">
+            <SheetContent side="left" className="w-[min(92vw,320px)] p-0">
               <SheetHeader className="sr-only">
                 <SheetTitle>{currentPanel.title}</SheetTitle>
                 <SheetDescription>
@@ -86,10 +86,10 @@ export function LearningShellHeader({
             </SheetContent>
           </Sheet>
 
-          <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-2">
-              <h1 className="truncate text-sm font-semibold">{currentPanel.title}</h1>
-              {showLessonsBadge ? <Badge variant="outline">{lessonsCount} 门课程</Badge> : null}
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h1 className="truncate text-sm font-semibold md:text-base">{currentPanel.title}</h1>
+              {showLessonsBadge ? <Badge variant="outline" className="max-w-full truncate">{lessonsCount} 门课程</Badge> : null}
             </div>
           </div>
         </div>

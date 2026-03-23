@@ -286,6 +286,10 @@ function normalizeDesktopLocalTranscriptionResult(payload) {
     taskStatus: String(payload?.task_status || ""),
     usageSeconds: Math.max(0, Number(payload?.usage_seconds || 0)),
     asrPayload: payload?.asr_result_json && typeof payload.asr_result_json === "object" ? payload.asr_result_json : {},
+    localGenerationResult:
+      payload?.local_generation_result && typeof payload.local_generation_result === "object"
+        ? payload.local_generation_result
+        : null,
   };
 }
 
@@ -303,6 +307,26 @@ export async function transcribeDesktopLocalAsr(modelKey, sourceFile) {
       model_key: normalizeModelId(modelKey),
       source_path: sourcePath,
       source_filename: String(sourceFile?.name || ""),
+    },
+  });
+  return normalizeDesktopLocalTranscriptionResult(response.data);
+}
+
+export async function generateDesktopLocalLesson(modelKey, sourceFile, runtimeKind = "desktop_local") {
+  if (!hasDesktopLocalHelper()) {
+    throw new Error("Desktop local helper is unavailable");
+  }
+  const sourcePath = resolveDesktopLocalSourcePath(sourceFile);
+  if (!sourcePath) {
+    throw new Error("当前桌面端无法读取本机文件路径，请改用云端运行。");
+  }
+  const response = await requestDesktopLocalHelper("/api/desktop-asr/generate", "json", {
+    method: "POST",
+    body: {
+      model_key: normalizeModelId(modelKey),
+      source_path: sourcePath,
+      source_filename: String(sourceFile?.name || ""),
+      runtime_kind: String(runtimeKind || "desktop_local"),
     },
   });
   return normalizeDesktopLocalTranscriptionResult(response.data);

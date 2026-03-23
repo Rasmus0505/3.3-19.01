@@ -749,6 +749,39 @@ def create_lesson_task_from_local_asr(
         raise
 
 
+def create_completed_lesson_from_local_generation(
+    *,
+    source_filename: str,
+    source_duration_ms: int,
+    runtime_kind: str,
+    asr_payload: dict,
+    owner_user_id: int,
+    asr_model: str,
+    db: Session,
+) -> Lesson:
+    normalized_asr_payload = dict(asr_payload or {}) if isinstance(asr_payload, dict) else {}
+    local_generation_result = dict(normalized_asr_payload.pop("__local_generation_result__", {}) or {})
+    if not isinstance(local_generation_result, dict) or not local_generation_result:
+        raise MediaError(
+            "LOCAL_GENERATION_RESULT_MISSING",
+            "本地生成结果缺失",
+            "asr_payload.__local_generation_result__ is required",
+        )
+
+    lesson = LessonService.create_lesson_from_local_generation_result(
+        asr_payload=normalized_asr_payload,
+        source_filename=(source_filename or "local_generated.json")[:255],
+        source_duration_ms=int(source_duration_ms or 0),
+        runtime_kind=str(runtime_kind or "").strip() or "local_browser",
+        owner_id=owner_user_id,
+        asr_model=asr_model,
+        local_generation_result=local_generation_result,
+        db=db,
+    )
+    invalidate_lesson_related_queries(owner_user_id)
+    return lesson
+
+
 def resume_lesson_task_for_user(*, task_id: str, user_id: int, db: Session) -> dict[str, object] | None:
     ensure_lesson_task_storage_ready(db)
     task = get_task(task_id, db=db)
