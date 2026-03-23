@@ -426,7 +426,7 @@
 .immersive-media-mask-layer {
   position: absolute;
   inset: 0;
-  z-index: 3;
+  z-index: 1;
   pointer-events: none;
 }
 
@@ -479,6 +479,7 @@
   letter-spacing: 0.02em;
   white-space: nowrap;
   pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .immersive-translation-mask__resize-handle {
@@ -490,6 +491,21 @@
   background: rgba(8, 14, 24, 0.48);
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
   touch-action: none;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.immersive-translation-mask--chrome-hidden .immersive-translation-mask__label,
+.immersive-translation-mask--chrome-hidden .immersive-translation-mask__resize-handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.immersive-translation-mask--chrome-hidden .immersive-translation-mask__label {
+  transform: translateX(-50%) translateY(-4px);
+}
+
+.immersive-translation-mask--chrome-hidden .immersive-translation-mask__resize-handle {
+  transform: scale(0.88);
 }
 
 .immersive-translation-mask__resize-handle::before {

@@ -38,6 +38,7 @@ const TRANSLATION_MASK_MIN_WIDTH_PX = 120;
 const TRANSLATION_MASK_MIN_HEIGHT_PX = 52;
 const TRANSLATION_MASK_DEFAULT_WIDTH_RATIO = 0.58;
 const TRANSLATION_MASK_DEFAULT_BOTTOM_OFFSET_PX = 12;
+const TRANSLATION_MASK_CHROME_IDLE_MS = 1200;
 const TRANSLATION_MASK_VISIBLE_BOTTOM_GAP_PX = 12;
 const TRANSLATION_MASK_EMPTY_RECT = Object.freeze({ x: null, y: null, width: null, height: null });
 const MEDIA_TYPE_BY_EXTENSION = {
@@ -132,16 +133,20 @@ function buildTranslationMaskUiPreference(enabled, rect) {
   };
 }
 
-function buildDefaultTranslationMaskRect(metrics) {
+function buildDefaultTranslationMaskRect(metrics, options = {}) {
   const safeWidth = Math.max(1, Number(metrics?.width || 0));
   const safeHeight = Math.max(1, Number(metrics?.height || 0));
   const minWidth = Math.min(TRANSLATION_MASK_MIN_WIDTH_PX, safeWidth);
   const minHeight = Math.min(TRANSLATION_MASK_MIN_HEIGHT_PX, safeHeight);
   const width = clampNumber(safeWidth * TRANSLATION_MASK_DEFAULT_WIDTH_RATIO, minWidth, safeWidth);
   const height = minHeight;
-  const bottomOffset = Math.min(TRANSLATION_MASK_DEFAULT_BOTTOM_OFFSET_PX, Math.max(0, safeHeight - height));
+  const preferredBottom = clampNumber(Number(options?.preferredBottom ?? safeHeight), height, safeHeight);
   const left = clampNumber((safeWidth - width) / 2, 0, Math.max(0, safeWidth - width));
-  const top = clampNumber(safeHeight - height - bottomOffset, 0, Math.max(0, safeHeight - height));
+  const top = clampNumber(
+    preferredBottom - height - TRANSLATION_MASK_DEFAULT_BOTTOM_OFFSET_PX,
+    0,
+    Math.max(0, safeHeight - height),
+  );
   return convertTranslationMaskRectToStored({ left, top, width, height }, { width: safeWidth, height: safeHeight });
 }
 
@@ -801,6 +806,7 @@ export function ImmersiveLessonPage({
     normalizeTranslationMaskRect(readLearningSettings().uiPreferences?.translationMask),
   );
   const [translationMaskMetrics, setTranslationMaskMetrics] = useState(null);
+  const [translationMaskChromeVisible, setTranslationMaskChromeVisible] = useState(true);
 
   const immersiveContainerRef = useRef(null);
   const immersiveMediaRef = useRef(null);
@@ -810,11 +816,13 @@ export function ImmersiveLessonPage({
   const typingInputRef = useRef(null);
   const bindingInputRef = useRef(null);
   const cinemaControlsIdleTimerRef = useRef(null);
+  const translationMaskChromeIdleTimerRef = useRef(null);
   const currentWordInputRef = useRef("");
   const activeWordIndexRef = useRef(0);
   const wordInputsRef = useRef([]);
   const wordStatusesRef = useRef([]);
   const sentenceAdvanceLockedRef = useRef(false);
+  const translationMaskHoveredRef = useRef(false);
   const wordbookPointerGestureRef = useRef({
     pointerId: null,
     pressTokenIndex: null,
@@ -849,6 +857,30 @@ export function ImmersiveLessonPage({
     window.clearTimeout(cinemaControlsIdleTimerRef.current);
     cinemaControlsIdleTimerRef.current = null;
   }, []);
+
+  const clearTranslationMaskChromeIdleTimer = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (translationMaskChromeIdleTimerRef.current === null) return;
+    window.clearTimeout(translationMaskChromeIdleTimerRef.current);
+    translationMaskChromeIdleTimerRef.current = null;
+  }, []);
+
+  const showTranslationMaskChrome = useCallback(() => {
+    clearTranslationMaskChromeIdleTimer();
+    setTranslationMaskChromeVisible((current) => (current ? current : true));
+  }, [clearTranslationMaskChromeIdleTimer]);
+
+  const queueTranslationMaskChromeHide = useCallback(() => {
+    if (typeof window === "undefined") return;
+    clearTranslationMaskChromeIdleTimer();
+    translationMaskChromeIdleTimerRef.current = window.setTimeout(() => {
+      translationMaskChromeIdleTimerRef.current = null;
+      if (translationMaskHoveredRef.current || translationMaskGestureRef.current.pointerId !== null) {
+        return;
+      }
+      setTranslationMaskChromeVisible(false);
+    }, TRANSLATION_MASK_CHROME_IDLE_MS);
+  }, [clearTranslationMaskChromeIdleTimer]);
 
   const focusTypingInput = useCallback(() => {
     if (!typingEnabled) return;
@@ -1047,22 +1079,19 @@ export function ImmersiveLessonPage({
       return;
     }
     const typingRect = typingPanelRef.current?.getBoundingClientRect() || null;
-    const visibleBottom = typingRect
-      ? Math.min(
-          videoRect.top + videoRect.height,
-          Math.max(videoRect.top, typingRect.top - containerRect.top - TRANSLATION_MASK_VISIBLE_BOTTOM_GAP_PX),
+    const minPreferredBottom = Math.min(TRANSLATION_MASK_MIN_HEIGHT_PX, videoRect.height);
+    const preferredBottom = typingRect
+      ? clampNumber(
+          typingRect.top - containerRect.top - TRANSLATION_MASK_VISIBLE_BOTTOM_GAP_PX,
+          minPreferredBottom,
+          videoRect.height,
         )
-      : videoRect.top + videoRect.height;
-    const visibleHeight = Math.max(0, visibleBottom - videoRect.top);
-    if (visibleHeight <= 0) {
-      setTranslationMaskMetrics(null);
-      return;
-    }
+      : videoRect.height;
     const maskViewportRect = {
       width: videoRect.width,
-      height: visibleHeight,
+      height: videoRect.height,
     };
-    const defaultRect = buildDefaultTranslationMaskRect(maskViewportRect);
+    const defaultRect = buildDefaultTranslationMaskRect(maskViewportRect, { preferredBottom });
     setTranslationMaskMetrics({
       width: maskViewportRect.width,
       height: maskViewportRect.height,
@@ -1670,6 +1699,16 @@ export function ImmersiveLessonPage({
   }, [canShowTranslationMask, resetTranslationMaskGesture]);
 
   useEffect(() => {
+    if (translationMaskEnabled && canShowTranslationMask) {
+      showTranslationMaskChrome();
+      return;
+    }
+    translationMaskHoveredRef.current = false;
+    clearTranslationMaskChromeIdleTimer();
+    setTranslationMaskChromeVisible(true);
+  }, [canShowTranslationMask, clearTranslationMaskChromeIdleTimer, showTranslationMaskChrome, translationMaskEnabled]);
+
+  useEffect(() => {
     if (!immersiveActive) return;
     if (!autoReplayAnsweredSentence) return;
     if (!sentenceTypingDone) return;
@@ -2045,6 +2084,7 @@ export function ImmersiveLessonPage({
       if (typeof event.button === "number" && event.button !== 0) return;
       const gesture = translationMaskGestureRef.current;
       if (gesture.pointerId !== null && gesture.pointerId !== event.pointerId) return;
+      showTranslationMaskChrome();
       event.preventDefault();
       event.stopPropagation();
       gesture.pointerId = event.pointerId;
@@ -2062,12 +2102,22 @@ export function ImmersiveLessonPage({
         }
       }
     },
-    [resolvedTranslationMaskRect, translationMaskEnabled, translationMaskMetrics],
+    [resolvedTranslationMaskRect, showTranslationMaskChrome, translationMaskEnabled, translationMaskMetrics],
   );
 
   const handleTranslationMaskButtonClick = useCallback(() => {
     toggleTranslationMask();
   }, [toggleTranslationMask]);
+
+  const handleTranslationMaskPointerEnter = useCallback(() => {
+    translationMaskHoveredRef.current = true;
+    showTranslationMaskChrome();
+  }, [showTranslationMaskChrome]);
+
+  const handleTranslationMaskPointerLeave = useCallback(() => {
+    translationMaskHoveredRef.current = false;
+    queueTranslationMaskChromeHide();
+  }, [queueTranslationMaskChromeHide]);
 
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
@@ -2137,6 +2187,12 @@ export function ImmersiveLessonPage({
       clearCinemaControlsIdleTimer();
     };
   }, [clearCinemaControlsIdleTimer]);
+
+  useEffect(() => {
+    return () => {
+      clearTranslationMaskChromeIdleTimer();
+    };
+  }, [clearTranslationMaskChromeIdleTimer]);
 
   useEffect(() => {
     return () => {
@@ -2216,6 +2272,9 @@ export function ImmersiveLessonPage({
         persistTranslationMaskPreference(translationMaskEnabled, convertTranslationMaskRectToStored(gesture.latestRect, translationMaskMetrics));
       }
       resetTranslationMaskGesture();
+      if (!translationMaskHoveredRef.current) {
+        queueTranslationMaskChromeHide();
+      }
     };
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -2226,7 +2285,13 @@ export function ImmersiveLessonPage({
       window.removeEventListener("pointerup", handlePointerFinish);
       window.removeEventListener("pointercancel", handlePointerFinish);
     };
-  }, [persistTranslationMaskPreference, resetTranslationMaskGesture, translationMaskEnabled, translationMaskMetrics]);
+  }, [
+    persistTranslationMaskPreference,
+    queueTranslationMaskChromeHide,
+    resetTranslationMaskGesture,
+    translationMaskEnabled,
+    translationMaskMetrics,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -2454,6 +2519,12 @@ export function ImmersiveLessonPage({
   const showTranslationMaskToggle = cinemaFullscreenActive && mediaMode === "video" && !needsBinding;
   const playbackRateLabel = formatPlaybackRateLabel(currentPlaybackRate);
   const translationMaskVisible = canShowTranslationMask && translationMaskEnabled;
+  const translationMaskClassName = [
+    "immersive-translation-mask",
+    translationMaskChromeVisible ? "" : "immersive-translation-mask--chrome-hidden",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div
@@ -2575,10 +2646,12 @@ export function ImmersiveLessonPage({
           {translationMaskVisible && translationMaskStyle ? (
             <div className="immersive-media-mask-layer">
               <div
-                className="immersive-translation-mask"
+                className={translationMaskClassName}
                 style={translationMaskStyle}
                 data-translation-mask="true"
                 onPointerDown={(event) => handleTranslationMaskPointerDown(event, "move")}
+                onPointerEnter={handleTranslationMaskPointerEnter}
+                onPointerLeave={handleTranslationMaskPointerLeave}
                 onClick={(event) => event.stopPropagation()}
               >
                 <div className="immersive-translation-mask__glass" />
@@ -2588,7 +2661,9 @@ export function ImmersiveLessonPage({
                     key={handle.key}
                     type="button"
                     aria-label={handle.ariaLabel}
+                    aria-hidden={!translationMaskChromeVisible}
                     className={handle.className}
+                    tabIndex={translationMaskChromeVisible ? 0 : -1}
                     onPointerDown={(event) => handleTranslationMaskPointerDown(event, handle.mode)}
                   />
                 ))}
