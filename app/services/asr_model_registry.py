@@ -12,7 +12,6 @@ from app.services.faster_whisper_asr import (
 )
 
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
-LOCAL_SENSEVOICE_ASR_MODEL = "local-sensevoice-small"
 
 UPLOAD_ASR_MODEL_KEYS: tuple[str, ...] = (
     FASTER_WHISPER_ASR_MODEL,

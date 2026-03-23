@@ -29,11 +29,6 @@ def _default_persistent_data_dir() -> Path:
 def _default_faster_whisper_model_dir() -> Path:
     return _default_asr_bundle_root() / "faster-distil-small.en"
 
-
-def _default_sensevoice_model_dir() -> Path:
-    return _default_asr_bundle_root() / "SenseVoiceSmall"
-
-
 def _default_asr_bundle_root() -> Path:
     return PROJECT_DIR / "asr-test" / "models"
 
@@ -161,9 +156,6 @@ PERSISTENT_DATA_DIR = Path(
 )
 ASR_BUNDLE_ROOT_DIR = Path(
     os.getenv("ASR_BUNDLE_ROOT_DIR", str(_default_asr_bundle_root())).strip() or str(_default_asr_bundle_root())
-)
-SENSEVOICE_MODEL_DIR = Path(
-    os.getenv("SENSEVOICE_MODEL_DIR", str(_default_sensevoice_model_dir())).strip() or str(_default_sensevoice_model_dir())
 )
 FASTER_WHISPER_MODELSCOPE_MODEL_ID = (
     os.getenv("FASTER_WHISPER_MODELSCOPE_MODEL_ID", "Systran/faster-distil-whisper-small.en").strip()

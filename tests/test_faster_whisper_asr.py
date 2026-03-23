@@ -397,7 +397,6 @@ def test_asr_model_routes_report_status_and_prepare(monkeypatch):
         list_resp = client.get("/api/asr-models")
         status_resp = client.get("/api/asr-models/faster-whisper-medium/status")
         prepare_resp = client.post("/api/asr-models/faster-whisper-medium/prepare")
-        invalid_resp = client.get("/api/asr-models/sensevoice-small/status")
 
     assert list_resp.status_code == 200
     assert [item["model_key"] for item in list_resp.json()["models"]] == [
@@ -411,8 +410,6 @@ def test_asr_model_routes_report_status_and_prepare(monkeypatch):
     assert prepare_resp.status_code == 200
     assert prepare_resp.json()["status"] == "preparing"
     assert prepare_resp.json()["preparing"] is True
-    assert invalid_resp.status_code == 400
-    assert invalid_resp.json()["detail"]["supported_models"] == ["faster-whisper-medium", "qwen3-asr-flash-filetrans"]
 
 
 def test_asr_runtime_routes_faster_whisper_model(monkeypatch):

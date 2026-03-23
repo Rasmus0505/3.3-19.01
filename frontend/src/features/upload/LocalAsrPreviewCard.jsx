@@ -8,8 +8,8 @@ import { getLocalAsrPreviewState, saveLocalAsrPreviewState } from "../../shared/
 import { Button, ScrollArea } from "../../shared/ui";
 import { buildLocalAsrLongAudioWarning, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS, LOCAL_ASR_TARGET_SAMPLE_RATE, preprocessLocalAsrFile } from "./localAsrAudioPreprocess";
 
-const LOCAL_ASR_MODEL_ID = "local-sensevoice-small";
-const LOCAL_ASR_MODEL_LABEL = "SenseVoice Small";
+const LOCAL_ASR_MODEL_ID = "faster-whisper-medium";
+const LOCAL_ASR_MODEL_LABEL = "Bottle 1.0";
 const DEFAULT_LOCAL_ASR_ASSET_BASE_URL = "/api/local-asr-assets";
 const LOCAL_ASR_ASSET_BASE_URL = (import.meta.env.VITE_LOCAL_ASR_MODEL_BASE_URL || DEFAULT_LOCAL_ASR_ASSET_BASE_URL).trim().replace(/\/+$/, "");
 const LOCAL_ASR_FILE_ACCEPT = "audio/*,video/mp4,.mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.opus";
@@ -71,7 +71,7 @@ function buildWorkerRequestId(sequence) {
 export function LocalAsrPreviewCard({ disabled = false }) {
   const localAsrSupport = useMemo(() => detectLocalAsrPreviewSupport(), []);
   const [localModelStatus, setLocalModelStatus] = useState(localAsrSupport.supported ? "idle" : "unsupported");
-  const [localModelStatusText, setLocalModelStatusText] = useState(localAsrSupport.supported ? "尚未下载本地 SenseVoice" : localAsrSupport.reason);
+  const [localModelStatusText, setLocalModelStatusText] = useState(localAsrSupport.supported ? "尚未下载本地 Bottle 1.0" : localAsrSupport.reason);
   const [localModelProgress, setLocalModelProgress] = useState(null);
   const [localModelRuntime, setLocalModelRuntime] = useState("");
   const [localModelError, setLocalModelError] = useState("");
@@ -81,7 +81,7 @@ export function LocalAsrPreviewCard({ disabled = false }) {
   const [localPreviewText, setLocalPreviewText] = useState("");
   const [localPreviewSegments, setLocalPreviewSegments] = useState([]);
   const [localPreviewRuntime, setLocalPreviewRuntime] = useState("");
-  const [localPreviewWarning, setLocalPreviewWarning] = useState("SenseVoice 本地模式当前使用 WASM 运行，首次下载会稍慢。");
+  const [localPreviewWarning, setLocalPreviewWarning] = useState("Bottle 1.0 本地模式当前使用 WASM 运行，首次下载会稍慢。");
   const [localPreviewPerformanceWarning, setLocalPreviewPerformanceWarning] = useState("");
   const localPreviewInputRef = useRef(null);
   const localAsrWorkerRef = useRef(null);
@@ -150,7 +150,7 @@ export function LocalAsrPreviewCard({ disabled = false }) {
         setLocalModelProgress(100);
         setLocalModelRuntime(runtime);
         if (runtime === "wasm") {
-          setLocalPreviewWarning("SenseVoice 本地模式当前使用 WASM 运行，首次下载会稍慢。");
+          setLocalPreviewWarning("Bottle 1.0 本地模式当前使用 WASM 运行，首次下载会稍慢。");
         }
         void persistLocalAsrState({ status: "ready", runtime, lastError: "" });
         return result;
@@ -197,8 +197,8 @@ export function LocalAsrPreviewCard({ disabled = false }) {
           return;
         }
         if (payload.stage === "runtime-fallback") {
-          setLocalPreviewWarning("SenseVoice 本地模式当前使用 WASM 运行，首次下载会稍慢。");
-          setLocalModelStatusText(String(payload.status_text || "SenseVoice 当前使用 WASM 运行"));
+          setLocalPreviewWarning("Bottle 1.0 本地模式当前使用 WASM 运行，首次下载会稍慢。");
+          setLocalModelStatusText(String(payload.status_text || "Bottle 1.0 当前使用 WASM 运行"));
           setLocalModelRuntime(String(payload.runtime || "wasm"));
           return;
         }
@@ -273,7 +273,7 @@ export function LocalAsrPreviewCard({ disabled = false }) {
           setLocalModelProgress(100);
           setLocalModelStatusText(runtime === "wasm" ? "模型已缓存，上次使用 WASM 运行" : "模型已缓存，可直接试玩");
           if (runtime === "wasm") {
-            setLocalPreviewWarning("SenseVoice 本地模式当前使用 WASM 运行，首次下载会稍慢。");
+            setLocalPreviewWarning("Bottle 1.0 本地模式当前使用 WASM 运行，首次下载会稍慢。");
           }
           return;
         }
@@ -297,7 +297,7 @@ export function LocalAsrPreviewCard({ disabled = false }) {
       const result = await ensureModelReady();
       setLocalPreviewStatusText("模型已就绪，选择本地音频或 MP4 文件即可试玩字幕预览");
       setLocalPreviewRuntime(String(result?.runtime || ""));
-      toast.success("本地 SenseVoice 已准备好");
+      toast.success("本地 Bottle 1.0 已准备好");
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : String(error);
       setLocalPreviewPhase("error");
@@ -369,7 +369,7 @@ export function LocalAsrPreviewCard({ disabled = false }) {
       setLocalPreviewPhase("success");
       setLocalPreviewStatusText(segments.length > 0 ? `本地识别完成，共 ${segments.length} 段字幕` : "本地识别完成，但未得到可用字幕");
       if (runtime === "wasm") {
-        setLocalPreviewWarning("SenseVoice 本地模式当前使用 WASM 运行，首次下载会稍慢。");
+        setLocalPreviewWarning("Bottle 1.0 本地模式当前使用 WASM 运行，首次下载会稍慢。");
       }
       logPreviewDebug("run.done", {
         file_name: String(file.name || ""),

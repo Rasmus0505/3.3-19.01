@@ -1,6 +1,4 @@
 export const ASR_MODEL_KEYS = {
-  sensevoiceServer: "sensevoice-small",
-  sensevoiceBrowser: "local-sensevoice-small",
   fasterWhisper: "faster-whisper-medium",
   qwen: "qwen3-asr-flash-filetrans",
 };

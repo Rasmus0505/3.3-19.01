@@ -20,7 +20,6 @@ from app.repositories.billing_rates import list_billing_rates as query_billing_r
 from app.services.asr_model_registry import (
     FASTER_WHISPER_ASR_MODEL as FASTER_WHISPER_SERVER_MODEL,
     LOCAL_BROWSER_ASR_MODEL_KEYS,
-    LOCAL_SENSEVOICE_ASR_MODEL as LOCAL_SENSEVOICE_SMALL_MODEL,
     QWEN_ASR_MODEL as FAST_CLOUD_MODEL,
 )
 from app.models import (
@@ -822,16 +821,10 @@ def _cleanup_non_flash_mt_rates(db: Session, *, ensure_flash: bool) -> tuple[int
 
 def _cleanup_removed_admin_rates(db: Session) -> int:
     removed_rows = list(
-        db.scalars(
-            select(BillingModelRate).where(
-                BillingModelRate.model_name.in_(
-                    [
-                        "sensevoice-small",
-                        LOCAL_SENSEVOICE_SMALL_MODEL,
-                    ]
-                )
-            )
-        ).all()
+        row
+        for row in db.scalars(select(BillingModelRate)).all()
+        if str(getattr(row, "model_name", "") or "").strip() not in ADMIN_BILLING_MODEL_ORDER
+        and not str(getattr(row, "model_name", "") or "").strip().startswith(MT_MODEL_PREFIX)
     )
     removed_count = len(removed_rows)
     for row in removed_rows:

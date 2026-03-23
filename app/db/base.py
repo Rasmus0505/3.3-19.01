@@ -19,7 +19,6 @@ BUSINESS_TABLES = (
     "billing_model_rates",
     "translation_request_logs",
     "subtitle_settings",
-    "sensevoice_settings",
     "faster_whisper_settings",
     "redeem_code_batches",
     "redeem_codes",
