@@ -1,0 +1,70 @@
+schema_version: 1
+task_id: TASK-015
+title: 浏览器端 ASR 多核并行识别
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: 优化本地 ASR Worker Pool 在多核机器上的并行效率：在音频分片策略、并发调度、内存管理和进度感知四个维度改进，使 8+ 核机器上识别时长显著低于串行 baseline，同时不因 Worker 数过多导致 OOM。
+scope:
+  - ASR Worker Pool 并行分片策略（动态并发决策）
+  - Worker 生命周期管理与内存上限
+  - 音频切段方案优化（overlap 策略、重叠区裁切精度）
+  - 并行识别进度精细化（per-worker progress、分段完成感知）
+allowed_paths:
+  - frontend/src/features/upload/localAsrParallelRuntime.js
+  - frontend/src/features/upload/localAsrPreviewWorker.js
+  - frontend/src/shared/media/localAsrAssetManager.js
+  - frontend/src/shared/media/localAsrPreviewStore.js
+acceptance:
+  - `runLocalAsrWithAutoParallelism()` 的自动并发决策必须基于 `navigator.hardwareConcurrency` 动态收敛到明确上限：逻辑核数 >= 8 时上限至少提升到 6，>= 12 时上限至少提升到 8；同时音频时长低于 3 分钟时不得分片并发。
+  - 分片计划必须从“目标分片数/目标分片时长”推导，而不是只依赖固定时长 bucket；overlap 裁切必须结合相邻词时间戳 gap，自适应缩小无效重叠，且保持拼接结果不出现明显重复词。
+  - Worker 运行时必须在单段转写完成后释放该段音频缓冲，不共享大块音频引用；当池大小大于 4 时必须采用分批启动，避免一次性拉起全部 Worker。
+  - `onProgress` / worker 进度事件必须区分模型加载阶段与实际转写阶段，并能向前端汇报“第 X/Y 段已完成”的细粒度状态；任意 worker 失败时不得静默吞错。
+  - 不得改变 `asr_payload` 输出 schema，且前端构建命令保持通过。
+check_commands:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  本任务集中在 `frontend/src/features/upload/localAsrParallelRuntime.js`，不涉及后端或 Electron。以下是需要实现的改进点：
+
+  1. 动态并发上限（localAsrParallelRuntime.js）：
+     - 现有 `MAX_AUTO_WORKERS = 4` 限制偏保守。将其改为：先通过 `navigator.hardwareConcurrency` 检测逻辑核数，若 >= 8 核则 MAX_AUTO_WORKERS 上调至 6，若 >= 12 核则上调至 8
+     - `computeLocalAsrConcurrency()` 中的并发决策逻辑应优先保证 Worker 不超过 MAX_AUTO_WORKERS，同时在音频时长 > 20 分钟时才启用高并发
+     - 低于 3 分钟的音频不应分片，并发恒为 1（避免小音频的开销反而大于收益）
+
+  2. 音频切段策略优化（buildLocalAsrSegmentPlan）：
+     - 现有方案以固定 duration bucket（3 分钟、12 分钟）决定分片粒度，改为基于目标分片数（target_segment_count）驱动：先计算所需并发数，再反推每个分片的目标毫秒数，使分片更均匀
+     - OVERLAP_MS 固定 800ms 可能导致长句子中间被切。改为：如果相邻 word 时间戳 gap < 1s，则只取 min(overlap, gap*1.5) 作为 overlap，减少无效重叠计算
+     - 在 mergeParallelSegmentResults() 中，去重逻辑 dedupeSortedWords 已有的 `begin_ms` 和 `end_ms` 容差（40ms）应作为常量提取出来，方便后续调优
+
+  3. Worker 内存隔离（localAsrPreviewWorker.js）：
+     - Worker 内 `resetRuntimeState()` 应在每次 `transcribe-audio` 完成后立即释放音频数据，不再持有上一次的分片音频引用
+     - `ensureRuntime()` 中的 runtime 缓存策略：如果同一个 Worker 实例被复用于多个分片，transcribe 完成后不应 free() recognizer，只在显式 `dispose-model` 时才释放（避免反复重新初始化）
+     - 在 `runLocalAsrWithAutoParallelism()` 中，当 pool size > 4 时，应分批启动 Worker（每批 2 个），避免同时创建过多 Worker 导致浏览器内存抖动
+
+  4. 进度感知精细化（runLocalAsrWithAutoParallelism）：
+     - `onWorkerProgress` 回调中，worker LoadProgress 汇报应区分 model loading（stage=model-progress）和 actual transcription（stage=transcribe-start）两个阶段，前端进度条颜色或文案应区分这两个阶段
+     - 每个 Worker 完成后，应触发一次前端通知（`onProgress`），包含 "第 X/Y 段已完成，耗时 Z ms"，便于前端渲染逐段完成动画
+     - 若任意 Worker 在 `workerClient.request()` 时抛出异常，pool 级别的 catch 应终止所有其他 pending workerClient，并将错误汇总为一条"第 N 段识别失败：具体原因"，同时允许用户重试整段任务而不丢失已完成段的结果（已完成段结果应暂存，不丢弃）
+
+  5. 回归保护：
+     - 不要改变 asr_payload 的输出 schema（现有 UI 依赖此结构）
+     - `runLocalAsrWithAutoParallelism` 的函数签名保持兼容，新增参数以 options 对象方式传入（不要破坏现有调用方）
+result_summary: 完成浏览器端本地 ASR 的动态并发上限、目标分片规划、自适应 overlap、批次 warmup 与分段进度事件增强。
+changed_files:
+  - frontend/src/features/upload/localAsrParallelRuntime.js
+tests_run:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+blocked_reason: ""
+completed_at: "2026-03-23T18:42:53.0919484+08:00"
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

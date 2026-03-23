@@ -1,6 +1,6 @@
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import { deleteLessonMedia } from "../../shared/media/localMediaStore";
-import { deleteLessonSubtitleCache, getActiveLessonSubtitleVariant, getLessonSubtitleAvailability, saveLessonSubtitleCacheSeed } from "../../shared/media/localSubtitleStore";
+import { deleteLessonSubtitleCache, getActiveLessonSubtitleVariant, getLessonSubtitleAvailability, saveLessonSubtitleCacheSeed } from "../../shared/media/localSubtitleStore.js";
 
 function buildProgressSnapshot(progressData = {}) {
   return {
