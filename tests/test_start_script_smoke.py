@@ -319,8 +319,18 @@ def test_run_desktop_backend_boots_with_local_helper_dirs(tmp_path):
         health_payload, ready_payload = _wait_for_status(process, port, 200)
         assert health_payload["ok"] is True
         assert health_payload["ready"] is True
+        assert health_payload["helper_mode"] == "system-python"
+        assert health_payload["python_version"].count(".") == 2
+        assert isinstance(health_payload["asr_model_ready"], bool)
+        assert isinstance(health_payload["model_status"], str)
         assert ready_payload["ok"] is True
+        assert ready_payload["model_ready"] == health_payload["model_ready"]
+        assert ready_payload["status"]["helper_ready"] is True
         assert ready_payload["status"]["local_only"] is True
+        assert ready_payload["status"]["helper_mode"] == health_payload["helper_mode"]
+        assert ready_payload["status"]["python_version"] == health_payload["python_version"]
+        assert ready_payload["status"]["model_ready"] == ready_payload["model_ready"]
+        assert ready_payload["status"]["model_status"] == ready_payload["model_status"]
 
         root_resp = requests.get(f"http://127.0.0.1:{port}/", timeout=3)
         assert root_resp.status_code == 200
@@ -328,6 +338,13 @@ def test_run_desktop_backend_boots_with_local_helper_dirs(tmp_path):
         bundle_resp = requests.get(f"http://127.0.0.1:{port}/api/local-asr-assets/download-models", timeout=3)
         assert bundle_resp.status_code == 200
         assert bundle_resp.json()["ok"] is True
+        manifest_resp = requests.get(f"http://127.0.0.1:{port}/api/local-asr-assets/download-models/faster-whisper-medium/manifest", timeout=3)
+        assert manifest_resp.status_code == 200
+        manifest_payload = manifest_resp.json()
+        assert manifest_payload["ok"] is True
+        assert isinstance(manifest_payload["model_version"], str)
+        assert manifest_payload["file_count"] >= 1
+        assert all("sha256" in item for item in manifest_payload["files"])
     finally:
         logs = _stop_process(process)
 

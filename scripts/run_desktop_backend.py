@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import importlib
 import os
 import sys
@@ -84,6 +85,47 @@ def _load_desktop_asr_module():
     return importlib.import_module("app.api.routers.desktop_asr")
 
 
+def _load_faster_whisper_status() -> dict[str, object]:
+    try:
+        faster_whisper_asr = importlib.import_module("app.services.faster_whisper_asr")
+        payload = faster_whisper_asr.get_faster_whisper_model_status()
+    except Exception as exc:
+        return {
+            "model_ready": False,
+            "model_status": "status_error",
+            "model_status_message": str(exc),
+        }
+    return {
+        "model_ready": bool(payload.get("cached") and not payload.get("download_required")),
+        "model_status": str(payload.get("status") or ""),
+        "model_status_message": str(payload.get("message") or ""),
+    }
+
+
+def _build_helper_health_payload(runtime_paths: dict[str, str]) -> dict[str, object]:
+    model_payload = _load_faster_whisper_status()
+    helper_mode = "bundled-runtime" if getattr(sys, "frozen", False) else "system-python"
+    return {
+        "ok": True,
+        "ready": True,
+        "service": "desktop-local-helper",
+        "helper_mode": helper_mode,
+        "python_version": ".".join(
+            [
+                str(sys.version_info.major),
+                str(sys.version_info.minor),
+                str(sys.version_info.micro),
+            ]
+        ),
+        "asr_model_ready": bool(model_payload["model_ready"]),
+        "model_ready": bool(model_payload["model_ready"]),
+        "model_status": str(model_payload["model_status"]),
+        "model_status_message": str(model_payload["model_status_message"]),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "runtime": runtime_paths,
+    }
+
+
 def create_desktop_helper_app(runtime_paths: dict[str, str]) -> FastAPI:
     local_asr_assets = _load_local_asr_assets_module()
     desktop_asr = _load_desktop_asr_module()
@@ -103,21 +145,22 @@ def create_desktop_helper_app(runtime_paths: dict[str, str]) -> FastAPI:
 
     @app.get("/health")
     def health() -> dict[str, object]:
-        return {
-            "ok": True,
-            "ready": True,
-            "service": "desktop-local-helper",
-            "runtime": runtime_paths,
-        }
+        return _build_helper_health_payload(runtime_paths)
 
     @app.get("/health/ready")
     def ready() -> dict[str, object]:
+        health_payload = _build_helper_health_payload(runtime_paths)
         return {
-            "ok": True,
-            "ready": True,
+            **health_payload,
             "status": {
                 "helper_ready": True,
                 "local_only": True,
+                "helper_mode": health_payload["helper_mode"],
+                "python_version": health_payload["python_version"],
+                "model_ready": health_payload["model_ready"],
+                "model_status": health_payload["model_status"],
+                "model_status_message": health_payload["model_status_message"],
+                "checked_at": health_payload["checked_at"],
                 "runtime": runtime_paths,
             },
         }

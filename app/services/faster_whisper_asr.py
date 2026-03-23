@@ -452,6 +452,7 @@ def get_faster_whisper_model_status() -> dict[str, Any]:
     return {
         "model_key": FASTER_WHISPER_ASR_MODEL,
         "status": status,
+        "model_ready": bool(cached and cache_matches and not download_required),
         "download_required": bool(download_required),
         "preparing": bool(preparing),
         "cached": bool(cached and cache_matches),

@@ -4,13 +4,20 @@ const DEFAULT_MODEL_ID = "local-sensevoice-small";
 const DEFAULT_ASSET_BASE_URL = "/api/local-asr-assets";
 const DEFAULT_SAMPLE_RATE = 16000;
 const DEFAULT_OVERLAP_MS = 800;
-const MAX_AUTO_WORKERS = 4;
+const MAX_AUTO_WORKERS_BASELINE = 4;
+const MAX_AUTO_WORKERS_MID = 6;
+const MAX_AUTO_WORKERS_HIGH = 8;
 const MAX_SEGMENTS = 24;
 const SHORT_AUDIO_SECONDS = 3 * 60;
 const MEDIUM_AUDIO_SECONDS = 12 * 60;
+const LONG_AUDIO_SECONDS = 20 * 60;
 const TARGET_SEGMENT_MS_MEDIUM = 90 * 1000;
 const TARGET_SEGMENT_MS_LONG = 75 * 1000;
 const MIN_SEGMENT_MS = 30 * 1000;
+const WORD_DEDUPE_TOLERANCE_MS = 40;
+const MIN_WORD_GAP_FOR_OVERLAP_MS = 1000;
+const OVERLAP_GAP_RATIO = 1.5;
+const WORKER_WARMUP_BATCH_SIZE = 2;
 
 function nowMs() {
   if (typeof performance !== "undefined" && typeof performance.now === "function") {
@@ -235,8 +242,8 @@ function dedupeSortedWords(words) {
     }
     const sameSurface = normalizeSurfaceText(previous.surface) === normalizeSurfaceText(item.surface);
     const sameText = normalizeSurfaceText(previous.text) === normalizeSurfaceText(item.text);
-    const nearlySameBegin = Math.abs(previous.begin_ms - item.begin_ms) <= 40;
-    const nearlySameEnd = Math.abs(previous.end_ms - item.end_ms) <= 40;
+    const nearlySameBegin = Math.abs(previous.begin_ms - item.begin_ms) <= WORD_DEDUPE_TOLERANCE_MS;
+    const nearlySameEnd = Math.abs(previous.end_ms - item.end_ms) <= WORD_DEDUPE_TOLERANCE_MS;
     if ((sameSurface || sameText) && nearlySameBegin && nearlySameEnd) {
       continue;
     }
@@ -258,26 +265,51 @@ function createSegmentAudioData(audioData, samplingRate, startMs, endMs) {
 }
 
 function chooseTargetSegmentMs(durationSec) {
-  if (durationSec > MEDIUM_AUDIO_SECONDS) {
+  if (durationSec > LONG_AUDIO_SECONDS) {
     return TARGET_SEGMENT_MS_LONG;
   }
   return TARGET_SEGMENT_MS_MEDIUM;
 }
 
+function computeMaxAutoWorkers(hardwareConcurrency) {
+  const safeHardware = normalizeHardwareConcurrency(hardwareConcurrency);
+  if (safeHardware >= 12) {
+    return MAX_AUTO_WORKERS_HIGH;
+  }
+  if (safeHardware >= 8) {
+    return MAX_AUTO_WORKERS_MID;
+  }
+  return MAX_AUTO_WORKERS_BASELINE;
+}
+
 export function computeLocalAsrConcurrency({ durationSec = 0, hardwareConcurrency } = {}) {
   const safeDurationSec = Math.max(0, Number(durationSec || 0));
   const safeHardware = normalizeHardwareConcurrency(hardwareConcurrency);
+  const maxAutoWorkers = computeMaxAutoWorkers(safeHardware);
   if (safeDurationSec <= SHORT_AUDIO_SECONDS) {
     return 1;
   }
   if (safeDurationSec <= MEDIUM_AUDIO_SECONDS) {
     return clamp(Math.floor(safeHardware / 4) || 1, 1, 2);
   }
-  return clamp(Math.floor(safeHardware / 3) || 2, 2, MAX_AUTO_WORKERS);
+  if (safeDurationSec <= LONG_AUDIO_SECONDS) {
+    return clamp(Math.floor(safeHardware / 3) || 2, 2, Math.min(maxAutoWorkers, MAX_AUTO_WORKERS_BASELINE));
+  }
+  return clamp(Math.floor(safeHardware / 2) || 2, 2, maxAutoWorkers);
 }
 
 export function shouldUseParallelLocalAsr({ durationSec = 0, hardwareConcurrency } = {}) {
   return computeLocalAsrConcurrency({ durationSec, hardwareConcurrency }) > 1;
+}
+
+function computeTargetSegmentCount(totalDurationMs, plannedConcurrency, targetSegmentMs, effectiveDurationSec) {
+  const durationDrivenCount = Math.ceil(totalDurationMs / Math.max(MIN_SEGMENT_MS, targetSegmentMs));
+  const concurrencyMultiplier = effectiveDurationSec > LONG_AUDIO_SECONDS ? 3 : 2;
+  return clamp(
+    Math.max(plannedConcurrency, durationDrivenCount, plannedConcurrency * concurrencyMultiplier),
+    plannedConcurrency,
+    MAX_SEGMENTS,
+  );
 }
 
 export function buildLocalAsrSegmentPlan({
@@ -297,12 +329,13 @@ export function buildLocalAsrSegmentPlan({
     durationSec: effectiveDurationSec,
     hardwareConcurrency,
   });
+  const safeOverlapMs = Math.max(0, Math.round(overlapMs || 0));
   const targetSegmentMs = Math.max(MIN_SEGMENT_MS, chooseTargetSegmentMs(effectiveDurationSec));
   if (plannedConcurrency <= 1 || totalDurationMs <= SHORT_AUDIO_SECONDS * 1000) {
     return {
       plannedConcurrency,
       actualConcurrency: 1,
-      overlapMs: Math.max(0, Math.round(overlapMs || 0)),
+      overlapMs: safeOverlapMs,
       segmentCount: 1,
       totalDurationMs,
       segments: [
@@ -318,9 +351,7 @@ export function buildLocalAsrSegmentPlan({
     };
   }
 
-  let segmentCount = Math.max(plannedConcurrency, Math.ceil(totalDurationMs / targetSegmentMs));
-  segmentCount = Math.max(segmentCount, plannedConcurrency * 2);
-  segmentCount = clamp(segmentCount, plannedConcurrency, MAX_SEGMENTS);
+  const segmentCount = computeTargetSegmentCount(totalDurationMs, plannedConcurrency, targetSegmentMs, effectiveDurationSec);
   const rawSegmentMs = Math.max(MIN_SEGMENT_MS, Math.ceil(totalDurationMs / segmentCount));
   const segments = [];
   for (let index = 0; index < segmentCount; index += 1) {
@@ -329,8 +360,8 @@ export function buildLocalAsrSegmentPlan({
     if (keepEndMs <= keepStartMs) {
       continue;
     }
-    const actualStartMs = Math.max(0, keepStartMs - overlapMs);
-    const actualEndMs = Math.min(totalDurationMs, keepEndMs + overlapMs);
+    const actualStartMs = Math.max(0, keepStartMs - safeOverlapMs);
+    const actualEndMs = Math.min(totalDurationMs, keepEndMs + safeOverlapMs);
     const segmentAudioData = createSegmentAudioData(audioData, safeSamplingRate, actualStartMs, actualEndMs);
     segments.push({
       index,
@@ -346,7 +377,7 @@ export function buildLocalAsrSegmentPlan({
   return {
     plannedConcurrency,
     actualConcurrency,
-    overlapMs: Math.max(0, Math.round(overlapMs || 0)),
+    overlapMs: safeOverlapMs,
     segmentCount: segments.length,
     totalDurationMs,
     segments,
@@ -451,7 +482,7 @@ function createProgressCounters(completedSegments, totalSegments) {
 }
 
 function createParallelProgressEvent({
-  stage = "asr_transcribe",
+  stage = "model-progress",
   currentText = "",
   completedSegments = 0,
   totalSegments = 0,
@@ -471,6 +502,50 @@ function createParallelProgressEvent({
   };
 }
 
+function computeAdaptiveBoundaryMs(boundaryMs, shiftedWords, actualStartMs, actualEndMs, overlapAllowanceMs) {
+  if (!Array.isArray(shiftedWords) || shiftedWords.length < 2 || overlapAllowanceMs <= 0) {
+    return boundaryMs;
+  }
+  let leftWord = null;
+  let rightWord = null;
+  for (const word of shiftedWords) {
+    if (!word) continue;
+    if (Number(word.end_ms || 0) <= boundaryMs) {
+      leftWord = word;
+      continue;
+    }
+    if (Number(word.begin_ms || 0) >= boundaryMs) {
+      rightWord = word;
+      break;
+    }
+  }
+  if (!leftWord || !rightWord) {
+    return boundaryMs;
+  }
+  const gapMs = Math.max(0, Number(rightWord.begin_ms || 0) - Number(leftWord.end_ms || 0));
+  if (gapMs <= 0 || gapMs >= MIN_WORD_GAP_FOR_OVERLAP_MS) {
+    return boundaryMs;
+  }
+  const midpoint = Number(leftWord.end_ms || 0) + gapMs / 2;
+  const maxShift = Math.min(overlapAllowanceMs, gapMs * OVERLAP_GAP_RATIO);
+  return clamp(midpoint, Math.max(actualStartMs, boundaryMs - maxShift), Math.min(actualEndMs, boundaryMs + maxShift));
+}
+
+function computeEffectiveKeepRange(segment, shiftedWords, isLastSegment) {
+  const keepStartMs = Math.max(0, Number(segment?.keep_start_ms || 0));
+  const keepEndMs = Math.max(keepStartMs + 1, Number(segment?.keep_end_ms || keepStartMs + 1));
+  const actualStartMs = Math.max(0, Number(segment?.actual_start_ms || 0));
+  const actualEndMs = Math.max(keepEndMs, Number(segment?.actual_end_ms || keepEndMs));
+  const adaptiveKeepStartMs = computeAdaptiveBoundaryMs(keepStartMs, shiftedWords, actualStartMs, actualEndMs, keepStartMs - actualStartMs);
+  const adaptiveKeepEndMs = isLastSegment
+    ? keepEndMs
+    : computeAdaptiveBoundaryMs(keepEndMs, shiftedWords, actualStartMs, actualEndMs, actualEndMs - keepEndMs);
+  return {
+    keepStartMs: adaptiveKeepStartMs,
+    keepEndMs: Math.max(adaptiveKeepStartMs + 1, adaptiveKeepEndMs),
+  };
+}
+
 function mergeParallelSegmentResults(results, totalDurationMs) {
   const shiftedWords = [];
   const shiftedSentences = [];
@@ -478,15 +553,13 @@ function mergeParallelSegmentResults(results, totalDurationMs) {
     const transcript = item?.result?.asr_payload?.transcripts?.[0] || {};
     const sourceWords = Array.isArray(transcript.words) ? transcript.words : [];
     const sourceSentences = Array.isArray(transcript.sentences) ? transcript.sentences : Array.isArray(item?.result?.segments) ? item.result.segments : [];
-    const keepStartMs = Math.max(0, Number(item?.segment?.keep_start_ms || 0));
-    const keepEndMs = Math.max(keepStartMs + 1, Number(item?.segment?.keep_end_ms || keepStartMs + 1));
     const actualStartMs = Math.max(0, Number(item?.segment?.actual_start_ms || 0));
     const isLastSegment = Boolean(item?.isLastSegment);
+    const shiftedSegmentWords = sourceWords.map((word) => shiftWordToGlobal(word, actualStartMs)).filter(Boolean);
+    const effectiveKeepRange = computeEffectiveKeepRange(item?.segment, shiftedSegmentWords, isLastSegment);
 
-    for (const word of sourceWords) {
-      const shifted = shiftWordToGlobal(word, actualStartMs);
-      if (!shifted) continue;
-      if (!isMidpointInsideKeepRange(shifted.begin_ms, shifted.end_ms, keepStartMs, keepEndMs, isLastSegment)) {
+    for (const shifted of shiftedSegmentWords) {
+      if (!isMidpointInsideKeepRange(shifted.begin_ms, shifted.end_ms, effectiveKeepRange.keepStartMs, effectiveKeepRange.keepEndMs, isLastSegment)) {
         continue;
       }
       shiftedWords.push(shifted);
@@ -496,7 +569,15 @@ function mergeParallelSegmentResults(results, totalDurationMs) {
       for (let index = 0; index < sourceSentences.length; index += 1) {
         const shifted = shiftSentenceToGlobal(sourceSentences[index], actualStartMs, index);
         if (!shifted) continue;
-        if (!isMidpointInsideKeepRange(shifted.begin_ms, shifted.end_ms, keepStartMs, keepEndMs, isLastSegment)) {
+        if (
+          !isMidpointInsideKeepRange(
+            shifted.begin_ms,
+            shifted.end_ms,
+            effectiveKeepRange.keepStartMs,
+            effectiveKeepRange.keepEndMs,
+            isLastSegment,
+          )
+        ) {
           continue;
         }
         shiftedSentences.push(shifted);
@@ -518,6 +599,27 @@ function mergeParallelSegmentResults(results, totalDurationMs) {
     previewText,
     asrPayload: buildAsrPayload(mergedWords, mergedSentences, rawResult),
   };
+}
+
+function buildModelLoadingText(actualConcurrency, aggregateLoad) {
+  if (actualConcurrency > 1) {
+    return aggregateLoad == null ? "正在准备并行识别" : `正在加载并行识别模型 ${Math.round(aggregateLoad)}%`;
+  }
+  return aggregateLoad == null ? "正在准备识别字幕" : `正在加载本地模型 ${Math.round(aggregateLoad)}%`;
+}
+
+async function warmupWorkerPool(pool, actualConcurrency) {
+  if (!Array.isArray(pool) || pool.length === 0) {
+    return;
+  }
+  if (pool.length <= WORKER_WARMUP_BATCH_SIZE || actualConcurrency <= MAX_AUTO_WORKERS_BASELINE) {
+    await Promise.all(pool.map((workerClient) => workerClient.request("load-model")));
+    return;
+  }
+  for (let index = 0; index < pool.length; index += WORKER_WARMUP_BATCH_SIZE) {
+    const batch = pool.slice(index, index + WORKER_WARMUP_BATCH_SIZE);
+    await Promise.all(batch.map((workerClient) => workerClient.request("load-model")));
+  }
 }
 
 export async function runLocalAsrWithAutoParallelism({
@@ -588,9 +690,26 @@ export async function runLocalAsrWithAutoParallelism({
           }
           const values = [...workerLoadProgress.values()];
           const aggregateLoad = values.length > 0 ? values.reduce((sum, item) => sum + item, 0) / values.length : null;
+          const progressStage = payload?.stage === "transcribe-start" ? "transcribe-start" : "model-progress";
           onProgress?.(
             createParallelProgressEvent({
               currentText: plan.actualConcurrency > 1 ? "自动提速中，正在准备并行识别" : "正在准备识别字幕",
+              completedSegments: 0,
+              totalSegments: plan.segmentCount,
+              plannedConcurrency: plan.plannedConcurrency,
+              activeConcurrency: plan.actualConcurrency,
+              loadProgress: aggregateLoad,
+            }),
+          );
+          onProgress?.(
+            createParallelProgressEvent({
+              stage: progressStage,
+              currentText:
+                progressStage === "transcribe-start"
+                  ? plan.actualConcurrency > 1
+                    ? "并行模型已就绪，开始识别"
+                    : "本地模型已就绪，开始识别"
+                  : buildModelLoadingText(plan.actualConcurrency, aggregateLoad),
               completedSegments: 0,
               totalSegments: plan.segmentCount,
               plannedConcurrency: plan.plannedConcurrency,
@@ -603,7 +722,7 @@ export async function runLocalAsrWithAutoParallelism({
       pool.push(workerClient);
     }
 
-    await Promise.all(pool.map((workerClient) => workerClient.request("load-model")));
+    await warmupWorkerPool(pool, plan.actualConcurrency);
     if (aborted || signal?.aborted) {
       throw createAbortError();
     }
@@ -623,15 +742,26 @@ export async function runLocalAsrWithAutoParallelism({
         }
         const requestStart = nowMs();
         const segmentAudioData = segment.audioData;
-        const result = await workerClient.request(
-          "transcribe-audio",
-          {
-            audioData: segmentAudioData,
-            samplingRate,
-            fileName: `segment_${String(segment.index).padStart(4, "0")}.wav`,
-          },
-          [segmentAudioData.buffer],
-        );
+        let result;
+        try {
+          result = await workerClient.request(
+            "transcribe-audio",
+            {
+              audioData: segmentAudioData,
+              samplingRate,
+              fileName: `segment_${String(segment.index).padStart(4, "0")}.wav`,
+            },
+            [segmentAudioData.buffer],
+          );
+        } catch (error) {
+          for (const otherWorker of pool) {
+            if (otherWorker !== workerClient) {
+              otherWorker.terminate("识别失败", "Error");
+            }
+          }
+          throw new Error(`第 ${segment.index + 1}/${plan.segmentCount} 段识别失败：${error instanceof Error ? error.message : String(error)}`);
+        }
+        segment.audioData = null;
         completed.push({
           segment,
           result,
@@ -652,10 +782,29 @@ export async function runLocalAsrWithAutoParallelism({
             loadProgress: 100,
           }),
         );
+        onProgress?.(
+          createParallelProgressEvent({
+            stage: "segment-complete",
+            currentText: `第 ${completedSegments}/${plan.segmentCount} 段已完成，耗时 ${Math.max(0, Math.round(nowMs() - requestStart))} ms`,
+            completedSegments,
+            totalSegments: plan.segmentCount,
+            plannedConcurrency: plan.plannedConcurrency,
+            activeConcurrency: plan.actualConcurrency,
+            loadProgress: 100,
+          }),
+        );
       }
     }
 
-    await Promise.all(pool.map((workerClient) => runWorkerLoop(workerClient)));
+    try {
+      await Promise.all(pool.map((workerClient) => runWorkerLoop(workerClient)));
+    } catch (error) {
+      aborted = true;
+      for (const workerClient of pool) {
+        workerClient.terminate(error instanceof Error ? error.message : "parallel_asr_failed", "Error");
+      }
+      throw error;
+    }
     if (aborted || signal?.aborted) {
       throw createAbortError();
     }
