@@ -1,0 +1,62 @@
+schema_version: 1
+task_id: TASK-016
+title: 客户端更新与模型更新分层
+status: fix
+priority: medium
+project_root: D:/3.3-19.01
+base_ref: main
+task_context: 之前这项任务已经把 Bottle 1.0 的模型增量更新链路做出来了，但现在用户的真实诉求变成“客户端版本更新”和“模型资源更新”要明确分层，不能继续只让用户看到一条模糊的更新路径。继续维持现在只有模型更新、却没有客户端版本检查与提示的状态，会让用户分不清“更新应用”和“更新模型”各自负责什么，也会让后续正式发布桌面客户端时缺少稳定的升级入口。本轮修复要把更新故事改成两条清晰通道：客户端更新第一版只负责检查与提示，模型更新继续保留应用内增量更新能力。
+goal: 为桌面客户端补齐独立的客户端版本检查与提示链路，并把客户端更新状态与模型更新状态在运行时和交互上彻底分层。
+scope:
+  - 桌面端应用版本检查与提示入口
+  - 客户端版本元数据读取、桥接契约与提示文案边界
+  - Electron 主进程中的客户端更新状态与模型更新状态分离
+  - 桌面端更新相关打包配置与运行时脚本边界
+allowed_paths:
+  - desktop/package.json
+  - desktop/electron/main.mjs
+  - desktop/electron/preload.mjs
+  - desktop/electron/runtime-config.mjs
+  - desktop/electron/model-updater.mjs
+  - desktop/scripts/build-helper-runtime.mjs
+  - desktop/scripts/write-runtime-defaults.mjs
+  - tests/test_desktop_runtime_contract.py
+  - tests/test_desktop_installer_contract.py
+acceptance:
+  - 桌面客户端启动后或显式检查时，必须能独立判断“是否存在新客户端版本”，且该状态与 Bottle 1.0 模型更新状态分开维护，不能复用同一组字段、提示文案或进度事件。
+  - 第一版客户端更新只要求做到“检查并提示”：当存在更高客户端版本时，桌面端应给出非阻塞提示，至少包含当前版本、远端版本以及后续更新入口或链接；模型更新仍继续走现有应用内流程。
+  - 现有 Bottle 1.0 模型增量更新、取消、回滚与进度通知行为不得回归；客户端版本检查失败也不能把模型更新状态误标为失败，反之亦然。
+  - 桌面运行时桥接与相关合同测试必须能反映“客户端更新状态”和“模型更新状态”是两套边界清晰的能力，而不是只有模型更新。
+check_commands:
+  - npm --prefix desktop run build
+  - pytest tests/test_desktop_runtime_contract.py tests/test_desktop_installer_contract.py -q
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with: []
+notes_for_after: 这次修复不要把范围重新拉回“继续增强模型更新器”。重点是把更新能力按第一性原理拆开：应用版本更新负责客户端程序本身，模型更新负责 Bottle 1.0 资源本身。第一版优先交付“检查并提示”，不要顺手扩成完整静默自更新；如果需要引入新的应用版本检查配置或远端元数据读取方式，也要保持它与 `model-updater.mjs` 的职责分离，而不是继续把客户端更新逻辑塞进模型更新器。尽量把提示放在桌面层，不要依赖上传页或生成工作台 UI。当前仓库中的实际桌面工程目录是 `desktop/`；历史完成记录里保留的 `desktop-client/` 路径属于上一轮产物痕迹，本轮修复边界统一以 `desktop/` 为准，不要再演化出第二套桌面目录。
+result_summary: >-
+  完成本地 ASR manifest、增量更新器、Electron 更新 IPC 与上传页模型更新提示，
+  补齐从预装模型目录迁移到用户可写目录的增量更新链路，支持差异下载、取消、回滚与下次启动自动补齐。
+changed_files:
+  - app/api/routers/local_asr_assets.py
+  - desktop-client/electron/helper-runtime.mjs
+  - desktop-client/electron/main.mjs
+  - desktop-client/electron/preload.mjs
+  - desktop-client/electron/model-updater.mjs
+  - frontend/src/features/upload/UploadPanel.jsx
+  - frontend/src/shared/media/localAsrAssetManager.js
+  - tests/test_desktop_runtime_contract.py
+  - tests/test_desktop_installer_contract.py
+tests_run:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+  - npm --prefix desktop-client run build
+  - pytest tests/test_desktop_runtime_contract.py tests/test_desktop_installer_contract.py
+blocked_reason: ""
+completed_at: "2026-03-23T19:12:44.9401045+08:00"
+fix_request: 用户现在要求把客户端版本更新和模型更新拆成两条清晰通道：客户端更新第一版只负责检查与提示，模型更新继续留在应用内，不再把两者混成同一种“更新”体验。
+fix_reason: 上一轮任务只解决了模型资源增量更新，没有建立桌面客户端程序本身的更新入口，也没有把两类更新的状态、文案和职责边界分开；这已经偏离了当前用户要的正式桌面产品升级体验，需要在同一更新表面上原地修复。
+fix_round: 1
+fix_result_summary: ""
+fix_updated_at: "2026-03-24T00:36:16.9352134+08:00"

@@ -1,0 +1,49 @@
+schema_version: 1
+task_id: TASK-028
+title: 重构生成工作台与流式字幕
+status: todo
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+task_context: 用户当前真正不满的是“生成过程不可见”：上传页虽然有阶段进度，但看不到字幕是怎样一步步出来的，也无法像 Memo 那样一边看素材、一边看生成中的字幕草稿，更谈不上生成完成后留在同一工作台直接进入学习。继续只靠百分比、阶段名和最终结果，会让 Bottle 1.0 与 Bottle 2.0 在体验上都显得像黑盒，不满足用户对生成可见、可控、可恢复的第一目标。本任务要把上传流程重构成统一的生成工作台，并补上流式字幕展示：桌面浏览器网页与 Electron 统一工作台思路，移动端保持同能力但不强求同布局。
+goal: 把上传页重构为生成工作台，并为 Bottle 1.0 与 Bottle 2.0 增加可回改的流式字幕展示和完成后留页学习入口。
+scope:
+  - 上传页生成工作台布局与状态流转
+  - Bottle 1.0 与 Bottle 2.0 的中间字幕流展示
+  - 工作台统一字幕草稿契约，优先复用现有任务详情轮询，必要时可叠加 SSE 推送，但两条通路必须输出同一份草稿结构
+allowed_paths:
+  - frontend/src/features/upload/UploadPanel.jsx
+  - frontend/src/features/upload/localAsrParallelRuntime.js
+  - frontend/src/features/upload/uploadStatusTheme.js
+  - frontend/src/shared/media/localAsrAssetManager.js
+  - app/api/routers/lessons.py
+  - app/api/routers/desktop_asr.py
+  - app/services/lesson_service.py
+  - app/services/lesson_task_manager.py
+  - tests/test_regression_api.py
+  - tests/test_desktop_local_asr.py
+acceptance:
+  - PC 浏览器网页与 Electron 上传页必须变成统一的生成工作台：左上显示视频或素材预览，左下显示生成流程与主操作区，右侧显示生成中的字幕草稿；移动端与平板要求保留同等生成可见性与流式字幕能力，但允许不是左右分栏。
+  - Bottle 1.0 生成时必须能持续展示可回改的中间字幕草稿，优先做到词级滚动；Bottle 2.0 第一版至少要按句或按段持续刷新字幕草稿，更新粒度与频率可以比 Bottle 1.0 稀疏，但不能继续只有静态阶段进度或最终一次性结果。
+  - 生成中的草稿字幕允许被后续结果修正，但任务成功后必须由最终正式字幕或课程结果完成一次确定性覆盖并标记为最终态，页面主操作切换为“开始沉浸式学习”，而不是强制自动跳页。
+  - 刷新页面或重新进入上传页时，工作台必须能从工作区/任务状态恢复最近一次生成上下文与字幕草稿，而不是只恢复百分比。
+  - 本任务不得把 `TASK-026` 的链接导入一起吞并重做；如果改到共享上传状态或入口结构，必须为后续链接导入保留清晰接入缝，不得破坏现有文件上传生成链路。
+check_commands:
+  - npm --prefix frontend run build
+  - pytest tests/test_regression_api.py tests/test_desktop_local_asr.py -q
+depends_on:
+  - TASK-027
+dependency_reason: 生成工作台需要可靠读取每课工作区里的中间字幕草稿、过程日志和恢复摘要，否则流式字幕与刷新恢复仍会退回到零散的临时状态，无法在同一页稳定承接本地与云端两类生成路径。
+blocked_by: []
+conflicts_with: []
+notes_for_after: 这项任务的产品核心不是“把上传页换个布局”，而是把生成过程做成可见、可回改、可恢复的工作台。Bottle 1.0 与 Bottle 2.0 都要接入同一套“字幕草稿”展示契约：Bottle 1.0 优先词级，Bottle 2.0 第一版允许更稀疏的按句或按段刷新，但不要做假随机打字效果。无论底层最终走轮询还是 SSE，前端都只消费一份统一草稿结构，至少包含来源 task/workspace、当前字幕片段列表、是否最终态与最近更新时间，不要为 Bottle 1.0 和 Bottle 2.0 各造一套前端状态。移动端遵循“同能力，不强求同布局”，不要硬套桌面双栏。生成完成后留在当前页，把流程区主按钮切成“开始沉浸式学习”。另外不要把已完成的链接导入逻辑吞并重做；如改到共享上传状态，需给既有链接导入入口保留清晰接入缝。
+result_summary: ""
+changed_files: []
+tests_run: []
+blocked_reason: ""
+completed_at: ""
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

@@ -17,7 +17,7 @@ import { computeModelUpdateDelta, fetchRemoteManifest, performIncrementalModelUp
 const currentFile = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFile);
 const iconPath = path.join(path.resolve(currentDir, ".."), "build", "icon.ico");
-const LOCAL_HELPER_ALLOWED_PREFIXES = ["/api/local-asr-assets", "/api/desktop-asr", "/health", "/health/ready"];
+const LOCAL_HELPER_ALLOWED_PREFIXES = ["/api/local-asr-assets", "/api/desktop-asr", "/api/desktop-asr/url-import", "/health", "/health/ready"];
 const DESKTOP_MODEL_UPDATE_KEY = "faster-whisper-medium";
 
 let mainWindow = null;
