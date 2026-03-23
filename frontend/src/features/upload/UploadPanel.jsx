@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { cn } from "../../lib/utils";
 import { api, createApiClient, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
-import { ASR_MODEL_KEYS, buildAsrModelCatalogMap, getAsrModelCatalogItem, getAsrModelStatusLabel, isAsrModelPreparing, isAsrModelReady } from "../../shared/lib/asrModels";
+import { ASR_MODEL_KEYS, buildAsrModelCatalogMap, getAsrModelCatalogItem, isAsrModelPreparing, isAsrModelReady } from "../../shared/lib/asrModels";
 import { formatMoneyCents, formatMoneyYuan, formatMoneyYuanPerMinute } from "../../shared/lib/money";
 import {
   cancelDesktopModelUpdate,
@@ -85,12 +85,6 @@ function getDefaultFasterWhisperRuntimeTrack() {
     return FAST_RUNTIME_TRACK_BROWSER_LOCAL;
   }
   return FAST_RUNTIME_TRACK_CLOUD;
-}
-
-function getFastRuntimeTrackLabel(track) {
-  if (track === FAST_RUNTIME_TRACK_DESKTOP_LOCAL) return "本地电脑跑";
-  if (track === FAST_RUNTIME_TRACK_BROWSER_LOCAL) return "本地网站跑";
-  return "服务器跑";
 }
 
 function normalizeServerStatus(payload = {}) {
@@ -322,8 +316,8 @@ function getUploadCardActionMeta({
 }) {
   if (item.key === FASTER_WHISPER_MODEL) {
     return {
-      label: fasterModelReady ? "重新准备" : fasterModelPreparing || fasterModelBusy ? "准备中" : "准备模型",
-      disabled: uploadActionBusy || fasterModelBusy || fasterModelPreparing || localTranscribing,
+      label: fasterModelReady ? "已就绪" : fasterModelPreparing || fasterModelBusy ? "准备中" : "准备模型",
+      disabled: fasterModelReady || uploadActionBusy || fasterModelBusy || fasterModelPreparing || localTranscribing,
     };
   }
   return {
@@ -3475,10 +3469,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                   : "选择文件后显示"
                 : "该模型未配置 ASR 单价"}
             </p>
-            <p className="text-xs text-muted-foreground">
-              MT 估算：{mtRatePricePer1kTokensYuan > 0 ? `${formatMoneyYuan(mtRatePricePer1kTokensYuan)}/1k Tokens` : "未配置 MT 费率"}，按约{" "}
-              {ESTIMATED_MT_TOKENS_PER_MINUTE} Tokens/分钟折算，最终以实际翻译 Tokens 为准。
-            </p>
           </AlertDescription>
         </Alert>
 
@@ -3507,24 +3497,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 isFasterWhisper && (hasDesktopRuntimeBridge() || hasBrowserLocalRuntimeBridge()) ? fasterWhisperRuntimeTrack : FAST_RUNTIME_TRACK_CLOUD;
               const fasterWhisperDesktopTrack = fasterWhisperCardTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL;
               const fasterWhisperBrowserTrack = fasterWhisperCardTrack === FAST_RUNTIME_TRACK_BROWSER_LOCAL;
-              const fasterCardStatus = String(fasterModelState.status || "").trim().toLowerCase();
-              const cardStatusLabel = isFasterWhisper
-                ? fasterWhisperDesktopTrack
-                  ? desktopBundleBusy
-                    ? "本机准备中"
-                    : desktopBundleAvailable
-                      ? "本机可用"
-                      : "本机未就绪"
-                  : fasterWhisperBrowserTrack
-                    ? browserLocalRuntimeAvailable
-                      ? "本地网站可用"
-                      : "本地网站未就绪"
-                  : getAsrModelStatusLabel(fasterModelState, { readyLabel: "云端已就绪", missingLabel: "云端未准备", loadingLabel: "云端准备中", errorLabel: "云端异常", unsupportedLabel: "不可用" })
-                : getAsrModelStatusLabel({ status: "ready", downloadRequired: false }, { readyLabel: "可用" });
-              const cardPriceLabel =
-                isFasterWhisper && (fasterWhisperDesktopTrack || fasterWhisperBrowserTrack)
-                  ? `${getFastRuntimeTrackLabel(fasterWhisperCardTrack)} / ${getUploadModelPriceLabel(item, billingRates)}`
-                  : getUploadModelPriceLabel(item, billingRates);
+              const cardPriceLabel = getUploadModelPriceLabel(item, billingRates);
               const highlightStatus = isFasterWhisper
                 ? fasterWhisperDesktopTrack
                   ? desktopBundleAvailable
@@ -3546,7 +3519,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 error: modelCardHasError,
               });
               const modelCardToneStyles = getUploadToneStyles(modelCardTone);
-              const modelBadgeToneStyles = getUploadToneStyles(highlightStatus ? "success" : modelCardTone === "running" ? "running" : "idle");
+              const cardStatusAvailable = !isFasterWhisper || highlightStatus;
+              const cardStatusLabel = cardStatusAvailable ? "可用" : "不可用";
               const showCardProgress = isFasterWhisper
                 ? fasterWhisperDesktopTrack
                   ? desktopBundleBusy
@@ -3561,48 +3535,6 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                   ? desktopBundleState.message || "正在准备本机资源"
                   : serverBusyText || fasterModelState.message || "准备中",
               );
-              const cardErrorText = isFasterWhisper
-                ? sanitizeUserFacingText(String(fasterWhisperDesktopTrack ? desktopBundleState.lastError || "" : fasterModelState.lastError || ""))
-                : "";
-              const desktopBundleStatusText =
-                isFasterWhisper && hasDesktopRuntimeBridge()
-                  ? sanitizeUserFacingText(
-                      String(
-                        desktopBundleState.message ||
-                          (desktopBundleAvailable
-                            ? "桌面端本机 Bottle 1.0 资源已预装。"
-                            : desktopBundleInstallAvailable
-                              ? "桌面端本机 Bottle 1.0 资源未预装，可在安装后继续准备。"
-                              : ""),
-                      ),
-                    )
-                  : "";
-              const desktopBundleErrorText = isFasterWhisper && hasDesktopRuntimeBridge() ? sanitizeUserFacingText(String(desktopBundleState.lastError || "")) : "";
-              const cardStatusText = isFasterWhisper
-                ? fasterWhisperDesktopTrack
-                  ? sanitizeUserFacingText(
-                      desktopBundleState.message ||
-                        (desktopBundleAvailable
-                          ? "Bottle 1.0 将在本地电脑 helper 中运行，云端只负责保存课程结果。"
-                          : desktopBundleInstallAvailable
-                            ? "请先准备本地电脑资源，随后即可用本地电脑 Bottle 1.0 生成课程。"
-                            : "当前安装包未提供可用的 Bottle 1.0 本机资源，请改用云端运行。"),
-                    )
-                  : fasterWhisperBrowserTrack
-                    ? sanitizeUserFacingText(
-                        browserLocalRuntimeAvailable
-                          ? "Bottle 1.0 将在本地网站运行时中完成抽音频、识别和课程结构生成，云端只负责保存。"
-                          : browserLocalRuntimeBlockedMessage,
-                      )
-                  : sanitizeUserFacingText(
-                      fasterModelState.message ||
-                        (fasterModelReady
-                          ? "服务端模型已就绪，可直接生成。"
-                          : fasterCardStatus === "error"
-                            ? "服务端模型暂未就绪，请重新准备。"
-                            : String(uploadCardMeta.note || uploadCardMeta.subtitle || "")),
-                    )
-                : sanitizeUserFacingText(String(uploadCardMeta.note || uploadCardMeta.subtitle || ""));
               const actionMeta = getUploadCardActionMeta({
                 item,
                 uploadActionBusy,
@@ -3677,17 +3609,17 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                   aria-disabled={uploadActionBusy}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
+                    <div className="space-y-0.5">
                       <p className="text-sm font-semibold text-foreground">{uploadCardMeta.title}</p>
                       <p className="text-sm text-muted-foreground">{cardPriceLabel}</p>
-                      <p className="text-xs text-muted-foreground">{uploadCardMeta.subtitle}</p>
                     </div>
                     <Badge
                       variant="outline"
-                      className={cn(highlightStatus ? modelBadgeToneStyles.badgeSolid : modelBadgeToneStyles.badge)}
+                      className={cn(
+                        "shrink-0",
+                        cardStatusAvailable ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700",
+                      )}
                     >
-                      {showReadyIcon ? <CheckCircle2 className="mr-1 size-3.5" /> : null}
-                      {showLoadingIcon ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : null}
                       {cardStatusLabel}
                     </Badge>
                   </div>
@@ -3734,19 +3666,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                       >
                         服务器跑
                       </Button>
-                      <p className="w-full px-1 text-xs text-muted-foreground">当前轨道：{getFastRuntimeTrackLabel(fasterWhisperCardTrack)}</p>
-                      {fasterWhisperCardTrack === FAST_RUNTIME_TRACK_BROWSER_LOCAL && !browserLocalRuntimeAvailable ? (
-                        <p className="w-full px-1 text-xs text-muted-foreground">{browserLocalRuntimeBlockedMessage}</p>
-                      ) : null}
                     </div>
                   ) : null}
-
-                  <div className="rounded-xl border bg-background/70 p-3">
-                    <p className="text-xs leading-5 text-muted-foreground">{cardStatusText || "选择后即可开始。"}</p>
-                    {desktopBundleStatusText ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{desktopBundleStatusText}</p> : null}
-                    {cardErrorText ? <p className="mt-2 text-xs leading-5 text-destructive break-all">{cardErrorText}</p> : null}
-                    {desktopBundleErrorText && fasterWhisperDesktopTrack ? <p className="mt-2 text-xs leading-5 text-destructive break-all">{desktopBundleErrorText}</p> : null}
-                  </div>
 
                   {showCardProgress ? (
                     <div className="space-y-1">
@@ -3768,6 +3689,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                     <Button
                       type="button"
                       variant={isQwen ? "outline" : "default"}
+                      className="h-9 px-3"
                       onClick={(event) => {
                         event.stopPropagation();
                         if (isFasterWhisper) {
@@ -3795,6 +3717,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                       <Button
                         type="button"
                         variant={desktopBundleAvailable ? "outline" : "secondary"}
+                        className="h-9 px-3"
                         onClick={(event) => {
                           event.stopPropagation();
                           void handleDesktopBundlePrepare(item.key);
@@ -3864,7 +3787,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               canReconnectInterruptedTask ? (
                 <Button
                   type="button"
-                  className={getUploadToneStyles("recoverable").button}
+                  className={cn("h-9 px-3", getUploadToneStyles("recoverable").button)}
                   onClick={() => void (canReconnectInterruptedTask ? reconnectTaskPolling() : resumeTask())}
                 >
                   <RefreshCcw className="size-4" />
@@ -3875,16 +3798,19 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 type="button"
                 variant={(restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED || restoreBannerMode === RESTORE_BANNER_MODES.NONE) && taskPaused ? "outline" : "default"}
                 className={
-                  (restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED || restoreBannerMode === RESTORE_BANNER_MODES.NONE) && taskPaused
-                    ? getUploadToneStyles("selected").buttonSubtle
-                    : getUploadToneStyles("selected").button
+                  cn(
+                    "h-9 px-3",
+                    (restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED || restoreBannerMode === RESTORE_BANNER_MODES.NONE) && taskPaused
+                      ? getUploadToneStyles("selected").buttonSubtle
+                      : getUploadToneStyles("selected").button,
+                  )
                 }
                 onClick={() => void clearTaskRuntime("已保留素材，可重新开始。")}
               >
                 <RefreshCcw className="size-4" />
                 重新开始
               </Button>
-              <Button type="button" variant="ghost" onClick={() => void clearTaskRuntime()}>
+              <Button type="button" variant="ghost" className="h-9 px-3" onClick={() => void clearTaskRuntime()}>
                 清空这次记录
               </Button>
             </div>
@@ -3910,11 +3836,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               }}
               disabled={loading || localModeBusy}
             />
-            <div className="grid gap-2 md:grid-cols-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                className="h-11"
+                className="h-9 px-4"
                 onClick={() => {
                   if (fileInputRef.current) {
                     fileInputRef.current.value = "";
@@ -3925,18 +3851,18 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               >
                 选择文件
               </Button>
-              <Button type="button" variant="secondary" className="h-11" onClick={() => setLinkDialogOpen(true)} disabled={loading || localModeBusy}>
-                链接生成视频
+              <Button type="button" variant="default" className="h-9 px-4" onClick={() => setLinkDialogOpen(true)} disabled={loading || localModeBusy}>
+                提取视频
               </Button>
             </div>
           </div>
 
           {serviceTaskStopActionsVisible ? (
-            <div className="grid gap-2 md:grid-cols-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                className="h-11"
+                className="h-9 px-4"
                 onClick={() => void requestServerTaskControl("pause")}
                 disabled={Boolean(displayTaskSnapshot?.control_action) || !Boolean(displayTaskSnapshot?.can_pause)}
               >
@@ -3952,7 +3878,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               <Button
                 type="button"
                 variant="secondary"
-                className="h-11"
+                className="h-9 px-4"
                 onClick={() => void requestServerTaskControl("terminate")}
                 disabled={Boolean(displayTaskSnapshot?.control_action) || !Boolean(displayTaskSnapshot?.can_terminate)}
               >
@@ -3971,7 +3897,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               type={localTranscribing ? "button" : "submit"}
               disabled={primaryActionDisabled}
               className={cn(
-                "h-11 w-full",
+                "h-9 px-4",
                 phase === "upload_paused"
                   ? getUploadToneStyles("recoverable").button
                   : phase === "success"
@@ -3999,7 +3925,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
           )}
 
           {phase === "uploading" ? (
-            <Button type="button" variant="outline" className="h-11 w-full" onClick={() => void pauseUpload()}>
+            <Button type="button" variant="outline" className="h-9 px-4" onClick={() => void pauseUpload()}>
               取消上传
             </Button>
           ) : null}
@@ -4017,11 +3943,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
               <div className={cn("h-full rounded-full transition-[width,background-color] duration-300", taskToneStyles.progress)} style={{ width: `${progressPercent}%` }} />
             </div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-5 gap-2 overflow-x-auto pb-1">
               {stageItems.map((item) => {
                 const stageToneStyles = getUploadToneStyles(getUploadStageTone(item.status));
                 return (
-                  <div key={item.key} className={cn("space-y-2 rounded-xl border px-3 py-3", stageToneStyles.surface)}>
+                  <div key={item.key} className={cn("min-w-[120px] space-y-2 rounded-xl border px-3 py-3", stageToneStyles.surface)}>
                     <div className="flex items-start justify-between gap-3">
                       <p className="text-sm font-semibold">{item.label}</p>
                       <span className="text-xs font-semibold tabular-nums">{item.detailText}</span>
@@ -4055,15 +3981,15 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" className={getUploadToneStyles("success").button} onClick={() => onNavigateToLesson?.(taskSnapshot.lesson.id)}>
+              <Button type="button" className={cn("h-9 px-3", getUploadToneStyles("success").button)} onClick={() => onNavigateToLesson?.(taskSnapshot.lesson.id)}>
                 去学习
               </Button>
               {taskSucceededPartially ? (
-                <Button type="button" variant="outline" className={getUploadToneStyles("selected").buttonSubtle} onClick={() => void copyTaskDebugReport(taskId || taskSnapshot?.task_id)}>
+                <Button type="button" variant="outline" className={cn("h-9 px-3", getUploadToneStyles("selected").buttonSubtle)} onClick={() => void copyTaskDebugReport(taskId || taskSnapshot?.task_id)}>
                   复制排错信息
                 </Button>
               ) : null}
-              <Button type="button" variant="outline" className={getUploadToneStyles("selected").buttonSubtle} onClick={() => void resetSession()}>
+              <Button type="button" variant="outline" className={cn("h-9 px-3", getUploadToneStyles("selected").buttonSubtle)} onClick={() => void resetSession()}>
                 继续上传
               </Button>
             </div>
@@ -4090,23 +4016,23 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 </Button>
               ) : null}
               {canRetryWithoutUpload ? (
-                <Button type="button" className={getUploadToneStyles(taskSnapshot?.resume_available ? "recoverable" : "selected").button} onClick={() => void resumeTask()}>
+                <Button type="button" className={cn("h-9 px-3", getUploadToneStyles(taskSnapshot?.resume_available ? "recoverable" : "selected").button)} onClick={() => void resumeTask()}>
                   <RefreshCcw className="size-4" />
                   {taskSnapshot?.resume_available ? "免上传继续生成" : "免上传重新生成"}
                 </Button>
               ) : null}
               {hasLocalFile ? (
-                <Button type="button" variant="secondary" className={getUploadToneStyles("selected").button} onClick={() => void submit()}>
+                <Button type="button" variant="secondary" className={cn("h-9 px-3", getUploadToneStyles("selected").button)} onClick={() => void submit()}>
                   <RefreshCcw className="size-4" />
                   重新上传当前素材
                 </Button>
               ) : null}
               {hasLocalFile ? (
-                <Button type="button" variant="ghost" onClick={() => void clearTaskRuntime()}>
+                <Button type="button" variant="ghost" className="h-9 px-3" onClick={() => void clearTaskRuntime()}>
                   保留素材并清空错误
                 </Button>
               ) : null}
-              <Button type="button" variant="outline" onClick={() => void resetSession()}>
+              <Button type="button" variant="outline" className="h-9 px-3" onClick={() => void resetSession()}>
                 更换素材
               </Button>
             </div>
@@ -4138,7 +4064,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>链接生成视频</DialogTitle>
+              <DialogTitle>提取视频</DialogTitle>
               <DialogDescription asChild>
                 <div className="space-y-1">
                   <p>上传视频才可以获取素材。</p>
@@ -4148,10 +4074,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setLinkDialogOpen(false)}>
+              <Button type="button" variant="ghost" className="h-9 px-3" onClick={() => setLinkDialogOpen(false)}>
                 取消
               </Button>
-              <Button type="button" onClick={() => window.open("https://snapany.com/zh", "_blank", "noopener,noreferrer")}>
+              <Button type="button" className="h-9 px-3" onClick={() => window.open("https://snapany.com/zh", "_blank", "noopener,noreferrer")}>
                 跳转
               </Button>
             </DialogFooter>
