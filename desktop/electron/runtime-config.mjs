@@ -52,6 +52,7 @@ function readJsonFile(configPath) {
 function buildDefaultConfig({ userDataDir, cacheDir, logDir, tempDir, env = process.env, defaultConfigPath = "" }) {
   const packagedDefaults = trimText(defaultConfigPath) ? readJsonFile(defaultConfigPath) : {};
   const packagedCloud = packagedDefaults?.cloud && typeof packagedDefaults.cloud === "object" ? packagedDefaults.cloud : {};
+  const packagedLocal = packagedDefaults?.local && typeof packagedDefaults.local === "object" ? packagedDefaults.local : {};
   const packagedAppBaseUrl = trimText(packagedCloud.appBaseUrl);
   const packagedApiBaseUrl = trimText(packagedCloud.apiBaseUrl);
   const defaultAppBaseUrl = trimText(env.DESKTOP_CLOUD_APP_URL || env.DESKTOP_APP_URL || env.DESKTOP_WEB_BASE_URL || packagedAppBaseUrl);
@@ -65,7 +66,10 @@ function buildDefaultConfig({ userDataDir, cacheDir, logDir, tempDir, env = proc
     },
     local: {
       userDataDir: localUserDataDir,
-      modelDir: normalizeDirectoryPath(env.DESKTOP_MODEL_DIR, path.join(localUserDataDir, "models", "faster-distil-small.en")),
+      modelDir: normalizeDirectoryPath(
+        env.DESKTOP_MODEL_DIR,
+        packagedLocal?.preinstalledModelDir || path.join(localUserDataDir, "models", "faster-distil-small.en"),
+      ),
       cacheDir: normalizeDirectoryPath(env.DESKTOP_CACHE_DIR, cacheDir),
       logDir: normalizeDirectoryPath(env.DESKTOP_LOG_DIR, logDir),
       tempDir: normalizeDirectoryPath(env.DESKTOP_TEMP_DIR, tempDir),

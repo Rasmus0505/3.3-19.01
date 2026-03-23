@@ -40,6 +40,13 @@ const configuredApiBaseUrl = trimText(process.env.DESKTOP_CLOUD_API_BASE_URL || 
 const appBaseUrl = normalizeHttpUrl(configuredAppBaseUrl || inferAppBaseUrl(configuredApiBaseUrl), "DESKTOP_CLOUD_APP_URL");
 const apiBaseUrl = normalizeHttpUrl(configuredApiBaseUrl || appBaseUrl, "DESKTOP_CLOUD_API_BASE_URL");
 
+// The preinstalled model shipped inside the installer at resources/preinstalled-models/faster-distil-small.en.
+// This path is baked in at package time and read back at runtime by runtime-config.mjs
+// as a fallback when DESKTOP_MODEL_DIR is not configured.
+const bundledModelSourceDir = path.resolve(desktopRoot, "..", "asr-test", "models", "faster-distil-small.en");
+const bundledModelExists = fs.existsSync(bundledModelSourceDir) && fs.readdirSync(bundledModelSourceDir).length > 0;
+const preinstalledModelDir = bundledModelExists ? bundledModelSourceDir : "";
+
 if (!appBaseUrl || !apiBaseUrl) {
   throw new Error(
     "package:win requires DESKTOP_CLOUD_APP_URL and/or DESKTOP_CLOUD_API_BASE_URL so the installed app can open the cloud login page without asking end users for server settings.",
@@ -52,6 +59,9 @@ const payload = {
   cloud: {
     appBaseUrl,
     apiBaseUrl,
+  },
+  local: {
+    preinstalledModelDir,
   },
 };
 
