@@ -15,6 +15,7 @@ import {
 } from "../../shared/ui";
 import {
   LEARNING_SETTINGS_UPDATED_EVENT,
+  TRANSLATION_MASK_LAYOUT_VERSION,
   getShortcutLabel,
   isShortcutPressed,
   readLearningSettings,
@@ -35,9 +36,9 @@ const PROGRAMMATIC_FULLSCREEN_EXIT_RESET_MS = 1000;
 const WORDBOOK_LONG_PRESS_MS = 260;
 const TRANSLATION_MASK_MIN_WIDTH_PX = 120;
 const TRANSLATION_MASK_MIN_HEIGHT_PX = 52;
-const TRANSLATION_MASK_DEFAULT_WIDTH_RATIO = 0.44;
-const TRANSLATION_MASK_DEFAULT_HEIGHT_RATIO = 0.16;
-const TRANSLATION_MASK_DEFAULT_BOTTOM_OFFSET_RATIO = 0.08;
+const TRANSLATION_MASK_DEFAULT_WIDTH_RATIO = 0.58;
+const TRANSLATION_MASK_DEFAULT_BOTTOM_OFFSET_PX = 12;
+const TRANSLATION_MASK_VISIBLE_BOTTOM_GAP_PX = 12;
 const TRANSLATION_MASK_EMPTY_RECT = Object.freeze({ x: null, y: null, width: null, height: null });
 const MEDIA_TYPE_BY_EXTENSION = {
   ".mp4": "video/mp4",
@@ -53,6 +54,32 @@ const MEDIA_TYPE_BY_EXTENSION = {
   ".ogg": "audio/ogg",
   ".opus": "audio/ogg; codecs=opus",
 };
+const TRANSLATION_MASK_RESIZE_HANDLES = [
+  {
+    key: "nw",
+    mode: "resize-nw",
+    className: "immersive-translation-mask__resize-handle immersive-translation-mask__resize-handle--top-left",
+    ariaLabel: "从左上角调整字幕遮挡板尺寸",
+  },
+  {
+    key: "ne",
+    mode: "resize-ne",
+    className: "immersive-translation-mask__resize-handle immersive-translation-mask__resize-handle--top-right",
+    ariaLabel: "从右上角调整字幕遮挡板尺寸",
+  },
+  {
+    key: "sw",
+    mode: "resize-sw",
+    className: "immersive-translation-mask__resize-handle immersive-translation-mask__resize-handle--bottom-left",
+    ariaLabel: "从左下角调整字幕遮挡板尺寸",
+  },
+  {
+    key: "se",
+    mode: "resize-se",
+    className: "immersive-translation-mask__resize-handle immersive-translation-mask__resize-handle--bottom-right",
+    ariaLabel: "从右下角调整字幕遮挡板尺寸",
+  },
+];
 
 function clampNumber(value, min, max) {
   if (!Number.isFinite(value)) return min;
@@ -97,6 +124,7 @@ function buildTranslationMaskUiPreference(enabled, rect) {
   const normalizedRect = normalizeTranslationMaskRect(rect);
   return {
     enabled: Boolean(enabled),
+    layoutVersion: TRANSLATION_MASK_LAYOUT_VERSION,
     x: normalizedRect.x,
     y: normalizedRect.y,
     width: normalizedRect.width,
@@ -110,8 +138,8 @@ function buildDefaultTranslationMaskRect(metrics) {
   const minWidth = Math.min(TRANSLATION_MASK_MIN_WIDTH_PX, safeWidth);
   const minHeight = Math.min(TRANSLATION_MASK_MIN_HEIGHT_PX, safeHeight);
   const width = clampNumber(safeWidth * TRANSLATION_MASK_DEFAULT_WIDTH_RATIO, minWidth, safeWidth);
-  const height = clampNumber(safeHeight * TRANSLATION_MASK_DEFAULT_HEIGHT_RATIO, minHeight, safeHeight);
-  const bottomOffset = Math.max(12, safeHeight * TRANSLATION_MASK_DEFAULT_BOTTOM_OFFSET_RATIO);
+  const height = minHeight;
+  const bottomOffset = Math.min(TRANSLATION_MASK_DEFAULT_BOTTOM_OFFSET_PX, Math.max(0, safeHeight - height));
   const left = clampNumber((safeWidth - width) / 2, 0, Math.max(0, safeWidth - width));
   const top = clampNumber(safeHeight - height - bottomOffset, 0, Math.max(0, safeHeight - height));
   return convertTranslationMaskRectToStored({ left, top, width, height }, { width: safeWidth, height: safeHeight });
@@ -167,6 +195,57 @@ function resolveTranslationMaskRect(maskRect, metrics) {
   const left = clampNumber((sourceRect.x ?? fallbackRect.x ?? 0) * safeWidth, 0, Math.max(0, safeWidth - width));
   const top = clampNumber((sourceRect.y ?? fallbackRect.y ?? 0) * safeHeight, 0, Math.max(0, safeHeight - height));
   return { left, top, width, height };
+}
+
+function resolveTranslationMaskResizeRect(startRect, mode, deltaX, deltaY, metrics) {
+  if (!startRect || !metrics) return null;
+  const boundsWidth = Math.max(1, Number(metrics.width || 0));
+  const boundsHeight = Math.max(1, Number(metrics.height || 0));
+  const minWidth = Math.min(TRANSLATION_MASK_MIN_WIDTH_PX, boundsWidth);
+  const minHeight = Math.min(TRANSLATION_MASK_MIN_HEIGHT_PX, boundsHeight);
+  const right = startRect.left + startRect.width;
+  const bottom = startRect.top + startRect.height;
+
+  switch (mode) {
+    case "resize":
+    case "resize-se":
+      return {
+        left: startRect.left,
+        top: startRect.top,
+        width: clampNumber(startRect.width + deltaX, minWidth, boundsWidth - startRect.left),
+        height: clampNumber(startRect.height + deltaY, minHeight, boundsHeight - startRect.top),
+      };
+    case "resize-sw": {
+      const left = clampNumber(startRect.left + deltaX, 0, Math.max(0, right - minWidth));
+      return {
+        left,
+        top: startRect.top,
+        width: right - left,
+        height: clampNumber(startRect.height + deltaY, minHeight, boundsHeight - startRect.top),
+      };
+    }
+    case "resize-ne": {
+      const top = clampNumber(startRect.top + deltaY, 0, Math.max(0, bottom - minHeight));
+      return {
+        left: startRect.left,
+        top,
+        width: clampNumber(startRect.width + deltaX, minWidth, boundsWidth - startRect.left),
+        height: bottom - top,
+      };
+    }
+    case "resize-nw": {
+      const left = clampNumber(startRect.left + deltaX, 0, Math.max(0, right - minWidth));
+      const top = clampNumber(startRect.top + deltaY, 0, Math.max(0, bottom - minHeight));
+      return {
+        left,
+        top,
+        width: right - left,
+        height: bottom - top,
+      };
+    }
+    default:
+      return null;
+  }
 }
 
 function debugImmersiveLog(event, detail = {}) {
@@ -727,6 +806,7 @@ export function ImmersiveLessonPage({
   const immersiveMediaRef = useRef(null);
   const mediaElementRef = useRef(null);
   const clipAudioRef = useRef(null);
+  const typingPanelRef = useRef(null);
   const typingInputRef = useRef(null);
   const bindingInputRef = useRef(null);
   const cinemaControlsIdleTimerRef = useRef(null);
@@ -755,6 +835,7 @@ export function ImmersiveLessonPage({
     startY: 0,
     startRect: null,
     latestRect: null,
+    captureElement: null,
   });
   const cinemaFullscreenActive = isCinemaFullscreen || isFullscreenFallback;
   const showPreviousSentenceBlock = !cinemaFullscreenActive || showFullscreenPreviousSentence;
@@ -925,12 +1006,31 @@ export function ImmersiveLessonPage({
   );
 
   const resetTranslationMaskGesture = useCallback(() => {
+    const captureElement = translationMaskGestureRef.current.captureElement;
+    const activePointerId = translationMaskGestureRef.current.pointerId;
+    if (
+      captureElement &&
+      activePointerId !== null &&
+      typeof captureElement.releasePointerCapture === "function"
+    ) {
+      try {
+        if (
+          typeof captureElement.hasPointerCapture !== "function" ||
+          captureElement.hasPointerCapture(activePointerId)
+        ) {
+          captureElement.releasePointerCapture(activePointerId);
+        }
+      } catch (_) {
+        // Ignore pointer capture release failures across browsers.
+      }
+    }
     translationMaskGestureRef.current.pointerId = null;
     translationMaskGestureRef.current.mode = "";
     translationMaskGestureRef.current.startX = 0;
     translationMaskGestureRef.current.startY = 0;
     translationMaskGestureRef.current.startRect = null;
     translationMaskGestureRef.current.latestRect = null;
+    translationMaskGestureRef.current.captureElement = null;
   }, []);
 
   const updateTranslationMaskMetrics = useCallback(() => {
@@ -946,10 +1046,26 @@ export function ImmersiveLessonPage({
       setTranslationMaskMetrics(null);
       return;
     }
-    const defaultRect = buildDefaultTranslationMaskRect(videoRect);
-    setTranslationMaskMetrics({
+    const typingRect = typingPanelRef.current?.getBoundingClientRect() || null;
+    const visibleBottom = typingRect
+      ? Math.min(
+          videoRect.top + videoRect.height,
+          Math.max(videoRect.top, typingRect.top - containerRect.top - TRANSLATION_MASK_VISIBLE_BOTTOM_GAP_PX),
+        )
+      : videoRect.top + videoRect.height;
+    const visibleHeight = Math.max(0, visibleBottom - videoRect.top);
+    if (visibleHeight <= 0) {
+      setTranslationMaskMetrics(null);
+      return;
+    }
+    const maskViewportRect = {
       width: videoRect.width,
-      height: videoRect.height,
+      height: visibleHeight,
+    };
+    const defaultRect = buildDefaultTranslationMaskRect(maskViewportRect);
+    setTranslationMaskMetrics({
+      width: maskViewportRect.width,
+      height: maskViewportRect.height,
       offsetLeft: videoRect.left,
       offsetTop: videoRect.top,
       defaultRect,
@@ -1529,6 +1645,9 @@ export function ImmersiveLessonPage({
     if (resizeObserver && mediaElementRef.current) {
       resizeObserver.observe(mediaElementRef.current);
     }
+    if (resizeObserver && typingPanelRef.current) {
+      resizeObserver.observe(typingPanelRef.current);
+    }
     window.addEventListener("resize", updateTranslationMaskMetrics);
     return () => {
       resizeObserver?.disconnect();
@@ -1924,14 +2043,24 @@ export function ImmersiveLessonPage({
     (event, mode = "move") => {
       if (!translationMaskEnabled || !resolvedTranslationMaskRect || !translationMaskMetrics) return;
       if (typeof event.button === "number" && event.button !== 0) return;
+      const gesture = translationMaskGestureRef.current;
+      if (gesture.pointerId !== null && gesture.pointerId !== event.pointerId) return;
       event.preventDefault();
       event.stopPropagation();
-      translationMaskGestureRef.current.pointerId = event.pointerId;
-      translationMaskGestureRef.current.mode = mode;
-      translationMaskGestureRef.current.startX = event.clientX;
-      translationMaskGestureRef.current.startY = event.clientY;
-      translationMaskGestureRef.current.startRect = { ...resolvedTranslationMaskRect };
-      translationMaskGestureRef.current.latestRect = { ...resolvedTranslationMaskRect };
+      gesture.pointerId = event.pointerId;
+      gesture.mode = mode;
+      gesture.startX = event.clientX;
+      gesture.startY = event.clientY;
+      gesture.startRect = { ...resolvedTranslationMaskRect };
+      gesture.latestRect = { ...resolvedTranslationMaskRect };
+      gesture.captureElement = event.currentTarget;
+      if (typeof event.currentTarget?.setPointerCapture === "function") {
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch (_) {
+          // Ignore pointer capture failures across browsers.
+        }
+      }
     },
     [resolvedTranslationMaskRect, translationMaskEnabled, translationMaskMetrics],
   );
@@ -2067,24 +2196,15 @@ export function ImmersiveLessonPage({
       if (!startRect) return;
       const deltaX = event.clientX - gesture.startX;
       const deltaY = event.clientY - gesture.startY;
-      const nextRect = { ...startRect };
-      if (gesture.mode === "move") {
-        nextRect.left = clampNumber(startRect.left + deltaX, 0, Math.max(0, translationMaskMetrics.width - startRect.width));
-        nextRect.top = clampNumber(startRect.top + deltaY, 0, Math.max(0, translationMaskMetrics.height - startRect.height));
-      } else {
-        const nextWidth = clampNumber(
-          startRect.width + deltaX,
-          Math.min(TRANSLATION_MASK_MIN_WIDTH_PX, translationMaskMetrics.width),
-          translationMaskMetrics.width - startRect.left,
-        );
-        const nextHeight = clampNumber(
-          startRect.height + deltaY,
-          Math.min(TRANSLATION_MASK_MIN_HEIGHT_PX, translationMaskMetrics.height),
-          translationMaskMetrics.height - startRect.top,
-        );
-        nextRect.width = nextWidth;
-        nextRect.height = nextHeight;
-      }
+      const nextRect =
+        gesture.mode === "move"
+          ? {
+              ...startRect,
+              left: clampNumber(startRect.left + deltaX, 0, Math.max(0, translationMaskMetrics.width - startRect.width)),
+              top: clampNumber(startRect.top + deltaY, 0, Math.max(0, translationMaskMetrics.height - startRect.height)),
+            }
+          : resolveTranslationMaskResizeRect(startRect, gesture.mode, deltaX, deltaY, translationMaskMetrics);
+      if (!nextRect) return;
       gesture.latestRect = nextRect;
       setTranslationMaskRect(convertTranslationMaskRectToStored(nextRect, translationMaskMetrics));
     };
@@ -2377,10 +2497,12 @@ export function ImmersiveLessonPage({
                       size="sm"
                       className={cinemaButtonClassName}
                       aria-pressed={translationMaskEnabled}
+                      aria-label={translationMaskEnabled ? "关闭字幕遮挡板" : "开启字幕遮挡板"}
+                      title={translationMaskEnabled ? "关闭字幕遮挡板" : "开启字幕遮挡板"}
                       onClick={handleTranslationMaskButtonClick}
                     >
                       <Eye className="size-4" />
-                      {translationMaskEnabled ? "关闭字幕遮挡" : "开启字幕遮挡"}
+                      字幕遮挡板
                     </Button>
                   ) : null}
                 </>
@@ -2457,15 +2579,19 @@ export function ImmersiveLessonPage({
                 style={translationMaskStyle}
                 data-translation-mask="true"
                 onPointerDown={(event) => handleTranslationMaskPointerDown(event, "move")}
+                onClick={(event) => event.stopPropagation()}
               >
                 <div className="immersive-translation-mask__glass" />
-                <div className="immersive-translation-mask__label">中文字幕遮挡</div>
-                <button
-                  type="button"
-                  aria-label="调整字幕遮挡尺寸"
-                  className="immersive-translation-mask__resize-handle"
-                  onPointerDown={(event) => handleTranslationMaskPointerDown(event, "resize")}
-                />
+                <div className="immersive-translation-mask__label">字幕遮挡板</div>
+                {TRANSLATION_MASK_RESIZE_HANDLES.map((handle) => (
+                  <button
+                    key={handle.key}
+                    type="button"
+                    aria-label={handle.ariaLabel}
+                    className={handle.className}
+                    onPointerDown={(event) => handleTranslationMaskPointerDown(event, handle.mode)}
+                  />
+                ))}
               </div>
             </div>
           ) : null}
@@ -2477,7 +2603,7 @@ export function ImmersiveLessonPage({
               请先在历史记录页顶部配置学习参数，再从课程卡片进入学习。
             </div>
           ) : (
-            <div className={`immersive-typing ${cinemaFullscreenActive ? "immersive-typing--cinema" : ""}`}>
+            <div ref={typingPanelRef} className={`immersive-typing ${cinemaFullscreenActive ? "immersive-typing--cinema" : ""}`}>
               <div className="immersive-typing-status">
                 <Badge variant="outline">
                   第 {Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 句
