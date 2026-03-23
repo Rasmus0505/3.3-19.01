@@ -1,0 +1,82 @@
+﻿schema_version: 1
+task_id: TASK-013
+title: 正式版安装向导客户端
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: 将当前 Windows 便携版桌面端改为标准安装向导式正式版客户端：安装包自带本地 helper 运行时，安装完成后用户从已安装程序启动并登录，并可在安装时选择是否预装 Bottle 1.0。
+scope:
+  - Windows 安装向导与已安装程序入口
+  - 本地 helper 自带运行时与打包链路
+  - Bottle 1.0 安装时可选预装与安装后状态识别
+  - README 与安装版回归契约
+allowed_paths:
+  - desktop-client/build
+  - desktop-client/electron
+  - desktop-client/package.json
+  - desktop-client/package-lock.json
+  - desktop-client/scripts
+  - scripts/run_desktop_backend.py
+  - frontend/src/features/upload/UploadPanel.jsx
+  - frontend/src/shared/lib/asrModels.js
+  - frontend/src/shared/media/localAsrAssetManager.js
+  - app/api/routers/local_asr_assets.py
+  - README.md
+  - requirements-dev.txt
+  - tests/test_start_script_smoke.py
+  - tests/test_desktop_runtime_contract.py
+  - tests/test_desktop_installer_contract.py
+acceptance:
+  - `npm --prefix desktop-client run package:win` 产出的 Windows 分发物必须是标准安装向导式安装包而不是 portable 便携版；安装向导至少支持安装目录选择、桌面快捷方式、开始菜单入口与安装完成后启动程序。
+  - 安装版桌面端在打包态不得依赖用户机器预装 Python 3.11；`package:win` 需先生成并打入自带本地 helper 运行时，安装后的客户端在无系统 Python 的 Windows 机器上也能启动并通过本地 helper 健康检查。开发态仍可继续使用本机 Python。
+  - 安装向导必须提供 `Bottle 1.0` 可选预装项，默认勾选但允许用户取消；若保持勾选，安装完成后客户端首次启动即可识别本地 `Bottle 1.0` 资源已就绪；若取消勾选，安装与登录流程仍可正常完成，且客户端清楚显示该模型未预装/可后续准备。
+  - 安装器与首次启动流程不得要求用户填写 `DATABASE_URL`、`JWT_SECRET`、`ADMIN_EMAILS`、`DASHSCOPE_API_KEY`、服务器环境等业务配置；安装完成后启动客户端时应直接进入现有云端登录页，桌面端继续连接同一套 Zeabur `web` 与 `postgresql`。
+  - 本地 helper 仍只负责健康检查、模型目录、缓存目录、日志目录和本机资源接口，不得重新承载线上账号认证、管理员登录、课程业务写入等云端职责。
+  - README 必须改写为安装版交付说明：明确写出 Zeabur 侧仍只维护现有 `web` 与 `postgresql`，无需新建 desktop 服务；同时写清安装包构建方式、安装后默认用户路径、是否预装 Bottle 1.0 的差异，以及终端用户无需单独安装 Python。
+check_commands:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+  - pytest tests/test_start_script_smoke.py tests/test_desktop_runtime_contract.py tests/test_desktop_installer_contract.py
+  - npm --prefix desktop-client run build
+  - npm --prefix desktop-client run package:win
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with: []
+notes_for_after: 这次修复不是继续交付 portable，而是改成标准 Windows 安装向导。实现时固定采用 `electron-builder` 的 NSIS 安装器路线，要求非 one-click，可选安装目录，并提供桌面快捷方式、开始菜单入口和安装完成后启动程序。安装器里不要暴露服务器地址或业务环境变量，只保留常规安装项，并额外提供 `Bottle 1.0` 预装勾选项，默认勾选但允许取消。为满足“用户安装后即用”，请固定把本地 helper 改成打包时生成的自带运行时，优先使用 PyInstaller 或等价冻结方案，把 `scripts/run_desktop_backend.py` 及其依赖封成随安装包分发的 helper 可执行文件；打包态不再探测系统 Python，开发态才保留现有 Python 入口。安装版启动后仍然读取用户目录配置并连接既有 Zeabur `web`，不新增 desktop 服务。若你为了让预装的 `Bottle 1.0` 在客户端里可见，需要补桌面检测或上传页状态逻辑，请在同一任务内一并收口，并用新增的 installer contract 测试覆盖“安装包目标、安装器选项、自带运行时、不再产出 portable、Bottle 1.0 默认预装可取消”这些约束。
+result_summary: 已将 Windows 桌面端正式收口为 NSIS 安装向导版：`package:win` 现在生成安装版 exe，自带 PyInstaller 本地 helper 运行时，安装器支持 Bottle 1.0 默认勾选且可取消的预装项，并通过打包态 cloud defaults 直接进入现有云端登录页，同时补齐安装版契约测试与回归说明。
+changed_files:
+  - README.md
+  - app/api/routers/local_asr_assets.py
+  - desktop-client/build/installer.nsh
+  - desktop-client/electron/helper-runtime.mjs
+  - desktop-client/electron/main.mjs
+  - desktop-client/electron/preload.mjs
+  - desktop-client/electron/runtime-config.mjs
+  - desktop-client/package.json
+  - desktop-client/scripts/build-helper-runtime.mjs
+  - desktop-client/scripts/build.mjs
+  - desktop-client/scripts/package-win.mjs
+  - desktop-client/scripts/write-runtime-defaults.mjs
+  - frontend/src/features/upload/UploadPanel.jsx
+  - frontend/src/shared/lib/asrModels.js
+  - frontend/src/shared/media/localAsrAssetManager.js
+  - requirements-dev.txt
+  - scripts/run_desktop_backend.py
+  - tests/test_desktop_installer_contract.py
+  - tests/test_desktop_runtime_contract.py
+  - tests/test_start_script_smoke.py
+tests_run:
+  - npm --prefix frontend run build
+  - npm --prefix frontend run build:app-static
+  - pytest tests/test_start_script_smoke.py tests/test_desktop_runtime_contract.py tests/test_desktop_installer_contract.py
+  - npm --prefix desktop-client run build
+  - DESKTOP_CLOUD_APP_URL=https://desktop.example.com/app DESKTOP_CLOUD_API_BASE_URL=https://desktop.example.com npm --prefix desktop-client run package:win
+blocked_reason: ""
+completed_at: 2026-03-23T11:04:32.8894429+08:00
+fix_request: 用户明确要求交付的是“安装向导式 exe 程序”，而不是当前这种 portable 便携版。安装流程应像常见 Windows 软件：运行安装器、选择安装项、安装完成后启动程序并进入登录；安装包需要自带本地 helper 运行时，不要求终端用户再手装 Python；安装器需支持 Bottle 1.0 预装选项，默认勾选但允许取消。
+fix_reason: 当前结果虽然完成了云端接入与本地 helper 架构，但最终交付形态仍是 portable，并且打包态依赖用户本机 Python 3.11，不符合“正式版安装程序”的用户预期，也缺少安装向导中的可选安装项。
+fix_round: 1
+fix_result_summary: 已把交付形态从 portable 改成标准 NSIS 安装向导，并在安装包里打入自带 helper 运行时与 Bottle 1.0 预装选项，桌面端也能识别“已预装 / 未预装可后续准备”的本机资源状态。
+fix_updated_at: 2026-03-23T11:04:32.8894429+08:00

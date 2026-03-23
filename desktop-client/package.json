@@ -30,27 +30,34 @@
     ],
     "extraResources": [
       {
-        "from": "../app",
-        "to": "backend/app"
+        "from": ".cache/helper-runtime/BottleLocalHelper",
+        "to": "desktop-helper-runtime/BottleLocalHelper"
       },
       {
-        "from": "../migrations",
-        "to": "backend/migrations"
+        "from": ".cache/runtime-defaults.json",
+        "to": "runtime-defaults.json"
       },
       {
-        "from": "../alembic.ini",
-        "to": "backend/alembic.ini"
-      },
-      {
-        "from": "../scripts/run_desktop_backend.py",
-        "to": "backend/scripts/run_desktop_backend.py"
+        "from": "../asr-test/models/faster-distil-small.en",
+        "to": "preinstalled-models/faster-distil-small.en"
       }
     ],
     "win": {
       "icon": "build/icon.ico",
       "target": [
-        "portable"
+        "nsis"
       ]
+    },
+    "nsis": {
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "shortcutName": "Bottle",
+      "include": "build/installer.nsh"
     }
   }
 }

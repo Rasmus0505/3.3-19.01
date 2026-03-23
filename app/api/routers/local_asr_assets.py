@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import tempfile
@@ -63,10 +64,21 @@ def _bundle_dir(spec: dict[str, object]) -> Path:
 
 
 def _source_bundle_dir() -> Path:
-    configured = os.getenv("DESKTOP_BUNDLED_MODEL_DIR", "").strip()
+    configured = os.getenv("DESKTOP_PREINSTALLED_MODEL_DIR", "").strip() or os.getenv("DESKTOP_BUNDLED_MODEL_DIR", "").strip()
     if configured:
         return Path(configured)
     return Path("__desktop_bundled_model_missing__")
+
+
+def _desktop_install_state() -> dict[str, object]:
+    state_path = Path(os.getenv("DESKTOP_INSTALL_STATE_PATH", "").strip())
+    if not str(state_path).strip() or not state_path.exists() or not state_path.is_file():
+        return {}
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def _bundle_files(bundle_dir: Path) -> list[dict[str, object]]:
@@ -100,10 +112,13 @@ def _bundle_summary(spec: dict[str, object]) -> dict[str, object]:
     files = _bundle_files(bundle_dir)
     source_bundle_dir = _source_bundle_dir()
     source_files = _bundle_files(source_bundle_dir)
+    install_state = _desktop_install_state()
     total_size_bytes = sum(int(item["size_bytes"]) for item in files)
     model_key = str(spec["model_key"])
     missing_reason = _bundle_missing_reason(bundle_dir, files)
     source_missing_reason = _bundle_missing_reason(source_bundle_dir, source_files)
+    install_selected = install_state.get("bottle1Preinstalled")
+    runtime_source = "installer_bundle" if bundle_dir.resolve() == source_bundle_dir.resolve() else "user_data"
     return {
         "model_key": model_key,
         "display_name": str(spec["display_name"]),
@@ -119,6 +134,10 @@ def _bundle_summary(spec: dict[str, object]) -> dict[str, object]:
         "source_available": bool(source_files),
         "source_missing_reason": source_missing_reason,
         "install_available": bool(source_files),
+        "install_selected": install_selected if isinstance(install_selected, bool) else None,
+        "install_choice": str(install_state.get("bottle1InstallChoice") or "").strip() or None,
+        "preinstalled": bool(files) and runtime_source == "installer_bundle",
+        "runtime_source": runtime_source,
         "file_count": len(files),
         "total_size_bytes": total_size_bytes,
         "download_url": f"/api/local-asr-assets/download-models/{model_key}/download",

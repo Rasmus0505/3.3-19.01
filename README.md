@@ -207,75 +207,162 @@ python -m alembic -c alembic.ini upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
-## Windows Electron 客户端并行开发
+## Windows Electron 正式版客户端
 
-桌面客户端与网站继续并行开发，默认原则是“网站照常部署到 Zeabur，客户端只在本地或小范围灰度测试，不接入当前 Dockerfile”。
+桌面客户端现在采用“云端主系统 + 本地轻量助手”的正式版架构：
 
-### 1. 不影响 Zeabur 的边界
+- Electron 窗口直接加载你配置的云端站点地址
+- 账号、鉴权、课程、订单、管理后台等业务数据全部走现有 Zeabur `web`
+- 本地 Python 进程只保留健康检查、模型目录、缓存目录、日志目录和本地资源接口
+- Zeabur 侧仍然只有 `web` 和 `postgresql`，不新增独立 desktop 服务
+
+### 1. Zeabur 边界不变
 
 - Zeabur 继续只使用仓库根目录 `Dockerfile`
 - 网站前端继续通过 `frontend` 构建后同步到 `app/static`
-- 新增的 `desktop-client/` 仅用于 Electron 客户端，本目录已通过 `.dockerignore` 从 Docker 和 Zeabur 构建上下文排除
-- 不要把 Electron 打包脚本接到 Zeabur 构建命令里，也不要让客户端产物进入 `app/static`
+- `desktop-client/` 仍然通过 `.dockerignore` 排除在 Docker / Zeabur 构建上下文之外
+- 不要把 Electron 打包脚本接到 Zeabur 构建命令里，也不要为客户端新建单独的 Zeabur 服务
 
-### 2. 本地灰度测试客户端
+### 2. 首次本地灰度测试
 
 首次准备：
 
 ```powershell
 cd D:\3.3-19.01
 npm --prefix frontend install
+npm --prefix frontend run build
 npm --prefix frontend run build:app-static
 npm --prefix desktop-client install
 ```
 
-启动本地客户端灰度测试：
+开发态如果要连接指定云端环境，可先写入目标地址：
+
+```powershell
+$env:DESKTOP_CLOUD_APP_URL="https://your-web.example.com"
+$env:DESKTOP_CLOUD_API_BASE_URL="https://your-web.example.com"
+```
+
+然后启动桌面端：
 
 ```powershell
 cd D:\3.3-19.01
 npm --prefix desktop-client run dev
 ```
 
+启动后 Electron 会在用户目录写出本地配置文件：
+
+- 配置文件：`%APPDATA%\Bottle\desktop-runtime.json`
+- 默认保存项：云端站点地址、云端 API 基址、模型目录、缓存目录、日志目录、临时目录
+- 这些配置只作用于当前 Windows 客户端，不会写回仓库，也不会改动 Zeabur 环境变量
+
 说明：
 
-- Electron 会先启动本地 FastAPI，再等待 `GET /health` 成功后打开窗口
-- 默认本地数据目录使用 Windows 用户目录，不依赖仓库工作目录
-- 如果机器上的 Python 3.11 不在默认路径，可先设置 `DESKTOP_PYTHON_EXECUTABLE`
-- 这条灰度路径只影响你本机，不会改变网站用户看到的内容，也不会触发 Zeabur 重新构建客户端
+- 开发态如果机器上的 Python 3.11 不在默认路径，可先设置 `DESKTOP_PYTHON_EXECUTABLE`
+- 本地助手不再创建 `app.db`，也不会自动迁移数据库
+- 本地助手不再要求 `ADMIN_EMAILS`、`JWT_SECRET`、`DASHSCOPE_API_KEY` 这类服务端业务变量
+- 灰度测试时，桌面端会连接你在配置文件里指定的 Zeabur `web` 域名，网站原有部署拓扑保持不变
 
 ### 3. 打包 Windows 客户端
 
-先确保网站静态资源已经同步到 `app/static`：
+正式打包前，先给安装版写入默认云端目标，并确保当前 Python 环境已经安装 `requirements-dev.txt`（其中包含 PyInstaller，用于生成自带的本地 helper 运行时）：
 
 ```powershell
 cd D:\3.3-19.01
-npm --prefix frontend run build:app-static
+pip install -r requirements-dev.txt
+$env:DESKTOP_CLOUD_APP_URL="https://your-web.example.com/app"
+$env:DESKTOP_CLOUD_API_BASE_URL="https://your-web.example.com"
+```
+
+然后执行：
+
+```powershell
+cd D:\3.3-19.01
+npm --prefix desktop-client run build
 npm --prefix desktop-client run package:win
 ```
 
-当前打包策略适合内部灰度：
+打包后的行为：
 
-- 当前默认输出 Windows 便携版分发产物到 `desktop-client/dist`
-- 客户端会携带后端源码和启动脚本，但仍默认依赖本机可用的 Python 3.11 运行时
-- 这一步不会修改 Zeabur 服务，也不会替换线上网站入口
+- 默认输出标准 Windows NSIS 安装向导到 `desktop-client/dist`，不再产出 portable 便携版
+- 安装向导支持安装目录选择、桌面快捷方式、开始菜单入口，以及安装完成后立即启动
+- 安装包会先生成并打入自带的本地 helper 运行时；终端用户安装后不需要再单独安装 Python 3.11
+- 默认安装路径为当前用户的 `%LOCALAPPDATA%\Programs\Bottle`
+- 安装后的客户端继续读取用户目录里的 `%APPDATA%\Bottle\desktop-runtime.json`，并直接使用打包时写入的云端站点地址打开登录页
+- 安装器提供 `Bottle 1.0` 可选预装项，默认勾选：勾选时客户端会直接把安装目录下的 `resources\preinstalled-models\faster-distil-small.en` 识别为已预装；取消勾选时客户端仍可登录，并会显示该本机资源未预装、可后续准备
 
-当前测试版说明：
+推荐正式版回归路径：
 
-- 客户端名称：`Bottle`
-- 当前测试版本：`0.2.0`
-- 分发文件名示例：`Bottle 0.2.0.exe`
-- 图标：水瓶图标，仅用于当前 Windows 灰度测试包
+1. 在 Zeabur 维持现有 `web + postgresql` 不变
+2. 在打包机上设置 `DESKTOP_CLOUD_APP_URL` 与 `DESKTOP_CLOUD_API_BASE_URL` 后运行 `npm --prefix desktop-client run package:win`
+3. 运行安装器，保留或取消 `Bottle 1.0` 预装勾选项
+4. 安装完成后直接启动客户端，验证登录、鉴权、上传转写、课程读写和后台访问都落到同一套 Zeabur `web`
 
-### 4. 继续正常部署网站到 Zeabur
+### 4. Zeabur 侧只需要维护什么
+
+正式发布时继续维护现有 `web` 服务环境变量与 PostgreSQL 即可，重点核对：
+
+- `APP_ENV`
+- `PORT`
+- `DATABASE_URL`
+- `DASHSCOPE_API_KEY`
+- `JWT_SECRET`
+- `ADMIN_EMAILS`
+- `ADMIN_BOOTSTRAP_PASSWORD`
+- `REDEEM_CODE_EXPORT_CONFIRM_TEXT`
+- `AUTO_MIGRATE_ON_START`
+- `AUTO_MIGRATE_CONTINUE_ON_FAILURE`
+- `AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS`
+- `TMP_WORK_DIR`
+- `PERSISTENT_DATA_DIR`
+- `ASR_BUNDLE_ROOT_DIR`
+- `FASTER_WHISPER_MODELSCOPE_MODEL_ID`
+- `FASTER_WHISPER_MODEL_DIR`
+- `FASTER_WHISPER_PREFETCH_ON_START`
+- `FASTER_WHISPER_COMPUTE_TYPE`
+- `FASTER_WHISPER_CPU_THREADS`
+- `MT_BASE_URL`
+- `MT_MODEL`
+- `ASR_SEGMENT_TARGET_SECONDS`
+- `ASR_SEGMENT_SEARCH_WINDOW_SECONDS`
+
+不需要做的事：
+
+- 不需要新建 Zeabur desktop 服务
+- 不需要为客户端额外屏蔽 GitHub 自动部署
+- 不需要把客户端域名、模型路径、日志路径写进 Zeabur 环境变量
+
+### 5. 网站继续正常部署
 
 网站部署流程不变：
 
 - 正常提交网站代码
 - 由 GitHub 触发 Zeabur 按根目录 `Dockerfile` 重新构建
 - 客户端代码即使合并到仓库，只要不修改 Dockerfile 和 Zeabur 构建命令，就不会参与线上部署
+## Windows Installer Addendum
 
-如果你只想试客户端，不想影响线上，保持以下做法即可：
+This repository now ships the Windows desktop client as a standard `NSIS` installer wizard, not as a portable package.
 
-- 客户端开发只改 `desktop-client/`、客户端启动脚本和文档
-- 网站功能仍按原流程在浏览器和 Zeabur 上验证
-- 只有准备给小范围 Windows 用户试用时，才手动运行 `npm --prefix desktop-client run package:win`
+Build steps:
+
+```powershell
+cd D:\3.3-19.01
+pip install -r requirements-dev.txt
+$env:DESKTOP_CLOUD_APP_URL="https://your-web.example.com/app"
+$env:DESKTOP_CLOUD_API_BASE_URL="https://your-web.example.com"
+npm --prefix desktop-client run build
+npm --prefix desktop-client run package:win
+```
+
+Delivery contract:
+
+- `npm --prefix desktop-client run package:win` produces an installer `.exe` in `desktop-client/dist`.
+- The installer is an assisted `NSIS` flow with install directory selection, desktop shortcut, start menu entry, and run-after-finish.
+- The installer bundles a frozen local helper runtime built with `PyInstaller`. End users do not need to install Python 3.11.
+- Default per-user install path: `%LOCALAPPDATA%\Programs\Bottle`
+- Default runtime config path: `%APPDATA%\Bottle\desktop-runtime.json`
+- Default logs path: `%APPDATA%\Bottle\logs`
+- Installer state file: `%LOCALAPPDATA%\Programs\Bottle\resources\desktop-install-state.json`
+- Bundled `Bottle 1.0` payload path: `%LOCALAPPDATA%\Programs\Bottle\resources\preinstalled-models\faster-distil-small.en`
+- If the `Bottle 1.0` checkbox stays enabled, the desktop client detects the bundled local model as ready on first launch.
+- If the checkbox is cleared, install and login still work, and the desktop client shows that `Bottle 1.0` is not preinstalled and can be prepared later.
+- Zeabur still keeps only the existing `web` and `postgresql` services. Do not create a separate desktop service.

@@ -9,7 +9,9 @@ import { formatMoneyCents, formatMoneyYuan, formatMoneyYuanPerMinute } from "../
 import {
   bindLocalAsrModelDirectory,
   ensureLocalAsrModel,
+  getDesktopBundledAsrModelSummary,
   getLocalAsrWorkerAssetPayload,
+  installDesktopBundledAsrModel,
   localAsrDirectoryBindingSupported,
   LOCAL_ASR_STORAGE_MODE_BROWSER,
   LOCAL_ASR_STORAGE_MODE_DIRECTORY,
@@ -49,6 +51,10 @@ const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止生成，可重新开始。"
 const LOCAL_BROWSER_ASR_ENABLED = false;
 const DEFAULT_ASR_MODEL_CATALOG_MAP = buildAsrModelCatalogMap();
 const DEFAULT_FAST_UPLOAD_MODEL = QWEN_MODEL;
+function hasDesktopRuntimeBridge() {
+  return typeof window !== "undefined" && typeof window.desktopRuntime?.requestLocalHelper === "function";
+}
+
 const LOCAL_MODEL_OPTIONS = [
   {
     key: ASR_MODEL_KEYS.sensevoiceBrowser,
@@ -713,6 +719,8 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [serverModelStateMap, setServerModelStateMap] = useState({});
   const [serverBusyModelKey, setServerBusyModelKey] = useState("");
   const [serverBusyText, setServerBusyText] = useState("");
+  const [desktopBundleStateMap, setDesktopBundleStateMap] = useState({});
+  const [desktopBundleBusyModelKey, setDesktopBundleBusyModelKey] = useState("");
   const [restoreBannerMode, setRestoreBannerMode] = useState(RESTORE_BANNER_MODES.NONE);
   const pollingAbortRef = useRef(false);
   const pollTokenRef = useRef(0);
@@ -851,6 +859,29 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         ...(patch || {}),
       },
     }));
+  }
+
+  function updateDesktopBundleState(modelKey, patch) {
+    setDesktopBundleStateMap((prev) => ({
+      ...prev,
+      [modelKey]: {
+        ...(prev[modelKey] || {}),
+        ...(patch || {}),
+      },
+    }));
+  }
+
+  function applyDesktopBundleState(modelKey, summary, overrides = {}) {
+    updateDesktopBundleState(modelKey, {
+      available: Boolean(overrides.available ?? summary?.available),
+      installAvailable: Boolean(overrides.installAvailable ?? summary?.installAvailable),
+      sourceAvailable: Boolean(overrides.sourceAvailable ?? summary?.sourceAvailable),
+      sourceBundleDir: String(overrides.sourceBundleDir || summary?.sourceBundleDir || ""),
+      targetBundleDir: String(overrides.targetBundleDir || summary?.targetBundleDir || ""),
+      fileCount: Number(overrides.fileCount ?? summary?.fileCount ?? 0),
+      message: String(overrides.message || summary?.message || ""),
+      lastError: String(overrides.lastError || ""),
+    });
   }
 
   function applyServerModelState(modelKey, payload, overrides = {}) {
@@ -1278,6 +1309,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
           };
         }
         setServerModelStateMap((prev) => ({ ...prev, ...nextServerStateMap }));
+        if (hasDesktopRuntimeBridge()) {
+          void fetchDesktopBundleStatus(FASTER_WHISPER_MODEL, { silent: true });
+        }
       } catch (_) {
         const entries = await Promise.all(
           Array.from(SERVER_PREPARABLE_MODELS).map(async (modelKey) => {
@@ -1303,6 +1337,9 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         );
         if (canceled) return;
         setServerModelStateMap((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+        if (hasDesktopRuntimeBridge()) {
+          void fetchDesktopBundleStatus(FASTER_WHISPER_MODEL, { silent: true });
+        }
       }
     }
     void restoreServerModelState();
@@ -2097,6 +2134,31 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
   }
 
+  async function fetchDesktopBundleStatus(modelKey, options = {}) {
+    const { silent = false } = options;
+    if (!hasDesktopRuntimeBridge() || modelKey !== FASTER_WHISPER_MODEL) {
+      return null;
+    }
+    try {
+      const summary = await getDesktopBundledAsrModelSummary(modelKey);
+      applyDesktopBundleState(modelKey, summary, { lastError: "" });
+      return summary;
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : String(error);
+      updateDesktopBundleState(modelKey, {
+        available: false,
+        installAvailable: false,
+        sourceAvailable: false,
+        message: "",
+        lastError: message,
+      });
+      if (!silent) {
+        toast.error(message);
+      }
+      return null;
+    }
+  }
+
   async function fetchServerModelStatus(modelKey, options = {}) {
     const { silent = false } = options;
     try {
@@ -2121,12 +2183,38 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
   }
 
+  async function handleDesktopBundlePrepare(modelKey) {
+    if (!hasDesktopRuntimeBridge() || modelKey !== FASTER_WHISPER_MODEL) {
+      return;
+    }
+    setDesktopBundleBusyModelKey(modelKey);
+    updateDesktopBundleState(modelKey, {
+      lastError: "",
+      message: "正在准备桌面端本机 Bottle 1.0 资源",
+    });
+    try {
+      const summary = await installDesktopBundledAsrModel(modelKey);
+      applyDesktopBundleState(modelKey, summary, { lastError: "" });
+      toast.success(summary.available ? "桌面端本机 Bottle 1.0 已就绪" : "桌面端本机资源已更新");
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : String(error);
+      updateDesktopBundleState(modelKey, {
+        lastError: message,
+        message: "",
+      });
+      toast.error(message);
+    } finally {
+      setDesktopBundleBusyModelKey("");
+    }
+  }
+
   function handleSelectUploadModelCard(modelKey) {
     const nextModelMeta = getUploadModelMeta(modelKey);
     setSelectedUploadModel(nextModelMeta.key);
     setMode(nextModelMeta.mode);
     if (SERVER_PREPARABLE_MODELS.has(nextModelMeta.key)) {
       void fetchServerModelStatus(nextModelMeta.key, { silent: true });
+      void fetchDesktopBundleStatus(nextModelMeta.key, { silent: true });
     }
   }
 
@@ -2860,6 +2948,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               const fasterModelReady = isAsrModelReady(fasterModelState);
               const fasterModelBusy = serverBusyModelKey === item.key;
               const fasterModelPreparing = isAsrModelPreparing(fasterModelState);
+              const desktopBundleState = desktopBundleStateMap[item.key] || {};
+              const desktopBundleAvailable = Boolean(desktopBundleState.available);
+              const desktopBundleInstallAvailable = Boolean(desktopBundleState.installAvailable);
+              const desktopBundleBusy = desktopBundleBusyModelKey === item.key;
               const sensevoiceCardStatus = String(sensevoiceModelState.status || "").trim().toLowerCase();
               const fasterCardStatus = String(fasterModelState.status || "").trim().toLowerCase();
               const cardStatusLabel = isSenseVoice
@@ -2892,6 +2984,20 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 : isFasterWhisper
                   ? sanitizeUserFacingText(String(fasterModelState.lastError || ""))
                   : "";
+              const desktopBundleStatusText =
+                isFasterWhisper && hasDesktopRuntimeBridge()
+                  ? sanitizeUserFacingText(
+                      String(
+                        desktopBundleState.message ||
+                          (desktopBundleAvailable
+                            ? "桌面端本机 Bottle 1.0 资源已预装。"
+                            : desktopBundleInstallAvailable
+                              ? "桌面端本机 Bottle 1.0 资源未预装，可在安装后继续准备。"
+                              : ""),
+                      ),
+                    )
+                  : "";
+              const desktopBundleErrorText = isFasterWhisper && hasDesktopRuntimeBridge() ? sanitizeUserFacingText(String(desktopBundleState.lastError || "")) : "";
               const cardStatusText = isSenseVoice
                 ? sanitizeUserFacingText(
                     sensevoiceModelState.message ||
@@ -2969,10 +3075,12 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                     </Badge>
                   </div>
 
-                  <div className="rounded-xl border bg-background/70 p-3">
-                    <p className="text-xs leading-5 text-muted-foreground">{cardStatusText || "选择后即可开始。"}</p>
-                    {cardErrorText ? <p className="mt-2 text-xs leading-5 text-destructive break-all">{cardErrorText}</p> : null}
-                  </div>
+                    <div className="rounded-xl border bg-background/70 p-3">
+                      <p className="text-xs leading-5 text-muted-foreground">{cardStatusText || "选择后即可开始。"}</p>
+                      {desktopBundleStatusText ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{desktopBundleStatusText}</p> : null}
+                      {cardErrorText ? <p className="mt-2 text-xs leading-5 text-destructive break-all">{cardErrorText}</p> : null}
+                      {desktopBundleErrorText ? <p className="mt-2 text-xs leading-5 text-destructive break-all">{desktopBundleErrorText}</p> : null}
+                    </div>
 
                   {showCardProgress ? (
                     <div className="space-y-1">
@@ -3009,6 +3117,20 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                       {showLoadingIcon ? <Loader2 className="size-4 animate-spin" /> : null}
                       {actionMeta.label}
                     </Button>
+                    {isFasterWhisper && hasDesktopRuntimeBridge() ? (
+                      <Button
+                        type="button"
+                        variant={desktopBundleAvailable ? "outline" : "secondary"}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleDesktopBundlePrepare(item.key);
+                        }}
+                        disabled={uploadActionBusy || desktopBundleBusy || !desktopBundleInstallAvailable}
+                      >
+                        {desktopBundleBusy ? <Loader2 className="size-4 animate-spin" /> : null}
+                        {desktopBundleAvailable ? "本机已预装" : "准备本机资源"}
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               );

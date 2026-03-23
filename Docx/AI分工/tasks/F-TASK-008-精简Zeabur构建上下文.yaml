@@ -1,6 +1,6 @@
 schema_version: 1
 task_id: TASK-008
-title: Slim Zeabur Docker build context
+title: 精简 Zeabur Docker 构建上下文
 status: done
 priority: high
 project_root: D:/3.3-19.01

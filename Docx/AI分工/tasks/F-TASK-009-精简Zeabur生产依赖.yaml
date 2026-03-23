@@ -1,6 +1,6 @@
 schema_version: 1
 task_id: TASK-009
-title: Slim production Python requirements for Zeabur
+title: 精简 Zeabur 生产环境 Python 依赖
 status: done
 priority: high
 project_root: D:/3.3-19.01

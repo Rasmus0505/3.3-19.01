@@ -111,19 +111,21 @@ def _start_process(env: dict[str, str]) -> subprocess.Popen[str]:
     )
 
 
-def _start_desktop_backend_process(tmp_path: Path, port: int) -> subprocess.Popen[str]:
+def _start_desktop_backend_process(tmp_path: Path, port: int, *, bundled_model_dir: Path | None = None) -> subprocess.Popen[str]:
     env = os.environ.copy()
     env.update(
         {
             "DESKTOP_BACKEND_ROOT": str(REPO_ROOT),
             "DESKTOP_USER_DATA_DIR": str(tmp_path / "desktop-user-data"),
+            "DESKTOP_MODEL_DIR": str(tmp_path / "desktop-user-data" / "models" / "faster-distil-small.en"),
             "DESKTOP_CACHE_DIR": str(tmp_path / "desktop-cache"),
             "DESKTOP_LOG_DIR": str(tmp_path / "desktop-logs"),
             "DESKTOP_TEMP_DIR": str(tmp_path / "desktop-tmp"),
-            "JWT_SECRET": "desktop-test-secret",
             "PYTHONUNBUFFERED": "1",
         }
     )
+    if bundled_model_dir is not None:
+        env["DESKTOP_PREINSTALLED_MODEL_DIR"] = str(bundled_model_dir)
     log_path = tmp_path / "desktop-backend-subprocess.log"
     log_handle = open(log_path, "w+", encoding="utf-8")
     process = subprocess.Popen(
@@ -137,6 +139,13 @@ def _start_desktop_backend_process(tmp_path: Path, port: int) -> subprocess.Pope
     process._codex_log_handle = log_handle  # type: ignore[attr-defined]
     process._codex_log_path = log_path  # type: ignore[attr-defined]
     return process
+
+
+def _create_fake_bundled_model(model_dir: Path) -> Path:
+    model_dir.mkdir(parents=True, exist_ok=True)
+    (model_dir / "config.json").write_text("{}", encoding="utf-8")
+    (model_dir / "model.bin").write_bytes(b"fake-bottle-model")
+    return model_dir
 
 
 def _wait_for_status(process: subprocess.Popen[str], port: int, ready_status_code: int) -> tuple[dict, dict]:
@@ -303,25 +312,90 @@ def test_start_script_runs_auto_migration_before_boot(tmp_path):
     assert "[DEBUG] boot.migrate success=true" in logs
 
 
-def test_run_desktop_backend_boots_with_local_sqlite_and_user_dirs(tmp_path):
+def test_run_desktop_backend_boots_with_local_helper_dirs(tmp_path):
     port = _pick_free_port()
     process = _start_desktop_backend_process(tmp_path, port)
     try:
-        health_payload, _ready_payload = _wait_for_status(process, port, 503)
+        health_payload, ready_payload = _wait_for_status(process, port, 200)
         assert health_payload["ok"] is True
+        assert health_payload["ready"] is True
+        assert ready_payload["ok"] is True
+        assert ready_payload["status"]["local_only"] is True
 
         root_resp = requests.get(f"http://127.0.0.1:{port}/", timeout=3)
         assert root_resp.status_code == 200
-        assert "text/html" in root_resp.headers.get("content-type", "")
+        assert "application/json" in root_resp.headers.get("content-type", "")
+        bundle_resp = requests.get(f"http://127.0.0.1:{port}/api/local-asr-assets/download-models", timeout=3)
+        assert bundle_resp.status_code == 200
+        assert bundle_resp.json()["ok"] is True
     finally:
         logs = _stop_process(process)
 
     if process.returncode not in (0, 1, -15):
         raise AssertionError(f"desktop backend exited with {process.returncode}\n{logs}")
-    assert (tmp_path / "desktop-user-data" / "app.db").exists()
+    assert not (tmp_path / "desktop-user-data" / "app.db").exists()
     assert (tmp_path / "desktop-user-data" / "data").exists()
+    assert (tmp_path / "desktop-user-data" / "models").exists()
     assert (tmp_path / "desktop-logs").exists()
-    assert "[desktop] backend_root=" in logs
+    assert "[desktop] helper_root=" in logs
+
+
+def test_run_desktop_backend_can_install_bundled_bottle_model_later(tmp_path):
+    port = _pick_free_port()
+    bundled_model_dir = _create_fake_bundled_model(tmp_path / "installer-payload" / "faster-distil-small.en")
+    process = _start_desktop_backend_process(tmp_path, port, bundled_model_dir=bundled_model_dir)
+    try:
+        _wait_for_status(process, port, 200)
+        install_resp = requests.post(
+            f"http://127.0.0.1:{port}/api/local-asr-assets/download-models/faster-whisper-medium/install",
+            timeout=5,
+        )
+        assert install_resp.status_code == 200
+        install_payload = install_resp.json()
+        assert install_payload["ok"] is True
+        assert install_payload["available"] is True
+        assert install_payload["install_available"] is True
+        assert install_payload["runtime_source"] == "user_data"
+    finally:
+        logs = _stop_process(process)
+
+    if process.returncode not in (0, 1, -15):
+        raise AssertionError(f"desktop backend exited with {process.returncode}\n{logs}")
+    assert (tmp_path / "desktop-user-data" / "models" / "faster-distil-small.en" / "config.json").exists()
+    assert (tmp_path / "desktop-user-data" / "models" / "faster-distil-small.en" / "model.bin").exists()
+
+
+def test_run_desktop_backend_can_install_bundled_bottle_model(tmp_path):
+    bundled_model_dir = tmp_path / "bundled-model" / "faster-distil-small.en"
+    bundled_model_dir.mkdir(parents=True, exist_ok=True)
+    (bundled_model_dir / "config.json").write_text('{"model":"Bottle 1.0"}\n', encoding="utf-8")
+    (bundled_model_dir / "weights.bin").write_bytes(b"bottle-runtime")
+
+    port = _pick_free_port()
+    process = _start_desktop_backend_process(tmp_path, port, bundled_model_dir=bundled_model_dir)
+    try:
+        _wait_for_status(process, port, 200)
+
+        summary_resp = requests.get(f"http://127.0.0.1:{port}/api/local-asr-assets/download-models/faster-whisper-medium", timeout=3)
+        assert summary_resp.status_code == 200
+        summary_payload = summary_resp.json()
+        assert summary_payload["available"] is False
+        assert summary_payload["install_available"] is True
+
+        install_resp = requests.post(f"http://127.0.0.1:{port}/api/local-asr-assets/download-models/faster-whisper-medium/install", timeout=10)
+        assert install_resp.status_code == 200
+        install_payload = install_resp.json()
+        assert install_payload["ok"] is True
+        assert install_payload["available"] is True
+
+        installed_model_dir = tmp_path / "desktop-user-data" / "models" / "faster-distil-small.en"
+        assert (installed_model_dir / "config.json").read_text(encoding="utf-8") == '{"model":"Bottle 1.0"}\n'
+        assert (installed_model_dir / "weights.bin").read_bytes() == b"bottle-runtime"
+    finally:
+        logs = _stop_process(process)
+
+    if process.returncode not in (0, 1, -15):
+        raise AssertionError(f"desktop backend exited with {process.returncode}\n{logs}")
 
 
 @pytest.mark.parametrize("manual_value", ["0", "false", "no", "off"])

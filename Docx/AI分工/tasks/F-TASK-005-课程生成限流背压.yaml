@@ -1,6 +1,6 @@
 schema_version: 1
 task_id: TASK-005
-title: Add server-side admission control and backpressure for lesson generation
+title: 为课程生成增加服务端准入控制与背压
 status: done
 priority: high
 project_root: D:/3.3-19.01
