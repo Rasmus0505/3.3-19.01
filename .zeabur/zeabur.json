@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/zeabur.json",
+  "services": [
+    {
+      "name": "web",
+      "build": {
+        "dockerfile": "Dockerfile"
+      },
+      "env": {
+        "DATABASE_URL": "@database.DATABASE_URL",
+        "DASHSCOPE_API_KEY": "@secrets.DASHSCOPE_API_KEY",
+        "JWT_SECRET": "@secrets.JWT_SECRET",
+        "APP_ENV": "production",
+        "AUTO_MIGRATE_ON_START": "1",
+        "PORT": "8080"
+      }
+    },
+    {
+      "name": "postgres",
+      "type": "postgres"
+    }
+  ]
+}

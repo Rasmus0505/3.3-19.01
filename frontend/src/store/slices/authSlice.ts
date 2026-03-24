@@ -1,18 +1,21 @@
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import { clearAuthStorage, TOKEN_KEY, USER_EMAIL_KEY, USER_ID_KEY, USER_IS_ADMIN_KEY } from "../../app/authStorage";
 
+type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
+type Getter = () => any;
+
 function readStoredAccessToken() {
   if (typeof localStorage === "undefined") return "";
   return localStorage.getItem(TOKEN_KEY) || "";
 }
 
-function normalizeAdminFlag(value) {
+function normalizeAdminFlag(value: unknown) {
   if (typeof value === "boolean") return value;
   const normalized = String(value ?? "").trim().toLowerCase();
   return normalized === "true" || normalized === "1" || normalized === "yes";
 }
 
-function normalizeStoredUser(user) {
+function normalizeStoredUser(user: any) {
   const id = Number(user?.id || 0);
   const email = String(user?.email || "").trim();
   if (!Number.isFinite(id) || id <= 0 || !email) {
@@ -46,7 +49,7 @@ function buildAuthInitialState() {
 
 export const authInitialState = buildAuthInitialState();
 
-export function createAuthSlice(set, get) {
+export function createAuthSlice(set: Setter, get: Getter) {
   return {
     ...buildAuthInitialState(),
     resetAuthState: () => set({ ...buildAuthInitialState() }),
@@ -64,7 +67,7 @@ export function createAuthSlice(set, get) {
       });
       return accessToken;
     },
-    setAccessToken: (accessToken) => {
+    setAccessToken: (accessToken: unknown) => {
       const nextAccessToken = String(accessToken || "");
       const currentUser = nextAccessToken ? readStoredCurrentUser() : null;
       set({
@@ -77,7 +80,7 @@ export function createAuthSlice(set, get) {
         adminAuthState: "idle",
       });
     },
-    setCurrentUser: (currentUser) => {
+    setCurrentUser: (currentUser: unknown) => {
       const normalizedUser = normalizeStoredUser(currentUser);
       set({
         currentUser: normalizedUser,

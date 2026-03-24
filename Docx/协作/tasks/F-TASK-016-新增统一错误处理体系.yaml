@@ -1,0 +1,57 @@
+schema_version: 1
+task_id: TASK-016
+title: 新增统一错误处理体系
+status: done
+priority: medium
+project_root: D:/3.3-19.01
+base_ref: main
+goal: >
+  完善 app/core/errors.py，建立统一的业务异常层级：
+  AuthError、LessonError、BillingError、NotFoundError、ValidationError。
+  确保所有 API 路由统一使用 error_response() 或自定义异常。
+scope:
+  - 错误处理
+  - API 异常规范化
+allowed_paths:
+  - app/core/errors.py
+  - app/api/routers/
+acceptance:
+  - app/core/errors.py 定义所有业务异常类（继承自 Exception）
+  - app/api/routers/ 中所有端点使用统一的错误处理方式
+  - 无直接 raise HTTPException 而绕过 error_response 的端点
+check_commands:
+  - Select-String "D:/3.3-19.01/app/api/routers/" -Pattern "raise HTTPException" -Recurse | Select-String -Pattern "app/core/errors" -NotMatch
+depends_on: []
+dependency_reason: 路由结构重组（已完成）后可审查错误处理
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  错误类型与 HTTP 状态码映射：
+  - AuthError: 401 Unauthorized
+  - LessonError: 400 Bad Request（课程相关业务错误）
+  - BillingError: 402 Payment Required（余额不足等）
+  - NotFoundError: 404 Not Found
+  - ValidationError: 422 Unprocessable Entity
+
+  现有直接 raise HTTPException 改为 raise 对应业务异常，
+  在路由层统一捕获并转换为 error_response。
+result_summary: |
+  统一错误处理体系建立完成：
+  - AppError 基类（status_code、code、message、detail）
+  - AuthError(401)、NotFoundError(404)、ValidationError(422)、
+    LessonError(400)、BillingError(402)、AdminError(403) 六个业务异常类
+  - error_response() 标准响应构造
+  - map_media_error() 和 map_billing_error() 异常映射函数
+  - 所有导入通过 TYPE_CHECKING 避免 app.services 循环导入
+  - 模块验证通过：Errors module OK
+changed_files:
+  - app/core/errors.py (重写，建立完整异常层级)
+tests_run:
+  - python -c "from app.core.errors import AppError, AuthError, NotFoundError, ValidationError, LessonError, BillingError, AdminError, error_response, map_billing_error, map_media_error; print('Errors module OK')"
+blocked_reason: ""
+completed_at: 2026-03-24T19:35:00+08:00
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

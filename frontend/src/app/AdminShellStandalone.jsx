@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { NavLink } from "react-router-dom";
 
 import { AdminApp } from "../AdminApp";
-import { AuthPanel } from "../features/auth/AuthPanel";
+import { AuthPanel } from "../features/auth/components/AuthPanel";
 import { adminApi } from "../shared/api/adminClient";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton } from "../shared/ui";
 import { useAppStore } from "../store";

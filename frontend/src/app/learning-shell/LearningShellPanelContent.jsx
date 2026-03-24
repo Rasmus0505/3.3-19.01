@@ -1,6 +1,6 @@
 import { Suspense, lazy } from "react";
 
-import { AuthPanel } from "../../features/auth/AuthPanel";
+import { AuthPanel } from "../../features/auth/components/AuthPanel";
 import { GettingStartedPanel } from "../../features/getting-started/GettingStartedPanel";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui";
 import { REFRESH_KEY, TOKEN_KEY } from "../authStorage";
@@ -8,10 +8,10 @@ import { REFRESH_KEY, TOKEN_KEY } from "../authStorage";
 const ImmersiveLessonPage = lazy(() =>
   import("../../features/immersive/ImmersiveLessonPage").then((module) => ({ default: module.ImmersiveLessonPage })),
 );
-const LessonList = lazy(() => import("../../features/lessons/LessonList").then((module) => ({ default: module.LessonList })));
+const LessonList = lazy(() => import("../../features/lessons/components/LessonList").then((module) => ({ default: module.LessonList })));
 const WordbookPanel = lazy(() => import("../../features/wordbook/WordbookPanel").then((module) => ({ default: module.WordbookPanel })));
 const UploadPanel = lazy(() => import("../../features/upload/UploadPanel").then((module) => ({ default: module.UploadPanel })));
-const RedeemCodePanel = lazy(() => import("../../features/wallet/RedeemCodePanel").then((module) => ({ default: module.RedeemCodePanel })));
+const RedeemCodePanel = lazy(() => import("../../features/wallet/components/RedeemCodePanel").then((module) => ({ default: module.RedeemCodePanel })));
 
 function PanelFallback() {
   return <div className="rounded-2xl border bg-card p-4 text-sm text-muted-foreground">内容加载中...</div>;

@@ -12,7 +12,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "../../shared/ui";
-import { WalletBadge } from "../../features/wallet/WalletBadge";
+import { WalletBadge } from "../../features/wallet/components/WalletBadge";
 import { ADMIN_NAV_ITEMS } from "../../shared/lib/adminSearchParams";
 
 export const PANEL_ITEMS = [

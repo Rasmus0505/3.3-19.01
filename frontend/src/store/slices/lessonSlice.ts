@@ -2,7 +2,10 @@ import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import { deleteLessonMedia } from "../../shared/media/localMediaStore";
 import { deleteLessonSubtitleCache, getActiveLessonSubtitleVariant, getLessonSubtitleAvailability, saveLessonSubtitleCacheSeed } from "../../shared/media/localSubtitleStore.js";
 
-function buildProgressSnapshot(progressData = {}) {
+type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
+type Getter = () => any;
+
+function buildProgressSnapshot(progressData: any = {}) {
   return {
     current_sentence_index: Number(progressData.current_sentence_index || 0),
     completed_sentence_indexes: Array.isArray(progressData.completed_sentence_indexes) ? progressData.completed_sentence_indexes : [],
@@ -10,7 +13,7 @@ function buildProgressSnapshot(progressData = {}) {
   };
 }
 
-function buildCatalogProgressSnapshot(progressSummary = null) {
+function buildCatalogProgressSnapshot(progressSummary: any = null) {
   if (!progressSummary || typeof progressSummary !== "object") {
     return buildProgressSnapshot();
   }
@@ -21,7 +24,7 @@ function buildCatalogProgressSnapshot(progressSummary = null) {
   };
 }
 
-function getSentenceCount(detailData, fallbackLesson) {
+function getSentenceCount(detailData: any, fallbackLesson: any) {
   if (Array.isArray(detailData?.sentences)) {
     return detailData.sentences.length;
   }
@@ -35,7 +38,7 @@ function getSentenceCount(detailData, fallbackLesson) {
   return 0;
 }
 
-function mergeLessonWithSubtitleVariant(lesson, variant) {
+function mergeLessonWithSubtitleVariant(lesson: any, variant: any) {
   if (!lesson || !variant || !Array.isArray(variant.sentences) || variant.sentences.length === 0) {
     return lesson;
   }
@@ -51,7 +54,7 @@ function mergeLessonWithSubtitleVariant(lesson, variant) {
   };
 }
 
-async function applyLocalSubtitleVariant(lesson) {
+async function applyLocalSubtitleVariant(lesson: any) {
   if (!lesson?.id) return lesson;
   try {
     const activeVariant = await getActiveLessonSubtitleVariant(lesson.id);
@@ -61,17 +64,17 @@ async function applyLocalSubtitleVariant(lesson) {
   }
 }
 
-function normalizeDeletedLessonIds(lessonIds = []) {
+function normalizeDeletedLessonIds(lessonIds: unknown[] = []) {
   return Array.from(new Set(listToNumberArray(lessonIds))).filter((item) => item > 0);
 }
 
-function listToNumberArray(items = []) {
+function listToNumberArray(items: unknown[] = []) {
   return (Array.isArray(items) ? items : []).map((item) => Number(item || 0)).filter((item) => Number.isInteger(item) && item > 0);
 }
 
-function removeDeletedLessonsFromState(state, deletedIds) {
+function removeDeletedLessonsFromState(state: any, deletedIds: unknown[]) {
   const deletedIdSet = new Set(listToNumberArray(deletedIds));
-  const nextLessons = state.lessons.filter((item) => !deletedIdSet.has(Number(item.id || 0)));
+  const nextLessons = state.lessons.filter((item: any) => !deletedIdSet.has(Number(item.id || 0)));
   const nextLessonCardMetaMap = { ...state.lessonCardMetaMap };
   const nextSubtitleCacheMetaMap = { ...state.subtitleCacheMetaMap };
   for (const lessonId of deletedIdSet) {
@@ -86,7 +89,7 @@ function removeDeletedLessonsFromState(state, deletedIds) {
   };
 }
 
-async function cleanupDeletedLessonArtifacts(lessonIds) {
+async function cleanupDeletedLessonArtifacts(lessonIds: unknown[]) {
   const deletedIds = listToNumberArray(lessonIds);
   await Promise.all(
     deletedIds.flatMap((lessonId) => [
@@ -113,14 +116,14 @@ export const lessonInitialState = {
   subtitleCacheMetaMap: {},
 };
 
-export function createLessonSlice(set, get) {
+export function createLessonSlice(set: Setter, get: Getter) {
   return {
     ...lessonInitialState,
     resetLessonState: () => set({ ...lessonInitialState }),
-    setLessonsQuery: (lessonsQuery) => set({ lessonsQuery: String(lessonsQuery || "") }),
-    setCurrentLesson: (currentLesson) => set({ currentLesson: currentLesson || null }),
-    setLessonCardMetaMap: (lessonCardMetaMap) => set({ lessonCardMetaMap: lessonCardMetaMap || {} }),
-    mergeLessonCardMeta: (lessonId, patch) =>
+    setLessonsQuery: (lessonsQuery: unknown) => set({ lessonsQuery: String(lessonsQuery || "") }),
+    setCurrentLesson: (currentLesson: unknown) => set({ currentLesson: currentLesson || null }),
+    setLessonCardMetaMap: (lessonCardMetaMap: unknown) => set({ lessonCardMetaMap: lessonCardMetaMap || {} }),
+    mergeLessonCardMeta: (lessonId: string | number, patch: unknown) =>
       set((state) => ({
         lessonCardMetaMap: {
           ...state.lessonCardMetaMap,
@@ -130,24 +133,24 @@ export function createLessonSlice(set, get) {
           },
         },
       })),
-    setSubtitleCacheMetaMap: (subtitleCacheMetaMap) => set({ subtitleCacheMetaMap: subtitleCacheMetaMap || {} }),
-    setWalletBalance: (walletBalance) => set({ walletBalance: Number(walletBalance || 0) }),
-    setBillingRates: (billingRates) => set({ billingRates: Array.isArray(billingRates) ? billingRates : [] }),
-    setSubtitleSettings: (subtitleSettings) =>
+    setSubtitleCacheMetaMap: (subtitleCacheMetaMap: unknown) => set({ subtitleCacheMetaMap: subtitleCacheMetaMap || {} }),
+    setWalletBalance: (walletBalance: unknown) => set({ walletBalance: Number(walletBalance || 0) }),
+    setBillingRates: (billingRates: unknown) => set({ billingRates: Array.isArray(billingRates) ? billingRates : [] }),
+    setSubtitleSettings: (subtitleSettings: any) =>
       set({
         subtitleSettings: {
           semantic_split_default_enabled: Boolean(subtitleSettings?.semantic_split_default_enabled),
           default_asr_model: String(subtitleSettings?.default_asr_model || ""),
         },
       }),
-    async refreshSubtitleCacheMeta(lessonList, options = {}) {
+    async refreshSubtitleCacheMeta(lessonList: any, options: any = {}) {
       const sourceLessons = Array.isArray(lessonList) ? lessonList : get().lessons;
       if (!sourceLessons.length) {
         set({ subtitleCacheMetaMap: {} });
         return {};
       }
       const entries = await Promise.all(
-        sourceLessons.map(async (lesson) => {
+        sourceLessons.map(async (lesson: any) => {
           try {
             return [lesson.id, await getLessonSubtitleAvailability(lesson.id)];
           } catch (_) {
@@ -172,7 +175,7 @@ export function createLessonSlice(set, get) {
       }));
       return nextMap;
     },
-    async loadLessonDetail(lessonId, options = {}) {
+    async loadLessonDetail(lessonId: number, options: any = {}) {
       if (!lessonId || !get().accessToken) return null;
       const { autoEnterImmersive = false, keepCurrentImmersiveState = false } = options;
       try {
@@ -227,7 +230,7 @@ export function createLessonSlice(set, get) {
         return null;
       }
     },
-    async loadCatalog(options = {}) {
+    async loadCatalog(options: any = {}) {
       const {
         page = 1,
         pageSize = get().lessonsPageSize || 20,
@@ -265,7 +268,7 @@ export function createLessonSlice(set, get) {
         }
         const incoming = Array.isArray(data.items) ? data.items : [];
         const nextLessons = append
-          ? [...get().lessons, ...incoming.filter((item) => !get().lessons.some((lesson) => lesson.id === item.id))]
+          ? [...get().lessons, ...incoming.filter((item: any) => !get().lessons.some((lesson: any) => lesson.id === item.id))]
           : incoming;
         const nextCardMetaMap = append ? { ...get().lessonCardMetaMap } : {};
         for (const lesson of nextLessons) {
@@ -286,7 +289,7 @@ export function createLessonSlice(set, get) {
         });
         get().ensureLessonMediaPlaceholders(nextLessons);
         const currentLessonId = get().currentLesson?.id;
-        const currentExists = currentLessonId && nextLessons.some((item) => item.id === currentLessonId);
+        const currentExists = currentLessonId && nextLessons.some((item: any) => item.id === currentLessonId);
         const targetLessonId = preferredLessonId || (!append && !currentExists ? nextLessons[0]?.id : null);
         if (!nextLessons.length && !targetLessonId) {
           if (!String(query || "").trim()) {
@@ -364,12 +367,12 @@ export function createLessonSlice(set, get) {
       }
       return [];
     },
-    async refreshCurrentLesson(options = {}) {
+    async refreshCurrentLesson(options: any = {}) {
       const lessonId = get().currentLesson?.id;
       if (!lessonId) return null;
       return get().loadLessonDetail(lessonId, { keepCurrentImmersiveState: true, ...options });
     },
-    async renameLesson(lessonId, title) {
+    async renameLesson(lessonId: number, title: string) {
       if (!get().accessToken) {
         return { ok: false, message: "请先登录" };
       }
@@ -390,7 +393,7 @@ export function createLessonSlice(set, get) {
           return { ok: false, message };
         }
         set((state) => ({
-          lessons: state.lessons.map((item) => (item.id === lessonId ? { ...item, title: data.title } : item)),
+          lessons: state.lessons.map((item: any) => (item.id === lessonId ? { ...item, title: data.title } : item)),
           currentLesson: state.currentLesson?.id === lessonId ? { ...state.currentLesson, title: data.title } : state.currentLesson,
         }));
         get().setGlobalStatus("");
@@ -401,7 +404,7 @@ export function createLessonSlice(set, get) {
         return { ok: false, message };
       }
     },
-    async deleteLesson(lessonId, options = {}) {
+    async deleteLesson(lessonId: number, options: any = {}) {
       if (!get().accessToken) {
         return { ok: false, message: "请先登录" };
       }
@@ -436,7 +439,7 @@ export function createLessonSlice(set, get) {
         return { ok: false, message };
       }
     },
-    async deleteLessonsBulk({ lessonIds = [], deleteAll = false } = {}) {
+    async deleteLessonsBulk({ lessonIds = [], deleteAll = false }: any = {}) {
       if (!get().accessToken) {
         return { ok: false, message: "请先登录" };
       }

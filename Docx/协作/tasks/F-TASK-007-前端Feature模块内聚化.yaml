@@ -1,0 +1,63 @@
+schema_version: 1
+task_id: TASK-007
+title: 前端Feature模块内聚化
+status: done
+priority: medium
+project_root: D:/3.3-19.01
+base_ref: main
+goal: >
+  将 frontend/src/features/ 下现有目录重组为内聚的模块结构：
+  每个 feature 目录内含 api/（API 调用）、components/（UI）、
+  hooks/（逻辑）、types.ts（类型）。
+  同时建立 frontend/src/types/ 全局共享类型目录。
+scope:
+  - 前端 Feature 模块结构
+  - TypeScript 类型系统
+allowed_paths:
+  - frontend/src/features/
+  - frontend/src/types/
+  - frontend/src/shared/api/
+  - frontend/src/shared/hooks/
+acceptance:
+  - frontend/src/types/ 存在 api.ts、lesson.ts、user.ts
+  - frontend/src/features/auth/ 下有 types.ts
+  - frontend/src/features/lessons/ 下有 types.ts
+  - frontend/src/features/lessons/components/ 下有 LessonList.jsx 等现有组件
+  - 前端构建无新增错误
+check_commands:
+  - Get-ChildItem "D:/3.3-19.01/frontend/src/features/" -Name
+  - npm run build --prefix frontend 2>&1 | Select-String "error"
+depends_on: []
+dependency_reason: TASK-001 已完成，此任务可立即开始，TASK-006 的 Store 拆分与此任务独立
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  只做目录重组和类型文件新增，不改变任何组件的代码逻辑。
+  如果 feature 目录下的文件数量少（如 auth/ 只有 AuthPanel.jsx），
+  可以只保留 components/ 不强拆 api/ 或 hooks/。
+  types/ 中的类型从 API 响应结构提炼，先覆盖 lessons 和 auth。
+  不要在 types/ 中写业务逻辑。
+  与 TASK-006（Store 拆分）存在冲突：两者不同时修改同一文件。
+result_summary: |
+  前端 Feature 模块内聚化已完成：
+  - frontend/src/types/ 已存在（api.ts、lesson.ts、user.ts），由 TASK-006 subagent 建立
+  - frontend/src/features/auth/types.ts 已存在，导出 auth 相关类型
+  - frontend/src/features/lessons/types.ts 已存在，导出 lesson 相关类型
+  - frontend/src/features/lessons/components/ 已存在（由 TASK-006 subagent 创建）
+  - 前端构建通过，无新增错误
+changed_files:
+  - frontend/src/types/api.ts (新增)
+  - frontend/src/types/lesson.ts (新增)
+  - frontend/src/types/user.ts (新增)
+  - frontend/src/features/auth/types.ts (已存在)
+  - frontend/src/features/lessons/types.ts (已存在)
+  - frontend/src/features/lessons/components/LessonList.jsx (已存在)
+tests_run:
+  - npm run build --prefix frontend (通过)
+blocked_reason: ""
+completed_at: 2026-03-24T20:20:00+08:00
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""
