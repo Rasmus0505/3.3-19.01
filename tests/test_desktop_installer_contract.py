@@ -49,6 +49,8 @@ def test_package_json_targets_nsis_installer_with_bundled_runtime_resources():
     assert build_config["nsis"]["include"] == "build/installer.nsh"
     assert extra_resources["desktop-helper-runtime/BottleLocalHelper"] == ".cache/helper-runtime/BottleLocalHelper"
     assert extra_resources["runtime-defaults.json"] == ".cache/runtime-defaults.json"
+    assert extra_resources["runtime-tools/ffmpeg"] == "../tools/ffmpeg/bin"
+    assert extra_resources["runtime-tools/yt-dlp"] == "../tools/yt-dlp"
     assert extra_resources["preinstalled-models/faster-distil-small.en"] == "../asr-test/models/faster-distil-small.en"
 
 
@@ -80,6 +82,8 @@ def test_main_process_uses_bundled_helper_runtime_and_packaged_defaults():
     assert '"/api/desktop-asr/url-import"' in main_text
     assert "runtime-defaults.json" in main_text
     assert "DESKTOP_PREINSTALLED_MODEL_DIR" in main_text
+    assert "DESKTOP_FFMPEG_BIN_DIR" in main_text
+    assert "DESKTOP_YTDLP_PATH" in main_text
     assert 'helperMode: app.isPackaged ? "bundled-runtime" : "system-python"' in main_text
     assert "computeModelUpdateDelta" in model_updater_text
     assert ".model-version.json" in model_updater_text
@@ -92,6 +96,8 @@ def test_main_process_uses_bundled_helper_runtime_and_packaged_defaults():
     assert "BottleLocalHelper.exe" in helper_runtime_text
     assert "desktop-helper-runtime" in helper_runtime_text
     assert "preinstalled-models" in helper_runtime_text
+    assert "runtime-tools" in helper_runtime_text
+    assert "yt-dlp" in helper_runtime_text
 
 
 def test_installer_script_contains_bottle_preinstall_checkbox_and_copy_logic():

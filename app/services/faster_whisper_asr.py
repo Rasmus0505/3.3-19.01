@@ -430,125 +430,6 @@ def _prepare_running() -> bool:
         return bool(_PREPARE_THREAD and _PREPARE_THREAD.is_alive())
 
 
-def get_faster_whisper_model_status() -> dict[str, Any]:
-    missing_files = _missing_model_files()
-    cached = not missing_files
-    cache_matches = _model_cache_matches_current_config()
-    download_required = (not cached) or (not cache_matches)
-    downloading, last_error = _download_runtime_snapshot()
-    preparing = downloading or _prefetch_running() or _prepare_running()
-
-    if preparing:
-        status = "preparing"
-        message = "模型准备中，请稍候"
-    elif download_required and last_error:
-        status = "error"
-        message = "模型准备失败，请重试"
-    elif download_required:
-        status = "missing"
-        if not cached:
-            message = "模型未下载，需要先准备"
-        else:
-            message = "模型缓存与当前配置不一致，需要重新准备"
-    else:
-        status = "ready"
-        message = "模型已就绪"
-
-    return {
-        "model_key": FASTER_WHISPER_ASR_MODEL,
-        "status": status,
-        "model_ready": bool(cached and cache_matches and not download_required),
-        "download_required": bool(download_required),
-        "preparing": bool(preparing),
-        "cached": bool(cached and cache_matches),
-        "message": message,
-        "last_error": str(last_error or ""),
-        "model_dir": str(FASTER_WHISPER_MODEL_DIR),
-        "missing_files": list(missing_files),
-    }
-
-
-def prepare_faster_whisper_model(*, force_refresh: bool = False) -> dict[str, Any]:
-    current_status = get_faster_whisper_model_status()
-    if not force_refresh and current_status["cached"] and not current_status["download_required"]:
-        return current_status
-
-    scheduled = schedule_faster_whisper_model_prepare(force_refresh=force_refresh)
-    next_status = get_faster_whisper_model_status()
-    if scheduled or next_status["preparing"]:
-        next_status.update(
-            {
-                "status": "preparing",
-                "preparing": True,
-                "message": "模型准备中，请稍候",
-                "last_error": "",
-            }
-        )
-    return next_status
-
-
-def ensure_faster_whisper_model_ready_for_transcribe() -> dict[str, Any]:
-    status = get_faster_whisper_model_status()
-    if status["cached"] and not status["download_required"]:
-        return status
-
-    scheduled = schedule_faster_whisper_model_prepare(force_refresh=False)
-    next_status = get_faster_whisper_model_status()
-    if scheduled or next_status["preparing"]:
-        next_status.update(
-            {
-                "status": "preparing",
-                "preparing": True,
-                "message": "Faster Whisper model is preparing. Please retry in a moment.",
-                "last_error": "",
-            }
-        )
-    elif next_status["status"] == "missing":
-        next_status["message"] = "Faster Whisper model is not ready yet. Please prepare it first."
-    raise FasterWhisperModelNotReadyError(next_status)
-
-
-def ensure_faster_whisper_model_downloaded(*, force_refresh: bool = False) -> Path:
-    with _MODEL_LOCK:
-        if not force_refresh and has_faster_whisper_model_cache() and _model_cache_matches_current_config():
-            return FASTER_WHISPER_MODEL_DIR
-
-        _set_download_runtime(in_progress=True, last_error="")
-        try:
-            FASTER_WHISPER_MODEL_DIR.parent.mkdir(parents=True, exist_ok=True)
-            snapshot_download = _load_snapshot_download()
-            logger.info(
-                "[DEBUG] faster_whisper.download_start model_id=%s model_dir=%s force_refresh=%s missing=%s",
-                FASTER_WHISPER_MODELSCOPE_MODEL_ID,
-                FASTER_WHISPER_MODEL_DIR,
-                force_refresh,
-                ",".join(_missing_model_files()),
-            )
-            snapshot_download(
-                FASTER_WHISPER_MODELSCOPE_MODEL_ID,
-                local_dir=str(FASTER_WHISPER_MODEL_DIR),
-                local_files_only=False,
-            )
-            missing = _missing_model_files()
-            if missing:
-                error_text = f"faster-whisper model incomplete: {', '.join(missing)}"
-                _set_download_runtime(last_error=error_text)
-                raise RuntimeError(error_text)
-            _write_meta()
-            _set_download_runtime(last_error="")
-            logger.info(
-                "[DEBUG] faster_whisper.download_done model_id=%s model_dir=%s",
-                FASTER_WHISPER_MODELSCOPE_MODEL_ID,
-                FASTER_WHISPER_MODEL_DIR,
-            )
-            return FASTER_WHISPER_MODEL_DIR
-        except Exception as exc:
-            _set_download_runtime(last_error=str(exc)[:1200])
-            raise
-        finally:
-            _set_download_runtime(in_progress=False)
-
-
 def _raise_if_cancel_requested(*, audio_path: str | None = None) -> None:
     if is_task_terminate_requested(path=audio_path):
         raise FasterWhisperCancellationRequested("terminate requested")
@@ -560,33 +441,6 @@ def _emit_faster_whisper_progress(progress_callback, payload: dict[str, Any], *,
         return
     progress_callback(payload)
     _raise_if_cancel_requested(audio_path=audio_path)
-
-
-def _prefetch_model_worker() -> None:
-    global _PREFETCH_THREAD
-    try:
-        if not faster_whisper_prefetch_needed():
-            logger.info("[DEBUG] faster_whisper.prefetch_skip reason=cache_ready")
-            return
-        ensure_faster_whisper_model_downloaded(force_refresh=False)
-        logger.info("[DEBUG] faster_whisper.prefetch_done model_dir=%s", FASTER_WHISPER_MODEL_DIR)
-    except Exception as exc:
-        logger.exception("[DEBUG] faster_whisper.prefetch_failed detail=%s", str(exc)[:400])
-    finally:
-        with _PREFETCH_LOCK:
-            _PREFETCH_THREAD = None
-
-
-def _prepare_model_worker(*, force_refresh: bool) -> None:
-    global _PREPARE_THREAD
-    try:
-        ensure_faster_whisper_model_downloaded(force_refresh=force_refresh)
-        logger.info("[DEBUG] faster_whisper.prepare_done model_dir=%s force_refresh=%s", FASTER_WHISPER_MODEL_DIR, force_refresh)
-    except Exception as exc:
-        logger.exception("[DEBUG] faster_whisper.prepare_failed detail=%s", str(exc)[:400])
-    finally:
-        with _PREPARE_LOCK:
-            _PREPARE_THREAD = None
 
 
 def _verify_local_faster_whisper_bundle(*, force_refresh: bool = False) -> Path:
@@ -644,6 +498,7 @@ def get_faster_whisper_model_status() -> dict[str, Any]:
     return {
         "model_key": FASTER_WHISPER_ASR_MODEL,
         "status": status,
+        "model_ready": bool(cached and cache_matches and not download_required),
         "download_required": bool(download_required),
         "preparing": bool(preparing),
         "cached": bool(cached and cache_matches),
@@ -675,6 +530,27 @@ def prepare_faster_whisper_model(*, force_refresh: bool = False) -> dict[str, An
 
 def ensure_faster_whisper_model_downloaded(*, force_refresh: bool = False) -> Path:
     return _verify_local_faster_whisper_bundle(force_refresh=force_refresh)
+
+
+def ensure_faster_whisper_model_ready_for_transcribe() -> dict[str, Any]:
+    status = get_faster_whisper_model_status()
+    if status["cached"] and not status["download_required"]:
+        return status
+
+    scheduled = schedule_faster_whisper_model_prepare(force_refresh=False)
+    next_status = get_faster_whisper_model_status()
+    if scheduled or next_status["preparing"]:
+        next_status.update(
+            {
+                "status": "preparing",
+                "preparing": True,
+                "message": "Faster Whisper model is preparing. Please retry in a moment.",
+                "last_error": "",
+            }
+        )
+    elif next_status["status"] == "missing":
+        next_status["message"] = "Faster Whisper model is not ready yet. Please prepare it first."
+    raise FasterWhisperModelNotReadyError(next_status)
 
 
 def _prefetch_model_worker() -> None:

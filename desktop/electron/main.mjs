@@ -1123,6 +1123,16 @@ async function startBackend() {
     if (!packagedRuntime?.helperExists) {
       throw new Error(`Bundled local helper runtime is missing: ${packagedRuntime?.helperExecutablePath || "unknown path"}`);
     }
+    if (!packagedRuntime.ffmpegExists || !packagedRuntime.ffprobeExists || !packagedRuntime.ytdlpExists) {
+      throw new Error(
+        [
+          "Bundled desktop runtime tools are incomplete.",
+          `ffmpeg=${packagedRuntime.ffmpegExecutablePath}`,
+          `ffprobe=${packagedRuntime.ffprobeExecutablePath}`,
+          `yt-dlp=${packagedRuntime.ytdlpExecutablePath}`,
+        ].join(" "),
+      );
+    }
     launchCommand = packagedRuntime.helperExecutablePath;
     launchArgs = ["--host", "127.0.0.1", "--port", String(backendPort)];
   } else {
@@ -1143,6 +1153,8 @@ async function startBackend() {
     DESKTOP_TEMP_DIR: desktopRuntimeConfig.local.tempDir,
     DESKTOP_PREINSTALLED_MODEL_DIR: packagedRuntime?.bottle1ModelDir || "",
     DESKTOP_INSTALL_STATE_PATH: packagedRuntime?.installStatePath || "",
+    DESKTOP_FFMPEG_BIN_DIR: packagedRuntime?.ffmpegBinDir || "",
+    DESKTOP_YTDLP_PATH: packagedRuntime?.ytdlpExecutablePath || "",
   };
 
   backendShutdownExpected = false;

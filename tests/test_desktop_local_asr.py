@@ -7,6 +7,42 @@ from fastapi.testclient import TestClient
 from scripts.run_desktop_backend import create_desktop_helper_app
 
 
+def test_desktop_helper_health_reports_bundled_media_tools(monkeypatch, tmp_path):
+    import scripts.run_desktop_backend as desktop_backend
+    from app.services import media as media_service
+
+    monkeypatch.setattr(
+        desktop_backend,
+        "_load_faster_whisper_status",
+        lambda: {
+            "model_ready": True,
+            "model_status": "ready",
+            "model_status_message": "模型已就绪",
+        },
+    )
+    monkeypatch.setattr(
+        media_service,
+        "get_media_runtime_status",
+        lambda: {
+            "ffmpeg_ready": True,
+            "ffprobe_ready": True,
+            "yt_dlp_ready": True,
+            "detail": "",
+        },
+    )
+
+    app = create_desktop_helper_app({"model_dir": str(tmp_path / "models")})
+    with TestClient(app) as client:
+        resp = client.get("/health/ready")
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["ffmpeg_ready"] is True
+    assert payload["ffprobe_ready"] is True
+    assert payload["yt_dlp_ready"] is True
+    assert payload["status"]["model_ready"] is True
+
+
 def test_desktop_helper_transcribe_route_reads_local_source_and_returns_asr_payload(tmp_path, monkeypatch):
     from app.api.routers import desktop_asr as desktop_asr_router
 

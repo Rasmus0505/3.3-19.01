@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import subprocess
@@ -9,6 +10,9 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.core.config import BASE_TMP_DIR, MEDIA_STORAGE_ROOT_DIR, PERSISTENT_DATA_DIR, PROJECT_DIR
+from app.infra.runtime_tools import describe_command_candidates, get_ffmpeg_bin_dir, get_ytdlp_command, resolve_command_path
+
+logger = logging.getLogger(__name__)
 
 
 class MediaError(RuntimeError):
@@ -39,15 +43,19 @@ _DURATION_RE = re.compile(r"Duration:\s*(?P<hours>\d+):(?P<minutes>\d+):(?P<seco
 
 
 def ensure_local_media_bin_on_path() -> None:
-    if not LOCAL_MEDIA_BIN_DIR.exists():
+    resolved_bin_dir = get_ffmpeg_bin_dir()
+    if not resolved_bin_dir:
+        logger.info("[DEBUG] media_ffmpeg.local_bin_not_found path=%s", LOCAL_MEDIA_BIN_DIR)
         return
     current_path = os.environ.get("PATH", "")
-    local_bin = str(LOCAL_MEDIA_BIN_DIR)
+    local_bin = str(resolved_bin_dir)
     parts = current_path.split(os.pathsep) if current_path else []
     normalized_parts = {part.lower() for part in parts if part}
     if local_bin.lower() in normalized_parts:
+        logger.info("[DEBUG] media_ffmpeg.local_bin_already_on_path path=%s", local_bin)
         return
     os.environ["PATH"] = local_bin if not current_path else f"{local_bin}{os.pathsep}{current_path}"
+    logger.info("[DEBUG] media_ffmpeg.local_bin_added_to_path path=%s", local_bin)
 
 
 def create_request_dir(base_tmp_dir: Path) -> Path:
@@ -119,24 +127,27 @@ def validate_suffix(file_name: str) -> str:
 
 def resolve_media_command(cmd: str) -> str:
     ensure_local_media_bin_on_path()
-    normalized = str(cmd or "").strip()
-    if normalized in {"ffmpeg", "ffprobe"}:
-        local_match = shutil.which(normalized, path=str(LOCAL_MEDIA_BIN_DIR))
-        if local_match:
-            return local_match
-    return normalized
+    return resolve_command_path(cmd)
 
 
 def _ensure_command_exists(cmd: str) -> str:
     resolved = resolve_media_command(cmd)
-    if shutil.which(resolved) is None:
-        raise MediaError("COMMAND_MISSING", "媒体处理依赖缺失", f"{cmd} 未安装或不可执行")
+    found_path = shutil.which(resolved)
+    logger.info("[DEBUG] media_ffmpeg.check_command cmd=%s resolved=%s found=%s", cmd, resolved, found_path or "NOT FOUND")
+    if found_path is None:
+        candidates = describe_command_candidates(cmd)
+        raise MediaError(
+            "COMMAND_MISSING",
+            "媒体处理依赖缺失",
+            f"{cmd} 不可用；checked={'; '.join(candidates) or 'PATH lookup only'}",
+        )
     return resolved
 
 
 @lru_cache(maxsize=1)
 def ensure_ffmpeg_for_transcribe() -> None:
     ffmpeg_executable = _ensure_command_exists("ffmpeg")
+    logger.info("[DEBUG] media_ffmpeg.check_libopus executable=%s", ffmpeg_executable)
     try:
         proc = subprocess.run(
             [ffmpeg_executable, "-hide_banner", "-encoders"],
@@ -151,7 +162,9 @@ def ensure_ffmpeg_for_transcribe() -> None:
 
     output = (proc.stdout or "") + "\n" + (proc.stderr or "")
     if "libopus" not in output:
-        raise MediaError("FFMPEG_LIBOPUS_MISSING", "ffmpeg 缺少 libopus 编码器支持", output[:1000])
+        logger.warning("[DEBUG] media_ffmpeg.libopus_missing ffmpeg=%s output_preview=%s", ffmpeg_executable, output[:200])
+        raise MediaError("FFMPEG_LIBOPUS_MISSING", "ffmpeg 缺少 libopus 编码器支持", f"当前 ffmpeg 不支持 libopus 编码器，请重新安装 ffmpeg（建议：conda install ffmpeg libopus）")
+    logger.info("[DEBUG] media_ffmpeg.libopus_ok ffmpeg=%s", ffmpeg_executable)
 
 
 @lru_cache(maxsize=1)
@@ -167,6 +180,7 @@ def get_media_runtime_status() -> dict[str, str | bool]:
     status: dict[str, str | bool] = {
         "ffmpeg_ready": True,
         "ffprobe_ready": True,
+        "yt_dlp_ready": True,
         "detail": "",
     }
     try:
@@ -179,6 +193,10 @@ def get_media_runtime_status() -> dict[str, str | bool]:
     except MediaError as exc:
         status["ffprobe_ready"] = False
         status["detail"] = status["detail"] or exc.detail or exc.message
+    if not get_ytdlp_command():
+        status["yt_dlp_ready"] = False
+        candidates = describe_command_candidates("yt-dlp")
+        status["detail"] = status["detail"] or f"yt-dlp unavailable; checked={'; '.join(candidates) or 'PATH lookup only'}"
     return status
 
 
