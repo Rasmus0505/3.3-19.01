@@ -1,0 +1,53 @@
+schema_version: 1
+task_id: TASK-031
+title: 前端上传面板添加客户端诊断信息面板
+status: done
+priority: medium
+project_root: D:/3.3-19.01
+base_ref: main
+task_context: |
+  用户在使用桌面客户端时遇到问题但不知道客户端当前状态。客户端内部运行着多个服务（本地 Helper、云端连接、客户端更新检测等），但用户看不到这些状态信息。
+
+  用户明确表示："我希望现在我看到的客户端就是以后可以给用户发 exe 安装的客户端"，说明用户需要一个能展示客户端健康状态的诊断面板，让用户（以及自己测试时）能快速判断客户端是否正常运行。
+goal: |
+  在前端上传面板的设置或帮助入口处，添加一个可展开的诊断信息面板，显示客户端版本、云端连接状态、本地 Helper 状态、客户端更新状态、错误日志入口。
+scope:
+  - 前端上传面板 UI 改动
+  - 客户端诊断信息获取逻辑
+allowed_paths:
+  - frontend/src/features/upload/UploadPanel.jsx
+  - frontend/src/shared/api/client.js
+  - desktop/electron/preload.mjs
+acceptance:
+  - 在上传面板的帮助或设置菜单中有一个"客户端诊断"入口
+  - 点击展开后显示：客户端当前版本号
+  - 显示云端服务连接状态（连接中/已连接/不可用）
+  - 显示本地 Helper 状态（运行中/未启动/模型就绪）
+  - 显示客户端更新状态（已是最新/发现新版本/检查更新失败）
+  - 有一个"打开日志目录"按钮，点击后调用 window.desktopRuntime.openLogsDirectory()
+  - 非 Electron 环境（纯浏览器）下不显示诊断面板
+check_commands:
+  - ""
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  1. 在 UploadPanel.jsx 中添加一个 useState 用于存储诊断信息。
+  2. 在 useEffect 中调用 window.desktopRuntime.getRuntimeInfo() 获取完整诊断数据。
+  3. 添加一个诊断面板组件（可以是一个 Dialog 或折叠面板），在帮助图标处触发。
+  4. 诊断面板需要显示 runtimeInfo.clientUpdate、runtimeInfo.helperStatus、runtimeInfo.serverStatus、runtimeInfo.cloud 等字段。
+  5. 调用 window.desktopRuntime.openLogsDirectory() 时需要通过 ipcMain.handle 在 desktop/electron/main.mjs 中注册。
+  6. 注意样式要与现有 UI 风格保持一致。
+result_summary: "在上传面板头部新增仅桌面端显示的“客户端诊断”入口，并提供诊断弹窗展示客户端版本、云端连接、本地 Helper、客户端更新状态与日志目录入口。"
+changed_files:
+  - frontend/src/features/upload/UploadPanel.jsx
+tests_run:
+  - npm run build
+blocked_reason: ""
+completed_at: "2026-03-24T20:05:22+08:00"
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

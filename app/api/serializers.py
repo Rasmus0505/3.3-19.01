@@ -94,6 +94,7 @@ def to_lesson_item_response(lesson: Lesson) -> LessonItemResponse:
         source_duration_ms=lesson.source_duration_ms,
         status=lesson.status,
         created_at=to_shanghai_aware(lesson.created_at),
+        updated_at=to_shanghai_aware(getattr(lesson, "updated_at", None)),
     )
 
 

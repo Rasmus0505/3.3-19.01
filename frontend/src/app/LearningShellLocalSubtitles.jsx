@@ -52,7 +52,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "../shared/ui";
-import { clearAuthStorage, REFRESH_KEY, TOKEN_KEY } from "./authStorage";
+import { clearAuthStorage, REFRESH_KEY, restoreCachedAuthSession, TOKEN_KEY } from "./authStorage";
 
 function toAsrSentenceOnlyPayload(asrPayload) {
   if (!asrPayload || typeof asrPayload !== "object") {
@@ -312,6 +312,40 @@ export function LearningShellLocalSubtitles() {
   useEffect(() => {
     let canceled = false;
 
+    async function restoreAuth(forceRefresh = false) {
+      try {
+        const result = await restoreCachedAuthSession({ forceRefresh });
+        if (canceled) {
+          return;
+        }
+        setAccessToken(localStorage.getItem(TOKEN_KEY) || "");
+        if (result?.status === "expired") {
+          setGlobalStatus(result.message || "登录状态已过期，请联网重新登录");
+          return;
+        }
+        setGlobalStatus("");
+      } catch (error) {
+        if (canceled) {
+          return;
+        }
+        setGlobalStatus(`登录恢复失败: ${String(error)}`);
+      }
+    }
+
+    void restoreAuth(false);
+    const handleOnline = () => {
+      void restoreAuth(true);
+    };
+    window.addEventListener("online", handleOnline);
+    return () => {
+      canceled = true;
+      window.removeEventListener("online", handleOnline);
+    };
+  }, []);
+
+  useEffect(() => {
+    let canceled = false;
+
     async function detectCurrentLessonMediaStatus() {
       if (!currentLesson?.id) {
         setCurrentLessonNeedsBinding(false);
@@ -342,8 +376,8 @@ export function LearningShellLocalSubtitles() {
     setGlobalStatus("");
   }
 
-  function handleLogout() {
-    clearAuthStorage();
+  async function handleLogout() {
+    await clearAuthStorage();
     setAccessToken("");
     setLessons([]);
     setCurrentLesson(null);

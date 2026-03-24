@@ -1,0 +1,82 @@
+schema_version: 1
+task_id: TASK-034
+title: 同步元数据与冲突日志表
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: |
+  在本地 SQLite 中新增 sync_journals 和 sync_conflicts 表，实现基础的同步记录写入、查询接口，为后续增量同步引擎提供数据基础。
+scope:
+  - 本地 SQLite 同步表设计
+  - 同步记录 CRUD 操作
+  - 冲突记录写入与查询
+allowed_paths:
+  - desktop/src/db/
+  - desktop/electron/preload.mjs
+acceptance:
+  - saveCourse 后，sync_journals 表中有对应的同步记录（table_name=courses, record_id, synced_at, version, status）
+  - getUnresolvedConflicts() 在无冲突时返回空数组 []
+  - 在 conflict 字段中写入本地/远程数据差异后，getUnresolvedConflicts() 能返回该冲突记录
+  - 冲突解决后 resolveConflict() 将该记录从冲突列表移除
+check_commands: []
+depends_on:
+  - TASK-033
+dependency_reason: |
+  本任务依赖 TASK-033 建立的基础数据库结构和 db/index.mjs 入口，无法在数据库层不存在时独立实现。
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  1. 在 desktop/src/db/schema.sql 中新增：
+     CREATE TABLE sync_journals (
+       id TEXT PRIMARY KEY,
+       table_name TEXT NOT NULL,
+       record_id TEXT NOT NULL,
+       operation TEXT NOT NULL, -- INSERT / UPDATE / DELETE
+       version INTEGER NOT NULL DEFAULT 1,
+       synced_at TEXT,
+       status TEXT NOT NULL DEFAULT 'pending', -- pending / synced / conflict
+       local_updated_at TEXT,
+       remote_updated_at TEXT
+     );
+     CREATE TABLE sync_conflicts (
+       id TEXT PRIMARY KEY,
+       table_name TEXT NOT NULL,
+       record_id TEXT NOT NULL,
+       local_data TEXT, -- JSON string
+       remote_data TEXT, -- JSON string
+       detected_at TEXT NOT NULL,
+       resolved_at TEXT,
+       resolution TEXT -- local / remote / merged / null
+     );
+  2. 在 desktop/src/db/sync-journal.mjs 中实现：
+     - logSync(tableName, recordId, operation, version): 写入 sync_journals
+     - getUnresolvedConflicts(): 返回所有 resolved_at IS NULL 的 sync_conflicts 记录
+     - resolveConflict(conflictId, resolution): 更新 sync_conflicts.resolved_at 和 resolution
+     - getPendingRecords(tableName): 返回 status='pending' 的同步记录
+     - markSynced(ids): 将指定 journal ids 标记为 synced
+  3. 在 preload 中暴露 window.localDb.sync.* 接口。
+  4. 注意：version 字段用于乐观锁，每次本地修改时递增。
+result_summary: |
+  为桌面端本地 SQLite 增加 sync_journals / sync_conflicts 迁移与 CRUD，saveCourse 会自动递增 version 并写入课程同步日志，preload 已暴露 localDb.sync.* 接口。
+changed_files:
+  - desktop/src/db/local-db.cjs
+  - desktop/src/db/schema.sql
+  - desktop/src/db/sync-journal.mjs
+  - desktop/electron/preload.mjs
+tests_run:
+  - node --check D:/3.3-19.01/desktop/src/db/local-db.cjs
+  - node --check D:/3.3-19.01/desktop/src/db/sync-journal.mjs
+  - node --check D:/3.3-19.01/desktop/electron/preload.mjs
+  - >
+    PowerShell here-string piped to node in D:/3.3-19.01/desktop:
+    createLocalDbBridge in-memory verification covering init schemaVersion=2,
+    saveCourse journal write/version increment, getUnresolvedConflicts empty,
+    saveConflict visibility, resolveConflict removal, markSynced update
+blocked_reason: ""
+completed_at: 2026-03-24T20:57:58.5124865+08:00
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

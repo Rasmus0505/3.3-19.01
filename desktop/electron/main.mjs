@@ -1,7 +1,6 @@
-import { app, BrowserWindow, Notification, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, Notification, dialog, ipcMain, safeStorage, shell, protocol, net } from "electron";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
-import net from "node:net";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -11,13 +10,28 @@ import {
   resolveDesktopRuntimeConfig,
   validateDesktopRuntimeConfig,
 } from "./runtime-config.mjs";
+import {
+  registerAppProtocolClient,
+  registerAppFileProtocol,
+  buildLocalAppUrl,
+  hasLocalDistBundle,
+  APP_PROTOCOL_NAME,
+} from "./app-protocol.mjs";
 import { resolvePackagedDesktopRuntime, selectDesktopModelDir } from "./helper-runtime.mjs";
 import { computeModelUpdateDelta, fetchRemoteManifest, performIncrementalModelUpdate, readLocalManifest } from "./model-updater.mjs";
 
 const currentFile = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFile);
 const iconPath = path.join(path.resolve(currentDir, ".."), "build", "icon.ico");
-const LOCAL_HELPER_ALLOWED_PREFIXES = ["/api/local-asr-assets", "/api/desktop-asr", "/api/desktop-asr/url-import", "/health", "/health/ready"];
+const LOCAL_HELPER_ALLOWED_PREFIXES = [
+  "/api/local-asr",
+  "/api/local-asr-assets",
+  "/api/desktop-asr",
+  "/api/desktop-asr/url-import",
+  "/health",
+  "/health/ready",
+];
+const LOCAL_ASR_DEFAULT_PORT = 18765;
 const DESKTOP_MODEL_UPDATE_KEY = "faster-whisper-medium";
 const DESKTOP_APP_ID = "com.bottle.desktop";
 const DESKTOP_MEDIA_FILE_FILTERS = [
@@ -165,6 +179,52 @@ function serializeError(error) {
     message: String(error || "Unknown error"),
     stack: "",
   };
+}
+
+function encodePlaintextSecret(secret = "") {
+  return Buffer.from(String(secret || ""), "utf8").toString("base64");
+}
+
+function decodePlaintextSecret(ciphertext = "") {
+  if (!trimText(ciphertext)) {
+    return "";
+  }
+  return Buffer.from(String(ciphertext || ""), "base64").toString("utf8");
+}
+
+function encryptDesktopSecret(secret = "") {
+  const normalizedSecret = String(secret || "");
+  if (!normalizedSecret) {
+    return {
+      ciphertext: "",
+      storageMode: "none",
+    };
+  }
+  if (typeof safeStorage?.isEncryptionAvailable === "function" && safeStorage.isEncryptionAvailable()) {
+    return {
+      ciphertext: safeStorage.encryptString(normalizedSecret).toString("base64"),
+      storageMode: "safeStorage",
+    };
+  }
+  return {
+    ciphertext: encodePlaintextSecret(normalizedSecret),
+    storageMode: "plaintext-base64",
+  };
+}
+
+function decryptDesktopSecret(ciphertext = "", storageMode = "none") {
+  const normalizedCiphertext = String(ciphertext || "");
+  const normalizedMode = trimText(storageMode || "none");
+  if (!normalizedCiphertext) {
+    return "";
+  }
+  if (normalizedMode === "safeStorage") {
+    return safeStorage.decryptString(Buffer.from(normalizedCiphertext, "base64"));
+  }
+  if (normalizedMode === "plaintext-base64") {
+    return decodePlaintextSecret(normalizedCiphertext);
+  }
+  return "";
 }
 
 function inspectFile(filePath) {
@@ -938,6 +998,52 @@ if (process.platform === "win32") {
   app.setAppUserModelId(DESKTOP_APP_ID);
 }
 
+function isStandaloneModeEnabled() {
+  if (desktopRuntimeConfig && desktopRuntimeConfig.standaloneMode === true) {
+    return true;
+  }
+  return hasLocalDistBundle();
+}
+
+function buildMainWindowLoadUrl() {
+  const standalone = isStandaloneModeEnabled();
+  if (standalone) {
+    const url = buildLocalAppUrl("index.html");
+    appendDesktopDiagnostic("window-load-url", { mode: "standalone", url });
+    return url;
+  }
+  const cloudUrl = String(desktopRuntimeConfig?.cloud?.appBaseUrl || "").trim();
+  if (!cloudUrl) {
+    throw new Error(`Desktop cloud app URL is empty. Update ${desktopConfigPath}.`);
+  }
+  appendDesktopDiagnostic("window-load-url", { mode: "cloud-linked", url: cloudUrl });
+  return cloudUrl;
+}
+
+function setupCorsProxyForAppProtocol() {
+  if (!app.isPackaged) return;
+  const ALLOWED_CLOUD_ORIGINS = [
+    desktopRuntimeConfig?.cloud?.appBaseUrl ? new URL(desktopRuntimeConfig.cloud.appBaseUrl).origin : null,
+    desktopRuntimeConfig?.cloud?.apiBaseUrl ? new URL(desktopRuntimeConfig.cloud.apiBaseUrl).origin : null,
+  ].filter(Boolean);
+
+  protocol.handle("https", (request) => {
+    const requestOrigin = new URL(request.url).origin;
+    if (ALLOWED_CLOUD_ORIGINS.includes(requestOrigin)) {
+      return net.fetch(request);
+    }
+    return new Response("Forbidden", { status: 403 });
+  });
+  appendDesktopDiagnostic("cors-proxy", { registered: true, origins: ALLOWED_CLOUD_ORIGINS });
+}
+
+async function createMainWindow() {
+  if (!desktopRuntimeConfig) {
+    throw new Error("Desktop runtime config has not been initialized.");
+  }
+  const loadUrl = buildMainWindowLoadUrl();
+  const isStandalone = isStandaloneModeEnabled();
+
 function getDesktopClientRoot() {
   return app.isPackaged ? app.getAppPath() : path.resolve(currentDir, "..");
 }
@@ -996,23 +1102,12 @@ function resolvePythonCommand() {
   throw new Error("No usable Python 3.11 runtime was found. Install Python 3.11 or set DESKTOP_PYTHON_EXECUTABLE.");
 }
 
-function pickFreePort() {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.unref();
-    server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      const port = typeof address === "object" && address ? address.port : 0;
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve(port);
-      });
-    });
-  });
+function resolveLocalAsrPort() {
+  const configured = Number.parseInt(trimText(process.env.DESKTOP_LOCAL_ASR_PORT), 10);
+  if (Number.isInteger(configured) && configured > 0 && configured <= 65535) {
+    return configured;
+  }
+  return LOCAL_ASR_DEFAULT_PORT;
 }
 
 async function fetchHelperHealth(pathname = "/health/ready") {
@@ -1108,7 +1203,7 @@ async function startBackend() {
     throw new Error("Desktop runtime config has not been initialized.");
   }
   backendRoot = getBackendRoot();
-  backendPort = await pickFreePort();
+  backendPort = resolveLocalAsrPort();
   backendLogPath = path.join(desktopRuntimeConfig.local.logDir, "desktop-helper.log");
   ensureLogFile(backendLogPath);
 
@@ -1155,6 +1250,7 @@ async function startBackend() {
     DESKTOP_INSTALL_STATE_PATH: packagedRuntime?.installStatePath || "",
     DESKTOP_FFMPEG_BIN_DIR: packagedRuntime?.ffmpegBinDir || "",
     DESKTOP_YTDLP_PATH: packagedRuntime?.ytdlpExecutablePath || "",
+    DESKTOP_CLOUD_APP_URL: trimText(desktopRuntimeConfig.cloud?.appBaseUrl || ""),
   };
 
   backendShutdownExpected = false;
@@ -1306,6 +1402,7 @@ function buildRuntimeInfo() {
     isPackaged: app.isPackaged,
     helperMode: app.isPackaged ? "bundled-runtime" : "system-python",
     backendPort,
+    localAsrPort: backendPort || resolveLocalAsrPort(),
     backendRoot,
     backendLogPath,
     configPath: desktopConfigPath,
@@ -1318,6 +1415,7 @@ function buildRuntimeInfo() {
     cloud: desktopRuntimeConfig?.cloud || {},
     local: desktopRuntimeConfig?.local || {},
     clientUpdateConfig: desktopRuntimeConfig?.clientUpdate || {},
+    standaloneMode: isStandaloneModeEnabled(),
     install: packagedRuntime
       ? {
           bottle1InstallChoice: packagedRuntime.bottle1InstallChoice,
@@ -1591,10 +1689,8 @@ async function createMainWindow() {
   if (!desktopRuntimeConfig) {
     throw new Error("Desktop runtime config has not been initialized.");
   }
-  const appBaseUrl = String(desktopRuntimeConfig.cloud.appBaseUrl || "").trim();
-  if (!appBaseUrl) {
-    throw new Error(`Desktop cloud app URL is empty. Update ${desktopConfigPath}.`);
-  }
+  const loadUrl = buildMainWindowLoadUrl();
+  const isStandalone = isStandaloneModeEnabled();
   const preloadPath = path.join(currentDir, "preload.mjs");
   const preloadFile = inspectFile(preloadPath);
   const windowWebPreferences = {
@@ -1644,12 +1740,17 @@ async function createMainWindow() {
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
   });
-  await mainWindow.loadURL(appBaseUrl);
+  await mainWindow.loadURL(loadUrl);
 }
 
 async function bootstrapDesktopApp() {
   try {
     loadDesktopRuntimeConfigForApp();
+    if (app.isPackaged) {
+      registerAppProtocolClient();
+      registerAppFileProtocol();
+      setupCorsProxyForAppProtocol();
+    }
     await startBackend();
     startHealthPolling();
     await createMainWindow();
@@ -1711,6 +1812,23 @@ ipcMain.handle("desktop:open-logs-directory", async () => {
   }
   await shell.openPath(folder);
   return true;
+});
+
+ipcMain.handle("desktop:encrypt-secret", async (_event, secret = "") => {
+  const { ciphertext, storageMode } = encryptDesktopSecret(secret);
+  return {
+    ok: true,
+    ciphertext,
+    storageMode,
+  };
+});
+
+ipcMain.handle("desktop:decrypt-secret", async (_event, payload = {}) => {
+  const safePayload = payload && typeof payload === "object" ? payload : {};
+  return {
+    ok: true,
+    secret: decryptDesktopSecret(safePayload.ciphertext, safePayload.storageMode),
+  };
 });
 
 ipcMain.handle("desktop:select-local-media-file", async (_event, options = {}) => selectLocalMediaFile(options));

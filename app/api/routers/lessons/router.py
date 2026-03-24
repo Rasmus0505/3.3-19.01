@@ -568,8 +568,21 @@ def list_lesson_catalog(
     return LessonCatalogResponse(ok=True, **payload)
 
 
-@router.get("", response_model=list[LessonItemResponse], responses={401: {"model": ErrorResponse}})
-def list_lessons(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@router.get("", response_model=list[LessonItemResponse] | dict, responses={401: {"model": ErrorResponse}})
+def list_lessons(
+    since: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if since:
+        lessons = list_lessons_for_user(db, current_user.id, since=since)
+        return [
+            {
+                **to_lesson_item_response(item).model_dump(mode="json"),
+                "updated_at": item.updated_at.isoformat() if hasattr(item, "updated_at") and item.updated_at else None,
+            }
+            for item in lessons
+        ]
     lessons = list_lessons_for_user(db, current_user.id)
     return [to_lesson_item_response(item) for item in lessons]
 

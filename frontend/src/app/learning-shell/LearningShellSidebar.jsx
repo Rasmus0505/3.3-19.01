@@ -1,4 +1,4 @@
-import { BookOpenText, ChevronDown, Gift, History, LogIn, LogOut, Search, Shield, Sparkles, UploadCloud } from "lucide-react";
+import { BookOpenText, ChevronDown, Gift, History, LogIn, LogOut, RefreshCw, Search, Shield, Sparkles, UploadCloud, Wifi, WifiOff } from "lucide-react";
 
 import {
   SidebarContent,
@@ -13,6 +13,7 @@ import {
   useSidebar,
 } from "../../shared/ui";
 import { WalletBadge } from "../../features/wallet/components/WalletBadge";
+import { ConnectionStatusBadge } from "./components/ConnectionStatusBadge";
 import { ADMIN_NAV_ITEMS } from "../../shared/lib/adminSearchParams";
 
 export const PANEL_ITEMS = [
@@ -79,6 +80,20 @@ export function LearningShellSidebar({
   onAdminToggle,
   onAdminSelect,
   mobile = false,
+  isDesktopSync = false,
+  syncStatus = "idle",
+  syncInProgress = false,
+  syncCompleted = 0,
+  syncTotal = 0,
+  lastSyncDisplay = null,
+  onForceSync,
+  pendingCounts = {},
+  onOpenConflicts,
+  isOnline = true,
+  isSyncing = false,
+  connectionStatus = "online",
+  connectionLastSyncDisplay = null,
+  connectionSyncedItems = 0,
 }) {
   const { open, setOpen } = useSidebar();
   const expanded = mobile || open;
@@ -108,15 +123,26 @@ export function LearningShellSidebar({
   return (
     <>
       <SidebarHeader className="justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl border bg-primary/10 text-primary">
-            <Sparkles className="size-5" />
-          </div>
-          {expanded ? (
-            <div className="min-w-0 space-y-2">
-              <p className="truncate text-sm font-semibold">Bottle English</p>
-              {accessToken ? <WalletBadge accessToken={accessToken} balancePoints={walletBalance} /> : null}
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl border bg-primary/10 text-primary">
+              <Sparkles className="size-5" />
             </div>
+            {expanded ? (
+              <div className="min-w-0 space-y-2">
+                <p className="truncate text-sm font-semibold">Bottle English</p>
+                {accessToken ? <WalletBadge accessToken={accessToken} balancePoints={walletBalance} isOnline={isOnline} /> : null}
+              </div>
+            ) : null}
+          </div>
+          {!isDesktopSync ? (
+            <ConnectionStatusBadge
+              isOnline={isOnline}
+              isSyncing={isSyncing}
+              syncStatus={connectionStatus}
+              lastSyncDisplay={connectionLastSyncDisplay}
+              syncedItems={connectionSyncedItems}
+            />
           ) : null}
         </div>
       </SidebarHeader>
@@ -226,6 +252,62 @@ export function LearningShellSidebar({
               <LogIn className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               {expanded ? <p className="text-xs leading-5 text-muted-foreground">{loginHint}</p> : <span className="sr-only">{loginHint}</span>}
             </div>
+          </div>
+        ) : null}
+        {isDesktopSync ? (
+          <div className="rounded-2xl border bg-muted/30 p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {syncStatus === "offline" ? (
+                  <WifiOff className="size-4 shrink-0 text-muted-foreground" />
+                ) : syncInProgress ? (
+                  <RefreshCw className="size-4 shrink-0 animate-spin text-primary" />
+                ) : (
+                  <Wifi className="size-4 shrink-0 text-green-500" />
+                )}
+                {expanded ? (
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="truncate text-xs font-medium">
+                      {syncStatus === "offline"
+                        ? "离线模式"
+                        : syncInProgress
+                          ? `同步中 ${syncCompleted}/${syncTotal}`
+                          : syncStatus === "synced"
+                            ? "已同步"
+                            : syncStatus === "error"
+                              ? "同步失败"
+                              : "空闲"}
+                    </p>
+                    {lastSyncDisplay && (
+                      <p className="truncate text-xs text-muted-foreground">上次同步：{lastSyncDisplay}</p>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+              {expanded && (syncInProgress || syncStatus === "error") ? (
+                <button
+                  onClick={onForceSync}
+                  className="rounded-lg border bg-background px-2 py-1 text-xs hover:bg-muted"
+                  title="手动同步"
+                >
+                  <RefreshCw className="size-3" />
+                </button>
+              ) : null}
+            </div>
+            {pendingCounts.courses > 0 || pendingCounts.progress > 0 ? (
+              <div className="mt-1 flex gap-2">
+                {pendingCounts.courses > 0 ? (
+                  <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300">
+                    {pendingCounts.courses} 个课程待同步
+                  </span>
+                ) : null}
+                {pendingCounts.progress > 0 ? (
+                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                    {pendingCounts.progress} 个进度待同步
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </SidebarFooter>

@@ -1,0 +1,53 @@
+schema_version: 1
+task_id: TASK-030
+title: 增强桌面端文件选择错误捕获链路
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+task_context: |
+  用户在桌面客户端中选择本地媒体文件后点击生成时，会出现"当前桌面端无法读取本机文件路径，请改用云端运行"或"云端服务暂不可用"这两个错误提示，但提示信息过于模糊，用户不知道真实原因是什么。
+
+  根因分析：
+  - "当前桌面端无法读取本机文件路径"：当 resolveDesktopSourcePathCandidate(selection) 返回空时触发。Electron dialog 返回的 file.path 为空或 selection 对象中缺少路径字段。
+  - "云端服务暂不可用"：客户端轮询 {cloud.appBaseUrl}/api/health 时响应失败，说明云端连接有问题。
+
+  两种错误的真实原因都被吞掉了，用户看到的是固定提示而不是真实诊断信息。
+goal: |
+  改进 Electron 主进程的 selectLocalMediaFile() 使其在文件选择失败时返回详细错误原因；改进前端 selectDesktopLocalSourceFile() 使其优先显示真实错误而不是固定提示。
+scope:
+  - 桌面客户端 Electron 主进程的文件选择和错误返回逻辑
+  - 前端上传面板的文件选择错误展示逻辑
+allowed_paths:
+  - desktop/electron/main.mjs
+  - frontend/src/features/upload/UploadPanel.jsx
+acceptance:
+  - 当用户选择不支持的文件类型时，前端应显示"不支持的文件类型，请选择 mp4/mp3/wav 等格式"而不是固定提示
+  - 当 Electron dialog 返回路径为空时，前端应显示"文件路径获取失败，请尝试重新选择"
+  - 当云端连接失败时，前端应显示具体连接失败原因（如 DNS 解析失败、连接超时等）而不是简单提示"云端服务暂不可用"
+  - 错误信息应通过 toast 提示用户，而不是静默失败
+check_commands:
+  - ""
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  1. 修改 desktop/electron/main.mjs 中 selectLocalMediaFile() 函数的返回值，在 dialog canceled 或 inspectDesktopMediaFile 抛出异常时，返回详细的 error 字段。
+  2. 修改 frontend/src/features/upload/UploadPanel.jsx 中 selectDesktopLocalSourceFile() 函数，当 selection.error 存在时通过 toast.error() 显示。
+  3. 同样处理 cloudServerStatus 的错误信息传递，在 UploadPanel 中使用 getServerStatus() 返回的 reason 字段。
+  4. 注意保持向后兼容，不要破坏现有的正常文件选择流程。
+result_summary: 已补全桌面端文件选择错误返回链路，并让上传面板优先展示真实文件选择错误与云端连接失败原因。
+changed_files:
+  - desktop/electron/main.mjs
+  - frontend/src/features/upload/UploadPanel.jsx
+tests_run:
+  - node --check D:/3.3-19.01/desktop/electron/main.mjs
+  - npx esbuild D:/3.3-19.01/frontend/src/features/upload/UploadPanel.jsx --bundle --platform=browser --format=esm --outfile=%TEMP%/uploadpanel-check.js
+blocked_reason: ""
+completed_at: "2026-03-24T20:02:18+08:00"
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

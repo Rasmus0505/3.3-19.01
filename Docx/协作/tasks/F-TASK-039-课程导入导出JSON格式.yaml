@@ -1,0 +1,59 @@
+schema_version: 1
+task_id: TASK-039
+title: 课程导入导出JSON格式
+status: done
+priority: medium
+project_root: D:/3.3-19.01
+base_ref: main
+goal: |
+  实现课程导入和导出功能：用户可将本地课程导出为 .bottle-lesson.json 文件，也可将导出的 JSON 文件导入到本地课程列表。
+scope:
+  - 课程导出序列化
+  - 课程导入解析与写入
+  - 前端导入导出 UI
+allowed_paths:
+  - desktop/src/sync/
+  - desktop/src/db/
+  - frontend/src/features/lessons/LessonList.jsx
+  - frontend/src/features/upload/UploadPanel.jsx
+acceptance:
+  - 课程列表页每个课程有"导出"按钮，点击后浏览器下载 .bottle-lesson.json 文件
+  - 上传面板有"导入课程"入口，支持拖拽或选择 .bottle-lesson.json 文件
+  - 导入后课程出现在本地课程列表，包含完整的 sentences 和 progress
+  - 导入时若课程 ID 冲突，弹出确认框让用户选择"覆盖"或"新建副本"
+  - 导出文件的 JSON Schema 版本记录在文件中，支持后续格式升级
+check_commands: []
+depends_on:
+  - TASK-033
+  - TASK-034
+dependency_reason: |
+  导入功能需要写入本地 SQLite（TASK-033）和记录同步日志（TASK-034），导出功能需要从本地数据库读取课程数据。
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  1. 导出格式设计（.bottle-lesson.json）：
+     {
+       "schema_version": "1",
+       "exported_at": "2026-03-24T12:00:00Z",
+       "app_version": "0.2.0",
+       "lesson": { "id": "uuid", "title": "...", ... },
+       "sentences": [...],
+       "progress": { "current_index": 3, "completed_indices": [0,1,2] }
+     }
+  2. desktop/src/sync/course-export.mjs 实现 exportCourse(lessonId)：从 window.localDb 获取数据，序列化为 JSON，通过 Electron dialog 保存文件
+  3. desktop/src/sync/course-import.mjs 实现 importCourse(filePath)：解析 JSON，检查 ID 冲突，写入 window.localDb 和 sync_journals
+  4. 前端课程列表页和上传面板增加导入/导出入口。
+result_summary: 已在课程列表补载本地 SQLite 课程并支持导出 .bottle-lesson.json，在上传面板补充拖拽/选择导入、ID 冲突覆盖或新建副本、本地课程写入与列表刷新。
+changed_files:
+  - frontend/src/features/lessons/LessonList.jsx
+  - frontend/src/features/upload/UploadPanel.jsx
+tests_run:
+  - npx esbuild D:/3.3-19.01/frontend/src/features/lessons/LessonList.jsx --bundle --platform=browser --format=esm --outfile=%TEMP%/lessonlist-check.js
+  - npx esbuild D:/3.3-19.01/frontend/src/features/upload/UploadPanel.jsx --bundle --platform=browser --format=esm --outfile=%TEMP%/uploadpanel-import-check.js
+blocked_reason: ""
+completed_at: 2026-03-24T21:46:09.3386798+08:00
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

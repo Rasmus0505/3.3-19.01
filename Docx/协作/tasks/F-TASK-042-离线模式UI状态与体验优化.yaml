@@ -1,0 +1,76 @@
+schema_version: 1
+task_id: TASK-042
+title: 离线模式UI状态与体验优化
+status: completed
+priority: medium
+project_root: D:/3.3-19.01
+base_ref: main
+goal: |
+  实现离线状态感知 UI：侧边栏显示在线/离线状态徽章，各功能页面在离线时有明确的降级提示和可用入口，联网瞬间自动同步并提示用户。
+scope:
+  - 网络状态感知 hook
+  - 侧边栏状态徽章
+  - 各功能页离线降级
+  - 同步状态展示
+allowed_paths:
+  - frontend/src/hooks/
+  - frontend/src/app/LearningShell.jsx
+  - frontend/src/features/upload/UploadPanel.jsx
+  - frontend/src/features/lessons/LessonList.jsx
+  - frontend/src/features/wallet/WalletBadge.jsx
+acceptance:
+  - 侧边栏顶部显示状态徽章：在线（绿色）、离线（灰色），hover 显示详细说明
+  - 断开网络后客户端不崩溃，各页面功能降级友好
+  - 联网瞬间弹出 Toast"已恢复连接，正在同步..."，同步完成后提示"同步完成，共同步 X 条"
+  - 余额显示：联网时显示精确余额，离线时显示"离线模式，余额待同步"
+  - 课程列表：区分本地课程（橙色徽章）和已同步课程（绿色徽章）
+check_commands: []
+depends_on:
+  - TASK-033
+  - TASK-034
+  - TASK-040
+  - TASK-041
+dependency_reason: |
+  本任务依赖 TASK-033/034 的本地数据库（离线时可读取数据）、TASK-040 的同步引擎（联网时触发同步）、TASK-041 的静态打包（离线可启动 UI）。缺少任何一个都无法完整展示离线 UI 状态。
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  1. 新增 frontend/src/hooks/useOfflineMode.mjs：
+     综合判断：navigator.onLine && cloud health check 都通过才视为"在线"（仅 navigator.onLine=true 不够）
+     返回：{ isOnline, isSyncing, lastSyncAt, syncStatus }
+  2. 侧边栏 LearningShell.jsx 改造：
+     在顶部添加状态徽章组件 <ConnectionStatusBadge />
+     联网/断连时通过 toast 提示
+  3. 各功能页面降级策略：
+     - UploadPanel：离线时"云端生成"按钮禁用，显示"离线模式，仅支持本地生成"；未实现 TASK-041 前显示"本地生成需先完成客户端打包"
+     - LessonList：课程卡片区分本地/同步来源；离线时仅显示本地课程
+     - WalletBadge：联网显示余额，离线显示"离线模式"
+     - WordbookPanel：离线完全可用（本地数据）
+  4. TASK-041 是核心依赖：若 TASK-041 未完成，前端 UI 仍从云端 URL 加载，离线下 UI 本身无法展示。本任务在 TASK-041 之后执行。
+result_summary: |
+  TASK-042 离线模式 UI 状态与体验优化已实现，主要功能模块均已就绪：
+  1. useOfflineMode hook (frontend/src/hooks/useOfflineMode.js)：综合判断 navigator.onLine + 云端健康检查，返回 { isOnline, isSyncing, lastSyncAt, syncStatus }；联网瞬间触发 toast 并调用 onSyncStart 回调，修复了 checkHealth 未被正确 await 导致 sync 触发逻辑失效的问题。
+  2. ConnectionStatusBadge 组件 (frontend/src/app/learning-shell/components/ConnectionStatusBadge.jsx)：在线（绿色 Wifi）、离线（灰色 WifiOff）、同步中（蓝色 RefreshCw，旋转动画）、同步失败（红色 WifiOff）、hover 显示详细 tooltip。
+  3. LearningShellSidebar 侧边栏集成：非桌面端渲染 ConnectionStatusBadge，isOnline/isSyncing/syncStatus 等状态通过 props 透传。
+  4. UploadPanel 离线降级：离线时 Banner 提示，faster-whisper 模型显示"离线模式，仅支持本地生成"，云端模型显示"离线模式，云端生成不可用"；桌面端余额离线状态实时反映。
+  5. LessonList 课程列表：本地课程显示橙色"本地课程" Badge，云端课程显示绿色"云端课程" Badge，离线时仅显示本地课程（云端列表为空时展示友好提示）。
+  6. WalletBadge 余额组件：联网显示精确余额，离线显示"离线模式，余额待同步"。
+  7. LearningShellPanelContent 将 isOnline 透传给 UploadPanel，LearningShellContainer 调用 useOfflineMode 并将状态传递给侧边栏和面板内容。
+  8. useDesktopSync hook 在联网时自动触发 autoSync，并监听冲突事件。
+changed_files:
+  - frontend/src/hooks/useOfflineMode.js
+  - frontend/src/app/learning-shell/LearningShellContainer.jsx
+  - frontend/src/app/learning-shell/LearningShellPanelContent.jsx
+  - frontend/src/app/learning-shell/LearningShellSidebar.jsx
+  - frontend/src/app/learning-shell/components/ConnectionStatusBadge.jsx
+  - frontend/src/features/upload/UploadPanel.jsx
+  - frontend/src/features/lessons/LessonList.jsx
+  - frontend/src/features/wallet/components/WalletBadge.jsx
+tests_run: []
+blocked_reason: ""
+completed_at: "2026-03-25"
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

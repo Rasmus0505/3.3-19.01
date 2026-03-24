@@ -1,5 +1,5 @@
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
-import { clearAuthStorage, TOKEN_KEY, USER_EMAIL_KEY, USER_ID_KEY, USER_IS_ADMIN_KEY } from "../../app/authStorage";
+import { clearAuthStorage, restoreCachedAuthSession, TOKEN_KEY, USER_EMAIL_KEY, USER_ID_KEY, USER_IS_ADMIN_KEY } from "../../app/authStorage";
 
 type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
 type Getter = () => any;
@@ -67,6 +67,34 @@ export function createAuthSlice(set: Setter, get: Getter) {
       });
       return accessToken;
     },
+    restoreDesktopSession: async (options: { forceRefresh?: boolean } = {}) => {
+      const result = await restoreCachedAuthSession({ forceRefresh: Boolean(options.forceRefresh) });
+      const accessToken = readStoredAccessToken();
+      const currentUser = readStoredCurrentUser();
+      if (result?.status === "expired") {
+        const nextMessage = String(result.message || "登录状态已过期，请联网重新登录");
+        set({
+          accessToken: "",
+          currentUser,
+          hasStoredToken: Boolean(currentUser),
+          authStatus: "expired",
+          authStatusMessage: nextMessage,
+          isAdminUser: false,
+          adminAuthState: "forbidden",
+        });
+        return "";
+      }
+      set({
+        accessToken,
+        currentUser,
+        hasStoredToken: Boolean(accessToken),
+        authStatus: accessToken ? "active" : "anonymous",
+        authStatusMessage: "",
+        isAdminUser: Boolean(accessToken && currentUser?.is_admin),
+        adminAuthState: "idle",
+      });
+      return accessToken;
+    },
     setAccessToken: (accessToken: unknown) => {
       const nextAccessToken = String(accessToken || "");
       const currentUser = nextAccessToken ? readStoredCurrentUser() : null;
@@ -101,15 +129,25 @@ export function createAuthSlice(set: Setter, get: Getter) {
       });
     },
     async detectAdmin(apiCall = api) {
-      const accessToken = get().accessToken;
+      let accessToken = get().accessToken;
       if (!accessToken) {
         set({ isAdminUser: false, adminAuthState: get().authStatus === "expired" ? "forbidden" : "idle" });
         return false;
       }
       set({ adminAuthState: "checking" });
       try {
-        const resp = await apiCall("/api/admin/billing-rates", {}, accessToken);
-        const data = await parseResponse(resp);
+        let resp = await apiCall("/api/admin/billing-rates", {}, accessToken);
+        let data = await parseResponse(resp);
+        if (resp.status === 401) {
+          const refreshedAccessToken = await get().restoreDesktopSession({ forceRefresh: true });
+          if (!refreshedAccessToken) {
+            get().markAuthExpired(toErrorText(data, "登录状态已过期，请联网重新登录"));
+            return false;
+          }
+          accessToken = refreshedAccessToken;
+          resp = await apiCall("/api/admin/billing-rates", {}, accessToken);
+          data = await parseResponse(resp);
+        }
         if (resp.ok) {
           set({
             isAdminUser: true,
@@ -134,8 +172,8 @@ export function createAuthSlice(set: Setter, get: Getter) {
       set({ isAdminUser: false, adminAuthState: "forbidden" });
       return false;
     },
-    logout: () => {
-      clearAuthStorage();
+    logout: async () => {
+      await clearAuthStorage();
       set({
         ...buildAuthInitialState(),
         accessToken: "",
