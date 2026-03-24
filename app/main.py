@@ -14,6 +14,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.api.routers import admin, admin_console, admin_sql_console, asr_models, auth, billing, lessons, local_asr_assets, media, practice, transcribe, wallet
+from app.api.routers.dashscope_upload import router as dashscope_upload
 from app.core.config import (
     BASE_DATA_DIR,
     BASE_TMP_DIR,
@@ -556,6 +557,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(admin_console)
     app.include_router(admin_sql_console)
     app.include_router(transcribe)
+    app.include_router(dashscope_upload)
     app.include_router(lessons)
     app.include_router(asr_models)
     app.include_router(practice)

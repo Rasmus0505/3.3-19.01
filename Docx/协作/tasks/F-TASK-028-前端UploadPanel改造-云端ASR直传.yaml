@@ -1,0 +1,74 @@
+schema_version: 1
+task_id: TASK-028
+title: 前端UploadPanel改造-云端ASR直传
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: >
+  修改 frontend/src/features/upload/UploadPanel.jsx 的 handleCloudGeneration() 函数。
+  当用户选择云端 ASR 时，前端先请求 POST /api/dashscope-upload/request-url 拿到 pre-signed upload URL，
+  然后直接 PUT 视频到 DashScope（不经过应用服务器），
+  最后将返回的 dashscope_file_id 随课程创建请求一起提交。
+scope:
+  - 前端上传流程改造
+  - 云端 ASR 直传 UI
+  - UploadPanel 直传分支
+allowed_paths:
+  - frontend/src/features/upload/UploadPanel.jsx
+  - frontend/src/shared/api/client.js
+  - frontend/src/features/upload/asrStrategy.js
+acceptance:
+  - "handleCloudGeneration() 在云端 ASR 模式下，先请求 pre-signed URL，再直传到 DashScope"
+  - "PUT 到 DashScope 时显示上传进度（复用现有 progress callback）"
+  - "上传完成后，/api/lessons/tasks 请求中携带 dashscope_file_id 字段"
+  - "本地 ASR 模式（faster-whisper）不受影响，流程保持不变"
+  - "npm run build --prefix frontend 无新增错误"
+check_commands:
+  - npm run build --prefix frontend 2>&1 | Select-String "error" | Measure-Object
+depends_on:
+  - TASK-025
+  - TASK-027
+dependency_reason: TASK-025 提供后端接口，TASK-027 完成路由和后端逻辑，TASK-028 需要两者就绪后才能端到端联调，三者顺序执行
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  UploadPanel.jsx 中 handleCloudGeneration() 需要改造：
+  1. 判断是否云端 ASR（asr_model 不是 faster-whisper）
+  2. 如果是云端 ASR：
+     a. POST /api/dashscope-upload/request-url，body={filename, content_type}
+     b. 拿到 {upload_url, file_id} 后
+     c. fetch(upload_url, {method:'PUT', body:file, headers:{'Content-Type':content_type}})
+     d. PUT 完成后，formData.append('dashscope_file_id', file_id)
+     e. POST /api/lessons/tasks 时带上 dashscope_file_id
+  3. 如果是本地 ASR（faster-whisper）：
+     - 保持现有 handleLocalGeneration() 逻辑不变
+  4. 错误处理：
+     - 如果 request-url 接口失败，回退到现有上传逻辑（作为降级方案）
+     - 如果 PUT 到 DashScope 失败，提示用户并可重试
+  5. 进度提示：PUT 阶段复用现有 onUploadProgress callback
+  6. 鉴权：uploadUrl 请求需要携带 access_token（从 authStorage 读取）
+  7. asrStrategy.js 可能需要调整（如果涉及云端 ASR 的模型选择逻辑）
+result_summary: |
+  前端 UploadPanel.jsx：新增 submitCloudDirectUpload() 函数，实现云端 ASR 直传三步流程：
+  1. POST /api/dashscope-upload/request-url 获取 OSS policy 认证字段
+  2. fetch PUT 直接上传到 DashScope OSS（含 OSS 凭证 + 文件内容）
+  3. POST /api/lessons/tasks 时携带 dashscope_file_id
+  同时修改 app/api/routers/lessons.py：video_file 改为可选，lesson_command_service.py：支持 dashscope_file_id 存在时跳过文件处理。
+  npm run build --prefix frontend 构建成功（无新增错误）。
+  本地 ASR（faster-whisper）流程完全不受影响。
+changed_files:
+  - frontend/src/features/upload/UploadPanel.jsx
+  - app/api/routers/lessons.py
+  - app/services/lesson_command_service.py
+tests_run:
+  - npm run build --prefix frontend（构建成功）
+  - python -c "from app.api.routers.lessons import router; print('lessons router OK')"
+  - python -c "from app.services.lesson_command_service import create_lesson_task_from_upload; print('command_service OK')"
+blocked_reason: ""
+completed_at: 2026-03-24T22:15:00+08:00
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

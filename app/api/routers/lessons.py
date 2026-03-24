@@ -213,9 +213,10 @@ async def create_lesson(
     responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
 async def create_lesson_task(
-    video_file: UploadFile = File(...),
+    video_file: UploadFile | None = File(None),
     asr_model: str = Form(""),
     semantic_split_enabled: bool | None = Form(None),
+    dashscope_file_id: str | None = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -233,6 +234,7 @@ async def create_lesson_task(
             owner_user_id=current_user.id,
             asr_model=selected_model,
             semantic_split_enabled=semantic_split_enabled,
+            dashscope_file_id=dashscope_file_id,
             db=db,
         )
         response_payload = LessonTaskCreateResponse(
@@ -263,7 +265,8 @@ async def create_lesson_task(
     except Exception as exc:
         return error_response(500, "INTERNAL_ERROR", "任务创建失败", str(exc)[:1200])
     finally:
-        await video_file.close()
+        if video_file is not None:
+            await video_file.close()
 
 
 @router.post(

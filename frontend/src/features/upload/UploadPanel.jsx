@@ -4043,6 +4043,192 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
   }
 
+  async function submitCloudDirectUpload(uploadSourceFile, runToken, pollToken) {
+    const uploadStartStatus = "正在获取云端上传地址";
+    setPhase("uploading");
+    setStatus(uploadStartStatus);
+    await persistSession({
+      file: uploadSourceFile,
+      taskId: "",
+      phase: "uploading",
+      taskSnapshot: null,
+      uploadPercent: 0,
+      status: uploadStartStatus,
+      bindingCompleted: false,
+    });
+
+    const abortController = new AbortController();
+    uploadAbortRef.current = abortController;
+
+    try {
+      // Step 1: 获取 DashScope pre-signed upload URL
+      const requestUrlResp = await api(
+        "/api/dashscope-upload/request-url",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: String(uploadSourceFile?.name || "upload"),
+            content_type: String(uploadSourceFile?.type || "audio/mpeg"),
+          }),
+          signal: abortController.signal,
+        },
+        accessToken,
+      );
+
+      if (!requestUrlResp.ok) {
+        const errorData = await parseResponse(requestUrlResp);
+        throw new Error(toErrorText(errorData, "获取云端上传地址失败"));
+      }
+
+      const uploadConfig = await parseResponse(requestUrlResp);
+      const { upload_url, oss_fields, file_id } = uploadConfig;
+
+      if (runToken !== localRunTokenRef.current) return;
+      if (abortController.signal.aborted) return;
+
+      // Step 2: 直接 PUT 到 DashScope OSS（multipart/form-data 格式）
+      const dashscopeUploadStatus = "正在上传到云端存储";
+      setStatus(dashscopeUploadStatus);
+
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+
+        const onAbort = () => {
+          xhr.abort();
+          reject(new DOMException("Upload aborted", "AbortError"));
+        };
+        abortController.signal.addEventListener("abort", onAbort, { once: true });
+
+        xhr.open("PUT", upload_url, true);
+
+        // 使用 FormData 构建 multipart/form-data 请求
+        const formData = new FormData();
+        // 添加 OSS 认证字段
+        if (oss_fields) {
+          Object.entries(oss_fields).forEach(([key, value]) => {
+            if (value !== undefined && value !== null) {
+              formData.append(key, String(value));
+            }
+          });
+        }
+        // 添加文件（必须在 OSS 字段之后）
+        formData.append("file", uploadSourceFile);
+
+        xhr.upload.onprogress = (event) => {
+          if (abortController.signal.aborted) return;
+          const total = Number(event.total || 0);
+          const loaded = Number(event.loaded || 0);
+          const percent = event.lengthComputable && total > 0 ? Math.round((loaded / total) * 100) : 0;
+          const clampedPercent = clampPercent(percent);
+          uploadPersistRef.current.latestPercent = clampedPercent;
+          setUploadPercent(clampedPercent);
+          persistUploadProgress(clampedPercent, uploadSourceFile);
+        };
+
+        xhr.onload = () => {
+          abortController.signal.removeEventListener("abort", onAbort);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error(`云端存储上传失败 (HTTP ${xhr.status}): ${xhr.statusText}`));
+          }
+        };
+
+        xhr.onerror = () => {
+          abortController.signal.removeEventListener("abort", onAbort);
+          reject(new Error("云端存储上传网络错误"));
+        };
+
+        xhr.onabort = () => {
+          abortController.signal.removeEventListener("abort", onAbort);
+          reject(new DOMException("Upload aborted", "AbortError"));
+        };
+
+        xhr.send(formData);
+      });
+
+      if (runToken !== localRunTokenRef.current) return;
+      if (abortController.signal.aborted) return;
+
+      // Step 3: PUT 成功后，创建任务并携带 dashscope_file_id
+      const createTaskStatus = "正在提交云端任务";
+      setStatus(createTaskStatus);
+
+      const form = new FormData();
+      // 传一个空文件占位（FastAPI File(...) 必填，但后端有 dashscope_file_id 时会忽略此文件）
+      form.append("video_file", new Blob([], { type: "application/octet-stream" }), "placeholder.bin");
+      form.append("asr_model", selectedAsrModel);
+      form.append("semantic_split_enabled", "false");
+      form.append("dashscope_file_id", file_id);
+
+      const { ok, data } = await uploadWithProgress(
+        "/api/lessons/tasks",
+        {
+          method: "POST",
+          body: form,
+          signal: abortController.signal,
+          onUploadProgress: () => {
+            // 进度已在 DashScope PUT 阶段处理
+          },
+        },
+        accessToken,
+      );
+
+      uploadAbortRef.current = null;
+
+      if (!ok) {
+        const message = mapCloudAsrFailureToMessage(toErrorText(data, "创建云端任务失败"), desktopServerStatus);
+        await handleTaskFailureState({
+          message,
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: clampPercent(uploadPersistRef.current.latestPercent || uploadPercent),
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+          refreshWallet: true,
+        });
+        return;
+      }
+
+      const nextTaskId = String(data.task_id || "");
+      if (!nextTaskId) {
+        const message = "任务创建成功但缺少 task_id";
+        await handleTaskFailureState({
+          message,
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: clampPercent(uploadPersistRef.current.latestPercent || uploadPercent),
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+        });
+        return;
+      }
+
+      maybeShowModelFallbackToast({ ...data, task_id: nextTaskId });
+      setTaskId(nextTaskId);
+      setUploadPercent(100);
+      uploadPersistRef.current.latestPercent = 100;
+      setPhase("processing");
+      resetUploadPersistState();
+      await persistSession({ taskId: nextTaskId, phase: "processing", taskSnapshot: null, uploadPercent: 100, status: "", bindingCompleted: false });
+      void pollTask(nextTaskId, false, pollToken);
+    } catch (error) {
+      uploadAbortRef.current = null;
+      if (error?.name === "AbortError") return;
+      resetUploadPersistState();
+      const message = error instanceof Error && error.message ? error.message : `云端直传失败: ${String(error)}`;
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: clampPercent(uploadPersistRef.current.latestPercent || uploadPercent),
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+      });
+    }
+  }
+
   async function submit() {
     if (desktopLinkModeActive) {
       await submitDesktopLinkImport();
@@ -4157,6 +4343,23 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
         nextBindingCompleted: false,
       });
+      return;
+    }
+    // 云端直传模式（Bottle 2.0 / QWEN_MODEL）：使用 DashScope pre-signed URL 直传
+    if (selectedAsrModel === QWEN_MODEL) {
+      try {
+        const uploadSourceFile = await ensureUploadableSourceFile();
+        await submitCloudDirectUpload(uploadSourceFile, runToken, pollToken);
+      } catch (error) {
+        await handleTaskFailureState({
+          message: error instanceof Error && error.message ? error.message : String(error),
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: 0,
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+        });
+      }
       return;
     }
     try {

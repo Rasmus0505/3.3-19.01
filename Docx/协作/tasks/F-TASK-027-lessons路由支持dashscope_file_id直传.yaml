@@ -1,0 +1,71 @@
+schema_version: 1
+task_id: TASK-027
+title: lessons路由支持dashscope_file_id直传
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: >
+  修改 app/api/routers/lessons.py 的 create_lesson_task 接口，
+  支持接收可选字段 dashscope_file_id。
+  当该字段存在时，任务创建逻辑走 dashscope_file_id 直传分支；
+  当该字段不存在时，沿用现有文件上传逻辑（向后兼容）。
+scope:
+  - lessons 路由改造
+  - 课程任务创建入口
+  - 直传/上传双路径分支
+allowed_paths:
+  - app/api/routers/lessons.py
+  - app/services/lesson_command_service.py
+  - app/services/lesson_task_manager.py
+acceptance:
+  - "create_lesson_task 接口接受可选的 dashscope_file_id 字段"
+  - "当 dashscope_file_id 存在时，LessonGenerationTask.artifacts_json 中记录 dashscope_file_id"
+  - "run_lesson_generation_task 识别到 dashscope_file_id 时走直传分支（不创建 source_path）"
+  - "当 dashscope_file_id 不存在时，现有文件上传逻辑完全不变"
+  - "python -c 'from app.api.routers.lessons import router; print(\"lessons router imports OK\")'"
+check_commands:
+  - python -c "from app.api.routers.lessons import router; print('lessons router imports OK')"
+  - python -c "from app.services.lesson_command_service import create_lesson_task_from_upload; print('lesson_command_service imports OK')"
+depends_on:
+  - TASK-026
+dependency_reason: TASK-026 在 LessonService 中新增了直传分支，TASK-027 负责在路由层将 dashscope_file_id 传递进去，两者顺序执行
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  lessons.py 需要修改：
+  1. create_lesson_task 函数签名新增可选参数 dashscope_file_id: str | None = None
+     - 作为 Form 字段接收（与 video_file 同级）
+  2. 将 dashscope_file_id 传递给 create_lesson_task_from_upload()
+  3. create_lesson_task_from_upload() 中：
+     - 如果 dashscope_file_id 非空，创建 task 时在 artifacts_json 中记录 dashscope_file_id
+     - 如果 dashscope_file_id 非空，不保存 video_file 到本地（跳过 source_path 创建）
+  lesson_command_service.py 需要修改：
+  4. create_lesson_task_from_upload() 新增 dashscope_file_id 参数
+  5. run_lesson_generation_task() 中：
+     - 读取 artifacts_json 中的 dashscope_file_id
+     - 如果有 dashscope_file_id，调用 LessonService.generate_from_dashscope_file_id()
+     - 如果没有，走现有 generate_from_saved_file()
+  注意：现有文件上传用户（无 dashscope_file_id）应完全不受影响
+result_summary: >
+  在 create_lesson_task 接口新增可选 Form 字段 dashscope_file_id。
+  create_lesson_task_from_upload() 中：若 dashscope_file_id 非空，在 artifacts_json 中记录该字段，
+  且 source_path 置空（不保存本地文件）；若为空，沿用现有文件上传逻辑。
+  run_lesson_generation_task() 中：从 task.artifacts_json 读取 dashscope_file_id，
+  若存在则路由至 LessonService.generate_from_dashscope_file_id()，否则走 generate_from_saved_file() 分支。
+  现有文件上传逻辑完全不受影响。
+changed_files:
+  - app/api/routers/lessons.py
+  - app/services/lesson_command_service.py
+tests_run:
+  - python -c "from app.api.routers.lessons import router; print('lessons router OK')"
+  - python -m py_compile app/api/routers/lessons.py
+  - python -m py_compile app/services/lesson_command_service.py
+  - 路由注册验证通过（/api/lessons POST, /api/lessons/tasks POST）
+blocked_reason: ""
+completed_at: 2026-03-24T12:00:00+08:00
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

@@ -1,0 +1,61 @@
+schema_version: 1
+task_id: TASK-025
+title: 新增DashScope-pre-signed-URL接口
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: >
+  新增 app/api/routers/dashscope_upload.py，提供 POST /api/dashscope-upload/request-url 接口。
+  服务器调用 DashScope Files API 为客户端申请 pre-signed upload URL，返回 {upload_url, file_id, expires_in_seconds}。
+  该 file_id 后续传给 QwenTranscription 完成推理（视频不经过应用服务器）。
+scope:
+  - DashScope pre-signed upload URL 接口
+  - 文件存储控制平面
+  - DashScope Files API 集成
+allowed_paths:
+  - app/api/routers/dashscope_upload.py
+  - app/infra/asr_dashscope.py
+  - app/main.py
+acceptance:
+  - "POST /api/dashscope-upload/request-url 返回 {upload_url, file_id, expires_in_seconds}"
+  - "接口需要 JWT 鉴权（需要已登录）"
+  - "file_id 可用于后续 dashscope_file_id 字段传递给 /api/lessons/tasks"
+  - "python -c 'from app.main import app; print(app.url_path_for(\"request_dashscope_upload_url\"))' 能找到路由"
+check_commands:
+  - python -c "from app.main import app; print(app.url_path_for('request_dashscope_upload_url'))"
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  实现参考：
+  1. 在 dashscope_upload.py 中：
+     - 使用已安装的 dashscope.Files 或 requests 调用 DashScope Files API
+     - 申请一个 pre-signed upload URL（有效期至少 1 小时）
+     - 返回 {upload_url, file_id, expires_in_seconds}
+  2. 在 app/main.py 中：
+     - include_router(dashscope_upload.router, prefix="/api/dashscope-upload")
+  3. 路由命名约定：request_dashscope_upload_url
+  4. 鉴权：使用 get_current_user 依赖
+  5. 如果 DashScope SDK 不直接支持 build_upload_url，需用 requests 调用底层 API
+result_summary: |
+  新建 app/api/routers/dashscope_upload.py，提供 POST /api/dashscope-upload/request-url 接口。
+  由于 DashScope SDK（v1.25.15）没有 build_upload_url() 方法，改为直接 requests 调用底层 REST API：
+  GET https://dashscope.aliyuncs.com/api/v1/uploads?action=getPolicy&model=qwen-audio
+  返回给前端 {upload_url, upload_host, upload_dir, oss_fields, file_id, expires_in_seconds}。
+  file_id = upload_dir（OSS 对象路径），前端 PUT 成功后用此值作为 dashscope_file_id 提交。
+  app/main.py 添加两行 import + include_router。
+changed_files:
+  - app/api/routers/dashscope_upload.py
+  - app/main.py
+tests_run:
+  - python -c "from app.api.routers.dashscope_upload import router; print('dashscope_upload router OK')"
+  - python -c "from app.main import app; print(app.url_path_for('request_dashscope_upload_url'))"
+blocked_reason: ""
+completed_at: 2026-03-24T21:30:00+08:00
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""
