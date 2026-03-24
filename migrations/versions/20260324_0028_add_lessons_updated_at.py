@@ -53,7 +53,14 @@ def upgrade() -> None:
                 schema=schema,
             )
             op.execute(text(f"UPDATE {schema + '.' if schema else ''}lessons SET updated_at = created_at WHERE updated_at IS NULL"))
-            op.alter_column("lessons", "updated_at", nullable=False, existing_type=sa_.DateTime(), server_default=None)
+            op.alter_column(
+                "lessons",
+                "updated_at",
+                nullable=False,
+                existing_type=sa_.DateTime(),
+                server_default=None,
+                schema=schema,
+            )
 
 
 def downgrade() -> None:
