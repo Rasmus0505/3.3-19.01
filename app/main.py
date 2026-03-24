@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
@@ -8,7 +9,7 @@ from datetime import datetime, timezone
 from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
@@ -432,6 +433,57 @@ def _spa_shell_response() -> FileResponse:
     return response
 
 
+def _trim_text(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _normalize_desktop_client_version(value: object) -> str:
+    return _trim_text(value).lstrip("vV")
+
+
+def _build_desktop_client_default_download_url(request: Request) -> str:
+    return f"{str(request.base_url).rstrip('/')}/download/desktop"
+
+
+def _get_desktop_client_release_payload(request: Request) -> dict[str, object]:
+    requested_version = _normalize_desktop_client_version(request.headers.get("x-bottle-client-version", ""))
+    configured_version = _normalize_desktop_client_version(
+        os.getenv("DESKTOP_CLIENT_LATEST_VERSION") or os.getenv("DESKTOP_CLIENT_VERSION") or ""
+    )
+    configured_entry_url = _trim_text(
+        os.getenv("DESKTOP_CLIENT_ENTRY_URL")
+        or os.getenv("DESKTOP_CLIENT_DOWNLOAD_URL")
+        or os.getenv("DESKTOP_CLIENT_UPDATE_ENTRY_URL")
+        or os.getenv("DESKTOP_CLIENT_UPDATE_DOWNLOAD_URL")
+    )
+    configured_release_name = _trim_text(
+        os.getenv("DESKTOP_CLIENT_RELEASE_NAME") or os.getenv("DESKTOP_CLIENT_VERSION_NAME") or ""
+    )
+    configured_release_notes = _trim_text(
+        os.getenv("DESKTOP_CLIENT_RELEASE_NOTES") or os.getenv("DESKTOP_CLIENT_CHANGELOG") or ""
+    )
+    configured_published_at = _trim_text(
+        os.getenv("DESKTOP_CLIENT_PUBLISHED_AT") or os.getenv("DESKTOP_CLIENT_RELEASED_AT") or ""
+    )
+    metadata_url = f"{str(request.base_url).rstrip('/')}/desktop/client/latest.json"
+    entry_url = configured_entry_url or _build_desktop_client_default_download_url(request)
+    latest_version = configured_version or requested_version or "0.0.0"
+    release_notes = configured_release_notes or (
+        "尚未在服务端配置正式桌面客户端发布信息；发布新客户端后请设置 "
+        "DESKTOP_CLIENT_LATEST_VERSION 与 DESKTOP_CLIENT_ENTRY_URL。"
+    )
+    return {
+        "latestVersion": latest_version,
+        "entryUrl": entry_url,
+        "releaseNotes": release_notes,
+        "releaseName": configured_release_name or (f"Bottle Desktop {latest_version}" if configured_version else "Bottle Desktop"),
+        "publishedAt": configured_published_at,
+        "metadataUrl": metadata_url,
+        "configured": bool(configured_version),
+        "requestedVersion": requested_version,
+    }
+
+
 def _is_spa_fallback_path(full_path: str) -> bool:
     normalized_path = str(full_path or "").strip().lstrip("/")
     if not normalized_path:
@@ -526,6 +578,32 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
         if icon_path.exists():
             return FileResponse(icon_path)
         return Response(status_code=204)
+
+    @app.get("/desktop/client/latest.json", include_in_schema=False)
+    def desktop_client_latest(request: Request) -> dict[str, object]:
+        return _get_desktop_client_release_payload(request)
+
+    @app.get("/desktop-client-version.json", include_in_schema=False)
+    def desktop_client_latest_legacy(request: Request) -> dict[str, object]:
+        # Keep legacy packaged clients working while runtime-config.mjs uses the newer nested route.
+        return _get_desktop_client_release_payload(request)
+
+    @app.get("/download/desktop", include_in_schema=False)
+    def desktop_client_download(request: Request):
+        payload = _get_desktop_client_release_payload(request)
+        entry_url = _trim_text(payload.get("entryUrl"))
+        current_url = str(request.url).strip()
+        if entry_url and entry_url != current_url:
+            return RedirectResponse(entry_url, status_code=307)
+        body = [
+            "<html><head><meta charset='utf-8'><title>Bottle Desktop Download</title></head><body>",
+            "<h1>Bottle Desktop 下载入口未单独配置</h1>",
+            "<p>请在部署环境中设置 <code>DESKTOP_CLIENT_ENTRY_URL</code> 指向当前桌面安装包或发布页。</p>",
+            f"<p>当前最新版本：<code>{payload['latestVersion']}</code></p>",
+            f"<p>元数据地址：<code>{payload['metadataUrl']}</code></p>",
+            "</body></html>",
+        ]
+        return Response(content="".join(body), media_type="text/html; charset=utf-8")
 
     @app.get("/health")
     def health() -> dict:

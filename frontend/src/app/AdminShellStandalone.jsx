@@ -16,12 +16,12 @@ export function AdminShellStandalone() {
   const isAdminUser = useAppStore((state) => state.isAdminUser);
   const adminAuthState = useAppStore((state) => state.adminAuthState);
   const detectAdmin = useAppStore((state) => state.detectAdmin);
-  const hydrateAccessToken = useAppStore((state) => state.hydrateAccessToken);
+  const restoreDesktopSession = useAppStore((state) => state.restoreDesktopSession);
   const logout = useAppStore((state) => state.logout);
 
   useEffect(() => {
-    hydrateAccessToken();
-  }, [hydrateAccessToken]);
+    void restoreDesktopSession();
+  }, [restoreDesktopSession]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -40,7 +40,7 @@ export function AdminShellStandalone() {
                 <CardDescription>{expired ? authStatusMessage || "请重新登录管理员账号后继续。" : "请使用管理员账号登录后访问独立管理后台。"}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <AuthPanel onAuthed={hydrateAccessToken} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
+                <AuthPanel onAuthed={() => restoreDesktopSession()} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
                 {hasStoredToken ? (
                   <div className="flex justify-end">
                     <Button variant="outline" onClick={logout}>

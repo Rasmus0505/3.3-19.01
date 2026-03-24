@@ -1,0 +1,27 @@
+# 计划清单
+# 仅保留当前未完成且可执行的任务
+# 由 after / before 在任务池整理时更新
+# 仅扫描当前协作目录（Docx/协作/tasks/）下的任务池
+
+schema_version: 1
+updated_at: "2026-03-24T12:30:00+08:00"
+updated_by: after
+
+# 当前可并行执行的任务（已满足 depends_on，且无未解决 conflicts_with）
+executable: []
+
+# 需等待的任务（存在 depends_on 或 conflicts_with 未满足）
+waiting: []
+
+# 推荐执行顺序
+notes: |
+  2026-03-24 本轮完成：
+  - TASK-038: 本地课程生成完整流水线 ✅
+  - TASK-040: 云端增量同步引擎 ✅
+  - TASK-041: Electron静态打包脱离URL加载 ✅
+  - TASK-042: 离线模式UI状态与体验优化 ✅
+
+  任务池全部完成，无待执行任务。
+
+  Zeabur 操作提醒：需执行 alembic upgrade head
+

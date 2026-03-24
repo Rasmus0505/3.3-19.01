@@ -1,0 +1,88 @@
+schema_version: 1
+task_id: TASK-036
+title: 共享JWT认证体系本地缓存
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+task_context: |
+  当前桌面端已经具备本地 SQLite 基础层（TASK-033 已完成），但登录态仍只靠前端 localStorage 临时保存 access_token / refresh_token。用户一旦断网重启客户端，就无法沿用已登录身份继续使用，后续余额校验和同步任务也会因为没有稳定身份缓存而无法落地。
+
+  上一次执行把任务卡在 blocked，不是因为需求本身不可做，而是因为 allowed_paths 没覆盖真实生效的认证入口和状态流文件。这个任务现在需要补齐真实边界，让 after 能在同一个任务里完成本地认证缓存、刷新、过期退出和前端恢复流程。
+goal: |
+  实现本地 JWT 认证缓存：联网登录成功后自动缓存 access_token 和 refresh_token；离线时从 SQLite 读取缓存用户信息，维持登录状态。
+scope:
+  - 本地认证缓存表设计与安全存储
+  - 桌面端 preload 认证桥接
+  - 前端真实认证状态入口与恢复流程
+  - 服务端登录刷新接口对接
+allowed_paths:
+  - desktop/src/auth/
+  - desktop/src/db/
+  - desktop/electron/preload.mjs
+  - desktop/electron/main.mjs
+  - frontend/src/features/auth/components/AuthPanel.jsx
+  - frontend/src/store/slices/authSlice.ts
+  - frontend/src/app/authStorage.js
+  - frontend/src/app/LearningShellLocalSubtitles.jsx
+  - frontend/src/app/AdminShellStandalone.jsx
+  - app/api/routers/auth/router.py
+acceptance:
+  - 联网登录成功后，断开网络重新打开桌面客户端，LearningShellLocalSubtitles 入口能以缓存账户身份恢复登录并进入首页
+  - access_token 过期但 refresh_token 仍有效且当前联网时，客户端能自动调用刷新接口并继续保持登录状态
+  - refresh_token 也过期且当前无网时，真实认证入口显示"登录状态已过期，请联网重新登录"，authSlice 状态为 expired
+  - logout() 会同时清除 localStorage 与本地 auth_cache，下次打开客户端不能再自动恢复登录
+  - AdminShellStandalone 与 LearningShellLocalSubtitles 复用同一套认证缓存与退出逻辑，不出现状态分叉
+check_commands:
+  - node --check desktop/electron/preload.mjs
+  - node --input-type=module -e "import('./desktop/src/auth/offline-auth.mjs').then((mod) => console.log(Object.keys(mod).sort().join(',')))"
+  - npm --prefix frontend run build
+depends_on:
+  - TASK-033
+dependency_reason: |
+  本任务依赖 TASK-033 的 SQLite 数据库层，auth_cache 表和数据库初始化逻辑需要在其基础上实现。
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  1. 本任务真正生效的前端入口不是 frontend/src/features/auth/AuthPanel.jsx（它只是 re-export），而是 frontend/src/features/auth/components/AuthPanel.jsx；认证状态持久化与过期处理集中在 frontend/src/store/slices/authSlice.ts。
+  2. 在 desktop/src/db/schema.sql 与对应本地数据库桥接中补 auth_cache 表，至少包含 user_id、email、access_token、refresh_token、安全存储结果、expires_at、cached_at 等恢复登录所需字段。
+  3. 在 desktop/src/auth/offline-auth.mjs 中实现可复用的 AuthCache/AuthService：
+     - login(email, password): 联网调用 /api/auth/login，成功后缓存 token 与用户信息
+     - getCachedUser(): 启动时读取 SQLite 缓存并判断是否可恢复
+     - refreshTokenIfNeeded(): access_token 过期但联网时静默刷新
+     - logout(): 同步清除 auth_cache 与 frontend/src/app/authStorage.js 中的 token
+     - isLoggedIn(): 返回当前缓存是否仍可用
+  4. refresh_token 不要以明文长期落盘；优先通过 Electron safeStorage 做加密。若当前 preload 无法直接安全调用，就通过 desktop/electron/main.mjs 增加最小 IPC 桥接，不要把敏感 token 明文暴露给 renderer。
+  5. 前端接线要覆盖真实使用入口：
+     - frontend/src/features/auth/components/AuthPanel.jsx
+     - frontend/src/store/slices/authSlice.ts
+     - frontend/src/app/LearningShellLocalSubtitles.jsx
+     - frontend/src/app/AdminShellStandalone.jsx
+     - frontend/src/app/authStorage.js
+     启动时优先尝试恢复缓存身份；恢复失败且离线时提示联网登录；主动退出时统一清空所有缓存。
+  6. app/api/routers/auth/router.py 已有 /login、/refresh、/logout，优先复用现有契约；只有在字段不足以支持恢复流程时才最小调整接口返回。
+result_summary: "新增桌面端 auth_cache 持久化与 refresh_token 安全存储桥接，前端认证入口可恢复离线登录、联网刷新并在过期时统一进入 expired 状态。"
+changed_files:
+  - desktop/src/auth/offline-auth.mjs
+  - desktop/src/db/local-db.cjs
+  - desktop/src/db/schema.sql
+  - desktop/electron/main.mjs
+  - desktop/electron/preload.mjs
+  - frontend/src/app/authStorage.js
+  - frontend/src/store/slices/authSlice.ts
+  - frontend/src/features/auth/components/AuthPanel.jsx
+  - frontend/src/app/LearningShellLocalSubtitles.jsx
+  - frontend/src/app/AdminShellStandalone.jsx
+tests_run:
+  - node --check desktop/electron/preload.mjs
+  - node --input-type=module -e "import('./desktop/src/auth/offline-auth.mjs').then((mod)=>console.log(Object.keys(mod).sort().join(',')))"
+  - npm --prefix frontend run build
+  - node --check desktop/electron/main.mjs
+  - "@'\nconst { createLocalDbBridge } = require('./desktop/src/db/local-db.cjs');\nlet snapshot = null;\nconst storage = {\n  loadBytes: async () => (snapshot ? new Uint8Array(snapshot) : null),\n  saveBytes: async (bytes) => {\n    snapshot = new Uint8Array(bytes);\n  },\n};\n(async () => {\n  const bridge = createLocalDbBridge({ storage });\n  await bridge.saveAuthCache({\n    cache_key: 'default',\n    user_id: '1',\n    email: 'user@example.com',\n    is_admin: true,\n    access_token: 'header.payload.signature',\n    access_token_expires_at: '2026-03-24T12:00:00Z',\n    refresh_token_ciphertext: 'cipher',\n    refresh_token_storage_mode: 'plaintext-base64',\n    refresh_token_expires_at: '2026-03-25T12:00:00Z',\n    cached_at: '2026-03-24T11:00:00Z',\n    updated_at: '2026-03-24T11:00:00Z',\n  });\n  const cached = await bridge.getAuthCache('default');\n  if (!cached || cached.user_id !== '1' || cached.email !== 'user@example.com') {\n    throw new Error('auth cache roundtrip failed');\n  }\n  await bridge.clearAuthCache('default');\n  const cleared = await bridge.getAuthCache('default');\n  if (cleared !== null) {\n    throw new Error('auth cache clear failed');\n  }\n  console.log('auth cache smoke test passed');\n})().catch((error) => {\n  console.error(error);\n  process.exit(1);\n});\n'@ | node"
+blocked_reason: ""
+completed_at: "2026-03-24T21:19:57+08:00"
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

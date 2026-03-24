@@ -1,0 +1,101 @@
+schema_version: 1
+task_id: TASK-040
+title: 云端增量同步引擎
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+task_context: |
+  当前仓库已经有本地 SQLite 数据层、sync_journals / sync_conflicts 表，以及 preload 暴露的 localDb sync 桥接，
+  说明离线同步并不是从零开始缺能力；上一次任务被挡住的核心原因，是任务边界没有覆盖真实后端入口和真实前端学习壳组件。
+
+  这会让 after 明知道要改哪里，却因为 allowed_paths 不完整而无法继续，最终导致用户仍然没有“联网后自动同步本地与云端课程/进度，并在界面看到同步状态与冲突处理”的能力。
+
+  本任务现在需要把真实实现面纳入边界，让 after 能在一个任务里完成同步引擎、增量查询接口、学习壳同步状态展示和冲突处理入口。
+goal: |
+  实现客户端云端增量同步：联网后自动将本地 pending 记录同步到云端，同时拉取云端更新；冲突时让用户选择保留本地/云端/合并。
+scope:
+  - 增量同步算法
+  - 冲突检测与处理
+  - 同步状态 UI
+allowed_paths:
+  - desktop/src/sync/
+  - desktop/src/db/
+  - desktop/electron/preload.mjs
+  - frontend/src/app/LearningShell.jsx
+  - frontend/src/app/learning-shell/LearningShellContainer.jsx
+  - frontend/src/app/learning-shell/LearningShellSidebar.jsx
+  - app/api/routers/lessons/router.py
+  - app/repositories/lessons.py
+acceptance:
+  - 联网后自动触发同步，无需用户手动操作
+  - 侧边栏显示"同步中 X/Y"和"上次同步：HH:mm"
+  - 本地新建的课程联网后自动出现在网页端课程列表
+  - 云端更新的进度联网后同步到本地
+  - 冲突时弹出确认框，显示本地和云端数据的 diff，让用户选择保留哪个版本
+check_commands:
+  - node --check desktop/electron/preload.mjs
+  - python -m py_compile app/api/routers/lessons/router.py app/repositories/lessons.py
+  - npm --prefix frontend run build
+depends_on:
+  - TASK-033
+  - TASK-034
+  - TASK-036
+dependency_reason: |
+  同步引擎依赖 TASK-033 的数据库 CRUD、TASK-034 的 sync_journals 记录、TASK-036 的 JWT 认证缓存（需要 token 身份才能调用云端 API）。
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  1. 在 desktop/src/sync/sync-engine.mjs 中实现 SyncEngine 类：
+     async syncCourses():
+       - 读取本地 sync_journals 中 status='pending' 的 course 记录
+       - 调用云端 GET /api/lessons?since={lastSyncAt} 获取远程更新
+       - 对比 updated_at：本地新 -> push to cloud；远程新 -> pull to local
+       - 冲突检测：同一 course_id，local.updated_at > remote.updated_at 但 remote 是最新 -> 写入 sync_conflicts
+     async syncProgress() / async syncWordbook()：同上逻辑
+     async resolveConflict(table, recordId, strategy='local' | 'remote' | 'merge')
+     async autoSync()：联网后自动调用
+  2. 触发时机：navigator.onLine 从 false 变 true 时、客户端启动时联网状态下
+  3. frontend/src/app/LearningShell.jsx 只是薄封装，真实同步状态 UI 放在 frontend/src/app/learning-shell/LearningShellContainer.jsx
+     与 frontend/src/app/learning-shell/LearningShellSidebar.jsx；不要把主要逻辑堆回薄封装文件。
+  4. desktop/src/db/sync-journal.mjs 已经提供 sync_journals / sync_conflicts 的基础读写，可直接复用，不要重复造表。
+  5. 云端 API 真实入口是 app/api/routers/lessons/router.py；必要时在 app/repositories/lessons.py 中补按 updated_at / since 的查询能力。
+result_summary: |
+  实现云端增量同步引擎：
+  1. 新建 desktop/src/sync/sync-engine.mjs (725行)：SyncEngine 类实现 syncCourses/syncProgress/syncWordbook/
+     resolveConflict/autoSync，含冲突检测和事件系统；
+  2. 新建 frontend/src/app/learning-shell/hooks/useDesktopSync.js：React hook 封装 SyncEngine；
+  3. 新建 frontend/src/app/learning-shell/ConflictDialog.jsx：冲突解决对话框，支持 diff 展示和三策略选择；
+  4. 新建 migrations/versions/20260324_0028_add_lessons_updated_at.py：Alembic 迁移，为 lessons 表添加
+     updated_at 列（必须执行）；
+  5. 修改 desktop/electron/preload.mjs：暴露 window.syncEngine；
+  6. 修改 app/api/routers/lessons/router.py：GET /api/lessons?since= 支持增量查询；
+  7. 修改 app/repositories/lessons.py：list_lessons_for_user 支持 since 参数；
+  8. 修改 app/api/routers/practice.py：新增 PUT /{id}/progress 和 GET /progress/batch；
+  9. 修改 app/models/lesson.py：Lesson 模型添加 updated_at 列；
+  10. 修改 frontend/src/app/learning-shell/：LearningShellSidebar 添加同步状态卡片，
+      LearningShellContainer 接入 useDesktopSync 并渲染 ConflictDialog。
+changed_files:
+  - desktop/src/sync/sync-engine.mjs
+  - frontend/src/app/learning-shell/hooks/useDesktopSync.js
+  - frontend/src/app/learning-shell/ConflictDialog.jsx
+  - migrations/versions/20260324_0028_add_lessons_updated_at.py
+  - desktop/electron/preload.mjs
+  - app/api/routers/lessons/router.py
+  - app/repositories/lessons.py
+  - app/api/routers/practice.py
+  - app/models/lesson.py
+  - app/schemas/lesson.py
+  - app/api/serializers.py
+  - frontend/src/app/learning-shell/LearningShellSidebar.jsx
+  - frontend/src/app/learning-shell/LearningShellContainer.jsx
+tests_run:
+  - node --check desktop/electron/preload.mjs
+  - python -m py_compile app/api/routers/lessons/router.py app/repositories/lessons.py
+  - npm --prefix frontend run build
+completed_at: 2026-03-24T12:10:00+08:00
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

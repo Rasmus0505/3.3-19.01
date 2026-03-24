@@ -1,0 +1,69 @@
+schema_version: 1
+task_id: TASK-035
+title: 本地 faster-whisper HTTP 服务封装
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+task_context: |
+  当前 Python Helper 子进程（scripts/run_desktop_backend.py）通过 spawn 调用 faster-whisper，前端通过 Electron main 进程的 IPC 函数直接调用子进程函数。这种方式的缺点是：前端和推理逻辑耦合，协议不标准，扩展困难（如增加健康检查接口、超时控制）。
+
+  解决方向：参考 Memo 的 Addon 模式，将 Python Helper 改造为独立的 HTTP 服务器，暴露标准化 REST 接口，前端通过 fetch 直接调用，解耦前端与推理逻辑。
+goal: |
+  将 scripts/run_desktop_backend.py 改造为 FastAPI HTTP 服务器（监听本地固定端口），暴露 /api/local-asr/transcribe、/api/local-asr/generate-lesson、/health 等接口；在 Electron preload 中通过 window.localAsr 暴露这些接口给前端。
+scope:
+  - Python Helper HTTP 服务改造
+  - 本地 ASR 接口设计与实现
+  - Electron preload 接口扩展
+allowed_paths:
+  - scripts/run_desktop_backend.py
+  - app/infra/asr/faster_whisper.py
+  - desktop/electron/preload.mjs
+  - desktop/electron/main.mjs
+acceptance: |
+  - Python Helper 启动后监听本地端口（如 18765），/health 返回 {"ok": true, "model_ready": true}
+  - POST /api/local-asr/transcribe 对本地视频文件返回 {"text": "...", "words": [{"word": "Hello", "start": 0.0, "end": 0.5}]}
+  - POST /api/local-asr/generate-lesson 返回完整课程 JSON（含 sentences）
+  - 前端 window.localAsr.transcribe({filePath: '...'}) 返回正确的 ASR 结果
+  - Helper 进程崩溃后前端收到有意义的错误信息（不是静默失败）
+check_commands:
+  - ""
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  1. 端口分配：在 DESKTOP_RUNTIME_CONFIG_FILE_NAME (runtime-config.json) 中新增 localAsrPort 字段，首次启动时 pickFreePort 写入配置文件，后续直接读取。
+  2. scripts/run_desktop_backend.py 改造为 FastAPI 应用：
+     - 保留现有的 faster-whisper 推理逻辑（from app.infra.asr.faster_whisper import）
+     - 移除 subprocess/spawn 调用，改为直接函数调用
+     - 新增 FastAPI app，监听 127.0.0.1:localAsrPort
+     - 接口：
+       GET  /health                     -> {"ok": bool, "model_ready": bool, "python_version": str}
+       POST /api/local-asr/transcribe    -> {"text": str, "words": [...], "usage_seconds": int}
+       POST /api/local-asr/generate-lesson -> {"course_id": str, "sentences": [...], "preview_text": str}
+  3. desktop/electron/main.mjs 中 startBackend() 在启动 Helper 后从配置文件读取 localAsrPort。
+  4. desktop/electron/preload.mjs 中新增 window.localAsr：
+     - health(): GET /health
+     - transcribe({filePath}): POST /api/local-asr/transcribe
+     - generateLesson({filePath}): POST /api/local-asr/generate-lesson
+  5. 配置写入：在 desktop/electron/runtime-config.mjs 的 validateDesktopRuntimeConfig 中校验 localAsrPort 存在。
+result_summary: "已为桌面 Helper 新增 /api/local-asr/transcribe 与 /api/local-asr/generate-lesson 接口，preload 暴露 window.localAsr，并将本地 ASR 端口固定为 18765（支持 DESKTOP_LOCAL_ASR_PORT 覆盖）。"
+changed_files:
+  - scripts/run_desktop_backend.py
+  - desktop/electron/preload.mjs
+  - desktop/electron/main.mjs
+tests_run:
+  - "python -m py_compile 'D:\\3.3-19.01\\scripts\\run_desktop_backend.py' 'D:\\3.3-19.01\\app\\infra\\asr\\faster_whisper.py'"
+  - "node --check 'D:\\3.3-19.01\\desktop\\electron\\preload.mjs'"
+  - "node --check 'D:\\3.3-19.01\\desktop\\electron\\main.mjs'"
+  - "node --input-type=module -e \"import('file:///D:/3.3-19.01/desktop/electron/runtime-config.mjs').then((m)=>{const required=['DESKTOP_RUNTIME_CONFIG_FILE_NAME','resolveDesktopRuntimeConfig','validateDesktopRuntimeConfig']; const missing=required.filter((key)=>!(key in m)); if (missing.length) { console.error('missing exports: '+missing.join(',')); process.exit(1);} console.log('runtime-config exports ok'); }).catch((error)=>{ console.error(error && error.stack ? error.stack : String(error)); process.exit(1); })\""
+  - "@'...helper /health + missing-file smoke...'@ | python -"
+  - "@'...helper CORS smoke...'@ | python -"
+blocked_reason: ""
+completed_at: "2026-03-24T20:14:28+08:00"
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

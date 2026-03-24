@@ -66,6 +66,10 @@ function normalizeBoolean(value, fallbackValue = true) {
   return Boolean(fallbackValue);
 }
 
+function normalizeStandaloneMode(value, fallbackValue = false) {
+  return normalizeBoolean(value, fallbackValue);
+}
+
 function readJsonFile(configPath) {
   if (!fs.existsSync(configPath)) {
     return {};
@@ -106,6 +110,10 @@ function buildDefaultConfig({ userDataDir, cacheDir, logDir, tempDir, env = proc
       resolvedDefaultAppBaseUrl,
   );
   const localUserDataDir = normalizeDirectoryPath(userDataDir, userDataDir);
+  const defaultStandaloneMode = normalizeStandaloneMode(
+    env.DESKTOP_STANDALONE_MODE,
+    packagedDefaults?.standaloneMode ?? false,
+  );
   return {
     schemaVersion: DESKTOP_RUNTIME_CONFIG_VERSION,
     cloud: {
@@ -127,6 +135,7 @@ function buildDefaultConfig({ userDataDir, cacheDir, logDir, tempDir, env = proc
       entryUrl: normalizeHttpUrl(defaultClientUpdateEntryUrl),
       checkOnLaunch: normalizeBoolean(env.DESKTOP_CLIENT_UPDATE_CHECK_ON_LAUNCH, packagedClientUpdate.checkOnLaunch ?? true),
     },
+    standaloneMode: defaultStandaloneMode,
   };
 }
 
@@ -149,6 +158,10 @@ function mergeConfig(defaultConfig, storedConfig) {
       inferClientUpdateEntryUrl(appBaseUrl) ||
       appBaseUrl,
   );
+  const standaloneMode =
+    storedConfig.standaloneMode !== undefined
+      ? normalizeStandaloneMode(storedConfig.standaloneMode)
+      : normalizeStandaloneMode(defaultConfig.standaloneMode, false);
   return {
     schemaVersion: DESKTOP_RUNTIME_CONFIG_VERSION,
     updatedAt: new Date().toISOString(),
@@ -168,6 +181,7 @@ function mergeConfig(defaultConfig, storedConfig) {
       entryUrl,
       checkOnLaunch: normalizeBoolean(storedClientUpdate.checkOnLaunch, defaultConfig.clientUpdate?.checkOnLaunch ?? true),
     },
+    standaloneMode,
   };
 }
 

@@ -36,6 +36,9 @@ import { UploadTaskFloatingCard } from "./UploadTaskFloatingCard";
 import { useCurrentLessonMediaBinding } from "./hooks/useCurrentLessonMediaBinding";
 import { useLearningShellBootstrap } from "./hooks/useLearningShellBootstrap";
 import { useLearningShellPrefetch } from "./hooks/useLearningShellPrefetch";
+import { useDesktopSync } from "./hooks/useDesktopSync";
+import { useOfflineMode } from "../../hooks/useOfflineMode";
+import { ConflictDialog } from "./ConflictDialog";
 
 async function requestOriginalSubtitleVariant(accessToken, lessonId, asrPayload) {
   const resp = await api(
@@ -237,6 +240,25 @@ export function LearningShellContainer() {
     currentLesson,
     detectCurrentLessonMediaBinding,
   });
+
+  const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
+  const isDesktopEnv = Boolean(typeof window !== "undefined" && window.syncEngine);
+  const desktopSync = useDesktopSync({ accessToken, isDesktop: isDesktopEnv });
+
+  const offlineMode = useOfflineMode({
+    onSyncStart: () => desktopSync.forceSync?.(),
+    onSyncComplete: (itemsCount) => {
+      if (itemsCount !== undefined) {
+        offlineMode.notifySyncComplete(itemsCount);
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (desktopSync.conflicts.length > 0 && !conflictDialogOpen) {
+      setConflictDialogOpen(true);
+    }
+  }, [desktopSync.conflicts.length, conflictDialogOpen]);
 
   useEffect(() => {
     if (!immersiveLayoutActive) {
@@ -710,6 +732,20 @@ export function LearningShellContainer() {
               adminNavExpanded={adminNavExpanded}
               onAdminToggle={handleAdminToggle}
               onAdminSelect={handleAdminSelect}
+              isDesktopSync={isDesktopEnv}
+              syncStatus={desktopSync.syncStatus}
+              syncInProgress={desktopSync.syncStatus === "syncing"}
+              syncCompleted={desktopSync.completedItems}
+              syncTotal={desktopSync.totalItems}
+              lastSyncDisplay={desktopSync.lastSyncDisplay}
+              onForceSync={desktopSync.forceSync}
+              pendingCounts={desktopSync.pendingCounts}
+              onOpenConflicts={() => setConflictDialogOpen(true)}
+              isOnline={offlineMode.isOnline}
+              isSyncing={offlineMode.isSyncing}
+              connectionStatus={offlineMode.syncStatus}
+              connectionLastSyncDisplay={offlineMode.lastSyncDisplay}
+              connectionSyncedItems={offlineMode.syncedItems}
             />
           </Sidebar>
         ) : null}
@@ -789,6 +825,7 @@ export function LearningShellContainer() {
                   guideTargetLessonId={latestGeneratedLessonId}
                   wordbookRefreshToken={wordbookRefreshToken}
                   onWordbookChanged={handleWordbookChanged}
+                  isOnline={offlineMode.isOnline}
                 />
               )}
             </div>
@@ -846,6 +883,14 @@ export function LearningShellContainer() {
           ) : null}
         </SidebarInset>
       </div>
+      {isDesktopEnv ? (
+        <ConflictDialog
+          open={conflictDialogOpen}
+          onOpenChange={setConflictDialogOpen}
+          conflicts={desktopSync.conflicts}
+          onResolve={desktopSync.resolveConflict}
+        />
+      ) : null}
     </SidebarProvider>
   );
 }

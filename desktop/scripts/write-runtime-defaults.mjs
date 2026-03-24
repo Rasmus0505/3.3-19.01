@@ -107,6 +107,7 @@ const payload = {
   local: {
     preinstalledModelDir,
   },
+  standaloneMode: true,
 };
 
 fs.mkdirSync(path.dirname(outputPath), { recursive: true });

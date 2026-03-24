@@ -1,4 +1,4 @@
-import { CheckCircle2, Loader2, RefreshCcw, UploadCloud } from "lucide-react";
+import { CheckCircle2, FileJson, Loader2, RefreshCcw, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -56,6 +56,8 @@ const LOCAL_ASR_ASSET_BASE_URL = (import.meta.env.VITE_LOCAL_ASR_MODEL_BASE_URL 
 const LOCAL_BROWSER_RUNTIME_BASE_URL = (import.meta.env.VITE_LOCAL_RUNTIME_BASE_URL || "").trim().replace(/\/+$/, "");
 const ASR_MODELS_API_BASE = "/api/asr-models";
 const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止生成，可重新开始。";
+const DESKTOP_CLIENT_OFFLINE_MESSAGE = "离线模式下无法生成课程，请联网后重试";
+const DESKTOP_CLIENT_INSUFFICIENT_BALANCE_MESSAGE = "余额不足，请充值";
 const LOCAL_BROWSER_ASR_ENABLED = false;
 const DEFAULT_ASR_MODEL_CATALOG_MAP = buildAsrModelCatalogMap();
 const DEFAULT_FAST_UPLOAD_MODEL = QWEN_MODEL;
@@ -64,9 +66,14 @@ const FAST_RUNTIME_TRACK_BROWSER_LOCAL = "browser_local";
 const FAST_RUNTIME_TRACK_DESKTOP_LOCAL = "desktop_local";
 const DESKTOP_LOCAL_TRANSCRIBING_PHASE = "desktop_local_transcribing";
 const DESKTOP_LINK_IMPORTING_PHASE = "desktop_link_importing";
+const DESKTOP_LOCAL_GENERATING_PHASE = "desktop_local_generating";
 const DESKTOP_UPLOAD_SOURCE_MODE_FILE = "file";
 const DESKTOP_UPLOAD_SOURCE_MODE_LINK = "link";
 const browserLocalRuntimeApi = LOCAL_BROWSER_RUNTIME_BASE_URL ? createApiClient({ baseUrl: LOCAL_BROWSER_RUNTIME_BASE_URL }) : null;
+
+function hasLocalCourseGeneratorBridge() {
+  return typeof window !== "undefined" && typeof window.localAsr?.generateCourse === "function";
+}
 function hasDesktopRuntimeBridge() {
   return typeof window !== "undefined" && typeof window.desktopRuntime?.requestLocalHelper === "function";
 }
@@ -121,6 +128,37 @@ async function requestDesktopLocalHelper(pathname, responseType = "json", option
   return response;
 }
 
+async function requestWalletBalance(accessToken = "") {
+  const response = await api("/api/wallet/balance", { method: "GET" }, accessToken);
+  const payload = await parseResponse(response);
+  if (!response.ok) {
+    throw new Error(toErrorText(payload, "读取余额失败"));
+  }
+  return {
+    ok: payload?.ok !== false,
+    balanceAmountCents: Math.max(0, Number(payload?.balance_amount_cents ?? payload?.balance ?? 0)),
+    currency: String(payload?.currency || "CNY").trim() || "CNY",
+    updatedAt: String(payload?.updated_at || "").trim(),
+  };
+}
+
+async function reportLocalGenerationUsage(accessToken = "", payload = {}) {
+  const response = await api(
+    "/api/wallet/consume",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload || {}),
+    },
+    accessToken,
+  );
+  const data = await parseResponse(response);
+  if (!response.ok) {
+    throw new Error(toErrorText(data, "上报本地生成用量失败"));
+  }
+  return data;
+}
+
 function getDefaultFasterWhisperRuntimeTrack() {
   if (hasDesktopRuntimeBridge()) {
     return FAST_RUNTIME_TRACK_DESKTOP_LOCAL;
@@ -136,6 +174,9 @@ function normalizeServerStatus(payload = {}) {
     reachable: payload?.reachable !== false,
     lastCheckedAt: String(payload?.lastCheckedAt || ""),
     latencyMs: payload?.latencyMs == null ? null : Math.max(0, Number(payload.latencyMs || 0)),
+    statusCode: Math.max(0, Number(payload?.statusCode || payload?.status_code || 0)),
+    endpoint: String(payload?.endpoint || ""),
+    reason: String(payload?.reason || ""),
   };
 }
 
@@ -144,9 +185,35 @@ function getOfflineBannerText(serverStatus) {
     return "当前处于离线模式，部分功能不可用";
   }
   if (serverStatus?.reachable === false) {
-    return "云端服务当前不可达，请稍后重试";
+    return sanitizeUserFacingText(serverStatus?.reason || "云端服务当前不可达，请稍后重试");
   }
   return "";
+}
+
+function getOfflineHintText(isOnline, selectedAsrModel) {
+  if (isOnline) return null;
+  if (selectedAsrModel === FASTER_WHISPER_MODEL) {
+    return "离线模式，仅支持本地生成";
+  }
+  return "离线模式，云端生成不可用，请联网后重试";
+}
+
+function getDesktopSelectionErrorMessage(selection = {}) {
+  return sanitizeUserFacingText(
+    selection?.error?.message ||
+      selection?.error ||
+      selection?.message ||
+      "",
+  );
+}
+
+function getCloudFailureMessage(message = "", serverStatus = {}) {
+  const normalizedServerStatus = normalizeServerStatus(serverStatus);
+  const reason = sanitizeUserFacingText(normalizedServerStatus.reason || "");
+  if (normalizedServerStatus.reachable === false && reason) {
+    return reason;
+  }
+  return mapCloudAsrFailureToMessage(message, normalizedServerStatus);
 }
 
 const LOCAL_MODEL_OPTIONS = [
@@ -206,6 +273,9 @@ const RESTORE_BANNER_MODES = {
   STALE: "stale",
   INTERRUPTED: "interrupted",
 };
+const BOTTLE_LESSON_SCHEMA_VERSION = "1";
+const BOTTLE_LESSON_FILE_SUFFIX = ".bottle-lesson.json";
+const LOCAL_LESSON_UPDATE_EVENT = "bottle-local-lessons-updated";
 const POLL_RETRY_LIMIT = 3;
 const POLL_RETRY_DELAY_MS = 1500;
 
@@ -411,6 +481,256 @@ function formatDateTimeLabel(value) {
     second: "2-digit",
     hour12: false,
   });
+}
+
+function hasLocalLessonImportBridge() {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.localDb?.getCourses === "function" &&
+    typeof window.localDb?.saveCourse === "function" &&
+    typeof window.localDb?.saveSentences === "function" &&
+    typeof window.localDb?.saveProgress === "function"
+  );
+}
+
+function dispatchLocalLessonUpdateEvent() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.dispatchEvent(new Event(LOCAL_LESSON_UPDATE_EVENT));
+}
+
+function createImportedLessonId() {
+  return `${Date.now()}${Math.floor(Math.random() * 1000)
+    .toString()
+    .padStart(3, "0")}`;
+}
+
+function normalizeImportedLessonPayload(payload = {}) {
+  const schemaVersion = String(payload?.schema_version || "").trim();
+  if (!schemaVersion) {
+    throw new Error("导入文件缺少 schema_version");
+  }
+  if (schemaVersion !== BOTTLE_LESSON_SCHEMA_VERSION) {
+    throw new Error(`暂不支持 schema_version=${schemaVersion} 的课程文件`);
+  }
+  const lesson = payload?.lesson;
+  if (!lesson || typeof lesson !== "object" || Array.isArray(lesson)) {
+    throw new Error("导入文件缺少 lesson");
+  }
+  const lessonId = String(lesson.id ?? "").trim();
+  if (!lessonId) {
+    throw new Error("导入文件中的 lesson.id 不能为空");
+  }
+  return {
+    schemaVersion,
+    exportedAt: String(payload?.exported_at || ""),
+    appVersion: String(payload?.app_version || ""),
+    lesson,
+    sentences: Array.isArray(payload?.sentences) ? payload.sentences : [],
+    progress: payload?.progress && typeof payload.progress === "object" && !Array.isArray(payload.progress) ? payload.progress : null,
+  };
+}
+
+function buildImportedCourseRecord(lesson = {}, targetLessonId, meta = {}) {
+  const metadata = lesson?.metadata && typeof lesson.metadata === "object" && !Array.isArray(lesson.metadata) ? lesson.metadata : {};
+  const importedAt = String(meta.importedAt || new Date().toISOString());
+  const sourceDurationMs = Math.max(
+    0,
+    Number(lesson?.source_duration_ms ?? lesson?.duration_ms ?? metadata?.source_duration_ms ?? 0) || 0,
+  );
+
+  return {
+    id: String(targetLessonId),
+    title: String(lesson?.title || metadata?.title || "导入课程"),
+    source_filename: String(lesson?.source_filename || metadata?.source_filename || `${targetLessonId}${BOTTLE_LESSON_FILE_SUFFIX}`),
+    duration_ms: sourceDurationMs,
+    runtime_kind: String(lesson?.runtime_kind || metadata?.runtime_kind || "local_import"),
+    asr_model: String(lesson?.asr_model || metadata?.asr_model || ""),
+    created_at: String(lesson?.created_at || importedAt),
+    updated_at: String(lesson?.updated_at || importedAt),
+    synced_at: null,
+    version: Math.max(1, Number(lesson?.version || 1) || 1),
+    is_local_only: true,
+    metadata: {
+      ...metadata,
+      source_duration_ms: sourceDurationMs,
+      media_storage: String(lesson?.media_storage || metadata?.media_storage || "local_import"),
+      import_source: "bottle_lesson_json",
+      import_schema_version: String(meta.schemaVersion || ""),
+      original_lesson_id: String(lesson?.id ?? ""),
+      exported_at: String(meta.exportedAt || ""),
+      exported_app_version: String(meta.appVersion || ""),
+    },
+  };
+}
+
+function buildImportedSentenceRecord(courseId, sentence = {}, index = 0) {
+  const timestamp = new Date().toISOString();
+  return {
+    id: `${courseId}:${index}`,
+    sentence_index: Math.max(0, Number(sentence?.order_index ?? sentence?.sentence_index ?? index) || index),
+    english_text: String(sentence?.text_en || sentence?.english_text || sentence?.text || ""),
+    chinese_text: String(sentence?.text_zh || sentence?.chinese_text || sentence?.translation || ""),
+    start_ms: Math.max(0, Number(sentence?.begin_ms ?? sentence?.start_ms ?? 0) || 0),
+    end_ms: Math.max(0, Number(sentence?.end_ms ?? sentence?.end_time ?? 0) || 0),
+    words: Array.isArray(sentence?.tokens) ? sentence.tokens : Array.isArray(sentence?.words) ? sentence.words : [],
+    variant_key: String(sentence?.variant_key || ""),
+    created_at: String(sentence?.created_at || timestamp),
+    updated_at: String(sentence?.updated_at || timestamp),
+  };
+}
+
+function buildImportedProgressRecord(courseId, progress = null) {
+  if (!progress) {
+    return null;
+  }
+  return {
+    id: String(progress?.id || `${courseId}:local-desktop-user`),
+    user_id: String(progress?.user_id || "local-desktop-user"),
+    current_index: Math.max(0, Number(progress?.current_index ?? progress?.current_sentence_index ?? 0) || 0),
+    completed_indices: Array.isArray(progress?.completed_indices)
+      ? progress.completed_indices
+      : Array.isArray(progress?.completed_sentence_indexes)
+        ? progress.completed_sentence_indexes
+        : [],
+    started_at: progress?.started_at || null,
+    updated_at: String(progress?.updated_at || new Date().toISOString()),
+    synced_at: progress?.synced_at || null,
+    version: Math.max(1, Number(progress?.version || 1) || 1),
+  };
+}
+
+function formatLatencyLabel(latencyMs) {
+  if (!Number.isFinite(Number(latencyMs))) {
+    return "";
+  }
+  return `${Math.max(0, Math.round(Number(latencyMs)))} ms`;
+}
+
+function getDiagnosticBadgeClassName(tone = "neutral") {
+  if (tone === "success") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
+  if (tone === "warning") return "border-amber-500/30 bg-amber-500/10 text-amber-700";
+  if (tone === "danger") return "border-rose-500/30 bg-rose-500/10 text-rose-700";
+  return "border-slate-500/20 bg-slate-500/10 text-slate-700";
+}
+
+function getDesktopServerDiagnostic(serverStatus = {}, runtimeInfo = null) {
+  const normalizedServerStatus = normalizeServerStatus(runtimeInfo?.serverStatus || serverStatus || {});
+  const detailParts = [];
+  const checkedAtLabel = formatDateTimeLabel(normalizedServerStatus.lastCheckedAt);
+  const latencyLabel = formatLatencyLabel(normalizedServerStatus.latencyMs);
+  if (latencyLabel) {
+    detailParts.push(`延迟 ${latencyLabel}`);
+  }
+  if (checkedAtLabel) {
+    detailParts.push(`检查于 ${checkedAtLabel}`);
+  }
+  if (!normalizedServerStatus.lastCheckedAt && !runtimeInfo?.serverStatus) {
+    return {
+      label: "连接中",
+      tone: "neutral",
+      detail: "正在检查云端服务可用性",
+    };
+  }
+  if (normalizedServerStatus.reachable === false) {
+    return {
+      label: "不可用",
+      tone: "danger",
+      detail: detailParts.join(" · ") || "当前无法连接云端服务",
+    };
+  }
+  return {
+    label: "已连接",
+    tone: "success",
+    detail: detailParts.join(" · ") || "云端服务连接正常",
+  };
+}
+
+function getDesktopHelperDiagnostic(helperStatus = {}, runtimeInfo = null) {
+  const safeHelperStatus = runtimeInfo?.helperStatus || helperStatus || {};
+  const detailParts = [];
+  const modelStatus = String(safeHelperStatus?.modelStatus || "").trim();
+  const helperMode = String(safeHelperStatus?.helperMode || runtimeInfo?.helperMode || "").trim();
+  const checkedAtLabel = formatDateTimeLabel(safeHelperStatus?.lastCheckedAt);
+  if (modelStatus) {
+    detailParts.push(modelStatus);
+  }
+  if (helperMode) {
+    detailParts.push(helperMode === "bundled-runtime" ? "正式包运行时" : helperMode);
+  }
+  if (checkedAtLabel) {
+    detailParts.push(`检查于 ${checkedAtLabel}`);
+  }
+  if (safeHelperStatus?.modelReady) {
+    return {
+      label: "模型就绪",
+      tone: "success",
+      detail: detailParts.join(" · ") || "本地 Helper 与模型均已准备完成",
+    };
+  }
+  if (safeHelperStatus?.healthy || safeHelperStatus?.ok) {
+    return {
+      label: "运行中",
+      tone: "warning",
+      detail: detailParts.join(" · ") || "本地 Helper 已运行，正在等待模型就绪",
+    };
+  }
+  return {
+    label: "未启动",
+    tone: "danger",
+    detail: detailParts.join(" · ") || "未检测到本地 Helper",
+  };
+}
+
+function getDesktopClientUpdateDiagnostic(runtimeInfo = null) {
+  const updateState = runtimeInfo?.clientUpdate || {};
+  const currentVersion = String(updateState?.currentVersion || "").trim();
+  const latestVersion = String(updateState?.latestVersion || "").trim();
+  const checkedAtLabel = formatDateTimeLabel(updateState?.checkedAt);
+  const detailParts = [];
+  if (currentVersion) {
+    detailParts.push(`当前 ${currentVersion}`);
+  }
+  if (latestVersion) {
+    detailParts.push(`最新 ${latestVersion}`);
+  }
+  if (checkedAtLabel) {
+    detailParts.push(`检查于 ${checkedAtLabel}`);
+  }
+  if (!runtimeInfo) {
+    return {
+      label: "连接中",
+      tone: "neutral",
+      detail: "正在读取客户端版本与更新状态",
+    };
+  }
+  if (updateState?.checking) {
+    return {
+      label: "检查中",
+      tone: "neutral",
+      detail: detailParts.join(" · ") || "正在检查客户端更新",
+    };
+  }
+  if (String(updateState?.lastError || "").trim()) {
+    return {
+      label: "检查更新失败",
+      tone: "danger",
+      detail: detailParts.join(" · ") || String(updateState.lastError || "").trim(),
+    };
+  }
+  if (updateState?.available) {
+    return {
+      label: "发现新版本",
+      tone: "warning",
+      detail: detailParts.join(" · ") || "检测到可用新版本",
+    };
+  }
+  return {
+    label: "已是最新",
+    tone: "success",
+    detail: detailParts.join(" · ") || "当前客户端已是最新版本",
+  };
 }
 
 function createAbortError(message) {
@@ -640,6 +960,9 @@ function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
     const nextPercent = taskSnapshot ? clampPercent(taskSnapshot?.overall_percent) : clampPercent(uploadPercent);
     return `下载素材 ${nextPercent}%`;
   }
+  if (phase === DESKTOP_LOCAL_GENERATING_PHASE) {
+    return `本机生成课程 ${clampPercent(uploadPercent)}%`;
+  }
   if (!taskSnapshot) return phase === "success" ? "生成课程完成" : phase === "error" ? "生成课程失败" : "等待上传";
   if (phase === "success") return "生成课程完成";
   const taskStatus = String(taskSnapshot.status || "").toLowerCase();
@@ -672,6 +995,9 @@ function getVisualProgress(phase, uploadPercent, taskSnapshot) {
   if (phase === "success") return 100;
   if (phase === DESKTOP_LINK_IMPORTING_PHASE) {
     return taskSnapshot ? clampPercent(taskSnapshot?.overall_percent) : clampPercent(uploadPercent);
+  }
+  if (phase === DESKTOP_LOCAL_GENERATING_PHASE) {
+    return clampPercent(uploadPercent);
   }
   if (phase === "local_transcribing" || phase === DESKTOP_LOCAL_TRANSCRIBING_PHASE) {
     return taskSnapshot ? clampPercent(taskSnapshot?.overall_percent) : 28;
@@ -1055,7 +1381,19 @@ function isMobileUploadViewport() {
   return Boolean(navigator.userAgentData?.mobile) || /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent);
 }
 
-export function UploadPanel({ accessToken, isActivePanel = true, onCreated, balanceAmountCents, balancePoints, billingRates, subtitleSettings, onWalletChanged, onTaskStateChange, onNavigateToLesson }) {
+export function UploadPanel({
+  accessToken,
+  isActivePanel = true,
+  onCreated,
+  balanceAmountCents,
+  balancePoints,
+  billingRates,
+  subtitleSettings,
+  onWalletChanged,
+  onTaskStateChange,
+  onNavigateToLesson,
+  isOnline = true,
+}) {
   const currentUser = useAppStore((state) => state.currentUser);
   const normalizedBalanceAmountCents = Number(balanceAmountCents ?? balancePoints ?? 0);
   const localAsrSupport = useMemo(
@@ -1084,6 +1422,21 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [taskSnapshot, setTaskSnapshot] = useState(null);
   const [uploadPercent, setUploadPercent] = useState(0);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [diagnosticsDialogOpen, setDiagnosticsDialogOpen] = useState(false);
+  const [desktopRuntimeInfo, setDesktopRuntimeInfo] = useState(null);
+  const [networkOnline, setNetworkOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine !== false));
+  const [desktopDiagnosticsLoading, setDesktopDiagnosticsLoading] = useState(false);
+  const [desktopDiagnosticsError, setDesktopDiagnosticsError] = useState("");
+  const [importBusy, setImportBusy] = useState(false);
+  const [importDropActive, setImportDropActive] = useState(false);
+  const [pendingLessonImport, setPendingLessonImport] = useState(null);
+  const [desktopBillingState, setDesktopBillingState] = useState({
+    status: "idle",
+    balanceAmountCents: null,
+    currency: "CNY",
+    message: "",
+    checkedAt: "",
+  });
   const [bindingCompleted, setBindingCompleted] = useState(false);
   const [selectedUploadModel, setSelectedUploadModel] = useState(() => getDefaultUploadModelKey(configuredDefaultAsrModel));
   const [fasterWhisperRuntimeTrack, setFasterWhisperRuntimeTrack] = useState(() => getDefaultFasterWhisperRuntimeTrack());
@@ -1106,7 +1459,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const [desktopBundleBusyModelKey, setDesktopBundleBusyModelKey] = useState("");
   const [streamingSubtitleDraft, setStreamingSubtitleDraft] = useState(null);
   const [subtitleDraftEdits, setSubtitleDraftEdits] = useState({});
-  const [desktopServerStatus, setDesktopServerStatus] = useState({ reachable: true, lastCheckedAt: "", latencyMs: null });
+  const [desktopServerStatus, setDesktopServerStatus] = useState(() => normalizeServerStatus({ reachable: true, lastCheckedAt: "", latencyMs: null }));
   const [desktopHelperStatus, setDesktopHelperStatus] = useState({ healthy: false, modelReady: false, modelStatus: "" });
   const [offlineBannerMessage, setOfflineBannerMessage] = useState("");
   const [restoreBannerMode, setRestoreBannerMode] = useState(RESTORE_BANNER_MODES.NONE);
@@ -1120,6 +1473,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const localStageProgressTimerRef = useRef(null);
   const localStageProgressMetaRef = useRef({ runToken: 0, startedAt: 0, durationSec: 0, statusText: "" });
   const fileInputRef = useRef(null);
+  const importFileInputRef = useRef(null);
   const freshEntryInitKeyRef = useRef("");
   const restoreVerificationTaskRef = useRef("");
   const successStateOriginRef = useRef("none");
@@ -1130,10 +1484,199 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const desktopModelUpdatePromptRef = useRef("");
   const fasterWhisperTrackTouchedRef = useRef(false);
   const desktopLocalFailureCountRef = useRef(0);
+  const desktopBillingReportRef = useRef(null);
   const desktopLinkPollTokenRef = useRef(0);
   const desktopLinkTaskIdRef = useRef("");
   const ownerUserId = Number(currentUser?.id || 0);
   const desktopRuntimeAvailable = hasDesktopRuntimeBridge();
+  const localLessonImportAvailable = hasLocalLessonImportBridge();
+
+  async function refreshDesktopDiagnostics(options = {}) {
+    if (!desktopRuntimeAvailable) {
+      return null;
+    }
+    const silent = options.silent === true;
+    if (!silent || !desktopRuntimeInfo) {
+      setDesktopDiagnosticsLoading(true);
+    }
+    setDesktopDiagnosticsError("");
+    try {
+      const runtimeInfo = await window.desktopRuntime.getRuntimeInfo?.();
+      const safeRuntimeInfo = runtimeInfo && typeof runtimeInfo === "object" ? runtimeInfo : null;
+      setDesktopRuntimeInfo(safeRuntimeInfo);
+      if (safeRuntimeInfo?.serverStatus) {
+        setDesktopServerStatus(normalizeServerStatus(safeRuntimeInfo.serverStatus));
+      }
+      if (safeRuntimeInfo?.helperStatus) {
+        setDesktopHelperStatus(safeRuntimeInfo.helperStatus);
+      }
+      return safeRuntimeInfo;
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "读取客户端诊断信息失败";
+      setDesktopDiagnosticsError(message);
+      return null;
+    } finally {
+      setDesktopDiagnosticsLoading(false);
+    }
+  }
+
+  async function handleOpenLogsDirectory() {
+    if (!desktopRuntimeAvailable) {
+      return;
+    }
+    try {
+      const opened = await window.desktopRuntime.openLogsDirectory?.();
+      if (!opened) {
+        throw new Error("当前日志目录不可用");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : "打开日志目录失败");
+    }
+  }
+
+  async function ensureDesktopClientBillingAdmission(sourceDurationSec = durationSec) {
+    if (!desktopClientBillingEnabled) {
+      return true;
+    }
+    if (!accessToken) {
+      await handleTaskFailureState({
+        message: "请先登录后再生成课程",
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+        persistState: false,
+      });
+      return false;
+    }
+    if (!networkOnline) {
+      setDesktopBillingState((prev) => ({
+        ...prev,
+        status: "offline",
+        message: DESKTOP_CLIENT_OFFLINE_MESSAGE,
+      }));
+      await handleTaskFailureState({
+        message: DESKTOP_CLIENT_OFFLINE_MESSAGE,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+        persistState: false,
+      });
+      return false;
+    }
+    if (!selectedRate) {
+      const message = "当前计费单价未配置，暂时无法开始生成";
+      setDesktopBillingState((prev) => ({
+        ...prev,
+        status: "error",
+        message,
+      }));
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+        persistState: false,
+      });
+      return false;
+    }
+    try {
+      setDesktopBillingState((prev) => ({
+        ...prev,
+        status: "checking",
+        message: "正在检查余额...",
+      }));
+      const snapshot = await requestWalletBalance(accessToken);
+      const effectiveDurationSec = Math.max(0, Number(sourceDurationSec || durationSec || 0));
+      const estimatedChargeCents =
+        effectiveDurationSec > 0
+          ? calculateChargeCentsBySeconds(effectiveDurationSec, selectedRatePricePerMinuteYuan) + estimatedMtChargeCents
+          : desktopClientEstimatedChargeCents;
+      const hasEnoughBalance = estimatedChargeCents <= 0 || snapshot.balanceAmountCents >= estimatedChargeCents;
+      setDesktopBillingState({
+        status: hasEnoughBalance ? "ready" : "insufficient",
+        balanceAmountCents: snapshot.balanceAmountCents,
+        currency: snapshot.currency,
+        message: hasEnoughBalance ? "" : DESKTOP_CLIENT_INSUFFICIENT_BALANCE_MESSAGE,
+        checkedAt: snapshot.updatedAt,
+      });
+      if (hasEnoughBalance) {
+        return true;
+      }
+      await handleTaskFailureState({
+        message: DESKTOP_CLIENT_INSUFFICIENT_BALANCE_MESSAGE,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+        persistState: false,
+      });
+      return false;
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "读取余额失败";
+      setDesktopBillingState((prev) => ({
+        ...prev,
+        status: "error",
+        message,
+      }));
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+        persistState: false,
+      });
+      return false;
+    }
+  }
+
+  async function syncDesktopClientBillingAfterSuccess(data) {
+    const report = desktopBillingReportRef.current;
+    desktopBillingReportRef.current = null;
+    if (!report || !accessToken) {
+      await onWalletChanged?.();
+      return;
+    }
+    const lessonId = Number(data?.lesson?.id || 0);
+    const lessonDurationSeconds = Math.max(
+      1,
+      Math.ceil(Number(data?.lesson?.source_duration_ms || 0) / 1000) || Math.ceil(Number(report.sourceDurationSec || durationSec || 0)),
+    );
+    if (!lessonId || lessonDurationSeconds <= 0) {
+      await onWalletChanged?.();
+      return;
+    }
+    try {
+      const payload = await reportLocalGenerationUsage(accessToken, {
+        courseId: lessonId,
+        actualSeconds: lessonDurationSeconds,
+        modelName: report.modelName,
+        runtimeKind: report.runtimeKind,
+      });
+      const nextBalanceAmountCents = Number(payload?.balance_amount_cents ?? payload?.balance ?? NaN);
+      if (Number.isFinite(nextBalanceAmountCents)) {
+        setDesktopBillingState((prev) => ({
+          ...prev,
+          status: "ready",
+          balanceAmountCents: Math.max(0, nextBalanceAmountCents),
+          currency: String(payload?.currency || prev.currency || "CNY").trim() || "CNY",
+          message: "",
+        }));
+      }
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : "课程已生成，但余额同步失败，请稍后刷新确认。");
+    } finally {
+      await onWalletChanged?.();
+    }
+  }
 
   const selectedFastModel = useMemo(() => {
     const selectedMeta = getUploadModelMeta(selectedUploadModel);
@@ -1173,6 +1716,13 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   const estimatedMtTokens = estimateMtTokensByDuration(durationSec || 0);
   const estimatedMtChargeCents = calculateChargeCentsByTokens(estimatedMtTokens, mtRateCentsPer1kTokens);
   const estimatedTotalChargeCents = (fasterWhisperDesktopLocalSelected ? 0 : estimatedAsrChargeCents) + estimatedMtChargeCents;
+  const desktopClientBillingEnabled = fasterWhisperDesktopLocalSelected;
+  const desktopClientEstimatedChargeCents = estimatedAsrChargeCents + estimatedMtChargeCents;
+  const desktopClientBalanceAmountCents =
+    desktopClientBillingEnabled && Number.isFinite(Number(desktopBillingState.balanceAmountCents))
+      ? Math.max(0, Number(desktopBillingState.balanceAmountCents || 0))
+      : normalizedBalanceAmountCents;
+  const desktopClientHasUsableEstimate = desktopClientBillingEnabled && durationSec != null && selectedRate != null;
   const localWorkerReady = Boolean(localWorkerReadyMap.browserLocal);
   const balancedPerformanceWarning = useMemo(
     () => (mode === "balanced" ? buildLocalAsrLongAudioWarning(durationSec, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS) : ""),
@@ -1255,15 +1805,20 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     (loading || phase === "success" || phase === "error" || phase === "upload_paused" || Boolean(displayTaskSnapshot));
   const canRetryWithoutUpload = Boolean(taskId) && (Boolean(taskSnapshot?.resume_available) || phase === "error");
   const showMediaPreview = Boolean(file || coverDataUrl);
+  const offlineHintText = getOfflineHintText(isOnline, selectedAsrModel);
   const sourceDisplayName = String(file?.name || taskSnapshot?.lesson?.source_filename || "");
   const uploadActionBusy =
-    loading && ["uploading", "processing", "local_transcribing", DESKTOP_LOCAL_TRANSCRIBING_PHASE, DESKTOP_LINK_IMPORTING_PHASE].includes(String(phase || ""));
+    loading && ["uploading", "processing", "local_transcribing", DESKTOP_LOCAL_TRANSCRIBING_PHASE, DESKTOP_LINK_IMPORTING_PHASE, DESKTOP_LOCAL_GENERATING_PHASE].includes(String(phase || ""));
   const localModeBusy = Boolean(localBusyModelKey || serverBusyModelKey) || localTranscribing;
   const cancelablePrimaryAction = localTranscribing || desktopLinkImporting;
   const primaryActionDisabled =
     phase === "success" ||
     (loading && !cancelablePrimaryAction && !serviceTaskStopActionsVisible) ||
     (mode === "balanced" && !localTranscribing && (!localAsrSupport.supported || !localWorkerReady || Boolean(localBusyModelKey))) ||
+    (!isOnline && selectedAsrModel !== FASTER_WHISPER_MODEL && !desktopLocalTranscribing && !desktopLinkImporting) ||
+    (desktopClientBillingEnabled &&
+      (desktopBillingState.status === "offline" ||
+        (desktopClientHasUsableEstimate && ["checking", "insufficient", "error"].includes(String(desktopBillingState.status || ""))))) ||
     (desktopLinkModeActive && !desktopLinkImporting && (!desktopLinkModeSupported || !trimmedDesktopLinkInput));
   const taskTone = getUploadTaskTone({
     phase,
@@ -1320,6 +1875,91 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
             },
           ]
         : [];
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+    const updateOnlineState = () => {
+      setNetworkOnline(typeof navigator === "undefined" ? true : navigator.onLine !== false);
+    };
+    updateOnlineState();
+    window.addEventListener("online", updateOnlineState);
+    window.addEventListener("offline", updateOnlineState);
+    return () => {
+      window.removeEventListener("online", updateOnlineState);
+      window.removeEventListener("offline", updateOnlineState);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!desktopClientBillingEnabled) {
+      setDesktopBillingState({
+        status: "idle",
+        balanceAmountCents: null,
+        currency: "CNY",
+        message: "",
+        checkedAt: "",
+      });
+      return undefined;
+    }
+    if (!accessToken) {
+      setDesktopBillingState({
+        status: "error",
+        balanceAmountCents: null,
+        currency: "CNY",
+        message: "请先登录后再生成课程",
+        checkedAt: "",
+      });
+      return undefined;
+    }
+    if (!networkOnline) {
+      setDesktopBillingState((prev) => ({
+        ...prev,
+        status: "offline",
+        message: DESKTOP_CLIENT_OFFLINE_MESSAGE,
+      }));
+      return undefined;
+    }
+    if (!selectedRate) {
+      setDesktopBillingState((prev) => ({
+        ...prev,
+        status: "error",
+        message: "当前计费单价未配置，暂时无法开始生成",
+      }));
+      return undefined;
+    }
+    let cancelled = false;
+    setDesktopBillingState((prev) => ({
+      ...prev,
+      status: "checking",
+      message: durationSec != null ? "正在检查余额..." : "",
+    }));
+    void (async () => {
+      try {
+        const snapshot = await requestWalletBalance(accessToken);
+        if (cancelled) return;
+        const hasEnoughBalance = durationSec == null || snapshot.balanceAmountCents >= desktopClientEstimatedChargeCents;
+        setDesktopBillingState({
+          status: hasEnoughBalance ? "ready" : "insufficient",
+          balanceAmountCents: snapshot.balanceAmountCents,
+          currency: snapshot.currency,
+          message: hasEnoughBalance ? "" : DESKTOP_CLIENT_INSUFFICIENT_BALANCE_MESSAGE,
+          checkedAt: snapshot.updatedAt,
+        });
+      } catch (error) {
+        if (cancelled) return;
+        setDesktopBillingState((prev) => ({
+          ...prev,
+          status: "error",
+          message: error instanceof Error && error.message ? error.message : "读取余额失败",
+        }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, desktopClientBillingEnabled, desktopClientEstimatedChargeCents, durationSec, networkOnline, selectedRate]);
 
   useEffect(() => {
     setSubtitleDraftEdits({});
@@ -1403,9 +2043,15 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     if (selection?.canceled) {
       return;
     }
+    const selectionErrorMessage = getDesktopSelectionErrorMessage(selection);
+    if (selectionErrorMessage) {
+      toast.error(selectionErrorMessage);
+      return;
+    }
     const selectedFile = buildDesktopSelectedFile(selection?.file || selection);
     if (!selectedFile) {
-      throw new Error("当前桌面端无法读取本机文件路径，请重新选择素材。");
+      toast.error("文件路径获取失败，请尝试重新选择");
+      return;
     }
     await onSelectFile(selectedFile);
   }
@@ -1427,6 +2073,147 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       throw new Error("无法载入已下载素材");
     }
     return attachDesktopSourcePath(nextFile, String(taskPayload?.source_path || ""));
+  }
+
+  async function commitImportedLesson(normalizedImport, mode = "overwrite") {
+    if (!localLessonImportAvailable) {
+      throw new Error("当前环境不支持本地课程导入");
+    }
+    const courses = await window.localDb.getCourses().catch(() => []);
+    const existingCourse = (Array.isArray(courses) ? courses : []).find(
+      (course) => String(course?.id ?? "") === String(normalizedImport?.lesson?.id ?? ""),
+    );
+    const importedAt = new Date().toISOString();
+    const targetLessonId =
+      mode === "copy"
+        ? (() => {
+            const existingIds = new Set((Array.isArray(courses) ? courses : []).map((course) => String(course?.id ?? "")));
+            let nextId = createImportedLessonId();
+            while (existingIds.has(nextId)) {
+              nextId = createImportedLessonId();
+            }
+            return nextId;
+          })()
+        : String(normalizedImport.lesson.id);
+    const courseRecord = buildImportedCourseRecord(normalizedImport.lesson, targetLessonId, {
+      schemaVersion: normalizedImport.schemaVersion,
+      exportedAt: normalizedImport.exportedAt,
+      appVersion: normalizedImport.appVersion,
+      importedAt,
+    });
+    const sentenceRecords = normalizedImport.sentences.map((sentence, index) =>
+      buildImportedSentenceRecord(targetLessonId, sentence, index),
+    );
+    const progressRecord = buildImportedProgressRecord(targetLessonId, normalizedImport.progress);
+    const savedCourse = await window.localDb.saveCourse(courseRecord);
+    await window.localDb.saveSentences(targetLessonId, sentenceRecords);
+    if (progressRecord) {
+      await window.localDb.saveProgress(targetLessonId, progressRecord);
+    }
+    await Promise.resolve(
+      window.localDb.sync?.logSync?.(
+        "lesson_sentences",
+        targetLessonId,
+        existingCourse && mode !== "copy" ? "UPDATE" : "INSERT",
+        Number(savedCourse?.version || courseRecord.version || 1),
+      ),
+    ).catch(() => null);
+    if (progressRecord) {
+      await Promise.resolve(
+        window.localDb.sync?.logSync?.(
+          "progress",
+          targetLessonId,
+          existingCourse && mode !== "copy" ? "UPDATE" : "INSERT",
+          Number(progressRecord.version || savedCourse?.version || 1),
+        ),
+      ).catch(() => null);
+    }
+    dispatchLocalLessonUpdateEvent();
+    setPendingLessonImport(null);
+    setStatus(mode === "copy" ? "课程已作为新副本导入，可在历史记录中查看。" : "课程已导入，可在历史记录中查看。");
+    toast.success(mode === "copy" ? "课程已作为新副本导入" : existingCourse ? "课程已覆盖导入" : "课程已导入");
+    return savedCourse;
+  }
+
+  async function handleImportLessonFile(file) {
+    if (!file) {
+      return;
+    }
+    if (!localLessonImportAvailable) {
+      toast.error("当前环境不支持本地课程导入");
+      return;
+    }
+    setImportBusy(true);
+    try {
+      const fileName = String(file?.name || "");
+      if (fileName && !fileName.toLowerCase().endsWith(BOTTLE_LESSON_FILE_SUFFIX) && !fileName.toLowerCase().endsWith(".json")) {
+        throw new Error("仅支持导入 .bottle-lesson.json 或 .json 文件");
+      }
+      const rawText = await file.text();
+      const parsed = JSON.parse(rawText);
+      const normalizedImport = normalizeImportedLessonPayload(parsed);
+      const courses = await window.localDb.getCourses().catch(() => []);
+      const hasConflict = (Array.isArray(courses) ? courses : []).some(
+        (course) => String(course?.id ?? "") === String(normalizedImport.lesson.id),
+      );
+      if (hasConflict) {
+        setPendingLessonImport({
+          fileName: fileName || `${normalizedImport.lesson.id}${BOTTLE_LESSON_FILE_SUFFIX}`,
+          normalizedImport,
+        });
+        return;
+      }
+      await commitImportedLesson(normalizedImport, "overwrite");
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : "导入课程失败");
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
+  async function resolvePendingLessonImport(mode = "overwrite") {
+    if (!pendingLessonImport?.normalizedImport) {
+      return;
+    }
+    setImportBusy(true);
+    try {
+      await commitImportedLesson(pendingLessonImport.normalizedImport, mode);
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : "导入课程失败");
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
+  function handleImportDropHover(event) {
+    if (!localLessonImportAvailable) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setImportDropActive(true);
+  }
+
+  function handleImportDropLeave(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.currentTarget.contains(event.relatedTarget)) {
+      return;
+    }
+    setImportDropActive(false);
+  }
+
+  async function handleImportDrop(event) {
+    if (!localLessonImportAvailable) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setImportDropActive(false);
+    const nextFile = event.dataTransfer?.files?.[0] ?? null;
+    if (nextFile) {
+      await handleImportLessonFile(nextFile);
+    }
   }
 
   async function handleDesktopSourceModeChange(nextMode) {
@@ -1995,15 +2782,20 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
           window.desktopRuntime.getHelperStatus?.(),
         ]);
         if (cancelled) return;
-        setDesktopServerStatus(serverStatus || { reachable: true, lastCheckedAt: "", latencyMs: null });
-        setDesktopHelperStatus(helperStatus || { healthy: false, modelReady: false, modelStatus: "" });
-        const bannerMessage =
-          typeof navigator !== "undefined" && navigator.onLine === false
-            ? "当前处于离线模式"
-            : serverStatus?.reachable === false
-              ? "云端服务暂不可用"
-              : "";
-        setOfflineBannerMessage(bannerMessage);
+        const normalizedServerStatus = normalizeServerStatus(serverStatus);
+        const nextHelperStatus = helperStatus || { healthy: false, modelReady: false, modelStatus: "" };
+        setDesktopServerStatus(normalizedServerStatus);
+        setDesktopHelperStatus(nextHelperStatus);
+        setDesktopRuntimeInfo((prev) =>
+          prev
+            ? {
+                ...prev,
+                serverStatus: normalizedServerStatus,
+                helperStatus: nextHelperStatus,
+              }
+            : prev,
+        );
+        setOfflineBannerMessage(getOfflineBannerText(normalizedServerStatus));
       } catch (_) {
         if (!cancelled) {
           setOfflineBannerMessage(typeof navigator !== "undefined" && navigator.onLine === false ? "当前处于离线模式" : "");
@@ -2019,14 +2811,17 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     window.addEventListener("offline", onOnlineChange);
     const unsubscribe = window.desktopRuntime.onServerStatusChanged?.((payload) => {
       if (cancelled) return;
-      setDesktopServerStatus(payload || { reachable: true, lastCheckedAt: "", latencyMs: null });
-      setOfflineBannerMessage(
-        typeof navigator !== "undefined" && navigator.onLine === false
-          ? "当前处于离线模式"
-          : payload?.reachable === false
-            ? "云端服务暂不可用"
-            : "",
+      const normalizedServerStatus = normalizeServerStatus(payload);
+      setDesktopServerStatus(normalizedServerStatus);
+      setDesktopRuntimeInfo((prev) =>
+        prev
+          ? {
+              ...prev,
+              serverStatus: normalizedServerStatus,
+            }
+          : prev,
       );
+      setOfflineBannerMessage(getOfflineBannerText(normalizedServerStatus));
     });
     return () => {
       cancelled = true;
@@ -2037,6 +2832,36 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!desktopRuntimeAvailable) {
+      setDiagnosticsDialogOpen(false);
+      setDesktopRuntimeInfo(null);
+      setDesktopDiagnosticsError("");
+      setDesktopDiagnosticsLoading(false);
+      return undefined;
+    }
+    void refreshDesktopDiagnostics({ silent: true });
+    const unsubscribe = window.desktopRuntime.onClientUpdateStatusChanged?.((payload) => {
+      setDesktopRuntimeInfo((prev) => ({
+        ...(prev || {}),
+        clientUpdate: payload || {},
+      }));
+    });
+    return () => {
+      if (typeof unsubscribe === "function") {
+        unsubscribe();
+      }
+    };
+  }, [desktopRuntimeAvailable]);
+
+  useEffect(() => {
+    if (!desktopRuntimeAvailable || !diagnosticsDialogOpen) {
+      return;
+    }
+    void refreshDesktopDiagnostics();
+    void window.desktopRuntime.probeServerNow?.().catch(() => null);
+  }, [desktopRuntimeAvailable, diagnosticsDialogOpen]);
 
   useEffect(() => {
     if (!selectedFastModelNeedsPreparation) return undefined;
@@ -2181,6 +3006,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     refreshWallet = false,
     persistState = true,
   } = {}) {
+    desktopBillingReportRef.current = null;
     const normalizedMessage = String(message || "").trim() || "生成失败";
     await applyTaskViewState({
       nextTaskId,
@@ -2202,6 +3028,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }
 
   async function resetSession() {
+    desktopBillingReportRef.current = null;
     resetLocalSessionState();
     setDesktopLinkInput("");
     if (!ownerUserId) return;
@@ -2267,6 +3094,10 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
         clearDesktopLinkTaskTracking(false);
         const selectionMeta = await onSelectFile(sourceFile);
         const sourceDurationSeconds = Number(selectionMeta?.durationSec || payload.duration_seconds || 0);
+        const billingAllowed = await ensureDesktopClientBillingAdmission(sourceDurationSeconds);
+        if (!billingAllowed) {
+          return;
+        }
         const runToken = localRunTokenRef.current + 1;
         localRunTokenRef.current = runToken;
         const generationPollToken = startPollingSession();
@@ -2343,6 +3174,18 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     if (!desktopLinkModeSupported) {
       await handleTaskFailureState({
         message: desktopLinkModeBlockedMessage || "链接导入当前仅支持桌面端 Bottle 1.0 本机运行。",
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+        persistState: false,
+      });
+      return;
+    }
+    if (!networkOnline) {
+      await handleTaskFailureState({
+        message: DESKTOP_CLIENT_OFFLINE_MESSAGE,
         nextTaskId: "",
         nextTaskSnapshot: null,
         nextUploadPercent: 0,
@@ -2659,6 +3502,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
   }
 
   async function clearTaskRuntime(nextStatus = "") {
+    desktopBillingReportRef.current = null;
     stopPollingSession();
     resetUploadPersistState();
     uploadAbortRef.current?.abort();
@@ -2688,6 +3532,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
 
   async function stopLocalRecognition() {
     if (!localTranscribing) return;
+    desktopBillingReportRef.current = null;
     console.debug("[DEBUG] upload.local_asr.stop", {
       fileName: String(file?.name || ""),
       model: selectedBalancedModel,
@@ -2786,7 +3631,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       await clearActiveGenerationTask(ownerUserId);
       await saveSuccessSnapshot(sourceFile, data, successMessage);
     }
-    await onWalletChanged?.();
+    await syncDesktopClientBillingAfterSuccess(data);
     if (data.lesson) await onCreated?.({ lesson: data.lesson, mediaPreview, mediaPersisted });
     if (!silentToast) {
       if (partialSuccess || successMessage) {
@@ -3539,7 +4384,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       localRunAbortRef.current = null;
       const taskData = await parseResponse(resp);
       if (!resp.ok) {
-        const message = mapCloudAsrFailureToMessage(toErrorText(taskData, "创建识别任务失败"), desktopServerStatus);
+        const message = getCloudFailureMessage(toErrorText(taskData, "创建识别任务失败"), desktopServerStatus);
         await handleTaskFailureState({
           message,
           nextTaskId: "",
@@ -3627,6 +4472,11 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
 
     const startStatus = "正在通过本机 Bottle 1.0 识别字幕";
+    desktopBillingReportRef.current = {
+      modelName: FASTER_WHISPER_MODEL,
+      runtimeKind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
+      sourceDurationSec: Math.max(0, Number(sourceDurationSec || durationSec || 0)),
+    };
     setPhase(DESKTOP_LOCAL_TRANSCRIBING_PHASE);
     setStatus(startStatus);
     setTaskId("");
@@ -3689,7 +4539,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       const data = await parseResponse(resp);
       if (!resp.ok) {
         setLocalProgressSnapshot(null);
-        const message = mapCloudAsrFailureToMessage(toErrorText(data, "创建识别任务失败"), desktopServerStatus);
+        const message = getCloudFailureMessage(toErrorText(data, "创建识别任务失败"), desktopServerStatus);
         await handleTaskFailureState({
           message,
           nextTaskId: "",
@@ -3733,6 +4583,160 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       setLocalProgressSnapshot(null);
       if (error?.name === "AbortError") return;
       const message = error instanceof Error && error.message ? error.message : `网络错误: ${String(error)}`;
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+      });
+    }
+  }
+
+  async function submitDesktopLocalGenerateCourse(sourceFile = file) {
+    if (!hasDesktopRuntimeBridge()) {
+      await handleTaskFailureState({
+        message: "当前环境不支持桌面端本机生成，请改用云端运行。",
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+      });
+      return;
+    }
+    if (!hasLocalCourseGeneratorBridge()) {
+      await handleTaskFailureState({
+        message: "本机课程生成功能暂不可用，请确保桌面客户端已更新到最新版本。",
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+      });
+      return;
+    }
+
+    const currentBundleState = desktopBundleStateMap[FASTER_WHISPER_MODEL] || {};
+    let bundleSummary = currentBundleState;
+    if (!bundleSummary?.available) {
+      bundleSummary = (await fetchDesktopBundleStatus(FASTER_WHISPER_MODEL, { silent: true })) || currentBundleState;
+    }
+    if (!bundleSummary?.available) {
+      const message = bundleSummary?.installAvailable
+        ? "Bottle 1.0 本机资源未就绪，请先点「准备本机资源」。"
+        : "当前安装包未提供可用的 Bottle 1.0 本机资源，请改用云端运行。";
+      await handleTaskFailureState({
+        message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+        persistState: false,
+      });
+      return;
+    }
+
+    const sourceFileName = String(sourceFile?.name || file?.name || "本地视频").trim();
+    const sourceFilePath = String(
+      typeof sourceFile?.path === "string" && sourceFile.path
+        ? sourceFile.path
+        : typeof file?.path === "string" && file.path
+          ? file.path
+          : "",
+    ).trim();
+
+    const startStatus = "正在通过本机 Bottle 1.0 生成课程";
+    setPhase(DESKTOP_LOCAL_GENERATING_PHASE);
+    setStatus(startStatus);
+    setTaskId("");
+    setTaskSnapshot(null);
+    setUploadPercent(0);
+    setLocalProgressSnapshot(null);
+    setStreamingSubtitleDraft(null);
+    setLoading(true);
+    desktopBillingReportRef.current = {
+      modelName: FASTER_WHISPER_MODEL,
+      runtimeKind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
+      sourceDurationSec: Math.max(0, Number(durationSec || 0)),
+    };
+
+    try {
+      const result = await window.localAsr.generateCourse({
+        filePath: sourceFilePath,
+        sourceFilename: sourceFileName,
+        modelKey: FASTER_WHISPER_MODEL,
+        runtimeKind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
+      });
+
+      const response = result?.data || result || {};
+
+      if (!response?.ok) {
+        throw new Error(
+          String(response?.message || response?.detail || response?.error_message || "课程生成失败").trim() ||
+            "课程生成失败",
+        );
+      }
+
+      const courseId = String(response?.course_id || "").trim();
+      const translationPending = Boolean(response?.translation_pending);
+      const sentenceCount = Array.isArray(response?.sentences) ? response.sentences.length : 0;
+      const usageSeconds = Math.max(0, Number(response?.usage_seconds || 0));
+      const lessonStatus = String(response?.lesson_status || "ready").trim();
+
+      setUploadPercent(100);
+      setPhase("success");
+      setLoading(false);
+      setStatus(
+        translationPending
+          ? "课程已生成（翻译待补全），可在历史记录中查看"
+          : "课程已生成，可在历史记录中查看",
+      );
+
+      const taskSnapshotValue = {
+        lesson: {
+          id: courseId,
+          source_filename: sourceFileName,
+          title: String(response?.course?.title || sourceFileName.replace(/\.[^.]+$/, "")).trim(),
+          runtime_kind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
+          asr_model: FASTER_WHISPER_MODEL,
+        },
+        task_id: courseId,
+        status: "succeeded",
+        current_text: translationPending ? "课程已生成（翻译待补全）" : "课程已生成",
+        overall_percent: 100,
+        workspace: null,
+      };
+      setTaskSnapshot(taskSnapshotValue);
+
+      dispatchLocalLessonUpdateEvent();
+      await clearUploadPanelSuccessSnapshot(null);
+
+      if (accessToken && courseId) {
+        try {
+          await reportLocalGenerationUsage(accessToken, {
+            courseId,
+            actualSeconds: Math.round(usageSeconds),
+            modelName: FASTER_WHISPER_MODEL,
+            runtimeKind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
+          });
+          if (onRefreshWallet != null) {
+            void onRefreshWallet();
+          }
+        } catch (_) {
+          // Usage reporting failure should not interrupt success flow
+        }
+      }
+
+      toast.success(translationPending ? "课程已生成（翻译待补全）" : "课程已生成");
+    } catch (error) {
+      setLoading(false);
+      if (error?.name === "AbortError") {
+        return;
+      }
+      const message = error instanceof Error && error.message ? error.message : `本机课程生成失败: ${String(error)}`;
       await handleTaskFailureState({
         message,
         nextTaskId: "",
@@ -3982,7 +4986,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       const data = await parseResponse(resp);
       if (!resp.ok) {
         setLocalProgressSnapshot(null);
-        const message = mapCloudAsrFailureToMessage(toErrorText(data, "创建识别任务失败"), desktopServerStatus);
+        const message = getCloudFailureMessage(toErrorText(data, "创建识别任务失败"), desktopServerStatus);
         await handleTaskFailureState({
           message,
           nextTaskId: "",
@@ -4013,17 +5017,20 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       if (canAutoFallbackToCloud) {
         desktopLocalFailureCountRef.current += 1;
         if (desktopLocalFailureCountRef.current < 2) {
+          desktopBillingReportRef.current = null;
           toast.message("本地识别失败，正在重试一次");
           await submitDesktopLocalFast(pollToken, runToken, sourceFile, sourceDurationSec);
           return;
         }
         desktopLocalFailureCountRef.current = 0;
+        desktopBillingReportRef.current = null;
         setFasterWhisperRuntimeTrack(FAST_RUNTIME_TRACK_CLOUD);
         toast.message("本地识别连续失败，已切换到云端模式");
         await submit();
         return;
       }
       desktopLocalFailureCountRef.current = 0;
+      desktopBillingReportRef.current = null;
       logUploadLocalAsrDebug("run.failed", {
         file_name: String(sourceFile?.name || ""),
         model: selectedBalancedModel,
@@ -4178,7 +5185,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       uploadAbortRef.current = null;
 
       if (!ok) {
-        const message = mapCloudAsrFailureToMessage(toErrorText(data, "创建云端任务失败"), desktopServerStatus);
+        const message = getCloudFailureMessage(toErrorText(data, "创建云端任务失败"), desktopServerStatus);
         await handleTaskFailureState({
           message,
           nextTaskId: "",
@@ -4269,6 +5276,16 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     desktopLocalFailureCountRef.current = 0;
     let shouldUseDesktopLocalFast = fasterWhisperDesktopLocalSelected;
     let shouldUseBrowserLocalFast = fasterWhisperBrowserLocalSelected;
+    let shouldUseDesktopLocalGenerateCourse = false;
+    if (
+      desktopNativeFileSelectionActive &&
+      file &&
+      hasLocalCourseGeneratorBridge() &&
+      !loading &&
+      (phase === "idle" || phase === "error")
+    ) {
+      shouldUseDesktopLocalGenerateCourse = true;
+    }
     const ensureUploadableSourceFile = async () => {
       const preparedFile = await ensureBlobBackedSourceFile(file);
       if (isBlobBackedSourceFile(preparedFile)) {
@@ -4314,7 +5331,15 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       setFasterWhisperRuntimeTrack(FAST_RUNTIME_TRACK_CLOUD);
       toast.message(browserLocalRuntimeBlockedMessage);
     }
+    if (shouldUseDesktopLocalGenerateCourse) {
+      await submitDesktopLocalGenerateCourse(file);
+      return;
+    }
     if (shouldUseDesktopLocalFast) {
+      const billingAllowed = await ensureDesktopClientBillingAdmission(durationSec);
+      if (!billingAllowed) {
+        return;
+      }
       await submitDesktopLocalFast(pollToken, runToken, file, durationSec);
       return;
     }
@@ -4397,7 +5422,7 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
       );
       uploadAbortRef.current = null;
       if (!ok) {
-        const message = mapCloudAsrFailureToMessage(toErrorText(data, "创建上传任务失败"), desktopServerStatus);
+        const message = getCloudFailureMessage(toErrorText(data, "创建上传任务失败"), desktopServerStatus);
         await handleTaskFailureState({
           message,
           nextTaskId: "",
@@ -4610,19 +5635,64 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
     }
   }
 
+  const desktopServerDiagnostic = getDesktopServerDiagnostic(desktopServerStatus, desktopRuntimeInfo);
+  const desktopHelperDiagnostic = getDesktopHelperDiagnostic(desktopHelperStatus, desktopRuntimeInfo);
+  const desktopClientUpdateDiagnostic = getDesktopClientUpdateDiagnostic(desktopRuntimeInfo);
+  const desktopClientVersionLabel = String(desktopRuntimeInfo?.clientUpdate?.currentVersion || "").trim() || "未知";
+  const desktopDiagnosticsItems = [
+    {
+      key: "client-version",
+      title: "客户端版本",
+      badgeLabel: desktopClientVersionLabel,
+      badgeTone: "neutral",
+      detail:
+        String(desktopRuntimeInfo?.clientUpdate?.releaseName || "").trim() ||
+        String(desktopRuntimeInfo?.cloud?.appBaseUrl || "").trim() ||
+        "用于确认当前用户安装的桌面客户端版本",
+    },
+    {
+      key: "cloud-status",
+      title: "云端连接",
+      badgeLabel: desktopServerDiagnostic.label,
+      badgeTone: desktopServerDiagnostic.tone,
+      detail: desktopServerDiagnostic.detail,
+    },
+    {
+      key: "helper-status",
+      title: "本地 Helper",
+      badgeLabel: desktopHelperDiagnostic.label,
+      badgeTone: desktopHelperDiagnostic.tone,
+      detail: desktopHelperDiagnostic.detail,
+    },
+    {
+      key: "client-update",
+      title: "客户端更新",
+      badgeLabel: desktopClientUpdateDiagnostic.label,
+      badgeTone: desktopClientUpdateDiagnostic.tone,
+      detail: desktopClientUpdateDiagnostic.detail,
+    },
+  ];
+
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <UploadCloud className="size-4" />
-          生成工作台
-        </CardTitle>
-        <CardDescription>左侧查看素材与生成流程，右侧持续查看并回改字幕草稿。</CardDescription>
+      <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <UploadCloud className="size-4" />
+            生成工作台
+          </CardTitle>
+          <CardDescription>左侧查看素材与生成流程，右侧持续查看并回改字幕草稿。</CardDescription>
+        </div>
+        {desktopRuntimeAvailable ? (
+          <Button type="button" variant="outline" className="h-9 w-fit px-3" onClick={() => setDiagnosticsDialogOpen(true)}>
+            客户端诊断
+          </Button>
+        ) : null}
       </CardHeader>
       <CardContent className="space-y-4">
         <Alert className={cn("border", getUploadToneStyles("idle").surface)}>
           <AlertDescription>
-            <p className="text-muted-foreground">余额：{formatMoneyCents(normalizedBalanceAmountCents)}</p>
+            <p className="text-muted-foreground">余额：{desktopClientBillingEnabled && desktopBillingState.status === "offline" ? "离线模式" : formatMoneyCents(desktopClientBalanceAmountCents)}</p>
             <p className="text-muted-foreground">
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -4631,14 +5701,23 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 <TooltipContent className="max-w-xs">ASR 按素材秒数折算分钟估算；MT 按 qwen-mt-flash 的 1k Tokens 费率与常见字幕量近似估算，最终以实际翻译 Tokens 结算。</TooltipContent>
               </Tooltip>
               ：
-              {fasterWhisperDesktopLocalSelected
-                ? "Bottle 1.0 当前走本机运行，暂不展示 ASR 价格估算。"
+              {desktopClientBillingEnabled
+                ? selectedRate
+                  ? durationSec != null
+                    ? `${formatMoneyCents(desktopClientEstimatedChargeCents)}（ASR ${formatMoneyCents(estimatedAsrChargeCents)} + MT 约 ${formatMoneyCents(estimatedMtChargeCents)}）`
+                    : "选择文件后显示"
+                  : "该模型未配置 ASR 单价"
                 : selectedRate
                 ? durationSec != null
                   ? `${formatMoneyCents(estimatedTotalChargeCents)}（ASR ${formatMoneyCents(estimatedAsrChargeCents)} + MT 约 ${formatMoneyCents(estimatedMtChargeCents)}）`
                   : "选择文件后显示"
                 : "该模型未配置 ASR 单价"}
             </p>
+            {desktopClientBillingEnabled && desktopBillingState.message ? (
+              <p className={cn("text-xs", desktopBillingState.status === "insufficient" || desktopBillingState.status === "offline" || desktopBillingState.status === "error" ? getUploadToneStyles("recoverable").text : "text-muted-foreground")}>
+                {desktopBillingState.message}
+              </p>
+            ) : null}
           </AlertDescription>
         </Alert>
 
@@ -4911,6 +5990,17 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
           </Alert>
         ) : null}
 
+        {offlineHintText && !offlineBannerMessage ? (
+          <Alert className="border-yellow-300 bg-yellow-50 text-yellow-800 dark:border-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300">
+            <AlertDescription className="flex items-center gap-2">
+              <span>{offlineHintText}</span>
+              {selectedAsrModel === FASTER_WHISPER_MODEL && (
+                <span className="text-xs opacity-80">（本地生成仍可使用）</span>
+              )}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
         {showMediaPreview ? (
           <div className="relative overflow-hidden rounded-2xl border bg-muted/10 p-1">
             <MediaCover
@@ -5036,6 +6126,20 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               }}
               disabled={loading || localModeBusy}
             />
+            <input
+              ref={importFileInputRef}
+              type="file"
+              accept={`${BOTTLE_LESSON_FILE_SUFFIX},application/json,.json`}
+              className="hidden"
+              onChange={(event) => {
+                const nextFile = event.target.files?.[0] ?? null;
+                if (nextFile) {
+                  void handleImportLessonFile(nextFile);
+                }
+                event.target.value = "";
+              }}
+              disabled={loading || localModeBusy || importBusy}
+            />
             {desktopLinkModeActive ? (
               <div className="space-y-2">
                 <input
@@ -5074,6 +6178,25 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 >
                   选择文件
                 </Button>
+                {desktopRuntimeAvailable && hasLocalCourseGeneratorBridge() ? (
+                  <Button
+                    type="button"
+                    variant="default"
+                    className="h-9 px-4"
+                    onClick={() => {
+                      void selectDesktopLocalSourceFile().then((selected) => {
+                        if (selected) {
+                          void submit();
+                        }
+                      }).catch((error) => {
+                        toast.error(error instanceof Error && error.message ? error.message : "选择本地文件失败");
+                      });
+                    }}
+                    disabled={loading || localModeBusy}
+                  >
+                    本地生成
+                  </Button>
+                ) : null}
                 {!desktopRuntimeAvailable ? (
                   <Button type="button" variant="default" className="h-9 px-4" onClick={() => setLinkDialogOpen(true)} disabled={loading || localModeBusy}>
                     提取视频
@@ -5081,6 +6204,44 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                 ) : null}
               </div>
             )}
+            {localLessonImportAvailable ? (
+              <div
+                className={cn(
+                  "rounded-2xl border border-dashed px-4 py-3 transition-colors",
+                  importDropActive
+                    ? "border-primary/60 bg-primary/5"
+                    : "border-border/70 bg-muted/10",
+                )}
+                onDragEnter={handleImportDropHover}
+                onDragOver={handleImportDropHover}
+                onDragLeave={handleImportDropLeave}
+                onDrop={(event) => {
+                  void handleImportDrop(event);
+                }}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">导入课程</p>
+                    <p className="text-xs text-muted-foreground">支持拖拽或选择 `.bottle-lesson.json` 文件，导入后会写入本地课程列表。</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 px-4"
+                    onClick={() => {
+                      if (importFileInputRef.current) {
+                        importFileInputRef.current.value = "";
+                        importFileInputRef.current.click();
+                      }
+                    }}
+                    disabled={loading || localModeBusy || importBusy}
+                  >
+                    <FileJson className="size-4" />
+                    {importBusy ? "导入中..." : "导入课程"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {serviceTaskStopActionsVisible ? (
@@ -5131,16 +6292,16 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
                     : getUploadToneStyles("selected").button,
               )}
               data-guide-id="upload-submit"
-              onClick={localTranscribing ? () => void stopLocalRecognition() : desktopLinkImporting ? () => void cancelDesktopLinkImport() : undefined}
+                  onClick={localTranscribing || phase === DESKTOP_LOCAL_GENERATING_PHASE ? () => void stopLocalRecognition() : desktopLinkImporting ? () => void cancelDesktopLinkImport() : undefined}
             >
-              {localTranscribing ? (
+              {localTranscribing || phase === DESKTOP_LOCAL_GENERATING_PHASE ? (
                 "停止生成"
               ) : desktopLinkImporting ? (
                 "取消下载"
-              ) : loading ? (
+              ) : loading && (phase === "uploading" || phase === "processing" || phase === DESKTOP_LOCAL_GENERATING_PHASE) ? (
                 <span className="inline-flex items-center gap-2">
                   <Loader2 className="size-4 animate-spin" />
-                  {phase === "uploading" ? "上传中" : desktopLinkModeActive ? "下载中" : "生成中"}
+                  {phase === "uploading" ? "上传中" : desktopLinkModeActive ? "下载中" : phase === DESKTOP_LOCAL_GENERATING_PHASE ? "本机生成中" : "生成中"}
                 </span>
               ) : phase === "success" ? (
                 "已生成完成"
@@ -5288,6 +6449,96 @@ export function UploadPanel({ accessToken, isActivePanel = true, onCreated, bala
               </Button>
             </div>
           </div>
+        ) : null}
+
+        <Dialog
+          open={Boolean(pendingLessonImport)}
+          onOpenChange={(open) => {
+            if (!open && !importBusy) {
+              setPendingLessonImport(null);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>检测到课程 ID 冲突</DialogTitle>
+              <DialogDescription>
+                导入文件 `{pendingLessonImport?.fileName || "课程文件"}` 的课程 ID 已存在。你可以覆盖现有记录，或导入为一个新副本。
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-9 px-3"
+                onClick={() => setPendingLessonImport(null)}
+                disabled={importBusy}
+              >
+                取消
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 px-3"
+                onClick={() => void resolvePendingLessonImport("copy")}
+                disabled={importBusy}
+              >
+                新建副本
+              </Button>
+              <Button
+                type="button"
+                className="h-9 px-3"
+                onClick={() => void resolvePendingLessonImport("overwrite")}
+                disabled={importBusy}
+              >
+                覆盖导入
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {desktopRuntimeAvailable ? (
+          <Dialog open={diagnosticsDialogOpen} onOpenChange={setDiagnosticsDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>客户端诊断</DialogTitle>
+                <DialogDescription>查看当前桌面客户端版本、云端连接、本地 Helper 与更新状态，便于快速排查用户环境问题。</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {desktopDiagnosticsItems.map((item) => (
+                    <div key={item.key} className="space-y-2 rounded-2xl border bg-muted/15 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="text-sm font-medium">{item.title}</p>
+                        <Badge variant="outline" className={getDiagnosticBadgeClassName(item.badgeTone)}>
+                          {item.badgeLabel}
+                        </Badge>
+                      </div>
+                      <p className="text-xs leading-5 text-muted-foreground break-words">{item.detail}</p>
+                    </div>
+                  ))}
+                </div>
+                {desktopDiagnosticsError ? (
+                  <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-700">{desktopDiagnosticsError}</div>
+                ) : null}
+                <div className="rounded-2xl border bg-muted/10 px-4 py-3 text-xs text-muted-foreground">
+                  {desktopDiagnosticsLoading ? "正在刷新客户端诊断信息..." : "诊断信息会在打开面板时自动刷新；如状态变化较快，可手动刷新一次。"}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="ghost" className="h-9 px-3" onClick={() => setDiagnosticsDialogOpen(false)}>
+                  关闭
+                </Button>
+                <Button type="button" variant="outline" className="h-9 px-3" onClick={() => void refreshDesktopDiagnostics()} disabled={desktopDiagnosticsLoading}>
+                  <RefreshCcw className={cn("size-4", desktopDiagnosticsLoading ? "animate-spin" : "")} />
+                  刷新状态
+                </Button>
+                <Button type="button" className="h-9 px-3" onClick={() => void handleOpenLogsDirectory()}>
+                  打开日志目录
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         ) : null}
 
         <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>

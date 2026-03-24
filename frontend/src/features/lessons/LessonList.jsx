@@ -1,7 +1,9 @@
-import { Clock3, History, MoreVertical, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
+import { Clock3, Download, History, MoreVertical, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { TOKEN_KEY } from "../../app/authStorage";
 import { cn } from "../../lib/utils";
+import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import {
   Alert,
   AlertDescription,
@@ -46,6 +48,162 @@ import {
 
 /** @typedef {import("./types").Lesson} Lesson */
 /** @typedef {import("./types").LessonSentence} LessonSentence */
+
+const BOTTLE_LESSON_SCHEMA_VERSION = "1";
+const BOTTLE_LESSON_FILE_SUFFIX = ".bottle-lesson.json";
+const BOTTLE_DESKTOP_APP_VERSION = "0.2.0";
+
+function hasLocalDbBridge() {
+  return typeof window !== "undefined" && typeof window.localDb?.getCourses === "function";
+}
+
+function sanitizeExportFileName(value, fallback = "lesson") {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return normalized || fallback;
+}
+
+function buildBottleLessonFilename(lesson) {
+  const title = sanitizeExportFileName(lesson?.title, "");
+  const lessonId = sanitizeExportFileName(lesson?.id, "lesson");
+  return `${title || lessonId}${BOTTLE_LESSON_FILE_SUFFIX}`;
+}
+
+function downloadJsonFile(fileName, payload) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
+function normalizeExportLesson(lesson = {}, source = "remote") {
+  const metadata = lesson?.metadata && typeof lesson.metadata === "object" && !Array.isArray(lesson.metadata) ? lesson.metadata : {};
+  return {
+    id: String(lesson?.id ?? "").trim(),
+    title: String(lesson?.title || ""),
+    source_filename: String(lesson?.source_filename || ""),
+    created_at: String(lesson?.created_at || ""),
+    updated_at: String(lesson?.updated_at || lesson?.created_at || ""),
+    source_duration_ms: Math.max(0, Number(lesson?.source_duration_ms ?? lesson?.duration_ms ?? 0) || 0),
+    media_storage: String(lesson?.media_storage || metadata.media_storage || source),
+    asr_model: String(lesson?.asr_model || ""),
+    metadata: {
+      ...metadata,
+      export_source: source,
+    },
+  };
+}
+
+function normalizeExportSentence(sentence = {}, index = 0) {
+  return {
+    id: sentence?.id == null ? `${index}` : String(sentence.id),
+    order_index: Number(sentence?.order_index ?? sentence?.sentence_index ?? index) || index,
+    text_en: String(sentence?.text_en || sentence?.english_text || sentence?.text || ""),
+    text_zh: String(sentence?.text_zh || sentence?.chinese_text || sentence?.translation || ""),
+    begin_ms: Math.max(0, Number(sentence?.begin_ms ?? sentence?.start_ms ?? 0) || 0),
+    end_ms: Math.max(0, Number(sentence?.end_ms ?? sentence?.end_time ?? 0) || 0),
+    tokens: Array.isArray(sentence?.tokens) ? sentence.tokens : Array.isArray(sentence?.words) ? sentence.words : [],
+    audio_url: sentence?.audio_url ?? null,
+    variant_key: String(sentence?.variant_key || ""),
+  };
+}
+
+function normalizeExportProgress(progress = {}) {
+  return {
+    current_sentence_index: Math.max(0, Number(progress?.current_sentence_index ?? progress?.current_index ?? 0) || 0),
+    completed_sentence_indexes: Array.isArray(progress?.completed_sentence_indexes)
+      ? progress.completed_sentence_indexes
+      : Array.isArray(progress?.completed_indices)
+        ? progress.completed_indices
+        : [],
+    last_played_at_ms: Math.max(0, Number(progress?.last_played_at_ms || 0) || 0),
+    started_at: progress?.started_at || null,
+    updated_at: progress?.updated_at || "",
+    user_id: String(progress?.user_id || ""),
+  };
+}
+
+function buildBottleLessonPayload({ lesson, sentences, progress, source }) {
+  return {
+    schema_version: BOTTLE_LESSON_SCHEMA_VERSION,
+    exported_at: new Date().toISOString(),
+    app_version: BOTTLE_DESKTOP_APP_VERSION,
+    lesson: normalizeExportLesson(lesson, source),
+    sentences: (Array.isArray(sentences) ? sentences : []).map((item, index) => normalizeExportSentence(item, index)),
+    progress: normalizeExportProgress(progress),
+  };
+}
+
+function buildLocalLessonRecord(course, sentences, progress) {
+  const metadata = course?.metadata && typeof course.metadata === "object" && !Array.isArray(course.metadata) ? course.metadata : {};
+  const progressSnapshot = normalizeExportProgress(progress);
+  const normalizedSentences = (Array.isArray(sentences) ? sentences : []).map((item, index) => normalizeExportSentence(item, index));
+  return {
+    id: String(course?.id ?? ""),
+    title: String(course?.title || metadata.title || "未命名课程"),
+    source_filename: String(course?.source_filename || metadata.source_filename || "本地导入课程"),
+    created_at: String(course?.created_at || ""),
+    updated_at: String(course?.updated_at || course?.created_at || ""),
+    source_duration_ms: Math.max(0, Number(metadata.source_duration_ms ?? course?.duration_ms ?? 0) || 0),
+    media_storage: "local_import",
+    asr_model: String(course?.asr_model || metadata.asr_model || ""),
+    sentences: normalizedSentences,
+    progress: progressSnapshot,
+    __bottleLocal: true,
+    __bottleCardMeta: {
+      sentenceCount: normalizedSentences.length,
+      progress: progressSnapshot,
+    },
+    __bottleExportPayload: buildBottleLessonPayload({
+      lesson: {
+        ...course,
+        source_duration_ms: metadata.source_duration_ms ?? course?.duration_ms ?? 0,
+        media_storage: metadata.media_storage || "local_import",
+        metadata,
+      },
+      sentences: normalizedSentences,
+      progress: progressSnapshot,
+      source: "local_db",
+    }),
+  };
+}
+
+async function buildRemoteLessonExportPayload(lessonId) {
+  const accessToken = typeof window !== "undefined" && window.localStorage ? window.localStorage.getItem(TOKEN_KEY) || "" : "";
+  if (!accessToken) {
+    throw new Error("当前未登录，无法导出云端课程。");
+  }
+
+  const [detailResp, progressResp] = await Promise.all([
+    api(`/api/lessons/${lessonId}`, {}, accessToken),
+    api(`/api/lessons/${lessonId}/progress`, {}, accessToken),
+  ]);
+  const detailData = await parseResponse(detailResp);
+  const progressData = await parseResponse(progressResp);
+
+  if (!detailResp.ok) {
+    throw new Error(toErrorText(detailData, "加载课程详情失败"));
+  }
+  if (!progressResp.ok && progressResp.status !== 404) {
+    throw new Error(toErrorText(progressData, "加载课程进度失败"));
+  }
+
+  return buildBottleLessonPayload({
+    lesson: detailData,
+    sentences: Array.isArray(detailData?.sentences) ? detailData.sentences : [],
+    progress: progressResp.ok ? progressData : null,
+    source: "remote_api",
+  });
+}
 
 function formatCreatedAt(createdAt) {
   if (!createdAt) return "时间未知";
@@ -125,6 +283,7 @@ export function LessonList({
   loadingMore = false,
   onLoadMore = null,
 }) {
+  const [localLessons, setLocalLessons] = useState([]);
   const [renamingLesson, setRenamingLesson] = useState(null);
   const [renameTitle, setRenameTitle] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
@@ -134,6 +293,7 @@ export function LessonList({
   const [menuLessonId, setMenuLessonId] = useState(null);
   const [restoringLessonId, setRestoringLessonId] = useState(null);
   const [status, setStatus] = useState("");
+  const [exportingLessonId, setExportingLessonId] = useState("");
   const [selectionMode, setSelectionMode] = useState("none");
   const [selectedLessonIds, setSelectedLessonIds] = useState([]);
   const [excludedLessonIds, setExcludedLessonIds] = useState([]);
@@ -142,7 +302,14 @@ export function LessonList({
   const [recordingShortcutActionId, setRecordingShortcutActionId] = useState("");
   const restoreInputRef = useRef(null);
   const restoreTargetRef = useRef(null);
-  const loadedLessonIds = useMemo(() => lessons.map((lesson) => Number(lesson.id || 0)).filter((item) => item > 0), [lessons]);
+  const visibleLessons = useMemo(() => {
+    if (!localLessons.length) {
+      return lessons;
+    }
+    const localLessonIdSet = new Set(localLessons.map((lesson) => String(lesson?.id ?? "")));
+    return [...localLessons, ...lessons.filter((lesson) => !localLessonIdSet.has(String(lesson?.id ?? "")))];
+  }, [lessons, localLessons]);
+  const loadedLessonIds = useMemo(() => visibleLessons.map((lesson) => Number(lesson.id || 0)).filter((item) => item > 0), [visibleLessons]);
   const loadedLessonIdSet = useMemo(() => new Set(loadedLessonIds), [loadedLessonIds]);
   const selectedLessonIdSet = useMemo(() => new Set(selectedLessonIds), [selectedLessonIds]);
   const excludedLessonIdSet = useMemo(() => new Set(excludedLessonIds), [excludedLessonIds]);
@@ -191,13 +358,14 @@ export function LessonList({
 
   const cards = useMemo(
     () =>
-      lessons.map((lesson) => {
-        const meta = lessonCardMetaMap[lesson.id] || {};
+      visibleLessons.map((lesson) => {
+        const isLocalLesson = Boolean(lesson?.__bottleLocal);
+        const meta = lesson?.__bottleCardMeta || lessonCardMetaMap[lesson.id] || {};
         const mediaMeta = lessonMediaMetaMap[lesson.id] || {};
         const sentenceCount = Number(meta.sentenceCount || lesson.sentences?.length || 0);
         const progressState = buildLessonProgressState(meta.progress, sentenceCount);
-        const actionLabel = hasProgressSnapshot(meta.progress) ? "继续学习" : "开始学习";
-        const needsBinding = lesson.media_storage === "client_indexeddb" && !mediaMeta.hasMedia;
+        const actionLabel = isLocalLesson ? "本地导入" : hasProgressSnapshot(meta.progress) ? "继续学习" : "开始学习";
+        const needsBinding = !isLocalLesson && lesson.media_storage === "client_indexeddb" && !mediaMeta.hasMedia;
         return {
           lesson,
           mediaMeta,
@@ -205,11 +373,13 @@ export function LessonList({
           progressState,
           actionLabel,
           needsBinding,
+          isLocalLesson,
           createdAtLabel: formatCreatedAt(lesson.created_at),
         };
       }),
-    [lessonCardMetaMap, lessonMediaMetaMap, lessons],
+    [lessonCardMetaMap, lessonMediaMetaMap, visibleLessons],
   );
+  const defaultGuideLessonId = useMemo(() => cards.find((item) => !item.isLocalLesson)?.lesson.id ?? cards[0]?.lesson.id ?? 0, [cards]);
   const allHistorySelected = selectionMode === "all" && Number(totalLessons || 0) > 0;
   const selectedCount = allHistorySelected ? Math.max(0, Number(totalLessons || 0) - excludedLessonIds.length) : selectedLessonIds.length;
   const hasSelection = selectedCount > 0;
@@ -268,9 +438,73 @@ export function LessonList({
     void onStartLesson?.(lessonId);
   }
 
+  async function refreshLocalLessons() {
+    if (!hasLocalDbBridge()) {
+      setLocalLessons([]);
+      return;
+    }
+    try {
+      const courses = await window.localDb.getCourses();
+      const nextLocalLessons = await Promise.all(
+        (Array.isArray(courses) ? courses : []).map(async (course) => {
+          const [sentences, progress] = await Promise.all([
+            window.localDb.getSentences(course.id).catch(() => []),
+            window.localDb.getProgress(course.id).catch(() => null),
+          ]);
+          return buildLocalLessonRecord(course, sentences, progress);
+        }),
+      );
+      setLocalLessons(nextLocalLessons);
+    } catch (_) {
+      setLocalLessons([]);
+    }
+  }
+
+  async function handleExportLesson(lesson) {
+    if (!lesson?.id) return;
+    const normalizedLessonId = String(lesson.id);
+    setExportingLessonId(normalizedLessonId);
+    setStatus("");
+    try {
+      const payload = lesson.__bottleExportPayload || (lesson.__bottleLocal ? null : await buildRemoteLessonExportPayload(lesson.id));
+      if (!payload) {
+        throw new Error("当前课程缺少可导出的本地数据。");
+      }
+      downloadJsonFile(buildBottleLessonFilename(lesson), payload);
+      setStatus(`已导出课程：${lesson.title || normalizedLessonId}`);
+    } catch (error) {
+      setStatus(error instanceof Error && error.message ? error.message : "导出课程失败");
+    } finally {
+      setExportingLessonId("");
+    }
+  }
+
   useEffect(() => {
     writeLearningSettings(learningSettings);
   }, [learningSettings]);
+
+  useEffect(() => {
+    let disposed = false;
+
+    const load = async () => {
+      if (disposed) return;
+      await refreshLocalLessons();
+    };
+
+    void load();
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handleLocalLessonUpdated = () => {
+      void load();
+    };
+    window.addEventListener(LOCAL_LESSON_UPDATE_EVENT, handleLocalLessonUpdated);
+    return () => {
+      disposed = true;
+      window.removeEventListener(LOCAL_LESSON_UPDATE_EVENT, handleLocalLessonUpdated);
+    };
+  }, []);
 
   useEffect(() => {
     if (!recordingShortcutActionId || typeof window === "undefined") return undefined;
@@ -315,21 +549,21 @@ export function LessonList({
   }, [learningSettings.shortcuts, recordingShortcutActionId]);
 
   useEffect(() => {
-    if (renamingLesson && !lessons.some((item) => item.id === renamingLesson.id)) {
+    if (renamingLesson && !visibleLessons.some((item) => item.id === renamingLesson.id)) {
       setRenamingLesson(null);
       setRenameTitle("");
     }
-    if (deletingLesson && !lessons.some((item) => item.id === deletingLesson.id)) {
+    if (deletingLesson && !visibleLessons.some((item) => item.id === deletingLesson.id)) {
       setDeletingLesson(null);
     }
-    if (menuLessonId && !lessons.some((item) => item.id === menuLessonId)) {
+    if (menuLessonId && !visibleLessons.some((item) => item.id === menuLessonId)) {
       setMenuLessonId(null);
     }
-    if (restoringLessonId && !lessons.some((item) => item.id === restoringLessonId)) {
+    if (restoringLessonId && !visibleLessons.some((item) => item.id === restoringLessonId)) {
       setRestoringLessonId(null);
       restoreTargetRef.current = null;
     }
-  }, [deletingLesson, lessons, menuLessonId, renamingLesson, restoringLessonId]);
+  }, [deletingLesson, menuLessonId, renamingLesson, restoringLessonId, visibleLessons]);
 
   useEffect(() => {
     setSelectedLessonIds((current) => current.filter((lessonId) => loadedLessonIdSet.has(Number(lessonId || 0))));
@@ -611,9 +845,10 @@ export function LessonList({
 
         {!loading ? (
           <div className="space-y-3">
-            {cards.map(({ lesson, mediaMeta, sentenceCount, progressState, actionLabel, needsBinding, createdAtLabel }) => {
+            {cards.map(({ lesson, mediaMeta, sentenceCount, progressState, actionLabel, needsBinding, isLocalLesson, createdAtLabel }) => {
               const selected = currentLessonId === lesson.id;
-              const isGuideTarget = Number(guideTargetLessonId || 0) > 0 ? Number(guideTargetLessonId) === Number(lesson.id) : lesson.id === cards[0]?.lesson.id;
+              const isGuideTarget =
+                Number(guideTargetLessonId || 0) > 0 ? Number(guideTargetLessonId) === Number(lesson.id) : lesson.id === defaultGuideLessonId;
               return (
                 <div
                   key={lesson.id}
@@ -634,7 +869,7 @@ export function LessonList({
                         type="checkbox"
                         className="size-4 rounded border-input accent-primary"
                         checked={isLessonSelected(lesson.id)}
-                        disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                        disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || isLocalLesson}
                         onChange={(event) => toggleLessonSelection(lesson.id, event.target.checked)}
                         onClick={(event) => event.stopPropagation()}
                         aria-label={`选择课程 ${lesson.title || lesson.source_filename || lesson.id}`}
@@ -643,7 +878,12 @@ export function LessonList({
                     <button
                       type="button"
                       className="flex min-w-0 flex-1 flex-col items-stretch gap-4 text-left sm:flex-row"
-                      onClick={() => startLessonFromHistory(lesson.id)}
+                      onClick={() => {
+                        if (!isLocalLesson) {
+                          startLessonFromHistory(lesson.id);
+                        }
+                      }}
+                      disabled={isLocalLesson}
                     >
                       <MediaCover
                         coverDataUrl={mediaMeta.coverDataUrl}
@@ -657,6 +897,15 @@ export function LessonList({
                           <div className="flex flex-wrap items-center gap-2">
                             <div className="truncate text-lg font-semibold">{lesson.title}</div>
                             {selected ? <Badge variant="outline">当前课程</Badge> : null}
+                            {isLocalLesson ? (
+                              <Badge variant="outline" className="border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
+                                本地课程
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="border-green-300 bg-green-50 text-green-700 dark:border-green-700 dark:bg-green-900/30 dark:text-green-300">
+                                云端课程
+                              </Badge>
+                            )}
                             {needsBinding ? <Badge variant="secondary">待恢复视频</Badge> : null}
                             {selected && currentLessonNeedsBinding ? <Badge variant="secondary">需绑定本地视频</Badge> : null}
                           </div>
@@ -728,73 +977,86 @@ export function LessonList({
                         type="button"
                         className="min-h-11 flex-1 md:w-full"
                         onClick={() => startLessonFromHistory(lesson.id)}
+                        disabled={isLocalLesson}
                         data-guide-id={isGuideTarget ? "history-start-latest" : undefined}
                       >
                         <Play className="size-4" />
                         {actionLabel}
                       </Button>
-                      <Popover
-                        open={menuLessonId === lesson.id}
-                        onOpenChange={(open) => {
-                          setMenuLessonId(open ? lesson.id : null);
-                        }}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="min-h-11 flex-1 md:w-full"
+                        onClick={() => void handleExportLesson(lesson)}
+                        disabled={Boolean(exportingLessonId) || renameBusy || deleteBusy || Boolean(restoringLessonId)}
                       >
-                        <PopoverTrigger asChild>
-                          <Button
-                            type="button"
-                            size="icon-sm"
-                            variant="outline"
-                            className="min-h-11 w-11 shrink-0 self-stretch md:w-auto md:self-end"
-                            aria-label="open-lesson-menu"
-                            disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
-                          >
-                            <MoreVertical className="size-4" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent align="end" sideOffset={8} className="w-[min(92vw,14rem)] p-2">
-                          <div className="flex flex-col gap-1">
+                        <Download className="size-4" />
+                        {exportingLessonId === String(lesson.id) ? "导出中..." : "导出"}
+                      </Button>
+                      {!isLocalLesson ? (
+                        <Popover
+                          open={menuLessonId === lesson.id}
+                          onOpenChange={(open) => {
+                            setMenuLessonId(open ? lesson.id : null);
+                          }}
+                        >
+                          <PopoverTrigger asChild>
                             <Button
                               type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="w-full justify-start"
-                              onClick={() => {
-                                openRenameDialog(lesson);
-                                setMenuLessonId(null);
-                              }}
+                              size="icon-sm"
+                              variant="outline"
+                              className="min-h-11 w-11 shrink-0 self-stretch md:w-auto md:self-end"
+                              aria-label="open-lesson-menu"
                               disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
                             >
-                              <Pencil className="size-4" />
-                              修改标题
+                              <MoreVertical className="size-4" />
                             </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="w-full justify-start"
-                              onClick={() => openRestorePicker(lesson)}
-                              disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
-                            >
-                              <RotateCcw className="size-4" />
-                              恢复本地视频
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="w-full justify-start text-destructive hover:text-destructive"
-                              onClick={() => {
-                                setDeletingLesson(lesson);
-                                setMenuLessonId(null);
-                              }}
-                              disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
-                            >
-                              <Trash2 className="size-4" />
-                              删除
-                            </Button>
-                          </div>
-                        </PopoverContent>
-                      </Popover>
+                          </PopoverTrigger>
+                          <PopoverContent align="end" sideOffset={8} className="w-[min(92vw,14rem)] p-2">
+                            <div className="flex flex-col gap-1">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="w-full justify-start"
+                                onClick={() => {
+                                  openRenameDialog(lesson);
+                                  setMenuLessonId(null);
+                                }}
+                                disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                              >
+                                <Pencil className="size-4" />
+                                修改标题
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="w-full justify-start"
+                                onClick={() => openRestorePicker(lesson)}
+                                disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                              >
+                                <RotateCcw className="size-4" />
+                                恢复本地视频
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="w-full justify-start text-destructive hover:text-destructive"
+                                onClick={() => {
+                                  setDeletingLesson(lesson);
+                                  setMenuLessonId(null);
+                                }}
+                                disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                              >
+                                <Trash2 className="size-4" />
+                                删除
+                              </Button>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      ) : null}
                     </div>
                   </div>
                 </div>

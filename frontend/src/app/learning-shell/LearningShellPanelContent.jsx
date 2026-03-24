@@ -62,6 +62,7 @@ export function LearningShellPanelContent({
   guideTargetLessonId,
   wordbookRefreshToken = 0,
   onWordbookChanged,
+  isOnline = true,
 }) {
   const publicPanels = new Set(["getting-started"]);
   const contentAlert = globalStatus ? (
@@ -136,6 +137,7 @@ export function LearningShellPanelContent({
             onWalletChanged={onWalletChanged}
             onTaskStateChange={onTaskStateChange}
             onNavigateToLesson={onNavigateToGeneratedLesson}
+            isOnline={isOnline}
           />
         </Suspense>
       );

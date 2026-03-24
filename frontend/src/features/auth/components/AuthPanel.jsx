@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { USER_EMAIL_KEY, USER_ID_KEY, USER_IS_ADMIN_KEY } from "../../../app/authStorage";
+import { persistAuthSession } from "../../../app/authStorage";
 import { api, parseResponse, toErrorText } from "../../../shared/api/client";
 import { ENDPOINTS } from "../../../shared/api/endpoints";
 import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, Input, Label } from "../../../shared/ui";
@@ -13,6 +13,7 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
   const setAccessToken = useAppStore((state) => state.setAccessToken);
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
   const setGlobalStatus = useAppStore((state) => state.setGlobalStatus);
+  const restoreDesktopSession = useAppStore((state) => state.restoreDesktopSession);
   const authStatus = useAppStore((state) => state.authStatus);
   const authStatusMessage = useAppStore((state) => state.authStatusMessage);
   const hasStoredToken = useAppStore((state) => state.hasStoredToken);
@@ -20,6 +21,25 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    let canceled = false;
+
+    async function tryRestoreSession() {
+      const restoredAccessToken = await restoreDesktopSession();
+      if (canceled || !restoredAccessToken) {
+        return;
+      }
+      onAuthed({
+        access_token: restoredAccessToken,
+      });
+    }
+
+    void tryRestoreSession();
+    return () => {
+      canceled = true;
+    };
+  }, [onAuthed, restoreDesktopSession]);
 
   async function submit(path) {
     setLoading(true);
@@ -37,19 +57,7 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
         toast.error(message);
         return;
       }
-      localStorage.setItem(tokenKey, data.access_token);
-      localStorage.setItem(refreshKey, data.refresh_token);
-      if (data.user?.id) {
-        localStorage.setItem(USER_ID_KEY, String(data.user.id));
-      } else {
-        localStorage.removeItem(USER_ID_KEY);
-      }
-      if (data.user?.email) {
-        localStorage.setItem(USER_EMAIL_KEY, String(data.user.email));
-      } else {
-        localStorage.removeItem(USER_EMAIL_KEY);
-      }
-      localStorage.setItem(USER_IS_ADMIN_KEY, data.user?.is_admin ? "true" : "false");
+      await persistAuthSession(data, { tokenKey, refreshKey });
       setCurrentUser(data.user || null);
       setAccessToken(data.access_token);
       setStatus("登录成功，正在进入首页...");

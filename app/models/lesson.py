@@ -23,6 +23,7 @@ class Lesson(Base):
     source_duration_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="ready", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
 
     user: Mapped["User"] = relationship(back_populates="lessons")
     sentences: Mapped[list["LessonSentence"]] = relationship(back_populates="lesson", cascade="all, delete-orphan")

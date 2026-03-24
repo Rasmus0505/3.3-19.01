@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
@@ -8,8 +9,15 @@ from sqlalchemy.orm import Session
 from app.models import Lesson, LessonProgress, LessonSentence
 
 
-def list_lessons_for_user(db: Session, user_id: int) -> list[Lesson]:
-    return list(db.scalars(select(Lesson).where(Lesson.user_id == user_id).order_by(Lesson.created_at.desc(), Lesson.id.desc())).all())
+def list_lessons_for_user(db: Session, user_id: int, since: str | None = None) -> list[Lesson]:
+    stmt = select(Lesson).where(Lesson.user_id == user_id)
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+            stmt = stmt.where(Lesson.updated_at > since_dt)
+        except Exception:
+            pass
+    return list(db.scalars(stmt.order_by(Lesson.updated_at.desc(), Lesson.id.desc())).all())
 
 
 def list_lesson_catalog_for_user(
