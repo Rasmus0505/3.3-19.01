@@ -20,7 +20,6 @@ from sqlalchemy import event, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps.auth import get_admin_user
-from app.api.routers import local_asr_assets as local_asr_assets_router
 from app.core.config import MEDIA_STORAGE_ROOT_DIR
 from app.db import Base, create_database_engine, get_db
 from app.infra.translation_qwen_mt import TranslationError
@@ -48,6 +47,7 @@ from app.services.faster_whisper_asr import get_faster_whisper_settings
 
 FASTER_WHISPER_ASR_MODEL = "faster-whisper-medium"
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
+local_asr_assets_router = importlib.import_module("app.api.routers.local_asr_assets")
 
 
 def _frontend_build_marker_from_index() -> str:
@@ -1794,12 +1794,18 @@ def test_startup_without_dashscope_key_keeps_health_alive(monkeypatch, tmp_path)
 
     tmp_base = tmp_path / "startup"
     prefetch_called = {"count": 0}
+    bundle_summary_called = {"count": 0}
     monkeypatch.setattr(app_main, "BASE_TMP_DIR", tmp_base)
     monkeypatch.setattr(app_main, "BASE_DATA_DIR", tmp_base / "data")
     monkeypatch.setattr(app_main, "DASHSCOPE_API_KEY", "")
     monkeypatch.setattr(app_main, "_refresh_optional_runtime_status", lambda _app: None)
     monkeypatch.setattr(
-        app_main.local_asr_assets,
+        app_main,
+        "get_downloadable_model_bundle_summaries",
+        lambda: bundle_summary_called.__setitem__("count", bundle_summary_called["count"] + 1) or [],
+    )
+    monkeypatch.setattr(
+        app_main,
         "schedule_local_asr_asset_prefetch",
         lambda: prefetch_called.__setitem__("count", prefetch_called["count"] + 1) or True,
     )
@@ -1817,6 +1823,7 @@ def test_startup_without_dashscope_key_keeps_health_alive(monkeypatch, tmp_path)
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
     assert resp.json()["ready"] is False
+    assert bundle_summary_called["count"] == 1
     assert prefetch_called["count"] == 1
 
 
