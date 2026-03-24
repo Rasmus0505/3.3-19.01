@@ -260,6 +260,22 @@ def _install_bundle_from_source(spec: dict[str, object]) -> dict[str, object]:
 
 @router.get("/status")
 def get_local_asr_asset_status():
+    try:
+        summaries = get_downloadable_model_bundle_summaries()
+        if summaries:
+            first = summaries[0]
+            return {
+                "ok": True,
+                "model_key": str(first.get("model_key", "")),
+                "cache_version": str(first.get("model_version", "")),
+                "allowed_files": [f["name"] for f in first.get("files", [])],
+                "cache_dir": str(first.get("bundle_dir", "")),
+                "cached": bool(first.get("available", False)),
+                "current": bool(first.get("available", False)),
+                "missing_files": [],
+            }
+    except Exception:
+        pass
     return _legacy_status_payload()
 
 

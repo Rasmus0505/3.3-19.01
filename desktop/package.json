@@ -38,6 +38,14 @@
         "to": "runtime-defaults.json"
       },
       {
+        "from": "../tools/ffmpeg/bin",
+        "to": "runtime-tools/ffmpeg"
+      },
+      {
+        "from": "../tools/yt-dlp",
+        "to": "runtime-tools/yt-dlp"
+      },
+      {
         "from": "../asr-test/models/faster-distil-small.en",
         "to": "preinstalled-models/faster-distil-small.en"
       }

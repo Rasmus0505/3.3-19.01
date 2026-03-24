@@ -23,6 +23,11 @@ const writeRuntimeDefaultsScriptPath = path.join(scriptsDir, "write-runtime-defa
 const builderCliPath = path.join(desktopRoot, "node_modules", "electron-builder", "cli.js");
 const electronInstallScriptPath = path.join(desktopRoot, "node_modules", "electron", "install.js");
 const bundledModelSourceDir = path.join(repoRoot, "asr-test", "models", "faster-distil-small.en");
+const bundledFfmpegDir = path.join(repoRoot, "tools", "ffmpeg", "bin");
+const bundledFfmpegPath = path.join(bundledFfmpegDir, "ffmpeg.exe");
+const bundledFfprobePath = path.join(bundledFfmpegDir, "ffprobe.exe");
+const bundledYtdlpDir = path.join(repoRoot, "tools", "yt-dlp");
+const bundledYtdlpPath = path.join(bundledYtdlpDir, "yt-dlp.exe");
 
 function resolveElectronCacheDir() {
   const configured = String(process.env.ELECTRON_CACHE || "").trim();
@@ -126,12 +131,37 @@ async function verifyInstallerArtifacts(outputDir) {
   }
 }
 
+function verifyBundledRuntimeInputs() {
+  const missing = [];
+  for (const filePath of [bundledFfmpegPath, bundledFfprobePath, bundledYtdlpPath]) {
+    if (!fs.existsSync(filePath)) {
+      missing.push(filePath);
+    }
+  }
+  if (missing.length > 0) {
+    throw new Error(`Bundled desktop runtime tools are missing: ${missing.join(", ")}`);
+  }
+}
+
+async function verifyBundledRuntimeResources(outputDir) {
+  const requiredPaths = [
+    path.join(outputDir, "win-unpacked", "resources", "runtime-tools", "ffmpeg", "ffmpeg.exe"),
+    path.join(outputDir, "win-unpacked", "resources", "runtime-tools", "ffmpeg", "ffprobe.exe"),
+    path.join(outputDir, "win-unpacked", "resources", "runtime-tools", "yt-dlp", "yt-dlp.exe"),
+  ];
+  const missing = requiredPaths.filter((filePath) => !fs.existsSync(filePath));
+  if (missing.length > 0) {
+    throw new Error(`Packaged runtime tools were not emitted: ${missing.join(", ")}`);
+  }
+}
+
 async function main() {
   const packageOutputDir = path.join(localCacheRoot, `package-output-${Date.now()}`);
   await runNodeScript(buildScriptPath, ["--clean-dist"]);
   if (!fs.existsSync(bundledModelSourceDir)) {
     throw new Error(`Bottle 1.0 bundled model directory is missing: ${bundledModelSourceDir}`);
   }
+  verifyBundledRuntimeInputs();
   await runNodeScript(writeRuntimeDefaultsScriptPath);
   await runNodeScript(buildHelperRuntimeScriptPath);
   await preparePackageWorkspace();
@@ -152,8 +182,10 @@ async function main() {
     }
   );
   await verifyInstallerArtifacts(packageOutputDir);
+  await verifyBundledRuntimeResources(packageOutputDir);
   await syncArtifactsToDist(packageOutputDir);
   await verifyInstallerArtifacts(distDir);
+  await verifyBundledRuntimeResources(distDir);
 }
 
 main().catch((error) => {

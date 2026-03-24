@@ -103,7 +103,10 @@ def _load_faster_whisper_status() -> dict[str, object]:
 
 
 def _build_helper_health_payload(runtime_paths: dict[str, str]) -> dict[str, object]:
+    from app.services.media import get_media_runtime_status
+
     model_payload = _load_faster_whisper_status()
+    media_payload = get_media_runtime_status()
     helper_mode = "bundled-runtime" if getattr(sys, "frozen", False) else "system-python"
     return {
         "ok": True,
@@ -121,6 +124,10 @@ def _build_helper_health_payload(runtime_paths: dict[str, str]) -> dict[str, obj
         "model_ready": bool(model_payload["model_ready"]),
         "model_status": str(model_payload["model_status"]),
         "model_status_message": str(model_payload["model_status_message"]),
+        "ffmpeg_ready": bool(media_payload.get("ffmpeg_ready")),
+        "ffprobe_ready": bool(media_payload.get("ffprobe_ready")),
+        "yt_dlp_ready": bool(media_payload.get("yt_dlp_ready")),
+        "media_detail": str(media_payload.get("detail") or ""),
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "runtime": runtime_paths,
     }

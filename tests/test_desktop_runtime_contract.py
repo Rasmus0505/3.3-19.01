@@ -138,6 +138,14 @@ def test_packaged_runtime_prefers_bundled_helper_and_respects_installer_state(tm
     helper_exe = resources_dir / "desktop-helper-runtime" / "BottleLocalHelper" / "BottleLocalHelper.exe"
     helper_exe.parent.mkdir(parents=True, exist_ok=True)
     helper_exe.write_bytes(b"helper")
+    ffmpeg_exe = resources_dir / "runtime-tools" / "ffmpeg" / "ffmpeg.exe"
+    ffprobe_exe = resources_dir / "runtime-tools" / "ffmpeg" / "ffprobe.exe"
+    ytdlp_exe = resources_dir / "runtime-tools" / "yt-dlp" / "yt-dlp.exe"
+    ffmpeg_exe.parent.mkdir(parents=True, exist_ok=True)
+    ytdlp_exe.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg_exe.write_bytes(b"ffmpeg")
+    ffprobe_exe.write_bytes(b"ffprobe")
+    ytdlp_exe.write_bytes(b"yt-dlp")
     bundled_model_dir = resources_dir / "preinstalled-models" / "faster-distil-small.en"
     bundled_model_dir.mkdir(parents=True, exist_ok=True)
     (bundled_model_dir / "config.json").write_text("{}", encoding="utf-8")
@@ -168,6 +176,9 @@ def test_packaged_runtime_prefers_bundled_helper_and_respects_installer_state(tm
     payload = _run_node_json(script)
 
     assert payload["runtime"]["helperExists"] is True
+    assert payload["runtime"]["ffmpegExists"] is True
+    assert payload["runtime"]["ffprobeExists"] is True
+    assert payload["runtime"]["ytdlpExists"] is True
     assert payload["runtime"]["bottle1InstallChoice"] == "preinstalled"
     assert payload["runtime"]["bottle1UseAsRuntime"] is True
     assert payload["selectedModelDir"] == str(bundled_model_dir.resolve())
@@ -178,6 +189,14 @@ def test_packaged_runtime_falls_back_to_user_model_dir_when_installer_opted_out(
     helper_exe = resources_dir / "desktop-helper-runtime" / "BottleLocalHelper" / "BottleLocalHelper.exe"
     helper_exe.parent.mkdir(parents=True, exist_ok=True)
     helper_exe.write_bytes(b"helper")
+    ffmpeg_exe = resources_dir / "runtime-tools" / "ffmpeg" / "ffmpeg.exe"
+    ffprobe_exe = resources_dir / "runtime-tools" / "ffmpeg" / "ffprobe.exe"
+    ytdlp_exe = resources_dir / "runtime-tools" / "yt-dlp" / "yt-dlp.exe"
+    ffmpeg_exe.parent.mkdir(parents=True, exist_ok=True)
+    ytdlp_exe.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg_exe.write_bytes(b"ffmpeg")
+    ffprobe_exe.write_bytes(b"ffprobe")
+    ytdlp_exe.write_bytes(b"yt-dlp")
     bundled_model_dir = resources_dir / "preinstalled-models" / "faster-distil-small.en"
     bundled_model_dir.mkdir(parents=True, exist_ok=True)
     (bundled_model_dir / "config.json").write_text("{}", encoding="utf-8")
@@ -218,6 +237,14 @@ def test_packaged_runtime_prefers_user_model_dir_when_local_override_exists(tmp_
     helper_exe = resources_dir / "desktop-helper-runtime" / "BottleLocalHelper" / "BottleLocalHelper.exe"
     helper_exe.parent.mkdir(parents=True, exist_ok=True)
     helper_exe.write_bytes(b"helper")
+    ffmpeg_exe = resources_dir / "runtime-tools" / "ffmpeg" / "ffmpeg.exe"
+    ffprobe_exe = resources_dir / "runtime-tools" / "ffmpeg" / "ffprobe.exe"
+    ytdlp_exe = resources_dir / "runtime-tools" / "yt-dlp" / "yt-dlp.exe"
+    ffmpeg_exe.parent.mkdir(parents=True, exist_ok=True)
+    ytdlp_exe.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg_exe.write_bytes(b"ffmpeg")
+    ffprobe_exe.write_bytes(b"ffprobe")
+    ytdlp_exe.write_bytes(b"yt-dlp")
     bundled_model_dir = resources_dir / "preinstalled-models" / "faster-distil-small.en"
     bundled_model_dir.mkdir(parents=True, exist_ok=True)
     (bundled_model_dir / "config.json").write_text("{}", encoding="utf-8")
