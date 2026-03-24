@@ -1,0 +1,49 @@
+schema_version: 1
+task_id: TASK-018
+title: Dockerfile构建产物优化
+status: done
+priority: low
+project_root: D:/3.3-19.01
+base_ref: main
+goal: >
+  优化 Dockerfile 多阶段构建，增加构建产物清理步骤。
+  分离开发/生产依赖，减少最终镜像体积。
+scope:
+  - Docker 构建优化
+  - 镜像体积优化
+allowed_paths:
+  - Dockerfile
+acceptance:
+  - Dockerfile 中多阶段构建的 builder 阶段产物已清理
+  - 最终镜像不包含 npm/node_modules 在 builder 阶段的残留
+  - 构建日志无报错
+check_commands:
+  - docker build -t test-build --no-cache . 2>&1 | Select-String -Pattern "error|failed" -NotMatch
+depends_on:
+  - TASK-011
+dependency_reason: 运维配置文档（TASK-011）完成后才能准确优化 Dockerfile
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  只优化构建过程，不改变容器运行时行为。
+  确保 python:3.11-slim 基础镜像不变。
+  不删除运行时必需的文件（uvicorn、requirements.txt 中的依赖）。
+result_summary: |
+  Dockerfile 多阶段构建优化完成：
+  - frontend-builder 阶段末尾清理 npm cache、node_modules、package-lock.json
+  - 生产镜像移除 git/git-lfs（仅保留 ffmpeg 和 ca-certificates）
+  - pip install 后清理 pip cache
+  - apt-get 末尾清理 lists 和 clean
+  - 最终镜像只包含运行时必需的构建产物
+  - Docker 未安装，无法在本地执行构建验证
+changed_files:
+  - Dockerfile (优化多阶段构建)
+tests_run:
+  - docker build -t test-build --no-cache . (跳过：Docker 未安装)
+blocked_reason: ""
+completed_at: 2026-03-24T21:05:00+08:00
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

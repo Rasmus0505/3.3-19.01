@@ -1,0 +1,70 @@
+schema_version: 1
+task_id: TASK-002
+title: 新增Repository数据访问层
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: >
+  完善 app/repositories/ 数据访问层：
+  1. base.py 已有 Repository[T] 泛型基类 ✅
+  2. user.py、lesson.py、wallet.py、billing.py 已有对应 Repository 类 ✅
+  3. 清理重复文件：存在 wallets.py（空文件，与 wallet.py 重复）和 Windows 大小写产生的 lessons.py 重复项
+  4. 将 lessons.py 中的独立函数（list_lessons_for_user、get_lesson_for_user 等）评估并逐步迁移到 LessonRepository
+scope:
+  - 数据访问层抽象
+  - Repository 模式实现
+  - 重复文件清理
+allowed_paths:
+  - app/repositories/
+  - app/services/
+  - app/api/routers/
+  - app/models/
+acceptance:
+  - app/repositories/base.py 存在 Repository[T] 泛型基类 ✅
+  - app/repositories/user.py 存在 UserRepository ✅
+  - app/repositories/lesson.py 存在 LessonRepository ✅
+  - app/repositories/wallet.py 存在 WalletRepository ✅
+  - app/repositories/billing.py 存在 BillingRepository ✅
+  - app/repositories/wallets.py 已删除（与 wallet.py 重复，wallets.py 无任何类定义）
+  - app/repositories/lessons.py 中的独立函数已评估并决定保留位置（独立函数 或 迁入 Repository）
+  - app/repositories/__init__.py 统一导出所有 Repository 类和常用函数
+  - services 中新写的 db 操作走 Repository，保留现有调用 lessons.py 函数的代码不变
+check_commands:
+  - Get-ChildItem "D:/3.3-19.01/app/repositories/" -Name | Select-String "wallets"
+  - python -c "from app.repositories import Repository, UserRepository, LessonRepository, WalletRepository, BillingRepository; print('Repository imports OK')"
+depends_on: []
+dependency_reason: TASK-001 已完成
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  现状说明：
+  - base.py、user.py、lesson.py、wallet.py、billing.py 已存在，Repository 基类和大部分实现已完成
+  - wallets.py 是空文件（无任何类定义），仅包装 app.services.billing.get_or_create_wallet_account，
+    可以删除，调用方改用 WalletRepository
+  - lessons.py 含独立函数（list_lessons_for_user、list_lesson_catalog_for_user 等），
+    被 many 地方引用，不强求迁移到 LessonRepository，但 __init__.py 应统一导出
+  - lessons.py 和 lesson.py 可能是 Windows 大小写产生的重复（同内容的两个文件），需确认并保留正确的一个
+  关于 WalletRepository vs wallets.py：
+    - WalletRepository 已存在且正确
+    - wallets.py 可以删除，其唯一的 get_wallet_for_user 函数改用 WalletRepository
+  删除 wallets.py 前需确认无 import 引用（当前已知无引用）。
+result_summary: |
+  Repository 数据访问层整理完成：
+  - base.py、user.py、lesson.py、wallet.py、billing.py 全部存在且正确，Repository 基类和实现已完成 ✅
+  - wallets.py 已删除（薄封装无 Repository 类，仓库无引用）
+  - lessons.py 保留（非 Windows 重复，是含独立函数的独立模块，被多处引用）
+  - __init__.py 已包含所有 Repository 导出，无需修改
+  - 导入验证通过：Repository imports OK
+changed_files:
+  - app/repositories/wallets.py (已删除)
+tests_run:
+  - python -c "from app.repositories import Repository, UserRepository, LessonRepository, WalletRepository, BillingRepository; print('Repository imports OK')"
+  - Get-ChildItem "D:/3.3-19.01/app/repositories/" -Name | Select-String "wallets" (无输出，wallets.py 已删除)
+blocked_reason: ""
+completed_at: 2026-03-24T18:10:00+08:00
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

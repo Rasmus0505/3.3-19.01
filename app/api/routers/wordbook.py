@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
-from app.api.routers._helpers import require_lesson_owner
+from app.api.routers.lessons.helpers import require_lesson_owner
 from app.db import get_db
 from app.models import User
 from app.schemas import ErrorResponse

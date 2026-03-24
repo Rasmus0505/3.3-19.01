@@ -1,6 +1,9 @@
 import { getLessonMediaPreview, hasLessonMedia } from "../../shared/media/localMediaStore";
 
-export function getDefaultMediaPreview(lessonId) {
+type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
+type Getter = () => any;
+
+export function getDefaultMediaPreview(lessonId: number) {
   return {
     lessonId,
     hasMedia: false,
@@ -17,19 +20,19 @@ export const mediaInitialState = {
   mediaRestoreTick: 0,
 };
 
-export function createMediaSlice(set, get) {
+export function createMediaSlice(set: Setter, get: Getter) {
   return {
     ...mediaInitialState,
     resetMediaState: () => set({ ...mediaInitialState }),
-    setLessonMediaMetaMap: (lessonMediaMetaMap) => set({ lessonMediaMetaMap: lessonMediaMetaMap || {} }),
-    mergeLessonMediaMeta: (patch) =>
+    setLessonMediaMetaMap: (lessonMediaMetaMap: unknown) => set({ lessonMediaMetaMap: lessonMediaMetaMap || {} }),
+    mergeLessonMediaMeta: (patch: unknown) =>
       set((state) => ({
         lessonMediaMetaMap: {
           ...state.lessonMediaMetaMap,
           ...(patch || {}),
         },
       })),
-    ensureLessonMediaPlaceholders: (lessons = []) =>
+    ensureLessonMediaPlaceholders: (lessons: any[] = []) =>
       set((state) => {
         const next = { ...state.lessonMediaMetaMap };
         for (const lesson of lessons) {
@@ -38,9 +41,9 @@ export function createMediaSlice(set, get) {
         }
         return { lessonMediaMetaMap: next };
       }),
-    setCurrentLessonNeedsBinding: (currentLessonNeedsBinding) => set({ currentLessonNeedsBinding: Boolean(currentLessonNeedsBinding) }),
+    setCurrentLessonNeedsBinding: (currentLessonNeedsBinding: unknown) => set({ currentLessonNeedsBinding: Boolean(currentLessonNeedsBinding) }),
     bumpMediaRestoreTick: () => set((state) => ({ mediaRestoreTick: Number(state.mediaRestoreTick || 0) + 1 })),
-    async prefetchLessonMediaMeta(lessons = []) {
+    async prefetchLessonMediaMeta(lessons: any[] = []) {
       if (!Array.isArray(lessons) || lessons.length === 0) {
         set({ lessonMediaMetaMap: {} });
         return {};
@@ -64,7 +67,7 @@ export function createMediaSlice(set, get) {
       }));
       return nextMap;
     },
-    async detectCurrentLessonMediaBinding(currentLesson) {
+    async detectCurrentLessonMediaBinding(currentLesson: any) {
       if (!currentLesson?.id || currentLesson.media_storage !== "client_indexeddb") {
         set({ currentLessonNeedsBinding: false });
         return false;

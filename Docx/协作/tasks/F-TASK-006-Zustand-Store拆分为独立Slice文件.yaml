@@ -1,0 +1,68 @@
+schema_version: 1
+task_id: TASK-006
+title: Zustand Store拆分为独立Slice文件
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: >
+  将 frontend/src/store/index.js（400+ 行）拆分为 4 个独立文件：
+  authSlice.ts、lessonSlice.ts、mediaSlice.ts、uiSlice.ts。
+  每个 slice 独立导出，由 store/index.ts 统一组合。
+scope:
+  - Zustand Store 重构
+  - 前端状态管理
+allowed_paths:
+  - frontend/src/store/
+  - frontend/src/store/index.js
+  - frontend/src/store/index.ts
+  - frontend/src/store/slices/
+acceptance:
+  - frontend/src/store/authSlice.ts 独立导出 useAuthSlice
+  - frontend/src/store/lessonSlice.ts 独立导出 useLessonSlice
+  - frontend/src/store/mediaSlice.ts 独立导出 useMediaSlice
+  - frontend/src/store/uiSlice.ts 独立导出 useUiSlice
+  - frontend/src/store/index.ts 组合所有 slice
+  - 原有 store/index.js 功能完全保留（可另存为 index.js.bak）
+  - 前端应用启动无报错
+check_commands:
+  - Get-ChildItem "D:/3.3-19.01/frontend/src/store/" -Name
+depends_on: []
+dependency_reason: TASK-001 已完成，此任务可立即开始
+blocked_by: []
+conflicts_with:
+  - TASK-007
+notes_for_after: |
+  Store 拆分不影响任何 React 组件的导入方式。
+  所有 store 的 import 路径不变（仍然是 `from '@/store'`）。
+  先读 store/index.js 完整内容，理解 4 个 slice 的边界，再做拆分。
+  拆分时保持所有 actions 和 state 完全一致，不改变任何逻辑。
+  与 TASK-007（前端Feature模块内聚化）存在冲突：
+  两者同时修改 frontend/src/store/ 时需注意，TASK-006 只做 store 拆分，不做 feature 重组。
+result_summary: |
+  Zustand Store 拆分完成：
+  - 新增 frontend/src/store/slices/*.ts 四个独立 slice 文件（auth/lesson/media/ui）
+  - 新增 frontend/src/store/index.ts 统一组合所有 slice
+  - frontend/src/store/index.js 改为兼容导出层，保持现有 JS 调用路径不变
+  - 删除旧的 slices/*.js，避免重复实现与解析歧义
+  - 前端构建通过（仅有 chunk size 警告，无错误）
+changed_files:
+  - frontend/src/store/index.js (更新)
+  - frontend/src/store/index.ts (新增)
+  - frontend/src/store/slices/authSlice.ts (新增)
+  - frontend/src/store/slices/lessonSlice.ts (新增)
+  - frontend/src/store/slices/mediaSlice.ts (新增)
+  - frontend/src/store/slices/uiSlice.ts (新增)
+  - frontend/src/store/slices/authSlice.js (删除)
+  - frontend/src/store/slices/lessonSlice.js (删除)
+  - frontend/src/store/slices/mediaSlice.js (删除)
+  - frontend/src/store/slices/uiSlice.js (删除)
+tests_run:
+  - npm run build --prefix frontend
+blocked_reason: ""
+completed_at: 2026-03-24T20:15:00+08:00
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

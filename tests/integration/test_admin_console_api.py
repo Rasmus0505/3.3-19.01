@@ -8,7 +8,7 @@ from sqlalchemy import select, text
 
 from app.models import Lesson, LessonGenerationTask, TranslationRequestLog, User
 from app.services.lesson_task_manager import create_task, mark_task_failed
-from test_regression_api import _register_and_login, clear_query_caches, test_client
+from tests.integration.test_regression_api import _register_and_login, clear_query_caches, test_client
 
 
 def _recreate_legacy_redeem_tables_without_face_value_unit(session_factory) -> None:

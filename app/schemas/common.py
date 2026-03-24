@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Any, Literal
 
@@ -65,3 +65,29 @@ class AsrModelPrepareResponse(AsrModelStatusResponse):
 class AsrModelListResponse(BaseModel):
     ok: bool = True
     models: list[AsrModelStatusResponse] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Generic pagination types
+# ---------------------------------------------------------------------------
+from typing import Generic, TypeVar
+
+T = TypeVar("T")
+
+
+class PaginationMeta(BaseModel):
+    """通用分页元数据。"""
+    page: int = Field(default=1, ge=1, description="当前页码")
+    page_size: int = Field(default=20, ge=1, le=100, description="每页条数")
+    total: int = Field(default=0, ge=0, description="总条数")
+    total_pages: int = Field(default=0, ge=0, description="总页数")
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    """通用分页响应。"""
+    ok: bool = True
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=100)
+    total: int = Field(default=0, ge=0)
+    total_pages: int = Field(default=0, ge=0)
+    items: list[T] = Field(default_factory=list)

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import logging
 import mimetypes
@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
-from app.api.routers._helpers import require_lesson_owner
+from app.api.routers.lessons.helpers import require_lesson_owner
 from app.core.errors import error_response
 from app.db import get_db
 from app.models import User

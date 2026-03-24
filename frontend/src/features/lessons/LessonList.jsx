@@ -44,6 +44,9 @@ import {
   writeLearningSettings,
 } from "../immersive/learningSettings";
 
+/** @typedef {import("./types").Lesson} Lesson */
+/** @typedef {import("./types").LessonSentence} LessonSentence */
+
 function formatCreatedAt(createdAt) {
   if (!createdAt) return "时间未知";
   try {

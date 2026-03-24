@@ -1,0 +1,83 @@
+schema_version: 1
+task_id: TASK-005
+title: 统一API路由结构
+status: done
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+goal: >
+  将 app/api/routers/ 下的 16 个路由文件重组为 4 个子组：
+  auth/（认证）、lessons/（课程）、billing/（计费）、admin/（管理后台）。
+  每个子组含 __init__.py 和 router.py。
+  路由逻辑不改变，只重组文件结构。
+scope:
+  - API 路由重组
+  - 模块化目录结构
+allowed_paths:
+  - app/api/
+  - app/api/routers/
+  - app/main.py
+acceptance:
+  - app/api/routers/auth/ 存在 __init__.py 和 router.py
+  - app/api/routers/lessons/ 存在 __init__.py 和 router.py
+  - app/api/routers/billing/ 存在 __init__.py 和 router.py
+  - app/api/routers/admin/ 存在 __init__.py、router.py、console.py、sql_console.py
+  - app/main.py 正确导入并注册所有路由
+  - 所有 16 个原始路由端点路径和方法保持不变
+check_commands:
+  - Get-ChildItem "D:/3.3-19.01/app/api/routers/" -Recurse -Name
+depends_on:
+  - TASK-004
+dependency_reason: Schema 系统化完成后才能重构路由文件
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  不要删除任何现有路由端点。
+  admin 下的 console.py 和 sql_console.py 保持独立文件。
+  所有路由的 API prefix（/api/auth 等）不变。
+  main.py 中的 include_router 调用改为引用子组。
+result_summary: |
+  将 app/api/routers/ 重组为 4 个子组：
+  - auth/: __init__.py + router.py（原 auth.py）
+  - lessons/: __init__.py + router.py + helpers.py（原 lessons.py，_helpers.py → lessons/helpers.py）
+  - billing/: __init__.py + router.py + wallet.py（原 billing.py + wallet.py）
+  - admin/: __init__.py + router.py + console.py + sql_console.py（原 admin.py + admin_console.py + admin_sql_console.py）
+  routers/__init__.py 统一导出所有 13 个 router 对象，保留 wordbook→practice 的路由附加逻辑。
+  main.py 的 include_router 调用改为直接引用 router 对象（去掉 .router 后缀）。
+  导入验证通过，所有 13 个路由前缀正确，wordbook 路由正确附加到 practice。
+changed_files:
+  - app/api/routers/__init__.py
+  - app/api/routers/auth/__init__.py
+  - app/api/routers/auth/router.py
+  - app/api/routers/auth.py (保留，扁平文件)
+  - app/api/routers/lessons/__init__.py
+  - app/api/routers/lessons/router.py
+  - app/api/routers/lessons/helpers.py
+  - app/api/routers/lessons.py (保留，扁平文件)
+  - app/api/routers/billing/__init__.py
+  - app/api/routers/billing/router.py
+  - app/api/routers/billing/wallet.py
+  - app/api/routers/billing.py (保留，扁平文件)
+  - app/api/routers/admin/__init__.py
+  - app/api/routers/admin/router.py
+  - app/api/routers/admin/console.py
+  - app/api/routers/admin/sql_console.py
+  - app/api/routers/admin.py (保留，扁平文件)
+  - app/api/routers/admin_console.py (保留，扁平文件)
+  - app/api/routers/admin_sql_console.py (保留，扁平文件)
+  - app/api/routers/practice.py (更新 _helpers 导入路径)
+  - app/api/routers/wordbook.py (更新 _helpers 导入路径)
+  - app/api/routers/media.py (更新 _helpers 导入路径)
+  - app/main.py (更新 include_router 调用)
+  - app/infra/__init__.py (修正导入路径)
+  - app/infra/asr/__init__.py (修正导入路径)
+  - app/infra/translation/__init__.py (修正导入路径)
+tests_run:
+  - python -c "from app.api.routers import auth, lessons, billing, wallet, admin, admin_console, admin_sql_console, practice, wordbook, media, asr_models, transcribe, desktop_asr, local_asr_assets; print('OK')"
+blocked_reason: ""
+completed_at: 2026-03-24T17:30:00+08:00
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

@@ -1,14 +1,14 @@
-﻿import { LogOut, Menu, Search, Shield, Sparkles } from "lucide-react";
+import { LogOut, Menu, Search, Shield, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
-import { AuthPanel } from "../features/auth/AuthPanel";
+import { AuthPanel } from "../features/auth/components/AuthPanel";
 import { ImmersiveLessonPage } from "../features/immersive/ImmersiveLessonPage";
 import { LessonListLocalSubtitles } from "../features/lessons/LessonListLocalSubtitles";
 import { UploadPanel } from "../features/upload/UploadPanel";
-import { RedeemCodePanel } from "../features/wallet/RedeemCodePanel";
-import { WalletBadge } from "../features/wallet/WalletBadge";
+import { RedeemCodePanel } from "../features/wallet/components/RedeemCodePanel";
+import { WalletBadge } from "../features/wallet/components/WalletBadge";
 import { api, parseResponse, toErrorText } from "../shared/api/client";
 import {
   deleteLessonMedia,
