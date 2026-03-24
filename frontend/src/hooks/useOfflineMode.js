@@ -9,7 +9,7 @@ async function checkCloudHealth() {
   const timeoutId = setTimeout(() => controller.abort(), CLOUD_HEALTH_CHECK_TIMEOUT_MS);
 
   try {
-    const response = await fetch("/api/health", {
+    const response = await fetch("/health", {
       method: "GET",
       signal: controller.signal,
       cache: "no-store",

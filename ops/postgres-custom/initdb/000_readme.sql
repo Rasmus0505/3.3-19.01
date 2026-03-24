@@ -1,2 +1,0 @@
--- Add optional SQL initialization statements here for fresh databases.
--- Keep this file as placeholder so Docker COPY source always exists.

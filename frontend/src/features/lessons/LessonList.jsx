@@ -52,6 +52,7 @@ import {
 const BOTTLE_LESSON_SCHEMA_VERSION = "1";
 const BOTTLE_LESSON_FILE_SUFFIX = ".bottle-lesson.json";
 const BOTTLE_DESKTOP_APP_VERSION = "0.2.0";
+const LOCAL_LESSON_UPDATE_EVENT = "bottle-local-lessons-updated";
 
 function hasLocalDbBridge() {
   return typeof window !== "undefined" && typeof window.localDb?.getCourses === "function";
