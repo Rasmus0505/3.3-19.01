@@ -13,8 +13,13 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
-from app.api.routers import admin, admin_console, admin_sql_console, asr_models, auth, billing, lessons, local_asr_assets, media, practice, transcribe, wallet
+from app.api.routers import admin, admin_console, admin_sql_console, asr_models, auth, billing, lessons, media, practice, transcribe, wallet
 from app.api.routers.dashscope_upload import router as dashscope_upload
+from app.api.routers.local_asr_assets import (
+    get_downloadable_model_bundle_summaries,
+    router as local_asr_assets_router,
+    schedule_local_asr_asset_prefetch,
+)
 from app.core.config import (
     BASE_DATA_DIR,
     BASE_TMP_DIR,
@@ -345,7 +350,7 @@ def _build_database_not_ready_response(runtime_status: RuntimeStatus) -> JSONRes
 
 
 def _log_downloadable_model_bundle_status() -> None:
-    for summary in local_asr_assets.get_downloadable_model_bundle_summaries():
+    for summary in get_downloadable_model_bundle_summaries():
         model_key = str(summary.get("model_key") or "")
         bundle_dir = str(summary.get("bundle_dir") or "")
         file_count = int(summary.get("file_count") or 0)
@@ -461,7 +466,7 @@ async def app_lifespan(app: FastAPI):
     _refresh_optional_runtime_status(app)
     _enforce_runtime_security_policies(app)
     await _bootstrap_runtime_state(app)
-    if local_asr_assets.schedule_local_asr_asset_prefetch():
+    if schedule_local_asr_asset_prefetch():
         logger.info("[DEBUG] startup.local_asr_prefetch scheduled")
     else:
         logger.info("[DEBUG] startup.local_asr_prefetch skipped")
@@ -562,7 +567,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(asr_models)
     app.include_router(practice)
     app.include_router(media)
-    app.include_router(local_asr_assets)
+    app.include_router(local_asr_assets_router)
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa_fallback_page(full_path: str) -> FileResponse:
