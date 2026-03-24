@@ -5,7 +5,7 @@ import logging
 import math
 import re
 from dataclasses import replace
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from app.core.config import (
     FASTER_WHISPER_MODEL_DIR,
@@ -13,18 +13,9 @@ from app.core.config import (
 )
 from app.core.timezone import now_shanghai_naive
 from app.infra.asr.base import ASRConfig, ASRProvider, ASRResult
-from app.models import FasterWhisperSetting
-from app.services.faster_whisper_asr import (
-    FASTER_WHISPER_ASR_MODEL,
-    FasterWhisperCancellationRequested,
-    FasterWhisperModelNotReadyError,
-    get_faster_whisper_model_status,
-    get_faster_whisper_settings_snapshot,
-    schedule_faster_whisper_model_prepare,
-    transcribe_audio_file_with_faster_whisper,
-)
-from app.services.lesson_task_manager import is_task_terminate_requested
 
+if TYPE_CHECKING:
+    from app.models import FasterWhisperSetting
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +28,21 @@ FASTER_WHISPER_REQUIRED_FILES: tuple[str, ...] = (
 )
 
 _NON_WORD_EDGE_RE = re.compile(r"^[^\w]+|[^\w]+$")
+
+# Lazy-imported constants to avoid circular dependency at module load time
+_FASTER_WHISPER_ASR_MODEL: str | None = None
+
+
+def _get_faster_whisper_model() -> str:
+    global _FASTER_WHISPER_ASR_MODEL
+    if _FASTER_WHISPER_ASR_MODEL is None:
+        try:
+            from app.services.faster_whisper_asr import FASTER_WHISPER_ASR_MODEL as _m
+
+            _FASTER_WHISPER_ASR_MODEL = _m
+        except Exception:
+            _FASTER_WHISPER_ASR_MODEL = "faster-whisper"
+    return _FASTER_WHISPER_ASR_MODEL
 
 
 def _seconds_to_ms(value: Any) -> int:
@@ -107,9 +113,17 @@ def _convert_to_asr_result(result: dict[str, Any]) -> ASRResult:
         duration_seconds=result.get("usage_seconds"),
         segments=segments,
         provider="faster_whisper",
-        model=result.get("model", FASTER_WHISPER_ASR_MODEL),
+        model=result.get("model", _get_faster_whisper_model()),
         raw_result=result,
     )
+
+
+class FasterWhisperCancellationRequested(RuntimeError):
+    """Raised when user requests cancellation of Faster-Whisper transcription."""
+
+
+class FasterWhisperModelNotReadyError(RuntimeError):
+    """Raised when the Faster-Whisper model is not ready."""
 
 
 class FasterWhisperASRProvider(ASRProvider):
@@ -130,11 +144,11 @@ class FasterWhisperASRProvider(ASRProvider):
 
     def _default_model_name(self) -> str:
         """Return the default model name."""
-        return FASTER_WHISPER_ASR_MODEL
+        return _get_faster_whisper_model()
 
     def supports_model(self, model_name: str) -> bool:
         """Check if this provider supports the given model name."""
-        return model_name == FASTER_WHISPER_ASR_MODEL
+        return model_name == _get_faster_whisper_model()
 
     def transcribe(
         self,
@@ -152,15 +166,22 @@ class FasterWhisperASRProvider(ASRProvider):
         Returns:
             ASRResult with transcribed text and metadata
         """
+        from app.services.faster_whisper_asr import (
+            FasterWhisperCancellationRequested as _Cancel,
+            FasterWhisperModelNotReadyError as _NotReady,
+            get_faster_whisper_model_status,
+            transcribe_audio_file_with_faster_whisper,
+        )
+
         try:
             result = transcribe_audio_file_with_faster_whisper(
                 audio_path,
                 progress_callback=progress_callback,
             )
             return _convert_to_asr_result(result)
-        except FasterWhisperCancellationRequested as exc:
+        except _Cancel as exc:
             raise FasterWhisperCancellationRequested(str(exc) or "terminate requested") from exc
-        except FasterWhisperModelNotReadyError as exc:
+        except _NotReady as exc:
             status_payload = dict(getattr(exc, "status_payload", None) or get_faster_whisper_model_status())
             raise FasterWhisperModelNotReadyError(status_payload) from exc
 
@@ -173,6 +194,8 @@ class FasterWhisperASRProvider(ASRProvider):
         Returns:
             Model status dict
         """
+        from app.services.faster_whisper_asr import schedule_faster_whisper_model_prepare
+
         return schedule_faster_whisper_model_prepare(force_refresh=force_refresh)
 
     def get_model_status(self) -> dict[str, Any]:
@@ -181,6 +204,8 @@ class FasterWhisperASRProvider(ASRProvider):
         Returns:
             Model status dict
         """
+        from app.services.faster_whisper_asr import get_faster_whisper_model_status
+
         return get_faster_whisper_model_status()
 
 

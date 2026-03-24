@@ -8,14 +8,19 @@ from dashscope.files import Files
 
 from app.core.config import ASR_TASK_POLL_SECONDS
 from app.infra.asr.base import ASRConfig, ASRProvider, ASRResult
-from app.services.asr_model_registry import QWEN_ASR_MODEL, get_supported_transcribe_asr_model_keys
-from app.services.lesson_task_manager import is_task_terminate_requested, wait_for_task_terminate_request
 
 
 DEFAULT_MODEL = "qwen-audio"
 SUPPORTED_MODELS: set = set()
 
-def _init_models() -> None:
+def _get_qwen_model() -> str:
+    try:
+        from app.services.asr_model_registry import QWEN_ASR_MODEL as _MODEL
+        return _MODEL
+    except Exception:
+        return "qwen-audio"
+
+def _init_supported_models() -> None:
     global SUPPORTED_MODELS
     try:
         from app.services.asr_model_registry import get_supported_transcribe_asr_model_keys
@@ -139,6 +144,10 @@ def _extract_usage_seconds(wait_out: dict[str, Any], wait_resp: Any) -> int | No
 
 
 def _raise_if_cancel_requested(*, audio_path: str | None = None) -> None:
+    try:
+        from app.services.lesson_task_manager import is_task_terminate_requested
+    except Exception:
+        return
     if is_task_terminate_requested(path=audio_path):
         raise AsrCancellationRequested("terminate requested")
 
@@ -156,7 +165,7 @@ def _call_with_optional_request_timeout(func, /, *args, request_timeout: int | N
 
 def _create_task(model: str, signed_url: str, *, request_timeout: int | None = None) -> Any:
     from dashscope.audio.qwen_asr import QwenTranscription
-    if model == QWEN_ASR_MODEL:
+    if model == _get_qwen_model():
         return _call_with_optional_request_timeout(
             QwenTranscription.async_call,
             model=model,
@@ -170,7 +179,7 @@ def _create_task(model: str, signed_url: str, *, request_timeout: int | None = N
 
 def _fetch_task(model: str, task_id: str, *, request_timeout: int | None = None) -> Any:
     from dashscope.audio.qwen_asr import QwenTranscription
-    if model == QWEN_ASR_MODEL:
+    if model == _get_qwen_model():
         return _call_with_optional_request_timeout(QwenTranscription.fetch, task=task_id, request_timeout=request_timeout)
     raise AsrError("INVALID_MODEL", "不支持的模型", model)
 
@@ -337,7 +346,11 @@ def _transcribe_with_qwen(
                 "ASR 任务失败",
                 json.dumps({"task_status": task_status, "subtask_code": sub_code, "subtask_message": sub_msg}, ensure_ascii=False),
             )
-        if wait_for_task_terminate_request(poll_interval_seconds, path=audio_path):
+        try:
+            from app.services.lesson_task_manager import wait_for_task_terminate_request
+        except Exception:
+            wait_for_task_terminate_request = None
+        if wait_for_task_terminate_request and wait_for_task_terminate_request(poll_interval_seconds, path=audio_path):
             _raise_if_cancel_requested(audio_path=audio_path)
 
     usage_seconds = _extract_usage_seconds(fetch_out, fetch_resp)
@@ -393,10 +406,12 @@ class DashScopeASRProvider(ASRProvider):
 
     def _default_model_name(self) -> str:
         """Return the default model name."""
-        return QWEN_ASR_MODEL
+        return _get_qwen_model()
 
     def supports_model(self, model_name: str) -> bool:
         """Check if this provider supports the given model name."""
+        if not SUPPORTED_MODELS:
+            _init_supported_models()
         return model_name in SUPPORTED_MODELS and model_name != "faster-whisper-medium"
 
     def transcribe(
