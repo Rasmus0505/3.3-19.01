@@ -1,4 +1,4 @@
-﻿import { ArrowLeft, ArrowRight, Eye, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -824,6 +824,7 @@ export function ImmersiveLessonPage({
   const [wordbookSelectedTokenIndexes, setWordbookSelectedTokenIndexes] = useState([]);
   const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
   const [isFullscreenFallback, setIsFullscreenFallback] = useState(false);
+  const [sentenceJumpValue, setSentenceJumpValue] = useState("");
   const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(
     () => readLearningSettings().uiPreferences?.showFullscreenPreviousSentence ?? false,
   );
@@ -871,6 +872,7 @@ export function ImmersiveLessonPage({
   const programmaticFullscreenExitRef = useRef(false);
   const programmaticFullscreenExitTimerRef = useRef(null);
   const focusRestoreTimerRef = useRef(null);
+  const wordbookActionRef = useRef(false);
   const viewportSyncFrameRef = useRef(null);
   const viewportBaselineHeightRef = useRef(0);
   const viewportOrientationRef = useRef("");
@@ -1307,6 +1309,7 @@ export function ImmersiveLessonPage({
   const collectWordbookEntry = useCallback(
     async ({ sentence, entryType, entryText, startTokenIndex, endTokenIndex }) => {
       if (!lesson?.id || !sentence || !accessToken) return;
+      wordbookActionRef.current = true;
       setWordbookBusy(true);
       try {
         const resp = await apiClient(
@@ -1337,6 +1340,9 @@ export function ImmersiveLessonPage({
         toast.error(`网络错误: ${String(error)}`);
       } finally {
         setWordbookBusy(false);
+        setTimeout(() => {
+          wordbookActionRef.current = false;
+        }, 0);
       }
     },
     [accessToken, apiClient, clearWordbookSelection, lesson?.id, onWordbookChanged],
@@ -1920,6 +1926,7 @@ export function ImmersiveLessonPage({
     if (typeof window === "undefined") return undefined;
 
     const onPointerDownCapture = () => {
+      if (wordbookActionRef.current) return;
       setTimeout(() => {
         focusTypingInput(isTouchDevice);
       }, 0);
@@ -2201,6 +2208,34 @@ export function ImmersiveLessonPage({
     },
     [currentSentenceIndex, jumpToSentence, sentenceCount],
   );
+
+  const handleSentenceJumpKeyDown = useCallback(
+    (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const raw = Number(e.target.value);
+        if (!Number.isFinite(raw) || raw < 1) {
+          setSentenceJumpValue(String(currentSentenceIndex + 1));
+          return;
+        }
+        const target = Math.max(1, Math.min(sentenceCount, Math.floor(raw)));
+        const targetIdx = target - 1;
+        if (targetIdx === currentSentenceIndex) {
+          setSentenceJumpValue(String(currentSentenceIndex + 1));
+          return;
+        }
+        void jumpToSentence(targetIdx, "input_enter");
+        setSentenceJumpValue("");
+      } else if (e.key === "Escape") {
+        setSentenceJumpValue("");
+      }
+    },
+    [currentSentenceIndex, jumpToSentence, sentenceCount],
+  );
+
+  const handleSentenceJumpBlur = useCallback(() => {
+    setSentenceJumpValue("");
+  }, []);
 
   const revealCurrentLetter = useCallback(
     (source = "button_reveal_letter") => {
@@ -2950,10 +2985,41 @@ export function ImmersiveLessonPage({
           ) : (
             <div ref={typingPanelRef} className={`immersive-typing ${cinemaFullscreenActive ? "immersive-typing--cinema" : ""}`}>
               <div className="immersive-typing-status">
-                <Badge variant="outline">
-                  第 {Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 句
-                </Badge>
-                <Badge variant="outline">已完成 {completedIndexes.length} / {sentenceCount}</Badge>
+                <span className="flex items-center gap-1 text-sm">
+                  <span className="text-muted-foreground">第</span>
+                  <input
+                    type="number"
+                    className="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-center text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    min={1}
+                    max={sentenceCount}
+                    value={sentenceJumpValue !== "" ? sentenceJumpValue : String(currentSentenceIndex + 1)}
+                    onChange={(e) => setSentenceJumpValue(e.target.value)}
+                    onKeyDown={handleSentenceJumpKeyDown}
+                    onBlur={handleSentenceJumpBlur}
+                    aria-label="跳转到指定句子"
+                  />
+                  <span className="text-muted-foreground">/ {sentenceCount} 句</span>
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    className="rounded border border-input bg-background px-2 py-0.5 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={currentSentenceIndex <= 0}
+                    onClick={() => goToPreviousSentence("status_prev")}
+                    aria-label="上一句"
+                  >
+                    ‹ 上一句
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded border border-input bg-background px-2 py-0.5 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={currentSentenceIndex >= sentenceCount - 1}
+                    onClick={() => goToNextSentence("status_next")}
+                    aria-label="下一句"
+                  >
+                    下一句 ›
+                  </button>
+                </div>
                 {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
                 {isPlaybackPaused ? <Badge variant="outline">已暂停</Badge> : null}
               </div>
