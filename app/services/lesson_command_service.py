@@ -433,6 +433,11 @@ def run_lesson_generation_task(
             effective_asr_model,
         )
 
+        artifacts: dict = {}
+        task_record = db.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        if task_record:
+            artifacts = dict(task_record.artifacts_json or {})
+
         def _should_emit_progress(payload: dict) -> bool:
             if not sqlite_progress_mode:
                 return True
@@ -478,7 +483,20 @@ def run_lesson_generation_task(
 
         normalized_input_mode = str(input_mode or "upload").strip().lower()
         _raise_if_task_control_requested(task_id, session_factory=session_factory)
-        if normalized_input_mode == "local_asr":
+        dashscope_file_id = str(artifacts.get("dashscope_file_id") or "").strip()
+        if dashscope_file_id:
+            lesson = LessonService.generate_from_dashscope_file_id(
+                dashscope_file_id=dashscope_file_id,
+                source_filename=source_filename,
+                req_dir=req_dir,
+                owner_id=owner_id,
+                asr_model=effective_asr_model,
+                task_id=task_id,
+                semantic_split_enabled=semantic_split_enabled,
+                db=db,
+                progress_callback=_progress,
+            )
+        elif normalized_input_mode == "local_asr":
             local_payload = json.loads(Path(source_path).read_text(encoding="utf-8"))
             lesson = LessonService.generate_from_local_asr_payload(
                 asr_payload=dict(local_payload.get("asr_payload") or {}),
@@ -613,6 +631,7 @@ def create_lesson_task_from_upload(
     owner_user_id: int,
     asr_model: str,
     semantic_split_enabled: bool | None,
+    dashscope_file_id: str | None = None,
     db: Session,
 ) -> dict[str, object]:
     task_id = build_task_id()
@@ -622,19 +641,28 @@ def create_lesson_task_from_upload(
     try:
         ensure_default_billing_rates(db)
         ensure_lesson_task_storage_ready(db)
-        source_filename = (video_file.filename or "unknown")[:255]
-        suffix = validate_suffix(source_filename)
-        source_path = req_dir / f"source{suffix}"
-        save_upload_file_stream(video_file, source_path, max_bytes=UPLOAD_MAX_BYTES)
+        artifacts_patch: dict[str, object] = {}
+
+        if dashscope_file_id:
+            artifacts_patch["dashscope_file_id"] = str(dashscope_file_id)
+            source_path_for_task = ""
+            source_filename = "dashscope-direct-upload"
+        else:
+            source_filename = (video_file.filename or "unknown")[:255]
+            suffix = validate_suffix(source_filename)
+            source_path = req_dir / f"source{suffix}"
+            save_upload_file_stream(video_file, source_path, max_bytes=UPLOAD_MAX_BYTES)
+            source_duration_ms = probe_audio_duration_ms(source_path)
+            _ensure_sufficient_balance_for_model(
+                db=db,
+                owner_user_id=owner_user_id,
+                asr_model=asr_model,
+                source_duration_ms=source_duration_ms,
+            )
+            source_path_for_task = str(source_path)
+
         model_resolution = _resolve_task_asr_models(asr_model)
         effective_asr_model = str(model_resolution["effective_asr_model"])
-        source_duration_ms = probe_audio_duration_ms(source_path)
-        _ensure_sufficient_balance_for_model(
-            db=db,
-            owner_user_id=owner_user_id,
-            asr_model=effective_asr_model,
-            source_duration_ms=source_duration_ms,
-        )
 
         with _TASK_ADMISSION_LOCK:
             create_task(
@@ -648,9 +676,11 @@ def create_lesson_task_from_upload(
                 model_fallback_reason=str(model_resolution["model_fallback_reason"]),
                 semantic_split_enabled=semantic_split_enabled,
                 work_dir=str(req_dir),
-                source_path=str(source_path),
+                source_path=source_path_for_task,
                 db=db,
             )
+            if artifacts_patch:
+                patch_task_artifacts(task_id, artifacts_patch=artifacts_patch, db=db)
             task = db.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
             if task is None:
                 raise RuntimeError(f"lesson task missing after create: {task_id}")

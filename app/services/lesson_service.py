@@ -25,7 +25,8 @@ from app.core.config import (
 )
 from app.models import Lesson, LessonSentence, TranslationRequestLog
 from app.repositories.progress import create_progress
-from app.services.asr_dashscope import transcribe_audio_file
+from app.services.asr_dashscope import transcribe_audio_file, transcribe_signed_url
+from app.infra.dashscope_storage import get_file_signed_url
 from app.services.faster_whisper_asr import FASTER_WHISPER_ASR_MODEL
 from app.services.billing_service import (
     EVENT_CONSUME_TRANSLATE,
@@ -2744,6 +2745,437 @@ class LessonService:
                         model_name=asr_model,
                         duration_ms=reserved_duration_ms,
                         note=f"课程生成失败，退回预扣点数，预扣流水#{reserve_ledger_id}",
+                    )
+                    db.commit()
+                except Exception:
+                    db.rollback()
+            raise
+
+    def generate_from_dashscope_file_id(
+        self,
+        *,
+        dashscope_file_id: str,
+        source_filename: str,
+        req_dir: Path,
+        owner_id: int,
+        asr_model: str,
+        db: Session,
+        progress_callback: ProgressCallback | None = None,
+        task_id: str | None = None,
+        semantic_split_enabled: bool | None = None,
+    ) -> Lesson:
+        """Generate a lesson from a file already uploaded to DashScope OSS.
+
+        This method is the counterpart of ``generate_from_saved_file`` for the
+        pre-signed upload flow.  The file has already been transferred to DashScope
+        storage by the front end, so this method skips the local audio conversion
+        stage and uses ``get_file_signed_url`` to obtain a signed URL that is
+        passed directly to the ASR inference pipeline.
+
+        Args:
+            dashscope_file_id: The OSS object path (upload_dir) returned by the
+                pre-signed upload policy endpoint, e.g. ``uploads/20240115/xxx.mp4``.
+            source_filename: Human-readable filename to include in the lesson title.
+            req_dir: Working directory for intermediate result files.
+            owner_id: User ID who owns the resulting lesson.
+            asr_model: ASR model name.
+            db: SQLAlchemy database session.
+            progress_callback: Optional progress callback (same as generate_from_saved_file).
+            task_id: Optional task ID for resuming from a checkpoint.
+            semantic_split_enabled: Optional semantic segmentation flag.
+
+        Returns:
+            The created or resumed ``Lesson`` instance.
+        """
+        asr_result_path = req_dir / _ASR_RESULT_FILE
+        variant_result_path = req_dir / _VARIANT_RESULT_FILE
+        translation_checkpoint_path = req_dir / _TRANSLATION_CHECKPOINT_FILE
+        lesson_result_path = req_dir / _LESSON_RESULT_FILE
+
+        # Check lesson-level checkpoint (skip convert_audio stage – no local file)
+        lesson_checkpoint = _read_json_file(lesson_result_path)
+        if isinstance(lesson_checkpoint, dict) and lesson_checkpoint.get("lesson_id"):
+            existing_lesson = db.get(Lesson, int(lesson_checkpoint["lesson_id"]))
+            if existing_lesson:
+                subtitle_cache_seed = lesson_checkpoint.get("subtitle_cache_seed")
+                if isinstance(subtitle_cache_seed, dict):
+                    existing_lesson.subtitle_cache_seed = dict(subtitle_cache_seed)
+                task_result_meta = lesson_checkpoint.get("task_result_meta")
+                if isinstance(task_result_meta, dict):
+                    LessonService._attach_task_result_metadata(
+                        existing_lesson,
+                        translation_debug=getattr(existing_lesson, "task_translation_debug", None),
+                        result_kind=str(task_result_meta.get("result_kind") or "full_success"),
+                        result_message=str(task_result_meta.get("result_message") or ""),
+                        partial_failure_stage=str(task_result_meta.get("partial_failure_stage") or ""),
+                        partial_failure_code=str(task_result_meta.get("partial_failure_code") or ""),
+                        partial_failure_message=str(task_result_meta.get("partial_failure_message") or ""),
+                    )
+                return existing_lesson
+
+        # Check task-level checkpoint
+        if task_id:
+            existing_lesson_id = db.scalar(
+                select(TranslationRequestLog.lesson_id)
+                .where(
+                    TranslationRequestLog.task_id == task_id,
+                    TranslationRequestLog.lesson_id.is_not(None),
+                )
+                .limit(1)
+            )
+            if existing_lesson_id:
+                existing_lesson = db.get(Lesson, int(existing_lesson_id))
+                if existing_lesson:
+                    cached_asr = _read_json_file(asr_result_path)
+                    cached_variant = _read_json_file(variant_result_path)
+                    if cached_asr and cached_variant:
+                        existing_lesson.subtitle_cache_seed = LessonService.build_subtitle_cache_seed(
+                            asr_payload=dict(cached_asr.get("asr_payload") or {}),
+                            variant=dict(cached_variant),
+                        )
+                    return existing_lesson
+
+        # Skip convert_audio: file is already on DashScope, get signed URL
+        _emit_progress(
+            progress_callback,
+            stage_key="convert_audio",
+            stage_status="completed",
+            overall_percent=_progress_percent_by_stage("convert_audio", 1.0),
+            current_text="音频已在 DashScope（跳过转换）",
+            counters={"asr_done": 0, "asr_estimated": 0, "translate_done": 0, "translate_total": 0, "segment_done": 0, "segment_total": 0},
+        )
+
+        reserved_points = 0
+        reserved_duration_ms = 0
+        reserve_ledger_id: int | None = None
+        translation_trace_id = uuid4().hex
+        actual_duration_ms: int | None = None
+        actual_points: int | None = None
+        usage_seconds: int | None = None
+        usage_hit = False
+
+        try:
+            # Obtain signed URL and probe duration from ASR result
+            signed_url = get_file_signed_url(dashscope_file_id)
+
+            rate = get_model_rate(db, asr_model)
+            segment_target_seconds = max(
+                1,
+                int(getattr(rate, "segment_seconds", ASR_SEGMENT_TARGET_SECONDS) or ASR_SEGMENT_TARGET_SECONDS),
+            )
+
+            # First ASR call to determine duration for reservation
+            _emit_progress(
+                progress_callback,
+                stage_key="asr_transcribe",
+                stage_status="running",
+                overall_percent=_progress_percent_by_stage("asr_transcribe", _single_asr_stage_ratio(0)),
+                current_text="识别中",
+                counters={"asr_done": 0, "asr_estimated": 0, "translate_done": 0, "translate_total": 0, "segment_done": 0, "segment_total": 0},
+            )
+
+            asr_raw = transcribe_signed_url(
+                signed_url,
+                model=asr_model,
+                requests_timeout=300,
+                audio_path_for_cancel=None,
+                progress_callback=None,
+            )
+            asr_payload: dict[str, Any] = {"transcripts": asr_raw.get("asr_result_json", {}).get("transcripts", [])}
+            usage_seconds = asr_raw.get("usage_seconds")
+            if usage_seconds:
+                usage_hit = True
+                reserved_duration_ms = int(usage_seconds * 1000)
+                actual_duration_ms = reserved_duration_ms
+            else:
+                reserved_duration_ms = 0
+                actual_duration_ms = None
+
+            reserved_points = calculate_points(
+                reserved_duration_ms,
+                rate.points_per_minute,
+                price_per_minute_yuan=getattr(rate, "price_per_minute_yuan", None),
+            )
+            actual_points = reserved_points
+            points_diff = 0
+            logger.info(
+                "[DEBUG] lesson.generate_dashscope reserve owner_id=%s model=%s duration_ms=%s points=%s",
+                owner_id,
+                asr_model,
+                reserved_duration_ms,
+                reserved_points,
+            )
+            reserve_ledger = reserve_points(
+                db,
+                user_id=owner_id,
+                points=reserved_points,
+                model_name=asr_model,
+                duration_ms=reserved_duration_ms,
+                note=f"课程生成预扣（DashScope直传），模型={asr_model}",
+            )
+            reserve_ledger_id = reserve_ledger.id
+            db.commit()
+
+            asr_progress_counters = {
+                "asr_done": 0,
+                "asr_estimated": 0,
+                "segment_done": 0,
+                "segment_total": 0,
+            }
+            runtime_sentences: list[dict[str, Any]] = []
+            translate_total = 0
+
+            _emit_progress(
+                progress_callback,
+                stage_key="asr_transcribe",
+                stage_status="completed",
+                overall_percent=_progress_percent_by_stage("asr_transcribe", 1.0),
+                current_text="识别完成",
+                counters={
+                    "asr_done": 0,
+                    "asr_estimated": 0,
+                    "translate_done": 0,
+                    "translate_total": 0,
+                    "segment_done": 0,
+                    "segment_total": 0,
+                },
+            )
+
+            # Write ASR result checkpoint
+            _write_json_file(
+                asr_result_path,
+                {
+                    "asr_payload": asr_payload,
+                    "usage_seconds": usage_seconds,
+                    "progress_counters": {},
+                    "raw_result": asr_raw,
+                },
+            )
+
+            def _on_before_translation(total: int) -> None:
+                nonlocal translate_total
+                translate_total = max(0, int(total))
+                _emit_progress(
+                    progress_callback,
+                    stage_key="translate_zh",
+                    stage_status="running",
+                    overall_percent=_progress_percent_by_stage("translate_zh", 0.0),
+                    current_text=f"翻译字幕 0/{translate_total}",
+                    counters={
+                        "asr_done": asr_progress_counters["asr_done"],
+                        "asr_estimated": asr_progress_counters["asr_estimated"],
+                        "translate_done": 0,
+                        "translate_total": translate_total,
+                        "segment_done": asr_progress_counters["segment_done"],
+                        "segment_total": asr_progress_counters["segment_total"],
+                    },
+                )
+
+            def _on_translation_progress(done: int, total: int) -> None:
+                _emit_progress(
+                    progress_callback,
+                    stage_key="translate_zh",
+                    stage_status="running",
+                    overall_percent=_progress_percent_by_stage("translate_zh", done / max(total, 1)),
+                    current_text=f"翻译字幕 {done}/{total}",
+                    counters={
+                        "asr_done": asr_progress_counters["asr_done"],
+                        "asr_estimated": asr_progress_counters["asr_estimated"],
+                        "translate_done": done,
+                        "translate_total": total,
+                        "segment_done": asr_progress_counters["segment_done"],
+                        "segment_total": asr_progress_counters["segment_total"],
+                    },
+                )
+
+            variant = _read_json_file(variant_result_path)
+            if not variant:
+                variant = LessonService.build_subtitle_variant(
+                    asr_payload=asr_payload,
+                    db=db,
+                    task_id=task_id,
+                    semantic_split_enabled=semantic_split_enabled,
+                    allow_partial_translation=True,
+                    before_translate_callback=_on_before_translation,
+                    translation_progress_callback=_on_translation_progress,
+                    translation_checkpoint_path=translation_checkpoint_path,
+                )
+                _write_json_file(variant_result_path, variant)
+            else:
+                _emit_progress(
+                    progress_callback,
+                    stage_key="build_lesson",
+                    stage_status="completed",
+                    overall_percent=_progress_percent_by_stage("build_lesson", 1.0),
+                    current_text="生成课程结构完成",
+                    counters={
+                        "asr_done": asr_progress_counters["asr_done"],
+                        "asr_estimated": asr_progress_counters["asr_estimated"],
+                        "translate_done": 0,
+                        "translate_total": 0,
+                        "segment_done": asr_progress_counters["segment_done"],
+                        "segment_total": asr_progress_counters["segment_total"],
+                    },
+                )
+            runtime_sentences = list(variant["sentences"])
+            translate_total = len(runtime_sentences)
+            translation_rate = get_model_rate(db, MT_MODEL)
+            translation_usage = dict(variant.get("translation_usage") or {})
+            translation_cost_amount_cents = calculate_token_points(
+                int(translation_usage.get("total_tokens", 0) or 0),
+                int(getattr(translation_rate, "points_per_1k_tokens", 0) or 0),
+            )
+            translation_usage["charged_points"] = translation_cost_amount_cents
+            translation_usage["charged_amount_cents"] = translation_cost_amount_cents
+            translation_usage["actual_cost_amount_cents"] = translation_cost_amount_cents
+            translation_debug = {
+                "total_sentences": translate_total,
+                "failed_sentences": int(variant.get("translate_failed_count", 0)),
+                "request_count": int(variant.get("translation_request_count", 0)),
+                "success_request_count": int(variant.get("translation_success_request_count", 0)),
+                "usage": translation_usage,
+                "latest_error_summary": str(variant.get("latest_translate_error_summary") or ""),
+            }
+            _emit_progress(
+                progress_callback,
+                stage_key="translate_zh",
+                stage_status="completed",
+                overall_percent=_progress_percent_by_stage("translate_zh", 1.0),
+                current_text=f"翻译字幕完成 {translate_total} 句",
+                counters={
+                    "asr_done": asr_progress_counters["asr_done"],
+                    "asr_estimated": asr_progress_counters["asr_estimated"],
+                    "translate_done": translate_total,
+                    "translate_total": translate_total,
+                    "segment_done": asr_progress_counters["segment_done"],
+                    "segment_total": asr_progress_counters["segment_total"],
+                },
+            )
+            lesson: Lesson = Lesson()
+            lesson.title = _derive_title(source_filename=source_filename, transcript_preview=asr_payload.get("transcripts", [{}])[0].get("text", "") if asr_payload.get("transcripts") else "")
+            task_result_meta: dict[str, Any] = {}
+            _emit_progress(
+                progress_callback,
+                stage_key="build_lesson",
+                stage_status="running",
+                overall_percent=_progress_percent_by_stage("build_lesson", 0.0),
+                current_text="生成课程结构",
+                counters={
+                    "asr_done": asr_progress_counters["asr_done"],
+                    "asr_estimated": asr_progress_counters["asr_estimated"],
+                    "translate_done": translate_total,
+                    "translate_total": translate_total,
+                    "segment_done": asr_progress_counters["segment_done"],
+                    "segment_total": asr_progress_counters["segment_total"],
+                },
+            )
+            build_result = LessonService._build_one_lesson(
+                lesson,
+                owner_id=owner_id,
+                asr_payload=asr_payload,
+                variant=variant,
+                db=db,
+                translation_trace_id=translation_trace_id,
+                task_id=task_id,
+                translation_usage=translation_usage,
+                translation_debug=translation_debug,
+            )
+            if build_result.errors:
+                task_result_meta = {
+                    "result_kind": "partial_failure",
+                    "result_message": str(build_result.errors[0]) if build_result.errors else "",
+                    "partial_failure_stage": "build_lesson",
+                    "partial_failure_code": "BUILD_ERROR",
+                    "partial_failure_message": "; ".join(str(e) for e in build_result.errors),
+                }
+            _emit_progress(
+                progress_callback,
+                stage_key="build_lesson",
+                stage_status="completed",
+                overall_percent=_progress_percent_by_stage("build_lesson", 1.0),
+                current_text="生成课程结构完成",
+                counters={
+                    "asr_done": asr_progress_counters["asr_done"],
+                    "asr_estimated": asr_progress_counters["asr_estimated"],
+                    "translate_done": translate_total,
+                    "translate_total": translate_total,
+                    "segment_done": asr_progress_counters["segment_done"],
+                    "segment_total": asr_progress_counters["segment_total"],
+                },
+            )
+            persist_lesson_workspace_summary(
+                lesson_id=lesson.id,
+                trace_id=translation_trace_id,
+                variant_result_path=variant_result_path,
+                translation_checkpoint_path=translation_checkpoint_path,
+            )
+            lesson.subtitle_cache_seed = LessonService.build_subtitle_cache_seed(asr_payload=asr_payload, variant=variant)
+            logger.info(
+                "[DEBUG] lesson.generate translate_cost owner_id=%s lesson_id=%s model=%s total_tokens=%s actual_cost_amount_cents=%s failed=%s requests=%s",
+                owner_id,
+                lesson.id,
+                MT_MODEL,
+                int(translation_usage.get("total_tokens", 0) or 0),
+                translation_cost_amount_cents,
+                int(variant.get("translate_failed_count", 0)),
+                int(variant.get("translation_request_count", 0) or 0),
+            )
+            record_consume(
+                db,
+                user_id=owner_id,
+                model_name=asr_model,
+                duration_ms=actual_duration_ms or 0,
+                lesson_id=lesson.id,
+                note=(
+                    f"课程生成完成（DashScope直传），预扣流水#{reserve_ledger_id}，"
+                    f"预扣金额={reserved_points}分，实耗金额={actual_points}分，差额={points_diff}分，"
+                    f"usage_seconds={usage_seconds if usage_hit else 'fallback'}"
+                ),
+            )
+            db.commit()
+            db.refresh(lesson)
+            lesson.task_result_meta = dict(task_result_meta)
+            lesson.translation_debug = dict(translation_debug)
+            try:
+                _write_json_file(
+                    lesson_result_path,
+                    {
+                        "lesson_id": int(lesson.id),
+                        "subtitle_cache_seed": lesson.subtitle_cache_seed,
+                        "task_result_meta": dict(task_result_meta),
+                    },
+                )
+            except Exception:
+                logger.exception("[DEBUG] lesson.checkpoint.write_failed path=%s", lesson_result_path)
+
+            _emit_progress(
+                progress_callback,
+                stage_key="write_lesson",
+                stage_status="completed",
+                overall_percent=100,
+                current_text="课程生成完成",
+                counters={
+                    "asr_done": asr_progress_counters["asr_done"],
+                    "asr_estimated": asr_progress_counters["asr_estimated"],
+                    "translate_done": translate_total,
+                    "translate_total": translate_total,
+                    "segment_done": asr_progress_counters["segment_done"],
+                    "segment_total": asr_progress_counters["segment_total"],
+                },
+                translation_debug=translation_debug,
+            )
+            return lesson
+        except Exception:
+            db.rollback()
+            if reserve_ledger_id is not None:
+                try:
+                    refund_points(
+                        db,
+                        user_id=owner_id,
+                        points=reserved_points,
+                        model_name=asr_model,
+                        duration_ms=reserved_duration_ms,
+                        note=f"课程生成失败（DashScope直传），退回预扣点数，预扣流水#{reserve_ledger_id}",
                     )
                     db.commit()
                 except Exception:
