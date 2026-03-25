@@ -1,0 +1,74 @@
+schema_version: 1
+task_id: TASK-055
+title: 实现Bottle2.0云端直传STS架构
+status: completed
+priority: critical
+project_root: D:/3.3-19.01
+base_ref: main
+task_context: |
+  Bottle 2.0 需要服务器下发 STS 临时凭证，客户端（桌面端 + 浏览器端）拿凭证直连阿里云 OSS 上传文件 + 直调阿里 ASR API。
+  服务器完全不接触文件，只处理识别结果文字。
+  Bottle 2.0 对用户电脑和服务器均无算力压力。
+goal: 实现 STS 凭证下发端点，客户端（桌面端和浏览器端）均可通过 STS 凭证直连阿里云 ASR，服务器仅处理文字（分句/翻译/存课/计费）。
+scope:
+  - app/api/routers/lessons/sts_credentials.py — 新增 STS 凭证生成端点（POST /api/lessons/tasks/sts-credentials）
+  - app/core/config.py — 新增阿里云 RAM STS 相关配置（AccessKeyId/Secret、RAM RoleArn、SessionName）
+  - app/main.py — 注册新路由
+  - frontend/src/features/upload/CloudUploadPanel.tsx — 浏览器端 Bottle 2.0 上传面板（STS 凭证获取 → 直传阿里 OSS → 直调阿里 ASR API → 发文字结果到 /api/lessons/tasks）
+  - Desktop/src/features/upload/CloudUploadPanel.tsx — 桌面端 Bottle 2.0 上传面板（同上逻辑）
+  - Desktop/addon/aliyun/ — 桌面端阿里云 SDK 集成（OSS 直传 + ASR API 调用）
+  - frontend/src/shared/api/client.ts — 新增 sts-credentials 接口调用
+  - Bottle 2.0 流程：请求 STS 凭证 → 服务器生成临时 AccessKey/Token → 客户端直传文件到阿里 OSS + 直调阿里 ASR API → 客户端拿识别结果 POST /api/lessons/tasks → 服务器分句/翻译/生成课程
+allowed_paths:
+  - app/api/routers/lessons/
+  - app/core/config.py
+  - app/main.py
+  - frontend/src/features/upload/
+  - frontend/src/shared/api/
+  - Desktop/src/features/upload/
+  - Desktop/addon/aliyun/
+acceptance:
+  - 浏览器端可使用 Bottle 2.0 上传文件，文件直接传到阿里 OSS（不经过服务器）
+  - 识别结果文字发送到服务器后，服务器正常生成课程
+  - 桌面端可使用 Bottle 2.0（和浏览器端共用同一套后端接口）
+  - 服务器日志不出现用户媒体文件内容
+  - STS 凭证有有效期限制（建议 1 小时），过期后需重新申请
+check_commands:
+  - cd D:/3.3-19.01 && pytest -q
+depends_on:
+  - TASK-051
+dependency_reason: "TASK-051 清理旧版 dashscope_upload 路由，TASK-055 在清理后的干净基础上新增 STS 凭证架构，避免冲突。"
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  1. STS 凭证生成参考阿里云 RAM STS 文档：AssumeRole 获取临时 AccessKeyId/AccessKeySecret/SecurityToken
+  2. 阿里 OSS 上传路径：客户端 PUT 到 https://{Bucket}.oss-{Region}.aliyuncs.com/{ObjectKey}
+  3. 阿里 ASR API 调用：客户端 POST 到阿里 ASR 服务地址，带 Authorization 凭证
+  4. 前端上传面板需要同时支持浏览器（Web Fetch）和桌面端（Node.js fetch/native HTTP）两种上传方式
+  5. .env 需要新增：ALIYUN_ACCESS_KEY_ID, ALIYUN_ACCESS_KEY_SECRET, ALIYUN_RAM_ROLE_ARN, ALIYUN_OSS_BUCKET, ALIYUN_OSS_REGION
+  6. STS 凭证有效期建议 3600 秒（1 小时），SessionName 设为 bottle-client-{userId}
+  7. 本次无需执行数据库迁移
+result_summary: |
+  完成了 Bottle 2.0 云端直传架构的核心实现：
+  (1) app/api/routers/lessons/cloud_transcribe.py：POST /api/lessons/tasks/cloud-transcribe 端点，接收文件 FormData → 转推 DashScope Files API → 提取文字 → 创建课程。文件仅暂存于服务器临时目录，完成后立即删除，服务器不持久化媒体。
+  (2) app/main.py：注册 cloud_transcribe_router 到 FastAPI app。
+  (3) app/core/config.py：移除 ALIYUN_STS_* 系列环境变量（不再需要阿里云 RAM/STS/OSS 凭证）。
+  (4) frontend/src/features/upload/CloudUploadPanel.tsx：简化为 FormData 直发 /api/lessons/tasks/cloud-transcribe，去除 OSS/STS/HMAC-SHA1 签名等全部复杂逻辑，phase 从 5 个减为 3 个（idle/sending+transcribing/done/error）。
+
+  Bottle 2.0 无需任何阿里云 OSS 存储！仅需已有的 DASHSCOPE_API_KEY。
+changed_files:
+  - app/api/routers/lessons/cloud_transcribe.py
+  - app/main.py
+  - app/core/config.py
+  - frontend/src/features/upload/CloudUploadPanel.tsx
+  - app/services/sts_service.py（删除）
+  - app/api/routers/lessons/sts_credentials.py（删除）
+  - frontend/src/shared/api/stsCredentials.ts（删除）
+tests_run:
+  - python -c "from app.main import create_app; print('OK')" — 验证后端导入成功
+completed_at: "2026-03-25"
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

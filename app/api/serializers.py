@@ -3,12 +3,11 @@ from __future__ import annotations
 from decimal import Decimal
 
 from app.core.timezone import to_shanghai_aware
-from app.models import BillingModelRate, FasterWhisperSetting, Lesson, LessonSentence, SubtitleSetting, User
+from app.models import BillingModelRate, Lesson, LessonSentence, SubtitleSetting, User
 from app.models.billing import cents_to_rate_yuan, normalize_rate_yuan, rate_yuan_to_compat_cents
 from app.schemas import (
     AdminSubtitleSettingsItem,
     BillingRateItem,
-    FasterWhisperSettingsItem,
     LessonCatalogItemResponse,
     LessonCatalogProgressSummaryResponse,
     LessonDetailResponse,
@@ -35,7 +34,7 @@ def _compat_cents_from_yuan(value: Decimal) -> int:
 def _rate_display_meta(model_name: str) -> tuple[str, str]:
     normalized = str(model_name or "").strip()
     display_name, runtime_kind = get_asr_display_meta(normalized)
-    if normalized in {"faster-whisper-medium", "qwen3-asr-flash-filetrans"}:
+    if normalized == "qwen3-asr-flash-filetrans":
         return display_name, runtime_kind
     if normalized == "qwen-mt-flash":
         return "翻译成本参考", "internal"
@@ -212,18 +211,5 @@ def to_admin_subtitle_settings_item(item: SubtitleSetting) -> AdminSubtitleSetti
         semantic_split_max_words_threshold=int(item.semantic_split_max_words_threshold),
         semantic_split_timeout_seconds=int(item.semantic_split_timeout_seconds),
         translation_batch_max_chars=max(1, min(12000, int(getattr(item, "translation_batch_max_chars", 2600) or 2600))),
-        updated_at=to_shanghai_aware(item.updated_at),
-    )
-
-
-def to_faster_whisper_settings_item(item: FasterWhisperSetting) -> FasterWhisperSettingsItem:
-    return FasterWhisperSettingsItem(
-        device=str(getattr(item, "device", "") or ""),
-        compute_type=str(getattr(item, "compute_type", "") or ""),
-        cpu_threads=int(getattr(item, "cpu_threads", 4) or 4),
-        num_workers=int(getattr(item, "num_workers", 2) or 2),
-        beam_size=int(getattr(item, "beam_size", 5) or 5),
-        vad_filter=bool(getattr(item, "vad_filter", True)),
-        condition_on_previous_text=bool(getattr(item, "condition_on_previous_text", False)),
         updated_at=to_shanghai_aware(item.updated_at),
     )

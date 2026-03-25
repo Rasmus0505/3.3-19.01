@@ -6,27 +6,6 @@ import { cn } from "../../lib/utils";
 import { api, createApiClient, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
 import { ASR_MODEL_KEYS, buildAsrModelCatalogMap, getAsrModelCatalogItem, isAsrModelPreparing, isAsrModelReady } from "../../shared/lib/asrModels";
 import { formatMoneyCents, formatMoneyYuan, formatMoneyYuanPerMinute } from "../../shared/lib/money";
-import {
-  cancelDesktopModelUpdate,
-  checkDesktopModelUpdate,
-  desktopModelUpdateSupported,
-  bindLocalAsrModelDirectory,
-  ensureLocalAsrModel,
-  getDesktopBundledAsrModelSummary,
-  getLocalAsrWorkerAssetPayload,
-  installDesktopBundledAsrModel,
-  localAsrDirectoryBindingSupported,
-  LOCAL_ASR_STORAGE_MODE_BROWSER,
-  LOCAL_ASR_STORAGE_MODE_DIRECTORY,
-  onDesktopModelUpdateProgress,
-  releaseAllLocalAsrWorkerAssetPayloads,
-  releaseLocalAsrWorkerAssetPayload,
-  removeLocalAsrModel,
-  startDesktopModelUpdate,
-  switchLocalAsrStorageMode,
-  transcribeDesktopLocalAsr,
-  verifyLocalAsrModel,
-} from "../../shared/media/localAsrAssetManager";
 import { extractMediaCoverPreview, getLessonMediaPreview, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import {
   clearActiveGenerationTask,
@@ -39,8 +18,6 @@ import {
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, MediaCover, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
 import { useAppStore } from "../../store";
 import { ASR_STRATEGY_CLOUD, resolveAsrStrategy, mapCloudAsrFailureToMessage } from "./asrStrategy";
-import { buildLocalAsrLongAudioWarning, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS, LOCAL_ASR_TARGET_SAMPLE_RATE, preprocessLocalAsrFile } from "./localAsrAudioPreprocess";
-import { runLocalAsrWithAutoParallelism } from "./localAsrParallelRuntime";
 import { getUploadModelTone, getUploadRestoreTone, getUploadStageTone, getUploadTaskTone, getUploadToneStyles } from "./uploadStatusTheme";
 
 const QWEN_MODEL = "qwen3-asr-flash-filetrans";
@@ -48,21 +25,12 @@ const FASTER_WHISPER_MODEL = "faster-whisper-medium";
 const MT_PRICE_MODEL = "qwen-mt-flash";
 const ESTIMATED_MT_TOKENS_PER_MINUTE = 320;
 const UPLOAD_PROGRESS_PERSIST_INTERVAL_MS = 800;
-const LOCAL_ASR_FILE_ACCEPT = "audio/*,video/mp4,.mp4,.m4a,.mp3,.wav,.aac,.ogg,.flac,.opus";
-const LOCAL_MODEL_VISUAL_PROGRESS_INTERVAL_MS = 120;
-const LOCAL_STAGE_PROGRESS_INTERVAL_MS = 800;
-const DEFAULT_LOCAL_ASR_ASSET_BASE_URL = "/api/local-asr-assets";
-const LOCAL_ASR_ASSET_BASE_URL = (import.meta.env.VITE_LOCAL_ASR_MODEL_BASE_URL || DEFAULT_LOCAL_ASR_ASSET_BASE_URL).trim().replace(/\/+$/, "");
-const LOCAL_BROWSER_RUNTIME_BASE_URL = (import.meta.env.VITE_LOCAL_RUNTIME_BASE_URL || "").trim().replace(/\/+$/, "");
 const ASR_MODELS_API_BASE = "/api/asr-models";
-const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止生成，可重新开始。";
 const DESKTOP_CLIENT_OFFLINE_MESSAGE = "离线模式下无法生成课程，请联网后重试";
 const DESKTOP_CLIENT_INSUFFICIENT_BALANCE_MESSAGE = "余额不足，请充值";
-const LOCAL_BROWSER_ASR_ENABLED = false;
 const DEFAULT_ASR_MODEL_CATALOG_MAP = buildAsrModelCatalogMap();
 const DEFAULT_FAST_UPLOAD_MODEL = QWEN_MODEL;
 const FAST_RUNTIME_TRACK_CLOUD = "cloud";
-const FAST_RUNTIME_TRACK_BROWSER_LOCAL = "browser_local";
 const FAST_RUNTIME_TRACK_DESKTOP_LOCAL = "desktop_local";
 const DESKTOP_LOCAL_TRANSCRIBING_PHASE = "desktop_local_transcribing";
 const DESKTOP_LINK_IMPORTING_PHASE = "desktop_link_importing";
@@ -71,25 +39,13 @@ const DESKTOP_UPLOAD_SOURCE_MODE_FILE = "file";
 const DESKTOP_UPLOAD_SOURCE_MODE_LINK = "link";
 const FILE_PICKER_ACTION_SELECT = "select";
 const FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE = "desktop_local_generate";
-const browserLocalRuntimeApi = LOCAL_BROWSER_RUNTIME_BASE_URL ? createApiClient({ baseUrl: LOCAL_BROWSER_RUNTIME_BASE_URL }) : null;
-
-function hasLocalCourseGeneratorBridge() {
-  return typeof window !== "undefined" && typeof window.localAsr?.generateCourse === "function";
-}
-function hasDesktopRuntimeBridge() {
-  return typeof window !== "undefined" && typeof window.desktopRuntime?.requestLocalHelper === "function";
-}
-
-function hasDesktopFileSelectionBridge() {
-  return typeof window !== "undefined" && typeof window.desktopRuntime?.selectLocalMediaFile === "function";
-}
 
 function hasDesktopFileReadBridge() {
   return typeof window !== "undefined" && typeof window.desktopRuntime?.readLocalMediaFile === "function";
 }
 
-function hasBrowserLocalRuntimeBridge() {
-  return Boolean(browserLocalRuntimeApi);
+function hasDesktopRuntimeBridge() {
+  return typeof window !== "undefined" && typeof window.desktopRuntime?.requestLocalHelper === "function";
 }
 
 function hasDesktopModelUpdateBridge() {
@@ -128,6 +84,25 @@ async function requestDesktopLocalHelper(pathname, responseType = "json", option
     throw new Error(detail || "Desktop local helper request failed");
   }
   return response;
+}
+
+async function transcribeDesktopLocalAsr(modelKey, sourceFile) {
+  if (!hasDesktopRuntimeBridge()) {
+    throw new Error("Desktop runtime bridge is unavailable");
+  }
+  const response = await window.desktopRuntime.transcribeLocalMedia({
+    modelKey: String(modelKey || FASTER_WHISPER_MODEL),
+    file: sourceFile,
+  });
+  if (!response?.ok) {
+    const message = String(response?.message || response?.error_message || response?.detail || "Desktop local ASR failed").trim();
+    throw new Error(message || "Desktop local ASR failed");
+  }
+  return {
+    asrPayload: response?.asr_payload || response?.asrPayload || response || {},
+    sourceFilename: String(sourceFile?.name || ""),
+    sourceDurationMs: Math.max(1, Number(response?.source_duration_ms || response?.sourceDurationMs || 0)),
+  };
 }
 
 async function requestWalletBalance(accessToken = "") {
@@ -748,86 +723,8 @@ function nowMs() {
   return Date.now();
 }
 
-function logUploadLocalAsrDebug(message, extra = {}) {
-  if (typeof console === "undefined" || typeof console.debug !== "function") return;
-  console.debug("[DEBUG] upload.local_asr", message, extra);
-}
-
-async function extractAudioForLocalAsrWithServer(file, accessToken = "", signal = undefined) {
-  const form = new FormData();
-  form.append("video_file", file);
-  const resp = await api(
-    "/api/lessons/local-asr/audio-extract",
-    {
-      method: "POST",
-      body: form,
-      signal,
-    },
-    accessToken,
-  );
-  if (!resp.ok) {
-    const payload = await parseResponse(resp);
-    throw new Error(toErrorText(payload, "视频音轨提取失败"));
-  }
-  return resp.blob();
-}
-
-async function prepareAudioDataForLocalAsr(file, accessToken = "", options = {}) {
-  const { preferServerExtract = false, signal = undefined } = options;
-  const isMp4 = String(file?.type || "").toLowerCase() === "video/mp4" || /\.mp4$/i.test(String(file?.name || ""));
-  const preprocessOptions = {
-    targetSampleRate: LOCAL_ASR_TARGET_SAMPLE_RATE,
-    unsupportedAudioContextMessage: "当前浏览器暂不支持这个模型",
-    mp4DecodeErrorMessage: "当前 MP4 音轨无法直接解析，请改传音频或换另一个模型。",
-    decodeErrorPrefix: "解析音频失败",
-  };
-  if (isMp4 && preferServerExtract) {
-    if (!accessToken) {
-      throw new Error("当前登录状态已失效，请重新登录后再试。");
-    }
-    const extractStart = nowMs();
-    const extractedAudio = await extractAudioForLocalAsrWithServer(file, accessToken, signal);
-    const extractedFile = new File([extractedAudio], `${String(file?.name || "local-source").replace(/\.[^.]+$/, "") || "local-source"}.opus`, {
-      type: String(extractedAudio.type || "audio/ogg"),
-      lastModified: Date.now(),
-    });
-    const preprocessResult = await preprocessLocalAsrFile(extractedFile, preprocessOptions);
-    return {
-      ...preprocessResult,
-      metrics: {
-        ...(preprocessResult?.metrics || {}),
-        audio_extract_ms: Math.max(0, Math.round(nowMs() - extractStart)),
-      },
-    };
-  }
-  try {
-    return await preprocessLocalAsrFile(file, preprocessOptions);
-  } catch (error) {
-    if (!isMp4) {
-      throw error;
-    }
-    if (!accessToken) {
-      throw new Error("当前 MP4 音轨无法直接解析，请改传音频或换另一个模型。");
-    }
-    const extractStart = nowMs();
-    const extractedAudio = await extractAudioForLocalAsrWithServer(file, accessToken, signal);
-    const extractedFile = new File([extractedAudio], `${String(file?.name || "local-source").replace(/\.[^.]+$/, "") || "local-source"}.opus`, {
-      type: String(extractedAudio.type || "audio/ogg"),
-      lastModified: Date.now(),
-    });
-    const preprocessResult = await preprocessLocalAsrFile(extractedFile, preprocessOptions);
-    return {
-      ...preprocessResult,
-      metrics: {
-        ...(preprocessResult?.metrics || {}),
-        audio_extract_ms: Math.max(0, Math.round(nowMs() - extractStart)),
-      },
-    };
-  }
-}
-
 function buildWorkerRequestId(sequence) {
-  return `upload-local-asr-${Date.now()}-${sequence}`;
+  return `upload-${Date.now()}-${sequence}`;
 }
 
 function getStageItems(taskSnapshot) {
@@ -1017,39 +914,6 @@ function getStageProgressPercent(stageKey, ratio = 1) {
   if (stageKey === "translate_zh") return Math.round(60 + 25 * safeRatio);
   if (stageKey === "write_lesson") return Math.round(85 + 15 * safeRatio);
   return 0;
-}
-
-function estimateLocalAsrStageRatio(elapsedMs, durationSec) {
-  const elapsedSeconds = Math.max(0, Number(elapsedMs || 0)) / 1000;
-  const expectedSeconds = Math.max(30, Math.min(120, Math.round(Math.max(10, Number(durationSec || 0)) * 0.6)));
-  if (elapsedSeconds <= 0) return 0.12;
-  return Math.min(0.84, 0.12 + Math.min(0.72, (elapsedSeconds / expectedSeconds) * 0.72));
-}
-
-function buildLocalAsrProgressCounters(elapsedMs, durationSec) {
-  const totalUnits = Math.max(0, Math.ceil(Number(durationSec || 0)));
-  if (totalUnits <= 0) {
-    return {
-      asr_done: 0,
-      asr_estimated: 0,
-      translate_done: 0,
-      translate_total: 0,
-      segment_done: 0,
-      segment_total: 0,
-    };
-  }
-  const elapsedSeconds = Math.max(0, Number(elapsedMs || 0)) / 1000;
-  const expectedSeconds = Math.max(30, Math.min(120, Math.round(Math.max(10, Number(durationSec || 0)) * 0.6)));
-  const runningRatio = expectedSeconds > 0 ? Math.min(0.94, (elapsedSeconds / expectedSeconds) * 0.94) : 0;
-  const done = Math.min(Math.max(0, totalUnits - 1), Math.floor(totalUnits * runningRatio));
-  return {
-    asr_done: done,
-    asr_estimated: totalUnits,
-    translate_done: 0,
-    translate_total: 0,
-    segment_done: 0,
-    segment_total: 0,
-  };
 }
 
 function buildLocalProgressSnapshot({ stageKey, stageStatus = "running", ratio = 0, currentText = "", counters = {} }) {
@@ -2455,213 +2319,6 @@ export function UploadPanel({
       setSelectedBalancedModel(getDefaultBalancedModelKey(selectedBalancedModel));
     }
   }, [selectedBalancedModel]);
-
-  useEffect(() => {
-    if (mode === "balanced") {
-      setSelectedUploadModel((prev) => (prev === getDefaultFastUploadModelKey(configuredDefaultAsrModel) ? prev : getDefaultFastUploadModelKey(configuredDefaultAsrModel)));
-      return;
-    }
-    setSelectedUploadModel((prev) => (getUploadModelMeta(prev).mode === "fast" ? prev : getDefaultFastUploadModelKey(configuredDefaultAsrModel)));
-  }, [configuredDefaultAsrModel, mode]);
-
-  useEffect(() => {
-    if (!LOCAL_BROWSER_ASR_ENABLED) {
-      setLocalWorkerReadyMap({ browserLocal: false });
-      setLocalModelStateMap({});
-      return undefined;
-    }
-    if (!localAsrSupport.supported) {
-      setLocalWorkerReadyMap({ browserLocal: false });
-      const unsupportedMap = Object.fromEntries(
-        LOCAL_MODEL_OPTIONS.map((item) => [
-          item.key,
-          {
-            status: "unsupported",
-            runtime: "",
-            progress: null,
-            error: localAsrSupport.reason,
-          },
-        ]),
-      );
-      setLocalModelStateMap(unsupportedMap);
-      return undefined;
-    }
-    const senseWorker = new Worker(new URL("./localAsrPreviewWorker.js", import.meta.url));
-    localSenseWorkerRef.current = senseWorker;
-    setLocalWorkerReadyMap({ browserLocal: true });
-
-    const handleMessage = (event) => {
-      const payload = event?.data || {};
-      const requestId = String(payload?.requestId || "");
-      const pending = requestId ? localAsrPendingRequestsRef.current.get(requestId) : null;
-      const modelKey = pending?.modelKey || LOCAL_MODEL_OPTIONS.find((item) => item.workerModelId === String(payload?.modelId || payload?.model_id || ""))?.key || "";
-      if (payload?.type === "progress" && modelKey) {
-        if (payload.stage === "model-load-start") {
-          updateLocalModelState(modelKey, { status: "loading", runtime: String(payload.runtime || ""), progress: null, error: "" });
-          setLocalBusyModelKey(modelKey);
-          setLocalBusyText(sanitizeUserFacingText(payload.status_text || "正在下载模型"));
-          return;
-        }
-        if (payload.stage === "model-progress") {
-          updateLocalModelState(modelKey, {
-            status: "loading",
-            runtime: String(payload.runtime || ""),
-            progress: Number.isFinite(Number(payload.progress)) ? clampPercent(payload.progress) : null,
-            error: "",
-          });
-          setLocalBusyModelKey(modelKey);
-          setLocalBusyText(sanitizeUserFacingText(payload.status || "正在下载模型"));
-          return;
-        }
-        if (payload.stage === "runtime-fallback") {
-          updateLocalModelState(modelKey, { runtime: String(payload.runtime || "wasm") });
-          setLocalBusyText(sanitizeUserFacingText(payload.status_text || "已切换为兼容模式"));
-          return;
-        }
-      }
-      if (payload?.type === "result" && pending) {
-        localAsrPendingRequestsRef.current.delete(requestId);
-        pending.resolve(payload);
-        return;
-      }
-      if (payload?.type === "error" && pending) {
-        localAsrPendingRequestsRef.current.delete(requestId);
-        pending.reject(new Error(sanitizeUserFacingText(payload.message || "识别组件失败")));
-      }
-    };
-
-    const buildWorkerErrorHandler = (workerKind) => (event) => {
-      const message = sanitizeUserFacingText(event?.message || "识别组件启动失败");
-      rejectPendingLocalRequests(message);
-      setWorkerReady(workerKind, false);
-      setLocalBusyModelKey("");
-      setLocalBusyText("");
-      setLocalModelStateMap((prev) => {
-        const next = { ...prev };
-        LOCAL_MODEL_OPTIONS.forEach((item) => {
-          if (workerKind !== "browserLocal") return;
-          next[item.key] = {
-            ...(next[item.key] || {}),
-            status: "error",
-            error: message,
-          };
-        });
-        return next;
-      });
-    };
-    const handleSenseWorkerError = buildWorkerErrorHandler("browserLocal");
-
-    senseWorker.addEventListener("message", handleMessage);
-    senseWorker.addEventListener("error", handleSenseWorkerError);
-    return () => {
-      senseWorker.removeEventListener("message", handleMessage);
-      senseWorker.removeEventListener("error", handleSenseWorkerError);
-      rejectPendingLocalRequests("识别组件已关闭");
-      setLocalWorkerReadyMap({ browserLocal: false });
-      senseWorker.terminate();
-      releaseAllLocalAsrWorkerAssetPayloads();
-      if (localSenseWorkerRef.current === senseWorker) localSenseWorkerRef.current = null;
-    };
-  }, [localAsrSupport.reason, localAsrSupport.supported, localWorkerEpoch]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setLocalModelVisualProgressMap((prev) => {
-        let changed = false;
-        const next = { ...prev };
-        LOCAL_MODEL_OPTIONS.forEach((item) => {
-          const modelState = localModelStateMap[item.key] || {};
-          const status = String(modelState.status || "");
-          const rawProgress = Number(modelState.progress);
-          const shouldShowProgress =
-            ["ready", "cached"].includes(status) || (status === "loading" && Number.isFinite(rawProgress));
-
-          if (!shouldShowProgress) {
-            if (Object.prototype.hasOwnProperty.call(next, item.key)) {
-              delete next[item.key];
-              changed = true;
-            }
-            return;
-          }
-
-          const target = ["ready", "cached"].includes(status) ? 100 : clampPercent(rawProgress);
-          const current = Number.isFinite(Number(prev[item.key])) ? clampPercent(prev[item.key]) : 0;
-          const nextValue =
-            target >= 100
-              ? 100
-              : current >= target
-                ? current
-                : Math.min(target, current + Math.max(1, Math.ceil((target - current) * 0.22)));
-
-          if (!Object.prototype.hasOwnProperty.call(next, item.key) || Math.abs(Number(next[item.key]) - nextValue) > 0.001) {
-            next[item.key] = nextValue;
-            changed = true;
-          }
-        });
-        return changed ? next : prev;
-      });
-    }, LOCAL_MODEL_VISUAL_PROGRESS_INTERVAL_MS);
-
-    return () => {
-      clearInterval(timer);
-    };
-  }, [localModelStateMap]);
-
-  useEffect(() => {
-    if (!LOCAL_BROWSER_ASR_ENABLED) {
-      setLocalModelStateMap({});
-      return undefined;
-    }
-    let canceled = false;
-    async function restoreLocalModelState() {
-      const nextEntries = await Promise.all(
-        LOCAL_MODEL_OPTIONS.map(async (item) => {
-          if (!localAsrSupport.supported) {
-            return [item.key, { status: "unsupported", runtime: "", progress: null, error: localAsrSupport.reason }];
-          }
-          if (!item.uploadEnabled) {
-            return [item.key, { status: "unsupported", runtime: "", progress: null, error: String(item.unavailableReason || "") }];
-          }
-          try {
-            const verification = await verifyLocalAsrModel(item.key, LOCAL_ASR_ASSET_BASE_URL);
-            return [
-              item.key,
-              {
-                status: verification.status,
-                runtime: verification.runtime,
-                progress: verification.ready ? 100 : null,
-                error: verification.error,
-                message: verification.message,
-                storageMode: verification.storageMode,
-                storageSummary: verification.storageSummary,
-                directoryName: verification.directoryName,
-                directoryBound: verification.directoryBound,
-                cacheVersion: verification.cacheVersion,
-                missingFiles: verification.missingFiles,
-              },
-            ];
-          } catch (error) {
-            return [
-              item.key,
-              {
-                status: "error",
-                runtime: "",
-                progress: null,
-                error: error instanceof Error && error.message ? error.message : String(error),
-              },
-            ];
-          }
-        }),
-      );
-      if (canceled) return;
-      const nextMap = Object.fromEntries(nextEntries);
-      setLocalModelStateMap(nextMap);
-    }
-    void restoreLocalModelState();
-    return () => {
-      canceled = true;
-    };
-  }, [localAsrSupport.reason, localAsrSupport.supported]);
 
   useEffect(() => {
     let canceled = false;

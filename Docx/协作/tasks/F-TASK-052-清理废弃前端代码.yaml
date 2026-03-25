@@ -1,0 +1,53 @@
+schema_version: 1
+task_id: TASK-052
+title: 清理废弃前端代码
+status: todo
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+task_context: |
+  前端存在多个与被删流程相关的文件：浏览器端本地 ASR（WASM/WebWorker 方案）、旧版云端上传/云端直传 UploadPanel。
+  这些文件全部要删除，前端 UploadPanel 简化为两个选项：Bottle 1.0（桌面端）和 Bottle 2.0（云端 STS）。
+goal: 删除所有与被删流程相关的前端代码，UploadPanel 简化为两个模式。
+scope:
+  - frontend/src/features/upload/localAsrParallelRuntime.js — 删除
+  - frontend/src/features/upload/localAsrPreviewWorker.js — 删除
+  - frontend/src/features/upload/localAsrAudioPreprocess.js — 删除
+  - frontend/src/shared/media/localAsrAssetManager.js — 删除
+  - frontend/src/shared/media/localAsrPreviewStore.js — 删除
+  - frontend/src/shared/lib/asrModels.js — 删除浏览器本地 ASR 相关配置
+  - frontend/src/features/upload/UploadPanel.jsx — 删除 browser_local 和旧版 cloud 上传模式，仅保留 Bottle 2.0 STS 上传
+  - frontend/src/features/upload/localAsrParallelRuntime.js — 删除
+  - frontend/src/features/upload/localAsrPreviewWorker.js — 删除
+  - frontend/src/features/upload/localAsrAudioPreprocess.js — 删除
+  - frontend/src/shared/media/localAsrAssetManager.js — 删除
+  - frontend/src/shared/media/localAsrPreviewStore.js — 删除
+  - frontend/src/shared/lib/asrModels.js — 删除浏览器本地 ASR 相关配置
+allowed_paths:
+  - frontend/src/features/upload/
+  - frontend/src/shared/media/
+  - frontend/src/shared/lib/
+acceptance:
+  - npm run build 成功
+  - 上传面板仅显示两个选项：Bottle 1.0（桌面端）和 Bottle 2.0（云端 STS）
+check_commands:
+  - cd D:/3.3-19.01/frontend && npm run build
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  1. UploadPanel 改造：删除 browser_local 和旧版 cloud 模式，保留 STS 相关 UI
+  2. 删除的 6 个文件引用链：确认没有被其他地方引用后再删
+  3. asrModels.js 中如果有 Bottle 2.0 需要的模型配置（如 dashscope），保留
+  4. 本次无需执行数据库迁移
+result_summary: ""
+changed_files: []
+tests_run: []
+blocked_reason: ""
+completed_at: ""
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

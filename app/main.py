@@ -15,17 +15,11 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.api.routers import admin, admin_console, admin_sql_console, asr_models, auth, billing, lessons, media, practice, transcribe, wallet
-from app.api.routers.dashscope_upload import router as dashscope_upload
-from app.api.routers.local_asr_assets import (
-    get_downloadable_model_bundle_summaries,
-    router as local_asr_assets_router,
-    schedule_local_asr_asset_prefetch,
-)
+from app.api.routers.lessons.cloud_transcribe import router as cloud_transcribe_router
 from app.core.config import (
     BASE_DATA_DIR,
     BASE_TMP_DIR,
     DASHSCOPE_API_KEY,
-    FASTER_WHISPER_MODEL_DIR,
     PERSISTENT_DATA_DIR,
     SERVICE_NAME,
     STATIC_DIR,
@@ -39,10 +33,9 @@ from app.core.logging import setup_logging
 from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, schema_name_for_url
 from app.models import LessonGenerationTask
 from app.services.admin_bootstrap import ensure_admin_users
-from app.services.asr_model_registry import list_asr_models_with_status
 from app.services.asr_dashscope import setup_dashscope
+from app.services.asr_model_registry import list_asr_models_with_status
 from app.services.billing_service import ensure_default_billing_rates
-from app.services.faster_whisper_asr import ensure_default_faster_whisper_settings, schedule_faster_whisper_model_prefetch
 from app.services.media import get_media_runtime_status
 from app.services.user_activity import ensure_user_activity_schema
 
@@ -108,15 +101,6 @@ READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "semantic_split_max_words_threshold",
         "semantic_split_timeout_seconds",
         "translation_batch_max_chars",
-    ),
-    "faster_whisper_settings": (
-        "device",
-        "compute_type",
-        "cpu_threads",
-        "num_workers",
-        "beam_size",
-        "vad_filter",
-        "condition_on_previous_text",
     ),
     "lesson_generation_tasks": LESSON_TASK_REQUIRED_COLUMNS,
 }
@@ -350,37 +334,12 @@ def _build_database_not_ready_response(runtime_status: RuntimeStatus) -> JSONRes
     )
 
 
-def _log_downloadable_model_bundle_status() -> None:
-    for summary in get_downloadable_model_bundle_summaries():
-        model_key = str(summary.get("model_key") or "")
-        bundle_dir = str(summary.get("bundle_dir") or "")
-        file_count = int(summary.get("file_count") or 0)
-        available = bool(summary.get("available"))
-        missing_reason = str(summary.get("missing_reason") or "")
-        log_payload = {
-            "model_key": model_key,
-            "bundle_dir": bundle_dir,
-            "file_count": file_count,
-            "available": available,
-        }
-        if available:
-            logger.info("[DEBUG] startup.downloadable_model ready=%s detail=%s", available, log_payload)
-            continue
-        logger.warning(
-            "[DEBUG] startup.downloadable_model ready=%s detail=%s missing_reason=%s",
-            available,
-            log_payload,
-            missing_reason,
-        )
-
-
 async def _bootstrap_runtime_state(app: FastAPI) -> None:
     runtime_status = _ensure_runtime_status(app)
     db = SessionLocal()
     try:
         ensure_user_activity_schema(db)
         ensure_default_billing_rates(db)
-        ensure_default_faster_whisper_settings(db)
     finally:
         db.close()
     ready, error = _probe_database_ready()
@@ -506,26 +465,15 @@ async def app_lifespan(app: FastAPI):
     BASE_TMP_DIR.mkdir(parents=True, exist_ok=True)
     BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
     PERSISTENT_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    FASTER_WHISPER_MODEL_DIR.parent.mkdir(parents=True, exist_ok=True)
     logger.info(
-        "[DEBUG] startup.paths tmp_dir=%s tmp_data_dir=%s persistent_data_dir=%s faster_whisper_model_dir=%s",
+        "[DEBUG] startup.paths tmp_dir=%s tmp_data_dir=%s persistent_data_dir=%s",
         BASE_TMP_DIR,
         BASE_DATA_DIR,
         PERSISTENT_DATA_DIR,
-        FASTER_WHISPER_MODEL_DIR,
     )
-    _log_downloadable_model_bundle_status()
     _refresh_optional_runtime_status(app)
     _enforce_runtime_security_policies(app)
     await _bootstrap_runtime_state(app)
-    if schedule_local_asr_asset_prefetch():
-        logger.info("[DEBUG] startup.local_asr_prefetch scheduled")
-    else:
-        logger.info("[DEBUG] startup.local_asr_prefetch skipped")
-    if schedule_faster_whisper_model_prefetch():
-        logger.info("[DEBUG] startup.faster_whisper_prefetch scheduled")
-    else:
-        logger.info("[DEBUG] startup.faster_whisper_prefetch skipped")
     if _update_runtime_readiness(runtime_status):
         logger.info("[DEBUG] startup.ready")
     else:
@@ -640,12 +588,11 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(admin_console)
     app.include_router(admin_sql_console)
     app.include_router(transcribe)
-    app.include_router(dashscope_upload)
     app.include_router(lessons)
+    app.include_router(cloud_transcribe_router)
     app.include_router(asr_models)
     app.include_router(practice)
     app.include_router(media)
-    app.include_router(local_asr_assets_router)
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa_fallback_page(full_path: str) -> FileResponse:

@@ -45,7 +45,7 @@ from app.schemas.admin import (
     WalletLedgerItem,
 )
 from app.schemas.admin_console import AdminUserActivityItem, AdminUserActivityResponse, AdminUserActivitySummary, AdminUserActivitySummaryResponse
-from app.schemas.auth import AuthRequest, AuthResponse, LogoutResponse, RefreshRequest, UserResponse
+from app.schemas.auth import AuthRequest, AuthResponse, DesktopTokenLoginRequest, DesktopTokenLoginResponse, LogoutResponse, RefreshRequest, UserResponse
 from app.schemas.billing import (
     BillingRateItem,
     BillingRatesResponse,

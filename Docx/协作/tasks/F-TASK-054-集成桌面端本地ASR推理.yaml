@@ -1,0 +1,86 @@
+schema_version: 1
+task_id: TASK-054
+title: 桌面端集成本地ASR推理
+status: completed
+priority: critical
+project_root: D:/3.3-19.01
+base_ref: main
+task_context: |
+  Bottle 1.0 的核心能力是在桌面端本地完成 ASR 推理，文件完全不经过服务器。
+  已下载的模型放在 D:/3.3-19.01/Desktop/models/sherpa-onnx/sense-voice-zh-en-ja-ko-yue/。
+  参考 Memo AI 的子进程隔离架构，将 Sherpa-ONNX Node.js 绑定运行在独立的 Node.js 子进程中。
+goal: 桌面端在本地完成 ASR 推理，用户上传视频/音频文件后，桌面端提取音频并调用 Sherpa-ONNX ASR，识别结果文字发送到服务器生成课程。
+scope:
+  - Desktop/addon/sherpa-onnx/asr_offline_process.js — Sherpa-ONNX 离线识别子进程（JSON-RPC over stdin/stdout）
+  - Desktop/src/features/asr/asrProcess.ts — Electron 主进程子进程管理器（启动/通信/重启/崩溃恢复）
+  - Desktop/src/features/asr/sherpaAsr.ts — Sherpa-ONNX ASR 封装（音频格式转换/进度回调）
+  - Desktop/src/features/asr/asrModels.ts — ASR 模型配置（sense-voice-local）
+  - Desktop/src/features/upload/DesktopUploadPanel.tsx — 桌面端上传面板（文件选择/本地识别/发送到服务器）
+  - Desktop/electron/main.ts — 主进程集成 ASR IPC handlers
+  - Desktop/electron/preload.ts — 暴露 asrStart/asrTranscribe/asrHealthcheck/asrStop 等 IPC API
+  - app/services/asr_model_registry.py — 添加 SENSE_VOICE_LOCAL_MODEL 及状态支持
+  - app/api/routers/auth.py — 添加 /api/auth/desktop-token-login 端点
+  - app/schemas/auth.py — 添加 DesktopTokenLoginRequest/DesktopTokenLoginResponse
+  - electron-builder.json — 配置 asarUnpack 包含 addon/models/node_modules/sherpa-onnx-node
+  - models/sherpa-onnx/sense-voice-zh-en-ja-ko-yue/ — 已有模型文件（model.onnx, tokens.txt, configuration.json）
+allowed_paths:
+  - Desktop/addon/sherpa-onnx/
+  - Desktop/src/features/asr/
+  - Desktop/src/features/upload/
+  - Desktop/models/
+  - app/services/asr_model_registry.py
+  - app/api/routers/auth.py
+  - app/schemas/auth.py
+acceptance:
+  - 桌面端选择本地视频/音频文件，点击"开始识别"，能在本地完成 ASR 推理
+  - 识别结果文字发送到服务器后，服务器正常生成课程
+  - ASR 子进程崩溃后可自动重启（最多3次）
+  - 打包后的 .exe 能正确找到 Sherpa-ONNX 模型和 sherpa-onnx-node addon
+check_commands:
+  - cd D:/3.3-19.01/Desktop && npm run dev
+  - cd D:/3.3-19.01/Desktop && npm run package:win:dir
+depends_on:
+  - TASK-053
+dependency_reason: "TASK-053 提供桌面端项目骨架，TASK-054 在骨架内集成 ASR 能力，两者需顺序执行。"
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  1. Sherpa-ONNX Node.js 绑定安装：npm install sherpa-onnx-node（自动从 npm 安装）
+  2. 子进程架构：Electron main → child_process spawn Node.js → sherpa_onnx Node.js addon
+  3. 通信协议：stdin/stdout JSON-RPC 风格消息
+  4. 音频预处理：mp4→wav（16kHz，mono），需要 ffmpeg 在 PATH 中（sherpaAsr.ts）
+  5. 模型路径：D:/3.3-19.01/Desktop/models/sherpa-onnx/sense-voice-zh-en-ja-ko-yue/model.onnx
+  6. Faster-Whisper 兼容性：asrModels.ts 中预留接口，模型切换不影响主流程
+  7. 计费：TASK-054 阶段暂不在前端显示计费扣点，Bottle 1.0 计费逻辑在 TASK-055 后端 STS 凭证阶段处理
+  8. 本次无需执行数据库迁移
+result_summary: |
+  完成了 Bottle 1.0 桌面端本地 ASR 推理的完整集成。核心包括：
+  (1) asr_offline_process.js：独立的 Node.js 子进程，运行 Sherpa-ONNX SenseVoice 模型，通过 JSON-RPC over stdin/stdout 与主进程通信，支持 init/transcribe/healthcheck 三个方法。
+  (2) asrProcess.ts：Electron 主进程的子进程管理器，负责 spawn/restart/JSON-RPC 通信/崩溃恢复（最多3次重启），以及 IPC handler 注册（asr:start/asr:transcribe/asr:healthcheck/asr:stop）。
+  (3) sherpaAsr.ts：高层封装，负责音频格式转换（调用 ffmpeg）和进度回调。
+  (4) DesktopUploadPanel.tsx：桌面端上传面板，支持文件选择、本地识别、Bottle 2.0 占位符。
+  (5) 后端集成：在 asr_model_registry.py 中添加 sense-voice-local 模型支持，在 auth.py 中添加桌面端令牌登录端点。
+  (6) 打包配置：electron-builder.json 配置 asarUnpack，确保 addon/、models/、sherpa-onnx-node 在打包后处于 app.asar.unpacked 目录，ASR 子进程通过 NODE_PATH 和正确的相对路径找到它们。
+changed_files:
+  - Desktop/addon/sherpa-onnx/asr_offline_process.js
+  - Desktop/src/features/asr/asrProcess.ts
+  - Desktop/src/features/asr/sherpaAsr.ts
+  - Desktop/src/features/asr/asrModels.ts
+  - Desktop/src/features/upload/DesktopUploadPanel.tsx
+  - Desktop/electron/main.ts
+  - Desktop/electron/preload.ts
+  - Desktop/electron-builder.json
+  - app/services/asr_model_registry.py
+  - app/api/routers/auth.py
+  - app/schemas/auth.py
+  - app/schemas/__init__.py
+tests_run:
+  - npm run build (electron-vite build)
+  - npm run package:win:dir (electron-builder --win --dir)
+  - Package structure verified: resources/app.asar.unpacked/addon/, resources/app.asar.unpacked/models/, resources/app.asar.unpacked/node_modules/sherpa-onnx-node/
+completed_at: "2026-03-25"
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

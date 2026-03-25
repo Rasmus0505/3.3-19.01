@@ -26,7 +26,6 @@ from app.services.billing_service import (
     get_model_rate,
     get_or_create_wallet_account,
 )
-from app.services.faster_whisper_asr import FASTER_WHISPER_ASR_MODEL, get_faster_whisper_model_status, prepare_faster_whisper_model
 from app.services.lesson_query_service import invalidate_lesson_catalog_cache
 from app.services.lesson_service import LessonService
 from app.services.lesson_task_manager import (
@@ -88,28 +87,12 @@ class LessonTaskAdmissionError(RuntimeError):
 
 def _resolve_task_asr_models(requested_asr_model: str) -> dict[str, object]:
     normalized_requested_model = str(requested_asr_model or "").strip()
-    resolution = {
+    return {
         "requested_asr_model": normalized_requested_model,
         "effective_asr_model": normalized_requested_model,
         "model_fallback_applied": False,
         "model_fallback_reason": "",
     }
-    if normalized_requested_model != FASTER_WHISPER_ASR_MODEL:
-        return resolution
-
-    status = get_faster_whisper_model_status()
-    normalized_status = str(status.get("status") or "").strip().lower()
-    model_ready = bool(status.get("cached")) or normalized_status in {"ready", "cached"} or (
-        status.get("download_required") is False and not status.get("preparing") and normalized_status != "error"
-    )
-    if model_ready:
-        return resolution
-
-    try:
-        prepare_faster_whisper_model(force_refresh=False)
-    except Exception as exc:
-        logger.warning("[DEBUG] lessons.task.faster_whisper.prepare_schedule_failed detail=%s", str(exc)[:400])
-    return resolution
 
 
 def _ensure_sufficient_balance_for_model(

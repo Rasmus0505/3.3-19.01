@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 import tempfile
@@ -25,9 +25,6 @@ def _default_persistent_data_dir() -> Path:
         return Path(tempfile.gettempdir()) / "zeabur3.3-persistent"
     return Path("/data")
 
-
-def _default_faster_whisper_model_dir() -> Path:
-    return _default_asr_bundle_root() / "faster-distil-small.en"
 
 def _default_asr_bundle_root() -> Path:
     return PROJECT_DIR / "asr-test" / "models"
@@ -158,16 +155,6 @@ LESSON_WORKSPACE_ROOT_DIR = PERSISTENT_DATA_DIR / "lesson-workspaces"
 ASR_BUNDLE_ROOT_DIR = Path(
     os.getenv("ASR_BUNDLE_ROOT_DIR", str(_default_asr_bundle_root())).strip() or str(_default_asr_bundle_root())
 )
-FASTER_WHISPER_MODELSCOPE_MODEL_ID = (
-    os.getenv("FASTER_WHISPER_MODELSCOPE_MODEL_ID", "Systran/faster-distil-whisper-small.en").strip()
-    or "Systran/faster-distil-whisper-small.en"
-)
-FASTER_WHISPER_MODEL_DIR = Path(
-    os.getenv("FASTER_WHISPER_MODEL_DIR", str(_default_faster_whisper_model_dir())).strip() or str(_default_faster_whisper_model_dir())
-)
-FASTER_WHISPER_PREFETCH_ON_START = _get_env_bool("FASTER_WHISPER_PREFETCH_ON_START", False)
-FASTER_WHISPER_COMPUTE_TYPE = os.getenv("FASTER_WHISPER_COMPUTE_TYPE", "int8").strip() or "int8"
-FASTER_WHISPER_CPU_THREADS = _get_env_int("FASTER_WHISPER_CPU_THREADS", 4)
 
 REDEEM_CODE_DEFAULT_VALID_DAYS = _get_env_int("REDEEM_CODE_DEFAULT_VALID_DAYS", 30)
 REDEEM_CODE_DEFAULT_DAILY_LIMIT = _get_env_int("REDEEM_CODE_DEFAULT_DAILY_LIMIT", 5)

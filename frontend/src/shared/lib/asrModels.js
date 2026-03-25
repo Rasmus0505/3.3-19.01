@@ -1,28 +1,12 @@
 export const ASR_MODEL_KEYS = {
-  fasterWhisper: "faster-whisper-medium",
   qwen: "qwen3-asr-flash-filetrans",
 };
 
 export const FALLBACK_ASR_MODEL_CATALOG = {
-  [ASR_MODEL_KEYS.fasterWhisper]: {
-    model_key: ASR_MODEL_KEYS.fasterWhisper,
-    display_name: "Bottle 1.0",
-    subtitle: "More accurate subtitles, slower than Bottle 2.0.",
-    runtime_kind: "desktop_local_browser_local_cloud",
-    runtime_label: "Desktop Local / Browser Local / Cloud",
-    prepare_mode: "desktop_local_browser_local_or_cloud",
-    cache_scope: "desktop_and_server",
-    supports_upload: true,
-    supports_preview: false,
-    supports_transcribe_api: true,
-    source_model_id: "Systran/faster-distil-whisper-small.en",
-    deploy_path: "D:\\3.3-19.01\\asr-test\\models\\faster-distil-small.en",
-    note: "Bottle 1.0 can switch between desktop local, browser local, and cloud runtime.",
-  },
   [ASR_MODEL_KEYS.qwen]: {
     model_key: ASR_MODEL_KEYS.qwen,
     display_name: "Bottle 2.0",
-    subtitle: "Start immediately with cloud transcription.",
+    subtitle: "Fast cloud transcription.",
     runtime_kind: "cloud_api",
     runtime_label: "Cloud API",
     prepare_mode: "none",
@@ -30,7 +14,7 @@ export const FALLBACK_ASR_MODEL_CATALOG = {
     supports_upload: true,
     supports_preview: false,
     supports_transcribe_api: true,
-    note: "No local model preparation required.",
+    note: "Cloud transcription via DashScope API.",
   },
 };
 
