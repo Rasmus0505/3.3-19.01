@@ -2,12 +2,9 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { persistAuthSession } from "../../../app/authStorage";
-import { api, parseResponse, toErrorText } from "../../../shared/api/client";
-import { ENDPOINTS } from "../../../shared/api/endpoints";
-import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, Input, Label } from "../../../shared/ui";
 import { useAppStore } from "../../../store";
-
-/** @typedef {import("../types").AuthResponse} AuthResponse */
+import { SharedAuthPanel } from "../shared/SharedAuthPanel";
+import { postAuthJson } from "../shared/authApi";
 
 export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
   const setAccessToken = useAppStore((state) => state.setAccessToken);
@@ -17,22 +14,25 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
   const authStatus = useAppStore((state) => state.authStatus);
   const authStatusMessage = useAppStore((state) => state.authStatusMessage);
   const hasStoredToken = useAppStore((state) => state.hasStoredToken);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const currentUser = useAppStore((state) => state.currentUser);
   const [status, setStatus] = useState("");
+  const [restorePending, setRestorePending] = useState(true);
 
   useEffect(() => {
     let canceled = false;
 
     async function tryRestoreSession() {
+      setRestorePending(true);
       const restoredAccessToken = await restoreDesktopSession();
-      if (canceled || !restoredAccessToken) {
+      if (canceled) {
         return;
       }
-      onAuthed({
-        access_token: restoredAccessToken,
-      });
+      if (restoredAccessToken) {
+        onAuthed({
+          access_token: restoredAccessToken,
+        });
+      }
+      setRestorePending(false);
     }
 
     void tryRestoreSession();
@@ -41,36 +41,35 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
     };
   }, [onAuthed, restoreDesktopSession]);
 
-  async function submit(path) {
-    setLoading(true);
-    setStatus("正在提交...");
-    try {
-      const resp = await api(path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await parseResponse(resp);
-      if (!resp.ok) {
-        const message = toErrorText(data, "请求失败");
-        setStatus(message);
-        toast.error(message);
-        return;
-      }
-      await persistAuthSession(data, { tokenKey, refreshKey });
-      setCurrentUser(data.user || null);
-      setAccessToken(data.access_token);
-      setStatus("登录成功，正在进入首页...");
-      setGlobalStatus("");
-      toast.success("登录成功");
-      onAuthed(data);
-    } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setStatus(message);
-      toast.error(message);
-    } finally {
-      setLoading(false);
+  async function handleAuthenticate(intent, credentials) {
+    const path = intent === "login" ? "/api/auth/login" : "/api/auth/register";
+    const fallbackMessage = intent === "login" ? "登录失败" : "注册失败";
+    const successMessage = intent === "login" ? "登录成功，正在进入首页..." : "注册成功，正在进入首页...";
+
+    setStatus(intent === "login" ? "正在登录..." : "正在注册...");
+    const result = await postAuthJson(path, credentials, fallbackMessage);
+
+    if (!result.ok) {
+      setStatus(result.message);
+      toast.error(result.message);
+      return {
+        ok: false,
+        message: result.message,
+        clearPassword: true,
+      };
     }
+
+    await persistAuthSession(result.data, { tokenKey, refreshKey });
+    setCurrentUser(result.data.user || null);
+    setAccessToken(result.data.access_token);
+    setGlobalStatus("");
+    setStatus(successMessage);
+    toast.success(intent === "login" ? "登录成功" : "注册成功");
+    onAuthed(result.data);
+    return {
+      ok: true,
+      message: successMessage,
+    };
   }
 
   const isExpired = authStatus === "expired";
@@ -82,71 +81,17 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
     : "登录后即可开始上传和学习。";
 
   return (
-    <Card className="mx-auto w-full max-w-md overflow-hidden">
-      <CardHeader>
-        <CardTitle className="text-lg">{isExpired ? "登录已失效" : "登录"}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <form
-          className="space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit(ENDPOINTS.auth.login);
-          }}
-        >
-          <div className="grid gap-2">
-            <Label htmlFor="email">邮箱</Label>
-            <Input
-              id="email"
-              inputMode="email"
-              autoCapitalize="none"
-              autoCorrect="off"
-              autoComplete="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="password">密码</Label>
-            <Input
-              id="password"
-              placeholder="至少 6 位"
-              type="password"
-              autoCapitalize="none"
-              autoCorrect="off"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              minLength={6}
-              required
-            />
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button type="submit" disabled={loading} className="min-h-11 flex-1">
-              登录
-            </Button>
-            <Button type="button" variant="outline" disabled={loading} onClick={() => submit(ENDPOINTS.auth.register)} className="min-h-11 flex-1">
-              注册
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-      <CardFooter className="pt-0">
-        {status ? (
-          <Alert className="w-full py-2">
-            <AlertDescription>{status}</AlertDescription>
-          </Alert>
-        ) : isExpired ? (
-          <Alert variant="destructive" className="w-full py-2">
-            <AlertDescription>{footerMessage}</AlertDescription>
-          </Alert>
-        ) : (
-          <p className="text-sm text-muted-foreground">{footerMessage}</p>
-        )}
-      </CardFooter>
-    </Card>
+    <SharedAuthPanel
+      title={isExpired ? "登录已失效" : "登录"}
+      description={description}
+      footerMessage={footerMessage}
+      statusMessage={status}
+      expired={isExpired}
+      restorePending={restorePending}
+      initialEmail={currentUser?.email || ""}
+      appName="Bottle"
+      badgeText="Account"
+      onAuthenticate={handleAuthenticate}
+    />
   );
 }
