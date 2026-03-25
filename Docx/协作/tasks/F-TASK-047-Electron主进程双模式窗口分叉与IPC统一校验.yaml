@@ -1,7 +1,7 @@
 schema_version: 1
 task_id: TASK-047
 title: Electron主进程双模式窗口分叉与IPC统一校验
-status: todo
+status: done
 priority: critical
 goal: 建立 standalone/cloud-linked 双模式窗口路由，阻止远端页面获取高权限能力；为所有敏感 IPC 插入统一 sender/origin 校验中间件
 scope: desktop/electron/main.mjs（窗口创建路由、IPC handler 入口、校验中间件）
@@ -25,3 +25,25 @@ notes_for_after: |
   6. shell.openExternal handler 增加协议白名单（仅 http/https）
   7. 修改 main.mjs 窗口创建的 webPreferences，动态选择 preload 脚本
   8. 修改后运行桌面应用验证启动正常
+result_summary: 完成主进程双模式窗口分叉与 IPC 统一校验，standalone 改走 file:// + preload.mjs，cloud-linked 改走 preload-cloud.mjs，并为敏感 IPC 与外链打开补齐本地 renderer / 协议白名单校验。
+changed_files:
+  - desktop/electron/main.mjs
+  - desktop/electron/preload-cloud.mjs
+  - desktop/scripts/build.mjs
+  - Docx/协作/tasks/F-TASK-047-Electron主进程双模式窗口分叉与IPC统一校验.yaml
+  - Docx/协作/计划清单.yaml
+tests_run:
+  - node --check D:\\3.3-19.01\\desktop\\electron\\main.mjs
+  - node --check D:\\3.3-19.01\\desktop\\electron\\preload-cloud.mjs
+  - node --check D:\\3.3-19.01\\desktop\\scripts\\build.mjs
+  - npm --prefix D:\\3.3-19.01\\desktop run build -- --cloud-linked
+  - npm --prefix D:\\3.3-19.01\\desktop run build -- --standalone --clean-dist
+  - node - (spawn desktop\\node_modules\\.bin\\electron.cmd in standalone mode, wait 25s, request http://127.0.0.1:18765/health/ready, then taskkill process tree)
+check_commands:
+  - node --check D:\\3.3-19.01\\desktop\\electron\\main.mjs
+  - node --check D:\\3.3-19.01\\desktop\\electron\\preload-cloud.mjs
+  - node --check D:\\3.3-19.01\\desktop\\scripts\\build.mjs
+  - npm --prefix D:\\3.3-19.01\\desktop run build -- --cloud-linked
+  - npm --prefix D:\\3.3-19.01\\desktop run build -- --standalone --clean-dist
+  - node - (spawn desktop\\node_modules\\.bin\\electron.cmd in standalone mode, wait 25s, request http://127.0.0.1:18765/health/ready, then taskkill process tree)
+completed_at: 2026-03-25T16:33:50+08:00

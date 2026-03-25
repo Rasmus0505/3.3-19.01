@@ -10,10 +10,10 @@ function getSyncEngineBridge() {
     localDb: localDbBridge,
     desktopRuntime: {
       auth: {
-        restoreSession: (...args) => restoreDesktopAuthSession(...args),
-        cacheSession: (...args) => cacheDesktopAuthSession(...args),
-        clearSession: (...args) => clearDesktopAuthSession(...args),
-        getCachedUser: (...args) => getDesktopCachedUser(...args),
+        getAccessToken: async (options = {}) => {
+          const response = await ipcRenderer.invoke("desktop:auth-get-access-token", options);
+          return trimText(response?.accessToken);
+        },
       },
       getRuntimeInfo: () => ipcRenderer.invoke("desktop:get-runtime-info"),
     },
@@ -164,6 +164,31 @@ function requireLocalAsrFilePath(filePath) {
   });
 }
 
+function requireLocalAsrFileToken(fileToken) {
+  const normalized = trimText(fileToken);
+  if (normalized) {
+    return normalized;
+  }
+  throw createLocalAsrError("本地媒体 token 不能为空。", {
+    code: "LOCAL_ASR_FILE_TOKEN_REQUIRED",
+  });
+}
+
+async function resolveLocalAsrSourcePath({ filePath = "", fileToken = "" } = {}) {
+  const normalizedToken = trimText(fileToken);
+  if (normalizedToken) {
+    const payload = await ipcRenderer.invoke("desktop:resolve-local-media-file-token", requireLocalAsrFileToken(normalizedToken));
+    const resolvedPath = trimText(payload?.filePath);
+    if (!payload?.ok || !resolvedPath) {
+      throw createLocalAsrError("本地媒体 token 无效或已过期，请重新选择文件。", {
+        code: "LOCAL_ASR_FILE_TOKEN_INVALID",
+      });
+    }
+    return resolvedPath;
+  }
+  return requireLocalAsrFilePath(filePath);
+}
+
 const preloadContext = {
   emittedAt: nowIso(),
   href: globalThis.location?.href || "",
@@ -195,6 +220,51 @@ function wrapLocalDbSyncMethod(methodName) {
     } catch (error) {
       throw serializeError(error);
     }
+  };
+}
+
+async function listLocalLessons() {
+  const courses = await localDbBridge.getCourses();
+  return Promise.all(
+    (Array.isArray(courses) ? courses : []).map(async (course) => {
+      const [sentences, progress] = await Promise.all([
+        localDbBridge.getSentences(course.id).catch(() => []),
+        localDbBridge.getProgress(course.id).catch(() => null),
+      ]);
+      return {
+        course,
+        sentences: Array.isArray(sentences) ? sentences : [],
+        progress: progress || null,
+      };
+    }),
+  );
+}
+
+async function saveLocalCourseBundle(payload = {}) {
+  const course = payload?.course && typeof payload.course === "object" ? payload.course : null;
+  if (!course) {
+    throw new Error("localDb.saveCourseBundle requires course payload.");
+  }
+  const sentences = Array.isArray(payload?.sentences) ? payload.sentences : [];
+  const progress = payload?.progress && typeof payload.progress === "object" ? payload.progress : null;
+  const syncBehavior = trimText(payload?.syncBehavior) || "local";
+  const overwriteExisting = Boolean(payload?.overwriteExisting);
+  const savedCourse = await localDbBridge.saveCourse(course, { syncBehavior });
+  await localDbBridge.saveSentences(savedCourse.id, sentences);
+  if (progress) {
+    await localDbBridge.saveProgress(savedCourse.id, progress, { syncBehavior });
+  }
+  if (Boolean(payload?.recordImportSync)) {
+    const operation = overwriteExisting ? "UPDATE" : "INSERT";
+    await localDbBridge.sync.logSync("lesson_sentences", savedCourse.id, operation, Number(savedCourse?.version || course?.version || 1));
+    if (progress) {
+      await localDbBridge.sync.logSync("progress", savedCourse.id, operation, Number(progress?.version || savedCourse?.version || 1));
+    }
+  }
+  return {
+    course: savedCourse,
+    sentences,
+    progress,
   };
 }
 
@@ -457,28 +527,40 @@ async function getDesktopCachedUser() {
 const localAsrApi = {
   getBaseUrl: () => getLocalAsrBaseUrl(),
   health: () => requestLocalAsr("/health"),
-  transcribe: ({ filePath, modelKey = LOCAL_ASR_DEFAULT_MODEL_KEY } = {}) =>
+  getAssetStatus: () => ipcRenderer.invoke("desktop:local-asr-assets-status"),
+  getBundledModelSummary: (modelKey) => ipcRenderer.invoke("desktop:local-asr-assets-bundled-summary", modelKey),
+  installBundledModel: (modelKey) => ipcRenderer.invoke("desktop:local-asr-assets-install-bundled", modelKey),
+  readAssetFile: (assetPath) => ipcRenderer.invoke("desktop:local-asr-read-asset-file", assetPath),
+  transcribeDesktop: (payload) => ipcRenderer.invoke("desktop:desktop-asr-transcribe", payload),
+  generateDesktop: (payload) => ipcRenderer.invoke("desktop:desktop-asr-generate", payload),
+  transcribe: async ({ filePath, fileToken, modelKey = LOCAL_ASR_DEFAULT_MODEL_KEY } = {}) =>
     requestLocalAsr("/api/local-asr/transcribe", {
       method: "POST",
       body: {
-        filePath: requireLocalAsrFilePath(filePath),
+        filePath: await resolveLocalAsrSourcePath({ filePath, fileToken }),
         modelKey: trimText(modelKey) || LOCAL_ASR_DEFAULT_MODEL_KEY,
       },
     }),
-  generateLesson: ({ filePath, modelKey = LOCAL_ASR_DEFAULT_MODEL_KEY, runtimeKind = "desktop_local" } = {}) =>
+  generateLesson: async ({ filePath, fileToken, modelKey = LOCAL_ASR_DEFAULT_MODEL_KEY, runtimeKind = "desktop_local" } = {}) =>
     requestLocalAsr("/api/local-asr/generate-lesson", {
       method: "POST",
       body: {
-        filePath: requireLocalAsrFilePath(filePath),
+        filePath: await resolveLocalAsrSourcePath({ filePath, fileToken }),
         modelKey: trimText(modelKey) || LOCAL_ASR_DEFAULT_MODEL_KEY,
         runtimeKind: trimText(runtimeKind) || "desktop_local",
       },
     }),
-  generateCourse: ({ filePath, sourceFilename = "", modelKey = LOCAL_ASR_DEFAULT_MODEL_KEY, runtimeKind = "desktop_local" } = {}) =>
+  generateCourse: async ({
+    filePath,
+    fileToken,
+    sourceFilename = "",
+    modelKey = LOCAL_ASR_DEFAULT_MODEL_KEY,
+    runtimeKind = "desktop_local",
+  } = {}) =>
     requestLocalAsr("/api/local-asr/generate-course", {
       method: "POST",
       body: {
-        filePath: requireLocalAsrFilePath(filePath),
+        filePath: await resolveLocalAsrSourcePath({ filePath, fileToken }),
         sourceFilename: trimText(sourceFilename) || "",
         modelKey: trimText(modelKey) || LOCAL_ASR_DEFAULT_MODEL_KEY,
         runtimeKind: trimText(runtimeKind) || "desktop_local",
@@ -498,10 +580,13 @@ try {
     platform: "electron",
     getRuntimeInfo: () => ipcRenderer.invoke("desktop:get-runtime-info"),
     auth: {
-      cacheSession: (payload) => cacheDesktopAuthSession(payload),
-      restoreSession: (options) => restoreDesktopAuthSession(options),
-      clearSession: () => clearDesktopAuthSession(),
-      getCachedUser: () => getDesktopCachedUser(),
+      getStatus: () => ipcRenderer.invoke("desktop:auth-get-status"),
+      login: (credentials) => ipcRenderer.invoke("desktop:auth-login", credentials),
+      register: (credentials) => ipcRenderer.invoke("desktop:auth-register", credentials),
+      restoreSession: (options) => ipcRenderer.invoke("desktop:auth-restore-session", options),
+      logout: () => ipcRenderer.invoke("desktop:auth-logout"),
+      request: (request) => ipcRenderer.invoke("desktop:auth-request", request),
+      upload: (request) => ipcRenderer.invoke("desktop:auth-upload", request),
     },
     localAsr: localAsrApi,
     getHelperStatus: () => ipcRenderer.invoke("desktop:get-helper-status"),
@@ -515,9 +600,15 @@ try {
     checkClientUpdate: () => ipcRenderer.invoke("desktop:check-client-update"),
     openClientUpdateLink: (preferredUrl) => ipcRenderer.invoke("desktop:open-client-update-link", preferredUrl),
     openLogsDirectory: () => ipcRenderer.invoke("desktop:open-logs-directory"),
+    createLocalMediaFileToken: (sourcePath) => ipcRenderer.invoke("desktop:create-local-media-file-token", sourcePath),
     selectLocalMediaFile: (options) => ipcRenderer.invoke("desktop:select-local-media-file", options),
-    readLocalMediaFile: (sourcePath) => ipcRenderer.invoke("desktop:read-local-media-file", sourcePath),
-    requestLocalHelper: (request) => ipcRenderer.invoke("desktop:request-local-helper", request),
+    readLocalMediaFile: (fileToken) => ipcRenderer.invoke("desktop:read-local-media-file", fileToken),
+    urlImport: {
+      createTask: (payload) => ipcRenderer.invoke("desktop:url-import-create-task", payload),
+      getTask: (taskId) => ipcRenderer.invoke("desktop:url-import-get-task", taskId),
+      cancelTask: (taskId) => ipcRenderer.invoke("desktop:url-import-cancel-task", taskId),
+      downloadFile: (taskId) => ipcRenderer.invoke("desktop:url-import-download-file", taskId),
+    },
     getPathForFile: (file) => {
       try {
         return String(webUtils.getPathForFile(file) || "");
@@ -568,43 +659,18 @@ try {
   });
   contextBridge.exposeInMainWorld("localDb", {
     init: wrapLocalDbMethod("init"),
-    getCourses: wrapLocalDbMethod("getCourses"),
-    saveCourse: wrapLocalDbMethod("saveCourse"),
-    deleteCourse: wrapLocalDbMethod("deleteCourse"),
-    getSentences: wrapLocalDbMethod("getSentences"),
-    saveSentences: wrapLocalDbMethod("saveSentences"),
-    getProgress: wrapLocalDbMethod("getProgress"),
-    saveProgress: wrapLocalDbMethod("saveProgress"),
-    getWordbook: wrapLocalDbMethod("getWordbook"),
-    saveWordbookEntry: wrapLocalDbMethod("saveWordbookEntry"),
-    deleteWordbookEntry: wrapLocalDbMethod("deleteWordbookEntry"),
-    getAuthCache: wrapLocalDbMethod("getAuthCache"),
-    saveAuthCache: wrapLocalDbMethod("saveAuthCache"),
-    clearAuthCache: wrapLocalDbMethod("clearAuthCache"),
-    sync: {
-      logSync: wrapLocalDbSyncMethod("logSync"),
-      saveConflict: wrapLocalDbSyncMethod("saveConflict"),
-      getUnresolvedConflicts: wrapLocalDbSyncMethod("getUnresolvedConflicts"),
-      resolveConflict: wrapLocalDbSyncMethod("resolveConflict"),
-      getPendingRecords: wrapLocalDbSyncMethod("getPendingRecords"),
-      markSynced: wrapLocalDbSyncMethod("markSynced"),
-    },
+    listLessons: () => listLocalLessons(),
+    saveCourseBundle: (payload) => saveLocalCourseBundle(payload),
   });
 
   const syncEngineBridge = getSyncEngineBridge();
   contextBridge.exposeInMainWorld("syncEngine", {
     syncAll: (options) => syncEngineBridge.syncAll(options),
-    syncCourses: (options) => syncEngineBridge.syncCourses(options),
-    syncProgress: (options) => syncEngineBridge.syncProgress(options),
-    syncWordbook: (options) => syncEngineBridge.syncWordbook(options),
-    autoSync: (options) => syncEngineBridge.autoSync(options),
     resolveConflict: (conflictId, strategy) => syncEngineBridge.resolveConflict(conflictId, strategy),
     getStatus: () => syncEngineBridge.getStatus(),
     getConflicts: () => syncEngineBridge.getConflicts(),
     getPendingCounts: () => syncEngineBridge.getPendingCounts(),
-    getLastSyncTime: () => syncEngineBridge.getLastSyncTime(),
     on: (event, callback) => syncEngineBridge.on(event, callback),
-    destroy: () => syncEngineBridge.destroy(),
   });
 
   emitPreloadSignal("desktop:preload-ready", {

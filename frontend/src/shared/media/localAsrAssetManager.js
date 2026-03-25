@@ -43,7 +43,7 @@ function buildAssetUrl(assetBaseUrl, fileName) {
 }
 
 function hasDesktopLocalHelper() {
-  return typeof window !== "undefined" && typeof window.desktopRuntime?.requestLocalHelper === "function";
+  return typeof window !== "undefined" && typeof window.localAsr?.getAssetStatus === "function";
 }
 
 function hasDesktopModelUpdateBridge() {
@@ -69,42 +69,16 @@ function decodeBase64Bytes(base64Text) {
   return bytes;
 }
 
-function normalizeDesktopHelperPath(assetPath) {
-  if (!hasDesktopLocalHelper()) {
-    return "";
-  }
+function normalizeDesktopAssetPath(assetPath) {
   try {
     const parsed = new URL(String(assetPath || ""), "http://desktop.local");
-    const isSyntheticRelative = parsed.origin === "http://desktop.local";
-    const isLoopbackOrigin = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
-    if (!isSyntheticRelative && !isLoopbackOrigin) {
+    if (!parsed.pathname.startsWith("/api/local-asr-assets/")) {
       return "";
     }
     return `${parsed.pathname}${parsed.search}`.trim();
   } catch (_) {
     return "";
   }
-}
-
-async function requestDesktopLocalHelper(pathname, responseType = "json", options = {}) {
-  const helperPath = normalizeDesktopHelperPath(pathname);
-  if (!helperPath) {
-    throw new Error("Desktop local helper path is invalid");
-  }
-  const response = await window.desktopRuntime.requestLocalHelper({
-    path: helperPath,
-    method: String(options.method || "GET").toUpperCase(),
-    responseType,
-    body: options.body,
-  });
-  if (!response?.ok) {
-    const detail =
-      String(response?.data?.message || "").trim() ||
-      String(response?.data?.detail || "").trim() ||
-      String(response?.status || "unknown").trim();
-    throw new Error(detail || "Desktop local helper request failed");
-  }
-  return response;
 }
 
 function toErrorMessage(error) {
@@ -134,10 +108,9 @@ function normalizeManifest(statusPayload, assetBaseUrl) {
 async function fetchLocalAsrAssetStatus(assetBaseUrl) {
   const normalizedBaseUrl = normalizeAssetBaseUrl(assetBaseUrl);
   try {
-    const desktopHelperPath = normalizeDesktopHelperPath(`${normalizedBaseUrl}/status`);
-    if (desktopHelperPath) {
-      const response = await requestDesktopLocalHelper(desktopHelperPath, "json");
-      return normalizeManifest(response.data, normalizedBaseUrl);
+    if (hasDesktopLocalHelper()) {
+      const payload = await window.localAsr.getAssetStatus();
+      return normalizeManifest(payload, normalizedBaseUrl);
     }
     const response = await fetch(`${normalizedBaseUrl}/status`, {
       method: "GET",
@@ -211,18 +184,16 @@ export async function getDesktopBundledAsrModelSummary(modelKey) {
   if (!hasDesktopLocalHelper()) {
     throw new Error("Desktop local helper is unavailable");
   }
-  const helperModelKey = encodeURIComponent(normalizeModelId(modelKey));
-  const response = await requestDesktopLocalHelper(`/api/local-asr-assets/download-models/${helperModelKey}`, "json");
-  return normalizeDesktopBundledModelSummary(response.data);
+  const payload = await window.localAsr.getBundledModelSummary(normalizeModelId(modelKey));
+  return normalizeDesktopBundledModelSummary(payload);
 }
 
 export async function installDesktopBundledAsrModel(modelKey) {
   if (!hasDesktopLocalHelper()) {
     throw new Error("Desktop local helper is unavailable");
   }
-  const helperModelKey = encodeURIComponent(normalizeModelId(modelKey));
-  const response = await requestDesktopLocalHelper(`/api/local-asr-assets/download-models/${helperModelKey}/install`, "json", { method: "POST" });
-  return normalizeDesktopBundledModelSummary(response.data);
+  const payload = await window.localAsr.installBundledModel(normalizeModelId(modelKey));
+  return normalizeDesktopBundledModelSummary(payload);
 }
 
 export function desktopModelUpdateSupported() {
@@ -268,14 +239,21 @@ export function onDesktopModelUpdateProgress(callback) {
   });
 }
 
-function resolveDesktopLocalSourcePath(fileLike) {
-  const candidatePath =
+function resolveDesktopLocalSourceReference(fileLike) {
+  const fileToken =
+    String(fileLike?.desktopSourceToken || "").trim() ||
+    String(fileLike?.sourceToken || "").trim() ||
+    String(fileLike?.token || "").trim();
+  const filePath =
     String(fileLike?.desktopSourcePath || "").trim() ||
     String(fileLike?.sourcePath || "").trim() ||
     String(fileLike?.path || "").trim() ||
     String(fileLike?.filePath || "").trim() ||
     String((typeof window !== "undefined" ? window.desktopRuntime?.getPathForFile?.(fileLike) : "") || "").trim();
-  return candidatePath;
+  return {
+    filePath,
+    fileToken,
+  };
 }
 
 function normalizeDesktopLocalTranscriptionResult(payload) {
@@ -300,39 +278,56 @@ export async function transcribeDesktopLocalAsr(modelKey, sourceFile) {
   if (!hasDesktopLocalHelper()) {
     throw new Error("Desktop local helper is unavailable");
   }
-  const sourcePath = resolveDesktopLocalSourcePath(sourceFile);
-  if (!sourcePath) {
+  const { filePath, fileToken } = resolveDesktopLocalSourceReference(sourceFile);
+  if (!filePath && !fileToken) {
     throw new Error("当前桌面端无法读取本机文件路径，请改用云端运行。");
   }
-  const response = await requestDesktopLocalHelper("/api/desktop-asr/transcribe", "json", {
-    method: "POST",
-    body: {
-      model_key: normalizeModelId(modelKey),
-      source_path: sourcePath,
-      source_filename: String(sourceFile?.name || ""),
-    },
+  if (typeof window !== "undefined" && typeof window.localAsr?.transcribe === "function") {
+    const response = await window.localAsr.transcribe({
+      filePath,
+      fileToken,
+      modelKey: normalizeModelId(modelKey),
+    });
+    return normalizeDesktopLocalTranscriptionResult(response?.data || response || {});
+  }
+  if (!filePath) {
+    throw new Error("当前桌面端无法恢复本机文件路径，请重新选择文件后再试。");
+  }
+  const payload = await window.localAsr.transcribeDesktop({
+    model_key: normalizeModelId(modelKey),
+    source_path: filePath,
+    source_filename: String(sourceFile?.name || ""),
   });
-  return normalizeDesktopLocalTranscriptionResult(response.data);
+  return normalizeDesktopLocalTranscriptionResult(payload);
 }
 
 export async function generateDesktopLocalLesson(modelKey, sourceFile, runtimeKind = "desktop_local") {
   if (!hasDesktopLocalHelper()) {
     throw new Error("Desktop local helper is unavailable");
   }
-  const sourcePath = resolveDesktopLocalSourcePath(sourceFile);
-  if (!sourcePath) {
+  const { filePath, fileToken } = resolveDesktopLocalSourceReference(sourceFile);
+  if (!filePath && !fileToken) {
     throw new Error("当前桌面端无法读取本机文件路径，请改用云端运行。");
   }
-  const response = await requestDesktopLocalHelper("/api/desktop-asr/generate", "json", {
-    method: "POST",
-    body: {
-      model_key: normalizeModelId(modelKey),
-      source_path: sourcePath,
-      source_filename: String(sourceFile?.name || ""),
-      runtime_kind: String(runtimeKind || "desktop_local"),
-    },
+  if (typeof window !== "undefined" && typeof window.localAsr?.generateLesson === "function") {
+    const response = await window.localAsr.generateLesson({
+      filePath,
+      fileToken,
+      modelKey: normalizeModelId(modelKey),
+      runtimeKind: String(runtimeKind || "desktop_local"),
+    });
+    return normalizeDesktopLocalTranscriptionResult(response?.data || response || {});
+  }
+  if (!filePath) {
+    throw new Error("当前桌面端无法恢复本机文件路径，请重新选择文件后再试。");
+  }
+  const payload = await window.localAsr.generateDesktop({
+    model_key: normalizeModelId(modelKey),
+    source_path: filePath,
+    source_filename: String(sourceFile?.name || ""),
+    runtime_kind: String(runtimeKind || "desktop_local"),
   });
-  return normalizeDesktopLocalTranscriptionResult(response.data);
+  return normalizeDesktopLocalTranscriptionResult(payload);
 }
 
 function directoryBindingSupported() {
@@ -407,9 +402,9 @@ async function clearOldBrowserCaches(modelId, keepCacheName = "") {
 }
 
 async function fetchBlobWithProgress(url, onProgress) {
-  const desktopHelperPath = normalizeDesktopHelperPath(url);
-  if (desktopHelperPath) {
-    const response = await requestDesktopLocalHelper(desktopHelperPath, "arrayBuffer");
+  const desktopAssetPath = normalizeDesktopAssetPath(url);
+  if (desktopAssetPath && hasDesktopLocalHelper()) {
+    const response = await window.localAsr.readAssetFile(desktopAssetPath);
     const bytes = decodeBase64Bytes(response.bodyBase64);
     const blob = new Blob([bytes], { type: String(response.contentType || "application/octet-stream") });
     onProgress?.(blob.size, blob.size);

@@ -3,6 +3,7 @@ export const REFRESH_KEY = "english_asr_refresh_token";
 export const USER_ID_KEY = "english_asr_user_id";
 export const USER_EMAIL_KEY = "english_asr_user_email";
 export const USER_IS_ADMIN_KEY = "english_asr_user_is_admin";
+export const DESKTOP_SESSION_TOKEN = "__desktop_session__";
 
 function getStorage() {
   if (typeof window === "undefined" || !window.localStorage) {
@@ -16,6 +17,11 @@ function getDesktopAuthRuntime() {
     return null;
   }
   return window.desktopRuntime?.auth || null;
+}
+
+function hasDesktopAuthProxy() {
+  const desktopAuth = getDesktopAuthRuntime();
+  return Boolean(desktopAuth?.login && desktopAuth?.restoreSession && desktopAuth?.request);
 }
 
 function trimText(value) {
@@ -64,19 +70,25 @@ export function writeStoredTokens(accessToken, refreshToken, tokenKey = TOKEN_KE
 export function applyAuthSession(authPayload, options = {}) {
   const tokenKey = options.tokenKey || TOKEN_KEY;
   const refreshKey = options.refreshKey || REFRESH_KEY;
-  writeStoredTokens(authPayload?.access_token, authPayload?.refresh_token, tokenKey, refreshKey);
-  writeStoredUser(authPayload?.user || null);
+  const desktopSession = authPayload?.session && typeof authPayload.session === "object" ? authPayload.session : null;
+  const nextUser = desktopSession?.user || authPayload?.user || null;
+  if (hasDesktopAuthProxy()) {
+    writeStoredTokens(DESKTOP_SESSION_TOKEN, "", tokenKey, refreshKey);
+  } else {
+    writeStoredTokens(authPayload?.access_token, authPayload?.refresh_token, tokenKey, refreshKey);
+  }
+  writeStoredUser(nextUser);
   return {
-    accessToken: trimText(authPayload?.access_token),
-    refreshToken: trimText(authPayload?.refresh_token),
-    user: authPayload?.user || null,
+    accessToken: hasDesktopAuthProxy() ? DESKTOP_SESSION_TOKEN : trimText(authPayload?.access_token),
+    refreshToken: hasDesktopAuthProxy() ? "" : trimText(authPayload?.refresh_token),
+    user: nextUser,
   };
 }
 
 export async function persistAuthSession(authPayload, options = {}) {
   const nextSession = applyAuthSession(authPayload, options);
   const desktopAuth = getDesktopAuthRuntime();
-  if (desktopAuth?.cacheSession) {
+  if (!hasDesktopAuthProxy() && desktopAuth?.cacheSession) {
     await desktopAuth.cacheSession({
       access_token: nextSession.accessToken,
       refresh_token: nextSession.refreshToken,
@@ -104,8 +116,8 @@ export async function restoreCachedAuthSession(options = {}) {
     forceRefresh: Boolean(options.forceRefresh),
   });
 
-  if (result?.status === "active" && result?.auth) {
-    applyAuthSession(result.auth, options);
+  if (result?.status === "active" && (result?.auth || result?.session)) {
+    applyAuthSession(result?.session ? result : result.auth, options);
     return result;
   }
 
@@ -132,7 +144,13 @@ export async function clearAuthStorage() {
     storage.removeItem(USER_IS_ADMIN_KEY);
   }
   const desktopAuth = getDesktopAuthRuntime();
-  if (desktopAuth?.clearSession) {
+  if (desktopAuth?.logout) {
+    try {
+      await desktopAuth.logout();
+    } catch (_) {
+      // Ignore desktop cache cleanup failures after local storage has been cleared.
+    }
+  } else if (desktopAuth?.clearSession) {
     try {
       await desktopAuth.clearSession();
     } catch (_) {

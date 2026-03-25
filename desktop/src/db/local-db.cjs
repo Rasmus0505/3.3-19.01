@@ -393,6 +393,40 @@ function getSingleValue(database, sql, params = [], fallbackValue = null) {
   return values.length ? values[0] : fallbackValue;
 }
 
+function assertDatabaseHealthy(database, context) {
+  if (!database || typeof database.prepare !== "function" || typeof database.export !== "function") {
+    throw buildLocalDbError(`SQLite database is not ready for ${context}.`);
+  }
+
+  let statement = null;
+  try {
+    statement = database.prepare("SELECT 1 AS ok;");
+    statement.step();
+  } catch (error) {
+    throw buildLocalDbError(`SQLite database health check failed before ${context}.`, error);
+  } finally {
+    try {
+      statement?.free();
+    } catch (_) {
+      // Ignore secondary cleanup failures.
+    }
+  }
+}
+
+function exportDatabaseSnapshot(database, context) {
+  assertDatabaseHealthy(database, context);
+  let bytes;
+  try {
+    bytes = database.export();
+  } catch (error) {
+    throw buildLocalDbError(`Failed to export SQLite snapshot for ${context}.`, error);
+  }
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength <= 0) {
+    throw buildLocalDbError(`SQLite snapshot export returned no data for ${context}.`);
+  }
+  return bytes;
+}
+
 function createIndexedDbStorage(options = {}) {
   const indexedDBFactory = options.indexedDBFactory || globalThis.indexedDB;
   const databaseName = options.databaseName || DATABASE_NAME;
@@ -536,7 +570,8 @@ function createLocalDbBridge(options = {}) {
     if (!database) {
       return;
     }
-    await getStorage().saveBytes(database.export());
+    const snapshot = exportDatabaseSnapshot(database, "IndexedDB persistence");
+    await getStorage().saveBytes(snapshot);
     lastPersistedAt = nowIso();
   }
 
@@ -610,6 +645,7 @@ function createLocalDbBridge(options = {}) {
         });
         const persisted = await getStorage().loadBytes();
         database = persisted ? new sqlJs.Database(persisted) : new sqlJs.Database();
+        assertDatabaseHealthy(database, "initialization");
         await migrateDatabase();
         return api;
       })().catch((error) => {
@@ -725,12 +761,39 @@ function createLocalDbBridge(options = {}) {
       });
     },
 
-    async deleteCourse(id) {
+    async deleteCourse(id, options = {}) {
       return execute("deleteCourse", async () => {
         const courseId = ensureNonEmptyString(id, "course id");
-        runStatement(database, "DELETE FROM lesson_sentences WHERE course_id = ?;", [courseId]);
-        runStatement(database, "DELETE FROM progress WHERE course_id = ?;", [courseId]);
-        runStatement(database, "DELETE FROM courses WHERE id = ?;", [courseId]);
+        const existing = queryRows(
+          database,
+          `SELECT id, version, updated_at, synced_at
+             FROM courses
+            WHERE id = ?
+            LIMIT 1;`,
+          [courseId],
+        )[0];
+        const syncBehavior = String(options.syncBehavior || "local").trim().toLowerCase() || "local";
+        const sync = await getSyncStore();
+        const deleteVersion = existing ? Math.max(1, Number(existing.version || 0) + 1) : 1;
+        const deletedAt = nowIso();
+
+        runStatement(database, "BEGIN;");
+        try {
+          runStatement(database, "DELETE FROM lesson_sentences WHERE course_id = ?;", [courseId]);
+          runStatement(database, "DELETE FROM progress WHERE course_id = ?;", [courseId]);
+          runStatement(database, "DELETE FROM courses WHERE id = ?;", [courseId]);
+          if (syncBehavior === "local" && existing) {
+            await sync.logSync("courses", courseId, "DELETE", deleteVersion, {
+              persist: false,
+              localUpdatedAt: deletedAt,
+              syncedAt: existing.synced_at || null,
+            });
+          }
+          runStatement(database, "COMMIT;");
+        } catch (error) {
+          runStatement(database, "ROLLBACK;");
+          throw error;
+        }
         await persistDatabase();
         return { deleted: true, id: courseId };
       });

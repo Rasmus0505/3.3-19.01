@@ -18,6 +18,7 @@ const requiredPaths = [
   path.join(desktopRoot, "build", "installer.nsh"),
   path.join(desktopRoot, "electron", "main.mjs"),
   path.join(desktopRoot, "electron", "preload.mjs"),
+  path.join(desktopRoot, "electron", "preload-cloud.mjs"),
   path.join(desktopRoot, "electron", "helper-runtime.mjs"),
   path.join(desktopRoot, "electron", "runtime-config.mjs"),
   path.join(desktopRoot, "electron", "app-protocol.mjs"),

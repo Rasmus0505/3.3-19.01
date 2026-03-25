@@ -55,7 +55,7 @@ const BOTTLE_DESKTOP_APP_VERSION = "0.2.0";
 const LOCAL_LESSON_UPDATE_EVENT = "bottle-local-lessons-updated";
 
 function hasLocalDbBridge() {
-  return typeof window !== "undefined" && typeof window.localDb?.getCourses === "function";
+  return typeof window !== "undefined" && typeof window.localDb?.listLessons === "function";
 }
 
 function sanitizeExportFileName(value, fallback = "lesson") {
@@ -445,15 +445,9 @@ export function LessonList({
       return;
     }
     try {
-      const courses = await window.localDb.getCourses();
-      const nextLocalLessons = await Promise.all(
-        (Array.isArray(courses) ? courses : []).map(async (course) => {
-          const [sentences, progress] = await Promise.all([
-            window.localDb.getSentences(course.id).catch(() => []),
-            window.localDb.getProgress(course.id).catch(() => null),
-          ]);
-          return buildLocalLessonRecord(course, sentences, progress);
-        }),
+      const lessons = await window.localDb.listLessons();
+      const nextLocalLessons = (Array.isArray(lessons) ? lessons : []).map((item) =>
+        buildLocalLessonRecord(item?.course || {}, item?.sentences || [], item?.progress || null),
       );
       setLocalLessons(nextLocalLessons);
     } catch (_) {
