@@ -31,13 +31,6 @@ export function useDesktopSync({ accessToken, isDesktop = false }) {
   const [isInitialized, setIsInitialized] = useState(false);
   const [lastSyncDisplay, setLastSyncDisplay] = useState(null);
 
-  async function runSync() {
-    if (!engineRef.current) return;
-    if (typeof engineRef.current.syncAll === "function") {
-      await engineRef.current.syncAll();
-    }
-  }
-
   useEffect(() => {
     if (!isDesktop || typeof window === "undefined" || !window.syncEngine) {
       setIsInitialized(false);
@@ -74,12 +67,12 @@ export function useDesktopSync({ accessToken, isDesktop = false }) {
         });
 
         syncOnOnline = () => {
-          runSync().catch(() => {});
+          engineRef.current.autoSync().catch(() => {});
         };
         window.addEventListener("online", syncOnOnline);
 
         if (navigator.onLine) {
-          await runSync();
+          await engineRef.current.autoSync();
         }
       } catch (_) {
       } finally {
@@ -108,7 +101,7 @@ export function useDesktopSync({ accessToken, isDesktop = false }) {
 
   async function forceSync() {
     if (!engineRef.current) return;
-    await runSync();
+    await engineRef.current.autoSync();
   }
 
   return {

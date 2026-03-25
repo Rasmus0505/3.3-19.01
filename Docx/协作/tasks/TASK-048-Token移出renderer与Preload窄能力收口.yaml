@@ -1,7 +1,7 @@
 schema_version: 1
 task_id: TASK-048
 title: Token移出renderer与Preload窄能力收口
-status: done
+status: todo
 priority: critical
 goal: 将 access token/refresh token 完全移出 renderer 可见范围，auth 操作全部经由 main 进程代理；将 localDb/syncEngine 原始接口替换为窄能力桥接
 scope: desktop/electron/preload.mjs、desktop/src/auth/offline-auth.mjs
@@ -25,31 +25,3 @@ notes_for_after: |
   6. 删除 renderer 可直接调用 requestLocalHelper 的路径，改为业务封装
   7. 如果 preload-cloud.mjs 尚未创建，从 preload.mjs 剥离一个仅含只读功能的最小版本
   8. 修改后测试：本地登录/登出正常、离线模式可用、文件选择正常工作
-result_summary: 已将桌面端登录会话改为 main 进程持有并通过 IPC 代理鉴权请求，收窄了 preload 暴露的 auth/localDb/syncEngine/helper 能力，并同步改造前端消费层以兼容窄桥接。
-changed_files:
-  - desktop/electron/main.mjs
-  - desktop/electron/preload.mjs
-  - desktop/src/sync/sync-engine.mjs
-  - desktop/src/services/local-course-generator.mjs
-  - frontend/src/app/authStorage.js
-  - frontend/src/app/learning-shell/hooks/useDesktopSync.js
-  - frontend/src/features/auth/components/AuthPanel.jsx
-  - frontend/src/features/lessons/LessonList.jsx
-  - frontend/src/features/upload/UploadPanel.jsx
-  - frontend/src/shared/api/client.js
-  - frontend/src/shared/media/localAsrAssetManager.js
-tests_run:
-  - node --check D:\\3.3-19.01\\desktop\\electron\\main.mjs
-  - node --check D:\\3.3-19.01\\desktop\\electron\\preload.mjs
-  - node --check D:\\3.3-19.01\\desktop\\src\\sync\\sync-engine.mjs
-  - node --check D:\\3.3-19.01\\desktop\\src\\services\\local-course-generator.mjs
-  - node --check D:\\3.3-19.01\\frontend\\src\\app\\authStorage.js
-  - node --check D:\\3.3-19.01\\frontend\\src\\shared\\api\\client.js
-  - node --check D:\\3.3-19.01\\frontend\\src\\shared\\media\\localAsrAssetManager.js
-  - npm run build
-  - python -m pytest D:\\3.3-19.01\\tests\\contracts\\test_desktop_runtime_contract.py
-check_commands:
-  - node --check D:\\3.3-19.01\\desktop\\electron\\main.mjs
-  - node --check D:\\3.3-19.01\\desktop\\electron\\preload.mjs
-  - npm run build
-completed_at: 2026-03-25T16:50:54+08:00

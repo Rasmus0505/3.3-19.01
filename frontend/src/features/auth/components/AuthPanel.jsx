@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { DESKTOP_SESSION_TOKEN, persistAuthSession } from "../../../app/authStorage";
+import { persistAuthSession } from "../../../app/authStorage";
 import { api, parseResponse, toErrorText } from "../../../shared/api/client";
 import { ENDPOINTS } from "../../../shared/api/endpoints";
 import { Alert, AlertDescription, Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, Input, Label } from "../../../shared/ui";
@@ -45,28 +45,21 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
     setLoading(true);
     setStatus("正在提交...");
     try {
-      const desktopAuth = typeof window !== "undefined" ? window.desktopRuntime?.auth : null;
-      const useDesktopAuth = Boolean(desktopAuth?.login && desktopAuth?.register);
-      let data;
-      if (useDesktopAuth) {
-        data = path === ENDPOINTS.auth.register ? await desktopAuth.register({ email, password }) : await desktopAuth.login({ email, password });
-      } else {
-        const resp = await api(path, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
-        data = await parseResponse(resp);
-        if (!resp.ok) {
-          const message = toErrorText(data, "请求失败");
-          setStatus(message);
-          toast.error(message);
-          return;
-        }
+      const resp = await api(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await parseResponse(resp);
+      if (!resp.ok) {
+        const message = toErrorText(data, "请求失败");
+        setStatus(message);
+        toast.error(message);
+        return;
       }
       await persistAuthSession(data, { tokenKey, refreshKey });
-      setCurrentUser(data?.session?.user || data.user || null);
-      setAccessToken(useDesktopAuth ? DESKTOP_SESSION_TOKEN : data.access_token);
+      setCurrentUser(data.user || null);
+      setAccessToken(data.access_token);
       setStatus("登录成功，正在进入首页...");
       setGlobalStatus("");
       toast.success("登录成功");
