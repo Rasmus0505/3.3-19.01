@@ -1,0 +1,56 @@
+schema_version: 1
+task_id: TASK-051
+title: 清理废弃后端路由与服务
+status: todo
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+task_context: |
+  当前后端存在多条互不相干的生成素材流程：普通云端上传、旧版云端直传 pre-signed URL、服务器端 faster-whisper 推理、浏览器端本地 ASR（本地资产 API）、URL 导入。
+  这些流程全部要被删除，只保留 Bottle 2.0 云端识别（Bottle 2.0 通过 STS 凭证架构实现，客户端直连阿里云，服务器仅处理文字）。
+  需要删除所有相关后端代码，否则遗留代码会持续产生维护负担。
+goal: 删除所有与被删流程相关的后端代码，服务器仅保留 Bottle 2.0 STS 架构和分句/翻译/存课/计费能力。
+scope:
+  - app/api/routers/desktop_asr.py — 全部删除
+  - app/api/routers/local_asr_assets.py — 全部删除
+  - app/api/routers/dashscope_upload.py — 全部删除
+  - app/api/routers/lessons.py — 删除 legacy /api/lessons POST 和旧版 cloud 分支，保留 STS 兼容的 /api/lessons/tasks
+  - app/api/routers/lessons/router.py — 删除 browser_local 相关路由
+  - app/services/asr_dashscope.py — 保留，仅用于 Bottle 2.0
+  - app/infra/asr/dashscope.py — 保留
+  - app/infra/asr/faster_whisper.py — 删除
+  - app/services/faster_whisper_asr.py — 删除
+  - app/services/media_url_import.py — 删除
+  - app/services/asr_model_registry.py — 删除 faster-whisper 配置，保留 dashscope 模型配置
+  - app/main.py — 删除相关路由注册
+allowed_paths:
+  - app/api/routers/
+  - app/services/
+  - app/infra/asr/
+  - app/main.py
+acceptance:
+  - pytest 全量通过
+  - 服务器仅保留 Bottle 2.0 云端识别能力（/api/lessons/tasks 端点可正常接收识别结果并生成课程）
+  - /api/lessons/tasks 接口与 Bottle 1.0 桌面端和 Bottle 2.0 客户端均兼容
+check_commands:
+  - cd D:/3.3-19.01 && pytest -q
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  1. 仔细读每个文件再删除，不能误删仍在使用的代码
+  2. 删除路由后注意 app/main.py 中的 include_router 调用也要同步删除
+  3. asr_dashscope.py 和 dashscope.py 是 Bottle 2.0 需要的，保留
+  4. 删除后运行 pytest 确认无破坏
+  5. 本次无需执行数据库迁移
+result_summary: ""
+changed_files: []
+tests_run: []
+blocked_reason: ""
+completed_at: ""
+fix_request: ""
+fix_reason: ""
+fix_round: 0
+fix_result_summary: ""
+fix_updated_at: ""

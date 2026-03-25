@@ -27,7 +27,6 @@ from app.models import Lesson, LessonSentence, TranslationRequestLog
 from app.repositories.progress import create_progress
 from app.services.asr_dashscope import transcribe_audio_file, transcribe_signed_url
 from app.infra.dashscope_storage import get_file_signed_url
-from app.services.faster_whisper_asr import FASTER_WHISPER_ASR_MODEL
 from app.services.billing_service import (
     EVENT_CONSUME_TRANSLATE,
     append_translation_request_logs,
@@ -77,11 +76,6 @@ _VARIANT_RESULT_FILE = "variant_result.json"
 _TRANSLATION_CHECKPOINT_FILE = "translation_checkpoint.json"
 _LESSON_RESULT_FILE = "lesson_result.json"
 _SEGMENT_RESULT_DIR = "asr_segment_results"
-_FASTER_WHISPER_FORCE_PARALLEL_THRESHOLD_SECONDS = 300
-_FASTER_WHISPER_SINGLE_ASR_STALL_MIN_SECONDS = 45
-_FASTER_WHISPER_SINGLE_ASR_STALL_MAX_SECONDS = 120
-_FASTER_WHISPER_LEGACY_SEGMENT_SECONDS = 240
-_FASTER_WHISPER_LEGACY_MAX_CONCURRENCY = 2
 
 
 def _read_json_file(path: Path) -> dict[str, Any] | None:
@@ -268,15 +262,6 @@ def _single_asr_stage_ratio(elapsed_seconds: int) -> float:
     return min(0.84, 0.12 + min(0.72, elapsed_seconds / 120.0 * 0.72))
 
 
-def _single_faster_whisper_stall_timeout_seconds(source_duration_ms: int) -> int:
-    duration_seconds = max(1, math.ceil(max(0, int(source_duration_ms or 0)) / 1000))
-    derived_timeout = int(math.ceil(duration_seconds * 0.25))
-    return min(
-        _FASTER_WHISPER_SINGLE_ASR_STALL_MAX_SECONDS,
-        max(_FASTER_WHISPER_SINGLE_ASR_STALL_MIN_SECONDS, derived_timeout),
-    )
-
-
 def _normalize_parallel_runtime_config(
     *,
     asr_model: str,
@@ -291,28 +276,6 @@ def _normalize_parallel_runtime_config(
     normalized_segment_target_seconds = max(1, int(segment_target_seconds or ASR_SEGMENT_TARGET_SECONDS))
     normalized_max_concurrency = max(1, int(max_concurrency or 1))
 
-    duration_seconds = max(1, math.ceil(max(0, int(source_duration_ms or 0)) / 1000))
-    legacy_single_profile = (
-        asr_model == FASTER_WHISPER_ASR_MODEL
-        and not normalized_parallel_enabled
-        and normalized_max_concurrency <= 1
-        and normalized_parallel_threshold_seconds >= 600
-        and normalized_segment_target_seconds >= 300
-    )
-    if legacy_single_profile and duration_seconds >= _FASTER_WHISPER_FORCE_PARALLEL_THRESHOLD_SECONDS:
-        logger.warning(
-            "[DEBUG] lesson.parallel_asr.legacy_profile_autofix model=%s duration_seconds=%s threshold=%s segment_seconds=%s max_concurrency=%s",
-            asr_model,
-            duration_seconds,
-            normalized_parallel_threshold_seconds,
-            normalized_segment_target_seconds,
-            normalized_max_concurrency,
-        )
-        normalized_parallel_enabled = True
-        normalized_parallel_threshold_seconds = _FASTER_WHISPER_FORCE_PARALLEL_THRESHOLD_SECONDS
-        normalized_segment_target_seconds = min(normalized_segment_target_seconds, _FASTER_WHISPER_LEGACY_SEGMENT_SECONDS)
-        normalized_max_concurrency = max(normalized_max_concurrency, _FASTER_WHISPER_LEGACY_MAX_CONCURRENCY)
-
     return (
         normalized_parallel_enabled,
         normalized_parallel_threshold_seconds,
@@ -323,14 +286,10 @@ def _normalize_parallel_runtime_config(
 
 def _effective_parallel_threshold_seconds(
     *,
-    asr_model: str,
     parallel_enabled: bool,
-    max_concurrency: int,
     parallel_threshold_seconds: int,
 ) -> int:
     threshold_seconds = max(1, int(parallel_threshold_seconds))
-    if asr_model == FASTER_WHISPER_ASR_MODEL and parallel_enabled and max_concurrency > 1:
-        return min(threshold_seconds, _FASTER_WHISPER_FORCE_PARALLEL_THRESHOLD_SECONDS)
     return threshold_seconds
 
 
@@ -1804,148 +1763,6 @@ class LessonService:
             raise
 
     @staticmethod
-    def _transcribe_faster_whisper_single(
-        *,
-        opus_path: Path,
-        req_dir: Path,
-        source_duration_ms: int,
-        parallel_enabled: bool,
-        parallel_threshold_seconds: int,
-        segment_target_seconds: int,
-        max_concurrency: int,
-        progress_callback: ProgressCallback | None,
-    ) -> dict[str, Any]:
-        asr_result_path = req_dir / _ASR_RESULT_FILE
-        last_segment_done = 0
-        last_segment_change_elapsed = 0
-        stall_timeout_seconds = _single_faster_whisper_stall_timeout_seconds(source_duration_ms)
-        stall_warning_logged = False
-
-        def _on_progress(payload: dict[str, Any]) -> None:
-            nonlocal last_segment_done, last_segment_change_elapsed, stall_warning_logged
-            elapsed_seconds = max(0, int(payload.get("elapsed_seconds", 0) or 0))
-            segment_done = max(0, int(payload.get("segment_done", 0) or 0))
-            raw_segment_total = max(0, int(payload.get("segment_total", 0) or 0))
-            segment_total = max(segment_done, raw_segment_total) if raw_segment_total > 0 else 0
-            if segment_done != last_segment_done:
-                last_segment_done = segment_done
-                last_segment_change_elapsed = elapsed_seconds
-                stall_warning_logged = False
-            if segment_total > 0:
-                wait_text = f"识别中 {segment_done}/{segment_total}"
-                stage_ratio = min(0.98, max(segment_done / max(segment_total, 1), 0.02))
-            elif segment_done > 0:
-                waited_seconds = max(0, elapsed_seconds - last_segment_change_elapsed)
-                wait_text = f"识别中，已识别 {segment_done} 段"
-                if waited_seconds > 0:
-                    wait_text = f"{wait_text}，已等待 {waited_seconds} 秒"
-                if waited_seconds >= stall_timeout_seconds:
-                    wait_text = f"{wait_text}，当前段耗时较长，继续等待"
-                    if not stall_warning_logged:
-                        logger.warning(
-                            "[DEBUG] lesson.single_asr.slow_segment model=%s segments=%s waited_seconds=%s stall_timeout_seconds=%s source_duration_ms=%s",
-                            FASTER_WHISPER_ASR_MODEL,
-                            segment_done,
-                            waited_seconds,
-                            stall_timeout_seconds,
-                            source_duration_ms,
-                        )
-                        stall_warning_logged = True
-                stage_ratio = _single_asr_stage_ratio(elapsed_seconds)
-            else:
-                wait_text = "识别中" if elapsed_seconds <= 0 else f"识别中，已等待 {elapsed_seconds} 秒"
-                stage_ratio = _single_asr_stage_ratio(elapsed_seconds)
-            _emit_progress(
-                progress_callback,
-                stage_key="asr_transcribe",
-                stage_status="running",
-                overall_percent=_progress_percent_by_stage("asr_transcribe", stage_ratio),
-                current_text=wait_text,
-                counters={
-                    "asr_done": segment_done,
-                    "asr_estimated": segment_total,
-                    "translate_done": 0,
-                    "translate_total": 0,
-                    "segment_done": segment_done,
-                    "segment_total": segment_total,
-                },
-            )
-
-        _emit_progress(
-            progress_callback,
-            stage_key="asr_transcribe",
-            stage_status="running",
-            overall_percent=_progress_percent_by_stage("asr_transcribe", _single_asr_stage_ratio(0)),
-            current_text="识别中",
-            counters={
-                "asr_done": 0,
-                "asr_estimated": 0,
-                "translate_done": 0,
-                "translate_total": 0,
-                "segment_done": 0,
-                "segment_total": 0,
-            },
-        )
-        asr_result = dict(
-            _call_transcribe_audio_file(
-                str(opus_path),
-                model=FASTER_WHISPER_ASR_MODEL,
-                known_duration_ms=source_duration_ms,
-                progress_callback=_on_progress,
-            )
-            or {}
-        )
-        asr_payload = asr_result["asr_result_json"]
-        actual_sentence_count = max(1, len(extract_sentences(asr_payload)))
-        raw_generate_result = dict(asr_result.get("raw_generate_result") or {}) if isinstance(asr_result.get("raw_generate_result"), dict) else {}
-        raw_segment_total = max(0, int(raw_generate_result.get("segment_count", 0) or 0))
-        completed_asr_count = raw_segment_total if raw_segment_total > 0 else actual_sentence_count
-        payload = {
-            "asr_payload": asr_payload,
-            "usage_seconds": int(asr_result.get("usage_seconds"))
-            if isinstance(asr_result.get("usage_seconds"), int) and int(asr_result.get("usage_seconds")) > 0
-            else None,
-            "raw_result": dict(asr_result),
-            "cache_meta": _build_asr_cache_meta(
-                opus_path=opus_path,
-                source_duration_ms=source_duration_ms,
-                parallel_enabled=parallel_enabled,
-                parallel_threshold_seconds=parallel_threshold_seconds,
-                segment_target_seconds=segment_target_seconds,
-                max_concurrency=max_concurrency,
-            ),
-            "progress_counters": {
-                "asr_done": completed_asr_count,
-                "asr_estimated": completed_asr_count,
-                "segment_done": raw_segment_total,
-                "segment_total": raw_segment_total,
-            },
-        }
-        _emit_progress(
-            progress_callback,
-            stage_key="asr_transcribe",
-            stage_status="completed",
-            overall_percent=_progress_percent_by_stage("asr_transcribe", 1.0),
-            current_text=f"识别完成 {raw_segment_total}/{raw_segment_total}" if raw_segment_total > 0 else "识别完成",
-            counters={
-                "asr_done": completed_asr_count,
-                "asr_estimated": completed_asr_count,
-                "translate_done": 0,
-                "translate_total": 0,
-                "segment_done": raw_segment_total,
-                "segment_total": raw_segment_total,
-            },
-            asr_raw=payload["raw_result"],
-        )
-        _write_json_file(asr_result_path, payload)
-        return {
-            "asr_payload": payload["asr_payload"],
-            "usage_seconds": payload["usage_seconds"],
-            "progress_counters": dict(payload.get("progress_counters") or {}),
-            "asr_raw": dict(payload["raw_result"]),
-        }
-
-    @staticmethod
     def _transcribe_with_optional_parallel(
         *,
         opus_path: Path,
@@ -1973,9 +1790,7 @@ class LessonService:
             max_concurrency=max_concurrency,
         )
         effective_parallel_threshold_seconds = _effective_parallel_threshold_seconds(
-            asr_model=asr_model,
             parallel_enabled=parallel_enabled,
-            max_concurrency=max_concurrency,
             parallel_threshold_seconds=parallel_threshold_seconds,
         )
         cached_result = _read_json_file(asr_result_path)
@@ -2005,18 +1820,6 @@ class LessonService:
             and segment_target_seconds > 0
             and max_concurrency > 1
         )
-
-        if not should_parallel and asr_model == FASTER_WHISPER_ASR_MODEL:
-            return LessonService._transcribe_faster_whisper_single(
-                opus_path=opus_path,
-                req_dir=req_dir,
-                source_duration_ms=source_duration_ms,
-                parallel_enabled=parallel_enabled,
-                parallel_threshold_seconds=effective_parallel_threshold_seconds,
-                segment_target_seconds=segment_target_seconds,
-                max_concurrency=max_concurrency,
-                progress_callback=progress_callback,
-            )
 
         if not should_parallel:
             last_single_segment_done = 0

@@ -4,47 +4,52 @@
 # 仅扫描当前协作目录（Docx/协作/tasks/）下的任务池
 
 schema_version: 1
-updated_at: "2026-03-25T14:00:00+08:00"
-updated_by: before
+updated_at: "2026-03-25T17:00:00+08:00"
+updated_by: after
 
 # 当前可并行执行的任务（已满足 depends_on，且无未解决 conflicts_with）
-executable:
-  - TASK-047  # Electron主进程双模式窗口分叉与IPC统一校验
-  - TASK-048  # Token移出renderer与Preload窄能力收口
-  - TASK-049  # 数据闭环三个关键bug修复
-  - TASK-050  # safeStorage明文回退修复与文件读取token模式
+executable: []
 
 # 需等待的任务（存在 depends_on 或 conflicts_with 未满足）
-waiting:
-  - TASK-043  # 桌面端 Electron 主进程安全与架构审查 → 已审查，等待修复任务完成
-  - TASK-044  # 桌面端 Preload 与渲染桥接安全审查 → 已审查，等待修复任务完成
-  - TASK-045  # 桌面端 本地数据库与同步引擎审查 → 已审查，等待修复任务完成
-  - TASK-046  # 桌面端 构建与打包流程审查 → 已审查，等待修复任务完成
+waiting: []
 
 # 推荐执行顺序
 notes: |
   2026-03-25 本次规划：
 
-  新增四个 P0/P1 修复任务（TASK-047~TASK-050），基于审查结果5的建议拆分：
+  背景：用户希望将 Bottle 生成素材流程从 5 个精简为 2 个，同时重建桌面端。
+  第一性原理：生成素材时，服务器不承受任何压力——文件在用户本地跑 ASR，或直传阿里云跑 ASR。
 
-  - TASK-047（critical）：Electron 主进程双模式窗口分叉 + IPC 统一校验中间件
-    → 斩断远端页面获取高权限的根路径，是所有后续修复的架构基座
-    → 与 TASK-048 有协同关系：TASK-048 依赖 preload-cloud.mjs，建议优先完成 TASK-047
+  新增六个任务：
 
-  - TASK-048（critical）：Token 移出 renderer + Preload 窄能力收口
-    → 消除 token 暴露和横向放大风险
+  并行组A（可直接执行）：
+    - TASK-051（high）：清理废弃后端代码（desktop_asr/local_asr_assets/dashscope_upload/faster_whisper/url_import）
+    - TASK-052（high）：清理废弃前端代码（浏览器端本地 ASR 相关 6 个 JS 文件 + UploadPanel 改造）
 
-  - TASK-049（high）：数据闭环三个关键 bug 修复
-    → progress 同步键错配 / 删除不写 journal / markSynced 缺失
-    → 独立于 TASK-047/048，可并行
+  串行执行：
+    - TASK-053（critical）：新建 Electron + React + Vite 桌面端骨架（D:/3.3-19.01/Desktop/）
+    - TASK-054（critical）：桌面端集成本地 ASR（Sherpa-ONNX，模型已在 Desktop/models/sherpa-onnx/）
+    - TASK-055（critical）：实现 Bottle 2.0 STS 凭证架构（服务器下发临时凭证，客户端直连阿里云）
+    - TASK-056（medium）：更新产品文档和产品修改历史
 
-  - TASK-050（high）：safeStorage 明文回退修复 + 文件读取 token 模式
-    → 独立于 TASK-047/048/049，可并行
+  执行顺序建议：
+    第一轮：TASK-051 + TASK-052（并行，无依赖）
+    第二轮：TASK-053（桌面端骨架，独立）
+    第三轮：TASK-054（桌面端 ASR，依赖 053）+ TASK-055（Bottle 2.0 STS，依赖 051）
+    第四轮：TASK-056（文档，依赖全部）
 
-  推荐执行顺序（考虑依赖关系）：
-    并行组A：TASK-047 + TASK-049 + TASK-050（互相独立）
-    并行组B：TASK-048（依赖 TASK-047 产生的 preload-cloud.mjs）
+  执行结果：
+    ✅ TASK-051 — 已完成（F-TASK-051）
+    ✅ TASK-052 — 已完成（F-TASK-052）
+    ✅ TASK-053 — 已完成（F-TASK-053）
+    ✅ TASK-054 — 已完成（F-TASK-054）
+    ✅ TASK-055 — 已完成（F-TASK-055）
+    ✅ TASK-056 — 已完成（F-TASK-056）
 
-  TASK-047 完成后，TASK-048 可与 A 组并行执行。
+    全部任务已完成！executable 和 waiting 均为空。
 
-  Zeabur 操作提醒：本次仅涉及前端桌面端代码修改，无需数据库迁移。
+  Zeabur 操作提醒：
+    - TASK-051~052 清理废弃代码：直接部署即可
+    - TASK-053~054 Desktop/ 目录仅本地使用，不影响 Zeabur 部署
+    - TASK-055 Bottle 2.0 STS：部署时需在环境变量中配置 ALIYUN_* 系列变量
+    - 以上任务均无需数据库迁移

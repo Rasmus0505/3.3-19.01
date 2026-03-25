@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -8,7 +8,7 @@ from app.api.serializers import to_user_response
 from app.core.errors import error_response
 from app.db import get_db
 from app.models import User
-from app.schemas import AuthRequest, AuthResponse, ErrorResponse, LogoutResponse, RefreshRequest
+from app.schemas import AuthRequest, AuthResponse, DesktopTokenLoginRequest, DesktopTokenLoginResponse, ErrorResponse, LogoutResponse, RefreshRequest
 from app.security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from app.services.billing_service import get_or_create_wallet_account
 from app.services.user_activity import ensure_user_activity_schema, record_user_login_event
@@ -79,3 +79,41 @@ def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
 @router.post("/logout", response_model=LogoutResponse)
 def logout() -> LogoutResponse:
     return LogoutResponse(ok=True, message="已退出登录")
+
+
+@router.post(
+    "/desktop-token-login",
+    response_model=DesktopTokenLoginResponse,
+    responses={401: {"model": ErrorResponse}},
+)
+def desktop_token_login(
+    payload: DesktopTokenLoginRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Desktop client login via existing access token.
+    Allows the desktop app to authenticate using a token obtained from the web login.
+    """
+    ensure_user_activity_schema(db)
+    try:
+        decoded = decode_token(payload.token)
+        if decoded.get("type") != "access":
+            raise ValueError("invalid token type")
+        user_id = int(decoded.get("sub"))
+    except Exception:
+        return error_response(401, "INVALID_TOKEN", "无效或过期的令牌")
+
+    user = db.get(User, user_id)
+    if not user:
+        return error_response(401, "INVALID_TOKEN", "用户不存在")
+
+    record_user_login_event(db, user_id=user.id, event_type="desktop_login")
+    db.commit()
+    db.refresh(user)
+
+    return DesktopTokenLoginResponse(
+        ok=True,
+        access_token=create_access_token(user.id),
+        user_id=user.id,
+        email=user.email,
+    )

@@ -11,13 +11,6 @@ from dashscope.files import Files
 
 from app.core.config import ASR_TASK_POLL_SECONDS
 from app.services.asr_model_registry import QWEN_ASR_MODEL, get_supported_transcribe_asr_model_keys
-from app.services.faster_whisper_asr import (
-    FASTER_WHISPER_ASR_MODEL,
-    FasterWhisperCancellationRequested,
-    FasterWhisperModelNotReadyError,
-    get_faster_whisper_model_status,
-    transcribe_audio_file_with_faster_whisper,
-)
 from app.services.lesson_task_manager import is_task_terminate_requested, wait_for_task_terminate_request
 
 
@@ -369,24 +362,6 @@ def _transcribe_audio_file_with_qwen(
     }
 
 
-def _transcribe_audio_file_with_faster_whisper(audio_path: str, *, known_duration_ms: int | None = None, progress_callback=None) -> dict[str, Any]:
-    try:
-        return transcribe_audio_file_with_faster_whisper(audio_path, progress_callback=progress_callback)
-    except FasterWhisperCancellationRequested as exc:
-        raise AsrCancellationRequested(str(exc) or "terminate requested") from exc
-    except FasterWhisperModelNotReadyError as exc:
-        status_payload = dict(getattr(exc, "status_payload", None) or get_faster_whisper_model_status())
-        raise AsrError(
-            "ASR_MODEL_NOT_READY",
-            str(status_payload.get("message") or "Faster Whisper model is not ready"),
-            json.dumps({"status": status_payload}, ensure_ascii=False)[:1200],
-        ) from exc
-    except AsrError:
-        raise
-    except Exception as exc:
-        raise AsrError("FASTER_WHISPER_TRANSCRIBE_FAILED", "Faster Whisper transcribe failed", str(exc)[:1200]) from exc
-
-
 def transcribe_audio_file(
     audio_path: str,
     *,
@@ -398,12 +373,6 @@ def transcribe_audio_file(
     model_name = (model or "").strip()
     if model_name not in SUPPORTED_MODELS:
         raise AsrError("INVALID_MODEL", "不支持的模型", model_name)
-    if model_name == FASTER_WHISPER_ASR_MODEL:
-        return _transcribe_audio_file_with_faster_whisper(
-            audio_path,
-            known_duration_ms=known_duration_ms,
-            progress_callback=progress_callback,
-        )
     return _transcribe_audio_file_with_qwen(audio_path, model=model_name, requests_timeout=requests_timeout, progress_callback=progress_callback)
 
 
@@ -444,8 +413,6 @@ def transcribe_signed_url(
     model_name = (model or "").strip()
     if model_name not in SUPPORTED_MODELS:
         raise AsrError("INVALID_MODEL", "不支持的模型", model_name)
-    if model_name == FASTER_WHISPER_ASR_MODEL:
-        raise AsrError("INVALID_MODEL", "Faster-Whisper 不支持 signed URL 直传", model_name)
 
     _ensure_dashscope_api_key()
     request_timeout = max(5, int(requests_timeout or 120))

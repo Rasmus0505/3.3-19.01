@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import hashlib
 import json
@@ -18,8 +18,6 @@ from app.core.config import LESSON_DEFAULT_ASR_MODEL, REDEEM_CODE_DEFAULT_DAILY_
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
 from app.repositories.billing_rates import list_billing_rates as query_billing_rates
 from app.services.asr_model_registry import (
-    FASTER_WHISPER_ASR_MODEL as FASTER_WHISPER_SERVER_MODEL,
-    LOCAL_BROWSER_ASR_MODEL_KEYS,
     QWEN_ASR_MODEL as FAST_CLOUD_MODEL,
 )
 from app.models import (
@@ -68,14 +66,12 @@ MT_FLASH_MODEL = "qwen-mt-flash"
 MT_MODEL_PREFIX = "qwen-mt-"
 ADMIN_BILLING_MODEL_ORDER: tuple[str, ...] = (
     FAST_CLOUD_MODEL,
-    FASTER_WHISPER_SERVER_MODEL,
     MT_FLASH_MODEL,
 )
 PUBLIC_BILLING_MODEL_ORDER: tuple[str, ...] = (
     FAST_CLOUD_MODEL,
-    FASTER_WHISPER_SERVER_MODEL,
 )
-LOCAL_BROWSER_ASR_MODELS: tuple[str, ...] = LOCAL_BROWSER_ASR_MODEL_KEYS
+LOCAL_BROWSER_ASR_MODELS: tuple[str, ...] = ()
 
 DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
     {
@@ -90,19 +86,6 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
         "parallel_threshold_seconds": 600,
         "segment_seconds": 300,
         "max_concurrency": 4,
-    },
-    {
-        "model_name": FASTER_WHISPER_SERVER_MODEL,
-        "points_per_minute": 130,
-        "price_per_minute_yuan": Decimal("1.3000"),
-        "points_per_1k_tokens": 0,
-        "cost_per_minute_cents": 0,
-        "cost_per_minute_yuan": Decimal("0.0000"),
-        "billing_unit": "minute",
-        "parallel_enabled": True,
-        "parallel_threshold_seconds": 480,
-        "segment_seconds": 240,
-        "max_concurrency": 2,
     },
     {
         "model_name": MT_FLASH_MODEL,
@@ -1158,7 +1141,7 @@ def _backfill_subtitle_settings_values(db: Session) -> bool:
         elif column_name == "default_asr_model":
             where_sql = (
                 f"{column_name} IS NULL OR TRIM({column_name}) = '' "
-                f"OR TRIM({column_name}) NOT IN ('{FAST_CLOUD_MODEL}', '{FASTER_WHISPER_SERVER_MODEL}')"
+                f"OR TRIM({column_name}) NOT IN ('{FAST_CLOUD_MODEL}')"
             )
             update_sql = text(f"UPDATE {table_name} SET {column_name} = :default_value WHERE {where_sql}")
             params = {"default_value": str(default_value or LESSON_DEFAULT_ASR_MODEL)}
@@ -1205,7 +1188,7 @@ def _normalize_subtitle_settings_row(row: SubtitleSetting) -> bool:
             continue
         if key == "default_asr_model":
             normalized_value = str(current or "").strip() or str(value or LESSON_DEFAULT_ASR_MODEL)
-            if normalized_value not in {FAST_CLOUD_MODEL, FASTER_WHISPER_SERVER_MODEL}:
+            if normalized_value not in {FAST_CLOUD_MODEL}:
                 normalized_value = str(value or LESSON_DEFAULT_ASR_MODEL)
             if normalized_value != current:
                 setattr(row, key, normalized_value)

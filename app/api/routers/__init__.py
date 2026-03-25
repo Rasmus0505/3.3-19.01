@@ -12,8 +12,6 @@ from app.api.routers.wordbook import router as wordbook
 from app.api.routers.media import router as media
 from app.api.routers.asr_models import router as asr_models
 from app.api.routers.transcribe import router as transcribe
-from app.api.routers.desktop_asr import router as desktop_asr
-from app.api.routers.local_asr_assets import router as local_asr_assets
 
 
 def _attach_wordbook_routes() -> None:
@@ -36,7 +34,6 @@ __all__ = [
     "practice",
     "media",
     "transcribe",
-    "local_asr_assets",
     "asr_models",
     "wordbook",
 ]
