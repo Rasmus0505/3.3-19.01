@@ -157,7 +157,7 @@ async function verifyBundledRuntimeResources(outputDir) {
 
 async function main() {
   const packageOutputDir = path.join(localCacheRoot, `package-output-${Date.now()}`);
-  await runNodeScript(buildScriptPath, ["--clean-dist"]);
+  await runNodeScript(buildScriptPath, ["--clean-dist", "--standalone"]);
   if (!fs.existsSync(bundledModelSourceDir)) {
     throw new Error(`Bottle 1.0 bundled model directory is missing: ${bundledModelSourceDir}`);
   }

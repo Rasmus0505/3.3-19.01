@@ -1,0 +1,37 @@
+schema_version: 1
+task_id: TASK-044
+title: Preload与渲染桥接安全审查
+status: done
+priority: high
+goal: 审查 desktop/electron/preload.mjs 与 src/ 下所有前端桥接代码的安全性，输出结构化问题清单
+scope: desktop/electron/preload.mjs、desktop/src/auth/offline-auth.mjs、desktop/src/billing/offline-billing.mjs
+acceptance:
+  - 评估 contextBridge 暴露的 API 粒度是否存在过度暴露风险
+  - 检查 localAsr / desktopRuntime / localDb / syncEngine 四个桥接对象的调用链安全性
+  - 识别前端可直接访问敏感操作（文件读写、HTTP代理、加密解密）时的权限边界是否清晰
+  - 每项问题附带严重等级（critical/high/medium/low）和修复方向提示
+depends_on: []
+conflicts_with: []
+notes_for_after: |
+  使用 Ask Mode（只读模式）进行全面审查，不要修改任何文件。
+  审查 preload.mjs 和 src/ 下所有 .mjs 文件。
+  输出格式：问题编号 | 严重等级 | 问题类别 | 位置/行号 | 描述 | 修复方向。
+result_summary: 审查完成，确认 4 项桥接安全问题：认证令牌向渲染层暴露、localDb 与 sync 内部能力过度暴露、任意媒体路径可读、通用 helper 代理边界过宽。
+changed_files:
+  - Docx/协作/tasks/F-TASK-044-Preload与渲染桥接安全审查.yaml
+  - Docx/协作/计划清单.yaml
+tests_run:
+  - rg -n "localAsr|desktopRuntime|localDb|syncEngine" D:\3.3-19.01\desktop\src
+  - rg -n "request-local-helper|read-local-media-file|select-local-media-file|encrypt-secret|decrypt-secret|get-runtime-info|open-client-update-link|open-logs-directory" D:\3.3-19.01\desktop\electron\main.mjs
+  - Get-Content -Raw D:\3.3-19.01\desktop\electron\preload.mjs
+  - Get-Content -Raw D:\3.3-19.01\desktop\src\sync\sync-engine.mjs
+  - Get-Content -Raw D:\3.3-19.01\desktop\src\db\local-db.cjs
+  - Get-Content -Raw D:\3.3-19.01\desktop\src\services\local-course-generator.mjs
+check_commands:
+  - rg -n "localAsr|desktopRuntime|localDb|syncEngine" D:\3.3-19.01\desktop\src
+  - rg -n "request-local-helper|read-local-media-file|select-local-media-file|encrypt-secret|decrypt-secret|get-runtime-info|open-client-update-link|open-logs-directory" D:\3.3-19.01\desktop\electron\main.mjs
+  - Get-Content -Raw D:\3.3-19.01\desktop\electron\preload.mjs
+  - Get-Content -Raw D:\3.3-19.01\desktop\src\sync\sync-engine.mjs
+  - Get-Content -Raw D:\3.3-19.01\desktop\src\db\local-db.cjs
+  - Get-Content -Raw D:\3.3-19.01\desktop\src\services\local-course-generator.mjs
+completed_at: 2026-03-25T15:34:09+08:00

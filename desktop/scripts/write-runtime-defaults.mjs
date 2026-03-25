@@ -41,6 +41,9 @@ function deriveClientUpdateManifestUrl(appBaseUrl) {
   if (explicitValue) {
     return normalizeHttpUrl(explicitValue, "DESKTOP_CLIENT_UPDATE_MANIFEST_URL");
   }
+  if (!trimText(appBaseUrl)) {
+    return "";
+  }
   return new URL(
     DEFAULT_CLIENT_UPDATE_MANIFEST_PATH,
     appBaseUrl.endsWith("/") ? appBaseUrl : `${appBaseUrl}/`,

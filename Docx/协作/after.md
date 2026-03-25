@@ -8,7 +8,7 @@
 1. 读取 `计划清单.yaml`，获取当前可并行执行的任务列表（`executable`）
 2. 扫描任务池（`D:/3.3-19.01/Docx/协作/tasks/`）确认任务状态
 3. 选择并执行 `executable` 中可跑的任务（可多个并行）
-4. 通过 subagent 实施代码、验证结果
+4. 实施代码、验证结果
 5. 把执行结果回写到原任务 YAML
 6. 重新计算并更新 `计划清单.yaml`
 
@@ -51,18 +51,12 @@
 
 ## 执行边界
 
-- 只能修改 `allowed_paths` 内的文件
+- 依据任务 YAML 中 `goal`、`scope`、`acceptance` 执行
+- 自己推断合理的验证方式（无需等待 YAML 中的 `check_commands`）
+- 从 `scope` 和 `goal` 推断影响范围，无需等待 YAML 中的 `allowed_paths`
 - 只实现当前任务的 `goal` 和 `acceptance`
 - 如果当前任务处于 `fix` 或 `fixing`，还必须落实 `fix_request`
-- 必须运行或确认 `check_commands`
 - 除了当前任务 YAML 的状态回写与重命名，不要改其他任务文件
-
-## subagent 规则
-
-开始或恢复任务后，主线程必须先创建并使用至少一个 subagent：
-- 主线程负责任务选择、改状态、改文件名、最终验收与回写
-- subagent 负责调查、实现、修复、验证
-- modifying subagent 必须被明确告知：它不是唯一在仓库里工作的 agent，不得回滚别人改动，不得超出当前任务边界
 
 ## 成功回写
 
@@ -78,6 +72,8 @@ tests_run:
   - 实际执行命令 1
   - 实际执行命令 2
 completed_at: 2026-03-24T15:00:00+08:00
+check_commands:
+  - 本次实际使用的验证命令
 ```
 
 如果是修复任务，还要额外更新：
@@ -90,7 +86,6 @@ fix_updated_at: 2026-03-24T14:50:00+08:00
 
 若出现以下情况，必须停止并标记 `blocked`：
 - 任务定义过于模糊，无法安全执行
-- 关键必需文件不在 `allowed_paths`
 - 缺少前置条件
 - 仓库当前状态与任务定义冲突
 

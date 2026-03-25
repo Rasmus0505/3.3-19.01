@@ -69,6 +69,8 @@ const DESKTOP_LINK_IMPORTING_PHASE = "desktop_link_importing";
 const DESKTOP_LOCAL_GENERATING_PHASE = "desktop_local_generating";
 const DESKTOP_UPLOAD_SOURCE_MODE_FILE = "file";
 const DESKTOP_UPLOAD_SOURCE_MODE_LINK = "link";
+const FILE_PICKER_ACTION_SELECT = "select";
+const FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE = "desktop_local_generate";
 const browserLocalRuntimeApi = LOCAL_BROWSER_RUNTIME_BASE_URL ? createApiClient({ baseUrl: LOCAL_BROWSER_RUNTIME_BASE_URL }) : null;
 
 function hasLocalCourseGeneratorBridge() {
@@ -1487,6 +1489,7 @@ export function UploadPanel({
   const desktopBillingReportRef = useRef(null);
   const desktopLinkPollTokenRef = useRef(0);
   const desktopLinkTaskIdRef = useRef("");
+  const filePickerActionRef = useRef(FILE_PICKER_ACTION_SELECT);
   const ownerUserId = Number(currentUser?.id || 0);
   const desktopRuntimeAvailable = hasDesktopRuntimeBridge();
   const localLessonImportAvailable = hasLocalLessonImportBridge();
@@ -1736,13 +1739,13 @@ export function UploadPanel({
   const desktopLocalTranscribing = phase === DESKTOP_LOCAL_TRANSCRIBING_PHASE;
   const desktopLinkImporting = phase === DESKTOP_LINK_IMPORTING_PHASE;
   const desktopLinkModeActive = desktopRuntimeAvailable && desktopSourceMode === DESKTOP_UPLOAD_SOURCE_MODE_LINK;
-  const desktopNativeFileSelectionActive =
+  const desktopLocalGenerateAvailable =
     desktopRuntimeAvailable &&
     desktopSourceMode === DESKTOP_UPLOAD_SOURCE_MODE_FILE &&
     mode === "fast" &&
     selectedFastModel === FASTER_WHISPER_MODEL &&
     selectedFastRuntimeTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL &&
-    hasDesktopFileSelectionBridge();
+    hasLocalCourseGeneratorBridge();
   const trimmedDesktopLinkInput = String(desktopLinkInput || "").trim();
   const desktopLinkModeSupported =
     desktopLinkModeActive &&
@@ -2028,32 +2031,15 @@ export function UploadPanel({
     return resolvedMaterializedFile;
   }
 
-  async function selectDesktopLocalSourceFile() {
-    if (!hasDesktopFileSelectionBridge()) {
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-        fileInputRef.current.click();
-      }
-      return;
+  function openSourceFilePicker(action = FILE_PICKER_ACTION_SELECT) {
+    filePickerActionRef.current = action;
+    if (!fileInputRef.current) {
+      filePickerActionRef.current = FILE_PICKER_ACTION_SELECT;
+      return false;
     }
-    const selection = await window.desktopRuntime.selectLocalMediaFile({
-      title: "选择本地媒体",
-      buttonLabel: "选择",
-    });
-    if (selection?.canceled) {
-      return;
-    }
-    const selectionErrorMessage = getDesktopSelectionErrorMessage(selection);
-    if (selectionErrorMessage) {
-      toast.error(selectionErrorMessage);
-      return;
-    }
-    const selectedFile = buildDesktopSelectedFile(selection?.file || selection);
-    if (!selectedFile) {
-      toast.error("文件路径获取失败，请尝试重新选择");
-      return;
-    }
-    await onSelectFile(selectedFile);
+    fileInputRef.current.value = "";
+    fileInputRef.current.click();
+    return true;
   }
 
   async function loadDesktopImportedSourceFile(taskPayload = {}) {
@@ -3916,6 +3902,19 @@ export function UploadPanel({
     }
   }
 
+  async function handleSourceFileInputChange(nextFile) {
+    const pickerAction = filePickerActionRef.current;
+    filePickerActionRef.current = FILE_PICKER_ACTION_SELECT;
+    const selectionMeta = await onSelectFile(nextFile);
+    if (nextFile && pickerAction === FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE) {
+      await submit({
+        sourceFile: nextFile,
+        submitIntent: FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE,
+      });
+    }
+    return selectionMeta;
+  }
+
   async function fetchDesktopModelUpdate(modelKey, options = {}) {
     const { silent = false } = options;
     if (!hasDesktopModelUpdateBridge() || modelKey !== FASTER_WHISPER_MODEL) {
@@ -5236,12 +5235,14 @@ export function UploadPanel({
     }
   }
 
-  async function submit() {
+  async function submit(options = {}) {
+    const selectedSourceFile = options?.sourceFile ?? file;
+    const submitIntent = String(options?.submitIntent || FILE_PICKER_ACTION_SELECT);
     if (desktopLinkModeActive) {
       await submitDesktopLinkImport();
       return;
     }
-    if (!file) {
+    if (!selectedSourceFile) {
       const message = "请先选择文件";
       await handleTaskFailureState({
         message,
@@ -5278,16 +5279,16 @@ export function UploadPanel({
     let shouldUseBrowserLocalFast = fasterWhisperBrowserLocalSelected;
     let shouldUseDesktopLocalGenerateCourse = false;
     if (
-      desktopNativeFileSelectionActive &&
-      file &&
+      submitIntent === FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE &&
+      selectedSourceFile &&
       hasLocalCourseGeneratorBridge() &&
       !loading &&
-      (phase === "idle" || phase === "error")
+      (phase === "idle" || phase === "ready" || phase === "error")
     ) {
       shouldUseDesktopLocalGenerateCourse = true;
     }
     const ensureUploadableSourceFile = async () => {
-      const preparedFile = await ensureBlobBackedSourceFile(file);
+      const preparedFile = await ensureBlobBackedSourceFile(selectedSourceFile);
       if (isBlobBackedSourceFile(preparedFile)) {
         return preparedFile;
       }
@@ -5332,7 +5333,7 @@ export function UploadPanel({
       toast.message(browserLocalRuntimeBlockedMessage);
     }
     if (shouldUseDesktopLocalGenerateCourse) {
-      await submitDesktopLocalGenerateCourse(file);
+      await submitDesktopLocalGenerateCourse(selectedSourceFile);
       return;
     }
     if (shouldUseDesktopLocalFast) {
@@ -5340,7 +5341,7 @@ export function UploadPanel({
       if (!billingAllowed) {
         return;
       }
-      await submitDesktopLocalFast(pollToken, runToken, file, durationSec);
+      await submitDesktopLocalFast(pollToken, runToken, selectedSourceFile, durationSec);
       return;
     }
     if (shouldUseBrowserLocalFast) {
@@ -6122,7 +6123,11 @@ export function UploadPanel({
               accept={mode === "balanced" ? LOCAL_ASR_FILE_ACCEPT : undefined}
               className="hidden"
               onChange={(event) => {
-                void onSelectFile(event.target.files?.[0] ?? null);
+                const nextFile = event.target.files?.[0] ?? null;
+                void handleSourceFileInputChange(nextFile).catch((error) => {
+                  toast.error(error instanceof Error && error.message ? error.message : "选择本地文件失败");
+                });
+                event.target.value = "";
               }}
               disabled={loading || localModeBusy}
             />
@@ -6163,34 +6168,27 @@ export function UploadPanel({
                   variant="outline"
                   className="h-9 px-4"
                   onClick={() => {
-                    if (desktopNativeFileSelectionActive) {
-                      void selectDesktopLocalSourceFile().catch((error) => {
-                        toast.error(error instanceof Error && error.message ? error.message : "选择本地文件失败");
-                      });
-                      return;
-                    }
-                    if (fileInputRef.current) {
-                      fileInputRef.current.value = "";
-                      fileInputRef.current.click();
+                    if (!openSourceFilePicker()) {
+                      toast.error("文件选择器不可用，请刷新后重试");
                     }
                   }}
                   disabled={loading || localModeBusy}
                 >
                   选择文件
                 </Button>
-                {desktopRuntimeAvailable && hasLocalCourseGeneratorBridge() ? (
+                {desktopLocalGenerateAvailable ? (
                   <Button
                     type="button"
                     variant="default"
                     className="h-9 px-4"
                     onClick={() => {
-                      void selectDesktopLocalSourceFile().then((selected) => {
-                        if (selected) {
-                          void submit();
-                        }
-                      }).catch((error) => {
-                        toast.error(error instanceof Error && error.message ? error.message : "选择本地文件失败");
-                      });
+                      if (file) {
+                        void submit({ submitIntent: FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE });
+                        return;
+                      }
+                      if (!openSourceFilePicker(FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE)) {
+                        toast.error("文件选择器不可用，请刷新后重试");
+                      }
                     }}
                     disabled={loading || localModeBusy}
                   >
