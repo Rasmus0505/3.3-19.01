@@ -2067,6 +2067,27 @@ export function UploadPanel({
 
   function openSourceFilePicker(action = FILE_PICKER_ACTION_SELECT) {
     filePickerActionRef.current = action;
+    if (desktopRuntimeAvailable && typeof window.desktopRuntime.selectLocalMediaFile === "function") {
+      void (async () => {
+        try {
+          const selection = await window.desktopRuntime.selectLocalMediaFile({
+            action,
+            accept: LOCAL_ASR_FILE_ACCEPT,
+          });
+          if (!selection?.ok || !selection?.path) {
+            return;
+          }
+          const selectedFile = buildDesktopSelectedFile(selection);
+          await onSelectFile(selectedFile);
+          if (action === FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE) {
+            await submit({ sourceFile: selectedFile, submitIntent: action });
+          }
+        } catch (error) {
+          toast.error(error instanceof Error && error.message ? error.message : "选择本地文件失败");
+        }
+      })();
+      return true;
+    }
     if (!fileInputRef.current) {
       filePickerActionRef.current = FILE_PICKER_ACTION_SELECT;
       return false;
@@ -4924,62 +4945,32 @@ export function UploadPanel({
       const dashscopeUploadStatus = "正在上传到云端存储";
       setStatus(dashscopeUploadStatus);
 
-      await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
+      const formData = new FormData();
+      if (oss_fields) {
+        Object.entries(oss_fields).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            formData.append(key, String(value));
+          }
+        });
+      }
+      formData.append("file", uploadSourceFile);
 
-        const onAbort = () => {
-          xhr.abort();
-          reject(new DOMException("Upload aborted", "AbortError"));
-        };
-        abortController.signal.addEventListener("abort", onAbort, { once: true });
-
-        xhr.open("PUT", upload_url, true);
-
-        // 使用 FormData 构建 multipart/form-data 请求
-        const formData = new FormData();
-        // 添加 OSS 认证字段
-        if (oss_fields) {
-          Object.entries(oss_fields).forEach(([key, value]) => {
-            if (value !== undefined && value !== null) {
-              formData.append(key, String(value));
-            }
-          });
-        }
-        // 添加文件（必须在 OSS 字段之后）
-        formData.append("file", uploadSourceFile);
-
-        xhr.upload.onprogress = (event) => {
+      const uploadResult = await uploadWithProgress(upload_url, {
+        method: "PUT",
+        body: formData,
+        signal: abortController.signal,
+        onUploadProgress: ({ percent }) => {
           if (abortController.signal.aborted) return;
-          const total = Number(event.total || 0);
-          const loaded = Number(event.loaded || 0);
-          const percent = event.lengthComputable && total > 0 ? Math.round((loaded / total) * 100) : 0;
           const clampedPercent = clampPercent(percent);
           uploadPersistRef.current.latestPercent = clampedPercent;
           setUploadPercent(clampedPercent);
           persistUploadProgress(clampedPercent, uploadSourceFile);
-        };
-
-        xhr.onload = () => {
-          abortController.signal.removeEventListener("abort", onAbort);
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve();
-          } else {
-            reject(new Error(`云端存储上传失败 (HTTP ${xhr.status}): ${xhr.statusText}`));
-          }
-        };
-
-        xhr.onerror = () => {
-          abortController.signal.removeEventListener("abort", onAbort);
-          reject(new Error("云端存储上传网络错误"));
-        };
-
-        xhr.onabort = () => {
-          abortController.signal.removeEventListener("abort", onAbort);
-          reject(new DOMException("Upload aborted", "AbortError"));
-        };
-
-        xhr.send(formData);
+        },
       });
+
+      if (!uploadResult.ok) {
+        throw new Error(`云端存储上传失败 (HTTP ${uploadResult.status})`);
+      }
 
       if (runToken !== localRunTokenRef.current) return;
       if (abortController.signal.aborted) return;

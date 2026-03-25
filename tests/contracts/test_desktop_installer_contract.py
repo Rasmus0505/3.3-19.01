@@ -6,16 +6,17 @@ import textwrap
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DESKTOP_ROOT = REPO_ROOT / "desktop"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DESKTOP_ROOT = REPO_ROOT / "desktop-client"
 PACKAGE_JSON_PATH = DESKTOP_ROOT / "package.json"
 PACKAGE_WIN_SCRIPT_PATH = DESKTOP_ROOT / "scripts" / "package-win.mjs"
 MAIN_PROCESS_PATH = DESKTOP_ROOT / "electron" / "main.mjs"
-PRELOAD_PATH = DESKTOP_ROOT / "electron" / "preload.mjs"
+PRELOAD_PATH = DESKTOP_ROOT / "electron" / "preload.cjs"
 HELPER_RUNTIME_PATH = DESKTOP_ROOT / "electron" / "helper-runtime.mjs"
 MODEL_UPDATER_PATH = DESKTOP_ROOT / "electron" / "model-updater.mjs"
 INSTALLER_SCRIPT_PATH = DESKTOP_ROOT / "build" / "installer.nsh"
 RUNTIME_CONFIG_MODULE = (DESKTOP_ROOT / "electron" / "runtime-config.mjs").resolve().as_uri()
+FRONTEND_VITE_CONFIG_PATH = REPO_ROOT / "frontend" / "vite.config.js"
 
 
 def _load_package_json() -> dict:
@@ -38,8 +39,11 @@ def _run_node_json(script: str) -> dict:
 def test_package_json_targets_nsis_installer_with_bundled_runtime_resources():
     package_json = _load_package_json()
     build_config = package_json["build"]
+    scripts = package_json["scripts"]
     extra_resources = {str(item["to"]): str(item["from"]) for item in build_config["extraResources"]}
 
+    assert scripts["package:win"] == "node ./scripts/package-win.mjs dir"
+    assert scripts["package:release"] == "node ./scripts/package-win.mjs nsis"
     assert build_config["win"]["target"] == ["nsis"]
     assert build_config["nsis"]["oneClick"] is False
     assert build_config["nsis"]["allowToChangeInstallationDirectory"] is True
@@ -54,13 +58,25 @@ def test_package_json_targets_nsis_installer_with_bundled_runtime_resources():
     assert extra_resources["preinstalled-models/faster-distil-small.en"] == "../asr-test/models/faster-distil-small.en"
 
 
-def test_package_win_script_builds_runtime_defaults_and_helper_before_nsis():
+def test_package_win_script_builds_runtime_defaults_and_helper_before_target_build():
     script_text = PACKAGE_WIN_SCRIPT_PATH.read_text(encoding="utf-8")
 
     assert "write-runtime-defaults.mjs" in script_text
     assert "build-helper-runtime.mjs" in script_text
-    assert '["--win", "nsis", "--x64"' in script_text
+    assert 'const requestedTarget = (process.argv[2] || "dir").trim();' in script_text
+    assert 'const supportedTargets = new Set(["dir", "nsis"]);' in script_text
+    assert '["--win", requestedTarget, "--x64"]' in script_text
+    assert 'requestedTarget === "dir" ? "win-unpacked bundle" : "NSIS installer"' in script_text
     assert "bundledModelSourceDir" in script_text
+
+
+def test_desktop_build_script_marks_frontend_build_as_desktop_renderer():
+    script_text = (DESKTOP_ROOT / "scripts" / "build.mjs").read_text(encoding="utf-8")
+    vite_config_text = FRONTEND_VITE_CONFIG_PATH.read_text(encoding="utf-8")
+
+    assert "BOTTLE_DESKTOP_RENDERER_BUILD" in script_text
+    assert "VITE_DESKTOP_RENDERER_BUILD" in script_text
+    assert 'base: desktopRendererBuild ? "./" : "/static/"' in vite_config_text
 
 
 def test_main_process_uses_bundled_helper_runtime_and_packaged_defaults():
@@ -85,6 +101,10 @@ def test_main_process_uses_bundled_helper_runtime_and_packaged_defaults():
     assert "DESKTOP_FFMPEG_BIN_DIR" in main_text
     assert "DESKTOP_YTDLP_PATH" in main_text
     assert 'helperMode: app.isPackaged ? "bundled-runtime" : "system-python"' in main_text
+    assert "usingBundledFileRenderer" in main_text
+    assert 'preload: path.resolve(electronRoot, "preload.cjs")' in main_text
+    assert "sandbox: false" in main_text
+    assert "webSecurity: !usingBundledFileRenderer ? true : false" in main_text
     assert "computeModelUpdateDelta" in model_updater_text
     assert ".model-version.json" in model_updater_text
     assert ".backup" in model_updater_text

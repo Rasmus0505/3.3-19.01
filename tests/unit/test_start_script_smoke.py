@@ -18,7 +18,7 @@ from app.db import APP_SCHEMA, BUSINESS_TABLES, create_database_engine
 from app.db.migration_bootstrap import _repair_redundant_linear_version_rows, run_startup_migration
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 START_SCRIPT_PATH = REPO_ROOT / "scripts" / "start.sh"
 DESKTOP_BACKEND_SCRIPT_PATH = REPO_ROOT / "scripts" / "run_desktop_backend.py"
 

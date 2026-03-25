@@ -8,6 +8,9 @@ tmp/
 tmp_filetrans/
 frontend/node_modules/
 frontend/dist/
+desktop-client/node_modules/
+desktop-client/.cache/
+desktop-client/dist/
 modelscope_whisper/
 
 asr_test_results.json
