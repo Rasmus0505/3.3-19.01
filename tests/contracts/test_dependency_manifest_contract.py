@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_REQUIREMENTS = PROJECT_ROOT / "requirements.txt"
 DEV_REQUIREMENTS = PROJECT_ROOT / "requirements-dev.txt"
 README = PROJECT_ROOT / "README.md"

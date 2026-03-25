@@ -7,15 +7,19 @@ import textwrap
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DESKTOP_ROOT = REPO_ROOT / "desktop"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DESKTOP_ROOT = REPO_ROOT / "desktop-client"
 RUNTIME_CONFIG_MODULE = (DESKTOP_ROOT / "electron" / "runtime-config.mjs").resolve().as_uri()
 HELPER_RUNTIME_MODULE = (DESKTOP_ROOT / "electron" / "helper-runtime.mjs").resolve().as_uri()
 MODEL_UPDATER_MODULE = (DESKTOP_ROOT / "electron" / "model-updater.mjs").resolve().as_uri()
-PRELOAD_FILE = DESKTOP_ROOT / "electron" / "preload.mjs"
+PRELOAD_FILE = DESKTOP_ROOT / "electron" / "preload.cjs"
 MAIN_PROCESS_FILE = DESKTOP_ROOT / "electron" / "main.mjs"
+FRONTEND_MAIN_FILE = REPO_ROOT / "frontend" / "src" / "main.jsx"
+FRONTEND_ADMIN_MAIN_FILE = REPO_ROOT / "frontend" / "src" / "main-admin.jsx"
 ASR_STRATEGY_MODULE = (REPO_ROOT / "frontend" / "src" / "features" / "upload" / "asrStrategy.js").resolve().as_uri()
 UPLOAD_PANEL_FILE = REPO_ROOT / "frontend" / "src" / "features" / "upload" / "UploadPanel.jsx"
+API_CLIENT_FILE = REPO_ROOT / "frontend" / "src" / "shared" / "api" / "client.js"
+OFFLINE_MODE_FILE = REPO_ROOT / "frontend" / "src" / "hooks" / "useOfflineMode.js"
 
 
 def _run_node_json(script: str) -> dict:
@@ -280,6 +284,8 @@ def test_packaged_runtime_prefers_user_model_dir_when_local_override_exists(tmp_
 def test_preload_exposes_helper_status_bridge():
     preload_source = PRELOAD_FILE.read_text(encoding="utf-8")
 
+    assert 'requestCloudApi: (request) => ipcRenderer.invoke("desktop:request-cloud-api", request)' in preload_source
+    assert 'cancelCloudRequest: (requestId) => ipcRenderer.send("desktop:cancel-cloud-request", requestId)' in preload_source
     assert 'getHelperStatus: () => ipcRenderer.invoke("desktop:get-helper-status")' in preload_source
     assert 'getServerStatus: () => ipcRenderer.invoke("desktop:get-server-status")' in preload_source
     assert 'probeServerNow: () => ipcRenderer.invoke("desktop:probe-server-now")' in preload_source
@@ -313,6 +319,12 @@ def test_preload_exposes_model_update_bridge():
 def test_main_process_separates_client_update_from_model_update_channels():
     main_source = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
 
+    assert 'const activeCloudRequests = new Map();' in main_source
+    assert 'ipcMain.handle("desktop:request-cloud-api", async (_event, request = {}) => requestCloudApi(request))' in main_source
+    assert 'ipcMain.on("desktop:cancel-cloud-request", (_event, requestId = "") => {' in main_source
+    assert 'async function requestCloudApi(request = {}) {' in main_source
+    assert 'await fetch(`${baseUrl.replace(/\\/+$/, "")}/api/auth/refresh`' in main_source
+    assert 'ipcMain.handle("desktop:auth-restore-session", async (_event, options = {}) => restoreAuthSession(options))' in main_source
     assert 'clientUpdate: desktopClientUpdateState' in main_source
     assert 'modelUpdate: desktopModelUpdateState' in main_source
     assert 'ipcMain.handle("desktop:get-client-update-status", () => desktopClientUpdateState)' in main_source
@@ -347,6 +359,45 @@ def test_preload_exposes_server_status_bridge():
     assert 'getServerStatus: () => ipcRenderer.invoke("desktop:get-server-status")' in preload_source
     assert 'probeServerNow: () => ipcRenderer.invoke("desktop:probe-server-now")' in preload_source
     assert 'ipcRenderer.on("desktop:server-status-changed", handler)' in preload_source
+
+
+def test_frontend_entry_switches_to_hash_router_for_desktop_renderer_build():
+    main_source = FRONTEND_MAIN_FILE.read_text(encoding="utf-8")
+    admin_main_source = FRONTEND_ADMIN_MAIN_FILE.read_text(encoding="utf-8")
+
+    assert "HashRouter" in main_source
+    assert "VITE_DESKTOP_RENDERER_BUILD" in main_source
+    assert "<AppRouter>" in main_source
+    assert "HashRouter" in admin_main_source
+    assert "VITE_DESKTOP_RENDERER_BUILD" in admin_main_source
+    assert "<AppRouter>" in admin_main_source
+
+
+def test_desktop_api_client_surfaces_missing_cloud_base_configuration():
+    api_client_source = API_CLIENT_FILE.read_text(encoding="utf-8")
+
+    assert "Desktop cloud API base URL is not configured" in api_client_source
+    assert "hasDesktopRuntime()" in api_client_source
+    assert "buildDesktopApiBaseUrlMissingError" in api_client_source
+    assert "hasDesktopCloudBridge()" in api_client_source
+    assert "window.desktopRuntime.requestCloudApi" in api_client_source
+    assert 'window.desktopRuntime?.cancelCloudRequest?.(requestId);' in api_client_source
+    assert "new Response(" in api_client_source
+
+
+def test_upload_panel_routes_oss_uploads_through_shared_upload_bridge():
+    upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
+
+    assert 'const uploadResult = await uploadWithProgress(upload_url, {' in upload_panel_source
+    assert 'method: "PUT"' in upload_panel_source
+    assert 'if (!uploadResult.ok) {' in upload_panel_source
+
+
+def test_offline_mode_uses_desktop_server_bridge_when_available():
+    offline_mode_source = OFFLINE_MODE_FILE.read_text(encoding="utf-8")
+
+    assert "function hasDesktopServerBridge()" in offline_mode_source
+    assert "window.desktopRuntime.probeServerNow()" in offline_mode_source
 
 
 def test_model_updater_delta_detects_missing_and_changed_files():

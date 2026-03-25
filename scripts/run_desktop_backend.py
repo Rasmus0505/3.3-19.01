@@ -72,12 +72,8 @@ def _build_default_paths() -> tuple[Path, Path, Path, Path, Path]:
         user_data_root = Path.home() / "AppData" / "Roaming" / "Bottle"
 
     model_root = Path(os.getenv("DESKTOP_MODEL_DIR", "")).expanduser()
-    bundled_model_root = Path(os.getenv("DESKTOP_PREINSTALLED_MODEL_DIR", "")).expanduser()
     if not str(model_root).strip():
-        if str(bundled_model_root).strip() and bundled_model_root.exists():
-            model_root = bundled_model_root
-        else:
-            model_root = user_data_root / "models" / "faster-distil-small.en"
+        model_root = user_data_root / "models" / "faster-distil-small.en"
 
     cache_root = Path(os.getenv("DESKTOP_CACHE_DIR", "")).expanduser()
     if not str(cache_root).strip():

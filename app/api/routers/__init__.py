@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from app.api.routers.auth.router import router as auth
-from app.api.routers.lessons.router import router as lessons
+import app.api.routers.lessons.router as lessons
+from app.api.routers.lessons.router import router as lessons_router
 from app.api.routers.billing.router import router as billing
 from app.api.routers.billing.wallet import router as wallet
 from app.api.routers.admin.router import router as admin
@@ -10,7 +11,8 @@ from app.api.routers.admin.sql_console import router as admin_sql_console
 from app.api.routers.practice import router as practice
 from app.api.routers.wordbook import router as wordbook
 from app.api.routers.media import router as media
-from app.api.routers.asr_models import router as asr_models
+import app.api.routers.asr_models as asr_models
+from app.api.routers.asr_models import router as asr_models_router
 from app.api.routers.transcribe import router as transcribe
 
 
@@ -31,9 +33,11 @@ __all__ = [
     "admin_console",
     "admin_sql_console",
     "lessons",
+    "lessons_router",
     "practice",
     "media",
     "transcribe",
     "asr_models",
+    "asr_models_router",
     "wordbook",
 ]

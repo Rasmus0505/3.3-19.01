@@ -4,7 +4,20 @@ import { toast } from "sonner";
 const CLOUD_HEALTH_CHECK_INTERVAL_MS = 30000;
 const CLOUD_HEALTH_CHECK_TIMEOUT_MS = 8000;
 
+function hasDesktopServerBridge() {
+  return typeof window !== "undefined" && typeof window.desktopRuntime?.probeServerNow === "function";
+}
+
 async function checkCloudHealth() {
+  if (hasDesktopServerBridge()) {
+    try {
+      const status = await window.desktopRuntime.probeServerNow();
+      return Boolean(status?.reachable);
+    } catch (_) {
+      return false;
+    }
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CLOUD_HEALTH_CHECK_TIMEOUT_MS);
 

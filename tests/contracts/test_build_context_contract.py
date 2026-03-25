@@ -5,7 +5,7 @@ import shlex
 from pathlib import Path, PurePosixPath
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCKERIGNORE_PATH = REPO_ROOT / ".dockerignore"
 DOCKERFILE_PATH = REPO_ROOT / "Dockerfile"
 

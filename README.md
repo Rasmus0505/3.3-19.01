@@ -315,9 +315,22 @@ npm --prefix desktop-client run build
 npm --prefix desktop-client run package:win
 ```
 
-打包后的行为：
+日常迭代后的行为：
 
-- 默认输出标准 Windows NSIS 安装向导到 `desktop-client/dist`，不再产出 portable 便携版
+- 默认输出解包版 `desktop-client/dist/win-unpacked`，方便直接替换和调试，不生成安装器
+- 解包版仍然会先生成并带上本地 helper 运行时；终端用户运行 `win-unpacked/Bottle.exe` 时不需要本机再装 Python 3.11
+- 客户端继续读取用户目录里的 `%APPDATA%\Bottle\desktop-runtime.json`，并直接使用打包时写入的云端站点地址打开登录页
+
+正式发布安装器时，再执行：
+
+```powershell
+cd D:\3.3-19.01
+npm --prefix desktop-client run package:release
+```
+
+安装版行为：
+
+- 输出标准 Windows NSIS 安装向导到 `desktop-client/dist`
 - 安装向导支持安装目录选择、桌面快捷方式、开始菜单入口，以及安装完成后立即启动
 - 安装包会先生成并打入自带的本地 helper 运行时；终端用户安装后不需要再单独安装 Python 3.11
 - 默认安装路径为当前用户的 `%LOCALAPPDATA%\Programs\Bottle`
@@ -327,9 +340,10 @@ npm --prefix desktop-client run package:win
 推荐正式版回归路径：
 
 1. 在 Zeabur 维持现有 `web + postgresql` 不变
-2. 在打包机上设置 `DESKTOP_CLOUD_APP_URL` 与 `DESKTOP_CLOUD_API_BASE_URL` 后运行 `npm --prefix desktop-client run package:win`
-3. 运行安装器，保留或取消 `Bottle 1.0` 预装勾选项
-4. 安装完成后直接启动客户端，验证登录、鉴权、上传转写、课程读写和后台访问都落到同一套 Zeabur `web`
+2. 日常联调用 `npm --prefix desktop-client run package:win` 只产出 `win-unpacked`
+3. 在打包机上设置 `DESKTOP_CLOUD_APP_URL` 与 `DESKTOP_CLOUD_API_BASE_URL` 后，发布前运行 `npm --prefix desktop-client run package:release`
+4. 运行安装器，保留或取消 `Bottle 1.0` 预装勾选项
+5. 安装完成后直接启动客户端，验证登录、鉴权、上传转写、课程读写和后台访问都落到同一套 Zeabur `web`
 
 ### 4. Zeabur 侧只需要维护什么
 
@@ -374,7 +388,7 @@ npm --prefix desktop-client run package:win
 - 客户端代码即使合并到仓库，只要不修改 Dockerfile 和 Zeabur 构建命令，就不会参与线上部署
 ## Windows Installer Addendum
 
-This repository now ships the Windows desktop client as a standard `NSIS` installer wizard, not as a portable package.
+This repository now uses `win-unpacked` as the default desktop build artifact for daily iteration. The `NSIS` installer is reserved for release packaging.
 
 Build steps:
 
@@ -389,7 +403,8 @@ npm --prefix desktop-client run package:win
 
 Delivery contract:
 
-- `npm --prefix desktop-client run package:win` produces an installer `.exe` in `desktop-client/dist`.
+- `npm --prefix desktop-client run package:win` produces `desktop-client/dist/win-unpacked`.
+- `npm --prefix desktop-client run package:release` produces an installer `.exe` in `desktop-client/dist`.
 - The installer is an assisted `NSIS` flow with install directory selection, desktop shortcut, start menu entry, and run-after-finish.
 - The installer bundles a frozen local helper runtime built with `PyInstaller`. End users do not need to install Python 3.11.
 - Default per-user install path: `%LOCALAPPDATA%\Programs\Bottle`
