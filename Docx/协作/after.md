@@ -1,7 +1,39 @@
 # after.md — 执行者职责
 
-> 本文件是 `D:/3.3-19.01/Docx/协作/` 协作目录的执行者入口。  
+> 本文件是 `D:/3.3-19.01/Docx/协作/` 协作目录的执行者入口。
 > 对应 AGENTS.md 总规范中 after 的职责范围。
+
+## Worktree 管理规范
+
+每个任务执行前自动创建独立 worktree，执行后自动 push 并删除，全程无需用户干预。
+
+### 名义规则
+
+- worktree 目录：`../ai-task-{task_id}`，与仓库根平级
+- 分支名：`ai/task-{task_id}`
+- slug 取 task YAML 的 `title` 字段（中文则用拼音首字母缩写或直接用 task_id）
+
+### 执行前
+
+1. 计算分支名：`ai/task-{task_id}`
+2. 计算 worktree 目录：`../ai-task-{task_id}`
+3. 若 worktree 已存在（本次会话恢复执行），跳过创建，直接 `cd ..` 进入该目录
+4. 若分支已存在（上次执行已推送），先 `git fetch origin` 拉取，再 `cd ..` 进入该目录
+5. 若均不存在，运行：`git worktree add ../ai-task-{task_id} -b ai/task-{task_id}`
+6. `cd` 进入 worktree 目录，后续所有工作在该目录下进行
+
+### 执行后（任务状态回写完毕时）
+
+1. `git add .` → `git commit -m "TASK-{id} {title}"`
+2. `git push -u origin ai/task-{task_id}`
+3. `git worktree remove ../ai-task-{task_id}`
+4. 切回主仓库（`cd` 到仓库根目录）
+
+### 异常处理
+
+- 若 worktree 删除失败（如有未提交改动），先强制 `git checkout . && git clean -fd`，再删除
+- 若 push 失败，跳过删除步骤，在 result_summary 中注明"已 commit，待手动 push"
+- 若 worktree 创建失败，任务标记 `blocked`，reason 写明 git worktree 操作失败原因
 
 ## 核心职责
 
@@ -128,6 +160,7 @@ blocked_reason: >
 - 一行文件列表；若没有改动，写 `本次修改文件：无`
 - 一行独立的 `Zeabur操作：...`
 - 说明本次是正常执行、因 `blocked` 停止、因 `conflicts_with` 暂停，还是仅做 dry-run
+- 每次任务开始时，在输出开头注明当前 worktree 目录（如 `../ai-task-057`）和分支名（如 `ai/task-057`），便于用户识别本次是哪个 agent 在工作
 
 如果本轮至少完成了一个任务或修复任务，还必须额外提供：
 - 一个下次做同类任务可复用的中文提示词
