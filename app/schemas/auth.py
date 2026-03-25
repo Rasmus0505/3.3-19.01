@@ -17,11 +17,13 @@ class DesktopTokenLoginResponse(BaseModel):
     access_token: str
     user_id: int
     email: str
+    is_admin: bool = False
 
 
 class UserResponse(BaseModel):
     id: int
     email: str
+    is_admin: bool = False
     created_at: datetime | None = None
 
 
