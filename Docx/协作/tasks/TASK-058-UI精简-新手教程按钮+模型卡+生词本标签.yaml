@@ -1,0 +1,42 @@
+schema_version: 1
+task_id: TASK-058
+title: UI精简：新手教程按钮+模型卡+生词本标签
+status: pending
+priority: high
+project_root: D:/3.3-19.01
+base_ref: main
+task_context: |
+  三个独立的 UI 精简需求，修改均为纯前端静态内容，无逻辑依赖，可以放在同一任务中。
+goal: 删除过时的登录按钮、精简模型卡描述、移除生词本冗余标签和引导文案。
+scope:
+  - frontend/src/features/getting-started/GettingStartedPanel.jsx
+    * 删除「登录或注册」按钮（第16-19行附近）及其 onGoLogin 属性
+    * 删除变量 onGoLogin 的定义
+  - frontend/src/features/getting-started/gettingStartedContent.js
+    * 删除 id 为 "login" 的步骤对象（第17-22行附近）
+  - frontend/src/features/upload/UploadPanel.jsx
+    * LOCAL_MODEL_OPTIONS 和 UPLOAD_MODEL_OPTIONS（第196-223行附近）
+    * 删除 Bottle 1.0 的 subtitle、note、sizeEstimateMb 等所有说明字段
+    * 删除 Bottle 2.0 的 subtitle、note、mode 等所有说明字段
+    * 只保留 title（模型名称）和必要的价格字段
+  - frontend/src/app/wordbook/WordbookPage.tsx（或对应生词本页面组件）
+    * 查找并删除「短语」「生词」的标签 Badge
+    * 删除引导文案「在沉浸学习里收下单词或短语，并按课程来源和掌握状态管理它们。」
+allowed_paths:
+  - frontend/src/features/getting-started/
+  - frontend/src/features/upload/
+  - frontend/src/app/wordbook/
+acceptance:
+  - 新手教程页面不再显示「登录或注册」按钮
+  - 模型卡片只显示名称和价格，不显示说明文字
+  - 生词本不显示短语/生词标签，不显示引导文案
+check_commands:
+  - cd D:/3.3-19.01/frontend && npm run dev
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  1. 生词本页面文件需用 Glob 确认具体文件名（可能在 pages/wordbook/ 或 features/wordbook/）
+  2. 引导文案可能作为 description/placeholder 存在，需全文搜索确认
+  3. 本次无需后端修改，无需数据库迁移

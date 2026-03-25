@@ -4,52 +4,44 @@
 # 仅扫描当前协作目录（Docx/协作/tasks/）下的任务池
 
 schema_version: 1
-updated_at: "2026-03-25T17:00:00+08:00"
-updated_by: after
+updated_at: "2026-03-25T18:00:00+08:00"
+updated_by: before
 
 # 当前可并行执行的任务（已满足 depends_on，且无未解决 conflicts_with）
-executable: []
+executable:
+  - TASK-057  # 移除重播降速 + Shift+E 快捷键（纯前端，无依赖）
+  - TASK-058  # UI精简：新手教程按钮+模型卡+生词本标签（纯前端，无依赖）
 
 # 需等待的任务（存在 depends_on 或 conflicts_with 未满足）
-waiting: []
+waiting:
+  - TASK-059  # 生词本Bug修复+回溯视频弹窗（纯前端，但依赖前端组件结构确认）
+  - TASK-060  # 打卡连续天数系统（需数据库迁移）
+  - TASK-061  # 热更新公告系统（需数据库迁移）
 
 # 推荐执行顺序
 notes: |
-  2026-03-25 本次规划：
+  2026-03-25 本次规划（第2批）：
 
-  背景：用户希望将 Bottle 生成素材流程从 5 个精简为 2 个，同时重建桌面端。
-  第一性原理：生成素材时，服务器不承受任何压力——文件在用户本地跑 ASR，或直传阿里云跑 ASR。
-
-  新增六个任务：
+  背景：产品经理提出8个功能需求，涵盖视频播放器、生词本、UI精简、打卡系统、热更新5大模块。
 
   并行组A（可直接执行）：
-    - TASK-051（high）：清理废弃后端代码（desktop_asr/local_asr_assets/dashscope_upload/faster_whisper/url_import）
-    - TASK-052（high）：清理废弃前端代码（浏览器端本地 ASR 相关 6 个 JS 文件 + UploadPanel 改造）
+    - TASK-057（critical）：移除重播自动降速 + 新增 Shift+E 降倍速快捷键
+    - TASK-058（high）：UI精简（新手教程登录按钮+模型卡说明+生词本标签）
 
-  串行执行：
-    - TASK-053（critical）：新建 Electron + React + Vite 桌面端骨架（D:/3.3-19.01/Desktop/）
-    - TASK-054（critical）：桌面端集成本地 ASR（Sherpa-ONNX，模型已在 Desktop/models/sherpa-onnx/）
-    - TASK-055（critical）：实现 Bottle 2.0 STS 凭证架构（服务器下发临时凭证，客户端直连阿里云）
-    - TASK-056（medium）：更新产品文档和产品修改历史
+  并行组B（第二轮执行）：
+    - TASK-059（critical）：生词本Bug修复（最后一句无法加入）+ 回溯视频弹窗
+    - TASK-060（critical）：打卡连续天数系统（后端数据模型+API+前端两处显示）
+    - TASK-061（high）：热更新公告系统（后端+管理后台+用户端弹窗）
 
   执行顺序建议：
-    第一轮：TASK-051 + TASK-052（并行，无依赖）
-    第二轮：TASK-053（桌面端骨架，独立）
-    第三轮：TASK-054（桌面端 ASR，依赖 053）+ TASK-055（Bottle 2.0 STS，依赖 051）
-    第四轮：TASK-056（文档，依赖全部）
+    第一轮：TASK-057 + TASK-058（纯前端并行，无依赖）
+    第二轮：TASK-059 + TASK-060 + TASK-061（TASK-060/061 需数据库迁移）
+    （可并行执行，但数据库迁移只需执行一次）
 
   执行结果：
-    ✅ TASK-051 — 已完成（F-TASK-051）
-    ✅ TASK-052 — 已完成（F-TASK-052）
-    ✅ TASK-053 — 已完成（F-TASK-053）
-    ✅ TASK-054 — 已完成（F-TASK-054）
-    ✅ TASK-055 — 已完成（F-TASK-055）
-    ✅ TASK-056 — 已完成（F-TASK-056）
+    待执行
 
-    全部任务已完成！executable 和 waiting 均为空。
-
-  Zeabur 操作提醒：
-    - TASK-051~052 清理废弃代码：直接部署即可
-    - TASK-053~054 Desktop/ 目录仅本地使用，不影响 Zeabur 部署
-    - TASK-055 Bottle 2.0 STS：部署时需在环境变量中配置 ALIYUN_* 系列变量
-    - 以上任务均无需数据库迁移
+  数据库迁移提醒（TASK-060、TASK-061）：
+    - TASK-060：alembic revision --autogenerate（DailyCheckin表、User/Streak字段、LessonProgress字段）
+    - TASK-061：alembic revision --autogenerate（Announcement表）
+    - 两个任务可合并一次迁移执行

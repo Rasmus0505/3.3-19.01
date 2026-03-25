@@ -34,6 +34,14 @@ export default defineConfig({
   },
   renderer: {
     root: ".",
+    server: {
+      proxy: {
+        "/api": {
+          target: "http://localhost:8000",
+          changeOrigin: true,
+        },
+      },
+    },
     build: {
       outDir: "out/renderer",
       rollupOptions: {
