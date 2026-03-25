@@ -1,6 +1,5 @@
 const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const ENV_API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").trim();
-const DESKTOP_SESSION_TOKEN = "__desktop_session__";
 let desktopRuntimeInfoPromise = null;
 
 function withBase(path, baseUrl = "") {
@@ -13,18 +12,6 @@ function withBase(path, baseUrl = "") {
 
 function hasDesktopRuntime() {
   return typeof window !== "undefined" && typeof window.desktopRuntime?.getRuntimeInfo === "function";
-}
-
-function hasDesktopAuthProxy() {
-  return typeof window !== "undefined" && typeof window.desktopRuntime?.auth?.request === "function";
-}
-
-function hasDesktopAuthUploadProxy() {
-  return typeof window !== "undefined" && typeof window.desktopRuntime?.auth?.upload === "function";
-}
-
-function isDesktopSessionToken(accessToken = "") {
-  return String(accessToken || "").trim() === DESKTOP_SESSION_TOKEN;
 }
 
 async function getDesktopRuntimeInfo() {
@@ -76,125 +63,13 @@ function sleep(ms) {
 
 function buildHeaders(options = {}, accessToken = "") {
   const headers = new Headers(options.headers || {});
-  if (accessToken && !isDesktopSessionToken(accessToken)) {
+  if (accessToken) {
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
   return headers;
 }
 
-function serializeHeaders(headers) {
-  return Object.fromEntries(new Headers(headers || {}).entries());
-}
-
-function serializeBody(body) {
-  if (body == null) {
-    return { kind: "none" };
-  }
-  if (typeof body === "string") {
-    return { kind: "text", text: body };
-  }
-  return { kind: "text", text: String(body) };
-}
-
-function buildProxyResponse(payload = {}) {
-  if (payload?.bodyBase64) {
-    const decoded = atob(String(payload.bodyBase64 || ""));
-    const bytes = new Uint8Array(decoded.length);
-    for (let index = 0; index < decoded.length; index += 1) {
-      bytes[index] = decoded.charCodeAt(index);
-    }
-    return new Response(bytes, {
-      status: Number(payload?.status || 500),
-      headers: payload?.headers || {},
-    });
-  }
-  return new Response(payload?.bodyText || "", {
-    status: Number(payload?.status || 500),
-    headers: payload?.headers || {},
-  });
-}
-
-async function runDesktopAuthFetch(path, options = {}, baseUrl = "") {
-  const method = normalizeMethod(options);
-  const { retries, retryDelayMs = 250, onAuthError, ...fetchOptions } = options;
-  const resolvedBaseUrl = await resolveApiBaseUrl(baseUrl);
-  const request = {
-    url: withBase(path, resolvedBaseUrl),
-    method,
-    headers: serializeHeaders(fetchOptions.headers),
-    body: serializeBody(fetchOptions.body),
-  };
-  let attempt = 0;
-  while (true) {
-    try {
-      const payload = await window.desktopRuntime.auth.request(request);
-      const response = buildProxyResponse(payload);
-      if ((response.status === 401 || response.status === 403) && typeof onAuthError === "function") {
-        onAuthError(response);
-      }
-      if (!shouldRetry(method, { retries }, attempt, response)) {
-        return response;
-      }
-    } catch (error) {
-      if (!shouldRetry(method, { retries }, attempt, null, error)) {
-        throw error;
-      }
-    }
-    attempt += 1;
-    await sleep(Number(retryDelayMs || 250) * 2 ** (attempt - 1));
-  }
-}
-
-function resolveDesktopFilePath(fileLike) {
-  return String(
-    fileLike?.desktopSourcePath ||
-      fileLike?.sourcePath ||
-      fileLike?.path ||
-      fileLike?.filePath ||
-      (typeof window !== "undefined" ? window.desktopRuntime?.getPathForFile?.(fileLike) : "") ||
-      "",
-  ).trim();
-}
-
-async function blobToBase64(blobLike) {
-  const blob = blobLike instanceof Blob ? blobLike : new Blob([blobLike]);
-  const buffer = await blob.arrayBuffer();
-  let binary = "";
-  const bytes = new Uint8Array(buffer);
-  for (let index = 0; index < bytes.length; index += 1) {
-    binary += String.fromCharCode(bytes[index]);
-  }
-  return btoa(binary);
-}
-
-async function serializeFormData(body) {
-  const fields = [];
-  for (const [name, value] of body.entries()) {
-    if (value instanceof File || value instanceof Blob) {
-      const filePath = value instanceof File ? resolveDesktopFilePath(value) : "";
-      fields.push({
-        kind: "file",
-        name,
-        filePath,
-        bodyBase64: filePath ? "" : await blobToBase64(value),
-        filename: value instanceof File ? value.name : "upload.bin",
-        contentType: value.type || "application/octet-stream",
-      });
-    } else {
-      fields.push({
-        kind: "text",
-        name,
-        value: String(value ?? ""),
-      });
-    }
-  }
-  return fields;
-}
-
 async function runFetch(path, options = {}, accessToken = "", baseUrl = "") {
-  if (isDesktopSessionToken(accessToken) && hasDesktopAuthProxy()) {
-    return runDesktopAuthFetch(path, options, baseUrl);
-  }
   const method = normalizeMethod(options);
   const { retries, retryDelayMs = 250, onAuthError, ...fetchOptions } = options;
   const resolvedBaseUrl = await resolveApiBaseUrl(baseUrl);
@@ -234,36 +109,12 @@ export async function uploadWithProgress(path, options = {}, accessToken = "", b
   const { body, headers: rawHeaders, method = "POST", onUploadProgress, signal } = options;
   const resolvedBaseUrl = await resolveApiBaseUrl(baseUrl);
 
-  if (isDesktopSessionToken(accessToken) && hasDesktopAuthUploadProxy()) {
-    if (!(body instanceof FormData)) {
-      throw new Error("Desktop auth upload proxy requires FormData body");
-    }
-    if (signal?.aborted) {
-      throw new DOMException("Request aborted", "AbortError");
-    }
-    onUploadProgress?.({ loaded: 1, total: 100, percent: 1, lengthComputable: true });
-    const payload = await window.desktopRuntime.auth.upload({
-      url: withBase(path, resolvedBaseUrl),
-      method: String(method || "POST").toUpperCase(),
-      headers: serializeHeaders(rawHeaders),
-      formFields: await serializeFormData(body),
-    });
-    onUploadProgress?.({ loaded: 100, total: 100, percent: 100, lengthComputable: true });
-    const response = buildProxyResponse(payload);
-    return {
-      ok: response.ok,
-      status: response.status,
-      data: await parseResponse(response),
-      responseText: payload?.bodyText || "",
-    };
-  }
-
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const headers = new Headers(rawHeaders || {});
     let aborted = false;
 
-    if (accessToken && !isDesktopSessionToken(accessToken)) {
+    if (accessToken) {
       headers.set("Authorization", `Bearer ${accessToken}`);
     }
 

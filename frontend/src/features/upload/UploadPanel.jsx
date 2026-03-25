@@ -77,7 +77,7 @@ function hasLocalCourseGeneratorBridge() {
   return typeof window !== "undefined" && typeof window.localAsr?.generateCourse === "function";
 }
 function hasDesktopRuntimeBridge() {
-  return typeof window !== "undefined" && typeof window.desktopRuntime?.urlImport?.createTask === "function";
+  return typeof window !== "undefined" && typeof window.desktopRuntime?.requestLocalHelper === "function";
 }
 
 function hasDesktopFileSelectionBridge() {
@@ -109,32 +109,25 @@ function decodeBase64Bytes(base64Text) {
   return bytes;
 }
 
-async function getDesktopUrlImportTask(taskId) {
+async function requestDesktopLocalHelper(pathname, responseType = "json", options = {}) {
   if (!hasDesktopRuntimeBridge()) {
-    throw new Error("Desktop url import bridge is unavailable");
+    throw new Error("Desktop local helper is unavailable");
   }
-  return window.desktopRuntime.urlImport.getTask(String(taskId || ""));
-}
-
-async function createDesktopUrlImportTask(payload = {}) {
-  if (!hasDesktopRuntimeBridge()) {
-    throw new Error("Desktop url import bridge is unavailable");
+  const response = await window.desktopRuntime.requestLocalHelper({
+    path: String(pathname || ""),
+    method: String(options.method || "GET").toUpperCase(),
+    responseType,
+    body: options.body,
+  });
+  if (!response?.ok) {
+    const detail =
+      String(response?.data?.message || "").trim() ||
+      String(response?.data?.error_message || "").trim() ||
+      String(response?.data?.detail || "").trim() ||
+      String(response?.status || "").trim();
+    throw new Error(detail || "Desktop local helper request failed");
   }
-  return window.desktopRuntime.urlImport.createTask(payload);
-}
-
-async function cancelDesktopUrlImportTask(taskId) {
-  if (!hasDesktopRuntimeBridge()) {
-    throw new Error("Desktop url import bridge is unavailable");
-  }
-  return window.desktopRuntime.urlImport.cancelTask(String(taskId || ""));
-}
-
-async function downloadDesktopUrlImportFile(taskId) {
-  if (!hasDesktopRuntimeBridge()) {
-    throw new Error("Desktop url import bridge is unavailable");
-  }
-  return window.desktopRuntime.urlImport.downloadFile(String(taskId || ""));
+  return response;
 }
 
 async function requestWalletBalance(accessToken = "") {
@@ -495,8 +488,10 @@ function formatDateTimeLabel(value) {
 function hasLocalLessonImportBridge() {
   return (
     typeof window !== "undefined" &&
-    typeof window.localDb?.listLessons === "function" &&
-    typeof window.localDb?.saveCourseBundle === "function"
+    typeof window.localDb?.getCourses === "function" &&
+    typeof window.localDb?.saveCourse === "function" &&
+    typeof window.localDb?.saveSentences === "function" &&
+    typeof window.localDb?.saveProgress === "function"
   );
 }
 
@@ -1128,46 +1123,6 @@ function decorateDesktopSourcePath(fileLike, sourcePath) {
   return fileLike;
 }
 
-function decorateDesktopSourceToken(fileLike, sourceToken) {
-  if (!fileLike || !sourceToken) return fileLike;
-  try {
-    Object.defineProperty(fileLike, "desktopSourceToken", { value: sourceToken, configurable: true });
-  } catch (_) {
-    try {
-      fileLike.desktopSourceToken = sourceToken;
-    } catch (_) {
-      void 0;
-    }
-  }
-  try {
-    Object.defineProperty(fileLike, "sourceToken", { value: sourceToken, configurable: true });
-  } catch (_) {
-    try {
-      fileLike.sourceToken = sourceToken;
-    } catch (_) {
-      void 0;
-    }
-  }
-  try {
-    Object.defineProperty(fileLike, "token", { value: sourceToken, configurable: true });
-  } catch (_) {
-    try {
-      fileLike.token = sourceToken;
-    } catch (_) {
-      void 0;
-    }
-  }
-  return fileLike;
-}
-
-function resolveDesktopSourceTokenCandidate(payload = {}) {
-  return (
-    String(payload?.desktopSourceToken || "").trim() ||
-    String(payload?.sourceToken || "").trim() ||
-    String(payload?.token || "").trim()
-  );
-}
-
 function resolveDesktopSourcePathCandidate(payload = {}) {
   return (
     String(payload?.desktopSourcePath || "").trim() ||
@@ -1178,17 +1133,14 @@ function resolveDesktopSourcePathCandidate(payload = {}) {
 }
 
 function buildDesktopSelectedFile(selection = {}) {
-  const sourceToken = resolveDesktopSourceTokenCandidate(selection);
   const sourcePath = resolveDesktopSourcePathCandidate(selection);
-  if (!sourcePath && !sourceToken) {
+  if (!sourcePath) {
     return null;
   }
-  const fallbackFileName = sourcePath ? sourcePath.split(/[\\/]/).pop() : "desktop-local-source";
-  const fileName =
-    String(selection?.fileName || selection?.name || fallbackFileName || "desktop-local-source").trim() || "desktop-local-source";
+  const fileName = String(selection?.name || sourcePath.split(/[\\/]/).pop() || "desktop-local-source").trim() || "desktop-local-source";
   const mediaType = String(selection?.type || selection?.mediaType || "").trim();
   const lastModified = Math.max(0, Number(selection?.lastModifiedMs || selection?.lastModified || Date.now()));
-  const size = Math.max(0, Number(selection?.fileSize || selection?.size || selection?.sizeBytes || 0));
+  const size = Math.max(0, Number(selection?.size || selection?.sizeBytes || 0));
   let nextFile;
   try {
     nextFile = new File([], fileName, { type: mediaType, lastModified });
@@ -1216,17 +1168,15 @@ function buildDesktopSelectedFile(selection = {}) {
       void 0;
     }
   }
-  decorateDesktopSourcePath(nextFile, sourcePath);
-  return decorateDesktopSourceToken(nextFile, sourceToken);
+  return decorateDesktopSourcePath(nextFile, sourcePath);
 }
 
 async function materializeDesktopSelectedFile(fileLike) {
-  const sourceToken = resolveDesktopSourceTokenCandidate(fileLike);
   const sourcePath = resolveDesktopSourcePathCandidate(fileLike);
-  if (!sourceToken || !hasDesktopFileReadBridge()) {
+  if (!sourcePath || !hasDesktopFileReadBridge()) {
     return fileLike;
   }
-  const response = await window.desktopRuntime.readLocalMediaFile(sourceToken);
+  const response = await window.desktopRuntime.readLocalMediaFile(sourcePath);
   const filePayload = response?.file && typeof response.file === "object" ? response.file : response;
   const bodyBase64 = String(filePayload?.bodyBase64 || "").trim();
   if (!bodyBase64) {
@@ -1257,17 +1207,14 @@ async function materializeDesktopSelectedFile(fileLike) {
       void 0;
     }
   }
-  decorateDesktopSourcePath(nextFile, sourcePath);
-  return decorateDesktopSourceToken(nextFile, sourceToken);
+  return decorateDesktopSourcePath(nextFile, sourcePath);
 }
 
 function restoreSavedSourceFile(saved = {}) {
   const sourcePath = resolveDesktopSourcePathCandidate(saved);
-  const sourceToken = resolveDesktopSourceTokenCandidate(saved);
   const restoredBlobFile = createFileFromBlob(saved?.file_blob, saved?.file_name, saved?.media_type);
   if (restoredBlobFile) {
-    decorateDesktopSourcePath(restoredBlobFile, sourcePath);
-    return decorateDesktopSourceToken(restoredBlobFile, sourceToken);
+    return decorateDesktopSourcePath(restoredBlobFile, sourcePath);
   }
   const restoredDescriptor = buildDesktopSelectedFile({
     name: saved?.file_name,
@@ -1275,10 +1222,8 @@ function restoreSavedSourceFile(saved = {}) {
     size: saved?.file_size_bytes,
     lastModifiedMs: saved?.file_last_modified_ms,
     path: sourcePath,
-    token: sourceToken,
   });
-  decorateDesktopSourcePath(restoredDescriptor, sourcePath);
-  return decorateDesktopSourceToken(restoredDescriptor, sourceToken);
+  return decorateDesktopSourcePath(restoredDescriptor, sourcePath);
 }
 
 function buildTaskState({ phase, taskId, taskSnapshot, uploadPercent, status }) {
@@ -2063,10 +2008,6 @@ export function UploadPanel({
     return decorateDesktopSourcePath(fileLike, sourcePath);
   }
 
-  function attachDesktopSourceToken(fileLike, sourceToken) {
-    return decorateDesktopSourceToken(fileLike, sourceToken);
-  }
-
   function resolveDesktopSelectedSourcePath(fileLike) {
     const existingPath = resolveDesktopSourcePathCandidate(fileLike);
     if (existingPath) return existingPath;
@@ -2078,36 +2019,12 @@ export function UploadPanel({
     }
   }
 
-  async function resolveDesktopSelectedSourceToken(fileLike) {
-    const existingToken = resolveDesktopSourceTokenCandidate(fileLike);
-    if (existingToken) return existingToken;
-    if (!desktopRuntimeAvailable || !fileLike || typeof window.desktopRuntime?.createLocalMediaFileToken !== "function") {
-      return "";
-    }
-    const sourcePath = resolveDesktopSelectedSourcePath(fileLike);
-    if (!sourcePath) {
-      return "";
-    }
-    try {
-      const payload = await window.desktopRuntime.createLocalMediaFileToken(sourcePath);
-      const nextToken = String(payload?.token || "").trim();
-      if (!nextToken) {
-        return "";
-      }
-      attachDesktopSourceToken(fileLike, nextToken);
-      return nextToken;
-    } catch (_) {
-      return "";
-    }
-  }
-
   async function ensureBlobBackedSourceFile(sourceFile) {
     if (!sourceFile || isBlobBackedSourceFile(sourceFile)) {
       return sourceFile;
     }
     const materializedFile = await materializeDesktopSelectedFile(sourceFile);
     const resolvedMaterializedFile = attachDesktopSourcePath(materializedFile, resolveDesktopSelectedSourcePath(sourceFile));
-    attachDesktopSourceToken(resolvedMaterializedFile, resolveDesktopSourceTokenCandidate(sourceFile));
     if (file === sourceFile && resolvedMaterializedFile && resolvedMaterializedFile !== sourceFile) {
       setFile(resolvedMaterializedFile);
     }
@@ -2130,7 +2047,7 @@ export function UploadPanel({
     if (!taskToken) {
       throw new Error("链接下载任务缺少 task_id");
     }
-    const response = await downloadDesktopUrlImportFile(taskToken);
+    const response = await requestDesktopLocalHelper(`/api/desktop-asr/url-import/tasks/${taskToken}/file`, "arrayBuffer");
     const bytes = decodeBase64Bytes(response.bodyBase64);
     if (bytes.byteLength <= 0) {
       throw new Error("已下载素材为空，无法继续生成");
@@ -2148,15 +2065,15 @@ export function UploadPanel({
     if (!localLessonImportAvailable) {
       throw new Error("当前环境不支持本地课程导入");
     }
-    const lessons = await window.localDb.listLessons().catch(() => []);
-    const existingCourse = (Array.isArray(lessons) ? lessons : []).find(
-      (item) => String(item?.course?.id ?? "") === String(normalizedImport?.lesson?.id ?? ""),
+    const courses = await window.localDb.getCourses().catch(() => []);
+    const existingCourse = (Array.isArray(courses) ? courses : []).find(
+      (course) => String(course?.id ?? "") === String(normalizedImport?.lesson?.id ?? ""),
     );
     const importedAt = new Date().toISOString();
     const targetLessonId =
       mode === "copy"
         ? (() => {
-            const existingIds = new Set((Array.isArray(lessons) ? lessons : []).map((item) => String(item?.course?.id ?? "")));
+            const existingIds = new Set((Array.isArray(courses) ? courses : []).map((course) => String(course?.id ?? "")));
             let nextId = createImportedLessonId();
             while (existingIds.has(nextId)) {
               nextId = createImportedLessonId();
@@ -2174,19 +2091,34 @@ export function UploadPanel({
       buildImportedSentenceRecord(targetLessonId, sentence, index),
     );
     const progressRecord = buildImportedProgressRecord(targetLessonId, normalizedImport.progress);
-    const saveResult = await window.localDb.saveCourseBundle({
-      course: courseRecord,
-      sentences: sentenceRecords,
-      progress: progressRecord,
-      syncBehavior: "local",
-      recordImportSync: true,
-      overwriteExisting: Boolean(existingCourse && mode !== "copy"),
-    });
+    const savedCourse = await window.localDb.saveCourse(courseRecord);
+    await window.localDb.saveSentences(targetLessonId, sentenceRecords);
+    if (progressRecord) {
+      await window.localDb.saveProgress(targetLessonId, progressRecord);
+    }
+    await Promise.resolve(
+      window.localDb.sync?.logSync?.(
+        "lesson_sentences",
+        targetLessonId,
+        existingCourse && mode !== "copy" ? "UPDATE" : "INSERT",
+        Number(savedCourse?.version || courseRecord.version || 1),
+      ),
+    ).catch(() => null);
+    if (progressRecord) {
+      await Promise.resolve(
+        window.localDb.sync?.logSync?.(
+          "progress",
+          targetLessonId,
+          existingCourse && mode !== "copy" ? "UPDATE" : "INSERT",
+          Number(progressRecord.version || savedCourse?.version || 1),
+        ),
+      ).catch(() => null);
+    }
     dispatchLocalLessonUpdateEvent();
     setPendingLessonImport(null);
     setStatus(mode === "copy" ? "课程已作为新副本导入，可在历史记录中查看。" : "课程已导入，可在历史记录中查看。");
     toast.success(mode === "copy" ? "课程已作为新副本导入" : existingCourse ? "课程已覆盖导入" : "课程已导入");
-    return saveResult?.course || null;
+    return savedCourse;
   }
 
   async function handleImportLessonFile(file) {
@@ -2206,9 +2138,9 @@ export function UploadPanel({
       const rawText = await file.text();
       const parsed = JSON.parse(rawText);
       const normalizedImport = normalizeImportedLessonPayload(parsed);
-      const lessons = await window.localDb.listLessons().catch(() => []);
-      const hasConflict = (Array.isArray(lessons) ? lessons : []).some(
-        (item) => String(item?.course?.id ?? "") === String(normalizedImport.lesson.id),
+      const courses = await window.localDb.getCourses().catch(() => []);
+      const hasConflict = (Array.isArray(courses) ? courses : []).some(
+        (course) => String(course?.id ?? "") === String(normalizedImport.lesson.id),
       );
       if (hasConflict) {
         setPendingLessonImport({
@@ -2936,7 +2868,9 @@ export function UploadPanel({
     localRunAbortRef.current?.abort();
     localRunAbortRef.current = null;
     if (activeDesktopLinkTaskId && hasDesktopRuntimeBridge()) {
-      void cancelDesktopUrlImportTask(activeDesktopLinkTaskId).catch(() => null);
+      void requestDesktopLocalHelper(`/api/desktop-asr/url-import/tasks/${encodeURIComponent(activeDesktopLinkTaskId)}/cancel`, "json", {
+        method: "POST",
+      }).catch(() => null);
     }
     desktopLinkPollTokenRef.current += 1;
     desktopLinkTaskIdRef.current = "";
@@ -2976,7 +2910,6 @@ export function UploadPanel({
     const nextPhase = overrides.phase ?? phase;
     const nextMode = overrides.mode ?? mode;
     const nextDesktopSourcePath = resolveDesktopSelectedSourcePath(nextFile);
-    const nextDesktopSourceToken = await resolveDesktopSelectedSourceToken(nextFile);
     const restorablePhase =
       nextPhase === "local_transcribing" || nextPhase === DESKTOP_LOCAL_TRANSCRIBING_PHASE ? (nextFile ? "ready" : "idle") : nextPhase;
     const restorableStatus =
@@ -2998,8 +2931,7 @@ export function UploadPanel({
       media_type: String(nextFile?.type || ""),
       file_size_bytes: Math.max(0, Number(nextFile?.size || 0)),
       file_last_modified_ms: Math.max(0, Number(nextFile?.lastModified || 0)),
-      desktop_source_path: nextDesktopSourceToken ? "" : nextDesktopSourcePath,
-      desktop_source_token: nextDesktopSourceToken,
+      desktop_source_path: nextDesktopSourcePath,
       cover_data_url: String(overrides.coverDataUrl ?? coverDataUrl ?? ""),
       cover_width: Number(overrides.coverWidth ?? coverWidth ?? 0),
       cover_height: Number(overrides.coverHeight ?? coverHeight ?? 0),
@@ -3098,7 +3030,9 @@ export function UploadPanel({
       return;
     }
     try {
-      await cancelDesktopUrlImportTask(activeTaskId);
+      await requestDesktopLocalHelper(`/api/desktop-asr/url-import/tasks/${encodeURIComponent(activeTaskId)}/cancel`, "json", {
+        method: "POST",
+      });
       setStatus("正在取消下载");
       setLoading(true);
       updateDesktopLinkProgressState(uploadPercent, "正在取消下载");
@@ -3124,10 +3058,11 @@ export function UploadPanel({
       return;
     }
     try {
-      const payload = await getDesktopUrlImportTask(linkTaskId);
+      const response = await requestDesktopLocalHelper(`/api/desktop-asr/url-import/tasks/${encodeURIComponent(linkTaskId)}`, "json");
       if (pollToken !== desktopLinkPollTokenRef.current) {
         return;
       }
+      const payload = response.data || {};
       const nextStatus = String(payload.status || "").trim().toLowerCase();
       const nextMessage = sanitizeUserFacingText(String(payload.status_text || "正在下载素材"));
       setLoading(true);
@@ -3281,7 +3216,11 @@ export function UploadPanel({
     updateDesktopLinkProgressState(0, "正在解析链接");
 
     try {
-      const payload = await createDesktopUrlImportTask({ source_url: trimmedDesktopLinkInput });
+      const response = await requestDesktopLocalHelper("/api/desktop-asr/url-import/tasks", "json", {
+        method: "POST",
+        body: { source_url: trimmedDesktopLinkInput },
+      });
+      const payload = response.data || {};
       const nextTaskId = String(payload.task_id || "");
       if (!nextTaskId) {
         throw new Error("链接下载任务创建成功但缺少 task_id");
@@ -3310,8 +3249,6 @@ export function UploadPanel({
 
   async function saveSuccessSnapshot(sourceFile, data, nextStatus = "") {
     if (!ownerUserId || !data?.lesson?.id) return;
-    const nextDesktopSourcePath = resolveDesktopSelectedSourcePath(sourceFile);
-    const nextDesktopSourceToken = await resolveDesktopSelectedSourceToken(sourceFile);
     await saveUploadPanelSuccessSnapshot(ownerUserId, {
       phase: "success",
       task_snapshot: data,
@@ -3321,8 +3258,7 @@ export function UploadPanel({
       media_type: String(sourceFile?.type || ""),
       file_size_bytes: Math.max(0, Number(sourceFile?.size || 0)),
       file_last_modified_ms: Math.max(0, Number(sourceFile?.lastModified || 0)),
-      desktop_source_path: nextDesktopSourceToken ? "" : nextDesktopSourcePath,
-      desktop_source_token: nextDesktopSourceToken,
+      desktop_source_path: resolveDesktopSelectedSourcePath(sourceFile),
       cover_data_url: String(coverDataUrl || ""),
       cover_width: Number(coverWidth || 0),
       cover_height: Number(coverHeight || 0),
@@ -4710,7 +4646,6 @@ export function UploadPanel({
           ? file.path
           : "",
     ).trim();
-    const sourceFileToken = String(resolveDesktopSourceTokenCandidate(sourceFile) || resolveDesktopSourceTokenCandidate(file) || "").trim();
 
     const startStatus = "正在通过本机 Bottle 1.0 生成课程";
     setPhase(DESKTOP_LOCAL_GENERATING_PHASE);
@@ -4730,7 +4665,6 @@ export function UploadPanel({
     try {
       const result = await window.localAsr.generateCourse({
         filePath: sourceFilePath,
-        fileToken: sourceFileToken,
         sourceFilename: sourceFileName,
         modelKey: FASTER_WHISPER_MODEL,
         runtimeKind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,

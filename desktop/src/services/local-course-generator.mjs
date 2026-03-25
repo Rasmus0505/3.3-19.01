@@ -57,7 +57,9 @@ function parseErrorText(payload, fallback) {
 function hasLocalDbBridge() {
   return (
     typeof window !== "undefined" &&
-    typeof window.localDb?.saveCourseBundle === "function"
+    typeof window.localDb?.saveCourse === "function" &&
+    typeof window.localDb?.saveSentences === "function" &&
+    typeof window.localDb?.saveProgress === "function"
   );
 }
 
@@ -71,8 +73,29 @@ function hasLocalAsrBridge() {
 function hasDesktopRuntimeBridge() {
   return (
     typeof window !== "undefined" &&
-    typeof window.localAsr?.generateCourse === "function"
+    typeof window.desktopRuntime?.requestLocalHelper === "function"
   );
+}
+
+async function requestLocalHelper(pathname, responseType = "json", options = {}) {
+  if (!hasDesktopRuntimeBridge()) {
+    throw new Error("Desktop runtime bridge is unavailable");
+  }
+  const response = await window.desktopRuntime.requestLocalHelper({
+    path: String(pathname || ""),
+    method: String(options.method || "GET").toUpperCase(),
+    responseType,
+    body: options.body,
+  });
+  if (!response?.ok) {
+    const detail =
+      String(response?.data?.message || "").trim() ||
+      String(response?.data?.error_message || "").trim() ||
+      String(response?.data?.detail || "").trim() ||
+      String(response?.status || "").trim();
+    throw new Error(detail || "Local helper request failed");
+  }
+  return response;
 }
 
 function buildCourseRecordFromResponse(response = {}) {
@@ -238,6 +261,17 @@ export class LocalCourseGenerator {
           runtimeKind: String(runtimeKind || "desktop_local").trim(),
         });
         response = localResult?.data || localResult;
+      } else {
+        response = await requestLocalHelper("/api/local-asr/generate-course", "json", {
+          method: "POST",
+          body: {
+            filePath: safeFilePath,
+            sourceFilename: String(sourceFilename || "").trim(),
+            modelKey: String(modelKey || "faster-whisper-medium").trim(),
+            runtimeKind: String(runtimeKind || "desktop_local").trim(),
+          },
+        });
+        response = response?.data || response;
       }
 
       if (this._aborted) {
@@ -299,12 +333,9 @@ export class LocalCourseGenerator {
 
       if (hasLocalDbBridge()) {
         const localDb = this._options.localDb || window.localDb;
-        await localDb.saveCourseBundle({
-          course: courseRecord,
-          sentences: sentenceRecords,
-          progress: progressRecord,
-          syncBehavior: "local",
-        });
+        await localDb.saveCourse(courseRecord, { syncBehavior: "local" });
+        await localDb.saveSentences(courseId, sentenceRecords);
+        await localDb.saveProgress(courseId, progressRecord, { syncBehavior: "local" });
 
         this._emitProgress(
           LOCAL_COURSE_GENERATION_PHASES.ASSEMBLE,

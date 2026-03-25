@@ -22,7 +22,7 @@ spec:
     - key: APP_ADMIN_EMAILS
       type: STRING
       name: Admin Emails
-      description: C  omma-separated admin bootstrap email list.
+      description: Comma-separated admin bootstrap email list.
     - key: APP_ADMIN_BOOTSTRAP_PASSWORD
       type: STRING
       name: Admin Bootstrap Password
