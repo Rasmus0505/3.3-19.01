@@ -9,7 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: [] })],
+    plugins: [externalizeDepsPlugin({ exclude: ["electron-log", "electron-updater"] })],
     build: {
       outDir: "out/main",
       rollupOptions: {

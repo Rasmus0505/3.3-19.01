@@ -7054,25 +7054,28 @@ function DesktopUploadPanel() {
     const filename = filePath.split(/[\\/]/).pop() || "本地文件";
     const durationSec = state.duration || 0;
     try {
-      const res = await fetch("/api/lessons/tasks/local-asr", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`
-        },
-        body: JSON.stringify({
-          asr_model: "sense-voice-local",
-          source_filename: filename,
-          source_duration_ms: Math.round(durationSec * 1e3),
-          runtime_kind: "local_desktop",
-          asr_payload: {
-            text: state.transcriptionText,
-            segments: state.transcriptionSegments,
-            rtf: state.rtf,
-            elapsed_ms: state.elapsedMs
-          }
-        })
-      });
+      const res = await fetch(
+        `${"https://351636.preview.aliyun-zeabur.cn"}/api/lessons/tasks/local-asr`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            asr_model: "sense-voice-local",
+            source_filename: filename,
+            source_duration_ms: Math.round(durationSec * 1e3),
+            runtime_kind: "local_desktop",
+            asr_payload: {
+              text: state.transcriptionText,
+              segments: state.transcriptionSegments,
+              rtf: state.rtf,
+              elapsed_ms: state.elapsedMs
+            }
+          })
+        }
+      );
       if (!res.ok) {
         const data2 = await res.json();
         throw new Error(data2.detail || `Server error: ${res.status}`);
@@ -7088,11 +7091,14 @@ function DesktopUploadPanel() {
     if (!loginToken.trim()) return;
     setLoginError("");
     try {
-      const res = await fetch("/api/auth/desktop-token-login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: loginToken })
-      });
+      const res = await fetch(
+        `${"https://351636.preview.aliyun-zeabur.cn"}/api/auth/desktop-token-login`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: loginToken })
+        }
+      );
       if (!res.ok) {
         const data2 = await res.json();
         setLoginError(data2.detail || "登录失败");
