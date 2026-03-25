@@ -1,0 +1,26 @@
+schema_version: 1
+task_id: TASK-050
+title: safeStorage明文回退修复与文件读取token模式
+status: todo
+priority: high
+goal: 移除 safeStorage 失败时的明文 base64 回退；将 readLocalMediaFile 改为一次性 token 模式
+scope: desktop/electron/main.mjs、desktop/electron/preload.mjs、desktop/src/auth/offline-auth.mjs
+acceptance:
+  - safeStorage 可用时正常加密；不可用时不再回退明文 base64，改为抛出明确错误并拒绝缓存敏感数据
+  - readLocalMediaFile 不再接受原始路径字符串，改为接受 selectLocalMediaFile 返回的一次性 session token
+  - selectLocalMediaFile 返回 { token, fileName, fileSize }，readLocalMediaFile(token) 验证 token 有效性后读取对应文件
+  - token 有时效（建议 5 分钟）或一次性（读取后立即失效），防止路径穿越复用
+  - 任意路径读取媒体文件的能力被阻断
+  - 修改前后文件选择和媒体读取流程正常
+depends_on: []
+conflicts_with: []
+notes_for_after: |
+  本次为实现任务，需要修改代码。按以下步骤执行：
+  1. 阅读 desktop/src/auth/offline-auth.mjs，找到 safeStorage 相关的加密/解密实现
+  2. 找到 fallback 到 plaintext-base64 的代码路径，将其改为：if (!safeStorage.isEncryptionAvailable()) throw new Error('SafeStorage unavailable, refuse to cache auth data')
+  3. 阅读 desktop/electron/preload.mjs，找到 readLocalMediaFile 的 contextBridge 暴露方式
+  4. 在 main.mjs 中新建 fileSessionTokens Map（token -> { filePath, expiresAt }）
+  5. 修改 selectLocalMediaFile IPC handler，返回 { token, fileName, fileSize } 而非文件路径
+  6. 修改 readLocalMediaFile IPC handler，验证 token 有效性和时效后读取对应文件，读取后使 token 失效
+  7. 修改 preload.mjs 中的 contextBridge 暴露，readLocalMediaFile 改为只接受 token 参数
+  8. 修改后测试：正常文件选择读取流程正常；尝试用旧路径调用 readLocalMediaFile 被拒绝

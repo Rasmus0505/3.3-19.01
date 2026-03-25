@@ -58,8 +58,9 @@ if (isStandalone) {
   }
 
   console.log("building frontend (standalone mode)...");
-  const buildResult = spawnSync("npm", ["run", "build"], {
+  const buildResult = spawnSync("npm run build", {
     cwd: frontendRoot,
+    shell: true,
     stdio: "inherit",
     windowsHide: true,
   });

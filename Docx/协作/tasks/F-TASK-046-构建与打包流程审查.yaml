@@ -1,0 +1,44 @@
+﻿schema_version: 1
+task_id: TASK-046
+title: 构建与打包流程审查
+status: done
+priority: high
+goal: 审查 desktop/scripts/ 和 desktop/package.json 的构建流程安全性、依赖锁定与版本管理，输出结构化问题清单
+scope: desktop/scripts/build.mjs、desktop/scripts/build-helper-runtime.mjs、desktop/scripts/write-runtime-defaults.mjs、desktop/scripts/package-win.mjs、desktop/package.json、desktop/build-desktop.bat
+acceptance:
+  - 检查 PyInstaller 打包 Python 后端时的依赖收集完整性（隐蔽依赖、动态导入缺失）
+  - 评估 electron-builder 配置中的代码签名、资源完整性校验是否缺失
+  - 审查 write-runtime-defaults.mjs 写入敏感信息（URL、密钥）的安全性
+  - 检查 package.json 中的依赖版本锁定策略（^ vs ~ vs 精确版本）
+  - 识别安装包分发渠道中的供应链风险
+  - 每项问题附带严重等级（critical/high/medium/low）和修复方向提示
+depends_on: []
+conflicts_with: []
+notes_for_after: |
+  使用 Ask Mode（只读模式）进行全面审查，不要修改任何文件。
+  审查范围包括 desktop/scripts/ 下所有 .mjs、desktop/package.json、desktop/build-desktop.bat。
+  输出格式：问题编号 | 严重等级 | 问题类别 | 位置/行号 | 描述 | 修复方向。
+result_summary: 完成桌面端构建与打包流程审查，确认 6 项风险，覆盖供应链、代码签名、资源完整性、URL 配置写入与依赖漂移。
+changed_files:
+  - Docx/协作/tasks/F-TASK-046-构建与打包流程审查.yaml
+  - Docx/协作/计划清单.yaml
+tests_run:
+  - Get-Content -Raw desktop/scripts/build.mjs
+  - Get-Content -Raw desktop/scripts/build-helper-runtime.mjs
+  - Get-Content -Raw desktop/scripts/write-runtime-defaults.mjs
+  - Get-Content -Raw desktop/scripts/package-win.mjs
+  - Get-Content -Raw desktop/package.json
+  - Get-Content -Raw desktop/build-desktop.bat
+  - rg -n "importlib|__import__|pkg_resources|entry_points|metadata\\.entry_points|pkgutil" app scripts
+  - rg -n "sha256|checksum|integrity|signature|sign|notar|sumchecker|verify" desktop/scripts desktop/package.json desktop/build-desktop.bat
+check_commands:
+  - Get-Content -Raw desktop/scripts/build.mjs
+  - Get-Content -Raw desktop/scripts/build-helper-runtime.mjs
+  - Get-Content -Raw desktop/scripts/write-runtime-defaults.mjs
+  - Get-Content -Raw desktop/scripts/package-win.mjs
+  - Get-Content -Raw desktop/package.json
+  - Get-Content -Raw desktop/build-desktop.bat
+  - rg -n "importlib|__import__|pkg_resources|entry_points|metadata\\.entry_points|pkgutil" app scripts
+  - rg -n "sha256|checksum|integrity|signature|sign|notar|sumchecker|verify" desktop/scripts desktop/package.json desktop/build-desktop.bat
+completed_at: 2026-03-25T15:33:06+08:00
+

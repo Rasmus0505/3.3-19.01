@@ -1037,13 +1037,6 @@ function setupCorsProxyForAppProtocol() {
   appendDesktopDiagnostic("cors-proxy", { registered: true, origins: ALLOWED_CLOUD_ORIGINS });
 }
 
-async function createMainWindow() {
-  if (!desktopRuntimeConfig) {
-    throw new Error("Desktop runtime config has not been initialized.");
-  }
-  const loadUrl = buildMainWindowLoadUrl();
-  const isStandalone = isStandaloneModeEnabled();
-
 function getDesktopClientRoot() {
   return app.isPackaged ? app.getAppPath() : path.resolve(currentDir, "..");
 }
