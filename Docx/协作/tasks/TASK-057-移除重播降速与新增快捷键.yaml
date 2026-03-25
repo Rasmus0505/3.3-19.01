@@ -1,0 +1,38 @@
+schema_version: 1
+task_id: TASK-057
+title: 移除重播自动降速 + 新增Shift+E降倍速快捷键
+status: pending
+priority: critical
+project_root: D:/3.3-19.01
+base_ref: main
+task_context: |
+  沉浸式学习页的重播功能内置了逐次降速机制（第1次0.95x、第2次0.85x、第3次+0.75x），是历史遗留设计，
+  用户反馈是"重播几次后自动降速"。本次完全移除该行为，重播始终从1.0x开始。
+  同时新增 Shift+E 快捷键支持，用户可手动降倍速（循环档位：1.0x → 0.75x → 0.5x → 1.0x）。
+goal: 重播句子时速度恒为1.0x；按Shift+E可在1.0x/0.75x/0.5x间循环切换，切换后立即生效。
+scope:
+  - frontend/src/features/immersive/learningSettings.js
+    * 删除 DEFAULT_STANDARD_TAIL_RATES 常量（第112-116行）
+    * resolveReplayAssistance() 函数中删除 tailRate 逻辑，返回固定值 1
+  - frontend/src/features/immersive/ImmersiveLessonPage.jsx
+    * buildReplayPlaybackPlan() 函数：移除所有降速分支，始终返回 { initialRate: 1, rateSteps: [] }
+    * replayCurrentSentence() 调用处：始终传 { initialRate: 1, rateSteps: [] }，不传 tailRate
+    * 新增 Shift+E 快捷键监听：播放中按 Shift+E 循环降速
+  - frontend/src/features/immersive/useSentencePlayback.js
+    * 新增 slowDownPlayback() 函数或直接暴露控制 media.playbackRate 的方法
+allowed_paths:
+  - frontend/src/features/immersive/
+acceptance:
+  - 重播任意句子，视频速度始终为1.0x
+  - 按 Shift+E：1.0x → 0.75x → 0.5x → 1.0x（循环），左上角 Badge 显示当前倍速
+  - 非播放状态下按 Shift+E 无效
+check_commands:
+  - cd D:/3.3-19.01/frontend && npm run dev
+depends_on: []
+dependency_reason: ""
+blocked_by: []
+conflicts_with: []
+notes_for_after: |
+  1. 降速快捷键在沉浸式学习页面内生效，需要 mediaElementRef 引用
+  2. playbackRate Badge 显示逻辑参考 ImmersiveLessonPage 第2808-2856行的 showPlaybackRateBadge
+  3. 本次无需后端修改，无需数据库迁移

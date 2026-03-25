@@ -170,8 +170,9 @@ export default function DesktopUploadPanel() {
     const durationSec = state.duration || 0;
 
     try {
-      const res = await fetch("/api/lessons/tasks/local-asr", {
-        method: "POST",
+      const res = await fetch(
+        `${import.meta.env.VITE_API_BASE_URL}/api/lessons/tasks/local-asr`,
+        {method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${authToken}`,
@@ -207,8 +208,10 @@ export default function DesktopUploadPanel() {
     if (!loginToken.trim()) return;
     setLoginError("");
     try {
-      const res = await fetch("/api/auth/desktop-token-login", {
-        method: "POST",
+      const res = await fetch(
+        `${import.meta.env.VITE_API_BASE_URL}/api/auth/desktop-token-login`,
+        {
+          method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: loginToken }),
       });
