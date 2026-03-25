@@ -27,18 +27,15 @@ function tryParseJson(value, fallback) {
 
 function buildCloudApiClient(desktopRuntime) {
   async function getAccessToken() {
-    const result = await desktopRuntime.auth.restoreSession({ online: true });
-    if (result.status !== "active" || !result.auth?.access_token) {
+    const token = await desktopRuntime.auth.getAccessToken({ online: true });
+    if (!token) {
       throw new Error("No active cloud session for sync.");
     }
-    return result.auth.access_token;
+    return token;
   }
 
   async function request(path, options = {}) {
     const token = await getAccessToken();
-    const apiBase = await desktopRuntime.auth.cacheSession
-      ? _resolveCloudBase()
-      : _resolveCloudBase();
     const response = await fetch(`${await _resolveCloudBase()}${path}`, {
       ...options,
       headers: {
@@ -243,6 +240,11 @@ export class SyncEngine {
     await this.#setMeta("courseMapping", mapping);
   }
 
+  async #markJournalSynced(journalId) {
+    if (!journalId) return;
+    await this.#localDb.sync.markSynced([journalId]);
+  }
+
   #pushLocalCourses(pending, courseMapping) {
     const localOnly = pending.filter((j) => {
       const course = this.#getLocalCourseById(j.record_id);
@@ -349,12 +351,14 @@ export class SyncEngine {
           for (const journal of pending) {
             const courseMapping2 = await this.#getCourseMapping();
             const cloudId = courseMapping2[journal.record_id];
+            let pushed = false;
             if (cloudId) {
               if (journal.operation === "DELETE") {
                 await this.#cloud.deleteCourse(cloudId);
                 delete courseMapping2[journal.record_id];
                 await this.#saveCourseMapping(courseMapping2);
                 remoteUpdated = true;
+                pushed = true;
               } else {
                 const courses = await this.#localDb.getCourses();
                 const course = courses.find((c) => c.id === journal.record_id);
@@ -363,6 +367,7 @@ export class SyncEngine {
                     await this.#cloud.updateCourseTitle(cloudId, course.title);
                   }
                   remoteUpdated = true;
+                  pushed = true;
                 }
               }
             } else {
@@ -392,11 +397,16 @@ export class SyncEngine {
                       { syncBehavior: "none" },
                     );
                     remoteUpdated = true;
+                    pushed = true;
                   }
                 } catch (err) {
                   console.warn("[SyncEngine] Failed to push local course:", err?.message);
                 }
               }
+            }
+
+            if (pushed) {
+              await this.#markJournalSynced(journal.id);
             }
 
             this.#notify({
@@ -457,10 +467,11 @@ export class SyncEngine {
       const pending = await this.#localDb.sync.getPendingRecords(tableName);
 
       for (const journal of pending) {
-        const cloudCourseId = courseMapping[journal.record_id.replace(/:[^:]+$/, "")];
+        const localCourseId = journal.record_id.replace(/:[^:]+$/, "");
+        const cloudCourseId = courseMapping[localCourseId];
         if (!cloudCourseId) continue;
 
-        const progress = await this.#localDb.getProgress(journal.record_id);
+        const progress = await this.#localDb.getProgress(localCourseId);
         if (!progress) continue;
 
         try {
@@ -468,6 +479,7 @@ export class SyncEngine {
             current_index: progress.current_index,
             completed_indices: progress.completed_indices || [],
           });
+          await this.#markJournalSynced(journal.id);
         } catch (err) {
           console.warn("[SyncEngine] Failed to sync progress:", err?.message);
         }

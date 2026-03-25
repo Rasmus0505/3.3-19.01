@@ -4,47 +4,15 @@
 # 仅扫描当前协作目录（Docx/协作/tasks/）下的任务池
 
 schema_version: 1
-updated_at: "2026-03-25T14:00:00+08:00"
-updated_by: before
+updated_at: "2026-03-25T16:50:54+08:00"
+updated_by: after
 
 # 当前可并行执行的任务（已满足 depends_on，且无未解决 conflicts_with）
-executable:
-  - TASK-047  # Electron主进程双模式窗口分叉与IPC统一校验
-  - TASK-048  # Token移出renderer与Preload窄能力收口
-  - TASK-049  # 数据闭环三个关键bug修复
-  - TASK-050  # safeStorage明文回退修复与文件读取token模式
+executable: []
 
 # 需等待的任务（存在 depends_on 或 conflicts_with 未满足）
-waiting:
-  - TASK-043  # 桌面端 Electron 主进程安全与架构审查 → 已审查，等待修复任务完成
-  - TASK-044  # 桌面端 Preload 与渲染桥接安全审查 → 已审查，等待修复任务完成
-  - TASK-045  # 桌面端 本地数据库与同步引擎审查 → 已审查，等待修复任务完成
-  - TASK-046  # 桌面端 构建与打包流程审查 → 已审查，等待修复任务完成
+waiting: []
 
 # 推荐执行顺序
 notes: |
-  2026-03-25 本次规划：
-
-  新增四个 P0/P1 修复任务（TASK-047~TASK-050），基于审查结果5的建议拆分：
-
-  - TASK-047（critical）：Electron 主进程双模式窗口分叉 + IPC 统一校验中间件
-    → 斩断远端页面获取高权限的根路径，是所有后续修复的架构基座
-    → 与 TASK-048 有协同关系：TASK-048 依赖 preload-cloud.mjs，建议优先完成 TASK-047
-
-  - TASK-048（critical）：Token 移出 renderer + Preload 窄能力收口
-    → 消除 token 暴露和横向放大风险
-
-  - TASK-049（high）：数据闭环三个关键 bug 修复
-    → progress 同步键错配 / 删除不写 journal / markSynced 缺失
-    → 独立于 TASK-047/048，可并行
-
-  - TASK-050（high）：safeStorage 明文回退修复 + 文件读取 token 模式
-    → 独立于 TASK-047/048/049，可并行
-
-  推荐执行顺序（考虑依赖关系）：
-    并行组A：TASK-047 + TASK-049 + TASK-050（互相独立）
-    并行组B：TASK-048（依赖 TASK-047 产生的 preload-cloud.mjs）
-
-  TASK-047 完成后，TASK-048 可与 A 组并行执行。
-
-  Zeabur 操作提醒：本次仅涉及前端桌面端代码修改，无需数据库迁移。
+  当前任务池中已无未完成且可执行任务。

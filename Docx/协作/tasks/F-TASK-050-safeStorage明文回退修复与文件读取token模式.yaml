@@ -1,7 +1,7 @@
 schema_version: 1
 task_id: TASK-050
 title: safeStorage明文回退修复与文件读取token模式
-status: todo
+status: done
 priority: high
 goal: 移除 safeStorage 失败时的明文 base64 回退；将 readLocalMediaFile 改为一次性 token 模式
 scope: desktop/electron/main.mjs、desktop/electron/preload.mjs、desktop/src/auth/offline-auth.mjs
@@ -24,3 +24,19 @@ notes_for_after: |
   6. 修改 readLocalMediaFile IPC handler，验证 token 有效性和时效后读取对应文件，读取后使 token 失效
   7. 修改 preload.mjs 中的 contextBridge 暴露，readLocalMediaFile 改为只接受 token 参数
   8. 修改后测试：正常文件选择读取流程正常；尝试用旧路径调用 readLocalMediaFile 被拒绝
+result_summary: 已移除 safeStorage 明文回退，并将桌面端媒体读取链路改为 5 分钟有效 token 模式，补齐上传面板与本机 ASR 的 token 适配。
+changed_files:
+  - desktop/electron/main.mjs
+  - desktop/electron/preload.mjs
+  - frontend/src/features/upload/UploadPanel.jsx
+  - frontend/src/shared/media/localAsrAssetManager.js
+  - frontend/src/shared/media/localTaskStore.js
+tests_run:
+  - node --check D:\\3.3-19.01\\desktop\\electron\\main.mjs
+  - node --check D:\\3.3-19.01\\desktop\\electron\\preload.mjs
+  - npm run build
+check_commands:
+  - node --check D:\\3.3-19.01\\desktop\\electron\\main.mjs
+  - node --check D:\\3.3-19.01\\desktop\\electron\\preload.mjs
+  - cd D:\\3.3-19.01\\frontend && npm run build
+completed_at: 2026-03-25T16:21:07+08:00

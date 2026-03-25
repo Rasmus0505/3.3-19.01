@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Notification, dialog, ipcMain, safeStorage, shell, protocol, net } from "electron";
 import { spawn, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -13,12 +14,13 @@ import {
 import {
   registerAppProtocolClient,
   registerAppFileProtocol,
-  buildLocalAppUrl,
   hasLocalDistBundle,
   APP_PROTOCOL_NAME,
+  getLocalDistRoot,
 } from "./app-protocol.mjs";
 import { resolvePackagedDesktopRuntime, selectDesktopModelDir } from "./helper-runtime.mjs";
 import { computeModelUpdateDelta, fetchRemoteManifest, performIncrementalModelUpdate, readLocalManifest } from "./model-updater.mjs";
+import { buildOfflineRestoreDecision, normalizeCachedUser, readJwtExpiryIso } from "../src/auth/offline-auth.mjs";
 
 const currentFile = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFile);
@@ -58,6 +60,9 @@ const DESKTOP_MEDIA_MIME_TYPES = {
   ".webm": "video/webm",
 };
 const DESKTOP_ALLOWED_MEDIA_EXTENSIONS = new Set(Object.keys(DESKTOP_MEDIA_MIME_TYPES));
+const DESKTOP_MEDIA_FILE_TOKEN_TTL_MS = 5 * 60 * 1000;
+const DESKTOP_AUTH_SESSION_FILE_NAME = "desktop-auth-session.json";
+const DESKTOP_AUTH_SESSION_KEY = "desktop-session";
 
 let mainWindow = null;
 let backendProcess = null;
@@ -76,6 +81,8 @@ let backendShutdownExpected = false;
 let modelUpdateAbortController = null;
 let latestRemoteModelManifest = null;
 let lastClientUpdatePromptKey = "";
+let desktopAuthSession = null;
+const fileSessionTokens = new Map();
 
 let desktopModelUpdateState = {
   checking: false,
@@ -116,6 +123,7 @@ let desktopClientUpdateState = {
 const MAX_BACKEND_RESTART_COUNT = 3;
 const HEALTH_POLL_INTERVAL_MS = 30_000;
 const HEALTH_POLL_MAX_FAILURES = 3;
+const EXTERNAL_PROTOCOL_WHITELIST = new Set(["http:", "https:"]);
 
 let lastHelperHealth = {
   ok: false,
@@ -181,10 +189,6 @@ function serializeError(error) {
   };
 }
 
-function encodePlaintextSecret(secret = "") {
-  return Buffer.from(String(secret || ""), "utf8").toString("base64");
-}
-
 function decodePlaintextSecret(ciphertext = "") {
   if (!trimText(ciphertext)) {
     return "";
@@ -206,10 +210,7 @@ function encryptDesktopSecret(secret = "") {
       storageMode: "safeStorage",
     };
   }
-  return {
-    ciphertext: encodePlaintextSecret(normalizedSecret),
-    storageMode: "plaintext-base64",
-  };
+  throw new Error("SafeStorage unavailable, refuse to cache auth data");
 }
 
 function decryptDesktopSecret(ciphertext = "", storageMode = "none") {
@@ -225,6 +226,117 @@ function decryptDesktopSecret(ciphertext = "", storageMode = "none") {
     return decodePlaintextSecret(normalizedCiphertext);
   }
   return "";
+}
+
+function getDesktopAuthSessionFilePath() {
+  const userDataDir = trimText(desktopRuntimeConfig?.local?.userDataDir || "");
+  if (!userDataDir) {
+    throw new Error("Desktop runtime userDataDir is unavailable.");
+  }
+  return path.join(userDataDir, DESKTOP_AUTH_SESSION_FILE_NAME);
+}
+
+function normalizeDesktopAuthUser(user = {}) {
+  const normalized = normalizeCachedUser(user);
+  return normalized.id > 0 && normalized.email ? normalized : null;
+}
+
+function buildDesktopAuthView(status = "anonymous", user = null, message = "") {
+  const normalizedUser = normalizeDesktopAuthUser(user);
+  return {
+    status,
+    message: trimText(message),
+    session: {
+      isLoggedIn: status === "active" && Boolean(normalizedUser),
+      userId: normalizedUser?.id || 0,
+      userName: normalizedUser?.email || "",
+      userEmail: normalizedUser?.email || "",
+      isAdmin: Boolean(normalizedUser?.is_admin),
+      user: normalizedUser,
+    },
+    user: normalizedUser,
+  };
+}
+
+function buildDesktopAuthMemorySession(accessToken = "", refreshToken = "", user = null) {
+  const normalizedUser = normalizeDesktopAuthUser(user);
+  if (!trimText(accessToken) || !trimText(refreshToken) || !normalizedUser) {
+    return null;
+  }
+  return {
+    accessToken: trimText(accessToken),
+    refreshToken: trimText(refreshToken),
+    user: normalizedUser,
+    accessTokenExpiresAt: readJwtExpiryIso(accessToken),
+    refreshTokenExpiresAt: readJwtExpiryIso(refreshToken),
+    updatedAt: nowIso(),
+  };
+}
+
+async function saveDesktopAuthSession(session = null) {
+  const sessionFile = getDesktopAuthSessionFilePath();
+  await fs.promises.mkdir(path.dirname(sessionFile), { recursive: true });
+  if (!session) {
+    desktopAuthSession = null;
+    await fs.promises.rm(sessionFile, { force: true });
+    return;
+  }
+  const encryptedAccess = encryptDesktopSecret(session.accessToken);
+  const encryptedRefresh = encryptDesktopSecret(session.refreshToken);
+  const payload = {
+    schemaVersion: 1,
+    cacheKey: DESKTOP_AUTH_SESSION_KEY,
+    user: session.user,
+    access_token_ciphertext: encryptedAccess.ciphertext,
+    access_token_storage_mode: encryptedAccess.storageMode,
+    access_token_expires_at: session.accessTokenExpiresAt || readJwtExpiryIso(session.accessToken),
+    refresh_token_ciphertext: encryptedRefresh.ciphertext,
+    refresh_token_storage_mode: encryptedRefresh.storageMode,
+    refresh_token_expires_at: session.refreshTokenExpiresAt || readJwtExpiryIso(session.refreshToken),
+    updated_at: session.updatedAt || nowIso(),
+  };
+  await fs.promises.writeFile(sessionFile, JSON.stringify(payload, null, 2), "utf8");
+  desktopAuthSession = {
+    ...session,
+    accessTokenExpiresAt: payload.access_token_expires_at,
+    refreshTokenExpiresAt: payload.refresh_token_expires_at,
+    updatedAt: payload.updated_at,
+  };
+}
+
+async function loadDesktopAuthSession() {
+  if (desktopAuthSession?.accessToken && desktopAuthSession?.refreshToken) {
+    return desktopAuthSession;
+  }
+  const sessionFile = getDesktopAuthSessionFilePath();
+  try {
+    const raw = await fs.promises.readFile(sessionFile, "utf8");
+    const payload = JSON.parse(raw);
+    const nextSession = buildDesktopAuthMemorySession(
+      decryptDesktopSecret(payload?.access_token_ciphertext, payload?.access_token_storage_mode),
+      decryptDesktopSecret(payload?.refresh_token_ciphertext, payload?.refresh_token_storage_mode),
+      payload?.user,
+    );
+    if (!nextSession) {
+      return null;
+    }
+    desktopAuthSession = {
+      ...nextSession,
+      accessTokenExpiresAt: trimText(payload?.access_token_expires_at) || nextSession.accessTokenExpiresAt,
+      refreshTokenExpiresAt: trimText(payload?.refresh_token_expires_at) || nextSession.refreshTokenExpiresAt,
+      updatedAt: trimText(payload?.updated_at) || nextSession.updatedAt,
+    };
+    return desktopAuthSession;
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function clearDesktopAuthSession() {
+  await saveDesktopAuthSession(null);
 }
 
 function inspectFile(filePath) {
@@ -296,6 +408,23 @@ function safeNormalizeHttpUrl(value) {
     }
     url.hash = "";
     return url.toString().replace(/\/+$/, "");
+  } catch (_) {
+    return "";
+  }
+}
+
+function normalizeExternalHttpUrl(value) {
+  const text = trimText(value);
+  if (!text) {
+    return "";
+  }
+  try {
+    const url = new URL(text);
+    if (!EXTERNAL_PROTOCOL_WHITELIST.has(url.protocol)) {
+      return "";
+    }
+    url.hash = "";
+    return url.toString();
   } catch (_) {
     return "";
   }
@@ -710,8 +839,7 @@ async function openDesktopClientUpdateLink(preferredUrl = "") {
   if (!targetUrl) {
     return false;
   }
-  await shell.openExternal(targetUrl);
-  return true;
+  return openExternalWithWhitelist(targetUrl);
 }
 
 async function promptDesktopClientUpdate(clientUpdateState, reason = "manual") {
@@ -1005,19 +1133,86 @@ function isStandaloneModeEnabled() {
   return hasLocalDistBundle();
 }
 
-function buildMainWindowLoadUrl() {
-  const standalone = isStandaloneModeEnabled();
-  if (standalone) {
-    const url = buildLocalAppUrl("index.html");
-    appendDesktopDiagnostic("window-load-url", { mode: "standalone", url });
-    return url;
+function getMainWindowMode() {
+  return isStandaloneModeEnabled() ? "standalone" : "cloud-linked";
+}
+
+function resolveMainWindowEntry() {
+  const mode = getMainWindowMode();
+  if (mode === "standalone") {
+    const filePath = path.join(getLocalDistRoot(), "index.html");
+    appendDesktopDiagnostic("window-load-target", { mode, filePath });
+    return {
+      mode,
+      preloadPath: path.join(currentDir, "preload.mjs"),
+      loadKind: "file",
+      filePath,
+    };
   }
   const cloudUrl = String(desktopRuntimeConfig?.cloud?.appBaseUrl || "").trim();
   if (!cloudUrl) {
     throw new Error(`Desktop cloud app URL is empty. Update ${desktopConfigPath}.`);
   }
-  appendDesktopDiagnostic("window-load-url", { mode: "cloud-linked", url: cloudUrl });
-  return cloudUrl;
+  appendDesktopDiagnostic("window-load-target", { mode, url: cloudUrl });
+  return {
+    mode,
+    preloadPath: path.join(currentDir, "preload-cloud.mjs"),
+    loadKind: "url",
+    url: cloudUrl,
+  };
+}
+
+function getIpcSenderUrl(event) {
+  return trimText(event?.senderFrame?.url || event?.sender?.getURL?.() || "");
+}
+
+function isTrustedLocalRendererUrl(value) {
+  const text = trimText(value);
+  if (!text) {
+    return false;
+  }
+  try {
+    const url = new URL(text);
+    if (url.protocol === "file:") {
+      return true;
+    }
+    if (url.protocol === `${APP_PROTOCOL_NAME}:`) {
+      return trimText(url.hostname).toLowerCase() === "local";
+    }
+  } catch (_) {
+    return false;
+  }
+  return false;
+}
+
+function assertLocalRenderer(event) {
+  const senderUrl = getIpcSenderUrl(event);
+  if (isTrustedLocalRendererUrl(senderUrl)) {
+    return senderUrl;
+  }
+  appendDesktopDiagnostic("ipc-access-denied", {
+    senderUrl,
+  });
+  throw new Error(`Access denied for renderer origin: ${senderUrl || "unknown"}`);
+}
+
+function handleLocalRenderer(channel, handler) {
+  ipcMain.handle(channel, async (event, ...args) => {
+    assertLocalRenderer(event);
+    return handler(event, ...args);
+  });
+}
+
+async function openExternalWithWhitelist(targetUrl) {
+  const normalizedUrl = normalizeExternalHttpUrl(targetUrl);
+  if (!normalizedUrl) {
+    appendDesktopDiagnostic("open-external-blocked", {
+      targetUrl,
+    });
+    return false;
+  }
+  await shell.openExternal(normalizedUrl);
+  return true;
 }
 
 function setupCorsProxyForAppProtocol() {
@@ -1421,6 +1616,63 @@ function buildRuntimeInfo() {
   };
 }
 
+function buildPublicRuntimeInfo() {
+  return {
+    isPackaged: app.isPackaged,
+    helperMode: app.isPackaged ? "bundled-runtime" : "system-python",
+    standaloneMode: isStandaloneModeEnabled(),
+    mode: getMainWindowMode(),
+    helperStatus: {
+      ok: Boolean(lastHelperHealth.ok),
+      healthy: Boolean(lastHelperHealth.healthy),
+      modelReady: Boolean(lastHelperHealth.modelReady),
+      modelStatus: trimText(lastHelperHealth.modelStatus),
+      lastCheckedAt: trimText(lastHelperHealth.lastCheckedAt),
+      statusCode: Number(lastHelperHealth.statusCode || 0),
+    },
+    serverStatus: {
+      reachable: Boolean(lastCloudServerStatus.reachable),
+      lastCheckedAt: trimText(lastCloudServerStatus.lastCheckedAt),
+      latencyMs: lastCloudServerStatus.latencyMs == null ? null : Number(lastCloudServerStatus.latencyMs),
+    },
+    clientUpdate: {
+      available: Boolean(desktopClientUpdateState.available),
+      currentVersion: trimText(desktopClientUpdateState.currentVersion),
+      latestVersion: trimText(desktopClientUpdateState.latestVersion),
+      checkedAt: trimText(desktopClientUpdateState.checkedAt),
+      statusText: trimText(desktopClientUpdateState.statusText),
+      releaseName: trimText(desktopClientUpdateState.releaseName),
+      publishedAt: trimText(desktopClientUpdateState.publishedAt),
+    },
+    modelUpdate: {
+      checking: Boolean(desktopModelUpdateState.checking),
+      updateAvailable: Boolean(desktopModelUpdateState.updateAvailable),
+      updating: Boolean(desktopModelUpdateState.updating),
+      cancellable: Boolean(desktopModelUpdateState.cancellable),
+      modelKey: trimText(desktopModelUpdateState.modelKey),
+      localVersion: trimText(desktopModelUpdateState.localVersion),
+      remoteVersion: trimText(desktopModelUpdateState.remoteVersion),
+      totalFiles: Math.max(0, Number(desktopModelUpdateState.totalFiles || 0)),
+      completedFiles: Math.max(0, Number(desktopModelUpdateState.completedFiles || 0)),
+      currentFile: trimText(desktopModelUpdateState.currentFile),
+      lastCheckedAt: trimText(desktopModelUpdateState.lastCheckedAt),
+      lastCompletedAt: trimText(desktopModelUpdateState.lastCompletedAt),
+      lastError: trimText(desktopModelUpdateState.lastError),
+      message: trimText(desktopModelUpdateState.message),
+    },
+    preload: {
+      configured: Boolean(preloadDiagnostics.exists),
+      lastResolvedAt: trimText(preloadDiagnostics.lastResolvedAt),
+      lastNavigationAt: trimText(preloadDiagnostics.lastNavigationAt),
+      lastNavigationUrl: trimText(preloadDiagnostics.lastNavigationUrl),
+      lastDidFinishLoadAt: trimText(preloadDiagnostics.lastDidFinishLoadAt),
+      lastPreloadReadyAt: trimText(preloadDiagnostics.lastPreloadReadyAt),
+      lastPreloadStage: trimText(preloadDiagnostics.lastPreloadStage),
+      lastPreloadError: trimText(preloadDiagnostics.lastPreloadError),
+    },
+  };
+}
+
 async function probeDesktopRuntimeBridge(reason = "unspecified") {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return null;
@@ -1582,13 +1834,61 @@ function inspectDesktopMediaFile(filePath) {
   };
 }
 
+function clearExpiredDesktopMediaFileTokens(nowMs = Date.now()) {
+  for (const [token, session] of fileSessionTokens.entries()) {
+    if (!session || Number(session.expiresAt || 0) <= nowMs) {
+      fileSessionTokens.delete(token);
+    }
+  }
+}
+
+function issueDesktopMediaFileToken(filePath) {
+  const { resolvedPath, stat } = inspectDesktopMediaFile(filePath);
+  const expiresAtMs = Date.now() + DESKTOP_MEDIA_FILE_TOKEN_TTL_MS;
+  const token = randomUUID();
+  clearExpiredDesktopMediaFileTokens();
+  fileSessionTokens.set(token, {
+    filePath: resolvedPath,
+    expiresAt: expiresAtMs,
+  });
+  return {
+    token,
+    resolvedPath,
+    stat,
+    expiresAtMs,
+  };
+}
+
+function resolveDesktopMediaFileToken(fileToken = "") {
+  const normalizedToken = trimText(fileToken);
+  clearExpiredDesktopMediaFileTokens();
+  if (!normalizedToken) {
+    throw new Error("Desktop media file token is required.");
+  }
+  const session = fileSessionTokens.get(normalizedToken);
+  if (!session) {
+    throw new Error("Desktop media file token is invalid or expired.");
+  }
+  if (Number(session.expiresAt || 0) <= Date.now()) {
+    fileSessionTokens.delete(normalizedToken);
+    throw new Error("Desktop media file token is invalid or expired.");
+  }
+  const { resolvedPath, stat } = inspectDesktopMediaFile(session.filePath);
+  return {
+    token: normalizedToken,
+    resolvedPath,
+    stat,
+    expiresAtMs: Number(session.expiresAt || 0),
+  };
+}
+
 function buildDesktopMediaFilePayload(filePath, stat) {
   const resolvedPath = path.resolve(String(filePath || ""));
   return {
     name: path.basename(resolvedPath),
-    path: resolvedPath,
-    filePath: resolvedPath,
+    fileName: path.basename(resolvedPath),
     size: Math.max(0, Number(stat?.size || 0)),
+    fileSize: Math.max(0, Number(stat?.size || 0)),
     lastModifiedMs: Math.max(0, Number(stat?.mtimeMs || Date.now())),
     type: inferDesktopMediaMimeType(resolvedPath),
   };
@@ -1604,25 +1904,265 @@ async function selectLocalMediaFile(options = {}) {
   if (dialogResult.canceled || !Array.isArray(dialogResult.filePaths) || !dialogResult.filePaths[0]) {
     return {
       canceled: true,
-      file: null,
+      token: "",
+      fileName: "",
+      fileSize: 0,
     };
   }
-  const { resolvedPath, stat } = inspectDesktopMediaFile(dialogResult.filePaths[0]);
+  const { token, resolvedPath, stat, expiresAtMs } = issueDesktopMediaFileToken(dialogResult.filePaths[0]);
+  const fileSelection = {
+    token,
+    expiresAt: new Date(expiresAtMs).toISOString(),
+    ...buildDesktopMediaFilePayload(resolvedPath, stat),
+  };
   return {
     canceled: false,
-    file: buildDesktopMediaFilePayload(resolvedPath, stat),
+    ...fileSelection,
   };
 }
 
-async function readLocalMediaFile(sourcePath = "") {
-  const { resolvedPath, stat } = inspectDesktopMediaFile(sourcePath);
+async function readLocalMediaFile(fileToken = "") {
+  const { resolvedPath, stat, token, expiresAtMs } = resolveDesktopMediaFileToken(fileToken);
   const bytes = await fs.promises.readFile(resolvedPath);
   return {
     ok: true,
     file: {
+      token,
+      expiresAt: new Date(expiresAtMs).toISOString(),
       ...buildDesktopMediaFilePayload(resolvedPath, stat),
       bodyBase64: bytes.toString("base64"),
     },
+  };
+}
+
+function resolveDesktopCloudRequestUrl(inputUrl = "") {
+  const normalizedUrl = trimText(inputUrl);
+  if (!normalizedUrl) {
+    throw new Error("Desktop auth request URL is required.");
+  }
+  if (/^https?:\/\//i.test(normalizedUrl)) {
+    return normalizedUrl;
+  }
+  const apiBaseUrl = trimText(desktopRuntimeConfig?.cloud?.apiBaseUrl || desktopRuntimeConfig?.cloud?.appBaseUrl || "");
+  if (!apiBaseUrl) {
+    throw new Error("桌面端未配置 cloud.apiBaseUrl。");
+  }
+  return new URL(normalizedUrl, `${apiBaseUrl.replace(/\/+$/, "")}/`).toString();
+}
+
+async function parseDesktopAuthResponse(response) {
+  const rawText = await response.text();
+  if (!rawText) {
+    return {};
+  }
+  try {
+    return JSON.parse(rawText);
+  } catch (_) {
+    return {
+      message: rawText,
+      raw: rawText,
+    };
+  }
+}
+
+function normalizeDesktopAuthPayload(payload = {}) {
+  const nextSession = buildDesktopAuthMemorySession(payload?.access_token, payload?.refresh_token, payload?.user);
+  if (!nextSession) {
+    throw new Error("桌面端认证响应缺少有效 token 或用户信息。");
+  }
+  return nextSession;
+}
+
+async function submitDesktopAuthRequest(endpoint, credentials = {}) {
+  const targetUrl = resolveDesktopCloudRequestUrl(endpoint);
+  const response = await fetch(targetUrl, {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify({
+      email: trimText(credentials?.email),
+      password: String(credentials?.password || ""),
+    }),
+  });
+  const payload = await parseDesktopAuthResponse(response);
+  if (!response.ok) {
+    const error = new Error(trimText(payload?.message || payload?.detail?.message || payload?.detail) || "桌面端登录失败");
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  const session = normalizeDesktopAuthPayload(payload);
+  await saveDesktopAuthSession(session);
+  return buildDesktopAuthView("active", session.user, "");
+}
+
+async function refreshDesktopAuthSessionInMain(refreshToken = "") {
+  const targetUrl = resolveDesktopCloudRequestUrl("/api/auth/refresh");
+  const response = await fetch(targetUrl, {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify({ refresh_token: trimText(refreshToken) }),
+  });
+  const payload = await parseDesktopAuthResponse(response);
+  if (!response.ok) {
+    const error = new Error(trimText(payload?.message || payload?.detail?.message || payload?.detail) || "桌面端刷新登录失败");
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  const session = normalizeDesktopAuthPayload(payload);
+  await saveDesktopAuthSession(session);
+  return session;
+}
+
+async function restoreDesktopAuthSessionInMain(options = {}) {
+  const cached = await loadDesktopAuthSession();
+  if (!cached) {
+    return buildDesktopAuthView("anonymous", null, "");
+  }
+  const online = options.online !== false;
+  const forceRefresh = Boolean(options.forceRefresh);
+  const decision = buildOfflineRestoreDecision({
+    accessToken: cached.accessToken,
+    refreshToken: cached.refreshToken,
+    online,
+  });
+  if (forceRefresh || decision.shouldRefresh) {
+    try {
+      const refreshed = await refreshDesktopAuthSessionInMain(cached.refreshToken);
+      return buildDesktopAuthView("active", refreshed.user, "");
+    } catch (error) {
+      return buildDesktopAuthView("expired", cached.user, trimText(error?.message) || "登录状态已失效，请重新登录");
+    }
+  }
+  if (decision.status === "active") {
+    desktopAuthSession = cached;
+    return buildDesktopAuthView("active", cached.user, "");
+  }
+  return buildDesktopAuthView("expired", cached.user, online ? "登录状态已失效，请重新登录" : "登录状态已过期，请联网重新登录");
+}
+
+async function ensureDesktopAuthSessionForRequest() {
+  const restored = await restoreDesktopAuthSessionInMain({ online: true });
+  if (restored.status !== "active") {
+    return null;
+  }
+  return loadDesktopAuthSession();
+}
+
+function normalizeDesktopProxyHeaders(headers = {}) {
+  const nextHeaders = {};
+  for (const [key, value] of Object.entries(headers || {})) {
+    const normalizedKey = trimText(key);
+    if (!normalizedKey || value == null) {
+      continue;
+    }
+    nextHeaders[normalizedKey] = String(value);
+  }
+  return nextHeaders;
+}
+
+async function buildDesktopProxyBody(body = {}) {
+  const normalizedBody = body && typeof body === "object" ? body : {};
+  const kind = trimText(normalizedBody.kind || "none");
+  if (!kind || kind === "none") {
+    return undefined;
+  }
+  if (kind === "text") {
+    return String(normalizedBody.text || "");
+  }
+  throw new Error(`Unsupported desktop auth request body kind: ${kind}`);
+}
+
+async function buildDesktopProxyFormData(fields = []) {
+  const form = new FormData();
+  for (const field of Array.isArray(fields) ? fields : []) {
+    const name = trimText(field?.name);
+    if (!name) {
+      continue;
+    }
+    if (field?.kind === "text") {
+      form.append(name, String(field?.value || ""));
+      continue;
+    }
+    if (field?.kind === "file") {
+      let bytes = null;
+      if (trimText(field?.filePath)) {
+        bytes = await fs.promises.readFile(trimText(field.filePath));
+      } else if (trimText(field?.bodyBase64)) {
+        bytes = Buffer.from(String(field.bodyBase64 || ""), "base64");
+      }
+      if (!bytes) {
+        throw new Error(`Desktop auth upload field ${name} is missing file bytes.`);
+      }
+      form.append(
+        name,
+        new Blob([bytes], { type: trimText(field?.contentType) || "application/octet-stream" }),
+        trimText(field?.filename) || "upload.bin",
+      );
+      continue;
+    }
+    throw new Error(`Unsupported desktop auth upload field kind: ${field?.kind || "unknown"}`);
+  }
+  return form;
+}
+
+async function executeDesktopAuthFetch(request = {}, { retryOnRefresh = true } = {}) {
+  const session = await ensureDesktopAuthSessionForRequest();
+  if (!session?.accessToken) {
+    return {
+      ok: false,
+      status: 401,
+      headers: { "content-type": "application/json" },
+      contentType: "application/json",
+      bodyText: JSON.stringify({ message: "登录状态已失效，请重新登录" }),
+    };
+  }
+  const method = trimText(request.method || "GET").toUpperCase() || "GET";
+  const targetUrl = resolveDesktopCloudRequestUrl(request.url || request.path);
+  const headers = new Headers(normalizeDesktopProxyHeaders(request.headers));
+  if (request.formFields) {
+    headers.delete("content-type");
+  }
+  headers.set("authorization", `Bearer ${session.accessToken}`);
+  const response = await fetch(targetUrl, {
+    method,
+    headers,
+    body: request.formFields ? await buildDesktopProxyFormData(request.formFields) : await buildDesktopProxyBody(request.body),
+  });
+  if ((response.status === 401 || response.status === 403) && retryOnRefresh && trimText(session.refreshToken)) {
+    try {
+      await refreshDesktopAuthSessionInMain(session.refreshToken);
+      return executeDesktopAuthFetch(request, { retryOnRefresh: false });
+    } catch (_) {
+      await clearDesktopAuthSession();
+    }
+  }
+  const contentType = response.headers.get("content-type") || "application/json";
+  const headersPayload = Object.fromEntries(response.headers.entries());
+  if (/^text\/|json|javascript|xml/i.test(contentType)) {
+    return {
+      ok: response.ok,
+      status: response.status,
+      headers: headersPayload,
+      contentType,
+      bodyText: await response.text(),
+    };
+  }
+  const bodyBuffer = Buffer.from(await response.arrayBuffer());
+  return {
+    ok: response.ok,
+    status: response.status,
+    headers: headersPayload,
+    contentType,
+    bodyBase64: bodyBuffer.toString("base64"),
   };
 }
 
@@ -1678,13 +2218,37 @@ async function requestLocalHelper(request = {}) {
   };
 }
 
+async function requestLocalHelperJson(pathname, method = "GET", body = undefined) {
+  const response = await requestLocalHelper({
+    path: pathname,
+    method,
+    responseType: "json",
+    body,
+  });
+  if (!response?.ok) {
+    throw new Error(trimText(response?.data?.message || response?.data?.detail || response?.status) || "Desktop local helper request failed");
+  }
+  return response.data || {};
+}
+
+async function requestLocalHelperBinary(pathname) {
+  const response = await requestLocalHelper({
+    path: pathname,
+    method: "GET",
+    responseType: "arrayBuffer",
+  });
+  if (!response?.ok) {
+    throw new Error(trimText(response?.status) || "Desktop local helper binary request failed");
+  }
+  return response;
+}
+
 async function createMainWindow() {
   if (!desktopRuntimeConfig) {
     throw new Error("Desktop runtime config has not been initialized.");
   }
-  const loadUrl = buildMainWindowLoadUrl();
-  const isStandalone = isStandaloneModeEnabled();
-  const preloadPath = path.join(currentDir, "preload.mjs");
+  const windowEntry = resolveMainWindowEntry();
+  const preloadPath = windowEntry.preloadPath;
   const preloadFile = inspectFile(preloadPath);
   const windowWebPreferences = {
     contextIsolation: true,
@@ -1711,6 +2275,7 @@ async function createMainWindow() {
     sandbox: windowWebPreferences.sandbox,
     contextIsolation: windowWebPreferences.contextIsolation,
     isPackaged: app.isPackaged,
+    mode: windowEntry.mode,
   });
   mainWindow = new BrowserWindow({
     title: "Bottle",
@@ -1727,13 +2292,17 @@ async function createMainWindow() {
   });
   attachMainWindowDiagnostics(mainWindow);
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url).catch(() => null);
+    void openExternalWithWhitelist(url);
     return { action: "deny" };
   });
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
   });
-  await mainWindow.loadURL(loadUrl);
+  if (windowEntry.loadKind === "file") {
+    await mainWindow.loadFile(windowEntry.filePath);
+    return;
+  }
+  await mainWindow.loadURL(windowEntry.url);
 }
 
 async function bootstrapDesktopApp() {
@@ -1771,34 +2340,42 @@ async function bootstrapDesktopApp() {
   }
 }
 
-ipcMain.handle("desktop:get-runtime-info", () => buildRuntimeInfo());
+handleLocalRenderer("desktop:get-runtime-info", () => buildRuntimeInfo());
 
-ipcMain.handle("desktop:get-helper-status", async () => {
+ipcMain.handle("desktop:get-public-runtime-info", () => buildPublicRuntimeInfo());
+
+handleLocalRenderer("desktop:get-helper-status", async () => {
   if (!backendPort) {
     return getStoppedHelperHealthSnapshot();
   }
   return fetchHelperHealth("/health/ready");
 });
 
-ipcMain.handle("desktop:get-server-status", () => lastCloudServerStatus);
+handleLocalRenderer("desktop:get-server-status", () => lastCloudServerStatus);
 
-ipcMain.handle("desktop:probe-server-now", async () => probeCloudServerAndNotify());
+handleLocalRenderer("desktop:probe-server-now", async () => probeCloudServerAndNotify());
 
-ipcMain.handle("desktop:get-client-update-status", () => desktopClientUpdateState);
+handleLocalRenderer("desktop:get-client-update-status", () => desktopClientUpdateState);
 
-ipcMain.handle("desktop:check-client-update", async () => checkDesktopClientUpdate({ reason: "manual", notify: true }));
+handleLocalRenderer("desktop:check-client-update", async () => checkDesktopClientUpdate({ reason: "manual", notify: true }));
 
-ipcMain.handle("desktop:open-client-update-link", async (_event, preferredUrl = "") => openDesktopClientUpdateLink(preferredUrl));
+handleLocalRenderer("desktop:open-client-update-link", async (_event, preferredUrl = "") =>
+  openDesktopClientUpdateLink(preferredUrl),
+);
 
-ipcMain.handle("desktop:get-model-update-status", () => desktopModelUpdateState);
+handleLocalRenderer("desktop:get-model-update-status", () => desktopModelUpdateState);
 
-ipcMain.handle("desktop:check-model-update", async (_event, modelKey = DESKTOP_MODEL_UPDATE_KEY) => checkDesktopModelUpdate(modelKey));
+handleLocalRenderer("desktop:check-model-update", async (_event, modelKey = DESKTOP_MODEL_UPDATE_KEY) =>
+  checkDesktopModelUpdate(modelKey),
+);
 
-ipcMain.handle("desktop:start-model-update", async (_event, modelKey = DESKTOP_MODEL_UPDATE_KEY) => startDesktopModelUpdate(modelKey));
+handleLocalRenderer("desktop:start-model-update", async (_event, modelKey = DESKTOP_MODEL_UPDATE_KEY) =>
+  startDesktopModelUpdate(modelKey),
+);
 
-ipcMain.handle("desktop:cancel-model-update", () => cancelDesktopModelUpdate());
+handleLocalRenderer("desktop:cancel-model-update", () => cancelDesktopModelUpdate());
 
-ipcMain.handle("desktop:open-logs-directory", async () => {
+handleLocalRenderer("desktop:open-logs-directory", async () => {
   const folder = String(desktopRuntimeConfig?.local?.logDir || "").trim() || (backendLogPath ? path.dirname(backendLogPath) : "");
   if (!folder) {
     return false;
@@ -1807,7 +2384,96 @@ ipcMain.handle("desktop:open-logs-directory", async () => {
   return true;
 });
 
-ipcMain.handle("desktop:encrypt-secret", async (_event, secret = "") => {
+handleLocalRenderer("desktop:auth-login", async (_event, credentials = {}) =>
+  submitDesktopAuthRequest("/api/auth/login", credentials),
+);
+
+handleLocalRenderer("desktop:auth-register", async (_event, credentials = {}) =>
+  submitDesktopAuthRequest("/api/auth/register", credentials),
+);
+
+handleLocalRenderer("desktop:auth-restore-session", async (_event, options = {}) =>
+  restoreDesktopAuthSessionInMain(options),
+);
+
+handleLocalRenderer("desktop:auth-get-status", async () => {
+  const restored = await restoreDesktopAuthSessionInMain({ online: false });
+  if (restored.status === "active") {
+    return restored;
+  }
+  return buildDesktopAuthView("anonymous", restored.user, restored.message);
+});
+
+handleLocalRenderer("desktop:auth-logout", async () => {
+  await clearDesktopAuthSession();
+  return buildDesktopAuthView("anonymous", null, "");
+});
+
+handleLocalRenderer("desktop:auth-request", async (_event, request = {}) => executeDesktopAuthFetch(request));
+
+handleLocalRenderer("desktop:auth-upload", async (_event, request = {}) => executeDesktopAuthFetch(request));
+
+handleLocalRenderer("desktop:auth-get-access-token", async () => {
+  const session = await ensureDesktopAuthSessionForRequest();
+  return {
+    ok: Boolean(session?.accessToken),
+    accessToken: trimText(session?.accessToken),
+  };
+});
+
+handleLocalRenderer("desktop:local-asr-assets-status", async () =>
+  requestLocalHelperJson("/api/local-asr-assets/status"),
+);
+
+handleLocalRenderer("desktop:local-asr-assets-bundled-summary", async (_event, modelKey = "") => {
+  const helperModelKey = encodeURIComponent(trimText(modelKey));
+  return requestLocalHelperJson(`/api/local-asr-assets/download-models/${helperModelKey}`);
+});
+
+handleLocalRenderer("desktop:local-asr-assets-install-bundled", async (_event, modelKey = "") => {
+  const helperModelKey = encodeURIComponent(trimText(modelKey));
+  return requestLocalHelperJson(`/api/local-asr-assets/download-models/${helperModelKey}/install`, "POST");
+});
+
+handleLocalRenderer("desktop:local-asr-read-asset-file", async (_event, assetPath = "") => {
+  const response = await requestLocalHelperBinary(assetPath);
+  return {
+    ok: true,
+    contentType: response.contentType,
+    bodyBase64: response.bodyBase64,
+  };
+});
+
+handleLocalRenderer("desktop:desktop-asr-transcribe", async (_event, payload = {}) =>
+  requestLocalHelperJson("/api/desktop-asr/transcribe", "POST", payload),
+);
+
+handleLocalRenderer("desktop:desktop-asr-generate", async (_event, payload = {}) =>
+  requestLocalHelperJson("/api/desktop-asr/generate", "POST", payload),
+);
+
+handleLocalRenderer("desktop:url-import-create-task", async (_event, payload = {}) =>
+  requestLocalHelperJson("/api/desktop-asr/url-import/tasks", "POST", payload),
+);
+
+handleLocalRenderer("desktop:url-import-get-task", async (_event, taskId = "") =>
+  requestLocalHelperJson(`/api/desktop-asr/url-import/tasks/${encodeURIComponent(trimText(taskId))}`),
+);
+
+handleLocalRenderer("desktop:url-import-cancel-task", async (_event, taskId = "") =>
+  requestLocalHelperJson(`/api/desktop-asr/url-import/tasks/${encodeURIComponent(trimText(taskId))}/cancel`, "POST"),
+);
+
+handleLocalRenderer("desktop:url-import-download-file", async (_event, taskId = "") => {
+  const response = await requestLocalHelperBinary(`/api/desktop-asr/url-import/tasks/${encodeURIComponent(trimText(taskId))}/file`);
+  return {
+    ok: true,
+    contentType: response.contentType,
+    bodyBase64: response.bodyBase64,
+  };
+});
+
+handleLocalRenderer("desktop:encrypt-secret", async (_event, secret = "") => {
   const { ciphertext, storageMode } = encryptDesktopSecret(secret);
   return {
     ok: true,
@@ -1816,7 +2482,7 @@ ipcMain.handle("desktop:encrypt-secret", async (_event, secret = "") => {
   };
 });
 
-ipcMain.handle("desktop:decrypt-secret", async (_event, payload = {}) => {
+handleLocalRenderer("desktop:decrypt-secret", async (_event, payload = {}) => {
   const safePayload = payload && typeof payload === "object" ? payload : {};
   return {
     ok: true,
@@ -1824,11 +2490,29 @@ ipcMain.handle("desktop:decrypt-secret", async (_event, payload = {}) => {
   };
 });
 
-ipcMain.handle("desktop:select-local-media-file", async (_event, options = {}) => selectLocalMediaFile(options));
+handleLocalRenderer("desktop:create-local-media-file-token", async (_event, sourcePath = "") => {
+  const { token, expiresAtMs } = issueDesktopMediaFileToken(sourcePath);
+  return {
+    ok: true,
+    token,
+    expiresAt: new Date(expiresAtMs).toISOString(),
+  };
+});
 
-ipcMain.handle("desktop:read-local-media-file", async (_event, sourcePath = "") => readLocalMediaFile(sourcePath));
+handleLocalRenderer("desktop:resolve-local-media-file-token", async (_event, fileToken = "") => {
+  const { resolvedPath, expiresAtMs } = resolveDesktopMediaFileToken(fileToken);
+  return {
+    ok: true,
+    filePath: resolvedPath,
+    expiresAt: new Date(expiresAtMs).toISOString(),
+  };
+});
 
-ipcMain.handle("desktop:request-local-helper", async (_event, request) => requestLocalHelper(request));
+handleLocalRenderer("desktop:select-local-media-file", async (_event, options = {}) => selectLocalMediaFile(options));
+
+handleLocalRenderer("desktop:read-local-media-file", async (_event, fileToken = "") => readLocalMediaFile(fileToken));
+
+handleLocalRenderer("desktop:request-local-helper", async (_event, request) => requestLocalHelper(request));
 
 ipcMain.on("desktop:preload-ready", (_event, payload = {}) => {
   const safePayload = payload && typeof payload === "object" ? payload : {};

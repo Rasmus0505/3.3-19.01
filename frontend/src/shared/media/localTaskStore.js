@@ -146,6 +146,7 @@ function normalizeSnapshotPayload(payload = {}) {
     file_size_bytes: normalizeNonNegativeNumber(payload.file_size_bytes),
     file_last_modified_ms: normalizeNonNegativeNumber(payload.file_last_modified_ms),
     desktop_source_path: String(payload.desktop_source_path || ""),
+    desktop_source_token: String(payload.desktop_source_token || ""),
     cover_data_url: String(payload.cover_data_url || ""),
     cover_width: normalizeNonNegativeNumber(payload.cover_width),
     cover_height: normalizeNonNegativeNumber(payload.cover_height),
