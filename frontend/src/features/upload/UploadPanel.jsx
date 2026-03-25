@@ -39,6 +39,57 @@ const DESKTOP_UPLOAD_SOURCE_MODE_FILE = "file";
 const DESKTOP_UPLOAD_SOURCE_MODE_LINK = "link";
 const FILE_PICKER_ACTION_SELECT = "select";
 const FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE = "desktop_local_generate";
+const LOCAL_BROWSER_ASR_ENABLED = import.meta.env.VITE_LOCAL_BROWSER_ASR_ENABLED === "true";
+const LOCAL_ASR_ASSET_BASE_URL = import.meta.env.VITE_LOCAL_ASR_ASSET_BASE_URL || "/static/assets/asr-assets";
+const LOCAL_BROWSER_RUNTIME_BASE_URL = import.meta.env.VITE_LOCAL_BROWSER_RUNTIME_BASE_URL || "";
+const LOCAL_ASR_LONG_AUDIO_HINT_SECONDS = 300;
+const LOCAL_ASR_STORAGE_MODE_BROWSER = "browser";
+const LOCAL_ASR_TARGET_SAMPLE_RATE = 16000;
+const LOCAL_ASR_FILE_ACCEPT = ".mp3,.mp4,.m4a,.wav,.flac,.ogg,.aac,.webm,.mkv,.mov";
+const LOCAL_STAGE_PROGRESS_INTERVAL_MS = 500;
+
+function localAsrDirectoryBindingSupported() {
+  return typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
+}
+function getLocalAsrWorkerAssetPayload(modelKey, assetBaseUrl) {
+  return {};
+}
+function ensureLocalAsrModel(modelKey, assetBaseUrl, options) {
+  return { status: "idle" };
+}
+function removeLocalAsrModel(modelKey, assetBaseUrl) {
+  return { status: "removed" };
+}
+function switchLocalAsrStorageMode(modelKey, mode, assetBaseUrl) {
+  return { status: "idle" };
+}
+function bindLocalAsrModelDirectory(modelKey, assetBaseUrl) {
+  return { status: "idle" };
+}
+function buildLocalAsrLongAudioWarning(durationSec, hintSeconds) {
+  return "";
+}
+function releaseLocalAsrWorkerAssetPayload(modelKey) {}
+
+function estimateLocalAsrStageRatio(elapsedMs, durationSec) {
+  if (!durationSec || durationSec <= 0) return 0;
+  return Math.max(0, Math.min(1, elapsedMs / (durationSec * 1000 * 0.9)));
+}
+function buildLocalAsrProgressCounters(elapsedMs, durationSec) {
+  return {};
+}
+
+function hasLocalAsrWorkerSupport() { return false; }
+function localSenseWorkerSupportedRuntimes() { return []; }
+async function createLocalSenseWorker(runtime) { return null; }
+function buildLocalAsrAudioMetadata(mediaEl) { return {}; }
+function buildLocalAsrTranscribeOptions(options) { return options || {}; }
+async function runLocalAsrTranscribe(worker, options) { return { text: "", segments: [] }; }
+function estimateLocalAsrStageProgress(elapsedMs, durationSec, stageKey) { return { ratio: 0, stageLabel: "" }; }
+function buildLocalAsrSegmentProgressCounters(elapsedMs, durationSec, segmentCount) { return { processedSegments: 0, totalSegments: segmentCount || 0 }; }
+function persistLocalAsrSession(taskSnapshot) {}
+function loadLocalAsrSession() { return null; }
+function clearLocalAsrSession() {}
 
 function hasDesktopFileReadBridge() {
   return typeof window !== "undefined" && typeof window.desktopRuntime?.readLocalMediaFile === "function";
