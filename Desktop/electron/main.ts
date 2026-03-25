@@ -1,7 +1,9 @@
 import { app, BrowserWindow, ipcMain, shell, dialog, Menu, Tray, nativeImage } from "electron";
 import { join, resolve as pathResolve } from "path";
-import { autoUpdater } from "electron-updater";
+import electronUpdater from "electron-updater";
 import log from "electron-log";
+
+const { autoUpdater } = electronUpdater;
 
 // Register ASR IPC handlers early (needs app.getAppPath so import dynamically)
 import("../src/features/asr/asrProcess")

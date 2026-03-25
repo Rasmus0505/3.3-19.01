@@ -31,6 +31,7 @@ const DESKTOP_CLIENT_INSUFFICIENT_BALANCE_MESSAGE = "余额不足，请充值";
 const DEFAULT_ASR_MODEL_CATALOG_MAP = buildAsrModelCatalogMap();
 const DEFAULT_FAST_UPLOAD_MODEL = QWEN_MODEL;
 const FAST_RUNTIME_TRACK_CLOUD = "cloud";
+const FAST_RUNTIME_TRACK_BROWSER_LOCAL = "browser_local";
 const FAST_RUNTIME_TRACK_DESKTOP_LOCAL = "desktop_local";
 const DESKTOP_LOCAL_TRANSCRIBING_PHASE = "desktop_local_transcribing";
 const DESKTOP_LINK_IMPORTING_PHASE = "desktop_link_importing";
@@ -41,12 +42,14 @@ const FILE_PICKER_ACTION_SELECT = "select";
 const FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE = "desktop_local_generate";
 const LOCAL_BROWSER_ASR_ENABLED = import.meta.env.VITE_LOCAL_BROWSER_ASR_ENABLED === "true";
 const LOCAL_ASR_ASSET_BASE_URL = import.meta.env.VITE_LOCAL_ASR_ASSET_BASE_URL || "/static/assets/asr-assets";
-const LOCAL_BROWSER_RUNTIME_BASE_URL = import.meta.env.VITE_LOCAL_BROWSER_RUNTIME_BASE_URL || "";
+const LOCAL_BROWSER_RUNTIME_BASE_URL = String(import.meta.env.VITE_LOCAL_BROWSER_RUNTIME_BASE_URL || "").trim().replace(/\/+$/, "");
 const LOCAL_ASR_LONG_AUDIO_HINT_SECONDS = 300;
 const LOCAL_ASR_STORAGE_MODE_BROWSER = "browser";
 const LOCAL_ASR_TARGET_SAMPLE_RATE = 16000;
 const LOCAL_ASR_FILE_ACCEPT = ".mp3,.mp4,.m4a,.wav,.flac,.ogg,.aac,.webm,.mkv,.mov";
 const LOCAL_STAGE_PROGRESS_INTERVAL_MS = 500;
+const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止生成，可重新开始。";
+const browserLocalRuntimeApi = LOCAL_BROWSER_RUNTIME_BASE_URL ? createApiClient({ baseUrl: LOCAL_BROWSER_RUNTIME_BASE_URL }) : null;
 
 function localAsrDirectoryBindingSupported() {
   return typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
@@ -90,6 +93,122 @@ function buildLocalAsrSegmentProgressCounters(elapsedMs, durationSec, segmentCou
 function persistLocalAsrSession(taskSnapshot) {}
 function loadLocalAsrSession() { return null; }
 function clearLocalAsrSession() {}
+function releaseAllLocalAsrWorkerAssetPayloads() {}
+
+function hasLocalCourseGeneratorBridge() {
+  return typeof window !== "undefined" && typeof window.localAsr?.generateCourse === "function";
+}
+
+function hasBrowserLocalRuntimeBridge() {
+  return Boolean(browserLocalRuntimeApi);
+}
+
+function hasNativeDesktopModelUpdateBridge() {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.desktopRuntime?.getModelUpdateStatus === "function" &&
+    typeof window.desktopRuntime?.checkModelUpdate === "function" &&
+    typeof window.desktopRuntime?.startModelUpdate === "function" &&
+    typeof window.desktopRuntime?.cancelModelUpdate === "function"
+  );
+}
+
+function desktopModelUpdateSupported() {
+  return hasNativeDesktopModelUpdateBridge();
+}
+
+function normalizeDesktopBundledModelSummary(payload = {}, modelKey = FASTER_WHISPER_MODEL) {
+  const normalizedModelKey = String(payload?.model_key || modelKey || FASTER_WHISPER_MODEL).trim() || FASTER_WHISPER_MODEL;
+  const available = Boolean(payload?.available);
+  const installAvailable = Boolean(payload?.install_available);
+  const sourceAvailable = Boolean(payload?.source_available);
+  const preinstalled = Boolean(payload?.preinstalled);
+  const runtimeSource = String(payload?.runtime_source || "").trim() || "user_data";
+  const message = available
+    ? "Bottle 1.0 is ready on this desktop client."
+    : installAvailable
+      ? "Bottle 1.0 was not preinstalled. You can prepare it later from the desktop client."
+      : "This installer does not contain a reusable Bottle 1.0 local bundle.";
+  return {
+    modelKey: normalizedModelKey,
+    available,
+    installAvailable,
+    sourceAvailable,
+    preinstalled,
+    runtimeSource,
+    installSelected: typeof payload?.install_selected === "boolean" ? payload.install_selected : null,
+    installChoice: String(payload?.install_choice || "").trim(),
+    sourceBundleDir: String(payload?.source_bundle_dir || ""),
+    targetBundleDir: String(payload?.bundle_dir || ""),
+    fileCount: Number(payload?.file_count || 0),
+    message,
+  };
+}
+
+async function getDesktopBundledAsrModelSummary(modelKey) {
+  if (!hasDesktopRuntimeBridge()) {
+    throw new Error("Desktop local helper is unavailable");
+  }
+  const helperModelKey = encodeURIComponent(String(modelKey || FASTER_WHISPER_MODEL).trim() || FASTER_WHISPER_MODEL);
+  const response = await requestDesktopLocalHelper(`/api/local-asr-assets/download-models/${helperModelKey}`, "json");
+  return normalizeDesktopBundledModelSummary(response?.data, modelKey);
+}
+
+async function installDesktopBundledAsrModel(modelKey) {
+  if (!hasDesktopRuntimeBridge()) {
+    throw new Error("Desktop local helper is unavailable");
+  }
+  const helperModelKey = encodeURIComponent(String(modelKey || FASTER_WHISPER_MODEL).trim() || FASTER_WHISPER_MODEL);
+  const response = await requestDesktopLocalHelper(
+    `/api/local-asr-assets/download-models/${helperModelKey}/install`,
+    "json",
+    { method: "POST" },
+  );
+  return normalizeDesktopBundledModelSummary(response?.data, modelKey);
+}
+
+async function checkDesktopModelUpdate(modelKey) {
+  if (!hasNativeDesktopModelUpdateBridge()) {
+    throw new Error("Desktop model update bridge is unavailable");
+  }
+  return window.desktopRuntime.checkModelUpdate(String(modelKey || FASTER_WHISPER_MODEL).trim() || FASTER_WHISPER_MODEL);
+}
+
+async function startDesktopModelUpdate(modelKey) {
+  if (!hasNativeDesktopModelUpdateBridge()) {
+    throw new Error("Desktop model update bridge is unavailable");
+  }
+  return window.desktopRuntime.startModelUpdate(String(modelKey || FASTER_WHISPER_MODEL).trim() || FASTER_WHISPER_MODEL);
+}
+
+async function cancelDesktopModelUpdate() {
+  if (!hasNativeDesktopModelUpdateBridge()) {
+    throw new Error("Desktop model update bridge is unavailable");
+  }
+  return window.desktopRuntime.cancelModelUpdate();
+}
+
+function onDesktopModelUpdateProgress(callback) {
+  if (!hasNativeDesktopModelUpdateBridge() || typeof window.desktopRuntime?.onModelUpdateProgress !== "function") {
+    return () => {};
+  }
+  return window.desktopRuntime.onModelUpdateProgress((payload) => {
+    callback?.(payload || {});
+  });
+}
+
+function logUploadLocalAsrDebug(message, extra = {}) {
+  if (typeof console === "undefined" || typeof console.debug !== "function") return;
+  console.debug("[DEBUG] upload.local_asr", message, extra);
+}
+
+async function prepareAudioDataForLocalAsr() {
+  throw new Error("浏览器本地 ASR 已下线，请改用 Bottle 1.0 本地电脑跑或 Bottle 2.0 云端。");
+}
+
+async function runLocalAsrWithAutoParallelism() {
+  throw new Error("浏览器本地 ASR 已下线，请改用 Bottle 1.0 本地电脑跑或 Bottle 2.0 云端。");
+}
 
 function hasDesktopFileReadBridge() {
   return typeof window !== "undefined" && typeof window.desktopRuntime?.readLocalMediaFile === "function";
@@ -4429,8 +4548,8 @@ export function UploadPanel({
             modelName: FASTER_WHISPER_MODEL,
             runtimeKind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
           });
-          if (onRefreshWallet != null) {
-            void onRefreshWallet();
+          if (onWalletChanged != null) {
+            void onWalletChanged();
           }
         } catch (_) {
           // Usage reporting failure should not interrupt success flow
