@@ -116,4 +116,5 @@ def desktop_token_login(
         access_token=create_access_token(user.id),
         user_id=user.id,
         email=user.email,
+        is_admin=bool(getattr(user, "is_admin", False)),
     )
