@@ -1,0 +1,68 @@
+{
+  "name": "bottle-desktop-client",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Bottle desktop client that hosts the existing frontend app inside Electron.",
+  "type": "module",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "dev": "node ./scripts/dev.mjs",
+    "build": "node ./scripts/build.mjs",
+    "package:win": "node ./scripts/package-win.mjs dir",
+    "package:release": "node ./scripts/package-win.mjs nsis"
+  },
+  "devDependencies": {
+    "electron": "^35.1.4",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "ai.bottle.desktop",
+    "productName": "Bottle",
+    "electronDist": "./node_modules/electron/dist",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "build/**/*",
+      ".cache/frontend-dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".cache/helper-runtime/BottleLocalHelper",
+        "to": "desktop-helper-runtime/BottleLocalHelper"
+      },
+      {
+        "from": ".cache/runtime-defaults.json",
+        "to": "runtime-defaults.json"
+      },
+      {
+        "from": "../tools/ffmpeg/bin",
+        "to": "runtime-tools/ffmpeg"
+      },
+      {
+        "from": "../tools/yt-dlp",
+        "to": "runtime-tools/yt-dlp"
+      },
+      {
+        "from": "../asr-test/models/faster-distil-small.en",
+        "to": "preinstalled-models/faster-distil-small.en"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "include": "build/installer.nsh"
+    }
+  }
+}

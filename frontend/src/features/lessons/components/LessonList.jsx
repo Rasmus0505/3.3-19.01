@@ -1,1 +1,0 @@
-export { LessonList } from "../LessonList";
