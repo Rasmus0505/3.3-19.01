@@ -4632,7 +4632,7 @@ def test_local_media_mode_requires_client_binding(test_client):
     assert clip_resp.json()["error_code"] == "LOCAL_MEDIA_REQUIRED"
 
 
-def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path):
+def test_dashscope_file_id_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path):
     client, session_factory, _ = test_client
     token = _register_and_login(client, email="task-user@example.com")
     headers = {"Authorization": f"Bearer {token}"}
@@ -4642,7 +4642,9 @@ def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path)
 
     monkeypatch.setattr(lesson_router, "BASE_TMP_DIR", tmp_path)
     monkeypatch.setattr(lesson_router, "SessionLocal", session_factory)
+    monkeypatch.setattr(lesson_command_service_module, "BASE_TMP_DIR", tmp_path)
     monkeypatch.setattr(lesson_command_service_module, "probe_audio_duration_ms", lambda _path: 1_000)
+    monkeypatch.setattr(lesson_router, "extract_audio_for_asr", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("local conversion should be skipped for dashscope_file_id tasks")))
     _seed_wallet_balance(session_factory, email="task-user@example.com")
 
     class InlineThread:
@@ -4669,6 +4671,8 @@ def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path)
         task_id=None,
         semantic_split_enabled=None,
     ):
+        captured["dashscope_file_id"] = dashscope_file_id
+        captured["source_filename"] = source_filename
         captured["semantic_split_enabled"] = semantic_split_enabled
         captured["task_id"] = task_id
         if progress_callback:
@@ -4759,8 +4763,11 @@ def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path)
         },
     )
     assert create_resp.status_code == 200
+    assert captured["dashscope_file_id"] == "uploads/test/task.mp4"
+    assert captured["source_filename"] == "task.mp4"
     assert captured["semantic_split_enabled"] is False
     task_id = create_resp.json()["task_id"]
+    assert captured["task_id"] == task_id
 
     poll_resp = client.get(f"/api/lessons/tasks/{task_id}", headers=headers)
     assert poll_resp.status_code == 200
@@ -4776,6 +4783,17 @@ def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path)
     assert payload["translation_debug"]["usage"]["total_tokens"] == 42
     assert payload["translation_debug"]["latest_error_summary"] == "第2句失败：REQUEST_FAILED rate limit"
     assert all(item["status"] == "completed" for item in payload["stages"])
+
+    verify_session = session_factory()
+    try:
+        task_row = verify_session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        assert task_row is not None
+        assert task_row.source_filename == "task.mp4"
+        assert task_row.source_path
+        assert Path(task_row.source_path).name == "dashscope_file_id.txt"
+        assert task_row.artifacts_json["dashscope_file_id"] == "uploads/test/task.mp4"
+    finally:
+        verify_session.close()
 
 
 
