@@ -364,7 +364,6 @@ async function startDesktopHelper() {
       modelReady: false,
       modelStatus: "helper_not_started",
     };
-    sendToRenderer("desktop:helper-restarting", { status: "restarting" });
   });
 }
 
