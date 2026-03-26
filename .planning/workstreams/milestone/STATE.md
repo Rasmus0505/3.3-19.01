@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-03-26T13:48:08.155Z"
-last_activity: 2026-03-26 - Completed Phase 01 shared cloud generation
+status: ready
+stopped_at: Inserted Phase 01.1 for ASR subtitle recognition 403 failure
+last_updated: "2026-03-26T22:02:07.4924538+08:00"
+last_activity: 2026-03-26 - Inserted Phase 01.1 for ASR subtitle recognition 403 failure
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 1
   total_plans: 3
   completed_plans: 3
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 02 - desktop-local-generation
+**Current focus:** Phase 01.1 - fix-asr-subtitle-recognition-403-file-access-failures
 
 ## Current Position
 
-Phase: 02 (desktop-local-generation) - READY
+Phase: 01.1 (fix-asr-subtitle-recognition-403-file-access-failures) - READY
 Plan: Not started
-Status: Phase 01 complete - ready for next phase discussion
-Last activity: 2026-03-26 - Completed Phase 01 shared cloud generation
+Status: Urgent inserted phase pending planning before Phase 02
+Last activity: 2026-03-26 - Inserted Phase 01.1 for ASR subtitle recognition 403 failure
 
-Progress: [██████████] 100%
+Progress: [----------] 0%
 
 ## Performance Metrics
 
@@ -66,6 +66,10 @@ Recent decisions affecting current work:
 - [Init]: Web centers on Bottle 2.0 and browser-safe capabilities.
 - [Init]: Platform-managed billing/keys replace user-managed ASR secrets.
 - [Phase 01]: Treat dashscope_file_id as the canonical cloud object key across request-url, task artifacts, and generation entrypoints. - The direct-upload path already works end-to-end when the same object key is preserved. Locking that contract in tests prevents the request-url response and task creation path from drifting apart.
+
+### Roadmap Evolution
+
+- Phase 01.1 inserted after Phase 1: Fix ASR subtitle recognition 403 file access failures (URGENT)
 
 ### Pending Todos
 

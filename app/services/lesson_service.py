@@ -25,7 +25,7 @@ from app.core.config import (
 )
 from app.models import Lesson, LessonSentence, TranslationRequestLog
 from app.repositories.progress import create_progress
-from app.services.asr_dashscope import transcribe_audio_file, transcribe_signed_url
+from app.services.asr_dashscope import AsrError, transcribe_audio_file, transcribe_signed_url
 from app.infra.dashscope_storage import get_file_signed_url
 from app.services.billing_service import (
     EVENT_CONSUME_TRANSLATE,
@@ -76,6 +76,28 @@ _VARIANT_RESULT_FILE = "variant_result.json"
 _TRANSLATION_CHECKPOINT_FILE = "translation_checkpoint.json"
 _LESSON_RESULT_FILE = "lesson_result.json"
 _SEGMENT_RESULT_DIR = "asr_segment_results"
+
+
+def _resolve_dashscope_asr_source_url(*, dashscope_file_id: str, dashscope_file_url: str | None = None) -> str:
+    normalized_file_id = str(dashscope_file_id or "").strip()
+    normalized_file_url = str(dashscope_file_url or "").strip()
+
+    if normalized_file_id:
+        try:
+            return get_file_signed_url(normalized_file_id)
+        except AsrError:
+            if normalized_file_url:
+                logger.warning(
+                    "[DEBUG] lesson.generate_dashscope signed_url_lookup_failed file_id=%s fallback_to_client_url=1",
+                    normalized_file_id,
+                )
+                return normalized_file_url
+            raise
+
+    if normalized_file_url:
+        return normalized_file_url
+
+    raise MediaError("DASHSCOPE_FILE_ID_REQUIRED", "dashscope_file_id is required", "")
 
 
 def _read_json_file(path: Path) -> dict[str, Any] | None:
@@ -2662,8 +2684,12 @@ class LessonService:
         usage_hit = False
 
         try:
-            # Obtain signed URL and probe duration from ASR result
-            signed_url = str(dashscope_file_url or "").strip() or get_file_signed_url(dashscope_file_id)
+            # Resolve a fresh signed URL from the canonical file_id first.
+            # Client-provided URLs are only a fallback for older artifacts.
+            signed_url = _resolve_dashscope_asr_source_url(
+                dashscope_file_id=dashscope_file_id,
+                dashscope_file_url=dashscope_file_url,
+            )
 
             rate = get_model_rate(db, asr_model)
             segment_target_seconds = max(

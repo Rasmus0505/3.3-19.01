@@ -13,6 +13,7 @@ This roadmap turns an already-running English learning codebase into a clearer r
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Shared Cloud Generation** - Harden Bottle 2.0 as the shared web + desktop generation path
+- [ ] **Phase 1.1: Fix ASR subtitle recognition 403 file access failures** - Urgent follow-up for cloud ASR subtitle access failures (INSERTED)
 - [ ] **Phase 2: Desktop Local Generation** - Make Bottle 1.0 a low-friction desktop capability
 - [ ] **Phase 3: Lesson Output Consistency** - Normalize generated lessons and learning flows across generation routes
 - [ ] **Phase 4: Desktop Link Import** - Support URL-based media import on desktop with local tooling
@@ -36,6 +37,16 @@ Plans:
 - [x] 01-01: Stabilize shared Bottle 2.0 upload/task pipeline
 - [x] 01-02: Clarify runtime capability gating in web and desktop UI
 - [x] 01-03: Harden auth/session prerequisites around generation entry points
+
+### Phase 01.1: Fix ASR subtitle recognition 403 file access failures (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 1
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 01.1 to break down)
 
 ### Phase 2: Desktop Local Generation
 **Goal**: Desktop users can use Bottle 1.0 locally with minimal setup friction and predictable readiness checks.
@@ -113,11 +124,12 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
+Phases execute in numeric order: 1 -> 1.1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Shared Cloud Generation | 3/3 | Complete | 2026-03-26 |
+| 1.1. Fix ASR subtitle recognition 403 file access failures | 0/0 | Not planned | - |
 | 2. Desktop Local Generation | 0/3 | Not started | - |
 | 3. Lesson Output Consistency | 0/3 | Not started | - |
 | 4. Desktop Link Import | 0/2 | Not started | - |
