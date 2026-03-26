@@ -1239,14 +1239,7 @@ def mark_task_failed(
             running_stage["status"] = "failed"
         resume_stage = str(failed_stage or running_stage.get("key") or "") if running_stage else str(failed_stage or _infer_resume_stage(stages))
         next_translation_debug = dict(translation_debug) if isinstance(translation_debug, dict) else _copy_dict(task.translation_debug_json)
-        normalized_dashscope_recovery = _normalize_dashscope_recovery(
-            dashscope_recovery
-            or (
-                dict(subtitle_cache_seed).get("dashscope_recovery")
-                if isinstance(subtitle_cache_seed, dict)
-                else None
-            )
-        )
+        normalized_dashscope_recovery = _normalize_dashscope_recovery(dashscope_recovery)
         task.stages_json = stages
         task.status = TASK_STATUS_FAILED
         task.translation_debug_json = next_translation_debug or None
