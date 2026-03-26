@@ -2043,8 +2043,8 @@ export function UploadPanel({
     selectedFastRuntimeTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL;
   const desktopLinkModeBlockedMessage = desktopLinkModeActive
     ? desktopRuntimeAvailable
-      ? "链接导入当前仅支持桌面端 Bottle 1.0 本机运行，不支持云端、网页本地模式或均衡模式。"
-      : "当前环境不支持桌面端本地 helper，无法使用链接导入。"
+      ? "链接导入当前仅支持桌面端本机运行，不支持云端或网页本地模式。"
+      : "当前环境不支持桌面端，无法使用链接导入。"
     : "";
   const useLocalProgressSnapshot = localTranscribing || desktopLocalTranscribing || desktopLinkImporting;
   const displayTaskSnapshot = useLocalProgressSnapshot ? localProgressSnapshot : taskSnapshot;
@@ -3287,7 +3287,7 @@ export function UploadPanel({
     }
     if (!desktopLinkModeSupported) {
       await handleTaskFailureState({
-        message: desktopLinkModeBlockedMessage || "链接导入当前仅支持桌面端 Bottle 1.0 本机运行。",
+        message: desktopLinkModeBlockedMessage || "链接导入当前仅支持桌面端本机运行。",
         nextTaskId: "",
         nextTaskSnapshot: null,
         nextUploadPercent: 0,
@@ -4072,9 +4072,9 @@ export function UploadPanel({
       (updating
         ? currentFile
           ? `正在更新 ${currentFile}（${completedFiles}/${Math.max(totalFiles, 1)}）`
-          : "正在更新 Bottle 1.0 本机模型"
+          : "正在更新本机模型"
         : updateAvailable
-          ? "发现新的 Bottle 1.0 模型版本，可立即更新"
+          ? "发现新的模型版本，可立即更新"
           : String(summary?.message || ""));
     return {
       ...(summary || {}),
@@ -4131,7 +4131,7 @@ export function UploadPanel({
       lastError: "",
       updating: true,
       cancellable: true,
-      message: "正在更新 Bottle 1.0 本机模型",
+      message: "正在更新本机模型",
     });
     try {
       const payload = await startDesktopModelUpdate(modelKey);
@@ -4139,7 +4139,7 @@ export function UploadPanel({
         lastError: "",
       });
       if (!payload?.updating) {
-        toast.success(payload?.message || "Bottle 1.0 本机模型已更新");
+        toast.success(payload?.message || "本机模型已更新");
       }
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : String(error);
@@ -4200,12 +4200,12 @@ export function UploadPanel({
     setDesktopBundleBusyModelKey(modelKey);
     updateDesktopBundleState(modelKey, {
       lastError: "",
-      message: "正在准备桌面端本机 Bottle 1.0 资源",
+      message: "正在准备桌面端本机资源",
     });
     try {
       const summary = await installDesktopBundledAsrModel(modelKey);
       applyDesktopBundleState(modelKey, summary, { lastError: "" });
-      toast.success(summary.available ? "桌面端本机 Bottle 1.0 已就绪" : "桌面端本机资源已更新");
+      toast.success(summary.available ? "桌面端本机资源已就绪" : "桌面端本机资源已更新");
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : String(error);
       updateDesktopBundleState(modelKey, {
@@ -4441,7 +4441,7 @@ export function UploadPanel({
       return;
     }
 
-    const startStatus = "正在通过本地网站 Bottle 1.0 识别字幕";
+    const startStatus = "正在识别字幕";
     setPhase("local_transcribing");
     setStatus(startStatus);
     setTaskId("");
@@ -4479,12 +4479,12 @@ export function UploadPanel({
         LOCAL_BROWSER_RUNTIME_BASE_URL,
       );
       if (!ok) {
-        throw new Error(toErrorText(data, "本地网站 Bottle 1.0 字幕识别失败"));
+        throw new Error(toErrorText(data, "本机字幕识别失败"));
       }
       const localResult = data || {};
       const localSentences = localResult?.asr_result_json?.transcripts?.[0]?.sentences;
       if (!Array.isArray(localSentences) || localSentences.length === 0) {
-        throw new Error("本地网站 Bottle 1.0 未识别出可用字幕，请改用云端运行或更换素材。");
+        throw new Error("本机未识别出可用字幕，请改用云端运行或更换素材。");
       }
       setStreamingSubtitleDraft(
         buildSubtitleDraftSnapshotFromAsrPayload(localResult?.asr_result_json, { title: "生成中的字幕草稿", source: "browser_local_asr" }),
@@ -4567,7 +4567,7 @@ export function UploadPanel({
   async function submitDesktopLocalFast(pollToken, runToken, sourceFile = file, sourceDurationSec = durationSec) {
     if (!hasDesktopRuntimeBridge()) {
       await handleTaskFailureState({
-        message: "当前环境不支持 Bottle 1.0 本机运行，请改用云端运行。",
+        message: "当前环境不支持本机运行，请改用云端运行。",
         nextTaskId: "",
         nextTaskSnapshot: null,
         nextUploadPercent: 0,
@@ -4584,8 +4584,8 @@ export function UploadPanel({
     }
     if (!bundleSummary?.available) {
       const message = bundleSummary?.installAvailable
-        ? "Bottle 1.0 本机资源未就绪，请先点“准备本机资源”。"
-        : "当前安装包未提供可用的 Bottle 1.0 本机资源，请改用云端运行。";
+        ? "本机资源未就绪，请先点“准备本机资源”。"
+        : "当前安装包未提供可用的本机资源，请改用云端运行。";
       await handleTaskFailureState({
         message,
         nextTaskId: "",
@@ -4598,7 +4598,7 @@ export function UploadPanel({
       return;
     }
 
-    const startStatus = "正在通过本机 Bottle 1.0 识别字幕";
+    const startStatus = "正在识别字幕";
     desktopBillingReportRef.current = {
       modelName: FASTER_WHISPER_MODEL,
       runtimeKind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
@@ -4632,7 +4632,7 @@ export function UploadPanel({
       );
       const localSentences = localResult?.asrPayload?.transcripts?.[0]?.sentences;
       if (!Array.isArray(localSentences) || localSentences.length === 0) {
-        throw new Error("当前本机 Bottle 1.0 未识别出可用字幕，请改用云端运行或更换素材。");
+        throw new Error("当前未识别出可用字幕，请改用云端运行或更换素材。");
       }
       const sentenceCount = localSentences.length;
       setLocalProgress("asr_transcribe", "completed", 1, `本机识别完成，共 ${sentenceCount} 段字幕`, {
@@ -4752,8 +4752,8 @@ export function UploadPanel({
     }
     if (!bundleSummary?.available) {
       const message = bundleSummary?.installAvailable
-        ? "Bottle 1.0 本机资源未就绪，请先点「准备本机资源」。"
-        : "当前安装包未提供可用的 Bottle 1.0 本机资源，请改用云端运行。";
+        ? "本机资源未就绪，请先点「准备本机资源」。"
+        : "当前安装包未提供可用的本机资源，请改用云端运行。";
       await handleTaskFailureState({
         message,
         nextTaskId: "",
@@ -4775,7 +4775,7 @@ export function UploadPanel({
           : "",
     ).trim();
 
-    const startStatus = "正在通过本机 Bottle 1.0 生成课程";
+    const startStatus = "正在生成课程";
     setPhase(DESKTOP_LOCAL_GENERATING_PHASE);
     setStatus(startStatus);
     setTaskId("");
