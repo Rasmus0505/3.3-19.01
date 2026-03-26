@@ -60,7 +60,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: Harden local model/tool readiness and install experience
+- [x] 02-01: Harden local model/tool readiness and install experience
 - [ ] 02-02: Stabilize Bottle 1.0 desktop generation pipeline
 - [ ] 02-03: Improve local-generation error handling and recovery
 
