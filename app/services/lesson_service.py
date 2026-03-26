@@ -100,6 +100,29 @@ def _resolve_dashscope_asr_source_url(*, dashscope_file_id: str, dashscope_file_
     raise MediaError("DASHSCOPE_FILE_ID_REQUIRED", "dashscope_file_id is required", "")
 
 
+def _parse_asr_error_detail(detail: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(str(detail or "").strip())
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _extract_dashscope_403_failure_message(error: AsrError) -> str:
+    detail_payload = _parse_asr_error_detail(getattr(error, "detail", ""))
+    provider_message = str(detail_payload.get("subtask_message") or "").strip()
+    if provider_message:
+        return provider_message
+    return str(getattr(error, "message", "") or str(error) or "").strip()
+
+
+def _is_dashscope_file_access_forbidden(error: AsrError) -> bool:
+    if str(getattr(error, "code", "") or "").strip() != "ASR_TASK_FAILED":
+        return False
+    detail_payload = _parse_asr_error_detail(getattr(error, "detail", ""))
+    return str(detail_payload.get("subtask_code") or "").strip() == "FILE_403_FORBIDDEN"
+
+
 def _read_json_file(path: Path) -> dict[str, Any] | None:
     try:
         if not path.exists():
@@ -2707,13 +2730,53 @@ class LessonService:
                 counters={"asr_done": 0, "asr_estimated": 0, "translate_done": 0, "translate_total": 0, "segment_done": 0, "segment_total": 0},
             )
 
-            asr_raw = transcribe_signed_url(
-                signed_url,
-                model=asr_model,
-                requests_timeout=300,
-                audio_path_for_cancel=None,
-                progress_callback=None,
-            )
+            dashscope_recovery: dict[str, Any] | None = None
+            try:
+                asr_raw = transcribe_signed_url(
+                    signed_url,
+                    model=asr_model,
+                    requests_timeout=300,
+                    audio_path_for_cancel=None,
+                    progress_callback=None,
+                )
+            except AsrError as exc:
+                if not _is_dashscope_file_access_forbidden(exc):
+                    raise
+
+                dashscope_recovery = {
+                    "dashscope_file_id": str(dashscope_file_id or "").strip(),
+                    "first_failure_stage": "asr_transcribe",
+                    "first_failure_code": str(getattr(exc, "code", "") or "ASR_TASK_FAILED").strip() or "ASR_TASK_FAILED",
+                    "first_failure_message": _extract_dashscope_403_failure_message(exc),
+                    "retry_attempted": True,
+                    "retry_outcome": "pending",
+                    "final_outcome": "pending",
+                }
+                retry_signed_url = _resolve_dashscope_asr_source_url(
+                    dashscope_file_id=dashscope_file_id,
+                    dashscope_file_url=dashscope_file_url,
+                )
+                try:
+                    asr_raw = transcribe_signed_url(
+                        retry_signed_url,
+                        model=asr_model,
+                        requests_timeout=300,
+                        audio_path_for_cancel=None,
+                        progress_callback=None,
+                    )
+                except AsrError as retry_exc:
+                    if _is_dashscope_file_access_forbidden(retry_exc):
+                        dashscope_recovery["retry_outcome"] = "failed"
+                        dashscope_recovery["final_outcome"] = "cloud_file_access_failed"
+                        raise AsrError(
+                            "DASHSCOPE_FILE_ACCESS_FORBIDDEN",
+                            "DashScope 云端文件访问失败",
+                            json.dumps(dashscope_recovery, ensure_ascii=False),
+                        ) from retry_exc
+                    raise
+
+                dashscope_recovery["retry_outcome"] = "succeeded"
+                dashscope_recovery["final_outcome"] = "recovered"
             asr_payload: dict[str, Any] = {"transcripts": asr_raw.get("asr_result_json", {}).get("transcripts", [])}
             usage_seconds = asr_raw.get("usage_seconds")
             if usage_seconds:
@@ -2885,7 +2948,7 @@ class LessonService:
                 },
             )
             lesson: Lesson = Lesson()
-            lesson.title = _derive_title(source_filename=source_filename, transcript_preview=asr_payload.get("transcripts", [{}])[0].get("text", "") if asr_payload.get("transcripts") else "")
+            lesson.title = Path(source_filename or "lesson").stem[:200] or "lesson"
             task_result_meta: dict[str, Any] = {}
             _emit_progress(
                 progress_callback,
@@ -2921,6 +2984,8 @@ class LessonService:
                     "partial_failure_code": "BUILD_ERROR",
                     "partial_failure_message": "; ".join(str(e) for e in build_result.errors),
                 }
+            if isinstance(dashscope_recovery, dict):
+                task_result_meta["dashscope_recovery"] = dict(dashscope_recovery)
             _emit_progress(
                 progress_callback,
                 stage_key="build_lesson",
