@@ -90,8 +90,28 @@ export async function restoreCachedAuthSession(options = {}) {
   const desktopAuth = getDesktopAuthRuntime();
   if (!desktopAuth?.restoreSession) {
     const storage = getStorage();
+    const cachedAccessToken = trimText(storage?.getItem(TOKEN_KEY));
+    if (!cachedAccessToken) {
+      return {
+        status: "anonymous",
+        auth: null,
+        restored: false,
+        refreshed: false,
+        message: "",
+      };
+    }
+    if (options.forceRefresh) {
+      writeStoredTokens("", "", options.tokenKey || TOKEN_KEY, options.refreshKey || REFRESH_KEY);
+      return {
+        status: "expired",
+        auth: null,
+        restored: false,
+        refreshed: false,
+        message: "当前环境不支持自动续期，请重新登录。",
+      };
+    }
     return {
-      status: storage?.getItem(TOKEN_KEY) ? "active" : "anonymous",
+      status: "active",
       auth: null,
       restored: false,
       refreshed: false,

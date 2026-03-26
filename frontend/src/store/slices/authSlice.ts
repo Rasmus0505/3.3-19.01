@@ -76,7 +76,7 @@ export function createAuthSlice(set: Setter, get: Getter) {
         set({
           accessToken: "",
           currentUser,
-          hasStoredToken: Boolean(currentUser),
+          hasStoredToken: false,
           authStatus: "expired",
           authStatusMessage: nextMessage,
           isAdminUser: false,
@@ -118,10 +118,12 @@ export function createAuthSlice(set: Setter, get: Getter) {
     markAuthExpired: (message = "登录已失效，请重新登录") => {
       const nextMessage = String(message || "登录已失效，请重新登录");
       console.debug("[DEBUG] auth expired", { message: nextMessage });
+      const rememberedUser = readStoredCurrentUser();
+      void clearAuthStorage();
       set({
         accessToken: "",
-        currentUser: readStoredCurrentUser(),
-        hasStoredToken: Boolean(readStoredAccessToken()),
+        currentUser: rememberedUser,
+        hasStoredToken: false,
         authStatus: "expired",
         authStatusMessage: nextMessage,
         isAdminUser: false,
