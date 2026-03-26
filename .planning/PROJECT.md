@@ -19,6 +19,7 @@ Users can turn real English media into usable learning lessons quickly, without 
 - ✓ User can generate lessons from uploaded media through cloud ASR paths — existing
 - ✓ Web and desktop now share a stable Bottle 2.0 direct-upload generation path — validated in Phase 01
 - ✓ Product now exposes explicit desktop guidance instead of server fallback for Bottle 2.0 edge cases — validated in Phase 01
+- ✓ Bottle 2.0 direct-upload now self-heals once on DashScope `FILE_403_FORBIDDEN` failures and surfaces exhausted retries as a dedicated cloud file-access failure — validated in Phase 01.1
 - ✓ User can enter lesson-based learning and spelling practice flows — existing
 - ✓ Admin can inspect health, pricing, and operational controls — existing
 - ✓ Desktop client, local helper, and local ASR bundle flows already exist in the codebase — existing
@@ -55,7 +56,7 @@ Users can turn real English media into usable learning lessons quickly, without 
 
 ## Current State
 
-- Phase 01 complete - Shared Cloud Generation is stable across direct upload, shared UI guidance, and auth/balance/recovery verification.
+- Phase 01.1 complete - Direct-upload DashScope 403 failures now self-heal once and preserve structured cloud file-access diagnostics.
 - Next focus: Phase 02 - Desktop Local Generation.
 
 ## Key Decisions
@@ -67,6 +68,7 @@ Users can turn real English media into usable learning lessons quickly, without 
 | Platform manages ASR keys instead of end users | Learners are non-technical and should pay with points/redeem codes rather than configure secrets | — Pending |
 | Server should stay light and avoid becoming the media processing bottleneck | Cost and infrastructure limits make centralized heavy processing a bad default | — Pending |
 | Generated media should become lesson/practice artifacts regardless of generation path | Users care about learning outcomes, not the underlying ASR route | — Pending |
+| Direct-upload DashScope file access failures should self-heal before surfacing to users | Signed URLs can expire or be rejected transiently; the product should repair that path without forcing users into manual fallback first | Validated in Phase 01.1 |
 
 ## Evolution
 
@@ -86,4 +88,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-26 after Phase 01 completion*
+*Last updated: 2026-03-27 after Phase 01.1 completion*
