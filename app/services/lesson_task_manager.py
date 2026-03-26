@@ -12,6 +12,7 @@ from uuid import uuid4
 from sqlalchemy import func, inspect, select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.config import LESSON_WORKSPACE_ROOT_DIR
 from app.core.timezone import now_shanghai_naive
@@ -173,6 +174,20 @@ def _copy_dict(value: dict | None) -> dict:
 
 def _copy_list(value: list | None) -> list:
     return [dict(item) if isinstance(item, dict) else item for item in list(value or [])]
+
+
+def _normalize_dashscope_recovery(value: dict | None) -> dict | None:
+    if not isinstance(value, dict):
+        return None
+    normalized = dict(value)
+    normalized["dashscope_file_id"] = str(value.get("dashscope_file_id") or "").strip()
+    normalized["first_failure_stage"] = str(value.get("first_failure_stage") or "").strip()
+    normalized["first_failure_code"] = str(value.get("first_failure_code") or "").strip()
+    normalized["first_failure_message"] = str(value.get("first_failure_message") or "").strip()
+    normalized["retry_attempted"] = bool(value.get("retry_attempted"))
+    normalized["retry_outcome"] = str(value.get("retry_outcome") or "").strip()
+    normalized["final_outcome"] = str(value.get("final_outcome") or "").strip()
+    return normalized
 
 
 def _read_json_file(path: Path | None) -> dict | None:
@@ -997,6 +1012,7 @@ def cleanup_expired_tasks(*, db: Session | None = None, session_factory: Session
     session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
         ensure_lesson_task_storage_ready(session)
+        session.expire_all()
         now = now_shanghai_naive()
         items = session.scalars(
             select(LessonGenerationTask).where(
@@ -1187,6 +1203,7 @@ def patch_task_artifacts(
         merged_artifacts.update(artifacts_patch)
         task.artifacts_json = merged_artifacts
         _sync_task_workspace_summary(task)
+        flag_modified(task, "artifacts_json")
         session.commit()
     finally:
         if owns_session:
@@ -1203,6 +1220,7 @@ def mark_task_failed(
     traceback_excerpt: str = "",
     failed_stage: str | None = None,
     translation_debug: dict | None = None,
+    dashscope_recovery: dict | None = None,
     resume_available: bool | None = None,
     db: Session | None = None,
     session_factory: SessionFactory | None = None,
@@ -1221,10 +1239,18 @@ def mark_task_failed(
             running_stage["status"] = "failed"
         resume_stage = str(failed_stage or running_stage.get("key") or "") if running_stage else str(failed_stage or _infer_resume_stage(stages))
         next_translation_debug = dict(translation_debug) if isinstance(translation_debug, dict) else _copy_dict(task.translation_debug_json)
+        normalized_dashscope_recovery = _normalize_dashscope_recovery(
+            dashscope_recovery
+            or (
+                dict(subtitle_cache_seed).get("dashscope_recovery")
+                if isinstance(subtitle_cache_seed, dict)
+                else None
+            )
+        )
         task.stages_json = stages
         task.status = TASK_STATUS_FAILED
         task.translation_debug_json = next_translation_debug or None
-        task.failure_debug_json = {
+        next_failure_debug = {
             "failed_stage": resume_stage,
             "exception_type": _trim_text(exception_type, FAILURE_EXCEPTION_TYPE_LIMIT),
             "detail_excerpt": _trim_text(detail_excerpt, FAILURE_DETAIL_EXCERPT_LIMIT),
@@ -1235,6 +1261,9 @@ def mark_task_failed(
             "translation_debug": next_translation_debug or None,
             "failed_at": failed_at.isoformat(),
         }
+        if normalized_dashscope_recovery:
+            next_failure_debug["dashscope_recovery"] = normalized_dashscope_recovery
+        task.failure_debug_json = next_failure_debug
         task.error_code = error_code
         task.message = message
         task.current_text = message
@@ -1249,8 +1278,12 @@ def mark_task_failed(
         next_artifacts["partial_failure_stage"] = ""
         next_artifacts["partial_failure_code"] = ""
         next_artifacts["partial_failure_message"] = ""
+        if normalized_dashscope_recovery:
+            next_artifacts["dashscope_recovery"] = normalized_dashscope_recovery
         task.artifacts_json = next_artifacts
         _sync_task_workspace_summary(task)
+        flag_modified(task, "artifacts_json")
+        flag_modified(task, "failure_debug_json")
         session.commit()
     finally:
         if owns_session:
@@ -1263,6 +1296,7 @@ def mark_task_succeeded(
     lesson_id: int,
     subtitle_cache_seed: dict | None = None,
     translation_debug: dict | None = None,
+    dashscope_recovery: dict | None = None,
     result_kind: str = TASK_RESULT_FULL_SUCCESS,
     result_message: str = "",
     partial_failure_stage: str = "",
@@ -1280,6 +1314,7 @@ def mark_task_succeeded(
         stages = _copy_list(task.stages_json)
         normalized_result_kind = _normalize_result_kind(result_kind)
         normalized_partial_stage = str(partial_failure_stage or "").strip()
+        normalized_dashscope_recovery = _normalize_dashscope_recovery(dashscope_recovery)
         for stage in stages:
             stage["status"] = "failed" if normalized_partial_stage and stage.get("key") == normalized_partial_stage else "completed"
         task.stages_json = stages
@@ -1292,7 +1327,7 @@ def mark_task_succeeded(
         task.subtitle_cache_seed_json = dict(subtitle_cache_seed) if isinstance(subtitle_cache_seed, dict) else None
         task.resume_available = False
         task.resume_stage = ""
-        task.artifact_expires_at = now_shanghai_naive()
+        task.artifact_expires_at = now_shanghai_naive() + timedelta(hours=FAILURE_RETENTION_HOURS)
         task.failed_at = None
         next_artifacts = _clear_admission_fields(_clear_control_fields(task.artifacts_json))
         next_artifacts["result_kind"] = normalized_result_kind
@@ -1301,8 +1336,11 @@ def mark_task_succeeded(
         next_artifacts["partial_failure_stage"] = normalized_partial_stage
         next_artifacts["partial_failure_code"] = str(partial_failure_code or "").strip()
         next_artifacts["partial_failure_message"] = str(partial_failure_message or "").strip()
+        if normalized_dashscope_recovery:
+            next_artifacts["dashscope_recovery"] = normalized_dashscope_recovery
         task.artifacts_json = next_artifacts
         _sync_task_workspace_summary(task)
+        flag_modified(task, "artifacts_json")
         session.commit()
     finally:
         if owns_session:
