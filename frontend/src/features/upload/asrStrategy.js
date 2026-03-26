@@ -96,24 +96,24 @@ export function getConnectivityActionMessage({ browserOnline = true, serverStatu
 export function getLocalModeBlockedMessage(reason = "") {
   switch (normalizeText(reason)) {
     case "local_helper_unhealthy":
-      return "本地 helper 当前不可用，请稍后重试或切换到 Bottle 2.0。";
+      return "本机运行当前不可用，请稍后重试或切换到云端。";
     case "local_bundle_missing":
     case "local_model_not_ready":
-      return "Bottle 1.0 本机模型未就绪，请先准备本机资源。";
+      return "本机资源未就绪，请先准备。";
     default:
-      return "Bottle 1.0 本机模式当前不可用，请稍后重试。";
+      return "本机模式当前不可用，请稍后重试。";
   }
 }
 
 export function getAutoDegradeBannerText(reason = "") {
   switch (normalizeText(reason)) {
     case "local_helper_unhealthy":
-      return "本地 helper 异常，已切换云端";
+      return "本机运行异常，已切换云端";
     case "local_retry_exhausted":
-      return "本地识别失败，已切换云端";
+      return "本机识别失败，已切换云端";
     case "local_bundle_missing":
     case "local_model_not_ready":
-      return "本地模型未就绪，已切换云端";
+      return "本机资源未就绪，已切换云端";
     default:
       return "已切换到云端模式";
   }
