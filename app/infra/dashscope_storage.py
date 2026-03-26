@@ -7,6 +7,7 @@ Provides utilities to interact with DashScope OSS storage:
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import dashscope
 from dashscope.files import Files
@@ -26,6 +27,56 @@ def _ensure_dashscope_api_key() -> str:
     if api_key:
         return api_key
     raise AsrError("ASR_API_KEY_MISSING", "DASHSCOPE_API_KEY 未配置")
+
+
+def _resolve_signed_url_from_meta(meta_out: dict[str, Any]) -> str:
+    candidate = _resolve_signed_url(meta_out)
+    if candidate:
+        return candidate
+
+    direct_candidates = (
+        "signed_url",
+        "file_url",
+        "download_url",
+        "http_url",
+    )
+    for key in direct_candidates:
+        value = str(meta_out.get(key) or "").strip()
+        if value:
+            return value
+
+    nested_candidates = meta_out.get("file")
+    if isinstance(nested_candidates, dict):
+        nested_candidate = _resolve_signed_url(nested_candidates)
+        if nested_candidate:
+            return nested_candidate
+        for key in direct_candidates:
+            value = str(nested_candidates.get(key) or "").strip()
+            if value:
+                return value
+
+    urls_payload = meta_out.get("urls")
+    if isinstance(urls_payload, dict):
+        for key in ("signed", "https", "http", "url"):
+            value = str(urls_payload.get(key) or "").strip()
+            if value:
+                return value
+    elif isinstance(urls_payload, list):
+        for item in urls_payload:
+            if isinstance(item, dict):
+                nested_candidate = _resolve_signed_url(item)
+                if nested_candidate:
+                    return nested_candidate
+                for key in direct_candidates:
+                    value = str(item.get(key) or "").strip()
+                    if value:
+                        return value
+            else:
+                value = str(item or "").strip()
+                if value:
+                    return value
+
+    return ""
 
 
 def get_file_signed_url(file_id: str, *, request_timeout: int = 30) -> str:
@@ -57,14 +108,20 @@ def get_file_signed_url(file_id: str, *, request_timeout: int = 30) -> str:
         raise AsrError("DASHSCOPE_STORAGE_FILE_GET_FAILED", "查询 DashScope 文件失败", str(exc)[:1200]) from exc
 
     meta_out = _to_dict(getattr(meta_resp, "output", None))
-    signed_url = _resolve_signed_url(meta_out)
-    if not signed_url:
-        raise AsrError(
-            "DASHSCOPE_STORAGE_SIGNED_URL_MISSING",
-            "查询文件成功但签名 URL 为空",
-            f"file_id={file_id}",
-        )
-    return signed_url
+    signed_url = _resolve_signed_url_from_meta(meta_out)
+    if signed_url:
+        return signed_url
+
+    # Some DashScope file-meta responses do not expose signed URLs directly.
+    # In that case, ASR APIs can still consume an oss:// object key.
+    oss_url = f"oss://{file_id}"
+    logger.warning(
+        "[DEBUG] dashscope_storage.signed_url_missing file_id=%s meta_keys=%s fallback=%s",
+        file_id,
+        sorted(list(meta_out.keys())),
+        oss_url,
+    )
+    return oss_url
 
 
 def verify_file_exists(file_id: str, *, request_timeout: int = 30) -> bool:
