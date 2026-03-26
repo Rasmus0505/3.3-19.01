@@ -86,6 +86,9 @@ def test_request_url_success(tmp_path, monkeypatch):
         assert payload["upload_url"] == "https://oss.example.com"
         assert payload["file_id"] == "uploads/20260326/demo.mp4"
         assert payload["oss_fields"]["policy"] == "p"
+        assert payload["oss_fields"]["key"] == "uploads/20260326/demo.mp4"
+        assert payload["oss_fields"]["x-oss-content-type"] == "video/mp4"
+        assert payload["oss_fields"]["success_action_status"] == "200"
         assert int(payload["expires_in_seconds"]) == 900
     finally:
         client.close()
