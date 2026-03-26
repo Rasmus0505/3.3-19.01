@@ -363,6 +363,75 @@ function getCloudFailureMessage(message = "", serverStatus = {}) {
   return mapCloudAsrFailureToMessage(message, normalizedServerStatus);
 }
 
+function toNormalizedFilename(filename = "") {
+  const normalized = String(filename || "").trim().replace(/\\/g, "/");
+  const parts = normalized.split("/").filter(Boolean);
+  return parts[parts.length - 1] || "upload.bin";
+}
+
+function resolveDashscopeObjectKey({ ossFields = {}, uploadDir = "", fileId = "", filename = "" } = {}) {
+  const normalizedFilename = toNormalizedFilename(filename);
+  const applyFilename = (value) => String(value || "").replace(/\$\{filename\}/gi, normalizedFilename);
+  const normalizePath = (value) => String(value || "").trim().replace(/\\/g, "/").replace(/^\/+/, "");
+  const looksLikeObjectPath = (value = "") => {
+    const lastSegment = String(value || "").split("/").pop() || "";
+    return /\.[A-Za-z0-9]{1,12}$/.test(lastSegment);
+  };
+
+  const keyFromFields = normalizePath(applyFilename(ossFields?.key));
+  if (keyFromFields) {
+    return keyFromFields;
+  }
+
+  const candidates = [fileId, uploadDir];
+  for (const candidate of candidates) {
+    let resolved = normalizePath(applyFilename(candidate));
+    if (!resolved) continue;
+    if (resolved.endsWith("/")) {
+      resolved = `${resolved}${normalizedFilename}`;
+    } else if (!looksLikeObjectPath(resolved)) {
+      resolved = `${resolved}/${normalizedFilename}`;
+    }
+    return resolved;
+  }
+  return "";
+}
+
+function parseDashscopeUploadErrorPayload(responseText = "") {
+  const text = String(responseText || "").trim();
+  if (!text) return { code: "", message: "", requestId: "" };
+
+  try {
+    const payload = JSON.parse(text);
+    return {
+      code: sanitizeUserFacingText(String(payload?.code || payload?.error_code || payload?.Code || "")),
+      message: sanitizeUserFacingText(String(payload?.message || payload?.error || payload?.Message || "")),
+      requestId: sanitizeUserFacingText(String(payload?.request_id || payload?.requestId || payload?.RequestId || "")),
+    };
+  } catch (_) {
+    const getXmlTagValue = (tagName) => {
+      const match = text.match(new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`, "i"));
+      return sanitizeUserFacingText(String(match?.[1] || ""));
+    };
+    return {
+      code: getXmlTagValue("Code"),
+      message: getXmlTagValue("Message"),
+      requestId: getXmlTagValue("RequestId"),
+    };
+  }
+}
+
+function buildDashscopeStorageUploadFailureMessage(uploadResult = {}) {
+  const status = Math.max(0, Number(uploadResult?.status || 0));
+  const prefix = status > 0 ? `云端存储上传失败 (HTTP ${status})` : "云端存储上传失败";
+  const parsed = parseDashscopeUploadErrorPayload(uploadResult?.responseText || "");
+  const details = [];
+  if (parsed.code) details.push(`Code=${parsed.code}`);
+  if (parsed.message) details.push(`Message=${parsed.message}`);
+  if (parsed.requestId) details.push(`RequestId=${parsed.requestId}`);
+  return details.length ? `${prefix}: ${details.join("; ")}` : prefix;
+}
+
 const LOCAL_MODEL_OPTIONS = [
   {
     key: ASR_MODEL_KEYS.fasterWhisper,
@@ -4936,27 +5005,42 @@ export function UploadPanel({
       }
 
       const uploadConfig = await parseResponse(requestUrlResp);
-      const { upload_url, oss_fields, file_id } = uploadConfig;
+      const uploadUrl = String(uploadConfig?.upload_host || uploadConfig?.upload_url || "").trim();
+      const uploadDir = String(uploadConfig?.upload_dir || "").trim();
+      const normalizedOssFields = uploadConfig?.oss_fields && typeof uploadConfig.oss_fields === "object" ? uploadConfig.oss_fields : {};
+      const resolvedFileId = resolveDashscopeObjectKey({
+        ossFields: normalizedOssFields,
+        uploadDir,
+        fileId: String(uploadConfig?.file_id || ""),
+        filename: uploadSourceFile?.name || "",
+      });
+      if (!uploadUrl || !resolvedFileId) {
+        throw new Error("云端上传策略无效：缺少上传地址或文件标识");
+      }
 
       if (runToken !== localRunTokenRef.current) return;
       if (abortController.signal.aborted) return;
 
-      // Step 2: 直接 PUT 到 DashScope OSS（multipart/form-data 格式）
+      // Step 2: 使用策略表单直传到 DashScope OSS（multipart/form-data）
       const dashscopeUploadStatus = "正在上传到云端存储";
       setStatus(dashscopeUploadStatus);
 
       const formData = new FormData();
-      if (oss_fields) {
-        Object.entries(oss_fields).forEach(([key, value]) => {
+      if (normalizedOssFields) {
+        Object.entries(normalizedOssFields).forEach(([key, value]) => {
           if (value !== undefined && value !== null) {
+            if (String(key || "").toLowerCase() === "file") return;
             formData.append(key, String(value));
           }
         });
       }
-      formData.append("file", uploadSourceFile);
+      if (!String(normalizedOssFields?.key || "").trim()) {
+        formData.append("key", resolvedFileId);
+      }
+      formData.append("file", uploadSourceFile, toNormalizedFilename(uploadSourceFile?.name || ""));
 
-      const uploadResult = await uploadWithProgress(upload_url, {
-        method: "PUT",
+      const uploadResult = await uploadWithProgress(uploadUrl, {
+        method: "POST",
         body: formData,
         signal: abortController.signal,
         onUploadProgress: ({ percent }) => {
@@ -4969,20 +5053,20 @@ export function UploadPanel({
       });
 
       if (!uploadResult.ok) {
-        throw new Error(`云端存储上传失败 (HTTP ${uploadResult.status})`);
+        throw new Error(buildDashscopeStorageUploadFailureMessage(uploadResult));
       }
 
       if (runToken !== localRunTokenRef.current) return;
       if (abortController.signal.aborted) return;
 
-      // Step 3: PUT 成功后，创建任务并携带 dashscope_file_id
+      // Step 3: 直传成功后，创建任务并携带 dashscope_file_id
       const createTaskStatus = "正在提交云端任务";
       setStatus(createTaskStatus);
 
       const form = new FormData();
       form.append("asr_model", selectedAsrModel);
       form.append("semantic_split_enabled", "false");
-      form.append("dashscope_file_id", file_id);
+      form.append("dashscope_file_id", resolvedFileId);
 
       const { ok, data } = await uploadWithProgress(
         "/api/lessons/tasks",

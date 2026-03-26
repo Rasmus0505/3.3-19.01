@@ -83,10 +83,62 @@ def test_request_url_success(tmp_path, monkeypatch):
         assert payload["ok"] is True
         assert payload["upload_host"] == "https://oss.example.com"
         assert payload["upload_dir"] == "uploads/20260326/demo.mp4"
-        assert payload["upload_url"] == "https://oss.example.com/uploads/20260326/demo.mp4"
+        assert payload["upload_url"] == "https://oss.example.com"
         assert payload["file_id"] == "uploads/20260326/demo.mp4"
         assert payload["oss_fields"]["policy"] == "p"
         assert int(payload["expires_in_seconds"]) == 900
+    finally:
+        client.close()
+        engine.dispose()
+
+
+def test_request_url_normalizes_flat_policy_fields(tmp_path, monkeypatch):
+    client, engine = _build_test_client(tmp_path)
+    try:
+        token = _register_and_login(client, email="dashscope-upload-flat-policy@example.com")
+
+        monkeypatch.setattr(dashscope_upload_router, "DASHSCOPE_API_KEY", "test-api-key")
+
+        def fake_get(url: str, *, headers: dict, params: dict, timeout: int):
+            assert "uploads" in url
+            assert params["action"] == "getPolicy"
+            return _FakeResponse(
+                status_code=200,
+                payload={
+                    "data": {
+                        "upload_host": "https://oss.example.com",
+                        "upload_dir": "uploads/20260326/session-abc123",
+                        "oss_access_key_id": "ak",
+                        "signature": "sig",
+                        "policy": "p",
+                        "x_oss_object_acl": "private",
+                        "x_oss_forbid_overwrite": "true",
+                        "expires_in_seconds": 1200,
+                    }
+                },
+            )
+
+        monkeypatch.setattr(dashscope_upload_router.requests, "get", fake_get)
+
+        resp = client.post(
+            "/api/dashscope-upload/request-url",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"filename": "demo.mp4", "content_type": "video/mp4"},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["ok"] is True
+        assert payload["upload_url"] == "https://oss.example.com"
+        assert payload["upload_dir"] == "uploads/20260326/session-abc123"
+        assert payload["file_id"] == "uploads/20260326/session-abc123/demo.mp4"
+        assert payload["oss_fields"]["OSSAccessKeyId"] == "ak"
+        assert payload["oss_fields"]["Signature"] == "sig"
+        assert payload["oss_fields"]["policy"] == "p"
+        assert payload["oss_fields"]["x-oss-object-acl"] == "private"
+        assert payload["oss_fields"]["x-oss-forbid-overwrite"] == "true"
+        assert payload["oss_fields"]["key"] == "uploads/20260326/session-abc123/demo.mp4"
+        assert payload["oss_fields"]["x-oss-content-type"] == "video/mp4"
+        assert payload["oss_fields"]["success_action_status"] == "200"
     finally:
         client.close()
         engine.dispose()
