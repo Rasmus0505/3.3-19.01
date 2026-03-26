@@ -8,6 +8,7 @@ import time
 import traceback
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
@@ -467,18 +468,22 @@ def run_lesson_generation_task(
         normalized_input_mode = str(input_mode or "upload").strip().lower()
         _raise_if_task_control_requested(task_id, session_factory=session_factory)
         dashscope_file_id = str(artifacts.get("dashscope_file_id") or "").strip()
+        dashscope_file_url = str(artifacts.get("dashscope_file_url") or "").strip()
         if dashscope_file_id:
-            lesson = LessonService.generate_from_dashscope_file_id(
-                dashscope_file_id=dashscope_file_id,
-                source_filename=source_filename,
-                req_dir=req_dir,
-                owner_id=owner_id,
-                asr_model=effective_asr_model,
-                task_id=task_id,
-                semantic_split_enabled=semantic_split_enabled,
-                db=db,
-                progress_callback=_progress,
-            )
+            dashscope_kwargs: dict[str, Any] = {
+                "dashscope_file_id": dashscope_file_id,
+                "source_filename": source_filename,
+                "req_dir": req_dir,
+                "owner_id": owner_id,
+                "asr_model": effective_asr_model,
+                "task_id": task_id,
+                "semantic_split_enabled": semantic_split_enabled,
+                "db": db,
+                "progress_callback": _progress,
+            }
+            if dashscope_file_url:
+                dashscope_kwargs["dashscope_file_url"] = dashscope_file_url
+            lesson = LessonService.generate_from_dashscope_file_id(**dashscope_kwargs)
         elif normalized_input_mode == "local_asr":
             local_payload = json.loads(Path(source_path).read_text(encoding="utf-8"))
             lesson = LessonService.generate_from_local_asr_payload(
@@ -614,6 +619,7 @@ def create_lesson_task_from_dashscope_file(
     asr_model: str,
     semantic_split_enabled: bool | None,
     dashscope_file_id: str,
+    dashscope_file_url: str | None = None,
     db: Session,
 ) -> dict[str, object]:
     task_id = build_task_id()
@@ -626,11 +632,14 @@ def create_lesson_task_from_dashscope_file(
         normalized_dashscope_file_id = str(dashscope_file_id or "").strip()
         if not normalized_dashscope_file_id:
             raise ValueError("dashscope_file_id is required")
+        normalized_dashscope_file_url = str(dashscope_file_url or "").strip()
         source_filename = Path(normalized_dashscope_file_id).name.strip() or "dashscope-direct-upload"
         source_filename = source_filename[:255]
         source_marker_path = req_dir / "dashscope_file_id.txt"
         source_marker_path.write_text(normalized_dashscope_file_id, encoding="utf-8")
         artifacts_patch: dict[str, object] = {"dashscope_file_id": normalized_dashscope_file_id}
+        if normalized_dashscope_file_url:
+            artifacts_patch["dashscope_file_url"] = normalized_dashscope_file_url
         source_path_for_task = str(source_marker_path)
 
         model_resolution = _resolve_task_asr_models(asr_model)

@@ -48,7 +48,19 @@ def test_get_file_signed_url_uses_flattened_output_when_needed(monkeypatch):
     assert signed_url == "https://example.com/from-flattened"
 
 
-def test_get_file_signed_url_falls_back_to_oss_when_missing_signed_url(monkeypatch):
+def test_get_file_signed_url_accepts_http_input_without_meta_lookup(monkeypatch):
+    monkeypatch.setattr(dashscope_storage.dashscope, "api_key", "test-api-key")
+
+    def fake_get(*_args, **_kwargs):
+        raise AssertionError("Files.get should not be called when file_id is already an URL")
+
+    monkeypatch.setattr(dashscope_storage.Files, "get", fake_get)
+
+    signed_url = dashscope_storage.get_file_signed_url("https://oss.example.com/uploads/2026/demo.mp4")
+    assert signed_url == "https://oss.example.com/uploads/2026/demo.mp4"
+
+
+def test_get_file_signed_url_raises_when_missing_signed_url(monkeypatch):
     monkeypatch.setattr(dashscope_storage.dashscope, "api_key", "test-api-key")
     monkeypatch.setattr(
         dashscope_storage.Files,
@@ -62,9 +74,10 @@ def test_get_file_signed_url_falls_back_to_oss_when_missing_signed_url(monkeypat
         ),
     )
 
-    file_id = "dashscope-instant/session-abc123/demo.mp4"
-    signed_url = dashscope_storage.get_file_signed_url(file_id)
-    assert signed_url == f"oss://{file_id}"
+    with pytest.raises(dashscope_storage.AsrError) as exc_info:
+        dashscope_storage.get_file_signed_url("dashscope-instant/session-abc123/demo.mp4")
+
+    assert exc_info.value.code == "DASHSCOPE_STORAGE_SIGNED_URL_MISSING"
 
 
 def test_get_file_signed_url_requires_file_id(monkeypatch):
