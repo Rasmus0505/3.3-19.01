@@ -39,6 +39,7 @@ class DashScopeUploadUrlResponse(BaseModel):
     upload_dir: str
     oss_fields: dict[str, Any]
     file_id: str
+    file_url: str
     expires_in_seconds: int
 
 
@@ -238,13 +239,15 @@ def request_dashscope_upload_url(
             object_key,
             sorted(list(oss_fields.keys())) if isinstance(oss_fields, dict) else [],
         )
+        file_id = object_key or upload_dir
         return DashScopeUploadUrlResponse(
             ok=True,
             upload_url=upload_url,
             upload_host=upload_host,
             upload_dir=upload_dir,
             oss_fields=dict(oss_fields) if isinstance(oss_fields, dict) else {},
-            file_id=object_key or upload_dir,
+            file_id=file_id,
+            file_url=f"oss://{file_id}" if file_id else "",
             expires_in_seconds=max(1, expires_in),
         )
     except _PolicyError as exc:

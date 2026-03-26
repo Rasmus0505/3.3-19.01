@@ -24,6 +24,20 @@ def test_resolve_dashscope_asr_source_url_prefers_signed_url_lookup(monkeypatch)
     assert resolved == "https://signed.example.com/uploads/20260326/demo.mp4?token=abc123"
 
 
+def test_resolve_dashscope_asr_source_url_prefers_oss_url_without_signed_lookup(monkeypatch):
+    def fake_get_file_signed_url(_file_id: str) -> str:
+        raise AssertionError("get_file_signed_url should not be called for oss:// fallback")
+
+    monkeypatch.setattr(lesson_service_module, "get_file_signed_url", fake_get_file_signed_url)
+
+    resolved = lesson_service_module._resolve_dashscope_asr_source_url(
+        dashscope_file_id="dashscope-instant/20260327/demo.mp4",
+        dashscope_file_url="oss://dashscope-instant/20260327/demo.mp4",
+    )
+
+    assert resolved == "oss://dashscope-instant/20260327/demo.mp4"
+
+
 def test_resolve_dashscope_asr_source_url_falls_back_to_client_url(monkeypatch):
     def fake_get_file_signed_url(_file_id: str) -> str:
         raise AsrError("DASHSCOPE_STORAGE_FILE_GET_FAILED", "查询 DashScope 文件失败", "boom")

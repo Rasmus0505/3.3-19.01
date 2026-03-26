@@ -166,12 +166,16 @@ def _call_with_optional_request_timeout(func, /, *args, request_timeout: int | N
 def _create_task(model: str, signed_url: str, *, request_timeout: int | None = None) -> Any:
     from dashscope.audio.qwen_asr import QwenTranscription
     if model == _get_qwen_model():
+        headers: dict[str, str] = {}
+        if str(signed_url or "").strip().startswith("oss://"):
+            headers["X-DashScope-OssResourceResolve"] = "enable"
         return _call_with_optional_request_timeout(
             QwenTranscription.async_call,
             model=model,
             file_url=signed_url,
             enable_words=True,
             enable_itn=False,
+            headers=headers or None,
             request_timeout=request_timeout,
         )
     raise AsrError("INVALID_MODEL", "不支持的模型", model)

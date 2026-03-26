@@ -85,6 +85,7 @@ def test_request_url_success(tmp_path, monkeypatch):
         assert payload["upload_dir"] == "uploads/20260326/demo.mp4"
         assert payload["upload_url"] == "https://oss.example.com"
         assert payload["file_id"] == "uploads/20260326/demo.mp4"
+        assert payload["file_url"] == "oss://uploads/20260326/demo.mp4"
         assert payload["oss_fields"]["policy"] == "p"
         assert payload["oss_fields"]["key"] == "uploads/20260326/demo.mp4"
         assert payload["oss_fields"]["x-oss-content-type"] == "video/mp4"
@@ -134,6 +135,7 @@ def test_request_url_normalizes_flat_policy_fields(tmp_path, monkeypatch):
         assert payload["upload_url"] == "https://oss.example.com"
         assert payload["upload_dir"] == "uploads/20260326/session-abc123"
         assert payload["file_id"] == "uploads/20260326/session-abc123/demo.mp4"
+        assert payload["file_url"] == "oss://uploads/20260326/session-abc123/demo.mp4"
         assert payload["oss_fields"]["OSSAccessKeyId"] == "ak"
         assert payload["oss_fields"]["Signature"] == "sig"
         assert payload["oss_fields"]["policy"] == "p"
@@ -179,6 +181,7 @@ def test_request_url_sanitizes_non_ascii_storage_key(tmp_path, monkeypatch):
         payload = resp.json()
         assert payload["ok"] is True
         assert payload["file_id"].startswith("dashscope-instant/session-abc123/2026-03-27/upload-slot/")
+        assert payload["file_url"].startswith("oss://dashscope-instant/session-abc123/2026-03-27/upload-slot/")
         assert payload["file_id"].endswith(".mp4")
         assert payload["oss_fields"]["key"] == payload["file_id"]
         assert "测试" not in payload["file_id"]
@@ -297,6 +300,7 @@ def test_b1_request_url_then_create_task_with_dashscope_file_id(tmp_path, monkey
         )
         assert request_url_resp.status_code == 200
         file_id = request_url_resp.json()["file_id"]
+        file_url = request_url_resp.json()["file_url"]
 
         create_task_resp = client.post(
             "/api/lessons/tasks",
@@ -305,6 +309,7 @@ def test_b1_request_url_then_create_task_with_dashscope_file_id(tmp_path, monkey
                 "asr_model": "qwen3-asr-flash-filetrans",
                 "semantic_split_enabled": "false",
                 "dashscope_file_id": file_id,
+                "dashscope_file_url": file_url,
                 "source_filename": "full-flow.mp4",
             },
         )
@@ -313,7 +318,7 @@ def test_b1_request_url_then_create_task_with_dashscope_file_id(tmp_path, monkey
         assert payload["ok"] is True
         assert payload["task_id"] == "task-b1-flow-001"
         assert recorded["dashscope_file_id"] == "uploads/20260326/full-flow.mp4"
-        assert recorded["dashscope_file_url"] == ""
+        assert recorded["dashscope_file_url"] == "oss://uploads/20260326/full-flow.mp4"
         assert recorded["source_filename"] == "full-flow.mp4"
     finally:
         client.close()

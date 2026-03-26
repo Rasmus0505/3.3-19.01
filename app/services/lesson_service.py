@@ -82,6 +82,9 @@ def _resolve_dashscope_asr_source_url(*, dashscope_file_id: str, dashscope_file_
     normalized_file_id = str(dashscope_file_id or "").strip()
     normalized_file_url = str(dashscope_file_url or "").strip()
 
+    if normalized_file_url.startswith("oss://"):
+        return normalized_file_url
+
     if normalized_file_id:
         try:
             return normalize_dashscope_file_url(get_file_signed_url(normalized_file_id))
@@ -2715,8 +2718,8 @@ class LessonService:
         usage_hit = False
 
         try:
-            # Resolve a fresh signed URL from the canonical file_id first.
-            # Client-provided URLs are only a fallback for older artifacts.
+            # Browser direct-upload may provide an oss:// resource URL.
+            # Prefer that fast path when available, otherwise refresh from file_id.
             signed_url = _resolve_dashscope_asr_source_url(
                 dashscope_file_id=dashscope_file_id,
                 dashscope_file_url=dashscope_file_url,
