@@ -1,7 +1,9 @@
 """DashScope pre-signed upload policy router for Bottle 2.0 direct upload."""
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
@@ -22,6 +24,7 @@ logger = logging.getLogger(__name__)
 DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/api/v1"
 POLICY_ENDPOINT = f"{DASHSCOPE_BASE_URL}/uploads"
 REQUEST_TIMEOUT_SECONDS = 30
+_SAFE_OBJECT_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 class DashScopeUploadUrlRequest(BaseModel):
@@ -53,9 +56,28 @@ def _normalize_filename(filename: str) -> str:
     return parts[-1] if parts else "upload.bin"
 
 
+def _build_storage_filename(filename: str) -> str:
+    original_name = _normalize_filename(filename)
+    path = PurePosixPath(original_name)
+    suffix = str(path.suffix or "")[:32]
+    stem = path.stem or "upload"
+    sanitized_stem = _SAFE_OBJECT_FILENAME_RE.sub("-", stem).strip("._-")
+    if not sanitized_stem:
+        sanitized_stem = "upload"
+
+    if sanitized_stem != stem:
+        digest = hashlib.sha1(original_name.encode("utf-8")).hexdigest()[:10]
+        sanitized_stem = f"{sanitized_stem}-{digest}"
+
+    sanitized_suffix = _SAFE_OBJECT_FILENAME_RE.sub("", suffix)
+    if sanitized_suffix and not sanitized_suffix.startswith("."):
+        sanitized_suffix = f".{sanitized_suffix}"
+    return f"{sanitized_stem}{sanitized_suffix}" if sanitized_suffix else sanitized_stem
+
+
 def _resolve_object_key(upload_dir: str, filename: str) -> str:
     normalized_dir = str(upload_dir or "").strip().replace("\\", "/").strip("/")
-    normalized_name = _normalize_filename(filename)
+    normalized_name = _build_storage_filename(filename)
     if not normalized_dir:
         return normalized_name
     if "${filename}" in normalized_dir:

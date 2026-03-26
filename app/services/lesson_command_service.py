@@ -686,6 +686,7 @@ def create_lesson_task_from_dashscope_file(
     semantic_split_enabled: bool | None,
     dashscope_file_id: str,
     dashscope_file_url: str | None = None,
+    source_filename: str | None = None,
     db: Session,
 ) -> dict[str, object]:
     task_id = build_task_id()
@@ -699,8 +700,10 @@ def create_lesson_task_from_dashscope_file(
         if not normalized_dashscope_file_id:
             raise ValueError("dashscope_file_id is required")
         normalized_dashscope_file_url = str(dashscope_file_url or "").strip()
-        source_filename = Path(normalized_dashscope_file_id).name.strip() or "dashscope-direct-upload"
-        source_filename = source_filename[:255]
+        normalized_source_filename = str(source_filename or "").strip()
+        if not normalized_source_filename:
+            normalized_source_filename = Path(normalized_dashscope_file_id).name.strip() or "dashscope-direct-upload"
+        normalized_source_filename = normalized_source_filename[:255]
         source_marker_path = req_dir / "dashscope_file_id.txt"
         source_marker_path.write_text(normalized_dashscope_file_id, encoding="utf-8")
         artifacts_patch: dict[str, object] = {"dashscope_file_id": normalized_dashscope_file_id}
@@ -715,7 +718,7 @@ def create_lesson_task_from_dashscope_file(
             create_task(
                 task_id=task_id,
                 owner_user_id=owner_user_id,
-                source_filename=source_filename,
+                source_filename=normalized_source_filename,
                 asr_model=asr_model,
                 requested_asr_model=str(model_resolution["requested_asr_model"]),
                 effective_asr_model=effective_asr_model,
