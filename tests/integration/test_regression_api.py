@@ -547,7 +547,7 @@ def test_subtitle_settings_migration_idempotent_when_table_exists(tmp_path):
     assert mt_models == ["qwen-mt-flash"]
 
 
-def test_lesson_generation_tasks_repair_migration_recreates_missing_table(tmp_path):
+def test_lesson_generation_repair_migration_recreates_missing_table(tmp_path):
     repo_root = Path(__file__).resolve().parents[1]
     db_file = tmp_path / "lesson_task_repair.db"
     database_url = f"sqlite:///{db_file.as_posix()}"
@@ -2931,7 +2931,7 @@ def test_extract_local_asr_audio_route_returns_file(test_client, monkeypatch, tm
     assert resp.headers["content-type"].startswith("audio/ogg")
 
 
-def test_create_local_asr_lesson_task(test_client, monkeypatch, tmp_path):
+def test_create_local_asr_lesson_job(test_client, monkeypatch, tmp_path):
     client, session_factory, _ = test_client
     token = _register_and_login(client, email="local-asr@example.com")
     headers = {"Authorization": f"Bearer {token}"}
@@ -3023,7 +3023,7 @@ def test_create_local_asr_lesson_task(test_client, monkeypatch, tmp_path):
         verify_session.close()
 
 
-def test_create_local_asr_lesson_task_persists_task_workspace_pointer(test_client, monkeypatch):
+def test_create_local_asr_lesson_workspace_pointer(test_client, monkeypatch):
     client, session_factory, _ = test_client
     token = _register_and_login(client, email="local-asr-workspace@example.com")
     headers = {"Authorization": f"Bearer {token}"}
