@@ -1,3 +1,5 @@
+import { api } from "../../../shared/api/client";
+
 export interface AuthPayload {
   email?: string;
   password?: string;
@@ -54,7 +56,7 @@ export async function postAuthJson<T = any>(
   fallbackMessage = "请求失败",
 ): Promise<AuthApiResult<T>> {
   try {
-    const response = await fetch(buildApiUrl(path), {
+    const response = await api(path, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
