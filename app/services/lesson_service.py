@@ -3123,12 +3123,6 @@ class LessonService:
                     "segment_total": asr_progress_counters["segment_total"],
                 },
             )
-            persist_lesson_workspace_summary(
-                lesson_id=lesson.id,
-                trace_id=translation_trace_id,
-                variant_result_path=variant_result_path,
-                translation_checkpoint_path=translation_checkpoint_path,
-            )
             lesson.subtitle_cache_seed = LessonService.build_subtitle_cache_seed(asr_payload=asr_payload, variant=variant)
             logger.info(
                 "[DEBUG] lesson.generate translate_cost owner_id=%s lesson_id=%s model=%s total_tokens=%s actual_cost_amount_cents=%s failed=%s requests=%s",
@@ -3156,6 +3150,19 @@ class LessonService:
             db.refresh(lesson)
             lesson.task_result_meta = dict(task_result_meta)
             lesson.translation_debug = dict(translation_debug)
+            lesson.workspace_summary = persist_lesson_workspace_summary(
+                owner_user_id=owner_id,
+                lesson_id=int(lesson.id),
+                source_filename=source_filename,
+                source_duration_ms=int(actual_duration_ms or 0),
+                input_mode="upload",
+                runtime_kind="cloud_api",
+                task_id=str(task_id or ""),
+                status="succeeded",
+                current_text=str(task_result_meta.get("result_message") or "课程已生成完成"),
+                subtitle_cache_seed=lesson.subtitle_cache_seed,
+                translation_debug=translation_debug,
+            )
             try:
                 _write_json_file(
                     lesson_result_path,

@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: ready
 stopped_at: Phase 01.1 complete
-last_updated: "2026-03-27T01:27:00+08:00"
-last_activity: 2026-03-27 - Completed quick task 260327-1xf for DashScope lesson builder recovery
+last_updated: "2026-03-27T01:45:00+08:00"
+last_activity: 2026-03-27 - Completed quick task 260327-2ca for DashScope workspace summary recovery
 progress:
   total_phases: 7
   completed_phases: 2
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-03-27)
 Phase: 02 (desktop-local-generation) - READY
 Plan: Not started
 Status: Phase 01.1 complete - ready for next phase planning
-Last activity: 2026-03-27 - Completed quick task 260327-1xf for DashScope lesson builder recovery
+Last activity: 2026-03-27 - Completed quick task 260327-2ca for DashScope workspace summary recovery
 
 Progress: [██████████] 100%
 
@@ -90,7 +90,8 @@ None yet.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
-| 260327-1xf | Fix LessonService._build_one_lesson missing in DashScope course generation path | 2026-03-27 | pending | [260327-1xf-fix-lessonservice-build-one-lesson-missi](../../quick/260327-1xf-fix-lessonservice-build-one-lesson-missi/) |
+| 260327-1xf | Fix LessonService._build_one_lesson missing in DashScope course generation path | 2026-03-27 | 4037e2f9 | [260327-1xf-fix-lessonservice-build-one-lesson-missi](../../quick/260327-1xf-fix-lessonservice-build-one-lesson-missi/) |
+| 260327-2ca | Fix persist_lesson_workspace_summary signature mismatch in DashScope save stage | 2026-03-27 | pending | [260327-2ca-fix-persist-lesson-workspace-summary-sig](../../quick/260327-2ca-fix-persist-lesson-workspace-summary-sig/) |
 
 ## Session Continuity
 

@@ -5162,7 +5162,6 @@ def test_generate_from_dashscope_file_id_uses_builtin_lesson_builder(test_client
                 },
             },
         )
-        monkeypatch.setattr(lesson_service_module, "persist_lesson_workspace_summary", lambda **_kwargs: None)
         monkeypatch.setattr(
             lesson_service_module.LessonService,
             "build_subtitle_variant",
@@ -5227,6 +5226,7 @@ def test_generate_from_dashscope_file_id_uses_builtin_lesson_builder(test_client
             .filter(WalletLedger.lesson_id == lesson.id, WalletLedger.event_type == "consume_translate")
             .one()
         )
+        workspace_summary = lesson.workspace_summary
 
         assert lesson.id > 0
         assert lesson.title == "direct"
@@ -5242,6 +5242,13 @@ def test_generate_from_dashscope_file_id_uses_builtin_lesson_builder(test_client
         assert translation_log.total_tokens == 60
         assert mt_ledger.model_name == "qwen-mt-flash"
         assert mt_ledger.delta_points == -1
+        assert workspace_summary["scope"] == "lesson"
+        assert workspace_summary["task_id"] == "task_dashscope_builder"
+        assert workspace_summary["lesson_id"] == lesson.id
+        assert workspace_summary["source"]["input_mode"] == "upload"
+        assert workspace_summary["source"]["runtime_kind"] == "cloud_api"
+        assert workspace_summary["latest_subtitle_snapshot"]["items"][0]["text_en"] == "hello world"
+        assert Path(workspace_summary["summary_path"]).exists()
     finally:
         session.close()
 
