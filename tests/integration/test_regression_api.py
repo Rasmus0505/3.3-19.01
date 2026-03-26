@@ -5129,6 +5129,123 @@ def test_dashscope_403_file_access_retry_task_hides_first_failure_and_skips_fall
         verify_session.close()
 
 
+def test_generate_from_dashscope_file_id_uses_builtin_lesson_builder(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    _register_and_login(client, email="dashscope-builder@example.com")
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "dashscope-builder@example.com").one()
+        account = get_or_create_wallet_account(session, user.id, for_update=True)
+        account.balance_points = 500
+        session.add(account)
+        session.commit()
+
+        from app.services import lesson_service as lesson_service_module
+
+        req_dir = tmp_path / "req_dashscope_builder"
+        req_dir.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr(lesson_service_module, "get_file_signed_url", lambda _file_id: "https://signed.example.com/direct")
+        monkeypatch.setattr(
+            lesson_service_module,
+            "transcribe_signed_url",
+            lambda _signed_url, **_kwargs: {
+                "usage_seconds": 1,
+                "asr_result_json": {
+                    "transcripts": [
+                        {
+                            "text": "hello world",
+                            "sentences": [{"text": "hello world", "begin_time": 0, "end_time": 1000}],
+                        }
+                    ]
+                },
+            },
+        )
+        monkeypatch.setattr(lesson_service_module, "persist_lesson_workspace_summary", lambda **_kwargs: None)
+        monkeypatch.setattr(
+            lesson_service_module.LessonService,
+            "build_subtitle_variant",
+            staticmethod(
+                lambda **_kwargs: {
+                    "sentences": [
+                        {
+                            "idx": 0,
+                            "begin_ms": 0,
+                            "end_ms": 1000,
+                            "text_en": "hello world",
+                            "text_zh": "你好世界",
+                            "tokens": ["hello", "world"],
+                            "audio_url": None,
+                        }
+                    ],
+                    "translation_attempt_records": [
+                        {
+                            "sentence_idx": 0,
+                            "attempt_no": 1,
+                            "provider": "dashscope_compatible",
+                            "model_name": "qwen-mt-flash",
+                            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                            "input_text_preview": "hello world",
+                            "provider_request_id": "req_dashscope_builder",
+                            "status_code": 200,
+                            "finish_reason": "stop",
+                            "prompt_tokens": 40,
+                            "completion_tokens": 20,
+                            "total_tokens": 60,
+                            "success": True,
+                            "error_code": "",
+                            "error_message": "",
+                            "started_at": datetime.utcnow(),
+                            "finished_at": datetime.utcnow(),
+                        }
+                    ],
+                    "translation_usage": {"total_tokens": 60},
+                    "translate_failed_count": 0,
+                    "translation_request_count": 1,
+                    "translation_success_request_count": 1,
+                    "latest_translate_error_summary": "",
+                }
+            ),
+        )
+
+        lesson = LessonService.generate_from_dashscope_file_id(
+            dashscope_file_id="uploads/test/direct.mp4",
+            source_filename="direct.mp4",
+            req_dir=req_dir,
+            owner_id=user.id,
+            asr_model=QWEN_ASR_MODEL,
+            db=session,
+            task_id="task_dashscope_builder",
+            semantic_split_enabled=False,
+        )
+
+        stored = session.query(LessonSentence).filter(LessonSentence.lesson_id == lesson.id).order_by(LessonSentence.idx.asc()).all()
+        translation_log = session.query(TranslationRequestLog).filter(TranslationRequestLog.task_id == "task_dashscope_builder").one()
+        mt_ledger = (
+            session.query(WalletLedger)
+            .filter(WalletLedger.lesson_id == lesson.id, WalletLedger.event_type == "consume_translate")
+            .one()
+        )
+
+        assert lesson.id > 0
+        assert lesson.title == "direct"
+        assert lesson.source_filename == "direct.mp4"
+        assert lesson.asr_model == QWEN_ASR_MODEL
+        assert lesson.status == "ready"
+        assert lesson.duration_ms == 1000
+        assert lesson.source_duration_ms == 1000
+        assert len(stored) == 1
+        assert stored[0].text_en == "hello world"
+        assert stored[0].text_zh == "你好世界"
+        assert translation_log.lesson_id == lesson.id
+        assert translation_log.total_tokens == 60
+        assert mt_ledger.model_name == "qwen-mt-flash"
+        assert mt_ledger.delta_points == -1
+    finally:
+        session.close()
+
+
 def test_dashscope_403_file_access_retry_failure_persists_recovery_debug(test_client, monkeypatch, tmp_path):
     client, session_factory, _ = test_client
     token = _register_and_login(client, email="dashscope-403-failed@example.com")

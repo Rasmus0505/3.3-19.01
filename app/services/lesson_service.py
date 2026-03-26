@@ -10,6 +10,7 @@ import time
 from datetime import date, datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -1342,6 +1343,104 @@ class LessonService:
         }
 
     @staticmethod
+    def _build_one_lesson(
+        lesson: Lesson,
+        *,
+        owner_id: int,
+        asr_payload: dict[str, Any],
+        variant: dict[str, Any],
+        db: Session,
+        source_filename: str = "",
+        asr_model: str = "",
+        source_duration_ms: int = 0,
+        media_storage: str = "client_indexeddb",
+        translation_trace_id: str | None = None,
+        task_id: str | None = None,
+        translation_usage: dict[str, Any] | None = None,
+        translation_debug: dict[str, Any] | None = None,
+        duration_ms: int | None = None,
+        lesson_status: str = "",
+        reserved_points: int = 0,
+        actual_points: int = 0,
+        translation_cost_amount_cents: int = 0,
+        settle_note: str = "",
+        translation_consume_note: str = "",
+    ) -> SimpleNamespace:
+        runtime_sentences = list(variant.get("sentences") or [])
+        normalized_translation_debug = dict(translation_debug or {})
+        failed_sentences = int(
+            normalized_translation_debug.get("failed_sentences", variant.get("translate_failed_count", 0)) or 0
+        )
+        resolved_duration_ms = max(1, int(duration_ms or estimate_duration_ms(asr_payload, runtime_sentences) or 1))
+        resolved_source_duration_ms = max(1, int(source_duration_ms or lesson.source_duration_ms or resolved_duration_ms or 1))
+        resolved_actual_points = max(0, int(actual_points or 0))
+        resolved_reserved_points = max(0, int(reserved_points or 0))
+        resolved_translation_cost_amount_cents = max(0, int(translation_cost_amount_cents or 0))
+
+        lesson.user_id = owner_id
+        if not str(getattr(lesson, "title", "") or "").strip():
+            lesson.title = Path(source_filename or "lesson").stem[:200] or "lesson"
+        lesson.source_filename = str(source_filename or getattr(lesson, "source_filename", "") or "")
+        lesson.asr_model = str(asr_model or getattr(lesson, "asr_model", "") or "")
+        lesson.duration_ms = resolved_duration_ms
+        lesson.media_storage = str(media_storage or getattr(lesson, "media_storage", "") or "client_indexeddb")
+        lesson.source_duration_ms = resolved_source_duration_ms
+        lesson.status = str(lesson_status or getattr(lesson, "status", "") or ("partial_ready" if failed_sentences > 0 else "ready"))
+
+        db.add(lesson)
+        db.flush()
+
+        errors: list[str] = []
+        for sentence in runtime_sentences:
+            try:
+                db.add(
+                    LessonSentence(
+                        lesson_id=lesson.id,
+                        idx=int(sentence["idx"]),
+                        begin_ms=int(sentence["begin_ms"]),
+                        end_ms=int(sentence["end_ms"]),
+                        text_en=str(sentence["text_en"]),
+                        text_zh=str(sentence["text_zh"]),
+                        tokens_json=[str(item) for item in list(sentence.get("tokens") or [])],
+                        audio_clip_path=None,
+                    )
+                )
+            except Exception as exc:
+                errors.append(str(exc))
+
+        create_progress(db, lesson_id=lesson.id, user_id=owner_id)
+        _append_translation_request_logs_safe(
+            db,
+            trace_id=translation_trace_id,
+            user_id=owner_id,
+            task_id=task_id,
+            lesson_id=lesson.id,
+            records=list(variant.get("translation_attempt_records") or []),
+        )
+        settle_reserved_points(
+            db,
+            user_id=owner_id,
+            model_name=lesson.asr_model,
+            reserved_points=resolved_reserved_points,
+            actual_points=resolved_actual_points,
+            duration_ms=resolved_source_duration_ms,
+            note=str(settle_note or f"课程生成结算，lesson_id={lesson.id}"),
+        )
+        consume_points(
+            db,
+            user_id=owner_id,
+            points=resolved_translation_cost_amount_cents,
+            model_name=MT_MODEL,
+            lesson_id=lesson.id,
+            event_type=EVENT_CONSUME_TRANSLATE,
+            note=str(
+                translation_consume_note
+                or f"课程生成翻译扣费，total_tokens={int((translation_usage or {}).get('total_tokens', 0) or 0)}"
+            ),
+        )
+        return SimpleNamespace(errors=errors)
+
+    @staticmethod
     def generate_from_upload(
         upload_file: UploadFile,
         req_dir: Path,
@@ -2554,14 +2653,6 @@ class LessonService:
             db.commit()
             db.refresh(lesson)
             lesson.subtitle_cache_seed = LessonService.build_subtitle_cache_seed(asr_payload=asr_payload, variant=variant)
-            if isinstance(dashscope_recovery, dict):
-                lesson.subtitle_cache_seed["dashscope_recovery"] = dict(dashscope_recovery)
-                if task_id:
-                    patch_task_artifacts(
-                        task_id,
-                        artifacts_patch={"dashscope_recovery": dict(dashscope_recovery)},
-                        db=db,
-                    )
             lesson.task_result_meta = dict(task_result_meta)
             lesson.translation_debug = dict(translation_debug)
             try:
@@ -2943,6 +3034,11 @@ class LessonService:
                 "usage": translation_usage,
                 "latest_error_summary": str(variant.get("latest_translate_error_summary") or ""),
             }
+            failed_count = int(variant.get("translate_failed_count", 0) or 0)
+            partial_translation = failed_count > 0
+            lesson_status = "partial_ready" if partial_translation else "ready"
+            duration_ms = estimate_duration_ms(asr_payload, runtime_sentences)
+            task_result_meta = LessonService._build_task_result_meta(variant=variant, translation_debug=translation_debug)
             _emit_progress(
                 progress_callback,
                 stage_key="translate_zh",
@@ -2960,7 +3056,6 @@ class LessonService:
             )
             lesson: Lesson = Lesson()
             lesson.title = Path(source_filename or "lesson").stem[:200] or "lesson"
-            task_result_meta: dict[str, Any] = {}
             _emit_progress(
                 progress_callback,
                 stage_key="build_lesson",
@@ -2982,10 +3077,26 @@ class LessonService:
                 asr_payload=asr_payload,
                 variant=variant,
                 db=db,
+                source_filename=source_filename,
+                asr_model=asr_model,
+                source_duration_ms=actual_duration_ms or duration_ms,
+                media_storage="client_indexeddb",
                 translation_trace_id=translation_trace_id,
                 task_id=task_id,
                 translation_usage=translation_usage,
                 translation_debug=translation_debug,
+                duration_ms=duration_ms,
+                lesson_status=lesson_status,
+                reserved_points=reserved_points,
+                actual_points=int(actual_points or 0),
+                translation_cost_amount_cents=translation_cost_amount_cents,
+                settle_note=(
+                    f"课程生成结算（DashScope直传），预扣流水#{reserve_ledger_id}，预扣金额={reserved_points}分，"
+                    f"实耗金额={actual_points}分，差额={points_diff}分，usage_seconds={usage_seconds if usage_hit else 'fallback'}"
+                ),
+                translation_consume_note=(
+                    f"课程生成翻译扣费（DashScope直传），total_tokens={int(translation_usage.get('total_tokens', 0) or 0)}"
+                ),
             )
             if build_result.errors:
                 task_result_meta = {
