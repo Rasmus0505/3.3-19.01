@@ -19,14 +19,14 @@
 
 ### Web Generation
 
-- [ ] **WEB-01**: Web users can upload local media and generate lessons through Bottle 2.0 when the browser/runtime path supports it
+- [x] **WEB-01**: Web users can upload local media and generate lessons through Bottle 2.0 when the browser/runtime path supports it
 - [ ] **WEB-02**: Web users receive clear feedback when a desired feature is desktop-only or temporarily unavailable
-- [ ] **WEB-03**: Web generation avoids turning the central server into the default heavy media-processing bottleneck
+- [x] **WEB-03**: Web generation avoids turning the central server into the default heavy media-processing bottleneck
 
 ### Desktop Generation
 
 - [ ] **DESK-01**: Desktop users can generate lessons with Bottle 1.0 on their local machine
-- [ ] **DESK-02**: Desktop users can generate lessons with Bottle 2.0 cloud ASR from the same product surface
+- [x] **DESK-02**: Desktop users can generate lessons with Bottle 2.0 cloud ASR from the same product surface
 - [ ] **DESK-03**: Desktop users can prepare Bottle 1.0 without manual model/tool setup knowledge
 - [ ] **DESK-04**: Desktop users can import media from supported links through local tooling
 
@@ -74,11 +74,11 @@
 | BILL-01 | Phase 1 | Pending |
 | BILL-02 | Phase 5 | Pending |
 | BILL-03 | Phase 5 | Pending |
-| WEB-01 | Phase 1 | Pending |
+| WEB-01 | Phase 1 | Complete |
 | WEB-02 | Phase 1 | Pending |
-| WEB-03 | Phase 1 | Pending |
+| WEB-03 | Phase 1 | Complete |
 | DESK-01 | Phase 2 | Pending |
-| DESK-02 | Phase 1 | Pending |
+| DESK-02 | Phase 1 | Complete |
 | DESK-03 | Phase 2 | Pending |
 | DESK-04 | Phase 4 | Pending |
 | LESS-01 | Phase 3 | Pending |
