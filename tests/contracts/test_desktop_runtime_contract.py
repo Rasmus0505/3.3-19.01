@@ -374,7 +374,7 @@ def test_frontend_entry_switches_to_hash_router_for_desktop_renderer_build():
     assert "<AppRouter>" in admin_main_source
 
 
-def test_desktop_api_client_surfaces_missing_cloud_base_configuration():
+def test_requestCloudApi_desktop_api_client_surfaces_missing_cloud_base_configuration():
     api_client_source = API_CLIENT_FILE.read_text(encoding="utf-8")
 
     assert "Desktop cloud API base URL is not configured" in api_client_source
@@ -394,12 +394,24 @@ def test_auth_api_reuses_shared_desktop_bridge_client():
     assert "fetch(buildApiUrl(path)" not in auth_api_source
 
 
-def test_upload_panel_routes_oss_uploads_through_shared_upload_bridge():
+def test_uploadWithProgress_upload_panel_routes_oss_uploads_through_shared_upload_bridge():
     upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
 
     assert 'const uploadResult = await uploadWithProgress(uploadUrl, {' in upload_panel_source
     assert 'method: "POST"' in upload_panel_source
     assert 'if (!uploadResult.ok) {' in upload_panel_source
+
+
+def test_uploadWithProgress_upload_panel_exposes_bottle2_cloud_stage_model_and_desktop_guidance():
+    upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
+
+    assert "提交云端任务" in upload_panel_source
+    assert "转写中" in upload_panel_source
+    assert "生成课程" in upload_panel_source
+    assert "下载桌面客户端" in upload_panel_source
+    assert "VITE_DESKTOP_CLIENT_ENTRY_URL" in upload_panel_source
+    assert "2.0 GB" in upload_panel_source or "2 GB" in upload_panel_source
+    assert "12 小时" in upload_panel_source
 
 
 def test_offline_mode_uses_desktop_server_bridge_when_available():
