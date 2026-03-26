@@ -1,4 +1,4 @@
-﻿# Bottle English Learning
+# Bottle English Learning
 
 ## What This Is
 
@@ -23,14 +23,14 @@ Users can turn real English media into usable learning lessons quickly, without 
 - ✓ User can enter lesson-based learning and spelling practice flows — existing
 - ✓ Admin can inspect health, pricing, and operational controls — existing
 - ✓ Desktop client, local helper, and local ASR bundle flows already exist in the codebase — existing
+- ✓ Desktop client exposes the complete product capability set, including Bottle 1.0 local generation, Bottle 2.0 cloud generation, and link-to-video generation — validated in Phase 02
+- ✓ Non-technical learners can complete generation without manual ffmpeg/model/key steps — validated in Phase 02
+- ✓ Desktop helper auto-starts on Electron launch; users never perceive helper, model, or ASR source — validated in Phase 02
 
 ### Active
 
-- [ ] Desktop client exposes the complete product capability set, including Bottle 1.0 local generation, Bottle 2.0 cloud generation, and link-to-video generation
 - [ ] Web app supports the strongest browser-safe generation path, centered on Bottle 2.0 cloud generation
 - [ ] Both Bottle 1.0 and Bottle 2.0 are paid capabilities using platform-managed pricing and point deduction
-- [ ] Users never need to configure their own ASR API keys
-- [ ] Non-technical learners can complete generation without manual ffmpeg/model/key steps
 - [ ] Heavy media processing and large-file handling stay off the central server whenever practical
 
 ### Out of Scope
@@ -56,17 +56,16 @@ Users can turn real English media into usable learning lessons quickly, without 
 
 ## Current State
 
-- Phase 01.1 complete - Direct-upload DashScope 403 failures now self-heal once and preserve structured cloud file-access diagnostics.
-- Next focus: Phase 02 - Desktop Local Generation.
+- Phase 02 complete — Bottle 1.0 desktop local generation pipeline now complete. Faster-distil-small.en model bundled in installer. Helper auto-starts silently. User experience unified: no technical details exposed. Error handling: model corruption triggers re-download guidance. Phase 03 next.
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Desktop client is the primary product surface for full generation capabilities | Desktop can safely host local models, ffmpeg, yt-dlp, and local helper workflows | — Pending |
-| Web app centers on Bottle 2.0 cloud generation | Browser users still need a useful path, but browser-local heavy tooling is not reliable enough | — Pending |
-| Platform manages ASR keys instead of end users | Learners are non-technical and should pay with points/redeem codes rather than configure secrets | — Pending |
-| Server should stay light and avoid becoming the media processing bottleneck | Cost and infrastructure limits make centralized heavy processing a bad default | — Pending |
+| Desktop client is the primary product surface for full generation capabilities | Desktop can safely host local models, ffmpeg, yt-dlp, and local helper workflows | Validated in Phase 02 |
+| Web app centers on Bottle 2.0 cloud generation | Browser users still need a useful path, but browser-local heavy tooling is not reliable enough | Validated in Phase 02 |
+| Platform manages ASR keys instead of end users | Learners are non-technical and should pay with points/redeem codes rather than configure secrets | Validated in Phase 02 |
+| Server should stay light and avoid becoming the media processing bottleneck | Cost and infrastructure limits make centralized heavy processing a bad default | Validated in Phase 02 |
 | Generated media should become lesson/practice artifacts regardless of generation path | Users care about learning outcomes, not the underlying ASR route | — Pending |
 | Direct-upload DashScope file access failures should self-heal before surfacing to users | Signed URLs can expire or be rejected transiently; the product should repair that path without forcing users into manual fallback first | Validated in Phase 01.1 |
 
@@ -88,4 +87,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-27 after Phase 01.1 completion*
+*Last updated: 2026-03-27 after Phase 02 completion*
