@@ -138,6 +138,7 @@ class LessonTaskFailureDebugResponse(BaseModel):
     stages: list[LessonTaskStageResponse] = Field(default_factory=list)
     counters: LessonTaskCountersResponse = Field(default_factory=LessonTaskCountersResponse)
     translation_debug: LessonTaskTranslationDebugResponse | None = None
+    dashscope_recovery: dict[str, Any] | None = None
     failed_at: datetime | None = None
 
 
