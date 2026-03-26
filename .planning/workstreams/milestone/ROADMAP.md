@@ -61,7 +61,7 @@ Plans:
 
 Plans:
 - [x] 02-01: Harden local model/tool readiness and install experience
-- [ ] 02-02: Stabilize Bottle 1.0 desktop generation pipeline
+- [x] 02-02: Stabilize Bottle 1.0 desktop generation pipeline
 - [ ] 02-03: Improve local-generation error handling and recovery
 
 ### Phase 3: Lesson Output Consistency
