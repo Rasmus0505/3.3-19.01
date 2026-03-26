@@ -1,4 +1,4 @@
----
+﻿---
 phase: 01
 slug: shared-cloud-generation
 status: draft
@@ -7,9 +7,9 @@ wave_0_complete: false
 created: 2026-03-26
 ---
 
-# Phase 01 — 验证策略
+# Phase 01 — Validation Strategy
 
-> 面向本阶段执行过程的验证契约，用来控制反馈采样与验证完整性。
+> Per-phase validation contract for feedback sampling during execution.
 
 ---
 
@@ -51,8 +51,8 @@ created: 2026-03-26
 
 ## Wave 0 Requirements
 
-- [ ] 不需要新增测试框架，现有 pytest 基础设施已覆盖本阶段。
-- [ ] 如果当前测试未覆盖“直传是唯一主路径”这一事实，需要补 focused regression 测试。
+- [ ] No new framework install required — existing pytest infrastructure covers this phase.
+- [ ] Add any missing focused regression tests for the chosen direct-upload canonical path.
 
 ---
 
@@ -60,9 +60,9 @@ created: 2026-03-26
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| 网页端用户看到桌面专属弹窗和 CTA | WEB-02 | 弹窗位置和 CTA 层级是视觉行为 | 在 Web UI 中触发桌面专属场景，确认弹窗出现且右下角 CTA 可见 |
-| Web 和 Desktop 的 Bottle 2.0 阶段词汇一致 | DESK-02 | 跨运行时 UX 一致性最容易用真实交互确认 | 在两个运行时中分别启动 Bottle 2.0 任务，比较阶段名称和顺序 |
-| 大文件/边界文件会推荐桌面端而不是服务器兜底 | WEB-03 | 这是产品边界提示问题，自动化不容易完全表达 | 使用超大或边界文件，确认 UI 给出桌面端推荐而不是服务端 fallback |
+| Browser user sees desktop-only popup with CTA | WEB-02 | UX presentation and CTA placement are visual | In web UI, trigger a desktop-only Bottle 2.0 guidance case and verify popup copy plus bottom-right CTA are visible |
+| Web and desktop expose the same Bottle 2.0 stage vocabulary | DESK-02 | Cross-runtime UX consistency is easiest to confirm interactively | Start a Bottle 2.0 task in both runtimes and compare stage labels/order |
+| Large-file warning/recommend-desktop behavior is understandable | WEB-03 | Product wording and fallback guidance are UX-dependent | Use an oversized or edge-case file and confirm the UI recommends desktop rather than server fallback |
 
 ---
 

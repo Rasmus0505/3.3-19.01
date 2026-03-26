@@ -1,25 +1,25 @@
-# 架构研究
+﻿# Architecture Research
 
-**Project:** Bottle 英语学习产品
+**Project:** Bottle English Learning
 **Confidence:** HIGH for current structure
 
-## 推荐产品架构
+## Recommended Product Architecture
 
-1. 共享账户 / 钱包 / 课程领域，统一由后端持有
-2. 共享 Web + Desktop 渲染层，尽量共用产品界面
-3. 桌面端专属 local helper bridge，承载本地 ASR、ffmpeg、yt-dlp、URL 导入
-4. 共享的云端生成路径，同时服务网页端和桌面端
-5. 生成完成后统一进入课程/学习产物链路
+1. Shared account / wallet / lesson domain on the backend
+2. Shared web + desktop renderer UI for most product flows
+3. Desktop-only local helper bridge for local ASR, ffmpeg, yt-dlp, and URL import
+4. Cloud generation path that both web and desktop can invoke
+5. Unified lesson/practice pipeline after generation completes
 
-## 数据流原则
+## Data Flow Principle
 
-- 输入媒体应尽量在靠近用户设备的一侧完成准备工作。
-- 云端 ASR 用于设备不走本地处理或本地处理不是首选的场景。
-- 后端主要负责保存课程/任务/计费状态和最终学习产物，而不是默认承担重媒体处理。
+- Input media should be prepared as close to the user device as possible.
+- Cloud ASR should be used where device-local processing is not the chosen route.
+- The backend should persist lesson/task/billing state and final learning artifacts, not act as the default heavy media worker.
 
-## 构建顺序含义
+## Build Order Implication
 
-- 先稳定云端共享路径，因为它同时影响网页端和桌面端。
-- 再加固 Bottle 1.0 桌面端本地路径。
-- 再做桌面端链接导入，因为它依赖更稳定的本地 runtime 边界。
-- 最后再打磨学习一致性与后台定价运营体验。
+- Stabilize cloud generation path first because it is shared by web and desktop.
+- Harden Bottle 1.0 desktop local path next.
+- Add or refine desktop URL import after local runtime contracts are stable.
+- Polish learning consistency and admin pricing after generation paths are reliable.

@@ -1,67 +1,67 @@
-# 约定
+﻿# Conventions
 
-## 后端约定
+## Backend Conventions
 
-### 配置优先
+### Configuration First
 
-- 运行时配置集中在 `app/core/config.py`。
-- `_get_env_bool`、`_get_env_int`、`resolve_database_url()` 这类辅助函数被复用，而不是在 router 中到处零散读取环境变量。
+- Runtime configuration is centralized in `app/core/config.py`.
+- Environment parsing helpers such as `_get_env_bool`, `_get_env_int`, and `resolve_database_url()` are reused instead of ad hoc environment reads scattered across routers.
 
-### 标准错误载荷
+### Standard Error Payloads
 
-- Router 通常通过 `app/core/errors.py` 中的 `error_response(...)` 返回统一错误结构。
-- media 和 billing 错误都有专门的映射辅助函数。
-- API 返回显式错误码，例如 `INVALID_MODEL`、`REQUEST_TIMEOUT`、`INVALID_CREDENTIALS`。
+- Routers commonly return `error_response(...)` from `app/core/errors.py`.
+- Business error mapping helpers exist for media and billing errors.
+- API responses use explicit error codes like `INVALID_MODEL`, `REQUEST_TIMEOUT`, `INVALID_CREDENTIALS`.
 
-### Service / Repository 拆分
+### Service / Repository Split
 
-- 路由层通常把重业务逻辑交给 service 层，而不是直接在路由函数里完成。
-- 读写职责经常被拆分，例如 `lesson_command_service.py` 与 `lesson_query_service.py`。
-- `app/repositories/` 中保留数据库访问封装。
+- Route handlers generally call service modules rather than embedding heavy business logic directly.
+- Read/write concerns are frequently split, for example `lesson_command_service.py` vs `lesson_query_service.py`.
+- Repository modules under `app/repositories/` hold reusable persistence operations.
 
-### 安全与鉴权
+### Security and Auth
 
-- 密码通过 `app/security.py` 中的 PBKDF2 进行哈希。
-- JWT access/refresh token 也在该模块统一创建与校验。
-- 管理员权限现在是数据驱动的，依赖 `users.is_admin`，和 README / readiness 检查保持一致。
+- Passwords are hashed with PBKDF2 in `app/security.py`.
+- JWT access/refresh tokens are created in the same module.
+- Admin rights are data-driven via `users.is_admin`, matching the README and readiness checks.
 
-### 运行时就绪检查
+### Operational Readiness Checks
 
-- `app/main.py` 会显式做 readiness 探针，并在数据库未就绪时阻断 `/api/*`。
-- `scripts/start.sh` 会打印启动决策，并通过 `AUTO_MIGRATE_ON_START` 控制自动迁移。
+- `app/main.py` uses explicit readiness probes and can block `/api/*` when DB readiness fails.
+- `scripts/start.sh` logs startup decisions and gates auto-migration with `AUTO_MIGRATE_ON_START`.
 
-## 前端约定
+## Frontend Conventions
 
-### 按功能组织
+### Feature-Oriented Organization
 
-- 产品行为主要按功能拆在 `frontend/src/features/` 下。
-- 共享抽象集中在 `frontend/src/shared/`、`frontend/src/components/ui/` 和 `frontend/src/store/`。
+- Product behavior is grouped by feature under `frontend/src/features/`.
+- Shared abstractions live under `frontend/src/shared/`, `frontend/src/components/ui/`, and `frontend/src/store/`.
 
-### Desktop 感知的共享前端
+### Desktop-Aware Shared Frontend
 
-- Web 和 Desktop 使用同一套 renderer 源码。
-- `frontend/src/main.jsx` 根据 `VITE_DESKTOP_RENDERER_BUILD` 切换路由模式。
-- `frontend/src/shared/api/client.js` 隐藏“当前请求是浏览器 fetch 还是 Electron bridge”这一差异。
+- Web and desktop use the same renderer source.
+- `frontend/src/main.jsx` chooses router mode based on `VITE_DESKTOP_RENDERER_BUILD`.
+- `frontend/src/shared/api/client.js` hides whether requests go through browser fetch or Electron bridge.
 
-### 状态与工具
+### State and Utilities
 
-- Zustand slices 存在于 `frontend/src/store/slices/`。
-- 业务格式化与公共工具放在 `frontend/src/shared/lib/` 和 `frontend/src/lib/utils.js`。
+- Zustand slices are stored under `frontend/src/store/slices/`.
+- Utility formatting and domain helpers live under `frontend/src/shared/lib/` and `frontend/src/lib/utils.js`.
 
-## 测试约定
+## Testing Conventions
 
-- 测试套件按层次分成 unit、integration、e2e、contracts。
-- 测试里经常用 `create_database_engine(...)` + SQLite 临时库做隔离验证。
-- Contract tests 会断言桌面打包、前端桥接和关键文件结构等不变量。
+- Test suite is intentionally layered: unit, integration, e2e, contracts.
+- Tests often construct SQLite databases with `create_database_engine(...)` for isolated verification.
+- Contract tests assert important file-level invariants in desktop and frontend integration code.
 
-## 命名与文件模式
+## Naming and File Patterns
 
-- Python 后端大多使用 snake_case 文件名。
-- React 组件大多使用 PascalCase 文件名。
-- Electron 主进程/runtime 模块多用 `.mjs`，preload 为兼容性采用 `.cjs`。
+- Python backend uses snake_case file names.
+- React components largely use PascalCase file names.
+- Electron uses `.mjs` for main/runtime modules and `.cjs` for preload compatibility.
 
-## 值得注意的不一致
+## Inconsistencies Worth Knowing
 
-- `app/api/routers/` 中同时存在平铺版和分目录版模块。
-- 前端混用了 `.jsx`、`.js`、`.ts`、`.tsx`。
-- 多个目录里提交了生成物，目录内容并不严格等同于“只有手写源码”。
+- There are both flat and nested router module shapes in `app/api/routers/`.
+- There are mixed JS/TS files in the frontend (`.jsx`, `.js`, `.ts`, `.tsx`).
+- Generated artifacts are committed next to source in several directories, so directory contents do not strictly imply hand-written source only.

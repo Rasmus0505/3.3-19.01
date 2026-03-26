@@ -1,33 +1,33 @@
-# 功能研究
+﻿# Features Research
 
-**Project:** Bottle 英语学习产品
-**Domain:** 基于用户媒体素材生成英语学习课程
+**Project:** Bottle English Learning
+**Domain:** English learning from user-supplied media
 **Confidence:** MEDIUM
 
 ## Table Stakes
 
-- 用户可以注册和登录
-- 用户可以上传或提供媒体素材用于生成课程
-- 用户可以清楚看到生成进度与失败原因
-- 用户可以消费生成后的课程并进入学习流程
-- 用户可以用生成内容进行拼写和句子级学习
-- 用户可以通过平台价格、点数、兑换码完成消费
+- User can register and log in
+- User can upload or provide media for lesson generation
+- User can see generation progress and failures clearly
+- User can consume generated lessons in a learning flow
+- User can practice spelling / sentence-level learning from generated materials
+- User can pay through platform pricing / points / redeem codes
 
 ## Differentiators
 
-- 桌面端低摩擦的 Bottle 1.0 本地生成
-- Web 和 Desktop 双入口下都可用的 Bottle 2.0
-- 桌面端通过本地工具链支持链接转视频/媒体导入
-- 在服务器压力受控的前提下，仍然保持对非技术学习者友好的体验
+- Desktop local Bottle 1.0 generation with minimal technical setup
+- Desktop and web dual-path product with cloud Bottle 2.0 available in both
+- Link-to-video import on desktop using local tooling
+- Product boundary that keeps server load low while still feeling simple to learners
 
 ## Anti-Features
 
-- 让用户自己配置 API Key
-- 让用户手动跑独立媒体转换工具
-- 不区分运行时能力，强制所有终端走一套能力边界
+- Asking users to configure API keys themselves
+- Asking users to run separate media conversion tools manually
+- Forcing all users through the same runtime regardless of device capability
 
 ## Complexity Notes
 
-- 桌面端本地生成和 URL 导入是运行时/tooling 复杂度最高的部分。
-- 云端生成更适合大范围暴露，但必须和价格体系、上传边界一起设计。
-- 无论底层生成方式如何，最终学习体验必须保持统一。
+- Desktop local generation and URL import have the highest runtime/tooling complexity.
+- Cloud generation is easier to expose broadly but must be integrated with pricing and upload constraints.
+- The learning experience must stay consistent regardless of generation source.

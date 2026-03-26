@@ -1,85 +1,85 @@
-# 结构
+﻿# Structure
 
-## 顶层布局
+## Top-Level Layout
 
-- `app/` - FastAPI 应用代码
-- `frontend/` - React/Vite 源码和本地构建产物
-- `desktop-client/` - Electron 桌面客户端源码和缓存构建产物
-- `migrations/` - Alembic 环境与 revision 历史
-- `tests/` - unit、integration、e2e、contract、fixture
-- `scripts/` - 迁移、启动、桌面后端、git hook 等辅助脚本
-- `tools/` - 打包使用的本地可执行文件（`ffmpeg`、`ffprobe`、`yt-dlp`）
-- `asr-test/` - 独立本地 ASR 实验区、模型文件、benchmark 脚本与结果归档
-- `admin-web/` - 独立 nginx 承载的 admin 静态镜像路径
-- `Docx/` - 协作/任务池文档，不属于运行时代码
+- `app/` - FastAPI application code
+- `frontend/` - React/Vite source plus local build artifacts
+- `desktop-client/` - Electron desktop client source plus cached packaged assets
+- `migrations/` - Alembic environment and revision history
+- `tests/` - unit, integration, e2e, contracts, fixtures
+- `scripts/` - migration, startup, desktop backend, git hook helpers
+- `tools/` - bundled local executables (`ffmpeg`, `ffprobe`, `yt-dlp`)
+- `asr-test/` - isolated local ASR lab, model files, benchmark scripts, result archives
+- `admin-web/` - standalone nginx-based admin static image path
+- `Docx/` - collaboration/task-pool documents, not runtime code
 
-## 后端目录
+## Backend Tree
 
-关键区域包括：
+Important backend areas:
 
-- `app/main.py` - 应用组装、健康检查、静态资源路由、中间件
-- `app/core/` - 配置、日志、错误、时区等核心模块
-- `app/db/` - engine/session/bootstrap/schema helper
-- `app/models/` - SQLAlchemy 模型，如 user、lesson、billing
-- `app/api/deps/` - 鉴权/数据库依赖
-- `app/api/routers/` - 路由处理器和分目录 router 包
-- `app/repositories/` - 持久化导向的数据访问层
-- `app/services/` - 业务编排和任务流程
-- `app/infra/` - 外部服务和本地工具适配层
-- `app/domain/` - lesson / billing 的轻量领域实体与策略
-- `app/schemas/` - 请求/响应模型
+- `app/main.py` - application assembly, health endpoints, static serving, middleware
+- `app/core/` - configuration, logging, error helpers, timezone helpers
+- `app/db/` - engine/session/bootstrap/schema helpers
+- `app/models/` - SQLAlchemy models for users, lessons, billing
+- `app/api/deps/` - auth/db dependencies
+- `app/api/routers/` - route handlers and nested router packages
+- `app/repositories/` - persistence-oriented data access
+- `app/services/` - business logic and task orchestration
+- `app/infra/` - external service and local tool adapters
+- `app/domain/` - small policy/entity modules for lesson and billing concepts
+- `app/schemas/` - request/response models
 
-## 前端目录
+## Frontend Tree
 
-关键区域包括：
+Important frontend areas:
 
-- `frontend/src/main.jsx` 与 `frontend/src/main-admin.jsx` - 入口文件
-- `frontend/src/app/` - shell / bootstrap 组合
-- `frontend/src/features/` - 业务功能切片
-- `frontend/src/shared/` - 共享 API / media / util
-- `frontend/src/components/ui/` - 通用 UI primitives
-- `frontend/src/store/` - Zustand store 与 slices
-- `frontend/src/pages/` - 页面级组合
-- `frontend/src/assets/` - onboarding 图片等静态资源
+- `frontend/src/main.jsx` and `frontend/src/main-admin.jsx` - application entrypoints
+- `frontend/src/app/` - shell/bootstrap composition
+- `frontend/src/features/` - product feature slices
+- `frontend/src/shared/` - shared API/client/media helpers
+- `frontend/src/components/ui/` - reusable UI primitives
+- `frontend/src/store/` - Zustand store setup and slices
+- `frontend/src/pages/` - page-level composition
+- `frontend/src/assets/` - onboarding images and static assets
 
-仓库里已经存在的构建输出目录：
+Build output directories already present in the repo:
 
 - `frontend/dist/`
 - `frontend/dist-admin/`
 
-## 桌面端目录
+## Desktop Tree
 
-关键区域包括：
+Important desktop areas:
 
-- `desktop-client/electron/` - main/preload/runtime 集成代码
-- `desktop-client/scripts/` - dev/build/package 脚本
-- `desktop-client/build/` - 安装器资源
-- `desktop-client/.cache/frontend-dist/` - 缓存的 renderer 构建产物
-- `desktop-client/.cache/helper-runtime/` - 缓存的 helper/runtime 产物
+- `desktop-client/electron/` - main/preload/runtime integration code
+- `desktop-client/scripts/` - dev/build/package scripts
+- `desktop-client/build/` - installer resources
+- `desktop-client/.cache/frontend-dist/` - cached renderer build
+- `desktop-client/.cache/helper-runtime/` - cached packaged helper runtime
 
-## 测试目录
+## Testing Tree
 
-- `tests/unit/` - 聚焦单模块/单能力的单元测试
-- `tests/integration/` - API / service 集成测试
-- `tests/e2e/` - 端到端流程测试
-- `tests/contracts/` - 文件结构/打包/桥接契约测试
-- `tests/fixtures/` - 复用的 db/auth/billing/lesson fixture
+- `tests/unit/` - isolated unit tests
+- `tests/integration/` - API/service integration tests
+- `tests/e2e/` - end-to-end workflow tests
+- `tests/contracts/` - file-content and packaging contract tests
+- `tests/fixtures/` - reusable db/auth/billing/lesson setup helpers
 
-## 迁移目录
+## Migration Tree
 
-- `migrations/env.py` - Alembic 环境入口
-- `migrations/versions/*.py` - 目前观察到 28 个 revision
-- `migrations/README.md` - 迁移和生产规则说明
+- `migrations/env.py` - Alembic environment
+- `migrations/versions/*.py` - 28 timestamped revisions observed
+- `migrations/README.md` - migration and production rules
 
-## 混入的非源码工件
+## Notable Mixed-In Artifacts
 
-仓库当前还包含不少非源码或生成内容：
+The repository currently also contains non-source or generated content:
 
-- `app.db`、`app.db-shm`、`app.db-wal`
-- 许多 `__pycache__/` 目录和 `*.pyc`
+- `app.db`, `app.db-shm`, `app.db-wal`
+- many `__pycache__/` directories and `*.pyc` files
 - `frontend/node_modules/`
-- `frontend/dist/` 和 `frontend/dist-admin/`
+- `frontend/dist/` and `frontend/dist-admin/`
 - `desktop-client/.cache/`
-- `asr-test/runs/` 与 `asr-test/results/` 下的 ASR 运行结果和归档
+- ASR run/result archives under `asr-test/runs/` and `asr-test/results/`
 
-这些内容会明显影响仓库体积与日常维护体验。
+These artifacts materially affect repository size and developer ergonomics.
