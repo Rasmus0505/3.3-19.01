@@ -219,11 +219,20 @@ def test_b1_request_url_then_create_task_with_dashscope_file_id(tmp_path, monkey
 
         recorded: dict[str, object] = {}
 
-        def fake_create_lesson_task_from_dashscope_file(*, owner_user_id, asr_model, semantic_split_enabled, dashscope_file_id, db):
+        def fake_create_lesson_task_from_dashscope_file(
+            *,
+            owner_user_id,
+            asr_model,
+            semantic_split_enabled,
+            dashscope_file_id,
+            dashscope_file_url=None,
+            db,
+        ):
             recorded["owner_user_id"] = int(owner_user_id)
             recorded["asr_model"] = str(asr_model)
             recorded["semantic_split_enabled"] = semantic_split_enabled
             recorded["dashscope_file_id"] = str(dashscope_file_id or "")
+            recorded["dashscope_file_url"] = str(dashscope_file_url or "")
             return {
                 "task_id": "task-b1-flow-001",
                 "requested_asr_model": asr_model,
@@ -258,6 +267,7 @@ def test_b1_request_url_then_create_task_with_dashscope_file_id(tmp_path, monkey
         assert payload["ok"] is True
         assert payload["task_id"] == "task-b1-flow-001"
         assert recorded["dashscope_file_id"] == "uploads/20260326/full-flow.mp4"
+        assert recorded["dashscope_file_url"] == ""
     finally:
         client.close()
         engine.dispose()
@@ -283,6 +293,56 @@ def test_create_task_requires_dashscope_file_id(tmp_path, monkeypatch):
         payload = resp.json()
         assert payload["ok"] is False
         assert payload["error_code"] == "DASHSCOPE_FILE_ID_REQUIRED"
+    finally:
+        client.close()
+        engine.dispose()
+
+
+def test_create_task_accepts_optional_dashscope_file_url(tmp_path, monkeypatch):
+    client, engine = _build_test_client(tmp_path)
+    try:
+        token = _register_and_login(client, email="dashscope-upload-file-url@example.com")
+        headers = {"Authorization": f"Bearer {token}"}
+        recorded: dict[str, str] = {}
+
+        def fake_create_lesson_task_from_dashscope_file(
+            *,
+            owner_user_id,
+            asr_model,
+            semantic_split_enabled,
+            dashscope_file_id,
+            dashscope_file_url=None,
+            db,
+        ):
+            _ = (owner_user_id, asr_model, semantic_split_enabled, db)
+            recorded["dashscope_file_id"] = str(dashscope_file_id or "")
+            recorded["dashscope_file_url"] = str(dashscope_file_url or "")
+            return {
+                "task_id": "task-b1-flow-002",
+                "requested_asr_model": asr_model,
+                "effective_asr_model": asr_model,
+                "model_fallback_applied": False,
+                "model_fallback_reason": "",
+            }
+
+        monkeypatch.setattr(lessons_router, "create_lesson_task_from_dashscope_file", fake_create_lesson_task_from_dashscope_file)
+        monkeypatch.setattr(lessons_router, "get_supported_upload_asr_model_keys", lambda: ("qwen3-asr-flash-filetrans",))
+        monkeypatch.setattr(lessons_router, "get_task", lambda *args, **kwargs: None)
+
+        create_task_resp = client.post(
+            "/api/lessons/tasks",
+            headers=headers,
+            data={
+                "asr_model": "qwen3-asr-flash-filetrans",
+                "semantic_split_enabled": "false",
+                "dashscope_file_id": "uploads/20260326/full-flow.mp4",
+                "dashscope_file_url": "https://oss.example.com/uploads/20260326/full-flow.mp4",
+            },
+        )
+        assert create_task_resp.status_code == 200
+        assert create_task_resp.json()["task_id"] == "task-b1-flow-002"
+        assert recorded["dashscope_file_id"] == "uploads/20260326/full-flow.mp4"
+        assert recorded["dashscope_file_url"] == "https://oss.example.com/uploads/20260326/full-flow.mp4"
     finally:
         client.close()
         engine.dispose()
