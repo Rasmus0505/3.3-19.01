@@ -397,8 +397,8 @@ def test_auth_api_reuses_shared_desktop_bridge_client():
 def test_upload_panel_routes_oss_uploads_through_shared_upload_bridge():
     upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
 
-    assert 'const uploadResult = await uploadWithProgress(upload_url, {' in upload_panel_source
-    assert 'method: "PUT"' in upload_panel_source
+    assert 'const uploadResult = await uploadWithProgress(uploadUrl, {' in upload_panel_source
+    assert 'method: "POST"' in upload_panel_source
     assert 'if (!uploadResult.ok) {' in upload_panel_source
 
 
