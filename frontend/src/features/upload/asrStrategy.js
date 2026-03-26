@@ -96,7 +96,7 @@ export function getConnectivityActionMessage({ browserOnline = true, serverStatu
 export function getLocalModeBlockedMessage(reason = "") {
   switch (normalizeText(reason)) {
     case "local_helper_unhealthy":
-      return "本机运行当前不可用，请稍后重试或切换到云端。";
+      return "本机生成当前不可用，请稍后重试。";
     case "local_bundle_missing":
     case "local_model_not_ready":
       return "本机资源未就绪，请先准备。";
@@ -108,14 +108,14 @@ export function getLocalModeBlockedMessage(reason = "") {
 export function getAutoDegradeBannerText(reason = "") {
   switch (normalizeText(reason)) {
     case "local_helper_unhealthy":
-      return "本机运行异常，已切换云端";
+      return "本机运行环境异常";
     case "local_retry_exhausted":
-      return "本机识别失败，已切换云端";
+      return "本机识别重试耗尽";
     case "local_bundle_missing":
     case "local_model_not_ready":
-      return "本机资源未就绪，已切换云端";
+      return "本机资源未就绪";
     default:
-      return "已切换到云端模式";
+      return "已自动重试";
   }
 }
 
@@ -302,42 +302,42 @@ export function buildCloudAsrErrorMessage({
     case "SERVICE_UNAVAILABLE":
       return {
         code: normalizedCode,
-        message: "Bottle 2.0 当前不可用（云端服务暂不可达），请稍后重试或尝试 Bottle 1.0 本机识别。",
+        message: "云端识别当前不可用，请稍后重试。",
       };
     case "RATE_LIMITED":
       return {
         code: normalizedCode,
-        message: "Bottle 2.0 当前请求过多，请稍后重试或尝试 Bottle 1.0 本机识别。",
+        message: "云端识别请求过多，请稍后重试。",
       };
     case "CLOUD_FILE_ACCESS_FORBIDDEN":
       return {
         code: normalizedCode,
-        message: "Bottle 2.0 暂时无法访问已上传的云端文件，请稍后重试；若再次失败，再重新上传当前素材。",
+        message: "云端暂时无法访问已上传的文件，请稍后重试；若再次失败，请重新上传当前素材。",
       };
     case "INSUFFICIENT_BALANCE":
       return {
         code: normalizedCode,
-        message: "Bottle 2.0 账户余额不足，请联系管理员充值或切换到 Bottle 1.0 本机识别。",
+        message: "账户余额不足，请联系管理员充值。",
       };
     case "NETWORK_TIMEOUT":
       return {
         code: normalizedCode,
-        message: "Bottle 2.0 网络连接超时，请检查网络后重试，或改用 Bottle 1.0 本机识别。",
+        message: "网络连接超时，请检查网络后重试。",
       };
     case "INVALID_MODEL":
       return {
         code: normalizedCode,
-        message: "Bottle 2.0 模型当前不可用，请稍后重试或切换到 Bottle 1.0 本机识别。",
+        message: "云端识别当前不可用，请稍后重试。",
       };
     case "CLOUD_CONFIG_MISSING":
       return {
         code: normalizedCode,
-        message: "Bottle 2.0 当前未正确配置，请联系管理员检查云端服务。",
+        message: "云端识别未正确配置，请联系管理员。",
       };
     default:
       return {
         code: normalizedCode,
-        message: "Bottle 2.0 当前不可用，请稍后重试或尝试 Bottle 1.0 本机识别。",
+        message: "云端识别当前不可用，请稍后重试。",
       };
   }
 }
