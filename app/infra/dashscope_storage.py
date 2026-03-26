@@ -107,18 +107,49 @@ def get_file_signed_url(file_id: str, *, request_timeout: int = 30) -> str:
     except Exception as exc:
         raise AsrError("DASHSCOPE_STORAGE_FILE_GET_FAILED", "查询 DashScope 文件失败", str(exc)[:1200]) from exc
 
-    meta_out = _to_dict(getattr(meta_resp, "output", None))
-    signed_url = _resolve_signed_url_from_meta(meta_out)
-    if signed_url:
-        return signed_url
+    meta_output = _to_dict(getattr(meta_resp, "output", None))
+    meta_full = _to_dict(meta_resp)
+    candidate_payloads: list[dict[str, Any]] = []
+    for payload in (
+        meta_output,
+        _to_dict(meta_full.get("output")) if isinstance(meta_full, dict) else {},
+        _to_dict(meta_full.get("data")) if isinstance(meta_full, dict) else {},
+        _to_dict(meta_full.get("result")) if isinstance(meta_full, dict) else {},
+        _to_dict(meta_full.get("file")) if isinstance(meta_full, dict) else {},
+        meta_full if isinstance(meta_full, dict) else {},
+    ):
+        if isinstance(payload, dict) and payload:
+            candidate_payloads.append(payload)
+
+    for payload in candidate_payloads:
+        signed_url = _resolve_signed_url_from_meta(payload)
+        if signed_url:
+            return signed_url
+
+    # Some SDK/API combinations only expose usable fields when flattened_output is enabled.
+    try:
+        flat_resp = _call_with_optional_request_timeout(
+            Files.get,
+            file_id=file_id,
+            request_timeout=request_timeout,
+            flattened_output=True,
+        )
+    except Exception:
+        flat_resp = {}
+    flat_payload = _to_dict(flat_resp)
+    flat_signed_url = _resolve_signed_url_from_meta(flat_payload)
+    if flat_signed_url:
+        return flat_signed_url
 
     # Some DashScope file-meta responses do not expose signed URLs directly.
     # In that case, ASR APIs can still consume an oss:// object key.
     oss_url = f"oss://{file_id}"
     logger.warning(
-        "[DEBUG] dashscope_storage.signed_url_missing file_id=%s meta_keys=%s fallback=%s",
+        "[DEBUG] dashscope_storage.signed_url_missing file_id=%s output_keys=%s full_keys=%s flat_keys=%s fallback=%s",
         file_id,
-        sorted(list(meta_out.keys())),
+        sorted(list(meta_output.keys())),
+        sorted(list(meta_full.keys())) if isinstance(meta_full, dict) else [],
+        sorted(list(flat_payload.keys())) if isinstance(flat_payload, dict) else [],
         oss_url,
     )
     return oss_url
