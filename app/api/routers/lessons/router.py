@@ -217,6 +217,7 @@ async def create_lesson_task(
     semantic_split_enabled: bool | None = Form(None),
     dashscope_file_id: str = Form(...),
     dashscope_file_url: str = Form(""),
+    source_filename: str = Form(""),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -230,6 +231,7 @@ async def create_lesson_task(
         )
     normalized_dashscope_file_id = str(dashscope_file_id or "").strip()
     normalized_dashscope_file_url = str(dashscope_file_url or "").strip()
+    normalized_source_filename = str(source_filename or "").strip()
     if not normalized_dashscope_file_id:
         return error_response(400, "DASHSCOPE_FILE_ID_REQUIRED", "缺少 DashScope 文件 ID")
     try:
@@ -239,6 +241,7 @@ async def create_lesson_task(
             semantic_split_enabled=semantic_split_enabled,
             dashscope_file_id=normalized_dashscope_file_id,
             dashscope_file_url=normalized_dashscope_file_url or None,
+            source_filename=normalized_source_filename or None,
             db=db,
         )
         response_payload = LessonTaskCreateResponse(

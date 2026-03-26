@@ -26,7 +26,7 @@ from app.core.config import (
 from app.models import Lesson, LessonSentence, TranslationRequestLog
 from app.repositories.progress import create_progress
 from app.services.asr_dashscope import AsrError, transcribe_audio_file, transcribe_signed_url
-from app.infra.dashscope_storage import get_file_signed_url
+from app.infra.dashscope_storage import get_file_signed_url, normalize_dashscope_file_url
 from app.services.billing_service import (
     EVENT_CONSUME_TRANSLATE,
     append_translation_request_logs,
@@ -84,18 +84,18 @@ def _resolve_dashscope_asr_source_url(*, dashscope_file_id: str, dashscope_file_
 
     if normalized_file_id:
         try:
-            return get_file_signed_url(normalized_file_id)
+            return normalize_dashscope_file_url(get_file_signed_url(normalized_file_id))
         except AsrError:
             if normalized_file_url:
                 logger.warning(
                     "[DEBUG] lesson.generate_dashscope signed_url_lookup_failed file_id=%s fallback_to_client_url=1",
                     normalized_file_id,
                 )
-                return normalized_file_url
+                return normalize_dashscope_file_url(normalized_file_url)
             raise
 
     if normalized_file_url:
-        return normalized_file_url
+        return normalize_dashscope_file_url(normalized_file_url)
 
     raise MediaError("DASHSCOPE_FILE_ID_REQUIRED", "dashscope_file_id is required", "")
 

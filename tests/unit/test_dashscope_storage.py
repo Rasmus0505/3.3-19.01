@@ -7,6 +7,14 @@ import pytest
 import app.infra.dashscope_storage as dashscope_storage
 
 
+def test_normalize_dashscope_file_url_encodes_non_ascii_path_without_touching_query():
+    normalized = dashscope_storage.normalize_dashscope_file_url(
+        "https://oss.example.com/dashscope-instant/2026-03-27/测试.mp4?Signature=abc%2B123&Expires=1"
+    )
+
+    assert normalized == "https://oss.example.com/dashscope-instant/2026-03-27/%E6%B5%8B%E8%AF%95.mp4?Signature=abc%2B123&Expires=1"
+
+
 def test_get_file_signed_url_returns_direct_url(monkeypatch):
     monkeypatch.setattr(dashscope_storage.dashscope, "api_key", "test-api-key")
     monkeypatch.setattr(
@@ -32,6 +40,20 @@ def test_get_file_signed_url_reads_url_from_response_data(monkeypatch):
 
     signed_url = dashscope_storage.get_file_signed_url("uploads/2026/demo.mp4")
     assert signed_url == "https://example.com/from-data-url"
+
+
+def test_get_file_signed_url_normalizes_non_ascii_url_from_meta(monkeypatch):
+    monkeypatch.setattr(dashscope_storage.dashscope, "api_key", "test-api-key")
+    monkeypatch.setattr(
+        dashscope_storage.Files,
+        "get",
+        lambda file_id, request_timeout=30: SimpleNamespace(
+            output={"url": f"https://oss.example.com/{file_id}?token=abc123"}
+        ),
+    )
+
+    signed_url = dashscope_storage.get_file_signed_url("dashscope-instant/2026-03-27/测试.mp4")
+    assert signed_url == "https://oss.example.com/dashscope-instant/2026-03-27/%E6%B5%8B%E8%AF%95.mp4?token=abc123"
 
 
 def test_get_file_signed_url_uses_flattened_output_when_needed(monkeypatch):

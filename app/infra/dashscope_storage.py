@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 import dashscope
 from dashscope.files import Files
@@ -23,6 +24,34 @@ from app.infra.asr_dashscope import (
 logger = logging.getLogger(__name__)
 
 
+def normalize_dashscope_file_url(file_url: str) -> str:
+    normalized = str(file_url or "").strip()
+    if not normalized.startswith(("http://", "https://")):
+        return normalized
+
+    try:
+        parts = urlsplit(normalized)
+    except Exception:
+        return normalized
+
+    path = str(parts.path or "")
+    if not path:
+        return normalized
+
+    encoded_segments: list[str] = []
+    for segment in path.split("/"):
+        if not segment:
+            encoded_segments.append("")
+            continue
+        try:
+            encoded_segments.append(quote(unquote(segment), safe="!$&'()*+,;=:@"))
+        except Exception:
+            encoded_segments.append(quote(segment, safe="!$&'()*+,;=:@"))
+
+    normalized_path = "/".join(encoded_segments)
+    return urlunsplit((parts.scheme, parts.netloc, normalized_path, parts.query, parts.fragment))
+
+
 def _ensure_dashscope_api_key() -> str:
     api_key = str(getattr(dashscope, "api_key", "") or "").strip()
     if api_key:
@@ -33,7 +62,7 @@ def _ensure_dashscope_api_key() -> str:
 def _resolve_signed_url_from_meta(meta_out: dict[str, Any]) -> str:
     candidate = _resolve_signed_url(meta_out)
     if candidate:
-        return candidate
+        return normalize_dashscope_file_url(candidate)
 
     direct_candidates = (
         "signed_url",
@@ -44,38 +73,38 @@ def _resolve_signed_url_from_meta(meta_out: dict[str, Any]) -> str:
     for key in direct_candidates:
         value = str(meta_out.get(key) or "").strip()
         if value:
-            return value
+            return normalize_dashscope_file_url(value)
 
     nested_candidates = meta_out.get("file")
     if isinstance(nested_candidates, dict):
         nested_candidate = _resolve_signed_url(nested_candidates)
         if nested_candidate:
-            return nested_candidate
+            return normalize_dashscope_file_url(nested_candidate)
         for key in direct_candidates:
             value = str(nested_candidates.get(key) or "").strip()
             if value:
-                return value
+                return normalize_dashscope_file_url(value)
 
     urls_payload = meta_out.get("urls")
     if isinstance(urls_payload, dict):
         for key in ("signed", "https", "http", "url"):
             value = str(urls_payload.get(key) or "").strip()
             if value:
-                return value
+                return normalize_dashscope_file_url(value)
     elif isinstance(urls_payload, list):
         for item in urls_payload:
             if isinstance(item, dict):
                 nested_candidate = _resolve_signed_url(item)
                 if nested_candidate:
-                    return nested_candidate
+                    return normalize_dashscope_file_url(nested_candidate)
                 for key in direct_candidates:
                     value = str(item.get(key) or "").strip()
                     if value:
-                        return value
+                        return normalize_dashscope_file_url(value)
             else:
                 value = str(item or "").strip()
                 if value:
-                    return value
+                    return normalize_dashscope_file_url(value)
 
     return ""
 
@@ -99,7 +128,7 @@ def get_file_signed_url(file_id: str, *, request_timeout: int = 30) -> str:
     if not file_id:
         raise AsrError("DASHSCOPE_STORAGE_INVALID_FILE_ID", "file_id 不能为空", "")
     if file_id.startswith(("http://", "https://")):
-        return file_id
+        return normalize_dashscope_file_url(file_id)
 
     try:
         meta_resp = _call_with_optional_request_timeout(

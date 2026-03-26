@@ -4796,6 +4796,126 @@ def test_dashscope_file_id_create_lesson_task_and_poll_success(test_client, monk
         verify_session.close()
 
 
+def test_dashscope_file_id_task_preserves_original_source_filename(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="task-unicode-source@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from app.api.routers import lessons as lesson_router
+    from app.services import lesson_command_service as lesson_command_service_module
+
+    monkeypatch.setattr(lesson_router, "BASE_TMP_DIR", tmp_path)
+    monkeypatch.setattr(lesson_router, "SessionLocal", session_factory)
+    monkeypatch.setattr(lesson_command_service_module, "BASE_TMP_DIR", tmp_path)
+    monkeypatch.setattr(lesson_command_service_module, "probe_audio_duration_ms", lambda _path: 1_000)
+    _seed_wallet_balance(session_factory, email="task-unicode-source@example.com")
+
+    class InlineThread:
+        def __init__(self, *, target, kwargs=None, daemon=None):
+            self._target = target
+            self._kwargs = kwargs or {}
+
+        def start(self):
+            self._target(**self._kwargs)
+
+    monkeypatch.setattr(lesson_router.threading, "Thread", InlineThread)
+
+    captured = {}
+
+    def fake_generate_from_saved_file(
+        *,
+        dashscope_file_id,
+        source_filename,
+        req_dir,
+        owner_id,
+        asr_model,
+        db,
+        progress_callback=None,
+        task_id=None,
+        semantic_split_enabled=None,
+    ):
+        captured["dashscope_file_id"] = dashscope_file_id
+        captured["source_filename"] = source_filename
+        captured["task_id"] = task_id
+        _ = (req_dir, asr_model, semantic_split_enabled)
+        if progress_callback:
+            progress_callback({"stage_key": "write_lesson", "stage_status": "completed", "overall_percent": 100, "current_text": "课程生成完成"})
+
+        lesson = Lesson(
+            user_id=owner_id,
+            title="unicode source lesson",
+            source_filename=source_filename,
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=1000,
+            media_storage="client_indexeddb",
+            source_duration_ms=1000,
+            status="ready",
+        )
+        db.add(lesson)
+        db.flush()
+        db.add(
+            LessonSentence(
+                lesson_id=lesson.id,
+                idx=0,
+                begin_ms=0,
+                end_ms=1000,
+                text_en="hello world",
+                text_zh="你好世界",
+                tokens_json=["hello", "world"],
+                audio_clip_path=None,
+            )
+        )
+        db.add(
+            LessonProgress(
+                lesson_id=lesson.id,
+                user_id=owner_id,
+                current_sentence_idx=0,
+                completed_indexes_json=[],
+                last_played_at_ms=0,
+            )
+        )
+        db.commit()
+        db.refresh(lesson)
+        lesson.subtitle_cache_seed = {
+            "semantic_split_enabled": False,
+            "split_mode": "asr_sentences",
+            "source_word_count": 2,
+            "asr_payload": {"transcripts": [{"words": [_word_entry("hello", 0, 300), _word_entry("world", 300, 1000)]}]},
+            "sentences": [],
+        }
+        return lesson
+
+    monkeypatch.setattr(lesson_router.LessonService, "generate_from_dashscope_file_id", fake_generate_from_saved_file)
+
+    create_resp = client.post(
+        "/api/lessons/tasks",
+        headers=headers,
+        data={
+            "asr_model": QWEN_ASR_MODEL,
+            "semantic_split_enabled": "false",
+            "dashscope_file_id": "dashscope-instant/d168822c2c877c2c15ca5fec1333412d/2026-03-27/f68f066a-e429-4b22-9645-ff3a765bca1c/upload-a1b2c3d4.mp4",
+            "source_filename": "测试.mp4",
+        },
+    )
+    assert create_resp.status_code == 200
+    task_id = create_resp.json()["task_id"]
+
+    poll_resp = client.get(f"/api/lessons/tasks/{task_id}", headers=headers)
+    assert poll_resp.status_code == 200
+    assert poll_resp.json()["status"] == "succeeded"
+    assert captured["dashscope_file_id"].endswith("/upload-a1b2c3d4.mp4")
+    assert captured["source_filename"] == "测试.mp4"
+
+    verify_session = session_factory()
+    try:
+        task_row = verify_session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        assert task_row is not None
+        assert task_row.source_filename == "测试.mp4"
+        assert task_row.artifacts_json["dashscope_file_id"].endswith("/upload-a1b2c3d4.mp4")
+    finally:
+        verify_session.close()
+
+
 
 def test_dashscope_403_file_access_retry_task_hides_first_failure_and_skips_fallback(test_client, monkeypatch, tmp_path):
     client, session_factory, _ = test_client

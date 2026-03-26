@@ -147,6 +147,46 @@ def test_request_url_normalizes_flat_policy_fields(tmp_path, monkeypatch):
         engine.dispose()
 
 
+def test_request_url_sanitizes_non_ascii_storage_key(tmp_path, monkeypatch):
+    client, engine = _build_test_client(tmp_path)
+    try:
+        token = _register_and_login(client, email="dashscope-upload-unicode-name@example.com")
+
+        monkeypatch.setattr(dashscope_upload_router, "DASHSCOPE_API_KEY", "test-api-key")
+
+        def fake_get(url: str, *, headers: dict, params: dict, timeout: int):
+            _ = (url, headers, params, timeout)
+            return _FakeResponse(
+                status_code=200,
+                payload={
+                    "data": {
+                        "upload_host": "https://oss.example.com",
+                        "upload_dir": "dashscope-instant/session-abc123/2026-03-27/upload-slot",
+                        "oss_fields": {"policy": "p", "signature": "s"},
+                        "expires_in_seconds": 1200,
+                    }
+                },
+            )
+
+        monkeypatch.setattr(dashscope_upload_router.requests, "get", fake_get)
+
+        resp = client.post(
+            "/api/dashscope-upload/request-url",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"filename": "测试.mp4", "content_type": "video/mp4"},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["ok"] is True
+        assert payload["file_id"].startswith("dashscope-instant/session-abc123/2026-03-27/upload-slot/")
+        assert payload["file_id"].endswith(".mp4")
+        assert payload["oss_fields"]["key"] == payload["file_id"]
+        assert "测试" not in payload["file_id"]
+    finally:
+        client.close()
+        engine.dispose()
+
+
 def test_request_url_missing_api_key(tmp_path, monkeypatch):
     client, engine = _build_test_client(tmp_path)
     try:
@@ -229,6 +269,7 @@ def test_b1_request_url_then_create_task_with_dashscope_file_id(tmp_path, monkey
             semantic_split_enabled,
             dashscope_file_id,
             dashscope_file_url=None,
+            source_filename=None,
             db,
         ):
             recorded["owner_user_id"] = int(owner_user_id)
@@ -236,6 +277,7 @@ def test_b1_request_url_then_create_task_with_dashscope_file_id(tmp_path, monkey
             recorded["semantic_split_enabled"] = semantic_split_enabled
             recorded["dashscope_file_id"] = str(dashscope_file_id or "")
             recorded["dashscope_file_url"] = str(dashscope_file_url or "")
+            recorded["source_filename"] = str(source_filename or "")
             return {
                 "task_id": "task-b1-flow-001",
                 "requested_asr_model": asr_model,
@@ -263,6 +305,7 @@ def test_b1_request_url_then_create_task_with_dashscope_file_id(tmp_path, monkey
                 "asr_model": "qwen3-asr-flash-filetrans",
                 "semantic_split_enabled": "false",
                 "dashscope_file_id": file_id,
+                "source_filename": "full-flow.mp4",
             },
         )
         assert create_task_resp.status_code == 200
@@ -271,6 +314,7 @@ def test_b1_request_url_then_create_task_with_dashscope_file_id(tmp_path, monkey
         assert payload["task_id"] == "task-b1-flow-001"
         assert recorded["dashscope_file_id"] == "uploads/20260326/full-flow.mp4"
         assert recorded["dashscope_file_url"] == ""
+        assert recorded["source_filename"] == "full-flow.mp4"
     finally:
         client.close()
         engine.dispose()
@@ -315,11 +359,13 @@ def test_create_task_accepts_optional_dashscope_file_url(tmp_path, monkeypatch):
             semantic_split_enabled,
             dashscope_file_id,
             dashscope_file_url=None,
+            source_filename=None,
             db,
         ):
             _ = (owner_user_id, asr_model, semantic_split_enabled, db)
             recorded["dashscope_file_id"] = str(dashscope_file_id or "")
             recorded["dashscope_file_url"] = str(dashscope_file_url or "")
+            recorded["source_filename"] = str(source_filename or "")
             return {
                 "task_id": "task-b1-flow-002",
                 "requested_asr_model": asr_model,
@@ -340,12 +386,14 @@ def test_create_task_accepts_optional_dashscope_file_url(tmp_path, monkeypatch):
                 "semantic_split_enabled": "false",
                 "dashscope_file_id": "uploads/20260326/full-flow.mp4",
                 "dashscope_file_url": "https://oss.example.com/uploads/20260326/full-flow.mp4",
+                "source_filename": "full-flow.mp4",
             },
         )
         assert create_task_resp.status_code == 200
         assert create_task_resp.json()["task_id"] == "task-b1-flow-002"
         assert recorded["dashscope_file_id"] == "uploads/20260326/full-flow.mp4"
         assert recorded["dashscope_file_url"] == "https://oss.example.com/uploads/20260326/full-flow.mp4"
+        assert recorded["source_filename"] == "full-flow.mp4"
     finally:
         client.close()
         engine.dispose()
