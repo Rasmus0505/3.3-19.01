@@ -1,26 +1,26 @@
-# 风险研究
+﻿# Pitfalls Research
 
-**Project:** Bottle 英语学习产品
+**Project:** Bottle English Learning
 **Confidence:** MEDIUM
 
-## 关键风险
+## Critical Pitfalls
 
-1. **服务器逐步滑向媒体处理节点**
-   - 预警信号：越来越多服务端转码、中央存储大文件、Web 后端承担长时媒体任务
-   - 规避方式：优先把本地转换放在桌面端，网页端优先走云端文件链路
+1. **Server drift into media worker**
+   - Warning signs: more server-side transcoding, large uploads stored centrally, long-running media jobs on web backend
+   - Avoidance: keep local conversion on desktop where possible; use cloud-native ASR flows where browser support is enough
 
-2. **浏览器承诺了它不擅长交付的能力**
-   - 预警信号：浏览器本地 ffmpeg 尝试、大文件不稳定、兼容性回退过多
-   - 规避方式：网页端边界明确围绕 Bottle 2.0 和浏览器安全能力来设计
+2. **Browser promises features it cannot deliver reliably**
+   - Warning signs: browser-local ffmpeg experiments, unstable large-file handling, complicated permission workarounds
+   - Avoidance: define web boundary clearly around browser-safe Bottle 2.0 flows
 
-3. **不同生成路径形成不同学习产物**
-   - 预警信号：Bottle 1.0 和 Bottle 2.0 生成出的课程状态、练习能力差异太大
-   - 规避方式：统一课程/学习产物契约，生成后进入同一学习流程
+3. **Different generation paths produce inconsistent learning output**
+   - Warning signs: Bottle 1.0 and Bottle 2.0 produce materially different lesson readiness or practice behavior
+   - Avoidance: normalize outputs into one lesson/practice contract
 
-4. **计费和能力边界不一致**
-   - 预警信号：模型价格不清楚，桌面专属能力没有反映到产品规则里，扣费口径不统一
-   - 规避方式：后台价格、能力边界、运行时路由都要显式绑定
+4. **Billing and capability mismatch**
+   - Warning signs: model pricing unclear, desktop-only features not reflected in product rules, point deduction happening inconsistently
+   - Avoidance: keep admin-configurable rates and explicit capability gating tied to generation mode
 
-5. **非技术用户遇到准备摩擦**
-   - 预警信号：用户被要求理解模型、密钥、转换工具或错误文案不明确
-   - 规避方式：尽量自动化桌面端准备过程，网页端给出明确引导和边界提示
+5. **Non-technical users hit setup friction**
+   - Warning signs: users need to manage models, keys, conversion tools, or unclear failure steps
+   - Avoidance: automate installs/checks in desktop and keep web guidance simple and explicit
