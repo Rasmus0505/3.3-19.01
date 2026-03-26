@@ -40,13 +40,14 @@ Plans:
 
 ### Phase 01.1: Fix ASR subtitle recognition 403 file access failures (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
+**Goal:** Bottle 2.0 direct-upload subtitle recognition transparently self-heals once when DashScope cloud-file access fails with `FILE_403_FORBIDDEN`, and exhausted retries are recorded and surfaced as a first-class cloud file-access failure.
+**Requirements**: [WEB-01, WEB-03, DESK-02]
 **Depends on:** Phase 1
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 01.1 to break down)
+- [ ] 01.1-01-PLAN.md — Add one-time backend self-heal for direct-upload `FILE_403_FORBIDDEN` ASR failures
+- [ ] 01.1-02-PLAN.md — Persist 403 recovery diagnostics and surface cloud file-access failures accurately
 
 ### Phase 2: Desktop Local Generation
 **Goal**: Desktop users can use Bottle 1.0 locally with minimal setup friction and predictable readiness checks.
@@ -129,7 +130,7 @@ Phases execute in numeric order: 1 -> 1.1 -> 2 -> 3 -> 4 -> 5 -> 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Shared Cloud Generation | 3/3 | Complete | 2026-03-26 |
-| 1.1. Fix ASR subtitle recognition 403 file access failures | 0/0 | Not planned | - |
+| 1.1. Fix ASR subtitle recognition 403 file access failures | 0/2 | Planned | - |
 | 2. Desktop Local Generation | 0/3 | Not started | - |
 | 3. Lesson Output Consistency | 0/3 | Not started | - |
 | 4. Desktop Link Import | 0/2 | Not started | - |
