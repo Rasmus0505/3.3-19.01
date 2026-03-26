@@ -5687,7 +5687,6 @@ export function UploadPanel({
   }
 
   const desktopServerDiagnostic = getDesktopServerDiagnostic(desktopServerStatus, desktopRuntimeInfo);
-  const desktopHelperDiagnostic = getDesktopHelperDiagnostic(desktopHelperStatus, desktopRuntimeInfo);
   const desktopClientUpdateDiagnostic = getDesktopClientUpdateDiagnostic(desktopRuntimeInfo);
   const desktopClientVersionLabel = String(desktopRuntimeInfo?.clientUpdate?.currentVersion || "").trim() || "未知";
   const desktopDiagnosticsItems = [
@@ -5707,13 +5706,6 @@ export function UploadPanel({
       badgeLabel: desktopServerDiagnostic.label,
       badgeTone: desktopServerDiagnostic.tone,
       detail: desktopServerDiagnostic.detail,
-    },
-    {
-      key: "helper-status",
-      title: "本地 Helper",
-      badgeLabel: desktopHelperDiagnostic.label,
-      badgeTone: desktopHelperDiagnostic.tone,
-      detail: desktopHelperDiagnostic.detail,
     },
     {
       key: "client-update",
@@ -6562,7 +6554,7 @@ export function UploadPanel({
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>客户端诊断</DialogTitle>
-                <DialogDescription>查看当前桌面客户端版本、云端连接、本地 Helper 与更新状态，便于快速排查用户环境问题。</DialogDescription>
+                <DialogDescription>查看当前桌面客户端版本、云端连接与更新状态。</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-2">
