@@ -142,37 +142,29 @@ export function getModelRedownloadGuidance(error = {}) {
 }
 
 export function resolveAsrStrategy({
-  mode = "auto",
+  runtimeTrack = "cloud",
+  userExplicitTrack = false,
   localHelperStatus = {},
-  localModelAvailable = false,
+  serverStatus = {},
   localFailureCount = 0,
 } = {}) {
-  const normalizedMode = normalizeText(mode, "auto");
   const helperStatus = normalizeDesktopHelperStatus(localHelperStatus);
-  if (normalizedMode === "manual_local") {
+  const serverReachable = serverStatus?.reachable !== false;
+  const track = normalizeText(runtimeTrack, "cloud");
+
+  if (track === "desktop_local" && userExplicitTrack) {
     return {
       strategy: ASR_EXECUTION_STRATEGIES.BOTTLE1_LOCAL,
-      degraded: false,
-      reason: "",
+      degraded: !helperStatus.healthy || !helperStatus.modelReady,
+      reason: !helperStatus.healthy
+        ? "local_helper_unhealthy"
+        : !helperStatus.modelReady
+          ? "local_model_not_ready"
+          : "",
       manual: true,
     };
   }
-  if (normalizedMode === "manual_bottle1_cloud") {
-    return {
-      strategy: ASR_EXECUTION_STRATEGIES.BOTTLE1_CLOUD,
-      degraded: false,
-      reason: "",
-      manual: true,
-    };
-  }
-  if (normalizedMode === "manual_bottle2_cloud") {
-    return {
-      strategy: ASR_EXECUTION_STRATEGIES.BOTTLE2_CLOUD,
-      degraded: false,
-      reason: "",
-      manual: true,
-    };
-  }
+
   if (Number(localFailureCount || 0) >= 2) {
     return {
       strategy: ASR_EXECUTION_STRATEGIES.BOTTLE2_CLOUD,
@@ -181,22 +173,16 @@ export function resolveAsrStrategy({
       manual: false,
     };
   }
-  if (!localModelAvailable) {
+
+  if (!serverReachable || !helperStatus.healthy) {
     return {
       strategy: ASR_EXECUTION_STRATEGIES.BOTTLE2_CLOUD,
       degraded: true,
-      reason: "local_bundle_missing",
+      reason: !serverReachable ? "cloud_unavailable" : "local_helper_unhealthy",
       manual: false,
     };
   }
-  if (!helperStatus.healthy) {
-    return {
-      strategy: ASR_EXECUTION_STRATEGIES.BOTTLE2_CLOUD,
-      degraded: true,
-      reason: "local_helper_unhealthy",
-      manual: false,
-    };
-  }
+
   if (!helperStatus.modelReady) {
     return {
       strategy: ASR_EXECUTION_STRATEGIES.BOTTLE2_CLOUD,
