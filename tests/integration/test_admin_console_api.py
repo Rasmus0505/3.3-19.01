@@ -687,8 +687,11 @@ def test_create_lesson_task_returns_503_when_task_table_missing(test_client):
     resp = client.post(
         "/api/lessons/tasks",
         headers=headers,
-        files={"video_file": ("migration.mp4", b"video", "video/mp4")},
-        data={"asr_model": "qwen3-asr-flash-filetrans", "semantic_split_enabled": "false"},
+        data={
+            "asr_model": "qwen3-asr-flash-filetrans",
+            "semantic_split_enabled": "false",
+            "dashscope_file_id": "uploads/test/migration.mp4",
+        },
     )
     assert resp.status_code == 503
     payload = resp.json()

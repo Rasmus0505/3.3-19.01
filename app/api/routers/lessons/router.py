@@ -51,8 +51,8 @@ from app.services.billing_service import BillingError, get_default_asr_model
 from app.services.lesson_command_service import (
     LessonTaskAdmissionError,
     create_completed_lesson_from_local_generation,
+    create_lesson_task_from_dashscope_file,
     create_lesson_task_from_local_asr,
-    create_lesson_task_from_upload,
     bulk_delete_lessons_for_user,
     delete_lesson_for_user,
     invalidate_lesson_related_queries,
@@ -213,9 +213,9 @@ async def create_lesson(
     responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
 async def create_lesson_task(
-    video_file: UploadFile = File(...),
     asr_model: str = Form(""),
     semantic_split_enabled: bool | None = Form(None),
+    dashscope_file_id: str = Form(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -227,12 +227,15 @@ async def create_lesson_task(
             "不支持的模型",
             {"supported_models": sorted(get_supported_upload_asr_model_keys()), "input_model": selected_model},
         )
+    normalized_dashscope_file_id = str(dashscope_file_id or "").strip()
+    if not normalized_dashscope_file_id:
+        return error_response(400, "DASHSCOPE_FILE_ID_REQUIRED", "缺少 DashScope 文件 ID")
     try:
-        payload = create_lesson_task_from_upload(
-            video_file=video_file,
+        payload = create_lesson_task_from_dashscope_file(
             owner_user_id=current_user.id,
             asr_model=selected_model,
             semantic_split_enabled=semantic_split_enabled,
+            dashscope_file_id=normalized_dashscope_file_id,
             db=db,
         )
         response_payload = LessonTaskCreateResponse(
@@ -260,10 +263,10 @@ async def create_lesson_task(
         return error_response(429, exc.code, exc.message, exc.detail)
     except BillingError as exc:
         return map_billing_error(exc)
+    except ValueError as exc:
+        return error_response(400, "DASHSCOPE_FILE_ID_REQUIRED", "缺少 DashScope 文件 ID", str(exc)[:1200])
     except Exception as exc:
         return error_response(500, "INTERNAL_ERROR", "任务创建失败", str(exc)[:1200])
-    finally:
-        await video_file.close()
 
 
 @router.post(

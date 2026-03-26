@@ -4980,8 +4980,6 @@ export function UploadPanel({
       setStatus(createTaskStatus);
 
       const form = new FormData();
-      // 传一个空文件占位（FastAPI File(...) 必填，但后端有 dashscope_file_id 时会忽略此文件）
-      form.append("video_file", new Blob([], { type: "application/octet-stream" }), "placeholder.bin");
       form.append("asr_model", selectedAsrModel);
       form.append("semantic_split_enabled", "false");
       form.append("dashscope_file_id", file_id);
@@ -5206,97 +5204,14 @@ export function UploadPanel({
       }
       return;
     }
-    try {
-      const uploadSourceFile = await ensureUploadableSourceFile();
-      setPhase("uploading");
-      await persistSession({
-        file: uploadSourceFile,
-        taskId: "",
-        phase: "uploading",
-        taskSnapshot: null,
-        uploadPercent: 0,
-        status: "",
-        bindingCompleted: false,
-      });
-      const form = new FormData();
-      form.append("video_file", uploadSourceFile);
-      form.append("asr_model", selectedAsrModel);
-      form.append("semantic_split_enabled", "false");
-      const abortController = new AbortController();
-      uploadAbortRef.current = abortController;
-      const { ok, data } = await uploadWithProgress(
-        "/api/lessons/tasks",
-        {
-          method: "POST",
-          body: form,
-          signal: abortController.signal,
-          onUploadProgress: ({ percent }) => {
-            const nextPercent = clampPercent(percent);
-            uploadPersistRef.current.latestPercent = nextPercent;
-            setUploadPercent(nextPercent);
-            persistUploadProgress(nextPercent, uploadSourceFile);
-          },
-        },
-        accessToken,
-      );
-      uploadAbortRef.current = null;
-      if (!ok) {
-        const message = getCloudFailureMessage(toErrorText(data, "创建上传任务失败"), desktopServerStatus);
-        await handleTaskFailureState({
-          message,
-          nextTaskId: "",
-          nextTaskSnapshot: null,
-          nextUploadPercent: clampPercent(uploadPersistRef.current.latestPercent || uploadPercent),
-          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
-          nextBindingCompleted: false,
-          refreshWallet: true,
-        });
-        return;
-      }
-      const nextTaskId = String(data.task_id || "");
-      if (!nextTaskId) {
-        const message = "任务创建成功但缺少 task_id";
-        await handleTaskFailureState({
-          message,
-          nextTaskId: "",
-          nextTaskSnapshot: null,
-          nextUploadPercent: clampPercent(uploadPersistRef.current.latestPercent || uploadPercent),
-          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
-          nextBindingCompleted: false,
-        });
-        return;
-      }
-      if (Boolean(data.model_fallback_applied)) {
-        updateServerModelState(FASTER_WHISPER_MODEL, {
-          status: "preparing",
-          preparing: true,
-          lastError: "",
-          message: "模型预热中",
-        });
-        void fetchServerModelStatus(FASTER_WHISPER_MODEL, { silent: true });
-      }
-      maybeShowModelFallbackToast({ ...data, task_id: nextTaskId });
-      setTaskId(nextTaskId);
-      setUploadPercent(100);
-      uploadPersistRef.current.latestPercent = 100;
-      setPhase("processing");
-      resetUploadPersistState();
-      await persistSession({ taskId: nextTaskId, phase: "processing", taskSnapshot: null, uploadPercent: 100, status: "", bindingCompleted: false });
-      void pollTask(nextTaskId, false, pollToken);
-    } catch (error) {
-      uploadAbortRef.current = null;
-      if (error?.name === "AbortError") return;
-      resetUploadPersistState();
-      const message = `网络错误: ${String(error)}`;
-      await handleTaskFailureState({
-        message,
-        nextTaskId: "",
-        nextTaskSnapshot: null,
-        nextUploadPercent: clampPercent(uploadPersistRef.current.latestPercent || uploadPercent),
-        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
-        nextBindingCompleted: false,
-      });
-    }
+    await handleTaskFailureState({
+      message: "当前仅支持 Bottle 2.0 云端直传，请切换到 Bottle 2.0 后重试。",
+      nextTaskId: "",
+      nextTaskSnapshot: null,
+      nextUploadPercent: 0,
+      nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+      nextBindingCompleted: false,
+    });
   }
 
   async function resumeTask() {
