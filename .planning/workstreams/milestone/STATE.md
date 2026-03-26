@@ -1,11 +1,10 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
-status: verifying
-stopped_at: Checkpoint at 02-03 Task 4 - awaiting human verification
-last_updated: "2026-03-26T18:57:56.516Z"
-last_activity: 2026-03-26
+milestone_name: 基础能力稳定化
+status: milestone_complete
+last_updated: "2026-03-27T03:45:00+08:00"
+last_activity: 2026-03-27
 progress:
   total_phases: 7
   completed_phases: 3
@@ -21,82 +20,42 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 02 — desktop-local-generation
+**Current focus:** v1.0 milestone complete — next: v1.1 planning
 
 ## Current Position
 
-Phase: 3
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-03-26
+v1.0 milestone complete. 3/7 phases shipped.
 
-Progress: [██████████] 100%
+Progress: [██████████] 100% (v1.0)
+
+**Next milestone:** v1.1 — Phase 3 (Lesson Output Consistency) + Phase 4 (Desktop Link Import)
+
+## Milestone: v1.0 Summary
+
+**Shipped:** 2026-03-27
+**Phases:** Phase 1, 01.1, 2
+**Plans:** 8 total (3 + 2 + 3)
+**Requirements satisfied:** 10/22 v1 requirements
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 3
-- Average duration: 18 min
-- Total execution time: 72 min
+| Phase | Plans | Duration |
+|-------|-------|----------|
+| 01 | 3 | 54 min |
+| 01.1 | 2 | 89 min |
+| 02 | 3 | ~15 min |
+| **Total** | **8** | **~158 min** |
 
-**By Phase:**
+## Quick Tasks Completed
 
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 01 | 3 | 54 min | 18 min |
-| 01.1 | 2 | 89 min | 45 min |
-
-**Recent Trend:**
-
-- Last 5 plans: 01.1-02 (71 min), 01.1-01 (18 min), 01-03 (5 min), 01-02 (29 min), 01-01 (20 min)
-- Trend: Stable
-
-| Phase 01 P01 | 20 min | 2 tasks | 2 files |
-| Phase 01 P02 | 29 min | 2 tasks | 2 files |
-| Phase 01 P03 | 5 min | 2 tasks | 2 files |
-| Phase 01.1-fix-asr-subtitle-recognition-403-file-access-failures P01 | 18 min | 2 tasks | 3 files |
-| Phase 01.1-fix-asr-subtitle-recognition-403-file-access-failures P02 | 71 min | 2 tasks | 7 files |
-| Phase 02-desktop-local-generation P01 | 5 | 3 tasks | 5 files |
-| Phase 02 P02 | 5 | 3 tasks | 2 files |
-
-## Accumulated Context
-
-### Decisions
-
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- [Init]: Desktop client is the complete capability surface.
-- [Init]: Web centers on Bottle 2.0 and browser-safe capabilities.
-- [Init]: Platform-managed billing/keys replace user-managed ASR secrets.
-- [Phase 01]: Treat dashscope_file_id as the canonical cloud object key across request-url, task artifacts, and generation entrypoints. - The direct-upload path already works end-to-end when the same object key is preserved. Locking that contract in tests prevents the request-url response and task creation path from drifting apart.
-- [Phase 01.1-fix-asr-subtitle-recognition-403-file-access-failures]: Retry direct-upload ASR once only for ASR_TASK_FAILED plus FILE_403_FORBIDDEN, refreshing the signed URL from the canonical dashscope_file_id.
-- [Phase 01.1-fix-asr-subtitle-recognition-403-file-access-failures]: Persist dashscope_recovery metadata on recovered lessons and map exhausted retries to DASHSCOPE_FILE_ACCESS_FORBIDDEN instead of a generic cloud outage.
-- [Post Phase 01.1]: For browser direct-upload, return `oss://<file_id>` from the upload-policy response, prefer that resource URL for ASR task creation, and enable `X-DashScope-OssResourceResolve` instead of requiring `Files.get()` to expose an HTTPS signed download URL.
-
-### Roadmap Evolution
-
-- Phase 01.1 inserted after Phase 1: Fix ASR subtitle recognition 403 file access failures (URGENT)
-
-### Pending Todos
-
-None yet.
-
-### Blockers/Concerns
-
-- Product still needs a precise low-server-load Bottle 2.0 web media path.
-- Browser and desktop capability boundaries must be communicated clearly.
-
-### Quick Tasks Completed
-
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 260327-1xf | Fix LessonService._build_one_lesson missing in DashScope course generation path | 2026-03-27 | 4037e2f9 | [260327-1xf-fix-lessonservice-build-one-lesson-missi](../../quick/260327-1xf-fix-lessonservice-build-one-lesson-missi/) |
-| 260327-2ca | Fix persist_lesson_workspace_summary signature mismatch in DashScope save stage | 2026-03-27 | pending | [260327-2ca-fix-persist-lesson-workspace-summary-sig](../../quick/260327-2ca-fix-persist-lesson-workspace-summary-sig/) |
+|| # | Description | Date | Commit | Directory |
+||---|-------------|------|--------|-----------|
+|| 260327-1xf | Fix LessonService._build_one_lesson missing in DashScope course generation path | 2026-03-27 | 4037e2f9 | quick/260327-1xf-fix-lessonservice-build-one-lesson-missi/ |
+|| 260327-2ca | Fix persist_lesson_workspace_summary signature mismatch in DashScope save stage | 2026-03-27 | pending | quick/260327-2ca-fix-persist-lesson-workspace-summary-sig/ |
 
 ## Session Continuity
 
-Last session: 2026-03-26T18:52:00.940Z
-Stopped at: Checkpoint at 02-03 Task 4 - awaiting human verification
-Resume file: None
+Last session: 2026-03-27T03:30:00+08:00
+Milestone v1.0 completed. Archived to .planning/milestones/
