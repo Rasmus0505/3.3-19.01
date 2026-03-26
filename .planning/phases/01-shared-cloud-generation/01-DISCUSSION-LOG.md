@@ -1,72 +1,72 @@
-﻿# Phase 1: Shared Cloud Generation - Discussion Log
+# Phase 1: Shared Cloud Generation - Discussion Log
 
 > **Audit trail only.** Do not use as input to planning, research, or execution agents.
 > Decisions are captured in CONTEXT.md — this log preserves the alternatives considered.
 
 **Date:** 2026-03-26
 **Phase:** 01-Shared Cloud Generation
-**Areas discussed:** Web media preparation path, runtime capability messaging, shared cloud task experience, supported inputs and file-size handling
+**Areas discussed:** 网页端媒体准备路径、运行时能力提示、共享云端任务体验、输入范围与大文件处理
 
 ---
 
-## Web media preparation path
+## 网页端媒体准备路径
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Prefer cloud file path | Upload media to the cloud path used by Bottle 2.0 and avoid server-side transcoding by default | ✓ |
-| Let server transcode as fallback | Use your own server when the web path cannot handle the media directly | |
+| Prefer cloud file path | 使用 Bottle 2.0 的云端文件路径，不默认走服务器侧转码 | ✓ |
+| Let server transcode as fallback | 当 Web 端处理不了时，让你自己的服务器参与转码 | |
 
-**User's choice:** Prefer the cloud file path and do not let the server become the default transcoding fallback.
-**Notes:** User explicitly wants low server pressure and is willing to recommend the desktop client instead of server-side fallback if the web/cloud path cannot reliably handle some media.
+**User's choice:** 优先走云端文件路径，不让服务器成为默认转码兜底。
+**Notes:** 用户明确希望降低服务器压力，并接受在网页端失败时引导用户下载桌面客户端，而不是服务器侧兜底。
 
 ---
 
-## Runtime capability messaging
+## 运行时能力提示
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Popup + CTA | Show a clear popup for desktop-only features and include a download button | ✓ |
-| Passive inline note | Only show a small page-level hint without a strong CTA | |
+| Popup + CTA | 用清晰弹窗解释桌面专属功能，并提供下载按钮 | ✓ |
+| Passive inline note | 只给一个弱提示，不做强引导 | |
 
-**User's choice:** Popup + CTA.
-**Notes:** The CTA should sit at the bottom-right. If no final installer host exists yet, the product may temporarily direct users to a group number or manual distribution instructions.
+**User's choice:** 使用弹窗 + CTA。
+**Notes:** CTA 应位于右下角；如果正式安装包链接还没准备好，可以先给群号或人工分发说明。
 
 ---
 
-## Shared cloud task experience
+## 共享云端任务体验
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Unified stages | Web and desktop should expose nearly the same Bottle 2.0 status stages and recovery expectations | ✓ |
-| Runtime-specific flows | Let web and desktop present clearly different cloud-task experiences | |
+| Unified stages | Web 和 Desktop 尽量看到同一套 Bottle 2.0 状态阶段 | ✓ |
+| Runtime-specific flows | 允许 Web 和 Desktop 的云端任务体验明显不同 | |
 
-**User's choice:** Unified stages.
-**Notes:** User wants Bottle 2.0 to feel like one shared product flow even if implementation details differ underneath.
+**User's choice:** 尽量统一阶段状态。
+**Notes:** 用户希望 Bottle 2.0 被理解成同一条云端生成产品能力，而不是两条风格不同的流程。
 
 ---
 
-## Supported inputs and file-size handling
+## 输入范围与大文件处理
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Local uploads only for Phase 1 | Support local audio/video uploads now; keep link import for later phase | ✓ |
-| Fold link import into Phase 1 | Include URL-based import in the initial shared cloud-generation phase | |
-| Hard product cap now | Define a strict file-size limit immediately before validating actual cloud behavior | |
-| Validate first, warn users, recommend desktop when needed | Use measured cloud constraints and guide users rather than guessing a low cap | ✓ |
+| Local uploads only for Phase 1 | 当前阶段先支持本地音频/视频上传，链接导入放后面 | ✓ |
+| Fold link import into Phase 1 | 把链接导入一并纳入当前共享云端生成阶段 | |
+| Hard product cap now | 现在就写死严格文件大小上限 | |
+| Validate first, warn users, recommend desktop when needed | 先验证真实云端能力，再给用户提示并推荐桌面端 | ✓ |
 
-**User's choice:** Local uploads only for Phase 1, support audio and video, and validate real file-size behavior before setting hard limits.
-**Notes:** User does not want to explicitly state that link import is permanently unsupported; it is simply deferred to a later dedicated phase. Oversized or unreliable cases should point users to the desktop client.
+**User's choice:** 当前阶段先支持本地音频/视频上传；文件边界先按真实云端能力验证，不立即写死保守上限。
+**Notes:** 用户并不是否定未来的链接导入，只是接受它属于后续专门阶段。超大文件或高风险场景优先推荐桌面端，而不是服务器兜底。
 
 ---
 
 ## the agent's Discretion
 
-- Exact popup copy and CTA hierarchy
-- Exact status label wording for the shared Bottle 2.0 stages
-- Exact warning thresholds after real-world cloud-file validation
+- 弹窗文案和 CTA 层级的具体视觉实现
+- 共享 Bottle 2.0 阶段标签的最终中文表达
+- 在真实云端边界验证后，具体 warning / hard-block 阈值如何划分
 
 ## Deferred Ideas
 
-- Desktop link import remains a later dedicated phase
-- Permanent installer hosting/distribution path can be finalized later
-- Final large-file limit policy should be based on measured cloud behavior rather than early guesses
+- 桌面端链接导入属于后续阶段
+- 正式安装包托管/分发路径可后续再定
+- 永久性大文件限制策略应基于真实验证结果再决定

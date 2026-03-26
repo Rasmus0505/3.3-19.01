@@ -1,43 +1,43 @@
-﻿# Stack
+# 技术栈
 
-## Runtime Layers
+## 运行时层级
 
-- Backend: Python 3.11 container running FastAPI from `app/main.py` via `uvicorn` in `scripts/start.sh`.
-- Frontend: React 18 + Vite 7 app in `frontend/` with Tailwind CSS 4 and Radix UI components.
-- Desktop client: Electron 35 shell in `desktop-client/` that hosts the same frontend and adds a local helper/runtime bridge.
-- Database: SQLAlchemy 2 + Alembic migrations in `migrations/`; production target is PostgreSQL, development commonly uses SQLite.
+- Backend：Python 3.11 容器，通过 `scripts/start.sh` 启动 `uvicorn`，入口是 `app/main.py`
+- Frontend：`frontend/` 中的 React 18 + Vite 7 应用，使用 Tailwind CSS 4 和 Radix UI
+- Desktop client：`desktop-client/` 中的 Electron 35，复用同一套前端并增加本地 helper / runtime bridge
+- Database：SQLAlchemy 2 + Alembic，生产目标是 PostgreSQL，本地开发常用 SQLite
 
-## Python Dependencies
+## Python 依赖
 
-Primary runtime dependencies from `requirements.txt`:
+`requirements.txt` 中的运行时核心依赖：
 
-- Web/API: `fastapi`, `uvicorn`, `python-multipart`
-- Data: `sqlalchemy`, `psycopg2-binary`, `alembic`
-- Auth/security: `PyJWT`, `passlib[bcrypt]`
-- AI/media: `dashscope`, `faster-whisper`, `spacy`, `yt-dlp`, `requests`
-- Translation client: `openai` SDK is used in `app/infra/translation_qwen_mt.py` against a compatible base URL
+- Web/API：`fastapi`、`uvicorn`、`python-multipart`
+- 数据层：`sqlalchemy`、`psycopg2-binary`、`alembic`
+- 认证安全：`PyJWT`、`passlib[bcrypt]`
+- AI / 媒体：`dashscope`、`faster-whisper`、`spacy`、`yt-dlp`、`requests`
+- 翻译客户端：`app/infra/translation_qwen_mt.py` 使用 `openai` SDK 连接兼容式翻译基座
 
-Development extras from `requirements-dev.txt`:
+`requirements-dev.txt` 中的开发补充依赖：
 
-- `pytest`, `httpx`, `pyinstaller`
+- `pytest`、`httpx`、`pyinstaller`
 
-## Frontend Dependencies
+## 前端依赖
 
-Key packages from `frontend/package.json`:
+`frontend/package.json` 中的重要依赖：
 
-- `react`, `react-dom`, `react-router-dom`
-- UI primitives: `@radix-ui/*`, `lucide-react`, `sonner`
-- Styling: `tailwindcss`, `@tailwindcss/vite`, `class-variance-authority`, `tailwind-merge`
-- Charts/state: `recharts`, `zustand`
+- `react`、`react-dom`、`react-router-dom`
+- UI primitives：`@radix-ui/*`、`lucide-react`、`sonner`
+- 样式：`tailwindcss`、`@tailwindcss/vite`、`class-variance-authority`、`tailwind-merge`
+- 图表与状态：`recharts`、`zustand`
 
-## Desktop Dependencies
+## 桌面端依赖
 
-Key packages from `desktop-client/package.json`:
+`desktop-client/package.json` 中的重要依赖：
 
 - `electron`
 - `electron-builder`
 
-Packaged desktop resources include:
+桌面打包额外资源包含：
 
 - `desktop-client/electron/**/*`
 - `desktop-client/.cache/frontend-dist/**/*`
@@ -45,24 +45,24 @@ Packaged desktop resources include:
 - `tools/yt-dlp/yt-dlp.exe`
 - `asr-test/models/faster-distil-small.en/*`
 
-## Configuration and Environment
+## 配置与环境变量
 
-Backend configuration is centralized in `app/core/config.py`.
+后端配置集中定义在 `app/core/config.py`。
 
-Important environment variables surfaced by code and README:
+当前代码和 README 中暴露的重要环境变量：
 
-- `APP_ENV`, `PORT`, `DATABASE_URL`
+- `APP_ENV`、`PORT`、`DATABASE_URL`
 - `JWT_SECRET`
 - `DASHSCOPE_API_KEY`
-- `ADMIN_EMAILS`, `ADMIN_BOOTSTRAP_PASSWORD`
+- `ADMIN_EMAILS`、`ADMIN_BOOTSTRAP_PASSWORD`
 - `REDEEM_CODE_EXPORT_CONFIRM_TEXT`
 - `AUTO_MIGRATE_ON_START`
-- `PERSISTENT_DATA_DIR`, `ASR_BUNDLE_ROOT_DIR`
-- `MT_BASE_URL`, `MT_MODEL`
+- `PERSISTENT_DATA_DIR`、`ASR_BUNDLE_ROOT_DIR`
+- `MT_BASE_URL`、`MT_MODEL`
 
-## Build and Packaging
+## 构建与打包
 
-- Root `Dockerfile` performs a multi-stage build: Vite frontend -> Python runtime image -> copies built assets into `app/static/`.
-- `admin-web/Dockerfile` builds a separate admin static site behind nginx.
-- `frontend/vite.config.js` switches base path to `/static/` for web and `./` for desktop renderer builds.
-- `desktop-client/scripts/build.mjs` rebuilds the frontend with desktop flags and copies output into `desktop-client/.cache/frontend-dist/`.
+- 根 `Dockerfile` 使用多阶段构建：Vite 前端 -> Python 运行时镜像 -> 把构建好的静态资源拷贝进 `app/static/`
+- `admin-web/Dockerfile` 会单独构建后台静态页面并交给 nginx
+- `frontend/vite.config.js` 对 web 使用 `/static/` base，对 desktop renderer build 使用 `./`
+- `desktop-client/scripts/build.mjs` 会使用 desktop 标志重新构建前端，再把输出复制到 `desktop-client/.cache/frontend-dist/`
