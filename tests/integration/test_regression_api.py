@@ -770,7 +770,7 @@ def test_lesson_task_resume_reuses_failed_task_artifacts(test_client, monkeypatc
 
     attempts = {"count": 0}
 
-    def fake_generate_from_saved_file(*, source_path, source_filename, req_dir, owner_id, asr_model, db, progress_callback=None, task_id=None, semantic_split_enabled=None):
+    def fake_generate_from_saved_file(*, dashscope_file_id, source_filename, req_dir, owner_id, asr_model, db, progress_callback=None, task_id=None, semantic_split_enabled=None):
         attempts["count"] += 1
         progress_callback(
             {
@@ -831,14 +831,17 @@ def test_lesson_task_resume_reuses_failed_task_artifacts(test_client, monkeypatc
         session.close()
 
     monkeypatch.setattr(lessons_router.threading, "Thread", ImmediateThread)
-    monkeypatch.setattr(lessons_router.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+    monkeypatch.setattr(lessons_router.LessonService, "generate_from_dashscope_file_id", fake_generate_from_saved_file)
     monkeypatch.setattr(lesson_command_service_module, "probe_audio_duration_ms", lambda _path: 1_000)
 
     create_resp = client.post(
         "/api/lessons/tasks",
         headers={"Authorization": f"Bearer {token}"},
-        files={"video_file": ("resume.mp4", io.BytesIO(b"video"), "video/mp4")},
-        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+        data={
+            "asr_model": QWEN_ASR_MODEL,
+            "semantic_split_enabled": "false",
+            "dashscope_file_id": "uploads/test/resume.mp4",
+        },
     )
     assert create_resp.status_code == 200
     task_id = create_resp.json()["task_id"]
@@ -1186,7 +1189,7 @@ def test_lesson_task_reports_translation_parse_failure_with_explicit_error(test_
                 return
             super().start()
 
-    def fake_generate_from_saved_file(*, source_path, source_filename, req_dir, owner_id, asr_model, db, progress_callback=None, task_id=None, semantic_split_enabled=None):
+    def fake_generate_from_saved_file(*, dashscope_file_id, source_filename, req_dir, owner_id, asr_model, db, progress_callback=None, task_id=None, semantic_split_enabled=None):
         progress_callback(
             {
                 "stage_key": "convert_audio",
@@ -1231,14 +1234,17 @@ def test_lesson_task_reports_translation_parse_failure_with_explicit_error(test_
         session.close()
 
     monkeypatch.setattr(lessons_router.threading, "Thread", ImmediateThread)
-    monkeypatch.setattr(lessons_router.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+    monkeypatch.setattr(lessons_router.LessonService, "generate_from_dashscope_file_id", fake_generate_from_saved_file)
     monkeypatch.setattr(lesson_command_service_module, "probe_audio_duration_ms", lambda _path: 1_000)
 
     create_resp = client.post(
         "/api/lessons/tasks",
         headers={"Authorization": f"Bearer {token}"},
-        files={"video_file": ("translation-parse.mp4", io.BytesIO(b"video"), "video/mp4")},
-        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+        data={
+            "asr_model": QWEN_ASR_MODEL,
+            "semantic_split_enabled": "false",
+            "dashscope_file_id": "uploads/test/translation-parse.mp4",
+        },
     )
     assert create_resp.status_code == 200
     task_id = create_resp.json()["task_id"]
@@ -1362,13 +1368,16 @@ def test_lesson_task_pause_and_resume_from_safe_point(test_client, monkeypatch, 
         }
         return lesson
 
-    monkeypatch.setattr(lesson_command_service_module.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+    monkeypatch.setattr(lesson_command_service_module.LessonService, "generate_from_dashscope_file_id", fake_generate_from_saved_file)
 
     create_resp = client.post(
         "/api/lessons/tasks",
         headers=headers,
-        files={"video_file": ("pause.mp4", io.BytesIO(b"video"), "video/mp4")},
-        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+        data={
+            "asr_model": QWEN_ASR_MODEL,
+            "semantic_split_enabled": "false",
+            "dashscope_file_id": "uploads/test/pause.mp4",
+        },
     )
     assert create_resp.status_code == 200
     task_id = create_resp.json()["task_id"]
@@ -1463,13 +1472,16 @@ def test_lesson_task_terminate_marks_task_as_terminated(test_client, monkeypatch
         )
         raise AssertionError("terminate control should interrupt generation")
 
-    monkeypatch.setattr(lesson_command_service_module.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+    monkeypatch.setattr(lesson_command_service_module.LessonService, "generate_from_dashscope_file_id", fake_generate_from_saved_file)
 
     create_resp = client.post(
         "/api/lessons/tasks",
         headers=headers,
-        files={"video_file": ("terminate.mp4", io.BytesIO(b"video"), "video/mp4")},
-        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+        data={
+            "asr_model": QWEN_ASR_MODEL,
+            "semantic_split_enabled": "false",
+            "dashscope_file_id": "uploads/test/terminate.mp4",
+        },
     )
     assert create_resp.status_code == 200
     task_id = create_resp.json()["task_id"]
@@ -1549,14 +1561,17 @@ def test_terminate_active_lesson_tasks_only_targets_current_user(test_client, mo
         )
         raise AssertionError("terminate control should interrupt generation")
 
-    monkeypatch.setattr(lesson_command_service_module.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+    monkeypatch.setattr(lesson_command_service_module.LessonService, "generate_from_dashscope_file_id", fake_generate_from_saved_file)
 
     def create_task(current_headers, filename):
         response = client.post(
             "/api/lessons/tasks",
             headers=current_headers,
-            files={"video_file": (filename, io.BytesIO(b"video"), "video/mp4")},
-            data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+            data={
+                "asr_model": QWEN_ASR_MODEL,
+                "semantic_split_enabled": "false",
+                "dashscope_file_id": f"uploads/test/{filename}",
+            },
         )
         assert response.status_code == 200
         return str(response.json()["task_id"])
@@ -1643,13 +1658,16 @@ def test_lesson_task_resume_marks_missing_artifacts_as_non_resumable(test_client
         raise RuntimeError("temporary failure")
 
     monkeypatch.setattr(lessons_router.threading, "Thread", ImmediateThread)
-    monkeypatch.setattr(lessons_router.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+    monkeypatch.setattr(lessons_router.LessonService, "generate_from_dashscope_file_id", fake_generate_from_saved_file)
 
     create_resp = client.post(
         "/api/lessons/tasks",
         headers={"Authorization": f"Bearer {token}"},
-        files={"video_file": ("resume-missing.mp4", io.BytesIO(b"video"), "video/mp4")},
-        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+        data={
+            "asr_model": QWEN_ASR_MODEL,
+            "semantic_split_enabled": "false",
+            "dashscope_file_id": "uploads/test/resume-missing.mp4",
+        },
     )
     assert create_resp.status_code == 200
     task_id = create_resp.json()["task_id"]
@@ -1751,13 +1769,16 @@ def test_lesson_task_resume_restarts_failed_task_when_resume_unavailable(test_cl
         return lesson
 
     monkeypatch.setattr(lessons_router.threading, "Thread", ImmediateThread)
-    monkeypatch.setattr(lessons_router.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+    monkeypatch.setattr(lessons_router.LessonService, "generate_from_dashscope_file_id", fake_generate_from_saved_file)
 
     create_resp = client.post(
         "/api/lessons/tasks",
         headers={"Authorization": f"Bearer {token}"},
-        files={"video_file": ("restart.mp4", io.BytesIO(b"video"), "video/mp4")},
-        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+        data={
+            "asr_model": QWEN_ASR_MODEL,
+            "semantic_split_enabled": "false",
+            "dashscope_file_id": "uploads/test/restart.mp4",
+        },
     )
     assert create_resp.status_code == 200
     task_id = create_resp.json()["task_id"]
@@ -4638,7 +4659,7 @@ def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path)
 
     def fake_generate_from_saved_file(
         *,
-        source_path,
+        dashscope_file_id,
         source_filename,
         req_dir,
         owner_id,
@@ -4726,13 +4747,16 @@ def test_create_lesson_task_and_poll_success(test_client, monkeypatch, tmp_path)
         }
         return lesson
 
-    monkeypatch.setattr(lesson_router.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+    monkeypatch.setattr(lesson_router.LessonService, "generate_from_dashscope_file_id", fake_generate_from_saved_file)
 
     create_resp = client.post(
         "/api/lessons/tasks",
         headers=headers,
-        files={"video_file": ("task.mp4", io.BytesIO(b"dummy"), "video/mp4")},
-        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+        data={
+            "asr_model": QWEN_ASR_MODEL,
+            "semantic_split_enabled": "false",
+            "dashscope_file_id": "uploads/test/task.mp4",
+        },
     )
     assert create_resp.status_code == 200
     assert captured["semantic_split_enabled"] is False
@@ -4774,7 +4798,7 @@ def test_lesson_task_admission_control_queues_and_rejects_across_entrypoints(tes
 
     def fake_generate_from_saved_file(
         *,
-        source_path,
+        dashscope_file_id,
         source_filename,
         req_dir,
         owner_id,
@@ -4784,7 +4808,7 @@ def test_lesson_task_admission_control_queues_and_rejects_across_entrypoints(tes
         task_id=None,
         semantic_split_enabled=None,
     ):
-        _ = (source_path, req_dir, task_id, semantic_split_enabled)
+        _ = (dashscope_file_id, req_dir, task_id, semantic_split_enabled)
         started_sources.append(source_filename)
         if progress_callback:
             progress_callback(
@@ -4844,13 +4868,16 @@ def test_lesson_task_admission_control_queues_and_rejects_across_entrypoints(tes
         db.refresh(lesson)
         return lesson
 
-    monkeypatch.setattr(lesson_command_service_module.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+    monkeypatch.setattr(lesson_command_service_module.LessonService, "generate_from_dashscope_file_id", fake_generate_from_saved_file)
 
     first_resp = client.post(
         "/api/lessons/tasks",
         headers=headers,
-        files={"video_file": ("hold.mp4", io.BytesIO(b"hold"), "video/mp4")},
-        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+        data={
+            "asr_model": QWEN_ASR_MODEL,
+            "semantic_split_enabled": "false",
+            "dashscope_file_id": "uploads/test/hold.mp4",
+        },
     )
     assert first_resp.status_code == 200
     first_payload = first_resp.json()
@@ -4860,8 +4887,11 @@ def test_lesson_task_admission_control_queues_and_rejects_across_entrypoints(tes
     second_resp = client.post(
         "/api/lessons/tasks",
         headers=headers,
-        files={"video_file": ("queued.mp4", io.BytesIO(b"queued"), "video/mp4")},
-        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+        data={
+            "asr_model": QWEN_ASR_MODEL,
+            "semantic_split_enabled": "false",
+            "dashscope_file_id": "uploads/test/queued.mp4",
+        },
     )
     assert second_resp.status_code == 200
     second_payload = second_resp.json()
@@ -4946,7 +4976,7 @@ def test_lesson_task_partial_success_and_debug_report(test_client, monkeypatch, 
 
     def fake_generate_from_saved_file(
         *,
-        source_path,
+        dashscope_file_id,
         source_filename,
         req_dir,
         owner_id,
@@ -5047,13 +5077,16 @@ def test_lesson_task_partial_success_and_debug_report(test_client, monkeypatch, 
         }
         return lesson
 
-    monkeypatch.setattr(lesson_router.LessonService, "generate_from_saved_file", fake_generate_from_saved_file)
+    monkeypatch.setattr(lesson_router.LessonService, "generate_from_dashscope_file_id", fake_generate_from_saved_file)
 
     create_resp = client.post(
         "/api/lessons/tasks",
         headers=headers,
-        files={"video_file": ("partial.mp4", io.BytesIO(b"dummy"), "video/mp4")},
-        data={"asr_model": QWEN_ASR_MODEL, "semantic_split_enabled": "false"},
+        data={
+            "asr_model": QWEN_ASR_MODEL,
+            "semantic_split_enabled": "false",
+            "dashscope_file_id": "uploads/test/partial.mp4",
+        },
     )
     assert create_resp.status_code == 200
     task_id = create_resp.json()["task_id"]
@@ -6521,6 +6554,8 @@ def test_generate_lesson_failure_still_refunds_reserved_points(test_client, monk
         assert ledgers[-1].delta_points == 260
     finally:
         session.close()
+
+
 
 
 

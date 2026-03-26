@@ -15,6 +15,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.api.routers import admin, admin_console, admin_sql_console, asr_models, asr_models_router, auth, billing, lessons, lessons_router, media, practice, transcribe, wallet
+from app.api.routers.dashscope_upload import router as dashscope_upload_router
 from app.api.routers.local_asr_assets import router as local_asr_assets_router
 from app.api.routers.lessons.cloud_transcribe import router as cloud_transcribe_router
 from app.core.config import (
@@ -591,6 +592,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(transcribe)
     app.include_router(lessons_router)
     app.include_router(cloud_transcribe_router)
+    app.include_router(dashscope_upload_router)
     app.include_router(asr_models_router)
     app.include_router(local_asr_assets_router)
     app.include_router(practice)

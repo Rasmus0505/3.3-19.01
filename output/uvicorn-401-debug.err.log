@@ -1,0 +1,46 @@
+development : 无法将“development”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，
+请确保路径正确，然后再试一次。
+所在位置 行:1 字符: 14
++ $env:APP_ENV=development; $env:DATABASE_URL=sqlite:///./app.db; $env: ...
++              ~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (development:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+sqlite:///./app.db : 无法将“sqlite:///./app.db”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，
+如果包括路径，请确保路径正确，然后再试一次。
+所在位置 行:1 字符: 45
++ ... env:APP_ENV=development; $env:DATABASE_URL=sqlite:///./app.db; $env:J ...
++                                                ~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (sqlite:///./app.db:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+change-me : 无法将“change-me”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确
+保路径正确，然后再试一次。
+所在位置 行:1 字符: 81
++ ... nv:DATABASE_URL=sqlite:///./app.db; $env:JWT_SECRET=change-me; python ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (change-me:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+INFO:     Started server process [32016]
+INFO:     Waiting for application startup.
+2026-03-26 15:33:50,643 INFO [app.main] [DEBUG] startup.begin
+2026-03-26 15:33:50,643 INFO [app.main] [DEBUG] startup.paths tmp_dir=\tmp\zeabur3.3 tmp_data_dir=\tmp\zeabur3.3\data persistent_data_dir=C:\Users\Administrator\AppData\Local\Temp\zeabur3.3-persistent
+2026-03-26 15:33:50,643 WARNING [app.main] [DEBUG] startup.dashscope missing DASHSCOPE_API_KEY; ASR endpoints may fail
+2026-03-26 15:33:50,643 INFO [app.infra.media_ffmpeg] [DEBUG] media_ffmpeg.local_bin_already_on_path path=D:\3.3-19.01\tools\ffmpeg\bin
+2026-03-26 15:33:50,644 INFO [app.infra.media_ffmpeg] [DEBUG] media_ffmpeg.check_command cmd=ffmpeg resolved=D:\3.3-19.01\tools\ffmpeg\bin\ffmpeg.exe found=D:\3.3-19.01\tools\ffmpeg\bin\ffmpeg.exe
+2026-03-26 15:33:50,644 INFO [app.infra.media_ffmpeg] [DEBUG] media_ffmpeg.check_libopus executable=D:\3.3-19.01\tools\ffmpeg\bin\ffmpeg.exe
+2026-03-26 15:33:51,588 INFO [app.infra.media_ffmpeg] [DEBUG] media_ffmpeg.libopus_ok ffmpeg=D:\3.3-19.01\tools\ffmpeg\bin\ffmpeg.exe
+2026-03-26 15:33:51,589 INFO [app.infra.media_ffmpeg] [DEBUG] media_ffmpeg.local_bin_already_on_path path=D:\3.3-19.01\tools\ffmpeg\bin
+2026-03-26 15:33:51,589 INFO [app.infra.media_ffmpeg] [DEBUG] media_ffmpeg.check_command cmd=ffprobe resolved=D:\3.3-19.01\tools\ffmpeg\bin\ffprobe.exe found=D:\3.3-19.01\tools\ffmpeg\bin\ffprobe.exe
+2026-03-26 15:33:51,615 WARNING [app.services.billing] [DEBUG] billing_rates.removed_admin_models_cleanup removed=2
+2026-03-26 15:33:51,624 INFO [app.main] [DEBUG] startup.db ready
+2026-03-26 15:33:51,624 INFO [app.main] [DEBUG] startup.admin_bootstrap ready
+2026-03-26 15:33:51,624 WARNING [app.main] [DEBUG] startup.degraded issues=['DASHSCOPE_API_KEY is not configured']
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8080 (Press CTRL+C to quit)
+forrtl: error (200): program aborting due to window-CLOSE event
+Image              PC                Routine            Line        Source             
+KERNELBASE.dll     00007FFC2B0E7847  Unknown               Unknown  Unknown
+KERNEL32.DLL       00007FFC2BB6257D  Unknown               Unknown  Unknown
+ntdll.dll          00007FFC2D88AA58  Unknown               Unknown  Unknown

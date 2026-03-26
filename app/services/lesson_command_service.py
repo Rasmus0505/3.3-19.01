@@ -608,13 +608,12 @@ def run_lesson_generation_task(
             logger.exception("[DEBUG] lessons.task.queue_schedule_failed task_id=%s", task_id)
 
 
-def create_lesson_task_from_upload(
+def create_lesson_task_from_dashscope_file(
     *,
-    video_file,
     owner_user_id: int,
     asr_model: str,
     semantic_split_enabled: bool | None,
-    dashscope_file_id: str | None = None,
+    dashscope_file_id: str,
     db: Session,
 ) -> dict[str, object]:
     task_id = build_task_id()
@@ -624,25 +623,15 @@ def create_lesson_task_from_upload(
     try:
         ensure_default_billing_rates(db)
         ensure_lesson_task_storage_ready(db)
-        artifacts_patch: dict[str, object] = {}
-
-        if dashscope_file_id:
-            artifacts_patch["dashscope_file_id"] = str(dashscope_file_id)
-            source_path_for_task = ""
-            source_filename = "dashscope-direct-upload"
-        else:
-            source_filename = (video_file.filename or "unknown")[:255]
-            suffix = validate_suffix(source_filename)
-            source_path = req_dir / f"source{suffix}"
-            save_upload_file_stream(video_file, source_path, max_bytes=UPLOAD_MAX_BYTES)
-            source_duration_ms = probe_audio_duration_ms(source_path)
-            _ensure_sufficient_balance_for_model(
-                db=db,
-                owner_user_id=owner_user_id,
-                asr_model=asr_model,
-                source_duration_ms=source_duration_ms,
-            )
-            source_path_for_task = str(source_path)
+        normalized_dashscope_file_id = str(dashscope_file_id or "").strip()
+        if not normalized_dashscope_file_id:
+            raise ValueError("dashscope_file_id is required")
+        source_filename = Path(normalized_dashscope_file_id).name.strip() or "dashscope-direct-upload"
+        source_filename = source_filename[:255]
+        source_marker_path = req_dir / "dashscope_file_id.txt"
+        source_marker_path.write_text(normalized_dashscope_file_id, encoding="utf-8")
+        artifacts_patch: dict[str, object] = {"dashscope_file_id": normalized_dashscope_file_id}
+        source_path_for_task = str(source_marker_path)
 
         model_resolution = _resolve_task_asr_models(asr_model)
         effective_asr_model = str(model_resolution["effective_asr_model"])
