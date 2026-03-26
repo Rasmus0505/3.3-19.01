@@ -52,7 +52,7 @@ from app.services.lesson_builder import (
     tokenize_learning_sentence,
     tokenize_sentence,
 )
-from app.services.lesson_task_manager import persist_lesson_workspace_summary
+from app.services.lesson_task_manager import patch_task_artifacts, persist_lesson_workspace_summary
 from app.services.media import MediaError, extract_audio_for_asr, probe_audio_duration_ms, resolve_media_command, run_cmd, save_upload_file_stream, validate_suffix
 from app.services.translation_qwen_mt import (
     MT_MODEL,
@@ -2551,6 +2551,14 @@ class LessonService:
             db.commit()
             db.refresh(lesson)
             lesson.subtitle_cache_seed = LessonService.build_subtitle_cache_seed(asr_payload=asr_payload, variant=variant)
+            if isinstance(dashscope_recovery, dict):
+                lesson.subtitle_cache_seed["dashscope_recovery"] = dict(dashscope_recovery)
+                if task_id:
+                    patch_task_artifacts(
+                        task_id,
+                        artifacts_patch={"dashscope_recovery": dict(dashscope_recovery)},
+                        db=db,
+                    )
             lesson.task_result_meta = dict(task_result_meta)
             lesson.translation_debug = dict(translation_debug)
             try:

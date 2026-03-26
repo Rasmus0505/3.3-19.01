@@ -4989,7 +4989,101 @@ def test_dashscope_403_file_access_retry_task_hides_first_failure_and_skips_fall
         assert task_row is not None
         assert task_row.error_code == ""
         assert task_row.failure_debug_json is None
-        assert task_row.artifacts_json["dashscope_file_id"] == "uploads/test/dashscope_403.mp4"
+        db_artifacts = json.loads(
+            verify_session.execute(
+                text("SELECT artifacts_json FROM lesson_generation_tasks WHERE task_id = :task_id"),
+                {"task_id": task_id},
+            ).scalar_one()
+        )
+        assert db_artifacts["dashscope_file_id"] == "uploads/test/dashscope_403.mp4"
+        assert db_artifacts["dashscope_recovery"] == {
+            "dashscope_file_id": "uploads/test/dashscope_403.mp4",
+            "first_failure_stage": "asr_transcribe",
+            "first_failure_code": "ASR_TASK_FAILED",
+            "first_failure_message": "provider denied signed url",
+            "retry_attempted": True,
+            "retry_outcome": "succeeded",
+            "final_outcome": "recovered",
+        }
+    finally:
+        verify_session.close()
+
+
+def test_dashscope_403_file_access_retry_failure_persists_recovery_debug(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="dashscope-403-failed@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from app.services import lesson_command_service as lesson_command_service_module
+
+    monkeypatch.setattr(lesson_command_service_module, "BASE_TMP_DIR", tmp_path)
+    _seed_wallet_balance(session_factory, email="dashscope-403-failed@example.com")
+
+    class InlineThread:
+        def __init__(self, *, target, kwargs=None, daemon=None):
+            self._target = target
+            self._kwargs = kwargs or {}
+
+        def start(self):
+            self._target(**self._kwargs)
+
+    monkeypatch.setattr(lesson_command_service_module.threading, "Thread", InlineThread)
+
+    recovery_payload = {
+        "dashscope_file_id": "uploads/test/exhausted.mp4",
+        "first_failure_stage": "asr_transcribe",
+        "first_failure_code": "ASR_TASK_FAILED",
+        "first_failure_message": "provider denied signed url",
+        "retry_attempted": True,
+        "retry_outcome": "failed",
+        "final_outcome": "cloud_file_access_failed",
+    }
+
+    def fake_generate_from_dashscope_file_id(**_kwargs):
+        raise lesson_command_service_module.AsrError(
+            "DASHSCOPE_FILE_ACCESS_FORBIDDEN",
+            "DashScope 云端文件访问失败",
+            json.dumps(recovery_payload, ensure_ascii=False),
+        )
+
+    monkeypatch.setattr(
+        lesson_command_service_module.LessonService,
+        "generate_from_dashscope_file_id",
+        staticmethod(fake_generate_from_dashscope_file_id),
+    )
+
+    create_resp = client.post(
+        "/api/lessons/tasks",
+        headers=headers,
+        data={
+            "asr_model": QWEN_ASR_MODEL,
+            "semantic_split_enabled": "false",
+            "dashscope_file_id": "uploads/test/exhausted.mp4",
+        },
+    )
+    assert create_resp.status_code == 200
+    task_id = create_resp.json()["task_id"]
+
+    poll_resp = client.get(f"/api/lessons/tasks/{task_id}", headers=headers)
+    assert poll_resp.status_code == 200
+    payload = poll_resp.json()
+    assert payload["status"] == "failed"
+    assert payload["error_code"] == "DASHSCOPE_FILE_ACCESS_FORBIDDEN"
+    assert payload["failure_debug"]["dashscope_recovery"] == recovery_payload
+
+    verify_session = session_factory()
+    try:
+        task_row = verify_session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        assert task_row is not None
+        assert task_row.error_code == "DASHSCOPE_FILE_ACCESS_FORBIDDEN"
+        db_row = verify_session.execute(
+            text(
+                "SELECT artifacts_json, failure_debug_json FROM lesson_generation_tasks WHERE task_id = :task_id"
+            ),
+            {"task_id": task_id},
+        ).mappings().one()
+        assert json.loads(db_row["failure_debug_json"])["dashscope_recovery"] == recovery_payload
+        assert json.loads(db_row["artifacts_json"])["dashscope_recovery"] == recovery_payload
     finally:
         verify_session.close()
 

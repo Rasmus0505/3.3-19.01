@@ -86,6 +86,16 @@ class LessonTaskAdmissionError(RuntimeError):
         super().__init__(self.message)
 
 
+def _parse_dashscope_recovery_payload(value: Any) -> dict[str, Any] | None:
+    payload = value
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            return None
+    return dict(payload) if isinstance(payload, dict) else None
+
+
 def _resolve_task_asr_models(requested_asr_model: str) -> dict[str, object]:
     normalized_requested_model = str(requested_asr_model or "").strip()
     return {
@@ -513,11 +523,31 @@ def run_lesson_generation_task(
             )
         _raise_if_task_control_requested(task_id, session_factory=session_factory)
         task_result_meta = dict(getattr(lesson, "task_result_meta", None) or {})
+        dashscope_recovery = _parse_dashscope_recovery_payload(task_result_meta.get("dashscope_recovery"))
+        if dashscope_recovery is None:
+            dashscope_recovery = _parse_dashscope_recovery_payload(
+                getattr(lesson, "subtitle_cache_seed", None).get("dashscope_recovery")
+                if isinstance(getattr(lesson, "subtitle_cache_seed", None), dict)
+                else None
+            )
+        if "dashscope_recovery" not in task_result_meta:
+            lesson_result_path = Path(str(artifacts.get("lesson_result_path") or "").strip())
+            if lesson_result_path.exists():
+                try:
+                    lesson_result_payload = json.loads(lesson_result_path.read_text(encoding="utf-8"))
+                except Exception:
+                    lesson_result_payload = {}
+                file_task_result_meta = lesson_result_payload.get("task_result_meta")
+                if isinstance(file_task_result_meta, dict):
+                    task_result_meta.update(file_task_result_meta)
+                    if dashscope_recovery is None:
+                        dashscope_recovery = _parse_dashscope_recovery_payload(file_task_result_meta.get("dashscope_recovery"))
         mark_task_succeeded(
             task_id,
             lesson_id=lesson.id,
             subtitle_cache_seed=getattr(lesson, "subtitle_cache_seed", None),
             translation_debug=getattr(lesson, "translation_debug", None) or getattr(lesson, "task_translation_debug", None),
+            dashscope_recovery=dashscope_recovery,
             result_kind=str(task_result_meta.get("result_kind") or getattr(lesson, "task_result_kind", "") or ""),
             result_message=str(task_result_meta.get("result_message") or getattr(lesson, "task_result_message", "") or ""),
             partial_failure_stage=str(task_result_meta.get("partial_failure_stage") or getattr(lesson, "task_partial_failure_stage", "") or ""),
@@ -525,6 +555,38 @@ def run_lesson_generation_task(
             partial_failure_message=str(task_result_meta.get("partial_failure_message") or getattr(lesson, "task_partial_failure_message", "") or ""),
             session_factory=session_factory,
         )
+        success_artifacts_patch = {
+            "result_kind": str(task_result_meta.get("result_kind") or getattr(lesson, "task_result_kind", "") or ""),
+            "result_message": str(task_result_meta.get("result_message") or getattr(lesson, "task_result_message", "") or ""),
+            "partial_failure_stage": str(task_result_meta.get("partial_failure_stage") or getattr(lesson, "task_partial_failure_stage", "") or ""),
+            "partial_failure_code": str(task_result_meta.get("partial_failure_code") or getattr(lesson, "task_partial_failure_code", "") or ""),
+            "partial_failure_message": str(task_result_meta.get("partial_failure_message") or getattr(lesson, "task_partial_failure_message", "") or ""),
+            "admission_state": "",
+            "queue_position": 0,
+            "active_task_count": 0,
+            "queued_task_count": 0,
+            "max_active_tasks": 0,
+            "max_queued_tasks": 0,
+            "queued_at": "",
+        }
+        if dashscope_recovery:
+            success_artifacts_patch["dashscope_recovery"] = dashscope_recovery
+        patch_task_artifacts(task_id, artifacts_patch=success_artifacts_patch, db=db)
+        persistence_session = session_factory()
+        try:
+            ensure_lesson_task_storage_ready(persistence_session)
+            latest_task = persistence_session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+            if latest_task is not None:
+                merged_artifacts = dict(latest_task.artifacts_json or {})
+                merged_artifacts.update(success_artifacts_patch)
+                persistence_session.execute(
+                    update(LessonGenerationTask)
+                    .where(LessonGenerationTask.task_id == task_id)
+                    .values(artifacts_json=merged_artifacts)
+                )
+                persistence_session.commit()
+        finally:
+            persistence_session.close()
         invalidate_lesson_related_queries(owner_id)
         logger.info("[DEBUG] lessons.task.succeeded task_id=%s lesson_id=%s", task_id, lesson.id)
     except LessonTaskPauseRequested:
@@ -549,6 +611,9 @@ def run_lesson_generation_task(
         logger.warning("[DEBUG] lessons.task.billing_failed task_id=%s code=%s", task_id, exc.code)
     except AsrError as exc:
         db.rollback()
+        dashscope_recovery = None
+        if str(getattr(exc, "code", "") or "").strip() == "DASHSCOPE_FILE_ACCESS_FORBIDDEN":
+            dashscope_recovery = _parse_dashscope_recovery_payload(getattr(exc, "detail", ""))
         mark_task_failed(
             task_id,
             error_code=exc.code,
@@ -556,6 +621,7 @@ def run_lesson_generation_task(
             exception_type=exc.__class__.__name__,
             detail_excerpt=str(getattr(exc, "detail", "") or exc.message or exc),
             traceback_excerpt=traceback.format_exc(),
+            dashscope_recovery=dashscope_recovery,
             session_factory=session_factory,
         )
         logger.warning("[DEBUG] lessons.task.asr_failed task_id=%s code=%s", task_id, exc.code)
