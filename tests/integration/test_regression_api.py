@@ -4797,6 +4797,203 @@ def test_dashscope_file_id_create_lesson_task_and_poll_success(test_client, monk
 
 
 
+def test_dashscope_403_file_access_retry_task_hides_first_failure_and_skips_fallback(test_client, monkeypatch, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="dashscope-403-task@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from app.services import lesson_command_service as lesson_command_service_module
+    from app.services import lesson_service as lesson_service_module
+
+    signed_url_calls: list[str] = []
+    transcribe_calls: list[str] = []
+    fallback_calls: list[str] = []
+
+    monkeypatch.setattr(lesson_command_service_module, "BASE_TMP_DIR", tmp_path)
+    _seed_wallet_balance(session_factory, email="dashscope-403-task@example.com")
+
+    class InlineThread:
+        def __init__(self, *, target, kwargs=None, daemon=None):
+            self._target = target
+            self._kwargs = kwargs or {}
+
+        def start(self):
+            self._target(**self._kwargs)
+
+    monkeypatch.setattr(lesson_command_service_module.threading, "Thread", InlineThread)
+
+    def fail_saved_file(*_args, **_kwargs):
+        fallback_calls.append("saved_file")
+        raise AssertionError("dashscope 403 retry should not route into saved-file fallback")
+
+    def fail_local_payload(*_args, **_kwargs):
+        fallback_calls.append("local_asr")
+        raise AssertionError("dashscope 403 retry should not route into local-asr fallback")
+
+    monkeypatch.setattr(lesson_command_service_module.LessonService, "generate_from_saved_file", staticmethod(fail_saved_file))
+    monkeypatch.setattr(lesson_command_service_module.LessonService, "generate_from_local_asr_payload", staticmethod(fail_local_payload))
+
+    def fake_get_file_signed_url(file_id: str) -> str:
+        signed_url_calls.append(file_id)
+        return f"https://signed.example.com/{len(signed_url_calls)}"
+
+    retry_failure = lesson_service_module.AsrError(
+        "ASR_TASK_FAILED",
+        "ASR 任务失败",
+        json.dumps(
+            {
+                "task_status": "FAILED",
+                "subtask_code": "FILE_403_FORBIDDEN",
+                "subtask_message": "provider denied signed url",
+            },
+            ensure_ascii=False,
+        ),
+    )
+
+    def fake_transcribe_signed_url(signed_url: str, **_kwargs):
+        transcribe_calls.append(signed_url)
+        if len(transcribe_calls) == 1:
+            raise retry_failure
+        return {
+            "usage_seconds": 1,
+            "asr_result_json": {
+                "transcripts": [
+                    {
+                        "text": "hello world",
+                        "sentences": [{"text": "hello world", "begin_time": 0, "end_time": 1000}],
+                    }
+                ]
+            },
+        }
+
+    monkeypatch.setattr(lesson_service_module, "get_file_signed_url", fake_get_file_signed_url)
+    monkeypatch.setattr(lesson_service_module, "transcribe_signed_url", fake_transcribe_signed_url)
+    monkeypatch.setattr(lesson_service_module, "persist_lesson_workspace_summary", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        lesson_service_module.LessonService,
+        "build_subtitle_variant",
+        staticmethod(
+            lambda **_kwargs: {
+                "sentences": [
+                    {
+                        "idx": 0,
+                        "begin_ms": 0,
+                        "end_ms": 1000,
+                        "text_en": "hello world",
+                        "text_zh": "你好世界",
+                        "tokens": ["hello", "world"],
+                        "audio_url": None,
+                    }
+                ],
+                "translation_usage": {"total_tokens": 0},
+                "translate_failed_count": 0,
+                "translation_request_count": 1,
+                "translation_success_request_count": 1,
+                "latest_translate_error_summary": "",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        lesson_service_module.LessonService,
+        "build_subtitle_cache_seed",
+        staticmethod(
+            lambda *, asr_payload, variant: {
+                "semantic_split_enabled": False,
+                "split_mode": "asr_sentences",
+                "source_word_count": 2,
+                "strategy_version": 2,
+                "asr_payload": asr_payload,
+                "sentences": list(variant["sentences"]),
+            }
+        ),
+    )
+
+    def fake_build_one_lesson(lesson, *, owner_id, asr_payload, variant, db, **_kwargs):
+        lesson.user_id = owner_id
+        lesson.title = "dashscope retry success"
+        lesson.source_filename = "dashscope_403.mp4"
+        lesson.asr_model = QWEN_ASR_MODEL
+        lesson.duration_ms = 1000
+        lesson.media_storage = "client_indexeddb"
+        lesson.source_duration_ms = 1000
+        lesson.status = "ready"
+        db.add(lesson)
+        db.flush()
+        db.add(
+            LessonSentence(
+                lesson_id=lesson.id,
+                idx=0,
+                begin_ms=0,
+                end_ms=1000,
+                text_en="hello world",
+                text_zh="你好世界",
+                tokens_json=["hello", "world"],
+                audio_clip_path=None,
+            )
+        )
+        db.add(
+            LessonProgress(
+                lesson_id=lesson.id,
+                user_id=owner_id,
+                current_sentence_idx=0,
+                completed_indexes_json=[],
+                last_played_at_ms=0,
+            )
+        )
+        _ = (asr_payload, variant)
+        return SimpleNamespace(errors=[])
+
+    monkeypatch.setattr(
+        lesson_service_module.LessonService,
+        "_build_one_lesson",
+        staticmethod(fake_build_one_lesson),
+        raising=False,
+    )
+
+    create_resp = client.post(
+        "/api/lessons/tasks",
+        headers=headers,
+        data={
+            "asr_model": QWEN_ASR_MODEL,
+            "semantic_split_enabled": "false",
+            "dashscope_file_id": "uploads/test/dashscope_403.mp4",
+        },
+    )
+    assert create_resp.status_code == 200
+    task_id = create_resp.json()["task_id"]
+
+    poll_resp = client.get(f"/api/lessons/tasks/{task_id}", headers=headers)
+    assert poll_resp.status_code == 200
+    payload = poll_resp.json()
+    assert payload["status"] == "succeeded"
+    assert payload["error_code"] == ""
+    assert payload["failure_debug"] is None
+    assert payload["lesson"]["title"] == "dashscope retry success"
+    assert payload["lesson"]["source_filename"] == "dashscope_403.mp4"
+    assert payload["lesson"]["subtitle_cache_seed"]["split_mode"] == "asr_sentences"
+    assert all(item["status"] == "completed" for item in payload["stages"])
+    assert payload["message"] != "ASR 任务失败"
+    assert signed_url_calls == [
+        "uploads/test/dashscope_403.mp4",
+        "uploads/test/dashscope_403.mp4",
+    ]
+    assert transcribe_calls == [
+        "https://signed.example.com/1",
+        "https://signed.example.com/2",
+    ]
+    assert fallback_calls == []
+
+    verify_session = session_factory()
+    try:
+        task_row = verify_session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+        assert task_row is not None
+        assert task_row.error_code == ""
+        assert task_row.failure_debug_json is None
+        assert task_row.artifacts_json["dashscope_file_id"] == "uploads/test/dashscope_403.mp4"
+    finally:
+        verify_session.close()
+
+
 def test_lesson_task_admission_control_queues_and_rejects_across_entrypoints(test_client, monkeypatch, tmp_path):
     client, session_factory, _ = test_client
     token = _register_and_login(client, email="task-queue@example.com")
