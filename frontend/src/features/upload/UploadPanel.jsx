@@ -5152,7 +5152,7 @@ export function UploadPanel({
         desktopLocalFailureCountRef.current = 0;
         desktopBillingReportRef.current = null;
         setFasterWhisperRuntimeTrack(FAST_RUNTIME_TRACK_CLOUD);
-        toast.message("本地识别连续失败，已切换到云端模式");
+        toast.message("生成失败，请重试");
         await submit();
         return;
       }
