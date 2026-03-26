@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: ready
 stopped_at: Phase 01.1 complete
-last_updated: "2026-03-27T00:07:16.8852418+08:00"
-last_activity: 2026-03-27 - Completed Phase 01.1 file-access recovery
+last_updated: "2026-03-27T01:27:00+08:00"
+last_activity: 2026-03-27 - Completed quick task 260327-1xf for DashScope lesson builder recovery
 progress:
   total_phases: 7
   completed_phases: 2
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-03-27)
 Phase: 02 (desktop-local-generation) - READY
 Plan: Not started
 Status: Phase 01.1 complete - ready for next phase planning
-Last activity: 2026-03-27 - Completed Phase 01.1 file-access recovery
+Last activity: 2026-03-27 - Completed quick task 260327-1xf for DashScope lesson builder recovery
 
 Progress: [██████████] 100%
 
@@ -71,6 +71,7 @@ Recent decisions affecting current work:
 - [Phase 01]: Treat dashscope_file_id as the canonical cloud object key across request-url, task artifacts, and generation entrypoints. - The direct-upload path already works end-to-end when the same object key is preserved. Locking that contract in tests prevents the request-url response and task creation path from drifting apart.
 - [Phase 01.1-fix-asr-subtitle-recognition-403-file-access-failures]: Retry direct-upload ASR once only for ASR_TASK_FAILED plus FILE_403_FORBIDDEN, refreshing the signed URL from the canonical dashscope_file_id.
 - [Phase 01.1-fix-asr-subtitle-recognition-403-file-access-failures]: Persist dashscope_recovery metadata on recovered lessons and map exhausted retries to DASHSCOPE_FILE_ACCESS_FORBIDDEN instead of a generic cloud outage.
+- [Post Phase 01.1]: For browser direct-upload, return `oss://<file_id>` from the upload-policy response, prefer that resource URL for ASR task creation, and enable `X-DashScope-OssResourceResolve` instead of requiring `Files.get()` to expose an HTTPS signed download URL.
 
 ### Roadmap Evolution
 
@@ -84,6 +85,12 @@ None yet.
 
 - Product still needs a precise low-server-load Bottle 2.0 web media path.
 - Browser and desktop capability boundaries must be communicated clearly.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260327-1xf | Fix LessonService._build_one_lesson missing in DashScope course generation path | 2026-03-27 | pending | [260327-1xf-fix-lessonservice-build-one-lesson-missi](../../quick/260327-1xf-fix-lessonservice-build-one-lesson-missi/) |
 
 ## Session Continuity
 
