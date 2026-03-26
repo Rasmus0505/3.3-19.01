@@ -17,6 +17,8 @@ Users can turn real English media into usable learning lessons quickly, without 
 - ✓ User can register and log in with email/password — existing
 - ✓ User can hold balance / redeem codes / consume points — existing
 - ✓ User can generate lessons from uploaded media through cloud ASR paths — existing
+- ✓ Web and desktop now share a stable Bottle 2.0 direct-upload generation path — validated in Phase 01
+- ✓ Product now exposes explicit desktop guidance instead of server fallback for Bottle 2.0 edge cases — validated in Phase 01
 - ✓ User can enter lesson-based learning and spelling practice flows — existing
 - ✓ Admin can inspect health, pricing, and operational controls — existing
 - ✓ Desktop client, local helper, and local ASR bundle flows already exist in the codebase — existing
@@ -51,6 +53,11 @@ Users can turn real English media into usable learning lessons quickly, without 
 - **Billing**: Bottle 1.0 and Bottle 2.0 are both paid capabilities with prices managed in admin tooling.
 - **Brownfield Preservation**: Existing auth, wallet, admin, lesson, and desktop foundations should be optimized, not discarded.
 
+## Current State
+
+- Phase 01 complete - Shared Cloud Generation is stable across direct upload, shared UI guidance, and auth/balance/recovery verification.
+- Next focus: Phase 02 - Desktop Local Generation.
+
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
@@ -79,4 +86,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-26 after initialization*
+*Last updated: 2026-03-26 after Phase 01 completion*
