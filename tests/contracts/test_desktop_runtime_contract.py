@@ -579,3 +579,48 @@ def test_asr_strategy_degrades_to_cloud_when_local_helper_is_unhealthy():
 
     assert payload["strategy"] == "bottle2_cloud"
     assert payload["degraded"] is True
+
+
+def test_asr_strategy_file_access_contract_maps_backend_code_and_nested_detail():
+    script = textwrap.dedent(
+        f"""
+        import {{ buildCloudAsrErrorMessage, mapCloudAsrFailureToMessage }} from {json.dumps(ASR_STRATEGY_MODULE)};
+        const direct = buildCloudAsrErrorMessage({{
+          errorCode: "DASHSCOPE_FILE_ACCESS_FORBIDDEN",
+          message: "DashScope 云端文件访问失败",
+          detail: JSON.stringify({{
+            dashscope_file_id: "uploads/test/exhausted.mp4",
+            first_failure_code: "FILE_403_FORBIDDEN",
+          }}),
+          browserOnline: true,
+          serverStatus: {{ reachable: true }},
+        }});
+        const nested = buildCloudAsrErrorMessage({{
+          message: "ASR task failed",
+          detail: JSON.stringify({{
+            subtask_code: "FILE_403_FORBIDDEN",
+            subtask_message: "provider denied signed url",
+          }}),
+          browserOnline: true,
+          serverStatus: {{ reachable: true }},
+        }});
+        const mappedMessage = mapCloudAsrFailureToMessage({{
+          error_code: "DASHSCOPE_FILE_ACCESS_FORBIDDEN",
+          message: "DashScope 云端文件访问失败",
+          detail: JSON.stringify({{
+            dashscope_file_id: "uploads/test/exhausted.mp4",
+            first_failure_code: "FILE_403_FORBIDDEN",
+          }}),
+        }}, {{ reachable: true }});
+        console.log(JSON.stringify({{ direct, nested, mappedMessage }}));
+        """
+    )
+
+    payload = _run_node_json(script)
+
+    expected_message = "Bottle 2.0 暂时无法访问已上传的云端文件，请稍后重试；若再次失败，再重新上传当前素材。"
+    assert payload["direct"]["code"] == "CLOUD_FILE_ACCESS_FORBIDDEN"
+    assert payload["direct"]["message"] == expected_message
+    assert payload["nested"]["code"] == "CLOUD_FILE_ACCESS_FORBIDDEN"
+    assert payload["nested"]["message"] == expected_message
+    assert payload["mappedMessage"] == expected_message

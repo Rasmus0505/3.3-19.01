@@ -207,11 +207,15 @@ function inferCloudErrorCode({ errorCode = "", message = "", detail = "", browse
   );
   const detailCode = normalizeText(
     detailPayload?.subtask_code ??
+      detailPayload?.first_failure_code ??
+      detailPayload?.dashscope_recovery?.first_failure_code ??
       detailPayload?.code ??
       detailPayload?.output?.code,
   ).toUpperCase();
   const detailMessage = normalizeText(
     detailPayload?.subtask_message ??
+      detailPayload?.first_failure_message ??
+      detailPayload?.dashscope_recovery?.first_failure_message ??
       detailPayload?.message ??
       detailPayload?.output?.message,
   );
@@ -223,6 +227,14 @@ function inferCloudErrorCode({ errorCode = "", message = "", detail = "", browse
   }
   if (connectivityKind === ASR_CONNECTIVITY_KINDS.CLOUD_UNAVAILABLE) {
     return "CLOUD_UNAVAILABLE";
+  }
+  if (
+    normalizedErrorCode === "DASHSCOPE_FILE_ACCESS_FORBIDDEN" ||
+    normalizeText(detailPayload?.first_failure_code).toUpperCase() === "FILE_403_FORBIDDEN" ||
+    normalizeText(detailPayload?.dashscope_recovery?.first_failure_code).toUpperCase() === "FILE_403_FORBIDDEN" ||
+    detailCode === "FILE_403_FORBIDDEN"
+  ) {
+    return "CLOUD_FILE_ACCESS_FORBIDDEN";
   }
   if (normalizedErrorCode === "INSUFFICIENT_BALANCE" || includesAny(searchableText, ["insufficient balance", "余额不足"])) {
     return "INSUFFICIENT_BALANCE";
@@ -275,6 +287,11 @@ export function buildCloudAsrErrorMessage({
         code: normalizedCode,
         message: "Bottle 2.0 当前请求过多，请稍后重试或尝试 Bottle 1.0 本机识别。",
       };
+    case "CLOUD_FILE_ACCESS_FORBIDDEN":
+      return {
+        code: normalizedCode,
+        message: "Bottle 2.0 暂时无法访问已上传的云端文件，请稍后重试；若再次失败，再重新上传当前素材。",
+      };
     case "INSUFFICIENT_BALANCE":
       return {
         code: normalizedCode,
@@ -303,9 +320,26 @@ export function buildCloudAsrErrorMessage({
   }
 }
 
-export function mapCloudAsrFailureToMessage(message = "", serverStatus = {}) {
+export function mapCloudAsrFailureToMessage(errorLike = "", serverStatus = {}) {
+  const normalizedErrorLike =
+    errorLike && typeof errorLike === "object"
+      ? {
+          errorCode: errorLike?.error_code ?? errorLike?.errorCode ?? errorLike?.code ?? "",
+          message: errorLike?.message ?? "",
+          detail:
+            typeof errorLike?.detail === "string"
+              ? errorLike.detail
+              : errorLike?.detail && typeof errorLike.detail === "object"
+                ? JSON.stringify(errorLike.detail)
+                : "",
+        }
+      : {
+          message: errorLike,
+        };
   return buildCloudAsrErrorMessage({
-    message,
+    errorCode: normalizedErrorLike.errorCode,
+    message: normalizedErrorLike.message,
+    detail: normalizedErrorLike.detail,
     serverStatus,
     browserOnline: typeof navigator === "undefined" ? true : navigator.onLine !== false,
   }).message;
