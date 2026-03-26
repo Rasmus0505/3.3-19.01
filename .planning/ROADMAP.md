@@ -34,7 +34,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 - [x] 01-01: Stabilize shared Bottle 2.0 upload/task pipeline
-- [ ] 01-02: Clarify runtime capability gating in web and desktop UI
+- [x] 01-02: Clarify runtime capability gating in web and desktop UI
 - [ ] 01-03: Harden auth/session prerequisites around generation entry points
 
 ### Phase 2: Desktop Local Generation
@@ -117,7 +117,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Shared Cloud Generation | 1/3 | In Progress | - |
+| 1. Shared Cloud Generation | 2/3 | In Progress | - |
 | 2. Desktop Local Generation | 0/3 | Not started | - |
 | 3. Lesson Output Consistency | 0/3 | Not started | - |
 | 4. Desktop Link Import | 0/2 | Not started | - |

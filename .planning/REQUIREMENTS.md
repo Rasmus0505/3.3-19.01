@@ -20,7 +20,7 @@
 ### Web Generation
 
 - [x] **WEB-01**: Web users can upload local media and generate lessons through Bottle 2.0 when the browser/runtime path supports it
-- [ ] **WEB-02**: Web users receive clear feedback when a desired feature is desktop-only or temporarily unavailable
+- [x] **WEB-02**: Web users receive clear feedback when a desired feature is desktop-only or temporarily unavailable
 - [x] **WEB-03**: Web generation avoids turning the central server into the default heavy media-processing bottleneck
 
 ### Desktop Generation
@@ -75,7 +75,7 @@
 | BILL-02 | Phase 5 | Pending |
 | BILL-03 | Phase 5 | Pending |
 | WEB-01 | Phase 1 | Complete |
-| WEB-02 | Phase 1 | Pending |
+| WEB-02 | Phase 1 | Complete |
 | WEB-03 | Phase 1 | Complete |
 | DESK-01 | Phase 2 | Pending |
 | DESK-02 | Phase 1 | Complete |
