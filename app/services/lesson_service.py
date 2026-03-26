@@ -2554,8 +2554,8 @@ class LessonService:
                     db.rollback()
             raise
 
+    @staticmethod
     def generate_from_dashscope_file_id(
-        self,
         *,
         dashscope_file_id: str,
         source_filename: str,
