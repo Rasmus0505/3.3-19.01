@@ -379,13 +379,23 @@ function getDesktopSelectionErrorMessage(selection = {}) {
   );
 }
 
-function getCloudFailureMessage(message = "", serverStatus = {}) {
+function getCloudFailureMessage(errorLike = "", serverStatus = {}, fallback = "") {
   const normalizedServerStatus = normalizeServerStatus(serverStatus);
   const reason = sanitizeUserFacingText(normalizedServerStatus.reason || "");
   if (normalizedServerStatus.reachable === false && reason) {
     return reason;
   }
-  return mapCloudAsrFailureToMessage(message, normalizedServerStatus);
+  if (errorLike && typeof errorLike === "object") {
+    return mapCloudAsrFailureToMessage(
+      {
+        error_code: errorLike?.error_code ?? errorLike?.code ?? "",
+        message: errorLike?.message || toErrorText(errorLike, fallback || "Bottle 2.0 当前不可用"),
+        detail: errorLike?.detail ?? "",
+      },
+      normalizedServerStatus,
+    );
+  }
+  return mapCloudAsrFailureToMessage(errorLike || fallback, normalizedServerStatus);
 }
 
 function toNormalizedFilename(filename = "") {
@@ -4525,7 +4535,7 @@ export function UploadPanel({
       localRunAbortRef.current = null;
       const taskData = await parseResponse(resp);
       if (!resp.ok) {
-        const message = getCloudFailureMessage(toErrorText(taskData, "创建识别任务失败"), desktopServerStatus);
+        const message = getCloudFailureMessage(taskData, desktopServerStatus, "创建识别任务失败");
         await handleTaskFailureState({
           message,
           nextTaskId: "",
@@ -4680,7 +4690,7 @@ export function UploadPanel({
       const data = await parseResponse(resp);
       if (!resp.ok) {
         setLocalProgressSnapshot(null);
-        const message = getCloudFailureMessage(toErrorText(data, "创建识别任务失败"), desktopServerStatus);
+        const message = getCloudFailureMessage(data, desktopServerStatus, "创建识别任务失败");
         await handleTaskFailureState({
           message,
           nextTaskId: "",
@@ -5127,7 +5137,7 @@ export function UploadPanel({
       const data = await parseResponse(resp);
       if (!resp.ok) {
         setLocalProgressSnapshot(null);
-        const message = getCloudFailureMessage(toErrorText(data, "创建识别任务失败"), desktopServerStatus);
+        const message = getCloudFailureMessage(data, desktopServerStatus, "创建识别任务失败");
         await handleTaskFailureState({
           message,
           nextTaskId: "",
@@ -5315,7 +5325,7 @@ export function UploadPanel({
       uploadAbortRef.current = null;
 
       if (!ok) {
-        const message = getCloudFailureMessage(toErrorText(data, "创建云端任务失败"), desktopServerStatus);
+        const message = getCloudFailureMessage(data, desktopServerStatus, "创建云端任务失败");
         await handleTaskFailureState({
           message,
           nextTaskId: "",
