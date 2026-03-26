@@ -410,6 +410,7 @@ def test_uploadWithProgress_upload_panel_exposes_bottle2_cloud_stage_model_and_d
     assert "生成课程" in upload_panel_source
     assert "下载桌面客户端" in upload_panel_source
     assert "VITE_DESKTOP_CLIENT_ENTRY_URL" in upload_panel_source
+    assert "音频与视频文件直传" in upload_panel_source
     assert "2.0 GB" in upload_panel_source or "2 GB" in upload_panel_source
     assert "12 小时" in upload_panel_source
 
