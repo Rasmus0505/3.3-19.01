@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Any
 
 import requests
@@ -44,6 +45,66 @@ class _PolicyError(Exception):
     error_code: str
     message: str
     detail: str = ""
+
+
+def _normalize_filename(filename: str) -> str:
+    normalized = str(filename or "").strip().replace("\\", "/")
+    parts = [part for part in normalized.split("/") if part]
+    return parts[-1] if parts else "upload.bin"
+
+
+def _resolve_object_key(upload_dir: str, filename: str) -> str:
+    normalized_dir = str(upload_dir or "").strip().replace("\\", "/").strip("/")
+    normalized_name = _normalize_filename(filename)
+    if not normalized_dir:
+        return normalized_name
+    if "${filename}" in normalized_dir:
+        return normalized_dir.replace("${filename}", normalized_name)
+
+    last_segment = normalized_dir.rsplit("/", 1)[-1]
+    has_extension = "." in last_segment and not last_segment.endswith(".")
+    if has_extension:
+        return normalized_dir
+    return str(PurePosixPath(normalized_dir) / normalized_name)
+
+
+def _build_oss_fields(*, policy_data: dict[str, Any], object_key: str, content_type: str) -> dict[str, str]:
+    normalized_fields: dict[str, str] = {}
+
+    raw_fields = policy_data.get("oss_fields")
+    if isinstance(raw_fields, dict):
+        for key, value in raw_fields.items():
+            if value is None:
+                continue
+            normalized_key = str(key or "").strip()
+            if not normalized_key:
+                continue
+            normalized_fields[normalized_key] = str(value)
+
+    alias_pairs: tuple[tuple[str, str], ...] = (
+        ("oss_access_key_id", "OSSAccessKeyId"),
+        ("signature", "Signature"),
+        ("policy", "policy"),
+        ("x_oss_object_acl", "x-oss-object-acl"),
+        ("x_oss_forbid_overwrite", "x-oss-forbid-overwrite"),
+        ("x_oss_security_token", "x-oss-security-token"),
+        ("security_token", "x-oss-security-token"),
+        ("x_oss_content_type", "x-oss-content-type"),
+    )
+    for source_key, target_key in alias_pairs:
+        if target_key in normalized_fields:
+            continue
+        candidate = str(policy_data.get(source_key) or "").strip()
+        if candidate:
+            normalized_fields[target_key] = candidate
+
+    if object_key and not str(normalized_fields.get("key") or "").strip():
+        normalized_fields["key"] = object_key
+    if content_type and not str(normalized_fields.get("x-oss-content-type") or "").strip():
+        normalized_fields["x-oss-content-type"] = content_type
+    if not str(normalized_fields.get("success_action_status") or "").strip():
+        normalized_fields["success_action_status"] = "200"
+    return normalized_fields
 
 
 def _require_api_key() -> str:
@@ -126,13 +187,17 @@ def request_dashscope_upload_url(
     payload: DashScopeUploadUrlRequest,
     current_user: User = Depends(get_current_user),
 ):
-    _ = payload
     try:
         api_key = _require_api_key()
         data = _request_policy(api_key=api_key)
         upload_host = str(data.get("upload_host") or "").strip()
         upload_dir = str(data.get("upload_dir") or "").strip()
-        oss_fields = data.get("oss_fields") or {}
+        object_key = _resolve_object_key(upload_dir, payload.filename)
+        oss_fields = _build_oss_fields(
+            policy_data=data,
+            object_key=object_key,
+            content_type=str(payload.content_type or "").strip(),
+        )
         expires_in = int(data.get("expires_in_seconds") or data.get("expires_in") or 3600)
         if not upload_host or not upload_dir:
             raise _PolicyError(
@@ -141,11 +206,15 @@ def request_dashscope_upload_url(
                 message="云端上传策略缺少 upload_host 或 upload_dir",
                 detail=str(data)[:500],
             )
-        upload_url = f"{upload_host.rstrip('/')}/{upload_dir.lstrip('/')}"
+        # DashScope policy upload uses form-data POST to upload_host.
+        upload_url = upload_host.rstrip("/")
         logger.info(
-            "[DEBUG] dashscope_upload.policy_ok user_id=%s upload_dir=%s",
+            "[DEBUG] dashscope_upload.policy_ok user_id=%s upload_host=%s upload_dir=%s file_id=%s field_keys=%s",
             current_user.id,
+            upload_host,
             upload_dir,
+            object_key,
+            sorted(list(oss_fields.keys())) if isinstance(oss_fields, dict) else [],
         )
         return DashScopeUploadUrlResponse(
             ok=True,
@@ -153,7 +222,7 @@ def request_dashscope_upload_url(
             upload_host=upload_host,
             upload_dir=upload_dir,
             oss_fields=dict(oss_fields) if isinstance(oss_fields, dict) else {},
-            file_id=upload_dir,
+            file_id=object_key or upload_dir,
             expires_in_seconds=max(1, expires_in),
         )
     except _PolicyError as exc:
