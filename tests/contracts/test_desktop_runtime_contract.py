@@ -19,6 +19,7 @@ FRONTEND_ADMIN_MAIN_FILE = REPO_ROOT / "frontend" / "src" / "main-admin.jsx"
 ASR_STRATEGY_MODULE = (REPO_ROOT / "frontend" / "src" / "features" / "upload" / "asrStrategy.js").resolve().as_uri()
 UPLOAD_PANEL_FILE = REPO_ROOT / "frontend" / "src" / "features" / "upload" / "UploadPanel.jsx"
 API_CLIENT_FILE = REPO_ROOT / "frontend" / "src" / "shared" / "api" / "client.js"
+AUTH_API_FILE = REPO_ROOT / "frontend" / "src" / "features" / "auth" / "shared" / "authApi.ts"
 OFFLINE_MODE_FILE = REPO_ROOT / "frontend" / "src" / "hooks" / "useOfflineMode.js"
 
 
@@ -383,6 +384,14 @@ def test_desktop_api_client_surfaces_missing_cloud_base_configuration():
     assert "window.desktopRuntime.requestCloudApi" in api_client_source
     assert 'window.desktopRuntime?.cancelCloudRequest?.(requestId);' in api_client_source
     assert "new Response(" in api_client_source
+
+
+def test_auth_api_reuses_shared_desktop_bridge_client():
+    auth_api_source = AUTH_API_FILE.read_text(encoding="utf-8")
+
+    assert 'import { api } from "../../../shared/api/client";' in auth_api_source
+    assert "const response = await api(path, {" in auth_api_source
+    assert "fetch(buildApiUrl(path)" not in auth_api_source
 
 
 def test_upload_panel_routes_oss_uploads_through_shared_upload_bridge():
