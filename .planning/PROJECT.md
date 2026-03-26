@@ -1,82 +1,82 @@
-﻿# Bottle English Learning
+# Bottle 英语学习产品
 
-## What This Is
+## 这是什么
 
-Bottle is an English learning product for English learners. Users bring their own study materials, generate structured lessons from media, and then practice with spelling and sentence-based learning flows.
+Bottle 是一个面向英语学习者的英语学习产品。用户带着自己的英语素材进入产品，把媒体内容生成结构化课程，然后继续做拼写练习、句子练习和后续学习。
 
-The product is intentionally split by runtime capability: the desktop client is the full-power experience, while the web app provides the strongest browser-safe subset. The platform should stay easy for non-technical learners while keeping heavy media work off your server whenever possible.
+产品按运行时能力做了明确分层：桌面客户端是完整能力形态，网页端提供浏览器环境下最稳定可用的能力子集。整体目标是在尽量不把重媒体处理压到你服务器的前提下，让非技术型学习者也能顺畅完成生成和学习。
 
-## Core Value
+## 核心价值
 
-Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
+用户可以把真实英语媒体快速变成可学习的课程，而且不需要理解技术配置，也不会把重处理压力默认压到你的中心服务器上。
 
-## Requirements
+## 需求
 
-### Validated
+### 已验证
 
-- ✓ User can register and log in with email/password — existing
-- ✓ User can hold balance / redeem codes / consume points — existing
-- ✓ User can generate lessons from uploaded media through cloud ASR paths — existing
-- ✓ User can enter lesson-based learning and spelling practice flows — existing
-- ✓ Admin can inspect health, pricing, and operational controls — existing
-- ✓ Desktop client, local helper, and local ASR bundle flows already exist in the codebase — existing
+- ✓ 用户可以使用邮箱密码注册和登录 — existing
+- ✓ 用户可以持有余额、兑换兑换码并消费点数 — existing
+- ✓ 用户可以通过云端 ASR 路径从上传媒体生成课程 — existing
+- ✓ 用户可以进入基于课程的学习和拼写练习流程 — existing
+- ✓ 管理员可以查看健康状态、价格与运营控制项 — existing
+- ✓ 代码库已经包含桌面客户端、本地 helper 和本地 ASR bundle 相关能力 — existing
 
-### Active
+### 当前范围
 
-- [ ] Desktop client exposes the complete product capability set, including Bottle 1.0 local generation, Bottle 2.0 cloud generation, and link-to-video generation
-- [ ] Web app supports the strongest browser-safe generation path, centered on Bottle 2.0 cloud generation
-- [ ] Both Bottle 1.0 and Bottle 2.0 are paid capabilities using platform-managed pricing and point deduction
-- [ ] Users never need to configure their own ASR API keys
-- [ ] Non-technical learners can complete generation without manual ffmpeg/model/key steps
-- [ ] Heavy media processing and large-file handling stay off the central server whenever practical
+- [ ] 桌面客户端提供完整产品能力，包括 Bottle 1.0 本地生成、Bottle 2.0 云端生成，以及链接转视频生成
+- [ ] 网页端提供浏览器条件下最强可用的生成路径，核心围绕 Bottle 2.0 云端生成
+- [ ] Bottle 1.0 与 Bottle 2.0 都是付费能力，使用平台管理的价格和点数扣费
+- [ ] 用户永远不需要自己配置 ASR API Key
+- [ ] 非技术型学习者可以在不手动处理 ffmpeg、模型、密钥等步骤的情况下完成生成
+- [ ] 大文件与重媒体处理在条件允许时尽量不落到中心服务器
 
-### Out of Scope
+### 不在范围内
 
-- User-provided ASR API key configuration — platform-managed billing and keys keep the experience simple
-- Forcing full desktop parity in the browser — browser/runtime constraints are acceptable where local tooling is required
-- Making the server the primary media processing worker — this conflicts with cost and capacity limits
+- 用户自己配置 ASR API Key — 平台统一管理计费和密钥，体验更简单
+- 强行让网页端完全等同于桌面端 — 涉及本地工具链的能力可以接受运行时差异
+- 让服务器成为主要媒体处理节点 — 这与成本和容量约束相冲突
 
-## Context
+## 背景
 
-- Existing brownfield codebase already contains FastAPI backend, React/Vite web app, Electron desktop client, billing/redeem flows, admin surfaces, lesson generation, and learning flows.
-- Desktop capability already includes local helper patterns, local ASR model management, bundled ffmpeg/yt-dlp resources, and URL import building blocks.
-- Web and desktop already share a large part of the frontend and product model, which should be preserved rather than split into separate products.
-- Current product direction is not to rebuild from scratch, but to sharpen product boundaries, stabilize generation flows, reduce server load, and improve the learner experience.
+- 这是一个已有代码的 brownfield 项目，已经具备 FastAPI 后端、React/Vite 网页端、Electron 桌面端、计费/兑换、管理后台、课程生成和学习流程等基础能力。
+- 桌面端已经具备本地 helper、本地 ASR 模型管理、打包内置 ffmpeg/yt-dlp 资源、链接导入基础能力等实现基础。
+- Web 与 Desktop 已经共享了大量前端和产品模型，应当延续而不是拆成两套产品。
+- 当前目标不是推倒重来，而是在既有业务上进一步收紧产品边界、稳定生成链路、减轻服务器压力并优化学习者体验。
 
-## Constraints
+## 约束
 
-- **Server Capacity**: Avoid heavy server-side media conversion and long-running ASR workloads — server performance is limited.
-- **User Simplicity**: Learners should not need to understand API keys, model setup, ffmpeg, or yt-dlp.
-- **Runtime Split**: Desktop must be the complete experience; web should provide only what browsers can reliably support.
-- **Billing**: Bottle 1.0 and Bottle 2.0 are both paid capabilities with prices managed in admin tooling.
-- **Brownfield Preservation**: Existing auth, wallet, admin, lesson, and desktop foundations should be optimized, not discarded.
+- **服务器容量**：避免把重视频转换和长时 ASR 任务压到中心服务器，当前服务器性能有限。
+- **用户简单性**：学习者不应该理解 API Key、模型安装、ffmpeg 或 yt-dlp。
+- **运行时分层**：桌面端必须是完整体验；网页端只提供浏览器稳定支持的能力。
+- **计费方式**：Bottle 1.0 和 Bottle 2.0 都是平台定价的付费能力。
+- **Brownfield 延续**：已有的鉴权、钱包、后台、课程和桌面能力应当优化复用，而不是整体废弃。
 
-## Key Decisions
+## 关键决策
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Desktop client is the primary product surface for full generation capabilities | Desktop can safely host local models, ffmpeg, yt-dlp, and local helper workflows | — Pending |
-| Web app centers on Bottle 2.0 cloud generation | Browser users still need a useful path, but browser-local heavy tooling is not reliable enough | — Pending |
-| Platform manages ASR keys instead of end users | Learners are non-technical and should pay with points/redeem codes rather than configure secrets | — Pending |
-| Server should stay light and avoid becoming the media processing bottleneck | Cost and infrastructure limits make centralized heavy processing a bad default | — Pending |
-| Generated media should become lesson/practice artifacts regardless of generation path | Users care about learning outcomes, not the underlying ASR route | — Pending |
+| 桌面客户端是完整生成能力的主产品表面 | 桌面端天然适合承载本地模型、ffmpeg、yt-dlp 和本地 helper 工作流 | — Pending |
+| 网页端以 Bottle 2.0 云端生成为核心 | 浏览器用户仍然需要可用路径，但浏览器不适合承担重本地工具链能力 | — Pending |
+| 平台统一管理 ASR 密钥，不让终端用户配置 | 学习者不是技术用户，应通过点数/兑换码消费而不是管理密钥 | — Pending |
+| 服务器应保持轻量，不成为媒体处理瓶颈 | 成本和基础设施约束决定了中心化重处理不是好默认值 | — Pending |
+| 无论通过哪条生成路径，最终都应形成统一的课程/练习产物 | 用户关心的是学习结果，而不是背后的 ASR 路线 | — Pending |
 
-## Evolution
+## 演化规则
 
-This document evolves at phase transitions and milestone boundaries.
+本文档会在阶段切换和里程碑边界持续更新。
 
-**After each phase transition** (via `$gsd-transition`):
-1. Requirements invalidated? -> Move to Out of Scope with reason
-2. Requirements validated? -> Move to Validated with phase reference
-3. New requirements emerged? -> Add to Active
-4. Decisions to log? -> Add to Key Decisions
-5. "What This Is" still accurate? -> Update if drifted
+**每次阶段切换后**（通过 `$gsd-transition`）：
+1. 如果某些需求被证伪，移到 Out of Scope 并写明原因
+2. 如果某些需求已被验证，移到 Validated 并标注对应阶段
+3. 如果出现新需求，加入 Active
+4. 如果形成新决策，写入 Key Decisions
+5. 如果“这是什么”已经漂移，及时更新
 
-**After each milestone** (via `$gsd-complete-milestone`):
-1. Full review of all sections
-2. Core Value check - still the right priority?
-3. Audit Out of Scope - reasons still valid?
-4. Update Context with current state
+**每次里程碑完成后**（通过 `$gsd-complete-milestone`）：
+1. 全量复查各章节
+2. 检查核心价值是否仍然正确
+3. 复查 Out of Scope 的理由是否仍成立
+4. 按当前项目状态更新 Context
 
 ---
 *Last updated: 2026-03-26 after initialization*

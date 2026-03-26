@@ -1,16 +1,16 @@
-﻿# Concerns
+# 风险点
 
-## Repository Hygiene
+## 仓库卫生
 
-The repo currently contains a significant amount of generated or machine-local content:
+当前仓库里混入了大量生成物或本地工件：
 
-- `frontend/node_modules/` is present in the working tree
-- `frontend/dist/` and `frontend/dist-admin/` are present
-- `desktop-client/.cache/` is present
-- local SQLite files `app.db`, `app.db-shm`, `app.db-wal` are present
-- many `__pycache__/` directories and `*.pyc` files are present across `app/`, `tests/`, `migrations/`, and `asr-test/`
+- `frontend/node_modules/`
+- `frontend/dist/` 和 `frontend/dist-admin/`
+- `desktop-client/.cache/`
+- 本地 SQLite 文件 `app.db`、`app.db-shm`、`app.db-wal`
+- `app/`、`tests/`、`migrations/`、`asr-test/` 中的大量 `__pycache__/` 与 `*.pyc`
 
-Observed counts during mapping:
+映射时观察到的大致数量：
 
 - `frontend_node_modules_files=21460`
 - `desktop_cache_files=690`
@@ -18,66 +18,66 @@ Observed counts during mapping:
 - `__pycache__=32`
 - `pyc=230`
 
-This increases clone weight, review noise, and the risk of stale artifacts affecting debugging.
+这些内容会放大 clone 体积、review 噪音以及“陈旧工件影响判断”的风险。
 
-## Mixed Source and Generated Output
+## 源码和生成输出混放
 
-Multiple directories mix hand-written source with generated output or runtime caches:
+多个目录同时混入手写源码、生成输出和运行时缓存：
 
-- `frontend/` mixes source, local build output, and `node_modules`
-- `desktop-client/` mixes source with `.cache/` helper/runtime/frontend artifacts
-- `asr-test/` mixes scripts, large model files, benchmark runs, and result archives
+- `frontend/` 同时包含源码、构建产物、`node_modules`
+- `desktop-client/` 同时包含源码和 `.cache/` helper/runtime/frontend 产物
+- `asr-test/` 同时包含脚本、模型文件、benchmark 运行结果和结果归档
 
-This makes it harder to tell which files are canonical source of truth.
+这会降低“哪些文件是唯一事实来源”的可读性。
 
-## Router / Module Shape Drift
+## Router / 模块形态漂移
 
-The backend contains both legacy flat router files and nested router packages, for example:
+后端存在平铺 router 文件和分目录 router 包并存的情况，例如：
 
-- `app/api/routers/auth.py` and `app/api/routers/auth/router.py`
-- `app/api/routers/admin.py` and `app/api/routers/admin/router.py`
-- `app/api/routers/billing.py` and `app/api/routers/billing/router.py`
-- `app/api/routers/lessons.py` and `app/api/routers/lessons/router.py`
+- `app/api/routers/auth.py` 与 `app/api/routers/auth/router.py`
+- `app/api/routers/admin.py` 与 `app/api/routers/admin/router.py`
+- `app/api/routers/billing.py` 与 `app/api/routers/billing/router.py`
+- `app/api/routers/lessons.py` 与 `app/api/routers/lessons/router.py`
 
-This often indicates an in-progress refactor or compatibility layer and can confuse new contributors.
+这通常意味着处于重构过渡态，会让新加入的人更难判断真实入口。
 
-## Operational Complexity
+## 运行面复杂度
 
-The product surface spans:
+产品表面同时覆盖：
 
 - web app
 - admin app
 - desktop client
 - local helper runtime
-- cloud ASR path
-- local ASR path
-- migration-sensitive backend readiness
+- 云端 ASR 路径
+- 本地 ASR 路径
+- 对迁移敏感的后端就绪检查
 
-That breadth increases coordination cost and raises regression risk at boundaries, especially around auth/session, media handling, and packaging.
+表面越多，边界回归风险越高，尤其是 auth/session、媒体处理和打包链路。
 
-## Security / Safety Sensitivity
+## 安全与高敏感能力
 
-The app includes several sensitive operational controls:
+应用中存在多个高敏感区域：
 
-- JWT auth in `app/security.py`
-- admin bootstrap in `app/services/admin_bootstrap.py`
-- export-confirmation guard in `app/core/config.py`
-- SQL/admin console routes in `app/api/routers/admin_sql_console.py` and related modules
+- `app/security.py` 中的 JWT 鉴权
+- `app/services/admin_bootstrap.py` 中的管理员引导
+- `app/core/config.py` 中的导出确认保护
+- `app/api/routers/admin_sql_console.py` 及相关管理控制台能力
 
-These areas deserve extra scrutiny in production because mistakes have outsized blast radius.
+这些区域一旦出错，影响范围明显大于普通业务功能。
 
-## Testing Gaps Relative to Product Surface
+## 自动化覆盖与产品表面的差距
 
-Backend testing is substantial, but UI/runtime integration breadth still exceeds what appears to be covered automatically:
+后端自动化测试已经相对丰富，但整个产品表面的广度仍然超过当前自动化可见范围：
 
-- no browser-driven web UI test suite was observed
-- desktop renderer behavior relies heavily on contract tests and string assertions
-- admin web deployment path is separate from the main Docker build path, which can drift if not exercised regularly
+- 没看到浏览器驱动型 Web UI 测试套件
+- Desktop renderer 的很多保护仍依赖 contract test 和字符串断言
+- admin-web 的独立部署路径主要依赖构建/契约检查，而不是完整交互测试
 
-## Deployment and Migration Risk
+## 部署与迁移风险
 
-Readiness logic in `app/main.py` depends on schema completeness and strong production settings. That is good for safety, but it also means:
+`app/main.py` 的 readiness 逻辑依赖表结构完整和生产配置正确。这有利于安全，但也意味着：
 
-- partially migrated environments will fail readiness
-- config drift on `DATABASE_URL`, `ADMIN_BOOTSTRAP_PASSWORD`, or `REDEEM_CODE_EXPORT_CONFIRM_TEXT` can block rollout
-- startup behavior differs materially depending on `AUTO_MIGRATE_ON_START`
+- 半迁移状态会直接导致 readiness 失败
+- `DATABASE_URL`、`ADMIN_BOOTSTRAP_PASSWORD`、`REDEEM_CODE_EXPORT_CONFIRM_TEXT` 的配置漂移会直接阻断上线
+- `AUTO_MIGRATE_ON_START` 的不同取值会显著改变启动路径
