@@ -49,6 +49,10 @@ const LOCAL_ASR_TARGET_SAMPLE_RATE = 16000;
 const LOCAL_ASR_FILE_ACCEPT = ".mp3,.mp4,.m4a,.wav,.flac,.ogg,.aac,.webm,.mkv,.mov";
 const LOCAL_STAGE_PROGRESS_INTERVAL_MS = 500;
 const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止生成，可重新开始。";
+const DESKTOP_CLIENT_ENTRY_URL = String(import.meta.env.VITE_DESKTOP_CLIENT_ENTRY_URL || import.meta.env.VITE_DESKTOP_CLIENT_DOWNLOAD_URL || "").trim();
+const DESKTOP_CLIENT_DISTRIBUTION_NOTE = String(import.meta.env.VITE_DESKTOP_CLIENT_DISTRIBUTION_NOTE || "").trim();
+const BOTTLE2_CLOUD_DESKTOP_RECOMMEND_SIZE_BYTES = 300 * 1024 * 1024;
+const BOTTLE2_CLOUD_DESKTOP_RECOMMEND_DURATION_SECONDS = 45 * 60;
 const browserLocalRuntimeApi = LOCAL_BROWSER_RUNTIME_BASE_URL ? createApiClient({ baseUrl: LOCAL_BROWSER_RUNTIME_BASE_URL }) : null;
 
 function localAsrDirectoryBindingSupported() {
@@ -73,6 +77,27 @@ function buildLocalAsrLongAudioWarning(durationSec, hintSeconds) {
   return "";
 }
 function releaseLocalAsrWorkerAssetPayload(modelKey) {}
+
+function formatBinarySize(bytes) {
+  const safeBytes = Math.max(0, Number(bytes || 0));
+  if (!safeBytes) return "0 B";
+  if (safeBytes >= 1024 * 1024 * 1024) {
+    return `${(safeBytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  }
+  if (safeBytes >= 1024 * 1024) {
+    return `${Math.max(1, Math.round(safeBytes / (1024 * 1024)))} MB`;
+  }
+  if (safeBytes >= 1024) {
+    return `${Math.max(1, Math.round(safeBytes / 1024))} KB`;
+  }
+  return `${safeBytes} B`;
+}
+
+function shouldRecommendDesktopForBottle2Cloud(fileLike, durationSeconds) {
+  const sizeBytes = Math.max(0, Number(fileLike?.size || 0));
+  const safeDurationSeconds = Math.max(0, Number(durationSeconds || 0));
+  return sizeBytes >= BOTTLE2_CLOUD_DESKTOP_RECOMMEND_SIZE_BYTES || safeDurationSeconds >= BOTTLE2_CLOUD_DESKTOP_RECOMMEND_DURATION_SECONDS;
+}
 
 function estimateLocalAsrStageRatio(elapsedMs, durationSec) {
   if (!durationSec || durationSec <= 0) return 0;
@@ -503,6 +528,102 @@ const STAGE_PROGRESS_BOUNDS = {
   translate_zh: { start: 60, end: 85 },
   write_lesson: { start: 85, end: 100 },
 };
+
+const BOTTLE2_CLOUD_DISPLAY_STAGES = [
+  { key: "upload", label: "上传素材" },
+  { key: "submit_cloud_task", label: "提交云端任务" },
+  { key: "transcribing", label: "转写中" },
+  { key: "generating_lesson", label: "生成课程" },
+  { key: "completed", label: "已完成" },
+];
+
+function buildBottle2CloudStageItem({ key, label, status = "pending", progressPercent = 0, detailText = "--", statusText = "等待开始" }) {
+  return {
+    key,
+    label,
+    status,
+    progressPercent: clampPercent(progressPercent),
+    detailText: detailText || "--",
+    statusText,
+  };
+}
+
+function getBottle2CloudStageDisplayItems({ phase, uploadPercent, taskSnapshot, status = "" }) {
+  const normalizedPhase = String(phase || "").trim();
+  const normalizedStatusText = sanitizeUserFacingText(status);
+  const taskStatus = String(taskSnapshot?.status || "").trim().toLowerCase();
+  const currentTaskStageKey = taskSnapshot ? getCurrentTaskStageKey(taskSnapshot) : "";
+  const currentTaskText = sanitizeUserFacingText(taskSnapshot?.current_text || "");
+  const hasTask = Boolean(taskSnapshot);
+  const isSubmittingTask = normalizedPhase === "uploading" && normalizedStatusText.includes("提交云端任务");
+  const isUploadFailed = normalizedPhase === "error" && !hasTask && clampPercent(uploadPercent) < 100;
+  const isSubmitFailed = normalizedPhase === "error" && !hasTask && clampPercent(uploadPercent) >= 100;
+  const isTaskFailed = taskStatus === "failed";
+  const isTaskSucceeded = normalizedPhase === "success" || taskStatus === "succeeded";
+  const isTranscribingStage = hasTask && (currentTaskStageKey === "convert_audio" || currentTaskStageKey === "asr_transcribe");
+  const isGeneratingStage = hasTask && ["build_lesson", "translate_zh", "write_lesson"].includes(currentTaskStageKey);
+  const uploadStage = buildBottle2CloudStageItem({
+    key: "upload",
+    label: "上传素材",
+    status: isUploadFailed ? "failed" : normalizedPhase === "uploading" && !isSubmittingTask ? "running" : (hasTask || normalizedPhase === "processing" || isSubmittingTask || isTaskSucceeded || isSubmitFailed ? "completed" : "pending"),
+    progressPercent: normalizedPhase === "uploading" && !isSubmittingTask ? Math.max(6, clampPercent(uploadPercent)) : (hasTask || normalizedPhase === "processing" || isSubmittingTask || isTaskSucceeded || isSubmitFailed ? 100 : 0),
+    detailText: normalizedPhase === "uploading" && !isSubmittingTask ? `${clampPercent(uploadPercent)}%` : (hasTask || normalizedPhase === "processing" || isSubmittingTask || isTaskSucceeded || isSubmitFailed ? "1/1" : "--"),
+    statusText: isUploadFailed ? (normalizedStatusText || "上传失败") : normalizedPhase === "uploading" && !isSubmittingTask ? (normalizedStatusText || "上传中") : (hasTask || normalizedPhase === "processing" || isSubmittingTask || isTaskSucceeded || isSubmitFailed ? "已完成" : "等待开始"),
+  });
+  const submitStage = buildBottle2CloudStageItem({
+    key: "submit_cloud_task",
+    label: "提交云端任务",
+    status: isSubmitFailed ? "failed" : (hasTask || normalizedPhase === "processing" || isTaskSucceeded ? "completed" : (isSubmittingTask ? "running" : "pending")),
+    progressPercent: hasTask || normalizedPhase === "processing" || isTaskSucceeded ? 100 : (isSubmittingTask ? 70 : 0),
+    detailText: hasTask || normalizedPhase === "processing" || isTaskSucceeded ? "1/1" : (isSubmittingTask ? "进行中" : "--"),
+    statusText: isSubmitFailed ? (normalizedStatusText || "提交失败") : (hasTask || normalizedPhase === "processing" || isTaskSucceeded ? "已完成" : (isSubmittingTask ? (normalizedStatusText || "提交中") : "等待开始")),
+  });
+  const transcribingStage = buildBottle2CloudStageItem({
+    key: "transcribing",
+    label: "转写中",
+    status: isTaskFailed && isTranscribingStage ? "failed" : (isTaskSucceeded || isGeneratingStage ? "completed" : (isTranscribingStage ? "running" : "pending")),
+    progressPercent: isTaskSucceeded || isGeneratingStage ? 100 : (isTranscribingStage ? Math.max(8, clampPercent((Number(taskSnapshot?.overall_percent || 0) / 45) * 100)) : 0),
+    detailText: isTaskSucceeded || isGeneratingStage ? "1/1" : (isTranscribingStage ? `${Math.max(1, clampPercent(taskSnapshot?.overall_percent || 0))}%` : "--"),
+    statusText: isTaskFailed && isTranscribingStage ? (currentTaskText || "转写失败") : (isTaskSucceeded || isGeneratingStage ? "已完成" : (isTranscribingStage ? (currentTaskText || "转写中") : "等待开始")),
+  });
+  const generatingStage = buildBottle2CloudStageItem({
+    key: "generating_lesson",
+    label: "生成课程",
+    status: isTaskFailed && !isTranscribingStage ? "failed" : (isTaskSucceeded ? "completed" : (isGeneratingStage ? "running" : "pending")),
+    progressPercent: isTaskSucceeded ? 100 : (isGeneratingStage ? Math.max(10, clampPercent(((Math.max(45, Number(taskSnapshot?.overall_percent || 0)) - 45) / 55) * 100)) : 0),
+    detailText: isTaskSucceeded ? "1/1" : (isGeneratingStage ? `${Math.max(45, clampPercent(taskSnapshot?.overall_percent || 0))}%` : "--"),
+    statusText: isTaskFailed && !isTranscribingStage ? (currentTaskText || "生成课程失败") : (isTaskSucceeded ? "已完成" : (isGeneratingStage ? (currentTaskText || "生成课程中") : "等待开始")),
+  });
+  const completedStage = buildBottle2CloudStageItem({
+    key: "completed",
+    label: "已完成",
+    status: isTaskSucceeded ? "completed" : "pending",
+    progressPercent: isTaskSucceeded ? 100 : 0,
+    detailText: isTaskSucceeded ? "1/1" : "--",
+    statusText: isTaskSucceeded ? "课程已生成完成" : "等待完成",
+  });
+  return [uploadStage, submitStage, transcribingStage, generatingStage, completedStage];
+}
+
+function getBottle2CloudProgressHeadline({ phase, uploadPercent, taskSnapshot, status = "" }) {
+  const normalizedPhase = String(phase || "").trim();
+  const normalizedStatusText = sanitizeUserFacingText(status);
+  if (normalizedPhase === "uploading") {
+    return normalizedStatusText.includes("提交云端任务") ? "提交云端任务" : `上传素材 ${clampPercent(uploadPercent)}%`;
+  }
+  if (normalizedPhase === "success") return "生成课程完成";
+  if (normalizedPhase === "error") return "生成课程失败";
+  if (!taskSnapshot) return "等待上传";
+  const currentTaskStageKey = getCurrentTaskStageKey(taskSnapshot);
+  const currentTaskText = sanitizeUserFacingText(taskSnapshot?.current_text || "");
+  if (currentTaskStageKey === "convert_audio" || currentTaskStageKey === "asr_transcribe") {
+    return currentTaskText || "转写中";
+  }
+  if (["build_lesson", "translate_zh", "write_lesson"].includes(currentTaskStageKey)) {
+    return currentTaskText || "生成课程";
+  }
+  return currentTaskText || "生成课程";
+}
 const SERVER_PREPARABLE_MODELS = new Set([FASTER_WHISPER_MODEL]);
 const ACTIVE_SERVER_TASK_STATUSES = new Set(["pending", "running", "pausing", "terminating"]);
 const STOPPABLE_SERVER_TASK_STATUSES = new Set(["pending", "running"]);
@@ -1550,7 +1671,9 @@ export function UploadPanel({
   const [isVideoSource, setIsVideoSource] = useState(false);
   const [taskSnapshot, setTaskSnapshot] = useState(null);
   const [uploadPercent, setUploadPercent] = useState(0);
-  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [desktopGuidanceDialogOpen, setDesktopGuidanceDialogOpen] = useState(false);
+  const [desktopGuidanceReason, setDesktopGuidanceReason] = useState("");
+  const [desktopGuidanceContext, setDesktopGuidanceContext] = useState({ sourceName: "", sizeBytes: 0, durationSec: 0 });
   const [diagnosticsDialogOpen, setDiagnosticsDialogOpen] = useState(false);
   const [desktopRuntimeInfo, setDesktopRuntimeInfo] = useState(null);
   const [networkOnline, setNetworkOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine !== false));
@@ -1611,6 +1734,7 @@ export function UploadPanel({
   const localAsrRequestSequenceRef = useRef(0);
   const localAsrPendingRequestsRef = useRef(new Map());
   const desktopModelUpdatePromptRef = useRef("");
+  const desktopGuidanceResumeOptionsRef = useRef(null);
   const fasterWhisperTrackTouchedRef = useRef(false);
   const desktopLocalFailureCountRef = useRef(0);
   const desktopBillingReportRef = useRef(null);
@@ -1661,6 +1785,58 @@ export function UploadPanel({
       }
     } catch (error) {
       toast.error(error instanceof Error && error.message ? error.message : "打开日志目录失败");
+    }
+  }
+
+  function openDesktopGuidanceDialog(reason, context = {}, resumeOptions = null) {
+    setDesktopGuidanceReason(String(reason || "").trim());
+    setDesktopGuidanceContext({
+      sourceName: String(context?.sourceName || "").trim(),
+      sizeBytes: Math.max(0, Number(context?.sizeBytes || 0)),
+      durationSec: Math.max(0, Number(context?.durationSec || 0)),
+    });
+    desktopGuidanceResumeOptionsRef.current = resumeOptions;
+    setDesktopGuidanceDialogOpen(true);
+  }
+
+  async function handleDesktopGuidancePrimaryAction() {
+    const preferredUrl = String(desktopRuntimeInfo?.clientUpdate?.entryUrl || DESKTOP_CLIENT_ENTRY_URL).trim();
+    if (desktopRuntimeAvailable && typeof window.desktopRuntime?.openClientUpdateLink === "function") {
+      try {
+        const opened = await window.desktopRuntime.openClientUpdateLink(preferredUrl);
+        if (opened) {
+          setDesktopGuidanceDialogOpen(false);
+          return;
+        }
+      } catch (_) {
+        void 0;
+      }
+    }
+    if (preferredUrl) {
+      window.open(preferredUrl, "_blank", "noopener,noreferrer");
+      setDesktopGuidanceDialogOpen(false);
+      return;
+    }
+    if (DESKTOP_CLIENT_DISTRIBUTION_NOTE) {
+      try {
+        await navigator.clipboard?.writeText(DESKTOP_CLIENT_DISTRIBUTION_NOTE);
+        toast.success("已复制桌面端分发说明");
+      } catch (_) {
+        toast.message(DESKTOP_CLIENT_DISTRIBUTION_NOTE);
+      }
+      setDesktopGuidanceDialogOpen(false);
+      return;
+    }
+    toast.message("请联系管理员获取当前桌面客户端分发方式。");
+    setDesktopGuidanceDialogOpen(false);
+  }
+
+  function handleDesktopGuidanceContinue() {
+    const resumeOptions = desktopGuidanceResumeOptionsRef.current;
+    desktopGuidanceResumeOptionsRef.current = null;
+    setDesktopGuidanceDialogOpen(false);
+    if (resumeOptions) {
+      void submit({ ...resumeOptions, skipDesktopRecommendation: true });
     }
   }
 
@@ -1925,8 +2101,33 @@ export function UploadPanel({
   const taskStatusCardText = getTaskStatusCardText(restoreBannerMode, taskSnapshot, status);
   const showTaskStatusCard =
     restoreBannerMode !== RESTORE_BANNER_MODES.NONE || (showRecoveryBanner && !isRestoreVerifying);
-  const stageItems = getStageDisplayItems(displayTaskSnapshot);
+  const isBottle2CloudFlow =
+    selectedAsrModel === QWEN_MODEL &&
+    !localTranscribing &&
+    !desktopLocalTranscribing &&
+    !desktopLinkImporting &&
+    !desktopLinkModeActive;
+  const stageItems = isBottle2CloudFlow
+    ? getBottle2CloudStageDisplayItems({ phase, uploadPercent, taskSnapshot: displayTaskSnapshot, status })
+    : getStageDisplayItems(displayTaskSnapshot);
+  const progressHeadline = isBottle2CloudFlow
+    ? getBottle2CloudProgressHeadline({ phase, uploadPercent, taskSnapshot: displayTaskSnapshot, status })
+    : getProgressHeadline(phase, uploadPercent, displayTaskSnapshot);
   const progressPercent = getVisualProgress(phase, uploadPercent, displayTaskSnapshot);
+  const desktopClientEntryUrl = String(desktopRuntimeInfo?.clientUpdate?.entryUrl || DESKTOP_CLIENT_ENTRY_URL).trim();
+  const desktopGuidancePrimaryLabel = desktopClientEntryUrl
+    ? "下载桌面客户端"
+    : DESKTOP_CLIENT_DISTRIBUTION_NOTE
+      ? "复制分发方式"
+      : "获取桌面端";
+  const desktopGuidanceIsLargeFile = desktopGuidanceReason === "large_file";
+  const desktopGuidanceDetail = desktopGuidanceIsLargeFile
+    ? `当前文件${desktopGuidanceContext.sourceName ? `“${desktopGuidanceContext.sourceName}”` : ""}${
+        desktopGuidanceContext.sizeBytes > 0 ? ` 大约 ${formatBinarySize(desktopGuidanceContext.sizeBytes)}` : ""
+      }${
+        desktopGuidanceContext.durationSec > 0 ? `，时长约 ${formatDurationLabel(desktopGuidanceContext.durationSec)}` : ""
+      }。`
+    : "网页端当前不会回退到服务器转码，建议改用桌面客户端完成这类操作。";
   const showProgress =
     !isRestoreVerifying &&
     restoreBannerMode !== RESTORE_BANNER_MODES.STALE &&
@@ -5168,6 +5369,7 @@ export function UploadPanel({
   async function submit(options = {}) {
     const selectedSourceFile = options?.sourceFile ?? file;
     const submitIntent = String(options?.submitIntent || FILE_PICKER_ACTION_SELECT);
+    const skipDesktopRecommendation = Boolean(options?.skipDesktopRecommendation);
     if (desktopLinkModeActive) {
       await submitDesktopLinkImport();
       return;
@@ -5182,6 +5384,22 @@ export function UploadPanel({
         nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
         nextBindingCompleted: false,
       });
+      return;
+    }
+    if (
+      selectedAsrModel === QWEN_MODEL &&
+      !skipDesktopRecommendation &&
+      shouldRecommendDesktopForBottle2Cloud(selectedSourceFile, durationSec)
+    ) {
+      openDesktopGuidanceDialog(
+        "large_file",
+        {
+          sourceName: String(selectedSourceFile?.name || "").trim(),
+          sizeBytes: Number(selectedSourceFile?.size || 0),
+          durationSec: Number(durationSec || 0),
+        },
+        { sourceFile: selectedSourceFile, submitIntent },
+      );
       return;
     }
     if (ownerUserId) {
@@ -6043,7 +6261,19 @@ export function UploadPanel({
                   </Button>
                 ) : null}
                 {!desktopRuntimeAvailable ? (
-                  <Button type="button" variant="default" className="h-9 px-4" onClick={() => setLinkDialogOpen(true)} disabled={loading || localModeBusy}>
+                  <Button
+                    type="button"
+                    variant="default"
+                    className="h-9 px-4"
+                    onClick={() =>
+                      openDesktopGuidanceDialog("desktop_only", {
+                        sourceName: String(file?.name || "").trim(),
+                        sizeBytes: Number(file?.size || 0),
+                        durationSec: Number(durationSec || 0),
+                      })
+                    }
+                    disabled={loading || localModeBusy}
+                  >
                     提取视频
                   </Button>
                 ) : null}
@@ -6169,7 +6399,7 @@ export function UploadPanel({
           <div className={cn("space-y-3 rounded-2xl border p-4", taskToneStyles.surface)}>
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
-                <p className="text-sm font-medium">{getProgressHeadline(phase, uploadPercent, displayTaskSnapshot)}</p>
+                <p className="text-sm font-medium">{progressHeadline}</p>
                 <p className={cn("text-xs", taskToneStyles.text)}>总进度</p>
               </div>
               <span className={cn("text-sm font-semibold tabular-nums", taskToneStyles.text)}>{progressPercent}%</span>
@@ -6386,24 +6616,44 @@ export function UploadPanel({
           </Dialog>
         ) : null}
 
-        <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
+        <Dialog
+          open={desktopGuidanceDialogOpen}
+          onOpenChange={(open) => {
+            setDesktopGuidanceDialogOpen(open);
+            if (!open) {
+              desktopGuidanceResumeOptionsRef.current = null;
+            }
+          }}
+        >
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>提取视频</DialogTitle>
+              <DialogTitle>{desktopGuidanceIsLargeFile ? "建议改用桌面端" : "此能力仅支持桌面端"}</DialogTitle>
               <DialogDescription asChild>
-                <div className="space-y-1">
-                  <p>上传视频才可以获取素材。</p>
-                  <p>您可自行寻找可以链接转视频的合法工具。</p>
-                  <p>或使用推荐的工具网站。</p>
+                <div className="space-y-2">
+                  <p>
+                    {desktopGuidanceIsLargeFile
+                      ? "Bottle 2.0 云端直传仍可继续，但超大文件、长时长素材或网络不稳定时，桌面端通常更稳。"
+                      : "链接导入和类似的桌面专属流程不会回退到服务器处理，请改用桌面客户端。"}
+                  </p>
+                  <p>{desktopGuidanceDetail}</p>
+                  <p>当前建议阈值不是硬性限制：在 2 GB / 12 小时以内仍可继续使用当前流程，但更推荐桌面端处理高风险素材。</p>
+                  {DESKTOP_CLIENT_DISTRIBUTION_NOTE ? (
+                    <p className="rounded-2xl border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">{DESKTOP_CLIENT_DISTRIBUTION_NOTE}</p>
+                  ) : null}
                 </div>
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button type="button" variant="ghost" className="h-9 px-3" onClick={() => setLinkDialogOpen(false)}>
-                取消
+              <Button type="button" variant="ghost" className="h-9 px-3" onClick={() => setDesktopGuidanceDialogOpen(false)}>
+                关闭
               </Button>
-              <Button type="button" className="h-9 px-3" onClick={() => window.open("https://snapany.com/zh", "_blank", "noopener,noreferrer")}>
-                跳转
+              {desktopGuidanceIsLargeFile ? (
+                <Button type="button" variant="outline" className="h-9 px-3" onClick={() => handleDesktopGuidanceContinue()}>
+                  继续当前流程
+                </Button>
+              ) : null}
+              <Button type="button" className="h-9 px-3" onClick={() => void handleDesktopGuidancePrimaryAction()}>
+                {desktopGuidancePrimaryLabel}
               </Button>
             </DialogFooter>
           </DialogContent>
