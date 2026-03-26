@@ -6636,6 +6636,7 @@ export function UploadPanel({
                       : "链接导入和类似的桌面专属流程不会回退到服务器处理，请改用桌面客户端。"}
                   </p>
                   <p>{desktopGuidanceDetail}</p>
+                  <p>Bottle 2.0 当前仍支持音频与视频文件直传；当素材特别大或网络不稳定时，优先改用桌面端会更可靠。</p>
                   <p>当前建议阈值不是硬性限制：在 2 GB / 12 小时以内仍可继续使用当前流程，但更推荐桌面端处理高风险素材。</p>
                   {DESKTOP_CLIENT_DISTRIBUTION_NOTE ? (
                     <p className="rounded-2xl border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">{DESKTOP_CLIENT_DISTRIBUTION_NOTE}</p>
