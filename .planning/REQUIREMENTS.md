@@ -7,13 +7,13 @@
 
 ### Authentication
 
-- [ ] **AUTH-01**: User can register with email and password
-- [ ] **AUTH-02**: User can log in and keep a usable session across refreshes
-- [ ] **AUTH-03**: User can access generation and learning features only after authentication where required by billing state
+- [x] **AUTH-01**: User can register with email and password
+- [x] **AUTH-02**: User can log in and keep a usable session across refreshes
+- [x] **AUTH-03**: User can access generation and learning features only after authentication where required by billing state
 
 ### Billing
 
-- [ ] **BILL-01**: User can redeem codes into platform points or balance
+- [x] **BILL-01**: User can redeem codes into platform points or balance
 - [ ] **BILL-02**: User is charged according to admin-configured pricing for Bottle 1.0 and Bottle 2.0 usage
 - [ ] **BILL-03**: User never needs to provide a personal ASR API key to use paid generation
 
@@ -68,10 +68,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | Phase 1 | Pending |
-| AUTH-02 | Phase 1 | Pending |
-| AUTH-03 | Phase 1 | Pending |
-| BILL-01 | Phase 1 | Pending |
+| AUTH-01 | Phase 1 | Complete |
+| AUTH-02 | Phase 1 | Complete |
+| AUTH-03 | Phase 1 | Complete |
+| BILL-01 | Phase 1 | Complete |
 | BILL-02 | Phase 5 | Pending |
 | BILL-03 | Phase 5 | Pending |
 | WEB-01 | Phase 1 | Complete |
