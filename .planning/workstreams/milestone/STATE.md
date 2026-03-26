@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: 基础能力稳定化
 status: milestone_complete
-last_updated: "2026-03-27T03:45:00+08:00"
+last_updated: "2026-03-27T04:00:00+08:00"
 last_activity: 2026-03-27
 progress:
   total_phases: 7
@@ -50,12 +50,13 @@ Progress: [██████████] 100% (v1.0)
 
 ## Quick Tasks Completed
 
-|| # | Description | Date | Commit | Directory |
-||---|-------------|------|--------|-----------|
-|| 260327-1xf | Fix LessonService._build_one_lesson missing in DashScope course generation path | 2026-03-27 | 4037e2f9 | quick/260327-1xf-fix-lessonservice-build-one-lesson-missi/ |
-|| 260327-2ca | Fix persist_lesson_workspace_summary signature mismatch in DashScope save stage | 2026-03-27 | pending | quick/260327-2ca-fix-persist-lesson-workspace-summary-sig/ |
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260327-1xf | Fix LessonService._build_one_lesson missing in DashScope course generation path | 2026-03-27 | 4037e2f9 | quick/260327-1xf-fix-lessonservice-build-one-lesson-missi/ |
+| 260327-2ca | Fix persist_lesson_workspace_summary signature mismatch in DashScope save stage | 2026-03-27 | pending | quick/260327-2ca-fix-persist-lesson-workspace-summary-sig/ |
+| 260327-5a4 | Fix desktop client UI: error messages and Bottle 1.0/2.0 UX | 2026-03-27 | — | quick/260327-5a4-fix-desktop-client-ui-error-messages-and/ |
 
 ## Session Continuity
 
-Last session: 2026-03-27T03:30:00+08:00
-Milestone v1.0 completed. Archived to .planning/milestones/
+Last session: 2026-03-27T04:00:00+08:00
+Milestone v1.0 completed. Quick task 260327-5a4 completed.
