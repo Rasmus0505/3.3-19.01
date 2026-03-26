@@ -119,6 +119,28 @@ export function getAutoDegradeBannerText(reason = "") {
   }
 }
 
+export function isModelCorruptionError(error = {}) {
+  const message = String(error?.message || error?.detail || "").toLowerCase();
+  const code = String(error?.code || error?.errorCode || "").toLowerCase();
+  const searchableText = `${message} ${code}`;
+
+  if (code === "model_corruption" || code === "model_invalid" || code === "model_missing") {
+    return true;
+  }
+  const corruptionIndicators = ["corrupt", "invalid", "missing", "damaged", "broken", "hash mismatch", "checksum failed"];
+  const modelIndicators = ["model", "weights", "bin file", "model file", "onnx", "safetensors"];
+  const hasCorruption = corruptionIndicators.some((indicator) => searchableText.includes(indicator));
+  const hasModelContext = modelIndicators.some((indicator) => searchableText.includes(indicator));
+  return hasCorruption && hasModelContext;
+}
+
+export function getModelRedownloadGuidance(error = {}) {
+  if (isModelCorruptionError(error)) {
+    return "模型文件可能损坏，请重新下载后重试。";
+  }
+  return "生成失败，请重试。";
+}
+
 export function resolveAsrStrategy({
   mode = "auto",
   localHelperStatus = {},
