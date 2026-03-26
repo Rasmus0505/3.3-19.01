@@ -260,7 +260,7 @@ def test_e2e_admin_adjust_wallet_and_logs(e2e_client):
 
     wallet_before = client.get("/api/wallet/me", headers=learner_headers)
     assert wallet_before.status_code == 200
-    before_points = wallet_before.json()["balance_points"]
+    before_points = wallet_before.json()["balance_amount_cents"]
 
     users_resp = client.get("/api/admin/users", headers=admin_headers)
     assert users_resp.status_code == 200
@@ -276,7 +276,7 @@ def test_e2e_admin_adjust_wallet_and_logs(e2e_client):
 
     wallet_after = client.get("/api/wallet/me", headers=learner_headers)
     assert wallet_after.status_code == 200
-    assert wallet_after.json()["balance_points"] == before_points + 120
+    assert wallet_after.json()["balance_amount_cents"] == before_points + 120
 
     logs_resp = client.get("/api/admin/wallet-logs", params={"user_email": "wallet-user@example.com"}, headers=admin_headers)
     assert logs_resp.status_code == 200
