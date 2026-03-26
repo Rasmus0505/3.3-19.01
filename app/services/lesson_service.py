@@ -2558,6 +2558,7 @@ class LessonService:
     def generate_from_dashscope_file_id(
         *,
         dashscope_file_id: str,
+        dashscope_file_url: str | None = None,
         source_filename: str,
         req_dir: Path,
         owner_id: int,
@@ -2578,6 +2579,9 @@ class LessonService:
         Args:
             dashscope_file_id: The OSS object path (upload_dir) returned by the
                 pre-signed upload policy endpoint, e.g. ``uploads/20240115/xxx.mp4``.
+            dashscope_file_url: Optional direct HTTP(S) file URL for the same
+                uploaded object. When provided, ASR uses this URL directly and
+                skips ``Files.get`` lookup.
             source_filename: Human-readable filename to include in the lesson title.
             req_dir: Working directory for intermediate result files.
             owner_id: User ID who owns the resulting lesson.
@@ -2659,7 +2663,7 @@ class LessonService:
 
         try:
             # Obtain signed URL and probe duration from ASR result
-            signed_url = get_file_signed_url(dashscope_file_id)
+            signed_url = str(dashscope_file_url or "").strip() or get_file_signed_url(dashscope_file_id)
 
             rate = get_model_rate(db, asr_model)
             segment_target_seconds = max(

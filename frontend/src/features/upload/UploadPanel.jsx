@@ -397,6 +397,30 @@ function resolveDashscopeObjectKey({ ossFields = {}, uploadDir = "", fileId = ""
   return "";
 }
 
+function buildDashscopeFileHttpUrl({ uploadUrl = "", fileId = "" } = {}) {
+  const base = String(uploadUrl || "").trim().replace(/\/+$/, "");
+  const normalizedPath = String(fileId || "").trim().replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!base || !normalizedPath) return "";
+
+  const encodedPath = normalizedPath
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => {
+      const raw = String(segment || "");
+      if (!raw) return "";
+      try {
+        return encodeURIComponent(decodeURIComponent(raw));
+      } catch (_) {
+        return encodeURIComponent(raw);
+      }
+    })
+    .filter(Boolean)
+    .join("/");
+
+  if (!encodedPath) return "";
+  return `${base}/${encodedPath}`;
+}
+
 function parseDashscopeUploadErrorPayload(responseText = "") {
   const text = String(responseText || "").trim();
   if (!text) return { code: "", message: "", requestId: "" };
@@ -5014,6 +5038,9 @@ export function UploadPanel({
         fileId: String(uploadConfig?.file_id || ""),
         filename: uploadSourceFile?.name || "",
       });
+      const resolvedFileUrl =
+        String(uploadConfig?.file_url || "").trim() ||
+        buildDashscopeFileHttpUrl({ uploadUrl, fileId: resolvedFileId });
       if (!uploadUrl || !resolvedFileId) {
         throw new Error("云端上传策略无效：缺少上传地址或文件标识");
       }
@@ -5067,6 +5094,9 @@ export function UploadPanel({
       form.append("asr_model", selectedAsrModel);
       form.append("semantic_split_enabled", "false");
       form.append("dashscope_file_id", resolvedFileId);
+      if (resolvedFileUrl) {
+        form.append("dashscope_file_url", resolvedFileUrl);
+      }
 
       const { ok, data } = await uploadWithProgress(
         "/api/lessons/tasks",
