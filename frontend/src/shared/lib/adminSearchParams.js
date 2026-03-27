@@ -82,8 +82,8 @@ export const ADMIN_NAV_ITEMS = [
   },
   {
     key: "users",
-    label: "用户活跃",
-    description: "",
+    label: "用户计费",
+    description: "用户、钱包流水与计费配置",
     href: "/admin/users",
   },
   {

@@ -54,6 +54,7 @@ Users can turn real English media into usable learning lessons quickly, without 
 - **Server Capacity**: Avoid heavy server-side media conversion and long-running ASR workloads — server performance is limited.
 - **User Simplicity**: Learners should not need to understand API keys, model setup, ffmpeg, or yt-dlp.
 - **Runtime Split**: Desktop must be the complete experience; web should provide only what browsers can reliably support.
+- **Web Delivery Contract**: 凡涉及网页端前端行为或路由的改动，完成标准必须包含同步并验证 `app/static`；仅修改 `frontend/src` 不视为网页端已完成。
 - **Billing**: Bottle 1.0 and Bottle 2.0 are both paid capabilities with prices managed in admin tooling.
 - **Brownfield Preservation**: Existing auth, wallet, admin, lesson, and desktop foundations should be optimized, not discarded.
 
@@ -95,4 +96,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-27 after Phase 2.1 completion*
+*Last updated: 2026-03-27 after Phase 2.1 completion and web delivery contract update*

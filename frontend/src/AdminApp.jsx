@@ -33,7 +33,7 @@ export function AdminApp({ apiCall }) {
         <Route path="users" element={<AdminUsersPage apiCall={apiCall} />} />
         <Route path="redeem" element={<AdminRedeemPage apiCall={apiCall} />} />
 
-        <Route path="logs" element={<Navigate to="/admin/users#admin-users-wallet-logs" replace />} />
+        <Route path="logs" element={<Navigate to="/admin/users?tab=wallet" replace />} />
         <Route path="rates" element={<Navigate to="/admin/users?tab=rates" replace />} />
         <Route path="subtitle-settings" element={<Navigate to="/admin/users?tab=rates" replace />} />
         <Route path="redeem-batches" element={<Navigate to="/admin/redeem#admin-redeem-batches" replace />} />
