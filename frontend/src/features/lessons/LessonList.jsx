@@ -311,6 +311,7 @@ export function LessonList({
   const [status, setStatus] = useState("");
   const [exportingLessonId, setExportingLessonId] = useState("");
   const [actionLessonId, setActionLessonId] = useState("");
+  const [progressOverrides, setProgressOverrides] = useState({});
   const [selectionMode, setSelectionMode] = useState("none");
   const [selectedLessonIds, setSelectedLessonIds] = useState([]);
   const [excludedLessonIds, setExcludedLessonIds] = useState([]);
@@ -377,7 +378,11 @@ export function LessonList({
     () =>
       visibleLessons.map((lesson) => {
         const isLocalLesson = Boolean(lesson?.__bottleLocal);
-        const meta = lesson?.__bottleCardMeta || lessonCardMetaMap[lesson.id] || {};
+        const overrideProgress = progressOverrides[lesson.id] || null;
+        const meta = {
+          ...(lesson?.__bottleCardMeta || lessonCardMetaMap[lesson.id] || {}),
+          progress: overrideProgress || lesson?.__bottleCardMeta?.progress || lessonCardMetaMap[lesson.id]?.progress || null,
+        };
         const mediaMeta = lessonMediaMetaMap[lesson.id] || {};
         const sentenceCount = Number(meta.sentenceCount || lesson.sentences?.length || 0);
         const progressState = buildLessonProgressState(meta.progress, sentenceCount);
@@ -394,7 +399,7 @@ export function LessonList({
           createdAtLabel: formatCreatedAt(lesson.created_at),
         };
       }),
-    [lessonCardMetaMap, lessonMediaMetaMap, visibleLessons],
+    [lessonCardMetaMap, lessonMediaMetaMap, progressOverrides, visibleLessons],
   );
   const defaultGuideLessonId = useMemo(() => cards.find((item) => !item.isLocalLesson)?.lesson.id ?? cards[0]?.lesson.id ?? 0, [cards]);
   const allHistorySelected = selectionMode === "all" && Number(totalLessons || 0) > 0;
@@ -496,7 +501,7 @@ export function LessonList({
     }
   }
 
-  async function handleMarkLessonCompleted(lesson) {
+  async function handleSetLessonCompletion(lesson, completed) {
     if (!lesson?.id) return;
     setActionLessonId(String(lesson.id));
     setMenuLessonId(null);
@@ -514,24 +519,32 @@ export function LessonList({
       const progressResp = await api(
         `/api/lessons/${lesson.id}/progress`,
         {
-          method: "POST",
+          method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            current_sentence_index: Math.max(0, sentenceCount - 1),
-            completed_sentence_indexes: completedSentenceIndexes,
-            last_played_at_ms: Number(detail?.duration_ms || detail?.source_duration_ms || 0),
+            current_sentence_index: completed ? Math.max(0, sentenceCount - 1) : 0,
+            completed_sentence_indexes: completed ? completedSentenceIndexes : [],
+            last_played_at_ms: completed ? Number(detail?.duration_ms || detail?.source_duration_ms || 0) : 0,
           }),
         },
         accessToken,
       );
       const progressData = await parseResponse(progressResp);
       if (!progressResp.ok) {
-        throw new Error(toErrorText(progressData, "标记学完失败"));
+        throw new Error(toErrorText(progressData, completed ? "标记学完失败" : "标记未完成失败"));
       }
+      setProgressOverrides((current) => ({
+        ...current,
+        [lesson.id]: {
+          current_sentence_index: completed ? Math.max(0, sentenceCount - 1) : 0,
+          completed_sentence_indexes: completed ? completedSentenceIndexes : [],
+          last_played_at_ms: completed ? Number(detail?.duration_ms || detail?.source_duration_ms || 0) : 0,
+        },
+      }));
       await onRefreshHistory?.();
-      setStatus("已标记学完");
+      setStatus(completed ? "已标记学完" : "已标记未完成");
     } catch (error) {
-      setStatus(error instanceof Error && error.message ? error.message : "标记学完失败");
+      setStatus(error instanceof Error && error.message ? error.message : completed ? "标记学完失败" : "标记未完成失败");
     } finally {
       setActionLessonId("");
     }
@@ -1011,7 +1024,6 @@ export function LessonList({
                           <div className="flex flex-wrap items-center gap-2">
                             <div className="truncate text-lg font-semibold">{lesson.title}</div>
                             {selected ? <Badge variant="outline">当前课程</Badge> : null}
-                            {needsBinding ? <Badge variant="secondary">待恢复视频</Badge> : null}
                             {selected && currentLessonNeedsBinding ? <Badge variant="secondary">需绑定本地视频</Badge> : null}
                           </div>
                           <p className="line-clamp-2 text-sm text-muted-foreground">{lesson.source_filename || "未命名素材"}</p>
@@ -1151,11 +1163,15 @@ export function LessonList({
                                 size="sm"
                                 variant="ghost"
                                 className="w-full justify-start"
-                                onClick={() => void handleMarkLessonCompleted(lesson)}
+                                onClick={() => void handleSetLessonCompletion(lesson, !progressState.isComplete)}
                                 disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || Boolean(actionLessonId)}
                               >
                                 <CheckCircle2 className="size-4" />
-                                {actionLessonId === String(lesson.id) ? "处理中..." : "标记学完"}
+                                {actionLessonId === String(lesson.id)
+                                  ? "处理中..."
+                                  : progressState.isComplete
+                                    ? "标记未完成"
+                                    : "标记学完"}
                               </Button>
                               <Button
                                 type="button"
