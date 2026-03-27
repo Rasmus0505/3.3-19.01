@@ -382,7 +382,8 @@ function getDesktopSelectionErrorMessage(selection = {}) {
 function getCloudFailureMessage(errorLike = "", serverStatus = {}, fallback = "") {
   const normalizedServerStatus = normalizeServerStatus(serverStatus);
   const reason = sanitizeUserFacingText(normalizedServerStatus.reason || "");
-  if (normalizedServerStatus.reachable === false && reason) {
+  const hasApiErrorData = errorLike && (typeof errorLike === "object" ? Object.keys(errorLike).length > 0 : String(errorLike).trim().length > 0);
+  if (normalizedServerStatus.reachable === false && reason && !hasApiErrorData) {
     return reason;
   }
   if (errorLike && typeof errorLike === "object") {
@@ -1008,6 +1009,13 @@ function getDesktopHelperDiagnostic(helperStatus = {}, runtimeInfo = null) {
   }
   if (checkedAtLabel) {
     detailParts.push(`检查于 ${checkedAtLabel}`);
+  }
+  if (!runtimeInfo) {
+    return {
+      label: "检查中",
+      tone: "neutral",
+      detail: "正在连接本地助手",
+    };
   }
   if (safeHelperStatus?.modelReady) {
     return {
@@ -1695,10 +1703,11 @@ export function UploadPanel({
   const [serverBusyText, setServerBusyText] = useState("");
   const [desktopBundleStateMap, setDesktopBundleStateMap] = useState({});
   const [desktopBundleBusyModelKey, setDesktopBundleBusyModelKey] = useState("");
+  const [desktopBundleLoading, setDesktopBundleLoading] = useState(false);
   const [streamingSubtitleDraft, setStreamingSubtitleDraft] = useState(null);
   const [subtitleDraftEdits, setSubtitleDraftEdits] = useState({});
   const [desktopServerStatus, setDesktopServerStatus] = useState(() => normalizeServerStatus({ reachable: true, lastCheckedAt: "", latencyMs: null }));
-  const [desktopHelperStatus, setDesktopHelperStatus] = useState({ healthy: false, modelReady: false, modelStatus: "" });
+  const [desktopHelperStatus, setDesktopHelperStatus] = useState(null);
   const [offlineBannerMessage, setOfflineBannerMessage] = useState("");
   const [restoreBannerMode, setRestoreBannerMode] = useState(RESTORE_BANNER_MODES.NONE);
   const pollingAbortRef = useRef(false);
@@ -2825,7 +2834,7 @@ export function UploadPanel({
         }
         setServerModelStateMap((prev) => ({ ...prev, ...nextServerStateMap }));
         if (hasDesktopRuntimeBridge()) {
-          void fetchDesktopBundleStatus(FASTER_WHISPER_MODEL, { silent: true });
+          void fetchDesktopBundleStatus(FASTER_WHISPER_MODEL, { silent: false });
         }
       } catch (_) {
         const entries = await Promise.all(
@@ -2853,7 +2862,7 @@ export function UploadPanel({
         if (canceled) return;
         setServerModelStateMap((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
         if (hasDesktopRuntimeBridge()) {
-          void fetchDesktopBundleStatus(FASTER_WHISPER_MODEL, { silent: true });
+          void fetchDesktopBundleStatus(FASTER_WHISPER_MODEL, { silent: false });
         }
       }
     }
@@ -4161,6 +4170,9 @@ export function UploadPanel({
     if (!hasDesktopRuntimeBridge() || modelKey !== FASTER_WHISPER_MODEL) {
       return null;
     }
+    if (!silent) {
+      setDesktopBundleLoading(true);
+    }
     try {
       const [summary, updateState] = await Promise.all([
         getDesktopBundledAsrModelSummary(modelKey),
@@ -4184,6 +4196,10 @@ export function UploadPanel({
         toast.error(message);
       }
       return null;
+    } finally {
+      if (!silent) {
+        setDesktopBundleLoading(false);
+      }
     }
   }
 
@@ -5902,7 +5918,8 @@ export function UploadPanel({
               });
               const modelCardToneStyles = getUploadToneStyles(modelCardTone);
               const cardStatusAvailable = !isFasterWhisper || highlightStatus;
-              const cardStatusLabel = cardStatusAvailable ? "可用" : "不可用";
+              const isDesktopBundleLoading = fasterWhisperDesktopTrack && desktopBundleLoading;
+              const cardStatusLabel = isDesktopBundleLoading ? "检查中" : cardStatusAvailable ? "可用" : "不可用";
               const showCardProgress = isFasterWhisper
                 ? fasterWhisperDesktopTrack
                   ? desktopBundleBusy
@@ -5999,7 +6016,11 @@ export function UploadPanel({
                       variant="outline"
                       className={cn(
                         "shrink-0",
-                        cardStatusAvailable ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700",
+                        isDesktopBundleLoading
+                          ? "border-blue-200 bg-blue-50 text-blue-700"
+                          : cardStatusAvailable
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : "border-red-200 bg-red-50 text-red-700",
                       )}
                     >
                       {cardStatusLabel}
