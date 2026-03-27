@@ -2220,6 +2220,10 @@ export function UploadPanel({
       });
       return undefined;
     }
+    // Skip if billing rates not yet loaded from API
+    if (!billingRates || billingRates.length === 0) {
+      return undefined;
+    }
     if (!accessToken) {
       setDesktopBillingState({
         status: "error",
@@ -2276,7 +2280,7 @@ export function UploadPanel({
     return () => {
       cancelled = true;
     };
-  }, [accessToken, desktopClientBillingEnabled, desktopClientEstimatedChargeCents, durationSec, networkOnline, selectedRate]);
+  }, [accessToken, desktopClientBillingEnabled, desktopClientEstimatedChargeCents, durationSec, networkOnline, selectedRate, billingRates]);
 
   useEffect(() => {
     setSubtitleDraftEdits({});
