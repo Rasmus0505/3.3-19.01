@@ -1412,6 +1412,32 @@ function decorateDesktopSourcePath(fileLike, sourcePath) {
   return fileLike;
 }
 
+function decorateDesktopLinkImportFile(fileLike, lessonTitle = "") {
+  if (!fileLike) return fileLike;
+  const normalizedTitle = String(lessonTitle || "").trim();
+  try {
+    Object.defineProperty(fileLike, "desktopLinkImported", { value: true, configurable: true });
+  } catch (_) {
+    try {
+      fileLike.desktopLinkImported = true;
+    } catch (_) {
+      void 0;
+    }
+  }
+  if (normalizedTitle) {
+    try {
+      Object.defineProperty(fileLike, "desktopLinkLessonTitle", { value: normalizedTitle, configurable: true });
+    } catch (_) {
+      try {
+        fileLike.desktopLinkLessonTitle = normalizedTitle;
+      } catch (_) {
+        void 0;
+      }
+    }
+  }
+  return fileLike;
+}
+
 function resolveDesktopSourcePathCandidate(payload = {}) {
   return (
     String(payload?.desktopSourcePath || "").trim() ||
@@ -2500,7 +2526,10 @@ export function UploadPanel({
     if (!nextFile) {
       throw new Error("无法载入已下载素材");
     }
-    return attachDesktopSourcePath(nextFile, String(taskPayload?.source_path || ""));
+    return decorateDesktopLinkImportFile(
+      attachDesktopSourcePath(nextFile, String(taskPayload?.source_path || "")),
+      String(taskPayload?.title || desktopLinkTitle || "").trim(),
+    );
   }
 
   async function commitImportedLesson(normalizedImport, mode = "overwrite") {
@@ -3873,12 +3902,39 @@ export function UploadPanel({
     maybeShowModelFallbackToast(data);
     setBindingCompleted(Boolean(mediaPersisted || data.lesson?.media_storage !== "client_indexeddb"));
     successStateOriginRef.current = "live";
+    const importedLinkLesson = Boolean(sourceFile?.desktopLinkImported);
+    const importedLinkTitle = String(sourceFile?.desktopLinkLessonTitle || desktopLinkTitle || "").trim();
+    if (importedLinkLesson && importedLinkTitle && data.lesson?.id && accessToken) {
+      try {
+        const renameResponse = await api(
+          `/api/lessons/${data.lesson.id}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: importedLinkTitle }),
+          },
+          accessToken,
+        );
+        const renamePayload = await parseResponse(renameResponse);
+        if (renameResponse.ok) {
+          data.lesson = {
+            ...(data.lesson || {}),
+            title: String(renamePayload?.title || importedLinkTitle).trim(),
+          };
+        }
+      } catch (_) {
+        void 0;
+      }
+    }
     if (ownerUserId) {
       await clearActiveGenerationTask(ownerUserId);
       await saveSuccessSnapshot(sourceFile, data, successMessage);
     }
     await syncDesktopClientBillingAfterSuccess(data);
     if (data.lesson) await onCreated?.({ lesson: data.lesson, mediaPreview, mediaPersisted });
+    if (importedLinkLesson && data.lesson?.id) {
+      await onNavigateToLesson?.(data.lesson.id);
+    }
     if (!silentToast) {
       if (partialSuccess || successMessage) {
         toast.warning(successMessage || "课程已生成，但翻译阶段存在失败，可先使用原文字幕学习。");
