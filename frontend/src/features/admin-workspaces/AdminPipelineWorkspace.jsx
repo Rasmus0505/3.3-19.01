@@ -54,7 +54,7 @@ export function AdminPipelineWorkspace({ apiCall, showTabsNavigation = true }) {
                 </Link>
               </Button>
               <Button variant="outline" size="sm" asChild>
-                <Link to="/admin/models?tab=billing">
+                <Link to="/admin/users?tab=rates">
                   <Settings2 className="size-4" />
                   鏌ョ湅妯″瀷璁¤垂
                 </Link>
@@ -110,4 +110,3 @@ export function AdminPipelineWorkspace({ apiCall, showTabsNavigation = true }) {
     </div>
   );
 }
-
