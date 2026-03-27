@@ -2061,9 +2061,11 @@ export function UploadPanel({
   const displayTaskStatus = String(displayTaskSnapshot?.status || "").toLowerCase();
   const taskCompletionKind = String(taskSnapshot?.completion_kind || displayTaskSnapshot?.completion_kind || "full").toLowerCase();
   const taskResultMessage = sanitizeUserFacingText(String(taskSnapshot?.result_message || displayTaskSnapshot?.result_message || ""));
-  const taskPartialFailureStageKey = String(taskSnapshot?.partial_failure_stage || "").trim();
+  const taskPartialFailureStageKey = String(taskSnapshot?.partial_failure_stage || displayTaskSnapshot?.partial_failure_stage || "").trim();
   const taskPartialFailureStageLabel = taskPartialFailureStageKey ? getStageLabelByKey(taskPartialFailureStageKey) : "";
-  const taskPartialFailureSummary = sanitizeUserFacingText(String(taskSnapshot?.partial_failure_message || "")).slice(0, 160);
+  const taskPartialFailureSummary = sanitizeUserFacingText(
+    String(taskSnapshot?.partial_failure_message || displayTaskSnapshot?.partial_failure_message || ""),
+  ).slice(0, 160);
   const taskSucceededPartially = !localTranscribing && !desktopLinkImporting && displayTaskStatus === "succeeded" && taskCompletionKind === "partial";
   const failureDebug = taskSnapshot?.failure_debug;
   const failureStageKey = String(failureDebug?.failed_stage || taskSnapshot?.resume_stage || "").trim();
@@ -6473,7 +6475,7 @@ export function UploadPanel({
           </div>
         ) : null}
 
-        {phase === "success" && taskSnapshot?.lesson ? (
+        {phase === "success" && displayTaskSnapshot?.lesson ? (
           <div className={cn("space-y-3 rounded-2xl border p-4", getUploadToneStyles("success").surface)}>
             <div className="flex items-start gap-3">
               <CheckCircle2 className={cn("mt-0.5 size-5", getUploadToneStyles("success").text)} />
@@ -6491,11 +6493,20 @@ export function UploadPanel({
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" className={cn("h-9 px-3", getUploadToneStyles("success").button)} onClick={() => onNavigateToLesson?.(taskSnapshot.lesson.id)}>
+              <Button
+                type="button"
+                className={cn("h-9 px-3", getUploadToneStyles("success").button)}
+                onClick={() => onNavigateToLesson?.(displayTaskSnapshot.lesson.id)}
+              >
                 去学习
               </Button>
               {taskSucceededPartially ? (
-                <Button type="button" variant="outline" className={cn("h-9 px-3", getUploadToneStyles("selected").buttonSubtle)} onClick={() => void copyTaskDebugReport(taskId || taskSnapshot?.task_id)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={cn("h-9 px-3", getUploadToneStyles("selected").buttonSubtle)}
+                  onClick={() => void copyTaskDebugReport(taskId || displayTaskSnapshot?.task_id || taskSnapshot?.task_id)}
+                >
                   复制排错信息
                 </Button>
               ) : null}

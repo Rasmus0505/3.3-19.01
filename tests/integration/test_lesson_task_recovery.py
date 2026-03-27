@@ -14,7 +14,13 @@ from app.main import create_app
 from app.models import LessonGenerationTask, User
 from app.services import lesson_command_service
 from app.services.billing_service import ensure_default_billing_rates
-from app.services.lesson_task_manager import configure_task_runtime_probe, create_task, mark_task_failed, update_task_progress
+from app.services.lesson_task_manager import (
+    configure_task_runtime_probe,
+    create_task,
+    mark_task_failed,
+    mark_task_succeeded,
+    update_task_progress,
+)
 from app.services.query_cache import clear_query_caches
 from app.core.timezone import now_shanghai_naive
 
@@ -292,3 +298,69 @@ def test_failed_task_ignores_late_progress_updates(test_client, tmp_path):
     assert payload["counters"]["asr_done"] == 6
     assert payload["result_kind"] == ""
     assert payload["result_message"] == ""
+
+
+def test_partial_success_task_exposes_canonical_partial_result_fields(test_client, tmp_path):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="recovery-partial@example.com")
+    user_id = _get_user_id(session_factory, email="recovery-partial@example.com")
+
+    req_dir = tmp_path / "partial-success"
+    req_dir.mkdir(parents=True, exist_ok=True)
+    source_path = req_dir / "source.mp4"
+    source_path.write_bytes(b"video")
+
+    task_id = "lesson_task_recovery_partial_result"
+    session = session_factory()
+    try:
+        create_task(
+            task_id=task_id,
+            owner_user_id=user_id,
+            source_filename="source.mp4",
+            asr_model="qwen3-asr-flash-filetrans",
+            semantic_split_enabled=False,
+            work_dir=str(req_dir),
+            source_path=str(source_path),
+            db=session,
+        )
+        mark_task_succeeded(
+            task_id,
+            lesson_id=0,
+            subtitle_cache_seed={
+                "semantic_split_enabled": False,
+                "split_mode": "asr_sentences",
+                "source_word_count": 2,
+                "strategy_version": 2,
+                "asr_payload": {"transcripts": [{"sentences": [{"text": "hello world"}]}]},
+                "sentences": [
+                    {
+                        "idx": 0,
+                        "begin_ms": 0,
+                        "end_ms": 1000,
+                        "text_en": "hello world",
+                        "text_zh": "",
+                        "tokens": ["hello", "world"],
+                        "audio_url": None,
+                    }
+                ],
+            },
+            result_kind="asr_only",
+            result_message="课程已生成，翻译失败，可先使用原文字幕学习。",
+            partial_failure_stage="translate_zh",
+            partial_failure_code="TRANSLATION_PARTIAL",
+            partial_failure_message="第2句失败：REQUEST_FAILED rate limit",
+            db=session,
+        )
+    finally:
+        session.close()
+
+    response = client.get(f"/api/lessons/tasks/{task_id}", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "succeeded"
+    assert payload["completion_kind"] == "partial"
+    assert payload["result_kind"] == "asr_only"
+    assert payload["partial_failure_stage"] == "translate_zh"
+    assert payload["partial_failure_code"] == "TRANSLATION_PARTIAL"
+    assert payload["partial_failure_message"] == "第2句失败：REQUEST_FAILED rate limit"
