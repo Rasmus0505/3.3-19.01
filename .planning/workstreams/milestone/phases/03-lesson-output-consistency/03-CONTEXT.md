@@ -17,26 +17,33 @@ Normalize Bottle 1.0 and Bottle 2.0 generation outputs into one canonical lesson
 - **D-01:** Bottle 1.0 and Bottle 2.0 must both persist into the same canonical `lessons`, `lesson_sentences`, and `lesson_progress` model shape rather than creating source-specific lesson types.
 - **D-02:** `LessonDetailResponse`, `LessonCatalogResponse`, and `LessonTaskResponse` remain the source-of-truth contracts for generated lesson output regardless of runtime.
 - **D-03:** Runtime-specific raw payloads such as `subtitle_cache_seed`, task debug data, and offline subtitle variants may exist for recovery, but they support the canonical lesson record instead of replacing it.
+- **D-04:** User-facing fields and learner workflow must stay strictly consistent across Bottle 1.0 and Bottle 2.0; internal supplemental fields may exist, but they must not alter the main history / learning / progress flow.
 
 ### History and learning entry
-- **D-04:** Users should reach generated lessons through the same history and "start learning" flow regardless of whether the lesson came from Bottle 1.0 local generation or Bottle 2.0 cloud generation.
-- **D-05:** History cards, catalog metadata, and lesson-open behavior should expose the same core fields across sources: title, source filename, sentence count, progress summary, and current lesson binding.
-- **D-06:** Desktop-local recovery data should stay keyed by the shared lesson ID so local-only artifacts do not create a separate desktop lesson namespace.
+- **D-05:** Users should reach generated lessons through the same history and "start learning" flow regardless of whether the lesson came from Bottle 1.0 local generation or Bottle 2.0 cloud generation.
+- **D-06:** History cards, catalog metadata, and lesson-open behavior should expose the same core fields across sources: title, source filename, sentence count, progress summary, and current lesson binding.
+- **D-07:** The history list should not expose runtime/source differences to normal users; do not show local/cloud origin badges or split history views.
+- **D-08:** Desktop-local recovery data should stay keyed by the shared lesson ID so local-only artifacts do not create a separate desktop lesson namespace.
+- **D-09:** The history item three-dot menu may contain recovery actions that operate on the canonical lesson, including re-running translation for degraded `asr_only` lessons and manually marking a lesson as completed.
 
 ### Generation-state visibility
-- **D-07:** Shared staged task feedback stays in place for all generation routes: one task contract with stage cards, counters, overall percent, pause/resume/terminate, and debug-report support.
-- **D-08:** Partial-success cases such as ASR-only output should remain learnable outcomes: show explicit degraded-success messaging, keep the lesson in history, and allow users to continue into review/practice instead of treating the result as a total failure.
-- **D-09:** Failure, pause, resume, and recovery affordances should stay attached to `/api/lessons/tasks/*` and the shared upload-task surface rather than splitting into cloud-only vs desktop-only UI behavior.
+- **D-10:** Shared staged task feedback stays in place for all generation routes: one task contract with stage cards, counters, overall percent, pause/resume/terminate, and debug-report support.
+- **D-11:** Partial-success cases such as `asr_only` output should remain learnable outcomes: show explicit degraded-success messaging, keep the lesson in history, and allow users to continue into review/practice instead of treating the result as a total failure.
+- **D-12:** For degraded `asr_only` lessons, the user may later trigger a translation-completion action from the history item menu rather than being forced to regenerate the whole lesson.
+- **D-13:** Failure, pause, resume, and recovery affordances should stay attached to `/api/lessons/tasks/*` and the shared upload-task surface rather than splitting into cloud-only vs desktop-only UI behavior.
 
 ### Practice and sentence continuity
-- **D-10:** Learning and spelling flows should consume persisted `LessonSentence` and `LessonProgress` data only; once generation finishes, practice must not branch on ASR source.
-- **D-11:** Sentence review needs to preserve English text, Chinese text, timing, and progress continuity from the persisted lesson so users can resume later on the same lesson record.
-- **D-12:** Phase 3 should prioritize canonical lesson/practice continuity before adding richer source-specific enhancements or Phase 4 link-import behavior.
+- **D-14:** Learning and spelling flows should consume persisted `LessonSentence` and `LessonProgress` data only; once generation finishes, practice must not branch on ASR source.
+- **D-15:** Sentence review needs to preserve English text, Chinese text, timing, and progress continuity from the persisted lesson so users can resume later on the same lesson record.
+- **D-16:** Practice should completely ignore generation source after lesson creation; any source-aware behavior is limited to recovery or diagnostics outside the main learning flow.
+- **D-17:** Phase 3 should prioritize canonical lesson/practice continuity before adding richer source-specific enhancements or Phase 4 link-import behavior.
 
 ### the agent's Discretion
-- Exact user-facing copy for partial-success, resume, and history-entry messaging
-- Whether plain subtitle variants are recovered eagerly or lazily, as long as the canonical lesson ID remains the only learner-facing lesson identity
+- Exact user-facing copy for partial-success, resume, history-entry, and "mark completed" actions
 - The exact visual hierarchy of progress/debug affordances on upload and history surfaces
+
+### Recovery strategy
+- **D-18:** Subtitle recovery and translation-completion behavior should use a lazy strategy: keep the canonical lesson flow immediately usable first, then run recovery only when the user opens the lesson or explicitly triggers a history-menu recovery action such as "补翻译".
 
 </decisions>
 
@@ -105,6 +112,9 @@ Normalize Bottle 1.0 and Bottle 2.0 generation outputs into one canonical lesson
 - The learner-facing product shape should be "generate -> history -> learn" no matter whether ASR was local or cloud.
 - Users should not need to understand ASR route differences once a lesson exists; they should see one lesson, one history entry, and one learning flow.
 - Degraded outcomes are acceptable if they still produce a usable lesson artifact; Phase 3 should make those outcomes explicit and resumable instead of hiding them.
+- `asr_only` degraded lessons should support a later "补翻译" style recovery action from the history three-dot menu.
+- The history three-dot menu should add a "mark completed" action for users who want to manually treat a lesson as finished.
+- Lazy recovery is preferred over eager recovery so subtitle/translation补偿 does not block or reshape the main history / learning / progress flow.
 
 </specifics>
 
