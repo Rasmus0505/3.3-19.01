@@ -982,8 +982,8 @@ function getDesktopServerDiagnostic(serverStatus = {}, runtimeInfo = null) {
   }
   if (normalizedServerStatus.reachable === false) {
     return {
-      label: "不可用",
-      tone: "danger",
+      label: "连接失败",
+      tone: "neutral",
       detail: detailParts.join(" · ") || "当前无法连接云端服务",
     };
   }
@@ -3719,14 +3719,22 @@ export function UploadPanel({
     if (String(data?.result_message || data?.message || "").trim()) {
       successMessages.push(String(data.result_message || data.message).trim());
     }
-    if (data.lesson?.id && isBlobBackedSourceFile(sourceFile) && data.lesson.media_storage === "client_indexeddb" && !bindingCompleted) {
-      try {
-        await requestPersistentStorage();
-        await saveLessonMedia(data.lesson.id, sourceFile, { coverDataUrl, coverWidth, coverHeight, aspectRatio: coverAspectRatio });
-        mediaPreview = await getLessonMediaPreview(data.lesson.id);
-        mediaPersisted = Boolean(mediaPreview?.hasMedia);
-      } catch (_) {
-        mediaPreview = { lessonId: Number(data.lesson.id || 0), hasMedia: false, mediaType: String(sourceFile?.type || ""), coverDataUrl, aspectRatio: coverAspectRatio, fileName: String(sourceFile?.name || data.lesson.source_filename || "") };
+    if (data.lesson?.id && data.lesson.media_storage === "client_indexeddb" && !bindingCompleted) {
+      // Try to materialize a desktop-path-backed file before saving, so learning mode gets the blob
+      const fileToPersist = isBlobBackedSourceFile(sourceFile)
+        ? sourceFile
+        : sourceFile && typeof sourceFile?.path === "string" && sourceFile.path
+          ? await materializeDesktopSelectedFile(sourceFile)
+          : sourceFile;
+      if (fileToPersist && isBlobBackedSourceFile(fileToPersist)) {
+        try {
+          await requestPersistentStorage();
+          await saveLessonMedia(data.lesson.id, fileToPersist, { coverDataUrl, coverWidth, coverHeight, aspectRatio: coverAspectRatio });
+          mediaPreview = await getLessonMediaPreview(data.lesson.id);
+          mediaPersisted = Boolean(mediaPreview?.hasMedia);
+        } catch (_) {
+          mediaPreview = { lessonId: Number(data.lesson.id || 0), hasMedia: false, mediaType: String(sourceFile?.type || ""), coverDataUrl, aspectRatio: coverAspectRatio, fileName: String(sourceFile?.name || data.lesson.source_filename || "") };
+        }
       }
     }
     if (data.lesson?.media_storage === "client_indexeddb" && !mediaPersisted) {
@@ -3753,6 +3761,59 @@ export function UploadPanel({
       } else {
         toast.success("课程已生成");
       }
+    }
+  }
+
+  // Saves the source media (blob-backed or desktop-path-backed) to IndexedDB for a desktop-local
+  // generated course so it becomes playable in learning mode. Returns true if materialization failed.
+  async function finalizeDesktopLocalCourseSuccess(lesson, sourceFile, desktopSourcePath) {
+    if (!lesson?.id || lesson.media_storage !== "client_indexeddb") {
+      return false;
+    }
+    let fileToSave = isBlobBackedSourceFile(sourceFile) ? sourceFile : null;
+    let coverToSave = coverDataUrl;
+    let coverWidthToSave = coverWidth;
+    let coverHeightToSave = coverHeight;
+    let aspectRatioToSave = coverAspectRatio;
+
+    // If we have a desktop path but no blob yet, materialize it to a Blob
+    if (!fileToSave && desktopSourcePath) {
+      const materialized = await materializeDesktopSelectedFile(sourceFile);
+      if (isBlobBackedSourceFile(materialized)) {
+        fileToSave = materialized;
+        // Extract cover now that we have a Blob (the initial onSelectFile extraction
+        // failed because desktop-path objects cannot be used with URL.createObjectURL)
+        if (!coverToSave) {
+          try {
+            const preview = await extractMediaCoverPreview(fileToSave, desktopSourcePath);
+            if (preview?.coverDataUrl) {
+              coverToSave = preview.coverDataUrl;
+              coverWidthToSave = Number(preview.width || 0);
+              coverHeightToSave = Number(preview.height || 0);
+              aspectRatioToSave = Number(preview.aspectRatio || 0);
+            }
+          } catch (_) {
+            // Cover extraction failed — continue without cover
+          }
+        }
+      }
+    }
+    if (!fileToSave) {
+      return true;
+    }
+    try {
+      await requestPersistentStorage();
+      const sourceDurationSec = Math.max(0, Number(durationSec || 0));
+      const durationMs = sourceDurationSec > 0 ? Math.round(sourceDurationSec * 1000) : 0;
+      await saveLessonMedia(lesson.id, fileToSave, {
+        coverDataUrl: coverToSave,
+        coverWidth: coverWidthToSave,
+        coverHeight: coverHeightToSave,
+        aspectRatio: aspectRatioToSave,
+      });
+      return false;
+    } catch (_) {
+      return true;
     }
   }
 
@@ -4829,6 +4890,7 @@ export function UploadPanel({
           title: String(response?.course?.title || sourceFileName.replace(/\.[^.]+$/, "")).trim(),
           runtime_kind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
           asr_model: FASTER_WHISPER_MODEL,
+          media_storage: "client_indexeddb",
         },
         task_id: courseId,
         status: "succeeded",
@@ -4837,6 +4899,9 @@ export function UploadPanel({
         workspace: null,
       };
       setTaskSnapshot(taskSnapshotValue);
+
+      // Materialize desktop file to blob and save to IndexedDB so the lesson is playable in learning mode
+      const materializationFailed = await finalizeDesktopLocalCourseSuccess(taskSnapshotValue.lesson, sourceFile, sourceFilePath);
 
       dispatchLocalLessonUpdateEvent();
       await clearUploadPanelSuccessSnapshot(null);
@@ -4858,6 +4923,9 @@ export function UploadPanel({
       }
 
       toast.success(translationPending ? "课程已生成（翻译待补全）" : "课程已生成");
+      if (materializationFailed) {
+        toast.warning("课程已生成，但未保存视频，请在历史记录中恢复视频后再开始学习。");
+      }
     } catch (error) {
       setLoading(false);
       if (error?.name === "AbortError") {
@@ -5521,6 +5589,24 @@ export function UploadPanel({
       }
       return;
     }
+    // Bottle 1.0 (FasterWhisper) 任务恢复时，自动切换为云端继续生成
+    const resumeAsrModel = String(taskSnapshot?.asr_model || selectedAsrModel || "");
+    if (resumeAsrModel === FASTER_WHISPER_MODEL) {
+      try {
+        const uploadSourceFile = await ensureUploadableSourceFile();
+        await submitCloudDirectUpload(uploadSourceFile, runToken, pollToken);
+      } catch (error) {
+        await handleTaskFailureState({
+          message: error instanceof Error && error.message ? error.message : String(error),
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: 0,
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+        });
+      }
+      return;
+    }
     await handleTaskFailureState({
           message: "当前仅支持云端识别直传，请切换到云端识别后重试。",
       nextTaskId: "",
@@ -5916,41 +6002,7 @@ export function UploadPanel({
                     </Badge>
                   </div>
 
-                  {isFasterWhisper && fasterWhisperDesktopTrack ? (
-                    <div className="rounded-xl border bg-background/70 px-3 py-1.5 text-sm font-medium text-foreground">
-                      本机识别
-                    </div>
-                  ) : isFasterWhisper ? (
-                    <div className="flex flex-wrap gap-2 rounded-xl border bg-background/70 p-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={fasterWhisperCardTrack === FAST_RUNTIME_TRACK_BROWSER_LOCAL ? "default" : "outline"}
-                        className={fasterWhisperCardTrack === FAST_RUNTIME_TRACK_BROWSER_LOCAL ? getUploadToneStyles("selected").button : getUploadToneStyles("selected").buttonSubtle}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleSelectFasterWhisperRuntimeTrack(FAST_RUNTIME_TRACK_BROWSER_LOCAL);
-                        }}
-                        disabled={uploadActionBusy || !hasBrowserLocalRuntimeBridge()}
-                        title={browserLocalRuntimeAvailable ? "" : browserLocalRuntimeBlockedMessage}
-                      >
-                        本地网站跑
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={fasterWhisperCardTrack === FAST_RUNTIME_TRACK_CLOUD ? "default" : "outline"}
-                        className={fasterWhisperCardTrack === FAST_RUNTIME_TRACK_CLOUD ? getUploadToneStyles("selected").button : getUploadToneStyles("selected").buttonSubtle}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleSelectFasterWhisperRuntimeTrack(FAST_RUNTIME_TRACK_CLOUD);
-                        }}
-                        disabled={uploadActionBusy}
-                      >
-                        服务器跑
-                      </Button>
-                    </div>
-                  ) : null}
+                  {/* Runtime track selection removed — desktop always uses local track */}
 
                   {showCardProgress ? (
                     <div className="space-y-1">

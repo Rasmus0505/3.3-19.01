@@ -13,6 +13,7 @@
 import { useState, useCallback, useRef } from "react";
 import { api } from "../../shared/api/client.js";
 import { useAppStore } from "../../store/index.js";
+import { extractMediaCoverPreview } from "../../shared/media/localMediaStore.js";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */
@@ -36,6 +37,8 @@ export function CloudUploadPanel({ onTaskCreated, onError }: CloudUploadPanelPro
   const [phase, setPhase] = useState<Phase>("idle");
   const [statusText, setStatusText] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [coverDataUrl, setCoverDataUrl] = useState<string>("");
+  const [coverAspectRatio, setCoverAspectRatio] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const reset = useCallback(() => {
@@ -48,7 +51,26 @@ export function CloudUploadPanel({ onTaskCreated, onError }: CloudUploadPanelPro
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
     setSelectedFile(file);
+    setCoverDataUrl("");
+    setCoverAspectRatio(0);
+    if (file) {
+      void extractAndSetCover(file);
+    }
   }, []);
+
+  const extractAndSetCover = async (file: File) => {
+    const mediaType = String(file.type || "");
+    if (!mediaType.startsWith("video/")) return;
+    try {
+      const preview = await extractMediaCoverPreview(file, file.name || "");
+      if (preview?.coverDataUrl) {
+        setCoverDataUrl(preview.coverDataUrl);
+        setCoverAspectRatio(preview.aspectRatio || 0);
+      }
+    } catch (_) {
+      // silently ignore cover extraction errors
+    }
+  };
 
   const handleUpload = useCallback(async () => {
     if (!selectedFile) return;
