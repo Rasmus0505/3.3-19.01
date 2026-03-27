@@ -10,16 +10,22 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db import Base
+from app.db.base import sqlite_schema_translate_map
 
 
 @pytest.fixture(scope="function")
 def db_engine():
-    """创建测试用数据库引擎（SQLite 内存）。"""
+    """Create test database engine (SQLite in-memory, schema-translated for PostgreSQL app schema)."""
     database_url = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
+    is_sqlite = database_url.startswith("sqlite")
+    execution_options = {}
+    if is_sqlite:
+        execution_options["schema_translate_map"] = sqlite_schema_translate_map(database_url)
     engine = create_engine(
         database_url,
-        connect_args={"check_same_thread": False} if database_url.startswith("sqlite") else {},
+        connect_args={"check_same_thread": False} if is_sqlite else {},
         poolclass=StaticPool if database_url == "sqlite:///:memory:" else None,
+        execution_options=execution_options,
     )
     Base.metadata.create_all(bind=engine)
     yield engine
