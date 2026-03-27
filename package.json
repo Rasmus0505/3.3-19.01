@@ -29,6 +29,9 @@
       ".cache/frontend-dist/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      ".cache/frontend-dist/**/*"
+    ],
     "extraResources": [
       {
         "from": ".cache/helper-runtime/BottleLocalHelper",

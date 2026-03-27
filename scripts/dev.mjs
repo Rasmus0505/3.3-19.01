@@ -57,12 +57,17 @@ process.on("SIGTERM", shutdown);
 
 await waitForUrl(devServerUrl);
 
+const CLOUD_APP_URL = "https://351636.preview.aliyun-zeabur.cn";
+const CLOUD_API_BASE_URL = "https://351636.preview.aliyun-zeabur.cn";
+
 const electronProcess = spawn(resolveCommand("npx"), ["electron", "."], {
   cwd: desktopRoot,
   stdio: "inherit",
   env: {
     ...process.env,
     DESKTOP_FRONTEND_DEV_SERVER_URL: devServerUrl,
+    DESKTOP_CLOUD_APP_URL: CLOUD_APP_URL,
+    DESKTOP_CLOUD_API_BASE_URL: CLOUD_API_BASE_URL,
   },
   shell: process.platform === "win32",
 });

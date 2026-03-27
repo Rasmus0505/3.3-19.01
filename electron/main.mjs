@@ -113,6 +113,11 @@ function authCachePath() {
 }
 
 function frontendEntryPath() {
+  if (app.isPackaged) {
+    // Packaged: .cache/frontend-dist is inside app.asar alongside app.asar.unpacked
+    return path.join(process.resourcesPath, "app.asar.unpacked", ".cache", "frontend-dist", "index.html");
+  }
+  // Dev: use .cache from repo root
   return path.resolve(desktopRoot, ".cache", "frontend-dist", "index.html");
 }
 
