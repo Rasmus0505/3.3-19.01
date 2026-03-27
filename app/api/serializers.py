@@ -185,10 +185,6 @@ def to_rate_item(rate: BillingModelRate) -> BillingRateItem:
         gross_profit_per_minute_cents=price_per_minute_cents - cost_per_minute_cents,
         billing_unit=str(getattr(rate, "billing_unit", "minute") or "minute"),
         is_active=rate.is_active,
-        parallel_enabled=bool(rate.parallel_enabled),
-        parallel_threshold_seconds=int(rate.parallel_threshold_seconds),
-        segment_seconds=int(rate.segment_seconds),
-        max_concurrency=int(rate.max_concurrency),
         runtime_kind=runtime_kind,
         updated_at=to_shanghai_aware(rate.updated_at),
     )

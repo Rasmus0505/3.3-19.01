@@ -77,7 +77,7 @@ export function AdminHealthPage({ apiCall }) {
         </div>
       </section>
 
-      <AdminSystemTab snapshot={snapshot} loading={loading} status={status} error={error} />
+      <AdminSystemTab apiCall={apiCall} snapshot={snapshot} loading={loading} status={status} error={error} />
     </div>
   );
 }

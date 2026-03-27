@@ -144,13 +144,13 @@ export function AdminOverviewTab({ apiCall }) {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/monitoring?tab=health&panel=system">
+              <Link to="/admin/troubleshooting?tab=health&panel=system">
                 去系统检查
                 <ArrowRight className="size-4" />
               </Link>
             </Button>
             <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/monitoring?tab=tasks&panel=task-failures">去生成失败</Link>
+              <Link to="/admin/troubleshooting?tab=tasks&panel=task-failures">去生成失败</Link>
             </Button>
             <Button size="sm" onClick={loadOverview} disabled={loading}>
               <RefreshCcw className="size-4" />
@@ -204,7 +204,7 @@ export function AdminOverviewTab({ apiCall }) {
               <CardDescription>快速看最近的兑换批次是否还在正常发放和过期。</CardDescription>
             </div>
             <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/business?tab=redeem&panel=batches">查看批次</Link>
+              <Link to="/admin/redeem?panel=batches">查看批次</Link>
             </Button>
           </CardHeader>
           <CardContent>
@@ -229,7 +229,7 @@ export function AdminOverviewTab({ apiCall }) {
               <CardDescription>重点看计费、调账和兑换码状态变更等关键操作。</CardDescription>
             </div>
             <Button variant="outline" size="sm" asChild>
-              <Link to="/admin/monitoring?tab=operations&panel=operations">查看操作日志</Link>
+              <Link to="/admin/troubleshooting?tab=operations&panel=operations">查看操作日志</Link>
             </Button>
           </CardHeader>
           <CardContent>

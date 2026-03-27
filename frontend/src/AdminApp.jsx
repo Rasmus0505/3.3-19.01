@@ -1,10 +1,10 @@
 import { useMemo } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
-import { AdminHealthPage } from "./features/admin-pages/AdminHealthPage";
 import { AdminRedeemPage } from "./features/admin-pages/AdminRedeemPage";
 import { AdminSecurityPage } from "./features/admin-pages/AdminSecurityPage";
 import { AdminUsersPage } from "./features/admin-pages/AdminUsersPage";
+import { AdminMonitoringWorkspace } from "./features/admin-workspaces/AdminMonitoringWorkspace";
 import { useErrorCopyShortcut } from "./shared/hooks/useErrorCopyShortcut";
 import { resolveAdminNavItem } from "./shared/lib/adminSearchParams";
 import { Badge } from "./shared/ui";
@@ -27,8 +27,9 @@ export function AdminApp({ apiCall }) {
       </section>
 
       <Routes>
-        <Route index element={<Navigate to="health" replace />} />
-        <Route path="health" element={<AdminHealthPage apiCall={apiCall} />} />
+        <Route index element={<Navigate to="users?tab=list" replace />} />
+        <Route path="health" element={<Navigate to="/admin/troubleshooting?tab=health&panel=overview" replace />} />
+        <Route path="troubleshooting" element={<AdminMonitoringWorkspace apiCall={apiCall} />} />
         <Route path="security" element={<AdminSecurityPage apiCall={apiCall} />} />
         <Route path="users" element={<AdminUsersPage apiCall={apiCall} />} />
         <Route path="redeem" element={<AdminRedeemPage apiCall={apiCall} />} />
@@ -36,11 +37,11 @@ export function AdminApp({ apiCall }) {
         <Route path="logs" element={<Navigate to="/admin/users?tab=wallet" replace />} />
         <Route path="rates" element={<Navigate to="/admin/users?tab=rates" replace />} />
         <Route path="subtitle-settings" element={<Navigate to="/admin/users?tab=rates" replace />} />
-        <Route path="redeem-batches" element={<Navigate to="/admin/redeem#admin-redeem-batches" replace />} />
-        <Route path="redeem-codes" element={<Navigate to="/admin/redeem#admin-redeem-codes" replace />} />
-        <Route path="redeem-audit" element={<Navigate to="/admin/redeem#admin-redeem-audit" replace />} />
+        <Route path="redeem-batches" element={<Navigate to="/admin/redeem?panel=batches" replace />} />
+        <Route path="redeem-codes" element={<Navigate to="/admin/redeem?panel=codes" replace />} />
+        <Route path="redeem-audit" element={<Navigate to="/admin/redeem?panel=audit" replace />} />
 
-        <Route path="*" element={<Navigate to="health" replace />} />
+        <Route path="*" element={<Navigate to="users?tab=list" replace />} />
       </Routes>
     </div>
   );

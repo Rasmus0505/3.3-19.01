@@ -142,6 +142,32 @@ def test_admin_overview_returns_metrics_and_recent_rows(test_client):
     assert any(item["action_type"] == "redeem_batch_create" for item in data["recent_operations"])
 
 
+def test_admin_runtime_readiness_returns_bottle_descriptors(test_client):
+    client, _, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "admin-runtime@example.com")
+
+    admin_token = _register_and_login(client, email="admin-runtime@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    runtime_resp = client.get("/api/admin/runtime-readiness", headers=admin_headers)
+    assert runtime_resp.status_code == 200
+
+    data = runtime_resp.json()
+    assert data["ok"] is True
+    items = {item["model_key"]: item for item in data["items"]}
+    assert set(items) == {"faster-whisper-medium", "qwen3-asr-flash-filetrans"}
+    assert items["faster-whisper-medium"]["display_name"] == "Bottle 1.0"
+    assert items["qwen3-asr-flash-filetrans"]["display_name"] == "Bottle 2.0"
+    assert items["faster-whisper-medium"]["runtime_kind"] == "desktop_local"
+    assert items["qwen3-asr-flash-filetrans"]["runtime_kind"] == "cloud_api"
+    assert isinstance(items["faster-whisper-medium"]["available"], bool)
+    assert isinstance(items["qwen3-asr-flash-filetrans"]["available"], bool)
+    assert isinstance(items["faster-whisper-medium"]["message"], str)
+    assert isinstance(items["qwen3-asr-flash-filetrans"]["message"], str)
+    assert isinstance(items["faster-whisper-medium"]["actions"], list)
+    assert isinstance(items["qwen3-asr-flash-filetrans"]["actions"], list)
+
+
 def test_admin_overview_and_redeem_endpoints_degrade_when_tables_missing(test_client):
     client, session_factory, monkeypatch = test_client
     monkeypatch.setenv("ADMIN_EMAILS", "admin-missing-schema@example.com")

@@ -1,6 +1,8 @@
 from app.schemas.admin import (
     AdminBillingRateUpdateRequest,
     AdminBillingRatesResponse,
+    AdminRuntimeReadinessItem,
+    AdminRuntimeReadinessResponse,
     AdminRedeemAuditExportRequest,
     AdminRedeemAuditItem,
     AdminRedeemAuditListResponse,
@@ -146,6 +148,8 @@ __all__ = [
     "AdminWalletLogsResponse",
     "AdminBillingRateUpdateRequest",
     "AdminBillingRatesResponse",
+    "AdminRuntimeReadinessItem",
+    "AdminRuntimeReadinessResponse",
     "AdminSubtitleSettingsItem",
     "AdminSubtitleSettingsHistoryItem",
     "AdminSubtitleSettingsHistoryResponse",
