@@ -100,7 +100,7 @@ export function getAdminNavItemByKey(key) {
 
 export function resolveAdminNavKey(pathname) {
   if (pathname.startsWith("/admin/security")) return "security";
-  if (pathname.startsWith("/admin/users") || pathname.startsWith("/admin/logs")) return "users";
+  if (pathname.startsWith("/admin/users") || pathname.startsWith("/admin/logs") || pathname.startsWith("/admin/rates") || pathname.startsWith("/admin/subtitle-settings")) return "users";
   if (pathname.startsWith("/admin/redeem")) return "redeem";
   return "health";
 }
