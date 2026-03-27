@@ -26,15 +26,18 @@ Users can turn real English media into usable learning lessons quickly, without 
 - ✓ Desktop client exposes the complete product capability set, including Bottle 1.0 local generation, Bottle 2.0 cloud generation, and link-to-video generation — validated in Phase 02
 - ✓ Non-technical learners can complete generation without manual ffmpeg/model/key steps — validated in Phase 02
 - ✓ Desktop helper auto-starts on Electron launch; users never perceive helper, model, or ASR source — validated in Phase 02
+- ✓ Generated lessons from Bottle 1.0 and Bottle 2.0 become consistent learning artifacts — validated in Phase 3
+- ✓ Users can enter spelling/lesson practice from generated content regardless of generation source — validated in Phase 3
+- ✓ Desktop users can import media from supported links through local tooling — validated in Phase 4
 
 ### Active
 
 - [ ] Web app supports the strongest browser-safe generation path, centered on Bottle 2.0 cloud generation — **Migrated to Validated (v1.0 Phase 1)**
 - [ ] Both Bottle 1.0 and Bottle 2.0 are paid capabilities using platform-managed pricing and point deduction — **Migrated to Validated (v1.0 Phase 2)**
 - [ ] Heavy media processing and large-file handling stay off the central server whenever practical — **Migrated to Validated (v1.0 Phase 01.1)**
-- [ ] Generated lessons from Bottle 1.0 and Bottle 2.0 become consistent learning artifacts — Phase 3 (v1.1)
-- [ ] Users can enter spelling/lesson practice from generated content regardless of generation source — Phase 3 (v1.1)
-- [ ] Desktop users can import media from supported links through local tooling — Phase 4 (v1.1)
+- [ ] Generated lessons from Bottle 1.0 and Bottle 2.0 become consistent learning artifacts — **Migrated to Validated (v1.1 Phase 3)**
+- [ ] Users can enter spelling/lesson practice from generated content regardless of generation source — **Migrated to Validated (v1.1 Phase 3)**
+- [ ] Desktop users can import media from supported links through local tooling — **Migrated to Validated (v1.1 Phase 4)**
 
 ### Out of Scope
 
@@ -60,11 +63,11 @@ Users can turn real English media into usable learning lessons quickly, without 
 
 ## Current State
 
-**v1.1 进行中 (Phase 2.1 完成)。** Admin surface cleanup complete: Bottle 1.0 billing integrated into admin rates, Faster Whisper settings UI removed, "模型管理" page deleted. Billing continuity verified (11/11 tests pass).
+**v1.1 已完成 (2026-03-27)。** Admin surface cleanup, lesson output consistency, and desktop link import are now shipped together: Bottle 1.0 billing/admin cleanup is complete, generated lessons converge into one canonical learner flow, and desktop users can import supported links locally and land directly in learning.
 
 **v1.0 已交付 (2026-03-27)。** Web 和 Desktop 现在 share 稳定的 Bottle 2.0 云端生成路径；Desktop 用户可以使用 Bottle 1.0 本地生成，零配置；DashScope 403 文件访问失败会自动自愈一次。
 
-**下一步：** v1.1 Phase 3 — Lesson Output Consistency + Phase 4 — Desktop Link Import
+**下一步：** v2.0 Phase 5 — Billing and Admin Alignment
 
 ## Key Decisions
 
@@ -74,9 +77,10 @@ Users can turn real English media into usable learning lessons quickly, without 
 | Web app centers on Bottle 2.0 cloud generation | Browser users still need a useful path, but browser-local heavy tooling is not reliable enough | ✅ Validated in Phase 01 & 02 — desktop guidance replaces server fallback, not browser parity |
 | Platform manages ASR keys instead of end users | Learners are non-technical and should pay with points/redeem codes rather than configure secrets | ✅ Validated — platform-managed keys throughout v1.0 |
 | Server should stay light and avoid becoming the media processing bottleneck | Cost and infrastructure limits make centralized heavy processing a bad default | ✅ Validated in Phase 01 & 01.1 — signed URL retry self-heal keeps server light |
-| Generated media should become lesson/practice artifacts regardless of generation path | Users care about learning outcomes, not the underlying ASR route | — Pending — Phase 3 will validate |
+| Generated media should become lesson/practice artifacts regardless of generation path | Users care about learning outcomes, not the underlying ASR route | ✅ Validated in Phase 3 — canonical lesson/history/learning flow now shared |
 | Direct-upload DashScope file access failures should self-heal before surfacing to users | Signed URLs can expire or be rejected transiently; the product should repair that path without forcing users into manual fallback first | ✅ Validated in Phase 01.1 — one-time retry + dedicated DASHSCOPE_FILE_ACCESS_FORBIDDEN error |
 | Treat `dashscope_file_id` as the canonical cloud object key across request-url, task artifacts, and generation entrypoints | The direct-upload path works end-to-end when the same object key is preserved; regression coverage prevents response and task creation paths from drifting apart | ✅ Validated in Phase 01 — regression coverage locked |
+| Desktop link imports should disappear into the same canonical lesson/history/learning flow after creation | Users care about the lesson outcome, not whether it came from file upload or imported media | ✅ Validated in Phase 4 — imported links now rename canonical lessons and enter learning directly |
 
 ## Evolution
 
@@ -96,4 +100,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-27 after Phase 2.1 completion and web delivery contract update*
+*Last updated: 2026-03-27 after v1.1 completion*
