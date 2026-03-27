@@ -82,9 +82,15 @@ export const ADMIN_NAV_ITEMS = [
   },
   {
     key: "users",
-    label: "用户计费",
-    description: "用户、钱包流水与计费配置",
-    href: "/admin/users",
+    label: "用户管理",
+    description: "用户列表与钱包流水",
+    href: "/admin/users?tab=list",
+  },
+  {
+    key: "models",
+    label: "模型配置",
+    description: "ASR 与翻译模型计费",
+    href: "/admin/users?tab=rates",
   },
   {
     key: "redeem",
@@ -98,15 +104,19 @@ export function getAdminNavItemByKey(key) {
   return ADMIN_NAV_ITEMS.find((item) => item.key === key) || ADMIN_NAV_ITEMS[0];
 }
 
-export function resolveAdminNavKey(pathname) {
+export function resolveAdminNavKey(pathname, search = "") {
   if (pathname.startsWith("/admin/security")) return "security";
-  if (pathname.startsWith("/admin/users") || pathname.startsWith("/admin/logs") || pathname.startsWith("/admin/rates") || pathname.startsWith("/admin/subtitle-settings")) return "users";
+  if (pathname.startsWith("/admin/rates") || pathname.startsWith("/admin/subtitle-settings")) return "models";
+  if (pathname.startsWith("/admin/users") || pathname.startsWith("/admin/logs")) {
+    const searchParams = new URLSearchParams(search);
+    return searchParams.get("tab") === "rates" ? "models" : "users";
+  }
   if (pathname.startsWith("/admin/redeem")) return "redeem";
   return "health";
 }
 
-export function resolveAdminNavItem(pathname) {
-  return getAdminNavItemByKey(resolveAdminNavKey(pathname));
+export function resolveAdminNavItem(pathname, search = "") {
+  return getAdminNavItemByKey(resolveAdminNavKey(pathname, search));
 }
 
 export async function copyCurrentUrl() {
