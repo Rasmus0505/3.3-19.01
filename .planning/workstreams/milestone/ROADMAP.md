@@ -70,7 +70,13 @@ Plans:
 
 **Goal**: Make Bottle 1.0 desktop-local generation behave like a first-class lesson path: one shared generate CTA, model-driven routing, translated lesson output, saved local video/cover, and consistent history/learning playback.
 **Depends on**: Phase 4
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+
+- [ ] 04.1-01: Unify Bottle 1.0/Bottle 2.0 behind one shared generate CTA and stable desktop file-selection routing
+- [ ] 04.1-02: Restore local media persistence, real cover generation, and learning playback for desktop-local lessons
+- [ ] 04.1-03: Lock Bottle 1.0 local result semantics and packaged runtime validation for translated vs partial outcomes
 
 ## Progress
 
@@ -82,7 +88,7 @@ Plans:
 || 2.1. Admin Bottle 1.0 Settings & Billing Cleanup | v1.1 | 3/3 | Complete | 2026-03-27 |
 || 3. Lesson Output Consistency | v1.1 | 3/3 | Complete | 2026-03-27 |
 || 4. Desktop Link Import | v1.1 | 2/2 | Complete | 2026-03-27 |
-|| 4.1. Desktop Local Course Fidelity | v2.0 | 0/TBD | Not started | — |
+|| 4.1. Desktop Local Course Fidelity | v2.0 | 0/3 | Not started | — |
 || 5. Billing and Admin Alignment | v2.0 | 0/3 | Not started | — |
 || 6. Product Polish and Fallbacks | v2.0 | 0/2 | Not started | — |
 

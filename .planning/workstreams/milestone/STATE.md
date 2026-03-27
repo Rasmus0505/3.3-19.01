@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: — Urgent Admin Cleanup, Lesson Output & Desktop Link Import
-status: Executing Phase 05
-last_updated: "2026-03-27T18:53:28.125Z"
+status: Phase 04.1 planned
+last_updated: "2026-03-28T18:45:00.000Z"
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 3
-  total_plans: 8
+  total_plans: 11
   completed_plans: 8
-  percent: 75
+  percent: 73
 ---
 
 # Project State
@@ -19,17 +19,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 05 — billing-and-admin-alignment
+**Current focus:** Phase 04.1 — desktop-local-course-fidelity
 
 ## Current Position
 
-Phase: 05 (billing-and-admin-alignment) — EXECUTING
+Phase: 04.1 (desktop-local-course-fidelity) — PLANNED
 Plan: 1 of 3
 v1.0 milestone shipped. v1.1 milestone shipped. Inserted follow-up phase queued before broader v2.0 work.
 
-Progress: [███████░░░] 75% (inserted follow-up phase queued after v1.1 shipment)
+Progress: [███████░░░] 73% (inserted follow-up phase planned after v1.1 shipment)
 
-**Next milestone:** v2.0 — Phase 04.1 (not started)
+**Next milestone:** v2.0 — Phase 04.1 (planned)
 
 ## Milestone: v1.0 Summary
 
@@ -71,5 +71,5 @@ Progress: [███████░░░] 75% (inserted follow-up phase queued 
 ## Session Continuity
 
 Last session: 2026-03-27T16:22:53.192Z
-Completed 04-02-PLAN.md and Phase 04 verification. Resume from inserted Phase 04.1 discussion/planning.
+Completed 04-02-PLAN.md and Phase 04 verification. Phase 04.1 is now formally planned and ready for execution.
 Artifacts: `.planning/workstreams/milestone/phases/04.1-desktop-local-course-fidelity/`
