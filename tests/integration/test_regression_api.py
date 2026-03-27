@@ -1997,7 +1997,7 @@ def test_admin_billing_rates_endpoint_handles_legacy_schema_defaults(tmp_path):
     assert target["cost_per_minute_cents"] == 2
     assert target["cost_per_minute_yuan"] == "0.0132"
     assert target["billing_unit"] == "minute"
-    assert target["parallel_enabled"] is False
+    assert "parallel_enabled" not in target
 
 
 def test_admin_translation_logs_endpoint_returns_empty_when_table_missing(tmp_path):
@@ -3352,10 +3352,6 @@ def test_admin_update_billing_rate_rejects_non_flash_mt_model(test_client):
             "points_per_1k_tokens": 15,
             "billing_unit": "1k_tokens",
             "is_active": True,
-            "parallel_enabled": False,
-            "parallel_threshold_seconds": 600,
-            "segment_seconds": 300,
-            "max_concurrency": 1,
         },
     )
     assert resp.status_code == 400
@@ -3498,10 +3494,6 @@ def test_admin_update_billing_rate_accepts_mt_flash_token_pricing(test_client):
             "cost_per_minute_yuan": "0.0110",
             "billing_unit": "1k_tokens",
             "is_active": True,
-            "parallel_enabled": False,
-            "parallel_threshold_seconds": 600,
-            "segment_seconds": 300,
-            "max_concurrency": 1,
         },
     )
     assert resp.status_code == 200
@@ -3537,10 +3529,6 @@ def test_admin_update_billing_rate_accepts_minute_yuan_pricing(test_client):
             "points_per_1k_tokens": 0,
             "billing_unit": "minute",
             "is_active": True,
-            "parallel_enabled": True,
-            "parallel_threshold_seconds": 900,
-            "segment_seconds": 240,
-            "max_concurrency": 3,
         },
     )
 
@@ -3580,10 +3568,6 @@ def test_admin_update_billing_rate_accepts_legacy_minute_cents_payload(test_clie
             "points_per_1k_tokens": 0,
             "billing_unit": "minute",
             "is_active": True,
-            "parallel_enabled": True,
-            "parallel_threshold_seconds": 480,
-            "segment_seconds": 240,
-            "max_concurrency": 2,
         },
     )
 
@@ -3609,10 +3593,6 @@ def test_admin_update_billing_rate_rejects_local_browser_model(test_client):
             "points_per_minute": 130,
             "billing_unit": "minute",
             "is_active": True,
-            "parallel_enabled": False,
-            "parallel_threshold_seconds": 600,
-            "segment_seconds": 300,
-            "max_concurrency": 1,
         },
     )
     assert resp.status_code == 400

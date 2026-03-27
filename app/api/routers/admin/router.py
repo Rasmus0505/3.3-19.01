@@ -42,6 +42,8 @@ from app.repositories.wallet_ledger import list_translation_request_rows, list_w
 from app.schemas import (
     AdminBillingRateUpdateRequest,
     AdminBillingRatesResponse,
+    AdminRuntimeReadinessItem,
+    AdminRuntimeReadinessResponse,
     AdminSubtitleSettingsItem,
     AdminSubtitleSettingsHistoryItem,
     AdminSubtitleSettingsHistoryResponse,
@@ -82,6 +84,7 @@ from app.schemas import (
     WalletLedgerItem,
 )
 from app.services.admin_service import AdminUserDeleteError, delete_user_hard
+from app.services.asr_model_registry import list_asr_models_with_status
 from app.services.admin_bootstrap import count_admin_users, get_admin_bootstrap_status
 from app.services.billing_service import (
     BillingError,
@@ -110,6 +113,19 @@ from app.services.media import get_controlled_media_roots
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
+
+_ADMIN_RUNTIME_READINESS_MODELS = (
+    {
+        "model_key": "faster-whisper-medium",
+        "display_name": "Bottle 1.0",
+        "runtime_kind": "desktop_local",
+    },
+    {
+        "model_key": "qwen3-asr-flash-filetrans",
+        "display_name": "Bottle 2.0",
+        "runtime_kind": "cloud_api",
+    },
+)
 
 
 def _now() -> datetime:
@@ -757,6 +773,33 @@ def admin_billing_rates(db: Session = Depends(get_db), _: User = Depends(get_adm
     return AdminBillingRatesResponse(ok=True, rates=[to_rate_item(item) for item in rates])
 
 
+@router.get(
+    "/runtime-readiness",
+    response_model=AdminRuntimeReadinessResponse,
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_runtime_readiness(_: User = Depends(get_admin_user)):
+    descriptors = {
+        str(item.get("model_key") or "").strip(): item
+        for item in list_asr_models_with_status()
+    }
+    items = []
+    for meta in _ADMIN_RUNTIME_READINESS_MODELS:
+        descriptor = descriptors.get(meta["model_key"], {})
+        items.append(
+            AdminRuntimeReadinessItem(
+                model_key=meta["model_key"],
+                display_name=str(descriptor.get("display_name") or meta["display_name"]),
+                runtime_kind=meta["runtime_kind"],
+                status=str(descriptor.get("status") or "unsupported"),
+                available=bool(descriptor.get("available")),
+                message=str(descriptor.get("message") or "未返回运行状态。"),
+                actions=list(descriptor.get("actions") or []),
+            )
+        )
+    return AdminRuntimeReadinessResponse(ok=True, items=items)
+
+
 @router.put(
     "/billing-rates/{model_name}",
     response_model=AdminBillingRatesResponse,
@@ -807,10 +850,6 @@ def admin_update_billing_rate(
     rate.cost_per_minute_cents_legacy = yuan_to_compat_cents(cost_per_minute_yuan)
     rate.billing_unit = expected_unit
     rate.is_active = payload.is_active
-    rate.parallel_enabled = payload.parallel_enabled
-    rate.parallel_threshold_seconds = payload.parallel_threshold_seconds
-    rate.segment_seconds = payload.segment_seconds
-    rate.max_concurrency = payload.max_concurrency
     rate.updated_by_user_id = current_admin.id
     db.add(rate)
     db.commit()

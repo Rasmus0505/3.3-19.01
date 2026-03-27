@@ -41,10 +41,6 @@ class BillingRateItem(BaseModel):
     gross_profit_per_minute_cents: int
     billing_unit: str
     is_active: bool
-    parallel_enabled: bool
-    parallel_threshold_seconds: int
-    segment_seconds: int
-    max_concurrency: int
     runtime_kind: str = "cloud"
     updated_at: datetime
 

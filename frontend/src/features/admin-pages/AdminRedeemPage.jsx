@@ -1,6 +1,6 @@
-import { Activity, Gift, RefreshCcw, ScrollText, Ticket } from "lucide-react";
+import { Activity, ArrowLeft, Gift, RefreshCcw, ScrollText, Ticket, Users } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { AdminRedeemAuditTab } from "../admin-redeem/AdminRedeemAuditTab";
 import { AdminRedeemBatchesTab } from "../admin-redeem/AdminRedeemBatchesTab";
@@ -116,10 +116,24 @@ export function AdminRedeemPage({ apiCall }) {
   return (
     <div className="space-y-6">
       <section className="flex justify-end">
-        <Button variant="outline" size="sm" onClick={loadOverview} disabled={loading}>
-          <RefreshCcw className="size-4" />
-          刷新概览
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/admin/users?tab=list">
+              <ArrowLeft className="size-4" />
+              返回用户工作台
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/admin/users?tab=wallet">
+              <Users className="size-4" />
+              按用户回查
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" onClick={loadOverview} disabled={loading}>
+            <RefreshCcw className="size-4" />
+            刷新概览
+          </Button>
+        </div>
       </section>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">

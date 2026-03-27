@@ -313,10 +313,6 @@ def test_e2e_admin_update_rate_visible_in_public_api(e2e_client):
             "points_per_1k_tokens": 0,
             "billing_unit": "minute",
             "is_active": True,
-            "parallel_enabled": True,
-            "parallel_threshold_seconds": 1200,
-            "segment_seconds": 240,
-            "max_concurrency": 6,
         },
     )
     assert update_resp.status_code == 200
@@ -327,10 +323,6 @@ def test_e2e_admin_update_rate_visible_in_public_api(e2e_client):
     assert rate["points_per_minute"] == 222
     assert rate["points_per_1k_tokens"] == 0
     assert rate["billing_unit"] == "minute"
-    assert rate["parallel_enabled"] is True
-    assert rate["parallel_threshold_seconds"] == 1200
-    assert rate["segment_seconds"] == 240
-    assert rate["max_concurrency"] == 6
 
     public_resp = client.get("/api/billing/rates")
     assert public_resp.status_code == 200
@@ -342,6 +334,68 @@ def test_e2e_admin_update_rate_visible_in_public_api(e2e_client):
     assert target["points_per_1k_tokens"] == 0
     assert target["billing_unit"] == "minute"
     assert target["is_active"] is True
+
+
+def test_e2e_admin_business_and_troubleshooting_endpoints_remain_reachable(e2e_client):
+    client, _, monkeypatch = e2e_client
+    monkeypatch.setenv("ADMIN_EMAILS", "admin-surface@example.com")
+
+    learner_token = _register_and_login(client, email="surface-user@example.com")
+    admin_token = _register_and_login(client, email="admin-surface@example.com")
+    learner_headers = {"Authorization": f"Bearer {learner_token}"}
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    users_resp = client.get("/api/admin/users", headers=admin_headers)
+    assert users_resp.status_code == 200
+    learner = next(item for item in users_resp.json()["items"] if item["email"] == "surface-user@example.com")
+
+    adjust_resp = client.post(
+        f"/api/admin/users/{learner['id']}/wallet-adjust",
+        headers=admin_headers,
+        json={"delta_points": 88, "reason": "phase5 smoke"},
+    )
+    assert adjust_resp.status_code == 200
+
+    wallet_resp = client.get("/api/wallet/me", headers=learner_headers)
+    assert wallet_resp.status_code == 200
+    assert wallet_resp.json()["balance_amount_cents"] >= 88
+
+    update_resp = client.put(
+        "/api/admin/billing-rates/faster-whisper-medium",
+        headers=admin_headers,
+        json={
+            "price_per_minute_yuan": "1.1100",
+            "cost_per_minute_yuan": "0.0210",
+            "points_per_1k_tokens": 0,
+            "billing_unit": "minute",
+            "is_active": True,
+        },
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.json()["rates"][0]["model_name"] == "faster-whisper-medium"
+
+    runtime_resp = client.get("/api/admin/runtime-readiness", headers=admin_headers)
+    assert runtime_resp.status_code == 200
+    runtime_items = {item["model_key"]: item for item in runtime_resp.json()["items"]}
+    assert "faster-whisper-medium" in runtime_items
+    assert "qwen3-asr-flash-filetrans" in runtime_items
+
+    create_batch_resp = client.post(
+        "/api/admin/redeem-batches",
+        headers=admin_headers,
+        json={
+            "batch_name": "phase5_surface_batch",
+            "face_value_points": 66,
+            "generate_quantity": 1,
+            "active_from": datetime.utcnow().isoformat(),
+            "expire_at": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+        },
+    )
+    assert create_batch_resp.status_code == 200
+
+    redeem_batches_resp = client.get("/api/admin/redeem-batches", headers=admin_headers)
+    assert redeem_batches_resp.status_code == 200
+    assert redeem_batches_resp.json()["total"] >= 1
 
 
 def test_e2e_redeem_batch_pause_blocks_redeem(e2e_client):

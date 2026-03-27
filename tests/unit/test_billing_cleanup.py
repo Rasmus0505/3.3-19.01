@@ -205,6 +205,17 @@ def test_admin_billing_rates_has_three_models(client: TestClient):
     assert len(rates) == 3, f"Expected 3 billing rates, got {len(rates)}: {[r.get('model_name') for r in rates]}"
 
 
+def test_admin_billing_rates_response_omits_runtime_tuning_fields(client: TestClient):
+    response = client.get("/api/admin/billing-rates")
+    assert response.status_code == 200
+
+    first_rate = response.json()["rates"][0]
+    assert "parallel_enabled" not in first_rate
+    assert "parallel_threshold_seconds" not in first_rate
+    assert "segment_seconds" not in first_rate
+    assert "max_concurrency" not in first_rate
+
+
 def test_public_billing_rates_endpoint_contains_faster_whisper(public_client: TestClient):
     """
     Verify GET /api/billing/rates returns faster-whisper-medium.

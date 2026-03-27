@@ -74,11 +74,7 @@ function isDraftChanged(item, draft) {
     Number(item.points_per_1k_tokens || 0) !== Number(draft.points_per_1k_tokens || 0) ||
     String(toMinuteRateDraftValue(item, "cost_per_minute_yuan", "cost_per_minute_cents")) !== String(draft.cost_per_minute_yuan || "") ||
     String(item.billing_unit || "minute") !== String(draft.billing_unit || "minute") ||
-    Boolean(item.is_active) !== Boolean(draft.is_active) ||
-    Boolean(item.parallel_enabled) !== Boolean(draft.parallel_enabled) ||
-    Number(item.parallel_threshold_seconds || 0) !== Number(draft.parallel_threshold_seconds || 0) ||
-    Number(item.segment_seconds || 0) !== Number(draft.segment_seconds || 0) ||
-    Number(item.max_concurrency || 0) !== Number(draft.max_concurrency || 0)
+    Boolean(item.is_active) !== Boolean(draft.is_active)
   );
 }
 
@@ -117,10 +113,6 @@ function buildDraftMap(list) {
       cost_per_minute_yuan: toMinuteRateDraftValue(item, "cost_per_minute_yuan", "cost_per_minute_cents"),
       billing_unit: String(item.billing_unit || "minute"),
       is_active: Boolean(item.is_active),
-      parallel_enabled: Boolean(item.parallel_enabled),
-      parallel_threshold_seconds: Number(item.parallel_threshold_seconds || 600),
-      segment_seconds: Number(item.segment_seconds || 300),
-      max_concurrency: Number(item.max_concurrency || 1),
     };
   });
   return draftMap;
@@ -199,10 +191,6 @@ export function AdminRatesTab({ apiCall }) {
           cost_per_minute_yuan: parseDraftNumber(draft.cost_per_minute_yuan),
           billing_unit: String(draft.billing_unit || "minute"),
           is_active: Boolean(draft.is_active),
-          parallel_enabled: Boolean(draft.parallel_enabled),
-          parallel_threshold_seconds: Number(draft.parallel_threshold_seconds || 1),
-          segment_seconds: Number(draft.segment_seconds || 1),
-          max_concurrency: Number(draft.max_concurrency || 1),
         }),
       });
       const data = await parseJsonSafely(resp);
@@ -296,7 +284,7 @@ export function AdminRatesTab({ apiCall }) {
           <Settings2 className="size-4" />
           计费配置
         </CardTitle>
-        <CardDescription>ASR 行统一按元/分钟编辑与显示，MT 行按 1k Tokens 维护售价与参考成本。</CardDescription>
+        <CardDescription>这里只维护售价、成本参考、计费单位和启停状态；运行时调优不再作为日常计费编辑的一部分。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {dirtyModels.length > 0 ? (
@@ -341,7 +329,7 @@ export function AdminRatesTab({ apiCall }) {
         {loading ? <Skeleton className="h-10 w-full" /> : null}
 
         <div className="w-full overflow-x-auto rounded-md border">
-          <Table className="min-w-[1640px]">
+          <Table className="min-w-[1160px]">
             <TableHeader>
               <TableRow>
                 <TableHead>模型</TableHead>
@@ -351,10 +339,6 @@ export function AdminRatesTab({ apiCall }) {
                 <TableHead>成本（元/分钟）</TableHead>
                 <TableHead>毛利</TableHead>
                 <TableHead>状态</TableHead>
-                <TableHead>并发开关</TableHead>
-                <TableHead>并发阈值（秒）</TableHead>
-                <TableHead>切片时长（秒）</TableHead>
-                <TableHead>并发上限</TableHead>
                 <TableHead>更新时间</TableHead>
                 <TableHead>操作</TableHead>
               </TableRow>
@@ -466,60 +450,6 @@ export function AdminRatesTab({ apiCall }) {
                         <span className="text-xs text-muted-foreground">{draft.is_active ? "启用" : "停用"}</span>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={Boolean(draft.parallel_enabled)}
-                          onCheckedChange={(checked) => {
-                            if (tokenBilling) return;
-                            updateDraft(item.model_name, { parallel_enabled: checked });
-                          }}
-                          disabled={tokenBilling}
-                        />
-                        <span className="text-xs text-muted-foreground">
-                          {tokenBilling ? "MT 模型忽略" : draft.parallel_enabled ? "已开启" : "已关闭"}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={draft.parallel_threshold_seconds}
-                        onChange={(event) => {
-                          if (tokenBilling) return;
-                          updateDraft(item.model_name, { parallel_threshold_seconds: Number(event.target.value || 1) });
-                        }}
-                        className="max-w-[150px]"
-                        disabled={tokenBilling}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={draft.segment_seconds}
-                        onChange={(event) => {
-                          if (tokenBilling) return;
-                          updateDraft(item.model_name, { segment_seconds: Number(event.target.value || 1) });
-                        }}
-                        className="max-w-[150px]"
-                        disabled={tokenBilling}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={draft.max_concurrency}
-                        onChange={(event) => {
-                          if (tokenBilling) return;
-                          updateDraft(item.model_name, { max_concurrency: Number(event.target.value || 1) });
-                        }}
-                        className="max-w-[140px]"
-                        disabled={tokenBilling}
-                      />
-                    </TableCell>
                     <TableCell>{formatDateTimeBeijing(item.updated_at)}</TableCell>
                     <TableCell>
                       <Button
@@ -536,7 +466,7 @@ export function AdminRatesTab({ apiCall }) {
 
               {rates.length === 0 && !loading ? (
                 <TableRow>
-                  <TableCell colSpan={13} className="text-muted-foreground">
+                  <TableCell colSpan={9} className="text-muted-foreground">
                     暂无计费配置
                   </TableCell>
                 </TableRow>

@@ -69,34 +69,28 @@ export function mergeScopedSearchParams(currentSearchParams, prefix, entries) {
 
 export const ADMIN_NAV_ITEMS = [
   {
-    key: "health",
-    label: "系统健康",
-    description: "",
-    href: "/admin/health",
-  },
-  {
-    key: "security",
-    label: "安全中心",
-    description: "数据库、权限与危险操作保护",
-    href: "/admin/security",
-  },
-  {
     key: "users",
-    label: "用户管理",
-    description: "用户列表与钱包流水",
+    label: "用户运营",
+    description: "查用户、钱包流水和计费",
     href: "/admin/users?tab=list",
-  },
-  {
-    key: "models",
-    label: "模型配置",
-    description: "ASR 与翻译模型计费",
-    href: "/admin/users?tab=rates",
   },
   {
     key: "redeem",
     label: "活动兑换",
-    description: "",
+    description: "批次、兑换码与审计",
     href: "/admin/redeem",
+  },
+  {
+    key: "troubleshooting",
+    label: "排障中心",
+    description: "健康、失败、翻译与操作日志",
+    href: "/admin/troubleshooting?tab=health&panel=overview",
+  },
+  {
+    key: "security",
+    label: "安全中心",
+    description: "数据库、权限与导出保护",
+    href: "/admin/security",
   },
 ];
 
@@ -105,14 +99,12 @@ export function getAdminNavItemByKey(key) {
 }
 
 export function resolveAdminNavKey(pathname, search = "") {
-  if (pathname.startsWith("/admin/security")) return "security";
-  if (pathname.startsWith("/admin/rates") || pathname.startsWith("/admin/subtitle-settings")) return "models";
-  if (pathname.startsWith("/admin/users") || pathname.startsWith("/admin/logs")) {
-    const searchParams = new URLSearchParams(search);
-    return searchParams.get("tab") === "rates" ? "models" : "users";
-  }
+  if (pathname.startsWith("/admin/users")) return "users";
   if (pathname.startsWith("/admin/redeem")) return "redeem";
-  return "health";
+  if (pathname.startsWith("/admin/troubleshooting") || pathname.startsWith("/admin/health")) return "troubleshooting";
+  if (pathname.startsWith("/admin/security")) return "security";
+  if (pathname.startsWith("/admin/rates") || pathname.startsWith("/admin/logs") || pathname.startsWith("/admin/subtitle-settings")) return "users";
+  return "users";
 }
 
 export function resolveAdminNavItem(pathname, search = "") {

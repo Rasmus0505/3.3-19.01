@@ -11,7 +11,7 @@ import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitl
 export const USERS_TABS = [
   { value: "list", label: "用户列表", description: "搜索用户、调账、查看最近行为。", component: AdminUsersTab },
   { value: "wallet", label: "余额流水", description: "按用户追扣点、退款、手工调账和兑换入账。", component: AdminLogsTab },
-  { value: "rates", label: "计费配置", description: "统一维护 ASR 与翻译计费参数。", component: AdminRatesTab },
+  { value: "rates", label: "计费价格", description: "统一维护 ASR 与翻译价格，不在这里调整运行时参数。", component: AdminRatesTab },
 ];
 
 export function AdminUsersWorkspace({ apiCall, showTabsNavigation = true }) {
@@ -37,10 +37,10 @@ export function AdminUsersWorkspace({ apiCall, showTabsNavigation = true }) {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <CardTitle className="text-lg">用户计费工作台</CardTitle>
+                <CardTitle className="text-lg">用户运营工作台</CardTitle>
                 <Badge variant="outline">用户 + 钱包 + 计费</Badge>
               </div>
-              <CardDescription>把用户管理、钱包流水和模型计费放在同一工作台，减少“先找用户再找流水”的重复跳转。</CardDescription>
+              <CardDescription>默认从用户开始，再沿着钱包、计费价格或兑换审计向下排查，减少在多个管理页面之间来回跳转。</CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" asChild>
@@ -58,7 +58,13 @@ export function AdminUsersWorkspace({ apiCall, showTabsNavigation = true }) {
               <Button variant="outline" size="sm" asChild>
                 <Link to="/admin/users?tab=rates">
                   <Settings2 className="size-4" />
-                  改计费配置
+                  改计费价格
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/admin/redeem?panel=audit">
+                  <Coins className="size-4" />
+                  查看兑换审计
                 </Link>
               </Button>
             </div>
@@ -79,8 +85,8 @@ export function AdminUsersWorkspace({ apiCall, showTabsNavigation = true }) {
           </Card>
           <Card className="border-dashed">
             <CardHeader>
-              <CardTitle className="text-base">不改接口</CardTitle>
-              <CardDescription>仅整合前端路由和工作台，不改用户、钱包和计费后端接口。</CardDescription>
+              <CardTitle className="text-base">计费只看价格</CardTitle>
+              <CardDescription>计费标签页只面向售价、成本和启停状态，不再把运行时调优暴露给日常运营。</CardDescription>
             </CardHeader>
           </Card>
         </CardContent>

@@ -6,6 +6,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.billing import BillingRateItem
+from app.schemas.common import AsrModelActionItem
 
 
 class AdminVisualStat(BaseModel):
@@ -177,10 +178,6 @@ class AdminBillingRateUpdateRequest(BaseModel):
     cost_per_minute_cents: int = Field(default=0, ge=0)
     billing_unit: str = Field(default="minute", min_length=1, max_length=32)
     is_active: bool
-    parallel_enabled: bool
-    parallel_threshold_seconds: int = Field(gt=0, le=24 * 60 * 60)
-    segment_seconds: int = Field(gt=0, le=2 * 60 * 60)
-    max_concurrency: int = Field(gt=0, le=64)
 
     @model_validator(mode="before")
     @classmethod
@@ -206,6 +203,21 @@ class AdminBillingRateUpdateRequest(BaseModel):
 class AdminBillingRatesResponse(BaseModel):
     ok: bool = True
     rates: list[BillingRateItem]
+
+
+class AdminRuntimeReadinessItem(BaseModel):
+    model_key: str
+    display_name: str
+    runtime_kind: str
+    status: str
+    available: bool
+    message: str = ""
+    actions: list[AsrModelActionItem] = Field(default_factory=list)
+
+
+class AdminRuntimeReadinessResponse(BaseModel):
+    ok: bool = True
+    items: list[AdminRuntimeReadinessItem] = Field(default_factory=list)
 
 
 class AdminTranslationLogItem(BaseModel):
