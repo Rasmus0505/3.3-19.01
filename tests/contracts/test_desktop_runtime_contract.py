@@ -304,6 +304,7 @@ def test_preload_exposes_client_update_bridge():
     assert 'getClientUpdateStatus: () => ipcRenderer.invoke("desktop:get-client-update-status")' in preload_source
     assert 'checkClientUpdate: () => ipcRenderer.invoke("desktop:check-client-update")' in preload_source
     assert 'openClientUpdateLink: (preferredUrl) => ipcRenderer.invoke("desktop:open-client-update-link", preferredUrl)' in preload_source
+    assert 'openExternalUrl: (targetUrl) => ipcRenderer.invoke("desktop:open-external-url", targetUrl)' in preload_source
     assert 'ipcRenderer.on("desktop:client-update-status-changed", handler)' in preload_source
 
 
@@ -330,6 +331,7 @@ def test_main_process_separates_client_update_from_model_update_channels():
     assert 'modelUpdate: desktopModelUpdateState' in main_source
     assert 'ipcMain.handle("desktop:get-client-update-status", () => desktopClientUpdateState)' in main_source
     assert 'ipcMain.handle("desktop:check-client-update", async () => checkDesktopClientUpdate({ reason: "manual", notify: true }))' in main_source
+    assert 'ipcMain.handle("desktop:open-external-url", async (_event, targetUrl = "") => openExternalUrl(targetUrl))' in main_source
     assert 'ipcMain.handle("desktop:get-model-update-status", () => desktopModelUpdateState)' in main_source
     assert 'ipcMain.handle("desktop:check-model-update", async (_event, modelKey = DESKTOP_MODEL_UPDATE_KEY) => checkDesktopModelUpdate(modelKey))' in main_source
     assert 'mainWindow.webContents.send("desktop:client-update-status-changed", desktopClientUpdateState)' in main_source
@@ -413,6 +415,19 @@ def test_uploadWithProgress_upload_panel_exposes_bottle2_cloud_stage_model_and_d
     assert "音频与视频文件直传" in upload_panel_source
     assert "2.0 GB" in upload_panel_source or "2 GB" in upload_panel_source
     assert "12 小时" in upload_panel_source
+
+
+def test_upload_panel_exposes_phase04_link_import_copy_and_fallback_contract():
+    upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
+
+    assert "本地文件" in upload_panel_source
+    assert "链接导入" in upload_panel_source
+    assert "导入并生成课程" in upload_panel_source
+    assert "未识别到可导入链接。" in upload_panel_source
+    assert "继续后台执行" in upload_panel_source
+    assert "取消当前链接任务" in upload_panel_source
+    assert "SnapAny" in upload_panel_source
+    assert "openSnapAnyFallback" in upload_panel_source
 
 
 def test_offline_mode_uses_desktop_server_bridge_when_available():
@@ -618,7 +633,7 @@ def test_asr_strategy_file_access_contract_maps_backend_code_and_nested_detail()
 
     payload = _run_node_json(script)
 
-    expected_message = "Bottle 2.0 暂时无法访问已上传的云端文件，请稍后重试；若再次失败，再重新上传当前素材。"
+    expected_message = "云端暂时无法访问已上传的文件，请稍后重试；若再次失败，请重新上传当前素材。"
     assert payload["direct"]["code"] == "CLOUD_FILE_ACCESS_FORBIDDEN"
     assert payload["direct"]["message"] == expected_message
     assert payload["nested"]["code"] == "CLOUD_FILE_ACCESS_FORBIDDEN"

@@ -275,6 +275,7 @@ def test_desktop_helper_url_import_task_downloads_public_media_and_exposes_file(
         assert task_payload["source_filename"] == "lesson.mp4"
         assert task_payload["content_type"] == "video/mp4"
         assert task_payload["duration_seconds"] == 37
+        assert task_payload["title"] == ""
 
         file_resp = client.get(f"/api/desktop-asr/url-import/tasks/{task_id}/file")
 
@@ -345,3 +346,60 @@ def test_desktop_helper_url_import_task_can_be_cancelled(tmp_path, monkeypatch):
         assert cancelled_payload["status"] == "cancelled"
         assert cancelled_payload["error_code"] == "URL_IMPORT_CANCELLED"
         assert cancelled_payload["error_message"] == "已取消链接下载"
+
+
+def test_desktop_helper_url_import_sanitizes_noisy_share_text(tmp_path, monkeypatch):
+    from app.api.routers import desktop_asr as desktop_asr_router
+
+    desktop_asr_router._URL_IMPORT_TASKS.clear()
+
+    captured = {}
+
+    def fake_download(source_url, output_dir, *, progress_callback=None, cancel_event=None):
+        captured["source_url"] = source_url
+        source_path = output_dir / "lesson.mp4"
+        source_path.write_bytes(b"downloaded-video")
+        return {
+            "source_url": source_url,
+            "source_path": str(source_path),
+            "source_filename": "lesson.mp4",
+            "content_type": "video/mp4",
+            "extractor_key": "Generic",
+            "webpage_url": source_url,
+            "duration_seconds": 9,
+            "title": "lesson",
+        }
+
+    monkeypatch.setattr(desktop_asr_router, "download_public_media", fake_download)
+
+    app = create_desktop_helper_app({"model_dir": str(tmp_path / "models")})
+    with TestClient(app) as client:
+        create_resp = client.post(
+            "/api/desktop-asr/url-import/tasks",
+            json={"source_url": "快看这个视频 https://example.com/watch?v=demo ，还有别的文字"},
+        )
+
+        assert create_resp.status_code == 200
+        task_id = create_resp.json()["task_id"]
+
+        task_payload = None
+        for _ in range(50):
+            task_resp = client.get(f"/api/desktop-asr/url-import/tasks/{task_id}")
+            assert task_resp.status_code == 200
+            task_payload = task_resp.json()
+            if task_payload["status"] == "succeeded":
+                break
+            time.sleep(0.02)
+
+    assert captured["source_url"] == "https://example.com/watch?v=demo"
+    assert task_payload is not None
+    assert task_payload["source_url"] == "https://example.com/watch?v=demo"
+
+
+def test_desktop_helper_classifies_login_restricted_ytdlp_failures():
+    from app.api.routers import desktop_asr as desktop_asr_router
+
+    code, message = desktop_asr_router._classify_ytdlp_error("ERROR: Sign in to confirm your age. Use --cookies for access.")
+
+    assert code == "URL_IMPORT_RESTRICTED"
+    assert "登录" in message or "SnapAny" in message
