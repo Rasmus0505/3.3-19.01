@@ -18,6 +18,7 @@ from app.core.config import LESSON_DEFAULT_ASR_MODEL, REDEEM_CODE_DEFAULT_DAILY_
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
 from app.repositories.billing_rates import list_billing_rates as query_billing_rates
 from app.services.asr_model_registry import (
+    FASTER_WHISPER_ASR_MODEL,
     QWEN_ASR_MODEL as FAST_CLOUD_MODEL,
 )
 from app.models import (
@@ -70,6 +71,7 @@ ADMIN_BILLING_MODEL_ORDER: tuple[str, ...] = (
 )
 PUBLIC_BILLING_MODEL_ORDER: tuple[str, ...] = (
     FAST_CLOUD_MODEL,
+    FASTER_WHISPER_ASR_MODEL,
 )
 LOCAL_BROWSER_ASR_MODELS: tuple[str, ...] = ()
 
@@ -95,6 +97,19 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
         "cost_per_minute_cents": 0,
         "cost_per_minute_yuan": Decimal("0.0000"),
         "billing_unit": "1k_tokens",
+        "parallel_enabled": False,
+        "parallel_threshold_seconds": 600,
+        "segment_seconds": 300,
+        "max_concurrency": 1,
+    },
+    {
+        "model_name": FASTER_WHISPER_ASR_MODEL,
+        "points_per_minute": 130,
+        "price_per_minute_yuan": Decimal("1.3000"),
+        "points_per_1k_tokens": 0,
+        "cost_per_minute_cents": 0,
+        "cost_per_minute_yuan": Decimal("0.0000"),
+        "billing_unit": "minute",
         "parallel_enabled": False,
         "parallel_threshold_seconds": 600,
         "segment_seconds": 300,
