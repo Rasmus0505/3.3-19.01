@@ -592,9 +592,8 @@ export function LearningShellContainer() {
   async function handleNavigateToGeneratedLesson(lessonId) {
     if (!lessonId) return;
     lastNonImmersivePanelRef.current = "history";
-    setImmersiveActive(false);
     navigate(getPanelPath("history"));
-    await loadLessonDetail(lessonId, { autoEnterImmersive: false });
+    await loadLessonDetail(lessonId, { autoEnterImmersive: true });
   }
 
   async function handleRenameLesson(lessonId, title) {
