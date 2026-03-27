@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
@@ -285,48 +285,6 @@ class AdminSubtitleSettingsHistoryResponse(BaseModel):
     ok: bool = True
     current: AdminSubtitleSettingsItem
     rollback_candidate: AdminSubtitleSettingsHistoryItem | None = None
-
-
-class FasterWhisperSettingsItem(BaseModel):
-    device: str
-    compute_type: str
-    cpu_threads: int
-    num_workers: int
-    beam_size: int
-    vad_filter: bool
-    condition_on_previous_text: bool
-    updated_at: datetime
-    updated_by_user_id: int | None = None
-    updated_by_user_email: str | None = None
-
-
-class FasterWhisperSettingsUpdateRequest(BaseModel):
-    device: str = Field(min_length=1, max_length=32)
-    compute_type: str = Field(default="", max_length=32)
-    cpu_threads: int = Field(gt=0, le=256)
-    num_workers: int = Field(gt=0, le=64)
-    beam_size: int = Field(gt=0, le=32)
-    vad_filter: bool
-    condition_on_previous_text: bool
-
-
-class FasterWhisperSettingsResponse(BaseModel):
-    ok: bool = True
-    settings: FasterWhisperSettingsItem
-
-
-class FasterWhisperSettingsHistoryItem(BaseModel):
-    action_id: int
-    created_at: datetime
-    operator_user_id: int | None = None
-    operator_user_email: str | None = None
-    settings: FasterWhisperSettingsItem
-
-
-class FasterWhisperSettingsHistoryResponse(BaseModel):
-    ok: bool = True
-    current: FasterWhisperSettingsItem
-    rollback_candidate: FasterWhisperSettingsHistoryItem | None = None
 
 
 class AdminRedeemBatchCreateRequest(BaseModel):
