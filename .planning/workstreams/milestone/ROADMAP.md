@@ -21,9 +21,21 @@ _See: `.planning/milestones/v1.0-ROADMAP.md` for full phase details_
 
 ### 🚧 v1.1 — Urgent Admin Cleanup, Lesson Output & Desktop Link Import (In Progress)
 
-- [x] **Phase 2.1: Admin Bottle 1.0 Settings & Billing Cleanup** (INSERTED) — not planned yet (completed 2026-03-27)
+- [x] **Phase 2.1: Admin Bottle 1.0 Settings & Billing Cleanup** (INSERTED) — not planned yet (completed 2026-03-27)
 - [ ] **Phase 3: Lesson Output Consistency** (3 plans)
 - [ ] **Phase 4: Desktop Link Import** (2 plans)
+
+### Phase 2.1: Admin Bottle 1.0 Settings & Billing Cleanup
+
+**Goal**: Remove the standalone `/admin/models` model-configuration surface, delete all admin-side model-parameter configuration paths, and make Bottle 1.0 a normal billable model row inside an existing admin workspace with end-to-end `model_name` continuity.
+**Depends on**: Phase 2
+**Plans**: 3 plans
+
+Plans:
+
+- [ ] 02.1-01: Remove `/admin/models` and relocate billing access into an existing admin workspace
+- [ ] 02.1-02: Delete model-parameter configuration UI, backend endpoints, and deprecated persistence paths
+- [ ] 02.1-03: Align Bottle 1.0 billing row, runtime deduction, and verification coverage on one canonical `model_name`
 
 ### 📋 v2.0 — Billing, Admin & Polish (Planned)
 
