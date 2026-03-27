@@ -68,6 +68,7 @@ MT_MODEL_PREFIX = "qwen-mt-"
 ADMIN_BILLING_MODEL_ORDER: tuple[str, ...] = (
     FAST_CLOUD_MODEL,
     MT_FLASH_MODEL,
+    FASTER_WHISPER_ASR_MODEL,  # "faster-whisper-medium" — Bottle 1.0 billing (per D-07)
 )
 PUBLIC_BILLING_MODEL_ORDER: tuple[str, ...] = (
     FAST_CLOUD_MODEL,
