@@ -24,6 +24,7 @@ AUTH_API_FILE = REPO_ROOT / "frontend" / "src" / "features" / "auth" / "shared" 
 OFFLINE_MODE_FILE = REPO_ROOT / "frontend" / "src" / "hooks" / "useOfflineMode.js"
 LOCAL_MEDIA_STORE_FILE = REPO_ROOT / "frontend" / "src" / "shared" / "media" / "localMediaStore.js"
 LOCAL_SUBTITLE_STORE_FILE = REPO_ROOT / "frontend" / "src" / "shared" / "media" / "localSubtitleStore.js"
+LOCAL_TASK_STORE_FILE = REPO_ROOT / "frontend" / "src" / "shared" / "media" / "localTaskStore.js"
 
 
 def _run_node_json(script: str) -> dict:
@@ -483,6 +484,14 @@ def test_local_media_and_subtitle_stores_accept_non_numeric_lesson_ids():
     assert 'return rawValue;' in media_store_source
     assert 'return rawValue;' in subtitle_store_source
     assert 'return compareLessonIds(left.lessonId, right.lessonId);' in subtitle_store_source
+
+
+def test_local_task_store_self_heals_corrupt_generation_task_database():
+    task_store_source = LOCAL_TASK_STORE_FILE.read_text(encoding="utf-8")
+
+    assert "function resetDatabase()" in task_store_source
+    assert "indexedDB.deleteDatabase(DB_NAME)" in task_store_source
+    assert "internal error|unknownerror|versionerror" in task_store_source
 
 
 def test_local_learning_shell_passes_generate_success_navigation_callback_to_upload_panel():

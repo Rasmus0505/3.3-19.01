@@ -224,30 +224,50 @@ function openDatabase() {
   });
 }
 
-function withStore(mode, handler) {
-  return openDatabase().then(
-    (db) =>
-      new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, mode);
-        const store = tx.objectStore(STORE_NAME);
-        let request;
-        try {
-          request = handler(store);
-        } catch (error) {
-          reject(error);
-          db.close();
-          return;
-        }
+function resetDatabase() {
+  assertIndexedDbAvailable();
+  return new Promise((resolve) => {
+    const request = indexedDB.deleteDatabase(DB_NAME);
+    request.onsuccess = () => resolve();
+    request.onerror = () => resolve();
+    request.onblocked = () => resolve();
+  });
+}
 
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error || new Error("生成任务缓存失败"));
-        tx.oncomplete = () => db.close();
-        tx.onerror = () => {
-          db.close();
-          reject(tx.error || new Error("生成任务事务失败"));
-        };
-      }),
-  );
+function withStore(mode, handler) {
+  const run = () =>
+    openDatabase().then(
+      (db) =>
+        new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, mode);
+          const store = tx.objectStore(STORE_NAME);
+          let request;
+          try {
+            request = handler(store);
+          } catch (error) {
+            reject(error);
+            db.close();
+            return;
+          }
+
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error || new Error("生成任务缓存失败"));
+          tx.oncomplete = () => db.close();
+          tx.onerror = () => {
+            db.close();
+            reject(tx.error || new Error("生成任务事务失败"));
+          };
+        }),
+    );
+  return run().catch(async (error) => {
+    const message = String(error?.message || error || "");
+    const shouldReset = /internal error|unknownerror|versionerror/i.test(message);
+    if (!shouldReset) {
+      throw error;
+    }
+    await resetDatabase();
+    return run();
+  });
 }
 
 export async function saveActiveGenerationTask(ownerUserId, payload) {
