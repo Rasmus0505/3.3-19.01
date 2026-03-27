@@ -70,6 +70,18 @@ def test_package_win_script_builds_runtime_defaults_and_helper_before_target_bui
     assert "bundledModelSourceDir" in script_text
 
 
+def test_build_helper_runtime_script_collects_dynamic_app_modules():
+    script_text = (DESKTOP_ROOT / "scripts" / "build-helper-runtime.mjs").read_text(encoding="utf-8")
+
+    assert '"--paths"' in script_text
+    assert '"--hidden-import"' in script_text
+    assert '"--collect-submodules"' in script_text
+    assert '"--collect-data"' in script_text
+    assert '"app"' in script_text
+    assert '"faster_whisper"' in script_text
+    assert "repoRoot" in script_text
+
+
 def test_desktop_build_script_marks_frontend_build_as_desktop_renderer():
     script_text = (DESKTOP_ROOT / "scripts" / "build.mjs").read_text(encoding="utf-8")
     vite_config_text = FRONTEND_VITE_CONFIG_PATH.read_text(encoding="utf-8")

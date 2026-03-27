@@ -4830,6 +4830,25 @@ export function UploadPanel({
     if (!bundleSummary?.available) {
       bundleSummary = (await fetchDesktopBundleStatus(FASTER_WHISPER_MODEL, { silent: true })) || currentBundleState;
     }
+    if (!bundleSummary?.available && bundleSummary?.installAvailable) {
+      setDesktopBundleBusyModelKey(FASTER_WHISPER_MODEL);
+      updateDesktopBundleState(FASTER_WHISPER_MODEL, {
+        lastError: "",
+        message: "正在准备桌面端本机资源",
+      });
+      try {
+        bundleSummary = await installDesktopBundledAsrModel(FASTER_WHISPER_MODEL);
+        applyDesktopBundleState(FASTER_WHISPER_MODEL, bundleSummary, { lastError: "" });
+      } catch (error) {
+        const message = error instanceof Error && error.message ? error.message : String(error);
+        updateDesktopBundleState(FASTER_WHISPER_MODEL, {
+          lastError: message,
+          message: "",
+        });
+      } finally {
+        setDesktopBundleBusyModelKey("");
+      }
+    }
     if (!bundleSummary?.available) {
       const message = bundleSummary?.installAvailable
         ? "本机资源未就绪，请先点“准备本机资源”。"
@@ -4998,6 +5017,25 @@ export function UploadPanel({
     if (!bundleSummary?.available) {
       bundleSummary = (await fetchDesktopBundleStatus(FASTER_WHISPER_MODEL, { silent: true })) || currentBundleState;
     }
+    if (!bundleSummary?.available && bundleSummary?.installAvailable) {
+      setDesktopBundleBusyModelKey(FASTER_WHISPER_MODEL);
+      updateDesktopBundleState(FASTER_WHISPER_MODEL, {
+        lastError: "",
+        message: "正在准备桌面端本机资源",
+      });
+      try {
+        bundleSummary = await installDesktopBundledAsrModel(FASTER_WHISPER_MODEL);
+        applyDesktopBundleState(FASTER_WHISPER_MODEL, bundleSummary, { lastError: "" });
+      } catch (error) {
+        const message = error instanceof Error && error.message ? error.message : String(error);
+        updateDesktopBundleState(FASTER_WHISPER_MODEL, {
+          lastError: message,
+          message: "",
+        });
+      } finally {
+        setDesktopBundleBusyModelKey("");
+      }
+    }
     if (!bundleSummary?.available) {
       const message = bundleSummary?.installAvailable
         ? "本机资源未就绪，请先点「准备本机资源」。"
@@ -5016,12 +5054,19 @@ export function UploadPanel({
 
     const sourceFileName = String(sourceFile?.name || file?.name || "本地视频").trim();
     const sourceFilePath = String(
-      typeof sourceFile?.path === "string" && sourceFile.path
-        ? sourceFile.path
-        : typeof file?.path === "string" && file.path
-          ? file.path
-          : "",
+      resolveDesktopSelectedSourcePath(sourceFile) || resolveDesktopSelectedSourcePath(file) || "",
     ).trim();
+    if (!sourceFilePath) {
+      await handleTaskFailureState({
+        message: "当前素材缺少桌面本机路径，请重新选择一次文件后再试。",
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: 0,
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+      });
+      return;
+    }
 
     const startStatus = "正在生成课程";
     setPhase(DESKTOP_LOCAL_GENERATING_PHASE);
@@ -5607,7 +5652,10 @@ export function UploadPanel({
   }
 
   async function submit(options = {}) {
-    const selectedSourceFile = options?.sourceFile ?? file;
+    const selectedSourceFile = attachDesktopSourcePath(
+      options?.sourceFile ?? file,
+      resolveDesktopSelectedSourcePath(options?.sourceFile ?? file) || resolveDesktopSelectedSourcePath(file),
+    );
     const submitIntent = String(options?.submitIntent || FILE_PICKER_ACTION_SELECT);
     const skipDesktopRecommendation = Boolean(options?.skipDesktopRecommendation);
     if (desktopLinkModeActive) {
@@ -5667,9 +5715,11 @@ export function UploadPanel({
     let shouldUseBrowserLocalFast = fasterWhisperBrowserLocalSelected;
     let shouldUseDesktopLocalGenerateCourse = false;
     if (
-      submitIntent === FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE &&
+      selectedFastModel === FASTER_WHISPER_MODEL &&
+      desktopSourceMode === DESKTOP_UPLOAD_SOURCE_MODE_FILE &&
       selectedSourceFile &&
       hasLocalCourseGeneratorBridge() &&
+      selectedFastRuntimeTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL &&
       !loading &&
       (phase === "idle" || phase === "ready" || phase === "error")
     ) {
@@ -5698,7 +5748,7 @@ export function UploadPanel({
       }
       return;
     }
-    if (selectedFastModel === FASTER_WHISPER_MODEL && hasDesktopRuntimeBridge()) {
+    if (!shouldUseDesktopLocalGenerateCourse && selectedFastModel === FASTER_WHISPER_MODEL && hasDesktopRuntimeBridge()) {
       const strategy = resolveAsrStrategy({
         runtimeTrack: fasterWhisperRuntimeTrack,
         userExplicitTrack: fasterWhisperTrackTouchedRef.current,
@@ -6063,9 +6113,10 @@ export function UploadPanel({
               const fasterWhisperDesktopTrack = fasterWhisperCardTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL;
               const fasterWhisperBrowserTrack = fasterWhisperCardTrack === FAST_RUNTIME_TRACK_BROWSER_LOCAL;
               const cardPriceLabel = getUploadModelPriceLabel(item, billingRates);
+              const desktopBundlePreparable = fasterWhisperDesktopTrack && desktopBundleInstallAvailable && !desktopBundleAvailable;
               const highlightStatus = isFasterWhisper
                 ? fasterWhisperDesktopTrack
-                  ? desktopBundleAvailable
+                  ? desktopBundleAvailable || desktopBundlePreparable
                   : fasterWhisperBrowserTrack
                     ? browserLocalRuntimeAvailable
                     : fasterModelReady
@@ -6086,7 +6137,7 @@ export function UploadPanel({
               const modelCardToneStyles = getUploadToneStyles(modelCardTone);
               const cardStatusAvailable = !isFasterWhisper || highlightStatus;
               const isDesktopBundleLoading = fasterWhisperDesktopTrack && desktopBundleLoading;
-              const cardStatusLabel = isDesktopBundleLoading ? "检查中" : cardStatusAvailable ? "可用" : "不可用";
+              const cardStatusLabel = isDesktopBundleLoading ? "检查中" : desktopBundlePreparable ? "可准备" : cardStatusAvailable ? "可用" : "不可用";
               const showCardProgress = isFasterWhisper
                 ? fasterWhisperDesktopTrack
                   ? desktopBundleBusy
@@ -6185,6 +6236,8 @@ export function UploadPanel({
                         "shrink-0",
                         isDesktopBundleLoading
                           ? "border-blue-200 bg-blue-50 text-blue-700"
+                          : desktopBundlePreparable
+                            ? "border-amber-200 bg-amber-50 text-amber-700"
                           : cardStatusAvailable
                             ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                             : "border-red-200 bg-red-50 text-red-700",
