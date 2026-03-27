@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 基础能力稳定化** — Phases 1, 1.1, 2 (shipped 2026-03-27)
-- 🚧 **v1.1** — Phases 2.1, 3, 4 (planned)
+- ✅ **v1.1** — Phases 2.1, 3, 4 (shipped 2026-03-27)
 - 📋 **v2.0** — Phases 5, 6 (planned)
 
 ## Phases
@@ -19,11 +19,11 @@ _See: `.planning/milestones/v1.0-ROADMAP.md` for full phase details_
 
 </details>
 
-### 🚧 v1.1 — Urgent Admin Cleanup, Lesson Output & Desktop Link Import (In Progress)
+### ✅ v1.1 — Urgent Admin Cleanup, Lesson Output & Desktop Link Import (Shipped 2026-03-27)
 
 - [x] **Phase 2.1: Admin Bottle 1.0 Settings & Billing Cleanup** (INSERTED) — completed 2026-03-27
 - [x] **Phase 3: Lesson Output Consistency** (3 plans) — completed 2026-03-27
-- [ ] **Phase 4: Desktop Link Import** (2 plans)
+- [x] **Phase 4: Desktop Link Import** (2 plans) — completed 2026-03-27
 
 ### Phase 2.1: Admin Bottle 1.0 Settings & Billing Cleanup
 
@@ -58,7 +58,7 @@ Plans:
 Plans:
 
 - [x] 04-01: Add desktop link selection, yt-dlp ingestion, and local media-preparation safeguards
-- [ ] 04-02: Feed imported desktop media into the shared generation and history pipeline with verification and error recovery
+- [x] 04-02: Feed imported desktop media into the shared generation and history pipeline with verification and error recovery
 
 ### 📋 v2.0 — Billing, Admin & Polish (Planned)
 
@@ -74,8 +74,8 @@ Plans:
 || 2. Desktop Local Generation | v1.0 | 3/3 | Complete | 2026-03-27 |
 || 2.1. Admin Bottle 1.0 Settings & Billing Cleanup | v1.1 | 3/3 | Complete | 2026-03-27 |
 || 3. Lesson Output Consistency | v1.1 | 3/3 | Complete | 2026-03-27 |
-|| 4. Desktop Link Import | v1.1 | 1/2 | In Progress | — |
+|| 4. Desktop Link Import | v1.1 | 2/2 | Complete | 2026-03-27 |
 || 5. Billing and Admin Alignment | v2.0 | 0/3 | Not started | — |
 || 6. Product Polish and Fallbacks | v2.0 | 0/2 | Not started | — |
 
-**Overall:** 5/8 phases complete (v1.0 shipped, v1.1 Phase 2.1 and Phase 3 complete)
+**Overall:** 6/8 phases complete (v1.0 shipped, v1.1 shipped)
