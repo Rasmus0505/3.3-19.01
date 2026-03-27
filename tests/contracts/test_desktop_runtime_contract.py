@@ -419,6 +419,7 @@ def test_uploadWithProgress_upload_panel_exposes_bottle2_cloud_stage_model_and_d
 
 def test_upload_panel_exposes_phase04_link_import_copy_and_fallback_contract():
     upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
+    learning_shell_source = (REPO_ROOT / "frontend" / "src" / "app" / "learning-shell" / "LearningShellContainer.jsx").read_text(encoding="utf-8")
 
     assert "本地文件" in upload_panel_source
     assert "链接导入" in upload_panel_source
@@ -428,6 +429,8 @@ def test_upload_panel_exposes_phase04_link_import_copy_and_fallback_contract():
     assert "取消当前链接任务" in upload_panel_source
     assert "SnapAny" in upload_panel_source
     assert "openSnapAnyFallback" in upload_panel_source
+    assert "onNavigateToLesson?.(data.lesson.id)" in upload_panel_source
+    assert 'loadLessonDetail(lessonId, { autoEnterImmersive: true })' in learning_shell_source
 
 
 def test_offline_mode_uses_desktop_server_bridge_when_available():
