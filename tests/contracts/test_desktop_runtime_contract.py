@@ -362,10 +362,10 @@ def test_main_process_exposes_desktop_file_bridge():
 def test_upload_panel_consumes_desktop_file_bridge_and_persists_source_path():
     upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
 
-    assert "window.desktopRuntime.selectLocalMediaFile" in upload_panel_source
     assert "desktop_source_path" in upload_panel_source
     assert "restoreSavedSourceFile" in upload_panel_source
     assert "ensureBlobBackedSourceFile" in upload_panel_source
+    assert "fileInputRef.current.click()" in upload_panel_source
 
 
 def test_preload_exposes_server_status_bridge():

@@ -2480,27 +2480,6 @@ export function UploadPanel({
 
   function openSourceFilePicker(action = FILE_PICKER_ACTION_SELECT) {
     filePickerActionRef.current = action;
-    if (desktopRuntimeAvailable && typeof window.desktopRuntime.selectLocalMediaFile === "function") {
-      void (async () => {
-        try {
-          const selection = await window.desktopRuntime.selectLocalMediaFile({
-            action,
-            accept: LOCAL_ASR_FILE_ACCEPT,
-          });
-          if (!selection?.ok || !selection?.path) {
-            return;
-          }
-          const selectedFile = buildDesktopSelectedFile(selection);
-          await onSelectFile(selectedFile);
-          if (action === FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE) {
-            await submit({ sourceFile: selectedFile, submitIntent: action });
-          }
-        } catch (error) {
-          toast.error(error instanceof Error && error.message ? error.message : "选择本地文件失败");
-        }
-      })();
-      return true;
-    }
     if (!fileInputRef.current) {
       filePickerActionRef.current = FILE_PICKER_ACTION_SELECT;
       return false;
