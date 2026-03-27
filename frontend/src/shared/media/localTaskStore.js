@@ -100,6 +100,20 @@ function normalizeTaskSnapshot(taskSnapshot) {
   if (!taskSnapshot || typeof taskSnapshot !== "object") {
     return null;
   }
+  const normalizeLessonId = (value) => {
+    const rawValue = typeof value === "number" ? value : String(value ?? "").trim();
+    if (typeof rawValue === "number") {
+      return Number.isInteger(rawValue) && rawValue > 0 ? rawValue : null;
+    }
+    if (!rawValue) {
+      return null;
+    }
+    const parsed = Number(rawValue);
+    if (Number.isInteger(parsed) && parsed > 0 && String(parsed) === rawValue) {
+      return parsed;
+    }
+    return rawValue;
+  };
   return {
     task_id: String(taskSnapshot.task_id || ""),
     status: String(taskSnapshot.status || ""),
@@ -114,7 +128,7 @@ function normalizeTaskSnapshot(taskSnapshot) {
     lesson:
       taskSnapshot.lesson && typeof taskSnapshot.lesson === "object"
         ? {
-            id: Number(taskSnapshot.lesson.id || 0) || null,
+            id: normalizeLessonId(taskSnapshot.lesson.id),
             title: String(taskSnapshot.lesson.title || ""),
             source_filename: String(taskSnapshot.lesson.source_filename || ""),
             asr_model: String(taskSnapshot.lesson.asr_model || ""),

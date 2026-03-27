@@ -18,9 +18,12 @@ FRONTEND_MAIN_FILE = REPO_ROOT / "frontend" / "src" / "main.jsx"
 FRONTEND_ADMIN_MAIN_FILE = REPO_ROOT / "frontend" / "src" / "main-admin.jsx"
 ASR_STRATEGY_MODULE = (REPO_ROOT / "frontend" / "src" / "features" / "upload" / "asrStrategy.js").resolve().as_uri()
 UPLOAD_PANEL_FILE = REPO_ROOT / "frontend" / "src" / "features" / "upload" / "UploadPanel.jsx"
+LOCAL_SHELL_FILE = REPO_ROOT / "frontend" / "src" / "app" / "LearningShellLocalSubtitles.jsx"
 API_CLIENT_FILE = REPO_ROOT / "frontend" / "src" / "shared" / "api" / "client.js"
 AUTH_API_FILE = REPO_ROOT / "frontend" / "src" / "features" / "auth" / "shared" / "authApi.ts"
 OFFLINE_MODE_FILE = REPO_ROOT / "frontend" / "src" / "hooks" / "useOfflineMode.js"
+LOCAL_MEDIA_STORE_FILE = REPO_ROOT / "frontend" / "src" / "shared" / "media" / "localMediaStore.js"
+LOCAL_SUBTITLE_STORE_FILE = REPO_ROOT / "frontend" / "src" / "shared" / "media" / "localSubtitleStore.js"
 
 
 def _run_node_json(script: str) -> dict:
@@ -462,10 +465,30 @@ def test_upload_panel_resolves_desktop_source_path_before_local_course_generatio
 def test_upload_panel_skips_cloud_auto_fallback_for_explicit_desktop_local_generate():
     upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
 
-    assert "if (!shouldUseDesktopLocalGenerateCourse && selectedFastModel === FASTER_WHISPER_MODEL && hasDesktopRuntimeBridge()) {" in upload_panel_source
-    assert "selectedFastModel === FASTER_WHISPER_MODEL &&" in upload_panel_source
-    assert "desktopSourceMode === DESKTOP_UPLOAD_SOURCE_MODE_FILE &&" in upload_panel_source
-    assert "selectedFastRuntimeTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL &&" in upload_panel_source
+    assert "selectedFastRuntimeTrack !== FAST_RUNTIME_TRACK_DESKTOP_LOCAL" in upload_panel_source
+
+
+def test_upload_panel_removes_dedicated_local_generate_button_from_file_actions():
+    upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
+
+    assert 'void submit({ submitIntent: FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE });' not in upload_panel_source
+    assert 'openSourceFilePicker(FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE)' not in upload_panel_source
+    assert "const shouldUseDesktopLocalGenerateCourse = false;" in upload_panel_source
+
+
+def test_local_media_and_subtitle_stores_accept_non_numeric_lesson_ids():
+    media_store_source = LOCAL_MEDIA_STORE_FILE.read_text(encoding="utf-8")
+    subtitle_store_source = LOCAL_SUBTITLE_STORE_FILE.read_text(encoding="utf-8")
+
+    assert 'return rawValue;' in media_store_source
+    assert 'return rawValue;' in subtitle_store_source
+    assert 'return compareLessonIds(left.lessonId, right.lessonId);' in subtitle_store_source
+
+
+def test_local_learning_shell_passes_generate_success_navigation_callback_to_upload_panel():
+    local_shell_source = LOCAL_SHELL_FILE.read_text(encoding="utf-8")
+
+    assert "onNavigateToLesson={handleStartLesson}" in local_shell_source
 
 
 def test_offline_mode_uses_desktop_server_bridge_when_available():

@@ -95,7 +95,11 @@ function applyLessonSubtitleVariantToStore(lessonId, activeVariant) {
 }
 
 function buildCreatedLessonMediaPreview(lesson, mediaPreview, mediaPersisted) {
-  const lessonId = Number(lesson?.id || mediaPreview?.lessonId || 0);
+  const rawLessonId = lesson?.id ?? mediaPreview?.lessonId ?? null;
+  const lessonId =
+    typeof rawLessonId === "number"
+      ? rawLessonId
+      : String(rawLessonId ?? "").trim() || 0;
   return {
     ...getDefaultMediaPreview(lessonId),
     ...(mediaPreview || {}),

@@ -5102,38 +5102,29 @@ export function UploadPanel({
 
       const courseId = String(response?.course_id || "").trim();
       const translationPending = Boolean(response?.translation_pending);
-      const sentenceCount = Array.isArray(response?.sentences) ? response.sentences.length : 0;
       const usageSeconds = Math.max(0, Number(response?.usage_seconds || 0));
-      const lessonStatus = String(response?.lesson_status || "ready").trim();
-
-      setUploadPercent(100);
-      setPhase("success");
-      setLoading(false);
-      setStatus(
-        translationPending
-          ? "课程已生成（翻译待补全），可在历史记录中查看"
-          : "课程已生成，可在历史记录中查看",
-      );
-
-      const taskSnapshotValue = {
-        lesson: {
-          id: courseId,
-          source_filename: sourceFileName,
-          title: String(response?.course?.title || sourceFileName.replace(/\.[^.]+$/, "")).trim(),
-          runtime_kind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
-          asr_model: FASTER_WHISPER_MODEL,
-          media_storage: "client_indexeddb",
-        },
+      const successPayload = {
+        ...response,
+        lesson: response?.lesson && typeof response.lesson === "object"
+          ? response.lesson
+          : {
+              id: courseId,
+              source_filename: sourceFileName,
+              title: String(response?.course?.title || sourceFileName.replace(/\.[^.]+$/, "")).trim(),
+              runtime_kind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
+              asr_model: FASTER_WHISPER_MODEL,
+              media_storage: "client_indexeddb",
+            },
         task_id: courseId,
         status: "succeeded",
         current_text: translationPending ? "课程已生成（翻译待补全）" : "课程已生成",
         overall_percent: 100,
-        workspace: null,
+        completion_kind: translationPending ? "partial" : "full",
+        result_message: translationPending ? "课程已生成（翻译待补全）" : "课程已生成，可在历史记录中查看",
+        workspace: response?.workspace || null,
       };
-      setTaskSnapshot(taskSnapshotValue);
 
-      // Materialize desktop file to blob and save to IndexedDB so the lesson is playable in learning mode
-      const materializationFailed = await finalizeDesktopLocalCourseSuccess(taskSnapshotValue.lesson, sourceFile, sourceFilePath);
+      await finalizeSuccess(successPayload, sourceFile, false);
 
       dispatchLocalLessonUpdateEvent();
       await clearUploadPanelSuccessSnapshot(null);
@@ -5154,10 +5145,6 @@ export function UploadPanel({
         }
       }
 
-      toast.success(translationPending ? "课程已生成（翻译待补全）" : "课程已生成");
-      if (materializationFailed) {
-        toast.warning("课程已生成，但未保存视频，请在历史记录中恢复视频后再开始学习。");
-      }
     } catch (error) {
       setLoading(false);
       if (error?.name === "AbortError") {
@@ -5713,18 +5700,7 @@ export function UploadPanel({
     desktopLocalFailureCountRef.current = 0;
     let shouldUseDesktopLocalFast = fasterWhisperDesktopLocalSelected;
     let shouldUseBrowserLocalFast = fasterWhisperBrowserLocalSelected;
-    let shouldUseDesktopLocalGenerateCourse = false;
-    if (
-      selectedFastModel === FASTER_WHISPER_MODEL &&
-      desktopSourceMode === DESKTOP_UPLOAD_SOURCE_MODE_FILE &&
-      selectedSourceFile &&
-      hasLocalCourseGeneratorBridge() &&
-      selectedFastRuntimeTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL &&
-      !loading &&
-      (phase === "idle" || phase === "ready" || phase === "error")
-    ) {
-      shouldUseDesktopLocalGenerateCourse = true;
-    }
+    const shouldUseDesktopLocalGenerateCourse = false;
     const ensureUploadableSourceFile = async () => {
       const preparedFile = await ensureBlobBackedSourceFile(selectedSourceFile);
       if (isBlobBackedSourceFile(preparedFile)) {
@@ -5748,7 +5724,11 @@ export function UploadPanel({
       }
       return;
     }
-    if (!shouldUseDesktopLocalGenerateCourse && selectedFastModel === FASTER_WHISPER_MODEL && hasDesktopRuntimeBridge()) {
+    if (
+      selectedFastModel === FASTER_WHISPER_MODEL &&
+      hasDesktopRuntimeBridge() &&
+      selectedFastRuntimeTrack !== FAST_RUNTIME_TRACK_DESKTOP_LOCAL
+    ) {
       const strategy = resolveAsrStrategy({
         runtimeTrack: fasterWhisperRuntimeTrack,
         userExplicitTrack: fasterWhisperTrackTouchedRef.current,
@@ -6531,25 +6511,6 @@ export function UploadPanel({
                 >
                   选择文件
                 </Button>
-                {desktopLocalGenerateAvailable ? (
-                  <Button
-                    type="button"
-                    variant="default"
-                    className="h-9 px-4"
-                    onClick={() => {
-                      if (file) {
-                        void submit({ submitIntent: FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE });
-                        return;
-                      }
-                      if (!openSourceFilePicker(FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE)) {
-                        toast.error("文件选择器不可用，请刷新后重试");
-                      }
-                    }}
-                    disabled={loading || localModeBusy}
-                  >
-                    本地生成
-                  </Button>
-                ) : null}
                 {!desktopRuntimeAvailable ? (
                   <Button
                     type="button"
