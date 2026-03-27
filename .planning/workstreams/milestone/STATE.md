@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: — Urgent Admin Cleanup, Lesson Output & Desktop Link Import
-status: Ready for next inserted phase
-last_updated: "2026-03-28T17:40:00.000Z"
+status: Executing Phase 05
+last_updated: "2026-03-27T18:53:28.125Z"
 progress:
-  total_phases: 4
+  total_phases: 3
   completed_phases: 3
   total_plans: 8
   completed_plans: 8
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Inserted Phase 04.1 discussion — desktop-local course fidelity before v2.0 Phase 5
+**Current focus:** Phase 05 — billing-and-admin-alignment
 
 ## Current Position
 
-Phase: 04.1 discussion
-Plan: Not started
+Phase: 05 (billing-and-admin-alignment) — EXECUTING
+Plan: 1 of 3
 v1.0 milestone shipped. v1.1 milestone shipped. Inserted follow-up phase queued before broader v2.0 work.
 
 Progress: [███████░░░] 75% (inserted follow-up phase queued after v1.1 shipment)
