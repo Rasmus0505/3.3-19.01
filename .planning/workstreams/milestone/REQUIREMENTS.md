@@ -15,7 +15,7 @@
 ### Billing
 
 - [x] **BILL-01**: User can redeem codes into platform points or balance — ✅ v1.0 Phase 1
-- [ ] **BILL-02**: User is charged according to admin-configured pricing for Bottle 1.0 and Bottle 2.0 usage — Phase 5
+- [x] **BILL-02**: User is charged according to admin-configured pricing for Bottle 1.0 and Bottle 2.0 usage — Phase 5
 - [x] **BILL-03**: User never needs to provide a personal ASR API key to use paid generation — ✅ v1.0 (platform-managed keys)
 
 ### Web Generation
@@ -45,9 +45,9 @@
 
 ### Admin Operations
 
-- [ ] **ADMIN-01**: Admin can configure or adjust pricing for Bottle 1.0 and Bottle 2.0 — Phase 5
-- [ ] **ADMIN-02**: Admin can inspect runtime health and generation-support status for operational troubleshooting — Phase 5
-- [ ] **ADMIN-03**: Admin can continue managing redeem-code and wallet-related operations — Phase 5
+- [x] **ADMIN-01**: Admin can configure or adjust pricing for Bottle 1.0 and Bottle 2.0 — Phase 5
+- [x] **ADMIN-02**: Admin can inspect runtime health and generation-support status for operational troubleshooting — Phase 5
+- [x] **ADMIN-03**: Admin can continue managing redeem-code and wallet-related operations — Phase 5
 
 ## v2 Requirements
 
@@ -73,7 +73,7 @@
 || AUTH-02 | Phase 1 | ✅ Complete |
 || AUTH-03 | Phase 1 | ✅ Complete |
 || BILL-01 | Phase 1 | ✅ Complete |
-|| BILL-02 | Phase 5 | Pending |
+|| BILL-02 | Phase 5 | Complete |
 || BILL-03 | — | ✅ Complete (platform-managed) |
 || WEB-01 | Phase 1 | ✅ Complete |
 || WEB-02 | Phase 1 | ✅ Complete |
@@ -88,9 +88,9 @@
 || LEARN-01 | Phase 3 | Pending |
 || LEARN-02 | Phase 3 | Pending |
 || LEARN-03 | Phase 6 | Pending |
-|| ADMIN-01 | Phase 5 | Pending |
-|| ADMIN-02 | Phase 5 | Pending |
-|| ADMIN-03 | Phase 5 | Pending |
+|| ADMIN-01 | Phase 5 | Complete |
+|| ADMIN-02 | Phase 5 | Complete |
+|| ADMIN-03 | Phase 5 | Complete |
 
 **Coverage:**
 - v1 requirements: 22 total

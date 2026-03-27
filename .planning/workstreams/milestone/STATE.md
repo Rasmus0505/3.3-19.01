@@ -1,16 +1,14 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.1
-milestone_name: Admin Cleanup, Lesson Output & Desktop Link Import
-status: in_progress
-last_updated: "2026-03-27T19:45:00+08:00"
-last_activity: 2026-03-27
+milestone_name: — Urgent Admin Cleanup, Lesson Output & Desktop Link Import
+status: Ready to execute
+last_updated: "2026-03-27T09:04:38.624Z"
 progress:
-  total_phases: 8
+  total_phases: 4
   completed_phases: 3
-  planned_phases: 4
-  total_plans: 14
-  completed_plans: 8
+  total_plans: 11
+  completed_plans: 9
   percent: 37
 ---
 
@@ -21,10 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 2.1 planned — next: Phase 2.1 execution
+**Current focus:** Phase 02.1 — admin-bottle-1-0-settings-and-billing-cleanup
 
 ## Current Position
 
+Phase: 02.1 (admin-bottle-1-0-settings-and-billing-cleanup) — EXECUTING
+Plan: 2 of 3
 v1.0 milestone shipped. v1.1 in progress.
 
 Progress: [████░░░░░░░░] 37% (v1.1 — 4/11 phases, 3/6 plans complete)
@@ -48,6 +48,7 @@ Progress: [████░░░░░░░░] 37% (v1.1 — 4/11 phases, 3/6 
 | 01.1 | 2 | 89 min |
 | 02 | 3 | ~15 min |
 | **Total** | **8** | **~158 min** |
+| Phase 02.1 P02 | 2 | 3 tasks | 4 files |
 
 ## Quick Tasks Completed
 
@@ -65,6 +66,6 @@ Progress: [████░░░░░░░░] 37% (v1.1 — 4/11 phases, 3/6 
 
 ## Session Continuity
 
-Last session: 2026-03-27T19:45:00+08:00
+Last session: 2026-03-27T09:04:38.622Z
 Phase 2.1 planned (UI-SPEC ✅ research ✅ plans ✅ verification ✅). Resume from execution.
 Plans: `.planning/workstreams/milestone/phases/02.1-admin-bottle-1-0-settings-and-billing-cleanup/`
