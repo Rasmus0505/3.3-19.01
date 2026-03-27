@@ -806,6 +806,7 @@ export function LearningShellContainer() {
                   onDeleteLesson={handleDeleteLesson}
                   onBulkDeleteLessons={handleBulkDeleteLessons}
                   onRestoreLessonMedia={handleRestoreLessonMedia}
+                  onRefreshHistory={() => loadCatalog({ page: 1, query: lessonsQuery, autoEnterImmersive: false })}
                   onSwitchToUpload={() => handlePanelChange("upload")}
                   walletBalance={walletBalance}
                   billingRates={billingRates}

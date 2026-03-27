@@ -43,6 +43,7 @@ export function LearningShellPanelContent({
   onDeleteLesson,
   onBulkDeleteLessons,
   onRestoreLessonMedia,
+  onRefreshHistory,
   onSwitchToUpload,
   walletBalance,
   billingRates,
@@ -106,6 +107,7 @@ export function LearningShellPanelContent({
             onDelete={onDeleteLesson}
             onBulkDelete={onBulkDeleteLessons}
             onRestoreMedia={onRestoreLessonMedia}
+            onRefreshHistory={onRefreshHistory}
             onSwitchToUpload={onSwitchToUpload}
             loading={loadingLessons}
             hasMore={hasMoreLessons}
