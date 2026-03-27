@@ -59,9 +59,11 @@ Users can turn real English media into usable learning lessons quickly, without 
 
 ## Current State
 
-**v1.0 已交付 (2026-03-27)。** Web 和 Desktop 现在共享稳定的 Bottle 2.0 云端生成路径；Desktop 用户可以使用 Bottle 1.0 本地生成，零配置；DashScope 403 文件访问失败会自动自愈一次。
+**v1.1 进行中 (Phase 2.1 完成)。** Admin surface cleanup complete: Bottle 1.0 billing integrated into admin rates, Faster Whisper settings UI removed, "模型管理" page deleted. Billing continuity verified (11/11 tests pass).
 
-**下一步：** v1.1 — Lesson Output Consistency + Desktop Link Import（Phase 3 & 4）
+**v1.0 已交付 (2026-03-27)。** Web 和 Desktop 现在 share 稳定的 Bottle 2.0 云端生成路径；Desktop 用户可以使用 Bottle 1.0 本地生成，零配置；DashScope 403 文件访问失败会自动自愈一次。
+
+**下一步：** v1.1 Phase 3 — Lesson Output Consistency + Phase 4 — Desktop Link Import
 
 ## Key Decisions
 
@@ -93,4 +95,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-27 after v1.0 milestone completion*
+*Last updated: 2026-03-27 after Phase 2.1 completion*
