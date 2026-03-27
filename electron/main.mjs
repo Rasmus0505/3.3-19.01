@@ -851,6 +851,15 @@ async function openClientUpdateLink(preferredUrl = "") {
   return true;
 }
 
+async function openExternalUrl(targetUrl = "") {
+  const normalizedUrl = trimText(targetUrl);
+  if (!normalizedUrl) {
+    return false;
+  }
+  await shell.openExternal(normalizedUrl);
+  return true;
+}
+
 async function fetchRemoteModelManifest(modelKey = DESKTOP_MODEL_UPDATE_KEY) {
   const baseUrl = runtimeCloudBaseUrl();
   const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/api/local-asr-assets/download-models/${encodeURIComponent(trimText(modelKey))}/manifest`);
@@ -1014,6 +1023,7 @@ ipcMain.handle("desktop:open-logs-directory", async () => openLogsDirectory());
 ipcMain.handle("desktop:get-client-update-status", () => desktopClientUpdateState);
 ipcMain.handle("desktop:check-client-update", async () => checkDesktopClientUpdate({ reason: "manual", notify: true }));
 ipcMain.handle("desktop:open-client-update-link", async (_event, preferredUrl = "") => openClientUpdateLink(preferredUrl));
+ipcMain.handle("desktop:open-external-url", async (_event, targetUrl = "") => openExternalUrl(targetUrl));
 ipcMain.handle("desktop:get-model-update-status", () => desktopModelUpdateState);
 ipcMain.handle("desktop:check-model-update", async (_event, modelKey = DESKTOP_MODEL_UPDATE_KEY) => checkDesktopModelUpdate(modelKey));
 ipcMain.handle("desktop:start-model-update", async (_event, modelKey = DESKTOP_MODEL_UPDATE_KEY) => startDesktopModelUpdate(modelKey));

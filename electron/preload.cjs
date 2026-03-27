@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld("desktopRuntime", {
   getClientUpdateStatus: () => ipcRenderer.invoke("desktop:get-client-update-status"),
   checkClientUpdate: () => ipcRenderer.invoke("desktop:check-client-update"),
   openClientUpdateLink: (preferredUrl) => ipcRenderer.invoke("desktop:open-client-update-link", preferredUrl),
+  openExternalUrl: (targetUrl) => ipcRenderer.invoke("desktop:open-external-url", targetUrl),
   getModelUpdateStatus: () => ipcRenderer.invoke("desktop:get-model-update-status"),
   checkModelUpdate: (modelKey) => ipcRenderer.invoke("desktop:check-model-update", modelKey),
   startModelUpdate: (modelKey) => ipcRenderer.invoke("desktop:start-model-update", modelKey),
