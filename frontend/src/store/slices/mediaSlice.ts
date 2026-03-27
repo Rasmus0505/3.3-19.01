@@ -2,8 +2,9 @@ import { getLessonMediaPreview, hasLessonMedia } from "../../shared/media/localM
 
 type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
 type Getter = () => any;
+type LessonId = string | number;
 
-export function getDefaultMediaPreview(lessonId: number) {
+export function getDefaultMediaPreview(lessonId: LessonId) {
   return {
     lessonId,
     hasMedia: false,

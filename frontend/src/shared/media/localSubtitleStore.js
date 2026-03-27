@@ -11,11 +11,21 @@ function assertIndexedDbAvailable() {
 }
 
 function normalizeLessonId(lessonId) {
-  const parsed = Number(lessonId);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+  const rawValue = typeof lessonId === "number" ? lessonId : String(lessonId ?? "").trim();
+  if (typeof rawValue === "number") {
+    if (!Number.isInteger(rawValue) || rawValue <= 0) {
+      throw new Error("lessonId 无效");
+    }
+    return rawValue;
+  }
+  if (!rawValue) {
     throw new Error("lessonId 无效");
   }
-  return parsed;
+  const parsed = Number(rawValue);
+  if (Number.isInteger(parsed) && parsed > 0 && String(parsed) === rawValue) {
+    return parsed;
+  }
+  return rawValue;
 }
 
 function ensureStoreIndex(store, name, keyPath) {
@@ -275,6 +285,15 @@ function normalizeOfflineListItem(record) {
   };
 }
 
+function compareLessonIds(leftLessonId, rightLessonId) {
+  const leftIsNumber = typeof leftLessonId === "number";
+  const rightIsNumber = typeof rightLessonId === "number";
+  if (leftIsNumber && rightIsNumber) {
+    return rightLessonId - leftLessonId;
+  }
+  return String(rightLessonId || "").localeCompare(String(leftLessonId || ""));
+}
+
 export function getSubtitleVariantKey(semanticSplitEnabled) {
   return getVariantKey(Boolean(semanticSplitEnabled));
 }
@@ -425,7 +444,7 @@ export async function listOfflineSubtitles({ searchQuery = "", limit = 20, offse
       if (right.generatedAt !== left.generatedAt) {
         return right.generatedAt - left.generatedAt;
       }
-      return right.lessonId - left.lessonId;
+      return compareLessonIds(left.lessonId, right.lessonId);
     });
   return {
     items: items.slice(normalizedOffset, normalizedOffset + normalizedLimit),

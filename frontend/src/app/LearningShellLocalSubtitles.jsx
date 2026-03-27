@@ -796,6 +796,7 @@ export function LearningShellLocalSubtitles() {
                   <UploadPanel
                     accessToken={accessToken}
                     onCreated={handleLessonCreated}
+                    onNavigateToLesson={handleStartLesson}
                     balancePoints={walletBalance}
                     billingRates={billingRates}
                     subtitleSettings={subtitleSettings}

@@ -32,11 +32,21 @@ function assertIndexedDbAvailable() {
 }
 
 function normalizeLessonId(lessonId) {
-  const parsed = Number(lessonId);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+  const rawValue = typeof lessonId === "number" ? lessonId : String(lessonId ?? "").trim();
+  if (typeof rawValue === "number") {
+    if (!Number.isInteger(rawValue) || rawValue <= 0) {
+      throw new Error("lessonId 无效");
+    }
+    return rawValue;
+  }
+  if (!rawValue) {
     throw new Error("lessonId 无效");
   }
-  return parsed;
+  const parsed = Number(rawValue);
+  if (Number.isInteger(parsed) && parsed > 0 && String(parsed) === rawValue) {
+    return parsed;
+  }
+  return rawValue;
 }
 
 function inferMediaTypeFromFileName(fileName) {
