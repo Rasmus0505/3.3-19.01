@@ -22,7 +22,7 @@ _See: `.planning/milestones/v1.0-ROADMAP.md` for full phase details_
 ### 🚧 v1.1 — Urgent Admin Cleanup, Lesson Output & Desktop Link Import (In Progress)
 
 - [x] **Phase 2.1: Admin Bottle 1.0 Settings & Billing Cleanup** (INSERTED) — completed 2026-03-27
-- [ ] **Phase 3: Lesson Output Consistency** (3 plans)
+- [x] **Phase 3: Lesson Output Consistency** (3 plans) — completed 2026-03-27
 - [ ] **Phase 4: Desktop Link Import** (2 plans)
 
 ### Phase 2.1: Admin Bottle 1.0 Settings & Billing Cleanup
@@ -73,9 +73,9 @@ Plans:
 || 1.1. Fix ASR 403 | v1.0 | 2/2 | Complete | 2026-03-27 |
 || 2. Desktop Local Generation | v1.0 | 3/3 | Complete | 2026-03-27 |
 || 2.1. Admin Bottle 1.0 Settings & Billing Cleanup | v1.1 | 3/3 | Complete | 2026-03-27 |
-|| 3. Lesson Output Consistency | v1.1 | 0/3 | Not started | — |
+|| 3. Lesson Output Consistency | v1.1 | 3/3 | Complete | 2026-03-27 |
 || 4. Desktop Link Import | v1.1 | 0/2 | Not started | — |
 || 5. Billing and Admin Alignment | v2.0 | 0/3 | Not started | — |
 || 6. Product Polish and Fallbacks | v2.0 | 0/2 | Not started | — |
 
-**Overall:** 4/8 phases complete (v1.0 shipped, v1.1 Phase 2.1 complete)
+**Overall:** 5/8 phases complete (v1.0 shipped, v1.1 Phase 2.1 and Phase 3 complete)
