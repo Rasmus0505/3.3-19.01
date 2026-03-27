@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 import mimetypes
 import os
 from pathlib import Path
+import re
+import subprocess
 import threading
 from typing import Any
 from urllib.parse import urlparse
@@ -14,6 +17,7 @@ from fastapi.responses import FileResponse
 
 from app.core.config import BASE_TMP_DIR, UPLOAD_MAX_BYTES
 from app.db import SessionLocal
+from app.infra.runtime_tools import get_ytdlp_command
 from app.services.asr_dashscope import AsrError, transcribe_audio_file
 from app.services.faster_whisper_asr import FASTER_WHISPER_ASR_MODEL
 from app.services.lesson_service import LessonService
@@ -22,6 +26,165 @@ from app.services.media import MediaError, cleanup_dir, create_request_dir, extr
 
 router = APIRouter(prefix="/api/desktop-asr", tags=["desktop-asr"])
 _URL_IMPORT_TASKS: dict[str, dict[str, Any]] = {}
+_SUPPORTED_DIRECT_MEDIA_SUFFIXES = {
+    ".mp3",
+    ".mp4",
+    ".m4a",
+    ".wav",
+    ".flac",
+    ".ogg",
+    ".aac",
+    ".webm",
+    ".mkv",
+    ".mov",
+}
+_URL_TOKEN_PATTERN = re.compile(r"https?://[^\s<>'\"，。；！？、））\]\}]+", re.IGNORECASE)
+
+
+def _sanitize_source_url(raw_value: str) -> str:
+    text = str(raw_value or "").strip()
+    if not text:
+        return ""
+    for match in _URL_TOKEN_PATTERN.finditer(text):
+        candidate = str(match.group(0) or "").strip().rstrip(".,!?;:)]}>\"'，。；！？、")
+        if candidate:
+            return candidate
+    return text if text.lower().startswith(("http://", "https://")) else ""
+
+
+def _looks_like_direct_media_url(source_url: str) -> bool:
+    parsed = urlparse(str(source_url or "").strip())
+    suffix = Path(parsed.path or "").suffix.lower()
+    return suffix in _SUPPORTED_DIRECT_MEDIA_SUFFIXES
+
+
+def _classify_ytdlp_error(stderr_text: str) -> tuple[str, str]:
+    normalized = str(stderr_text or "").strip()
+    lowered = normalized.lower()
+    if not normalized:
+        return ("URL_IMPORT_FAILED", "链接导入失败，请稍后重试")
+    if "sign in" in lowered or "login" in lowered or "cookies" in lowered or "members-only" in lowered:
+        return ("URL_IMPORT_RESTRICTED", "该链接可能需要登录或平台限制，建议改用 SnapAny")
+    if "unsupported url" in lowered or "unsupported" in lowered or "extractor" in lowered:
+        return ("URL_IMPORT_UNSUPPORTED", "当前桌面工具暂不支持该链接，建议改用 SnapAny")
+    if "private video" in lowered or "unavailable" in lowered or "forbidden" in lowered:
+        return ("URL_IMPORT_RESTRICTED", "该链接可能需要登录或平台限制，建议改用 SnapAny")
+    return ("URL_IMPORT_FAILED", "链接导入失败，请稍后重试")
+
+
+def _probe_ytdlp_metadata(source_url: str) -> dict[str, Any]:
+    ytdlp_command = get_ytdlp_command()
+    if not ytdlp_command:
+        raise MediaError("URL_IMPORT_UNSUPPORTED", "当前桌面工具暂不支持该链接，建议改用 SnapAny", "yt-dlp unavailable")
+    try:
+        completed = subprocess.run(
+            [
+                ytdlp_command,
+                "--dump-single-json",
+                "--no-playlist",
+                source_url,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+        )
+        payload = json.loads(str(completed.stdout or "{}"))
+        return payload if isinstance(payload, dict) else {}
+    except subprocess.CalledProcessError as exc:
+        code, message = _classify_ytdlp_error(exc.stderr or exc.stdout or "")
+        raise MediaError(code, message, str(exc.stderr or exc.stdout or "")[:1200]) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise MediaError("URL_IMPORT_FAILED", "链接导入超时，请稍后重试", str(exc)[:1200]) from exc
+    except json.JSONDecodeError as exc:
+        raise MediaError("URL_IMPORT_FAILED", "链接解析失败，请稍后重试", str(exc)[:1200]) from exc
+
+
+def _download_media_with_ytdlp(
+    source_url: str,
+    output_dir: Path,
+    *,
+    progress_callback=None,
+    cancel_event: threading.Event | None = None,
+) -> dict[str, Any]:
+    ytdlp_command = get_ytdlp_command()
+    if not ytdlp_command:
+        raise MediaError("URL_IMPORT_UNSUPPORTED", "当前桌面工具暂不支持该链接，建议改用 SnapAny", "yt-dlp unavailable")
+    metadata = _probe_ytdlp_metadata(source_url)
+    title = str(metadata.get("title") or "").strip()
+    duration_seconds = max(0, int(metadata.get("duration") or 0))
+    extractor_key = str(metadata.get("extractor_key") or metadata.get("extractor") or "").strip()
+    webpage_url = str(metadata.get("webpage_url") or metadata.get("original_url") or source_url).strip() or source_url
+    before_files = {path.resolve(strict=False) for path in output_dir.glob("*") if path.is_file()}
+    command = [
+        ytdlp_command,
+        "--no-playlist",
+        "--newline",
+        "--restrict-filenames",
+        "--no-progress",
+        "-P",
+        str(output_dir),
+        "-o",
+        "%(title).160B [%(id)s].%(ext)s",
+        source_url,
+    ]
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    stdout_lines: list[str] = []
+    stderr_lines: list[str] = []
+    while True:
+        if cancel_event is not None and cancel_event.is_set():
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            raise MediaError("URL_IMPORT_CANCELLED", "已取消链接下载", "cancelled during yt-dlp download")
+        if process.stdout is not None:
+            line = process.stdout.readline()
+            if line:
+                stdout_lines.append(line)
+                if callable(progress_callback):
+                    progress_callback(
+                        {
+                            "status": "running",
+                            "progress_percent": max(5, min(95, int(len(stdout_lines) * 8))),
+                            "status_text": "正在下载素材",
+                        }
+                    )
+        if process.poll() is not None:
+            break
+    if process.stdout is not None:
+        stdout_lines.extend(process.stdout.readlines())
+    if process.stderr is not None:
+        stderr_lines.extend(process.stderr.readlines())
+    if process.returncode != 0:
+        code, message = _classify_ytdlp_error("".join(stderr_lines) or "".join(stdout_lines))
+        raise MediaError(code, message, ("".join(stderr_lines) or "".join(stdout_lines))[:1200])
+    after_files = [path.resolve(strict=False) for path in output_dir.glob("*") if path.is_file() and path.resolve(strict=False) not in before_files]
+    candidate_files = [path for path in after_files if path.suffix.lower() != ".part"]
+    if not candidate_files:
+        raise MediaError("URL_IMPORT_FAILED", "链接导入失败，请稍后重试", "yt-dlp completed without output file")
+    target_path = max(candidate_files, key=lambda path: path.stat().st_mtime)
+    content_type = mimetypes.guess_type(target_path.name)[0] or "application/octet-stream"
+    return {
+        "source_url": source_url,
+        "source_path": str(target_path),
+        "source_filename": target_path.name,
+        "content_type": content_type,
+        "extractor_key": extractor_key,
+        "webpage_url": webpage_url,
+        "duration_seconds": duration_seconds,
+        "title": title,
+    }
 
 
 def _raise_media_http_error(exc: MediaError) -> None:
@@ -224,6 +387,7 @@ def _build_url_import_task(task_id: str, source_url: str, output_dir: Path) -> d
         "total_bytes": 0,
         "source_filename": "",
         "source_path": "",
+        "title": "",
         "content_type": "",
         "duration_seconds": 0,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -248,15 +412,24 @@ def download_public_media(
 ) -> dict[str, Any]:
     import requests
 
-    parsed = urlparse(str(source_url or "").strip())
+    normalized_source_url = _sanitize_source_url(source_url)
+    parsed = urlparse(normalized_source_url)
     if parsed.scheme not in {"http", "https"}:
-        raise MediaError("URL_IMPORT_INVALID_URL", "仅支持 http/https 链接", source_url)
+        raise MediaError("URL_IMPORT_INVALID_URL", "未识别到可导入链接。请粘贴公开视频页链接，例如 YouTube/B站视频页链接，或改用 SnapAny", source_url)
+
+    if not _looks_like_direct_media_url(normalized_source_url):
+        return _download_media_with_ytdlp(
+            normalized_source_url,
+            output_dir,
+            progress_callback=progress_callback,
+            cancel_event=cancel_event,
+        )
 
     filename = Path(parsed.path or "").name or "downloaded-media"
     if not Path(filename).suffix:
         filename = f"{filename}.mp4"
     target_path = output_dir / filename
-    with requests.get(source_url, stream=True, timeout=60) as response:
+    with requests.get(normalized_source_url, stream=True, timeout=60) as response:
         response.raise_for_status()
         total_bytes = max(0, int(response.headers.get("content-length", "0") or 0))
         downloaded_bytes = 0
@@ -281,13 +454,14 @@ def download_public_media(
                     )
     content_type = mimetypes.guess_type(target_path.name)[0] or "application/octet-stream"
     return {
-        "source_url": source_url,
+        "source_url": normalized_source_url,
         "source_path": str(target_path),
         "source_filename": target_path.name,
         "content_type": content_type,
         "extractor_key": "DirectHttp",
-        "webpage_url": source_url,
+        "webpage_url": normalized_source_url,
         "duration_seconds": 0,
+        "title": Path(target_path.name).stem,
     }
 
 
@@ -327,6 +501,7 @@ def _run_url_import_task(task_id: str) -> None:
             status_text="素材下载完成",
             source_path=str(result.get("source_path") or ""),
             source_filename=str(result.get("source_filename") or ""),
+            title=str(result.get("title") or ""),
             content_type=str(result.get("content_type") or ""),
             extractor_key=str(result.get("extractor_key") or ""),
             webpage_url=str(result.get("webpage_url") or ""),
@@ -402,9 +577,9 @@ def desktop_transcribe_upload(
 
 @router.post("/url-import/tasks")
 def create_url_import_task(payload: dict[str, Any]) -> dict[str, Any]:
-    source_url = str(payload.get("source_url") or "").strip()
+    source_url = _sanitize_source_url(str(payload.get("source_url") or ""))
     if not source_url:
-        raise HTTPException(status_code=400, detail="source_url is required")
+        raise HTTPException(status_code=400, detail={"ok": False, "error_code": "URL_IMPORT_INVALID_URL", "message": "未识别到可导入链接。"})
     task_id = uuid4().hex
     output_dir = create_request_dir(BASE_TMP_DIR) / "url-import"
     task = _build_url_import_task(task_id, source_url, output_dir)
