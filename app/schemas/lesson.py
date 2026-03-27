@@ -184,48 +184,6 @@ class LessonTaskDebugReportResponse(BaseModel):
     report_text: str
 
 
-class LessonTaskResponse(BaseModel):
-    ok: bool = True
-    task_id: str
-    requested_asr_model: str = ""
-    effective_asr_model: str = ""
-    model_fallback_applied: bool = False
-    model_fallback_reason: str = ""
-    completion_kind: Literal["full", "partial"] = "full"
-    result_kind: Literal["", "full_success", "asr_only"] = ""
-    result_label: str = ""
-    result_message: str = ""
-    partial_failure_stage: str = ""
-    partial_failure_code: str = ""
-    partial_failure_message: str = ""
-    status: Literal["pending", "running", "pausing", "paused", "terminating", "terminated", "succeeded", "failed"]
-    overall_percent: int
-    current_text: str
-    stages: list[LessonTaskStageResponse]
-    counters: LessonTaskCountersResponse
-    lesson: LessonDetailResponse | None = None
-    subtitle_cache_seed: SubtitleCacheSeedResponse | None = None
-    translation_debug: LessonTaskTranslationDebugResponse | None = None
-    failure_debug: LessonTaskFailureDebugResponse | None = None
-    error_code: str = ""
-    message: str = ""
-    resume_available: bool = False
-    resume_stage: str = ""
-    artifact_expires_at: datetime | None = None
-    control_action: Literal["", "pause", "terminate"] = ""
-    paused_at: datetime | None = None
-    terminated_at: datetime | None = None
-    can_pause: bool = False
-    can_terminate: bool = False
-
-
-class LessonTaskDebugReportResponse(BaseModel):
-    ok: bool = True
-    task_id: str
-    completion_kind: Literal["full", "partial"] = "full"
-    report_text: str
-
-
 class LessonTaskCreateResponse(BaseModel):
     ok: bool = True
     task_id: str
