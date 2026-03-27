@@ -53,6 +53,10 @@ const DESKTOP_CLIENT_ENTRY_URL = String(import.meta.env.VITE_DESKTOP_CLIENT_ENTR
 const DESKTOP_CLIENT_DISTRIBUTION_NOTE = String(import.meta.env.VITE_DESKTOP_CLIENT_DISTRIBUTION_NOTE || "").trim();
 const BOTTLE2_CLOUD_DESKTOP_RECOMMEND_SIZE_BYTES = 300 * 1024 * 1024;
 const BOTTLE2_CLOUD_DESKTOP_RECOMMEND_DURATION_SECONDS = 45 * 60;
+const SNAPANY_FALLBACK_URL = "https://snapany.com/zh";
+const DESKTOP_LINK_INVALID_MESSAGE = "未识别到可导入链接。";
+const DESKTOP_LINK_RESTRICTED_MESSAGE = "该链接可能需要登录或平台限制，建议改用 SnapAny";
+const DESKTOP_LINK_UNSUPPORTED_MESSAGE = "当前桌面工具暂不支持该链接，建议改用 SnapAny";
 const browserLocalRuntimeApi = LOCAL_BROWSER_RUNTIME_BASE_URL ? createApiClient({ baseUrl: LOCAL_BROWSER_RUNTIME_BASE_URL }) : null;
 
 function localAsrDirectoryBindingSupported() {
@@ -1172,6 +1176,49 @@ function sanitizeUserFacingText(text) {
     .trim();
 }
 
+function extractFirstSupportedUrl(text) {
+  const matches = String(text || "").match(/https?:\/\/[^\s<>'"，。；！？、\])}]+/gi) || [];
+  for (const match of matches) {
+    const candidate = String(match || "").trim().replace(/[.,!?;:)"'\]}，。；！？、]+$/g, "");
+    if (candidate) {
+      return candidate;
+    }
+  }
+  return "";
+}
+
+function sanitizeDesktopLinkInput(text) {
+  const extracted = extractFirstSupportedUrl(text);
+  if (extracted) {
+    return extracted;
+  }
+  const normalized = String(text || "").trim();
+  if (/^https?:\/\//i.test(normalized)) {
+    return normalized.replace(/[.,!?;:)"'\]}，。；！？、]+$/g, "");
+  }
+  return "";
+}
+
+function buildDesktopLinkErrorMessage(errorLike = "") {
+  const normalized = sanitizeUserFacingText(
+    typeof errorLike === "string" ? errorLike : errorLike?.message || errorLike?.detail || errorLike?.error_message || "",
+  );
+  const lowered = normalized.toLowerCase();
+  if (!normalized) {
+    return DESKTOP_LINK_UNSUPPORTED_MESSAGE;
+  }
+  if (normalized.includes(DESKTOP_LINK_INVALID_MESSAGE)) {
+    return `${DESKTOP_LINK_INVALID_MESSAGE} 请粘贴公开视频页链接，例如 YouTube/B站视频页链接，或改用 SnapAny`;
+  }
+  if (normalized.includes("登录") || normalized.includes("限制") || lowered.includes("login") || lowered.includes("cookie")) {
+    return DESKTOP_LINK_RESTRICTED_MESSAGE;
+  }
+  if (normalized.includes("不支持") || lowered.includes("unsupported")) {
+    return DESKTOP_LINK_UNSUPPORTED_MESSAGE;
+  }
+  return normalized;
+}
+
 function trimStageCounterSuffix(text) {
   return sanitizeUserFacingText(text).replace(/\s+\d+\/\d+$/, "").trim();
 }
@@ -1657,7 +1704,10 @@ export function UploadPanel({
   const [phase, setPhase] = useState("idle");
   const [desktopSourceMode, setDesktopSourceMode] = useState(DESKTOP_UPLOAD_SOURCE_MODE_FILE);
   const [desktopLinkInput, setDesktopLinkInput] = useState("");
+  const [desktopLinkTitle, setDesktopLinkTitle] = useState("");
   const [desktopLinkTaskId, setDesktopLinkTaskId] = useState("");
+  const [desktopSourceModeConfirmOpen, setDesktopSourceModeConfirmOpen] = useState(false);
+  const [pendingDesktopSourceMode, setPendingDesktopSourceMode] = useState(DESKTOP_UPLOAD_SOURCE_MODE_FILE);
   const [coverDataUrl, setCoverDataUrl] = useState("");
   const [coverAspectRatio, setCoverAspectRatio] = useState(0);
   const [coverWidth, setCoverWidth] = useState(0);
@@ -1832,6 +1882,48 @@ export function UploadPanel({
     setDesktopGuidanceDialogOpen(false);
     if (resumeOptions) {
       void submit({ ...resumeOptions, skipDesktopRecommendation: true });
+    }
+  }
+
+  async function openSnapAnyFallback() {
+    try {
+      if (!navigator?.clipboard?.writeText) {
+        throw new Error("当前浏览器不支持自动复制链接");
+      }
+      await navigator.clipboard.writeText(SNAPANY_FALLBACK_URL);
+      if (desktopRuntimeAvailable && typeof window.desktopRuntime?.openExternalUrl === "function") {
+        await window.desktopRuntime.openExternalUrl(SNAPANY_FALLBACK_URL);
+      } else {
+        window.open(SNAPANY_FALLBACK_URL, "_blank", "noopener,noreferrer");
+      }
+      toast.success("已复制 SnapAny 链接，并尝试为你打开");
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : "打开 SnapAny 失败");
+    }
+  }
+
+  function handleDesktopLinkInputChange(nextValue) {
+    const sanitized = sanitizeDesktopLinkInput(nextValue);
+    setDesktopLinkInput(sanitized || String(nextValue || ""));
+  }
+
+  async function continueDesktopLinkInBackground() {
+    setDesktopSourceModeConfirmOpen(false);
+    setPendingDesktopSourceMode(desktopSourceMode);
+    setDesktopSourceMode(DESKTOP_UPLOAD_SOURCE_MODE_FILE);
+  }
+
+  async function cancelDesktopLinkAndSwitchSourceMode() {
+    setDesktopSourceModeConfirmOpen(false);
+    const nextMode = pendingDesktopSourceMode === DESKTOP_UPLOAD_SOURCE_MODE_LINK ? DESKTOP_UPLOAD_SOURCE_MODE_LINK : DESKTOP_UPLOAD_SOURCE_MODE_FILE;
+    await cancelDesktopLinkImport({ showToast: false });
+    resetLocalSessionState();
+    setDesktopSourceMode(nextMode);
+    setDesktopLinkInput("");
+    setDesktopLinkTitle("");
+    if (ownerUserId) {
+      await clearUploadPanelSuccessSnapshot(ownerUserId);
+      await clearActiveGenerationTask(ownerUserId);
     }
   }
 
@@ -2044,7 +2136,7 @@ export function UploadPanel({
     selectedFastModel === FASTER_WHISPER_MODEL &&
     selectedFastRuntimeTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL &&
     hasLocalCourseGeneratorBridge();
-  const trimmedDesktopLinkInput = String(desktopLinkInput || "").trim();
+  const trimmedDesktopLinkInput = sanitizeDesktopLinkInput(desktopLinkInput) || String(desktopLinkInput || "").trim();
   const desktopLinkModeSupported =
     desktopLinkModeActive &&
     mode === "fast" &&
@@ -2557,9 +2649,15 @@ export function UploadPanel({
     if (normalizedMode === desktopSourceMode) {
       return;
     }
+    if (desktopLinkImporting && normalizedMode === DESKTOP_UPLOAD_SOURCE_MODE_FILE) {
+      setPendingDesktopSourceMode(normalizedMode);
+      setDesktopSourceModeConfirmOpen(true);
+      return;
+    }
     resetLocalSessionState();
     setDesktopSourceMode(normalizedMode);
     setDesktopLinkInput("");
+    setDesktopLinkTitle("");
     if (ownerUserId) {
       await clearUploadPanelSuccessSnapshot(ownerUserId);
       await clearActiveGenerationTask(ownerUserId);
@@ -3043,6 +3141,7 @@ export function UploadPanel({
     setLocalBusyText("");
     setServerBusyModelKey("");
     setServerBusyText("");
+    setDesktopLinkTitle("");
     setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
     successStateOriginRef.current = "none";
   }
@@ -3160,6 +3259,7 @@ export function UploadPanel({
     desktopBillingReportRef.current = null;
     resetLocalSessionState();
     setDesktopLinkInput("");
+    setDesktopLinkTitle("");
     if (!ownerUserId) return;
     await clearUploadPanelSuccessSnapshot(ownerUserId);
     await clearActiveGenerationTask(ownerUserId);
@@ -3216,6 +3316,9 @@ export function UploadPanel({
       if (nextStatus === "succeeded") {
         setStatus("素材下载完成，正在载入文件");
         updateDesktopLinkProgressState(100, "素材下载完成，正在载入文件");
+        if (payload?.title) {
+          setDesktopLinkTitle((prev) => prev || String(payload.title || "").trim());
+        }
         const sourceFile = await loadDesktopImportedSourceFile(payload);
         if (pollToken !== desktopLinkPollTokenRef.current) {
           return;
@@ -3238,7 +3341,7 @@ export function UploadPanel({
         clearDesktopLinkTaskTracking(false);
         setLocalProgressSnapshot(null);
         await handleTaskFailureState({
-          message: nextMessage || String(payload.error_message || "下载链接素材失败"),
+          message: buildDesktopLinkErrorMessage(payload.error_message || nextMessage || "下载链接素材失败"),
           nextTaskId: "",
           nextTaskSnapshot: null,
           nextUploadPercent: 0,
@@ -3276,7 +3379,7 @@ export function UploadPanel({
       setLocalProgressSnapshot(null);
       const message = error instanceof Error && error.message ? error.message : `网络错误: ${String(error)}`;
       await handleTaskFailureState({
-        message,
+        message: buildDesktopLinkErrorMessage(message),
         nextTaskId: "",
         nextTaskSnapshot: null,
         nextUploadPercent: 0,
@@ -3288,6 +3391,7 @@ export function UploadPanel({
   }
 
   async function submitDesktopLinkImport() {
+    const sanitizedLinkInput = sanitizeDesktopLinkInput(desktopLinkInput);
     if (!desktopRuntimeAvailable) {
       await handleTaskFailureState({
         message: "当前环境不支持桌面端本地 helper，无法使用链接导入。",
@@ -3324,9 +3428,10 @@ export function UploadPanel({
       });
       return;
     }
-    if (!trimmedDesktopLinkInput) {
+    if (!sanitizedLinkInput) {
+      setDesktopLinkInput("");
       await handleTaskFailureState({
-        message: "请输入公开视频链接",
+        message: `${DESKTOP_LINK_INVALID_MESSAGE} 请粘贴公开视频页链接，例如 YouTube/B站视频页链接，或改用 SnapAny`,
         nextTaskId: "",
         nextTaskSnapshot: null,
         nextUploadPercent: 0,
@@ -3336,6 +3441,7 @@ export function UploadPanel({
       });
       return;
     }
+    setDesktopLinkInput(sanitizedLinkInput);
 
     if (ownerUserId) {
       await clearUploadPanelSuccessSnapshot(ownerUserId);
@@ -3361,7 +3467,7 @@ export function UploadPanel({
     try {
       const response = await requestDesktopLocalHelper("/api/desktop-asr/url-import/tasks", "json", {
         method: "POST",
-        body: { source_url: trimmedDesktopLinkInput },
+        body: { source_url: sanitizedLinkInput },
       });
       const payload = response.data || {};
       const nextTaskId = String(payload.task_id || "");
@@ -3371,13 +3477,16 @@ export function UploadPanel({
       const linkPollToken = desktopLinkPollTokenRef.current || 1;
       desktopLinkTaskIdRef.current = nextTaskId;
       setDesktopLinkTaskId(nextTaskId);
+      if (!desktopLinkTitle && payload?.title) {
+        setDesktopLinkTitle(String(payload.title || "").trim());
+      }
       setStatus(sanitizeUserFacingText(String(payload.status_text || "正在下载素材")));
       updateDesktopLinkProgressState(Number(payload.progress_percent || 0), sanitizeUserFacingText(String(payload.status_text || "正在下载素材")));
       await pollDesktopLinkImportTask(nextTaskId, linkPollToken);
     } catch (error) {
       clearDesktopLinkTaskTracking(false);
       setLocalProgressSnapshot(null);
-      const message = error instanceof Error && error.message ? error.message : `网络错误: ${String(error)}`;
+      const message = buildDesktopLinkErrorMessage(error instanceof Error ? error.message : String(error));
       await handleTaskFailureState({
         message,
         nextTaskId: "",
@@ -6211,7 +6320,7 @@ export function UploadPanel({
                   onClick={() => void handleDesktopSourceModeChange(DESKTOP_UPLOAD_SOURCE_MODE_FILE)}
                   disabled={loading || localModeBusy}
                 >
-                  文件
+                  本地文件
                 </button>
                 <button
                   type="button"
@@ -6224,7 +6333,7 @@ export function UploadPanel({
                   onClick={() => void handleDesktopSourceModeChange(DESKTOP_UPLOAD_SOURCE_MODE_LINK)}
                   disabled={loading || localModeBusy}
                 >
-                  链接
+                  链接导入
                 </button>
               </div>
             ) : null}
@@ -6260,15 +6369,40 @@ export function UploadPanel({
             {desktopLinkModeActive ? (
               <div className="space-y-2">
                 <input
+                  type="text"
+                  className="h-11 rounded-2xl border bg-background px-4 text-sm outline-none transition-colors focus:border-upload-brand/50"
+                  placeholder="课程标题（可选，导入时可随时修改）"
+                  value={desktopLinkTitle}
+                  onChange={(event) => setDesktopLinkTitle(event.target.value)}
+                  disabled={localModeBusy}
+                />
+                <input
                   type="url"
                   inputMode="url"
                   className="h-11 rounded-2xl border bg-background px-4 text-sm outline-none transition-colors focus:border-upload-brand/50"
                   placeholder="粘贴公开单条视频链接，例如 https://www.youtube.com/watch?v=..."
                   value={desktopLinkInput}
-                  onChange={(event) => setDesktopLinkInput(event.target.value)}
+                  onChange={(event) => handleDesktopLinkInputChange(event.target.value)}
+                  onPaste={(event) => {
+                    const pastedText = event.clipboardData?.getData("text") || "";
+                    const sanitized = sanitizeDesktopLinkInput(pastedText);
+                    if (sanitized) {
+                      event.preventDefault();
+                      setDesktopLinkInput(sanitized);
+                    }
+                  }}
                   disabled={loading || localModeBusy}
                 />
-                <p className="text-xs text-muted-foreground">仅支持公开单条视频链接，不支持 cookies、登录态、手动 cookie、播放列表或批量链接。</p>
+                <p className="text-xs text-muted-foreground">
+                  仅支持公开单条视频链接，不支持 cookies、登录态、手动 cookie、播放列表或批量链接。粘贴分享文案时会自动提取第一条有效链接。
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  无法导入时可改用{" "}
+                  <button type="button" className="font-medium text-foreground underline underline-offset-2" onClick={() => void openSnapAnyFallback()}>
+                    SnapAny
+                  </button>
+                  。
+                </p>
                 {desktopLinkModeBlockedMessage ? (
                   <p className={cn("text-xs", getUploadToneStyles("recoverable").text)}>{desktopLinkModeBlockedMessage}</p>
                 ) : null}
@@ -6420,6 +6554,8 @@ export function UploadPanel({
                 "停止生成"
               ) : desktopLinkImporting ? (
                 "取消下载"
+              ) : desktopLinkModeActive ? (
+                "导入并生成课程"
               ) : loading && (phase === "uploading" || phase === "processing" || phase === DESKTOP_LOCAL_GENERATING_PHASE) ? (
                 <span className="inline-flex items-center gap-2">
                   <Loader2 className="size-4 animate-spin" />
@@ -6520,6 +6656,17 @@ export function UploadPanel({
         {phase === "error" && status ? (
           <div className={cn("space-y-3 rounded-2xl border p-4", getUploadToneStyles(taskTone).surface)}>
             <p className={cn("text-sm", getUploadToneStyles(taskTone).text)}>{status}</p>
+            {desktopLinkModeActive ? (
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <p>请粘贴公开视频页链接，例如 YouTube/B站视频页链接</p>
+                <p>
+                  或改用{" "}
+                  <button type="button" className="font-medium text-foreground underline underline-offset-2" onClick={() => void openSnapAnyFallback()}>
+                    SnapAny
+                  </button>
+                </p>
+              </div>
+            ) : null}
             {(failureStageLabel || failureSummary) && (
               <div className="space-y-1">
                 {failureStageLabel ? (
@@ -6581,6 +6728,26 @@ export function UploadPanel({
             </div>
           </div>
         ) : null}
+
+        <Dialog open={desktopSourceModeConfirmOpen} onOpenChange={setDesktopSourceModeConfirmOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>当前链接任务仍在执行</DialogTitle>
+              <DialogDescription>切换到本地文件前，请确认是继续后台执行，还是取消当前链接任务。</DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button type="button" variant="ghost" className="h-9 px-3" onClick={() => setDesktopSourceModeConfirmOpen(false)}>
+                关闭
+              </Button>
+              <Button type="button" variant="outline" className="h-9 px-3" onClick={() => void continueDesktopLinkInBackground()}>
+                继续后台执行
+              </Button>
+              <Button type="button" className="h-9 px-3" onClick={() => void cancelDesktopLinkAndSwitchSourceMode()}>
+                取消当前链接任务
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog
           open={Boolean(pendingLessonImport)}
