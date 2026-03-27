@@ -1,22 +1,17 @@
 ---
-status: testing
+status: complete
 phase: 03-lesson-output-consistency
 source:
   - 03-01-SUMMARY.md
   - 03-02-SUMMARY.md
   - 03-03-SUMMARY.md
 started: 2026-03-27T13:10:00Z
-updated: 2026-03-27T13:28:00Z
+updated: 2026-03-27T13:31:00Z
 ---
 
 ## Current Test
 
-number: 2
-name: 三点菜单可手动标记学完（复测）
-expected: |
-  在历史记录卡片的三点菜单里点击“标记学完”后，操作成功，课程进度立即刷新为完成态。
-  刷新页面不应该是必需步骤；同一位置在已完成课程上应显示“标记未完成”。
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -26,9 +21,8 @@ result: pass
 
 ### 2. 三点菜单可手动标记学完
 expected: 在历史记录卡片的三点菜单里点击“标记学完”后，操作成功，课程进度刷新为完成态，不需要离开历史记录页手动刷新。
-result: issue
-reported: "标记完成后没有反应"
-severity: major
+result: pass
+note: 复测通过；历史记录中现在可即时刷新，且已完成课程同位置显示“标记未完成”
 
 ### 3. 降级课程可从三点菜单补翻译
 expected: 对 `partial_ready` / 仅原文字幕的课程，三点菜单中会出现“补翻译”；点击后不会阻塞历史记录主流程，成功后进入课程即可使用补充后的翻译内容。
@@ -46,20 +40,10 @@ result: pass
 ## Summary
 
 total: 5
-passed: 3
-issues: 1
+passed: 4
+issues: 0
 pending: 0
 skipped: 1
 blocked: 0
 
 ## Gaps
-
-- truth: "在历史记录卡片的三点菜单里点击“标记学完”后，操作成功，课程进度刷新为完成态，不需要离开历史记录页手动刷新。"
-  status: failed
-  reason: "User reported: 标记完成后没有反应"
-  severity: major
-  test: 2
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
