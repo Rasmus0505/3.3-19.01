@@ -15,11 +15,14 @@ function resolveCommand(command) {
   return command;
 }
 
+const CLOUD_APP_URL = "https://351636.preview.aliyun-zeabur.cn";
+const CLOUD_API_BASE_URL = "https://351636.preview.aliyun-zeabur.cn";
+
 function run(command, args, cwd = repoRoot) {
   const result = spawnSync(command, args, {
     cwd,
     stdio: "inherit",
-    env: { ...process.env },
+    env: { ...process.env, DESKTOP_CLOUD_APP_URL: CLOUD_APP_URL, DESKTOP_CLOUD_API_BASE_URL: CLOUD_API_BASE_URL },
     shell: process.platform === "win32",
   });
   if (result.error) {
