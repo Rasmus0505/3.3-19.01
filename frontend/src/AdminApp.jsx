@@ -11,7 +11,7 @@ import { Badge } from "./shared/ui";
 
 export function AdminApp({ apiCall }) {
   const location = useLocation();
-  const activeItem = useMemo(() => resolveAdminNavItem(location.pathname), [location.pathname]);
+  const activeItem = useMemo(() => resolveAdminNavItem(location.pathname, location.search), [location.pathname, location.search]);
 
   useErrorCopyShortcut();
 
