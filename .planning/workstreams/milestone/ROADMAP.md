@@ -21,7 +21,7 @@ _See: `.planning/milestones/v1.0-ROADMAP.md` for full phase details_
 
 ### 🚧 v1.1 — Urgent Admin Cleanup, Lesson Output & Desktop Link Import (In Progress)
 
-- [ ] **Phase 2.1: Admin Bottle 1.0 Settings & Billing Cleanup** (INSERTED) — not planned yet
+- [x] **Phase 2.1: Admin Bottle 1.0 Settings & Billing Cleanup** (INSERTED) — not planned yet (completed 2026-03-27)
 - [ ] **Phase 3: Lesson Output Consistency** (3 plans)
 - [ ] **Phase 4: Desktop Link Import** (2 plans)
 
