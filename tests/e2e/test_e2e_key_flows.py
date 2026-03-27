@@ -148,6 +148,19 @@ def test_e2e_login_create_lesson_practice_progress(e2e_client):
     assert get_resp.status_code == 200
     assert get_resp.json()["completed_sentence_indexes"] == [0]
 
+    rename_resp = client.patch(
+        f"/api/lessons/{lesson_id}",
+        headers=headers,
+        json={"title": "renamed e2e lesson"},
+    )
+    assert rename_resp.status_code == 200
+    assert rename_resp.json()["title"] == "renamed e2e lesson"
+
+    catalog_resp = client.get("/api/lessons/catalog", headers=headers)
+    assert catalog_resp.status_code == 200
+    assert catalog_resp.json()["items"][0]["title"] == "renamed e2e lesson"
+    assert catalog_resp.json()["items"][0]["progress_summary"]["completed_sentence_count"] == 1
+
 
 def test_e2e_wordbook_collect_and_manage_entries(e2e_client):
     client, session_factory, _ = e2e_client

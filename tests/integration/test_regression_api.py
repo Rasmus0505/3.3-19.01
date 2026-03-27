@@ -3363,6 +3363,127 @@ def test_admin_update_billing_rate_rejects_non_flash_mt_model(test_client):
     assert payload["error_code"] == "MT_MODEL_DEPRECATED"
 
 
+def test_local_generated_lesson_title_rename_keeps_canonical_history_and_progress(test_client, monkeypatch):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="desktop-link-title@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    _enable_local_asr_model(monkeypatch)
+    _seed_wallet_balance(session_factory, email="desktop-link-title@example.com")
+
+    payload = {
+        "asr_model": FASTER_WHISPER_ASR_MODEL,
+        "source_filename": "downloaded-video.mp4",
+        "source_duration_ms": 1600,
+        "runtime_kind": "desktop_local",
+        "asr_payload": {
+            "transcripts": [
+                {
+                    "sentences": [
+                        {"text": "Desktop helper result", "begin_time": 0, "end_time": 1600},
+                    ]
+                }
+            ],
+            "__local_generation_result__": {
+                "runtime_kind": "desktop_local",
+                "lesson_status": "ready",
+                "duration_ms": 1600,
+                "variant": {
+                    "semantic_split_enabled": False,
+                    "split_mode": "asr_sentences",
+                    "source_word_count": 3,
+                    "strategy_version": 2,
+                    "sentences": [
+                        {
+                            "idx": 0,
+                            "begin_ms": 0,
+                            "end_ms": 1600,
+                            "text_en": "Desktop helper result",
+                            "text_zh": "桌面端结果",
+                            "tokens": ["Desktop", "helper", "result"],
+                            "audio_url": None,
+                        }
+                    ],
+                    "translate_failed_count": 0,
+                },
+                "translation_debug": {
+                    "total_sentences": 1,
+                    "failed_sentences": 0,
+                    "request_count": 0,
+                    "success_request_count": 0,
+                    "usage": {"total_tokens": 0},
+                    "latest_error_summary": "",
+                },
+                "task_result_meta": {
+                    "result_kind": "full_success",
+                    "result_message": "课程已生成完成",
+                    "partial_failure_stage": "",
+                    "partial_failure_code": "",
+                    "partial_failure_message": "",
+                },
+                "subtitle_cache_seed": {
+                    "semantic_split_enabled": False,
+                    "split_mode": "asr_sentences",
+                    "source_word_count": 3,
+                    "strategy_version": 2,
+                    "runtime_kind": "desktop_local",
+                    "asr_payload": {
+                        "transcripts": [
+                            {
+                                "sentences": [
+                                    {"text": "Desktop helper result", "begin_time": 0, "end_time": 1600},
+                                ]
+                            }
+                        ]
+                    },
+                    "sentences": [
+                        {
+                            "idx": 0,
+                            "begin_ms": 0,
+                            "end_ms": 1600,
+                            "text_en": "Desktop helper result",
+                            "text_zh": "桌面端结果",
+                            "tokens": ["Desktop", "helper", "result"],
+                            "audio_url": None,
+                        }
+                    ],
+                },
+            },
+        },
+    }
+
+    create_resp = client.post("/api/lessons/local-asr/complete", headers=headers, json=payload)
+    assert create_resp.status_code == 200
+    lesson_id = create_resp.json()["lesson"]["id"]
+
+    rename_resp = client.patch(
+        f"/api/lessons/{lesson_id}",
+        headers=headers,
+        json={"title": "Edited desktop link title"},
+    )
+    assert rename_resp.status_code == 200
+    assert rename_resp.json()["title"] == "Edited desktop link title"
+
+    progress_resp = client.post(
+        f"/api/lessons/{lesson_id}/progress",
+        headers=headers,
+        json={"current_sentence_index": 0, "completed_sentence_indexes": [0], "last_played_at_ms": 900},
+    )
+    assert progress_resp.status_code == 200
+
+    detail_resp = client.get(f"/api/lessons/{lesson_id}", headers=headers)
+    assert detail_resp.status_code == 200
+    detail_payload = detail_resp.json()
+    assert detail_payload["title"] == "Edited desktop link title"
+    assert detail_payload["source_filename"] == "downloaded-video.mp4"
+
+    catalog_resp = client.get("/api/lessons/catalog", headers=headers)
+    assert catalog_resp.status_code == 200
+    catalog_item = next(item for item in catalog_resp.json()["items"] if item["id"] == lesson_id)
+    assert catalog_item["title"] == "Edited desktop link title"
+    assert catalog_item["source_filename"] == "downloaded-video.mp4"
+    assert catalog_item["progress_summary"]["completed_sentence_count"] == 1
+
+
 def test_admin_update_billing_rate_accepts_mt_flash_token_pricing(test_client):
     client, session_factory, monkeypatch = test_client
     monkeypatch.setenv("ADMIN_EMAILS", "billing-flash-admin@example.com")
