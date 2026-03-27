@@ -3312,6 +3312,13 @@ def test_create_local_generated_lesson_persists_completed_result(test_client, mo
     body = resp.json()
     assert body["ok"] is True
     assert body["runtime_kind"] == "desktop_local"
+    assert body["completion_kind"] == "full"
+    assert body["result_kind"] == "full_success"
+    assert body["result_label"] == "完整成功"
+    assert body["result_message"] == "课程已生成完成"
+    assert body["partial_failure_stage"] == ""
+    assert body["partial_failure_code"] == ""
+    assert body["partial_failure_message"] == ""
     assert body["lesson"]["asr_model"] == FASTER_WHISPER_ASR_MODEL
     assert body["subtitle_cache_seed"]["runtime_kind"] == "desktop_local"
     assert body["lesson"]["sentences"][0]["text_en"] == "Desktop helper result"
@@ -5649,6 +5656,7 @@ def test_lesson_task_partial_success_and_debug_report(test_client, monkeypatch, 
     payload = poll_resp.json()
     assert payload["status"] == "succeeded"
     assert payload["completion_kind"] == "partial"
+    assert payload["result_kind"] == "asr_only"
     assert payload["result_message"] == "课程已生成，翻译失败，可先使用原文字幕学习。"
     assert payload["partial_failure_stage"] == "translate_zh"
     assert payload["partial_failure_code"] == "TRANSLATION_PARTIAL"

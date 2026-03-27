@@ -106,15 +106,62 @@ def _build_task_lesson_response(task: dict, db: Session) -> LessonDetailResponse
     return to_lesson_detail_response(lesson, sentences)
 
 
+def _normalize_result_kind(value: object) -> str:
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in {"full_success", "asr_only"} else ""
+
+
+def _completion_kind_for_result(result_kind: object) -> str:
+    return "partial" if _normalize_result_kind(result_kind) == "asr_only" else "full"
+
+
+def _result_label_for_kind(result_kind: object) -> str:
+    normalized = _normalize_result_kind(result_kind)
+    if normalized == "asr_only":
+        return "仅原文字幕"
+    if normalized == "full_success":
+        return "完整成功"
+    return ""
+
+
+def _lesson_result_payload(lesson: Lesson, *, fallback_runtime_kind: str = "") -> dict[str, object]:
+    task_result_meta = getattr(lesson, "task_result_meta", None)
+    task_result_meta = dict(task_result_meta) if isinstance(task_result_meta, dict) else {}
+    result_kind = _normalize_result_kind(
+        getattr(lesson, "task_result_kind", "") or task_result_meta.get("result_kind")
+    )
+    subtitle_cache_seed = getattr(lesson, "subtitle_cache_seed", None)
+    return {
+        "completion_kind": _completion_kind_for_result(result_kind),
+        "result_kind": result_kind,
+        "result_label": _result_label_for_kind(result_kind),
+        "result_message": str(getattr(lesson, "task_result_message", "") or task_result_meta.get("result_message") or ""),
+        "partial_failure_stage": str(
+            getattr(lesson, "task_partial_failure_stage", "") or task_result_meta.get("partial_failure_stage") or ""
+        ),
+        "partial_failure_code": str(
+            getattr(lesson, "task_partial_failure_code", "") or task_result_meta.get("partial_failure_code") or ""
+        ),
+        "partial_failure_message": str(
+            getattr(lesson, "task_partial_failure_message", "") or task_result_meta.get("partial_failure_message") or ""
+        ),
+        "subtitle_cache_seed": subtitle_cache_seed,
+        "translation_debug": getattr(lesson, "translation_debug", None) or getattr(lesson, "task_translation_debug", None),
+        "runtime_kind": str((subtitle_cache_seed or {}).get("runtime_kind") or fallback_runtime_kind or ""),
+    }
+
+
 def _to_task_response(task: dict, db: Session) -> LessonTaskResponse:
     status = str(task.get("status") or "").strip().lower()
-    result_kind = str(task.get("result_kind") or "").strip().lower()
-    completion_kind = "partial" if result_kind == "asr_only" else "full"
+    result_kind = _normalize_result_kind(task.get("result_kind"))
+    completion_kind = _completion_kind_for_result(result_kind)
     response_message = str(task.get("message") or "")
     if not response_message and status == "succeeded":
         response_message = str(task.get("result_message") or "")
-    response_result_kind = result_kind if status == "succeeded" and result_kind in {"full_success", "asr_only"} else ""
-    response_result_label = str(task.get("result_label") or "") if status == "succeeded" else ""
+    response_result_kind = result_kind if status == "succeeded" else ""
+    response_result_label = (
+        str(task.get("result_label") or "").strip() or _result_label_for_kind(result_kind)
+    ) if status == "succeeded" else ""
     response_result_message = str(task.get("result_message") or "") if status == "succeeded" else ""
     return LessonTaskResponse(
         ok=True,
@@ -394,19 +441,7 @@ def create_local_generated_lesson(
         )
         sentences = get_lesson_sentences(db, lesson.id)
         response_payload = LessonCreateResponse(ok=True, lesson=to_lesson_detail_response(lesson, sentences)).model_dump(mode="json")
-        response_payload.update(
-            {
-                "completion_kind": "partial" if str(getattr(lesson, "task_result_kind", "") or "") == "asr_only" else "full",
-                "result_kind": str(getattr(lesson, "task_result_kind", "") or ""),
-                "result_message": str(getattr(lesson, "task_result_message", "") or ""),
-                "partial_failure_stage": str(getattr(lesson, "task_partial_failure_stage", "") or ""),
-                "partial_failure_code": str(getattr(lesson, "task_partial_failure_code", "") or ""),
-                "partial_failure_message": str(getattr(lesson, "task_partial_failure_message", "") or ""),
-                "subtitle_cache_seed": getattr(lesson, "subtitle_cache_seed", None),
-                "translation_debug": getattr(lesson, "translation_debug", None),
-                "runtime_kind": str((getattr(lesson, "subtitle_cache_seed", {}) or {}).get("runtime_kind") or payload.runtime_kind or ""),
-            }
-        )
+        response_payload.update(_lesson_result_payload(lesson, fallback_runtime_kind=str(payload.runtime_kind or "")))
         response_payload["workspace"] = getattr(lesson, "workspace_summary", None) or upsert_lesson_workspace_summary(
             owner_user_id=current_user.id,
             lesson_id=int(lesson.id),
