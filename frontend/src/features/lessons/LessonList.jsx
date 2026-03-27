@@ -1,9 +1,10 @@
-import { Clock3, Download, History, MoreVertical, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
+import { CheckCircle2, Clock3, Download, History, MoreVertical, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { TOKEN_KEY } from "../../app/authStorage";
 import { cn } from "../../lib/utils";
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
+import { saveLessonSubtitleCacheSeed, saveLessonSubtitleVariant } from "../../shared/media/localSubtitleStore.js";
 import {
   Alert,
   AlertDescription,
@@ -206,6 +207,19 @@ async function buildRemoteLessonExportPayload(lessonId) {
   });
 }
 
+async function buildRemoteLessonDetailPayload(lessonId) {
+  const accessToken = typeof window !== "undefined" && window.localStorage ? window.localStorage.getItem(TOKEN_KEY) || "" : "";
+  if (!accessToken) {
+    throw new Error("当前未登录，无法读取课程详情。");
+  }
+  const detailResp = await api(`/api/lessons/${lessonId}`, {}, accessToken);
+  const detailData = await parseResponse(detailResp);
+  if (!detailResp.ok) {
+    throw new Error(toErrorText(detailData, "加载课程详情失败"));
+  }
+  return { accessToken, detail: detailData };
+}
+
 function formatCreatedAt(createdAt) {
   if (!createdAt) return "时间未知";
   try {
@@ -278,6 +292,7 @@ export function LessonList({
   onDelete,
   onBulkDelete,
   onRestoreMedia,
+  onRefreshHistory,
   onSwitchToUpload,
   loading = false,
   hasMore = false,
@@ -295,6 +310,7 @@ export function LessonList({
   const [restoringLessonId, setRestoringLessonId] = useState(null);
   const [status, setStatus] = useState("");
   const [exportingLessonId, setExportingLessonId] = useState("");
+  const [actionLessonId, setActionLessonId] = useState("");
   const [selectionMode, setSelectionMode] = useState("none");
   const [selectedLessonIds, setSelectedLessonIds] = useState([]);
   const [excludedLessonIds, setExcludedLessonIds] = useState([]);
@@ -477,6 +493,103 @@ export function LessonList({
       setStatus(error instanceof Error && error.message ? error.message : "导出课程失败");
     } finally {
       setExportingLessonId("");
+    }
+  }
+
+  async function handleMarkLessonCompleted(lesson) {
+    if (!lesson?.id) return;
+    setActionLessonId(String(lesson.id));
+    setMenuLessonId(null);
+    setStatus("");
+    try {
+      const { accessToken, detail } = await buildRemoteLessonDetailPayload(lesson.id);
+      const sentenceCount =
+        Array.isArray(detail?.sentences) && detail.sentences.length > 0
+          ? detail.sentences.length
+          : Number(lessonCardMetaMap[lesson.id]?.sentenceCount || 0);
+      if (!Number.isFinite(sentenceCount) || sentenceCount <= 0) {
+        throw new Error("当前课程暂无可完成的句子。");
+      }
+      const completedSentenceIndexes = Array.from({ length: sentenceCount }, (_, index) => index);
+      const progressResp = await api(
+        `/api/lessons/${lesson.id}/progress`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            current_sentence_index: Math.max(0, sentenceCount - 1),
+            completed_sentence_indexes: completedSentenceIndexes,
+            last_played_at_ms: Number(detail?.duration_ms || detail?.source_duration_ms || 0),
+          }),
+        },
+        accessToken,
+      );
+      const progressData = await parseResponse(progressResp);
+      if (!progressResp.ok) {
+        throw new Error(toErrorText(progressData, "标记学完失败"));
+      }
+      await onRefreshHistory?.();
+      setStatus("已标记学完");
+    } catch (error) {
+      setStatus(error instanceof Error && error.message ? error.message : "标记学完失败");
+    } finally {
+      setActionLessonId("");
+    }
+  }
+
+  async function handleRecoverTranslation(lesson) {
+    if (!lesson?.id) return;
+    setActionLessonId(String(lesson.id));
+    setMenuLessonId(null);
+    setStatus("");
+    try {
+      const { accessToken, detail } = await buildRemoteLessonDetailPayload(lesson.id);
+      const sourceSeed = detail?.subtitle_cache_seed;
+      const asrPayload = sourceSeed?.asr_payload;
+      if (!asrPayload || typeof asrPayload !== "object") {
+        throw new Error("当前课程缺少可补翻译的字幕源数据。");
+      }
+      const hasMissingTranslation = Array.isArray(detail?.sentences)
+        ? detail.sentences.some((sentence) => !String(sentence?.text_zh || "").trim())
+        : true;
+      if (!hasMissingTranslation && lesson.status !== "partial_ready") {
+        setStatus("当前课程已有翻译，无需补翻译");
+        return;
+      }
+      await saveLessonSubtitleCacheSeed(lesson.id, sourceSeed, {
+        metadata: {
+          source_filename: detail?.source_filename || lesson?.source_filename || "",
+          runtime_kind: sourceSeed?.runtime_kind || "",
+        },
+      });
+      const variantResp = await api(
+        `/api/lessons/${lesson.id}/subtitle-variants`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            asr_payload: asrPayload,
+            semantic_split_enabled: false,
+          }),
+        },
+        accessToken,
+      );
+      const variantData = await parseResponse(variantResp);
+      if (!variantResp.ok) {
+        throw new Error(toErrorText(variantData, "补翻译失败"));
+      }
+      await saveLessonSubtitleVariant(lesson.id, variantData, {
+        makeActive: true,
+        metadata: {
+          source_filename: detail?.source_filename || lesson?.source_filename || "",
+          runtime_kind: sourceSeed?.runtime_kind || "",
+        },
+      });
+      setStatus("已补充翻译，进入课程即可使用");
+    } catch (error) {
+      setStatus(error instanceof Error && error.message ? error.message : "补翻译失败");
+    } finally {
+      setActionLessonId("");
     }
   }
 
@@ -898,15 +1011,6 @@ export function LessonList({
                           <div className="flex flex-wrap items-center gap-2">
                             <div className="truncate text-lg font-semibold">{lesson.title}</div>
                             {selected ? <Badge variant="outline">当前课程</Badge> : null}
-                            {isLocalLesson ? (
-                              <Badge variant="outline" className="border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
-                                本地课程
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="border-green-300 bg-green-50 text-green-700 dark:border-green-700 dark:bg-green-900/30 dark:text-green-300">
-                                云端课程
-                              </Badge>
-                            )}
                             {needsBinding ? <Badge variant="secondary">待恢复视频</Badge> : null}
                             {selected && currentLessonNeedsBinding ? <Badge variant="secondary">需绑定本地视频</Badge> : null}
                           </div>
@@ -1024,10 +1128,34 @@ export function LessonList({
                                   openRenameDialog(lesson);
                                   setMenuLessonId(null);
                                 }}
-                                disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                                disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || Boolean(actionLessonId)}
                               >
                                 <Pencil className="size-4" />
                                 修改标题
+                              </Button>
+                              {lesson.status === "partial_ready" ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="w-full justify-start"
+                                  onClick={() => void handleRecoverTranslation(lesson)}
+                                  disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || Boolean(actionLessonId)}
+                                >
+                                  <RotateCcw className="size-4" />
+                                  {actionLessonId === String(lesson.id) ? "补翻译中..." : "补翻译"}
+                                </Button>
+                              ) : null}
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="w-full justify-start"
+                                onClick={() => void handleMarkLessonCompleted(lesson)}
+                                disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || Boolean(actionLessonId)}
+                              >
+                                <CheckCircle2 className="size-4" />
+                                {actionLessonId === String(lesson.id) ? "处理中..." : "标记学完"}
                               </Button>
                               <Button
                                 type="button"
@@ -1035,7 +1163,7 @@ export function LessonList({
                                 variant="ghost"
                                 className="w-full justify-start"
                                 onClick={() => openRestorePicker(lesson)}
-                                disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                                disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || Boolean(actionLessonId)}
                               >
                                 <RotateCcw className="size-4" />
                                 恢复本地视频
@@ -1049,7 +1177,7 @@ export function LessonList({
                                   setDeletingLesson(lesson);
                                   setMenuLessonId(null);
                                 }}
-                                disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
+                                disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || Boolean(actionLessonId)}
                               >
                                 <Trash2 className="size-4" />
                                 删除
