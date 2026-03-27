@@ -57,7 +57,7 @@ Plans:
 
 Plans:
 
-- [ ] 04-01: Add desktop link selection, yt-dlp ingestion, and local media-preparation safeguards
+- [x] 04-01: Add desktop link selection, yt-dlp ingestion, and local media-preparation safeguards
 - [ ] 04-02: Feed imported desktop media into the shared generation and history pipeline with verification and error recovery
 
 ### 📋 v2.0 — Billing, Admin & Polish (Planned)
@@ -74,7 +74,7 @@ Plans:
 || 2. Desktop Local Generation | v1.0 | 3/3 | Complete | 2026-03-27 |
 || 2.1. Admin Bottle 1.0 Settings & Billing Cleanup | v1.1 | 3/3 | Complete | 2026-03-27 |
 || 3. Lesson Output Consistency | v1.1 | 3/3 | Complete | 2026-03-27 |
-|| 4. Desktop Link Import | v1.1 | 0/2 | Not started | — |
+|| 4. Desktop Link Import | v1.1 | 1/2 | In Progress | — |
 || 5. Billing and Admin Alignment | v2.0 | 0/3 | Not started | — |
 || 6. Product Polish and Fallbacks | v2.0 | 0/2 | Not started | — |
 

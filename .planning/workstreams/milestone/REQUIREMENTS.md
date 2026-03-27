@@ -29,7 +29,7 @@
 - [x] **DESK-01**: Desktop users can generate lessons with Bottle 1.0 on their local machine — ✅ v1.0 Phase 2
 - [x] **DESK-02**: Desktop users can generate lessons with Bottle 2.0 cloud ASR from the same product surface — ✅ v1.0 Phase 1 & 1.1
 - [x] **DESK-03**: Desktop users can prepare Bottle 1.0 without manual model/tool setup knowledge — ✅ v1.0 Phase 2
-- [ ] **DESK-04**: Desktop users can import media from supported links through local tooling — Phase 4
+- [x] **DESK-04**: Desktop users can import media from supported links through local tooling — Phase 4
 
 ### Lesson Output
 
@@ -81,7 +81,7 @@
 || DESK-01 | Phase 2 | ✅ Complete |
 || DESK-02 | Phase 1 | ✅ Complete |
 || DESK-03 | Phase 2 | ✅ Complete |
-|| DESK-04 | Phase 4 | Pending |
+|| DESK-04 | Phase 4 | Complete |
 || LESS-01 | Phase 3 | Pending |
 || LESS-02 | Phase 3 | Pending |
 || LESS-03 | Phase 3 | Pending |
