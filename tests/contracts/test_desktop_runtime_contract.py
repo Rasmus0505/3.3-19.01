@@ -338,6 +338,15 @@ def test_main_process_separates_client_update_from_model_update_channels():
     assert 'mainWindow.webContents.send("desktop:model-update-progress", desktopModelUpdateState)' in main_source
 
 
+def test_main_process_stops_helper_process_tree_before_quit():
+    main_source = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+
+    assert "async function stopDesktopHelper()" in main_source
+    assert 'spawn("taskkill.exe", ["/PID", String(helperPid), "/T", "/F"]' in main_source
+    assert 'app.on("before-quit", (event) => {' in main_source
+    assert "await stopDesktopHelper();" in main_source
+
+
 def test_main_process_exposes_desktop_file_bridge():
     main_source = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
 
@@ -431,6 +440,32 @@ def test_upload_panel_exposes_phase04_link_import_copy_and_fallback_contract():
     assert "openSnapAnyFallback" in upload_panel_source
     assert "onNavigateToLesson?.(data.lesson.id)" in upload_panel_source
     assert 'loadLessonDetail(lessonId, { autoEnterImmersive: true })' in learning_shell_source
+
+
+def test_upload_panel_marks_desktop_bundle_as_preparable_and_auto_installs_before_local_run():
+    upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
+
+    assert 'const cardStatusLabel = isDesktopBundleLoading ? "检查中" : desktopBundlePreparable ? "可准备" : cardStatusAvailable ? "可用" : "不可用";' in upload_panel_source
+    assert "if (!bundleSummary?.available && bundleSummary?.installAvailable) {" in upload_panel_source
+    assert "bundleSummary = await installDesktopBundledAsrModel(FASTER_WHISPER_MODEL);" in upload_panel_source
+
+
+def test_upload_panel_resolves_desktop_source_path_before_local_course_generation():
+    upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
+
+    assert "resolveDesktopSelectedSourcePath(sourceFile) || resolveDesktopSelectedSourcePath(file) || \"\"" in upload_panel_source
+    assert "当前素材缺少桌面本机路径，请重新选择一次文件后再试。" in upload_panel_source
+    assert "const selectedSourceFile = attachDesktopSourcePath(" in upload_panel_source
+    assert "resolveDesktopSelectedSourcePath(options?.sourceFile ?? file) || resolveDesktopSelectedSourcePath(file)" in upload_panel_source
+
+
+def test_upload_panel_skips_cloud_auto_fallback_for_explicit_desktop_local_generate():
+    upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
+
+    assert "if (!shouldUseDesktopLocalGenerateCourse && selectedFastModel === FASTER_WHISPER_MODEL && hasDesktopRuntimeBridge()) {" in upload_panel_source
+    assert "selectedFastModel === FASTER_WHISPER_MODEL &&" in upload_panel_source
+    assert "desktopSourceMode === DESKTOP_UPLOAD_SOURCE_MODE_FILE &&" in upload_panel_source
+    assert "selectedFastRuntimeTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL &&" in upload_panel_source
 
 
 def test_offline_mode_uses_desktop_server_bridge_when_available():

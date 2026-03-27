@@ -29,6 +29,8 @@ let mainWindow = null;
 let desktopRuntimeConfig = null;
 let desktopPackagedRuntime = null;
 let desktopHelperProcess = null;
+let desktopHelperShutdownPromise = null;
+let appShutdownStarted = false;
 let desktopServerStatus = {
   reachable: false,
   lastCheckedAt: "",
@@ -362,6 +364,8 @@ async function startDesktopHelper() {
     windowsHide: true,
   });
   desktopHelperProcess.on("exit", () => {
+    desktopHelperProcess = null;
+    desktopHelperShutdownPromise = null;
     desktopHelperStatus = {
       ...desktopHelperStatus,
       ok: false,
@@ -370,6 +374,94 @@ async function startDesktopHelper() {
       modelStatus: "helper_not_started",
     };
   });
+}
+
+function waitForChildProcessExit(childProcess, timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    if (!childProcess || childProcess.exitCode != null || childProcess.killed) {
+      resolve();
+      return;
+    }
+    let settled = false;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      finish();
+    }, timeoutMs);
+    childProcess.once("exit", () => {
+      clearTimeout(timer);
+      finish();
+    });
+    childProcess.once("error", () => {
+      clearTimeout(timer);
+      finish();
+    });
+  });
+}
+
+async function stopDesktopHelper() {
+  if (!desktopHelperProcess) {
+    return;
+  }
+  if (desktopHelperShutdownPromise) {
+    await desktopHelperShutdownPromise;
+    return;
+  }
+  const helperProcess = desktopHelperProcess;
+  desktopHelperShutdownPromise = (async () => {
+    const helperPid = Number(helperProcess?.pid || 0);
+    if (helperPid <= 0 || helperProcess.exitCode != null) {
+      return;
+    }
+    if (process.platform === "win32") {
+      await new Promise((resolve) => {
+        const killer = spawn("taskkill.exe", ["/PID", String(helperPid), "/T", "/F"], {
+          stdio: "ignore",
+          windowsHide: true,
+        });
+        killer.once("error", () => {
+          try {
+            helperProcess.kill();
+          } catch {
+            // Ignore direct kill fallback failure.
+          }
+          resolve();
+        });
+        killer.once("exit", () => {
+          resolve();
+        });
+      });
+      await waitForChildProcessExit(helperProcess, 5000);
+      return;
+    }
+    try {
+      helperProcess.kill("SIGTERM");
+    } catch {
+      // Ignore graceful shutdown failure.
+    }
+    await waitForChildProcessExit(helperProcess, 3000);
+    if (helperProcess.exitCode == null) {
+      try {
+        helperProcess.kill("SIGKILL");
+      } catch {
+        // Ignore hard shutdown failure.
+      }
+      await waitForChildProcessExit(helperProcess, 2000);
+    }
+  })();
+  try {
+    await desktopHelperShutdownPromise;
+  } finally {
+    if (desktopHelperProcess === helperProcess) {
+      desktopHelperProcess = null;
+    }
+    desktopHelperShutdownPromise = null;
+  }
 }
 
 async function helperRequest(request = {}) {
@@ -1047,12 +1139,18 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("before-quit", () => {
-  if (desktopHelperProcess && !desktopHelperProcess.killed) {
-    desktopHelperProcess.kill();
+app.on("before-quit", (event) => {
+  if (appShutdownStarted) {
+    return;
   }
+  appShutdownStarted = true;
+  event.preventDefault();
   for (const controller of activeCloudRequests.values()) {
     controller.abort();
   }
   activeCloudRequests.clear();
+  void (async () => {
+    await stopDesktopHelper();
+    app.quit();
+  })();
 });
