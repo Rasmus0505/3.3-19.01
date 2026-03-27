@@ -21,7 +21,7 @@ _See: `.planning/milestones/v1.0-ROADMAP.md` for full phase details_
 
 ### 🚧 v1.1 — Urgent Admin Cleanup, Lesson Output & Desktop Link Import (In Progress)
 
-- [x] **Phase 2.1: Admin Bottle 1.0 Settings & Billing Cleanup** (INSERTED) — not planned yet (completed 2026-03-27)
+- [x] **Phase 2.1: Admin Bottle 1.0 Settings & Billing Cleanup** (INSERTED) — completed 2026-03-27
 - [ ] **Phase 3: Lesson Output Consistency** (3 plans)
 - [ ] **Phase 4: Desktop Link Import** (2 plans)
 
@@ -37,6 +37,29 @@ Plans:
 - [ ] 02.1-02: Delete model-parameter configuration UI, backend endpoints, and deprecated persistence paths
 - [ ] 02.1-03: Align Bottle 1.0 billing row, runtime deduction, and verification coverage on one canonical `model_name`
 
+### Phase 3: Lesson Output Consistency
+
+**Goal**: Normalize Bottle 1.0 and Bottle 2.0 generation outputs into one canonical lesson record and shared learning entry flow so users can open lessons, review sentence content, and continue practice regardless of generation source, while generation progress, partial failures, and success states stay consistent across runtimes.
+**Depends on**: Phases 1, 2, 2.1
+**Plans**: 3 plans
+
+Plans:
+
+- [ ] 03-01: Align task and persistence contracts so Bottle 1.0 and Bottle 2.0 both land in the same lesson, sentence, and subtitle-cache artifacts
+- [ ] 03-02: Unify history and lesson-opening flows so generated lessons expose consistent sentence review and resume behavior across sources
+- [ ] 03-03: Align generation-state, partial-success, and practice handoff UX and verification on the shared lesson pipeline
+
+### Phase 4: Desktop Link Import
+
+**Goal**: Let desktop users import supported media links through local tooling and feed the resulting media into the same generation pipeline without moving heavy download or conversion work onto the server.
+**Depends on**: Phase 3
+**Plans**: 2 plans
+
+Plans:
+
+- [ ] 04-01: Add desktop link selection, yt-dlp ingestion, and local media-preparation safeguards
+- [ ] 04-02: Feed imported desktop media into the shared generation and history pipeline with verification and error recovery
+
 ### 📋 v2.0 — Billing, Admin & Polish (Planned)
 
 - [ ] **Phase 5: Billing and Admin Alignment** (3 plans)
@@ -49,10 +72,10 @@ Plans:
 || 1. Shared Cloud Generation | v1.0 | 3/3 | Complete | 2026-03-26 |
 || 1.1. Fix ASR 403 | v1.0 | 2/2 | Complete | 2026-03-27 |
 || 2. Desktop Local Generation | v1.0 | 3/3 | Complete | 2026-03-27 |
-|| 2.1. Admin Bottle 1.0 Settings & Billing Cleanup | v1.1 | 3/3 | Inserted | — |
+|| 2.1. Admin Bottle 1.0 Settings & Billing Cleanup | v1.1 | 3/3 | Complete | 2026-03-27 |
 || 3. Lesson Output Consistency | v1.1 | 0/3 | Not started | — |
 || 4. Desktop Link Import | v1.1 | 0/2 | Not started | — |
 || 5. Billing and Admin Alignment | v2.0 | 0/3 | Not started | — |
 || 6. Product Polish and Fallbacks | v2.0 | 0/2 | Not started | — |
 
-**Overall:** 3/8 phases complete (v1.0 shipped)
+**Overall:** 4/8 phases complete (v1.0 shipped, v1.1 Phase 2.1 complete)
