@@ -10,11 +10,11 @@ Archived shipped requirements: see `.planning/milestones/v2.0-REQUIREMENTS.md`.
 
 ### Immersive Learning
 
-- [ ] **IMM-01**: User can replay the current sentence repeatedly without being forced to advance to the next sentence
-- [ ] **IMM-02**: User can enable or disable a single-sentence loop while studying
-- [ ] **IMM-03**: User can switch current-sentence playback speed between `0.75x`, `0.90x`, and `1.00x` during study
-- [ ] **IMM-04**: Replay, pause/continue, next/previous sentence, reveal-letter, and reveal-word actions behave predictably when combined
-- [ ] **IMM-05**: Fullscreen and subtitle-mask interactions do not incorrectly reset sentence playback or completion state
+- [x] **IMM-01**: User can replay the current sentence repeatedly without being forced to advance to the next sentence
+- [x] **IMM-02**: User can enable or disable a single-sentence loop while studying
+- [x] **IMM-03**: User can switch current-sentence playback speed between `0.75x`, `0.90x`, and `1.00x` during study
+- [x] **IMM-04**: Replay, pause/continue, next/previous sentence, reveal-letter, and reveal-word actions behave predictably when combined
+- [x] **IMM-05**: Fullscreen and subtitle-mask interactions do not incorrectly reset sentence playback or completion state
 
 ### Wordbook Review
 
@@ -76,11 +76,11 @@ Archived shipped requirements: see `.planning/milestones/v2.0-REQUIREMENTS.md`.
 | WEB-03 | Phase 7 | Complete |
 | GROW-01 | Phase 7 | Complete |
 | GROW-02 | Phase 7 | Complete |
-| IMM-01 | Phase 8 | Pending |
-| IMM-02 | Phase 8 | Pending |
-| IMM-03 | Phase 8 | Pending |
-| IMM-04 | Phase 8 | Pending |
-| IMM-05 | Phase 8 | Pending |
+| IMM-01 | Phase 8 | Complete |
+| IMM-02 | Phase 8 | Complete |
+| IMM-03 | Phase 8 | Complete |
+| IMM-04 | Phase 8 | Complete |
+| IMM-05 | Phase 8 | Complete |
 | WBK-01 | Phase 9 | Pending |
 | WBK-02 | Phase 9 | Pending |
 | WBK-03 | Phase 9 | Pending |
