@@ -15,10 +15,19 @@ from app.schemas.wordbook import (
     WordbookEntryResponse,
     WordbookListResponse,
     WordbookMutationResponse,
+    WordbookReviewQueueResponse,
+    WordbookReviewRequest,
     WordbookSourceLessonResponse,
     WordbookStatusUpdateRequest,
 )
-from app.services.wordbook_service import collect_wordbook_entry, delete_wordbook_entry, list_wordbook_entry_payloads, update_wordbook_entry_status
+from app.services.wordbook_service import (
+    collect_wordbook_entry,
+    delete_wordbook_entry,
+    list_wordbook_entry_payloads,
+    list_wordbook_review_queue_payloads,
+    review_wordbook_entry,
+    update_wordbook_entry_status,
+)
 
 
 router = APIRouter(prefix="/api/wordbook", tags=["wordbook"])
@@ -47,11 +56,30 @@ def list_wordbook(
         ok=True,
         items=[_entry_response_from_payload(item) for item in payload["items"]],
         total=int(payload["total"]),
+        due_count=int(payload["due_count"]),
         status=str(payload["status"]),
         sort=str(payload["sort"]),
         source_lesson_id=payload["source_lesson_id"],
         available_lessons=[WordbookSourceLessonResponse(**item) for item in payload["available_lessons"]],
     )
+
+
+@router.get("/review-queue", response_model=WordbookReviewQueueResponse, responses={401: {"model": ErrorResponse}})
+def list_wordbook_review_queue(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    payload = list_wordbook_review_queue_payloads(db, user_id=current_user.id)
+    return WordbookReviewQueueResponse(
+        ok=True,
+        items=[_entry_response_from_payload(item) for item in payload["items"]],
+        total=int(payload["total"]),
+    )
+
+
+@router.get("/health")
+def wordbook_health() -> dict[str, bool]:
+    return {"ok": True}
 
 
 @router.post(
@@ -102,6 +130,27 @@ def update_wordbook_status(
         ok=True,
         message=message,
         entry=_entry_response_from_payload(updated_payload),
+        remaining_due=0,
+    )
+
+
+@router.post(
+    "/{entry_id}/review",
+    response_model=WordbookMutationResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
+def review_wordbook(
+    entry_id: int,
+    payload: WordbookReviewRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    updated_payload = review_wordbook_entry(db, entry_id=entry_id, user_id=current_user.id, grade=payload.grade)
+    return WordbookMutationResponse(
+        ok=True,
+        message="已记录复习结果",
+        entry=_entry_response_from_payload(updated_payload["entry"]),
+        remaining_due=int(updated_payload["remaining_due"]),
     )
 
 

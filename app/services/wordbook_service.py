@@ -10,11 +10,14 @@ from app.models import WordbookEntry, WordbookEntrySource
 from app.repositories.lessons import get_sentence
 from app.repositories.wordbook import (
     build_wordbook_entry_payload,
+    count_due_wordbook_entries,
     get_wordbook_entry_by_identity,
     get_wordbook_entry_for_user,
     get_wordbook_source_link,
+    list_due_wordbook_entries,
     list_wordbook_entries,
 )
+from app.services.wordbook_review_scheduler import REVIEW_GRADES, apply_review_grade, build_initial_review_state
 from app.services.lesson_builder import tokenize_learning_sentence
 
 
@@ -86,6 +89,11 @@ def _entry_payload_to_dict(payload: dict[str, object]) -> dict[str, object]:
         "latest_sentence_en": str(entry.latest_sentence_en or ""),
         "latest_sentence_zh": str(entry.latest_sentence_zh or ""),
         "latest_collected_at": entry.latest_collected_at,
+        "next_review_at": getattr(entry, "next_review_at", None),
+        "last_reviewed_at": getattr(entry, "last_reviewed_at", None),
+        "review_count": int(getattr(entry, "review_count", 0) or 0),
+        "wrong_count": int(getattr(entry, "wrong_count", 0) or 0),
+        "memory_score": float(getattr(entry, "memory_score", 0.0) or 0.0),
         "created_at": entry.created_at,
         "updated_at": entry.updated_at,
         "source_lesson_id": int(entry.latest_lesson_id) if entry.latest_lesson_id else None,
@@ -120,17 +128,23 @@ def collect_wordbook_entry(
     existing_entry = get_wordbook_entry_by_identity(db, user_id=user_id, normalized_text=normalized_text, entry_type=entry_type)
     created = existing_entry is None
     if existing_entry is None:
+        initial_review_state = build_initial_review_state()
         existing_entry = WordbookEntry(
             user_id=user_id,
             latest_lesson_id=lesson.id,
             entry_text=canonical_text,
             normalized_text=normalized_text,
             entry_type=entry_type,
-            status=WORD_STATUS_ACTIVE,
             latest_sentence_idx=sentence.idx,
             latest_sentence_en=str(sentence.text_en or ""),
             latest_sentence_zh=str(sentence.text_zh or ""),
             latest_collected_at=now_shanghai_naive(),
+            next_review_at=initial_review_state.next_review_at,
+            last_reviewed_at=initial_review_state.last_reviewed_at,
+            review_count=initial_review_state.review_count,
+            wrong_count=initial_review_state.wrong_count,
+            memory_score=initial_review_state.memory_score,
+            status=initial_review_state.status,
         )
     else:
         existing_entry.latest_lesson_id = lesson.id
@@ -195,6 +209,7 @@ def list_wordbook_entry_payloads(
         "items": [_entry_payload_to_dict(row) for row in rows],
         "available_lessons": available_lessons,
         "total": len(rows),
+        "due_count": count_due_wordbook_entries(db, user_id=user_id),
         "status": safe_status,
         "sort": safe_sort,
         "source_lesson_id": safe_source_lesson_id,
@@ -215,6 +230,45 @@ def update_wordbook_entry_status(db: Session, *, entry_id: int, user_id: int, st
     if not raw_payload:
         raise HTTPException(status_code=500, detail="词条更新后读取失败")
     return _entry_payload_to_dict(raw_payload)
+
+
+def list_wordbook_review_queue_payloads(db: Session, *, user_id: int) -> dict[str, object]:
+    rows = list_due_wordbook_entries(db, user_id=user_id)
+    return {
+        "items": [_entry_payload_to_dict(row) for row in rows],
+        "total": len(rows),
+    }
+
+
+def review_wordbook_entry(db: Session, *, entry_id: int, user_id: int, grade: str) -> dict[str, object]:
+    safe_grade = str(grade or "").strip().lower()
+    if safe_grade not in REVIEW_GRADES:
+        raise HTTPException(status_code=400, detail="复习反馈无效")
+    entry = get_wordbook_entry_for_user(db, entry_id=entry_id, user_id=user_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="词条不存在")
+
+    review_update = apply_review_grade(
+        grade=safe_grade,
+        memory_score=float(getattr(entry, "memory_score", 0.0) or 0.0),
+        review_count=int(getattr(entry, "review_count", 0) or 0),
+        wrong_count=int(getattr(entry, "wrong_count", 0) or 0),
+    )
+    entry.next_review_at = review_update.next_review_at
+    entry.last_reviewed_at = review_update.last_reviewed_at
+    entry.review_count = review_update.review_count
+    entry.wrong_count = review_update.wrong_count
+    entry.memory_score = review_update.memory_score
+    entry.status = review_update.status
+    db.add(entry)
+    db.commit()
+    raw_payload = build_wordbook_entry_payload(db, entry_id=entry_id, user_id=user_id)
+    if not raw_payload:
+        raise HTTPException(status_code=500, detail="词条复习后读取失败")
+    return {
+        "entry": _entry_payload_to_dict(raw_payload),
+        "remaining_due": count_due_wordbook_entries(db, user_id=user_id),
+    }
 
 
 def delete_wordbook_entry(db: Session, *, entry_id: int, user_id: int) -> None:
