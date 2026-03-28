@@ -33,8 +33,8 @@ def _get_qwen_status() -> dict[str, object]:
         return {
             "model_key": QWEN_ASR_MODEL,
             "display_name": "Bottle 2.0",
-            "subtitle": "Fast cloud transcription.",
-            "note": "Cloud transcription via DashScope API.",
+            "subtitle": "网页端默认路径，上传后即可开始生成。",
+            "note": "Bottle 2.0 通过 DashScope 云端能力完成识别。",
             "runtime_kind": "cloud_api",
             "runtime_label": "Cloud API",
             "prepare_mode": "none",
@@ -60,8 +60,8 @@ def _get_qwen_status() -> dict[str, object]:
         return {
             "model_key": QWEN_ASR_MODEL,
             "display_name": "Bottle 2.0",
-            "subtitle": "Fast cloud transcription.",
-            "note": "Cloud transcription via DashScope API.",
+            "subtitle": "网页端默认路径，上传后即可开始生成。",
+            "note": "Bottle 2.0 通过 DashScope 云端能力完成识别。",
             "runtime_kind": "cloud_api",
             "runtime_label": "Cloud API",
             "prepare_mode": "none",
@@ -90,8 +90,8 @@ def _get_qwen_status() -> dict[str, object]:
         return {
             "model_key": QWEN_ASR_MODEL,
             "display_name": "Bottle 2.0",
-            "subtitle": "Fast cloud transcription.",
-            "note": "Cloud transcription via DashScope API.",
+            "subtitle": "网页端默认路径，上传后即可开始生成。",
+            "note": "Bottle 2.0 通过 DashScope 云端能力完成识别。",
             "runtime_kind": "cloud_api",
             "runtime_label": "Cloud API",
             "prepare_mode": "none",
@@ -115,8 +115,8 @@ def _get_qwen_status() -> dict[str, object]:
     return {
         "model_key": QWEN_ASR_MODEL,
         "display_name": "Bottle 2.0",
-        "subtitle": "Fast cloud transcription.",
-        "note": "Cloud transcription via DashScope API.",
+        "subtitle": "网页端默认路径，上传后即可开始生成。",
+        "note": "Bottle 2.0 通过 DashScope 云端能力完成识别。",
         "runtime_kind": "cloud_api",
         "runtime_label": "Cloud API",
         "prepare_mode": "none",

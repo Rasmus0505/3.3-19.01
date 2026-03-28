@@ -6,7 +6,7 @@ export const FALLBACK_ASR_MODEL_CATALOG = {
   [ASR_MODEL_KEYS.qwen]: {
     model_key: ASR_MODEL_KEYS.qwen,
     display_name: "Bottle 2.0",
-    subtitle: "Fast cloud transcription.",
+    subtitle: "网页端默认路径，上传后即可开始生成。",
     runtime_kind: "cloud_api",
     runtime_label: "Cloud API",
     prepare_mode: "none",
@@ -14,7 +14,7 @@ export const FALLBACK_ASR_MODEL_CATALOG = {
     supports_upload: true,
     supports_preview: false,
     supports_transcribe_api: true,
-    note: "Cloud transcription via DashScope API.",
+    note: "Bottle 2.0 通过 DashScope 云端能力完成识别。",
   },
 };
 

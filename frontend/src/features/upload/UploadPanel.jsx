@@ -233,11 +233,11 @@ function logUploadLocalAsrDebug(message, extra = {}) {
 }
 
 async function prepareAudioDataForLocalAsr() {
-  throw new Error("浏览器本地 ASR 已下线，请改用桌面端本机识别或云端识别。");
+  throw new Error("浏览器本地 ASR 已下线，请改用桌面端 Bottle 1.0 或网页端 Bottle 2.0。");
 }
 
 async function runLocalAsrWithAutoParallelism() {
-  throw new Error("浏览器本地 ASR 已下线，请改用桌面端本机识别或云端识别。");
+  throw new Error("浏览器本地 ASR 已下线，请改用桌面端 Bottle 1.0 或网页端 Bottle 2.0。");
 }
 
 function hasDesktopFileReadBridge() {
@@ -395,7 +395,7 @@ function getCloudFailureMessage(errorLike = "", serverStatus = {}, fallback = ""
     return mapCloudAsrFailureToMessage(
       {
         error_code: errorLike?.error_code ?? errorLike?.code ?? "",
-        message: errorLike?.message || toErrorText(errorLike, fallback || "云端识别当前不可用"),
+        message: errorLike?.message || toErrorText(errorLike, fallback || "Bottle 2.0 当前不可用"),
         detail: errorLike?.detail ?? "",
       },
       normalizedServerStatus,
@@ -477,8 +477,8 @@ const LOCAL_MODEL_OPTIONS = [
   {
     key: ASR_MODEL_KEYS.fasterWhisper,
     workerModelId: ASR_MODEL_KEYS.fasterWhisper,
-    title: "本机识别",
-    subtitle: "先准备模型，再开始生成。",
+    title: "Bottle 1.0",
+    subtitle: "先准备桌面端模型，再开始生成。",
     uploadEnabled: true,
     sizeEstimateMb: { wasm: 180 },
   },
@@ -486,17 +486,17 @@ const LOCAL_MODEL_OPTIONS = [
 const UPLOAD_MODEL_OPTIONS = [
   {
     key: FASTER_WHISPER_MODEL,
-    title: "本机识别",
-    subtitle: "识别字幕更精准/耗时加长",
+    title: "Bottle 1.0",
+    subtitle: "更注重字幕质量，需改用桌面端。",
     mode: "fast",
-    note: "固定本地目录。",
+    note: "下载桌面端后处理。",
     sourceModelId: "Systran/faster-distil-whisper-small.en",
     deployPath: "D:\\3.3-19.01\\asr-test\\models\\faster-distil-small.en",
   },
   {
     key: QWEN_MODEL,
-    title: "云端识别",
-    subtitle: "直接开始生成",
+    title: "Bottle 2.0",
+    subtitle: "网页端默认路径。",
     mode: "fast",
     note: "无需准备模型，选中文件后可直接开始。",
   },
@@ -1159,7 +1159,7 @@ function sanitizeUserFacingText(text) {
     .replace(/No module named ['"][^'"]+['"]/gi, "服务端依赖未安装")
     .replace(/本地识别/g, "识别")
     .replace(/本地模型/g, "模型")
-    .replace(/本地 Bottle 1\.0/g, "本机识别")
+    .replace(/本地 Bottle 1\.0/g, "Bottle 1.0")
     .replace(/本地字幕/g, "字幕")
     .replace(/本地音频/g, "音频")
     .replace(/本地视频/g, "视频")
@@ -2997,7 +2997,7 @@ export function UploadPanel({
         const promptKey = `${String(payload?.remoteVersion || "")}:${String(payload?.localVersion || "")}`;
         if (desktopModelUpdatePromptRef.current !== promptKey) {
           desktopModelUpdatePromptRef.current = promptKey;
-          toast.message("发现新的本机识别模型版本，可点击更新");
+          toast.message("发现新的 Bottle 1.0 模型版本，可点击更新");
         }
       }
     });
@@ -4882,7 +4882,7 @@ export function UploadPanel({
         throw new Error("当前未识别出可用字幕，请改用云端运行或更换素材。");
       }
       const sentenceCount = localSentences.length;
-      setLocalProgress("asr_transcribe", "completed", 1, `本机识别完成，共 ${sentenceCount} 段字幕`, {
+      setLocalProgress("asr_transcribe", "completed", 1, `Bottle 1.0 完成，共 ${sentenceCount} 段字幕`, {
         asr_done: sentenceCount,
         asr_estimated: sentenceCount,
         translate_done: 0,
@@ -5774,7 +5774,7 @@ export function UploadPanel({
       });
       return;
     }
-    // 云端直传模式（云端识别 / QWEN_MODEL）：使用 DashScope pre-signed URL 直传
+    // Bottle 2.0 直传模式（QWEN_MODEL）：使用 DashScope pre-signed URL 直传
     if (selectedAsrModel === QWEN_MODEL) {
       try {
         const uploadSourceFile = await ensureUploadableSourceFile();
@@ -5810,7 +5810,7 @@ export function UploadPanel({
       return;
     }
     await handleTaskFailureState({
-          message: "当前仅支持云端识别直传，请切换到云端识别后重试。",
+          message: "当前仅支持 Bottle 2.0 直传，请切换到 Bottle 2.0 后重试。",
       nextTaskId: "",
       nextTaskSnapshot: null,
       nextUploadPercent: 0,
@@ -6900,11 +6900,11 @@ export function UploadPanel({
                 <div className="space-y-2">
                   <p>
                       {desktopGuidanceIsLargeFile
-                        ? "云端识别直传仍可继续，但超大文件、长时长素材或网络不稳定时，桌面端通常更稳。"
+                        ? "Bottle 2.0 网页流程仍可继续，但超大文件、长时长素材或网络不稳定时，桌面端通常更稳。"
                         : "链接导入和类似的桌面专属流程不会回退到服务器处理，请改用桌面客户端。"}
                   </p>
                   <p>{desktopGuidanceDetail}</p>
-                  <p>云端识别当前仍支持音频与视频文件直传；当素材特别大或网络不稳定时，优先改用桌面端会更可靠。</p>
+                  <p>Bottle 2.0 当前仍支持音频与视频文件直传；当素材特别大或网络不稳定时，优先改用桌面端会更可靠。</p>
                   <p>当前建议阈值不是硬性限制：在 2 GB / 12 小时以内仍可继续使用当前流程，但更推荐桌面端处理高风险素材。</p>
                   {DESKTOP_CLIENT_DISTRIBUTION_NOTE ? (
                     <p className="rounded-2xl border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">{DESKTOP_CLIENT_DISTRIBUTION_NOTE}</p>

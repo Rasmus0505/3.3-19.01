@@ -133,7 +133,7 @@ export function CloudUploadPanel({ onTaskCreated, onError }: CloudUploadPanelPro
   return (
     <div className="flex flex-col gap-4 p-4 max-w-lg mx-auto">
       <div className="text-sm text-muted-foreground">
-        <strong>Bottle 2.0 云端识别</strong>
+        <strong>Bottle 2.0 网页流程</strong>
         <br />
         文件从浏览器直接传输到阿里云，服务器仅转发，文件不落地存储。
       </div>
