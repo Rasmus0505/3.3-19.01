@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: — Urgent Admin Cleanup, Lesson Output & Desktop Link Import
-status: Phase 04.1 planned
-last_updated: "2026-03-28T18:45:00.000Z"
+milestone: v2.0
+milestone_name: — Billing, Admin & Polish
+status: Phase 05 complete
+last_updated: "2026-03-28T07:05:00.000Z"
 progress:
-  total_phases: 4
-  completed_phases: 3
-  total_plans: 11
-  completed_plans: 8
-  percent: 73
+  total_phases: 2
+  completed_phases: 1
+  total_plans: 5
+  completed_plans: 3
+  percent: 60
 ---
 
 # Project State
@@ -19,17 +19,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 04.1 — desktop-local-course-fidelity
+**Current focus:** Phase 06 — product-polish-and-fallbacks
 
 ## Current Position
 
-Phase: 04.1 (desktop-local-course-fidelity) — PLANNED
-Plan: 1 of 3
-v1.0 milestone shipped. v1.1 milestone shipped. Inserted follow-up phase queued before broader v2.0 work.
+Phase: 06 (product-polish-and-fallbacks) — NOT PLANNED
+Plan: 0 of 2
+v1.0 milestone shipped. v1.1 milestone shipped. Phase 04.1 removed from the roadmap. Phase 05 is complete and the remaining v2.0 work is now Phase 06.
 
-Progress: [███████░░░] 73% (inserted follow-up phase planned after v1.1 shipment)
+Progress: [██████░░░░] 60% (Phase 05 complete, Phase 06 remaining)
 
-**Next milestone:** v2.0 — Phase 04.1 (planned)
+**Next milestone:** v2.0 — Phase 06 (ready for planning)
 
 ## Milestone: v1.0 Summary
 
@@ -66,10 +66,9 @@ Progress: [███████░░░] 73% (inserted follow-up phase planned
 ### Roadmap Evolution
 
 - Phase 2.1 inserted after Phase 2: 删除管理台里的模型管理，拆出 Bottle 1.0 独立设置并接入计费配置，同时删除现有 Bottle 1.0 前端与实际功能代码，确保新增模型配置衔接完整 (URGENT)
-- Phase 4.1 inserted after Phase 4: 收口 Bottle 1.0 桌面端本地课程生成的一致性，包括单 CTA 分流、翻译、封面、视频绑定与学习页可播放性 (URGENT)
+- Phase 4.1 removed after roadmap cleanup: Bottle 1.0 desktop-local fidelity work no longer sits as a standalone roadmap phase
 
 ## Session Continuity
 
 Last session: 2026-03-27T16:22:53.192Z
-Completed 04-02-PLAN.md and Phase 04 verification. Phase 04.1 is now formally planned and ready for execution.
-Artifacts: `.planning/workstreams/milestone/phases/04.1-desktop-local-course-fidelity/`
+Phase 04.1 has been removed from the roadmap. Phase 05 billing/admin alignment is complete, and the next remaining roadmap item is Phase 06 planning.
