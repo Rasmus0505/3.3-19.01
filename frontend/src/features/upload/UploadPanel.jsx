@@ -2165,16 +2165,8 @@ export function UploadPanel({
     selectedFastRuntimeTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL &&
     hasLocalCourseGeneratorBridge();
   const trimmedDesktopLinkInput = sanitizeDesktopLinkInput(desktopLinkInput) || String(desktopLinkInput || "").trim();
-  const desktopLinkModeSupported =
-    desktopLinkModeActive &&
-    mode === "fast" &&
-    selectedFastModel === FASTER_WHISPER_MODEL &&
-    selectedFastRuntimeTrack === FAST_RUNTIME_TRACK_DESKTOP_LOCAL;
-  const desktopLinkModeBlockedMessage = desktopLinkModeActive
-    ? desktopRuntimeAvailable
-      ? "链接导入当前仅支持桌面端本机运行，不支持云端或网页本地模式。"
-      : "当前环境不支持桌面端，无法使用链接导入。"
-    : "";
+  const desktopLinkModeSupported = desktopLinkModeActive;
+  const desktopLinkModeHint = desktopLinkModeActive ? "链接素材会先在桌面端下载，再按当前所选方式继续生成课程。" : "";
   const useLocalProgressSnapshot = localTranscribing || desktopLocalTranscribing || desktopLinkImporting;
   const displayTaskSnapshot = useLocalProgressSnapshot ? localProgressSnapshot : taskSnapshot;
   const hasLocalFile = Boolean(file);
@@ -3431,7 +3423,7 @@ export function UploadPanel({
     }
     if (!desktopLinkModeSupported) {
       await handleTaskFailureState({
-        message: desktopLinkModeBlockedMessage || "链接导入当前仅支持桌面端本机运行。",
+        message: "当前环境暂不支持链接导入。",
         nextTaskId: "",
         nextTaskSnapshot: null,
         nextUploadPercent: 0,
@@ -6473,8 +6465,8 @@ export function UploadPanel({
                   </button>
                   。
                 </p>
-                {desktopLinkModeBlockedMessage ? (
-                  <p className={cn("text-xs", getUploadToneStyles("recoverable").text)}>{desktopLinkModeBlockedMessage}</p>
+                {desktopLinkModeHint ? (
+                  <p className="text-xs text-muted-foreground">{desktopLinkModeHint}</p>
                 ) : null}
               </div>
             ) : (
