@@ -18,17 +18,17 @@ Archived shipped requirements: see `.planning/milestones/v2.0-REQUIREMENTS.md`.
 
 ### Wordbook Review
 
-- [ ] **WBK-01**: User can collect words or phrases from immersion with latest sentence context preserved
-- [ ] **WBK-02**: Wordbook shows source count, latest context, next review time, review count, wrong count, and current mastery status
-- [ ] **WBK-03**: User can open a due-review queue and review due items without manually filtering the full wordbook list
-- [ ] **WBK-04**: User can mark a review result as `again` or `good` and the next review time updates accordingly
+- [x] **WBK-01**: User can collect words or phrases from immersion with latest sentence context preserved
+- [x] **WBK-02**: Wordbook shows source count, latest context, next review time, review count, wrong count, and current mastery status
+- [x] **WBK-03**: User can open a due-review queue and review due items without manually filtering the full wordbook list
+- [x] **WBK-04**: User can mark a review result as `again` or `good` and the next review time updates accordingly
 
 ### Account Experience
 
-- [ ] **ACC-01**: User must provide a unique username during registration
-- [ ] **ACC-02**: User can update username after registration from a lightweight account settings entry
-- [ ] **ACC-03**: User still logs in with email and password only
-- [ ] **ACC-04**: Login and registration UI clearly distinguishes login fields from registration fields and uses branded Chinese-first copy
+- [x] **ACC-01**: User must provide a unique username during registration
+- [x] **ACC-02**: User can update username after registration from a lightweight account settings entry
+- [x] **ACC-03**: User still logs in with email and password only
+- [x] **ACC-04**: Login and registration UI clearly distinguishes login fields from registration fields and uses branded Chinese-first copy
 
 ### Web Product Boundary
 
@@ -81,14 +81,14 @@ Archived shipped requirements: see `.planning/milestones/v2.0-REQUIREMENTS.md`.
 | IMM-03 | Phase 8 | Complete |
 | IMM-04 | Phase 8 | Complete |
 | IMM-05 | Phase 8 | Complete |
-| WBK-01 | Phase 9 | Pending |
-| WBK-02 | Phase 9 | Pending |
-| WBK-03 | Phase 9 | Pending |
-| WBK-04 | Phase 9 | Pending |
-| ACC-01 | Phase 10 | Pending |
-| ACC-02 | Phase 10 | Pending |
-| ACC-03 | Phase 10 | Pending |
-| ACC-04 | Phase 10 | Pending |
+| WBK-01 | Phase 9 | Complete |
+| WBK-02 | Phase 9 | Complete |
+| WBK-03 | Phase 9 | Complete |
+| WBK-04 | Phase 9 | Complete |
+| ACC-01 | Phase 9 | Complete |
+| ACC-02 | Phase 9 | Complete |
+| ACC-03 | Phase 9 | Complete |
+| ACC-04 | Phase 9 | Complete |
 | ADM-01 | Phase 11 | Pending |
 | ADM-02 | Phase 11 | Pending |
 | ADM-03 | Phase 11 | Pending |
@@ -101,4 +101,4 @@ Archived shipped requirements: see `.planning/milestones/v2.0-REQUIREMENTS.md`.
 
 ---
 *Requirements defined: 2026-03-28*  
-*Last updated: 2026-03-28 after initial v2.1 definition*
+*Last updated: 2026-03-28 after Phase 9 completion*
