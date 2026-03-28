@@ -33,9 +33,11 @@ def _compat_cents_from_yuan(value: Decimal) -> int:
 
 def _rate_display_meta(model_name: str) -> tuple[str, str]:
     normalized = str(model_name or "").strip()
-    display_name, runtime_kind = get_asr_display_meta(normalized)
+    if normalized == "faster-whisper-medium":
+        return "Bottle 1.0", "desktop_local"
     if normalized == "qwen3-asr-flash-filetrans":
-        return display_name, runtime_kind
+        return "Bottle 2.0", "cloud_api"
+    display_name, runtime_kind = get_asr_display_meta(normalized)
     if normalized == "qwen-mt-flash":
         return "翻译成本参考", "internal"
     return normalized or "未命名模型", "cloud"

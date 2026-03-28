@@ -10,7 +10,7 @@ import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitl
 
 export const USERS_TABS = [
   { value: "list", label: "用户列表", description: "搜索用户、调账、查看最近行为。", component: AdminUsersTab },
-  { value: "wallet", label: "余额流水", description: "按用户追扣点、退款、手工调账和兑换入账。", component: AdminLogsTab },
+  { value: "wallet", label: "余额流水", description: "按用户追踪元金额变动、退款、手工调账和兑换入账。", component: AdminLogsTab },
   { value: "rates", label: "计费价格", description: "统一维护 ASR 与翻译价格，不在这里调整运行时参数。", component: AdminRatesTab },
 ];
 
@@ -40,7 +40,7 @@ export function AdminUsersWorkspace({ apiCall, showTabsNavigation = true }) {
                 <CardTitle className="text-lg">用户运营工作台</CardTitle>
                 <Badge variant="outline">用户 + 钱包 + 计费</Badge>
               </div>
-              <CardDescription>默认从用户开始，再沿着钱包、计费价格或兑换审计向下排查，减少在多个管理页面之间来回跳转。</CardDescription>
+              <CardDescription>默认从用户开始，再沿着钱包、计费价格或兑换审计向下排查；价格编辑留在这里，运行诊断统一留在排障中心。</CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" asChild>
@@ -52,7 +52,7 @@ export function AdminUsersWorkspace({ apiCall, showTabsNavigation = true }) {
               <Button variant="outline" size="sm" asChild>
                 <Link to="/admin/users?tab=wallet">
                   <Coins className="size-4" />
-                  看余额流水
+                  看元金额流水
                 </Link>
               </Button>
               <Button variant="outline" size="sm" asChild>
@@ -86,7 +86,7 @@ export function AdminUsersWorkspace({ apiCall, showTabsNavigation = true }) {
           <Card className="border-dashed">
             <CardHeader>
               <CardTitle className="text-base">计费只看价格</CardTitle>
-              <CardDescription>计费标签页只面向售价、成本和启停状态，不再把运行时调优暴露给日常运营。</CardDescription>
+              <CardDescription>计费标签页只面向售价、成本和启停状态，不再混入运行时调优或系统诊断动作。</CardDescription>
             </CardHeader>
           </Card>
         </CardContent>

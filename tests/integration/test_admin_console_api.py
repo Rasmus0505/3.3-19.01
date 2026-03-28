@@ -168,6 +168,25 @@ def test_admin_runtime_readiness_returns_bottle_descriptors(test_client):
     assert isinstance(items["qwen3-asr-flash-filetrans"]["actions"], list)
 
 
+def test_admin_billing_rates_use_bottle_names_as_primary_labels(test_client):
+    client, _, monkeypatch = test_client
+    monkeypatch.setenv("ADMIN_EMAILS", "admin-billing-labels@example.com")
+
+    admin_token = _register_and_login(client, email="admin-billing-labels@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    rates_resp = client.get("/api/admin/billing-rates", headers=admin_headers)
+    assert rates_resp.status_code == 200
+
+    data = rates_resp.json()
+    assert data["ok"] is True
+    rates = {item["model_name"]: item for item in data["rates"]}
+    assert rates["faster-whisper-medium"]["display_name"] == "Bottle 1.0"
+    assert rates["qwen3-asr-flash-filetrans"]["display_name"] == "Bottle 2.0"
+    assert rates["faster-whisper-medium"]["model_name"] == "faster-whisper-medium"
+    assert rates["qwen3-asr-flash-filetrans"]["model_name"] == "qwen3-asr-flash-filetrans"
+
+
 def test_admin_overview_and_redeem_endpoints_degrade_when_tables_missing(test_client):
     client, session_factory, monkeypatch = test_client
     monkeypatch.setenv("ADMIN_EMAILS", "admin-missing-schema@example.com")

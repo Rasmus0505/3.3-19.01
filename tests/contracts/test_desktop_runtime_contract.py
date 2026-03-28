@@ -434,14 +434,16 @@ def test_upload_panel_exposes_phase04_link_import_copy_and_fallback_contract():
     upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
     learning_shell_source = (REPO_ROOT / "frontend" / "src" / "app" / "learning-shell" / "LearningShellContainer.jsx").read_text(encoding="utf-8")
 
-    assert "本地文件" in upload_panel_source
     assert "链接导入" in upload_panel_source
+    assert "本地文件" in upload_panel_source
+    assert upload_panel_source.index("链接导入") < upload_panel_source.index("本地文件")
     assert "导入并生成课程" in upload_panel_source
     assert "未识别到可导入链接。" in upload_panel_source
     assert "继续后台执行" in upload_panel_source
     assert "取消当前链接任务" in upload_panel_source
     assert "SnapAny" in upload_panel_source
     assert "openSnapAnyFallback" in upload_panel_source
+    assert "仅支持公开单条视频链接，不支持 cookies、登录态、手动 cookie、播放列表或批量链接。粘贴分享文案时会自动提取第一条有效链接。" not in upload_panel_source
     assert "onNavigateToLesson?.(data.lesson.id)" in upload_panel_source
     assert 'loadLessonDetail(lessonId, { autoEnterImmersive: true })' in learning_shell_source
 
@@ -452,6 +454,8 @@ def test_upload_panel_reuses_normal_submit_strategy_after_link_download_succeeds
     assert "bypassDesktopLinkMode: true" in upload_panel_source
     assert "sourceDurationSec: sourceDurationSeconds" in upload_panel_source
     assert "skipDesktopRecommendation: true" in upload_panel_source
+    assert "buildDesktopSelectedFile({" in upload_panel_source
+    assert "taskPayload?.source_path" in upload_panel_source
     assert "await submitDesktopLocalFast(generationPollToken, runToken, sourceFile, sourceDurationSeconds);" not in upload_panel_source
 
 

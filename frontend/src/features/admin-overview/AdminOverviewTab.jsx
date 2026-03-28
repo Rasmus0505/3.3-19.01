@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { formatDateTimeBeijing } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
-import { formatMoneyCents } from "../../shared/lib/money";
+import { formatStoredMoneyYuan } from "../../shared/lib/money";
 import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, MetricCard, MetricChart, ResponsiveTable } from "../../shared/ui";
 
@@ -85,8 +85,8 @@ export function AdminOverviewTab({ apiCall }) {
   const metricCards = useMemo(() => {
     const list = [
       { icon: Users, label: "今日新增账号", value: metrics?.today_new_users ?? 0, hint: "按北京时间今天统计", key: "新增账号" },
-      { icon: Gift, label: "今日充值金额", value: formatMoneyCents(metrics?.today_redeem_points ?? 0), hint: "只统计兑换码充值", key: "充值点数" },
-      { icon: ScrollText, label: "今日消耗金额", value: formatMoneyCents(metrics?.today_spent_points ?? 0), hint: "转写和翻译合计", key: "消耗点数" },
+      { icon: Gift, label: "今日充值金额", value: formatStoredMoneyYuan(metrics?.today_redeem_points ?? 0), hint: "按元展示，只统计兑换码充值", key: "充值点数" },
+      { icon: ScrollText, label: "今日消耗金额", value: formatStoredMoneyYuan(metrics?.today_spent_points ?? 0), hint: "按元展示，含转写和翻译合计", key: "消耗点数" },
       { icon: Sparkles, label: "近 24 小时翻译失败", value: metrics?.translation_failures_24h ?? 0, hint: "越高越需要排查翻译链路", key: "异常数" },
       { icon: Activity, label: "近 24 小时异常", value: metrics?.incidents_24h ?? 0, hint: "包含翻译失败和兑换失败", key: "异常数" },
       { icon: Gift, label: "当前有效批次", value: metrics?.active_batches ?? 0, hint: "仍可继续兑换的批次", key: "新增账号" },
@@ -109,7 +109,7 @@ export function AdminOverviewTab({ apiCall }) {
           <Badge variant={item.status === "active" ? "default" : item.status === "expired" ? "secondary" : "outline"}>{item.status}</Badge>
         ),
       },
-      { key: "points", header: "面额", mobileLabel: "面额", render: (item) => formatMoneyCents(item.face_value_amount_cents ?? item.face_value_points ?? 0) },
+      { key: "points", header: "面额（元）", mobileLabel: "面额", render: (item) => formatStoredMoneyYuan(item.face_value_amount_cents ?? item.face_value_points ?? 0) },
       { key: "redeemed", header: "已兑 / 剩余", mobileLabel: "已兑 / 剩余", render: (item) => `${item.redeemed_count} / ${item.remaining_count}` },
       { key: "rate", header: "兑换率", mobileLabel: "兑换率", render: (item) => `${(Number(item.redeem_rate || 0) * 100).toFixed(1)}%` },
       { key: "expire", header: "过期时间", mobileLabel: "过期", render: (item) => formatDateTimeBeijing(item.expire_at) },
@@ -166,7 +166,7 @@ export function AdminOverviewTab({ apiCall }) {
             key={item.label}
             icon={item.label.includes("账号") ? Users : item.label.includes("充值") ? Gift : item.label.includes("消耗") ? ScrollText : Activity}
             label={item.label}
-            value={String(item.label || "").includes("金额") ? formatMoneyCents(item.value) : item.value}
+            value={String(item.label || "").includes("金额") || String(item.label || "").includes("余额") ? formatStoredMoneyYuan(item.value) : item.value}
             hint={item.hint}
             tone={item.tone || toneForCard(item.label)}
             loading={loading && !metrics}
@@ -213,7 +213,7 @@ export function AdminOverviewTab({ apiCall }) {
               data={recentBatches}
               getRowKey={(item) => item.id}
               mobileTitle={(item) => item.batch_name}
-              mobileDescription={(item) => `${formatMoneyCents(item.face_value_amount_cents ?? item.face_value_points ?? 0)} · ${item.status}`}
+              mobileDescription={(item) => `${formatStoredMoneyYuan(item.face_value_amount_cents ?? item.face_value_points ?? 0)} · ${item.status}`}
               mobileFooter={(item) => `过期：${formatDateTimeBeijing(item.expire_at)}`}
               emptyText="暂无批次数据"
               minWidth={720}

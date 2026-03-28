@@ -7,7 +7,7 @@ import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { copyCurrentUrl, mergeScopedSearchParams, readScopedIntParam, readScopedStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
-import { formatAmountByUnit } from "../../shared/lib/money";
+import { formatAmountByUnit, formatStoredMoneyMeta, formatStoredMoneyYuan } from "../../shared/lib/money";
 import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import {
   Badge,
@@ -38,8 +38,14 @@ function toLocalDatetimeValue(date) {
 
 function formatAmount(item, rawValue) {
   const value = Number(rawValue || 0);
-  const rendered = formatAmountByUnit(value, item?.amount_unit || "cents");
+  const primary = formatStoredMoneyYuan(value, item?.amount_unit || "cents");
+  const meta = formatStoredMoneyMeta(value, item?.amount_unit || "cents");
+  const rendered = meta ? `${primary}（${meta}）` : primary;
   return `${value >= 0 ? "+" : "-"}${rendered.replace(/^[+-]/, "")}`;
+}
+
+function isMoneyLabel(label) {
+  return ["金额", "余额", "入账", "消耗"].some((keyword) => String(label || "").includes(keyword));
 }
 
 export function AdminLogsTab({ apiCall, queryPrefix = "" }) {
@@ -154,7 +160,7 @@ export function AdminLogsTab({ apiCall, queryPrefix = "" }) {
       { key: "user", header: "用户", mobileLabel: "用户", render: (item) => item.user_email || "-" },
       { key: "event", header: "类型", mobileLabel: "类型", render: (item) => <Badge variant="outline">{item.event_type}</Badge> },
       { key: "delta", header: "变动", mobileLabel: "变动", render: (item) => <span className={Number(item.delta_points) >= 0 ? "text-emerald-600" : "text-amber-600"}>{formatAmount(item, item.delta_amount_cents ?? item.delta_points)}</span> },
-      { key: "balance", header: "变动后余额", mobileLabel: "变动后余额", render: (item) => formatAmountByUnit(item.balance_after_amount_cents ?? item.balance_after, item.amount_unit || "cents") },
+      { key: "balance", header: "变动后余额", mobileLabel: "变动后余额", render: (item) => formatStoredMoneyYuan(item.balance_after_amount_cents ?? item.balance_after, item.amount_unit || "cents") },
       { key: "note", header: "备注", mobileLabel: "备注", render: (item) => item.note || "-" },
     ],
     [],
@@ -164,7 +170,7 @@ export function AdminLogsTab({ apiCall, queryPrefix = "" }) {
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {(summaryCards.length ? summaryCards : [{ label: "匹配流水", value: total, hint: "当前筛选结果", tone: "info" }]).map((item) => (
-          <MetricCard key={item.label} icon={Wallet} label={item.label} value={String(item.label || "").includes("金额") ? formatAmountByUnit(item.value, "cents") : item.value} hint={item.hint} tone={item.tone || "default"} loading={loading && items.length === 0} />
+          <MetricCard key={item.label} icon={Wallet} label={item.label} value={isMoneyLabel(item.label) ? formatStoredMoneyYuan(item.value, "cents") : item.value} hint={item.hint} tone={item.tone || "default"} loading={loading && items.length === 0} />
         ))}
       </div>
 
@@ -176,7 +182,7 @@ export function AdminLogsTab({ apiCall, queryPrefix = "" }) {
 
       <FilterPanel
         title="余额流水筛选"
-        description="同一套筛选面板支持关键词、类型、时间范围和页大小，便于复制链接给同事复盘。"
+        description="同一套筛选面板支持关键词、类型、时间范围和页大小，金额按元优先展示，便于复制链接给同事复盘。"
         onSubmit={() => {
           setPage(1);
           loadLogs(1);
@@ -233,7 +239,7 @@ export function AdminLogsTab({ apiCall, queryPrefix = "" }) {
         getRowKey={(item) => item.id}
         mobileTitle={(item) => item.user_email || "未知用户"}
         mobileDescription={(item) => `${item.event_type} · ${formatDateTimeBeijing(item.created_at)}`}
-        mobileFooter={(item) => `${formatAmount(item, item.delta_amount_cents ?? item.delta_points)}，变动后 ${formatAmountByUnit(item.balance_after_amount_cents ?? item.balance_after, item.amount_unit || "cents")}`}
+        mobileFooter={(item) => `${formatAmount(item, item.delta_amount_cents ?? item.delta_points)}，变动后 ${formatStoredMoneyYuan(item.balance_after_amount_cents ?? item.balance_after, item.amount_unit || "cents")}`}
         emptyText="暂无流水数据"
         loading={loading}
         minWidth={1120}

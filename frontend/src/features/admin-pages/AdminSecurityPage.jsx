@@ -375,17 +375,15 @@ export function AdminSecurityPage({ apiCall }) {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="uppercase tracking-[0.18em]">
-                Security Center
-              </Badge>
+              <Badge variant="outline">排障中心 / 安全维护</Badge>
               {securityStatus?.admin_access?.runtime_authorization_mode ? (
                 <Badge variant="outline">{securityStatus.admin_access.runtime_authorization_mode}</Badge>
               ) : null}
             </div>
             <div className="space-y-2">
-              <h3 className="text-2xl font-semibold tracking-tight">管理员端安全中心</h3>
+              <h3 className="text-2xl font-semibold tracking-tight">排障中心 · 安全维护</h3>
               <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-                聚合数据库、管理员权限、兑换码导出保护和媒体路径边界状态。危险操作统一要求二次确认，并只展示服务端返回的安全提示，不在前端泄露真实确认词。
+                聚合数据库、管理员权限、兑换码导出保护和媒体路径边界状态。这里属于排障中心的高权限维护区，危险操作统一要求二次确认，并只展示服务端返回的安全提示，不在前端泄露真实确认词。
               </p>
             </div>
           </div>

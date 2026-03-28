@@ -34,3 +34,28 @@ export function formatAmountByUnit(value, unit = "cents") {
   }
   return formatMoneyCents(value);
 }
+
+export function formatStoredMoneyYuan(value, unit = "cents") {
+  const normalized = Number(value || 0);
+  if (!Number.isFinite(normalized)) {
+    return formatMoneyCents(0);
+  }
+  if (String(unit || "").toLowerCase() === "yuan") {
+    return formatMoneyYuan(normalized);
+  }
+  return formatMoneyCents(normalized);
+}
+
+export function formatStoredMoneyMeta(value, unit = "cents") {
+  const normalized = Number(value || 0);
+  if (!Number.isFinite(normalized)) {
+    return "";
+  }
+  if (String(unit || "").toLowerCase() === "points") {
+    return `${normalized} 点`;
+  }
+  if (String(unit || "").toLowerCase() === "yuan") {
+    return "";
+  }
+  return `${normalized} 分`;
+}

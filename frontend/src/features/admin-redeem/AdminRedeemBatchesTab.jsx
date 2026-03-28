@@ -7,7 +7,7 @@ import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { buildScopedSearchParams, copyCurrentUrl, mergeScopedSearchParams, readScopedIntParam, readScopedStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
-import { formatMoneyCents } from "../../shared/lib/money";
+import { formatMoneyCents, formatStoredMoneyMeta, formatStoredMoneyYuan } from "../../shared/lib/money";
 import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Label, MetricCard, Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, ScrollArea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea } from "../../shared/ui";
 
@@ -15,6 +15,12 @@ function toLocalDatetimeValue(date) {
   if (!date) return "";
   const pad = (value) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function parseYuanInputToCents(value) {
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized)) return 0;
+  return Math.round(normalized * 100);
 }
 
 export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
@@ -32,7 +38,7 @@ export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
 
   const [creating, setCreating] = useState(false);
   const [batchName, setBatchName] = useState("");
-  const [faceValuePoints, setFaceValuePoints] = useState(100);
+  const [faceValueYuan, setFaceValueYuan] = useState("1.00");
   const [generateQuantity, setGenerateQuantity] = useState(100);
   const [activeFrom, setActiveFrom] = useState(toLocalDatetimeValue(beijingNow));
   const [expireAt, setExpireAt] = useState(toLocalDatetimeValue(new Date(beijingNow.getTime() + 30 * 24 * 60 * 60 * 1000)));
@@ -124,7 +130,7 @@ export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
     try {
       const payload = {
         batch_name: batchName.trim() || `batch-${Date.now()}`,
-        face_value_points: Number(faceValuePoints),
+        face_value_points: parseYuanInputToCents(faceValueYuan),
         generate_quantity: Number(generateQuantity),
         active_from: datetimeLocalToBeijingOffset(activeFrom) || null,
         expire_at: datetimeLocalToBeijingOffset(expireAt) || null,
@@ -292,8 +298,9 @@ export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
               <Input value={batchName} onChange={(event) => setBatchName(event.target.value)} placeholder="如：3月活动A" />
             </div>
             <div className="space-y-2">
-              <Label>面额（分）</Label>
-              <Input type="number" min={1} value={faceValuePoints} onChange={(event) => setFaceValuePoints(Number(event.target.value || 1))} />
+              <Label>面额（元）</Label>
+              <Input type="number" min={0.01} step="0.01" value={faceValueYuan} onChange={(event) => setFaceValueYuan(event.target.value)} />
+              <p className="text-xs text-muted-foreground">后台按分兼容保存，本次将写入 {formatStoredMoneyYuan(parseYuanInputToCents(faceValueYuan))}（{formatStoredMoneyMeta(parseYuanInputToCents(faceValueYuan))}）。</p>
             </div>
             <div className="space-y-2">
               <Label>生成数量</Label>
@@ -330,8 +337,8 @@ export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
       </Card>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <Card><CardContent className="space-y-1 p-4"><p className="text-xs text-muted-foreground">当前页总发放金额</p><p className="text-xl font-semibold">{formatMoneyCents(batchHealth.totalIssued)}</p></CardContent></Card>
-        <Card><CardContent className="space-y-1 p-4"><p className="text-xs text-muted-foreground">当前页已发放金额</p><p className="text-xl font-semibold">{formatMoneyCents(batchHealth.totalRedeemed)}</p></CardContent></Card>
+        <Card><CardContent className="space-y-1 p-4"><p className="text-xs text-muted-foreground">当前页总发放金额</p><p className="text-xl font-semibold">{formatStoredMoneyYuan(batchHealth.totalIssued)}</p></CardContent></Card>
+        <Card><CardContent className="space-y-1 p-4"><p className="text-xs text-muted-foreground">当前页已发放金额</p><p className="text-xl font-semibold">{formatStoredMoneyYuan(batchHealth.totalRedeemed)}</p></CardContent></Card>
         <Card><CardContent className="space-y-1 p-4"><p className="text-xs text-muted-foreground">当前页 active 批次数</p><p className="text-xl font-semibold">{batchHealth.activeCount}</p></CardContent></Card>
       </div>
 
@@ -378,7 +385,7 @@ export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
                 <TableRow>
                   <TableHead>ID</TableHead>
                   <TableHead>批次名</TableHead>
-                  <TableHead>面额</TableHead>
+                  <TableHead>面额（元）</TableHead>
                   <TableHead>总码数</TableHead>
                   <TableHead>已兑</TableHead>
                   <TableHead>剩余</TableHead>
@@ -397,13 +404,13 @@ export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
                   <TableRow key={item.id}>
                     <TableCell>{item.id}</TableCell>
                     <TableCell>{item.batch_name}</TableCell>
-                    <TableCell>{formatMoneyCents(item.face_value_amount_cents ?? item.face_value_points ?? 0)}</TableCell>
+                    <TableCell>{formatStoredMoneyYuan(item.face_value_amount_cents ?? item.face_value_points ?? 0)}</TableCell>
                     <TableCell>{item.generated_count}</TableCell>
                     <TableCell>{item.redeemed_count}</TableCell>
                     <TableCell>{item.remaining_count}</TableCell>
                     <TableCell>{(Number(item.redeem_rate || 0) * 100).toFixed(2)}%</TableCell>
-                    <TableCell>{item.total_issued_points}</TableCell>
-                    <TableCell>{formatMoneyCents(item.total_redeemed_points || 0)}</TableCell>
+                    <TableCell>{formatStoredMoneyYuan(item.total_issued_points || 0)}</TableCell>
+                    <TableCell>{formatStoredMoneyYuan(item.total_redeemed_points || 0)}</TableCell>
                     <TableCell><Badge variant="outline">{item.status}</Badge></TableCell>
                     <TableCell>{formatDateTimeBeijing(item.active_from)}</TableCell>
                     <TableCell>{formatDateTimeBeijing(item.expire_at)}</TableCell>

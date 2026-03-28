@@ -71,26 +71,20 @@ export const ADMIN_NAV_ITEMS = [
   {
     key: "users",
     label: "用户运营",
-    description: "查用户、钱包流水和计费",
+    description: "查用户、钱包流水与计费价格",
     href: "/admin/users?tab=list",
   },
   {
     key: "redeem",
     label: "活动兑换",
-    description: "批次、兑换码与审计",
+    description: "批次、兑换码与兑换审计",
     href: "/admin/redeem",
   },
   {
     key: "troubleshooting",
     label: "排障中心",
-    description: "健康、失败、翻译与操作日志",
+    description: "健康、失败、安全维护与操作审计",
     href: "/admin/troubleshooting?tab=health&panel=overview",
-  },
-  {
-    key: "security",
-    label: "安全中心",
-    description: "数据库、权限与导出保护",
-    href: "/admin/security",
   },
 ];
 
@@ -102,7 +96,7 @@ export function resolveAdminNavKey(pathname, search = "") {
   if (pathname.startsWith("/admin/users")) return "users";
   if (pathname.startsWith("/admin/redeem")) return "redeem";
   if (pathname.startsWith("/admin/troubleshooting") || pathname.startsWith("/admin/health")) return "troubleshooting";
-  if (pathname.startsWith("/admin/security")) return "security";
+  if (pathname.startsWith("/admin/security")) return "troubleshooting";
   if (pathname.startsWith("/admin/rates") || pathname.startsWith("/admin/logs") || pathname.startsWith("/admin/subtitle-settings")) return "users";
   return "users";
 }
