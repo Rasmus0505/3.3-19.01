@@ -37,6 +37,13 @@ import {
   getRateDraftValidationMessage,
 } from "./rateDraftValidation";
 
+function billingDisplayRank(item) {
+  const displayName = String(item?.display_name || "").trim();
+  if (displayName === "Bottle 1.0") return 0;
+  if (displayName === "Bottle 2.0") return 1;
+  return 2;
+}
+
 function isTokenBilling(item) {
   return String(item?.billing_unit || "minute") === "1k_tokens";
 }
@@ -252,6 +259,12 @@ export function AdminRatesTab({ apiCall }) {
     }))
     .filter(({ validationMessage }) => Boolean(validationMessage));
 
+  const orderedRates = [...rates].sort((left, right) => {
+    const rankDiff = billingDisplayRank(left) - billingDisplayRank(right);
+    if (rankDiff !== 0) return rankDiff;
+    return String(left.display_name || left.model_name || "").localeCompare(String(right.display_name || right.model_name || ""), "zh-CN");
+  });
+
   async function saveAllRates() {
     if (invalidModels.length > 0) {
       setStatus("请先修正所有非法的费率字段，再尝试一次保存全部更改。");
@@ -284,7 +297,7 @@ export function AdminRatesTab({ apiCall }) {
           <Settings2 className="size-4" />
           计费配置
         </CardTitle>
-        <CardDescription>这里只维护售价、成本参考、计费单位和启停状态；运行时调优不再作为日常计费编辑的一部分。</CardDescription>
+        <CardDescription>这里只维护售价、成本参考、计费单位和启停状态；`Bottle 1.0 / Bottle 2.0` 作为主标题，技术模型名只保留为次级说明，运行时调优不再作为日常计费编辑的一部分。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {dirtyModels.length > 0 ? (
@@ -344,7 +357,7 @@ export function AdminRatesTab({ apiCall }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rates.map((item) => {
+              {orderedRates.map((item) => {
                 const fallbackDraft = buildDraftMap([item])[item.model_name];
                 const draft = drafts[item.model_name] || fallbackDraft;
                 const validationMessage = getRateDraftValidationMessage(draft);

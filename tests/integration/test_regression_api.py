@@ -621,7 +621,9 @@ def test_lesson_generation_repair_migration_recreates_missing_table(tmp_path):
 
 
 def _register_and_login(client: TestClient, email: str = "admin@example.com", password: str = "123456") -> str:
-    reg = client.post("/api/auth/register", json={"email": email, "password": password})
+    local_part = email.split("@", 1)[0] if "@" in email else email
+    username = re.sub(r"[^a-zA-Z0-9._-]+", "-", local_part).strip("-") or "user"
+    reg = client.post("/api/auth/register", json={"email": email, "password": password, "username": username})
     assert reg.status_code == 200
     admin_emails = {item.strip().lower() for item in os.getenv("ADMIN_EMAILS", "").split(",") if item.strip()}
     session_factory = getattr(client.app.state, "testing_session_factory", None)

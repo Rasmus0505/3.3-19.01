@@ -7,7 +7,7 @@ import { AdminErrorNotice } from "../../shared/components/AdminErrorNotice";
 import { copyCurrentUrl, mergeSearchParams, readIntParam, readStringParam } from "../../shared/lib/adminSearchParams";
 import { datetimeLocalToBeijingOffset, formatDateTimeBeijing, getBeijingNowForPicker } from "../../shared/lib/datetime";
 import { formatNetworkError, formatResponseError, parseJsonSafely } from "../../shared/lib/errorFormatter";
-import { formatMoneyCents } from "../../shared/lib/money";
+import { formatMoneyCents, formatStoredMoneyMeta, formatStoredMoneyYuan } from "../../shared/lib/money";
 import { useErrorHandler } from "../../shared/hooks/useErrorHandler";
 import {
   ActionMenu,
@@ -77,7 +77,22 @@ function buildRangeBounds(mode, singleDate, rangeStart, rangeEnd) {
 }
 
 function formatAmount(amountCents) {
-  return formatMoneyCents(amountCents);
+  return formatStoredMoneyYuan(amountCents);
+}
+
+function formatAmountWithMeta(amountCents) {
+  const meta = formatStoredMoneyMeta(amountCents);
+  return meta ? `${formatStoredMoneyYuan(amountCents)}（${meta}）` : formatStoredMoneyYuan(amountCents);
+}
+
+function parseYuanInputToCents(value) {
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized)) return 0;
+  return Math.round(normalized * 100);
+}
+
+function isMoneyLabel(label) {
+  return ["金额", "余额", "消耗", "兑换"].some((keyword) => String(label || "").includes(keyword));
 }
 
 function formatRangeText(mode, singleDate, rangeStart, rangeEnd) {
@@ -115,7 +130,7 @@ export function AdminUsersTab({ apiCall }) {
   const [summaryUser, setSummaryUser] = useState(null);
 
   const [adjustingUser, setAdjustingUser] = useState(null);
-  const [deltaPoints, setDeltaPoints] = useState(0);
+  const [deltaYuan, setDeltaYuan] = useState("0.00");
   const [reason, setReason] = useState("");
   const [adjustLoading, setAdjustLoading] = useState(false);
   const [confirmAdjustOpen, setConfirmAdjustOpen] = useState(false);
@@ -282,7 +297,7 @@ export function AdminUsersTab({ apiCall }) {
 
   function openAdjustDialog(user) {
     setAdjustingUser(user);
-    setDeltaPoints(0);
+    setDeltaYuan("0.00");
     setReason("");
   }
 
@@ -294,7 +309,7 @@ export function AdminUsersTab({ apiCall }) {
       const resp = await apiCall(`/api/admin/users/${adjustingUser.id}/wallet-adjust`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ delta_points: Number(deltaPoints), reason: reason.trim() }),
+        body: JSON.stringify({ delta_points: parseYuanInputToCents(deltaYuan), reason: reason.trim() }),
       });
       const data = await parseJsonSafely(resp);
       if (!resp.ok) {
@@ -304,7 +319,7 @@ export function AdminUsersTab({ apiCall }) {
             action: "余额调账",
             endpoint: `/api/admin/users/${adjustingUser.id}/wallet-adjust`,
             method: "POST",
-            meta: { user_id: adjustingUser.id, user_email: adjustingUser.email, delta_points: Number(deltaPoints), reason: reason.trim() },
+            meta: { user_id: adjustingUser.id, user_email: adjustingUser.email, delta_points: parseYuanInputToCents(deltaYuan), reason: reason.trim() },
             fallbackMessage: "调账失败",
           }),
         );
@@ -506,7 +521,7 @@ export function AdminUsersTab({ apiCall }) {
                 <UserRound className="size-4" />
                 用户活跃与用户操作
               </CardTitle>
-              <CardDescription>活跃口径按成功登录统计，支持指定日期和范围切换。下方用户列表继续保留查看摘要、余额调账和删除用户三个管理员动作。</CardDescription>
+            <CardDescription>活跃口径按成功登录统计，金额相关信息统一按元优先展示；下方用户列表继续保留查看摘要、余额调账和删除用户三个管理员动作。</CardDescription>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -535,7 +550,7 @@ export function AdminUsersTab({ apiCall }) {
             key={item.label}
             icon={item.label.includes("消耗") || item.label.includes("余额") ? Wallet : Activity}
             label={item.label}
-            value={String(item.label || "").includes("金额") || String(item.label || "").includes("余额") ? formatAmount(item.value) : item.value}
+            value={isMoneyLabel(item.label) ? formatAmount(item.value) : item.value}
             hint={item.hint}
             tone={item.tone || "default"}
             loading={loading && users.length === 0}
@@ -665,12 +680,13 @@ export function AdminUsersTab({ apiCall }) {
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-2">
-              <Label>变动金额（分，可负数）</Label>
-              <Input type="number" value={deltaPoints} onChange={(event) => setDeltaPoints(Number(event.target.value || 0))} />
+              <Label>变动金额（元，可负数）</Label>
+              <Input type="number" step="0.01" value={deltaYuan} onChange={(event) => setDeltaYuan(event.target.value)} placeholder="例如 10.00" />
+              <p className="text-xs text-muted-foreground">后台仍按分兼容存储，本次将写入 {formatAmountWithMeta(parseYuanInputToCents(deltaYuan))}。</p>
             </div>
             <div className="space-y-2">
               <Label>原因</Label>
-              <Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="例如：线下充值 1000 分" />
+              <Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="例如：线下充值 10 元" />
             </div>
           </div>
           <DialogFooter>
@@ -686,12 +702,12 @@ export function AdminUsersTab({ apiCall }) {
 
       <AlertDialog open={confirmAdjustOpen} onOpenChange={setConfirmAdjustOpen}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认提交调账？</AlertDialogTitle>
-            <AlertDialogDescription>
-              {adjustingUser?.email || "-"} 将变动 {formatAmount(deltaPoints)}，原因：{reason || "-"}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认提交调账？</AlertDialogTitle>
+              <AlertDialogDescription>
+              {adjustingUser?.email || "-"} 将变动 {formatAmountWithMeta(parseYuanInputToCents(deltaYuan))}，原因：{reason || "-"}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>返回修改</AlertDialogCancel>
             <AlertDialogAction onClick={submitAdjust}>{adjustLoading ? "提交中..." : "确认提交"}</AlertDialogAction>

@@ -38,10 +38,10 @@ Archived shipped requirements: see `.planning/milestones/v2.0-REQUIREMENTS.md`.
 
 ### Admin Operations
 
-- [ ] **ADM-01**: Admin overview, users, wallet logs, redeem, and pricing surfaces display money in yuan as the primary unit
-- [ ] **ADM-02**: Admin model naming uses `Bottle 1.0` and `Bottle 2.0` as primary labels, with technical names only as secondary notes
-- [ ] **ADM-03**: Admin route structure is Chinese-first and grouped by operator workflow while preserving old deep links
-- [ ] **ADM-04**: Editable pricing and read-only runtime diagnostics are presented as separate operator concerns
+- [x] **ADM-01**: Admin overview, users, wallet logs, redeem, and pricing surfaces display money in yuan as the primary unit
+- [x] **ADM-02**: Admin model naming uses `Bottle 1.0` and `Bottle 2.0` as primary labels, with technical names only as secondary notes
+- [x] **ADM-03**: Admin route structure is Chinese-first and grouped by operator workflow while preserving old deep links
+- [x] **ADM-04**: Editable pricing and read-only runtime diagnostics are presented as separate operator concerns
 
 ### Conversion & Monetization
 
@@ -89,10 +89,10 @@ Archived shipped requirements: see `.planning/milestones/v2.0-REQUIREMENTS.md`.
 | ACC-02 | Phase 9 | Complete |
 | ACC-03 | Phase 9 | Complete |
 | ACC-04 | Phase 9 | Complete |
-| ADM-01 | Phase 11 | Pending |
-| ADM-02 | Phase 11 | Pending |
-| ADM-03 | Phase 11 | Pending |
-| ADM-04 | Phase 11 | Pending |
+| ADM-01 | Phase 10 | Complete |
+| ADM-02 | Phase 10 | Complete |
+| ADM-03 | Phase 10 | Complete |
+| ADM-04 | Phase 10 | Complete |
 
 **Coverage:**
 - v2.1 requirements: 22 total
@@ -101,4 +101,4 @@ Archived shipped requirements: see `.planning/milestones/v2.0-REQUIREMENTS.md`.
 
 ---
 *Requirements defined: 2026-03-28*  
-*Last updated: 2026-03-28 after Phase 9 completion*
+*Last updated: 2026-03-29 after Phase 10 completion*

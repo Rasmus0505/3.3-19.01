@@ -263,6 +263,7 @@ export function AdminSystemTab({ apiCall, snapshot, loading = false, status = ""
                           <Badge variant={meta.variant}>{meta.label}</Badge>
                         </div>
                         <CardDescription>{item.runtime_kind === "desktop_local" ? "本地运行时诊断" : "云端接口诊断"}</CardDescription>
+                        <p className="text-xs text-muted-foreground">技术标识：{item.model_key}</p>
                       </CardHeader>
                       <CardContent className="space-y-3 text-sm text-muted-foreground">
                         <div>{item.message || "未返回运行说明。"}</div>

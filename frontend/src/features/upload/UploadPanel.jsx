@@ -2493,6 +2493,22 @@ export function UploadPanel({
   }
 
   async function loadDesktopImportedSourceFile(taskPayload = {}) {
+    const taskSourcePath = String(taskPayload?.source_path || "").trim();
+    const taskFilename = String(taskPayload?.source_filename || "desktop-link-source").trim() || "desktop-link-source";
+    const taskContentType = String(taskPayload?.content_type || "application/octet-stream").trim() || "application/octet-stream";
+    const taskSizeBytes = Math.max(0, Number(taskPayload?.source_size_bytes || taskPayload?.size_bytes || 0));
+    if (taskSourcePath) {
+      const nextFile = buildDesktopSelectedFile({
+        path: taskSourcePath,
+        sourcePath: taskSourcePath,
+        name: taskFilename,
+        type: taskContentType,
+        size: taskSizeBytes,
+      });
+      if (nextFile) {
+        return decorateDesktopLinkImportFile(nextFile, String(taskPayload?.title || desktopLinkTitle || "").trim());
+      }
+    }
     const taskToken = encodeURIComponent(String(taskPayload?.task_id || ""));
     if (!taskToken) {
       throw new Error("链接下载任务缺少 task_id");
@@ -6368,19 +6384,6 @@ export function UploadPanel({
                   type="button"
                   className={cn(
                     "rounded-xl px-3 py-1.5 text-sm transition-colors",
-                    desktopSourceMode === DESKTOP_UPLOAD_SOURCE_MODE_FILE
-                      ? getUploadToneStyles("selected").button
-                      : getUploadToneStyles("selected").buttonSubtle,
-                  )}
-                  onClick={() => void handleDesktopSourceModeChange(DESKTOP_UPLOAD_SOURCE_MODE_FILE)}
-                  disabled={loading || localModeBusy}
-                >
-                  本地文件
-                </button>
-                <button
-                  type="button"
-                  className={cn(
-                    "rounded-xl px-3 py-1.5 text-sm transition-colors",
                     desktopSourceMode === DESKTOP_UPLOAD_SOURCE_MODE_LINK
                       ? getUploadToneStyles("selected").button
                       : getUploadToneStyles("selected").buttonSubtle,
@@ -6389,6 +6392,19 @@ export function UploadPanel({
                   disabled={loading || localModeBusy}
                 >
                   链接导入
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "rounded-xl px-3 py-1.5 text-sm transition-colors",
+                    desktopSourceMode === DESKTOP_UPLOAD_SOURCE_MODE_FILE
+                      ? getUploadToneStyles("selected").button
+                      : getUploadToneStyles("selected").buttonSubtle,
+                  )}
+                  onClick={() => void handleDesktopSourceModeChange(DESKTOP_UPLOAD_SOURCE_MODE_FILE)}
+                  disabled={loading || localModeBusy}
+                >
+                  本地文件
                 </button>
               </div>
             ) : null}
@@ -6422,19 +6438,21 @@ export function UploadPanel({
               disabled={loading || localModeBusy || importBusy}
             />
             {desktopLinkModeActive ? (
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  className="h-11 rounded-2xl border bg-background px-4 text-sm outline-none transition-colors focus:border-upload-brand/50"
-                  placeholder="课程标题（可选，导入时可随时修改）"
-                  value={desktopLinkTitle}
-                  onChange={(event) => setDesktopLinkTitle(event.target.value)}
-                  disabled={localModeBusy}
-                />
+              <div className="space-y-3">
+                <div className="w-full md:w-1/3">
+                  <input
+                    type="text"
+                    className="h-11 w-full rounded-2xl border bg-background px-4 text-sm outline-none transition-colors focus:border-upload-brand/50"
+                    placeholder="课程标题（可选，导入时可随时修改）"
+                    value={desktopLinkTitle}
+                    onChange={(event) => setDesktopLinkTitle(event.target.value)}
+                    disabled={localModeBusy}
+                  />
+                </div>
                 <input
                   type="url"
                   inputMode="url"
-                  className="h-11 rounded-2xl border bg-background px-4 text-sm outline-none transition-colors focus:border-upload-brand/50"
+                  className="h-11 w-full rounded-2xl border bg-background px-4 text-sm outline-none transition-colors focus:border-upload-brand/50"
                   placeholder="粘贴公开单条视频链接，例如 https://www.youtube.com/watch?v=..."
                   value={desktopLinkInput}
                   onChange={(event) => handleDesktopLinkInputChange(event.target.value)}
@@ -6448,9 +6466,6 @@ export function UploadPanel({
                   }}
                   disabled={loading || localModeBusy}
                 />
-                <p className="text-xs text-muted-foreground">
-                  仅支持公开单条视频链接，不支持 cookies、登录态、手动 cookie、播放列表或批量链接。粘贴分享文案时会自动提取第一条有效链接。
-                </p>
                 <p className="text-xs text-muted-foreground">
                   无法导入时可改用{" "}
                   <button type="button" className="font-medium text-foreground underline underline-offset-2" onClick={() => void openSnapAnyFallback()}>

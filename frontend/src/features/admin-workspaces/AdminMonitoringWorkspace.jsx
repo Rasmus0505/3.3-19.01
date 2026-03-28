@@ -53,9 +53,9 @@ const PANEL_ALIASES = {
 };
 
 export const MONITORING_TABS = [
-  { value: "health", label: "健康概览", description: "总览、系统检查和 Bottle 运行诊断。", icon: ShieldCheck },
+  { value: "health", label: "健康概览", description: "总览、系统检查和安全状态总览。", icon: ShieldCheck },
   { value: "tasks", label: "任务失败", description: "生成失败和翻译失败集中排查。", icon: AlertTriangle },
-  { value: "operations", label: "操作审计", description: "后台日志与 SQL 诊断能力。", icon: ClipboardList },
+  { value: "operations", label: "操作审计", description: "后台日志、SQL 诊断与高权限维护留痕。", icon: ClipboardList },
 ];
 
 function scrollToPanel(panelValue) {
@@ -114,10 +114,10 @@ export function AdminMonitoringWorkspace({ apiCall }) {
               </div>
               <div>
                 <CardTitle className="text-lg">排障中心</CardTitle>
-                <CardDescription>把健康、失败、翻译和操作日志收敛到同一路由里，先判断问题在哪一层，再进入对应面板。</CardDescription>
+                <CardDescription>把健康、失败、翻译、安全维护和操作日志收敛到同一路由里，先判断问题在哪一层，再进入对应面板。</CardDescription>
               </div>
             </div>
-            <Badge variant="outline">Troubleshooting</Badge>
+            <Badge variant="outline">诊断 / 安全维护</Badge>
           </div>
           <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-3">
             <TabsList className="h-auto flex-wrap justify-start">
@@ -153,7 +153,7 @@ export function AdminMonitoringWorkspace({ apiCall }) {
           </div>
         </CardHeader>
         <CardContent className="pt-0">
-          <p className="text-sm text-muted-foreground">当前面板将保留深链参数 `tab` 和 `panel`，便于从总览卡片直接跳到具体故障面板。</p>
+          <p className="text-sm text-muted-foreground">当前面板保留 `tab` 和 `panel` 深链参数；旧 `/admin/security` 入口仍可访问，但语义已并入排障中心。</p>
         </CardContent>
       </Card>
 
