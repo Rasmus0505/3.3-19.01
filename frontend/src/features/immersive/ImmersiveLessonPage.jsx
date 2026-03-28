@@ -2080,13 +2080,13 @@ export function ImmersiveLessonPage({
     sentenceAdvanceLockedRef.current = true;
     dispatchSession({ type: SET_PHASE, phase: "transition" });
     setTimeout(() => {
-      requestHandleSentencePassed();
+      void handleSentencePassed();
     }, 120);
   }, [
     autoReplayAnsweredSentence,
+    handleSentencePassed,
     immersiveActive,
     postAnswerReplayState,
-    requestHandleSentencePassed,
     sentencePlaybackDone,
     sentencePlaybackRequired,
     sentenceTypingDone,
@@ -2256,6 +2256,19 @@ export function ImmersiveLessonPage({
       return { ok: false, reason: "fallback_active", error };
     }
   }, [immersiveActive, isCinemaFullscreen, isFullscreenFallback, isIpadSafari, lesson?.id]);
+
+  const interruptCurrentSentencePlayback = useCallback(
+    (source = "interrupt") => {
+      stopPlayback();
+      dispatchSession({ type: SET_POST_ANSWER_REPLAY_STATE, value: "idle" });
+      dispatchSession({ type: SET_PHASE, phase: "typing" });
+      debugImmersiveLog("interrupt_current_sentence_playback", {
+        source,
+        sentenceIndex: currentSentenceIndex,
+      });
+    },
+    [currentSentenceIndex, stopPlayback],
+  );
 
   const jumpToSentence = useCallback(
     async (targetIndex, source = "manual") => {
@@ -2437,19 +2450,6 @@ export function ImmersiveLessonPage({
       })();
     },
     [currentSentence, currentSentenceIndex, learningSettings.shortcuts.replay_sentence, needsBinding, togglePausePlayback],
-  );
-
-  const interruptCurrentSentencePlayback = useCallback(
-    (source = "interrupt") => {
-      stopPlayback();
-      dispatchSession({ type: SET_POST_ANSWER_REPLAY_STATE, value: "idle" });
-      dispatchSession({ type: SET_PHASE, phase: "typing" });
-      debugImmersiveLog("interrupt_current_sentence_playback", {
-        source,
-        sentenceIndex: currentSentenceIndex,
-      });
-    },
-    [currentSentenceIndex, stopPlayback],
   );
 
   const requestPlayPreviousSentence = useCallback(
