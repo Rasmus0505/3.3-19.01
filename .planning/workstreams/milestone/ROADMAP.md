@@ -5,100 +5,79 @@
 - ✅ **v1.0 基础能力稳定化** — Phases 1, 1.1, 2 (shipped 2026-03-27)
 - ✅ **v1.1** — Phases 2.1, 3, 4 (shipped 2026-03-27)
 - ✅ **v2.0** — Phases 5, 6 (shipped 2026-03-28)
+- 🚧 **v2.1 优化学习体验和管理体验** — Phases 7, 8, 9, 10, 11 (planned)
 
 ## Phases
 
-<details>
-<summary>✅ v1.0 基础能力稳定化 (Phases 1, 1.1, 2) — SHIPPED 2026-03-27</summary>
+### Phase 7: 竞品研究与产品规范
 
-- [x] Phase 1: Shared Cloud Generation (3/3 plans) — completed 2026-03-26
-- [x] Phase 1.1: Fix ASR 403 File Access Failures (2/2 plans) — completed 2026-03-27
-- [x] Phase 2: Desktop Local Generation (3/3 plans) — completed 2026-03-27
-
-_See: `.planning/milestones/v1.0-ROADMAP.md` for full phase details_
-
-</details>
-
-### ✅ v1.1 — Urgent Admin Cleanup, Lesson Output & Desktop Link Import (Shipped 2026-03-27)
-
-- [x] **Phase 2.1: Admin Bottle 1.0 Settings & Billing Cleanup** (INSERTED) — completed 2026-03-27
-- [x] **Phase 3: Lesson Output Consistency** (3 plans) — completed 2026-03-27
-- [x] **Phase 4: Desktop Link Import** (2 plans) — completed 2026-03-27
-
-### Phase 2.1: Admin Bottle 1.0 Settings & Billing Cleanup
-
-**Goal**: Remove the standalone `/admin/models` model-configuration surface, delete all admin-side model-parameter configuration paths, and make Bottle 1.0 a normal billable model row inside an existing admin workspace with end-to-end `model_name` continuity.
-**Depends on**: Phase 2
-**Plans**: 3 plans
-
-Plans:
-
-- [ ] 02.1-01: Remove `/admin/models` and relocate billing access into an existing admin workspace
-- [ ] 02.1-02: Delete model-parameter configuration UI, backend endpoints, and deprecated persistence paths
-- [ ] 02.1-03: Align Bottle 1.0 billing row, runtime deduction, and verification coverage on one canonical `model_name`
-
-### Phase 3: Lesson Output Consistency
-
-**Goal**: Normalize Bottle 1.0 and Bottle 2.0 generation outputs into one canonical lesson record and shared learning entry flow so users can open lessons, review sentence content, and continue practice regardless of generation source, while generation progress, partial failures, and success states stay consistent across runtimes.
-**Depends on**: Phases 1, 2, 2.1
-**Plans**: 3 plans
-
-Plans:
-
-- [ ] 03-01: Align task and persistence contracts so Bottle 1.0 and Bottle 2.0 both land in the same lesson, sentence, and subtitle-cache artifacts
-- [ ] 03-02: Unify history and lesson-opening flows so generated lessons expose consistent sentence review and resume behavior across sources
-- [ ] 03-03: Align generation-state, partial-success, and practice handoff UX and verification on the shared lesson pipeline
-
-### Phase 4: Desktop Link Import
-
-**Goal**: Let desktop users import supported media links through local tooling and feed the resulting media into the same generation pipeline without moving heavy download or conversion work onto the server.
-**Depends on**: Phase 3
+**Goal**: 固定 v2.1 的产品定位、竞品参考、Bottle 1.0 / 2.0 文案与网页端转化路径，让后续体验改造不是凭感觉推进。  
+**Depends on**: Phase 6  
+**Requirements**: WEB-01, WEB-02, WEB-03, GROW-01, GROW-02  
 **Plans**: 2 plans
 
 Plans:
 
-- [x] 04-01: Add desktop link selection, yt-dlp ingestion, and local media-preparation safeguards
-- [x] 04-02: Feed imported desktop media into the shared generation and history pipeline with verification and error recovery
+- [ ] 07-01: 完成官方竞品矩阵与 Bottle 1.0 / 2.0 定位文案
+- [ ] 07-02: 收口网页端模型卡、充值引导、桌面端 CTA 与 Bottle 1.0 执行防守
 
-### ✅ v2.0 — Billing, Admin & Polish (SHIPPED 2026-03-28)
+### Phase 8: 沉浸学习重构
 
-- [x] **Phase 5: Billing and Admin Alignment** (3/3 plans) — completed 2026-03-28
-- [x] **Phase 6: Product Polish and Fallbacks** (2/2 plans) — completed 2026-03-28
+**Goal**: 把沉浸学习改成稳定的播放/输入状态机，支持单句循环和倍速切换，并解决历史组合操作冲突。  
+**Depends on**: Phase 7  
+**Requirements**: IMM-01, IMM-02, IMM-03, IMM-04, IMM-05  
+**Plans**: 4 plans
 
-### Phase 5: Billing and Admin Alignment
+Plans:
 
-**Goal**: Align the admin-facing pricing, operational visibility, and troubleshooting structure around Bottle 1.0 and Bottle 2.0 so the product has a simpler business-facing admin surface plus a separate developer-oriented troubleshooting area.
-**Depends on**: Phase 4
+- [ ] 08-01: 拆分沉浸学习的播放、输入、快捷键与句子推进状态
+- [ ] 08-02: 增加单句循环与固定倍速切换
+- [ ] 08-03: 清理全屏、遮挡板与播放完成状态的互斥关系
+- [ ] 08-04: 补齐关键组合交互回归验证
+
+### Phase 9: 生词本、账号与网页模型边界
+
+**Goal**: 让生词本从收词列表升级为可复习入口，同时完成用户名注册/修改与网页端 Bottle 1.0 边界强化。  
+**Depends on**: Phase 8  
+**Requirements**: WBK-01, WBK-02, WBK-03, WBK-04, ACC-01, ACC-02, ACC-03, ACC-04  
+**Plans**: 4 plans
+
+Plans:
+
+- [ ] 09-01: 增加用户名注册、个人资料改名和当前用户读取接口
+- [ ] 09-02: 重做登录/注册前端与轻量账户设置入口
+- [ ] 09-03: 为生词本补齐复习字段、到期队列与复习动作
+- [ ] 09-04: 收口网页端 Bottle 1.0 不可执行但可引导的边界体验
+
+### Phase 10: 管理台前后端收口
+
+**Goal**: 重构管理台信息架构和接口展示语义，统一中文表达、元优先金额、Bottle 1.0 / 2.0 主命名。  
+**Depends on**: Phase 9  
+**Requirements**: ADM-01, ADM-02, ADM-03, ADM-04  
+**Plans**: 4 plans
+
+Plans:
+
+- [ ] 10-01: 设计并落地新的中文优先管理台导航与深链兼容
+- [ ] 10-02: 将 overview/users/wallet/redeem/pricing 金额统一改为元语义
+- [ ] 10-03: 收口 Bottle 1.0 / 2.0 命名、排序和模型配置说明
+- [ ] 10-04: 分离计费编辑与运行诊断视图并清理英文残留
+
+### Phase 11: 盈利转化落地与回归收口
+
+**Goal**: 基于前面阶段的定位和文案，把充值、模型选择、桌面下载转化路径真正落地，并完成整条链路回归。  
+**Depends on**: Phase 10  
+**Requirements**: GROW-01, GROW-02  
 **Plans**: 3 plans
 
 Plans:
 
-- [x] 05-01: Rework the admin shell into a lighter user-first workflow and separate troubleshooting route
-- [x] 05-02: Turn billing management into a pricing-only surface while preserving canonical model identities
-- [x] 05-03: Expose a full troubleshooting center with runtime-readiness visibility and verification coverage
+- [ ] 11-01: 统一模型卡、充值按钮、余额不足提示与桌面端下载转化文案
+- [ ] 11-02: 形成 v2.1 经营建议清单并固化到研究总结
+- [ ] 11-03: 完成全链路回归、旧深链验证与网页静态产物同步检查
 
-### Phase 6: Product Polish and Fallbacks
+## Summary
 
-**Goal**: Remove the Getting Started onboarding guide from the web app and improve the billing UX so insufficient balance surfaces a clear recovery path and the estimated charge display is simplified.
-**Depends on**: Phase 5
-**Plans**: 2 plans
-
-Plans:
-
-- [x] 06-01: Remove Getting Started guide from web app routing, sidebar, panel, and overlay
-- [x] 06-02: Improve billing insufficiency UX with dedicated recharge button and simplified estimate display
-
-## Progress
-
-|| Phase | Milestone | Plans | Status | Completed |
-||-------|-----------|-------|--------|-----------|
-|| 1. Shared Cloud Generation | v1.0 | 3/3 | Complete | 2026-03-26 |
-|| 1.1. Fix ASR 403 | v1.0 | 2/2 | Complete | 2026-03-27 |
-|| 2. Desktop Local Generation | v1.0 | 3/3 | Complete | 2026-03-27 |
-|| 2.1. Admin Bottle 1.0 Settings & Billing Cleanup | v1.1 | 3/3 | Complete | 2026-03-27 |
-|| 3. Lesson Output Consistency | v1.1 | 3/3 | Complete | 2026-03-27 |
-|| 4. Desktop Link Import | v1.1 | 2/2 | Complete | 2026-03-27 |
-|| 5. Billing and Admin Alignment | v2.0 | 3/3 | Complete | 2026-03-28 |
-|| 6. Product Polish and Fallbacks | v2.0 | 2/2 | Complete | 2026-03-28 |
-
-**Overall:** 8/8 phases complete (v1.0 shipped, v1.1 shipped, v2.0 shipped 2026-03-28)
+**Pending milestone:** v2.1 优化学习体验和管理体验  
+**Phase count:** 5  
+**Requirement coverage:** 22 / 22 mapped
