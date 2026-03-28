@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -167,6 +168,68 @@ def test_desktop_helper_generate_route_returns_local_generation_result(tmp_path,
     assert payload["runtime_kind"] == "desktop_local"
     assert payload["local_generation_result"]["lesson_status"] == "ready"
     assert payload["local_generation_result"]["variant"]["sentences"][0]["text_en"] == "hello from local generate"
+
+
+def test_desktop_helper_prepare_upload_source_extracts_audio_for_video(tmp_path, monkeypatch):
+    from app.api.routers import desktop_asr as desktop_asr_router
+
+    source_path = tmp_path / "sample.mp4"
+    source_path.write_bytes(b"fake-video")
+
+    monkeypatch.setattr(desktop_asr_router, "extract_audio_for_asr", lambda _src, dst: dst.write_bytes(b"prepared-audio"))
+    monkeypatch.setattr(desktop_asr_router, "probe_audio_duration_ms", lambda _path: 6789)
+
+    app = create_desktop_helper_app({"model_dir": str(tmp_path / "models")})
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/desktop-asr/prepare-upload-source",
+            json={
+                "source_path": str(source_path),
+                "source_filename": "sample.mp4",
+            },
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["ok"] is True
+    assert payload["prepared"] is True
+    assert payload["source_filename"].endswith(".opus")
+    assert payload["content_type"].startswith("audio/")
+    assert payload["source_duration_ms"] == 6789
+    assert Path(payload["source_path"]).read_bytes() == b"prepared-audio"
+
+
+def test_desktop_helper_prepare_upload_source_keeps_audio_file_when_conversion_not_needed(tmp_path, monkeypatch):
+    from app.api.routers import desktop_asr as desktop_asr_router
+
+    source_path = tmp_path / "sample.mp3"
+    source_path.write_bytes(b"fake-audio")
+    extract_calls = []
+
+    def fake_extract(*_args, **_kwargs):
+        extract_calls.append("called")
+
+    monkeypatch.setattr(desktop_asr_router, "extract_audio_for_asr", fake_extract)
+    monkeypatch.setattr(desktop_asr_router, "probe_audio_duration_ms", lambda _path: 4321)
+
+    app = create_desktop_helper_app({"model_dir": str(tmp_path / "models")})
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/desktop-asr/prepare-upload-source",
+            json={
+                "source_path": str(source_path),
+                "source_filename": "sample.mp3",
+            },
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["ok"] is True
+    assert payload["prepared"] is False
+    assert payload["source_path"] == str(source_path)
+    assert payload["source_filename"] == "sample.mp3"
+    assert payload["source_duration_ms"] == 4321
+    assert extract_calls == []
 
 
 def test_desktop_helper_transcribe_upload_route_returns_browser_local_asr_payload(tmp_path, monkeypatch):

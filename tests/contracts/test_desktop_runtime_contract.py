@@ -423,7 +423,7 @@ def test_uploadWithProgress_upload_panel_exposes_bottle2_cloud_stage_model_and_d
     assert "提交云端任务" in upload_panel_source
     assert "转写中" in upload_panel_source
     assert "生成课程" in upload_panel_source
-    assert "下载桌面客户端" in upload_panel_source
+    assert "下载桌面客户端" in upload_panel_source or "获取桌面端" in upload_panel_source
     assert "VITE_DESKTOP_CLIENT_ENTRY_URL" in upload_panel_source
     assert "音频与视频文件直传" in upload_panel_source
     assert "2.0 GB" in upload_panel_source or "2 GB" in upload_panel_source
@@ -474,6 +474,14 @@ def test_upload_panel_resolves_desktop_source_path_before_local_course_generatio
     assert "当前素材缺少桌面本机路径，请重新选择一次文件后再试。" in upload_panel_source
     assert "const selectedSourceFile = attachDesktopSourcePath(" in upload_panel_source
     assert "resolveDesktopSelectedSourcePath(options?.sourceFile ?? file) || resolveDesktopSelectedSourcePath(file)" in upload_panel_source
+
+
+def test_upload_panel_prepares_desktop_video_before_cloud_direct_upload():
+    upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
+
+    assert 'requestDesktopLocalHelper("/api/desktop-asr/prepare-upload-source"' in upload_panel_source
+    assert "prepareDesktopCloudUploadSourceFile(" in upload_panel_source
+    assert "await submitCloudDirectUpload(uploadSourceFile, runToken, pollToken, selectedSourceFile);" in upload_panel_source
 
 
 def test_upload_panel_skips_cloud_auto_fallback_for_explicit_desktop_local_generate():
@@ -716,7 +724,7 @@ def test_asr_strategy_file_access_contract_maps_backend_code_and_nested_detail()
 
     payload = _run_node_json(script)
 
-    expected_message = "云端暂时无法访问已上传的文件，请稍后重试；若再次失败，请重新上传当前素材。"
+    expected_message = "Bottle 2.0 暂时无法访问已上传的文件，请稍后重试；若再次失败，请重新上传当前素材。"
     assert payload["direct"]["code"] == "CLOUD_FILE_ACCESS_FORBIDDEN"
     assert payload["direct"]["message"] == expected_message
     assert payload["nested"]["code"] == "CLOUD_FILE_ACCESS_FORBIDDEN"

@@ -1529,6 +1529,45 @@ async function materializeDesktopSelectedFile(fileLike) {
   return decorateDesktopSourcePath(nextFile, sourcePath);
 }
 
+async function prepareDesktopCloudUploadSourceFile(sourceFile, fallbackLessonTitle = "") {
+  const sourcePath = resolveDesktopSourcePathCandidate(sourceFile);
+  if (!sourcePath || !hasDesktopRuntimeBridge()) {
+    return sourceFile;
+  }
+  const sourceType = String(sourceFile?.type || "").trim().toLowerCase();
+  const sourceName = String(sourceFile?.name || "").trim();
+  if (!sourceType.startsWith("video/") && !/\.(mp4|m4v|mov|mkv|webm|avi)$/i.test(sourceName)) {
+    return sourceFile;
+  }
+  const response = await requestDesktopLocalHelper("/api/desktop-asr/prepare-upload-source", "json", {
+    method: "POST",
+    body: {
+      source_path: sourcePath,
+      source_filename: sourceName,
+    },
+  });
+  const payload = response?.data || {};
+  if (!response?.ok) {
+    throw new Error(toErrorText(payload, "准备桌面上传素材失败"));
+  }
+  const preparedSourcePath = String(payload?.source_path || "").trim();
+  if (!preparedSourcePath || preparedSourcePath === sourcePath) {
+    return sourceFile;
+  }
+  const preparedFile = buildDesktopSelectedFile({
+    path: preparedSourcePath,
+    sourcePath: preparedSourcePath,
+    name: String(payload?.source_filename || sourceName || "desktop-cloud-upload").trim() || "desktop-cloud-upload",
+    type: String(payload?.content_type || "audio/ogg").trim() || "audio/ogg",
+    size: Math.max(0, Number(payload?.source_size_bytes || payload?.size_bytes || 0)),
+  });
+  const nextFile = preparedFile ? attachDesktopSourcePath(preparedFile, preparedSourcePath) : attachDesktopSourcePath(sourceFile, preparedSourcePath);
+  if (sourceFile?.desktopLinkImported) {
+    return decorateDesktopLinkImportFile(nextFile, String(sourceFile?.desktopLinkLessonTitle || fallbackLessonTitle || "").trim());
+  }
+  return nextFile;
+}
+
 function restoreSavedSourceFile(saved = {}) {
   const sourcePath = resolveDesktopSourcePathCandidate(saved);
   const restoredBlobFile = createFileFromBlob(saved?.file_blob, saved?.file_name, saved?.media_type);
@@ -5465,7 +5504,7 @@ export function UploadPanel({
     }
   }
 
-  async function submitCloudDirectUpload(uploadSourceFile, runToken, pollToken) {
+  async function submitCloudDirectUpload(uploadSourceFile, runToken, pollToken, displaySourceFile = uploadSourceFile) {
     const uploadStartStatus = "正在获取云端上传地址";
     setPhase("uploading");
     setStatus(uploadStartStatus);
@@ -5567,7 +5606,7 @@ export function UploadPanel({
       form.append("asr_model", selectedAsrModel);
       form.append("semantic_split_enabled", "false");
       form.append("dashscope_file_id", resolvedFileId);
-      form.append("source_filename", toNormalizedFilename(uploadSourceFile?.name || ""));
+      form.append("source_filename", toNormalizedFilename(displaySourceFile?.name || uploadSourceFile?.name || ""));
       if (resolvedFileUrl) {
         form.append("dashscope_file_url", resolvedFileUrl);
       }
@@ -5798,8 +5837,12 @@ export function UploadPanel({
     // Bottle 2.0 直传模式（QWEN_MODEL）：使用 DashScope pre-signed URL 直传
     if (selectedAsrModel === QWEN_MODEL) {
       try {
-        const uploadSourceFile = await ensureUploadableSourceFile();
-        await submitCloudDirectUpload(uploadSourceFile, runToken, pollToken);
+        const preparedDesktopSourceFile = await prepareDesktopCloudUploadSourceFile(
+          selectedSourceFile,
+          String(selectedSourceFile?.desktopLinkLessonTitle || desktopLinkTitle || "").trim(),
+        );
+        const uploadSourceFile = await ensureBlobBackedSourceFile(preparedDesktopSourceFile);
+        await submitCloudDirectUpload(uploadSourceFile, runToken, pollToken, selectedSourceFile);
       } catch (error) {
         await handleTaskFailureState({
           message: error instanceof Error && error.message ? error.message : String(error),
@@ -5816,8 +5859,12 @@ export function UploadPanel({
     const resumeAsrModel = String(taskSnapshot?.asr_model || selectedAsrModel || "");
     if (resumeAsrModel === FASTER_WHISPER_MODEL) {
       try {
-        const uploadSourceFile = await ensureUploadableSourceFile();
-        await submitCloudDirectUpload(uploadSourceFile, runToken, pollToken);
+        const preparedDesktopSourceFile = await prepareDesktopCloudUploadSourceFile(
+          selectedSourceFile,
+          String(selectedSourceFile?.desktopLinkLessonTitle || desktopLinkTitle || "").trim(),
+        );
+        const uploadSourceFile = await ensureBlobBackedSourceFile(preparedDesktopSourceFile);
+        await submitCloudDirectUpload(uploadSourceFile, runToken, pollToken, selectedSourceFile);
       } catch (error) {
         await handleTaskFailureState({
           message: error instanceof Error && error.message ? error.message : String(error),
