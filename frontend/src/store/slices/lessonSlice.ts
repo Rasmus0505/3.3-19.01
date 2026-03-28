@@ -439,11 +439,12 @@ export function createLessonSlice(set: Setter, get: Getter) {
         return { ok: false, message };
       }
     },
-    async deleteLessonsBulk({ lessonIds = [], deleteAll = false }: any = {}) {
+    async deleteLessonsBulk({ lessonIds = [], excludedLessonIds = [], deleteAll = false }: any = {}) {
       if (!get().accessToken) {
         return { ok: false, message: "请先登录" };
       }
       const normalizedIds = normalizeDeletedLessonIds(lessonIds);
+      const normalizedExcludedIds = normalizeDeletedLessonIds(excludedLessonIds);
       if (!deleteAll && !normalizedIds.length) {
         return { ok: false, message: "请先选择要删除的历史记录" };
       }
@@ -455,6 +456,7 @@ export function createLessonSlice(set: Setter, get: Getter) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               lesson_ids: normalizedIds,
+              excluded_lesson_ids: normalizedExcludedIds,
               delete_all: Boolean(deleteAll),
             }),
           },

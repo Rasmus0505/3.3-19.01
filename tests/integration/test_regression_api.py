@@ -4514,6 +4514,56 @@ def test_bulk_delete_all_lessons_only_removes_current_user_history(test_client):
     assert other_resp.status_code == 200
 
 
+def test_bulk_delete_all_lessons_respects_excluded_ids(test_client):
+    client, session_factory, _ = test_client
+    owner_token = _register_and_login(client, email="bulk-delete-excluded-owner@example.com")
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+
+    session = session_factory()
+    try:
+        owner = session.query(User).filter(User.email == "bulk-delete-excluded-owner@example.com").one()
+        owner_lessons = [
+            Lesson(
+                user_id=owner.id,
+                title=f"delete excluded owner {index}",
+                source_filename=f"delete-excluded-owner-{index}.mp4",
+                asr_model=QWEN_ASR_MODEL,
+                duration_ms=1600 + index,
+                media_storage="client_indexeddb",
+                source_duration_ms=1600 + index,
+                status="ready",
+            )
+            for index in range(1, 5)
+        ]
+        session.add_all(owner_lessons)
+        session.flush()
+        excluded_ids = [owner_lessons[1].id, owner_lessons[3].id]
+        expected_deleted_ids = [lesson.id for lesson in owner_lessons if lesson.id not in excluded_ids]
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.post(
+        "/api/lessons/bulk-delete",
+        headers=owner_headers,
+        json={"lesson_ids": [], "excluded_lesson_ids": excluded_ids, "delete_all": True},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["ok"] is True
+    assert sorted(payload["deleted_ids"]) == sorted(expected_deleted_ids)
+    assert payload["deleted_count"] == len(expected_deleted_ids)
+    assert payload["failed_ids"] == []
+
+    for lesson_id in expected_deleted_ids:
+        deleted_resp = client.get(f"/api/lessons/{lesson_id}", headers=owner_headers)
+        assert deleted_resp.status_code == 404
+
+    for lesson_id in excluded_ids:
+        kept_resp = client.get(f"/api/lessons/{lesson_id}", headers=owner_headers)
+        assert kept_resp.status_code == 200
+
+
 def test_create_lesson_endpoint_with_stubbed_service(test_client, monkeypatch, tmp_path):
     client, session_factory, _ = test_client
     token = _register_and_login(client, email="creator@example.com")

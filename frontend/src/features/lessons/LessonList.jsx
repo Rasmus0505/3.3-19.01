@@ -752,7 +752,7 @@ export function LessonList({
     try {
       const result = await onBulkDelete(
         allHistorySelected
-          ? { deleteAll: true, lessonIds: [] }
+          ? { deleteAll: true, lessonIds: [], excludedLessonIds }
           : { deleteAll: false, lessonIds: selectedLessonIds },
       );
       if (result?.ok) {
@@ -935,7 +935,11 @@ export function LessonList({
                 )}
                 {hasSelection ? (
                   <p className="text-sm text-muted-foreground">
-                    {allHistorySelected ? `已选全部历史 ${selectedCount} 项` : `已选 ${selectedCount} 项`}
+                    {allHistorySelected
+                      ? excludedLessonIds.length > 0
+                        ? `已选其余 ${selectedCount} 项，已排除 ${excludedLessonIds.length} 项`
+                        : `已选全部历史 ${selectedCount} 项`
+                      : `已选 ${selectedCount} 项`}
                   </p>
                 ) : (
                   <p className="text-sm text-muted-foreground">选择要删除的记录</p>
@@ -1293,14 +1297,16 @@ export function LessonList({
           }}
         >
           <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>确认删除选中的历史记录？</AlertDialogTitle>
-              <AlertDialogDescription>
-                {allHistorySelected
-                  ? `将删除全部历史记录中的 ${selectedCount} 项，课程、学习进度和相关记录都会被删除，删除后不可恢复。`
-                  : `将删除当前选中的 ${selectedCount} 项历史记录，课程、学习进度和相关记录都会被删除，删除后不可恢复。`}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>确认删除选中的历史记录？</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {allHistorySelected
+                      ? excludedLessonIds.length > 0
+                        ? `将删除除已取消勾选的 ${excludedLessonIds.length} 项外，其余 ${selectedCount} 项历史记录；课程、学习进度和相关记录都会被删除，删除后不可恢复。`
+                        : `将删除全部历史记录中的 ${selectedCount} 项，课程、学习进度和相关记录都会被删除，删除后不可恢复。`
+                      : `将删除当前选中的 ${selectedCount} 项历史记录，课程、学习进度和相关记录都会被删除，删除后不可恢复。`}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={deleteBusy}>取消</AlertDialogCancel>
               <AlertDialogAction
