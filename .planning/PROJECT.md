@@ -2,13 +2,25 @@
 
 ## What This Is
 
-Bottle is an English learning product for English learners. Users bring their own study materials, generate structured lessons from media, and then practice with spelling and sentence-based learning flows.
+Bottle is an English learning product for English learners. Users bring their own study materials, generate structured lessons from real media, and then practice through sentence-based learning, spelling, and review flows.
 
 The product is intentionally split by runtime capability: the desktop client is the full-power experience, while the web app provides the strongest browser-safe subset. The platform should stay easy for non-technical learners while keeping heavy media work off your server whenever possible.
 
 ## Core Value
 
 Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
+
+## Current Milestone: v2.1 优化学习体验和管理体验
+
+**Goal:** Rebuild the learning and admin experience around clearer product boundaries, more stable immersion controls, better review loops, and stronger conversion paths for Bottle 1.0 and Bottle 2.0.
+
+**Target features:**
+- 单句循环精听、倍速切换、沉浸学习组合操作稳定化
+- 生词本从“收词列表”升级为“带到期复习的复习入口”
+- 注册必填唯一用户名，登录/注册前端重做，并提供改用户名入口
+- 网页端明确 Bottle 1.0 / Bottle 2.0 的定位，Bottle 1.0 仅作桌面端引导不可执行
+- 管理台重构为中文优先、元优先、Bottle 1.0 / 2.0 命名统一的运营后台
+- 盈利转化先落地模型卡文案、价格锚点、充值引导、桌面端下载 CTA
 
 ## Requirements
 
@@ -37,13 +49,21 @@ Users can turn real English media into usable learning lessons quickly, without 
 
 ### Active
 
-*(All v1 requirements have been validated. See `milestones/v2.0-REQUIREMENTS.md` for the complete archived requirements list.)*
+- [ ] Learning experience is stable enough for repeated sentence listening, speed switching, and shortcut combinations without state conflicts
+- [ ] Wordbook supports due review, review progress, and context-rich revision instead of only passive collection
+- [ ] Account onboarding uses unique usernames while login remains email-first and low risk
+- [ ] Web product surface makes Bottle 1.0 desktop-only and Bottle 2.0 web-first obvious before users start generation
+- [ ] Admin operators work in a Chinese-first, yuan-first backend with clearer model naming and cleaner information architecture
+- [ ] Pricing, recharge, and desktop download paths convert users better through clearer positioning rather than new subscription logic
 
 ### Out of Scope
 
 - User-provided ASR API key configuration — platform-managed billing and keys keep the experience simple
-- Forcing full desktop parity in the browser — browser/runtime constraints are acceptable where local tooling is required
+- Full browser parity for local tooling features — browser/runtime constraints are acceptable where local tooling is required
 - Making the server the primary media processing worker — this conflicts with cost and capacity limits
+- Introducing subscriptions or membership bundles in v2.1 — this milestone focuses on per-use conversion improvements first
+- Letting web users actually execute Bottle 1.0 — Bottle 1.0 remains desktop-only by product boundary
+- Replacing email login with username login — higher auth churn risk than this milestone needs
 
 ## Context
 
@@ -51,6 +71,7 @@ Users can turn real English media into usable learning lessons quickly, without 
 - Desktop capability already includes local helper patterns, local ASR model management, bundled ffmpeg/yt-dlp resources, and URL import building blocks.
 - Web and desktop already share a large part of the frontend and product model, which should be preserved rather than split into separate products.
 - Current product direction is not to rebuild from scratch, but to sharpen product boundaries, stabilize generation flows, reduce server load, and improve the learner experience.
+- Market reference pass for this milestone is based on official materials checked on 2026-03-28 from LingQ, Migaku, FluentU, and Glossika. Shared patterns: sentence-centric repetition, one-click vocabulary capture, due-review loops, strong scenario-based plan positioning, and premium upsell through convenience rather than raw feature count.
 
 ## Constraints
 
@@ -60,17 +81,18 @@ Users can turn real English media into usable learning lessons quickly, without 
 - **Web Delivery Contract**: 凡涉及网页端前端行为或路由的改动，完成标准必须包含同步并验证 `app/static`；仅修改 `frontend/src` 不视为网页端已完成。
 - **Billing**: Bottle 1.0 and Bottle 2.0 are both paid capabilities with prices managed in admin tooling.
 - **Brownfield Preservation**: Existing auth, wallet, admin, lesson, and desktop foundations should be optimized, not discarded.
+- **Auth Risk Control**: Username can expand identity and profile UX, but email/password remains the only login path in v2.1.
 
 ## Current State
 
-**All v1 milestones complete.** The full v1 product is shipped:
+**v2.0 shipped on 2026-03-28.** The full v1 product is shipped:
 - v1.0 (2026-03-27): Foundation — shared cloud generation, ASR 403 self-heal, desktop local generation
 - v1.1 (2026-03-27): Bottle 1.0 billing/admin cleanup, canonical lesson pipeline, desktop link import
 - v2.0 (2026-03-28): Admin simplification, pricing-only billing, troubleshooting center, onboarding cleanup, billing UX
 
-**22/22 v1 requirements satisfied** across all three milestones.
+**22/22 prior milestone requirements satisfied.**
 
-**下一步：** 规划下一个里程碑
+**当前阶段：** v2.1 需求定义与路线图初始化
 
 ## Milestone: v2.0 Summary
 
@@ -87,18 +109,15 @@ Users can turn real English media into usable learning lessons quickly, without 
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Desktop client is the primary product surface for full generation capabilities | Desktop can safely host local models, ffmpeg, yt-dlp, and local helper workflows | ✅ Validated in Phase 02 — model bundled via extraResources, helper auto-starts silently, zero-friction UX |
-| Web app centers on Bottle 2.0 cloud generation | Browser users still need a useful path, but browser-local heavy tooling is not reliable enough | ✅ Validated in Phase 01 & 02 — desktop guidance replaces server fallback, not browser parity |
-| Platform manages ASR keys instead of end users | Learners are non-technical and should pay with points/redeem codes rather than configure secrets | ✅ Validated — platform-managed keys throughout v1.0 |
-| Server should stay light and avoid becoming the media processing bottleneck | Cost and infrastructure limits make centralized heavy processing a bad default | ✅ Validated in Phase 01 & 01.1 — signed URL retry self-heal keeps server light |
-| Generated media should become lesson/practice artifacts regardless of generation path | Users care about learning outcomes, not the underlying ASR route | ✅ Validated in Phase 3 — canonical lesson/history/learning flow now shared |
-| Direct-upload DashScope file access failures should self-heal before surfacing to users | Signed URLs can expire or be rejected transiently; the product should repair that path without forcing users into manual fallback first | ✅ Validated in Phase 01.1 — one-time retry + dedicated DASHSCOPE_FILE_ACCESS_FORBIDDEN error |
-| Treat `dashscope_file_id` as the canonical cloud object key across request-url, task artifacts, and generation entrypoints | The direct-upload path works end-to-end when the same object key is preserved; regression coverage prevents response and task creation paths from drifting apart | ✅ Validated in Phase 01 — regression coverage locked |
-| Desktop link imports should disappear into the same canonical lesson/history/learning flow after creation | Users care about the lesson outcome, not whether it came from file upload or imported media | ✅ Validated in Phase 4 — imported links now rename canonical lessons and enter learning directly |
-| Admin shell should default to the user workflow, not a developer/ops health page | Routine operators need business-facing tools (users, billing, redeem) rather than health dashboards as the home route | ✅ Validated in Phase 5 — `/admin` lands on users workspace, troubleshooting is a dedicated secondary route |
-| Billing editor should expose pricing only, not runtime tuning controls | Runtime parameters are internal defaults; routine billing ops should only see price, cost, unit, and active flag | ✅ Validated in Phase 5 — runtime fields removed from admin billing contract and UI; internal defaults preserved |
-| Troubleshooting should be a real operator surface, not a hidden/mislabeled section | Developers and advanced operators need live diagnostic access without it competing with the business-facing admin home | ✅ Validated in Phase 5 — troubleshooting has its own route with Bottle 1.0/2.0 runtime readiness, clean Chinese copy, and stable deep links |
-| Billing insufficiency should surface an actionable recovery path, not a dead-end disabled button | Users with insufficient balance need a clear path to recharge rather than a confusingly disabled submit button | ✅ Validated in Phase 6 — "充值后生成" button appears when billing is insufficient; primary button no longer disabled for insufficient alone |
+| Desktop client is the primary product surface for full generation capabilities | Desktop can safely host local models, ffmpeg, yt-dlp, and local helper workflows | ✅ Validated in Phase 02 |
+| Web app centers on Bottle 2.0 cloud generation | Browser users still need a useful path, but browser-local heavy tooling is not reliable enough | ✅ Validated in Phase 01 & 02 |
+| Platform manages ASR keys instead of end users | Learners are non-technical and should pay with points/redeem codes rather than configure secrets | ✅ Validated |
+| Server should stay light and avoid becoming the media processing bottleneck | Cost and infrastructure limits make centralized heavy processing a bad default | ✅ Validated in Phase 01 & 01.1 |
+| Generated media should become lesson/practice artifacts regardless of generation path | Users care about learning outcomes, not the underlying ASR route | ✅ Validated in Phase 3 |
+| v2.1 should benchmark market patterns before inventing new learning/admin flows | The user explicitly wants product references first, not isolated local redesign | — Pending in v2.1 |
+| Username is a unique profile identity, not a login credential | This improves onboarding and management without expanding auth risk | — Pending in v2.1 |
+| Web may explain Bottle 1.0 but may not execute it | This preserves the desktop-only boundary while still creating a conversion path | — Pending in v2.1 |
+| Admin monetary UI should standardize on yuan | Mixed cents/points language increases operator confusion | — Pending in v2.1 |
 
 ## Evolution
 
@@ -118,4 +137,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-28 after v2.0 completion — all v1 milestones complete*
+*Last updated: 2026-03-28 after v2.1 milestone start*
