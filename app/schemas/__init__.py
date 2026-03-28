@@ -42,7 +42,17 @@ from app.schemas.admin import (
     WalletLedgerItem,
 )
 from app.schemas.admin_console import AdminUserActivityItem, AdminUserActivityResponse, AdminUserActivitySummary, AdminUserActivitySummaryResponse
-from app.schemas.auth import AuthRequest, AuthResponse, DesktopTokenLoginRequest, DesktopTokenLoginResponse, LogoutResponse, RefreshRequest, UserResponse
+from app.schemas.auth import (
+    AuthRequest,
+    AuthResponse,
+    DesktopTokenLoginRequest,
+    DesktopTokenLoginResponse,
+    LogoutResponse,
+    ProfileUpdateRequest,
+    RefreshRequest,
+    RegisterRequest,
+    UserResponse,
+)
 from app.schemas.billing import (
     BillingRateItem,
     BillingRatesResponse,
@@ -93,6 +103,8 @@ __all__ = [
     "AsrModelPrepareResponse",
     "AsrModelListResponse",
     "AuthRequest",
+    "RegisterRequest",
+    "ProfileUpdateRequest",
     "UserResponse",
     "AuthResponse",
     "RefreshRequest",

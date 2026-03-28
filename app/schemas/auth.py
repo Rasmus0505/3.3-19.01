@@ -8,6 +8,16 @@ class AuthRequest(BaseModel):
     password: str = Field(min_length=6, max_length=128)
 
 
+class RegisterRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=6, max_length=128)
+    username: str = Field(min_length=1, max_length=255)
+
+
+class ProfileUpdateRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=255)
+
+
 class DesktopTokenLoginRequest(BaseModel):
     token: str = Field(min_length=1, max_length=512, description="Desktop client login token (access_token)")
 
@@ -23,6 +33,7 @@ class DesktopTokenLoginResponse(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: str
+    username: str
     is_admin: bool = False
     created_at: datetime | None = None
 

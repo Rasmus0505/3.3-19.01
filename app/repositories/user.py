@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import unicodedata
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
@@ -14,6 +16,23 @@ if TYPE_CHECKING:
     pass
 
 
+_USERNAME_INNER_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _normalize_username_parts(value: str) -> tuple[str, str]:
+    normalized_value = unicodedata.normalize("NFKC", str(value or ""))
+    display_value = _USERNAME_INNER_WHITESPACE_RE.sub(" ", normalized_value).strip()
+    return display_value, display_value.casefold()
+
+
+def canonicalize_username(value: str) -> str:
+    return _normalize_username_parts(value)[0]
+
+
+def normalize_username(value: str) -> str:
+    return _normalize_username_parts(value)[1]
+
+
 class UserRepository(Repository[User]):
     """Repository for User model operations."""
 
@@ -22,6 +41,12 @@ class UserRepository(Repository[User]):
 
     def get_by_email(self, email: str) -> Optional[User]:
         return self.session.scalar(select(User).where(User.email == email))
+
+    def get_by_normalized_username(self, username: str) -> Optional[User]:
+        normalized = normalize_username(username)
+        if not normalized:
+            return None
+        return self.session.scalar(select(User).where(User.username_normalized == normalized))
 
     def get_admin_users(self) -> List[User]:
         return list(self.session.scalars(select(User).where(User.is_admin == True).order_by(User.id.asc())))
@@ -58,3 +83,13 @@ class UserRepository(Repository[User]):
         self.session.add(event)
         self.session.flush()
         return event
+
+    def update_username(self, user_id: int, username: str) -> Optional[User]:
+        user = self.get(user_id)
+        if not user:
+            return None
+        user.username = canonicalize_username(username)
+        user.username_normalized = normalize_username(username)
+        self.session.add(user)
+        self.session.flush()
+        return user

@@ -4,11 +4,13 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps.auth import get_current_user
 from app.api.serializers import to_user_response
 from app.core.errors import error_response
 from app.db import get_db
 from app.models import User
-from app.schemas import AuthRequest, AuthResponse, ErrorResponse, LogoutResponse, RefreshRequest
+from app.repositories.user import UserRepository, canonicalize_username, normalize_username
+from app.schemas import AuthRequest, AuthResponse, ErrorResponse, LogoutResponse, ProfileUpdateRequest, RefreshRequest, RegisterRequest, UserResponse
 from app.security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from app.services.billing_service import get_or_create_wallet_account
 from app.services.user_activity import ensure_user_activity_schema, record_user_login_event
@@ -18,12 +20,26 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=AuthResponse, responses={400: {"model": ErrorResponse}})
-def register(payload: AuthRequest, db: Session = Depends(get_db)):
+def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     ensure_user_activity_schema(db)
+    user_repo = UserRepository(db)
     exists = db.scalar(select(User).where(User.email == payload.email.lower()))
     if exists:
         return error_response(400, "EMAIL_EXISTS", "邮箱已注册")
-    user = User(email=payload.email.lower(), password_hash=hash_password(payload.password), is_admin=False)
+    username = canonicalize_username(payload.username)
+    username_normalized = normalize_username(payload.username)
+    if not username_normalized:
+        return error_response(400, "USERNAME_REQUIRED", "用户名不能为空")
+    username_exists = user_repo.get_by_normalized_username(payload.username)
+    if username_exists:
+        return error_response(400, "USERNAME_EXISTS", "用户名已被占用")
+    user = User(
+        email=payload.email.lower(),
+        username=username,
+        username_normalized=username_normalized,
+        password_hash=hash_password(payload.password),
+        is_admin=False,
+    )
     db.add(user)
     db.flush()
     get_or_create_wallet_account(db, user.id, for_update=False)
@@ -53,6 +69,33 @@ def login(payload: AuthRequest, db: Session = Depends(get_db)):
         refresh_token=create_refresh_token(user.id),
         user=to_user_response(user),
     )
+
+
+@router.get("/me", response_model=UserResponse, responses={401: {"model": ErrorResponse}})
+def current_user_profile(current_user: User = Depends(get_current_user)) -> UserResponse:
+    return to_user_response(current_user)
+
+
+@router.patch("/profile", response_model=UserResponse, responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}})
+def update_profile(
+    payload: ProfileUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> UserResponse:
+    user_repo = UserRepository(db)
+    username = canonicalize_username(payload.username)
+    username_normalized = normalize_username(payload.username)
+    if not username_normalized:
+        return error_response(400, "USERNAME_REQUIRED", "用户名不能为空")
+    existing_user = user_repo.get_by_normalized_username(payload.username)
+    if existing_user and existing_user.id != current_user.id:
+        return error_response(400, "USERNAME_EXISTS", "用户名已被占用")
+    updated_user = user_repo.update_username(current_user.id, username)
+    if not updated_user:
+        return error_response(404, "USER_NOT_FOUND", "用户不存在")
+    db.commit()
+    db.refresh(updated_user)
+    return to_user_response(updated_user)
 
 
 @router.post("/refresh", response_model=AuthResponse, responses={401: {"model": ErrorResponse}})
