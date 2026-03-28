@@ -52,11 +52,12 @@ Users can turn real English media into usable learning lessons quickly, without 
 - ✓ Wordbook now supports due review, review progress, and context-rich revision instead of only passive collection — validated in Phase 09
 - ✓ Account onboarding now uses unique usernames while login remains email-first and low risk — validated in Phase 09
 - ✓ Web upload/account surface now keeps Bottle 1.0 desktop-only while presenting Bottle 2.0 as the web-first path with Bottle-only naming — validated in Phase 09
+- ✓ Admin operators now work in a Chinese-first, yuan-first backend with clearer model naming and cleaner information architecture — validated in Phase 10
+- ✓ Pricing, recharge, and desktop download paths now use the finalized upload-surface copy, recharge recovery, desktop guidance, and static-web verification flow — validated in Phase 11
 
 ### Active
 
-- [ ] Admin operators work in a Chinese-first, yuan-first backend with clearer model naming and cleaner information architecture
-- [ ] Pricing, recharge, and desktop download paths convert users better through clearer positioning rather than new subscription logic
+None
 
 ### Out of Scope
 
@@ -94,7 +95,7 @@ Users can turn real English media into usable learning lessons quickly, without 
 
 **22/22 prior milestone requirements satisfied.**
 
-**当前阶段：** Phase 9 complete — wordbook review, username-based profile identity, personal center, and stricter Bottle naming are now in place
+**当前阶段：** Phase 11 complete — 转化文案、桌面端下载引导、`app/static` 同步验证和数字输入框编辑体验收口已完成；v2.1 全部 phase 已执行完成，待里程碑收尾
 
 ## Milestone: v2.0 Summary
 
@@ -119,9 +120,10 @@ Users can turn real English media into usable learning lessons quickly, without 
 | v2.1 should benchmark market patterns before inventing new learning/admin flows | The user explicitly wants product references first, not isolated local redesign | ✅ Validated in Phase 7 |
 | Username is a unique profile identity, not a login credential | This improves onboarding and management without expanding auth risk | ✅ Validated in Phase 9 |
 | Web may explain Bottle 1.0 but may not execute it | This preserves the desktop-only boundary while still creating a conversion path | ✅ Locked in Phase 7 |
-| Admin monetary UI should standardize on yuan | Mixed cents/points language increases operator confusion | — Pending in v2.1 |
+| Admin monetary UI should standardize on yuan | Mixed cents/points language increases operator confusion | ✅ Validated in Phase 10 |
 | Monetization improvements stay inside pay-per-use copy and CTA work, not subscriptions | Competitor benchmarks favor clearer scenario guidance over more package complexity for this milestone | ✅ Locked in Phase 7 |
 | Immersive playback state should be reducer-driven with explicit loop/rate/display contracts | The existing page had too many overlapping state transitions for replay, navigation, fullscreen, and mask controls | ✅ Validated in Phase 8 |
+| Final conversion landing should use exact model-card and blocked-state copy instead of adding new marketing layers | The final upload-surface pass had to follow the locked context precisely, including recharge, desktop, and complex-media wording | ✅ Validated in Phase 11 |
 
 ## Evolution
 
@@ -141,4 +143,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-28 after Phase 9 completion*
+*Last updated: 2026-03-29 after Phase 11 completion*
