@@ -1,11 +1,18 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { AdminApp } from "../../AdminApp";
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import { getLessonMediaPreview, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
-import { getCachedLessonSubtitleVariant, getLessonSubtitleAvailability, getLessonSubtitleCache, saveLessonSubtitleCacheSeed, saveLessonSubtitleVariant, setActiveLessonSubtitleVariant } from "../../shared/media/localSubtitleStore.js";
+import {
+  getCachedLessonSubtitleVariant,
+  getLessonSubtitleAvailability,
+  getLessonSubtitleCache,
+  saveLessonSubtitleCacheSeed,
+  saveLessonSubtitleVariant,
+  setActiveLessonSubtitleVariant,
+} from "../../shared/media/localSubtitleStore.js";
 import {
   Button,
   Card,
@@ -27,16 +34,16 @@ import {
 import { resolveAdminNavItem } from "../../shared/lib/adminSearchParams";
 import { useAppStore } from "../../store";
 import { getDefaultMediaPreview } from "../../store/slices/mediaSlice";
+import { ConflictDialog } from "./ConflictDialog";
 import { LearningShellHeader } from "./LearningShellHeader";
 import { LearningShellPanelContent } from "./LearningShellPanelContent";
 import { PANEL_ITEMS, SIDEBAR_STORAGE_KEY, LearningShellSidebar, getPanelItemByPathname, getPanelPath } from "./LearningShellSidebar";
 import { UploadTaskFloatingCard } from "./UploadTaskFloatingCard";
 import { useCurrentLessonMediaBinding } from "./hooks/useCurrentLessonMediaBinding";
+import { useDesktopSync } from "./hooks/useDesktopSync";
 import { useLearningShellBootstrap } from "./hooks/useLearningShellBootstrap";
 import { useLearningShellPrefetch } from "./hooks/useLearningShellPrefetch";
-import { useDesktopSync } from "./hooks/useDesktopSync";
 import { useOfflineMode } from "../../hooks/useOfflineMode";
-import { ConflictDialog } from "./ConflictDialog";
 
 async function requestOriginalSubtitleVariant(accessToken, lessonId, asrPayload) {
   const resp = await api(
@@ -111,37 +118,6 @@ function buildCreatedLessonMediaPreview(lesson, mediaPreview, mediaPersisted) {
 }
 
 const MOBILE_MEDIA_QUERY = "(max-width: 767px)";
-  {
-    id: "open-upload",
-    targetId: "sidebar-upload",
-    instruction: "请点左侧“上传素材”",
-    advanceOnTargetClick: true,
-  },
-  {
-    id: "pick-file",
-    targetId: "upload-select-file",
-    instruction: "请点“选择文件”并选中素材",
-    advanceOnTargetClick: false,
-  },
-  {
-    id: "submit-upload",
-    targetId: "upload-submit",
-    instruction: "请点“开始生成课程”",
-    advanceOnTargetClick: false,
-  },
-  {
-    id: "open-history",
-    targetId: "sidebar-history",
-    instruction: "请点左侧“历史记录”",
-    advanceOnTargetClick: true,
-  },
-  {
-    id: "start-lesson",
-    targetId: "history-start-latest",
-    instruction: "请点最新课程上的“开始学习”",
-    advanceOnTargetClick: true,
-  },
-];
 
 export function LearningShellContainer() {
   const location = useLocation();
@@ -211,7 +187,6 @@ export function LearningShellContainer() {
   const activePanel = isAdminRoute ? null : getPanelItemByPathname(location.pathname).key;
   const immersiveLayoutActive = Boolean(accessToken && currentLesson?.id && immersiveActive);
   const lastNonImmersivePanelRef = useRef(getPanelItemByPathname(location.pathname).key);
-  const currentUserId = Number(currentUser?.id || 0);
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia(MOBILE_MEDIA_QUERY).matches : false,
   );
@@ -304,44 +279,10 @@ export function LearningShellContainer() {
     return () => mediaQueryList.removeListener(updateViewport);
   }, []);
 
-  useEffect(() => {
-  }, [currentUserId]);
-
-  useEffect(() => {
-    if (!accessToken || !currentUserId || isAdminRoute || immersiveLayoutActive) return;
-
-  useEffect(() => {
-    if (!accessToken || !currentUserId || isMobileViewport || isAdminRoute || immersiveLayoutActive) {
-    }
-
-  useEffect(() => {
-    const phase = String(uploadTaskState?.phase || "").toLowerCase();
-    if (
-      ["ready", "uploading", "processing", "success"].includes(phase)
-    ) {
-      return;
-    }
-      const nextLessonId = Number(uploadTaskState?.lessonId || latestGeneratedLessonId || 0);
-      if (nextLessonId > 0) {
-        setLatestGeneratedLessonId(nextLessonId);
-      }
-    }
-
   const filteredLessons = useMemo(() => lessons, [lessons]);
   const currentPanel = isAdminRoute
     ? { title: activeAdminItem.label }
     : PANEL_ITEMS.find((item) => item.key === activePanel) || PANEL_ITEMS[0];
-      const phase = String(uploadTaskState?.phase || "").toLowerCase();
-      if (phase === "ready") return "已选中文件，正在继续";
-      if (phase === "probing") return "已选中文件，正在读取文件";
-    }
-      const phase = String(uploadTaskState?.phase || "").toLowerCase();
-      if (phase === "uploading" || phase === "processing") {
-        return uploadTaskState?.headline || "等待生成完成…";
-      }
-      if (phase === "success") return "课程已生成，正在继续";
-      if (phase === "error") return uploadTaskState?.statusText || "生成失败，请先看上传页";
-    }
 
   async function persistLessonSubtitleCacheSeed(lesson) {
     if (!lesson?.id || !lesson?.subtitle_cache_seed) return;
@@ -422,10 +363,6 @@ export function LearningShellContainer() {
     setUploadTaskState(null);
   }
 
-  }
-
-  }
-
   function handleGoToLogin() {
     navigate(getPanelPath("history"));
   }
@@ -433,34 +370,6 @@ export function LearningShellContainer() {
   function handleGoToHistoryPanel() {
     navigate(getPanelPath("history"));
     setMobileNavOpen(false);
-  }
-
-    if (!accessToken || !currentUserId) {
-      toast("请先登录后开始引导");
-      navigate(getPanelPath("history"));
-      return;
-    }
-    if (isMobileViewport) {
-      toast("移动端本轮只保留图文教程，请在桌面端体验真实点选引导");
-      return;
-    }
-    setLatestGeneratedLessonId(0);
-    setUploadTaskState(null);
-  }
-
-    if (stepId === "open-upload") {
-      return;
-    }
-    if (stepId === "open-history") {
-      return;
-    }
-    if (stepId === "start-lesson") {
-      if (currentUserId > 0) {
-      }
-      toast.success("新手引导已完成");
-    }
-  }
-
   }
 
   function handlePanelChange(nextPanel) {
@@ -816,10 +725,6 @@ export function LearningShellContainer() {
               </CommandGroup>
             </CommandList>
           </CommandDialog>
-
-          {!isAdminRoute ? (
-            />
-          ) : null}
         </SidebarInset>
       </div>
       {isDesktopEnv ? (
