@@ -3,6 +3,7 @@ import { api } from "../../../shared/api/client";
 export interface AuthPayload {
   email?: string;
   password?: string;
+  username?: string;
   refresh_token?: string;
 }
 

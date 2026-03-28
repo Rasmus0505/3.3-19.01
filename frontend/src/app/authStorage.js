@@ -2,6 +2,7 @@ export const TOKEN_KEY = "english_asr_access_token";
 export const REFRESH_KEY = "english_asr_refresh_token";
 export const USER_ID_KEY = "english_asr_user_id";
 export const USER_EMAIL_KEY = "english_asr_user_email";
+export const USER_USERNAME_KEY = "english_asr_user_username";
 export const USER_IS_ADMIN_KEY = "english_asr_user_is_admin";
 
 function getStorage() {
@@ -29,6 +30,7 @@ export function writeStoredUser(user) {
   }
   const userId = Number(user?.id || 0);
   const email = trimText(user?.email);
+  const username = trimText(user?.username);
   if (Number.isFinite(userId) && userId > 0) {
     storage.setItem(USER_ID_KEY, String(userId));
   } else {
@@ -38,6 +40,11 @@ export function writeStoredUser(user) {
     storage.setItem(USER_EMAIL_KEY, email);
   } else {
     storage.removeItem(USER_EMAIL_KEY);
+  }
+  if (username) {
+    storage.setItem(USER_USERNAME_KEY, username);
+  } else {
+    storage.removeItem(USER_USERNAME_KEY);
   }
   storage.setItem(USER_IS_ADMIN_KEY, user?.is_admin ? "true" : "false");
 }
@@ -149,6 +156,7 @@ export async function clearAuthStorage() {
     storage.removeItem(REFRESH_KEY);
     storage.removeItem(USER_ID_KEY);
     storage.removeItem(USER_EMAIL_KEY);
+    storage.removeItem(USER_USERNAME_KEY);
     storage.removeItem(USER_IS_ADMIN_KEY);
   }
   const desktopAuth = getDesktopAuthRuntime();
