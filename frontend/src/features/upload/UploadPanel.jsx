@@ -28,7 +28,10 @@ const ESTIMATED_MT_TOKENS_PER_MINUTE = 320;
 const UPLOAD_PROGRESS_PERSIST_INTERVAL_MS = 800;
 const ASR_MODELS_API_BASE = "/api/asr-models";
 const DESKTOP_CLIENT_OFFLINE_MESSAGE = "离线模式下无法生成课程，请联网后重试";
-const DESKTOP_CLIENT_INSUFFICIENT_BALANCE_MESSAGE = "余额不足，请充值";
+const DESKTOP_CLIENT_INSUFFICIENT_BALANCE_MESSAGE = "余额不足，充值后即可继续生成当前内容";
+const BOTTLE1_DESKTOP_ONLY_MESSAGE = "Bottle 1.0 仅支持在客户端使用，请下载桌面端继续";
+const LINK_IMPORT_DESKTOP_ONLY_MESSAGE = "链接导入仅支持在客户端使用，请下载桌面端继续";
+const LARGE_FILE_DESKTOP_RECOMMEND_MESSAGE = "当前素材推荐使用客户端生成，效果和稳定性更好";
 const DEFAULT_ASR_MODEL_CATALOG_MAP = buildAsrModelCatalogMap();
 const DEFAULT_FAST_UPLOAD_MODEL = QWEN_MODEL;
 const FAST_RUNTIME_TRACK_CLOUD = "cloud";
@@ -749,7 +752,7 @@ function getUploadModelPriceLabel(item, rates) {
   const pricingModelKey = item.mode === "balanced" ? DEFAULT_FAST_UPLOAD_MODEL : item.key;
   const rate = getRateByModel(rates, pricingModelKey) || getRateByModel(rates, item.key);
   const pricePerMinuteYuan = getRatePricePerMinuteYuan(rate);
-  return pricePerMinuteYuan > 0 ? `ASR ${formatMoneyYuanPerMinute(pricePerMinuteYuan)}` : "ASR 未设置价格";
+  return pricePerMinuteYuan > 0 ? formatMoneyYuanPerMinute(pricePerMinuteYuan) : "未设置价格";
 }
 
 function mergeCatalogIntoUploadModelMeta(modelKey, catalogMap) {
@@ -2224,19 +2227,29 @@ export function UploadPanel({
     : getProgressHeadline(phase, uploadPercent, displayTaskSnapshot);
   const progressPercent = getVisualProgress(phase, uploadPercent, displayTaskSnapshot);
   const desktopClientEntryUrl = String(desktopRuntimeInfo?.clientUpdate?.entryUrl || DESKTOP_CLIENT_ENTRY_URL).trim();
-  const desktopGuidancePrimaryLabel = desktopClientEntryUrl
-    ? "下载桌面客户端"
-    : DESKTOP_CLIENT_DISTRIBUTION_NOTE
-      ? "复制分发方式"
-      : "获取桌面端";
+  const desktopGuidancePrimaryLabel = desktopClientEntryUrl || DESKTOP_CLIENT_DISTRIBUTION_NOTE ? "下载桌面端" : "获取桌面端";
   const desktopGuidanceIsLargeFile = desktopGuidanceReason === "large_file";
+  const desktopGuidanceIsBottle1Only = desktopGuidanceReason === "bottle1_only";
+  const desktopGuidanceIsLinkImportOnly = desktopGuidanceReason === "link_import_only";
+  const desktopGuidanceTitle = desktopGuidanceIsLargeFile
+    ? "建议改用桌面端"
+    : desktopGuidanceIsBottle1Only
+      ? "Bottle 1.0 仅支持客户端"
+      : "链接导入仅支持客户端";
+  const desktopGuidanceLeadText = desktopGuidanceIsLargeFile
+    ? LARGE_FILE_DESKTOP_RECOMMEND_MESSAGE
+    : desktopGuidanceIsBottle1Only
+      ? BOTTLE1_DESKTOP_ONLY_MESSAGE
+      : LINK_IMPORT_DESKTOP_ONLY_MESSAGE;
   const desktopGuidanceDetail = desktopGuidanceIsLargeFile
     ? `当前文件${desktopGuidanceContext.sourceName ? `“${desktopGuidanceContext.sourceName}”` : ""}${
         desktopGuidanceContext.sizeBytes > 0 ? ` 大约 ${formatBinarySize(desktopGuidanceContext.sizeBytes)}` : ""
       }${
         desktopGuidanceContext.durationSec > 0 ? `，时长约 ${formatDurationLabel(desktopGuidanceContext.durationSec)}` : ""
       }。`
-    : "网页端当前不会回退到服务器转码，建议改用桌面客户端完成这类操作。";
+    : desktopGuidanceIsBottle1Only
+      ? "网页端当前不会执行 Bottle 1.0，本次仅保留下载桌面端继续的路径。"
+      : "如果你不想走桌面端，也可以先切回本地文件上传继续当前网页流程。";
   const showProgress =
     !isRestoreVerifying &&
     restoreBannerMode !== RESTORE_BANNER_MODES.STALE &&
@@ -3411,7 +3424,7 @@ export function UploadPanel({
     const sanitizedLinkInput = sanitizeDesktopLinkInput(desktopLinkInput);
     if (!desktopRuntimeAvailable) {
       await handleTaskFailureState({
-        message: "当前环境不支持桌面端本地 helper，无法使用链接导入。",
+        message: LINK_IMPORT_DESKTOP_ONLY_MESSAGE,
         nextTaskId: "",
         nextTaskSnapshot: null,
         nextUploadPercent: 0,
@@ -3423,7 +3436,7 @@ export function UploadPanel({
     }
     if (!desktopLinkModeSupported) {
       await handleTaskFailureState({
-        message: "当前环境暂不支持链接导入。",
+        message: LINK_IMPORT_DESKTOP_ONLY_MESSAGE,
         nextTaskId: "",
         nextTaskSnapshot: null,
         nextUploadPercent: 0,
@@ -5818,7 +5831,7 @@ export function UploadPanel({
       return;
     }
     await handleTaskFailureState({
-          message: "当前仅支持 Bottle 2.0 直传，请切换到 Bottle 2.0 后重试。",
+          message: BOTTLE1_DESKTOP_ONLY_MESSAGE,
       nextTaskId: "",
       nextTaskSnapshot: null,
       nextUploadPercent: 0,
@@ -6043,7 +6056,7 @@ export function UploadPanel({
 
         <div className="space-y-3">
           <div className="space-y-1">
-            <p className="text-base font-semibold text-foreground">选择字幕生成方式</p>
+            <p className="text-base font-semibold text-foreground">选择学习素材质量</p>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -6180,9 +6193,9 @@ export function UploadPanel({
                   aria-disabled={uploadActionBusy}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-0.5">
+                    <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
                       <p className="text-sm font-semibold text-foreground">{uploadCardMeta.title}</p>
-                      <p className="text-sm text-muted-foreground">{cardPriceLabel}</p>
+                      <p className="shrink-0 text-sm text-muted-foreground">{cardPriceLabel}</p>
                     </div>
                     <Badge
                       variant="outline"
@@ -6202,6 +6215,26 @@ export function UploadPanel({
                   </div>
 
                   {/* Runtime track selection removed — desktop always uses local track */}
+
+                  <div className="space-y-2">
+                    {isFasterWhisper ? (
+                      <div className="flex flex-wrap gap-2">
+                        <span className="rounded-full border px-2.5 py-1 text-xs text-foreground">客户端专属</span>
+                        <span className="rounded-full border px-2.5 py-1 text-xs text-foreground">通用素材生成</span>
+                      </div>
+                    ) : null}
+                    {isQwen ? (
+                      <>
+                        <div className="flex flex-wrap gap-2">
+                          <span className="rounded-full border px-2.5 py-1 text-xs text-foreground">网站/客户端</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <span className="rounded-full border px-2.5 py-1 text-xs text-foreground">更强大的AI模型</span>
+                          <span className="rounded-full border px-2.5 py-1 text-xs text-foreground">适合复杂视频</span>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
 
                   {showCardProgress ? (
                     <div className="space-y-1">
@@ -6490,7 +6523,7 @@ export function UploadPanel({
                     variant="default"
                     className="h-9 px-4"
                     onClick={() =>
-                      openDesktopGuidanceDialog("desktop_only", {
+                      openDesktopGuidanceDialog("bottle1_only", {
                         sourceName: String(file?.name || "").trim(),
                         sizeBytes: Number(file?.size || 0),
                         durationSec: Number(durationSec || 0),
@@ -6579,14 +6612,19 @@ export function UploadPanel({
               </Button>
             </div>
           ) : showRechargeButton ? (
-            <Button
-              type="button"
-              disabled={false}
-              className={cn("h-9 px-4", getUploadToneStyles("recoverable").button)}
-              onClick={() => navigate("/redeem")}
-            >
-              充值后生成
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                disabled={false}
+                className={cn("h-9 px-4", getUploadToneStyles("recoverable").button)}
+                onClick={() => navigate("/redeem")}
+              >
+                充值后生成
+              </Button>
+              <Button type="button" variant="outline" className="h-9 px-4" onClick={() => void clearTaskRuntime("")}>
+                稍后再试
+              </Button>
+            </div>
           ) : (
             <Button
               type={cancelablePrimaryAction ? "button" : "submit"}
@@ -6734,6 +6772,34 @@ export function UploadPanel({
                 <Button type="button" variant="outline" onClick={() => void copyTaskDebugReport(taskId)}>
                   复制排错信息
                 </Button>
+              ) : null}
+              {status === BOTTLE1_DESKTOP_ONLY_MESSAGE ? (
+                <>
+                  <Button type="button" className="h-9 px-3" onClick={() => void handleDesktopGuidancePrimaryAction()}>
+                    下载桌面端
+                  </Button>
+                  <Button type="button" variant="outline" className="h-9 px-3" onClick={() => void clearTaskRuntime("")}>
+                    我知道了
+                  </Button>
+                </>
+              ) : null}
+              {status === LINK_IMPORT_DESKTOP_ONLY_MESSAGE ? (
+                <>
+                  <Button type="button" className="h-9 px-3" onClick={() => void handleDesktopGuidancePrimaryAction()}>
+                    下载桌面端
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 px-3"
+                    onClick={() => {
+                      setDesktopSourceMode(DESKTOP_UPLOAD_SOURCE_MODE_FILE);
+                      void clearTaskRuntime("");
+                    }}
+                  >
+                    继续上传本地文件
+                  </Button>
+                </>
               ) : null}
               {canRetryWithoutUpload ? (
                 <Button type="button" className={cn("h-9 px-3", getUploadToneStyles(taskSnapshot?.resume_available ? "recoverable" : "selected").button)} onClick={() => void resumeTask()}>
@@ -6902,17 +6968,19 @@ export function UploadPanel({
         >
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>{desktopGuidanceIsLargeFile ? "建议改用桌面端" : "此能力仅支持桌面端"}</DialogTitle>
+              <DialogTitle>{desktopGuidanceTitle}</DialogTitle>
               <DialogDescription asChild>
                 <div className="space-y-2">
                   <p>
-                      {desktopGuidanceIsLargeFile
-                        ? "Bottle 2.0 网页流程仍可继续，但超大文件、长时长素材或网络不稳定时，桌面端通常更稳。"
-                        : "链接导入和类似的桌面专属流程不会回退到服务器处理，请改用桌面客户端。"}
+                    {desktopGuidanceLeadText}
                   </p>
                   <p>{desktopGuidanceDetail}</p>
-                  <p>Bottle 2.0 当前仍支持音频与视频文件直传；当素材特别大或网络不稳定时，优先改用桌面端会更可靠。</p>
-                  <p>当前建议阈值不是硬性限制：在 2 GB / 12 小时以内仍可继续使用当前流程，但更推荐桌面端处理高风险素材。</p>
+                  {desktopGuidanceIsLargeFile ? (
+                    <>
+                      <p>Bottle 2.0 当前仍支持音频与视频文件直传；当素材特别大或网络不稳定时，优先改用桌面端会更可靠。</p>
+                      <p>当前建议阈值不是硬性限制：在 2 GB / 12 小时以内仍可继续使用当前流程，但更推荐桌面端处理高风险素材。</p>
+                    </>
+                  ) : null}
                   {DESKTOP_CLIENT_DISTRIBUTION_NOTE ? (
                     <p className="rounded-2xl border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">{DESKTOP_CLIENT_DISTRIBUTION_NOTE}</p>
                   ) : null}
@@ -6920,14 +6988,23 @@ export function UploadPanel({
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button type="button" variant="ghost" className="h-9 px-3" onClick={() => setDesktopGuidanceDialogOpen(false)}>
-                关闭
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 px-3"
+                onClick={() => {
+                  if (desktopGuidanceIsLargeFile) {
+                    handleDesktopGuidanceContinue();
+                    return;
+                  }
+                  if (desktopGuidanceIsLinkImportOnly) {
+                    setDesktopSourceMode(DESKTOP_UPLOAD_SOURCE_MODE_FILE);
+                  }
+                  setDesktopGuidanceDialogOpen(false);
+                }}
+              >
+                {desktopGuidanceIsLargeFile ? "继续生成素材" : desktopGuidanceIsBottle1Only ? "我知道了" : "继续上传本地文件"}
               </Button>
-              {desktopGuidanceIsLargeFile ? (
-                <Button type="button" variant="outline" className="h-9 px-3" onClick={() => handleDesktopGuidanceContinue()}>
-                  继续当前流程
-                </Button>
-              ) : null}
               <Button type="button" className="h-9 px-3" onClick={() => void handleDesktopGuidancePrimaryAction()}>
                 {desktopGuidancePrimaryLabel}
               </Button>
