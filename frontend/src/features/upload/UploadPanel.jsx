@@ -2266,8 +2266,9 @@ export function UploadPanel({
     (!isOnline && selectedAsrModel !== FASTER_WHISPER_MODEL && !desktopLocalTranscribing && !desktopLinkImporting) ||
     (desktopClientBillingEnabled &&
       (desktopBillingState.status === "offline" ||
-        (desktopClientHasUsableEstimate && ["checking", "insufficient", "error"].includes(String(desktopBillingState.status || ""))))) ||
+        (desktopClientHasUsableEstimate && ["checking", "error"].includes(String(desktopBillingState.status || ""))))) ||
     (desktopLinkModeActive && !desktopLinkImporting && (!desktopLinkModeSupported || !trimmedDesktopLinkInput));
+  const showRechargeButton = desktopClientBillingEnabled && desktopBillingState.status === "insufficient";
   const taskTone = getUploadTaskTone({
     phase,
     resumeAvailable: Boolean(displayTaskSnapshot?.resume_available) || taskPaused,
@@ -6023,26 +6024,7 @@ export function UploadPanel({
         <Alert className={cn("border", getUploadToneStyles("idle").surface)}>
           <AlertDescription>
             <p className="text-muted-foreground">余额：{desktopClientBillingEnabled && desktopBillingState.status === "offline" ? "离线模式" : formatMoneyCents(desktopClientBalanceAmountCents)}</p>
-            <p className="text-muted-foreground">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="cursor-help underline decoration-dotted underline-offset-2">预估价格</span>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-xs">ASR 按素材秒数折算分钟估算；MT 按 qwen-mt-flash 的 1k Tokens 费率与常见字幕量近似估算，最终以实际翻译 Tokens 结算。</TooltipContent>
-              </Tooltip>
-              ：
-              {desktopClientBillingEnabled
-                ? selectedRate
-                  ? durationSec != null
-                    ? `${formatMoneyCents(desktopClientEstimatedChargeCents)}（ASR ${formatMoneyCents(estimatedAsrChargeCents)} + MT 约 ${formatMoneyCents(estimatedMtChargeCents)}）`
-                    : "选择文件后显示"
-                  : "该模型未配置 ASR 单价"
-                : selectedRate
-                ? durationSec != null
-                  ? `${formatMoneyCents(estimatedTotalChargeCents)}（ASR ${formatMoneyCents(estimatedAsrChargeCents)} + MT 约 ${formatMoneyCents(estimatedMtChargeCents)}）`
-                  : "选择文件后显示"
-                : "该模型未配置 ASR 单价"}
-            </p>
+            <p className="text-muted-foreground">预估消耗：{selectedRate ? durationSec != null ? formatMoneyCents(desktopClientBillingEnabled ? desktopClientEstimatedChargeCents : estimatedTotalChargeCents) : "选择文件后显示" : "该模型未配置单价"}</p>
             {desktopClientBillingEnabled && desktopBillingState.message ? (
               <p className={cn("text-xs", desktopBillingState.status === "insufficient" || desktopBillingState.status === "offline" || desktopBillingState.status === "error" ? getUploadToneStyles("recoverable").text : "text-muted-foreground")}>
                 {desktopBillingState.message}
@@ -6589,6 +6571,15 @@ export function UploadPanel({
                 )}
               </Button>
             </div>
+          ) : showRechargeButton ? (
+            <Button
+              type="button"
+              disabled={false}
+              className={cn("h-9 px-4", getUploadToneStyles("recoverable").button)}
+              onClick={() => navigate("/redeem")}
+            >
+              充值后生成
+            </Button>
           ) : (
             <Button
               type={cancelablePrimaryAction ? "button" : "submit"}
