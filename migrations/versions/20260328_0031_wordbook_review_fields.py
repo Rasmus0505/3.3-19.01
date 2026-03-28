@@ -53,6 +53,7 @@ def upgrade() -> None:
         sa.column("review_count", sa.Integer()),
         sa.column("wrong_count", sa.Integer()),
         sa.column("memory_score", sa.Float()),
+        schema=schema,
     )
     bind = op.get_bind()
     now_sql = sa.text("CURRENT_TIMESTAMP")

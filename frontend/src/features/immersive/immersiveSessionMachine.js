@@ -13,11 +13,13 @@ export const SET_TRANSLATION_DISPLAY_MODE = "SET_TRANSLATION_DISPLAY_MODE";
 export const SET_POST_ANSWER_REPLAY_STATE = "SET_POST_ANSWER_REPLAY_STATE";
 export const SET_LOOP_ENABLED = "SET_LOOP_ENABLED";
 export const SET_PLAYBACK_RATE = "SET_PLAYBACK_RATE";
+export const SET_PLAYBACK_RATE_PINNED = "SET_PLAYBACK_RATE_PINNED";
 export const SET_PHASE = "SET_PHASE";
 export const SENTENCE_PASSED = "SENTENCE_PASSED";
 
-export const IMMERSIVE_PLAYBACK_RATE_PRESETS = Object.freeze([1, 0.9, 0.75]);
 export const DEFAULT_IMMERSIVE_PLAYBACK_RATE = 1;
+export const IMMERSIVE_PLAYBACK_RATE_MIN = 0.4;
+export const IMMERSIVE_PLAYBACK_RATE_MAX = 2;
 
 function normalizeSentenceCount(lesson) {
   return Array.isArray(lesson?.sentences) ? lesson.sentences.length : 0;
@@ -49,7 +51,24 @@ export function normalizePlaybackRate(value) {
   if (!Number.isFinite(numeric)) {
     return DEFAULT_IMMERSIVE_PLAYBACK_RATE;
   }
-  return IMMERSIVE_PLAYBACK_RATE_PRESETS.includes(numeric) ? numeric : DEFAULT_IMMERSIVE_PLAYBACK_RATE;
+  return Math.min(IMMERSIVE_PLAYBACK_RATE_MAX, Math.max(IMMERSIVE_PLAYBACK_RATE_MIN, numeric));
+}
+
+function resolveLessonPlaybackRateState(lesson, learningSettings) {
+  const lessonId = String(lesson?.id ?? "").trim();
+  const lessonOverrides = learningSettings?.playbackPreferences?.lessonPlaybackRateOverrides;
+  const storedPreference =
+    lessonId && lessonOverrides && typeof lessonOverrides === "object" ? lessonOverrides[lessonId] : null;
+  if (storedPreference?.pinned === true) {
+    return {
+      playbackRatePinned: true,
+      selectedPlaybackRate: normalizePlaybackRate(storedPreference.rate),
+    };
+  }
+  return {
+    playbackRatePinned: false,
+    selectedPlaybackRate: DEFAULT_IMMERSIVE_PLAYBACK_RATE,
+  };
 }
 
 function buildSentenceGateState(playbackRequired = true) {
@@ -71,6 +90,7 @@ export function createImmersiveSessionState({
   const sentenceCount = normalizeSentenceCount(lesson);
   const savedIndex = Number(lesson?.progress?.current_sentence_index);
   const safeIndex = clampSentenceIndex(savedIndex, sentenceCount);
+  const playbackRateState = resolveLessonPlaybackRateState(lesson, learningSettings);
   return {
     phase,
     currentSentenceIndex: safeIndex,
@@ -79,7 +99,8 @@ export function createImmersiveSessionState({
     sentenceJumpValue: "",
     mediaBindingRequired: false,
     singleSentenceLoopEnabled: normalizeLoopEnabled(learningSettings),
-    selectedPlaybackRate: DEFAULT_IMMERSIVE_PLAYBACK_RATE,
+    playbackRatePinned: playbackRateState.playbackRatePinned,
+    selectedPlaybackRate: playbackRateState.selectedPlaybackRate,
   };
 }
 
@@ -129,6 +150,7 @@ export function immersiveSessionReducer(state, event) {
         currentSentenceIndex: clampSentenceIndex(event.targetIndex, event.sentenceCount),
         phase: event.phase ?? "auto_play_pending",
         sentenceJumpValue: "",
+        selectedPlaybackRate: state.playbackRatePinned ? state.selectedPlaybackRate : DEFAULT_IMMERSIVE_PLAYBACK_RATE,
       };
     case POST_ANSWER_REPLAY_STARTED:
       return {
@@ -179,6 +201,12 @@ export function immersiveSessionReducer(state, event) {
         ...state,
         selectedPlaybackRate: normalizePlaybackRate(event.value),
       };
+    case SET_PLAYBACK_RATE_PINNED:
+      return {
+        ...state,
+        playbackRatePinned: Boolean(event.pinned),
+        selectedPlaybackRate: normalizePlaybackRate(event.value ?? state.selectedPlaybackRate),
+      };
     case SET_PHASE:
       return {
         ...state,
@@ -196,6 +224,7 @@ export function immersiveSessionReducer(state, event) {
         completedIndexes: nextCompleted,
         currentSentenceIndex: isLessonCompleted ? state.currentSentenceIndex : nextIndex,
         phase: isLessonCompleted ? "lesson_completed" : event.phase ?? "auto_play_pending",
+        selectedPlaybackRate: state.playbackRatePinned ? state.selectedPlaybackRate : DEFAULT_IMMERSIVE_PLAYBACK_RATE,
       };
     }
     case EXIT_IMMERSIVE:
@@ -204,6 +233,7 @@ export function immersiveSessionReducer(state, event) {
         ...buildSentenceGateState(true),
         phase: "idle",
         sentenceJumpValue: "",
+        playbackRatePinned: false,
         selectedPlaybackRate: DEFAULT_IMMERSIVE_PLAYBACK_RATE,
       };
     default:

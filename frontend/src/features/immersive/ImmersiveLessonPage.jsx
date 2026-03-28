@@ -24,8 +24,8 @@ import {
 } from "./learningSettings";
 import {
   ANSWER_COMPLETED,
+  DEFAULT_IMMERSIVE_PLAYBACK_RATE,
   EXIT_IMMERSIVE,
-  IMMERSIVE_PLAYBACK_RATE_PRESETS,
   LESSON_LOADED,
   NAVIGATE_TO_SENTENCE,
   PLAYBACK_FINISHED,
@@ -39,10 +39,12 @@ import {
   SET_POST_ANSWER_REPLAY_STATE,
   SET_PHASE,
   SET_PLAYBACK_RATE,
+  SET_PLAYBACK_RATE_PINNED,
   SET_SENTENCE_JUMP_VALUE,
   SET_TRANSLATION_DISPLAY_MODE,
   createImmersiveSessionState,
   immersiveSessionReducer,
+  normalizePlaybackRate,
 } from "./immersiveSessionMachine";
 import { getMediaExt, isAudioFilename, isVideoFilename, normalizeToken } from "./tokenNormalize";
 import { useImmersiveSessionController } from "./useImmersiveSessionController";
@@ -287,6 +289,10 @@ function debugImmersiveLog(event, detail = {}) {
 
 function formatPlaybackRateLabel(rate) {
   return `${Number(rate || 1).toFixed(2)}x`;
+}
+
+function formatPlaybackRateInputValue(rate) {
+  return Number(normalizePlaybackRate(rate)).toFixed(2).replace(/\.00$/, "").replace(/0$/, "");
 }
 
 function isIpadSafariBrowser() {
@@ -684,7 +690,7 @@ function buildReplayPlaybackPlan(sentence, sentenceTiming, activeWordIndex, sele
   const sentenceStartMs = Math.max(0, Number(sentence?.begin_ms || 0));
   const sentenceEndMs = Math.max(sentenceStartMs + 1, Number(sentence?.end_ms || 0));
   const resolvedBoundaryMs = resolveReplayBoundaryMs(sentence, sentenceTiming, activeWordIndex) || sentenceStartMs;
-  const safeInitialRate = Math.max(0.4, Math.min(1, Number(selectedRate || 1)));
+  const safeInitialRate = normalizePlaybackRate(selectedRate);
   return {
     initialRate: safeInitialRate,
     rateSteps: [],
@@ -817,6 +823,9 @@ export function ImmersiveLessonPage({
     keyboardInset: 0,
     keyboardOpen: false,
   });
+  const [playbackRateInputValue, setPlaybackRateInputValue] = useState(() =>
+    formatPlaybackRateInputValue(DEFAULT_IMMERSIVE_PLAYBACK_RATE),
+  );
   const {
     phase,
     currentSentenceIndex,
@@ -828,6 +837,7 @@ export function ImmersiveLessonPage({
     translationDisplayMode,
     sentenceJumpValue,
     singleSentenceLoopEnabled,
+    playbackRatePinned,
     selectedPlaybackRate,
   } = sessionState;
 
@@ -894,6 +904,9 @@ export function ImmersiveLessonPage({
   }, []);
   const setSelectedPlaybackRate = useCallback((nextValue) => {
     dispatchSession({ type: SET_PLAYBACK_RATE, value: nextValue });
+  }, []);
+  const setPlaybackRatePinned = useCallback((pinned, value) => {
+    dispatchSession({ type: SET_PLAYBACK_RATE_PINNED, pinned, value });
   }, []);
 
   const clearCinemaControlsIdleTimer = useCallback(() => {
@@ -1050,6 +1063,7 @@ export function ImmersiveLessonPage({
   }, []);
 
   const currentSentence = lesson?.sentences?.[currentSentenceIndex] || null;
+  const currentLessonId = String(lesson?.id ?? "").trim();
   const previousSentence = currentSentenceIndex > 0 ? lesson?.sentences?.[currentSentenceIndex - 1] || null : null;
   const currentSentenceEn = currentSentence?.text_en || "(当前句英文暂缺)";
   const currentSentenceZh = currentSentence ? currentSentence.text_zh || "(当前句中文翻译暂缺)" : "(暂无当前句中文翻译)";
@@ -1189,12 +1203,85 @@ export function ImmersiveLessonPage({
     }));
   }, [persistPlaybackPreferences, setLoopEnabled, singleSentenceLoopEnabled]);
 
-  const handleSelectPlaybackRate = useCallback(
-    (nextRate) => {
-      setSelectedPlaybackRate(nextRate);
+  const persistLessonPlaybackRate = useCallback(
+    (nextPinned, nextRate) => {
+      persistPlaybackPreferences((currentPlaybackPreferences) => {
+        const nextOverrides = {
+          ...(currentPlaybackPreferences?.lessonPlaybackRateOverrides || {}),
+        };
+        if (currentLessonId && nextPinned) {
+          nextOverrides[currentLessonId] = {
+            pinned: true,
+            rate: normalizePlaybackRate(nextRate),
+          };
+        } else if (currentLessonId) {
+          delete nextOverrides[currentLessonId];
+        }
+        return {
+          ...currentPlaybackPreferences,
+          lessonPlaybackRateOverrides: nextOverrides,
+        };
+      });
     },
-    [setSelectedPlaybackRate],
+    [currentLessonId, persistPlaybackPreferences],
   );
+
+  const applyPlaybackRate = useCallback(
+    (nextRate, { persistPinned = playbackRatePinned } = {}) => {
+      const resolvedRate = normalizePlaybackRate(nextRate);
+      setSelectedPlaybackRate(resolvedRate);
+      setPlaybackRateInputValue(formatPlaybackRateInputValue(resolvedRate));
+      if (persistPinned) {
+        persistLessonPlaybackRate(true, resolvedRate);
+      }
+      return resolvedRate;
+    },
+    [persistLessonPlaybackRate, playbackRatePinned, setSelectedPlaybackRate],
+  );
+
+  const commitPlaybackRateInput = useCallback(() => {
+    if (!playbackRateInputValue.trim()) {
+      const resetRate = applyPlaybackRate(DEFAULT_IMMERSIVE_PLAYBACK_RATE);
+      setPlaybackRateInputValue(formatPlaybackRateInputValue(resetRate));
+      return;
+    }
+    const committedRate = applyPlaybackRate(playbackRateInputValue);
+    setPlaybackRateInputValue(formatPlaybackRateInputValue(committedRate));
+  }, [applyPlaybackRate, playbackRateInputValue]);
+
+  const handlePlaybackRateInputChange = useCallback((event) => {
+    setPlaybackRateInputValue(event.target.value);
+  }, []);
+
+  const handlePlaybackRateInputKeyDown = useCallback(
+    (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitPlaybackRateInput();
+        event.currentTarget.blur();
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setPlaybackRateInputValue(formatPlaybackRateInputValue(selectedPlaybackRate));
+        event.currentTarget.blur();
+      }
+    },
+    [commitPlaybackRateInput, selectedPlaybackRate],
+  );
+
+  const handleResetPlaybackRate = useCallback(() => {
+    applyPlaybackRate(DEFAULT_IMMERSIVE_PLAYBACK_RATE);
+  }, [applyPlaybackRate]);
+
+  const handleTogglePlaybackRatePinned = useCallback(() => {
+    const nextPinned = !playbackRatePinned;
+    setPlaybackRatePinned(nextPinned, selectedPlaybackRate);
+    persistLessonPlaybackRate(nextPinned, selectedPlaybackRate);
+  }, [persistLessonPlaybackRate, playbackRatePinned, selectedPlaybackRate, setPlaybackRatePinned]);
+
+  useEffect(() => {
+    setPlaybackRateInputValue(formatPlaybackRateInputValue(selectedPlaybackRate));
+  }, [selectedPlaybackRate]);
 
   const resetTranslationMaskGesture = useCallback(() => {
     const captureElement = translationMaskGestureRef.current.captureElement;
@@ -1844,22 +1931,6 @@ export function ImmersiveLessonPage({
       dispatchSession({ type: SET_POST_ANSWER_REPLAY_STATE, value: "waiting_initial_finish" });
     }
   }, [autoReplayAnsweredSentence, immersiveActive, postAnswerReplayState, sentenceTypingDone]);
-
-  useEffect(() => {
-    if (!immersiveActive) return;
-    if (!autoReplayAnsweredSentence) return;
-    if (!singleSentenceLoopEnabled) return;
-    if (!sentenceTypingDone) return;
-    if (postAnswerReplayState !== "completed") return;
-    void startAnswerCompletedReplay();
-  }, [
-    autoReplayAnsweredSentence,
-    immersiveActive,
-    postAnswerReplayState,
-    sentenceTypingDone,
-    singleSentenceLoopEnabled,
-    startAnswerCompletedReplay,
-  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -2974,7 +3045,8 @@ export function ImmersiveLessonPage({
     .filter(Boolean)
     .join(" ");
   const cinemaButtonClassName = cinemaFullscreenActive ? "immersive-cinema-button" : undefined;
-  const showPlaybackRateBadge = cinemaFullscreenActive && selectedPlaybackRate < 0.999;
+  const showPlaybackRateBadge =
+    cinemaFullscreenActive && Math.abs(selectedPlaybackRate - DEFAULT_IMMERSIVE_PLAYBACK_RATE) > 0.001;
   const showTranslationMaskToggle = cinemaFullscreenActive && mediaMode === "video" && !needsBinding;
   const playbackRateLabel = formatPlaybackRateLabel(selectedPlaybackRate);
   const allowNativeVideoFullscreen = isIpadSafari && mediaMode === "video";
@@ -3154,7 +3226,7 @@ export function ImmersiveLessonPage({
           ) : (
             <div ref={typingPanelRef} className={`immersive-typing ${cinemaFullscreenActive ? "immersive-typing--cinema" : ""}`}>
               <div className="immersive-typing-status">
-                <span className="flex items-center gap-1 text-sm">
+                <span className="immersive-status-chip flex items-center gap-1 text-sm">
                   <span className="text-muted-foreground">第</span>
                   <input
                     type="number"
@@ -3169,10 +3241,10 @@ export function ImmersiveLessonPage({
                   />
                   <span className="text-muted-foreground">/ {sentenceCount} 句</span>
                 </span>
-                <div className="flex items-center gap-1">
+                <div className="immersive-session-controls" aria-label="沉浸学习控制">
                   <button
                     type="button"
-                    className="rounded border border-input bg-background px-2 py-0.5 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                    className="immersive-session-action"
                     disabled={currentSentenceIndex <= 0}
                     onClick={() => requestNavigateSentence({ delta: -1, source: "status_prev" })}
                     aria-label="上一句"
@@ -3181,48 +3253,53 @@ export function ImmersiveLessonPage({
                   </button>
                   <button
                     type="button"
-                    className="rounded border border-input bg-background px-2 py-0.5 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                    className="immersive-session-action"
                     disabled={currentSentenceIndex >= sentenceCount - 1}
                     onClick={() => requestNavigateSentence({ delta: 1, source: "status_next" })}
                     aria-label="下一句"
                   >
                     下一句 ›
                   </button>
-                </div>
-                {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
-                {isPlaybackPaused ? <Badge variant="outline">已暂停</Badge> : null}
-              </div>
-
-              {cinemaFullscreenActive ? (
-                <div className="immersive-session-controls" aria-label="沉浸学习控制">
                   <button
                     type="button"
                     className={`immersive-session-toggle ${singleSentenceLoopEnabled ? "immersive-session-toggle--active" : ""}`}
                     aria-pressed={singleSentenceLoopEnabled}
                     onClick={handleToggleSingleSentenceLoop}
                   >
-                    单句循环
+                    精听
                   </button>
-                  <div className="immersive-session-rate-group" role="group" aria-label="播放倍速">
-                    {[...IMMERSIVE_PLAYBACK_RATE_PRESETS].reverse().map((rate) => {
-                      const rateLabel = rate === 1 ? "1.00x" : rate === 0.9 ? "0.90x" : "0.75x";
-                      return (
-                        <button
-                          key={rate}
-                          type="button"
-                          className={`immersive-session-rate-button ${
-                            selectedPlaybackRate === rate ? "immersive-session-rate-button--active" : ""
-                          }`}
-                          aria-pressed={selectedPlaybackRate === rate}
-                          onClick={() => handleSelectPlaybackRate(rate)}
-                        >
-                          {rateLabel}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <label className="immersive-session-rate-field">
+                    <span className="immersive-session-rate-label">倍速</span>
+                    <input
+                      type="number"
+                      min="0.4"
+                      max="2"
+                      step="0.05"
+                      inputMode="decimal"
+                      className="immersive-session-rate-input"
+                      value={playbackRateInputValue}
+                      onChange={handlePlaybackRateInputChange}
+                      onBlur={commitPlaybackRateInput}
+                      onKeyDown={handlePlaybackRateInputKeyDown}
+                      aria-label="播放倍速"
+                    />
+                    <span className="immersive-session-rate-suffix">x</span>
+                  </label>
+                  <button type="button" className="immersive-session-action" onClick={handleResetPlaybackRate}>
+                    重置
+                  </button>
+                  <button
+                    type="button"
+                    className={`immersive-session-toggle ${playbackRatePinned ? "immersive-session-toggle--active" : ""}`}
+                    aria-pressed={playbackRatePinned}
+                    onClick={handleTogglePlaybackRatePinned}
+                  >
+                    固定
+                  </button>
                 </div>
-              ) : null}
+                {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
+                {isPlaybackPaused ? <Badge variant="outline">已暂停</Badge> : null}
+              </div>
 
               {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
               {waitingForInitialPlayback ? <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p> : null}
@@ -3262,7 +3339,13 @@ export function ImmersiveLessonPage({
                   {canRenderInteractiveWordbook ? (
                     <>
                       <div className="immersive-previous-sentence__row">
-                        <div className="min-w-0 flex flex-1 flex-wrap items-center gap-x-1 gap-y-2">
+                        <div
+                          className={`min-w-0 flex flex-1 items-center gap-x-1 gap-y-2 ${
+                            cinemaFullscreenActive
+                              ? "overflow-x-auto whitespace-nowrap flex-nowrap"
+                              : "flex-wrap"
+                          }`}
+                        >
                           <span className="shrink-0 text-foreground">上一句：</span>
                           {previousSentenceTokens.map((token, index) => {
                             const tokenSelected = wordbookSelectedTokenIndexes.includes(index);
@@ -3324,14 +3407,14 @@ export function ImmersiveLessonPage({
                           {wordbookBusy ? "加入中..." : "加入生词本"}
                         </Button>
                       </div>
-                      <p className="pl-[4.5em]">
+                      <p className={`pl-[4.5em] ${cinemaFullscreenActive ? "overflow-x-auto whitespace-nowrap" : ""}`}>
                         {previousSentenceZh}
                       </p>
                     </>
                   ) : (
                     <>
                       <div className="immersive-previous-sentence__row">
-                        <p className="min-w-0 flex-1">
+                        <p className={`min-w-0 flex-1 ${cinemaFullscreenActive ? "overflow-x-auto whitespace-nowrap" : ""}`}>
                           {translationHeading}：{translationEn}
                         </p>
                         {previousSentence ? (
@@ -3348,7 +3431,7 @@ export function ImmersiveLessonPage({
                           </button>
                         ) : null}
                       </div>
-                      <p className="pl-[4.5em]">
+                      <p className={`pl-[4.5em] ${cinemaFullscreenActive ? "overflow-x-auto whitespace-nowrap" : ""}`}>
                         {translationZh}
                       </p>
                     </>
