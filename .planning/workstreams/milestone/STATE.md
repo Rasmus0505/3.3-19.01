@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: 优化学习体验和管理体验
 status: planning
-stopped_at: Phase 10 completed
-last_updated: "2026-03-29T00:41:35+08:00"
+stopped_at: Phase 11 context gathered
+last_updated: "2026-03-28T17:06:55.786Z"
 last_activity: 2026-03-29 -- Phase 10 verified and completed
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 17
+  total_plans: 14
   completed_plans: 14
   percent: 82
 ---
@@ -57,12 +57,12 @@ Progress: [████████░░] 82%
 
 ### Pending Todos
 
-- 全局数字输入框默认值为 `0` 时不便于直接清空重输；已记录为独立 UI 待办：`.planning/workstreams/milestone/todos/pending/2026-03-28-fix-global-numeric-input-clearing.md`
+- 全局数字输入框默认值为 `0` 时不便于直接清空重输；该问题仍保留原 todo 文件，但已折入 Phase 11 scope：`.planning/workstreams/milestone/todos/pending/2026-03-28-fix-global-numeric-input-clearing.md`
 
 ## Session Continuity
 
 **Previous milestone:** v2.0 Billing, Admin & Polish (shipped 2026-03-28)  
-**Next expected action:** `$gsd-discuss-phase 11`  
-**Last Date:** 2026-03-29T00:41:35+08:00
-**Stopped At:** Phase 10 completed
-**Resume File:** .planning/workstreams/milestone/phases/10-admin-console-alignment/10-VERIFICATION.md
+**Next expected action:** `$gsd-plan-phase 11`  
+**Last Date:** 2026-03-28T17:06:55.784Z
+**Stopped At:** Phase 11 context gathered
+**Resume File:** .planning/workstreams/milestone/phases/11-conversion-rollout-and-regression-closeout/11-CONTEXT.md
