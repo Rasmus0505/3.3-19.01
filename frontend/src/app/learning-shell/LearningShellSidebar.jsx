@@ -15,43 +15,28 @@ import {
 import { WalletBadge } from "../../features/wallet/components/WalletBadge";
 import { ConnectionStatusBadge } from "./components/ConnectionStatusBadge";
 import { ADMIN_NAV_ITEMS } from "../../shared/lib/adminSearchParams";
+import { PANEL_ROUTE_ITEMS, getPanelItemByPathname, getPanelPath } from "./panelRoutes";
 
 export const PANEL_ITEMS = [
   {
-    key: "account",
-    title: "个人中心",
+    ...PANEL_ROUTE_ITEMS.find((item) => item.key === "account"),
     icon: UserRound,
-    path: "/account",
   },
   {
-    key: "history",
-    title: "历史记录",
+    ...PANEL_ROUTE_ITEMS.find((item) => item.key === "history"),
     icon: History,
-    path: "/",
   },
   {
-    key: "wordbook",
-    title: "生词本",
+    ...PANEL_ROUTE_ITEMS.find((item) => item.key === "wordbook"),
     icon: BookOpenText,
-    path: "/wordbook",
   },
   {
-    key: "upload",
-    title: "上传素材",
+    ...PANEL_ROUTE_ITEMS.find((item) => item.key === "upload"),
     icon: UploadCloud,
-    path: "/upload",
   },
 ];
 
 export const SIDEBAR_STORAGE_KEY = "app-shell-sidebar-open";
-
-export function getPanelItemByPathname(pathname) {
-  return PANEL_ITEMS.find((item) => item.path === pathname) || PANEL_ITEMS[0];
-}
-
-export function getPanelPath(panelKey) {
-  return PANEL_ITEMS.find((item) => item.key === panelKey)?.path || "/";
-}
 
 export function LearningShellSidebar({
   activePanel,
