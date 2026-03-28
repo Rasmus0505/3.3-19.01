@@ -39,7 +39,7 @@ export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
   const [creating, setCreating] = useState(false);
   const [batchName, setBatchName] = useState("");
   const [faceValueYuan, setFaceValueYuan] = useState("1.00");
-  const [generateQuantity, setGenerateQuantity] = useState(100);
+  const [generateQuantity, setGenerateQuantity] = useState("100");
   const [activeFrom, setActiveFrom] = useState(toLocalDatetimeValue(beijingNow));
   const [expireAt, setExpireAt] = useState(toLocalDatetimeValue(new Date(beijingNow.getTime() + 30 * 24 * 60 * 60 * 1000)));
   const [dailyLimit, setDailyLimit] = useState("");
@@ -131,7 +131,7 @@ export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
       const payload = {
         batch_name: batchName.trim() || `batch-${Date.now()}`,
         face_value_points: parseYuanInputToCents(faceValueYuan),
-        generate_quantity: Number(generateQuantity),
+        generate_quantity: Number(generateQuantity || 0),
         active_from: datetimeLocalToBeijingOffset(activeFrom) || null,
         expire_at: datetimeLocalToBeijingOffset(expireAt) || null,
         remark: remark.trim(),
@@ -304,7 +304,7 @@ export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
             </div>
             <div className="space-y-2">
               <Label>生成数量</Label>
-              <Input type="number" min={1} max={5000} value={generateQuantity} onChange={(event) => setGenerateQuantity(Number(event.target.value || 1))} />
+              <Input type="number" min={1} max={5000} value={generateQuantity} onChange={(event) => setGenerateQuantity(event.target.value)} />
             </div>
             <div className="space-y-2">
               <Label>生效时间</Label>
