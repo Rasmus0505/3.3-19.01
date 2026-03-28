@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  DEFAULT_IMMERSIVE_PLAYBACK_RATE,
+  IMMERSIVE_PLAYBACK_RATE_MAX,
+  IMMERSIVE_PLAYBACK_RATE_MIN,
+  normalizePlaybackRate,
+} from "./immersiveSessionMachine";
+
 function normalizePlaybackPlan(playbackPlan = {}) {
-  const initialRate = Math.max(0.4, Math.min(1, Number(playbackPlan?.initialRate || 1)));
+  const initialRate = normalizePlaybackRate(playbackPlan?.initialRate ?? DEFAULT_IMMERSIVE_PLAYBACK_RATE);
   const rateSteps = Array.isArray(playbackPlan?.rateSteps)
     ? playbackPlan.rateSteps
         .map((item) => ({
           atSec: Math.max(0, Number(item?.atSec || 0)),
-          rate: Math.max(0.4, Math.min(1, Number(item?.rate || 1))),
+          rate: normalizePlaybackRate(item?.rate ?? DEFAULT_IMMERSIVE_PLAYBACK_RATE),
         }))
         .sort((left, right) => left.atSec - right.atSec)
     : [];
@@ -41,7 +48,9 @@ export function useSentencePlayback({
   const [currentPlaybackRate, setCurrentPlaybackRate] = useState(1);
 
   const syncPlaybackRate = useCallback((nextRate) => {
-    setCurrentPlaybackRate(Math.max(0.4, Math.min(1, Number(nextRate || 1))));
+    setCurrentPlaybackRate(
+      Math.min(IMMERSIVE_PLAYBACK_RATE_MAX, Math.max(IMMERSIVE_PLAYBACK_RATE_MIN, Number(nextRate || 1))),
+    );
   }, []);
 
   const clearClipUrl = useCallback(() => {

@@ -1,3 +1,5 @@
+import { DEFAULT_IMMERSIVE_PLAYBACK_RATE, normalizePlaybackRate } from "./immersiveSessionMachine";
+
 const LEARNING_SETTINGS_STORAGE_KEY = "immersive_learning_settings_v2";
 const LEGACY_LEARNING_SETTINGS_STORAGE_KEY = "immersive_learning_settings_v1";
 export const LEARNING_SETTINGS_UPDATED_EVENT = "immersive-learning-settings-updated";
@@ -108,6 +110,7 @@ export const DEFAULT_UI_PREFERENCES = {
 export const DEFAULT_PLAYBACK_PREFERENCES = {
   autoReplayAnsweredSentence: true,
   singleSentenceLoopEnabled: false,
+  lessonPlaybackRateOverrides: {},
 };
 
 function normalizeLegacyPresetId(rawPresetId) {
@@ -144,6 +147,27 @@ function clampNumber(value, min, max, fallback, { integer = false } = {}) {
   }
   const clamped = Math.min(max, Math.max(min, parsed));
   return integer ? Math.round(clamped) : Number(clamped.toFixed(2));
+}
+
+function sanitizeLessonPlaybackRateOverrides(rawOverrides = {}) {
+  if (!rawOverrides || typeof rawOverrides !== "object" || Array.isArray(rawOverrides)) {
+    return {};
+  }
+  const nextOverrides = {};
+  for (const [rawLessonId, rawOverride] of Object.entries(rawOverrides)) {
+    const lessonId = String(rawLessonId || "").trim();
+    if (!lessonId || !rawOverride || typeof rawOverride !== "object") {
+      continue;
+    }
+    if (rawOverride.pinned !== true) {
+      continue;
+    }
+    nextOverrides[lessonId] = {
+      pinned: true,
+      rate: normalizePlaybackRate(rawOverride.rate),
+    };
+  }
+  return nextOverrides;
 }
 
 function normalizeShortcutKeyValue(value) {
@@ -578,5 +602,28 @@ export function sanitizePlaybackPreferences(rawPreferences = {}) {
       typeof rawPreferences?.singleSentenceLoopEnabled === "boolean"
         ? rawPreferences.singleSentenceLoopEnabled
         : DEFAULT_PLAYBACK_PREFERENCES.singleSentenceLoopEnabled,
+    lessonPlaybackRateOverrides: sanitizeLessonPlaybackRateOverrides(rawPreferences?.lessonPlaybackRateOverrides),
+  };
+}
+
+export function getLessonPlaybackRateOverride(learningSettings, lessonId) {
+  const safeLessonId = String(lessonId ?? "").trim();
+  if (!safeLessonId) {
+    return {
+      pinned: false,
+      rate: DEFAULT_IMMERSIVE_PLAYBACK_RATE,
+    };
+  }
+  const lessonOverrides = sanitizePlaybackPreferences(learningSettings?.playbackPreferences).lessonPlaybackRateOverrides;
+  const storedOverride = lessonOverrides[safeLessonId];
+  if (storedOverride?.pinned === true) {
+    return {
+      pinned: true,
+      rate: normalizePlaybackRate(storedOverride.rate),
+    };
+  }
+  return {
+    pinned: false,
+    rate: DEFAULT_IMMERSIVE_PLAYBACK_RATE,
   };
 }

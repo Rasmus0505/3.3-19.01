@@ -54,6 +54,7 @@ def upgrade() -> None:
         sa.column("id", sa.Integer()),
         sa.column("username", sa.String(length=255)),
         sa.column("username_normalized", sa.String(length=255)),
+        schema=schema,
     )
     bind = op.get_bind()
     rows = bind.execute(sa.select(users_table.c.id, users_table.c.username, users_table.c.username_normalized)).all()
