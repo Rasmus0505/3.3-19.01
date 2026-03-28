@@ -74,8 +74,8 @@ Archived shipped requirements: see `.planning/milestones/v2.0-REQUIREMENTS.md`.
 | WEB-01 | Phase 7 | Complete |
 | WEB-02 | Phase 7 | Complete |
 | WEB-03 | Phase 7 | Complete |
-| GROW-01 | Phase 7 | Complete |
-| GROW-02 | Phase 7 | Complete |
+| GROW-01 | Phase 11 | Complete |
+| GROW-02 | Phase 11 | Complete |
 | IMM-01 | Phase 8 | Complete |
 | IMM-02 | Phase 8 | Complete |
 | IMM-03 | Phase 8 | Complete |
@@ -101,4 +101,4 @@ Archived shipped requirements: see `.planning/milestones/v2.0-REQUIREMENTS.md`.
 
 ---
 *Requirements defined: 2026-03-28*  
-*Last updated: 2026-03-29 after Phase 10 completion*
+*Last updated: 2026-03-29 after Phase 11 completion*

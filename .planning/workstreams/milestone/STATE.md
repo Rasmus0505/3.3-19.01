@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: 优化学习体验和管理体验
-status: planning
-stopped_at: Phase 11 context gathered
-last_updated: "2026-03-28T17:06:55.786Z"
-last_activity: 2026-03-29 -- Phase 10 verified and completed
+status: ready
+stopped_at: Phase 11 complete
+last_updated: "2026-03-29T02:10:00+08:00"
+last_activity: 2026-03-29 -- Phase 11 complete
 progress:
   total_phases: 5
-  completed_phases: 4
-  total_plans: 14
-  completed_plans: 14
-  percent: 82
+  completed_phases: 5
+  total_plans: 17
+  completed_plans: 17
+  percent: 100
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 11 — 盈利转化落地与回归收口
+**Current focus:** Milestone wrap-up — v2.1 优化学习体验和管理体验
 
 ## Current Position
 
-Phase: 11 (盈利转化落地与回归收口)
-Plan: Not started
-Status: Ready for discussion and planning after Phase 10 completion
-Last activity: 2026-03-29 -- Phase 10 verified and completed
+Phase: 11 complete
+Plan: 3/3 complete
+Status: Phase 11 complete — milestone ready for closeout
+Last activity: 2026-03-29 -- Phase 11 complete
 
-Progress: [████████░░] 82%
+Progress: [██████████] 100%
 
 ## This Milestone
 
@@ -57,12 +57,12 @@ Progress: [████████░░] 82%
 
 ### Pending Todos
 
-- 全局数字输入框默认值为 `0` 时不便于直接清空重输；该问题仍保留原 todo 文件，但已折入 Phase 11 scope：`.planning/workstreams/milestone/todos/pending/2026-03-28-fix-global-numeric-input-clearing.md`
+None
 
 ## Session Continuity
 
 **Previous milestone:** v2.0 Billing, Admin & Polish (shipped 2026-03-28)  
-**Next expected action:** `$gsd-plan-phase 11`  
-**Last Date:** 2026-03-28T17:06:55.784Z
-**Stopped At:** Phase 11 context gathered
-**Resume File:** .planning/workstreams/milestone/phases/11-conversion-rollout-and-regression-closeout/11-CONTEXT.md
+**Next expected action:** `$gsd-complete-milestone`  
+**Last Date:** 2026-03-29T02:10:00+08:00
+**Stopped At:** Phase 11 complete
+**Resume File:** .planning/workstreams/milestone/phases/11-conversion-rollout-and-regression-closeout/11-VERIFICATION.md
