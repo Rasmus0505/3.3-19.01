@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: 优化学习体验和管理体验
-status: ready
-stopped_at: Phase 8 planned
-last_updated: "2026-03-28T13:20:00Z"
-last_activity: 2026-03-28 -- Phase 08 planned
+status: executing
+stopped_at: Phase 9 context gathered
+last_updated: "2026-03-28T13:42:17.319Z"
+last_activity: 2026-03-28 -- Phase 08 execution started
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 17
+  total_plans: 6
   completed_plans: 2
   percent: 12
 ---
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 08 — 沉浸学习重构
+**Current focus:** Phase 08 — immersive-learning-refactor
 
 ## Current Position
 
-Phase: 08 (沉浸学习重构)
-Plan: 4 plans ready
-Status: Phase 08 planned — ready to execute
-Last activity: 2026-03-28 -- Phase 08 planned
+Phase: 08 (immersive-learning-refactor) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 08
+Last activity: 2026-03-28 -- Phase 08 execution started
 
 Progress: [█░░░░░░░░░] 12%
 
@@ -59,6 +59,6 @@ Progress: [█░░░░░░░░░] 12%
 
 **Previous milestone:** v2.0 Billing, Admin & Polish (shipped 2026-03-28)  
 **Next expected action:** `$gsd-execute-phase 8`  
-**Last Date:** 2026-03-28T13:20:00Z
-**Stopped At:** Phase 8 planned
-**Resume File:** .planning/workstreams/milestone/phases/08-immersive-learning-refactor/08-01-PLAN.md
+**Last Date:** 2026-03-28T13:42:17.317Z
+**Stopped At:** Phase 9 context gathered
+**Resume File:** .planning/workstreams/milestone/phases/09-wordbook-account-and-web-bottle-boundary/09-CONTEXT.md
