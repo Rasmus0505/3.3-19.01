@@ -4,7 +4,7 @@
 
 - ✅ **v1.0 基础能力稳定化** — Phases 1, 1.1, 2 (shipped 2026-03-27)
 - ✅ **v1.1** — Phases 2.1, 3, 4 (shipped 2026-03-27)
-- 📋 **v2.0** — Phases 5, 6 (planned)
+- ✅ **v2.0** — Phases 5, 6 (shipped 2026-03-28)
 
 ## Phases
 
@@ -60,10 +60,10 @@ Plans:
 - [x] 04-01: Add desktop link selection, yt-dlp ingestion, and local media-preparation safeguards
 - [x] 04-02: Feed imported desktop media into the shared generation and history pipeline with verification and error recovery
 
-### 📋 v2.0 — Billing, Admin & Polish (In Progress)
+### ✅ v2.0 — Billing, Admin & Polish (SHIPPED 2026-03-28)
 
 - [x] **Phase 5: Billing and Admin Alignment** (3/3 plans) — completed 2026-03-28
-- [ ] **Phase 6: Product Polish and Fallbacks** (2 plans)
+- [x] **Phase 6: Product Polish and Fallbacks** (2/2 plans) — completed 2026-03-28
 
 ### Phase 5: Billing and Admin Alignment
 
@@ -77,6 +77,17 @@ Plans:
 - [x] 05-02: Turn billing management into a pricing-only surface while preserving canonical model identities
 - [x] 05-03: Expose a full troubleshooting center with runtime-readiness visibility and verification coverage
 
+### Phase 6: Product Polish and Fallbacks
+
+**Goal**: Remove the Getting Started onboarding guide from the web app and improve the billing UX so insufficient balance surfaces a clear recovery path and the estimated charge display is simplified.
+**Depends on**: Phase 5
+**Plans**: 2 plans
+
+Plans:
+
+- [x] 06-01: Remove Getting Started guide from web app routing, sidebar, panel, and overlay
+- [x] 06-02: Improve billing insufficiency UX with dedicated recharge button and simplified estimate display
+
 ## Progress
 
 || Phase | Milestone | Plans | Status | Completed |
@@ -88,6 +99,6 @@ Plans:
 || 3. Lesson Output Consistency | v1.1 | 3/3 | Complete | 2026-03-27 |
 || 4. Desktop Link Import | v1.1 | 2/2 | Complete | 2026-03-27 |
 || 5. Billing and Admin Alignment | v2.0 | 3/3 | Complete | 2026-03-28 |
-|| 6. Product Polish and Fallbacks | v2.0 | 0/2 | Not started | — |
+|| 6. Product Polish and Fallbacks | v2.0 | 2/2 | Complete | 2026-03-28 |
 
-**Overall:** 7/8 phases complete (v1.0 shipped, v1.1 shipped, v2.0 in progress)
+**Overall:** 8/8 phases complete (v1.0 shipped, v1.1 shipped, v2.0 shipped 2026-03-28)

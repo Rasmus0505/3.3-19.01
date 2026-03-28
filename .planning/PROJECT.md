@@ -67,7 +67,18 @@ Users can turn real English media into usable learning lessons quickly, without 
 
 **v1.0 已交付 (2026-03-27)。** Web 和 Desktop 现在 share 稳定的 Bottle 2.0 云端生成路径；Desktop 用户可以使用 Bottle 1.0 本地生成，零配置；DashScope 403 文件访问失败会自动自愈一次。
 
-**下一步：** v2.0 Phase 5 — Billing and Admin Alignment
+**下一步：** v2.0 已交付 (2026-03-28)。所有里程碑已完成。
+
+## Milestone: v2.0 Summary
+
+**Shipped:** 2026-03-28
+**Phases:** Phase 5, Phase 6
+**Key outcomes:**
+- Admin shell simplified: lighter user-first workflow with dedicated troubleshooting route
+- Billing surface is pricing-only: runtime controls removed from admin billing editor
+- Full troubleshooting center delivered: health, task logs, operation audit, runtime readiness
+- Getting Started guide removed from web app: no dead onboarding overlay
+- Billing UX improved: insufficient balance shows "充值后生成" button; estimate display simplified
 
 ## Key Decisions
 

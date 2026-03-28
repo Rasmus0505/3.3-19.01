@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: — Billing, Admin & Polish
-status: Phase 05 complete
-last_updated: "2026-03-28T07:15:03.8575663Z"
+status: v2.0 SHIPPED
+last_updated: "2026-03-28T07:38:00Z"
 progress:
   total_phases: 2
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 5
-  completed_plans: 3
-  percent: 60
+  completed_plans: 5
+  percent: 100
 ---
 
 # Project State
@@ -19,17 +19,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 06 — product-polish-and-fallbacks
+**Current focus:** v2.0 shipped — all milestones complete
 
 ## Current Position
 
-Phase: 06 (product-polish-and-fallbacks) — NOT PLANNED
-Plan: 0 of 2
-v1.0 milestone shipped. v1.1 milestone shipped. Phase 04.1 removed from the roadmap. Phase 05 is complete and the remaining v2.0 work is now Phase 06.
+Phase: 06 complete. v2.0 milestone shipped.
+v1.0 shipped. v1.1 shipped. v2.0 shipped 2026-03-28.
 
-Progress: [██████░░░░] 60% (Phase 05 complete, Phase 06 remaining)
-
-**Next milestone:** v2.0 — Phase 06 (ready for planning)
+Progress: [██████████] 100% (v2.0 complete)
 
 ## Milestone: v1.0 Summary
 
@@ -60,7 +57,7 @@ Progress: [██████░░░░] 60% (Phase 05 complete, Phase 06 rema
 | 260327-1xf | Fix LessonService._build_one_lesson missing in DashScope course generation path | 2026-03-27 | 4037e2f9 | quick/260327-1xf-fix-lessonservice-build-one-lesson-missi/ |
 | 260327-2ca | Fix persist_lesson_workspace_summary signature mismatch in DashScope save stage | 2026-03-27 | pending | quick/260327-2ca-fix-persist-lesson-workspace-summary-sig/ |
 | 260327-5a4 | Fix desktop client UI: error messages and Bottle 1.0/2.0 UX | 2026-03-27 | — | quick/260327-5a4-fix-desktop-client-ui-error-messages-and/ |
-| 260328-l5z | Fix desktop link-import handoff so downloaded Bilibili links continue through normal generation strategy | 2026-03-28 | pending | quick/260328-l5z-bottle-1-0-bilibili/ |
+| 260328-l5z | Fix desktop link-import handoff so downloaded Bilibili links continue through normal generation strategy | 2026-03-28 | 9a0dccc6 | quick/260328-l5z-bottle-1-0-bilibili/ |
 
 ## Accumulated Context
 
@@ -71,5 +68,5 @@ Progress: [██████░░░░] 60% (Phase 05 complete, Phase 06 rema
 
 ## Session Continuity
 
-Last session: 2026-03-27T16:22:53.192Z
-Phase 04.1 has been removed from the roadmap. Phase 05 billing/admin alignment is complete, and the next remaining roadmap item is Phase 06 planning.
+Last session: 2026-03-28T07:15:00Z
+Phase 06 (product polish and fallbacks) has been retroactively documented and all artifacts committed. v2.0 milestone is now complete. All roadmap phases shipped.
