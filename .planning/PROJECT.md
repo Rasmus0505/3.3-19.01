@@ -48,10 +48,10 @@ Users can turn real English media into usable learning lessons quickly, without 
 - ✓ Billing UX improved: insufficient balance shows "充值后生成" recovery button; estimate display simplified — validated in Phase 6
 - ✓ Bottle 1.0 / Bottle 2.0 benchmark, naming, CTA, and monetization contract is now fixed in reusable Phase 7 specs — validated in Phase 7
 - ✓ Web-facing Bottle boundary now has a canonical rule set: Bottle 2.0 is the default web path, Bottle 1.0 is visible but desktop-only, and balance recovery stays on recharge — validated in Phase 7
+- ✓ Learning experience is now stable for repeated sentence listening, fixed speed switching, and immersive shortcut/fullscreen/mask combinations — validated in Phase 8
 
 ### Active
 
-- [ ] Learning experience is stable enough for repeated sentence listening, speed switching, and shortcut combinations without state conflicts
 - [ ] Wordbook supports due review, review progress, and context-rich revision instead of only passive collection
 - [ ] Account onboarding uses unique usernames while login remains email-first and low risk
 - [ ] Web product surface makes Bottle 1.0 desktop-only and Bottle 2.0 web-first obvious before users start generation
@@ -94,7 +94,7 @@ Users can turn real English media into usable learning lessons quickly, without 
 
 **22/22 prior milestone requirements satisfied.**
 
-**当前阶段：** Phase 7 complete — benchmark, positioning, CTA, and copy specs are locked for downstream implementation
+**当前阶段：** Phase 8 complete — immersive learning now uses a reducer/controller contract with loop, fixed-rate playback, and stabilized fullscreen/mask/previous-sentence behavior
 
 ## Milestone: v2.0 Summary
 
@@ -116,11 +116,12 @@ Users can turn real English media into usable learning lessons quickly, without 
 | Platform manages ASR keys instead of end users | Learners are non-technical and should pay with points/redeem codes rather than configure secrets | ✅ Validated |
 | Server should stay light and avoid becoming the media processing bottleneck | Cost and infrastructure limits make centralized heavy processing a bad default | ✅ Validated in Phase 01 & 01.1 |
 | Generated media should become lesson/practice artifacts regardless of generation path | Users care about learning outcomes, not the underlying ASR route | ✅ Validated in Phase 3 |
-| v2.1 should benchmark market patterns before inventing new learning/admin flows | The user explicitly wants product references first, not isolated local redesign | — Pending in v2.1 |
+| v2.1 should benchmark market patterns before inventing new learning/admin flows | The user explicitly wants product references first, not isolated local redesign | ✅ Validated in Phase 7 |
 | Username is a unique profile identity, not a login credential | This improves onboarding and management without expanding auth risk | — Pending in v2.1 |
 | Web may explain Bottle 1.0 but may not execute it | This preserves the desktop-only boundary while still creating a conversion path | ✅ Locked in Phase 7 |
 | Admin monetary UI should standardize on yuan | Mixed cents/points language increases operator confusion | — Pending in v2.1 |
 | Monetization improvements stay inside pay-per-use copy and CTA work, not subscriptions | Competitor benchmarks favor clearer scenario guidance over more package complexity for this milestone | ✅ Locked in Phase 7 |
+| Immersive playback state should be reducer-driven with explicit loop/rate/display contracts | The existing page had too many overlapping state transitions for replay, navigation, fullscreen, and mask controls | ✅ Validated in Phase 8 |
 
 ## Evolution
 
@@ -140,4 +141,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-28 after Phase 7 completion*
+*Last updated: 2026-03-28 after Phase 8 completion*
