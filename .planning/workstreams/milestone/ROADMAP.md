@@ -4,7 +4,7 @@
 
 - ✅ **v1.0 基础能力稳定化** — Phases 1, 1.1, 2 (shipped 2026-03-27)
 - ✅ **v1.1** — Phases 2.1, 3, 4 (shipped 2026-03-27)
-- 📋 **v2.0** — Phases 4.1, 5, 6 (planned)
+- 📋 **v2.0** — Phases 5, 6 (planned)
 
 ## Phases
 
@@ -60,23 +60,22 @@ Plans:
 - [x] 04-01: Add desktop link selection, yt-dlp ingestion, and local media-preparation safeguards
 - [x] 04-02: Feed imported desktop media into the shared generation and history pipeline with verification and error recovery
 
-### 📋 v2.0 — Desktop Local Course Fidelity, Billing, Admin & Polish (Planned)
+### 📋 v2.0 — Billing, Admin & Polish (In Progress)
 
-- [ ] **Phase 4.1: Desktop Local Course Fidelity** (INSERTED) — not started
-- [ ] **Phase 5: Billing and Admin Alignment** (3 plans)
+- [x] **Phase 5: Billing and Admin Alignment** (3/3 plans) — completed 2026-03-28
 - [ ] **Phase 6: Product Polish and Fallbacks** (2 plans)
 
-### Phase 4.1: Desktop Local Course Fidelity
+### Phase 5: Billing and Admin Alignment
 
-**Goal**: Make Bottle 1.0 desktop-local generation behave like a first-class lesson path: one shared generate CTA, model-driven routing, translated lesson output, saved local video/cover, and consistent history/learning playback.
+**Goal**: Align the admin-facing pricing, operational visibility, and troubleshooting structure around Bottle 1.0 and Bottle 2.0 so the product has a simpler business-facing admin surface plus a separate developer-oriented troubleshooting area.
 **Depends on**: Phase 4
 **Plans**: 3 plans
 
 Plans:
 
-- [ ] 04.1-01: Unify Bottle 1.0/Bottle 2.0 behind one shared generate CTA and stable desktop file-selection routing
-- [ ] 04.1-02: Restore local media persistence, real cover generation, and learning playback for desktop-local lessons
-- [ ] 04.1-03: Lock Bottle 1.0 local result semantics and packaged runtime validation for translated vs partial outcomes
+- [x] 05-01: Rework the admin shell into a lighter user-first workflow and separate troubleshooting route
+- [x] 05-02: Turn billing management into a pricing-only surface while preserving canonical model identities
+- [x] 05-03: Expose a full troubleshooting center with runtime-readiness visibility and verification coverage
 
 ## Progress
 
@@ -88,8 +87,7 @@ Plans:
 || 2.1. Admin Bottle 1.0 Settings & Billing Cleanup | v1.1 | 3/3 | Complete | 2026-03-27 |
 || 3. Lesson Output Consistency | v1.1 | 3/3 | Complete | 2026-03-27 |
 || 4. Desktop Link Import | v1.1 | 2/2 | Complete | 2026-03-27 |
-|| 4.1. Desktop Local Course Fidelity | v2.0 | 0/3 | Not started | — |
-|| 5. Billing and Admin Alignment | v2.0 | 0/3 | Not started | — |
+|| 5. Billing and Admin Alignment | v2.0 | 3/3 | Complete | 2026-03-28 |
 || 6. Product Polish and Fallbacks | v2.0 | 0/2 | Not started | — |
 
-**Overall:** 6/9 phases complete (v1.0 shipped, v1.1 shipped)
+**Overall:** 7/8 phases complete (v1.0 shipped, v1.1 shipped, v2.0 in progress)
