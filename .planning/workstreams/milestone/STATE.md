@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: 优化学习体验和管理体验
 status: ready
-stopped_at: Phase 8 context gathered
-last_updated: "2026-03-28T13:01:39.863Z"
-last_activity: 2026-03-28 -- Phase 08 context gathered
+stopped_at: Phase 8 planned
+last_updated: "2026-03-28T13:20:00Z"
+last_activity: 2026-03-28 -- Phase 08 planned
 progress:
   total_phases: 5
   completed_phases: 1
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 08 (沉浸学习重构)
-Plan: Not started
-Status: Phase 08 context gathered — ready to plan
-Last activity: 2026-03-28 -- Phase 08 context gathered
+Plan: 4 plans ready
+Status: Phase 08 planned — ready to execute
+Last activity: 2026-03-28 -- Phase 08 planned
 
 Progress: [█░░░░░░░░░] 12%
 
@@ -58,7 +58,7 @@ Progress: [█░░░░░░░░░] 12%
 ## Session Continuity
 
 **Previous milestone:** v2.0 Billing, Admin & Polish (shipped 2026-03-28)  
-**Next expected action:** `$gsd-plan-phase 8`  
-**Last Date:** 2026-03-28T13:01:39.861Z
-**Stopped At:** Phase 8 context gathered
-**Resume File:** .planning/workstreams/milestone/phases/08-immersive-learning-refactor/08-CONTEXT.md
+**Next expected action:** `$gsd-execute-phase 8`  
+**Last Date:** 2026-03-28T13:20:00Z
+**Stopped At:** Phase 8 planned
+**Resume File:** .planning/workstreams/milestone/phases/08-immersive-learning-refactor/08-01-PLAN.md
