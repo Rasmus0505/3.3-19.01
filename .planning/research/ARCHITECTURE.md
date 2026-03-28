@@ -1,25 +1,45 @@
-﻿# Architecture Research
+# v2.1 Research: Architecture Impact
 
-**Project:** Bottle English Learning
-**Confidence:** HIGH for current structure
+**Milestone:** v2.1 优化学习体验和管理体验  
+**Date:** 2026-03-28
 
-## Recommended Product Architecture
+## Existing Architecture to Reuse
 
-1. Shared account / wallet / lesson domain on the backend
-2. Shared web + desktop renderer UI for most product flows
-3. Desktop-only local helper bridge for local ASR, ffmpeg, yt-dlp, and URL import
-4. Cloud generation path that both web and desktop can invoke
-5. Unified lesson/practice pipeline after generation completes
+- Shared learning shell for history, upload, wordbook, redeem, and admin routes
+- Existing immersive page with playback, shortcut settings, and wordbook collection hooks
+- Existing admin route shell with users, billing, redeem, and troubleshooting surfaces
+- Existing wallet and pricing model that can expose yuan without changing storage semantics
 
-## Data Flow Principle
+## Recommended Build Order
 
-- Input media should be prepared as close to the user device as possible.
-- Cloud ASR should be used where device-local processing is not the chosen route.
-- The backend should persist lesson/task/billing state and final learning artifacts, not act as the default heavy media worker.
+1. Research and product copy normalization
+2. Web upload model-card boundary and Bottle 1.0 guardrails
+3. Immersive playback-state refactor
+4. Wordbook review model and review endpoints
+5. Auth/profile username path and new account UI
+6. Admin IA and yuan-first contract cleanup
+7. Final monetization copy, recharge path, and regression sweep
 
-## Build Order Implication
+## New vs Modified Components
 
-- Stabilize cloud generation path first because it is shared by web and desktop.
-- Harden Bottle 1.0 desktop local path next.
-- Add or refine desktop URL import after local runtime contracts are stable.
-- Polish learning consistency and admin pricing after generation paths are reliable.
+### New
+
+- Research and monetization summary artifacts
+- Username profile update endpoint and account settings entry
+- Wordbook due-review endpoint(s)
+- Shared model-positioning copy helpers for upload/admin surfaces
+
+### Modified
+
+- Immersive learning state orchestration
+- Wordbook list UI and payload shape
+- Auth panel request/response flow
+- Upload model cards and browser guardrails
+- Admin overview, logs, users, pricing, and runtime-readiness surfaces
+
+## Integration Notes
+
+- Browser-side Bottle 1.0 blocking must happen both in frontend card behavior and backend lesson-task admission.
+- Username rollout must preserve desktop session restore and existing auth storage behavior.
+- Admin yuan-first rollout should keep legacy cents fields for compatibility but stop using them as canonical display fields.
+- Old admin deep links must keep resolving to the new workspace structure.
