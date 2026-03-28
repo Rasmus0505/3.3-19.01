@@ -29,15 +29,15 @@ Users can turn real English media into usable learning lessons quickly, without 
 - ✓ Generated lessons from Bottle 1.0 and Bottle 2.0 become consistent learning artifacts — validated in Phase 3
 - ✓ Users can enter spelling/lesson practice from generated content regardless of generation source — validated in Phase 3
 - ✓ Desktop users can import media from supported links through local tooling — validated in Phase 4
+- ✓ Admin shell restructured: user-first workflow with billing nested under users workspace, dedicated troubleshooting route — validated in Phase 5
+- ✓ Billing editor is pricing-only: runtime tuning controls removed; admin and public billing APIs aligned — validated in Phase 5
+- ✓ Admin troubleshooting center exposes Bottle 1.0 and Bottle 2.0 runtime readiness alongside system health and logs — validated in Phase 5
+- ✓ Getting Started guide removed from web app: no dead onboarding overlay or orphaned auth exemptions — validated in Phase 6
+- ✓ Billing UX improved: insufficient balance shows "充值后生成" recovery button; estimate display simplified — validated in Phase 6
 
 ### Active
 
-- [ ] Web app supports the strongest browser-safe generation path, centered on Bottle 2.0 cloud generation — **Migrated to Validated (v1.0 Phase 1)**
-- [ ] Both Bottle 1.0 and Bottle 2.0 are paid capabilities using platform-managed pricing and point deduction — **Migrated to Validated (v1.0 Phase 2)**
-- [ ] Heavy media processing and large-file handling stay off the central server whenever practical — **Migrated to Validated (v1.0 Phase 01.1)**
-- [ ] Generated lessons from Bottle 1.0 and Bottle 2.0 become consistent learning artifacts — **Migrated to Validated (v1.1 Phase 3)**
-- [ ] Users can enter spelling/lesson practice from generated content regardless of generation source — **Migrated to Validated (v1.1 Phase 3)**
-- [ ] Desktop users can import media from supported links through local tooling — **Migrated to Validated (v1.1 Phase 4)**
+*(All v1 requirements have been validated. See `milestones/v2.0-REQUIREMENTS.md` for the complete archived requirements list.)*
 
 ### Out of Scope
 
@@ -63,11 +63,14 @@ Users can turn real English media into usable learning lessons quickly, without 
 
 ## Current State
 
-**v1.1 已完成 (2026-03-27)。** Admin surface cleanup, lesson output consistency, and desktop link import are now shipped together: Bottle 1.0 billing/admin cleanup is complete, generated lessons converge into one canonical learner flow, and desktop users can import supported links locally and land directly in learning.
+**All v1 milestones complete.** The full v1 product is shipped:
+- v1.0 (2026-03-27): Foundation — shared cloud generation, ASR 403 self-heal, desktop local generation
+- v1.1 (2026-03-27): Bottle 1.0 billing/admin cleanup, canonical lesson pipeline, desktop link import
+- v2.0 (2026-03-28): Admin simplification, pricing-only billing, troubleshooting center, onboarding cleanup, billing UX
 
-**v1.0 已交付 (2026-03-27)。** Web 和 Desktop 现在 share 稳定的 Bottle 2.0 云端生成路径；Desktop 用户可以使用 Bottle 1.0 本地生成，零配置；DashScope 403 文件访问失败会自动自愈一次。
+**22/22 v1 requirements satisfied** across all three milestones.
 
-**下一步：** v2.0 已交付 (2026-03-28)。所有里程碑已完成。
+**下一步：** 规划下一个里程碑
 
 ## Milestone: v2.0 Summary
 
@@ -92,6 +95,10 @@ Users can turn real English media into usable learning lessons quickly, without 
 | Direct-upload DashScope file access failures should self-heal before surfacing to users | Signed URLs can expire or be rejected transiently; the product should repair that path without forcing users into manual fallback first | ✅ Validated in Phase 01.1 — one-time retry + dedicated DASHSCOPE_FILE_ACCESS_FORBIDDEN error |
 | Treat `dashscope_file_id` as the canonical cloud object key across request-url, task artifacts, and generation entrypoints | The direct-upload path works end-to-end when the same object key is preserved; regression coverage prevents response and task creation paths from drifting apart | ✅ Validated in Phase 01 — regression coverage locked |
 | Desktop link imports should disappear into the same canonical lesson/history/learning flow after creation | Users care about the lesson outcome, not whether it came from file upload or imported media | ✅ Validated in Phase 4 — imported links now rename canonical lessons and enter learning directly |
+| Admin shell should default to the user workflow, not a developer/ops health page | Routine operators need business-facing tools (users, billing, redeem) rather than health dashboards as the home route | ✅ Validated in Phase 5 — `/admin` lands on users workspace, troubleshooting is a dedicated secondary route |
+| Billing editor should expose pricing only, not runtime tuning controls | Runtime parameters are internal defaults; routine billing ops should only see price, cost, unit, and active flag | ✅ Validated in Phase 5 — runtime fields removed from admin billing contract and UI; internal defaults preserved |
+| Troubleshooting should be a real operator surface, not a hidden/mislabeled section | Developers and advanced operators need live diagnostic access without it competing with the business-facing admin home | ✅ Validated in Phase 5 — troubleshooting has its own route with Bottle 1.0/2.0 runtime readiness, clean Chinese copy, and stable deep links |
+| Billing insufficiency should surface an actionable recovery path, not a dead-end disabled button | Users with insufficient balance need a clear path to recharge rather than a confusingly disabled submit button | ✅ Validated in Phase 6 — "充值后生成" button appears when billing is insufficient; primary button no longer disabled for insufficient alone |
 
 ## Evolution
 
@@ -111,4 +118,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-27 after v1.1 completion*
+*Last updated: 2026-03-28 after v2.0 completion — all v1 milestones complete*
