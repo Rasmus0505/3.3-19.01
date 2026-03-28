@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: 优化学习体验和管理体验
-status: ready for planning
-stopped_at: Phase 09 complete
-last_updated: "2026-03-28T23:20:00+08:00"
-last_activity: 2026-03-28 -- Phase 09 completed
+status: planning
+stopped_at: Phase 10 context gathered
+last_updated: "2026-03-28T15:34:08.319Z"
+last_activity: 2026-03-28 -- Phase 09 verified and completed
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 17
+  total_plans: 10
   completed_plans: 10
   percent: 59
 ---
@@ -55,10 +55,14 @@ Progress: [██████░░░░] 59%
 - 网页端转化按场景分流：能力边界和高风险素材主推桌面端，余额不足继续走充值恢复
 - v2.1 的盈利优化保持按次付费，不引入订阅表达
 
+### Pending Todos
+
+- 全局数字输入框默认值为 `0` 时不便于直接清空重输；已记录为独立 UI 待办：`.planning/workstreams/milestone/todos/pending/2026-03-28-fix-global-numeric-input-clearing.md`
+
 ## Session Continuity
 
 **Previous milestone:** v2.0 Billing, Admin & Polish (shipped 2026-03-28)  
-**Next expected action:** `$gsd-discuss-phase 10`  
-**Last Date:** 2026-03-28T23:20:00+08:00
-**Stopped At:** Phase 09 complete
-**Resume File:** .planning/workstreams/milestone/ROADMAP.md
+**Next expected action:** `$gsd-plan-phase 10`  
+**Last Date:** 2026-03-28T15:34:08.317Z
+**Stopped At:** Phase 10 context gathered
+**Resume File:** .planning/workstreams/milestone/phases/10-admin-console-alignment/10-CONTEXT.md
