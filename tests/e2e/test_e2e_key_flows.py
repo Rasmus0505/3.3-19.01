@@ -146,7 +146,10 @@ def test_e2e_login_create_lesson_practice_progress(e2e_client):
 
     get_resp = client.get(f"/api/lessons/{lesson_id}/progress", headers=headers)
     assert get_resp.status_code == 200
-    assert get_resp.json()["completed_sentence_indexes"] == [0]
+    practice_progress = get_resp.json()
+    assert practice_progress["completed_sentence_indexes"] == [0]
+    assert practice_progress["current_sentence_index"] == 0
+    assert practice_progress["last_played_at_ms"] == 750
 
     rename_resp = client.patch(
         f"/api/lessons/{lesson_id}",
@@ -160,6 +163,7 @@ def test_e2e_login_create_lesson_practice_progress(e2e_client):
     assert catalog_resp.status_code == 200
     assert catalog_resp.json()["items"][0]["title"] == "renamed e2e lesson"
     assert catalog_resp.json()["items"][0]["progress_summary"]["completed_sentence_count"] == 1
+    assert catalog_resp.json()["items"][0]["progress_summary"]["current_sentence_index"] == 0
 
 
 def test_e2e_wordbook_collect_and_manage_entries(e2e_client):

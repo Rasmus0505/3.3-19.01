@@ -1,5 +1,5 @@
-import { ArrowLeft, ArrowRight, Eye, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Eye, Loader2, Volume2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { parseResponse, toErrorText } from "../../shared/api/client";
@@ -22,7 +22,30 @@ import {
   resolveReplayAssistance,
   writeLearningSettings,
 } from "./learningSettings";
+import {
+  ANSWER_COMPLETED,
+  EXIT_IMMERSIVE,
+  IMMERSIVE_PLAYBACK_RATE_PRESETS,
+  LESSON_LOADED,
+  NAVIGATE_TO_SENTENCE,
+  PLAYBACK_FINISHED,
+  PLAYBACK_STARTED,
+  POST_ANSWER_REPLAY_COMPLETED,
+  POST_ANSWER_REPLAY_STARTED,
+  RESET_SENTENCE_GATE,
+  SENTENCE_PASSED,
+  SET_LOOP_ENABLED,
+  SET_MEDIA_BINDING_REQUIRED,
+  SET_POST_ANSWER_REPLAY_STATE,
+  SET_PHASE,
+  SET_PLAYBACK_RATE,
+  SET_SENTENCE_JUMP_VALUE,
+  SET_TRANSLATION_DISPLAY_MODE,
+  createImmersiveSessionState,
+  immersiveSessionReducer,
+} from "./immersiveSessionMachine";
 import { getMediaExt, isAudioFilename, isVideoFilename, normalizeToken } from "./tokenNormalize";
+import { useImmersiveSessionController } from "./useImmersiveSessionController";
 import { useSentencePlayback } from "./useSentencePlayback";
 import { useTypingFeedbackSounds } from "./useTypingFeedbackSounds";
 import "./immersive.css";
@@ -30,7 +53,6 @@ import "./immersive.css";
 const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
 const APOSTROPHE_RE = /[’']/g;
 const CINEMA_CONTROLS_IDLE_MS = 3000;
-const MIN_PERCEPTIBLE_SLOWDOWN_WINDOW_MS = 900;
 const WORD_TIMING_TOLERANCE_MS = 140;
 const PROGRAMMATIC_FULLSCREEN_EXIT_RESET_MS = 1000;
 const WORDBOOK_LONG_PRESS_MS = 260;
@@ -658,61 +680,18 @@ function resolveReplayBoundaryMs(sentence, sentenceTiming, activeWordIndex) {
   return null;
 }
 
-function buildReplayPlaybackPlan(sentence, sentenceTiming, activeWordIndex, tailRate) {
+function buildReplayPlaybackPlan(sentence, sentenceTiming, activeWordIndex, selectedRate) {
   const sentenceStartMs = Math.max(0, Number(sentence?.begin_ms || 0));
   const sentenceEndMs = Math.max(sentenceStartMs + 1, Number(sentence?.end_ms || 0));
-  const resolvedBoundaryMs = resolveReplayBoundaryMs(sentence, sentenceTiming, activeWordIndex);
-  const safeTailRate = Math.max(0.4, Math.min(1, Number(tailRate || 1)));
-  const tailWindowMs = resolvedBoundaryMs ? Math.max(0, sentenceEndMs - resolvedBoundaryMs) : sentenceEndMs - sentenceStartMs;
-
-  if (!resolvedBoundaryMs) {
-    return {
-      initialRate: safeTailRate,
-      rateSteps: [],
-      preciseBoundary: false,
-      tailBoundaryMs: sentenceStartMs,
-      tailWindowMs,
-      speedMode: safeTailRate < 1 ? "full_sentence_fallback" : "normal",
-      fallbackReason: "boundary_missing",
-    };
-  }
-
-  if (resolvedBoundaryMs <= sentenceStartMs + 30) {
-    return {
-      initialRate: safeTailRate,
-      rateSteps: [],
-      preciseBoundary: true,
-      tailBoundaryMs: resolvedBoundaryMs,
-      tailWindowMs,
-      speedMode: safeTailRate < 1 ? "full_sentence_fallback" : "normal",
-      fallbackReason: "boundary_near_start",
-    };
-  }
-
-  if (safeTailRate < 1 && tailWindowMs < MIN_PERCEPTIBLE_SLOWDOWN_WINDOW_MS) {
-    return {
-      initialRate: safeTailRate,
-      rateSteps: [],
-      preciseBoundary: true,
-      tailBoundaryMs: resolvedBoundaryMs,
-      tailWindowMs,
-      speedMode: "full_sentence_fallback",
-      fallbackReason: "tail_window_too_short",
-    };
-  }
-
+  const resolvedBoundaryMs = resolveReplayBoundaryMs(sentence, sentenceTiming, activeWordIndex) || sentenceStartMs;
+  const safeInitialRate = Math.max(0.4, Math.min(1, Number(selectedRate || 1)));
   return {
-    initialRate: 1,
-    rateSteps: [
-      {
-        atSec: (resolvedBoundaryMs - sentenceStartMs) / 1000,
-        rate: safeTailRate,
-      },
-    ],
-    preciseBoundary: true,
+    initialRate: safeInitialRate,
+    rateSteps: [],
+    preciseBoundary: Boolean(resolvedBoundaryMs),
     tailBoundaryMs: resolvedBoundaryMs,
-    tailWindowMs,
-    speedMode: safeTailRate < 1 ? "tail_only" : "normal",
+    tailWindowMs: sentenceEndMs - sentenceStartMs,
+    speedMode: "fixed_rate",
     fallbackReason: "",
   };
 }
@@ -797,7 +776,6 @@ export function ImmersiveLessonPage({
   onStartImmersive,
   externalMediaReloadToken = 0,
 }) {
-  const [phase, setPhase] = useState("idle");
   const [mediaMode, setMediaMode] = useState("video");
   const [mediaBlobUrl, setMediaBlobUrl] = useState("");
   const [mediaLoading, setMediaLoading] = useState(false);
@@ -808,23 +786,20 @@ export function ImmersiveLessonPage({
   const [bindingError, setBindingError] = useState("");
   const [bindingHint, setBindingHint] = useState("");
   const [mediaReloadKey, setMediaReloadKey] = useState(0);
-  const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
-  const [completedIndexes, setCompletedIndexes] = useState([]);
   const [activeWordIndex, setActiveWordIndex] = useState(0);
   const [currentWordInput, setCurrentWordInput] = useState("");
   const [wordInputs, setWordInputs] = useState([]);
   const [wordStatuses, setWordStatuses] = useState([]);
   const [learningSettings, setLearningSettings] = useState(() => readLearningSettings());
-  const [sentenceTypingDone, setSentenceTypingDone] = useState(false);
-  const [sentencePlaybackDone, setSentencePlaybackDone] = useState(false);
-  const [sentencePlaybackRequired, setSentencePlaybackRequired] = useState(true);
-  const [postAnswerReplayState, setPostAnswerReplayState] = useState("idle");
-  const [translationDisplayMode, setTranslationDisplayMode] = useState("previous");
+  const [sessionState, dispatchSession] = useReducer(
+    immersiveSessionReducer,
+    null,
+    () => createImmersiveSessionState({ lesson, learningSettings: readLearningSettings() }),
+  );
   const [wordbookBusy, setWordbookBusy] = useState(false);
   const [wordbookSelectedTokenIndexes, setWordbookSelectedTokenIndexes] = useState([]);
   const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
   const [isFullscreenFallback, setIsFullscreenFallback] = useState(false);
-  const [sentenceJumpValue, setSentenceJumpValue] = useState("");
   const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(
     () => readLearningSettings().uiPreferences?.showFullscreenPreviousSentence ?? false,
   );
@@ -842,6 +817,19 @@ export function ImmersiveLessonPage({
     keyboardInset: 0,
     keyboardOpen: false,
   });
+  const {
+    phase,
+    currentSentenceIndex,
+    completedIndexes,
+    sentenceTypingDone,
+    sentencePlaybackDone,
+    sentencePlaybackRequired,
+    postAnswerReplayState,
+    translationDisplayMode,
+    sentenceJumpValue,
+    singleSentenceLoopEnabled,
+    selectedPlaybackRate,
+  } = sessionState;
 
   const immersiveContainerRef = useRef(null);
   const immersiveMediaRef = useRef(null);
@@ -892,6 +880,21 @@ export function ImmersiveLessonPage({
   const hasExitHandler = typeof onExitImmersive === "function" || typeof onBack === "function";
   const typingEnabled =
     immersiveActive && Boolean(lesson?.sentences?.[currentSentenceIndex]) && phase !== "transition" && phase !== "lesson_completed";
+  const setPhase = useCallback((nextPhase) => {
+    dispatchSession({ type: SET_PHASE, phase: nextPhase });
+  }, []);
+  const setSentenceJumpValue = useCallback((nextValue) => {
+    dispatchSession({ type: SET_SENTENCE_JUMP_VALUE, value: nextValue });
+  }, []);
+  const setTranslationDisplayMode = useCallback((nextValue) => {
+    dispatchSession({ type: SET_TRANSLATION_DISPLAY_MODE, value: nextValue });
+  }, []);
+  const setLoopEnabled = useCallback((enabled) => {
+    dispatchSession({ type: SET_LOOP_ENABLED, enabled });
+  }, []);
+  const setSelectedPlaybackRate = useCallback((nextValue) => {
+    dispatchSession({ type: SET_PLAYBACK_RATE, value: nextValue });
+  }, []);
 
   const clearCinemaControlsIdleTimer = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -1114,6 +1117,10 @@ export function ImmersiveLessonPage({
     setShowFullscreenPreviousSentence(resolvedSettings.uiPreferences?.showFullscreenPreviousSentence ?? false);
     setTranslationMaskEnabled(resolvedSettings.uiPreferences?.translationMask?.enabled !== false);
     setTranslationMaskRect(normalizeTranslationMaskRect(resolvedSettings.uiPreferences?.translationMask));
+    dispatchSession({
+      type: SET_LOOP_ENABLED,
+      enabled: resolvedSettings.playbackPreferences?.singleSentenceLoopEnabled === true,
+    });
   }, []);
 
   const persistUiPreferences = useCallback(
@@ -1126,6 +1133,24 @@ export function ImmersiveLessonPage({
         uiPreferences: {
           ...currentUiPreferences,
           ...nextUiPreferences,
+        },
+      });
+      syncLearningSettingsState(readLearningSettings());
+    },
+    [syncLearningSettingsState],
+  );
+
+  const persistPlaybackPreferences = useCallback(
+    (updater) => {
+      const currentSettings = readLearningSettings();
+      const currentPlaybackPreferences = currentSettings.playbackPreferences || {};
+      const nextPlaybackPreferences =
+        typeof updater === "function" ? updater(currentPlaybackPreferences) : updater;
+      writeLearningSettings({
+        ...currentSettings,
+        playbackPreferences: {
+          ...currentPlaybackPreferences,
+          ...nextPlaybackPreferences,
         },
       });
       syncLearningSettingsState(readLearningSettings());
@@ -1153,6 +1178,22 @@ export function ImmersiveLessonPage({
       }));
     },
     [persistUiPreferences],
+  );
+
+  const handleToggleSingleSentenceLoop = useCallback(() => {
+    const nextEnabled = !singleSentenceLoopEnabled;
+    setLoopEnabled(nextEnabled);
+    persistPlaybackPreferences((currentPlaybackPreferences) => ({
+      ...currentPlaybackPreferences,
+      singleSentenceLoopEnabled: nextEnabled,
+    }));
+  }, [persistPlaybackPreferences, setLoopEnabled, singleSentenceLoopEnabled]);
+
+  const handleSelectPlaybackRate = useCallback(
+    (nextRate) => {
+      setSelectedPlaybackRate(nextRate);
+    },
+    [setSelectedPlaybackRate],
   );
 
   const resetTranslationMaskGesture = useCallback(() => {
@@ -1246,11 +1287,7 @@ export function ImmersiveLessonPage({
   const resetSentenceGate = useCallback((playbackRequired = true) => {
     sentenceAdvanceLockedRef.current = false;
     playbackKindRef.current = "initial";
-    setSentenceTypingDone(false);
-    setSentencePlaybackDone(false);
-    setSentencePlaybackRequired(Boolean(playbackRequired));
-    setPostAnswerReplayState("idle");
-    setTranslationDisplayMode("previous");
+    dispatchSession({ type: RESET_SENTENCE_GATE, playbackRequired });
     replayAssistStageRef.current = 0;
     replayProgressAnchorRef.current = 0;
   }, []);
@@ -1482,8 +1519,6 @@ export function ImmersiveLessonPage({
     if (!lesson || !currentSentence) return;
 
     const nextCompleted = Array.from(new Set([...completedIndexes, currentSentence.idx])).sort((a, b) => a - b);
-    setCompletedIndexes(nextCompleted);
-
     const nextIdx = currentSentenceIndex + 1;
     const lastIdx = Math.max(0, sentenceCount - 1);
     const progressIdx = Math.min(nextIdx, lastIdx);
@@ -1495,13 +1530,24 @@ export function ImmersiveLessonPage({
     onProgressSynced?.();
 
     if (nextIdx > lastIdx) {
-      setPhase("lesson_completed");
+      dispatchSession({
+        type: SENTENCE_PASSED,
+        completedSentenceIndex: currentSentence.idx,
+        nextSentenceIndex: currentSentenceIndex,
+        sentenceCount,
+        isLessonCompleted: true,
+      });
       return;
     }
 
     resetWordTyping(lesson?.sentences?.[nextIdx], true);
-    setCurrentSentenceIndex(nextIdx);
-    setPhase("auto_play_pending");
+    dispatchSession({
+      type: SENTENCE_PASSED,
+      completedSentenceIndex: currentSentence.idx,
+      nextSentenceIndex: nextIdx,
+      sentenceCount,
+      phase: "auto_play_pending",
+    });
   }, [
     completedIndexes,
     currentSentence,
@@ -1520,19 +1566,22 @@ export function ImmersiveLessonPage({
       sentenceIndex: currentSentenceIndex,
       typingDone: sentenceTypingDone,
     });
-    setSentencePlaybackDone(true);
+    if (playbackKind === "previous_sentence_preview") {
+      dispatchSession({ type: SET_PHASE, phase: "typing" });
+      return;
+    }
     if (playbackKind === "answer_completed_replay") {
-      setPostAnswerReplayState("completed");
+      dispatchSession({ type: POST_ANSWER_REPLAY_COMPLETED, phase: "typing" });
       return;
     }
-    if (!expectedTokens.length) {
-      setSentenceTypingDone(true);
-      return;
-    }
-    setPhase("typing");
+    dispatchSession({
+      type: PLAYBACK_FINISHED,
+      expectedTokensCount: expectedTokens.length,
+      phase: expectedTokens.length ? "typing" : phase,
+    });
   }, [currentSentenceIndex, expectedTokens.length, sentenceTypingDone]);
 
-  const { isPlaying, isPlaybackPaused, currentPlaybackRate, playSentence, stopPlayback, togglePausePlayback, onMainMediaTimeUpdate } =
+  const { isPlaying, isPlaybackPaused, playSentence, stopPlayback, togglePausePlayback, onMainMediaTimeUpdate } =
     useSentencePlayback({
     mode: mediaMode,
     mediaElementRef,
@@ -1546,47 +1595,51 @@ export function ImmersiveLessonPage({
     async ({ manual = false, playbackKind = "initial", playbackPlan = null, source = "unknown" } = {}) => {
       if (!currentSentence) return;
       const replayShortcutLabel = getShortcutLabel(learningSettings.shortcuts.replay_sentence);
+      const effectivePlaybackPlan = playbackPlan || {
+        initialRate: selectedPlaybackRate,
+        rateSteps: [],
+      };
       if (needsBinding) {
         setMediaError("当前课程缺少可播放媒体，请先在历史记录中恢复视频。");
-        setSentencePlaybackRequired(false);
+        dispatchSession({ type: SET_MEDIA_BINDING_REQUIRED, required: true, phase: "typing" });
         if (!expectedTokens.length) {
-          setSentenceTypingDone(true);
+          dispatchSession({ type: PLAYBACK_FINISHED, expectedTokensCount: 0, phase: "typing" });
         }
-        setPhase("typing");
         return;
       }
       debugImmersiveLog("playback_start", {
         playbackKind,
         source,
         sentenceIndex: currentSentenceIndex,
-        playbackPlan,
+        playbackPlan: effectivePlaybackPlan,
       });
-      const result = await playSentence(currentSentence, playbackPlan);
+      const result = await playSentence(currentSentence, effectivePlaybackPlan);
       if (result.ok) {
         playbackKindRef.current = playbackKind;
-        setSentencePlaybackRequired(true);
-        setSentencePlaybackDone(false);
+        dispatchSession({
+          type: PLAYBACK_STARTED,
+          phase: "playing",
+          playbackRequired: true,
+          translationDisplayMode: playbackKind === "answer_completed_replay" ? "current_answered" : translationDisplayMode,
+        });
         setMediaError("");
-        setPhase("playing");
         debugImmersiveLog("playback_started", { playbackKind, sentenceIndex: currentSentenceIndex });
         return;
       }
       if (result.reason === "clip_unavailable") {
         setNeedsBinding(true);
-        setSentencePlaybackRequired(false);
+        dispatchSession({ type: SET_MEDIA_BINDING_REQUIRED, required: true, phase: "typing" });
         if (!expectedTokens.length) {
-          setSentenceTypingDone(true);
+          dispatchSession({ type: PLAYBACK_FINISHED, expectedTokensCount: 0, phase: "typing" });
         }
         setMediaError("本句服务器音频不可用，请先在历史记录中恢复视频。");
-        setPhase("typing");
         return;
       }
       if (result.reason === "autoplay_blocked") {
-        setSentencePlaybackRequired(false);
+        dispatchSession({ type: SET_MEDIA_BINDING_REQUIRED, required: false, phase: "typing" });
         if (!expectedTokens.length) {
-          setSentenceTypingDone(true);
+          dispatchSession({ type: PLAYBACK_FINISHED, expectedTokensCount: 0, phase: "typing" });
         }
-        setPhase("typing");
         setMediaError(
           manual
             ? `浏览器仍阻止自动播放。你可以继续输入，或稍后按 ${replayShortcutLabel} 手动重播本句。`
@@ -1594,32 +1647,38 @@ export function ImmersiveLessonPage({
         );
         return;
       }
-      setSentencePlaybackRequired(false);
+      dispatchSession({ type: SET_MEDIA_BINDING_REQUIRED, required: false, phase: "typing" });
       if (!expectedTokens.length) {
-        setSentenceTypingDone(true);
+        dispatchSession({ type: PLAYBACK_FINISHED, expectedTokensCount: 0, phase: "typing" });
       }
       setMediaError("当前句播放失败，已切换为输入模式。");
-      setPhase("typing");
     },
-    [currentSentence, currentSentenceIndex, expectedTokens.length, learningSettings.shortcuts.replay_sentence, needsBinding, playSentence],
+    [
+      currentSentence,
+      currentSentenceIndex,
+      expectedTokens.length,
+      learningSettings.shortcuts.replay_sentence,
+      needsBinding,
+      playSentence,
+      selectedPlaybackRate,
+      translationDisplayMode,
+    ],
   );
 
   const startAnswerCompletedReplay = useCallback(async () => {
     if (!currentSentence) {
-      setPostAnswerReplayState("completed");
+      dispatchSession({ type: POST_ANSWER_REPLAY_COMPLETED, phase: "typing" });
       return;
     }
 
-    setPostAnswerReplayState("replaying");
-    setSentencePlaybackDone(false);
     playbackKindRef.current = "answer_completed_replay";
-    setPhase("playing");
+    dispatchSession({ type: POST_ANSWER_REPLAY_STARTED, phase: "playing" });
     setMediaError("");
     debugImmersiveLog("answer_completed_replay.start", {
       sentenceIndex: currentSentenceIndex,
     });
 
-    const result = await playSentence(currentSentence, { initialRate: 1, rateSteps: [] });
+    const result = await playSentence(currentSentence, { initialRate: selectedPlaybackRate, rateSteps: [] });
     if (result.ok) {
       debugImmersiveLog("answer_completed_replay.playing", {
         sentenceIndex: currentSentenceIndex,
@@ -1632,10 +1691,8 @@ export function ImmersiveLessonPage({
       reason: result.reason || "unknown",
       detail: result.detail || "",
     });
-    setPostAnswerReplayState("completed");
-    setSentencePlaybackDone(true);
-    setPhase("typing");
-  }, [currentSentence, currentSentenceIndex, playSentence]);
+    dispatchSession({ type: POST_ANSWER_REPLAY_COMPLETED, phase: "typing" });
+  }, [currentSentence, currentSentenceIndex, playSentence, selectedPlaybackRate]);
 
   useEffect(() => {
     if (!lesson) return;
@@ -1647,21 +1704,21 @@ export function ImmersiveLessonPage({
     setMediaBlobUrl("");
     setMediaReady(false);
     setMediaLoading(false);
-
+    dispatchSession({
+      type: LESSON_LOADED,
+      lesson,
+      learningSettings,
+      phase: "idle",
+      playbackRequired: true,
+    });
     const savedIdx = Number.isInteger(lesson?.progress?.current_sentence_index) ? lesson.progress.current_sentence_index : 0;
     const safeIdx = Math.min(Math.max(savedIdx, 0), Math.max(0, (lesson?.sentences?.length || 1) - 1));
-    const savedCompleted = Array.isArray(lesson?.progress?.completed_sentence_indexes)
-      ? Array.from(new Set(lesson.progress.completed_sentence_indexes)).sort((a, b) => a - b)
-      : [];
-    setCurrentSentenceIndex(safeIdx);
-    setCompletedIndexes(savedCompleted);
     resetWordTyping(lesson?.sentences?.[safeIdx], true);
-    setPhase("idle");
 
     const fileName = String(lesson.source_filename || "");
     const preferredMode = isVideoFilename(fileName) ? "video" : resolveMediaModeFromFileName(fileName);
     setMediaMode(preferredMode);
-  }, [lesson?.id, resetWordTyping, stopPlayback]);
+  }, [learningSettings, lesson?.id, resetWordTyping, stopPlayback]);
 
   useEffect(() => {
     if (!lesson) return;
@@ -1693,6 +1750,7 @@ export function ImmersiveLessonPage({
         if (canceled) return;
         setMediaBlobUrl("");
         setNeedsBinding(true);
+        dispatchSession({ type: SET_MEDIA_BINDING_REQUIRED, required: true, phase: "typing" });
         setBindingHint("");
         setMediaError("当前课程媒体仅保存在浏览器本地，请先在历史记录中恢复视频。");
         setMediaLoading(false);
@@ -1708,9 +1766,11 @@ export function ImmersiveLessonPage({
           setMediaBlobUrl("");
           if (isLocalMediaRequiredPayload(resp, payload) || Number(resp.status) === 404) {
             setNeedsBinding(true);
+            dispatchSession({ type: SET_MEDIA_BINDING_REQUIRED, required: true, phase: "typing" });
             setMediaError("服务器媒体不可用，请先在历史记录中恢复视频。");
           } else {
             setNeedsBinding(true);
+            dispatchSession({ type: SET_MEDIA_BINDING_REQUIRED, required: true, phase: "typing" });
             setMediaError(`${formatMediaLoadError(resp, payload)} 请先在历史记录中恢复视频。`);
           }
           return;
@@ -1738,6 +1798,7 @@ export function ImmersiveLessonPage({
         const detail = String(error || "").trim();
         setMediaBlobUrl("");
         setNeedsBinding(true);
+        dispatchSession({ type: SET_MEDIA_BINDING_REQUIRED, required: true, phase: "typing" });
         setMediaError(detail ? `媒体加载异常（${detail}），请先在历史记录中恢复视频。` : "媒体加载异常，请先在历史记录中恢复视频。");
       } finally {
         if (!canceled) {
@@ -1762,7 +1823,7 @@ export function ImmersiveLessonPage({
     if (mediaMode === "clip") return;
     if (!mediaReady) return;
     if (!mediaBlobUrl) return;
-    setPhase("auto_play_pending");
+    dispatchSession({ type: SET_PHASE, phase: "auto_play_pending" });
   }, [immersiveActive, mediaBlobUrl, mediaMode, mediaReady, needsBinding]);
 
   useEffect(() => {
@@ -1778,9 +1839,27 @@ export function ImmersiveLessonPage({
     if (!immersiveActive) return;
     if (!autoReplayAnsweredSentence) return;
     if (!sentenceTypingDone) return;
-    setTranslationDisplayMode("current_answered");
-    setPostAnswerReplayState((current) => (current === "idle" ? "waiting_initial_finish" : current));
-  }, [autoReplayAnsweredSentence, immersiveActive, sentenceTypingDone]);
+    dispatchSession({ type: ANSWER_COMPLETED, translationDisplayMode: "current_answered" });
+    if (postAnswerReplayState === "idle") {
+      dispatchSession({ type: SET_POST_ANSWER_REPLAY_STATE, value: "waiting_initial_finish" });
+    }
+  }, [autoReplayAnsweredSentence, immersiveActive, postAnswerReplayState, sentenceTypingDone]);
+
+  useEffect(() => {
+    if (!immersiveActive) return;
+    if (!autoReplayAnsweredSentence) return;
+    if (!singleSentenceLoopEnabled) return;
+    if (!sentenceTypingDone) return;
+    if (postAnswerReplayState !== "completed") return;
+    void startAnswerCompletedReplay();
+  }, [
+    autoReplayAnsweredSentence,
+    immersiveActive,
+    postAnswerReplayState,
+    sentenceTypingDone,
+    singleSentenceLoopEnabled,
+    startAnswerCompletedReplay,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -1992,32 +2071,32 @@ export function ImmersiveLessonPage({
     if (!immersiveActive) return;
     if (!sentenceTypingDone) return;
     if (autoReplayAnsweredSentence) {
+      if (singleSentenceLoopEnabled) return;
       if (postAnswerReplayState !== "completed") return;
     } else if (sentencePlaybackRequired && !sentencePlaybackDone) {
       return;
     }
     if (sentenceAdvanceLockedRef.current) return;
     sentenceAdvanceLockedRef.current = true;
-    setPhase("transition");
+    dispatchSession({ type: SET_PHASE, phase: "transition" });
     setTimeout(() => {
-      void handleSentencePassed();
+      requestHandleSentencePassed();
     }, 120);
   }, [
     autoReplayAnsweredSentence,
-    handleSentencePassed,
     immersiveActive,
     postAnswerReplayState,
+    requestHandleSentencePassed,
     sentencePlaybackDone,
     sentencePlaybackRequired,
     sentenceTypingDone,
+    singleSentenceLoopEnabled,
   ]);
 
   useEffect(() => {
     if (immersiveActive) return;
     stopPlayback();
-    setPhase("idle");
-    setPostAnswerReplayState("idle");
-    setTranslationDisplayMode("previous");
+    dispatchSession({ type: EXIT_IMMERSIVE });
   }, [immersiveActive, stopPlayback]);
 
   const handleMainMediaError = useCallback(() => {
@@ -2031,7 +2110,7 @@ export function ImmersiveLessonPage({
     setMediaBlobUrl("");
     setNeedsBinding(true);
     setMediaError("当前媒体格式无法播放，请先在历史记录中恢复视频。");
-    setPhase("typing");
+    dispatchSession({ type: SET_MEDIA_BINDING_REQUIRED, required: true, phase: "typing" });
   }, [immersiveActive, lesson?.media_storage, lesson?.sentences]);
 
   const handleBindLocalFile = useCallback(
@@ -2105,7 +2184,10 @@ export function ImmersiveLessonPage({
         snapshot.activeWordIndex = nextActiveIndex;
       } else {
         snapshot.activeWordIndex = expectedTokens.length;
-        setSentenceTypingDone(true);
+        dispatchSession({
+          type: ANSWER_COMPLETED,
+          translationDisplayMode: "current_answered",
+        });
       }
       applyWordSnapshot(snapshot);
       return snapshot.activeWordIndex;
@@ -2142,8 +2224,6 @@ export function ImmersiveLessonPage({
   const enterCinemaFullscreen = useCallback(async ({ source = "manual", showFailureToast = false } = {}) => {
     if (!immersiveActive) return { ok: false, reason: "immersive_inactive" };
     if (isCinemaFullscreen || isFullscreenFallback) return { ok: true, reason: "already_active" };
-
-    setShowFullscreenPreviousSentence(false);
     const container = immersiveContainerRef.current;
     if (!container) return { ok: false, reason: "fullscreen_target_missing" };
 
@@ -2183,30 +2263,28 @@ export function ImmersiveLessonPage({
       const safeTarget = Math.max(0, Math.min(sentenceCount - 1, Number(targetIndex) || 0));
       if (safeTarget === currentSentenceIndex) return;
 
-      stopPlayback();
-      setPhase(immersiveActive ? "auto_play_pending" : "idle");
-      setCurrentSentenceIndex(safeTarget);
+      interruptCurrentSentencePlayback(source);
       resetWordTyping(lesson?.sentences?.[safeTarget], true);
+      dispatchSession({
+        type: NAVIGATE_TO_SENTENCE,
+        targetIndex: safeTarget,
+        sentenceCount,
+        phase: immersiveActive ? "auto_play_pending" : "idle",
+      });
       await syncProgress(safeTarget, completedIndexes, lesson?.sentences?.[safeTarget]?.begin_ms || 0);
       onProgressSynced?.();
     },
-    [completedIndexes, currentSentenceIndex, immersiveActive, lesson, onProgressSynced, resetWordTyping, sentenceCount, stopPlayback, syncProgress],
-  );
-
-  const goToPreviousSentence = useCallback(
-    (source = "button_prev") => {
-      if (currentSentenceIndex <= 0) return;
-      void jumpToSentence(currentSentenceIndex - 1, source);
-    },
-    [currentSentenceIndex, jumpToSentence],
-  );
-
-  const goToNextSentence = useCallback(
-    (source = "button_next") => {
-      if (currentSentenceIndex >= sentenceCount - 1) return;
-      void jumpToSentence(currentSentenceIndex + 1, source);
-    },
-    [currentSentenceIndex, jumpToSentence, sentenceCount],
+    [
+      completedIndexes,
+      currentSentenceIndex,
+      immersiveActive,
+      interruptCurrentSentencePlayback,
+      lesson,
+      onProgressSynced,
+      resetWordTyping,
+      sentenceCount,
+      syncProgress,
+    ],
   );
 
   const handleSentenceJumpKeyDown = useCallback(
@@ -2247,7 +2325,10 @@ export function ImmersiveLessonPage({
       );
       applyWordSnapshot(result.snapshot);
       if (result.completedSentence) {
-        setSentenceTypingDone(true);
+        dispatchSession({
+          type: ANSWER_COMPLETED,
+          translationDisplayMode: "current_answered",
+        });
       }
       debugImmersiveLog("reveal_letter", {
         source,
@@ -2287,21 +2368,23 @@ export function ImmersiveLessonPage({
       );
       applyWordSnapshot(assistedSnapshot.snapshot);
       if (assistedSnapshot.completedSentence) {
-        setSentenceTypingDone(true);
+        dispatchSession({
+          type: ANSWER_COMPLETED,
+          translationDisplayMode: "current_answered",
+        });
       }
       replayAssistStageRef.current = nextStage;
       const playbackPlan = buildReplayPlaybackPlan(
         currentSentence,
         currentSentenceTiming,
         assistedSnapshot.snapshot.activeWordIndex,
-        assistance.tailRate,
+        selectedPlaybackRate,
       );
       debugImmersiveLog("manual_replay", {
         source,
         sentenceIndex: currentSentenceIndex,
         stage: nextStage,
         assistance,
-        tailRate: assistance.tailRate,
         initialRate: playbackPlan.initialRate,
         rateSteps: playbackPlan.rateSteps,
         speedMode: playbackPlan.speedMode,
@@ -2327,6 +2410,7 @@ export function ImmersiveLessonPage({
       mediaLoading,
       needsBinding,
       phase,
+      selectedPlaybackRate,
       tryPlayCurrentSentence,
     ],
   );
@@ -2344,7 +2428,7 @@ export function ImmersiveLessonPage({
           return;
         }
         setMediaError("");
-        setPhase(result.state === "paused" ? "typing" : "playing");
+        dispatchSession({ type: SET_PHASE, phase: result.state === "paused" ? "typing" : "playing" });
         debugImmersiveLog("toggle_pause_playback", {
           source,
           sentenceIndex: currentSentenceIndex,
@@ -2354,6 +2438,81 @@ export function ImmersiveLessonPage({
     },
     [currentSentence, currentSentenceIndex, learningSettings.shortcuts.replay_sentence, needsBinding, togglePausePlayback],
   );
+
+  const interruptCurrentSentencePlayback = useCallback(
+    (source = "interrupt") => {
+      stopPlayback();
+      dispatchSession({ type: SET_POST_ANSWER_REPLAY_STATE, value: "idle" });
+      dispatchSession({ type: SET_PHASE, phase: "typing" });
+      debugImmersiveLog("interrupt_current_sentence_playback", {
+        source,
+        sentenceIndex: currentSentenceIndex,
+      });
+    },
+    [currentSentenceIndex, stopPlayback],
+  );
+
+  const requestPlayPreviousSentence = useCallback(
+    (source = "previous_sentence_speaker") => {
+      if (!previousSentence) return;
+      interruptCurrentSentencePlayback(source);
+      dispatchSession({ type: SET_TRANSLATION_DISPLAY_MODE, value: "previous" });
+      playbackKindRef.current = "previous_sentence_preview";
+      setMediaError("");
+      debugImmersiveLog("previous_sentence_speaker.start", {
+        source,
+        sentenceIndex: currentSentenceIndex,
+      });
+      void (async () => {
+        const result = await playSentence(previousSentence, {
+          initialRate: selectedPlaybackRate,
+          rateSteps: [],
+        });
+        if (!result.ok) {
+          dispatchSession({ type: SET_PHASE, phase: "typing" });
+          setMediaError("播放上一句失败，请稍后重试。");
+          debugImmersiveLog("previous_sentence_speaker.failed", {
+            source,
+            sentenceIndex: currentSentenceIndex,
+            reason: result.reason || "unknown",
+          });
+          return;
+        }
+        dispatchSession({
+          type: PLAYBACK_STARTED,
+          phase: "playing",
+          translationDisplayMode: "previous",
+        });
+      })();
+    },
+    [currentSentenceIndex, interruptCurrentSentencePlayback, playSentence, previousSentence, selectedPlaybackRate],
+  );
+
+  const {
+    requestReplayCurrentSentence,
+    requestTogglePausePlayback,
+    requestNavigateSentence,
+    requestRevealLetter,
+    requestRevealWord,
+    requestHandleSentencePassed,
+    requestPlayPreviousSentence: requestPreviousSentencePlayback,
+  } = useImmersiveSessionController({
+    canInteract: Boolean(immersiveActive),
+    currentSentenceIndex,
+    sentenceCount,
+    onReplayCurrentSentence: replayCurrentSentence,
+    onTogglePausePlayback: handleTogglePausePlayback,
+    onNavigateSentence: ({ targetIndex, source }) => {
+      void jumpToSentence(targetIndex, source);
+    },
+    onRevealLetter: revealCurrentLetter,
+    onRevealWord: revealCurrentWord,
+    onHandleSentencePassed: () => {
+      void handleSentencePassed();
+    },
+    onInterruptCurrentSentencePlayback: interruptCurrentSentencePlayback,
+    onPlayPreviousSentence: requestPlayPreviousSentence,
+  });
 
   const handleTranslationMaskPointerDown = useCallback(
     (event, mode = "move") => {
@@ -2600,37 +2759,43 @@ export function ImmersiveLessonPage({
       if (isShortcutPressed(event, learningSettings.shortcuts.replay_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        replayCurrentSentence(`shortcut_${getShortcutLabel(learningSettings.shortcuts.replay_sentence)}`);
+        requestReplayCurrentSentence(`shortcut_${getShortcutLabel(learningSettings.shortcuts.replay_sentence)}`);
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.toggle_pause_playback)) {
         event.preventDefault();
         event.stopPropagation();
-        handleTogglePausePlayback(`shortcut_${getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)}`);
+        requestTogglePausePlayback(`shortcut_${getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)}`);
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.previous_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        goToPreviousSentence(`shortcut_${getShortcutLabel(learningSettings.shortcuts.previous_sentence)}`);
+        requestNavigateSentence({
+          delta: -1,
+          source: `shortcut_${getShortcutLabel(learningSettings.shortcuts.previous_sentence)}`,
+        });
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.next_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        goToNextSentence(`shortcut_${getShortcutLabel(learningSettings.shortcuts.next_sentence)}`);
+        requestNavigateSentence({
+          delta: 1,
+          source: `shortcut_${getShortcutLabel(learningSettings.shortcuts.next_sentence)}`,
+        });
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.reveal_letter)) {
         event.preventDefault();
         event.stopPropagation();
-        revealCurrentLetter(`shortcut_${getShortcutLabel(learningSettings.shortcuts.reveal_letter)}`);
+        requestRevealLetter(`shortcut_${getShortcutLabel(learningSettings.shortcuts.reveal_letter)}`);
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.reveal_word)) {
         event.preventDefault();
         event.stopPropagation();
-        revealCurrentWord(`shortcut_${getShortcutLabel(learningSettings.shortcuts.reveal_word)}`);
+        requestRevealWord(`shortcut_${getShortcutLabel(learningSettings.shortcuts.reveal_word)}`);
       }
     };
 
@@ -2640,14 +2805,13 @@ export function ImmersiveLessonPage({
     };
   }, [
     exitImmersive,
-    goToPreviousSentence,
-    goToNextSentence,
     immersiveActive,
     learningSettings.shortcuts,
-    handleTogglePausePlayback,
-    replayCurrentSentence,
-    revealCurrentLetter,
-    revealCurrentWord,
+    requestNavigateSentence,
+    requestReplayCurrentSentence,
+    requestRevealLetter,
+    requestRevealWord,
+    requestTogglePausePlayback,
   ]);
 
   const handleKeyDown = useCallback(
@@ -2664,37 +2828,43 @@ export function ImmersiveLessonPage({
       if (isShortcutPressed(event, learningSettings.shortcuts.replay_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        replayCurrentSentence(`shortcut_${getShortcutLabel(learningSettings.shortcuts.replay_sentence)}`);
+        requestReplayCurrentSentence(`shortcut_${getShortcutLabel(learningSettings.shortcuts.replay_sentence)}`);
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.toggle_pause_playback)) {
         event.preventDefault();
         event.stopPropagation();
-        handleTogglePausePlayback(`shortcut_${getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)}`);
+        requestTogglePausePlayback(`shortcut_${getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)}`);
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.previous_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        goToPreviousSentence(`shortcut_${getShortcutLabel(learningSettings.shortcuts.previous_sentence)}`);
+        requestNavigateSentence({
+          delta: -1,
+          source: `shortcut_${getShortcutLabel(learningSettings.shortcuts.previous_sentence)}`,
+        });
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.next_sentence)) {
         event.preventDefault();
         event.stopPropagation();
-        goToNextSentence(`shortcut_${getShortcutLabel(learningSettings.shortcuts.next_sentence)}`);
+        requestNavigateSentence({
+          delta: 1,
+          source: `shortcut_${getShortcutLabel(learningSettings.shortcuts.next_sentence)}`,
+        });
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.reveal_letter)) {
         event.preventDefault();
         event.stopPropagation();
-        revealCurrentLetter(`shortcut_${getShortcutLabel(learningSettings.shortcuts.reveal_letter)}`);
+        requestRevealLetter(`shortcut_${getShortcutLabel(learningSettings.shortcuts.reveal_letter)}`);
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.reveal_word)) {
         event.preventDefault();
         event.stopPropagation();
-        revealCurrentWord(`shortcut_${getShortcutLabel(learningSettings.shortcuts.reveal_word)}`);
+        requestRevealWord(`shortcut_${getShortcutLabel(learningSettings.shortcuts.reveal_word)}`);
         return;
       }
 
@@ -2772,14 +2942,13 @@ export function ImmersiveLessonPage({
       currentSentence,
       exitImmersive,
       expectedTokens,
-      goToPreviousSentence,
-      goToNextSentence,
-      handleTogglePausePlayback,
       learningSettings.shortcuts,
       playKeySound,
-      replayCurrentSentence,
-      revealCurrentLetter,
-      revealCurrentWord,
+      requestNavigateSentence,
+      requestReplayCurrentSentence,
+      requestRevealLetter,
+      requestRevealWord,
+      requestTogglePausePlayback,
       typingEnabled,
     ],
   );
@@ -2805,9 +2974,9 @@ export function ImmersiveLessonPage({
     .filter(Boolean)
     .join(" ");
   const cinemaButtonClassName = cinemaFullscreenActive ? "immersive-cinema-button" : undefined;
-  const showPlaybackRateBadge = cinemaFullscreenActive && currentPlaybackRate < 0.999;
+  const showPlaybackRateBadge = cinemaFullscreenActive && selectedPlaybackRate < 0.999;
   const showTranslationMaskToggle = cinemaFullscreenActive && mediaMode === "video" && !needsBinding;
-  const playbackRateLabel = formatPlaybackRateLabel(currentPlaybackRate);
+  const playbackRateLabel = formatPlaybackRateLabel(selectedPlaybackRate);
   const allowNativeVideoFullscreen = isIpadSafari && mediaMode === "video";
   const translationMaskVisible = canShowTranslationMask && translationMaskEnabled;
   const translationMaskClassName = [
@@ -3005,7 +3174,7 @@ export function ImmersiveLessonPage({
                     type="button"
                     className="rounded border border-input bg-background px-2 py-0.5 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
                     disabled={currentSentenceIndex <= 0}
-                    onClick={() => goToPreviousSentence("status_prev")}
+                    onClick={() => requestNavigateSentence({ delta: -1, source: "status_prev" })}
                     aria-label="上一句"
                   >
                     ‹ 上一句
@@ -3014,7 +3183,7 @@ export function ImmersiveLessonPage({
                     type="button"
                     className="rounded border border-input bg-background px-2 py-0.5 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
                     disabled={currentSentenceIndex >= sentenceCount - 1}
-                    onClick={() => goToNextSentence("status_next")}
+                    onClick={() => requestNavigateSentence({ delta: 1, source: "status_next" })}
                     aria-label="下一句"
                   >
                     下一句 ›
@@ -3023,6 +3192,37 @@ export function ImmersiveLessonPage({
                 {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
                 {isPlaybackPaused ? <Badge variant="outline">已暂停</Badge> : null}
               </div>
+
+              {cinemaFullscreenActive ? (
+                <div className="immersive-session-controls" aria-label="沉浸学习控制">
+                  <button
+                    type="button"
+                    className={`immersive-session-toggle ${singleSentenceLoopEnabled ? "immersive-session-toggle--active" : ""}`}
+                    aria-pressed={singleSentenceLoopEnabled}
+                    onClick={handleToggleSingleSentenceLoop}
+                  >
+                    单句循环
+                  </button>
+                  <div className="immersive-session-rate-group" role="group" aria-label="播放倍速">
+                    {[...IMMERSIVE_PLAYBACK_RATE_PRESETS].reverse().map((rate) => {
+                      const rateLabel = rate === 1 ? "1.00x" : rate === 0.9 ? "0.90x" : "0.75x";
+                      return (
+                        <button
+                          key={rate}
+                          type="button"
+                          className={`immersive-session-rate-button ${
+                            selectedPlaybackRate === rate ? "immersive-session-rate-button--active" : ""
+                          }`}
+                          aria-pressed={selectedPlaybackRate === rate}
+                          onClick={() => handleSelectPlaybackRate(rate)}
+                        >
+                          {rateLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
 
               {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
               {waitingForInitialPlayback ? <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p> : null}
@@ -3061,7 +3261,7 @@ export function ImmersiveLessonPage({
                 >
                   {canRenderInteractiveWordbook ? (
                     <>
-                      <div className="flex flex-wrap items-start gap-2 sm:flex-nowrap sm:items-center">
+                      <div className="immersive-previous-sentence__row">
                         <div className="min-w-0 flex flex-1 flex-wrap items-center gap-x-1 gap-y-2">
                           <span className="shrink-0 text-foreground">上一句：</span>
                           {previousSentenceTokens.map((token, index) => {
@@ -3090,9 +3290,23 @@ export function ImmersiveLessonPage({
                             );
                           })}
                         </div>
+                        <button
+                          type="button"
+                          className="immersive-previous-sentence__speaker"
+                          aria-label="播放上一句"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            requestPreviousSentencePlayback("previous_sentence_speaker");
+                          }}
+                        >
+                          <Volume2 className="size-4" />
+                        </button>
+                      </div>
+                      <div className="immersive-previous-sentence__actions">
                         <Button
                           type="button"
                           size="sm"
+                          variant="outline"
                           className="shrink-0"
                           disabled={wordbookBusy || selectedWordbookTokens.length === 0}
                           onClick={(event) => {
@@ -3116,7 +3330,24 @@ export function ImmersiveLessonPage({
                     </>
                   ) : (
                     <>
-                      <p>{translationHeading}：{translationEn}</p>
+                      <div className="immersive-previous-sentence__row">
+                        <p className="min-w-0 flex-1">
+                          {translationHeading}：{translationEn}
+                        </p>
+                        {previousSentence ? (
+                          <button
+                            type="button"
+                            className="immersive-previous-sentence__speaker"
+                            aria-label="播放上一句"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              requestPreviousSentencePlayback("previous_sentence_speaker");
+                            }}
+                          >
+                            <Volume2 className="size-4" />
+                          </button>
+                        ) : null}
+                      </div>
                       <p className="pl-[4.5em]">
                         {translationZh}
                       </p>

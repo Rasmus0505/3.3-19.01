@@ -107,12 +107,7 @@ export const DEFAULT_UI_PREFERENCES = {
 
 export const DEFAULT_PLAYBACK_PREFERENCES = {
   autoReplayAnsweredSentence: true,
-};
-
-const DEFAULT_STANDARD_TAIL_RATES = {
-  firstReplay: 0.95,
-  secondReplay: 0.85,
-  laterReplay: 0.75,
+  singleSentenceLoopEnabled: false,
 };
 
 function normalizeLegacyPresetId(rawPresetId) {
@@ -434,25 +429,26 @@ export function getPresetSummaryLines(learningSettings) {
   const presetId = learningSettings?.presetId || "standard";
   if (presetId === "standard") {
     return [
-      "第1次：未答尾段 0.95x",
-      "第2次：未答尾段 0.85x，揭示当前词 1 个字母",
-      "第3次：未答尾段 0.75x，揭示当前词 1 个完整单词",
-      "第4次起：保持 0.75x，每次额外多揭示 1 个单词",
+      "固定倍速由沉浸学习面板控制",
+      "第2次重播开始可揭示当前词 1 个字母",
+      "第3次重播开始可揭示当前词 1 个完整单词",
+      "后续重播继续按辅助规则揭示更多单词",
     ];
   }
   if (presetId === "hard") {
     return [
-      "第1次：未答尾段 0.95x",
-      "第2次：未答尾段 0.85x",
-      "第3次：未答尾段 0.75x，揭示当前词 1 个字母",
-      "第4次起：保持 0.75x，每次揭示 1 个单词",
+      "固定倍速由沉浸学习面板控制",
+      "前两次重播不额外提示",
+      "第3次重播开始揭示当前词 1 个字母",
+      "第4次起每次揭示 1 个单词",
     ];
   }
   if (presetId === "assist") {
     return [
-      "第1次：未答尾段 0.90x，揭示当前词 1 个字母",
-      "第2次：未答尾段 0.80x，揭示当前词 1 个单词",
-      "第3次起：保持 0.75x，每次揭示 1 个单词",
+      "固定倍速由沉浸学习面板控制",
+      "第1次重播揭示当前词 1 个字母",
+      "第2次重播揭示当前词 1 个单词",
+      "第3次起继续逐步增加揭示",
     ];
   }
   const customConfig = sanitizeCustomReplayConfig(learningSettings?.customConfig);
@@ -468,19 +464,12 @@ export function getPresetSummaryLines(learningSettings) {
 
 export function resolveReplayAssistance(learningSettings, stage) {
   const safeStage = Math.max(1, Number(stage || 1));
-  const presetId = learningSettings?.presetId || "custom";
   const customConfig = sanitizeCustomReplayConfig(learningSettings?.customConfig);
   const revealWordCount =
     customConfig.revealWordEnabled && customConfig.revealWordAt > 0 && safeStage >= customConfig.revealWordAt
       ? 1 + Math.max(0, safeStage - customConfig.revealWordAt) * customConfig.extraRevealWordsPerReplay
       : 0;
   return {
-    tailRate:
-      safeStage === 1
-        ? DEFAULT_STANDARD_TAIL_RATES.firstReplay
-        : safeStage === 2
-          ? DEFAULT_STANDARD_TAIL_RATES.secondReplay
-          : DEFAULT_STANDARD_TAIL_RATES.laterReplay,
     revealLetterCount:
       revealWordCount > 0
         ? 0
@@ -585,5 +574,9 @@ export function sanitizePlaybackPreferences(rawPreferences = {}) {
       typeof rawPreferences?.autoReplayAnsweredSentence === "boolean"
         ? rawPreferences.autoReplayAnsweredSentence
         : DEFAULT_PLAYBACK_PREFERENCES.autoReplayAnsweredSentence,
+    singleSentenceLoopEnabled:
+      typeof rawPreferences?.singleSentenceLoopEnabled === "boolean"
+        ? rawPreferences.singleSentenceLoopEnabled
+        : DEFAULT_PLAYBACK_PREFERENCES.singleSentenceLoopEnabled,
   };
 }
