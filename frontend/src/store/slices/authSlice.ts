@@ -1,5 +1,5 @@
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
-import { clearAuthStorage, restoreCachedAuthSession, TOKEN_KEY, USER_EMAIL_KEY, USER_ID_KEY, USER_IS_ADMIN_KEY } from "../../app/authStorage";
+import { clearAuthStorage, restoreCachedAuthSession, TOKEN_KEY, USER_EMAIL_KEY, USER_ID_KEY, USER_IS_ADMIN_KEY, USER_USERNAME_KEY } from "../../app/authStorage";
 
 type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
 type Getter = () => any;
@@ -18,10 +18,11 @@ function normalizeAdminFlag(value: unknown) {
 function normalizeStoredUser(user: any) {
   const id = Number(user?.id || 0);
   const email = String(user?.email || "").trim();
+  const username = String(user?.username || "").trim();
   if (!Number.isFinite(id) || id <= 0 || !email) {
     return null;
   }
-  return { id, email, is_admin: normalizeAdminFlag(user?.is_admin) };
+  return { id, email, username, is_admin: normalizeAdminFlag(user?.is_admin) };
 }
 
 function readStoredCurrentUser() {
@@ -29,6 +30,7 @@ function readStoredCurrentUser() {
   return normalizeStoredUser({
     id: localStorage.getItem(USER_ID_KEY),
     email: localStorage.getItem(USER_EMAIL_KEY),
+    username: localStorage.getItem(USER_USERNAME_KEY),
     is_admin: localStorage.getItem(USER_IS_ADMIN_KEY),
   });
 }

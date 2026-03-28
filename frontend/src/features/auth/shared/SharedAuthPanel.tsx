@@ -7,6 +7,7 @@ export type AuthIntent = "login" | "register";
 export interface AuthCredentials {
   email: string;
   password: string;
+  username?: string;
 }
 
 export interface AuthActionResult {
@@ -23,6 +24,7 @@ interface SharedAuthPanelProps {
   expired?: boolean;
   restorePending?: boolean;
   initialEmail?: string;
+  initialUsername?: string;
   appName?: string;
   badgeText?: string;
   onAuthenticate: (
@@ -36,18 +38,21 @@ function panelShadow() {
 }
 
 export function SharedAuthPanel({
-  title = "登录",
+  title = "账号入口",
   description = "登录后即可继续上传、生成与学习。",
   footerMessage = "使用你的 Bottle 账号继续。",
   statusMessage = "",
   expired = false,
   restorePending = false,
   initialEmail = "",
+  initialUsername = "",
   appName = "Bottle",
   badgeText = "Account",
   onAuthenticate,
 }: SharedAuthPanelProps) {
+  const [intent, setIntent] = useState<AuthIntent>("login");
   const [email, setEmail] = useState(initialEmail);
+  const [username, setUsername] = useState(initialUsername);
   const [password, setPassword] = useState("");
   const [pendingIntent, setPendingIntent] = useState<AuthIntent | null>(null);
   const [localStatus, setLocalStatus] = useState("");
@@ -58,6 +63,7 @@ export function SharedAuthPanel({
   const effectiveStatus = localStatus || statusMessage;
   const effectiveStatusKind = localStatus ? localStatusKind : expired ? "danger" : "neutral";
   const pending = pendingIntent !== null;
+  const isRegister = intent === "register";
 
   const badgeStyle = useMemo<React.CSSProperties>(
     () => ({
@@ -91,36 +97,6 @@ export function SharedAuthPanel({
     [],
   );
 
-  const primaryButtonStyle = useMemo<React.CSSProperties>(
-    () => ({
-      flex: 1,
-      minHeight: 48,
-      borderRadius: "999px",
-      border: "none",
-      background: "linear-gradient(135deg, #0f766e 0%, #0891b2 100%)",
-      color: "#ecfeff",
-      fontSize: "0.95rem",
-      fontWeight: 700,
-      cursor: pending ? "wait" : "pointer",
-    }),
-    [pending],
-  );
-
-  const secondaryButtonStyle = useMemo<React.CSSProperties>(
-    () => ({
-      flex: 1,
-      minHeight: 48,
-      borderRadius: "999px",
-      border: "1px solid #94a3b8",
-      background: "#ffffff",
-      color: "#0f172a",
-      fontSize: "0.95rem",
-      fontWeight: 700,
-      cursor: pending ? "wait" : "pointer",
-    }),
-    [pending],
-  );
-
   const statusBoxStyle = useMemo<React.CSSProperties>(() => {
     const palette =
       effectiveStatusKind === "success"
@@ -149,24 +125,59 @@ export function SharedAuthPanel({
     };
   }, [effectiveStatusKind]);
 
-  async function handleAction(intent: AuthIntent) {
+  function getTabStyle(active: boolean): React.CSSProperties {
+    return {
+      flex: 1,
+      minHeight: 44,
+      borderRadius: "999px",
+      border: active ? "1px solid rgba(8, 145, 178, 0.2)" : "1px solid transparent",
+      background: active ? "linear-gradient(135deg, rgba(15, 118, 110, 0.12), rgba(8, 145, 178, 0.12))" : "transparent",
+      color: active ? "#0f766e" : "#475569",
+      fontSize: "0.92rem",
+      fontWeight: 700,
+      cursor: pending ? "wait" : "pointer",
+    };
+  }
+
+  function getPrimaryButtonStyle(): React.CSSProperties {
+    return {
+      width: "100%",
+      minHeight: 48,
+      borderRadius: "999px",
+      border: "none",
+      background: "linear-gradient(135deg, #0f766e 0%, #0891b2 100%)",
+      color: "#ecfeff",
+      fontSize: "0.95rem",
+      fontWeight: 700,
+      cursor: pending ? "wait" : "pointer",
+    };
+  }
+
+  async function handleAction(nextIntent: AuthIntent) {
     if (!email.trim() || !password) {
       setLocalStatus("请先输入邮箱和密码。");
       setLocalStatusKind("danger");
       return;
     }
-    setPendingIntent(intent);
+    if (nextIntent === "register" && !username.trim()) {
+      setLocalStatus("注册时请填写用户名。");
+      setLocalStatusKind("danger");
+      return;
+    }
+    setPendingIntent(nextIntent);
     setLocalStatus("");
     try {
-      const result = await onAuthenticate(intent, {
+      const result = await onAuthenticate(nextIntent, {
         email: email.trim(),
         password,
+        username: nextIntent === "register" ? username.trim() : undefined,
       });
       if (result.ok) {
-        setLocalStatus(result.message || (intent === "login" ? "登录成功。" : "注册成功。"));
+        setLocalStatus(result.message || (nextIntent === "login" ? "登录成功。" : "注册成功。"));
         setLocalStatusKind("success");
+        setIntent("login");
       } else {
-        setLocalStatus(result.message || (intent === "login" ? "登录失败。" : "注册失败。"));
+        setLocalStatus(result.message || (nextIntent === "login" ? "登录失败。" : "注册失败。"));
         setLocalStatusKind("danger");
       }
       if (result.clearPassword) {
@@ -221,7 +232,7 @@ export function SharedAuthPanel({
                     color: "#0f172a",
                   }}
                 >
-                  {title} {appName}
+                  {title}
                 </div>
                 <div
                   style={{
@@ -237,6 +248,15 @@ export function SharedAuthPanel({
             </div>
           </div>
 
+          <div style={{ display: "flex", gap: "0.75rem", padding: "0.35rem", borderRadius: "999px", background: "rgba(15, 23, 42, 0.04)" }}>
+            <button type="button" disabled={pending} onClick={() => setIntent("login")} style={getTabStyle(!isRegister)}>
+              登录
+            </button>
+            <button type="button" disabled={pending} onClick={() => setIntent("register")} style={getTabStyle(isRegister)}>
+              注册
+            </button>
+          </div>
+
           {restorePending ? (
             <div style={statusBoxStyle}>正在恢复上次登录状态...</div>
           ) : effectiveStatus ? (
@@ -249,19 +269,26 @@ export function SharedAuthPanel({
             style={{ display: "grid", gap: "0.9rem" }}
             onSubmit={(event) => {
               event.preventDefault();
-              void handleAction("login");
+              void handleAction(intent);
             }}
           >
+            {isRegister ? (
+              <label style={{ display: "grid", gap: "0.45rem" }}>
+                <span style={{ fontSize: "0.84rem", fontWeight: 700, color: "#334155" }}>用户名</span>
+                <input
+                  type="text"
+                  autoComplete="nickname"
+                  placeholder="例如 Bottle Learner"
+                  value={username}
+                  disabled={pending}
+                  onChange={(event) => setUsername(event.target.value)}
+                  style={inputStyle}
+                />
+              </label>
+            ) : null}
+
             <label style={{ display: "grid", gap: "0.45rem" }}>
-              <span
-                style={{
-                  fontSize: "0.84rem",
-                  fontWeight: 700,
-                  color: "#334155",
-                }}
-              >
-                邮箱
-              </span>
+              <span style={{ fontSize: "0.84rem", fontWeight: 700, color: "#334155" }}>邮箱</span>
               <input
                 type="email"
                 autoComplete="email"
@@ -276,18 +303,10 @@ export function SharedAuthPanel({
             </label>
 
             <label style={{ display: "grid", gap: "0.45rem" }}>
-              <span
-                style={{
-                  fontSize: "0.84rem",
-                  fontWeight: 700,
-                  color: "#334155",
-                }}
-              >
-                密码
-              </span>
+              <span style={{ fontSize: "0.84rem", fontWeight: 700, color: "#334155" }}>密码</span>
               <input
                 type="password"
-                autoComplete="current-password"
+                autoComplete={isRegister ? "new-password" : "current-password"}
                 autoCapitalize="none"
                 autoCorrect="off"
                 placeholder="至少 6 位"
@@ -299,25 +318,9 @@ export function SharedAuthPanel({
               />
             </label>
 
-            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "0.25rem" }}>
-              <button
-                type="submit"
-                disabled={pending}
-                style={primaryButtonStyle}
-              >
-                {pendingIntent === "login" ? "登录中..." : "登录"}
-              </button>
-              <button
-                type="button"
-                disabled={pending}
-                style={secondaryButtonStyle}
-                onClick={() => {
-                  void handleAction("register");
-                }}
-              >
-                {pendingIntent === "register" ? "注册中..." : "注册"}
-              </button>
-            </div>
+            <button type="submit" disabled={pending} style={getPrimaryButtonStyle()}>
+              {pendingIntent === intent ? (intent === "login" ? "登录中..." : "注册中...") : intent === "login" ? "登录" : "注册"}
+            </button>
           </form>
         </div>
       </div>

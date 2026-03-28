@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { persistAuthSession } from "../../../app/authStorage";
+import { persistAuthSession, writeStoredUser } from "../../../app/authStorage";
+import { api, parseResponse, toErrorText } from "../../../shared/api/client";
 import { useAppStore } from "../../../store";
 import { SharedAuthPanel } from "../shared/SharedAuthPanel";
 import { postAuthJson } from "../shared/authApi";
@@ -28,6 +29,16 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
         return;
       }
       if (restoredAccessToken) {
+        try {
+          const profileResp = await api("/api/auth/me", {}, restoredAccessToken);
+          const profileData = await parseResponse(profileResp);
+          if (profileResp.ok && profileData?.id) {
+            writeStoredUser(profileData);
+            setCurrentUser(profileData);
+          }
+        } catch (_) {
+          void 0;
+        }
         onAuthed({
           access_token: restoredAccessToken,
         });
@@ -89,6 +100,7 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
       expired={isExpired}
       restorePending={restorePending}
       initialEmail={currentUser?.email || ""}
+      initialUsername={currentUser?.username || ""}
       appName="Bottle"
       badgeText="Account"
       onAuthenticate={handleAuthenticate}

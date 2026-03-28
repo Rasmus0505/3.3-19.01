@@ -1,4 +1,4 @@
-import { BookOpenText, ChevronDown, Gift, History, LogIn, LogOut, RefreshCw, Search, Shield, Sparkles, UploadCloud, Wifi, WifiOff } from "lucide-react";
+import { BookOpenText, ChevronDown, History, LogIn, LogOut, RefreshCw, Search, Shield, Sparkles, UploadCloud, UserRound, Wifi, WifiOff } from "lucide-react";
 
 import {
   SidebarContent,
@@ -18,6 +18,12 @@ import { ADMIN_NAV_ITEMS } from "../../shared/lib/adminSearchParams";
 
 export const PANEL_ITEMS = [
   {
+    key: "account",
+    title: "个人中心",
+    icon: UserRound,
+    path: "/account",
+  },
+  {
     key: "history",
     title: "历史记录",
     icon: History,
@@ -34,12 +40,6 @@ export const PANEL_ITEMS = [
     title: "上传素材",
     icon: UploadCloud,
     path: "/upload",
-  },
-  {
-    key: "redeem",
-    title: "兑换码充值",
-    icon: Gift,
-    path: "/redeem",
   },
 ];
 
@@ -91,7 +91,12 @@ export function LearningShellSidebar({
   const showSearchAction = Boolean(accessToken && hasLessons);
   const showAdminAction = Boolean(accessToken && isAdminUser);
   const showLogoutAction = Boolean(hasStoredToken);
-  const visiblePanelItems = PANEL_ITEMS.filter((item) => item.key !== "wordbook" || Boolean(accessToken));
+  const visiblePanelItems = PANEL_ITEMS.filter((item) => {
+    if (item.key === "account" || item.key === "wordbook") {
+      return Boolean(accessToken);
+    }
+    return true;
+  });
   const loginHint =
     authStatus === "expired"
       ? authStatusMessage || "登录已失效，请重新登录后继续上传、同步进度和进入管理台。"
