@@ -110,7 +110,7 @@ export function getAutoDegradeBannerText(reason = "") {
     case "local_helper_unhealthy":
       return "本机运行环境异常";
     case "local_retry_exhausted":
-      return "本机识别重试耗尽";
+      return "Bottle 1.0 重试耗尽";
     case "local_bundle_missing":
     case "local_model_not_ready":
       return "本机资源未就绪";
@@ -288,17 +288,17 @@ export function buildCloudAsrErrorMessage({
     case "SERVICE_UNAVAILABLE":
       return {
         code: normalizedCode,
-        message: "云端识别当前不可用，请稍后重试。",
+        message: "Bottle 2.0 当前不可用，请稍后重试。",
       };
     case "RATE_LIMITED":
       return {
         code: normalizedCode,
-        message: "云端识别请求过多，请稍后重试。",
+        message: "Bottle 2.0 请求过多，请稍后重试。",
       };
     case "CLOUD_FILE_ACCESS_FORBIDDEN":
       return {
         code: normalizedCode,
-        message: "云端暂时无法访问已上传的文件，请稍后重试；若再次失败，请重新上传当前素材。",
+        message: "Bottle 2.0 暂时无法访问已上传的文件，请稍后重试；若再次失败，请重新上传当前素材。",
       };
     case "INSUFFICIENT_BALANCE":
       return {
@@ -313,17 +313,17 @@ export function buildCloudAsrErrorMessage({
     case "INVALID_MODEL":
       return {
         code: normalizedCode,
-        message: "云端识别当前不可用，请稍后重试。",
+        message: "Bottle 2.0 当前不可用，请稍后重试。",
       };
     case "CLOUD_CONFIG_MISSING":
       return {
         code: normalizedCode,
-        message: "云端识别未正确配置，请联系管理员。",
+        message: "Bottle 2.0 未正确配置，请联系管理员。",
       };
     default:
       return {
         code: normalizedCode,
-        message: "云端识别当前不可用，请稍后重试。",
+        message: "Bottle 2.0 当前不可用，请稍后重试。",
       };
   }
 }
