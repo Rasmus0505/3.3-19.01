@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -26,8 +26,6 @@ import {
 } from "../../shared/ui";
 import { resolveAdminNavItem } from "../../shared/lib/adminSearchParams";
 import { useAppStore } from "../../store";
-import { GettingStartedGuideOverlay } from "../../features/getting-started/GettingStartedGuideOverlay";
-import { markGettingStartedCompleted, markGettingStartedHomeVisited, readGettingStartedProgress } from "../../features/getting-started/gettingStartedStorage";
 import { getDefaultMediaPreview } from "../../store/slices/mediaSlice";
 import { LearningShellHeader } from "./LearningShellHeader";
 import { LearningShellPanelContent } from "./LearningShellPanelContent";
@@ -113,7 +111,6 @@ function buildCreatedLessonMediaPreview(lesson, mediaPreview, mediaPersisted) {
 }
 
 const MOBILE_MEDIA_QUERY = "(max-width: 767px)";
-const GETTING_STARTED_GUIDE_STEPS = [
   {
     id: "open-upload",
     targetId: "sidebar-upload",
@@ -218,10 +215,6 @@ export function LearningShellContainer() {
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia(MOBILE_MEDIA_QUERY).matches : false,
   );
-  const [gettingStartedProgress, setGettingStartedProgress] = useState(() => readGettingStartedProgress(currentUserId));
-  const [showGettingStartedWelcome, setShowGettingStartedWelcome] = useState(false);
-  const [gettingStartedGuideActive, setGettingStartedGuideActive] = useState(false);
-  const [gettingStartedGuideStepIndex, setGettingStartedGuideStepIndex] = useState(0);
   const [latestGeneratedLessonId, setLatestGeneratedLessonId] = useState(0);
   const [wordbookRefreshToken, setWordbookRefreshToken] = useState(0);
   const originalSubtitleRecoveryRef = useRef(new Map());
@@ -312,70 +305,43 @@ export function LearningShellContainer() {
   }, []);
 
   useEffect(() => {
-    setGettingStartedProgress(readGettingStartedProgress(currentUserId));
-    setShowGettingStartedWelcome(false);
   }, [currentUserId]);
 
   useEffect(() => {
     if (!accessToken || !currentUserId || isAdminRoute || immersiveLayoutActive) return;
-    if (gettingStartedProgress.homeVisited) return;
-    const nextProgress = markGettingStartedHomeVisited(currentUserId);
-    setGettingStartedProgress(nextProgress);
-    setShowGettingStartedWelcome(true);
-    navigate(getPanelPath("getting-started"));
-  }, [accessToken, currentUserId, gettingStartedProgress.homeVisited, immersiveLayoutActive, isAdminRoute, navigate]);
 
   useEffect(() => {
-    if (!gettingStartedGuideActive) return;
     if (!accessToken || !currentUserId || isMobileViewport || isAdminRoute || immersiveLayoutActive) {
-      setGettingStartedGuideActive(false);
-      setGettingStartedGuideStepIndex(0);
     }
-  }, [accessToken, currentUserId, gettingStartedGuideActive, immersiveLayoutActive, isAdminRoute, isMobileViewport]);
 
   useEffect(() => {
-    if (!gettingStartedGuideActive) return;
     const phase = String(uploadTaskState?.phase || "").toLowerCase();
     if (
-      gettingStartedGuideStepIndex === 1 &&
       ["ready", "uploading", "processing", "success"].includes(phase)
     ) {
-      setGettingStartedGuideStepIndex(2);
       return;
     }
-    if (gettingStartedGuideStepIndex === 2 && phase === "success") {
       const nextLessonId = Number(uploadTaskState?.lessonId || latestGeneratedLessonId || 0);
       if (nextLessonId > 0) {
         setLatestGeneratedLessonId(nextLessonId);
       }
-      setGettingStartedGuideStepIndex(3);
     }
-  }, [gettingStartedGuideActive, gettingStartedGuideStepIndex, latestGeneratedLessonId, uploadTaskState?.lessonId, uploadTaskState?.phase]);
 
   const filteredLessons = useMemo(() => lessons, [lessons]);
   const currentPanel = isAdminRoute
     ? { title: activeAdminItem.label }
     : PANEL_ITEMS.find((item) => item.key === activePanel) || PANEL_ITEMS[0];
-  const currentGettingStartedGuideStep = gettingStartedGuideActive ? GETTING_STARTED_GUIDE_STEPS[gettingStartedGuideStepIndex] || null : null;
-  const gettingStartedGuideInstruction = useMemo(() => {
-    if (!currentGettingStartedGuideStep) return "";
-    if (currentGettingStartedGuideStep.id === "pick-file") {
       const phase = String(uploadTaskState?.phase || "").toLowerCase();
       if (phase === "ready") return "已选中文件，正在继续";
       if (phase === "probing") return "已选中文件，正在读取文件";
-      return currentGettingStartedGuideStep.instruction;
     }
-    if (currentGettingStartedGuideStep.id === "submit-upload") {
       const phase = String(uploadTaskState?.phase || "").toLowerCase();
       if (phase === "uploading" || phase === "processing") {
         return uploadTaskState?.headline || "等待生成完成…";
       }
       if (phase === "success") return "课程已生成，正在继续";
       if (phase === "error") return uploadTaskState?.statusText || "生成失败，请先看上传页";
-      return currentGettingStartedGuideStep.instruction;
     }
-    return currentGettingStartedGuideStep.instruction;
-  }, [currentGettingStartedGuideStep, uploadTaskState?.headline, uploadTaskState?.phase, uploadTaskState?.statusText]);
 
   async function persistLessonSubtitleCacheSeed(lesson) {
     if (!lesson?.id || !lesson?.subtitle_cache_seed) return;
@@ -456,13 +422,8 @@ export function LearningShellContainer() {
     setUploadTaskState(null);
   }
 
-  function closeGettingStartedGuide() {
-    setGettingStartedGuideActive(false);
-    setGettingStartedGuideStepIndex(0);
   }
 
-  function handleDismissGettingStartedWelcome() {
-    setShowGettingStartedWelcome(false);
   }
 
   function handleGoToLogin() {
@@ -474,7 +435,6 @@ export function LearningShellContainer() {
     setMobileNavOpen(false);
   }
 
-  function handleStartGettingStartedGuide() {
     if (!accessToken || !currentUserId) {
       toast("请先登录后开始引导");
       navigate(getPanelPath("history"));
@@ -484,34 +444,23 @@ export function LearningShellContainer() {
       toast("移动端本轮只保留图文教程，请在桌面端体验真实点选引导");
       return;
     }
-    setShowGettingStartedWelcome(false);
     setLatestGeneratedLessonId(0);
     setUploadTaskState(null);
-    navigate(getPanelPath("getting-started"));
-    setGettingStartedGuideActive(true);
-    setGettingStartedGuideStepIndex(0);
   }
 
-  function handleGettingStartedGuideTargetAction(stepId) {
     if (stepId === "open-upload") {
-      setGettingStartedGuideStepIndex(1);
       return;
     }
     if (stepId === "open-history") {
-      setGettingStartedGuideStepIndex(4);
       return;
     }
     if (stepId === "start-lesson") {
-      closeGettingStartedGuide();
       if (currentUserId > 0) {
-        setGettingStartedProgress(markGettingStartedCompleted(currentUserId));
       }
       toast.success("新手引导已完成");
     }
   }
 
-  function handleGettingStartedGuidePrevious() {
-    setGettingStartedGuideStepIndex((currentIndex) => Math.max(0, currentIndex - 1));
   }
 
   function handlePanelChange(nextPanel) {
@@ -533,8 +482,6 @@ export function LearningShellContainer() {
   }
 
   function handleLogout() {
-    closeGettingStartedGuide();
-    setShowGettingStartedWelcome(false);
     logout();
     navigate("/");
   }
@@ -820,10 +767,6 @@ export function LearningShellContainer() {
                   onNavigateToGeneratedLesson={handleNavigateToGeneratedLesson}
                   apiCall={(path, options = {}) => api(path, options, accessToken)}
                   isMobileViewport={isMobileViewport}
-                  gettingStartedProgress={gettingStartedProgress}
-                  showGettingStartedWelcome={showGettingStartedWelcome}
-                  onDismissGettingStartedWelcome={handleDismissGettingStartedWelcome}
-                  onStartGettingStartedGuide={handleStartGettingStartedGuide}
                   onGoToLogin={handleGoToLogin}
                   onGoToHistory={handleGoToHistoryPanel}
                   guideTargetLessonId={latestGeneratedLessonId}
@@ -875,14 +818,6 @@ export function LearningShellContainer() {
           </CommandDialog>
 
           {!isAdminRoute ? (
-            <GettingStartedGuideOverlay
-              active={gettingStartedGuideActive}
-              step={currentGettingStartedGuideStep}
-              stepIndex={gettingStartedGuideStepIndex}
-              instructionText={gettingStartedGuideInstruction}
-              onPrevious={handleGettingStartedGuidePrevious}
-              onExit={closeGettingStartedGuide}
-              onTargetAction={handleGettingStartedGuideTargetAction}
             />
           ) : null}
         </SidebarInset>

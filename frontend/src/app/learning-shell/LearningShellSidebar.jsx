@@ -18,12 +18,6 @@ import { ADMIN_NAV_ITEMS } from "../../shared/lib/adminSearchParams";
 
 export const PANEL_ITEMS = [
   {
-    key: "getting-started",
-    title: "新手教程",
-    icon: BookOpenText,
-    path: "/getting-started",
-  },
-  {
     key: "history",
     title: "历史记录",
     icon: History,
@@ -52,9 +46,6 @@ export const PANEL_ITEMS = [
 export const SIDEBAR_STORAGE_KEY = "app-shell-sidebar-open";
 
 export function getPanelItemByPathname(pathname) {
-  if (pathname === "/help/getting-started") {
-    return PANEL_ITEMS[0];
-  }
   return PANEL_ITEMS.find((item) => item.path === pathname) || PANEL_ITEMS[0];
 }
 
@@ -156,7 +147,7 @@ export function LearningShellSidebar({
                 const Icon = item.icon;
                 const selected = activePanel === item.key;
                 const guideId =
-                  mobile || item.key === "getting-started"
+                  mobile
                     ? undefined
                     : item.key === "upload"
                       ? "sidebar-upload"

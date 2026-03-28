@@ -9,12 +9,10 @@ export function BootstrapApp() {
     <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">页面加载中...</div>}>
       <Routes>
         <Route path="/" element={<LearningPage />} />
-        <Route path="/getting-started" element={<LearningPage />} />
         <Route path="/wordbook" element={<LearningPage />} />
         <Route path="/upload" element={<LearningPage />} />
         <Route path="/models" element={<Navigate to="/upload" replace />} />
         <Route path="/redeem" element={<LearningPage />} />
-        <Route path="/help/getting-started" element={<Navigate to="/getting-started" replace />} />
         <Route path="/admin/*" element={<AdminPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
