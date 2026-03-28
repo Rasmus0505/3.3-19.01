@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.0
-milestone_name: — Billing, Admin & Polish
-status: v2.0 SHIPPED
-last_updated: "2026-03-28T07:38:00Z"
+milestone: v1.1
+milestone_name: — Urgent Admin Cleanup, Lesson Output & Desktop Link Import
+status: v2.0 milestone complete
+last_updated: "2026-03-28T09:29:27.919Z"
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
+  total_phases: 5
+  completed_phases: 5
+  total_plans: 13
+  completed_plans: 13
   percent: 100
 ---
 
