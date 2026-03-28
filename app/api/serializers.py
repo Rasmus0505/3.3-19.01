@@ -45,6 +45,7 @@ def to_user_response(user: User) -> UserResponse:
     return UserResponse(
         id=user.id,
         email=user.email,
+        username=str(getattr(user, "username", "") or ""),
         is_admin=bool(getattr(user, "is_admin", False)),
         created_at=to_shanghai_aware(user.created_at),
     )
