@@ -1003,13 +1003,24 @@ def delete_lesson_for_user(*, db: Session, lesson: Lesson) -> None:
     _cleanup_lesson_dir(lesson_dir, lesson_id=int(lesson.id))
 
 
-def bulk_delete_lessons_for_user(*, db: Session, user_id: int, lesson_ids: list[int] | None = None, delete_all: bool = False) -> dict[str, object]:
+def bulk_delete_lessons_for_user(
+    *,
+    db: Session,
+    user_id: int,
+    lesson_ids: list[int] | None = None,
+    excluded_lesson_ids: list[int] | None = None,
+    delete_all: bool = False,
+) -> dict[str, object]:
     normalized_ids = sorted({int(item) for item in list(lesson_ids or []) if int(item) > 0})
+    normalized_excluded_ids = sorted({int(item) for item in list(excluded_lesson_ids or []) if int(item) > 0})
     if not delete_all and not normalized_ids:
         return {"deleted_ids": [], "deleted_count": 0, "failed_ids": []}
 
     query = select(Lesson).where(Lesson.user_id == int(user_id))
-    if not delete_all:
+    if delete_all:
+        if normalized_excluded_ids:
+            query = query.where(Lesson.id.not_in(normalized_excluded_ids))
+    else:
         query = query.where(Lesson.id.in_(normalized_ids))
     lessons = list(db.scalars(query).all())
     if not lessons:

@@ -80,6 +80,7 @@ class LessonDeleteResponse(BaseModel):
 
 class LessonBulkDeleteRequest(BaseModel):
     lesson_ids: list[int] = Field(default_factory=list)
+    excluded_lesson_ids: list[int] = Field(default_factory=list)
     delete_all: bool = False
 
 

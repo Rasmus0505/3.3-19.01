@@ -798,21 +798,24 @@ def bulk_delete_lessons(
     current_user: User = Depends(get_current_user),
 ):
     normalized_ids = sorted({int(item) for item in list(payload.lesson_ids or []) if int(item) > 0})
+    normalized_excluded_ids = sorted({int(item) for item in list(payload.excluded_lesson_ids or []) if int(item) > 0})
     delete_all = bool(payload.delete_all)
     if not delete_all and not normalized_ids:
         return error_response(400, "EMPTY_DELETE_SELECTION", "请先选择要删除的历史记录")
 
     try:
         logger.info(
-            "[DEBUG] lessons.bulk_delete.request user_id=%s delete_all=%s count=%s",
+            "[DEBUG] lessons.bulk_delete.request user_id=%s delete_all=%s count=%s excluded_count=%s",
             current_user.id,
             delete_all,
             len(normalized_ids),
+            len(normalized_excluded_ids),
         )
         result = bulk_delete_lessons_for_user(
             db=db,
             user_id=current_user.id,
             lesson_ids=normalized_ids,
+            excluded_lesson_ids=normalized_excluded_ids,
             delete_all=delete_all,
         )
     except Exception as exc:
