@@ -1,26 +1,28 @@
-﻿# Pitfalls Research
+# v2.1 Research: Pitfalls
 
-**Project:** Bottle English Learning
-**Confidence:** MEDIUM
+**Milestone:** v2.1 优化学习体验和管理体验  
+**Date:** 2026-03-28
 
-## Critical Pitfalls
+## Product Pitfalls
 
-1. **Server drift into media worker**
-   - Warning signs: more server-side transcoding, large uploads stored centrally, long-running media jobs on web backend
-   - Avoidance: keep local conversion on desktop where possible; use cloud-native ASR flows where browser support is enough
+- Do not let “Bottle 1.0 desktop-only” become invisible. Hiding it entirely weakens the desktop conversion path.
+- Do not add username login in the same milestone as username registration/profile editing. It widens auth risk with little immediate conversion upside.
+- Do not introduce subscription experiments while copy, pricing anchors, and action recovery paths are still unclear.
 
-2. **Browser promises features it cannot deliver reliably**
-   - Warning signs: browser-local ffmpeg experiments, unstable large-file handling, complicated permission workarounds
-   - Avoidance: define web boundary clearly around browser-safe Bottle 2.0 flows
+## Learning-Flow Pitfalls
 
-3. **Different generation paths produce inconsistent learning output**
-   - Warning signs: Bottle 1.0 and Bottle 2.0 produce materially different lesson readiness or practice behavior
-   - Avoidance: normalize outputs into one lesson/practice contract
+- Replay, pause, and next-sentence actions must not independently mutate sentence state.
+- Fullscreen and subtitle-mask UI must not reset playback or mark a sentence done accidentally.
+- Long-press wordbook gestures must not compete with sentence navigation and typing focus.
 
-4. **Billing and capability mismatch**
-   - Warning signs: model pricing unclear, desktop-only features not reflected in product rules, point deduction happening inconsistently
-   - Avoidance: keep admin-configurable rates and explicit capability gating tied to generation mode
+## Admin Pitfalls
 
-5. **Non-technical users hit setup friction**
-   - Warning signs: users need to manage models, keys, conversion tools, or unclear failure steps
-   - Avoidance: automate installs/checks in desktop and keep web guidance simple and explicit
+- Do not mix yuan display with legacy points/cents wording on the same screen.
+- Do not present implementation labels like `faster-whisper-medium` as primary operator choices.
+- Do not collapse read-only diagnostics into editable pricing forms.
+
+## Delivery Pitfalls
+
+- Do not treat `frontend/src` changes as complete web delivery without syncing and validating `app/static`.
+- Do not leave `.planning/REQUIREMENTS.md` missing while milestone archives point to it as the current source of truth.
+- Do not split active roadmap/state files between root `.planning` and workstream files inconsistently.
