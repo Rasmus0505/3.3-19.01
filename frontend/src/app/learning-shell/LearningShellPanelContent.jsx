@@ -1,7 +1,6 @@
 import { Suspense, lazy } from "react";
 
 import { AuthPanel } from "../../features/auth/components/AuthPanel";
-import { GettingStartedPanel } from "../../features/getting-started/GettingStartedPanel";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui";
 import { REFRESH_KEY, TOKEN_KEY } from "../authStorage";
 
@@ -54,18 +53,11 @@ export function LearningShellPanelContent({
   onNavigateToGeneratedLesson,
   apiCall,
   isMobileViewport,
-  gettingStartedProgress,
-  showGettingStartedWelcome,
-  onDismissGettingStartedWelcome,
-  onStartGettingStartedGuide,
-  onGoToLogin,
-  onGoToHistory,
   guideTargetLessonId,
   wordbookRefreshToken = 0,
   onWordbookChanged,
   isOnline = true,
 }) {
-  const publicPanels = new Set(["getting-started"]);
   const contentAlert = globalStatus ? (
     <Alert variant="destructive">
       <AlertTitle>系统消息</AlertTitle>
@@ -74,23 +66,6 @@ export function LearningShellPanelContent({
   ) : null;
 
   function renderActivePanelContent() {
-    if (activePanel === "getting-started") {
-      return (
-        <GettingStartedPanel
-          accessToken={accessToken}
-          currentUser={currentUser}
-          isMobileViewport={isMobileViewport}
-          progressState={gettingStartedProgress}
-          showWelcomePrompt={showGettingStartedWelcome}
-          onDismissWelcome={onDismissGettingStartedWelcome}
-          onStartGuide={onStartGettingStartedGuide}
-          onGoLogin={onGoToLogin}
-          onGoUpload={() => onSwitchToUpload?.()}
-          onGoHistory={onGoToHistory}
-        />
-      );
-    }
-
     if (activePanel === "history") {
       return (
         <Suspense fallback={<PanelFallback />}>
@@ -180,7 +155,7 @@ export function LearningShellPanelContent({
   return (
     <section className="min-w-0 space-y-4">
       {contentAlert}
-      {!accessToken && !publicPanels.has(activePanel) ? (
+      {!accessToken ? (
         <div className="mx-auto max-w-md">
           <AuthPanel onAuthed={onAuthed} tokenKey={TOKEN_KEY} refreshKey={REFRESH_KEY} />
         </div>
