@@ -46,6 +46,8 @@ Users can turn real English media into usable learning lessons quickly, without 
 - ✓ Admin troubleshooting center exposes Bottle 1.0 and Bottle 2.0 runtime readiness alongside system health and logs — validated in Phase 5
 - ✓ Getting Started guide removed from web app: no dead onboarding overlay or orphaned auth exemptions — validated in Phase 6
 - ✓ Billing UX improved: insufficient balance shows "充值后生成" recovery button; estimate display simplified — validated in Phase 6
+- ✓ Bottle 1.0 / Bottle 2.0 benchmark, naming, CTA, and monetization contract is now fixed in reusable Phase 7 specs — validated in Phase 7
+- ✓ Web-facing Bottle boundary now has a canonical rule set: Bottle 2.0 is the default web path, Bottle 1.0 is visible but desktop-only, and balance recovery stays on recharge — validated in Phase 7
 
 ### Active
 
@@ -92,7 +94,7 @@ Users can turn real English media into usable learning lessons quickly, without 
 
 **22/22 prior milestone requirements satisfied.**
 
-**当前阶段：** v2.1 需求定义与路线图初始化
+**当前阶段：** Phase 7 complete — benchmark, positioning, CTA, and copy specs are locked for downstream implementation
 
 ## Milestone: v2.0 Summary
 
@@ -116,8 +118,9 @@ Users can turn real English media into usable learning lessons quickly, without 
 | Generated media should become lesson/practice artifacts regardless of generation path | Users care about learning outcomes, not the underlying ASR route | ✅ Validated in Phase 3 |
 | v2.1 should benchmark market patterns before inventing new learning/admin flows | The user explicitly wants product references first, not isolated local redesign | — Pending in v2.1 |
 | Username is a unique profile identity, not a login credential | This improves onboarding and management without expanding auth risk | — Pending in v2.1 |
-| Web may explain Bottle 1.0 but may not execute it | This preserves the desktop-only boundary while still creating a conversion path | — Pending in v2.1 |
+| Web may explain Bottle 1.0 but may not execute it | This preserves the desktop-only boundary while still creating a conversion path | ✅ Locked in Phase 7 |
 | Admin monetary UI should standardize on yuan | Mixed cents/points language increases operator confusion | — Pending in v2.1 |
+| Monetization improvements stay inside pay-per-use copy and CTA work, not subscriptions | Competitor benchmarks favor clearer scenario guidance over more package complexity for this milestone | ✅ Locked in Phase 7 |
 
 ## Evolution
 
@@ -137,4 +140,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-28 after v2.1 milestone start*
+*Last updated: 2026-03-28 after Phase 7 completion*
