@@ -446,6 +446,15 @@ def test_upload_panel_exposes_phase04_link_import_copy_and_fallback_contract():
     assert 'loadLessonDetail(lessonId, { autoEnterImmersive: true })' in learning_shell_source
 
 
+def test_upload_panel_reuses_normal_submit_strategy_after_link_download_succeeds():
+    upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
+
+    assert "bypassDesktopLinkMode: true" in upload_panel_source
+    assert "sourceDurationSec: sourceDurationSeconds" in upload_panel_source
+    assert "skipDesktopRecommendation: true" in upload_panel_source
+    assert "await submitDesktopLocalFast(generationPollToken, runToken, sourceFile, sourceDurationSeconds);" not in upload_panel_source
+
+
 def test_upload_panel_marks_desktop_bundle_as_preparable_and_auto_installs_before_local_run():
     upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
 

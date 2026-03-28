@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: — Billing, Admin & Polish
 status: Phase 05 complete
-last_updated: "2026-03-28T07:05:00.000Z"
+last_updated: "2026-03-28T07:15:03.8575663Z"
 progress:
   total_phases: 2
   completed_phases: 1
@@ -60,6 +60,7 @@ Progress: [██████░░░░] 60% (Phase 05 complete, Phase 06 rema
 | 260327-1xf | Fix LessonService._build_one_lesson missing in DashScope course generation path | 2026-03-27 | 4037e2f9 | quick/260327-1xf-fix-lessonservice-build-one-lesson-missi/ |
 | 260327-2ca | Fix persist_lesson_workspace_summary signature mismatch in DashScope save stage | 2026-03-27 | pending | quick/260327-2ca-fix-persist-lesson-workspace-summary-sig/ |
 | 260327-5a4 | Fix desktop client UI: error messages and Bottle 1.0/2.0 UX | 2026-03-27 | — | quick/260327-5a4-fix-desktop-client-ui-error-messages-and/ |
+| 260328-l5z | Fix desktop link-import handoff so downloaded Bilibili links continue through normal generation strategy | 2026-03-28 | pending | quick/260328-l5z-bottle-1-0-bilibili/ |
 
 ## Accumulated Context
 

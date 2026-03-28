@@ -1,5 +1,6 @@
 import { CheckCircle2, FileJson, Loader2, RefreshCcw, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { cn } from "../../lib/utils";
@@ -1711,6 +1712,7 @@ export function UploadPanel({
   onNavigateToLesson,
   isOnline = true,
 }) {
+  const navigate = useNavigate();
   const currentUser = useAppStore((state) => state.currentUser);
   const normalizedBalanceAmountCents = Number(balanceAmountCents ?? balancePoints ?? 0);
   const localAsrSupport = useMemo(
@@ -3334,14 +3336,12 @@ export function UploadPanel({
         clearDesktopLinkTaskTracking(false);
         const selectionMeta = await onSelectFile(sourceFile);
         const sourceDurationSeconds = Number(selectionMeta?.durationSec || payload.duration_seconds || 0);
-        const billingAllowed = await ensureDesktopClientBillingAdmission(sourceDurationSeconds);
-        if (!billingAllowed) {
-          return;
-        }
-        const runToken = localRunTokenRef.current + 1;
-        localRunTokenRef.current = runToken;
-        const generationPollToken = startPollingSession();
-        await submitDesktopLocalFast(generationPollToken, runToken, sourceFile, sourceDurationSeconds);
+        await submit({
+          sourceFile,
+          sourceDurationSec: sourceDurationSeconds,
+          skipDesktopRecommendation: true,
+          bypassDesktopLinkMode: true,
+        });
         return;
       }
 
@@ -5623,10 +5623,15 @@ export function UploadPanel({
       resolveDesktopSelectedSourcePath(options?.sourceFile ?? file) || resolveDesktopSelectedSourcePath(file),
     );
     const submitIntent = String(options?.submitIntent || FILE_PICKER_ACTION_SELECT);
+    const bypassDesktopLinkMode = Boolean(options?.bypassDesktopLinkMode);
     const skipDesktopRecommendation = Boolean(options?.skipDesktopRecommendation);
-    if (desktopLinkModeActive) {
+    const sourceDurationSec = Math.max(0, Number(options?.sourceDurationSec ?? durationSec ?? 0));
+    if (desktopLinkModeActive && !bypassDesktopLinkMode) {
       await submitDesktopLinkImport();
       return;
+    }
+    if (bypassDesktopLinkMode && desktopRuntimeAvailable && desktopSourceMode !== DESKTOP_UPLOAD_SOURCE_MODE_FILE) {
+      setDesktopSourceMode(DESKTOP_UPLOAD_SOURCE_MODE_FILE);
     }
     if (!selectedSourceFile) {
       const message = "请先选择文件";
@@ -5643,14 +5648,14 @@ export function UploadPanel({
     if (
       selectedAsrModel === QWEN_MODEL &&
       !skipDesktopRecommendation &&
-      shouldRecommendDesktopForBottle2Cloud(selectedSourceFile, durationSec)
+      shouldRecommendDesktopForBottle2Cloud(selectedSourceFile, sourceDurationSec)
     ) {
       openDesktopGuidanceDialog(
         "large_file",
         {
           sourceName: String(selectedSourceFile?.name || "").trim(),
           sizeBytes: Number(selectedSourceFile?.size || 0),
-          durationSec: Number(durationSec || 0),
+          durationSec: sourceDurationSec,
         },
         { sourceFile: selectedSourceFile, submitIntent },
       );
@@ -5734,11 +5739,11 @@ export function UploadPanel({
       return;
     }
     if (shouldUseDesktopLocalFast) {
-      const billingAllowed = await ensureDesktopClientBillingAdmission(durationSec);
+      const billingAllowed = await ensureDesktopClientBillingAdmission(sourceDurationSec);
       if (!billingAllowed) {
         return;
       }
-      await submitDesktopLocalFast(pollToken, runToken, selectedSourceFile, durationSec);
+      await submitDesktopLocalFast(pollToken, runToken, selectedSourceFile, sourceDurationSec);
       return;
     }
     if (shouldUseBrowserLocalFast) {
