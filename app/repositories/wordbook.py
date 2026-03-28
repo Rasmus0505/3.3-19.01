@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
+from app.core.timezone import now_shanghai_naive
 from app.models import Lesson, WordbookEntry, WordbookEntrySource
 
 
@@ -29,6 +30,18 @@ def get_wordbook_source_link(db: Session, *, entry_id: int, lesson_id: int, sent
             WordbookEntrySource.lesson_id == lesson_id,
             WordbookEntrySource.sentence_idx == sentence_idx,
         )
+    )
+
+
+def count_due_wordbook_entries(db: Session, *, user_id: int) -> int:
+    return int(
+        db.scalar(
+            select(func.count(WordbookEntry.id)).where(
+                WordbookEntry.user_id == user_id,
+                WordbookEntry.next_review_at <= now_shanghai_naive(),
+            )
+        )
+        or 0
     )
 
 
@@ -95,6 +108,39 @@ def list_wordbook_entries(
     ).all()
     available_lessons = [{"lesson_id": int(lesson_id), "title": str(title or f"课程 {lesson_id}")} for lesson_id, title in available_lesson_rows]
     return items, available_lessons
+
+
+def list_due_wordbook_entries(db: Session, *, user_id: int) -> list[dict[str, object]]:
+    source_count_sq = (
+        select(
+            WordbookEntrySource.entry_id.label("entry_id"),
+            func.count(WordbookEntrySource.id).label("source_count"),
+        )
+        .group_by(WordbookEntrySource.entry_id)
+        .subquery()
+    )
+    rows: Sequence[tuple[WordbookEntry, str | None, int]] = db.execute(
+        select(
+            WordbookEntry,
+            Lesson.title.label("source_lesson_title"),
+            func.coalesce(source_count_sq.c.source_count, 0).label("source_count"),
+        )
+        .outerjoin(Lesson, Lesson.id == WordbookEntry.latest_lesson_id)
+        .outerjoin(source_count_sq, source_count_sq.c.entry_id == WordbookEntry.id)
+        .where(
+            WordbookEntry.user_id == user_id,
+            WordbookEntry.next_review_at <= now_shanghai_naive(),
+        )
+        .order_by(WordbookEntry.next_review_at.asc(), WordbookEntry.id.asc())
+    ).all()
+    return [
+        {
+            "entry": entry,
+            "source_lesson_title": str(source_lesson_title or ""),
+            "source_count": int(source_count or 0),
+        }
+        for entry, source_lesson_title, source_count in rows
+    ]
 
 
 def build_wordbook_entry_payload(db: Session, *, entry_id: int, user_id: int) -> dict[str, object] | None:

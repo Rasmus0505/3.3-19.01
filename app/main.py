@@ -50,11 +50,18 @@ LESSON_TASK_REQUIRED_COLUMNS: tuple[str, ...] = tuple(str(column.name) for colum
 
 
 READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
-    "users": ("is_admin", "last_login_at"),
+    "users": ("is_admin", "last_login_at", "username", "username_normalized"),
     "user_login_events": (
         "user_id",
         "event_type",
         "created_at",
+    ),
+    "wordbook_entries": (
+        "next_review_at",
+        "last_reviewed_at",
+        "review_count",
+        "wrong_count",
+        "memory_score",
     ),
     "billing_model_rates": (
         "billing_unit",

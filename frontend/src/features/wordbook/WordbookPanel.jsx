@@ -1,4 +1,4 @@
-import { BookOpenText, Check, RotateCcw, Trash2 } from "lucide-react";
+import { BookOpenText, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -19,8 +19,15 @@ import {
   Skeleton,
 } from "../../shared/ui";
 
-function formatCollectedAt(value) {
-  if (!value) return "时间未知";
+const REVIEW_ACTIONS = [
+  { grade: "again", label: "重来" },
+  { grade: "hard", label: "很吃力" },
+  { grade: "good", label: "想起来了" },
+  { grade: "easy", label: "很轻松" },
+];
+
+function formatDateTime(value) {
+  if (!value) return "待安排";
   try {
     return new Intl.DateTimeFormat("zh-CN", {
       month: "numeric",
@@ -33,15 +40,23 @@ function formatCollectedAt(value) {
   }
 }
 
+function formatMemoryScore(value) {
+  const safeValue = Math.max(0, Math.min(1, Number(value || 0)));
+  return `${Math.round(safeValue * 100)}%`;
+}
+
 export function WordbookPanel({ apiCall, refreshToken = 0 }) {
   const [items, setItems] = useState([]);
   const [availableLessons, setAvailableLessons] = useState([]);
+  const [reviewQueue, setReviewQueue] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusText, setStatusText] = useState("");
   const [statusFilter, setStatusFilter] = useState("active");
   const [sourceLessonId, setSourceLessonId] = useState("all");
   const [sortOrder, setSortOrder] = useState("recent");
   const [busyEntryId, setBusyEntryId] = useState(0);
+  const [dueCount, setDueCount] = useState(0);
+  const [panelMode, setPanelMode] = useState("list");
 
   const loadWordbook = useCallback(async () => {
     setLoading(true);
@@ -62,6 +77,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
       }
       setItems(Array.isArray(data.items) ? data.items : []);
       setAvailableLessons(Array.isArray(data.available_lessons) ? data.available_lessons : []);
+      setDueCount(Math.max(0, Number(data.due_count || 0)));
     } catch (error) {
       setStatusText(`网络错误: ${String(error)}`);
     } finally {
@@ -79,21 +95,22 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
     setSourceLessonId("all");
   }, [availableLessons, sourceLessonId]);
 
-  async function handleStatusUpdate(entryId, nextStatus) {
-    setBusyEntryId(entryId);
+  async function loadReviewQueue() {
+    setBusyEntryId(-1);
     try {
-      const resp = await apiCall(`/api/wordbook/${entryId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
-      });
+      const resp = await apiCall("/api/wordbook/review-queue");
       const data = await parseResponse(resp);
       if (!resp.ok) {
-        toast.error(toErrorText(data, "更新生词本状态失败"));
+        toast.error(toErrorText(data, "加载复习队列失败"));
         return;
       }
-      toast.success(data.message || (nextStatus === "mastered" ? "已标记为掌握" : "已恢复到生词本"));
-      await loadWordbook();
+      const nextItems = Array.isArray(data.items) ? data.items : [];
+      setReviewQueue(nextItems);
+      setDueCount(Math.max(0, Number(data.total || 0)));
+      setPanelMode("review");
+      if (!nextItems.length) {
+        toast.message("当前没有到期词条");
+      }
     } catch (error) {
       toast.error(`网络错误: ${String(error)}`);
     } finally {
@@ -113,6 +130,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
         return;
       }
       toast.success("已删除词条");
+      setReviewQueue((current) => current.filter((item) => Number(item.id || 0) !== Number(entryId)));
       await loadWordbook();
     } catch (error) {
       toast.error(`网络错误: ${String(error)}`);
@@ -121,6 +139,34 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
     }
   }
 
+  async function handleReview(grade) {
+    const currentItem = reviewQueue[0];
+    if (!currentItem) return;
+    setBusyEntryId(Number(currentItem.id || 0));
+    try {
+      const resp = await apiCall(`/api/wordbook/${currentItem.id}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ grade }),
+      });
+      const data = await parseResponse(resp);
+      if (!resp.ok) {
+        toast.error(toErrorText(data, "提交复习结果失败"));
+        return;
+      }
+      toast.success(data.message || "已记录复习结果");
+      setReviewQueue((current) => current.slice(1));
+      setDueCount(Math.max(0, Number(data.remaining_due || 0)));
+      await loadWordbook();
+    } catch (error) {
+      toast.error(`网络错误: ${String(error)}`);
+    } finally {
+      setBusyEntryId(0);
+    }
+  }
+
+  const reviewItem = reviewQueue[0] || null;
+
   return (
     <Card>
       <CardHeader>
@@ -128,128 +174,185 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
           <BookOpenText className="size-4" />
           生词本
         </CardTitle>
-        <CardDescription>在沉浸学习里收下单词或短语，并按课程来源和掌握状态管理它们。</CardDescription>
+        <CardDescription>在沉浸学习里收下词条后，可以直接查看到期复习项、最新语境和下次复习时间。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">词条状态</p>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="active">仅看生词</SelectItem>
-                <SelectItem value="mastered">已掌握</SelectItem>
-              </SelectContent>
-            </Select>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-muted/10 px-4 py-3">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">开始复习</p>
+            <p className="text-xs text-muted-foreground">当前有 {dueCount} 条到期词条，可直接进入复习模式。</p>
           </div>
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">来源课程</p>
-            <Select value={sourceLessonId} onValueChange={setSourceLessonId}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部课程</SelectItem>
-                {availableLessons.map((item) => (
-                  <SelectItem key={item.lesson_id} value={String(item.lesson_id)}>
-                    {item.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">排序方式</p>
-            <Select value={sortOrder} onValueChange={setSortOrder}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="recent">最近收录</SelectItem>
-                <SelectItem value="oldest">最早收录</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex gap-2">
+            {panelMode === "review" ? (
+              <Button type="button" variant="outline" className="h-9 px-4" onClick={() => setPanelMode("list")}>
+                返回列表
+              </Button>
+            ) : null}
+            <Button type="button" className="h-9 px-4" disabled={busyEntryId === -1} onClick={() => void loadReviewQueue()}>
+              开始复习
+            </Button>
           </div>
         </div>
 
-        {statusText ? <p className="text-sm text-destructive">{statusText}</p> : null}
+        {panelMode === "list" ? (
+          <>
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">词条状态</p>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">待复习</SelectItem>
+                    <SelectItem value="mastered">已掌握</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">来源课程</p>
+                <Select value={sourceLessonId} onValueChange={setSourceLessonId}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部课程</SelectItem>
+                    {availableLessons.map((item) => (
+                      <SelectItem key={item.lesson_id} value={String(item.lesson_id)}>
+                        {item.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">排序方式</p>
+                <Select value={sortOrder} onValueChange={setSortOrder}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="recent">最近收录</SelectItem>
+                    <SelectItem value="oldest">最早收录</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
-        {loading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-36 w-full rounded-2xl" />
-            <Skeleton className="h-36 w-full rounded-2xl" />
-          </div>
-        ) : null}
+            {statusText ? <p className="text-sm text-destructive">{statusText}</p> : null}
 
-        {!loading && items.length === 0 ? (
-          <div className="rounded-2xl border border-dashed bg-muted/15 px-6 py-10 text-center">
-            <p className="text-base font-medium">{statusFilter === "active" ? "还没有生词" : "还没有已掌握词条"}</p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {statusFilter === "active" ? "去沉浸学习里点击单词或选中连续短语，就会出现在这里。" : "把词条标记为掌握后，会集中显示在这里。"}
-            </p>
-          </div>
-        ) : null}
+            {loading ? (
+              <div className="space-y-3">
+                <Skeleton className="h-36 w-full rounded-2xl" />
+                <Skeleton className="h-36 w-full rounded-2xl" />
+              </div>
+            ) : null}
 
-        {!loading ? (
-          <div className="space-y-3">
-            {items.map((item) => {
-              const busy = busyEntryId === Number(item.id || 0);
-              return (
-                <div key={item.id} className="rounded-2xl border bg-background p-4">
-                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <div className="min-w-0 space-y-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="truncate text-lg font-semibold">{item.entry_text}</div>
-                        <Badge variant={item.entry_type === "phrase" ? "secondary" : "outline"}>
-                          {item.entry_type === "phrase" ? "短语" : "单词"}
-                        </Badge>
-                        <Badge variant={item.status === "mastered" ? "secondary" : "outline"}>
-                          {item.status === "mastered" ? "已掌握" : "生词"}
-                        </Badge>
-                      </div>
-                      <div className="space-y-1 text-sm text-muted-foreground">
-                        <p>英文语境：{item.latest_sentence_en || "暂无英文语境"}</p>
-                        <p>中文语境：{item.latest_sentence_zh || "暂无中文语境"}</p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                        <span>来源课程：{item.source_lesson_title || "未知课程"}</span>
-                        <span>收录记录：{Number(item.source_count || 0)} 条</span>
-                        <span>最近收录：{formatCollectedAt(item.latest_collected_at)}</span>
+            {!loading && items.length === 0 ? (
+              <div className="rounded-2xl border border-dashed bg-muted/15 px-6 py-10 text-center">
+                <p className="text-base font-medium">{statusFilter === "active" ? "还没有待复习词条" : "还没有已掌握词条"}</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {statusFilter === "active" ? "去沉浸学习里收藏词条后，这里会显示最新语境和复习安排。" : "记忆率达到目标后，会集中显示在这里。"}
+                </p>
+              </div>
+            ) : null}
+
+            {!loading ? (
+              <div className="space-y-3">
+                {items.map((item) => {
+                  const busy = busyEntryId === Number(item.id || 0);
+                  const isMastered = Number(item.memory_score || 0) >= 0.85;
+                  return (
+                    <div key={item.id} className="rounded-2xl border bg-background p-4">
+                      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0 space-y-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="truncate text-lg font-semibold">{item.entry_text}</div>
+                            <Badge variant={isMastered ? "secondary" : "outline"}>
+                              {isMastered ? "已掌握" : `记忆率 ${formatMemoryScore(item.memory_score)}`}
+                            </Badge>
+                          </div>
+                          <div className="space-y-1 text-sm text-muted-foreground">
+                            <p>英文语境：{item.latest_sentence_en || "暂无英文语境"}</p>
+                            <p>中文语境：{item.latest_sentence_zh || "暂无中文语境"}</p>
+                            <p>下次复习：{formatDateTime(item.next_review_at)}</p>
+                            <p>复习次数：{Number(item.review_count || 0)}</p>
+                            <p>记忆率：{formatMemoryScore(item.memory_score)}</p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                            <span>来源课程：{item.source_lesson_title || "未知课程"}</span>
+                            <span>收录记录：{Number(item.source_count || 0)} 条</span>
+                            <span>答错次数：{Number(item.wrong_count || 0)} 次</span>
+                            <span>最近收录：{formatDateTime(item.latest_collected_at)}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive"
+                            disabled={busy}
+                            onClick={() => void handleDelete(item.id)}
+                          >
+                            <Trash2 className="size-4" />
+                            删除
+                          </Button>
+                        </div>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="space-y-4 rounded-2xl border bg-muted/5 p-4">
+            {!reviewItem ? (
+              <div className="rounded-2xl border border-dashed bg-background px-6 py-10 text-center">
+                <p className="text-base font-medium">当前没有到期词条</p>
+                <p className="mt-2 text-sm text-muted-foreground">回到列表继续收集或稍后再来复习。</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">复习中</p>
+                    <p className="text-xs text-muted-foreground">剩余 {reviewQueue.length} 条到期词条</p>
+                  </div>
+                  <Badge variant="outline">记忆率 {formatMemoryScore(reviewItem.memory_score)}</Badge>
+                </div>
 
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      {item.status === "active" ? (
-                        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void handleStatusUpdate(item.id, "mastered")}>
-                          <Check className="size-4" />
-                          标记掌握
-                        </Button>
-                      ) : (
-                        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void handleStatusUpdate(item.id, "active")}>
-                          <RotateCcw className="size-4" />
-                          恢复生词
-                        </Button>
-                      )}
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="text-destructive hover:text-destructive"
-                        disabled={busy}
-                        onClick={() => void handleDelete(item.id)}
-                      >
-                        <Trash2 className="size-4" />
-                        删除
-                      </Button>
-                    </div>
+                <div className="space-y-2 rounded-2xl border bg-background p-4">
+                  <p className="text-lg font-semibold">{reviewItem.entry_text}</p>
+                  <p className="text-sm text-muted-foreground">英文语境：{reviewItem.latest_sentence_en || "暂无英文语境"}</p>
+                  <p className="text-sm text-muted-foreground">中文语境：{reviewItem.latest_sentence_zh || "暂无中文语境"}</p>
+                  <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                    <span>下次复习：{formatDateTime(reviewItem.next_review_at)}</span>
+                    <span>复习次数：{Number(reviewItem.review_count || 0)}</span>
+                    <span>答错次数：{Number(reviewItem.wrong_count || 0)}</span>
                   </div>
                 </div>
-              );
-            })}
+
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                  {REVIEW_ACTIONS.map((action) => (
+                    <Button
+                      key={action.grade}
+                      type="button"
+                      variant={action.grade === "good" ? "default" : "outline"}
+                      className="h-11 px-4"
+                      disabled={busyEntryId === Number(reviewItem.id || 0)}
+                      onClick={() => void handleReview(action.grade)}
+                    >
+                      {action.label}
+                    </Button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
-        ) : null}
+        )}
       </CardContent>
     </Card>
   );

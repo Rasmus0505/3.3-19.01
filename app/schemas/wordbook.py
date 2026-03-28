@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 WordbookEntryType = Literal["word", "phrase"]
 WordbookEntryStatus = Literal["active", "mastered"]
 WordbookSortOrder = Literal["recent", "oldest"]
+WordbookReviewGrade = Literal["again", "hard", "good", "easy"]
 
 
 class WordbookSourceLessonResponse(BaseModel):
@@ -26,6 +27,11 @@ class WordbookEntryResponse(BaseModel):
     latest_sentence_en: str
     latest_sentence_zh: str
     latest_collected_at: datetime
+    next_review_at: datetime | None = None
+    last_reviewed_at: datetime | None = None
+    review_count: int = 0
+    wrong_count: int = 0
+    memory_score: float = 0.0
     created_at: datetime
     updated_at: datetime
     source_lesson_id: int | None = None
@@ -54,20 +60,32 @@ class WordbookListResponse(BaseModel):
     ok: bool = True
     items: list[WordbookEntryResponse] = Field(default_factory=list)
     total: int = 0
+    due_count: int = 0
     status: WordbookEntryStatus = "active"
     sort: WordbookSortOrder = "recent"
     source_lesson_id: int | None = None
     available_lessons: list[WordbookSourceLessonResponse] = Field(default_factory=list)
 
 
+class WordbookReviewQueueResponse(BaseModel):
+    ok: bool = True
+    items: list[WordbookEntryResponse] = Field(default_factory=list)
+    total: int = 0
+
+
 class WordbookStatusUpdateRequest(BaseModel):
     status: WordbookEntryStatus
+
+
+class WordbookReviewRequest(BaseModel):
+    grade: WordbookReviewGrade
 
 
 class WordbookMutationResponse(BaseModel):
     ok: bool = True
     message: str
     entry: WordbookEntryResponse
+    remaining_due: int = 0
 
 
 class WordbookDeleteResponse(BaseModel):
