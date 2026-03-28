@@ -116,7 +116,7 @@ function buildDraftMap(list) {
   list.forEach((item) => {
     draftMap[item.model_name] = {
       price_per_minute_yuan: toMinuteRateDraftValue(item, "price_per_minute_yuan", "price_per_minute_cents"),
-      points_per_1k_tokens: Number(item.points_per_1k_tokens || 0),
+      points_per_1k_tokens: String(Number(item.points_per_1k_tokens || 0)),
       cost_per_minute_yuan: toMinuteRateDraftValue(item, "cost_per_minute_yuan", "cost_per_minute_cents"),
       billing_unit: String(item.billing_unit || "minute"),
       is_active: Boolean(item.is_active),
@@ -409,7 +409,7 @@ export function AdminRatesTab({ apiCall }) {
                         min={0}
                         step={1}
                         value={draft.points_per_1k_tokens}
-                        onChange={(event) => updateDraft(item.model_name, { points_per_1k_tokens: Number(event.target.value || 0) })}
+                        onChange={(event) => updateDraft(item.model_name, { points_per_1k_tokens: event.target.value })}
                         aria-invalid={tokenInvalid}
                         className="max-w-[150px]"
                         disabled={!tokenBilling}

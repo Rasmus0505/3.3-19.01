@@ -28,3 +28,13 @@ def test_phase11_upload_surface_contract():
     assert "当前素材推荐使用客户端生成，效果和稳定性更好" in source
     assert "继续生成素材" in source
     assert "继续当前流程" not in source
+
+
+def test_number_inputs_do_not_force_zero_while_editing_contract():
+    input_source = INPUT_COMPONENT.read_text(encoding="utf-8")
+    rates_source = ADMIN_RATES_TAB.read_text(encoding="utf-8")
+    assert 'type === "number"' in input_source
+    assert "useState" in input_source
+    assert "onFocus" in input_source
+    assert "onBlur" in input_source
+    assert "Number(event.target.value || 0)" not in rates_source
