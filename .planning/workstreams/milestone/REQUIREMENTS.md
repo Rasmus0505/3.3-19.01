@@ -33,8 +33,8 @@ Archived shipped requirements: see `.planning/milestones/v2.0-REQUIREMENTS.md`.
 ### Web Product Boundary
 
 - [x] **WEB-01**: Web upload surface clearly explains the difference between Bottle 1.0 and Bottle 2.0 before generation starts
-- [ ] **WEB-02**: Web users cannot execute Bottle 1.0 generation through browser flows
-- [ ] **WEB-03**: Web users can follow a clear desktop CTA when Bottle 1.0 is the better fit
+- [x] **WEB-02**: Web users cannot execute Bottle 1.0 generation through browser flows
+- [x] **WEB-03**: Web users can follow a clear desktop CTA when Bottle 1.0 is the better fit
 
 ### Admin Operations
 
@@ -45,7 +45,7 @@ Archived shipped requirements: see `.planning/milestones/v2.0-REQUIREMENTS.md`.
 
 ### Conversion & Monetization
 
-- [ ] **GROW-01**: Upload model cards and blocked-action states use clearer pricing anchors and scenario guidance to improve recharge/download intent
+- [x] **GROW-01**: Upload model cards and blocked-action states use clearer pricing anchors and scenario guidance to improve recharge/download intent
 - [x] **GROW-02**: The milestone leaves a benchmark-backed monetization summary for later pricing or A/B follow-up without introducing subscriptions now
 
 ## Future Requirements
@@ -72,9 +72,9 @@ Archived shipped requirements: see `.planning/milestones/v2.0-REQUIREMENTS.md`.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | WEB-01 | Phase 7 | Complete |
-| WEB-02 | Phase 7 | Pending |
-| WEB-03 | Phase 7 | Pending |
-| GROW-01 | Phase 7 | Pending |
+| WEB-02 | Phase 7 | Complete |
+| WEB-03 | Phase 7 | Complete |
+| GROW-01 | Phase 7 | Complete |
 | GROW-02 | Phase 7 | Complete |
 | IMM-01 | Phase 8 | Pending |
 | IMM-02 | Phase 8 | Pending |
