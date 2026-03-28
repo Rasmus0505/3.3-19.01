@@ -38,6 +38,14 @@ _SUPPORTED_DIRECT_MEDIA_SUFFIXES = {
     ".mkv",
     ".mov",
 }
+_SUPPORTED_VIDEO_SUFFIXES = {
+    ".mp4",
+    ".m4v",
+    ".mov",
+    ".mkv",
+    ".webm",
+    ".avi",
+}
 _URL_TOKEN_PATTERN = re.compile(r"https?://[^\s<>'\"，。；！？、））\]\}]+", re.IGNORECASE)
 
 
@@ -208,6 +216,19 @@ def _resolve_source_path(source_path: str) -> Path:
     if not resolved.exists() or not resolved.is_file():
         raise HTTPException(status_code=404, detail="source_path does not exist")
     return resolved
+
+
+def _guess_media_content_type(source_path: Path, source_filename: str = "") -> str:
+    guessed = mimetypes.guess_type(str(source_filename or source_path.name).strip() or source_path.name)[0]
+    return str(guessed or "application/octet-stream").strip() or "application/octet-stream"
+
+
+def _looks_like_video_source(source_path: Path, source_filename: str = "", content_type: str = "") -> bool:
+    normalized_content_type = str(content_type or "").strip().lower()
+    if normalized_content_type.startswith("video/"):
+        return True
+    suffix = Path(str(source_filename or source_path.name).strip() or source_path.name).suffix.lower()
+    return suffix in _SUPPORTED_VIDEO_SUFFIXES
 
 
 def _run_desktop_transcribe(*, source_path: Path, source_filename: str, model_key: str, runtime_kind: str) -> dict[str, Any]:
@@ -552,6 +573,44 @@ def desktop_generate(payload: dict[str, Any]) -> dict[str, Any]:
         runtime_kind=runtime_kind,
     )
     return _build_local_generation_payload(transcription, runtime_kind, model_key)
+
+
+@router.post("/prepare-upload-source")
+def desktop_prepare_upload_source(payload: dict[str, Any]) -> dict[str, Any]:
+    source_path = _resolve_source_path(str(payload.get("source_path") or ""))
+    source_filename = str(payload.get("source_filename") or source_path.name).strip() or source_path.name
+    validate_suffix(source_filename or source_path.name)
+    content_type = _guess_media_content_type(source_path, source_filename)
+    if not _looks_like_video_source(source_path, source_filename, content_type):
+        return {
+            "ok": True,
+            "prepared": False,
+            "source_path": str(source_path),
+            "source_filename": source_filename,
+            "content_type": content_type,
+            "source_size_bytes": max(0, int(source_path.stat().st_size or 0)),
+            "source_duration_ms": max(1, probe_audio_duration_ms(source_path)),
+        }
+
+    request_dir = create_request_dir(BASE_TMP_DIR)
+    prepared_filename = f"{Path(source_filename).stem}.opus"
+    prepared_path = request_dir / prepared_filename
+    try:
+        extract_audio_for_asr(source_path, prepared_path)
+        prepared_content_type = _guess_media_content_type(prepared_path, prepared_filename)
+        return {
+            "ok": True,
+            "prepared": True,
+            "source_path": str(prepared_path),
+            "source_filename": prepared_filename,
+            "content_type": prepared_content_type,
+            "source_size_bytes": max(0, int(prepared_path.stat().st_size or 0)),
+            "source_duration_ms": max(1, probe_audio_duration_ms(prepared_path)),
+            "original_source_path": str(source_path),
+            "original_source_filename": source_filename,
+        }
+    except MediaError as exc:
+        _raise_media_http_error(exc)
 
 
 @router.post("/transcribe-upload")
