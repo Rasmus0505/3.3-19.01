@@ -47,6 +47,10 @@ _SUPPORTED_VIDEO_SUFFIXES = {
     ".avi",
 }
 _URL_TOKEN_PATTERN = re.compile(r"https?://[^\s<>'\"，。；！？、））\]\}]+", re.IGNORECASE)
+_URL_IMPORT_INVALID_MESSAGE = "未识别到可导入链接。"
+_URL_IMPORT_INVALID_DETAIL = "未识别到可导入链接。请粘贴公开视频页链接，例如 YouTube/B站视频页链接，或改用 SnapAny"
+_URL_IMPORT_RESTRICTED_MESSAGE = "该链接可能需要登录或平台限制，建议改用 SnapAny"
+_URL_IMPORT_UNSUPPORTED_MESSAGE = "当前桌面工具暂不支持该链接，建议改用 SnapAny"
 
 
 def _sanitize_source_url(raw_value: str) -> str:
@@ -72,18 +76,18 @@ def _classify_ytdlp_error(stderr_text: str) -> tuple[str, str]:
     if not normalized:
         return ("URL_IMPORT_FAILED", "链接导入失败，请稍后重试")
     if "sign in" in lowered or "login" in lowered or "cookies" in lowered or "members-only" in lowered:
-        return ("URL_IMPORT_RESTRICTED", "该链接可能需要登录或平台限制，建议改用 SnapAny")
+        return ("URL_IMPORT_RESTRICTED", _URL_IMPORT_RESTRICTED_MESSAGE)
     if "unsupported url" in lowered or "unsupported" in lowered or "extractor" in lowered:
-        return ("URL_IMPORT_UNSUPPORTED", "当前桌面工具暂不支持该链接，建议改用 SnapAny")
+        return ("URL_IMPORT_UNSUPPORTED", _URL_IMPORT_UNSUPPORTED_MESSAGE)
     if "private video" in lowered or "unavailable" in lowered or "forbidden" in lowered:
-        return ("URL_IMPORT_RESTRICTED", "该链接可能需要登录或平台限制，建议改用 SnapAny")
+        return ("URL_IMPORT_RESTRICTED", _URL_IMPORT_RESTRICTED_MESSAGE)
     return ("URL_IMPORT_FAILED", "链接导入失败，请稍后重试")
 
 
 def _probe_ytdlp_metadata(source_url: str) -> dict[str, Any]:
     ytdlp_command = get_ytdlp_command()
     if not ytdlp_command:
-        raise MediaError("URL_IMPORT_UNSUPPORTED", "当前桌面工具暂不支持该链接，建议改用 SnapAny", "yt-dlp unavailable")
+        raise MediaError("URL_IMPORT_UNSUPPORTED", _URL_IMPORT_UNSUPPORTED_MESSAGE, "yt-dlp unavailable")
     try:
         completed = subprocess.run(
             [
@@ -119,8 +123,9 @@ def _download_media_with_ytdlp(
 ) -> dict[str, Any]:
     ytdlp_command = get_ytdlp_command()
     if not ytdlp_command:
-        raise MediaError("URL_IMPORT_UNSUPPORTED", "当前桌面工具暂不支持该链接，建议改用 SnapAny", "yt-dlp unavailable")
+        raise MediaError("URL_IMPORT_UNSUPPORTED", _URL_IMPORT_UNSUPPORTED_MESSAGE, "yt-dlp unavailable")
     metadata = _probe_ytdlp_metadata(source_url)
+    # Only title is promoted into the primary user workflow; other metadata stays helper-side.
     title = str(metadata.get("title") or "").strip()
     duration_seconds = max(0, int(metadata.get("duration") or 0))
     extractor_key = str(metadata.get("extractor_key") or metadata.get("extractor") or "").strip()
@@ -436,7 +441,7 @@ def download_public_media(
     normalized_source_url = _sanitize_source_url(source_url)
     parsed = urlparse(normalized_source_url)
     if parsed.scheme not in {"http", "https"}:
-        raise MediaError("URL_IMPORT_INVALID_URL", "未识别到可导入链接。请粘贴公开视频页链接，例如 YouTube/B站视频页链接，或改用 SnapAny", source_url)
+        raise MediaError("URL_IMPORT_INVALID_URL", _URL_IMPORT_INVALID_DETAIL, source_url)
 
     if not _looks_like_direct_media_url(normalized_source_url):
         return _download_media_with_ytdlp(
@@ -638,7 +643,7 @@ def desktop_transcribe_upload(
 def create_url_import_task(payload: dict[str, Any]) -> dict[str, Any]:
     source_url = _sanitize_source_url(str(payload.get("source_url") or ""))
     if not source_url:
-        raise HTTPException(status_code=400, detail={"ok": False, "error_code": "URL_IMPORT_INVALID_URL", "message": "未识别到可导入链接。"})
+        raise HTTPException(status_code=400, detail={"ok": False, "error_code": "URL_IMPORT_INVALID_URL", "message": _URL_IMPORT_INVALID_MESSAGE})
     task_id = uuid4().hex
     output_dir = create_request_dir(BASE_TMP_DIR) / "url-import"
     task = _build_url_import_task(task_id, source_url, output_dir)

@@ -130,6 +130,9 @@ def test_main_process_uses_bundled_helper_runtime_and_packaged_defaults():
     assert "preinstalled-models" in helper_runtime_text
     assert "runtime-tools" in helper_runtime_text
     assert "yt-dlp" in helper_runtime_text
+    assert "updateYtdlp" not in main_text
+    assert "chooseDownloadSource" not in main_text
+    assert "manageCookies" not in preload_text
 
 
 def test_installer_script_contains_bottle_preinstall_checkbox_and_copy_logic():

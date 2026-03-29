@@ -276,6 +276,59 @@ def test_lesson_catalog_returns_paginated_items_search_and_cache(test_client, mo
     assert third.json()["items"][0]["title"] == "Gamma Lesson Renamed"
 
 
+def test_lesson_catalog_keeps_desktop_import_titles_in_canonical_summary(test_client):
+    client, session_factory, _ = test_client
+    token = _register_and_login(client, email="desktop-import-catalog@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session = session_factory()
+    try:
+        user = session.scalar(select(User).where(User.email == "desktop-import-catalog@example.com"))
+        assert user is not None
+
+        lesson = Lesson(
+            user_id=user.id,
+            title="Memo 导入标题",
+            source_filename="memo-import.mp4",
+            asr_model=QWEN_ASR_MODEL,
+            duration_ms=3600,
+            source_duration_ms=3600,
+            status="ready",
+        )
+        session.add(lesson)
+        session.flush()
+        session.add(
+            LessonSentence(
+                lesson_id=lesson.id,
+                idx=0,
+                begin_ms=0,
+                end_ms=1500,
+                text_en="imported sentence",
+                text_zh="导入句子",
+                tokens_json=["imported", "sentence"],
+            )
+        )
+        session.add(
+            LessonProgress(
+                lesson_id=lesson.id,
+                user_id=user.id,
+                current_sentence_idx=0,
+                completed_indexes_json=[],
+                last_played_at_ms=0,
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.get("/api/lessons/catalog", headers=headers)
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["items"][0]["title"] == "Memo 导入标题"
+    assert "source_type" not in payload["items"][0]
+    assert payload["items"][0]["progress_summary"]["current_sentence_index"] == 0
+
+
 def test_normalize_learning_english_text_spells_usd_amounts():
     assert normalize_learning_english_text("$40?") == "forty dollars?"
     assert normalize_learning_english_text("It is $1.") == "It is one dollar."

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: 优化学习体验和管理体验
-status: planning
-stopped_at: Phase 07.1 context gathered
-last_updated: "2026-03-29T09:34:39.700Z"
-last_activity: 2026-03-29 -- Phase 07.1 inserted after Phase 7
+status: complete
+stopped_at: Phase 07.1 complete
+last_updated: "2026-03-29T16:30:00.000Z"
+last_activity: 2026-03-29 -- Phase 07.1 complete; v2.1 all phases executed, milestone closeout pending
 progress:
   total_phases: 6
-  completed_phases: 5
-  total_plans: 17
-  completed_plans: 17
-  percent: 83
+  completed_phases: 6
+  total_plans: 20
+  completed_plans: 20
+  percent: 100
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 07.1 insertion — Memo 模式复刻与桌面媒体工作流产品化
+**Current focus:** v2.1 complete except milestone closeout
 
 ## Current Position
 
-Phase: 07.1 inserted
-Plan: —
-Status: Urgent phase inserted after Phase 7 — waiting for planning
-Last activity: 2026-03-29 -- Phase 07.1 inserted after Phase 7
+Phase: 07.1 complete
+Plan: 07.1-01, 07.1-02, 07.1-03
+Status: Phase 07.1 verified complete; milestone closeout pending
+Last activity: 2026-03-29 -- Phase 07.1 complete; v2.1 all phases executed, milestone closeout pending
 
-Progress: [████████░░] 83%
+Progress: [██████████] 100%
 
 ## This Milestone
 
@@ -67,7 +67,7 @@ None
 ## Session Continuity
 
 **Previous milestone:** v2.0 Billing, Admin & Polish (shipped 2026-03-28)  
-**Next expected action:** `$gsd-plan-phase 07.1`  
-**Last Date:** 2026-03-29T09:34:39.698Z
-**Stopped At:** Phase 07.1 context gathered
-**Resume File:** .planning/workstreams/milestone/phases/07.1-memo/07.1-CONTEXT.md
+**Next expected action:** `$gsd-complete-milestone`  
+**Last Date:** 2026-03-29T16:30:00.000Z
+**Stopped At:** Phase 07.1 complete
+**Resume File:** .planning/workstreams/milestone/phases/07.1-memo/07.1-VERIFICATION.md
