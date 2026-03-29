@@ -61,6 +61,8 @@ const SNAPANY_FALLBACK_URL = "https://snapany.com/zh";
 const DESKTOP_LINK_INVALID_MESSAGE = "未识别到可导入链接。";
 const DESKTOP_LINK_RESTRICTED_MESSAGE = "该链接可能需要登录或平台限制，建议改用 SnapAny";
 const DESKTOP_LINK_UNSUPPORTED_MESSAGE = "当前桌面工具暂不支持该链接，建议改用 SnapAny";
+const DESKTOP_LINK_PUBLIC_SUPPORT_MESSAGE = "支持常见公开视频链接：YouTube、B站、常见播客页面、公开视频直链";
+const DESKTOP_LINK_PUBLIC_ONLY_MESSAGE = "仅支持公开单条链接，不支持 cookies、账号登录、会员内容、受限内容导入";
 const browserLocalRuntimeApi = LOCAL_BROWSER_RUNTIME_BASE_URL ? createApiClient({ baseUrl: LOCAL_BROWSER_RUNTIME_BASE_URL }) : null;
 
 function localAsrDirectoryBindingSupported() {
@@ -1212,7 +1214,7 @@ function buildDesktopLinkErrorMessage(errorLike = "") {
     return DESKTOP_LINK_UNSUPPORTED_MESSAGE;
   }
   if (normalized.includes(DESKTOP_LINK_INVALID_MESSAGE)) {
-    return `${DESKTOP_LINK_INVALID_MESSAGE} 请粘贴公开视频页链接，例如 YouTube/B站视频页链接，或改用 SnapAny`;
+    return `${DESKTOP_LINK_INVALID_MESSAGE} ${DESKTOP_LINK_PUBLIC_SUPPORT_MESSAGE}，或改用 SnapAny`;
   }
   if (normalized.includes("登录") || normalized.includes("限制") || lowered.includes("login") || lowered.includes("cookie")) {
     return DESKTOP_LINK_RESTRICTED_MESSAGE;
@@ -2208,7 +2210,7 @@ export function UploadPanel({
     hasLocalCourseGeneratorBridge();
   const trimmedDesktopLinkInput = sanitizeDesktopLinkInput(desktopLinkInput) || String(desktopLinkInput || "").trim();
   const desktopLinkModeSupported = desktopLinkModeActive;
-  const desktopLinkModeHint = desktopLinkModeActive ? "链接素材会先在桌面端下载，再按当前所选方式继续生成课程。" : "";
+  const desktopLinkModeHint = desktopLinkModeActive ? `${DESKTOP_LINK_PUBLIC_SUPPORT_MESSAGE} ${DESKTOP_LINK_PUBLIC_ONLY_MESSAGE}。链接素材会先在桌面端下载，再按当前所选方式继续生成课程。` : "";
   const useLocalProgressSnapshot = localTranscribing || desktopLocalTranscribing || desktopLinkImporting;
   const displayTaskSnapshot = useLocalProgressSnapshot ? localProgressSnapshot : taskSnapshot;
   const hasLocalFile = Boolean(file);
@@ -3500,7 +3502,7 @@ export function UploadPanel({
     if (!sanitizedLinkInput) {
       setDesktopLinkInput("");
       await handleTaskFailureState({
-        message: `${DESKTOP_LINK_INVALID_MESSAGE} 请粘贴公开视频页链接，例如 YouTube/B站视频页链接，或改用 SnapAny`,
+        message: `${DESKTOP_LINK_INVALID_MESSAGE} ${DESKTOP_LINK_PUBLIC_SUPPORT_MESSAGE}，或改用 SnapAny`,
         nextTaskId: "",
         nextTaskSnapshot: null,
         nextUploadPercent: 0,
@@ -6538,6 +6540,8 @@ export function UploadPanel({
                   }}
                   disabled={loading || localModeBusy}
                 />
+                <p className="text-xs text-muted-foreground">{DESKTOP_LINK_PUBLIC_SUPPORT_MESSAGE}</p>
+                <p className="text-xs text-muted-foreground">{DESKTOP_LINK_PUBLIC_ONLY_MESSAGE}</p>
                 <p className="text-xs text-muted-foreground">
                   无法导入时可改用{" "}
                   <button type="button" className="font-medium text-foreground underline underline-offset-2" onClick={() => void openSnapAnyFallback()}>
@@ -6795,7 +6799,8 @@ export function UploadPanel({
             <p className={cn("text-sm", getUploadToneStyles(taskTone).text)}>{status}</p>
             {desktopLinkModeActive ? (
               <div className="space-y-1 text-xs text-muted-foreground">
-                <p>请粘贴公开视频页链接，例如 YouTube/B站视频页链接</p>
+                <p>{DESKTOP_LINK_PUBLIC_SUPPORT_MESSAGE}</p>
+                <p>{DESKTOP_LINK_PUBLIC_ONLY_MESSAGE}</p>
                 <p>
                   或改用{" "}
                   <button type="button" className="font-medium text-foreground underline underline-offset-2" onClick={() => void openSnapAnyFallback()}>

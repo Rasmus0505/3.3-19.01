@@ -443,9 +443,24 @@ def test_upload_panel_exposes_phase04_link_import_copy_and_fallback_contract():
     assert "取消当前链接任务" in upload_panel_source
     assert "SnapAny" in upload_panel_source
     assert "openSnapAnyFallback" in upload_panel_source
-    assert "仅支持公开单条视频链接，不支持 cookies、登录态、手动 cookie、播放列表或批量链接。粘贴分享文案时会自动提取第一条有效链接。" not in upload_panel_source
+    assert "支持常见公开视频链接：YouTube、B站、常见播客页面、公开视频直链" in upload_panel_source
+    assert "仅支持公开单条链接，不支持 cookies、账号登录、会员内容、受限内容导入" in upload_panel_source
     assert "onNavigateToLesson?.(data.lesson.id)" in upload_panel_source
     assert 'loadLessonDetail(lessonId, { autoEnterImmersive: true })' in learning_shell_source
+
+
+def test_desktop_runtime_keeps_advanced_media_tool_controls_out_of_user_bridge():
+    main_source = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+    preload_source = PRELOAD_FILE.read_text(encoding="utf-8")
+
+    assert "manageCookies" not in main_source
+    assert "chooseDownloadSource" not in main_source
+    assert "updateYtdlp" not in main_source
+    assert "importBrowserSession" not in main_source
+    assert "manageCookies" not in preload_source
+    assert "chooseDownloadSource" not in preload_source
+    assert "updateYtdlp" not in preload_source
+    assert "importBrowserSession" not in preload_source
 
 
 def test_upload_panel_reuses_normal_submit_strategy_after_link_download_succeeds():

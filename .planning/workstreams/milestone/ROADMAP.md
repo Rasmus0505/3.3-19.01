@@ -21,6 +21,18 @@ Plans:
 - [x] 07-01: 完成官方竞品矩阵与 Bottle 1.0 / 2.0 定位文案
 - [x] 07-02: 收口网页端模型卡、充值引导、桌面端 CTA 与 Bottle 1.0 执行防守
 
+### Phase 07.1: Memo 模式复刻与桌面媒体工作流产品化 (INSERTED)
+
+**Goal:** 把公开链接导入、本地下载/媒体准备、课程生成与后续学习闭环收口成正式桌面端产品能力，明确支持承诺、控制面与元数据边界。  
+**Requirements**: TBD
+**Depends on:** Phase 7
+**Plans:** 3/3 plans complete
+
+Plans:
+- [x] 07.1-01: 固定 Memo 模式复刻的桌面工作流规范、支持承诺与诊断边界
+- [x] 07.1-02: 将上传面板、desktop helper、runtime bridge 和产品介绍收口到公开链接优先的正式流程
+- [x] 07.1-03: 用单元/契约/集成回归与发布 checklist 锁定支持 promise、学习闭环和打包边界
+
 ### Phase 8: 沉浸学习重构
 
 **Goal**: 把沉浸学习改成稳定的播放/输入状态机，支持单句循环和倍速切换，并解决历史组合操作冲突。  
@@ -79,5 +91,5 @@ Plans:
 ## Summary
 
 **Pending milestone:** v2.1 优化学习体验和管理体验  
-**Phase count:** 5  
+**Phase count:** 6  
 **Requirement coverage:** 22 / 22 mapped

@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from scripts.run_desktop_backend import create_desktop_helper_app
@@ -466,3 +467,24 @@ def test_desktop_helper_classifies_login_restricted_ytdlp_failures():
 
     assert code == "URL_IMPORT_RESTRICTED"
     assert "登录" in message or "SnapAny" in message
+
+
+def test_desktop_helper_classifies_unsupported_ytdlp_failures():
+    from app.api.routers import desktop_asr as desktop_asr_router
+
+    code, message = desktop_asr_router._classify_ytdlp_error("ERROR: Unsupported URL: https://example.com/private")
+
+    assert code == "URL_IMPORT_UNSUPPORTED"
+    assert "SnapAny" in message
+
+
+def test_download_public_media_invalid_url_uses_public_link_guidance(tmp_path):
+    from app.api.routers import desktop_asr as desktop_asr_router
+
+    with pytest.raises(desktop_asr_router.MediaError) as exc_info:
+        desktop_asr_router.download_public_media("not-a-valid-link", tmp_path)
+
+    assert exc_info.value.code == "URL_IMPORT_INVALID_URL"
+    assert "未识别到可导入链接。" in exc_info.value.message
+    assert "YouTube/B站视频页链接" in exc_info.value.message
+    assert "SnapAny" in exc_info.value.message

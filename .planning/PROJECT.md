@@ -54,6 +54,7 @@ Users can turn real English media into usable learning lessons quickly, without 
 - ✓ Web upload/account surface now keeps Bottle 1.0 desktop-only while presenting Bottle 2.0 as the web-first path with Bottle-only naming — validated in Phase 09
 - ✓ Admin operators now work in a Chinese-first, yuan-first backend with clearer model naming and cleaner information architecture — validated in Phase 10
 - ✓ Pricing, recharge, and desktop download paths now use the finalized upload-surface copy, recharge recovery, desktop guidance, and static-web verification flow — validated in Phase 11
+- ✓ Desktop public-link import is now productized as a formal Memo-style workflow with explicit public-link promise, failure boundary, and release checklist — validated in Phase 07.1
 
 ### Active
 
@@ -95,7 +96,7 @@ None
 
 **22/22 prior milestone requirements satisfied.**
 
-**当前阶段：** Phase 11 complete — 转化文案、桌面端下载引导、`app/static` 同步验证和数字输入框编辑体验收口已完成；v2.1 全部 phase 已执行完成，待里程碑收尾
+**当前阶段：** Phase 07.1 complete — 公开链接导入、桌面下载/媒体准备、学习闭环产品化 contract 已补齐；v2.1 全部 phase 已执行完成，待里程碑收尾
 
 ## Milestone: v2.0 Summary
 
@@ -143,4 +144,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-29 after Phase 11 completion*
+*Last updated: 2026-03-29 after Phase 07.1 completion*

@@ -2,6 +2,7 @@
 
 import io
 import os
+import re
 from datetime import datetime, timedelta
 
 import pytest
@@ -45,7 +46,9 @@ def e2e_client(tmp_path, monkeypatch):
 
 
 def _register_and_login(client: TestClient, email: str, password: str = "123456") -> str:
-    reg = client.post("/api/auth/register", json={"email": email, "password": password})
+    local_part = email.split("@", 1)[0]
+    username = re.sub(r"[^a-zA-Z0-9._-]+", "-", local_part).strip("-") or "user"
+    reg = client.post("/api/auth/register", json={"email": email, "password": password, "username": username})
     assert reg.status_code == 200
     admin_emails = {item.strip().lower() for item in os.getenv("ADMIN_EMAILS", "").split(",") if item.strip()}
     session_factory = getattr(client.app.state, "testing_session_factory", None)
@@ -164,6 +167,69 @@ def test_e2e_login_create_lesson_practice_progress(e2e_client):
     assert catalog_resp.json()["items"][0]["title"] == "renamed e2e lesson"
     assert catalog_resp.json()["items"][0]["progress_summary"]["completed_sentence_count"] == 1
     assert catalog_resp.json()["items"][0]["progress_summary"]["current_sentence_index"] == 0
+
+
+def test_e2e_import_style_lesson_stays_in_canonical_progress_flow(e2e_client):
+    client, session_factory, _ = e2e_client
+    token = _register_and_login(client, email="desktop-link-e2e@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session = session_factory()
+    try:
+        user = session.query(User).filter(User.email == "desktop-link-e2e@example.com").one()
+        lesson = Lesson(
+            user_id=user.id,
+            title="公开链接导入课程",
+            source_filename="public-link.mp4",
+            asr_model="qwen3-asr-flash-filetrans",
+            duration_ms=1500,
+            media_storage="client_indexeddb",
+            source_duration_ms=1500,
+            status="ready",
+        )
+        session.add(lesson)
+        session.flush()
+        session.add(
+            LessonSentence(
+                lesson_id=lesson.id,
+                idx=0,
+                begin_ms=0,
+                end_ms=1000,
+                text_en="desktop import sentence",
+                text_zh="桌面导入句子",
+                tokens_json=["desktop", "import", "sentence"],
+                audio_clip_path=None,
+            )
+        )
+        session.add(
+            LessonProgress(
+                lesson_id=lesson.id,
+                user_id=user.id,
+                current_sentence_idx=0,
+                completed_indexes_json=[],
+                last_played_at_ms=0,
+            )
+        )
+        session.commit()
+        lesson_id = lesson.id
+    finally:
+        session.close()
+
+    get_resp = client.get(f"/api/lessons/{lesson_id}/progress", headers=headers)
+    assert get_resp.status_code == 200
+    assert get_resp.json()["current_sentence_index"] == 0
+
+    update_resp = client.post(
+        f"/api/lessons/{lesson_id}/progress",
+        headers=headers,
+        json={"current_sentence_index": 0, "completed_sentence_indexes": [0], "last_played_at_ms": 900},
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.json()["completed_sentence_indexes"] == [0]
+
+    detail_resp = client.get(f"/api/lessons/{lesson_id}", headers=headers)
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()["title"] == "公开链接导入课程"
 
 
 def test_e2e_wordbook_collect_and_manage_entries(e2e_client):
