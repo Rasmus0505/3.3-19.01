@@ -4225,7 +4225,7 @@ export function UploadPanel({
         if (!silentToast && retryCount === 1) {
           toast.warning("网络波动，正在重试任务状态");
         }
-        setTimeout(() => void pollTask(nextTaskId, true, pollToken), POLL_RETRY_DELAY_MS * retryCount);
+        setTimeout(() => void pollTask(nextTaskId, true, pollToken, sourceFileOverride), POLL_RETRY_DELAY_MS * retryCount);
         return;
       }
       pollFailureCountRef.current = 0;
