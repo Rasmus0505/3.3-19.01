@@ -1,5 +1,5 @@
 import { ArrowLeft, Eye, Loader2, Volume2 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { parseResponse, toErrorText } from "../../shared/api/client";
@@ -56,8 +56,6 @@ import "./immersive.css";
 const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
 const APOSTROPHE_RE = /[’']/g;
 const CINEMA_CONTROLS_IDLE_MS = 3000;
-const CINEMA_TYPING_COMPACT_ACTIVATE_RATIO = 1.18;
-const CINEMA_TYPING_COMPACT_RELEASE_RATIO = 1.06;
 const WORD_TIMING_TOLERANCE_MS = 140;
 const PROGRAMMATIC_FULLSCREEN_EXIT_RESET_MS = 1000;
 const WORDBOOK_LONG_PRESS_MS = 260;
@@ -289,32 +287,6 @@ function resolveTranslationMaskResizeRect(startRect, mode, deltaX, deltaY, metri
 function debugImmersiveLog(event, detail = {}) {
   if (typeof console === "undefined" || typeof console.debug !== "function") return;
   console.debug("[DEBUG] immersive.learning", event, detail);
-}
-
-function readPixelValue(value) {
-  const parsed = Number.parseFloat(String(value || ""));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function measureWordRowNaturalWidth(rowElement) {
-  if (!rowElement) return 0;
-  const children = Array.from(rowElement.children || []);
-  if (!children.length) return 0;
-  const computedStyle = typeof window !== "undefined" ? window.getComputedStyle(rowElement) : null;
-  const gap = readPixelValue(computedStyle?.columnGap || computedStyle?.gap || 0);
-  const childrenWidth = children.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0);
-  return Math.ceil(childrenWidth + gap * Math.max(0, children.length - 1));
-}
-
-function resolveCinemaTypingDensity(currentDensity, naturalRowWidth, availableRowWidth) {
-  if (!Number.isFinite(naturalRowWidth) || !Number.isFinite(availableRowWidth) || availableRowWidth <= 0) {
-    return "default";
-  }
-  const overflowRatio = naturalRowWidth / availableRowWidth;
-  if (currentDensity === "compact") {
-    return overflowRatio > CINEMA_TYPING_COMPACT_RELEASE_RATIO ? "compact" : "default";
-  }
-  return overflowRatio > CINEMA_TYPING_COMPACT_ACTIVATE_RATIO ? "compact" : "default";
 }
 
 function buildImmersiveEntryHintItems(learningSettings) {
@@ -863,7 +835,6 @@ export function ImmersiveLessonPage({
   const [wordbookBusy, setWordbookBusy] = useState(false);
   const [wordbookSelectedTokenIndexes, setWordbookSelectedTokenIndexes] = useState([]);
   const [showEntryHintOverlay, setShowEntryHintOverlay] = useState(false);
-  const [cinemaTypingPanelLayout, setCinemaTypingPanelLayout] = useState(null);
   const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
   const [isFullscreenFallback, setIsFullscreenFallback] = useState(false);
   const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(
@@ -906,7 +877,6 @@ export function ImmersiveLessonPage({
   const mediaElementRef = useRef(null);
   const clipAudioRef = useRef(null);
   const typingPanelRef = useRef(null);
-  const wordRowRef = useRef(null);
   const typingInputRef = useRef(null);
   const bindingInputRef = useRef(null);
   const cinemaControlsIdleTimerRef = useRef(null);
@@ -951,16 +921,6 @@ export function ImmersiveLessonPage({
   const hasExitHandler = typeof onExitImmersive === "function" || typeof onBack === "function";
   const typingEnabled =
     immersiveActive && Boolean(lesson?.sentences?.[currentSentenceIndex]) && phase !== "transition" && phase !== "lesson_completed";
-  const cinemaTypingCompact = cinemaFullscreenActive && cinemaTypingPanelLayout?.density === "compact";
-  const typingPanelInlineStyle = useMemo(() => {
-    if (!cinemaFullscreenActive || !cinemaTypingPanelLayout?.widthPx) {
-      return undefined;
-    }
-    return {
-      width: `${cinemaTypingPanelLayout.widthPx}px`,
-      maxWidth: `${cinemaTypingPanelLayout.maxWidthPx}px`,
-    };
-  }, [cinemaFullscreenActive, cinemaTypingPanelLayout]);
   const setPhase = useCallback((nextPhase) => {
     dispatchSession({ type: SET_PHASE, phase: nextPhase });
   }, []);
@@ -1205,87 +1165,6 @@ export function ImmersiveLessonPage({
     }
     setShowEntryHintOverlay(true);
   }, [immersiveActive, lesson?.id]);
-
-  useLayoutEffect(() => {
-    if (!cinemaFullscreenActive || !typingPanelRef.current || !wordRowRef.current || expectedTokens.length === 0) {
-      setCinemaTypingPanelLayout(null);
-      return undefined;
-    }
-
-    if (typeof window === "undefined") {
-      return undefined;
-    }
-
-    const measureLayout = () => {
-      const typingPanel = typingPanelRef.current;
-      const wordRow = wordRowRef.current;
-      if (!typingPanel || !wordRow) {
-        setCinemaTypingPanelLayout(null);
-        return;
-      }
-
-      const inlineWidth = typingPanel.style.width;
-      const inlineMaxWidth = typingPanel.style.maxWidth;
-      typingPanel.style.width = "";
-      typingPanel.style.maxWidth = "";
-
-      const baselineWidth = Math.ceil(typingPanel.getBoundingClientRect().width);
-      const panelStyle = window.getComputedStyle(typingPanel);
-      const horizontalChrome =
-        readPixelValue(panelStyle.paddingLeft) +
-        readPixelValue(panelStyle.paddingRight) +
-        readPixelValue(panelStyle.borderLeftWidth) +
-        readPixelValue(panelStyle.borderRightWidth);
-      const naturalRowWidth = measureWordRowNaturalWidth(wordRow);
-      const offsetParentWidth =
-        typingPanel.offsetParent?.clientWidth ||
-        typingPanel.parentElement?.clientWidth ||
-        window.innerWidth;
-      const positionedAbsolutely = panelStyle.position === "absolute" || panelStyle.position === "fixed";
-      const leftInset = positionedAbsolutely && panelStyle.left !== "auto" ? readPixelValue(panelStyle.left) : 0;
-      const rightInset = positionedAbsolutely && panelStyle.right !== "auto" ? readPixelValue(panelStyle.right) : 0;
-      const maxWidth = Math.max(baselineWidth, Math.floor(offsetParentWidth - leftInset - rightInset));
-      const availableRowWidth = Math.max(1, maxWidth - horizontalChrome);
-      const targetWidth = Math.ceil(naturalRowWidth + horizontalChrome);
-
-      typingPanel.style.width = inlineWidth;
-      typingPanel.style.maxWidth = inlineMaxWidth;
-
-      if (targetWidth <= baselineWidth + 1) {
-        setCinemaTypingPanelLayout((current) => (current ? null : current));
-        return;
-      }
-
-      const widthPx = Math.min(maxWidth, targetWidth);
-      setCinemaTypingPanelLayout((current) => {
-        const density = resolveCinemaTypingDensity(current?.density, naturalRowWidth, availableRowWidth);
-        if (current && current.widthPx === widthPx && current.maxWidthPx === maxWidth && current.density === density) {
-          return current;
-        }
-        return {
-          widthPx,
-          maxWidthPx: maxWidth,
-          density,
-        };
-      });
-    };
-
-    measureLayout();
-
-    const resizeObserver =
-      typeof window.ResizeObserver === "function"
-        ? new window.ResizeObserver(() => {
-            measureLayout();
-          })
-        : null;
-
-    resizeObserver?.observe(wordRowRef.current);
-    window.addEventListener("resize", measureLayout);
-    return () => {
-      resizeObserver?.disconnect();
-      window.removeEventListener("resize", measureLayout);
-    };
-  }, [cinemaFullscreenActive, currentSentenceIndex, expectedTokens, showPreviousSentenceBlock]);
 
   const syncLearningSettingsState = useCallback((nextSettings) => {
     const resolvedSettings = nextSettings && typeof nextSettings === "object" ? nextSettings : readLearningSettings();
@@ -3442,10 +3321,7 @@ export function ImmersiveLessonPage({
           ) : (
             <div
               ref={typingPanelRef}
-              className={`immersive-typing ${cinemaFullscreenActive ? "immersive-typing--cinema" : ""} ${
-                cinemaTypingCompact ? "immersive-typing--cinema-compact" : ""
-              }`}
-              style={typingPanelInlineStyle}
+              className={`immersive-typing ${cinemaFullscreenActive ? "immersive-typing--cinema" : ""}`}
             >
               <div className="immersive-typing-status">
                 <span className="immersive-status-chip flex items-center gap-1 text-sm">
@@ -3527,12 +3403,7 @@ export function ImmersiveLessonPage({
               {waitingForInitialPlayback ? <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p> : null}
 
               <div className={cinemaFullscreenActive ? "immersive-word-row-frame immersive-word-row-frame--cinema" : ""}>
-                <div
-                  ref={wordRowRef}
-                  className={`immersive-word-row ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""} ${
-                    cinemaTypingCompact ? "immersive-word-row--cinema-compact" : ""
-                  }`}
-                >
+                <div className={`immersive-word-row ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""}`}>
                   {expectedTokens.map((token, index) => {
                     const status = wordStatuses[index] || "pending";
                     const slots = buildLetterSlots(token, wordInputs[index] || "");

@@ -473,8 +473,8 @@
 }
 
 .immersive-word-row-frame--cinema {
-  width: 100%;
-  max-width: none;
+  width: min(1120px, calc(100% - 8px));
+  max-width: min(1120px, calc(100% - 8px));
   margin: 0 auto;
   padding: 0;
   border-radius: 0;
@@ -578,25 +578,6 @@
 .immersive-letter-char {
   min-width: 1ch;
   text-align: center;
-}
-
-.immersive-typing--cinema.immersive-typing--cinema-compact .immersive-word-row--cinema {
-  gap: 8px 10px;
-}
-
-.immersive-typing--cinema.immersive-typing--cinema-compact .immersive-word-slot--underline {
-  padding: 3px 1px 1px;
-}
-
-.immersive-typing--cinema.immersive-typing--cinema-compact .immersive-letter-row {
-  gap: 3px;
-}
-
-.immersive-typing--cinema.immersive-typing--cinema-compact .immersive-letter-cell {
-  min-width: 15px;
-  height: 30px;
-  padding: 0 2px 2px;
-  font-size: 16px;
 }
 
 .immersive-hidden-input {
