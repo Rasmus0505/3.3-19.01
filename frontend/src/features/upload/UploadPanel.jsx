@@ -3421,9 +3421,22 @@ export function UploadPanel({
         if (payload?.title) {
           setDesktopLinkTitle((prev) => prev || String(payload.title || "").trim());
         }
+        const thumbnailUrl = String(payload?.thumbnail || "").trim();
         const sourceFile = await loadDesktopImportedSourceFile(payload);
         if (pollToken !== desktopLinkPollTokenRef.current) {
           return;
+        }
+        // yt-dlp 封面 URL 附加到 sourceFile
+        if (thumbnailUrl) {
+          try {
+            Object.defineProperty(sourceFile, "thumbnail", { value: thumbnailUrl, configurable: true, writable: true });
+          } catch (_) {
+            try {
+              sourceFile.thumbnail = thumbnailUrl;
+            } catch (_) {
+              void 0;
+            }
+          }
         }
         clearDesktopLinkTaskTracking(false);
         const selectionMeta = await onSelectFile(sourceFile);
