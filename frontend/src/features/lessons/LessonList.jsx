@@ -760,11 +760,15 @@ export function LessonList({
     if (!onBulkDelete || !hasSelection) return;
     setDeleteBusy(true);
     try {
-      const result = await onBulkDelete(
-        allHistorySelected
-          ? { deleteAll: true, lessonIds: [], excludedLessonIds }
-          : { deleteAll: false, lessonIds: selectedLessonIds },
-      );
+      let deletePayload;
+      if (allHistorySelected) {
+        // Compute the explicit list of IDs to delete (all - excluded)
+        const idsToDelete = loadedLessonIds.filter((id) => !excludedLessonIdSet.has(id));
+        deletePayload = { deleteAll: false, lessonIds: idsToDelete, excludedLessonIds: [] };
+      } else {
+        deletePayload = { deleteAll: false, lessonIds: selectedLessonIds, excludedLessonIds: [] };
+      }
+      const result = await onBulkDelete(deletePayload);
       if (result?.ok) {
         clearSelection();
         setBulkDeleteOpen(false);
