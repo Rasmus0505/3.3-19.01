@@ -11,6 +11,8 @@ frontend/dist/
 desktop-client/node_modules/
 desktop-client/.cache/
 desktop-client/dist/
+# Local Electron win-unpacked / fixed bundles (regenerate with package scripts; do not commit)
+desktop-client/dist-fixed/
 modelscope_whisper/
 
 asr_test_results.json

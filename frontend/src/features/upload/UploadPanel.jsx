@@ -5080,7 +5080,7 @@ export function UploadPanel({
         status: pendingText,
         bindingCompleted: false,
       });
-      void pollTask(nextTaskId, false, pollToken, displaySourceFile);
+      void pollTask(nextTaskId, false, pollToken, sourceFile);
     } catch (error) {
       clearLocalStageProgressTimer();
       setLocalProgressSnapshot(null);

@@ -30,7 +30,7 @@ def test_phase11_upload_surface_contract():
     assert "继续当前流程" not in source
     assert "sourceFileOverride = file" in source
     assert "await finalizeSuccess(data, resolvedSourceFile, silentToast)" in source
-    assert "void pollTask(nextTaskId, false, pollToken, displaySourceFile)" in source
+    assert "void pollTask(nextTaskId, false, pollToken, sourceFile)" in source
 
 
 def test_number_inputs_do_not_force_zero_while_editing_contract():
