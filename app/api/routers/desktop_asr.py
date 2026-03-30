@@ -188,6 +188,7 @@ def _download_media_with_ytdlp(
         raise MediaError("URL_IMPORT_FAILED", "链接导入失败，请稍后重试", "yt-dlp completed without output file")
     target_path = max(candidate_files, key=lambda path: path.stat().st_mtime)
     content_type = mimetypes.guess_type(target_path.name)[0] or "application/octet-stream"
+    thumbnail_url = str(metadata.get("thumbnail") or "").strip()
     return {
         "source_url": source_url,
         "source_path": str(target_path),
@@ -197,6 +198,7 @@ def _download_media_with_ytdlp(
         "webpage_url": webpage_url,
         "duration_seconds": duration_seconds,
         "title": title,
+        "thumbnail": thumbnail_url,
     }
 
 
@@ -532,6 +534,7 @@ def _run_url_import_task(task_id: str) -> None:
             extractor_key=str(result.get("extractor_key") or ""),
             webpage_url=str(result.get("webpage_url") or ""),
             duration_seconds=int(result.get("duration_seconds") or 0),
+            thumbnail=str(result.get("thumbnail") or "").strip(),
         )
     except MediaError as exc:
         next_status = "cancelled" if str(exc.code or "").upper() == "URL_IMPORT_CANCELLED" else "failed"
