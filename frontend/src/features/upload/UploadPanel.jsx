@@ -5694,6 +5694,11 @@ export function UploadPanel({
       if (resolvedFileUrl) {
         form.append("dashscope_file_url", resolvedFileUrl);
       }
+      // yt-dlp 封面 URL 或前端提取的封面 data URL
+      const coverDataUrl = String(displaySourceFile?.thumbnail || uploadSourceFile?.thumbnail || "").trim();
+      if (coverDataUrl) {
+        form.append("cover_data_url", coverDataUrl);
+      }
 
       const { ok, data } = await uploadWithProgress(
         "/api/lessons/tasks",
