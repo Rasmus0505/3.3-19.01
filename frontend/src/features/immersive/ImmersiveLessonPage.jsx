@@ -476,6 +476,56 @@ function buildSelectableSentenceTokens(sentence) {
     .filter(Boolean);
 }
 
+function resolveInteractiveWordbookContext({
+  hasWordbookAccess = false,
+  showSentenceBlock = false,
+  translationDisplayMode = "previous",
+  singleSentenceLoopEnabled = false,
+  sentenceTypingDone = false,
+  postAnswerReplayState = "idle",
+  currentSentence = null,
+  currentSentenceTokens = [],
+  currentSentenceZh = "",
+  previousSentence = null,
+  previousSentenceTokens = [],
+  previousSentenceZh = "",
+} = {}) {
+  if (!hasWordbookAccess || !showSentenceBlock) {
+    return null;
+  }
+
+  const safeCurrentSentenceTokens = Array.isArray(currentSentenceTokens) ? currentSentenceTokens : [];
+  if (
+    translationDisplayMode === "current_answered" &&
+    singleSentenceLoopEnabled &&
+    sentenceTypingDone &&
+    postAnswerReplayState === "completed" &&
+    currentSentence &&
+    safeCurrentSentenceTokens.length > 0
+  ) {
+    return {
+      mode: "current",
+      sentence: currentSentence,
+      tokens: safeCurrentSentenceTokens,
+      heading: "本句",
+      zhText: currentSentenceZh,
+    };
+  }
+
+  const safePreviousSentenceTokens = Array.isArray(previousSentenceTokens) ? previousSentenceTokens : [];
+  if (translationDisplayMode === "previous" && previousSentence && safePreviousSentenceTokens.length > 0) {
+    return {
+      mode: "previous",
+      sentence: previousSentence,
+      tokens: safePreviousSentenceTokens,
+      heading: "上一句",
+      zhText: previousSentenceZh,
+    };
+  }
+
+  return null;
+}
+
 function toggleWordbookTokenIndex(selectedIndexes, tokenIndex) {
   if (!Number.isInteger(tokenIndex)) {
     return Array.isArray(selectedIndexes) ? selectedIndexes : [];
@@ -1109,27 +1159,65 @@ export function ImmersiveLessonPage({
   const immersivePhaseLabel = getImmersivePhaseLabel(phase);
   const entryHintItems = useMemo(() => buildImmersiveEntryHintItems(learningSettings), [learningSettings]);
   const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens : []), [currentSentence?.tokens]);
+  const currentSentenceTokens = useMemo(
+    () => buildSelectableSentenceTokens(currentSentence),
+    [currentSentence?.text_en, currentSentence?.tokens],
+  );
   const previousSentenceTokens = useMemo(
     () => buildSelectableSentenceTokens(previousSentence),
     [previousSentence?.text_en, previousSentence?.tokens],
   );
   const hasWordbookAccess = Boolean(accessToken && lesson?.id);
-  const canRenderInteractiveWordbook = Boolean(
-    hasWordbookAccess &&
-      previousSentence &&
-      previousSentenceTokens.length > 0 &&
-      translationDisplayMode === "previous" &&
+  const interactiveWordbookContext = useMemo(
+    () =>
+      resolveInteractiveWordbookContext({
+        hasWordbookAccess,
+        showSentenceBlock: showPreviousSentenceBlock,
+        translationDisplayMode,
+        singleSentenceLoopEnabled,
+        sentenceTypingDone,
+        postAnswerReplayState,
+        currentSentence,
+        currentSentenceTokens,
+        currentSentenceZh,
+        previousSentence,
+        previousSentenceTokens,
+        previousSentenceZh,
+      }),
+    [
+      currentSentence,
+      currentSentenceTokens,
+      currentSentenceZh,
+      hasWordbookAccess,
+      postAnswerReplayState,
+      previousSentence,
+      previousSentenceTokens,
+      previousSentenceZh,
+      sentenceTypingDone,
       showPreviousSentenceBlock,
+      singleSentenceLoopEnabled,
+      translationDisplayMode,
+    ],
   );
+  const canRenderInteractiveWordbook = Boolean(interactiveWordbookContext);
+  const wordbookSentence = interactiveWordbookContext?.sentence || null;
+  const wordbookSentenceTokens = interactiveWordbookContext?.tokens || [];
+  const wordbookSentenceHeading = interactiveWordbookContext?.heading || "上一句";
+  const wordbookSentenceZh = interactiveWordbookContext?.zhText || "";
+  const wordbookSentenceMode = interactiveWordbookContext?.mode || "previous";
+  const wordbookSentencePlaybackLabel = wordbookSentenceMode === "current" ? "播放本句" : "播放上一句";
+  const wordbookSentenceSourceKey = `${lesson?.id ?? "lesson"}:${wordbookSentenceMode}:${
+    wordbookSentence?.idx ?? "none"
+  }`;
   const hasWordbookSelection = wordbookSelectedTokenIndexes.length > 0;
   const selectedWordbookStart = hasWordbookSelection ? wordbookSelectedTokenIndexes[0] : -1;
   const selectedWordbookEnd = hasWordbookSelection ? wordbookSelectedTokenIndexes[wordbookSelectedTokenIndexes.length - 1] : -1;
   const selectedWordbookTokens = useMemo(
     () =>
       wordbookSelectedTokenIndexes
-        .map((tokenIndex) => previousSentenceTokens[tokenIndex])
+        .map((tokenIndex) => wordbookSentenceTokens[tokenIndex])
         .filter((token) => typeof token === "string" && token.length > 0),
-    [previousSentenceTokens, wordbookSelectedTokenIndexes],
+    [wordbookSentenceTokens, wordbookSelectedTokenIndexes],
   );
   const selectedWordbookText = selectedWordbookTokens.join(" ");
   const sentenceWordTimingMap = useMemo(
@@ -1606,7 +1694,7 @@ export function ImmersiveLessonPage({
   useEffect(() => {
     clearWordbookSelection();
     resetWordbookPointerGesture();
-  }, [clearWordbookSelection, currentSentence?.idx, lesson?.id, resetWordbookPointerGesture]);
+  }, [clearWordbookSelection, resetWordbookPointerGesture, wordbookSentenceSourceKey]);
 
   useEffect(() => {
     if (canRenderInteractiveWordbook) return;
@@ -2629,6 +2717,41 @@ export function ImmersiveLessonPage({
     [currentSentenceIndex, interruptCurrentSentencePlayback, playSentence, previousSentence, selectedPlaybackRate],
   );
 
+  const requestPlayCurrentAnsweredSentence = useCallback(
+    (source = "current_sentence_speaker") => {
+      if (!currentSentence) return;
+      stopPlayback();
+      dispatchSession({ type: SET_PHASE, phase: "typing" });
+      dispatchSession({ type: SET_TRANSLATION_DISPLAY_MODE, value: "current_answered" });
+      setMediaError("");
+      debugImmersiveLog("current_sentence_speaker.start", {
+        source,
+        sentenceIndex: currentSentenceIndex,
+      });
+      void tryPlayCurrentSentence({
+        manual: true,
+        playbackKind: "wordbook_sentence_preview",
+        playbackPlan: {
+          initialRate: selectedPlaybackRate,
+          rateSteps: [],
+        },
+        source,
+      });
+    },
+    [currentSentence, currentSentenceIndex, selectedPlaybackRate, stopPlayback, tryPlayCurrentSentence],
+  );
+
+  const requestInteractiveWordbookSentencePlayback = useCallback(
+    (source = "wordbook_sentence_speaker") => {
+      if (wordbookSentenceMode === "current") {
+        requestPlayCurrentAnsweredSentence(source);
+        return;
+      }
+      requestPlayPreviousSentence(source);
+    },
+    [requestPlayCurrentAnsweredSentence, requestPlayPreviousSentence, wordbookSentenceMode],
+  );
+
   const {
     requestReplayCurrentSentence,
     requestTogglePausePlayback,
@@ -3444,8 +3567,8 @@ export function ImmersiveLessonPage({
                               : "flex-wrap"
                           }`}
                         >
-                          <span className="shrink-0 text-foreground">上一句：</span>
-                          {previousSentenceTokens.map((token, index) => {
+                          <span className="shrink-0 text-foreground">{wordbookSentenceHeading}：</span>
+                          {wordbookSentenceTokens.map((token, index) => {
                             const tokenSelected = wordbookSelectedTokenIndexes.includes(index);
                             return (
                               <button
@@ -3474,10 +3597,10 @@ export function ImmersiveLessonPage({
                         <button
                           type="button"
                           className="immersive-previous-sentence__speaker"
-                          aria-label="播放上一句"
+                          aria-label={wordbookSentencePlaybackLabel}
                           onClick={(event) => {
                             event.stopPropagation();
-                            requestPreviousSentencePlayback("previous_sentence_speaker");
+                            requestInteractiveWordbookSentencePlayback("wordbook_sentence_speaker");
                           }}
                         >
                           <Volume2 className="size-4" />
@@ -3492,9 +3615,9 @@ export function ImmersiveLessonPage({
                           disabled={wordbookBusy || selectedWordbookTokens.length === 0}
                           onClick={(event) => {
                             event.stopPropagation();
-                            if (!previousSentence) return;
+                            if (!wordbookSentence) return;
                             void collectWordbookEntry({
-                              sentence: previousSentence,
+                              sentence: wordbookSentence,
                               entryType: selectedWordbookTokens.length > 1 ? "phrase" : "word",
                               entryText: selectedWordbookText,
                               startTokenIndex: selectedWordbookStart,
@@ -3506,7 +3629,7 @@ export function ImmersiveLessonPage({
                         </Button>
                       </div>
                       <p className={`pl-[4.5em] ${cinemaFullscreenActive ? "overflow-x-auto whitespace-nowrap" : ""}`}>
-                        {previousSentenceZh}
+                        {wordbookSentenceZh}
                       </p>
                     </>
                   ) : (
