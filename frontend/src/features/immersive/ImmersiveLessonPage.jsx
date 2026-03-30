@@ -539,6 +539,15 @@ function toggleWordbookTokenIndex(selectedIndexes, tokenIndex) {
   return Array.from(nextSelection).sort((left, right) => left - right);
 }
 
+function buildWordbookTokenRange(startTokenIndex, endTokenIndex) {
+  if (!Number.isInteger(startTokenIndex) || !Number.isInteger(endTokenIndex)) {
+    return [];
+  }
+  const rangeStart = Math.min(startTokenIndex, endTokenIndex);
+  const rangeEnd = Math.max(startTokenIndex, endTokenIndex);
+  return Array.from({ length: rangeEnd - rangeStart + 1 }, (_, offset) => rangeStart + offset);
+}
+
 function cloneWordSnapshot(activeWordIndex, currentWordInput, wordInputs, wordStatuses) {
   return {
     activeWordIndex: Math.max(0, Number(activeWordIndex || 0)),
@@ -940,9 +949,10 @@ export function ImmersiveLessonPage({
   const wordbookPointerGestureRef = useRef({
     pointerId: null,
     pressTokenIndex: null,
+    anchorTokenIndex: null,
+    currentTokenIndex: null,
     longPressActive: false,
     longPressTimerId: null,
-    sweepTokenIndex: null,
   });
   const playbackKindRef = useRef("initial");
   const replayAssistStageRef = useRef(0);
@@ -1564,13 +1574,20 @@ export function ImmersiveLessonPage({
     const gesture = wordbookPointerGestureRef.current;
     gesture.pointerId = null;
     gesture.pressTokenIndex = null;
+    gesture.anchorTokenIndex = null;
+    gesture.currentTokenIndex = null;
     gesture.longPressActive = false;
-    gesture.sweepTokenIndex = null;
   }, [clearWordbookGestureTimer]);
 
   const toggleWordbookTokenSelection = useCallback((tokenIndex) => {
     if (!Number.isInteger(tokenIndex)) return;
     setWordbookSelectedTokenIndexes((current) => toggleWordbookTokenIndex(current, tokenIndex));
+  }, []);
+
+  const selectWordbookTokenRange = useCallback((startTokenIndex, endTokenIndex) => {
+    const nextRange = buildWordbookTokenRange(startTokenIndex, endTokenIndex);
+    setWordbookSelectedTokenIndexes(nextRange);
+    return nextRange;
   }, []);
 
   const collectWordbookEntry = useCallback(
@@ -1629,17 +1646,19 @@ export function ImmersiveLessonPage({
       clearWordbookGestureTimer();
       gesture.pointerId = pointerId;
       gesture.pressTokenIndex = tokenIndex;
+      gesture.anchorTokenIndex = tokenIndex;
+      gesture.currentTokenIndex = tokenIndex;
       gesture.longPressActive = false;
-      gesture.sweepTokenIndex = null;
       gesture.longPressTimerId = window.setTimeout(() => {
         const nextGesture = wordbookPointerGestureRef.current;
         if (nextGesture.pointerId !== pointerId || nextGesture.pressTokenIndex !== tokenIndex) return;
         nextGesture.longPressActive = true;
-        nextGesture.sweepTokenIndex = tokenIndex;
-        toggleWordbookTokenSelection(tokenIndex);
+        nextGesture.anchorTokenIndex = tokenIndex;
+        nextGesture.currentTokenIndex = tokenIndex;
+        selectWordbookTokenRange(tokenIndex, tokenIndex);
       }, WORDBOOK_LONG_PRESS_MS);
     },
-    [canRenderInteractiveWordbook, clearWordbookGestureTimer, toggleWordbookTokenSelection, wordbookBusy],
+    [canRenderInteractiveWordbook, clearWordbookGestureTimer, selectWordbookTokenRange, wordbookBusy],
   );
 
   useEffect(() => {
@@ -1652,14 +1671,15 @@ export function ImmersiveLessonPage({
       }
       const tokenElement = document.elementFromPoint(event.clientX, event.clientY)?.closest?.("[data-wordbook-token-index]");
       if (!tokenElement) {
-        gesture.sweepTokenIndex = null;
         return;
       }
       const nextTokenIndex = Number(tokenElement.getAttribute("data-wordbook-token-index"));
       if (!Number.isInteger(nextTokenIndex)) return;
-      if (gesture.sweepTokenIndex === nextTokenIndex) return;
-      gesture.sweepTokenIndex = nextTokenIndex;
-      toggleWordbookTokenSelection(nextTokenIndex);
+      const anchorTokenIndex = gesture.anchorTokenIndex;
+      if (!Number.isInteger(anchorTokenIndex)) return;
+      if (gesture.currentTokenIndex === nextTokenIndex) return;
+      gesture.currentTokenIndex = nextTokenIndex;
+      selectWordbookTokenRange(anchorTokenIndex, nextTokenIndex);
     };
 
     const handlePointerUp = (event) => {
@@ -1689,7 +1709,7 @@ export function ImmersiveLessonPage({
       window.removeEventListener("pointercancel", handlePointerCancel);
       resetWordbookPointerGesture();
     };
-  }, [resetWordbookPointerGesture, toggleWordbookTokenSelection]);
+  }, [resetWordbookPointerGesture, selectWordbookTokenRange, toggleWordbookTokenSelection]);
 
   useEffect(() => {
     clearWordbookSelection();

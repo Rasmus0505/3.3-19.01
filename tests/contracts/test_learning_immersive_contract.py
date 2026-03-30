@@ -26,6 +26,8 @@ def test_phase08_immersive_contract_is_present():
     assert "重置" in immersive_page_source
     assert 'aria-label="播放上一句"' in immersive_page_source
     assert "resolveInteractiveWordbookContext" in immersive_page_source
+    assert "buildWordbookTokenRange" in immersive_page_source
+    assert "anchorTokenIndex" in immersive_page_source
     assert 'heading: "本句"' in immersive_page_source
     assert 'aria-label={wordbookSentencePlaybackLabel}' in immersive_page_source
     assert "commitSentenceJumpValue" in immersive_page_source

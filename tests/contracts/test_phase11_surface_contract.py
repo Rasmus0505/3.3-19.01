@@ -28,6 +28,9 @@ def test_phase11_upload_surface_contract():
     assert "当前素材推荐使用客户端生成，效果和稳定性更好" in source
     assert "继续生成素材" in source
     assert "继续当前流程" not in source
+    assert "sourceFileOverride = file" in source
+    assert "await finalizeSuccess(data, resolvedSourceFile, silentToast)" in source
+    assert "void pollTask(nextTaskId, false, pollToken, displaySourceFile)" in source
 
 
 def test_number_inputs_do_not_force_zero_while_editing_contract():
