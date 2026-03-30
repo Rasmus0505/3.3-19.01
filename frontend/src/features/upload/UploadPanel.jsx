@@ -3437,6 +3437,27 @@ export function UploadPanel({
               void 0;
             }
           }
+        } else if (String(sourceFile?.desktopSourcePath || sourceFile?.path || "").trim()) {
+          // 直链无 yt-dlp 封面时，从已下载本地文件提取封面
+          try {
+            const materializedFile = await materializeDesktopSelectedFile(sourceFile);
+            if (materializedFile && isBlobBackedSourceFile(materializedFile)) {
+              const coverPreview = await extractMediaCoverPreview(materializedFile, materializedFile.name || "");
+              if (coverPreview?.coverDataUrl) {
+                try {
+                  Object.defineProperty(sourceFile, "thumbnail", { value: coverPreview.coverDataUrl, configurable: true, writable: true });
+                } catch (_) {
+                  try {
+                    sourceFile.thumbnail = coverPreview.coverDataUrl;
+                  } catch (_) {
+                    void 0;
+                  }
+                }
+              }
+            }
+          } catch (_fallbackErr) {
+            // 封面提取失败不影响主流程
+          }
         }
         clearDesktopLinkTaskTracking(false);
         const selectionMeta = await onSelectFile(sourceFile);
