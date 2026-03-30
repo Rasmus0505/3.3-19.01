@@ -867,7 +867,7 @@
   left: 16px;
   z-index: 2;
   width: auto;
-  max-width: calc(100vw - 32px);
+  max-width: 1120px;
   margin: 0 auto;
   align-items: stretch;
   gap: 10px;
@@ -1083,7 +1083,7 @@
     right: 24px;
     bottom: calc(var(--immersive-keyboard-offset) + max(18px, env(safe-area-inset-bottom) + 18px));
     left: 24px;
-    max-width: calc(100vw - 48px);
+    max-width: min(92vw, 960px);
     font-size: 19px;
   }
 
@@ -1165,7 +1165,7 @@
   }
 
   .immersive-typing--cinema {
-    max-width: calc(100vw - 32px);
+    max-width: 900px;
     font-size: 20px;
   }
 }
