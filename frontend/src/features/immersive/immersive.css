@@ -460,14 +460,16 @@
 
 .immersive-word-row {
   display: flex;
-  flex-wrap: nowrap;
-  width: max-content;
-  min-width: 100%;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-start;
+  width: 100%;
+  min-width: 0;
   gap: 10px 12px;
 }
 
 .immersive-word-row--cinema {
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .immersive-word-row-frame--cinema {
@@ -514,9 +516,7 @@
 
 .immersive-word-row-frame {
   width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  overscroll-behavior-x: contain;
+  overflow: visible;
 }
 
 .immersive-word-slot--underline {
@@ -528,6 +528,7 @@
 .immersive-letter-row {
   display: flex;
   align-items: flex-end;
+  flex-wrap: nowrap;
   gap: 4px;
 }
 
@@ -866,7 +867,7 @@
   left: 16px;
   z-index: 2;
   width: auto;
-  max-width: 1120px;
+  max-width: calc(100vw - 32px);
   margin: 0 auto;
   align-items: stretch;
   gap: 10px;
@@ -1028,8 +1029,8 @@
   }
 
   .immersive-word-row-frame--cinema {
-    width: fit-content;
-    max-width: 100%;
+    width: 100%;
+    max-width: none;
     padding: 0;
     border-radius: 0;
   }
@@ -1082,7 +1083,7 @@
     right: 24px;
     bottom: calc(var(--immersive-keyboard-offset) + max(18px, env(safe-area-inset-bottom) + 18px));
     left: 24px;
-    max-width: min(92vw, 960px);
+    max-width: calc(100vw - 48px);
     font-size: 19px;
   }
 
@@ -1164,7 +1165,7 @@
   }
 
   .immersive-typing--cinema {
-    max-width: 900px;
+    max-width: calc(100vw - 32px);
     font-size: 20px;
   }
 }
