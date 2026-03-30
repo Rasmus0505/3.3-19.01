@@ -242,34 +242,44 @@ function hasProgressSnapshot(progress) {
   return currentIndex > 0 || completedCount > 0 || lastPlayedAtMs > 0;
 }
 
-function getCompletedSentenceCount(progress) {
-  if (!progress || !Array.isArray(progress.completed_sentence_indexes)) return 0;
-  return progress.completed_sentence_indexes.length;
+function getCurrentSentenceCount(progress, totalCount) {
+  if (!totalCount || totalCount <= 0 || !hasProgressSnapshot(progress)) {
+    return 0;
+  }
+  const currentIndex = Number(progress?.current_sentence_index || 0);
+  if (!Number.isFinite(currentIndex)) {
+    return 1;
+  }
+  return Math.min(totalCount, Math.max(1, Math.trunc(currentIndex) + 1));
 }
 
 function buildLessonProgressState(progress, sentenceCount) {
   const normalizedTotal = Number(sentenceCount || 0);
   const totalCount = Number.isFinite(normalizedTotal) && normalizedTotal > 0 ? Math.max(0, Math.trunc(normalizedTotal)) : 0;
-  const rawCompletedCount = Math.max(0, getCompletedSentenceCount(progress));
-  const completedCount = totalCount > 0 ? Math.min(totalCount, rawCompletedCount) : rawCompletedCount;
-  const ratio = totalCount > 0 ? completedCount / totalCount : 0;
+  const currentCount = getCurrentSentenceCount(progress, totalCount);
+  const completedCount = Array.isArray(progress?.completed_sentence_indexes)
+    ? Math.min(totalCount || Number.MAX_SAFE_INTEGER, progress.completed_sentence_indexes.length)
+    : 0;
+  const isComplete = totalCount > 0 && (currentCount >= totalCount || completedCount >= totalCount);
+  const ratio = totalCount > 0 ? (isComplete ? 1 : currentCount / totalCount) : 0;
   const clampedPercent = Math.max(0, Math.min(100, ratio * 100));
 
   return {
     completedCount,
+    currentCount,
     totalCount,
     percent: clampedPercent,
-    progressLabel: totalCount > 0 ? `${completedCount}\u53e5/${totalCount}\u53e5` : "\u53e5\u6570\u5f85\u540c\u6b65",
+    progressLabel: totalCount > 0 ? `${currentCount}/${totalCount}` : "\u53e5\u6570\u5f85\u540c\u6b65",
     statusLabel:
       totalCount <= 0
         ? "\u5b66\u4e60\u8fdb\u5ea6"
-        : completedCount >= totalCount
+        : isComplete
           ? "\u5df2\u5b8c\u6210"
-          : completedCount > 0
-            ? "\u5b66\u4e60\u8fdb\u5ea6"
+          : currentCount > 0
+            ? "\u5f53\u524d\u8fdb\u5ea6"
             : "\u5c1a\u672a\u5f00\u59cb",
-    isComplete: totalCount > 0 && completedCount >= totalCount,
-    isActive: totalCount > 0 && completedCount > 0 && completedCount < totalCount,
+    isComplete,
+    isActive: totalCount > 0 && currentCount > 0 && !isComplete,
     hasTrack: totalCount > 0,
   };
 }

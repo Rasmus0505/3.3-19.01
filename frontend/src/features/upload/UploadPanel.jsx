@@ -1563,7 +1563,9 @@ async function prepareDesktopCloudUploadSourceFile(sourceFile, fallbackLessonTit
     type: String(payload?.content_type || "audio/ogg").trim() || "audio/ogg",
     size: Math.max(0, Number(payload?.source_size_bytes || payload?.size_bytes || 0)),
   });
-  const nextFile = preparedFile ? attachDesktopSourcePath(preparedFile, preparedSourcePath) : attachDesktopSourcePath(sourceFile, preparedSourcePath);
+  const nextFile = preparedFile
+    ? decorateDesktopSourcePath(preparedFile, preparedSourcePath)
+    : decorateDesktopSourcePath(sourceFile, preparedSourcePath);
   if (sourceFile?.desktopLinkImported) {
     return decorateDesktopLinkImportFile(nextFile, String(sourceFile?.desktopLinkLessonTitle || fallbackLessonTitle || "").trim());
   }
@@ -1832,6 +1834,7 @@ export function UploadPanel({
   const [desktopHelperStatus, setDesktopHelperStatus] = useState(null);
   const [offlineBannerMessage, setOfflineBannerMessage] = useState("");
   const [restoreBannerMode, setRestoreBannerMode] = useState(RESTORE_BANNER_MODES.NONE);
+  const [pendingPersistedRestore, setPendingPersistedRestore] = useState(null);
   const pollingAbortRef = useRef(false);
   const pollTokenRef = useRef(0);
   const pollFailureCountRef = useRef(0);
@@ -3330,6 +3333,30 @@ export function UploadPanel({
 
   async function resetSession() {
     desktopBillingReportRef.current = null;
+    setPendingPersistedRestore(null);
+    resetLocalSessionState();
+    setDesktopLinkInput("");
+    setDesktopLinkTitle("");
+    if (!ownerUserId) return;
+    await clearUploadPanelSuccessSnapshot(ownerUserId);
+    await clearActiveGenerationTask(ownerUserId);
+  }
+
+  async function continuePersistedSessionRestore(snapshot = pendingPersistedRestore) {
+    if (!snapshot) return;
+    setPendingPersistedRestore(null);
+    if (snapshot.successSnapshot?.task_snapshot?.lesson?.id) {
+      await restoreSuccessSnapshot(snapshot.successSnapshot);
+      return;
+    }
+    if (snapshot.taskSnapshot) {
+      await restorePersistedTaskSnapshot(snapshot.taskSnapshot);
+    }
+  }
+
+  async function startNewTaskFromPersistedRestore() {
+    setPendingPersistedRestore(null);
+    desktopBillingReportRef.current = null;
     resetLocalSessionState();
     setDesktopLinkInput("");
     setDesktopLinkTitle("");
@@ -4210,12 +4237,20 @@ export function UploadPanel({
         ]);
         if (canceled) return;
         if (savedSuccessSnapshot?.task_snapshot?.lesson?.id) {
-          await restoreSuccessSnapshot(savedSuccessSnapshot);
+          setPendingPersistedRestore({
+            successSnapshot: savedSuccessSnapshot,
+            taskSnapshot: null,
+          });
           return;
         }
         if (savedTaskSnapshot) {
-          await restorePersistedTaskSnapshot(savedTaskSnapshot);
+          setPendingPersistedRestore({
+            successSnapshot: null,
+            taskSnapshot: savedTaskSnapshot,
+          });
+          return;
         }
+        setPendingPersistedRestore(null);
       } catch (error) {
         if (canceled) return;
         const message = error instanceof Error && error.message ? error.message : String(error);
@@ -4510,6 +4545,14 @@ export function UploadPanel({
 
   function handleSelectUploadModelCard(modelKey) {
     const nextModelMeta = getUploadModelMeta(modelKey);
+    if (!desktopRuntimeAvailable && nextModelMeta.key === FASTER_WHISPER_MODEL) {
+      openDesktopGuidanceDialog("bottle1_only", {
+        sourceName: String(file?.name || "").trim(),
+        sizeBytes: Number(file?.size || 0),
+        durationSec: Number(durationSec || 0),
+      });
+      return;
+    }
     setSelectedUploadModel(nextModelMeta.key);
     setMode(nextModelMeta.mode);
     if (SERVER_PREPARABLE_MODELS.has(nextModelMeta.key)) {
@@ -6113,6 +6156,7 @@ export function UploadPanel({
               const selected = selectedUploadModel === item.key;
               const isFasterWhisper = item.key === FASTER_WHISPER_MODEL;
               const isQwen = item.key === QWEN_MODEL;
+              const bottle1WebBlocked = isFasterWhisper && !desktopRuntimeAvailable;
               const uploadCardMeta = mergeCatalogIntoUploadModelMeta(item.key, asrModelCatalogMap);
               const fasterModelState = serverModelStateMap[item.key] || {};
               const fasterModelReady = isAsrModelReady(fasterModelState);
@@ -6211,6 +6255,11 @@ export function UploadPanel({
                       label: desktopBundleActionLabel,
                       disabled: desktopBundleActionDisabled,
                     }
+                  : bottle1WebBlocked
+                    ? {
+                        label: "仅桌面端",
+                        disabled: true,
+                      }
                   : isFasterWhisper
                     ? fasterWhisperActionMeta
                     : actionMeta;
@@ -6226,20 +6275,29 @@ export function UploadPanel({
                     "flex min-h-[220px] flex-col gap-3 rounded-2xl border p-4 text-left transition-colors",
                     modelCardToneStyles.surface,
                     selected ? "shadow-sm" : "bg-background/80",
-                    uploadActionBusy ? "cursor-not-allowed opacity-80" : "cursor-pointer",
+                    uploadActionBusy || bottle1WebBlocked ? "cursor-not-allowed opacity-80" : "cursor-pointer",
                   )}
                   onClick={() => {
-                    if (uploadActionBusy) return;
+                    if (uploadActionBusy || bottle1WebBlocked) {
+                      if (bottle1WebBlocked) {
+                        openDesktopGuidanceDialog("bottle1_only", {
+                          sourceName: String(file?.name || "").trim(),
+                          sizeBytes: Number(file?.size || 0),
+                          durationSec: Number(durationSec || 0),
+                        });
+                      }
+                      return;
+                    }
                     handleSelectUploadModelCard(item.key);
                   }}
                   onKeyDown={(event) => {
-                    if (uploadActionBusy) return;
+                    if (uploadActionBusy || bottle1WebBlocked) return;
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
                       handleSelectUploadModelCard(item.key);
                     }
                   }}
-                  aria-disabled={uploadActionBusy}
+                  aria-disabled={uploadActionBusy || bottle1WebBlocked}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
@@ -6272,6 +6330,7 @@ export function UploadPanel({
                         <span className="rounded-full border px-2.5 py-1 text-xs text-foreground">通用素材生成</span>
                       </div>
                     ) : null}
+                    {bottle1WebBlocked ? <p className="text-xs text-muted-foreground">网页端不可用，仅支持桌面客户端。</p> : null}
                     {isQwen ? (
                       <>
                         <div className="flex flex-wrap gap-2">
@@ -6898,6 +6957,32 @@ export function UploadPanel({
             </div>
           </div>
         ) : null}
+
+        <Dialog
+          open={Boolean(pendingPersistedRestore)}
+          onOpenChange={(open) => {
+            if (!open) return;
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>检测到上次上传记录</DialogTitle>
+              <DialogDescription>
+                {pendingPersistedRestore?.successSnapshot?.file_name || pendingPersistedRestore?.taskSnapshot?.file_name
+                  ? `发现素材“${pendingPersistedRestore?.successSnapshot?.file_name || pendingPersistedRestore?.taskSnapshot?.file_name}”的上次记录。请选择继续恢复，或直接开始新任务。`
+                  : "发现上次未清理的上传记录。请选择继续恢复，或直接开始新任务。"}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button type="button" variant="outline" className="h-9 px-3" onClick={() => void startNewTaskFromPersistedRestore()}>
+                开始新任务
+              </Button>
+              <Button type="button" className="h-9 px-3" onClick={() => void continuePersistedSessionRestore()}>
+                继续上次
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={desktopSourceModeConfirmOpen} onOpenChange={setDesktopSourceModeConfirmOpen}>
           <DialogContent>

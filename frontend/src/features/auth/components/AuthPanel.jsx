@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { persistAuthSession, writeStoredUser } from "../../../app/authStorage";
+import { clearAuthStorage, persistAuthSession, writeStoredUser } from "../../../app/authStorage";
 import { api, parseResponse, toErrorText } from "../../../shared/api/client";
 import { useAppStore } from "../../../store";
 import { SharedAuthPanel } from "../shared/SharedAuthPanel";
@@ -29,15 +29,31 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
         return;
       }
       if (restoredAccessToken) {
+        const requiresWebValidation =
+          typeof window !== "undefined" &&
+          typeof window.desktopRuntime?.auth?.restoreSession !== "function";
         try {
-          const profileResp = await api("/api/auth/me", {}, restoredAccessToken);
-          const profileData = await parseResponse(profileResp);
-          if (profileResp.ok && profileData?.id) {
+          if (requiresWebValidation) {
+            const profileResp = await api("/api/auth/me", {}, restoredAccessToken);
+            const profileData = await parseResponse(profileResp);
+            if (!profileResp.ok || !profileData?.id) {
+              await clearAuthStorage();
+              setAccessToken("");
+              setCurrentUser(null);
+              setRestorePending(false);
+              return;
+            }
             writeStoredUser(profileData);
             setCurrentUser(profileData);
           }
         } catch (_) {
-          void 0;
+          if (requiresWebValidation) {
+            await clearAuthStorage();
+            setAccessToken("");
+            setCurrentUser(null);
+            setRestorePending(false);
+            return;
+          }
         }
         onAuthed({
           access_token: restoredAccessToken,

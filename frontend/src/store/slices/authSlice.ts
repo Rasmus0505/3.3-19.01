@@ -36,16 +36,18 @@ function readStoredCurrentUser() {
 }
 
 function buildAuthInitialState() {
-  const accessToken = readStoredAccessToken();
+  const storedAccessToken = readStoredAccessToken();
   const currentUser = readStoredCurrentUser();
+  const hasStoredToken = Boolean(storedAccessToken);
   return {
-    accessToken,
+    accessToken: "",
     currentUser,
-    hasStoredToken: Boolean(accessToken),
-    authStatus: accessToken ? "active" : "anonymous",
+    hasStoredToken,
+    authStatus: hasStoredToken ? "restoring" : "anonymous",
     authStatusMessage: "",
-    isAdminUser: Boolean(accessToken && currentUser?.is_admin),
+    isAdminUser: false,
     adminAuthState: "idle",
+    authBootstrapPending: hasStoredToken,
   };
 }
 
@@ -66,10 +68,12 @@ export function createAuthSlice(set: Setter, get: Getter) {
         authStatusMessage: "",
         isAdminUser: Boolean(accessToken && currentUser?.is_admin),
         adminAuthState: "idle",
+        authBootstrapPending: false,
       });
       return accessToken;
     },
     restoreDesktopSession: async (options: { forceRefresh?: boolean } = {}) => {
+      set({ authBootstrapPending: true, authStatus: get().hasStoredToken ? "restoring" : get().authStatus });
       const result = await restoreCachedAuthSession({ forceRefresh: Boolean(options.forceRefresh) });
       const accessToken = readStoredAccessToken();
       const currentUser = readStoredCurrentUser();
@@ -83,6 +87,7 @@ export function createAuthSlice(set: Setter, get: Getter) {
           authStatusMessage: nextMessage,
           isAdminUser: false,
           adminAuthState: "forbidden",
+          authBootstrapPending: false,
         });
         return "";
       }
@@ -94,6 +99,7 @@ export function createAuthSlice(set: Setter, get: Getter) {
         authStatusMessage: "",
         isAdminUser: Boolean(accessToken && currentUser?.is_admin),
         adminAuthState: "idle",
+        authBootstrapPending: false,
       });
       return accessToken;
     },
@@ -108,6 +114,7 @@ export function createAuthSlice(set: Setter, get: Getter) {
         authStatusMessage: "",
         isAdminUser: Boolean(nextAccessToken && currentUser?.is_admin),
         adminAuthState: "idle",
+        authBootstrapPending: false,
       });
     },
     setCurrentUser: (currentUser: unknown) => {
@@ -130,6 +137,7 @@ export function createAuthSlice(set: Setter, get: Getter) {
         authStatusMessage: nextMessage,
         isAdminUser: false,
         adminAuthState: "forbidden",
+        authBootstrapPending: false,
       });
     },
     async detectAdmin(apiCall = api) {
@@ -184,6 +192,7 @@ export function createAuthSlice(set: Setter, get: Getter) {
         hasStoredToken: false,
         authStatus: "anonymous",
         authStatusMessage: "",
+        authBootstrapPending: false,
       });
       get().resetLessonState();
       get().resetMediaState();

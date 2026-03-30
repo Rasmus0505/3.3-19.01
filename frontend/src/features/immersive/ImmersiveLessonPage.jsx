@@ -15,6 +15,7 @@ import {
 } from "../../shared/ui";
 import {
   LEARNING_SETTINGS_UPDATED_EVENT,
+  SHORTCUT_ACTIONS,
   TRANSLATION_MASK_LAYOUT_VERSION,
   getShortcutLabel,
   isShortcutPressed,
@@ -66,6 +67,7 @@ const TRANSLATION_MASK_DEFAULT_BOTTOM_OFFSET_PX = 12;
 const TRANSLATION_MASK_CHROME_IDLE_MS = 1200;
 const TRANSLATION_MASK_VISIBLE_BOTTOM_GAP_PX = 12;
 const TRANSLATION_MASK_EMPTY_RECT = Object.freeze({ x: null, y: null, width: null, height: null });
+const ENTRY_HINT_ACTION_IDS = ["reveal_word", "replay_sentence", "next_sentence"];
 const MEDIA_TYPE_BY_EXTENSION = {
   ".mp4": "video/mp4",
   ".mov": "video/quicktime",
@@ -285,6 +287,34 @@ function resolveTranslationMaskResizeRect(startRect, mode, deltaX, deltaY, metri
 function debugImmersiveLog(event, detail = {}) {
   if (typeof console === "undefined" || typeof console.debug !== "function") return;
   console.debug("[DEBUG] immersive.learning", event, detail);
+}
+
+function buildImmersiveEntryHintItems(learningSettings) {
+  const actionLabelMap = new Map(SHORTCUT_ACTIONS.map((action) => [action.id, action.label]));
+  const orderedActionIds = [...ENTRY_HINT_ACTION_IDS, ...SHORTCUT_ACTIONS.map((action) => action.id)];
+  const seen = new Set();
+  const items = [];
+  for (const actionId of orderedActionIds) {
+    if (seen.has(actionId)) continue;
+    seen.add(actionId);
+    const shortcutLabel = getShortcutLabel(learningSettings?.shortcuts?.[actionId]);
+    if (!shortcutLabel || shortcutLabel === "未设置") continue;
+    items.push({
+      id: actionId,
+      shortcutLabel,
+      actionLabel: actionLabelMap.get(actionId) || actionId,
+    });
+    if (items.length >= 3) {
+      break;
+    }
+  }
+  return items;
+}
+
+function getImmersivePhaseLabel(phase) {
+  if (phase === "lesson_completed") return "完成模式";
+  if (phase === "playing" || phase === "auto_play_pending" || phase === "transition") return "回放模式";
+  return "听写模式";
 }
 
 function formatPlaybackRateLabel(rate) {
@@ -804,6 +834,7 @@ export function ImmersiveLessonPage({
   );
   const [wordbookBusy, setWordbookBusy] = useState(false);
   const [wordbookSelectedTokenIndexes, setWordbookSelectedTokenIndexes] = useState([]);
+  const [showEntryHintOverlay, setShowEntryHintOverlay] = useState(false);
   const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
   const [isFullscreenFallback, setIsFullscreenFallback] = useState(false);
   const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(
@@ -1075,6 +1106,8 @@ export function ImmersiveLessonPage({
   const translationHeading = translationDisplayMode === "current_answered" ? "本句" : "上一句";
   const translationEn = translationDisplayMode === "current_answered" ? currentSentenceEn : previousSentenceEn;
   const translationZh = translationDisplayMode === "current_answered" ? currentSentenceZh : previousSentenceZh;
+  const immersivePhaseLabel = getImmersivePhaseLabel(phase);
+  const entryHintItems = useMemo(() => buildImmersiveEntryHintItems(learningSettings), [learningSettings]);
   const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens : []), [currentSentence?.tokens]);
   const previousSentenceTokens = useMemo(
     () => buildSelectableSentenceTokens(previousSentence),
@@ -1124,6 +1157,14 @@ export function ImmersiveLessonPage({
   );
 
   const { playKeySound, playWrongSound, playCorrectSound } = useTypingFeedbackSounds();
+
+  useEffect(() => {
+    if (!immersiveActive || !lesson?.id) {
+      setShowEntryHintOverlay(false);
+      return;
+    }
+    setShowEntryHintOverlay(true);
+  }, [immersiveActive, lesson?.id]);
 
   const syncLearningSettingsState = useCallback((nextSettings) => {
     const resolvedSettings = nextSettings && typeof nextSettings === "object" ? nextSettings : readLearningSettings();
@@ -1231,6 +1272,12 @@ export function ImmersiveLessonPage({
       const resolvedRate = normalizePlaybackRate(nextRate);
       setSelectedPlaybackRate(resolvedRate);
       setPlaybackRateInputValue(formatPlaybackRateInputValue(resolvedRate));
+      const activeMedia = [mediaElementRef.current, clipAudioRef.current];
+      for (const media of activeMedia) {
+        if (!media) continue;
+        media.playbackRate = resolvedRate;
+        media.defaultPlaybackRate = resolvedRate;
+      }
       if (persistPinned) {
         persistLessonPlaybackRate(true, resolvedRate);
       }
@@ -1239,13 +1286,14 @@ export function ImmersiveLessonPage({
     [persistLessonPlaybackRate, playbackRatePinned, setSelectedPlaybackRate],
   );
 
-  const commitPlaybackRateInput = useCallback(() => {
-    if (!playbackRateInputValue.trim()) {
+  const commitPlaybackRateInput = useCallback((rawValue = playbackRateInputValue) => {
+    const normalizedValue = String(rawValue ?? "").trim();
+    if (!normalizedValue) {
       const resetRate = applyPlaybackRate(DEFAULT_IMMERSIVE_PLAYBACK_RATE);
       setPlaybackRateInputValue(formatPlaybackRateInputValue(resetRate));
       return;
     }
-    const committedRate = applyPlaybackRate(playbackRateInputValue);
+    const committedRate = applyPlaybackRate(normalizedValue);
     setPlaybackRateInputValue(formatPlaybackRateInputValue(committedRate));
   }, [applyPlaybackRate, playbackRateInputValue]);
 
@@ -1257,7 +1305,7 @@ export function ImmersiveLessonPage({
     (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        commitPlaybackRateInput();
+        commitPlaybackRateInput(event.currentTarget.value);
         event.currentTarget.blur();
       }
       if (event.key === "Escape") {
@@ -1267,6 +1315,13 @@ export function ImmersiveLessonPage({
       }
     },
     [commitPlaybackRateInput, selectedPlaybackRate],
+  );
+
+  const handlePlaybackRateInputBlur = useCallback(
+    (event) => {
+      commitPlaybackRateInput(event.currentTarget.value);
+    },
+    [commitPlaybackRateInput],
   );
 
   const handleResetPlaybackRate = useCallback(() => {
@@ -2371,33 +2426,48 @@ export function ImmersiveLessonPage({
     ],
   );
 
-  const handleSentenceJumpKeyDown = useCallback(
-    (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        const raw = Number(e.target.value);
-        if (!Number.isFinite(raw) || raw < 1) {
-          setSentenceJumpValue(String(currentSentenceIndex + 1));
-          return;
-        }
-        const target = Math.max(1, Math.min(sentenceCount, Math.floor(raw)));
-        const targetIdx = target - 1;
-        if (targetIdx === currentSentenceIndex) {
-          setSentenceJumpValue(String(currentSentenceIndex + 1));
-          return;
-        }
-        void jumpToSentence(targetIdx, "input_enter");
-        setSentenceJumpValue("");
-      } else if (e.key === "Escape") {
-        setSentenceJumpValue("");
+  const commitSentenceJumpValue = useCallback(
+    (rawValue, source = "input_commit") => {
+      const parsedValue = Number(rawValue);
+      if (!Number.isFinite(parsedValue) || parsedValue < 1) {
+        setSentenceJumpValue(String(currentSentenceIndex + 1));
+        return false;
       }
+      const target = Math.max(1, Math.min(sentenceCount, Math.floor(parsedValue)));
+      const targetIdx = target - 1;
+      if (targetIdx === currentSentenceIndex) {
+        setSentenceJumpValue(String(currentSentenceIndex + 1));
+        return false;
+      }
+      void jumpToSentence(targetIdx, source);
+      setSentenceJumpValue("");
+      return true;
     },
     [currentSentenceIndex, jumpToSentence, sentenceCount],
   );
 
-  const handleSentenceJumpBlur = useCallback(() => {
-    setSentenceJumpValue("");
-  }, []);
+  const handleSentenceJumpKeyDown = useCallback(
+    (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        commitSentenceJumpValue(e.currentTarget.value, "input_enter");
+      } else if (e.key === "Escape") {
+        setSentenceJumpValue("");
+      }
+    },
+    [commitSentenceJumpValue],
+  );
+
+  const handleSentenceJumpBlur = useCallback(
+    (event) => {
+      if (!String(event.currentTarget.value || "").trim()) {
+        setSentenceJumpValue("");
+        return;
+      }
+      commitSentenceJumpValue(event.currentTarget.value, "input_blur");
+    },
+    [commitSentenceJumpValue],
+  );
 
   const revealCurrentLetter = useCallback(
     (source = "button_reveal_letter") => {
@@ -2890,6 +2960,12 @@ export function ImmersiveLessonPage({
       if (!currentSentence) return;
 
       const key = event.key;
+      if (
+        showEntryHintOverlay &&
+        (key === "Backspace" || (key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey))
+      ) {
+        setShowEntryHintOverlay(false);
+      }
       if (key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
@@ -3020,6 +3096,7 @@ export function ImmersiveLessonPage({
       requestRevealLetter,
       requestRevealWord,
       requestTogglePausePlayback,
+      showEntryHintOverlay,
       typingEnabled,
     ],
   );
@@ -3189,6 +3266,24 @@ export function ImmersiveLessonPage({
             </div>
           ) : null}
 
+          {showEntryHintOverlay ? (
+            <div className="immersive-entry-hint" aria-live="polite">
+              <div className="immersive-entry-hint__panel">
+                <p className="immersive-entry-hint__eyebrow">进入学习</p>
+                <h3 className="immersive-entry-hint__title">直接敲键盘开始听写</h3>
+                <p className="immersive-entry-hint__mode">当前是{immersivePhaseLabel}</p>
+                <div className="immersive-entry-hint__chips">
+                  {entryHintItems.map((item) => (
+                    <span key={item.id} className="immersive-entry-hint__chip">
+                      <span className="immersive-entry-hint__shortcut">{item.shortcutLabel}</span>
+                      <span>{item.actionLabel}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {translationMaskVisible && translationMaskStyle ? (
             <div className="immersive-media-mask-layer">
               <div
@@ -3279,7 +3374,7 @@ export function ImmersiveLessonPage({
                       className="immersive-session-rate-input"
                       value={playbackRateInputValue}
                       onChange={handlePlaybackRateInputChange}
-                      onBlur={commitPlaybackRateInput}
+                      onBlur={handlePlaybackRateInputBlur}
                       onKeyDown={handlePlaybackRateInputKeyDown}
                       aria-label="播放倍速"
                     />
