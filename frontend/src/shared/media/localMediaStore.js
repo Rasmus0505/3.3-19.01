@@ -333,7 +333,10 @@ export function readMediaDurationSeconds(blob, fallbackFileName = "") {
 
 export function extractMediaCoverPreview(blob, fallbackFileName = "") {
   return new Promise((resolve) => {
-    const mediaType = String(blob?.type || inferMediaTypeFromFileName(fallbackFileName));
+    const blobType = String(blob?.type || "");
+    const inferredType = inferMediaTypeFromFileName(fallbackFileName);
+    // Prefer blob type only if it's a known video type; otherwise fall back to filename inference
+    const mediaType = isVideoMediaType(blobType) ? blobType : inferredType;
     if (!isVideoMediaType(mediaType)) {
       resolve({ coverDataUrl: "", width: 0, height: 0, aspectRatio: 0 });
       return;
