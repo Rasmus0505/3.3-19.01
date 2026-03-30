@@ -3951,7 +3951,30 @@ export function UploadPanel({
       if (fileToPersist && isBlobBackedSourceFile(fileToPersist)) {
         try {
           await requestPersistentStorage();
-          await saveLessonMedia(data.lesson.id, fileToPersist, { coverDataUrl, coverWidth, coverHeight, aspectRatio: coverAspectRatio });
+          // If no cover is available yet and this is a video, extract cover now
+          let resolvedCoverDataUrl = coverDataUrl;
+          let resolvedCoverWidth = coverWidth;
+          let resolvedCoverHeight = coverHeight;
+          let resolvedAspectRatio = coverAspectRatio;
+          if (!resolvedCoverDataUrl) {
+            try {
+              const coverPreview = await extractMediaCoverPreview(fileToPersist, fileToPersist.name || "");
+              if (coverPreview?.coverDataUrl) {
+                resolvedCoverDataUrl = coverPreview.coverDataUrl;
+                resolvedCoverWidth = Number(coverPreview.width || 0);
+                resolvedCoverHeight = Number(coverPreview.height || 0);
+                resolvedAspectRatio = Number(coverPreview.aspectRatio || 0);
+              }
+            } catch (_) {
+              // Cover extraction failed — continue without cover
+            }
+          }
+          await saveLessonMedia(data.lesson.id, fileToPersist, {
+            coverDataUrl: resolvedCoverDataUrl,
+            coverWidth: resolvedCoverWidth,
+            coverHeight: resolvedCoverHeight,
+            aspectRatio: resolvedAspectRatio,
+          });
           mediaPreview = await getLessonMediaPreview(data.lesson.id);
           mediaPersisted = Boolean(mediaPreview?.hasMedia);
         } catch (_) {
@@ -4066,20 +4089,21 @@ export function UploadPanel({
     }
   }
 
-  async function pollTask(nextTaskId, silentToast = false, pollToken = pollTokenRef.current) {
+  async function pollTask(nextTaskId, silentToast = false, pollToken = pollTokenRef.current, sourceFileOverride = file) {
     if (!nextTaskId || pollingAbortRef.current || pollToken !== pollTokenRef.current) return;
     try {
       const resp = await api(`/api/lessons/tasks/${nextTaskId}`, {}, accessToken);
       const data = await parseResponse(resp);
       if (pollingAbortRef.current || pollToken !== pollTokenRef.current) return;
       pollFailureCountRef.current = 0;
+      const resolvedSourceFile = sourceFileOverride || file;
       if (!resp.ok) {
         if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING) {
           const nextStatus = "上次生成记录已失效，可重新开始或清空这次记录。";
           await applyTaskViewState({
             nextTaskId: "",
             nextTaskSnapshot: null,
-            nextPhase: file ? "ready" : "idle",
+            nextPhase: resolvedSourceFile ? "ready" : "idle",
             nextStatus,
             nextUploadPercent: 0,
             nextLoading: false,
@@ -4114,11 +4138,11 @@ export function UploadPanel({
       if (taskStatus === "succeeded") {
         setTaskId(resolvedTaskId);
         setTaskSnapshot(data);
-        await finalizeSuccess(data, file, silentToast);
+        await finalizeSuccess(data, resolvedSourceFile, silentToast);
         return;
       }
       if (taskStatus === "paused" || taskStatus === "terminated") {
-        const nextPhase = file ? "ready" : "idle";
+        const nextPhase = resolvedSourceFile ? "ready" : "idle";
         const nextStatus = String(data.current_text || data.message || "");
         resetUploadPersistState();
         await applyTaskViewState({
@@ -4138,7 +4162,7 @@ export function UploadPanel({
           await applyTaskViewState({
             nextTaskId: "",
             nextTaskSnapshot: null,
-            nextPhase: file ? "ready" : "idle",
+            nextPhase: resolvedSourceFile ? "ready" : "idle",
             nextStatus,
             nextUploadPercent: 0,
             nextLoading: false,
@@ -4169,7 +4193,7 @@ export function UploadPanel({
         nextLoading: true,
         nextRestoreBannerMode: nextRestoreMode,
       });
-      setTimeout(() => void pollTask(nextTaskId, silentToast, pollToken), 1000);
+      setTimeout(() => void pollTask(nextTaskId, silentToast, pollToken, resolvedSourceFile), 1000);
     } catch (error) {
       if (pollingAbortRef.current || pollToken !== pollTokenRef.current || error?.name === "AbortError") return;
       if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING) {
@@ -4177,7 +4201,7 @@ export function UploadPanel({
         await applyTaskViewState({
           nextTaskId: "",
           nextTaskSnapshot: null,
-          nextPhase: file ? "ready" : "idle",
+          nextPhase: sourceFileOverride || file ? "ready" : "idle",
           nextStatus,
           nextUploadPercent: 0,
           nextLoading: false,
@@ -5056,7 +5080,7 @@ export function UploadPanel({
         status: pendingText,
         bindingCompleted: false,
       });
-      void pollTask(nextTaskId, false, pollToken);
+      void pollTask(nextTaskId, false, pollToken, displaySourceFile);
     } catch (error) {
       clearLocalStageProgressTimer();
       setLocalProgressSnapshot(null);
