@@ -56,6 +56,8 @@ import "./immersive.css";
 const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
 const APOSTROPHE_RE = /[’']/g;
 const CINEMA_CONTROLS_IDLE_MS = 3000;
+const CINEMA_TYPING_COMPACT_ACTIVATE_RATIO = 1.18;
+const CINEMA_TYPING_COMPACT_RELEASE_RATIO = 1.06;
 const WORD_TIMING_TOLERANCE_MS = 140;
 const PROGRAMMATIC_FULLSCREEN_EXIT_RESET_MS = 1000;
 const WORDBOOK_LONG_PRESS_MS = 260;
@@ -302,6 +304,17 @@ function measureWordRowNaturalWidth(rowElement) {
   const gap = readPixelValue(computedStyle?.columnGap || computedStyle?.gap || 0);
   const childrenWidth = children.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0);
   return Math.ceil(childrenWidth + gap * Math.max(0, children.length - 1));
+}
+
+function resolveCinemaTypingDensity(currentDensity, naturalRowWidth, availableRowWidth) {
+  if (!Number.isFinite(naturalRowWidth) || !Number.isFinite(availableRowWidth) || availableRowWidth <= 0) {
+    return "default";
+  }
+  const overflowRatio = naturalRowWidth / availableRowWidth;
+  if (currentDensity === "compact") {
+    return overflowRatio > CINEMA_TYPING_COMPACT_RELEASE_RATIO ? "compact" : "default";
+  }
+  return overflowRatio > CINEMA_TYPING_COMPACT_ACTIVATE_RATIO ? "compact" : "default";
 }
 
 function buildImmersiveEntryHintItems(learningSettings) {
@@ -938,6 +951,7 @@ export function ImmersiveLessonPage({
   const hasExitHandler = typeof onExitImmersive === "function" || typeof onBack === "function";
   const typingEnabled =
     immersiveActive && Boolean(lesson?.sentences?.[currentSentenceIndex]) && phase !== "transition" && phase !== "lesson_completed";
+  const cinemaTypingCompact = cinemaFullscreenActive && cinemaTypingPanelLayout?.density === "compact";
   const typingPanelInlineStyle = useMemo(() => {
     if (!cinemaFullscreenActive || !cinemaTypingPanelLayout?.widthPx) {
       return undefined;
@@ -1231,6 +1245,7 @@ export function ImmersiveLessonPage({
       const leftInset = positionedAbsolutely && panelStyle.left !== "auto" ? readPixelValue(panelStyle.left) : 0;
       const rightInset = positionedAbsolutely && panelStyle.right !== "auto" ? readPixelValue(panelStyle.right) : 0;
       const maxWidth = Math.max(baselineWidth, Math.floor(offsetParentWidth - leftInset - rightInset));
+      const availableRowWidth = Math.max(1, maxWidth - horizontalChrome);
       const targetWidth = Math.ceil(naturalRowWidth + horizontalChrome);
 
       typingPanel.style.width = inlineWidth;
@@ -1243,12 +1258,14 @@ export function ImmersiveLessonPage({
 
       const widthPx = Math.min(maxWidth, targetWidth);
       setCinemaTypingPanelLayout((current) => {
-        if (current && current.widthPx === widthPx && current.maxWidthPx === maxWidth) {
+        const density = resolveCinemaTypingDensity(current?.density, naturalRowWidth, availableRowWidth);
+        if (current && current.widthPx === widthPx && current.maxWidthPx === maxWidth && current.density === density) {
           return current;
         }
         return {
           widthPx,
           maxWidthPx: maxWidth,
+          density,
         };
       });
     };
@@ -3425,7 +3442,9 @@ export function ImmersiveLessonPage({
           ) : (
             <div
               ref={typingPanelRef}
-              className={`immersive-typing ${cinemaFullscreenActive ? "immersive-typing--cinema" : ""}`}
+              className={`immersive-typing ${cinemaFullscreenActive ? "immersive-typing--cinema" : ""} ${
+                cinemaTypingCompact ? "immersive-typing--cinema-compact" : ""
+              }`}
               style={typingPanelInlineStyle}
             >
               <div className="immersive-typing-status">
@@ -3510,7 +3529,9 @@ export function ImmersiveLessonPage({
               <div className={cinemaFullscreenActive ? "immersive-word-row-frame immersive-word-row-frame--cinema" : ""}>
                 <div
                   ref={wordRowRef}
-                  className={`immersive-word-row ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""}`}
+                  className={`immersive-word-row ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""} ${
+                    cinemaTypingCompact ? "immersive-word-row--cinema-compact" : ""
+                  }`}
                 >
                   {expectedTokens.map((token, index) => {
                     const status = wordStatuses[index] || "pending";
