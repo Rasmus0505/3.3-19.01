@@ -12,6 +12,7 @@
     "package:release": "node ./scripts/package-win.mjs nsis"
   },
   "devDependencies": {
+    "asar": "^3.2.0",
     "electron": "^35.1.4",
     "electron-builder": "^25.1.8"
   },
@@ -29,6 +30,7 @@
       ".cache/frontend-dist/**/*",
       "package.json"
     ],
+    "asar": true,
     "asarUnpack": [
       ".cache/frontend-dist/**/*"
     ],
