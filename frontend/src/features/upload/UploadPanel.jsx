@@ -295,9 +295,11 @@ async function transcribeDesktopLocalAsr(modelKey, sourceFile) {
   if (!hasDesktopRuntimeBridge()) {
     throw new Error("Desktop runtime bridge is unavailable");
   }
+  const sourcePath = String(sourceFile?.desktopSourcePath || "").trim();
   const response = await window.desktopRuntime.transcribeLocalMedia({
     modelKey: String(modelKey || FASTER_WHISPER_MODEL),
     file: sourceFile,
+    filePath: sourcePath,
   });
   if (!response?.ok) {
     const message = String(response?.message || response?.error_message || response?.detail || "Desktop local ASR failed").trim();
