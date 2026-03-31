@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: 桌面发布与体验收口
-status: roadmap ready
-last_updated: "2026-03-31T00:00:00+08:00"
+status: phase 13 context ready
+last_updated: "2026-03-31T20:26:30.1948841+08:00"
 progress:
   total_phases: 6
   completed_phases: 0
@@ -19,16 +19,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** v2.2 — 桌面发布与体验收口 — Roadmap ready
+**Current focus:** v2.2 — 桌面发布与体验收口 — Phase 13 context ready
 
 ## Current Position
 
 Phase: 13
 Plan: -
-Status: Roadmap ready for phase planning
-Last activity: 2026-03-31 — Created v2.2 roadmap (Phases 13-18)
+Status: Phase 13 context gathered, ready for planning
+Last activity: 2026-03-31 — Captured Phase 13 context for desktop release pipeline and signed installer
 
-**当前阶段：** v2.2 路线图已生成，待进入 Phase 13
+**当前阶段：** Phase 13 上下文已收集，待进入规划
 
 ## Accumulated Context
 
@@ -56,10 +56,10 @@ Last activity: 2026-03-31 — Created v2.2 roadmap (Phases 13-18)
 | 260331-kqa | 精听模式修复：Token 选词简化条件，播放速率固定状态在句间导航时正确处理 | 2026-03-31 | 7c89ee57 | [260331-kqa-token](./quick/260331-kqa-token/) |
 | 260331-qnj | 允许沉浸式学习和管理台数字输入框清空后重输，并为倍速输入框增加0.25步进内嵌上下调节按钮 | 2026-03-31 | 282a72c9 | [260331-qnj-0-25](./quick/260331-qnj-0-25/) |
 
-**Last activity:** 2026-03-31 — Created v2.2 roadmap: 桌面发布与体验收口
+**Last activity:** 2026-03-31 — Captured Phase 13 context: 官网统一下载页、完整安装包、隐藏技术选项、stable/preview 分流
 
 ## Session Continuity
 
 Previous milestone: v2.1 优化学习体验和管理体验 (shipped 2026-03-31)
-Current milestone: v2.2 桌面发布与体验收口 (roadmap ready)
-Next expected action: `$gsd-discuss-phase 13` — clarify approach for desktop release pipeline and signed installer
+Current milestone: v2.2 桌面发布与体验收口 (phase 13 context ready)
+Next expected action: `$gsd-plan-phase 13` — turn the release/distribution decisions into executable plans
