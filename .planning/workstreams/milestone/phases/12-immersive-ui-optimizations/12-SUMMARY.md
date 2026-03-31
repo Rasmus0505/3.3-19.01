@@ -1,11 +1,11 @@
 ---
-phase: 13
+phase: 12
 plan: 01
 status: complete
 completed: 2026-03-31
 ---
 
-## Phase 13: 沉浸学习前端交互优化 — 执行完成
+## Phase 12: 沉浸学习前端交互优化 — 执行完成
 
 **Commit:** `f27d9e46`  
 **变更文件：**
