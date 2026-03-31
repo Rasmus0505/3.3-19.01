@@ -161,31 +161,18 @@
   color: rgba(255, 255, 255, 0.96);
 }
 
-.immersive-entry-hint__eyebrow {
-  margin: 0 0 6px;
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: rgba(226, 232, 240, 0.72);
-}
-
-.immersive-entry-hint__title {
-  margin: 0;
-  font-size: clamp(1.1rem, 2vw, 1.45rem);
-  font-weight: 700;
-}
-
-.immersive-entry-hint__mode {
-  margin: 6px 0 0;
-  font-size: 0.92rem;
-  color: rgba(226, 232, 240, 0.82);
-}
-
 .immersive-entry-hint__chips {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 14px;
+  margin: 0;
+}
+
+.immersive-entry-hint__settings-note {
+  margin: 12px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: rgba(226, 232, 240, 0.72);
 }
 
 .immersive-entry-hint__chip {

@@ -311,12 +311,6 @@ function buildImmersiveEntryHintItems(learningSettings) {
   return items;
 }
 
-function getImmersivePhaseLabel(phase) {
-  if (phase === "lesson_completed") return "完成模式";
-  if (phase === "playing" || phase === "auto_play_pending" || phase === "transition") return "回放模式";
-  return "听写模式";
-}
-
 function formatPlaybackRateLabel(rate) {
   return `${Number(rate || 1).toFixed(2)}x`;
 }
@@ -1166,7 +1160,6 @@ export function ImmersiveLessonPage({
   const translationHeading = translationDisplayMode === "current_answered" ? "本句" : "上一句";
   const translationEn = translationDisplayMode === "current_answered" ? currentSentenceEn : previousSentenceEn;
   const translationZh = translationDisplayMode === "current_answered" ? currentSentenceZh : previousSentenceZh;
-  const immersivePhaseLabel = getImmersivePhaseLabel(phase);
   const entryHintItems = useMemo(() => buildImmersiveEntryHintItems(learningSettings), [learningSettings]);
   const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens : []), [currentSentence?.tokens]);
   const currentSentenceTokens = useMemo(
@@ -1263,6 +1256,14 @@ export function ImmersiveLessonPage({
     }
     setShowEntryHintOverlay(true);
   }, [immersiveActive, lesson?.id]);
+
+  useEffect(() => {
+    if (!showEntryHintOverlay) return undefined;
+    const id = window.setTimeout(() => {
+      setShowEntryHintOverlay(false);
+    }, 2000);
+    return () => window.clearTimeout(id);
+  }, [showEntryHintOverlay]);
 
   const syncLearningSettingsState = useCallback((nextSettings) => {
     const resolvedSettings = nextSettings && typeof nextSettings === "object" ? nextSettings : readLearningSettings();
@@ -3412,9 +3413,6 @@ export function ImmersiveLessonPage({
           {showEntryHintOverlay ? (
             <div className="immersive-entry-hint" aria-live="polite">
               <div className="immersive-entry-hint__panel">
-                <p className="immersive-entry-hint__eyebrow">进入学习</p>
-                <h3 className="immersive-entry-hint__title">直接敲键盘开始听写</h3>
-                <p className="immersive-entry-hint__mode">当前是{immersivePhaseLabel}</p>
                 <div className="immersive-entry-hint__chips">
                   {entryHintItems.map((item) => (
                     <span key={item.id} className="immersive-entry-hint__chip">
@@ -3423,6 +3421,7 @@ export function ImmersiveLessonPage({
                     </span>
                   ))}
                 </div>
+                <p className="immersive-entry-hint__settings-note">快捷键可在首页修改</p>
               </div>
             </div>
           ) : null}

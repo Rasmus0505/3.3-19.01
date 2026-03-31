@@ -47,6 +47,14 @@ All phases: 6 phases, 21 plans, 100%
 - 管理台前后端一起收口，而不是只改几个页面文案
 - Electron IPC 序列化不支持 Object.defineProperty 附加的属性，必须用普通数据字段
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260331-imu | 听写入口轻提示：仅保留快捷键行并置顶，增加首页修改说明，2秒自动消失 | 2026-03-31 | — | [260331-imu-2](./quick/260331-imu-2/) |
+
+**Last activity:** 2026-03-31 — Completed quick task 260331-imu: 听写入口轻提示 UI 与 2s 自动消失
+
 ## Session Continuity
 
 Previous milestone: v2.0 Billing, Admin & Polish (shipped 2026-03-28)
