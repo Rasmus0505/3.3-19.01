@@ -4,12 +4,16 @@ function serializeFileLike(file) {
   if (!file || typeof file !== "object") {
     return file;
   }
-  let sourcePath = "";
+  let pathFromUtils = "";
   try {
-    sourcePath = webUtils.getPathForFile(file);
+    pathFromUtils = webUtils.getPathForFile(file);
   } catch {
-    sourcePath = "";
+    pathFromUtils = "";
   }
+  const pathFromDescriptor = String(
+    file.desktopSourcePath || file.sourcePath || file.filePath || file.path || "",
+  ).trim();
+  const sourcePath = String(pathFromUtils || pathFromDescriptor || "").trim();
   return {
     name: String(file.name || "").trim(),
     type: String(file.type || "").trim(),
