@@ -1618,8 +1618,7 @@ export function ImmersiveLessonPage({
           toast.error(toErrorText(data, "加入生词本失败"));
           return;
         }
-        toast.success(data.message || (data.created ? "已加入生词本" : "已更新到最新语境"));
-        onWordbookChanged?.();
+        toast.success(data.message || (data.created ? "已加入生词本" : "已更新到最新语境"), { duration: 1500 });
         clearWordbookSelection();
       } catch (error) {
         toast.error(`网络错误: ${String(error)}`);
@@ -1630,7 +1629,7 @@ export function ImmersiveLessonPage({
         }, 0);
       }
     },
-    [accessToken, apiClient, clearWordbookSelection, lesson?.id, onWordbookChanged],
+    [accessToken, apiClient, clearWordbookSelection, lesson?.id],
   );
 
   const handleWordbookTokenPointerDown = useCallback(
@@ -2717,7 +2716,7 @@ export function ImmersiveLessonPage({
         const result = await playSentence(previousSentence, {
           initialRate: selectedPlaybackRate,
           rateSteps: [],
-        });
+        }, { skipSeek: true });
         if (!result.ok) {
           dispatchSession({ type: SET_PHASE, phase: "typing" });
           setMediaError("播放上一句失败，请稍后重试。");
@@ -3470,7 +3469,8 @@ export function ImmersiveLessonPage({
                   <span className="text-muted-foreground">第</span>
                   <input
                     type="number"
-                    className="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-center text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    className="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-center text-sm focus:outline-none focus:ring-1 focus:ring-ring appearance-none"
+                    style={{ MozAppearance: "textfield" }}
                     min={1}
                     max={sentenceCount}
                     value={sentenceJumpValue !== "" ? sentenceJumpValue : String(currentSentenceIndex + 1)}
@@ -3508,8 +3508,8 @@ export function ImmersiveLessonPage({
                   >
                     精听
                   </button>
-                  <label className="immersive-session-rate-field">
-                    <span className="immersive-session-rate-label">倍速</span>
+                    <label className="immersive-session-rate-field ml-4">
+                      <span className="immersive-session-rate-label">倍速</span>
                     <input
                       type="number"
                       min="0.4"
@@ -3630,7 +3630,7 @@ export function ImmersiveLessonPage({
                           type="button"
                           size="sm"
                           variant="outline"
-                          className="shrink-0"
+                          className="shrink-0 text-foreground"
                           disabled={wordbookBusy || selectedWordbookTokens.length === 0}
                           onClick={(event) => {
                             event.stopPropagation();

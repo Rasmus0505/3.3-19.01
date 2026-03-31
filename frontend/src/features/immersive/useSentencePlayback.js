@@ -169,17 +169,20 @@ export function useSentencePlayback({
   }, [applyScheduledRateSteps, finishPlayback, mediaElementRef, mode]);
 
   const playSentence = useCallback(
-    async (sentence, playbackPlan = null) => {
+    async (sentence, playbackPlan = null, { skipSeek = false } = {}) => {
       if (!sentence) {
         return { ok: false, reason: "sentence_missing" };
       }
       stopPlayback();
 
+      // Force clip mode when skipSeek is true — plays audio without seeking main video timeline
+      const effectiveMode = skipSeek && sentence.audio_url ? "clip" : mode;
+
       const normalizedPlaybackPlan = normalizePlaybackPlan(playbackPlan || {});
       playbackPlanRef.current = normalizedPlaybackPlan;
       nextRateStepIndexRef.current = 0;
 
-      if (mode === "clip") {
+      if (effectiveMode === "clip") {
         if (!sentence.audio_url) {
           return { ok: false, reason: "clip_unavailable" };
         }
