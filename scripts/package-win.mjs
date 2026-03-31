@@ -15,14 +15,25 @@ function resolveCommand(command) {
   return command;
 }
 
-const CLOUD_APP_URL = "https://351636.preview.aliyun-zeabur.cn";
-const CLOUD_API_BASE_URL = "https://351636.preview.aliyun-zeabur.cn";
+const CLOUD_APP_URL = String(process.env.DESKTOP_CLOUD_APP_URL || process.env.DESKTOP_RELEASE_APP_URL || "").trim();
+const CLOUD_API_BASE_URL = String(process.env.DESKTOP_CLOUD_API_BASE_URL || process.env.DESKTOP_RELEASE_API_BASE_URL || "").trim();
+const RELEASE_CHANNEL = String(process.env.DESKTOP_RELEASE_CHANNEL || "stable").trim() || "stable";
 
 function run(command, args, cwd = repoRoot) {
+  const nextEnv = {
+    ...process.env,
+    DESKTOP_RELEASE_CHANNEL: RELEASE_CHANNEL,
+  };
+  if (CLOUD_APP_URL) {
+    nextEnv.DESKTOP_CLOUD_APP_URL = CLOUD_APP_URL;
+  }
+  if (CLOUD_API_BASE_URL) {
+    nextEnv.DESKTOP_CLOUD_API_BASE_URL = CLOUD_API_BASE_URL;
+  }
   const result = spawnSync(command, args, {
     cwd,
     stdio: "inherit",
-    env: { ...process.env, DESKTOP_CLOUD_APP_URL: CLOUD_APP_URL, DESKTOP_CLOUD_API_BASE_URL: CLOUD_API_BASE_URL },
+    env: nextEnv,
     shell: process.platform === "win32",
   });
   if (result.error) {
