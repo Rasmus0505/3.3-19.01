@@ -29,7 +29,7 @@ if not exist node_modules (
 )
 
 echo [INFO] Starting local Bottle runtime at %LOCAL_RUNTIME_BASE_URL%
-start "Bottle Local Runtime" cmd /k "cd /d "%ROOT%" && set DESKTOP_BACKEND_ROOT=%ROOT% && "%PYTHON_BIN%" scripts\run_desktop_backend.py --host 127.0.0.1 --port %LOCAL_RUNTIME_PORT%"
+start "Bottle Local Runtime" cmd /k "cd /d "%ROOT%" && set "PYTHONUTF8=1" && set DESKTOP_BACKEND_ROOT=%ROOT% && "%PYTHON_BIN%" scripts\run_desktop_backend.py --host 127.0.0.1 --port %LOCAL_RUNTIME_PORT%"
 
 set "VITE_API_BASE_URL=%CLOUD_API_BASE_URL%"
 set "VITE_LOCAL_RUNTIME_BASE_URL=%LOCAL_RUNTIME_BASE_URL%"

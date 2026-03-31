@@ -295,7 +295,7 @@ async function transcribeDesktopLocalAsr(modelKey, sourceFile) {
   if (!hasDesktopRuntimeBridge()) {
     throw new Error("Desktop runtime bridge is unavailable");
   }
-  const sourcePath = String(sourceFile?.desktopSourcePath || "").trim();
+  const sourcePath = resolveTranscribeDesktopSourcePath(sourceFile);
   const response = await window.desktopRuntime.transcribeLocalMedia({
     modelKey: String(modelKey || FASTER_WHISPER_MODEL),
     file: sourceFile,
@@ -1455,6 +1455,20 @@ function resolveDesktopSourcePathCandidate(payload = {}) {
   );
 }
 
+/** 桌面本机转写：占位 File 无 getPathForFile 路径时，仍可读装饰字段 */
+function resolveTranscribeDesktopSourcePath(fileLike) {
+  const fromMeta = resolveDesktopSourcePathCandidate(fileLike).trim();
+  if (fromMeta) return fromMeta;
+  if (typeof window !== "undefined" && typeof window.desktopRuntime?.getPathForFile === "function" && fileLike) {
+    try {
+      return String(window.desktopRuntime.getPathForFile(fileLike) || "").trim();
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
 function buildDesktopSelectedFile(selection = {}) {
   const sourcePath = resolveDesktopSourcePathCandidate(selection);
   if (!sourcePath) {
@@ -2544,7 +2558,7 @@ export function UploadPanel({
   }
 
   async function loadDesktopImportedSourceFile(taskPayload = {}) {
-    const taskSourcePath = String(taskPayload?.source_path || "").trim();
+    const taskSourcePath = String(taskPayload?.source_path || taskPayload?.sourcePath || "").trim();
     const taskFilename = String(taskPayload?.source_filename || "desktop-link-source").trim() || "desktop-link-source";
     const taskContentType = String(taskPayload?.content_type || "application/octet-stream").trim() || "application/octet-stream";
     const taskSizeBytes = Math.max(0, Number(taskPayload?.source_size_bytes || taskPayload?.size_bytes || 0));
@@ -2576,7 +2590,10 @@ export function UploadPanel({
       throw new Error("无法载入已下载素材");
     }
     return decorateDesktopLinkImportFile(
-      attachDesktopSourcePath(nextFile, String(taskPayload?.source_path || "")),
+      attachDesktopSourcePath(
+        nextFile,
+        String(taskPayload?.source_path || taskPayload?.sourcePath || "").trim(),
+      ),
       String(taskPayload?.title || desktopLinkTitle || "").trim(),
     );
   }
@@ -4378,9 +4395,13 @@ export function UploadPanel({
     setPhase("probing");
     const nextIsVideoSource = String(resolvedFile.type || "").startsWith("video/");
     try {
+      // Materialize placeholder File to real Blob before extracting cover (required for desktop client)
+      const materializedFile = await materializeDesktopSelectedFile(resolvedFile);
+      const finalFile = isBlobBackedSourceFile(materializedFile) ? materializedFile : resolvedFile;
+      setFile(finalFile);
       const [seconds, cover] = await Promise.all([
-        readMediaDurationSeconds(resolvedFile, resolvedFile.name || ""),
-        extractMediaCoverPreview(resolvedFile, resolvedFile.name || ""),
+        readMediaDurationSeconds(finalFile, finalFile.name || ""),
+        extractMediaCoverPreview(finalFile, finalFile.name || ""),
       ]);
       setDurationSec(seconds);
       setCoverDataUrl(String(cover.coverDataUrl || ""));
@@ -4390,7 +4411,7 @@ export function UploadPanel({
       setIsVideoSource(nextIsVideoSource);
       setPhase("ready");
       await persistSession({
-        file: resolvedFile,
+        file: finalFile,
         phase: "ready",
         durationSec: seconds,
         coverDataUrl: cover.coverDataUrl,

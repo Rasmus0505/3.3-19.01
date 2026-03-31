@@ -7,4 +7,8 @@ const desktopRendererBuild = String(process.env.BOTTLE_DESKTOP_RENDERER_BUILD ||
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   base: desktopRendererBuild ? "./" : "/static/",
+  // main.jsx 用 HashRouter 才能在 Electron file:// 下正常匹配路由；须与 BOTTLE_DESKTOP_RENDERER_BUILD 同步
+  define: {
+    "import.meta.env.VITE_DESKTOP_RENDERER_BUILD": JSON.stringify(desktopRendererBuild ? "1" : ""),
+  },
 });
