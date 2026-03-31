@@ -491,9 +491,6 @@ function resolveInteractiveWordbookContext({
   const safeCurrentSentenceTokens = Array.isArray(currentSentenceTokens) ? currentSentenceTokens : [];
   if (
     translationDisplayMode === "current_answered" &&
-    singleSentenceLoopEnabled &&
-    sentenceTypingDone &&
-    postAnswerReplayState === "completed" &&
     currentSentence &&
     safeCurrentSentenceTokens.length > 0
   ) {

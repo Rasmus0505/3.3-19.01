@@ -150,7 +150,9 @@ export function immersiveSessionReducer(state, event) {
         currentSentenceIndex: clampSentenceIndex(event.targetIndex, event.sentenceCount),
         phase: event.phase ?? "auto_play_pending",
         sentenceJumpValue: "",
-        selectedPlaybackRate: state.selectedPlaybackRate,
+        selectedPlaybackRate: state.playbackRatePinned
+          ? state.selectedPlaybackRate
+          : DEFAULT_IMMERSIVE_PLAYBACK_RATE,
       };
     case POST_ANSWER_REPLAY_STARTED:
       return {
@@ -224,7 +226,9 @@ export function immersiveSessionReducer(state, event) {
         completedIndexes: nextCompleted,
         currentSentenceIndex: isLessonCompleted ? state.currentSentenceIndex : nextIndex,
         phase: isLessonCompleted ? "lesson_completed" : event.phase ?? "auto_play_pending",
-        selectedPlaybackRate: state.selectedPlaybackRate,
+        selectedPlaybackRate: state.playbackRatePinned
+          ? state.selectedPlaybackRate
+          : DEFAULT_IMMERSIVE_PLAYBACK_RATE,
       };
     }
     case EXIT_IMMERSIVE:
