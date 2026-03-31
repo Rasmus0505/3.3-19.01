@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: 优化学习体验和管理体验
-status: planning
-last_updated: "2026-03-31T05:12:43.841Z"
+status: active
+last_updated: "2026-03-31T13:56:00.000Z"
 last_activity: 2026-03-31
 progress:
   total_phases: 7
-  completed_phases: 6
-  total_plans: 21
-  completed_plans: 21
-  percent: 95
+  completed_phases: 7
+  total_plans: 22
+  completed_plans: 22
+  percent: 100
 ---
 
 # Project State
@@ -20,16 +20,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** v2.1 — Phase 11 盈利转化落地与回归收口
+**Current focus:** v2.1 — Phase 12 沉浸学习前端交互优化 ✓ 已完成
 
 ## Current Position
 
-Phase: 11 (next unstarted)
-Plan: —
-Status: Phase 12 renamed to Phase 11; Phase 13 renamed to Phase 12
+Phase: 12 (complete)
+Plan: 12-01 ✓
+Status: Phase 12 沉浸学习前端交互优化 shipped (f27d9e46)
 Last activity: 2026-03-31
 
-Progress: [▓▓▓▓▓▓▓▓▓░] 95%
+Progress: [▓▓▓▓▓▓▓▓▓▓] 100%
 
 ## This Milestone
 
@@ -37,22 +37,20 @@ Progress: [▓▓▓▓▓▓▓▓▓░] 95%
 
 **Focus areas:**
 
-- 竞品研究与产品规范
-- Memo 模式复刻与桌面媒体工作流产品化
-- 沉浸学习重构
-- 生词本补全与账号体验升级
-- 网页端 Bottle 1.0 / 2.0 边界清晰化
-- 管理台中文化、元优先、模型命名收口
-- 盈利转化文案与入口优化
-- Phase 11: 盈利转化落地与回归收口
+- 竞品研究与产品规范 ✓
+- Memo 模式复刻与桌面媒体工作流产品化 ✓
+- 沉浸学习重构 ✓
+- 生词本补全与账号体验升级 ✓
+- 网页端 Bottle 1.0 / 2.0 边界清晰化 ✓
+- 管理台中文化、元优先、模型命名收口 ✓
+- 盈利转化落地与回归收口 ✓
+- **Phase 12: 沉浸学习前端交互优化 ✓**
 
 ## Accumulated Context
 
 ### Roadmap Evolution
 
-- Phase 12 renamed to Phase 11: 盈利转化落地与回归收口 (no longer depends on Phase 11 bug fix)
-- Phase 13 renamed to Phase 12: 沉浸学习前端交互优化
-- Phase 11 bug fix phase removed: 不再单独作为 Phase，合并到产品正常迭代中
+- Phase 12 (沉浸学习前端交互优化) completed: 5项前端交互优化 shipped (f27d9e46)
 
 ### Working Assumptions
 
@@ -69,6 +67,6 @@ None
 ## Session Continuity
 
 **Previous milestone:** v2.0 Billing, Admin & Polish (shipped 2026-03-28)  
-**Next expected action:** `/gsd-plan-phase 11`
-**Last Date:** 2026-03-30T14:45:00.000Z
-**Phase 11 bug fix removed:** Bug 修复不再作为单独 Phase
+**Next expected action:** v2.1 milestone review
+**Last Date:** 2026-03-31
+**Phase 12 completed:** 沉浸学习前端交互优化 (f27d9e46)
