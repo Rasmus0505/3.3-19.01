@@ -3524,7 +3524,9 @@ export function ImmersiveLessonPage({
                     value={sentenceJumpInputValue}
                     onFocus={() => {
                       setSentenceJumpEditing(true);
-                      setSentenceJumpValue((currentValue) => (currentValue === "" ? String(currentSentenceIndex + 1) : currentValue));
+                      if (sentenceJumpValue === "") {
+                        setSentenceJumpValue(String(currentSentenceIndex + 1));
+                      }
                     }}
                     onChange={(e) => {
                       setSentenceJumpEditing(true);
