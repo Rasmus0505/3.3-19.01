@@ -1,62 +1,133 @@
-# Desktop Client Frontend Update Script
-# Usage: right-click -> "Run with PowerShell"
-#   OR double-click "更新桌面客户端前端.bat" in the same folder
-
 $ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$FrontendDir = Join-Path $ProjectRoot "frontend"
 $DesktopDir = Join-Path $ProjectRoot "desktop-client"
-$CacheFrontendDist = "$DesktopDir\dist-fixed\win-unpacked\resources\app.asar.unpacked\.cache\frontend-dist"
+$FastUpdateScript = Join-Path $DesktopDir "scripts\update-win-unpacked.mjs"
+$FullRebuildScript = Join-Path $ProjectRoot "rebuild-desktop-client.ps1"
+$FixedDir = Join-Path $DesktopDir "dist-fixed\win-unpacked"
+$TargetExe = Join-Path $FixedDir "Bottle.exe"
+$FastUpdateFallbackExitCode = 20
 
-Write-Host "=== Desktop Client Update Flow ===" -ForegroundColor Cyan
+function Write-Step {
+    param(
+        [string]$Step,
+        [string]$Message
+    )
 
-# Step 1: Build frontend with desktop renderer mode
-Write-Host ""
-Write-Host "[1/4] Building frontend (desktop renderer mode)..." -ForegroundColor Yellow
-Push-Location $FrontendDir
-try {
-    $env:BOTTLE_DESKTOP_RENDERER_BUILD = "1"
-    npm run build
-    Remove-Item Env:\BOTTLE_DESKTOP_RENDERER_BUILD -ErrorAction SilentlyContinue
-    if ($LASTEXITCODE -ne 0) { throw "Frontend build failed" }
-    Write-Host "Frontend build OK" -ForegroundColor Green
-} finally {
-    Pop-Location
+    Write-Host ""
+    Write-Host "[$Step] $Message" -ForegroundColor Yellow
 }
 
-# Step 2: Backup old assets
-Write-Host ""
-Write-Host "[2/4] Backing up old assets..." -ForegroundColor Yellow
-$BackupDir = "$CacheFrontendDist\..\frontend-dist-backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-if (Test-Path $CacheFrontendDist) {
-    Copy-Item -Path $CacheFrontendDist -Destination $BackupDir -Recurse -Force
-    Write-Host "Backup saved to: $BackupDir" -ForegroundColor Green
-}
+function Assert-PathExists {
+    param(
+        [string]$Path,
+        [string]$Description
+    )
 
-# Step 3: Copy new assets
-Write-Host ""
-Write-Host "[3/4] Copying new assets to desktop client..." -ForegroundColor Yellow
-$NewDistDir = Join-Path $FrontendDir "dist"
-if (Test-Path $NewDistDir) {
-    if (Test-Path $CacheFrontendDist) {
-        Remove-Item -Path $CacheFrontendDist -Recurse -Force
+    if (-not (Test-Path $Path)) {
+        throw "$Description not found: $Path"
     }
-    Copy-Item -Path $NewDistDir -Destination $CacheFrontendDist -Recurse -Force
-    Write-Host "Assets copied OK" -ForegroundColor Green
-} else {
-    throw "Frontend dist not found at $NewDistDir"
 }
 
-# Step 4: Done
-Write-Host ""
-Write-Host "[4/4] Done!" -ForegroundColor Green
-Write-Host ""
-Write-Host "Frontend assets updated in desktop client." -ForegroundColor Cyan
-Write-Host "Assets path: $CacheFrontendDist" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "You can now run '启动桌面客户端测试.bat' to launch the client." -ForegroundColor Green
-Write-Host ""
+function Assert-Command {
+    param([string]$Name)
 
-Write-Host "Press any key to exit..." -ForegroundColor Gray
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
+        throw "Required command not found: $Name"
+    }
+}
+
+function Stop-BottleProcess {
+    $processes = @(Get-Process -Name "Bottle" -ErrorAction SilentlyContinue)
+    if (-not $processes -or $processes.Count -eq 0) {
+        return $false
+    }
+
+    Write-Step -Step "0/4" -Message "Closing running Bottle.exe"
+    foreach ($process in $processes) {
+        try {
+            if ($process.MainWindowHandle -ne 0) {
+                [void]$process.CloseMainWindow()
+            }
+        } catch {
+            Write-Host "Graceful close failed for PID $($process.Id): $($_.Exception.Message)" -ForegroundColor DarkYellow
+        }
+    }
+
+    Start-Sleep -Seconds 2
+    $stillRunning = @(Get-Process -Name "Bottle" -ErrorAction SilentlyContinue)
+    if ($stillRunning.Count -gt 0) {
+        Write-Host "Bottle.exe did not exit in time, forcing shutdown..." -ForegroundColor DarkYellow
+        $stillRunning | Stop-Process -Force
+        Start-Sleep -Seconds 1
+    }
+
+    Write-Host "Bottle.exe closed." -ForegroundColor Green
+    return $true
+}
+
+function Invoke-NodeScript {
+    param(
+        [string]$ScriptPath,
+        [string]$WorkingDirectory
+    )
+
+    Push-Location $WorkingDirectory
+    try {
+        & node $ScriptPath | Out-Host
+        return [int]$LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+}
+
+Write-Host "=== Update Desktop Client ===" -ForegroundColor Cyan
+Write-Host "Target launch path: $TargetExe" -ForegroundColor Cyan
+
+Assert-PathExists -Path $DesktopDir -Description "desktop-client directory"
+Assert-PathExists -Path $FastUpdateScript -Description "fast desktop update script"
+Assert-PathExists -Path $FullRebuildScript -Description "full rebuild script"
+Assert-Command -Name "node"
+Assert-Command -Name "npm"
+
+$hadRunningBottle = Stop-BottleProcess
+
+$usedFullRebuild = $false
+
+Write-Step -Step "1/4" -Message "Applying latest desktop changes"
+$fastUpdateExitCode = Invoke-NodeScript -ScriptPath $FastUpdateScript -WorkingDirectory $ProjectRoot
+if ($fastUpdateExitCode -eq $FastUpdateFallbackExitCode) {
+    Write-Host "Fast update unavailable, falling back to full package rebuild..." -ForegroundColor DarkYellow
+    $usedFullRebuild = $true
+    & $FullRebuildScript
+    if ($LASTEXITCODE -ne 0) {
+        throw "Full rebuild failed with exit code $LASTEXITCODE"
+    }
+} elseif ($fastUpdateExitCode -ne 0) {
+    Write-Host "Fast update failed, falling back to full package rebuild..." -ForegroundColor DarkYellow
+    $usedFullRebuild = $true
+    & $FullRebuildScript
+    if ($LASTEXITCODE -ne 0) {
+        throw "Full rebuild failed with exit code $LASTEXITCODE"
+    }
+}
+
+Write-Step -Step "2/4" -Message "Validating launch bundle"
+Assert-PathExists -Path $TargetExe -Description "Bottle.exe"
+
+Write-Step -Step "3/4" -Message "Starting updated Bottle.exe"
+Start-Process -FilePath $TargetExe | Out-Null
+Write-Host "Bottle.exe started." -ForegroundColor Green
+
+Write-Step -Step "4/4" -Message "Desktop update complete"
+if ($usedFullRebuild) {
+    Write-Host "Used full rebuild path." -ForegroundColor Green
+} else {
+    Write-Host "Used fast incremental update path." -ForegroundColor Green
+}
+if ($hadRunningBottle) {
+    Write-Host "Previous Bottle.exe instance was closed before update." -ForegroundColor Green
+}
+Write-Host "Launch target: $TargetExe" -ForegroundColor White
+Write-Host ""
