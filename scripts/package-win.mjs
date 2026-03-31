@@ -17,7 +17,7 @@ function resolveCommand(command) {
 
 const CLOUD_APP_URL = String(process.env.DESKTOP_CLOUD_APP_URL || process.env.DESKTOP_RELEASE_APP_URL || "").trim();
 const CLOUD_API_BASE_URL = String(process.env.DESKTOP_CLOUD_API_BASE_URL || process.env.DESKTOP_RELEASE_API_BASE_URL || "").trim();
-const RELEASE_CHANNEL = String(process.env.DESKTOP_RELEASE_CHANNEL || "stable").trim() || "stable";
+const RELEASE_CHANNEL = "stable";
 
 function run(command, args, cwd = repoRoot) {
   const nextEnv = {
