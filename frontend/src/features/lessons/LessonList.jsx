@@ -351,7 +351,7 @@ export function LessonList({
 
   function handleCustomConfigChange(field, value) {
     setSettingsError("");
-    updateLearningSettings((current) => ({
+    setLearningSettings((current) => ({
       ...current,
       presetId: "custom",
       customConfig: {

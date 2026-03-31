@@ -1,4 +1,4 @@
-import { ArrowLeft, Eye, Loader2, Volume2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, Eye, Loader2, Volume2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -66,6 +66,7 @@ const TRANSLATION_MASK_DEFAULT_WIDTH_RATIO = 0.58;
 const TRANSLATION_MASK_DEFAULT_BOTTOM_OFFSET_PX = 12;
 const TRANSLATION_MASK_CHROME_IDLE_MS = 1200;
 const TRANSLATION_MASK_VISIBLE_BOTTOM_GAP_PX = 12;
+const IMMERSIVE_PLAYBACK_RATE_STEP = 0.25;
 const TRANSLATION_MASK_EMPTY_RECT = Object.freeze({ x: null, y: null, width: null, height: null });
 const ENTRY_HINT_ACTION_IDS = ["reveal_word", "replay_sentence", "next_sentence"];
 const MEDIA_TYPE_BY_EXTENSION = {
@@ -789,6 +790,12 @@ function isEditableShortcutTarget(target) {
   return tagName === "input" || tagName === "textarea" || tagName === "select";
 }
 
+function shouldKeepControlFocus(target) {
+  if (!target || typeof target.closest !== "function") return false;
+  if (isEditableShortcutTarget(target)) return true;
+  return Boolean(target.closest("button, a, label, [role='button'], [role='link']"));
+}
+
 function resolveMediaModeFromFileName(fileName) {
   if (isAudioFilename(fileName)) {
     return "audio";
@@ -907,6 +914,7 @@ export function ImmersiveLessonPage({
   const [playbackRateInputValue, setPlaybackRateInputValue] = useState(() =>
     formatPlaybackRateInputValue(DEFAULT_IMMERSIVE_PLAYBACK_RATE),
   );
+  const [sentenceJumpEditing, setSentenceJumpEditing] = useState(false);
   const [wordbookSuccessMessage, setWordbookSuccessMessage] = useState(null);
   const wordbookSuccessTimerRef = useRef(null);
   const {
@@ -1068,6 +1076,14 @@ export function ImmersiveLessonPage({
       }
     });
   }, [clearFocusRestoreTimer, isTouchDevice, scrollTypingPanelIntoView, typingEnabled]);
+
+  const handleImmersivePageClick = useCallback(
+    (event) => {
+      if (shouldKeepControlFocus(event.target)) return;
+      focusTypingInput();
+    },
+    [focusTypingInput],
+  );
 
   const syncMobileViewportLayout = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -1422,6 +1438,16 @@ export function ImmersiveLessonPage({
     [commitPlaybackRateInput],
   );
 
+  const adjustPlaybackRateByStep = useCallback(
+    (direction) => {
+      const draftValue = String(playbackRateInputValue ?? "").trim();
+      const parsedDraftValue = Number(draftValue);
+      const baseRate = Number.isFinite(parsedDraftValue) ? parsedDraftValue : selectedPlaybackRate;
+      applyPlaybackRate(baseRate + direction * IMMERSIVE_PLAYBACK_RATE_STEP);
+    },
+    [applyPlaybackRate, playbackRateInputValue, selectedPlaybackRate],
+  );
+
   const handleResetPlaybackRate = useCallback(() => {
     applyPlaybackRate(DEFAULT_IMMERSIVE_PLAYBACK_RATE);
   }, [applyPlaybackRate]);
@@ -1435,6 +1461,16 @@ export function ImmersiveLessonPage({
   useEffect(() => {
     setPlaybackRateInputValue(formatPlaybackRateInputValue(selectedPlaybackRate));
   }, [selectedPlaybackRate]);
+
+  useEffect(() => {
+    setSentenceJumpEditing(false);
+  }, [currentSentenceIndex, lesson?.id]);
+
+  const sentenceJumpInputValue = sentenceJumpEditing
+    ? sentenceJumpValue
+    : sentenceJumpValue !== ""
+      ? sentenceJumpValue
+      : String(currentSentenceIndex + 1);
 
   const resetTranslationMaskGesture = useCallback(() => {
     const captureElement = translationMaskGestureRef.current.captureElement;
@@ -2243,8 +2279,9 @@ export function ImmersiveLessonPage({
     if (!typingEnabled || !immersiveActive) return undefined;
     if (typeof window === "undefined") return undefined;
 
-    const onPointerDownCapture = () => {
+    const onPointerDownCapture = (event) => {
       if (wordbookActionRef.current) return;
+      if (shouldKeepControlFocus(event.target)) return;
       setTimeout(() => {
         focusTypingInput(isTouchDevice);
       }, 0);
@@ -2542,18 +2579,21 @@ export function ImmersiveLessonPage({
   const commitSentenceJumpValue = useCallback(
     (rawValue, source = "input_commit") => {
       const parsedValue = Number(rawValue);
-      if (!Number.isFinite(parsedValue) || parsedValue < 1) {
+      if (!Number.isFinite(parsedValue) || parsedValue < 0) {
         setSentenceJumpValue(String(currentSentenceIndex + 1));
+        setSentenceJumpEditing(false);
         return false;
       }
       const target = Math.max(1, Math.min(sentenceCount, Math.floor(parsedValue)));
       const targetIdx = target - 1;
       if (targetIdx === currentSentenceIndex) {
-        setSentenceJumpValue(String(currentSentenceIndex + 1));
+        setSentenceJumpValue("");
+        setSentenceJumpEditing(false);
         return false;
       }
       void jumpToSentence(targetIdx, source);
       setSentenceJumpValue("");
+      setSentenceJumpEditing(false);
       return true;
     },
     [currentSentenceIndex, jumpToSentence, sentenceCount],
@@ -2566,6 +2606,7 @@ export function ImmersiveLessonPage({
         commitSentenceJumpValue(e.currentTarget.value, "input_enter");
       } else if (e.key === "Escape") {
         setSentenceJumpValue("");
+        setSentenceJumpEditing(false);
       }
     },
     [commitSentenceJumpValue],
@@ -2573,6 +2614,7 @@ export function ImmersiveLessonPage({
 
   const handleSentenceJumpBlur = useCallback(
     (event) => {
+      setSentenceJumpEditing(false);
       if (!String(event.currentTarget.value || "").trim()) {
         setSentenceJumpValue("");
         return;
@@ -3306,7 +3348,7 @@ export function ImmersiveLessonPage({
         className={`immersive-page ${immersiveActive ? "immersive-page--immersive" : ""} ${
           cinemaFullscreenActive ? "immersive-page--cinema" : ""
         }`}
-        onClick={focusTypingInput}
+        onClick={handleImmersivePageClick}
       >
         <CardHeader className="immersive-card-header">
           <div className="immersive-header">
@@ -3477,10 +3519,17 @@ export function ImmersiveLessonPage({
                     inputMode="numeric"
                     pattern="[0-9]*"
                     className="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-center text-sm focus:outline-none focus:ring-1 focus:ring-ring [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    min={1}
+                    min={0}
                     max={sentenceCount}
-                    value={sentenceJumpValue !== "" ? sentenceJumpValue : String(currentSentenceIndex + 1)}
-                    onChange={(e) => setSentenceJumpValue(e.target.value)}
+                    value={sentenceJumpInputValue}
+                    onFocus={() => {
+                      setSentenceJumpEditing(true);
+                      setSentenceJumpValue((currentValue) => (currentValue === "" ? String(currentSentenceIndex + 1) : currentValue));
+                    }}
+                    onChange={(e) => {
+                      setSentenceJumpEditing(true);
+                      setSentenceJumpValue(e.target.value);
+                    }}
                     onKeyDown={handleSentenceJumpKeyDown}
                     onBlur={handleSentenceJumpBlur}
                     aria-label="跳转到指定句子"
@@ -3517,17 +3566,39 @@ export function ImmersiveLessonPage({
                   <div className="h-6 w-px bg-border mx-1 shrink-0" aria-hidden="true" />
                   <label className="immersive-session-rate-field">
                     <span className="immersive-session-rate-label">倍速</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      className="immersive-session-rate-input [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      style={{ MozAppearance: "textfield" }}
-                      value={playbackRateInputValue}
-                      onChange={handlePlaybackRateInputChange}
-                      onBlur={handlePlaybackRateInputBlur}
-                      onKeyDown={handlePlaybackRateInputKeyDown}
-                      aria-label="播放倍速"
-                    />
+                    <span className="immersive-session-rate-input-wrap">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        className="immersive-session-rate-input [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        style={{ MozAppearance: "textfield" }}
+                        value={playbackRateInputValue}
+                        onChange={handlePlaybackRateInputChange}
+                        onBlur={handlePlaybackRateInputBlur}
+                        onKeyDown={handlePlaybackRateInputKeyDown}
+                        aria-label="播放倍速"
+                      />
+                      <span className="immersive-session-rate-stepper">
+                        <button
+                          type="button"
+                          className="immersive-session-rate-stepper-button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => adjustPlaybackRateByStep(1)}
+                          aria-label="倍速增加 0.25"
+                        >
+                          <ChevronUp className="immersive-session-rate-stepper-icon" />
+                        </button>
+                        <button
+                          type="button"
+                          className="immersive-session-rate-stepper-button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => adjustPlaybackRateByStep(-1)}
+                          aria-label="倍速减少 0.25"
+                        >
+                          <ChevronDown className="immersive-session-rate-stepper-icon" />
+                        </button>
+                      </span>
+                    </span>
                     <span className="immersive-session-rate-suffix">x</span>
                   </label>
                   <button type="button" className="immersive-session-action" onClick={handleResetPlaybackRate}>
@@ -3722,9 +3793,11 @@ export function ImmersiveLessonPage({
             value={currentWordInput}
             onChange={() => {}}
             onKeyDown={handleKeyDown}
-            onBlur={() => {
+            onBlur={(event) => {
               if (typingEnabled) {
                 setTimeout(() => {
+                  const nextFocusTarget = event.relatedTarget ?? document.activeElement;
+                  if (shouldKeepControlFocus(nextFocusTarget)) return;
                   focusTypingInput(isTouchDevice);
                 }, 0);
               }
