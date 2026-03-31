@@ -50,7 +50,8 @@ _See: `.planning/milestones/v2.0-ROADMAP.md` for full phase details_
 - [x] Phase 8: 沉浸学习重构 (4/4 plans) — completed 2026-03-28
 - [x] Phase 9: 生词本、账号与网页模型边界 (4/4 plans) — completed 2026-03-28
 - [x] Phase 10: 管理台前后端收口 (4/4 plans) — completed 2026-03-29
-- [x] Phase 11: 盈利转化落地与回归收口 + Bug Fix (4/4 plans) — completed 2026-03-30
+- [x] Phase 11: 盈利转化落地与回归收口 (3/3 plans) — completed 2026-03-30
+- [ ] Phase 12: 沉浸学习前端交互优化 — pending planning
 
 _See: `.planning/milestones/v2.1-ROADMAP.md` for full phase details_
 
@@ -80,4 +81,4 @@ _See: `.planning/milestones/v2.1-ROADMAP.md` for full phase details_
 | 11. 盈利转化落地与回归收口                | v2.1      | 4/4   | Complete  | 2026-03-30 |
 | 12. (待定义)                             | v2.2      | —     | Planned   | —          |
 
-**Overall:** 13/14 phases complete — v2.2 initialized
+**Overall:** 13/13 phases complete — all milestones shipped

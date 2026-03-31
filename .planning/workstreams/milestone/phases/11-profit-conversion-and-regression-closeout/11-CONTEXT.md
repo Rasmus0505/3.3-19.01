@@ -65,6 +65,36 @@
 ### Folded Todos
 - 已并入 Phase 11：全局数字输入框默认值为 `0` 时不便于直接清空重输。该问题需要作为本阶段回归收口的一部分处理，优先覆盖价格、充值或其他会影响转化/支付操作流畅度的数字输入场景，并继续保持现有数值校验与规范化。
 
+### Bug 修复：链接转素材关键缺陷
+**2026-03-30 新增 — 用户反馈：课程无视频画面，封面图缺失，Bottle 1.0 报错 "Desktop source path is required"**
+
+#### Bug A：Desktop source path is required
+**根因**：`transcribeDesktopLocalAsr(UploadPanel.jsx:298)` 调用 `window.desktopRuntime.transcribeLocalMedia({modelKey, file: sourceFile})`，其中 `sourceFile` 是 `buildDesktopSelectedFile` 构建的空 File 对象。`desktopSourcePath` 通过 `Object.defineProperty` 附加，Electron IPC JSON 序列化时丢失。后端 `resolveRequestedSourcePath()` 找不到 path，返回空字符串 → `_resolve_source_path` 报错。
+
+**G-1 决策：IPC 层显式传 filePath（方案 2）**
+- 前端 `transcribeDesktopLocalAsr`：从 `sourceFile.desktopSourcePath` 显式提取，传入 `filePath` 字段
+- 后端 `resolveRequestedSourcePath`：优先读 `request["filePath"]`
+- 影响：所有桌面本地识别场景均受益于显式传参，更健壮
+
+#### Bug B：无封面图 / 课程无法播放
+**根因（两条）**：
+- **B-1**：`onSelectFile` 调用 `extractMediaCoverPreview(sourceFile)` 时，`sourceFile` 是空 File 对象（无 body），封面提取结果为空。yt-dlp 探测元数据已包含 `thumbnail` 字段，但未返回
+- **B-2**：`submitCloudDirectUpload` → `/api/lessons/tasks` FormData 中无 `cover_data_url` 字段
+
+**G-2 决策：利用 yt-dlp `thumbnail` 字段**
+- `_run_url_import_task` 完成时在 task 响应中返回 `thumbnail`（来自 yt-dlp JSON 元数据）
+- 前端 `pollDesktopLinkImportTask` 接收 `thumbnail` 存入 `sourceFile.thumbnail`
+- `prepareDesktopCloudUploadSourceFile` 把 `thumbnail` 随 Blob 传递
+- `submitCloudDirectUpload` FormData 增加 `cover_data_url`
+- **Fallback**：若 yt-dlp 无 thumbnail（如直链无封面图），链接导入成功后 `materializeDesktopSelectedFile` → `extractMediaCoverPreview` 从已下载文件提取
+
+**已锁定决策**
+- Phase 4 / 07.1 已锁定：链接导入走本地 yt-dlp + ffmpeg，不新增服务器下载路径
+- Phase 7 已锁定：Bottle 1.0 = 本机 FasterWhisper，Bottle 2.0 = 云端 Qwen
+- Phase 4 D-09 已锁定：链接导入成功 → 自动进入生成，不手动确认
+- Phase 4 D-21 已锁定：成功完成 → 直接进入学习页
+- 封面来源：包含视频封面图（yt-dlp `thumbnail` 字段）
+
 </decisions>
 
 <canonical_refs>
@@ -138,6 +168,20 @@
   - `更强大的AI模型` + `适合复杂视频`
 - 大文件 / 长时长 / 复杂视频的主提示固定为：`当前素材推荐使用客户端生成，效果和稳定性更好`
 - 本阶段不新建“经营建议清单”文档
+
+### Bug 修复：链接转素材关键缺陷
+
+#### Bug A 修复（6 个文件）
+1. `app/api/routers/desktop_asr.py` — `_run_url_import_task` 返回 `thumbnail` 字段（来自 yt-dlp JSON `metadata.thumbnail`）
+2. `desktop-client/electron/main.mjs` — `resolveRequestedSourcePath` 增加优先读 `request.filePath` 逻辑
+3. `frontend/src/features/upload/UploadPanel.jsx` — `transcribeDesktopLocalAsr` 调用时传入 `filePath: String(sourceFile?.desktopSourcePath || "").trim()`
+4. `frontend/src/features/upload/UploadPanel.jsx` — `pollDesktopLinkImportTask` 接收 `thumbnail` 存入 `sourceFile.thumbnail`
+5. `frontend/src/features/upload/UploadPanel.jsx` — `prepareDesktopCloudUploadSourceFile` 把 `thumbnail` 传递到新构建的 Blob File 对象
+6. `frontend/src/features/upload/UploadPanel.jsx` — `submitCloudDirectUpload` FormData 增加 `cover_data_url`
+
+#### Bug B Fallback（当 yt-dlp 无 thumbnail 时）
+- 链接导入成功后，`onSelectFile` 调用时如果 `sourceFile.thumbnail` 存在则直接使用
+- 否则走 `materializeDesktopSelectedFile` → `extractMediaCoverPreview` 从已下载文件提取
 
 </specifics>
 

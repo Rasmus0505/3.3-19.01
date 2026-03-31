@@ -20,13 +20,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** v2.1 — Phase 11 紧急 Bug 修复（链接转素材桌面源路径与封面缺失）
+**Current focus:** v2.1 — Phase 11 盈利转化落地与回归收口
 
 ## Current Position
 
 Phase: 11 (next unstarted)
 Plan: —
-Status: Phase 11 inserted; awaiting planning
+Status: Phase 12 renamed to Phase 11; Phase 13 renamed to Phase 12
 Last activity: 2026-03-31
 
 Progress: [▓▓▓▓▓▓▓▓▓░] 95%
@@ -44,16 +44,15 @@ Progress: [▓▓▓▓▓▓▓▓▓░] 95%
 - 网页端 Bottle 1.0 / 2.0 边界清晰化
 - 管理台中文化、元优先、模型命名收口
 - 盈利转化文案与入口优化
-- **Phase 11 (新增紧急): Bottle 链接转素材桌面源路径与封面缺失 Bug 修复**
-- Phase 12: 盈利转化落地与回归收口（含 Phase 11 Bug Fix 回归）
+- Phase 11: 盈利转化落地与回归收口
 
 ## Accumulated Context
 
 ### Roadmap Evolution
 
-- Phase 13 added: 沉浸学习前端交互优化 — 加入生词本无重播+答题区上方提示、按钮配色、输入框可手动编辑、倍速按钮间距、喇叭音频不跳转
-- Phase 12 renamed from Phase 11: 盈利转化落地与回归收口 now depends on Phase 11 (the Bug Fix)
-- Phase 07.1 inserted after Phase 7: Memo 模式复刻与桌面媒体工作流产品化 (URGENT)
+- Phase 12 renamed to Phase 11: 盈利转化落地与回归收口 (no longer depends on Phase 11 bug fix)
+- Phase 13 renamed to Phase 12: 沉浸学习前端交互优化
+- Phase 11 bug fix phase removed: 不再单独作为 Phase，合并到产品正常迭代中
 
 ### Working Assumptions
 
@@ -70,7 +69,6 @@ None
 ## Session Continuity
 
 **Previous milestone:** v2.0 Billing, Admin & Polish (shipped 2026-03-28)  
-**Next expected action:** `/gsd-plan-phase 11`  
+**Next expected action:** `/gsd-plan-phase 11`
 **Last Date:** 2026-03-30T14:45:00.000Z
-**Inserted:** Phase 11 (URGENT Bug Fix)
-**Resume File:** .planning/workstreams/milestone/phases/11-fix-bottle-link-material-desktop-source-and-cover/
+**Phase 11 bug fix removed:** Bug 修复不再作为单独 Phase
