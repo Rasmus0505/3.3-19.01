@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.1
-milestone_name: 优化学习体验和管理体验
-status: milestone complete
+milestone: v2.2
+milestone_name: 桌面发布与体验收口
+status: defining requirements
 last_updated: "2026-03-31T00:00:00+08:00"
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 21
-  completed_plans: 21
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -19,15 +19,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** v2.1 — 优化学习体验和管理体验 — SHIPPED 2026-03-31
+**Current focus:** v2.2 — 桌面发布与体验收口 — Defining requirements
 
 ## Current Position
 
-Milestone: v2.1 优化学习体验和管理体验
-Status: ✅ Complete (shipped 2026-03-31)
-All phases: 6 phases, 21 plans, 100%
+Phase: Not started (defining requirements)
+Plan: -
+Status: Defining requirements
+Last activity: 2026-03-31 — Milestone v2.2 started
 
-**当前阶段：** v2.1 已完成，待规划 v2.2
+**当前阶段：** v2.2 需求定义中
 
 ## Accumulated Context
 
@@ -55,10 +56,10 @@ All phases: 6 phases, 21 plans, 100%
 | 260331-kqa | 精听模式修复：Token 选词简化条件，播放速率固定状态在句间导航时正确处理 | 2026-03-31 | 7c89ee57 | [260331-kqa-token](./quick/260331-kqa-token/) |
 | 260331-qnj | 允许沉浸式学习和管理台数字输入框清空后重输，并为倍速输入框增加0.25步进内嵌上下调节按钮 | 2026-03-31 | 282a72c9 | [260331-qnj-0-25](./quick/260331-qnj-0-25/) |
 
-**Last activity:** 2026-03-31 — Completed quick task 260331-qnj: 允许沉浸式学习和管理台数字输入框清空后重输，并为倍速输入框增加0.25步进内嵌上下调节按钮
+**Last activity:** 2026-03-31 — Milestone v2.2 started: 桌面发布与体验收口
 
 ## Session Continuity
 
-Previous milestone: v2.0 Billing, Admin & Polish (shipped 2026-03-28)
-Current milestone: v2.1 优化学习体验和管理体验 (shipped 2026-03-31)
-Next expected action: `/gsd-new-milestone` — start v2.2 planning
+Previous milestone: v2.1 优化学习体验和管理体验 (shipped 2026-03-31)
+Current milestone: v2.2 桌面发布与体验收口 (requirements in progress)
+Next expected action: `$gsd-new-milestone` — define v2.2 requirements and roadmap

@@ -10,12 +10,18 @@ The product is intentionally split by runtime capability: the desktop client is 
 
 Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-## Current Milestone: v2.2 (Planning)
+## Current Milestone: v2.2 桌面发布与体验收口
 
-**Goal:** Define next milestone scope and requirements.
+**Goal:** 把 Bottle 从“可开发可验证”推进到“可正式交付给真实用户使用”，补齐桌面端发布更新体系、后台运营公告能力、生词本复习体验，以及站内关键交互细节。
 
 **Target features:**
-- 待定义
+- 可发布给用户的桌面客户端安装包与发布流程
+- 桌面客户端程序本体更新能力，以及 ASR 模型/资源包增量更新能力
+- 管理台公告能力：发布公告/更新日志、弹窗/横幅公告、排序/置顶、删除
+- 桌面客户端代码保护与发布安全加固
+- 生词本完整重做与收口：更好的复习流、遗忘曲线/掌握度、批量操作、删除冗杂信息专注复习、例句/来源回看、shadcn 风格重做
+- 生词本增强候选项：对框选内容单独翻译、发音/音标支持（先做可行性评估）
+- 网站 UX/交互优化：为易疑惑按钮增加半透明悬浮轻提示并自动消失
 
 ## Current State
 
@@ -73,7 +79,11 @@ See `.planning/v2.1-MILESTONE-AUDIT.md` for audit report.
 
 ### Active
 
-None
+- [ ] 用户可以下载并安装可正式发布的桌面客户端，而不是只依赖本地开发产物
+- [ ] 桌面客户端可以检测程序新版本，并尽量通过增量方式完成程序与 ASR 模型/资源更新
+- [ ] 管理员可以在后台发布、排序、置顶和删除公告，并将其作为更新日志、弹窗或横幅投放到用户端
+- [ ] 生词本复习体验围绕“高频复习、低噪音界面、掌握度反馈”完成一次产品级重做
+- [ ] 网站关键按钮和易疑惑操作具备统一的轻提示与交互引导，减少理解成本
 
 ### Out of Scope
 
@@ -91,6 +101,10 @@ None
 - Web and desktop already share a large part of the frontend and product model, which should be preserved rather than split into separate products.
 - Current product direction is not to rebuild from scratch, but to sharpen product boundaries, stabilize generation flows, reduce server load, and improve the learner experience.
 - Market reference pass for this milestone is based on official materials checked on 2026-03-28 from LingQ, Migaku, FluentU, and Glossika. Shared patterns: sentence-centric repetition, one-click vocabulary capture, due-review loops, strong scenario-based plan positioning, and premium upsell through convenience rather than raw feature count.
+- Current v2.2 direction is to close the gap between an internally usable Electron app and a user-deliverable desktop product with managed publishing, upgrade, and runtime protection boundaries.
+- Desktop code already contains partial client-update state handling and model delta-update logic, so this milestone should productize and verify that path rather than invent a second update system.
+- Frontend already ships Radix tooltip/popover primitives, making a consistent hint system feasible without introducing a new UI foundation.
+- Wordbook backend routes, review queue fields, and source-link context already exist; the largest opportunity is now the learning workflow, information architecture, and focused review surface.
 
 ## Constraints
 
@@ -101,6 +115,9 @@ None
 - **Billing**: Bottle 1.0 and Bottle 2.0 are both paid capabilities with prices managed in admin tooling.
 - **Brownfield Preservation**: Existing auth, wallet, admin, lesson, and desktop foundations should be optimized, not discarded.
 - **Auth Risk Control**: Username can expand identity and profile UX, but email/password remains the only login path.
+- **Desktop Security Boundary**: “避免核心代码泄露” means raising extraction and reuse cost for packaged desktop logic and assets, not claiming perfect anti-reverse-engineering guarantees.
+- **Update Reliability**: Desktop update flows must fail safely and explain recovery clearly; a broken updater is worse than a manual reinstall path.
+- **Scope Control**: 发音/音标与框选翻译先做可行性评估，再决定是否进入本里程碑硬承诺，避免把探索项直接写成已承诺交付。
 
 ## Milestone: v2.1 Summary
 
@@ -154,4 +171,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-31 after v2.1 milestone completion*
+*Last updated: 2026-03-31 after v2.2 milestone initialization*
