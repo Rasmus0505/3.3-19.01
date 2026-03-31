@@ -5,7 +5,7 @@
 - ✅ **v1.0 基础能力稳定化** — Phases 1, 1.1, 2 (shipped 2026-03-27)
 - ✅ **v1.1** — Phases 2.1, 3, 4 (shipped 2026-03-27)
 - ✅ **v2.0** — Phases 5, 6 (shipped 2026-03-28)
-- 🚧 **v2.1 优化学习体验和管理体验** — Phases 7, 8, 9, 10, 11 (planned)
+- 🚧 **v2.1 优化学习体验和管理体验** — Phases 7, 8, 9, 10, 11, 12 (planned)
 
 ## Phases
 
@@ -75,11 +75,21 @@ Plans:
 - [x] 10-03: 收口 Bottle 1.0 / 2.0 命名、排序和模型配置说明
 - [x] 10-04: 分离计费编辑与运行诊断视图并清理英文残留
 
-### Phase 11: 盈利转化落地与回归收口
+### Phase 11: Fix Bottle 链接转素材的桌面源路径与封面缺失问题 (INSERTED)
 
-**Goal**: 基于前面阶段的定位和文案，把充值、模型选择、桌面下载转化路径真正落地，并完成整条链路回归。  
-**Depends on**: Phase 10  
-**Requirements**: GROW-01, GROW-02  
+**Goal:** 修复链接转素材路径下 Bottle 1.0 / 2.0 的关键 Bug。Bottle 1.0 + 链接转素材报错 "Desktop source path is required"；Bottle 2.0 + 链接转素材能生成字幕但缺少视频封面和内容。
+**Depends on:** Phase 10
+**Requirements**: TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 11 to break down)
+
+### Phase 12: 盈利转化落地与回归收口
+
+**Goal**: 基于前面阶段的定位和文案，把充值、模型选择、桌面下载转化路径真正落地，并完成整条链路回归（含 Phase 11 Bug Fix 回归）。
+**Depends on**: Phase 11
+**Requirements**: GROW-01, GROW-02
 **Plans**: 3 plans
 
 Plans:
@@ -91,5 +101,16 @@ Plans:
 ## Summary
 
 **Pending milestone:** v2.1 优化学习体验和管理体验  
-**Phase count:** 6  
+**Phase count:** 7  
 **Requirement coverage:** 22 / 22 mapped
+
+### Phase 13: 沉浸学习前端交互优化
+
+**Goal:** 对沉浸学习页面做 5 个精确的前端交互优化——加入生词本无重播+轻量提示、按钮配色、输入框可手动编辑、倍速按钮间距、喇叭音频不跳转。  
+**Depends on:** Phase 12  
+**Requirements**: TBD  
+**Plans:** 1 plan
+
+Plans:
+
+- [ ] 13-01: 沉浸学习 5 项前端交互优化（toast/按钮/input/间距/喇叭音频）
