@@ -2,45 +2,32 @@
 gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: 优化学习体验和管理体验
-status: defining requirements and roadmap
-last_updated: "2026-03-28T18:20:00+08:00"
+status: milestone complete
+last_updated: "2026-03-31T00:00:00+08:00"
 progress:
-  total_phases: 5
-  completed_phases: 0
-  total_plans: 17
-  completed_plans: 0
-  percent: 0
+  total_phases: 6
+  completed_phases: 6
+  total_plans: 21
+  completed_plans: 21
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-28)
+See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** v2.1 — 优化学习体验和管理体验
+**Current focus:** v2.1 — 优化学习体验和管理体验 — SHIPPED 2026-03-31
 
 ## Current Position
 
-Phase: Not started (defining requirements)  
-Plan: —  
-Status: Defining requirements and roadmap for v2.1  
-Last activity: 2026-03-28 — Milestone v2.1 started
+Milestone: v2.1 优化学习体验和管理体验
+Status: ✅ Complete (shipped 2026-03-31)
+All phases: 6 phases, 21 plans, 100%
 
-Progress: [░░░░░░░░░░] 0%
-
-## This Milestone
-
-**Milestone:** v2.1 优化学习体验和管理体验
-
-**Focus areas:**
-- 竞品研究与产品规范
-- 沉浸学习重构
-- 生词本补全与账号体验升级
-- 网页端 Bottle 1.0 / 2.0 边界清晰化
-- 管理台中文化、元优先、模型命名收口
-- 盈利转化文案与入口优化
+**当前阶段：** v2.1 已完成，待规划 v2.2
 
 ## Accumulated Context
 
@@ -49,6 +36,8 @@ Progress: [░░░░░░░░░░] 0%
 - Phase 2.1 inserted after Phase 2: 删除管理台里的模型管理，拆出 Bottle 1.0 独立设置并接入计费配置，同时删除现有 Bottle 1.0 前端与实际功能代码，确保新增模型配置衔接完整 (URGENT)
 - Phase 4.1 removed after roadmap cleanup: Bottle 1.0 desktop-local fidelity work no longer sits as a standalone roadmap phase
 - v2.0 completed on 2026-03-28, leaving the product with a simpler pricing-only billing surface and a dedicated troubleshooting area
+- Phase 7.1 inserted after Phase 7: Memo 模式复刻与桌面媒体工作流产品化
+- v2.1 completed on 2026-03-31, delivering immersive learning refactor, wordbook review, username accounts, admin alignment, conversion copy, and desktop link-import bug fixes
 
 ### Working Assumptions
 
@@ -56,8 +45,10 @@ Progress: [░░░░░░░░░░] 0%
 - 网页端可展示 Bottle 1.0 价值说明，但不能执行 Bottle 1.0
 - 盈利改动只做按次付费增强，不引入会员制
 - 管理台前后端一起收口，而不是只改几个页面文案
+- Electron IPC 序列化不支持 Object.defineProperty 附加的属性，必须用普通数据字段
 
 ## Session Continuity
 
-Previous milestone: v2.0 Billing, Admin & Polish (shipped 2026-03-28)  
-Next expected action: `$gsd-discuss-phase 7`
+Previous milestone: v2.0 Billing, Admin & Polish (shipped 2026-03-28)
+Current milestone: v2.1 优化学习体验和管理体验 (shipped 2026-03-31)
+Next expected action: `/gsd-new-milestone` — start v2.2 planning

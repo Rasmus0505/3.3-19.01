@@ -10,17 +10,24 @@ The product is intentionally split by runtime capability: the desktop client is 
 
 Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-## Current Milestone: v2.1 优化学习体验和管理体验
+## Current Milestone: v2.2 (Planning)
 
-**Goal:** Rebuild the learning and admin experience around clearer product boundaries, more stable immersion controls, better review loops, and stronger conversion paths for Bottle 1.0 and Bottle 2.0.
+**Goal:** Define next milestone scope and requirements.
 
 **Target features:**
-- 单句循环精听、倍速切换、沉浸学习组合操作稳定化
-- 生词本从“收词列表”升级为“带到期复习的复习入口”
-- 注册必填唯一用户名，登录/注册前端重做，并提供改用户名入口
-- 网页端明确 Bottle 1.0 / Bottle 2.0 的定位，Bottle 1.0 仅作桌面端引导不可执行
-- 管理台重构为中文优先、元优先、Bottle 1.0 / 2.0 命名统一的运营后台
-- 盈利转化先落地模型卡文案、价格锚点、充值引导、桌面端下载 CTA
+- 待定义
+
+## Current State
+
+**v2.1 shipped on 2026-03-31.** Full v2.1 product delivered:
+- v1.0 (2026-03-27): Foundation — shared cloud generation, ASR 403 self-heal, desktop local generation
+- v1.1 (2026-03-27): Bottle 1.0 billing/admin cleanup, canonical lesson pipeline, desktop link import
+- v2.0 (2026-03-28): Admin simplification, pricing-only billing, troubleshooting center, onboarding cleanup, billing UX
+- v2.1 (2026-03-31): Immersive learning refactor (reducer state machine, loop/rate/fullscreen), wordbook review flow, username account system, admin Chinese/yuan-first alignment, conversion copy rollout, desktop link-import bug fixes, Memo-style desktop public-link workflow
+
+**22/22 v2.1 milestone requirements satisfied.**
+
+**当前阶段：** v2.1 已完成，待规划 v2.2
 
 ## Requirements
 
@@ -55,6 +62,8 @@ Users can turn real English media into usable learning lessons quickly, without 
 - ✓ Admin operators now work in a Chinese-first, yuan-first backend with clearer model naming and cleaner information architecture — validated in Phase 10
 - ✓ Pricing, recharge, and desktop download paths now use the finalized upload-surface copy, recharge recovery, desktop guidance, and static-web verification flow — validated in Phase 11
 - ✓ Desktop public-link import is now productized as a formal Memo-style workflow with explicit public-link promise, failure boundary, and release checklist — validated in Phase 07.1
+- ✓ Bottle 1.0 + link-import desktopSourcePath bug fixed: IPC serialization no longer strips the Object.defineProperty field — validated in Phase 11-04
+- ✓ Bottle 2.0 + link-import thumbnail bug fixed: yt-dlp thumbnail flows through poll response into lesson cover_data_url with file-extraction fallback — validated in Phase 11-04
 
 ### Active
 
@@ -65,7 +74,7 @@ None
 - User-provided ASR API key configuration — platform-managed billing and keys keep the experience simple
 - Full browser parity for local tooling features — browser/runtime constraints are acceptable where local tooling is required
 - Making the server the primary media processing worker — this conflicts with cost and capacity limits
-- Introducing subscriptions or membership bundles in v2.1 — this milestone focuses on per-use conversion improvements first
+- Introducing subscriptions or membership bundles — this milestone focuses on per-use conversion improvements first
 - Letting web users actually execute Bottle 1.0 — Bottle 1.0 remains desktop-only by product boundary
 - Replacing email login with username login — higher auth churn risk than this milestone needs
 
@@ -85,29 +94,22 @@ None
 - **Web Delivery Contract**: 凡涉及网页端前端行为或路由的改动，完成标准必须包含同步并验证 `app/static`；仅修改 `frontend/src` 不视为网页端已完成。
 - **Billing**: Bottle 1.0 and Bottle 2.0 are both paid capabilities with prices managed in admin tooling.
 - **Brownfield Preservation**: Existing auth, wallet, admin, lesson, and desktop foundations should be optimized, not discarded.
-- **Auth Risk Control**: Username can expand identity and profile UX, but email/password remains the only login path in v2.1.
+- **Auth Risk Control**: Username can expand identity and profile UX, but email/password remains the only login path.
 
-## Current State
+## Milestone: v2.1 Summary
 
-**v2.0 shipped on 2026-03-28.** The full v1 product is shipped:
-- v1.0 (2026-03-27): Foundation — shared cloud generation, ASR 403 self-heal, desktop local generation
-- v1.1 (2026-03-27): Bottle 1.0 billing/admin cleanup, canonical lesson pipeline, desktop link import
-- v2.0 (2026-03-28): Admin simplification, pricing-only billing, troubleshooting center, onboarding cleanup, billing UX
-
-**22/22 prior milestone requirements satisfied.**
-
-**当前阶段：** Phase 07.1 complete — 公开链接导入、桌面下载/媒体准备、学习闭环产品化 contract 已补齐；v2.1 全部 phase 已执行完成，待里程碑收尾
-
-## Milestone: v2.0 Summary
-
-**Shipped:** 2026-03-28
-**Phases:** Phase 5, Phase 6
+**Shipped:** 2026-03-31
+**Phases:** Phase 7, Phase 7.1, Phase 8, Phase 9, Phase 10, Phase 11
+**Plans:** 21 plans, 13 tasks
 **Key outcomes:**
-- Admin shell simplified: lighter user-first workflow with dedicated troubleshooting route
-- Billing surface is pricing-only: runtime controls removed from admin billing editor
-- Full troubleshooting center delivered: health, task logs, operation audit, runtime readiness
-- Getting Started guide removed from web app: no dead onboarding overlay
-- Billing UX improved: insufficient balance shows "充值后生成" button; estimate display simplified
+- Official competitor matrix and Bottle 1.0/2.0 positioning spec locks naming, boundary, and monetization narrative for all downstream phases
+- Memo-style desktop public-link import productized with explicit support promise, failure boundary, and release checklist
+- Immersive learning refactored into reducer-driven state machine: single-sentence loop, fixed 0.75x/0.90x/1.00x playback rate, fullscreen/mask/previous-sentence all preserved as display-only preferences
+- Wordbook upgraded from passive collection list to active due-review entry point with again/good grading and next-review scheduling
+- Account system added unique username registration, tabbed auth UI, and personal center shell
+- Admin fully Chinese-first, yuan-primary, Bottle 1.0/2.0 primary naming with technical names demoted to secondary notes
+- Conversion copy locked: model cards, recharge recovery, desktop CTA, and static web bundle all finalized
+- Two critical desktop link-import bugs fixed: desktopSourcePath IPC serialization loss and missing video cover from yt-dlp thumbnail
 
 ## Key Decisions
 
@@ -125,6 +127,8 @@ None
 | Monetization improvements stay inside pay-per-use copy and CTA work, not subscriptions | Competitor benchmarks favor clearer scenario guidance over more package complexity for this milestone | ✅ Locked in Phase 7 |
 | Immersive playback state should be reducer-driven with explicit loop/rate/display contracts | The existing page had too many overlapping state transitions for replay, navigation, fullscreen, and mask controls | ✅ Validated in Phase 8 |
 | Final conversion landing should use exact model-card and blocked-state copy instead of adding new marketing layers | The final upload-surface pass had to follow the locked context precisely, including recharge, desktop, and complex-media wording | ✅ Validated in Phase 11 |
+| Desktop public-link import is a formal product capability with explicit support boundary | Public links are the primary onboarding path; helper/yt-dlp internals stay behind the scenes | ✅ Validated in Phase 07.1 |
+| Object.defineProperty fields do not survive Electron IPC serialization — always use plain data fields | The desktopSourcePath field was silently dropped causing link-import failures | ✅ Validated in Phase 11-04 |
 
 ## Evolution
 
@@ -144,4 +148,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-29 after Phase 07.1 completion*
+*Last updated: 2026-03-31 after v2.1 milestone completion*
