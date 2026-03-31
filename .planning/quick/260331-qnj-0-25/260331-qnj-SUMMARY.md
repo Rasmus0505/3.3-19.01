@@ -49,6 +49,7 @@ npm run build
 ```
 
 - Vite production build passed successfully in `frontend/`.
+- Implementation commit: `282a72c9`
 
 ## Deviations from Plan
 
