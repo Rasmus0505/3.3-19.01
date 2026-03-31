@@ -5,7 +5,7 @@ milestone_name: 桌面发布与体验收口
 status: defining requirements
 last_updated: "2026-03-31T00:00:00+08:00"
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,16 +19,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** v2.2 — 桌面发布与体验收口 — Defining requirements
+**Current focus:** v2.2 — 桌面发布与体验收口 — Roadmap ready
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 13
 Plan: -
-Status: Defining requirements
-Last activity: 2026-03-31 — Milestone v2.2 started
+Status: Roadmap ready for phase planning
+Last activity: 2026-03-31 — Created v2.2 roadmap (Phases 13-18)
 
-**当前阶段：** v2.2 需求定义中
+**当前阶段：** v2.2 路线图已生成，待进入 Phase 13
 
 ## Accumulated Context
 
@@ -56,10 +56,10 @@ Last activity: 2026-03-31 — Milestone v2.2 started
 | 260331-kqa | 精听模式修复：Token 选词简化条件，播放速率固定状态在句间导航时正确处理 | 2026-03-31 | 7c89ee57 | [260331-kqa-token](./quick/260331-kqa-token/) |
 | 260331-qnj | 允许沉浸式学习和管理台数字输入框清空后重输，并为倍速输入框增加0.25步进内嵌上下调节按钮 | 2026-03-31 | 282a72c9 | [260331-qnj-0-25](./quick/260331-qnj-0-25/) |
 
-**Last activity:** 2026-03-31 — Milestone v2.2 started: 桌面发布与体验收口
+**Last activity:** 2026-03-31 — Created v2.2 roadmap: 桌面发布与体验收口
 
 ## Session Continuity
 
 Previous milestone: v2.1 优化学习体验和管理体验 (shipped 2026-03-31)
-Current milestone: v2.2 桌面发布与体验收口 (requirements in progress)
-Next expected action: `$gsd-new-milestone` — define v2.2 requirements and roadmap
+Current milestone: v2.2 桌面发布与体验收口 (roadmap ready)
+Next expected action: `$gsd-discuss-phase 13` — clarify approach for desktop release pipeline and signed installer

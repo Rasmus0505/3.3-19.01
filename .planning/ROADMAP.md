@@ -6,7 +6,7 @@
 - ✅ **v1.1** — Phases 2.1, 3, 4 (shipped 2026-03-27)
 - ✅ **v2.0** — Phases 5, 6 (shipped 2026-03-28)
 - ✅ **v2.1 优化学习体验和管理体验** — Phases 7, 7.1, 8, 9, 10, 11, 12 (shipped 2026-03-31)
-- 📋 **v2.2** — Phases 13+ (planned)
+- 📋 **v2.2 桌面发布与体验收口** — Phases 13, 14, 15, 16, 17, 18 (planned)
 
 ## Phases
 
@@ -57,9 +57,57 @@ _See: `.planning/milestones/v2.1-ROADMAP.md` for full phase details_
 
 </details>
 
-### 📋 v2.2 (Planned)
+### 📋 v2.2 桌面发布与体验收口 (Planned)
 
-- [ ] Phase 13: 待定义
+- [ ] **Phase 13: 桌面发布管线与签名安装包**
+  Goal: 把当前 Electron 工程从“能打包”提升到“能正式发布”，建立可追踪的 Windows 安装包与签名发布流程。
+  Requirements: DESK-01, SECU-01
+  Success criteria:
+  1. 团队可以从受控流程产出官方 Bottle Windows 安装包，而不是手工拼装开发产物。
+  2. 发布产物版本、安装包元数据和发布记录可以互相对应。
+  3. 公共发布所需的签名步骤进入正式发布流程，并能验证结果。
+
+- [ ] **Phase 14: 桌面程序与模型增量更新产品化**
+  Goal: 把桌面端版本更新与 ASR 资源更新收口成真实可用、可诊断、可恢复的升级体验。
+  Requirements: DESK-02, DESK-03, DESK-04, DESK-05, SECU-03
+  Success criteria:
+  1. 用户能在客户端看到当前版本、可用新版本和更新状态。
+  2. 程序更新在健康路径下可在客户端内完成，不需要用户手动卸载重装。
+  3. 模型/资源更新只下载变化文件，并能正确展示进度、完成状态和失败恢复入口。
+  4. 团队能区分哪些资源是打包保护资产，哪些资源是按设计允许增量更新的资产。
+
+- [ ] **Phase 15: 桌面运行时边界加固**
+  Goal: 审核并收紧桌面端主进程、预加载和渲染层边界，让正式发布版本具备更清晰的安全边界。
+  Requirements: SECU-02
+  Success criteria:
+  1. 渲染层只能访问产品明确允许的预加载能力。
+  2. 发布版桌面端的权限边界被记录并验证，而不是依赖默认或历史残留配置。
+  3. 核心运行时暴露面相比当前基线收紧，且不破坏已有核心工作流。
+
+- [ ] **Phase 16: 公告与更新日志系统**
+  Goal: 在管理台建立一套面向 web/desktop 的统一公告系统，支持更新日志、横幅和弹窗。
+  Requirements: ANNC-01, ANNC-02, ANNC-03, ANNC-04, ANNC-05
+  Success criteria:
+  1. 管理员可以创建、排序、置顶和删除公告。
+  2. 单条公告可以配置为 changelog、banner 或 modal 展示方式。
+  3. 用户在对应表面只会看到当前有效且匹配端能力的公告内容。
+
+- [ ] **Phase 17: 生词本复习主流程重做**
+  Goal: 把生词本从“功能存在”提升到“适合高频复习”，优先解决复习流、掌握度反馈和上下文回看。
+  Requirements: WORD-01, WORD-02, WORD-04
+  Success criteria:
+  1. 用户可以直接进入到期复习流，而不是先在冗杂列表里找入口。
+  2. 每次复习都会更新掌握度/下次复习安排，并对用户可见。
+  3. 用户在复习中可以快速回看例句和来源课程，不需要跳出一串低效页面。
+
+- [ ] **Phase 18: 生词本管理收口与站内轻提示**
+  Goal: 完成生词本的批量操作、框选翻译和 shadcn 风格重做，并把网站轻提示系统落到关键交互点。
+  Requirements: WORD-03, WORD-05, WORD-06, HINT-01, HINT-02
+  Success criteria:
+  1. 用户可以批量管理生词，并在聚焦复习与管理视图之间自然切换。
+  2. 用户可以对存量上下文中的局部内容发起单独翻译，而不是只能看整句解释。
+  3. 生词本界面完成一次一致的视觉与交互收口，减少非必要信息干扰。
+  4. 网站关键困惑点具备统一的半透明轻提示，且提示能自动消失、不阻塞流程。
 
 ## Progress
 
@@ -80,6 +128,11 @@ _See: `.planning/milestones/v2.1-ROADMAP.md` for full phase details_
 | 10. 管理台前后端收口 | v2.1 | 4/4 | Complete | 2026-03-29 |
 | 11. 盈利转化落地与回归收口 | v2.1 | 3/3 | Complete | 2026-03-30 |
 | 12. 沉浸学习前端交互优化 | v2.1 | 1/1 | Complete | 2026-03-31 |
-| 13. (待定义) | v2.2 | — | Planned | — |
+| 13. 桌面发布管线与签名安装包 | v2.2 | 0/0 | Planned | — |
+| 14. 桌面程序与模型增量更新产品化 | v2.2 | 0/0 | Planned | — |
+| 15. 桌面运行时边界加固 | v2.2 | 0/0 | Planned | — |
+| 16. 公告与更新日志系统 | v2.2 | 0/0 | Planned | — |
+| 17. 生词本复习主流程重做 | v2.2 | 0/0 | Planned | — |
+| 18. 生词本管理收口与站内轻提示 | v2.2 | 0/0 | Planned | — |
 
-**Overall:** 15/16 phases complete — v2.2 initialized
+**Overall:** 15/21 phases complete — v2.2 roadmap created

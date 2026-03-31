@@ -70,33 +70,33 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DESK-01 | — | Pending |
-| DESK-02 | — | Pending |
-| DESK-03 | — | Pending |
-| DESK-04 | — | Pending |
-| DESK-05 | — | Pending |
-| ANNC-01 | — | Pending |
-| ANNC-02 | — | Pending |
-| ANNC-03 | — | Pending |
-| ANNC-04 | — | Pending |
-| ANNC-05 | — | Pending |
-| SECU-01 | — | Pending |
-| SECU-02 | — | Pending |
-| SECU-03 | — | Pending |
-| WORD-01 | — | Pending |
-| WORD-02 | — | Pending |
-| WORD-03 | — | Pending |
-| WORD-04 | — | Pending |
-| WORD-05 | — | Pending |
-| WORD-06 | — | Pending |
-| HINT-01 | — | Pending |
-| HINT-02 | — | Pending |
+| DESK-01 | Phase 13 | Pending |
+| DESK-02 | Phase 14 | Pending |
+| DESK-03 | Phase 14 | Pending |
+| DESK-04 | Phase 14 | Pending |
+| DESK-05 | Phase 14 | Pending |
+| ANNC-01 | Phase 16 | Pending |
+| ANNC-02 | Phase 16 | Pending |
+| ANNC-03 | Phase 16 | Pending |
+| ANNC-04 | Phase 16 | Pending |
+| ANNC-05 | Phase 16 | Pending |
+| SECU-01 | Phase 13 | Pending |
+| SECU-02 | Phase 15 | Pending |
+| SECU-03 | Phase 14 | Pending |
+| WORD-01 | Phase 17 | Pending |
+| WORD-02 | Phase 17 | Pending |
+| WORD-03 | Phase 18 | Pending |
+| WORD-04 | Phase 17 | Pending |
+| WORD-05 | Phase 18 | Pending |
+| WORD-06 | Phase 18 | Pending |
+| HINT-01 | Phase 18 | Pending |
+| HINT-02 | Phase 18 | Pending |
 
 **Coverage:**
 - v2.2 requirements: 21 total
-- Mapped to phases: 0
-- Unmapped: 21 ⚠️
+- Mapped to phases: 21
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-31*
-*Last updated: 2026-03-31 after initial definition*
+*Last updated: 2026-03-31 after roadmap creation*
