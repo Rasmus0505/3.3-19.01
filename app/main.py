@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -7,9 +8,10 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
+from html import escape
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
@@ -119,6 +121,8 @@ HTML_NO_STORE_HEADERS: dict[str, str] = {
     "Pragma": "no-cache",
     "Expires": "0",
 }
+
+DESKTOP_RELEASE_CHANNELS: tuple[str, ...] = ("stable", "preview")
 
 
 @dataclass
@@ -409,47 +413,229 @@ def _normalize_desktop_client_version(value: object) -> str:
     return _trim_text(value).lstrip("vV")
 
 
-def _build_desktop_client_default_download_url(request: Request) -> str:
-    return f"{str(request.base_url).rstrip('/')}/download/desktop"
+def _normalize_desktop_release_channel(value: object) -> str:
+    normalized = _trim_text(value).lower()
+    return normalized if normalized in DESKTOP_RELEASE_CHANNELS else "stable"
 
 
-def _get_desktop_client_release_payload(request: Request) -> dict[str, object]:
-    requested_version = _normalize_desktop_client_version(request.headers.get("x-bottle-client-version", ""))
+def _build_desktop_client_default_download_url(request: Request, channel: str = "stable") -> str:
+    base_url = f"{str(request.base_url).rstrip('/')}/download/desktop"
+    normalized_channel = _normalize_desktop_release_channel(channel)
+    if normalized_channel == "preview":
+        return f"{base_url}?channel=preview"
+    return base_url
+
+
+def _build_desktop_client_metadata_url(request: Request, channel: str = "stable") -> str:
+    normalized_channel = _normalize_desktop_release_channel(channel)
+    return f"{str(request.base_url).rstrip('/')}/desktop/client/channels/{normalized_channel}.json"
+
+
+def _coerce_release_artifacts(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    artifacts: list[dict[str, object]] = []
+    for item in value:
+        if isinstance(item, dict):
+            artifacts.append({str(key): val for key, val in item.items()})
+    return artifacts
+
+
+def _build_legacy_desktop_release_record(request: Request, channel: str, requested_version: str = "") -> dict[str, object]:
+    normalized_channel = _normalize_desktop_release_channel(channel)
+    env_prefix = "DESKTOP_CLIENT_PREVIEW_" if normalized_channel == "preview" else "DESKTOP_CLIENT_"
     configured_version = _normalize_desktop_client_version(
-        os.getenv("DESKTOP_CLIENT_LATEST_VERSION") or os.getenv("DESKTOP_CLIENT_VERSION") or ""
+        os.getenv(f"{env_prefix}LATEST_VERSION")
+        or os.getenv(f"{env_prefix}VERSION")
+        or (requested_version if normalized_channel == "stable" else "")
     )
     configured_entry_url = _trim_text(
-        os.getenv("DESKTOP_CLIENT_ENTRY_URL")
-        or os.getenv("DESKTOP_CLIENT_DOWNLOAD_URL")
-        or os.getenv("DESKTOP_CLIENT_UPDATE_ENTRY_URL")
-        or os.getenv("DESKTOP_CLIENT_UPDATE_DOWNLOAD_URL")
+        os.getenv(f"{env_prefix}ENTRY_URL")
+        or os.getenv(f"{env_prefix}DOWNLOAD_URL")
+        or (os.getenv("DESKTOP_CLIENT_ENTRY_URL") if normalized_channel == "stable" else "")
+        or (os.getenv("DESKTOP_CLIENT_DOWNLOAD_URL") if normalized_channel == "stable" else "")
+        or (os.getenv("DESKTOP_CLIENT_UPDATE_ENTRY_URL") if normalized_channel == "stable" else "")
+        or (os.getenv("DESKTOP_CLIENT_UPDATE_DOWNLOAD_URL") if normalized_channel == "stable" else "")
     )
     configured_release_name = _trim_text(
-        os.getenv("DESKTOP_CLIENT_RELEASE_NAME") or os.getenv("DESKTOP_CLIENT_VERSION_NAME") or ""
+        os.getenv(f"{env_prefix}RELEASE_NAME")
+        or os.getenv(f"{env_prefix}VERSION_NAME")
+        or (os.getenv("DESKTOP_CLIENT_RELEASE_NAME") if normalized_channel == "stable" else "")
+        or (os.getenv("DESKTOP_CLIENT_VERSION_NAME") if normalized_channel == "stable" else "")
     )
     configured_release_notes = _trim_text(
-        os.getenv("DESKTOP_CLIENT_RELEASE_NOTES") or os.getenv("DESKTOP_CLIENT_CHANGELOG") or ""
+        os.getenv(f"{env_prefix}RELEASE_NOTES")
+        or os.getenv(f"{env_prefix}CHANGELOG")
+        or (os.getenv("DESKTOP_CLIENT_RELEASE_NOTES") if normalized_channel == "stable" else "")
+        or (os.getenv("DESKTOP_CLIENT_CHANGELOG") if normalized_channel == "stable" else "")
     )
     configured_published_at = _trim_text(
-        os.getenv("DESKTOP_CLIENT_PUBLISHED_AT") or os.getenv("DESKTOP_CLIENT_RELEASED_AT") or ""
+        os.getenv(f"{env_prefix}PUBLISHED_AT")
+        or os.getenv(f"{env_prefix}RELEASED_AT")
+        or (os.getenv("DESKTOP_CLIENT_PUBLISHED_AT") if normalized_channel == "stable" else "")
+        or (os.getenv("DESKTOP_CLIENT_RELEASED_AT") if normalized_channel == "stable" else "")
     )
-    metadata_url = f"{str(request.base_url).rstrip('/')}/desktop/client/latest.json"
-    entry_url = configured_entry_url or _build_desktop_client_default_download_url(request)
-    latest_version = configured_version or requested_version or "0.0.0"
-    release_notes = configured_release_notes or (
-        "尚未在服务端配置正式桌面客户端发布信息；发布新客户端后请设置 "
-        "DESKTOP_CLIENT_LATEST_VERSION 与 DESKTOP_CLIENT_ENTRY_URL。"
+    configured = bool(configured_version or configured_entry_url)
+    default_notes = (
+        "尚未配置正式桌面发布信息；发布新 stable 安装包后请提供 release record。"
+        if normalized_channel == "stable"
+        else "尚未配置 preview 桌面发布信息；如需内测，请提供 preview release record。"
     )
+    entry_url = configured_entry_url or _build_desktop_client_default_download_url(request, normalized_channel)
+    artifacts = [{"kind": "windows-installer", "url": entry_url}] if configured_entry_url else []
     return {
-        "latestVersion": latest_version,
-        "entryUrl": entry_url,
-        "releaseNotes": release_notes,
-        "releaseName": configured_release_name or (f"Bottle Desktop {latest_version}" if configured_version else "Bottle Desktop"),
+        "channel": normalized_channel,
+        "version": configured_version or "0.0.0",
+        "releaseName": configured_release_name or f"Bottle Desktop {normalized_channel}",
         "publishedAt": configured_published_at,
-        "metadataUrl": metadata_url,
-        "configured": bool(configured_version),
-        "requestedVersion": requested_version,
+        "entryUrl": entry_url,
+        "notes": configured_release_notes or default_notes,
+        "signatureRequired": normalized_channel == "stable",
+        "signed": bool(configured and normalized_channel == "stable"),
+        "artifacts": artifacts,
+        "configured": configured,
     }
+
+
+def _load_desktop_release_registry() -> dict[str, object]:
+    configured_file = _trim_text(os.getenv("DESKTOP_CLIENT_RELEASES_FILE"))
+    configured_json = _trim_text(os.getenv("DESKTOP_CLIENT_RELEASES_JSON"))
+    try:
+        if configured_file and os.path.exists(configured_file):
+            with open(configured_file, "r", encoding="utf-8") as file_handle:
+                payload = json.load(file_handle)
+                return payload if isinstance(payload, dict) else {}
+        if configured_json:
+            payload = json.loads(configured_json)
+            return payload if isinstance(payload, dict) else {}
+    except Exception:
+        logger.exception("[DEBUG] desktop.release_registry.invalid")
+    return {}
+
+
+def _normalize_desktop_release_record(record: object, request: Request, channel: str, requested_version: str = "") -> dict[str, object]:
+    fallback = _build_legacy_desktop_release_record(request, channel, requested_version=requested_version)
+    if not isinstance(record, dict):
+        return fallback
+
+    normalized_channel = _normalize_desktop_release_channel(record.get("channel") or channel)
+    version = _normalize_desktop_client_version(record.get("version") or fallback["version"])
+    entry_url = _trim_text(record.get("entryUrl") or fallback["entryUrl"])
+    release_name = _trim_text(record.get("releaseName") or fallback["releaseName"])
+    notes = _trim_text(record.get("notes") or record.get("releaseNotes") or fallback["notes"])
+    published_at = _trim_text(record.get("publishedAt") or fallback["publishedAt"])
+    signature_required = bool(record.get("signatureRequired", normalized_channel == "stable"))
+    signed = bool(record.get("signed", False))
+    artifacts = _coerce_release_artifacts(record.get("artifacts")) or _coerce_release_artifacts(fallback.get("artifacts"))
+    configured = bool(record.get("configured", bool(version and version != "0.0.0" and entry_url)))
+    return {
+        "channel": normalized_channel,
+        "version": version or "0.0.0",
+        "releaseName": release_name or str(fallback["releaseName"]),
+        "publishedAt": published_at,
+        "entryUrl": entry_url or str(fallback["entryUrl"]),
+        "notes": notes or str(fallback["notes"]),
+        "signatureRequired": signature_required,
+        "signed": signed if signature_required else bool(record.get("signed", False)),
+        "artifacts": artifacts,
+        "configured": configured,
+    }
+
+
+def _get_desktop_release_record(request: Request, channel: str = "stable") -> dict[str, object]:
+    requested_version = _normalize_desktop_client_version(request.headers.get("x-bottle-client-version", ""))
+    normalized_channel = _normalize_desktop_release_channel(channel)
+    registry = _load_desktop_release_registry()
+    raw_channels = registry.get("channels") if isinstance(registry.get("channels"), dict) else registry
+    if not isinstance(raw_channels, dict):
+        raw_channels = {}
+    raw_record = raw_channels.get(normalized_channel)
+    return _normalize_desktop_release_record(raw_record, request, normalized_channel, requested_version=requested_version)
+
+
+def _get_desktop_client_release_payload(request: Request, channel: str = "stable") -> dict[str, object]:
+    release_record = _get_desktop_release_record(request, channel)
+    normalized_channel = _normalize_desktop_release_channel(channel)
+    return {
+        "channel": normalized_channel,
+        "latestVersion": str(release_record["version"]),
+        "version": str(release_record["version"]),
+        "entryUrl": str(release_record["entryUrl"]),
+        "releaseNotes": str(release_record["notes"]),
+        "notes": str(release_record["notes"]),
+        "releaseName": str(release_record["releaseName"]),
+        "publishedAt": str(release_record["publishedAt"]),
+        "metadataUrl": _build_desktop_client_metadata_url(request, normalized_channel)
+        if normalized_channel != "stable"
+        else f"{str(request.base_url).rstrip('/')}/desktop/client/latest.json",
+        "configured": bool(release_record["configured"]),
+        "signatureRequired": bool(release_record["signatureRequired"]),
+        "signed": bool(release_record["signed"]),
+        "artifacts": list(release_record["artifacts"]),
+    }
+
+
+def _build_desktop_download_page(request: Request, requested_channel: str = "stable") -> str:
+    stable_payload = _get_desktop_client_release_payload(request, "stable")
+    preview_payload = _get_desktop_client_release_payload(request, "preview")
+    active_channel = _normalize_desktop_release_channel(requested_channel)
+    active_payload = preview_payload if active_channel == "preview" and preview_payload.get("configured") else stable_payload
+
+    def _render_card(title: str, payload: dict[str, object], *, primary: bool = False, badge: str = "") -> str:
+        version_label = escape(str(payload.get("version") or "0.0.0"))
+        published_at = escape(str(payload.get("publishedAt") or "未提供"))
+        notes = escape(str(payload.get("notes") or ""))
+        entry_url = escape(str(payload.get("entryUrl") or ""))
+        configured = bool(payload.get("configured"))
+        action = (
+            f"<a class='button{' secondary' if not primary else ''}' href='{entry_url}'>下载 {escape(title)}</a>"
+            if configured and entry_url
+            else "<span class='muted'>当前未配置可下载发布物</span>"
+        )
+        meta_url = escape(str(payload.get("metadataUrl") or ""))
+        return (
+            "<section class='card'>"
+            f"<div class='card-head'><h2>{escape(title)}</h2><span class='badge'>{escape(badge)}</span></div>"
+            f"<p><strong>版本：</strong>{version_label}</p>"
+            f"<p><strong>发布时间：</strong>{published_at}</p>"
+            f"<p><strong>Release metadata：</strong><code>{meta_url}</code></p>"
+            f"<p class='notes'>{notes}</p>"
+            f"<div class='actions'>{action}</div>"
+            "</section>"
+        )
+
+    return "".join(
+        [
+            "<html><head><meta charset='utf-8'><title>Bottle Desktop 下载</title>",
+            "<style>",
+            "body{font-family:Segoe UI,system-ui,sans-serif;margin:0;background:#f6f2ea;color:#1f2937;}",
+            ".wrap{max-width:960px;margin:0 auto;padding:48px 20px 64px;}",
+            ".hero{background:#fff;border:1px solid #e5ded2;border-radius:24px;padding:28px 28px 24px;box-shadow:0 16px 40px rgba(15,23,42,.06);}",
+            ".hero h1{margin:0 0 12px;font-size:32px;}",
+            ".hero p{margin:8px 0;line-height:1.7;}",
+            ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-top:24px;}",
+            ".card{background:#fff;border:1px solid #e5ded2;border-radius:20px;padding:20px;box-shadow:0 8px 24px rgba(15,23,42,.04);}",
+            ".card-head{display:flex;justify-content:space-between;align-items:center;gap:12px;}",
+            ".badge{display:inline-flex;padding:4px 10px;border-radius:999px;background:#efe6d8;color:#7c4a1d;font-size:12px;font-weight:600;}",
+            ".button{display:inline-flex;align-items:center;justify-content:center;padding:10px 16px;border-radius:999px;background:#1f6feb;color:#fff;text-decoration:none;font-weight:600;}",
+            ".button.secondary{background:#355070;}",
+            ".actions{margin-top:16px;}",
+            ".muted{color:#6b7280;font-size:14px;}",
+            ".notes{min-height:72px;white-space:pre-wrap;}",
+            "code{background:#f2eee7;padding:2px 6px;border-radius:8px;}",
+            "</style></head><body><div class='wrap'>",
+            "<section class='hero'>",
+            "<h1>Bottle Desktop 官方下载</h1>",
+            "<p>这是 Bottle 桌面端的统一官方发布入口。普通用户默认下载 <strong>stable</strong>；仅在明确需要内测时才使用 <strong>preview</strong>。</p>",
+            f"<p>当前默认渠道：<strong>{escape(str(active_payload.get('channel') or 'stable'))}</strong> · 当前版本：<strong>{escape(str(active_payload.get('version') or '0.0.0'))}</strong></p>",
+            "</section>",
+            "<div class='grid'>",
+            _render_card("Stable 安装包", stable_payload, primary=True, badge="默认用户渠道"),
+            _render_card("Preview 安装包", preview_payload, primary=False, badge="内部测试渠道"),
+            "</div>",
+            "</div></body></html>",
+        ]
+    )
 
 
 def _is_spa_fallback_path(full_path: str) -> bool:
@@ -538,29 +724,27 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
 
     @app.get("/desktop/client/latest.json", include_in_schema=False)
     def desktop_client_latest(request: Request) -> dict[str, object]:
-        return _get_desktop_client_release_payload(request)
+        return _get_desktop_client_release_payload(request, "stable")
+
+    @app.get("/desktop/client/channels/{channel}.json", include_in_schema=False)
+    def desktop_client_channel_release(request: Request, channel: str) -> dict[str, object]:
+        normalized_channel = _normalize_desktop_release_channel(channel)
+        if normalized_channel != _trim_text(channel).lower():
+            raise HTTPException(status_code=404, detail="Not Found")
+        return _get_desktop_client_release_payload(request, normalized_channel)
 
     @app.get("/desktop-client-version.json", include_in_schema=False)
     def desktop_client_latest_legacy(request: Request) -> dict[str, object]:
         # Keep legacy packaged clients working while runtime-config.mjs uses the newer nested route.
-        return _get_desktop_client_release_payload(request)
+        return _get_desktop_client_release_payload(request, "stable")
 
     @app.get("/download/desktop", include_in_schema=False)
     def desktop_client_download(request: Request):
-        payload = _get_desktop_client_release_payload(request)
-        entry_url = _trim_text(payload.get("entryUrl"))
-        current_url = str(request.url).strip()
-        if entry_url and entry_url != current_url:
-            return RedirectResponse(entry_url, status_code=307)
-        body = [
-            "<html><head><meta charset='utf-8'><title>Bottle Desktop Download</title></head><body>",
-            "<h1>Bottle Desktop 下载入口未单独配置</h1>",
-            "<p>请在部署环境中设置 <code>DESKTOP_CLIENT_ENTRY_URL</code> 指向当前桌面安装包或发布页。</p>",
-            f"<p>当前最新版本：<code>{payload['latestVersion']}</code></p>",
-            f"<p>元数据地址：<code>{payload['metadataUrl']}</code></p>",
-            "</body></html>",
-        ]
-        return Response(content="".join(body), media_type="text/html; charset=utf-8")
+        requested_channel = _normalize_desktop_release_channel(request.query_params.get("channel"))
+        return Response(
+            content=_build_desktop_download_page(request, requested_channel),
+            media_type="text/html; charset=utf-8",
+        )
 
     @app.get("/health")
     def health() -> dict:

@@ -1,104 +1,102 @@
 # Requirements: Bottle English Learning
 
-**Defined:** 2026-03-28  
-**Milestone:** v2.1 优化学习体验和管理体验  
+**Defined:** 2026-03-31
 **Core Value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-Archived shipped requirements: see `.planning/milestones/v2.0-REQUIREMENTS.md`.
+## v2.2 Requirements
 
-## v2.1 Requirements
+### Desktop Release and Updates
 
-### Immersive Learning
+- [ ] **DESK-01**: User can download an official Windows installer for Bottle desktop and complete installation without relying on a dev build or manual file assembly.
+- [ ] **DESK-02**: User can see the installed desktop app version and whether a newer official app version is available.
+- [ ] **DESK-03**: User can trigger a desktop app update from inside the client and complete it without manually uninstalling and reinstalling when the update path is healthy.
+- [ ] **DESK-04**: User can update Bottle desktop ASR model/resource files by downloading only the changed files instead of re-downloading the full model bundle.
+- [ ] **DESK-05**: User can see update progress, completion state, and actionable recovery guidance when app or model update fails.
 
-- [x] **IMM-01**: User can replay the current sentence repeatedly without being forced to advance to the next sentence
-- [x] **IMM-02**: User can enable or disable a single-sentence loop while studying
-- [x] **IMM-03**: User can switch current-sentence playback speed between `0.75x`, `0.90x`, and `1.00x` during study
-- [x] **IMM-04**: Replay, pause/continue, next/previous sentence, reveal-letter, and reveal-word actions behave predictably when combined
-- [x] **IMM-05**: Fullscreen and subtitle-mask interactions do not incorrectly reset sentence playback or completion state
+### Admin Announcements
 
-### Wordbook Review
+- [ ] **ANNC-01**: Admin can create an announcement with title and content for release communication.
+- [ ] **ANNC-02**: Admin can mark an announcement as changelog, banner, or modal so the same system can drive different user-facing placements.
+- [ ] **ANNC-03**: Admin can pin and sort announcements so important information appears first.
+- [ ] **ANNC-04**: Admin can delete announcements that should no longer be shown or managed.
+- [ ] **ANNC-05**: User only sees active announcements that are intended for the current surface (web, desktop, or both).
 
-- [x] **WBK-01**: User can collect words or phrases from immersion with latest sentence context preserved
-- [x] **WBK-02**: Wordbook shows source count, latest context, next review time, review count, wrong count, and current mastery status
-- [x] **WBK-03**: User can open a due-review queue and review due items without manually filtering the full wordbook list
-- [x] **WBK-04**: User can mark a review result as `again` or `good` and the next review time updates accordingly
+### Desktop Hardening
 
-### Account Experience
+- [ ] **SECU-01**: Operator can produce signed desktop release artifacts through a repeatable release pipeline instead of ad-hoc local packaging.
+- [ ] **SECU-02**: User runs a packaged desktop client whose renderer only receives explicitly whitelisted preload capabilities needed by the product.
+- [ ] **SECU-03**: Operator can verify which packaged runtime assets are protected inside the official desktop release and which assets remain updateable by design.
 
-- [x] **ACC-01**: User must provide a unique username during registration
-- [x] **ACC-02**: User can update username after registration from a lightweight account settings entry
-- [x] **ACC-03**: User still logs in with email and password only
-- [x] **ACC-04**: Login and registration UI clearly distinguishes login fields from registration fields and uses branded Chinese-first copy
+### Wordbook Review Experience
 
-### Web Product Boundary
+- [ ] **WORD-01**: User can enter a focused due-review flow that prioritizes words needing review ahead of passive browsing.
+- [ ] **WORD-02**: User sees mastery/progress feedback for each word, and each review result updates the next review timing using a forgetting-curve-inspired rule.
+- [ ] **WORD-03**: User can batch-manage wordbook entries for cleanup and organization without opening each word one by one.
+- [ ] **WORD-04**: User can reopen example sentence and source lesson context while reviewing a word.
+- [ ] **WORD-05**: User can request translation for a selected part of stored context instead of only translating the whole sentence.
+- [ ] **WORD-06**: User reviews and manages words through a redesigned shadcn-style interface that removes non-essential information during focused review.
 
-- [x] **WEB-01**: Web upload surface clearly explains the difference between Bottle 1.0 and Bottle 2.0 before generation starts
-- [x] **WEB-02**: Web users cannot execute Bottle 1.0 generation through browser flows
-- [x] **WEB-03**: Web users can follow a clear desktop CTA when Bottle 1.0 is the better fit
+### UX Hints and Interaction Polish
 
-### Admin Operations
-
-- [x] **ADM-01**: Admin overview, users, wallet logs, redeem, and pricing surfaces display money in yuan as the primary unit
-- [x] **ADM-02**: Admin model naming uses `Bottle 1.0` and `Bottle 2.0` as primary labels, with technical names only as secondary notes
-- [x] **ADM-03**: Admin route structure is Chinese-first and grouped by operator workflow while preserving old deep links
-- [x] **ADM-04**: Editable pricing and read-only runtime diagnostics are presented as separate operator concerns
-
-### Conversion & Monetization
-
-- [x] **GROW-01**: Upload model cards and blocked-action states use clearer pricing anchors and scenario guidance to improve recharge/download intent
-- [x] **GROW-02**: The milestone leaves a benchmark-backed monetization summary for later pricing or A/B follow-up without introducing subscriptions now
+- [ ] **HINT-01**: User sees a short translucent hover/focus hint on selected high-confusion buttons and controls.
+- [ ] **HINT-02**: User sees the same lightweight hint pattern for selected blocked, recovery, or first-use states, and the hint auto-dismisses without trapping the workflow.
 
 ## Future Requirements
 
-### Deferred
+### Desktop Releases
 
-- **FUT-01**: Username can be used as an optional login credential
-- **FUT-02**: Subscription or membership packaging on top of the current per-use model
-- **FUT-03**: More advanced SRS modes such as graded intervals, tagging, and weak-word drills
-- **FUT-04**: More browser-side generation capability where runtime reliability proves acceptable
+- **DESK-06**: Operator can run staged rollout or forced-update policies per desktop release.
+
+### Announcements
+
+- **ANNC-06**: Admin can schedule announcement visibility by time window and finer-grained audience targeting.
+
+### Wordbook
+
+- **WORD-07**: User can hear pronunciation audio for supported wordbook entries during review.
+- **WORD-08**: User can view phonetic symbols / IPA for supported wordbook entries during review.
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Username login | Expands auth risk beyond what v2.1 needs |
-| Subscription plans | This milestone focuses on per-use conversion improvements first |
-| Actual Bottle 1.0 execution in web flows | Bottle 1.0 remains desktop-only by product boundary |
-| Full custom SRS engine | v2.1 only needs due-review and simple review outcomes |
-| Replacing wallet storage semantics | UI and API display can standardize on yuan without changing current storage model immediately |
+| Guaranteed anti-reverse-engineering desktop protection | Electron desktop apps cannot promise absolute secrecy; this milestone focuses on raising extraction cost and tightening release/runtime boundaries |
+| Full CMS / marketing automation for announcements | v2.2 only needs release communication, placement, ordering, and deletion |
+| Pronunciation audio and IPA as hard v2.2 deliverables | Implementation source, quality, and complexity need feasibility validation first |
+| Subscription / membership redesign | This milestone is about release readiness and experience quality, not monetization model changes |
+| Full browser parity for desktop-only runtime features | Browser/runtime boundaries remain acceptable for local tooling and packaged desktop capabilities |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WEB-01 | Phase 7 | Complete |
-| WEB-02 | Phase 7 | Complete |
-| WEB-03 | Phase 7 | Complete |
-| GROW-01 | Phase 11 | Complete |
-| GROW-02 | Phase 11 | Complete |
-| IMM-01 | Phase 8 | Complete |
-| IMM-02 | Phase 8 | Complete |
-| IMM-03 | Phase 8 | Complete |
-| IMM-04 | Phase 8 | Complete |
-| IMM-05 | Phase 8 | Complete |
-| WBK-01 | Phase 9 | Complete |
-| WBK-02 | Phase 9 | Complete |
-| WBK-03 | Phase 9 | Complete |
-| WBK-04 | Phase 9 | Complete |
-| ACC-01 | Phase 9 | Complete |
-| ACC-02 | Phase 9 | Complete |
-| ACC-03 | Phase 9 | Complete |
-| ACC-04 | Phase 9 | Complete |
-| ADM-01 | Phase 10 | Complete |
-| ADM-02 | Phase 10 | Complete |
-| ADM-03 | Phase 10 | Complete |
-| ADM-04 | Phase 10 | Complete |
+| DESK-01 | Phase 13 | Pending |
+| DESK-02 | Phase 14 | Pending |
+| DESK-03 | Phase 14 | Pending |
+| DESK-04 | Phase 14 | Pending |
+| DESK-05 | Phase 14 | Pending |
+| ANNC-01 | Phase 16 | Pending |
+| ANNC-02 | Phase 16 | Pending |
+| ANNC-03 | Phase 16 | Pending |
+| ANNC-04 | Phase 16 | Pending |
+| ANNC-05 | Phase 16 | Pending |
+| SECU-01 | Phase 13 | Pending |
+| SECU-02 | Phase 15 | Pending |
+| SECU-03 | Phase 14 | Pending |
+| WORD-01 | Phase 17 | Pending |
+| WORD-02 | Phase 17 | Pending |
+| WORD-03 | Phase 18 | Pending |
+| WORD-04 | Phase 17 | Pending |
+| WORD-05 | Phase 18 | Pending |
+| WORD-06 | Phase 18 | Pending |
+| HINT-01 | Phase 18 | Pending |
+| HINT-02 | Phase 18 | Pending |
 
 **Coverage:**
-- v2.1 requirements: 22 total
-- Mapped to phases: 22
+- v2.2 requirements: 21 total
+- Mapped to phases: 21
 - Unmapped: 0 ✓
 
 ---
-*Requirements defined: 2026-03-28*  
-*Last updated: 2026-03-29 after Phase 11 completion*
+*Requirements defined: 2026-03-31*
+*Last updated: 2026-03-31 after roadmap creation*

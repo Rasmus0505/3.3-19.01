@@ -109,6 +109,84 @@ _See: `.planning/milestones/v2.1-ROADMAP.md` for full phase details_
   3. 生词本界面完成一次一致的视觉与交互收口，减少非必要信息干扰。
   4. 网站关键困惑点具备统一的半透明轻提示，且提示能自动消失、不阻塞流程。
 
+### Phase 13: 桌面发布管线与签名安装包
+
+**Goal**: 把当前 Electron 工程从“能打包”提升到“能正式发布”，建立可追踪的 Windows 安装包与签名发布流程。  
+**Depends on**: Phase 12  
+**Requirements**: DESK-01, SECU-01  
+**Plans**: 0 plans
+
+Plans:
+
+- [ ] 13-01: 收口正式下载页、release metadata 与 stable/preview 渠道规则
+- [ ] 13-02: 整理正式 Windows 打包与签名发布流水线
+- [ ] 13-03: 调整正式安装器表达、隐藏技术选项并补齐发布验证
+
+### Phase 14: 桌面程序与模型增量更新产品化
+
+**Goal**: 把桌面端版本更新与 ASR 资源更新收口成真实可用、可诊断、可恢复的升级体验。  
+**Depends on**: Phase 13  
+**Requirements**: DESK-02, DESK-03, DESK-04, DESK-05, SECU-03  
+**Plans**: 0 plans
+
+Plans:
+
+- [ ] 14-01: 接入正式程序更新元数据、版本显示与可用更新状态
+- [ ] 14-02: 产品化客户端内程序更新流程与失败恢复
+- [ ] 14-03: 收口模型/资源增量更新、进度反馈与资产边界说明
+
+### Phase 15: 桌面运行时边界加固
+
+**Goal**: 审核并收紧桌面端主进程、预加载和渲染层边界，让正式发布版本具备更清晰的安全边界。  
+**Depends on**: Phase 14  
+**Requirements**: SECU-02  
+**Plans**: 0 plans
+
+Plans:
+
+- [ ] 15-01: 审核并缩减 preload/main 暴露面
+- [ ] 15-02: 固定正式版 BrowserWindow / sandbox / 权限边界
+- [ ] 15-03: 为运行时边界补齐契约验证与发布检查
+
+### Phase 16: 公告与更新日志系统
+
+**Goal**: 在管理台建立一套面向 web/desktop 的统一公告系统，支持更新日志、横幅和弹窗。  
+**Depends on**: Phase 15  
+**Requirements**: ANNC-01, ANNC-02, ANNC-03, ANNC-04, ANNC-05  
+**Plans**: 0 plans
+
+Plans:
+
+- [ ] 16-01: 建立公告数据模型、后台接口与排序/置顶能力
+- [ ] 16-02: 完成管理台公告编辑、删除和投放配置
+- [ ] 16-03: 在 web/desktop 表面接入 changelog、banner、modal 渲染
+
+### Phase 17: 生词本复习主流程重做
+
+**Goal**: 把生词本从“功能存在”提升到“适合高频复习”，优先解决复习流、掌握度反馈和上下文回看。  
+**Depends on**: Phase 16  
+**Requirements**: WORD-01, WORD-02, WORD-04  
+**Plans**: 0 plans
+
+Plans:
+
+- [ ] 17-01: 重做复习入口与 due queue 优先级
+- [ ] 17-02: 收口掌握度反馈与遗忘曲线式调度
+- [ ] 17-03: 在复习流中补齐例句与来源课程回看
+
+### Phase 18: 生词本管理收口与站内轻提示
+
+**Goal**: 完成生词本的批量操作、框选翻译和 shadcn 风格重做，并把网站轻提示系统落到关键交互点。  
+**Depends on**: Phase 17  
+**Requirements**: WORD-03, WORD-05, WORD-06, HINT-01, HINT-02  
+**Plans**: 0 plans
+
+Plans:
+
+- [ ] 18-01: 补齐生词本批量管理与管理/复习视图切换
+- [ ] 18-02: 实现存量上下文局部翻译与界面重构
+- [ ] 18-03: 上线统一轻提示系统并覆盖关键困惑点
+
 ## Progress
 
 | Phase | Milestone | Plans | Status | Completed |

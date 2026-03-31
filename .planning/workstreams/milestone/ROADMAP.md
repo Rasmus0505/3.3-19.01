@@ -5,103 +5,212 @@
 - ✅ **v1.0 基础能力稳定化** — Phases 1, 1.1, 2 (shipped 2026-03-27)
 - ✅ **v1.1** — Phases 2.1, 3, 4 (shipped 2026-03-27)
 - ✅ **v2.0** — Phases 5, 6 (shipped 2026-03-28)
-- 🚧 **v2.1 优化学习体验和管理体验** — Phases 7, 7.1, 8, 9, 10, 11, 12 (planned)
+- ✅ **v2.1 优化学习体验和管理体验** — Phases 7, 7.1, 8, 9, 10, 11, 12 (shipped 2026-03-31)
+- 📋 **v2.2 桌面发布与体验收口** — Phases 13, 14, 15, 16, 17, 18 (planned)
 
 ## Phases
 
-### Phase 7: 竞品研究与产品规范
+<details>
+<summary>✅ v1.0 基础能力稳定化 (Phases 1, 1.1, 2) — SHIPPED 2026-03-27</summary>
 
-**Goal**: 固定 v2.1 的产品定位、竞品参考、Bottle 1.0 / 2.0 文案与网页端转化路径，让后续体验改造不是凭感觉推进。  
-**Depends on**: Phase 6  
-**Requirements**: WEB-01, WEB-02, WEB-03, GROW-01, GROW-02  
-**Plans**: 2 plans
+- [x] Phase 1: Shared Cloud Generation (3/3 plans) — completed 2026-03-26
+- [x] Phase 1.1: Fix ASR 403 File Access Failures (2/2 plans) — completed 2026-03-27
+- [x] Phase 2: Desktop Local Generation (3/3 plans) — completed 2026-03-27
+
+_See: `.planning/milestones/v1.0-ROADMAP.md` for full phase details_
+
+</details>
+
+<details>
+<summary>✅ v1.1 (Phases 2.1, 3, 4) — SHIPPED 2026-03-27</summary>
+
+- [x] Phase 2.1: Admin Bottle 1.0 Settings & Billing Cleanup (3/3 plans) — completed 2026-03-27
+- [x] Phase 3: Lesson Output Consistency (3/3 plans) — completed 2026-03-27
+- [x] Phase 4: Desktop Link Import (2/2 plans) — completed 2026-03-27
+
+_See: `.planning/milestones/v2.0-ROADMAP.md` for archived v1.1 phase details_
+
+</details>
+
+<details>
+<summary>✅ v2.0 — Billing, Admin & Polish (Phases 5, 6) — SHIPPED 2026-03-28</summary>
+
+- [x] Phase 5: Billing and Admin Alignment (3/3 plans) — completed 2026-03-28
+- [x] Phase 6: Product Polish and Fallbacks (2/2 plans) — completed 2026-03-28
+
+_See: `.planning/milestones/v2.0-ROADMAP.md` for full phase details_
+
+</details>
+
+<details>
+<summary>✅ v2.1 优化学习体验和管理体验 (Phases 7, 7.1, 8, 9, 10, 11, 12) — SHIPPED 2026-03-31</summary>
+
+- [x] Phase 7: 竞品研究与产品规范 (2/2 plans) — completed 2026-03-28
+- [x] Phase 7.1: Memo 模式复刻与桌面媒体工作流产品化 (3/3 plans) — completed 2026-03-29
+- [x] Phase 8: 沉浸学习重构 (4/4 plans) — completed 2026-03-28
+- [x] Phase 9: 生词本、账号与网页模型边界 (4/4 plans) — completed 2026-03-28
+- [x] Phase 10: 管理台前后端收口 (4/4 plans) — completed 2026-03-29
+- [x] Phase 11: 盈利转化落地与回归收口 (3/3 plans) — completed 2026-03-30
+- [x] Phase 12: 沉浸学习前端交互优化 (1/1 plan) — completed 2026-03-31
+
+_See: `.planning/milestones/v2.1-ROADMAP.md` for full phase details_
+
+</details>
+
+### 📋 v2.2 桌面发布与体验收口 (Planned)
+
+- [ ] **Phase 13: 桌面发布管线与签名安装包**
+  Goal: 把当前 Electron 工程从“能打包”提升到“能正式发布”，建立可追踪的 Windows 安装包与签名发布流程。
+  Requirements: DESK-01, SECU-01
+  Success criteria:
+  1. 团队可以从受控流程产出官方 Bottle Windows 安装包，而不是手工拼装开发产物。
+  2. 发布产物版本、安装包元数据和发布记录可以互相对应。
+  3. 公共发布所需的签名步骤进入正式发布流程，并能验证结果。
+
+- [ ] **Phase 14: 桌面程序与模型增量更新产品化**
+  Goal: 把桌面端版本更新与 ASR 资源更新收口成真实可用、可诊断、可恢复的升级体验。
+  Requirements: DESK-02, DESK-03, DESK-04, DESK-05, SECU-03
+  Success criteria:
+  1. 用户能在客户端看到当前版本、可用新版本和更新状态。
+  2. 程序更新在健康路径下可在客户端内完成，不需要用户手动卸载重装。
+  3. 模型/资源更新只下载变化文件，并能正确展示进度、完成状态和失败恢复入口。
+  4. 团队能区分哪些资源是打包保护资产，哪些资源是按设计允许增量更新的资产。
+
+- [ ] **Phase 15: 桌面运行时边界加固**
+  Goal: 审核并收紧桌面端主进程、预加载和渲染层边界，让正式发布版本具备更清晰的安全边界。
+  Requirements: SECU-02
+  Success criteria:
+  1. 渲染层只能访问产品明确允许的预加载能力。
+  2. 发布版桌面端的权限边界被记录并验证，而不是依赖默认或历史残留配置。
+  3. 核心运行时暴露面相比当前基线收紧，且不破坏已有核心工作流。
+
+- [ ] **Phase 16: 公告与更新日志系统**
+  Goal: 在管理台建立一套面向 web/desktop 的统一公告系统，支持更新日志、横幅和弹窗。
+  Requirements: ANNC-01, ANNC-02, ANNC-03, ANNC-04, ANNC-05
+  Success criteria:
+  1. 管理员可以创建、排序、置顶和删除公告。
+  2. 单条公告可以配置为 changelog、banner 或 modal 展示方式。
+  3. 用户在对应表面只会看到当前有效且匹配端能力的公告内容。
+
+- [ ] **Phase 17: 生词本复习主流程重做**
+  Goal: 把生词本从“功能存在”提升到“适合高频复习”，优先解决复习流、掌握度反馈和上下文回看。
+  Requirements: WORD-01, WORD-02, WORD-04
+  Success criteria:
+  1. 用户可以直接进入到期复习流，而不是先在冗杂列表里找入口。
+  2. 每次复习都会更新掌握度/下次复习安排，并对用户可见。
+  3. 用户在复习中可以快速回看例句和来源课程，不需要跳出一串低效页面。
+
+- [ ] **Phase 18: 生词本管理收口与站内轻提示**
+  Goal: 完成生词本的批量操作、框选翻译和 shadcn 风格重做，并把网站轻提示系统落到关键交互点。
+  Requirements: WORD-03, WORD-05, WORD-06, HINT-01, HINT-02
+  Success criteria:
+  1. 用户可以批量管理生词，并在聚焦复习与管理视图之间自然切换。
+  2. 用户可以对存量上下文中的局部内容发起单独翻译，而不是只能看整句解释。
+  3. 生词本界面完成一次一致的视觉与交互收口，减少非必要信息干扰。
+  4. 网站关键困惑点具备统一的半透明轻提示，且提示能自动消失、不阻塞流程。
+
+### Phase 13: 桌面发布管线与签名安装包
+
+**Goal**: 把当前 Electron 工程从“能打包”提升到“能正式发布”，建立可追踪的 Windows 安装包与签名发布流程。  
+**Depends on**: Phase 12  
+**Requirements**: DESK-01, SECU-01  
+**Plans**: 0 plans
 
 Plans:
 
-- [x] 07-01: 完成官方竞品矩阵与 Bottle 1.0 / 2.0 定位文案
-- [x] 07-02: 收口网页端模型卡、充值引导、桌面端 CTA 与 Bottle 1.0 执行防守
+- [ ] 13-01: 收口正式下载页、release metadata 与 stable/preview 渠道规则
+- [ ] 13-02: 整理正式 Windows 打包与签名发布流水线
+- [ ] 13-03: 调整正式安装器表达、隐藏技术选项并补齐发布验证
 
-### Phase 07.1: Memo 模式复刻与桌面媒体工作流产品化 (INSERTED)
+### Phase 14: 桌面程序与模型增量更新产品化
 
-**Goal:** 把公开链接导入、本地下载/媒体准备、课程生成与后续学习闭环收口成正式桌面端产品能力，明确支持承诺、控制面与元数据边界。  
-**Requirements**: TBD
-**Depends on:** Phase 7
-**Plans:** 3/3 plans complete
-
-Plans:
-- [x] 07.1-01: 固定 Memo 模式复刻的桌面工作流规范、支持承诺与诊断边界
-- [x] 07.1-02: 将上传面板、desktop helper、runtime bridge 和产品介绍收口到公开链接优先的正式流程
-- [x] 07.1-03: 用单元/契约/集成回归与发布 checklist 锁定支持 promise、学习闭环和打包边界
-
-### Phase 8: 沉浸学习重构
-
-**Goal**: 把沉浸学习改成稳定的播放/输入状态机，支持单句循环和倍速切换，并解决历史组合操作冲突。  
-**Depends on**: Phase 7  
-**Requirements**: IMM-01, IMM-02, IMM-03, IMM-04, IMM-05  
-**Plans**: 4 plans
+**Goal**: 把桌面端版本更新与 ASR 资源更新收口成真实可用、可诊断、可恢复的升级体验。  
+**Depends on**: Phase 13  
+**Requirements**: DESK-02, DESK-03, DESK-04, DESK-05, SECU-03  
+**Plans**: 0 plans
 
 Plans:
 
-- [x] 08-01: 拆分沉浸学习的播放、输入、快捷键与句子推进状态
-- [x] 08-02: 增加单句循环与固定倍速切换
-- [x] 08-03: 清理全屏、遮挡板与播放完成状态的互斥关系
-- [x] 08-04: 补齐关键组合交互回归验证
+- [ ] 14-01: 接入正式程序更新元数据、版本显示与可用更新状态
+- [ ] 14-02: 产品化客户端内程序更新流程与失败恢复
+- [ ] 14-03: 收口模型/资源增量更新、进度反馈与资产边界说明
 
-### Phase 9: 生词本、账号与网页模型边界
+### Phase 15: 桌面运行时边界加固
 
-**Goal**: 让生词本从收词列表升级为可复习入口，同时完成用户名注册/修改与网页端 Bottle 1.0 边界强化。  
-**Depends on**: Phase 8  
-**Requirements**: WBK-01, WBK-02, WBK-03, WBK-04, ACC-01, ACC-02, ACC-03, ACC-04  
-**Plans**: 4 plans
-
-Plans:
-
-- [x] 09-01: 增加用户名注册、个人资料改名和当前用户读取接口
-- [x] 09-02: 重做登录/注册前端与轻量账户设置入口
-- [x] 09-03: 为生词本补齐复习字段、到期队列与复习动作
-- [x] 09-04: 收口网页端 Bottle 1.0 不可执行但可引导的边界体验
-
-### Phase 10: 管理台前后端收口
-
-**Goal**: 重构管理台信息架构和接口展示语义，统一中文表达、元优先金额、Bottle 1.0 / 2.0 主命名。  
-**Depends on**: Phase 9  
-**Requirements**: ADM-01, ADM-02, ADM-03, ADM-04  
-**Plans**: 4 plans
+**Goal**: 审核并收紧桌面端主进程、预加载和渲染层边界，让正式发布版本具备更清晰的安全边界。  
+**Depends on**: Phase 14  
+**Requirements**: SECU-02  
+**Plans**: 0 plans
 
 Plans:
 
-- [x] 10-01: 设计并落地新的中文优先管理台导航与深链兼容
-- [x] 10-02: 将 overview/users/wallet/redeem/pricing 金额统一改为元语义
-- [x] 10-03: 收口 Bottle 1.0 / 2.0 命名、排序和模型配置说明
-- [x] 10-04: 分离计费编辑与运行诊断视图并清理英文残留
+- [ ] 15-01: 审核并缩减 preload/main 暴露面
+- [ ] 15-02: 固定正式版 BrowserWindow / sandbox / 权限边界
+- [ ] 15-03: 为运行时边界补齐契约验证与发布检查
 
-### Phase 11: 盈利转化落地与回归收口
+### Phase 16: 公告与更新日志系统
 
-**Goal**: 基于前面阶段的定位和文案，把充值、模型选择、桌面下载转化路径真正落地，并完成整条链路回归。
-**Depends on**: Phase 10
-**Requirements**: GROW-01, GROW-02
-**Plans**: 3 plans
-
-Plans:
-
-- [x] 11-01: 统一模型卡、充值按钮、余额不足提示与桌面端下载转化文案
-- [x] 11-02: 全局数字输入框编辑体验修复并覆盖关键金额/数量输入
-- [x] 11-03: 完成全链路回归、旧深链验证与网页静态产物同步检查
-
-## Summary
-
-**Pending milestone:** v2.1 优化学习体验和管理体验
-**Phase count:** 7
-**Requirement coverage:** 22 / 22 mapped
-**Completed:** Phase 12 — 沉浸学习前端交互优化 ✓
-
-### Phase 12: 沉浸学习前端交互优化
-
-**Goal:** 对沉浸学习页面做 5 个精确的前端交互优化——加入生词本无重播+轻量提示、按钮配色、输入框可手动编辑、倍速按钮间距、喇叭音频不跳转。
-**Depends on:** Phase 11
-**Requirements**: TBD
-**Plans:** 1 plan
+**Goal**: 在管理台建立一套面向 web/desktop 的统一公告系统，支持更新日志、横幅和弹窗。  
+**Depends on**: Phase 15  
+**Requirements**: ANNC-01, ANNC-02, ANNC-03, ANNC-04, ANNC-05  
+**Plans**: 0 plans
 
 Plans:
 
-- [x] 12-01: 沉浸学习 5 项前端交互优化（toast/按钮/input/间距/喇叭音频） (shipped f27d9e46)
+- [ ] 16-01: 建立公告数据模型、后台接口与排序/置顶能力
+- [ ] 16-02: 完成管理台公告编辑、删除和投放配置
+- [ ] 16-03: 在 web/desktop 表面接入 changelog、banner、modal 渲染
+
+### Phase 17: 生词本复习主流程重做
+
+**Goal**: 把生词本从“功能存在”提升到“适合高频复习”，优先解决复习流、掌握度反馈和上下文回看。  
+**Depends on**: Phase 16  
+**Requirements**: WORD-01, WORD-02, WORD-04  
+**Plans**: 0 plans
+
+Plans:
+
+- [ ] 17-01: 重做复习入口与 due queue 优先级
+- [ ] 17-02: 收口掌握度反馈与遗忘曲线式调度
+- [ ] 17-03: 在复习流中补齐例句与来源课程回看
+
+### Phase 18: 生词本管理收口与站内轻提示
+
+**Goal**: 完成生词本的批量操作、框选翻译和 shadcn 风格重做，并把网站轻提示系统落到关键交互点。  
+**Depends on**: Phase 17  
+**Requirements**: WORD-03, WORD-05, WORD-06, HINT-01, HINT-02  
+**Plans**: 0 plans
+
+Plans:
+
+- [ ] 18-01: 补齐生词本批量管理与管理/复习视图切换
+- [ ] 18-02: 实现存量上下文局部翻译与界面重构
+- [ ] 18-03: 上线统一轻提示系统并覆盖关键困惑点
+
+## Progress
+
+| Phase | Milestone | Plans | Status | Completed |
+|-------|-----------|-------|--------|-----------|
+| 1. Shared Cloud Generation | v1.0 | 3/3 | Complete | 2026-03-26 |
+| 1.1. Fix ASR 403 | v1.0 | 2/2 | Complete | 2026-03-27 |
+| 2. Desktop Local Generation | v1.0 | 3/3 | Complete | 2026-03-27 |
+| 2.1. Admin Bottle 1.0 Settings & Billing | v1.1 | 3/3 | Complete | 2026-03-27 |
+| 3. Lesson Output Consistency | v1.1 | 3/3 | Complete | 2026-03-27 |
+| 4. Desktop Link Import | v1.1 | 2/2 | Complete | 2026-03-27 |
+| 5. Billing and Admin Alignment | v2.0 | 3/3 | Complete | 2026-03-28 |
+| 6. Product Polish and Fallbacks | v2.0 | 2/2 | Complete | 2026-03-28 |
+| 7. 竞品研究与产品规范 | v2.1 | 2/2 | Complete | 2026-03-28 |
+| 7.1. Memo 模式复刻 | v2.1 | 3/3 | Complete | 2026-03-29 |
+| 8. 沉浸学习重构 | v2.1 | 4/4 | Complete | 2026-03-28 |
+| 9. 生词本、账号与网页模型边界 | v2.1 | 4/4 | Complete | 2026-03-28 |
+| 10. 管理台前后端收口 | v2.1 | 4/4 | Complete | 2026-03-29 |
+| 11. 盈利转化落地与回归收口 | v2.1 | 3/3 | Complete | 2026-03-30 |
+| 12. 沉浸学习前端交互优化 | v2.1 | 1/1 | Complete | 2026-03-31 |
+| 13. 桌面发布管线与签名安装包 | v2.2 | 0/0 | Planned | — |
+| 14. 桌面程序与模型增量更新产品化 | v2.2 | 0/0 | Planned | — |
+| 15. 桌面运行时边界加固 | v2.2 | 0/0 | Planned | — |
+| 16. 公告与更新日志系统 | v2.2 | 0/0 | Planned | — |
+| 17. 生词本复习主流程重做 | v2.2 | 0/0 | Planned | — |
+| 18. 生词本管理收口与站内轻提示 | v2.2 | 0/0 | Planned | — |
+
+**Overall:** 15/21 phases complete — v2.2 roadmap created

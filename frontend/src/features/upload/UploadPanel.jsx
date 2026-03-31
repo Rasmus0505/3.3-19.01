@@ -53,7 +53,7 @@ const LOCAL_ASR_TARGET_SAMPLE_RATE = 16000;
 const LOCAL_ASR_FILE_ACCEPT = ".mp3,.mp4,.m4a,.wav,.flac,.ogg,.aac,.webm,.mkv,.mov";
 const LOCAL_STAGE_PROGRESS_INTERVAL_MS = 500;
 const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止生成，可重新开始。";
-const DESKTOP_CLIENT_ENTRY_URL = String(import.meta.env.VITE_DESKTOP_CLIENT_ENTRY_URL || import.meta.env.VITE_DESKTOP_CLIENT_DOWNLOAD_URL || "").trim();
+const DESKTOP_CLIENT_ENTRY_URL = String(import.meta.env.VITE_DESKTOP_CLIENT_ENTRY_URL || import.meta.env.VITE_DESKTOP_CLIENT_DOWNLOAD_URL || "/download/desktop").trim();
 const DESKTOP_CLIENT_DISTRIBUTION_NOTE = String(import.meta.env.VITE_DESKTOP_CLIENT_DISTRIBUTION_NOTE || "").trim();
 const BOTTLE2_CLOUD_DESKTOP_RECOMMEND_SIZE_BYTES = 300 * 1024 * 1024;
 const BOTTLE2_CLOUD_DESKTOP_RECOMMEND_DURATION_SECONDS = 45 * 60;
@@ -162,7 +162,7 @@ function normalizeDesktopBundledModelSummary(payload = {}, modelKey = FASTER_WHI
   const message = available
     ? "Bottle 1.0 is ready on this desktop client."
     : installAvailable
-      ? "Bottle 1.0 was not preinstalled. You can prepare it later from the desktop client."
+      ? "Bottle 1.0 can be prepared from this desktop client."
       : "This installer does not contain a reusable Bottle 1.0 local bundle.";
   return {
     modelKey: normalizedModelKey,

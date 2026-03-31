@@ -2,7 +2,7 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: 桌面发布与体验收口
-status: phase 13 context ready
+status: phase 13 executed pending release verification
 last_updated: "2026-03-31T20:26:30.1948841+08:00"
 progress:
   total_phases: 6
@@ -19,16 +19,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** v2.2 — 桌面发布与体验收口 — Phase 13 context ready
+**Current focus:** v2.2 — 桌面发布与体验收口 — Phase 13 executed, pending manual release verification
 
 ## Current Position
 
 Phase: 13
 Plan: -
-Status: Phase 13 context gathered, ready for planning
-Last activity: 2026-03-31 — Captured Phase 13 context for desktop release pipeline and signed installer
+Status: Phase 13 plans executed in code; manual release verification still required
+Last activity: 2026-03-31 — Implemented Phase 13 release surface, release pipeline, installer formalization, and validation docs
 
-**当前阶段：** Phase 13 上下文已收集，待进入规划
+**当前阶段：** Phase 13 已执行代码与计划，待跑真实签名/发布清单验证
 
 ## Accumulated Context
 
@@ -56,10 +56,10 @@ Last activity: 2026-03-31 — Captured Phase 13 context for desktop release pipe
 | 260331-kqa | 精听模式修复：Token 选词简化条件，播放速率固定状态在句间导航时正确处理 | 2026-03-31 | 7c89ee57 | [260331-kqa-token](./quick/260331-kqa-token/) |
 | 260331-qnj | 允许沉浸式学习和管理台数字输入框清空后重输，并为倍速输入框增加0.25步进内嵌上下调节按钮 | 2026-03-31 | 282a72c9 | [260331-qnj-0-25](./quick/260331-qnj-0-25/) |
 
-**Last activity:** 2026-03-31 — Captured Phase 13 context: 官网统一下载页、完整安装包、隐藏技术选项、stable/preview 分流
+**Last activity:** 2026-03-31 — Executed Phase 13: 官网下载页、stable/preview metadata、release-win 脚本、正式安装器默认完整安装
 
 ## Session Continuity
 
 Previous milestone: v2.1 优化学习体验和管理体验 (shipped 2026-03-31)
-Current milestone: v2.2 桌面发布与体验收口 (phase 13 context ready)
-Next expected action: `$gsd-plan-phase 13` — turn the release/distribution decisions into executable plans
+Current milestone: v2.2 桌面发布与体验收口 (phase 13 executed pending release verification)
+Next expected action: run `.planning/workstreams/milestone/phases/13-/13-RELEASE-CHECKLIST.md`, then decide whether to mark Phase 13 complete or add follow-up fixes

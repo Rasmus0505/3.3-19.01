@@ -10,6 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DESKTOP_ROOT = REPO_ROOT / "desktop-client"
 PACKAGE_JSON_PATH = DESKTOP_ROOT / "package.json"
 PACKAGE_WIN_SCRIPT_PATH = DESKTOP_ROOT / "scripts" / "package-win.mjs"
+RELEASE_WIN_SCRIPT_PATH = DESKTOP_ROOT / "scripts" / "release-win.mjs"
 MAIN_PROCESS_PATH = DESKTOP_ROOT / "electron" / "main.mjs"
 PRELOAD_PATH = DESKTOP_ROOT / "electron" / "preload.cjs"
 HELPER_RUNTIME_PATH = DESKTOP_ROOT / "electron" / "helper-runtime.mjs"
@@ -44,6 +45,7 @@ def test_package_json_targets_nsis_installer_with_bundled_runtime_resources():
 
     assert scripts["package:win"] == "node ./scripts/package-win.mjs dir"
     assert scripts["package:release"] == "node ./scripts/package-win.mjs nsis"
+    assert scripts["release:win"] == "node ./scripts/release-win.mjs --channel stable --target nsis"
     assert build_config["win"]["target"] == ["nsis"]
     assert build_config["nsis"]["oneClick"] is False
     assert build_config["nsis"]["allowToChangeInstallationDirectory"] is True
@@ -68,6 +70,21 @@ def test_package_win_script_builds_runtime_defaults_and_helper_before_target_bui
     assert '["--win", requestedTarget, "--x64"]' in script_text
     assert 'requestedTarget === "dir" ? "win-unpacked bundle" : "NSIS installer"' in script_text
     assert "bundledModelSourceDir" in script_text
+    assert "DESKTOP_RELEASE_CHANNEL" in script_text
+    assert "https://351636.preview.aliyun-zeabur.cn" not in script_text
+
+
+def test_release_win_script_defines_channel_aware_signed_release_contract():
+    script_text = RELEASE_WIN_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "DESKTOP_RELEASE_CHANNEL" in script_text
+    assert "stable" in script_text
+    assert "preview" in script_text
+    assert "signatureRequired" in script_text
+    assert "DESKTOP_SIGN_CERT_FILE" in script_text
+    assert "DESKTOP_SIGN_CERT_PASSWORD" in script_text
+    assert "desktop-releases.json" in script_text
+    assert "pathToFileURL" in script_text
 
 
 def test_build_helper_runtime_script_collects_dynamic_app_modules():
@@ -135,13 +152,14 @@ def test_main_process_uses_bundled_helper_runtime_and_packaged_defaults():
     assert "manageCookies" not in preload_text
 
 
-def test_installer_script_contains_bottle_preinstall_checkbox_and_copy_logic():
+def test_installer_script_persists_default_complete_install_state_without_exposing_checkbox():
     installer_text = INSTALLER_SCRIPT_PATH.read_text(encoding="utf-8")
 
-    assert "Preinstall Bottle 1.0 local model bundle (recommended)" in installer_text
-    assert "Page custom BottleModelPageCreate BottleModelPageLeave" in installer_text
+    assert "Preinstall Bottle 1.0 local model bundle (recommended)" not in installer_text
+    assert "Page custom BottleModelPageCreate BottleModelPageLeave" not in installer_text
     assert "desktop-install-state.json" in installer_text
     assert "bottle1Preinstalled" in installer_text
+    assert '"bottle1InstallChoice":"preinstalled"' in installer_text
 
 
 def test_runtime_config_can_bootstrap_cloud_targets_from_packaged_defaults(tmp_path):

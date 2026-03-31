@@ -9,6 +9,14 @@ const outputPath = path.resolve(desktopRoot, ".cache", "runtime-defaults.json");
 const configuredCloudAppUrl = String(process.env.DESKTOP_CLOUD_APP_URL || "").trim();
 const configuredCloudApiBaseUrl = String(process.env.DESKTOP_CLOUD_API_BASE_URL || "").trim();
 const normalizedCloudApiBaseUrl = configuredCloudApiBaseUrl.replace(/\/+$/, "");
+const releaseChannel = (() => {
+  const value = String(process.env.DESKTOP_RELEASE_CHANNEL || "stable").trim().toLowerCase();
+  return value === "preview" ? "preview" : "stable";
+})();
+const defaultMetadataPath = normalizedCloudApiBaseUrl ? `${normalizedCloudApiBaseUrl}/desktop/client/channels/${releaseChannel}.json` : "";
+const defaultEntryPath = normalizedCloudApiBaseUrl
+  ? `${normalizedCloudApiBaseUrl}/download/desktop${releaseChannel === "preview" ? "?channel=preview" : ""}`
+  : "";
 
 const payload = {
   schemaVersion: 1,
@@ -17,12 +25,13 @@ const payload = {
     apiBaseUrl: configuredCloudApiBaseUrl,
   },
   clientUpdate: {
+    channel: releaseChannel,
     metadataUrl:
       String(process.env.DESKTOP_CLIENT_UPDATE_METADATA_URL || "").trim() ||
-      (normalizedCloudApiBaseUrl ? `${normalizedCloudApiBaseUrl}/desktop/client/latest.json` : ""),
+      defaultMetadataPath,
     entryUrl:
-      String(process.env.DESKTOP_CLIENT_UPDATE_ENTRY_URL || "").trim() ||
-      (normalizedCloudApiBaseUrl ? `${normalizedCloudApiBaseUrl}/download/desktop` : ""),
+      String(process.env.DESKTOP_CLIENT_UPDATE_ENTRY_URL || process.env.DESKTOP_CLIENT_ENTRY_URL || "").trim() ||
+      defaultEntryPath,
     checkOnLaunch: !["0", "false", "no", "off"].includes(String(process.env.DESKTOP_CLIENT_UPDATE_CHECK_ON_LAUNCH || "true").trim().toLowerCase()),
   },
 };

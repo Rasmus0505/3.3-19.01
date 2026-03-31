@@ -477,6 +477,8 @@ def test_upload_panel_reuses_normal_submit_strategy_after_link_download_succeeds
 def test_upload_panel_marks_desktop_bundle_as_preparable_and_auto_installs_before_local_run():
     upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
 
+    assert "Bottle 1.0 was not preinstalled. You can prepare it later from the desktop client." not in upload_panel_source
+    assert "Bottle 1.0 can be prepared from this desktop client." in upload_panel_source
     assert 'const cardStatusLabel = isDesktopBundleLoading ? "检查中" : desktopBundlePreparable ? "可准备" : cardStatusAvailable ? "可用" : "不可用";' in upload_panel_source
     assert "if (!bundleSummary?.available && bundleSummary?.installAvailable) {" in upload_panel_source
     assert "bundleSummary = await installDesktopBundledAsrModel(FASTER_WHISPER_MODEL);" in upload_panel_source
