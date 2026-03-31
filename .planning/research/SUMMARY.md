@@ -1,35 +1,57 @@
-# v2.1 Research Summary
+# v2.2 Research Summary
 
-**Milestone:** v2.1 优化学习体验和管理体验  
-**Date:** 2026-03-28
+**Date:** 2026-03-31
+**Milestone:** v2.2 桌面发布与体验收口
 
-## Key Findings
+## Stack Additions
 
-- Market references consistently center language learning around sentence replay, contextual vocabulary capture, and scheduled review rather than isolated feature toggles.
-- Premium conversion works best when the product clearly explains when to use the fast default path versus the higher-value advanced path.
-- Admin/operator products work better when technical internals are hidden behind localized business language and clear workflow grouping.
+- Keep `electron-builder` + `nsis` as the desktop release baseline.
+- Add `electron-updater` for real app-binary updates instead of maintaining a custom version-check-only flow.
+- Keep model/resource incremental update as a separate manifest-driven updater, but align it with the desktop release channel.
+- Add release logging and code-signing support to the packaging pipeline.
+- Reuse existing Radix/shadcn-capable frontend primitives for hints and wordbook redesign.
 
-## Decisions for This Milestone
+## Feature Table Stakes
 
-- Default immersive mode should support single-sentence loop and fixed speed presets: `0.75x / 0.9x / 1.0x`.
-- Wordbook should become a due-review workflow, not only a storage list.
-- Username is required and unique, but login remains email/password only.
-- Web upload keeps Bottle 1.0 visible as explanation and CTA, but Bottle 2.0 is the only executable browser flow.
-- Admin surfaces should standardize on yuan, Chinese labels, and Bottle 1.0 / Bottle 2.0 primary naming.
-- Monetization changes stay inside the existing per-use model: pricing anchors, recharge prompts, desktop download prompts, and scenario-based copy.
+- Signed Windows installer that real users can download and trust.
+- Desktop app update flow with visible release info and safe failure recovery.
+- Admin announcement system that supports changelog, banner, modal, sorting, pinning, and deletion.
+- Wordbook redesigned around due review, mastery feedback, context recall, and bulk cleanup.
+- Lightweight reusable hint system for confusing buttons and states.
 
-## Immediate Inputs to Requirements
+## Integration Guidance
 
-- Immersive refactor must explicitly solve replay/pause/next/fullscreen/mask interaction conflicts.
-- Wordbook requirements must include review metadata and due-review actions.
-- Account requirements must include username registration, profile rename, and branded auth UI.
-- Admin requirements must include yuan-first display, route compatibility, and separation of pricing vs diagnostics.
+- Wrap current desktop update status UI around `electron-updater` rather than running two different update systems.
+- Keep app updates and ASR model updates separate in implementation, unified in user experience.
+- Use one backend announcement model for both web and desktop consumption.
+- Build wordbook as review-first UI, not metadata-first UI.
 
-## Official References
+## Watch Out For
 
-- LingQ plans: https://www.lingq.com/en/learn/en/web/plans/
-- LingQ signup positioning: https://www.lingq.com/en/signup/
-- Migaku pricing: https://migaku.com/ja/pricing
-- FluentU pricing: https://www.fluentu.com/en/pricing/
-- Glossika plans: https://ai.glossika.com/plans
-- Glossika review mode: https://help.glossika.com/en/articles/6281457-%E5%A4%8D%E4%B9%A0%E6%A8%A1%E5%BC%8F-glossika-%E6%80%8E%E9%BA%BD%E5%B8%AE%E6%88%91%E5%B0%87%E5%AD%A6%E9%81%8E%E7%9A%84%E5%8F%A5%E5%AD%90%E8%BD%89%E7%82%BA%E9%95%B7%E6%9C%9F%E8%A8%98%E6%86%B6
+- Shipping unsigned installers or a “check update” flow that cannot actually complete updates.
+- Leaving desktop security debt untouched while claiming the app is hardened.
+- Expanding announcements into a full CMS.
+- Adding more wordbook detail while making review slower.
+- Treating pronunciation / IPA as guaranteed scope before feasibility is clear.
+
+## Immediate Planning Implications
+
+- v2.2 requirements should split into at least these domains:
+  - desktop distribution and updater
+  - announcement publishing
+  - desktop hardening
+  - wordbook redesign
+  - UX hint system
+- Pronunciation / IPA and selection translation should be planned carefully:
+  - selection translation is likely near-core if it reuses stored lesson context
+  - pronunciation / IPA should remain gated unless implementation path proves simple
+
+## Primary Sources
+
+- [electron-builder Auto Update](https://www.electron.build/auto-update.html)
+- [electron-builder electron-updater](https://www.electron.build/electron-updater/index.html)
+- [Electron Security](https://www.electronjs.org/docs/latest/tutorial/security)
+- [Electron Process Sandboxing](https://www.electronjs.org/docs/latest/tutorial/sandbox)
+- [Electron Code Signing](https://www.electronjs.org/docs/latest/tutorial/code-signing)
+- [shadcn/ui Components](https://ui.shadcn.com/docs/components)
+- [shadcn/ui Tooltip](https://ui.shadcn.com/docs/components/base/tooltip)

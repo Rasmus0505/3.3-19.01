@@ -1,42 +1,73 @@
-# v2.1 Research: Stack & Delivery Strategy
+# v2.2 Research: Stack
 
-**Milestone:** v2.1 优化学习体验和管理体验  
-**Date:** 2026-03-28  
-**Scope:** 学习体验、账号体验、网页端 Bottle 边界、管理台重构、盈利转化文案
+**Date:** 2026-03-31
+**Milestone:** v2.2 桌面发布与体验收口
 
-## Keep
+## Current Stack Fit
 
-- Keep the existing FastAPI + React/Vite + Electron split. v2.1 is a product-flow and information-architecture milestone, not a platform rewrite.
-- Keep email/password as the only authentication method. Add username as profile identity, not as a second login identifier.
-- Keep points/balance storage compatibility in backend models. Standardize admin-facing reads and writes around yuan in UI and API display fields.
-- Keep Bottle 1.0 as a desktop-first capability and Bottle 2.0 as the web-safe default.
+- Desktop packaging already uses `electron-builder@25.1.8` with Windows `nsis` target in `desktop-client/package.json`. This is the right baseline for a user-facing Windows installer.
+- Desktop runtime already contains custom client-update state and model-manifest delta update logic in `desktop-client/electron/main.mjs` and `desktop-client/electron/model-updater.mjs`.
+- Frontend already includes Radix-based primitives and `@radix-ui/react-tooltip` / `@radix-ui/react-popover`, so UX hints can be standardized without introducing a second component foundation.
+- Wordbook backend already exists with collection, review queue, status mutation, and source-link context tables. v2.2 should build on that instead of replacing it.
 
-## Add
+## Recommended Stack Additions
 
-- Introduce a dedicated profile update path for username changes.
-- Introduce wordbook review metadata and due-review endpoints instead of treating wordbook as a passive list.
-- Introduce a stable immersion playback state machine around replay, pause, next/previous sentence, fullscreen, and mask interactions.
-- Introduce canonical model-positioning copy shared by web upload cards, admin runtime views, and troubleshooting summaries.
+### Desktop Release and App Update
 
-## Delivery Defaults
+- Add `electron-updater` as a runtime dependency for packaged app update checks and installs.
+- Keep `electron-builder` as the packaging tool and stay on `nsis` for Windows auto-update compatibility.
+- Add `electron-log` (or equivalent file logger) for updater diagnostics in packaged builds.
+- Use a simple HTTPS-hosted release channel first:
+  - Generic HTTPS file host, object storage, or release CDN
+  - `latest.yml` + installer artifacts published by CI
+- Keep ASR model/resource incremental update as a separate manifest pipeline, but align it with the same release channel and version semantics.
 
-- Prefer shadcn/radix-style account surfaces already compatible with the current frontend stack.
-- Prefer reducer/state-machine style refactor for immersive learning rather than adding another ad-hoc hook layer.
-- Prefer “research + copy + conversion path” changes for monetization instead of new subscription billing logic.
-- Prefer route compatibility wrappers in admin so existing deep links still land in the restructured workspace.
+### Release Security
 
-## Source Notes
+- Add Windows code signing to the release pipeline before public distribution.
+- Prefer a cloud-signing path that works in CI:
+  - EV certificate with supported signing workflow
+  - or Azure Trusted Signing if organization eligibility permits
 
-- LingQ official plans and signup positioning emphasize gated free usage and premium convenience around saved vocabulary and imports.
-- Migaku pricing and product messaging emphasize immersion tooling and convenience value over raw lesson volume.
-- FluentU pricing emphasizes curated interactive media, premium polish, and guided learning.
-- Glossika review-mode guidance emphasizes sentence repetition and long-term memory through scheduled review.
+### Admin Announcements
 
-## Official References
+- Reuse existing FastAPI + admin surface.
+- Add a first-party announcement model instead of embedding a CMS.
+- Support announcement presentation variants in one system:
+  - changelog/update log
+  - dismissible banner
+  - modal popup
 
-- https://www.lingq.com/en/learn/en/web/plans/
-- https://www.lingq.com/en/signup/
-- https://migaku.com/ja/pricing
-- https://www.fluentu.com/en/pricing/
-- https://ai.glossika.com/plans
-- https://help.glossika.com/en/articles/6281457-%E5%A4%8D%E4%B9%A0%E6%A8%A1%E5%BC%8F-glossika-%E6%80%8E%E9%BA%BD%E5%B8%AE%E6%88%91%E5%B0%87%E5%AD%A6%E9%81%8E%E7%9A%84%E5%8F%A5%E5%AD%90%E8%BD%89%E7%82%BA%E9%95%B7%E6%9C%9F%E8%A8%98%E6%86%B6
+### Wordbook UI
+
+- Reuse the current React/Radix stack, but refactor the wordbook surface toward shadcn-style patterns:
+  - `Tabs`
+  - `Card`
+  - `Dialog`
+  - `Tooltip`
+  - `Badge`
+  - `Table` / `Data Table`
+  - `Sheet` / `Drawer`
+  - `Command` / search-driven interactions
+
+## What Not To Add
+
+- Do not replace `electron-builder` with a second release tool in the same milestone.
+- Do not introduce a separate headless CMS just for announcements.
+- Do not move core learning logic into a brand-new frontend stack.
+- Do not promise native-code obfuscation or “uncrackable” desktop protection as the milestone goal.
+
+## Why This Stack
+
+- Official Electron Builder docs state that auto updates are supported on Windows with the `NSIS` target and are driven by `electron-updater`, release metadata, and hosted artifacts.
+- Official Electron code-signing docs emphasize that public distribution should be signed to avoid Windows trust warnings.
+- Official shadcn docs show the current library already covers the interaction primitives needed for wordbook redesign and contextual hints.
+
+## Primary Sources
+
+- [electron-builder Auto Update](https://www.electron.build/auto-update.html)
+- [electron-builder electron-updater](https://www.electron.build/electron-updater/index.html)
+- [Electron Code Signing](https://www.electronjs.org/docs/latest/tutorial/code-signing)
+- [electron-builder Windows Code Signing](https://www.electron.build/code-signing-win.html)
+- [shadcn/ui Components](https://ui.shadcn.com/docs/components)
+- [shadcn/ui Tooltip](https://ui.shadcn.com/docs/components/base/tooltip)

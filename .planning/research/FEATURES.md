@@ -1,53 +1,89 @@
-# v2.1 Research: Feature Patterns
+# v2.2 Research: Features
 
-**Milestone:** v2.1 优化学习体验和管理体验  
-**Date:** 2026-03-28
+**Date:** 2026-03-31
+**Milestone:** v2.2 桌面发布与体验收口
 
-## Immersive Learning Patterns
-
-### Table Stakes
-
-- Sentence replay without leaving the current context
-- Fast playback-speed switches for “hear it again, slower”
-- One-click or low-friction word/phrase capture from sentence context
-- Due-review queues that turn collected vocabulary into revisitable study items
-
-### Differentiators Worth Adopting
-
-- Stable interaction model when replay, pause, reveal, and next/previous are mixed
-- Clear “what should I use?” guidance between fast cloud mode and higher-effort higher-control desktop mode
-- Context-rich wordbook entries that preserve latest sentence and source count, not only the isolated word
-
-### Anti-Patterns to Avoid
-
-- Hidden desktop-only constraints that users only discover after submitting work
-- Passive wordbook lists with no next action
-- Charging language that exposes internal units and implementation names instead of user-facing value
-
-## Account & Admin Patterns
+## Desktop Distribution and Updates
 
 ### Table Stakes
 
-- Registration asks for a recognizable identity beyond email
-- Account editing is easy and low-risk
-- Admin workspace language is clear, localized, and business-facing
+- User can download a signed Windows installer from an official release channel.
+- Installer version and app version are traceable to one release record.
+- Desktop app can check whether a newer app version exists.
+- Desktop app can present release notes / update name before installation.
+- App update flow has clear fallback when update fails: retry, manual download, logs.
+- ASR model/resource update can detect local vs remote version and only fetch changed files.
 
-### Differentiators Worth Adopting
+### Differentiators
 
-- Chinese-first operator copy with strong grouping by workflow, not by technical subsystem
-- Monetary presentation in yuan across overview, logs, pricing, and redeem flows
-- Model naming that speaks to user choice first and implementation second
+- Unified release surface where app version update and model update feel like one coherent “Bottle desktop upgrade” experience.
+- Desktop diagnostics panel exposes updater status, versions, and failure reason in user-readable terms.
+- Rollout control can be added later through release metadata without redesigning the whole updater.
 
-## Monetization & Conversion Patterns
+### Anti-Features
 
-### Strong Patterns Observed
+- Forcing users to re-download the whole installer for every model adjustment.
+- Shipping unsigned installers for public users.
+- Treating “check update” and “actually update” as hidden or unverifiable background magic.
 
-- Free or easy-entry path leads into premium convenience rather than overwhelming feature grids
-- Premium positioning works best when each mode has a clear scenario: fast/default vs deeper/high-control
-- Recharge or upgrade prompts perform better when tied to the user’s current blocked action
+## Admin Announcements
 
-### v2.1 Defaults Chosen
+### Table Stakes
 
-- Bottle 2.0 = 网页即用、快速起步、默认推荐
-- Bottle 1.0 = 桌面高精度、长音频/复杂素材/导链导入、价值更高
-- 盈利只做按次付费增强：模型卡文案、价格锚点、充值入口、桌面端 CTA
+- Admin can create announcement/update log entries.
+- Each announcement can be marked as changelog, banner, or modal.
+- Admin can sort, pin/top, and delete announcements.
+- Announcements can be rendered on user-facing surfaces with basic visibility control.
+
+### Differentiators
+
+- One announcement can support both release-note content and UI placement rules.
+- Release records and announcements can be linked so desktop updates and site communication stay aligned.
+
+### Anti-Features
+
+- Building a full marketing automation system.
+- Adding excessive targeting/rules before basic publishing quality is stable.
+
+## Wordbook Review Experience
+
+### Table Stakes
+
+- Review flow is focused and low-noise, with collected word, meaning/context, and review action all visible without clutter.
+- Mastery/progress is visible per word.
+- Due review queue is prioritized over passive list browsing.
+- Bulk operations exist for cleanup and curation.
+- User can reopen example sentence and source lesson context.
+
+### Differentiators
+
+- Forgetting-curve inspired scheduling feels noticeably smarter than the current due-only queue.
+- Selection-based translation from stored context supports “only translate the uncertain fragment” instead of re-reading the whole sentence.
+- UI visually matches the rest of the polished app rather than looking like an internal tool.
+
+### Candidate / Feasibility-Gated
+
+- Pronunciation playback
+- Phonetic symbols / IPA
+
+These are useful but should stay gated until implementation source, quality, and licensing path are clear.
+
+## UX Hints and Interaction Polish
+
+### Table Stakes
+
+- High-confusion buttons expose lightweight hover/focus hints.
+- Hints auto-dismiss and do not permanently block the screen.
+- Mobile and desktop behavior stays consistent enough to avoid surprise.
+
+### Differentiators
+
+- A small, reusable hint system that can support first-use education, blocked states, and inline recovery guidance.
+- Hints are tied to actual user confusion hotspots, not sprayed across every button.
+
+## Primary Sources
+
+- [electron-builder Auto Update](https://www.electron.build/auto-update.html)
+- [Electron Security](https://www.electronjs.org/docs/latest/tutorial/security)
+- [shadcn/ui Components](https://ui.shadcn.com/docs/components)
+- [shadcn/ui Tooltip](https://ui.shadcn.com/docs/components/base/tooltip)
