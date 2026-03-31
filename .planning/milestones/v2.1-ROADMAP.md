@@ -91,8 +91,9 @@ Plans:
 ## Summary
 
 **Pending milestone:** v2.1 优化学习体验和管理体验
-**Phase count:** 6
+**Phase count:** 7
 **Requirement coverage:** 22 / 22 mapped
+**Completed:** Phase 12 — 沉浸学习前端交互优化 ✓
 
 ### Phase 12: 沉浸学习前端交互优化
 
@@ -103,4 +104,4 @@ Plans:
 
 Plans:
 
-- [ ] 12-01: 沉浸学习 5 项前端交互优化（toast/按钮/input/间距/喇叭音频）
+- [x] 12-01: 沉浸学习 5 项前端交互优化（toast/按钮/input/间距/喇叭音频） (shipped f27d9e46)

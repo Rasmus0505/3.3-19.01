@@ -19,6 +19,9 @@ Users can turn real English media into usable learning lessons quickly, without 
 
 ## Current State
 
+<details>
+<summary>v2.1 归档摘要 (2026-03-31 shipped) — 点击展开</summary>
+
 **v2.1 shipped on 2026-03-31.** Full v2.1 product delivered:
 - v1.0 (2026-03-27): Foundation — shared cloud generation, ASR 403 self-heal, desktop local generation
 - v1.1 (2026-03-27): Bottle 1.0 billing/admin cleanup, canonical lesson pipeline, desktop link import
@@ -27,7 +30,10 @@ Users can turn real English media into usable learning lessons quickly, without 
 
 **22/22 v2.1 milestone requirements satisfied.**
 
-**当前阶段：** v2.1 已完成，待规划 v2.2
+See `.planning/milestones/v2.1-ROADMAP.md` for full phase details.
+See `.planning/v2.1-MILESTONE-AUDIT.md` for audit report.
+
+</details>
 
 ## Requirements
 
