@@ -907,6 +907,8 @@ export function ImmersiveLessonPage({
   const [playbackRateInputValue, setPlaybackRateInputValue] = useState(() =>
     formatPlaybackRateInputValue(DEFAULT_IMMERSIVE_PLAYBACK_RATE),
   );
+  const [wordbookSuccessMessage, setWordbookSuccessMessage] = useState(null);
+  const wordbookSuccessTimerRef = useRef(null);
   const {
     phase,
     currentSentenceIndex,
@@ -1615,7 +1617,13 @@ export function ImmersiveLessonPage({
           toast.error(toErrorText(data, "加入生词本失败"));
           return;
         }
-        toast.success(data.message || (data.created ? "已加入生词本" : "已更新到最新语境"), { duration: 1500 });
+        const message = data.message || (data.created ? "已加入生词本" : "已更新到最新语境");
+        if (wordbookSuccessTimerRef.current) clearTimeout(wordbookSuccessTimerRef.current);
+        setWordbookSuccessMessage(message);
+        wordbookSuccessTimerRef.current = setTimeout(() => {
+          setWordbookSuccessMessage(null);
+          wordbookSuccessTimerRef.current = null;
+        }, 1500);
         clearWordbookSelection();
       } catch (error) {
         toast.error(`网络错误: ${String(error)}`);
@@ -3465,9 +3473,10 @@ export function ImmersiveLessonPage({
                 <span className="immersive-status-chip flex items-center gap-1 text-sm">
                   <span className="text-muted-foreground">第</span>
                   <input
-                    type="number"
-                    className="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-center text-sm focus:outline-none focus:ring-1 focus:ring-ring appearance-none"
-                    style={{ MozAppearance: "textfield" }}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    className="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-center text-sm focus:outline-none focus:ring-1 focus:ring-ring [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     min={1}
                     max={sentenceCount}
                     value={sentenceJumpValue !== "" ? sentenceJumpValue : String(currentSentenceIndex + 1)}
@@ -3505,15 +3514,14 @@ export function ImmersiveLessonPage({
                   >
                     精听
                   </button>
-                    <label className="immersive-session-rate-field ml-4">
-                      <span className="immersive-session-rate-label">倍速</span>
+                  <div className="h-6 w-px bg-border mx-1 shrink-0" aria-hidden="true" />
+                  <label className="immersive-session-rate-field">
+                    <span className="immersive-session-rate-label">倍速</span>
                     <input
-                      type="number"
-                      min="0.4"
-                      max="2"
-                      step="0.05"
+                      type="text"
                       inputMode="decimal"
-                      className="immersive-session-rate-input"
+                      className="immersive-session-rate-input [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      style={{ MozAppearance: "textfield" }}
                       value={playbackRateInputValue}
                       onChange={handlePlaybackRateInputChange}
                       onBlur={handlePlaybackRateInputBlur}
@@ -3643,6 +3651,11 @@ export function ImmersiveLessonPage({
                         >
                           {wordbookBusy ? "加入中..." : "加入生词本"}
                         </Button>
+                        {wordbookSuccessMessage ? (
+                          <span className="text-sm text-emerald-600 font-medium animate-in fade-in duration-200">
+                            {wordbookSuccessMessage}
+                          </span>
+                        ) : null}
                       </div>
                       <p className={`pl-[4.5em] ${cinemaFullscreenActive ? "overflow-x-auto whitespace-nowrap" : ""}`}>
                         {wordbookSentenceZh}

@@ -175,7 +175,15 @@ export function useSentencePlayback({
       }
       stopPlayback();
 
-      // Force clip mode when skipSeek is true — plays audio without seeking main video timeline
+      // When skipSeek is true: only use clip audio, never touch main video timeline.
+      // If clip audio is unavailable, return error without seeking main video.
+      if (skipSeek) {
+        if (!sentence.audio_url) {
+          return { ok: false, reason: "clip_unavailable" };
+        }
+        // ... (clip mode logic follows below)
+      }
+
       const effectiveMode = skipSeek && sentence.audio_url ? "clip" : mode;
 
       const normalizedPlaybackPlan = normalizePlaybackPlan(playbackPlan || {});
