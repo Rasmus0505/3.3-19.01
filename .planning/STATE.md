@@ -2,7 +2,7 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: 桌面发布与体验收口
-status: defining requirements
+status: roadmap ready
 last_updated: "2026-03-31T00:00:00+08:00"
 progress:
   total_phases: 6
