@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const desktopRoot = path.resolve(path.dirname(__filename), "..");
 const repoRoot = path.resolve(desktopRoot, "..");
+const DEFAULT_PUBLIC_DOWNLOAD_URL = "https://share.feijipan.com/s/1n2mH6fh";
 
 
 function parseArgs(argv) {
@@ -80,11 +81,17 @@ async function findArtifacts(distDir) {
 
 
 const args = parseArgs(process.argv.slice(2));
-const channel = String(args.channel || process.env.DESKTOP_RELEASE_CHANNEL || "stable").trim().toLowerCase() === "preview" ? "preview" : "stable";
+const requestedChannel = String(args.channel || process.env.DESKTOP_RELEASE_CHANNEL || "stable").trim().toLowerCase();
+if (requestedChannel && requestedChannel !== "stable") {
+  throw new Error("release-win only supports stable releases");
+}
+const channel = "stable";
 const version = String(args.version || process.env.DESKTOP_RELEASE_VERSION || process.env.npm_package_version || "").trim();
 const metadataBaseUrl = String(args["metadata-base-url"] || process.env.DESKTOP_RELEASE_API_BASE_URL || process.env.DESKTOP_CLOUD_API_BASE_URL || "").trim().replace(/\/+$/, "");
 const appBaseUrl = String(args["app-base-url"] || process.env.DESKTOP_RELEASE_APP_URL || process.env.DESKTOP_CLOUD_APP_URL || metadataBaseUrl || "").trim().replace(/\/+$/, "");
-const entryUrl = String(args["entry-url"] || process.env.DESKTOP_RELEASE_ENTRY_URL || "").trim() || (appBaseUrl ? `${appBaseUrl}/download/desktop${channel === "preview" ? "?channel=preview" : ""}` : "");
+const entryUrl =
+  String(args["entry-url"] || process.env.DESKTOP_RELEASE_ENTRY_URL || process.env.DESKTOP_CLIENT_PUBLIC_DOWNLOAD_URL || "").trim() ||
+  DEFAULT_PUBLIC_DOWNLOAD_URL;
 const releaseNotes = String(args["release-notes"] || process.env.DESKTOP_RELEASE_NOTES || "").trim();
 const releaseName = String(args["release-name"] || process.env.DESKTOP_RELEASE_NAME || "").trim() || `Bottle Desktop ${version || channel}`;
 const publishDir = path.resolve(desktopRoot, String(args["publish-dir"] || process.env.DESKTOP_RELEASE_PUBLISH_DIR || "dist/release").trim());
@@ -111,12 +118,13 @@ const buildEnv = {
   DESKTOP_CLIENT_PUBLISHED_AT: new Date().toISOString(),
   DESKTOP_CLIENT_ENTRY_URL: entryUrl,
   DESKTOP_CLIENT_UPDATE_ENTRY_URL: entryUrl,
+  DESKTOP_CLIENT_PUBLIC_DOWNLOAD_URL: entryUrl,
   DESKTOP_CLOUD_API_BASE_URL: metadataBaseUrl,
   DESKTOP_CLOUD_APP_URL: appBaseUrl,
 };
 
 if (metadataBaseUrl) {
-  buildEnv.DESKTOP_CLIENT_UPDATE_METADATA_URL = `${metadataBaseUrl}/desktop/client/channels/${channel}.json`;
+  buildEnv.DESKTOP_CLIENT_UPDATE_METADATA_URL = `${metadataBaseUrl}/desktop/client/channels/stable.json`;
 }
 
 if (signatureRequired) {
@@ -148,20 +156,16 @@ const releaseRecord = {
 
 const channelFile = path.join(publishDir, `${channel}.json`);
 const registryFile = path.join(publishDir, "desktop-releases.json");
-let existingRegistry = { schemaVersion: 1, channels: {} };
-try {
-  existingRegistry = JSON.parse(await fs.readFile(registryFile, "utf8"));
-} catch {
-  existingRegistry = { schemaVersion: 1, channels: {} };
-}
-if (!existingRegistry.channels || typeof existingRegistry.channels !== "object") {
-  existingRegistry.channels = {};
-}
-existingRegistry.schemaVersion = 1;
-existingRegistry.channels[channel] = releaseRecord;
+const existingRegistry = {
+  schemaVersion: 1,
+  channels: {
+    stable: releaseRecord,
+  },
+};
 
 await fs.writeFile(channelFile, JSON.stringify(releaseRecord, null, 2), "utf8");
 await fs.writeFile(registryFile, JSON.stringify(existingRegistry, null, 2), "utf8");
+await fs.rm(path.join(publishDir, "preview.json"), { force: true });
 
 console.log(`release metadata written: ${channelFile}`);
 console.log(`release registry written: ${registryFile}`);

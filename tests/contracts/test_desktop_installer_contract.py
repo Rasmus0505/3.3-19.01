@@ -71,20 +71,24 @@ def test_package_win_script_builds_runtime_defaults_and_helper_before_target_bui
     assert 'requestedTarget === "dir" ? "win-unpacked bundle" : "NSIS installer"' in script_text
     assert "bundledModelSourceDir" in script_text
     assert "DESKTOP_RELEASE_CHANNEL" in script_text
+    assert 'const RELEASE_CHANNEL = "stable";' in script_text
     assert "https://351636.preview.aliyun-zeabur.cn" not in script_text
 
 
-def test_release_win_script_defines_channel_aware_signed_release_contract():
+def test_release_win_script_defines_stable_only_signed_release_contract():
     script_text = RELEASE_WIN_SCRIPT_PATH.read_text(encoding="utf-8")
 
     assert "DESKTOP_RELEASE_CHANNEL" in script_text
     assert "stable" in script_text
-    assert "preview" in script_text
+    assert "only supports stable releases" in script_text
     assert "signatureRequired" in script_text
     assert "DESKTOP_SIGN_CERT_FILE" in script_text
     assert "DESKTOP_SIGN_CERT_PASSWORD" in script_text
     assert "desktop-releases.json" in script_text
     assert "pathToFileURL" in script_text
+    assert "https://share.feijipan.com/s/1n2mH6fh" in script_text
+    assert 'channels: {' in script_text
+    assert 'stable: releaseRecord' in script_text
 
 
 def test_build_helper_runtime_script_collects_dynamic_app_modules():

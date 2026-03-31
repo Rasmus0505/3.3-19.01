@@ -89,6 +89,15 @@ def test_runtime_config_persists_cloud_targets_and_local_paths(tmp_path):
     assert payload["clientUpdate"]["checkOnLaunch"] is False
 
 
+def test_runtime_defaults_script_hardcodes_stable_channel_defaults():
+    script_text = (DESKTOP_ROOT / "scripts" / "write-runtime-defaults.mjs").read_text(encoding="utf-8")
+
+    assert 'channel: "stable"' in script_text
+    assert "/desktop/client/channels/stable.json" in script_text
+    assert "https://share.feijipan.com/s/1n2mH6fh" in script_text
+    assert "?channel=preview" not in script_text
+
+
 def test_runtime_config_derives_app_origin_and_preserves_existing_local_overrides(tmp_path):
     config_path = tmp_path / "desktop-runtime.json"
     existing_local_cache = tmp_path / "custom-cache"

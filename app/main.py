@@ -8,10 +8,9 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
-from html import escape
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
@@ -122,7 +121,8 @@ HTML_NO_STORE_HEADERS: dict[str, str] = {
     "Expires": "0",
 }
 
-DESKTOP_RELEASE_CHANNELS: tuple[str, ...] = ("stable", "preview")
+DESKTOP_RELEASE_CHANNELS: tuple[str, ...] = ("stable",)
+DEFAULT_DESKTOP_CLIENT_PUBLIC_DOWNLOAD_URL = "https://share.feijipan.com/s/1n2mH6fh"
 
 
 @dataclass
@@ -409,6 +409,11 @@ def _trim_text(value: object) -> str:
     return str(value or "").strip()
 
 
+def _resolve_desktop_client_public_download_url() -> str:
+    configured_url = _trim_text(os.getenv("DESKTOP_CLIENT_PUBLIC_DOWNLOAD_URL"))
+    return configured_url or DEFAULT_DESKTOP_CLIENT_PUBLIC_DOWNLOAD_URL
+
+
 def _normalize_desktop_client_version(value: object) -> str:
     return _trim_text(value).lstrip("vV")
 
@@ -419,11 +424,7 @@ def _normalize_desktop_release_channel(value: object) -> str:
 
 
 def _build_desktop_client_default_download_url(request: Request, channel: str = "stable") -> str:
-    base_url = f"{str(request.base_url).rstrip('/')}/download/desktop"
-    normalized_channel = _normalize_desktop_release_channel(channel)
-    if normalized_channel == "preview":
-        return f"{base_url}?channel=preview"
-    return base_url
+    return _resolve_desktop_client_public_download_url()
 
 
 def _build_desktop_client_metadata_url(request: Request, channel: str = "stable") -> str:
@@ -442,47 +443,35 @@ def _coerce_release_artifacts(value: object) -> list[dict[str, object]]:
 
 
 def _build_legacy_desktop_release_record(request: Request, channel: str, requested_version: str = "") -> dict[str, object]:
-    normalized_channel = _normalize_desktop_release_channel(channel)
-    env_prefix = "DESKTOP_CLIENT_PREVIEW_" if normalized_channel == "preview" else "DESKTOP_CLIENT_"
+    normalized_channel = "stable"
     configured_version = _normalize_desktop_client_version(
-        os.getenv(f"{env_prefix}LATEST_VERSION")
-        or os.getenv(f"{env_prefix}VERSION")
-        or (requested_version if normalized_channel == "stable" else "")
+        os.getenv("DESKTOP_CLIENT_LATEST_VERSION")
+        or os.getenv("DESKTOP_CLIENT_VERSION")
+        or requested_version
     )
     configured_entry_url = _trim_text(
-        os.getenv(f"{env_prefix}ENTRY_URL")
-        or os.getenv(f"{env_prefix}DOWNLOAD_URL")
-        or (os.getenv("DESKTOP_CLIENT_ENTRY_URL") if normalized_channel == "stable" else "")
-        or (os.getenv("DESKTOP_CLIENT_DOWNLOAD_URL") if normalized_channel == "stable" else "")
-        or (os.getenv("DESKTOP_CLIENT_UPDATE_ENTRY_URL") if normalized_channel == "stable" else "")
-        or (os.getenv("DESKTOP_CLIENT_UPDATE_DOWNLOAD_URL") if normalized_channel == "stable" else "")
+        os.getenv("DESKTOP_CLIENT_ENTRY_URL")
+        or os.getenv("DESKTOP_CLIENT_DOWNLOAD_URL")
+        or os.getenv("DESKTOP_CLIENT_UPDATE_ENTRY_URL")
+        or os.getenv("DESKTOP_CLIENT_UPDATE_DOWNLOAD_URL")
+        or os.getenv("DESKTOP_CLIENT_PUBLIC_DOWNLOAD_URL")
     )
     configured_release_name = _trim_text(
-        os.getenv(f"{env_prefix}RELEASE_NAME")
-        or os.getenv(f"{env_prefix}VERSION_NAME")
-        or (os.getenv("DESKTOP_CLIENT_RELEASE_NAME") if normalized_channel == "stable" else "")
-        or (os.getenv("DESKTOP_CLIENT_VERSION_NAME") if normalized_channel == "stable" else "")
+        os.getenv("DESKTOP_CLIENT_RELEASE_NAME")
+        or os.getenv("DESKTOP_CLIENT_VERSION_NAME")
     )
     configured_release_notes = _trim_text(
-        os.getenv(f"{env_prefix}RELEASE_NOTES")
-        or os.getenv(f"{env_prefix}CHANGELOG")
-        or (os.getenv("DESKTOP_CLIENT_RELEASE_NOTES") if normalized_channel == "stable" else "")
-        or (os.getenv("DESKTOP_CLIENT_CHANGELOG") if normalized_channel == "stable" else "")
+        os.getenv("DESKTOP_CLIENT_RELEASE_NOTES")
+        or os.getenv("DESKTOP_CLIENT_CHANGELOG")
     )
     configured_published_at = _trim_text(
-        os.getenv(f"{env_prefix}PUBLISHED_AT")
-        or os.getenv(f"{env_prefix}RELEASED_AT")
-        or (os.getenv("DESKTOP_CLIENT_PUBLISHED_AT") if normalized_channel == "stable" else "")
-        or (os.getenv("DESKTOP_CLIENT_RELEASED_AT") if normalized_channel == "stable" else "")
+        os.getenv("DESKTOP_CLIENT_PUBLISHED_AT")
+        or os.getenv("DESKTOP_CLIENT_RELEASED_AT")
     )
     configured = bool(configured_version or configured_entry_url)
-    default_notes = (
-        "尚未配置正式桌面发布信息；发布新 stable 安装包后请提供 release record。"
-        if normalized_channel == "stable"
-        else "尚未配置 preview 桌面发布信息；如需内测，请提供 preview release record。"
-    )
-    entry_url = configured_entry_url or _build_desktop_client_default_download_url(request, normalized_channel)
-    artifacts = [{"kind": "windows-installer", "url": entry_url}] if configured_entry_url else []
+    default_notes = "正式桌面版本通过小飞机网盘分发；发布新 stable 安装包后请同步 release record。"
+    entry_url = configured_entry_url or _resolve_desktop_client_public_download_url()
+    artifacts = [{"kind": "windows-installer", "url": entry_url}] if entry_url else []
     return {
         "channel": normalized_channel,
         "version": configured_version or "0.0.0",
@@ -575,67 +564,9 @@ def _get_desktop_client_release_payload(request: Request, channel: str = "stable
     }
 
 
-def _build_desktop_download_page(request: Request, requested_channel: str = "stable") -> str:
+def _resolve_desktop_download_redirect_url(request: Request) -> str:
     stable_payload = _get_desktop_client_release_payload(request, "stable")
-    preview_payload = _get_desktop_client_release_payload(request, "preview")
-    active_channel = _normalize_desktop_release_channel(requested_channel)
-    active_payload = preview_payload if active_channel == "preview" and preview_payload.get("configured") else stable_payload
-
-    def _render_card(title: str, payload: dict[str, object], *, primary: bool = False, badge: str = "") -> str:
-        version_label = escape(str(payload.get("version") or "0.0.0"))
-        published_at = escape(str(payload.get("publishedAt") or "未提供"))
-        notes = escape(str(payload.get("notes") or ""))
-        entry_url = escape(str(payload.get("entryUrl") or ""))
-        configured = bool(payload.get("configured"))
-        action = (
-            f"<a class='button{' secondary' if not primary else ''}' href='{entry_url}'>下载 {escape(title)}</a>"
-            if configured and entry_url
-            else "<span class='muted'>当前未配置可下载发布物</span>"
-        )
-        meta_url = escape(str(payload.get("metadataUrl") or ""))
-        return (
-            "<section class='card'>"
-            f"<div class='card-head'><h2>{escape(title)}</h2><span class='badge'>{escape(badge)}</span></div>"
-            f"<p><strong>版本：</strong>{version_label}</p>"
-            f"<p><strong>发布时间：</strong>{published_at}</p>"
-            f"<p><strong>Release metadata：</strong><code>{meta_url}</code></p>"
-            f"<p class='notes'>{notes}</p>"
-            f"<div class='actions'>{action}</div>"
-            "</section>"
-        )
-
-    return "".join(
-        [
-            "<html><head><meta charset='utf-8'><title>Bottle Desktop 下载</title>",
-            "<style>",
-            "body{font-family:Segoe UI,system-ui,sans-serif;margin:0;background:#f6f2ea;color:#1f2937;}",
-            ".wrap{max-width:960px;margin:0 auto;padding:48px 20px 64px;}",
-            ".hero{background:#fff;border:1px solid #e5ded2;border-radius:24px;padding:28px 28px 24px;box-shadow:0 16px 40px rgba(15,23,42,.06);}",
-            ".hero h1{margin:0 0 12px;font-size:32px;}",
-            ".hero p{margin:8px 0;line-height:1.7;}",
-            ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-top:24px;}",
-            ".card{background:#fff;border:1px solid #e5ded2;border-radius:20px;padding:20px;box-shadow:0 8px 24px rgba(15,23,42,.04);}",
-            ".card-head{display:flex;justify-content:space-between;align-items:center;gap:12px;}",
-            ".badge{display:inline-flex;padding:4px 10px;border-radius:999px;background:#efe6d8;color:#7c4a1d;font-size:12px;font-weight:600;}",
-            ".button{display:inline-flex;align-items:center;justify-content:center;padding:10px 16px;border-radius:999px;background:#1f6feb;color:#fff;text-decoration:none;font-weight:600;}",
-            ".button.secondary{background:#355070;}",
-            ".actions{margin-top:16px;}",
-            ".muted{color:#6b7280;font-size:14px;}",
-            ".notes{min-height:72px;white-space:pre-wrap;}",
-            "code{background:#f2eee7;padding:2px 6px;border-radius:8px;}",
-            "</style></head><body><div class='wrap'>",
-            "<section class='hero'>",
-            "<h1>Bottle Desktop 官方下载</h1>",
-            "<p>这是 Bottle 桌面端的统一官方发布入口。普通用户默认下载 <strong>stable</strong>；仅在明确需要内测时才使用 <strong>preview</strong>。</p>",
-            f"<p>当前默认渠道：<strong>{escape(str(active_payload.get('channel') or 'stable'))}</strong> · 当前版本：<strong>{escape(str(active_payload.get('version') or '0.0.0'))}</strong></p>",
-            "</section>",
-            "<div class='grid'>",
-            _render_card("Stable 安装包", stable_payload, primary=True, badge="默认用户渠道"),
-            _render_card("Preview 安装包", preview_payload, primary=False, badge="内部测试渠道"),
-            "</div>",
-            "</div></body></html>",
-        ]
-    )
+    return _trim_text(stable_payload.get("entryUrl")) or _resolve_desktop_client_public_download_url()
 
 
 def _is_spa_fallback_path(full_path: str) -> bool:
@@ -724,14 +655,18 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
 
     @app.get("/desktop/client/latest.json", include_in_schema=False)
     def desktop_client_latest(request: Request) -> dict[str, object]:
-        return _get_desktop_client_release_payload(request, "stable")
+        payload = _get_desktop_client_release_payload(request, "stable")
+        payload["metadataUrl"] = f"{str(request.base_url).rstrip('/')}/desktop/client/latest.json"
+        return payload
 
     @app.get("/desktop/client/channels/{channel}.json", include_in_schema=False)
     def desktop_client_channel_release(request: Request, channel: str) -> dict[str, object]:
-        normalized_channel = _normalize_desktop_release_channel(channel)
-        if normalized_channel != _trim_text(channel).lower():
+        normalized_channel = _trim_text(channel).lower()
+        if normalized_channel != "stable":
             raise HTTPException(status_code=404, detail="Not Found")
-        return _get_desktop_client_release_payload(request, normalized_channel)
+        payload = _get_desktop_client_release_payload(request, "stable")
+        payload["metadataUrl"] = _build_desktop_client_metadata_url(request, "stable")
+        return payload
 
     @app.get("/desktop-client-version.json", include_in_schema=False)
     def desktop_client_latest_legacy(request: Request) -> dict[str, object]:
@@ -740,11 +675,10 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
 
     @app.get("/download/desktop", include_in_schema=False)
     def desktop_client_download(request: Request):
-        requested_channel = _normalize_desktop_release_channel(request.query_params.get("channel"))
-        return Response(
-            content=_build_desktop_download_page(request, requested_channel),
-            media_type="text/html; charset=utf-8",
-        )
+        requested_channel = _trim_text(request.query_params.get("channel")).lower()
+        if requested_channel and requested_channel != "stable":
+            raise HTTPException(status_code=404, detail="Not Found")
+        return RedirectResponse(url=_resolve_desktop_download_redirect_url(request), status_code=302)
 
     @app.get("/health")
     def health() -> dict:

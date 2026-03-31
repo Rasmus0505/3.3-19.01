@@ -1,35 +1,29 @@
 # Phase 13 Release Checklist
 
-## 官网下载页
+## Public Download Entry
 
-- [ ] 访问 `/download/desktop` 时能看到 Bottle 官方桌面下载页，而不是占位跳转页
-- [ ] 页面明确展示 stable 版本号、发布时间、更新说明摘要
-- [ ] 页面主下载动作指向 stable 安装包
+- [ ] Visiting `/download/desktop` immediately redirects to the Feijipan stable link: `https://share.feijipan.com/s/1n2mH6fh`
+- [ ] `/download/desktop?channel=preview` no longer works and returns `404`
+- [ ] Web desktop CTAs still point to `/download/desktop`, not a scattered direct link
 
 ## Release Metadata
 
-- [ ] `GET /desktop/client/latest.json` 返回 stable 版本信息
-- [ ] `GET /desktop/client/channels/stable.json` 返回 stable release record
-- [ ] `GET /desktop/client/channels/preview.json` 返回 preview release record（如已配置）
-- [ ] release metadata 中包含 `channel`、`version`、`releaseName`、`entryUrl`
+- [ ] `GET /desktop/client/latest.json` returns stable version info
+- [ ] `GET /desktop/client/channels/stable.json` returns the stable release record
+- [ ] `GET /desktop/client/channels/preview.json` returns `404`
+- [ ] Stable metadata includes `channel`, `version`, `releaseName`, `entryUrl`
+- [ ] Stable metadata `entryUrl` is the Feijipan stable link
 
-## Stable / Preview 分流
+## Stable Release Pipeline
 
-- [ ] 默认官网入口只把普通用户带到 `stable`
-- [ ] `preview` 仅作为内部测试渠道展示，不替代 stable 主入口
-- [ ] 打包后的 stable 客户端默认读取 stable metadata
-- [ ] 打包后的 preview 客户端默认读取 preview metadata
+- [ ] `release-win` only emits stable release records
+- [ ] Generated `desktop-releases.json` only contains the stable channel
+- [ ] Stable release record still marks signing as required
+- [ ] Stable installer signature/file properties still verify correctly
 
-## Windows 安装与签名
+## Installer Experience
 
-- [ ] stable 发布通过正式 `release-win` 流程产出，而不是手工拼装
-- [ ] stable 发布记录中明确标记需要 `签名`
-- [ ] stable 安装包文件属性/签名验证通过
-- [ ] preview 如用于内部验证，可不要求签名，但不得冒充 stable
-
-## 正式安装器体验
-
-- [ ] 安装器默认是 `完整安装`
-- [ ] 安装器不出现 `model / helper / ffmpeg / yt-dlp`
-- [ ] 安装完成后写出 `desktop-install-state.json`
-- [ ] 安装后的 Bottle 1.0 本地资源可直接使用，不要求用户二次理解或手动准备运行资产
+- [ ] Installer defaults to complete installation
+- [ ] Installer does not expose `model / helper / ffmpeg / yt-dlp`
+- [ ] Installation writes `desktop-install-state.json`
+- [ ] Installed Bottle 1.0 local assets remain ready to use without extra user setup
