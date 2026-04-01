@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { resolveDesktopRuntimeConfig } from "./runtime-config.mjs";
 import { resolvePackagedDesktopRuntime, selectDesktopModelDir } from "./helper-runtime.mjs";
-import { computeModelUpdateDelta, readLocalManifest, performIncrementalModelUpdate } from "./model-updater.mjs";
+import { computeModelUpdateDelta, readLocalManifest, performIncrementalModelUpdate, copyDirectory } from "./model-updater.mjs";
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1134,6 +1134,13 @@ async function startDesktopModelUpdate(modelKey = DESKTOP_MODEL_UPDATE_KEY) {
       trimText(desktopPackagedRuntime?.bundledModelDir) ||
       trimText(desktopRuntimeConfig?.local?.modelDir);
     const targetModelDir = trimText(desktopRuntimeConfig?.local?.modelDir);
+
+    // First-run baseline copy: if target dir is empty, copy from bundled base
+    if (localManifest.files.length === 0 && baseModelDir) {
+      await copyDirectory(baseModelDir, targetModelDir);
+      // Re-read local manifest after baseline copy for correct delta computation
+      localManifest = await readLocalManifest(targetModelDir, modelKey);
+    }
 
     for (let i = 0; i < remoteFiles.length; i++) {
       const file = remoteFiles[i];
