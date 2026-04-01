@@ -122,7 +122,7 @@ HTML_NO_STORE_HEADERS: dict[str, str] = {
 }
 
 DESKTOP_RELEASE_CHANNELS: tuple[str, ...] = ("stable",)
-DEFAULT_DESKTOP_CLIENT_PUBLIC_DOWNLOAD_URL = "https://share.feijipan.com/s/1n2mH6fh"
+DEFAULT_DESKTOP_CLIENT_PUBLIC_DOWNLOAD_URL = "https://share.feijipan.com/s/rZ2nmSqi"
 
 
 @dataclass
