@@ -7292,6 +7292,55 @@ export function UploadPanel({
                 <DialogDescription>查看当前桌面客户端版本、云端连接与更新状态。</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
+                {/* DESK-02: Version display card — shows localVersion AND remoteVersion side-by-side when update available */}
+                <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                  <div className="text-sm font-medium text-blue-900">桌面客户端版本</div>
+                  <div className="mt-1 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs text-muted-foreground">当前版本</div>
+                      <div className="font-mono text-sm">
+                        {desktopUpdateState?.localVersion || desktopUpdateState?.currentVersion || "—"}
+                      </div>
+                    </div>
+                    {desktopUpdateState?.updateAvailable && desktopUpdateState?.remoteVersion ? (
+                      <div className="text-right">
+                        <div className="text-xs text-muted-foreground">可更新至</div>
+                        <div className="font-mono text-sm text-green-600">{desktopUpdateState.remoteVersion}</div>
+                        <div className="text-xs text-green-600">{desktopUpdateState.releaseName || "新版本可用"}</div>
+                      </div>
+                    ) : (
+                      !desktopUpdateState?.updateAvailable && desktopUpdateState?.status !== "checking" && (
+                        <div className="text-xs text-green-600">已是最新版本</div>
+                      )
+                    )}
+                    {desktopUpdateState?.status === "checking" && (
+                      <div className="text-xs text-muted-foreground">检查中...</div>
+                    )}
+                  </div>
+                  {desktopUpdateState?.message && desktopUpdateState.status !== "checking" && (
+                    <div className="mt-2 text-xs text-muted-foreground">{desktopUpdateState.message}</div>
+                  )}
+                  <div className="mt-2 flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => window.desktopRuntime?.checkClientUpdate?.()}
+                    >
+                      <RefreshCcw className="mr-1 h-3 w-3" />
+                      检查更新
+                    </Button>
+                    {desktopUpdateState?.updateAvailable && (
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => window.desktopRuntime?.startClientUpdateDownload?.()}
+                      >
+                        立即更新
+                      </Button>
+                    )}
+                  </div>
+                </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {desktopDiagnosticsItems.map((item) => (
                     <div key={item.key} className="space-y-2 rounded-2xl border bg-muted/15 p-4">
