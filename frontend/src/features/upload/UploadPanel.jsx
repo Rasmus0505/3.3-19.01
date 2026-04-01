@@ -1848,6 +1848,9 @@ export function UploadPanel({
   const [subtitleDraftEdits, setSubtitleDraftEdits] = useState({});
   const [desktopServerStatus, setDesktopServerStatus] = useState(() => normalizeServerStatus({ reachable: true, lastCheckedAt: "", latencyMs: null }));
   const [desktopHelperStatus, setDesktopHelperStatus] = useState(null);
+  const [desktopUpdateState, setDesktopUpdateState] = useState(null);
+  const [modelUpdateState, setModelUpdateState] = useState(null);
+  const [updateBannerDismissed, setUpdateBannerDismissed] = useState(false);
   const [offlineBannerMessage, setOfflineBannerMessage] = useState("");
   const [restoreBannerMode, setRestoreBannerMode] = useState(RESTORE_BANNER_MODES.NONE);
   const [pendingPersistedRestore, setPendingPersistedRestore] = useState(null);
@@ -3164,15 +3167,31 @@ export function UploadPanel({
       return undefined;
     }
     void refreshDesktopDiagnostics({ silent: true });
-    const unsubscribe = window.desktopRuntime.onClientUpdateStatusChanged?.((payload) => {
+    const unsubscribeUpdate = window.desktopRuntime.onClientUpdateStatusChanged?.((payload) => {
+      setDesktopUpdateState(payload);
+      if (payload?.badgeVisible === false) {
+        setUpdateBannerDismissed(false);
+      }
       setDesktopRuntimeInfo((prev) => ({
         ...(prev || {}),
         clientUpdate: payload || {},
       }));
     });
+    void window.desktopRuntime.getClientUpdateStatus?.().then((status) => {
+      if (status) setDesktopUpdateState(status);
+    });
+    const unsubscribeModelUpdate = window.desktopRuntime.onModelUpdateProgress?.((payload) => {
+      setModelUpdateState(payload);
+    });
+    void window.desktopRuntime.getModelUpdateStatus?.().then((status) => {
+      if (status) setModelUpdateState(status);
+    });
     return () => {
-      if (typeof unsubscribe === "function") {
-        unsubscribe();
+      if (typeof unsubscribeUpdate === "function") {
+        unsubscribeUpdate();
+      }
+      if (typeof unsubscribeModelUpdate === "function") {
+        unsubscribeModelUpdate();
       }
     };
   }, [desktopRuntimeAvailable]);
@@ -6214,12 +6233,138 @@ export function UploadPanel({
           <CardDescription>左侧查看素材与生成流程，右侧持续查看并回改字幕草稿。</CardDescription>
         </div>
         {desktopRuntimeAvailable ? (
-          <Button type="button" variant="outline" className="h-9 w-fit px-3" onClick={() => setDiagnosticsDialogOpen(true)}>
-            客户端诊断
-          </Button>
+          <div className="relative">
+            <Button type="button" variant="outline" className="h-9 w-fit px-3" onClick={() => setDiagnosticsDialogOpen(true)}>
+              客户端诊断
+            </Button>
+            {desktopUpdateState?.badgeVisible === true && desktopUpdateState?.updateAvailable === true && (
+              <span className="absolute -right-1 -top-1 flex h-3 w-3">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex h-3 w-3 rounded-full bg-red-500"></span>
+              </span>
+            )}
+          </div>
         ) : null}
       </CardHeader>
       <CardContent className="space-y-4">
+        {desktopUpdateState?.updateAvailable && !updateBannerDismissed && (
+          <div className="mb-3 flex items-start justify-between rounded-lg border border-blue-200 bg-blue-50 p-3">
+            {desktopUpdateState?.downloading ? (
+              <div className="w-full">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                  <span className="text-sm font-medium text-blue-900">正在下载更新</span>
+                  <span className="text-sm text-blue-700">{desktopUpdateState?.downloadProgress}%</span>
+                </div>
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-blue-100">
+                  <div
+                    className="h-full rounded-full bg-blue-500 transition-all duration-300"
+                    style={{ width: `${desktopUpdateState?.downloadProgress || 0}%` }}
+                  />
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">{desktopUpdateState?.message}</div>
+              </div>
+            ) : desktopUpdateState?.installPending ? (
+              <div className="w-full">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <span className="text-sm font-medium text-green-900">下载完成</span>
+                </div>
+                <div className="mt-1 text-xs text-green-700">点击「重启并安装」完成更新，或选择「稍后」</div>
+                <div className="mt-2 flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-muted-foreground"
+                    onClick={() => setUpdateBannerDismissed(true)}
+                  >
+                    稍后
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => window.desktopRuntime?.restartAndInstall?.()}
+                  >
+                    重启并安装
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-2 w-2 rounded-full bg-red-500"></span>
+                    <span className="text-sm font-medium text-blue-900">
+                      发现新版本 {desktopUpdateState?.remoteVersion}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs text-blue-700">
+                    {desktopUpdateState?.releaseName ? `${desktopUpdateState.releaseName} — ` : ""}
+                    点击"立即更新"下载并安装
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-muted-foreground"
+                    onClick={() => {
+                      setUpdateBannerDismissed(true);
+                      window.desktopRuntime?.acknowledgeClientUpdate?.();
+                    }}
+                  >
+                    稍后
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => window.desktopRuntime?.startClientUpdateDownload?.()}
+                  >
+                    立即更新
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {desktopUpdateState?.status === "error" && (
+          <div className="mb-3 flex items-start justify-between rounded-lg border border-red-200 bg-red-50 p-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-red-900">更新失败</span>
+              </div>
+              <div className="mt-1 text-xs text-red-700">
+                {desktopUpdateState?.lastError === "network_error" && "网络连接失败，请检查网络后重试"}
+                {desktopUpdateState?.lastError === "server_error" && "服务器暂时不可用，请稍后重试"}
+                {desktopUpdateState?.lastError === "disk_error" && "磁盘空间不足，请清理后重试"}
+                {(!desktopUpdateState?.lastError || desktopUpdateState?.lastError === "unknown") && "更新遇到问题，请重试或联系支持"}
+              </div>
+              {desktopUpdateState?.message && desktopUpdateState.message !== "下载失败，请重试" && (
+                <div className="mt-1 text-xs text-muted-foreground">{desktopUpdateState.message}</div>
+              )}
+            </div>
+            <div className="flex flex-col gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                onClick={() => window.desktopRuntime?.startClientUpdateDownload?.()}
+              >
+                重试
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs text-muted-foreground"
+                onClick={() => window.desktopRuntime?.openClientUpdateLink?.()}
+              >
+                官网下载
+              </Button>
+            </div>
+          </div>
+        )}
+
         <Alert className={cn("border", getUploadToneStyles("idle").surface)}>
           <AlertDescription>
             <p className="text-muted-foreground">余额：{desktopClientBillingEnabled && desktopBillingState.status === "offline" ? "离线模式" : formatMoneyCents(desktopClientBalanceAmountCents)}</p>
