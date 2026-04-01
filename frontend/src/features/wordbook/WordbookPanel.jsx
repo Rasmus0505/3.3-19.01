@@ -241,6 +241,11 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
           <div className="space-y-1">
             <p className="text-sm font-medium">开始复习</p>
             <p className="text-xs text-muted-foreground">当前有 {dueCount} 条到期词条，可直接进入复习模式。</p>
+            {dueCount > 0 && (
+              <Badge variant="destructive" className="mt-1 w-fit">
+                {dueCount}
+              </Badge>
+            )}
           </div>
           <div className="flex gap-2">
             {panelMode === "review" ? (
