@@ -3180,10 +3180,10 @@ export function UploadPanel({
     void window.desktopRuntime.getClientUpdateStatus?.().then((status) => {
       if (status) setDesktopUpdateState(status);
     });
-    const unsubscribeModelUpdate = window.desktopRuntime.onModelUpdateProgress?.((payload) => {
+    const unsubscribeModelUpdate = window.desktopRuntime?.onModelUpdateProgress?.((payload) => {
       setModelUpdateState(payload);
     });
-    void window.desktopRuntime.getModelUpdateStatus?.().then((status) => {
+    void window.desktopRuntime?.getModelUpdateStatus?.()?.then((status) => {
       if (status) setModelUpdateState(status);
     });
     return () => {
