@@ -17,7 +17,7 @@ from app.repositories.wordbook import (
     list_due_wordbook_entries,
     list_wordbook_entries,
 )
-from app.services.wordbook_review_scheduler import REVIEW_GRADES, apply_review_grade, build_initial_review_state
+from app.services.wordbook_review_scheduler import REVIEW_GRADES, apply_review_grade, build_initial_review_state, _resolve_interval_hours
 from app.services.lesson_builder import tokenize_learning_sentence
 
 
@@ -248,9 +248,18 @@ def review_wordbook_entry(db: Session, *, entry_id: int, user_id: int, grade: st
     if not entry:
         raise HTTPException(status_code=404, detail="词条不存在")
 
+    previous_memory_score = float(getattr(entry, "memory_score", 0.0) or 0.0)
+    now = now_shanghai_naive()
+    next_review = getattr(entry, "next_review_at", None)
+    if next_review and next_review > now:
+        previous_hours = (next_review - now).total_seconds() / 3600
+        previous_interval = _format_interval_hours(previous_hours)
+    else:
+        previous_interval = "现在"
+
     review_update = apply_review_grade(
         grade=safe_grade,
-        memory_score=float(getattr(entry, "memory_score", 0.0) or 0.0),
+        memory_score=previous_memory_score,
         review_count=int(getattr(entry, "review_count", 0) or 0),
         wrong_count=int(getattr(entry, "wrong_count", 0) or 0),
     )
@@ -265,9 +274,25 @@ def review_wordbook_entry(db: Session, *, entry_id: int, user_id: int, grade: st
     raw_payload = build_wordbook_entry_payload(db, entry_id=entry_id, user_id=user_id)
     if not raw_payload:
         raise HTTPException(status_code=500, detail="词条复习后读取失败")
+
+    new_interval_hours = (review_update.next_review_at - now).total_seconds() / 3600
+    new_interval = _format_interval_hours(new_interval_hours)
+    interval_diff_hours = new_interval_hours - previous_hours if previous_hours > 0 else new_interval_hours
+    if interval_diff_hours >= 0:
+        interval_change = f"+{_format_interval_hours(interval_diff_hours)}"
+    else:
+        interval_change = _format_interval_hours(abs(interval_diff_hours))
+    memory_score_change = review_update.memory_score - previous_memory_score
+
     return {
         "entry": _entry_payload_to_dict(raw_payload),
         "remaining_due": count_due_wordbook_entries(db, user_id=user_id),
+        "review_result": {
+            "previous_interval": previous_interval,
+            "new_interval": new_interval,
+            "interval_change": interval_change,
+            "memory_score_change": round(memory_score_change, 4),
+        },
     }
 
 
@@ -277,3 +302,69 @@ def delete_wordbook_entry(db: Session, *, entry_id: int, user_id: int) -> None:
         raise HTTPException(status_code=404, detail="词条不存在")
     db.delete(entry)
     db.commit()
+
+
+def _format_interval_hours(hours: float) -> str:
+    if hours < 1:
+        return f"{int(round(hours * 60))}分钟后"
+    if hours < 24:
+        return f"{int(round(hours))}小时后"
+    days = int(round(hours / 24))
+    return f"{days}天后"
+
+
+def _calculate_preview_grades(
+    memory_score: float,
+    review_count: int,
+    wrong_count: int,
+) -> list[dict[str, object]]:
+    results = []
+    for grade in REVIEW_GRADES:
+        next_review_count = max(0, review_count) + 1
+        next_wrong_count = max(0, wrong_count)
+        if grade == "again":
+            next_wrong_count += 1
+        next_score = clamp_memory_score(memory_score + {
+            "again": -0.28,
+            "hard": 0.06,
+            "good": 0.16,
+            "easy": 0.26,
+        }.get(grade, 0))
+        interval_hours = _resolve_interval_hours(
+            grade=grade,
+            memory_score=next_score,
+            review_count=next_review_count,
+            wrong_count=next_wrong_count,
+        )
+        results.append({
+            "grade": grade,
+            "interval": _format_interval_hours(interval_hours),
+            "interval_hours": float(interval_hours),
+        })
+    return results
+
+
+def preview_wordbook_review_grades(db: Session, *, entry_id: int, user_id: int) -> dict[str, object]:
+    entry = get_wordbook_entry_for_user(db, entry_id=entry_id, user_id=user_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="词条不存在")
+    memory_score = float(getattr(entry, "memory_score", 0.0) or 0.0)
+    review_count = int(getattr(entry, "review_count", 0) or 0)
+    wrong_count = int(getattr(entry, "wrong_count", 0) or 0)
+    grades = _calculate_preview_grades(
+        memory_score=memory_score,
+        review_count=review_count,
+        wrong_count=wrong_count,
+    )
+    now = now_shanghai_naive()
+    next_review = getattr(entry, "next_review_at", None)
+    if next_review and next_review > now:
+        hours_until = (next_review - now).total_seconds() / 3600
+        current_interval = _format_interval_hours(hours_until)
+    else:
+        current_interval = "现在"
+    return {
+        "entry_id": int(entry.id),
+        "current_interval": current_interval,
+        "grades": grades,
+    }

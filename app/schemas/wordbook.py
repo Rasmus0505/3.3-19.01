@@ -81,13 +81,34 @@ class WordbookReviewRequest(BaseModel):
     grade: WordbookReviewGrade
 
 
+class WordbookReviewResult(BaseModel):
+    previous_interval: str
+    new_interval: str
+    interval_change: str
+    memory_score_change: float
+
+
 class WordbookMutationResponse(BaseModel):
     ok: bool = True
     message: str
     entry: WordbookEntryResponse
     remaining_due: int = 0
+    review_result: WordbookReviewResult | None = None
 
 
 class WordbookDeleteResponse(BaseModel):
     ok: bool = True
     entry_id: int
+
+
+class WordbookReviewPreviewGrade(BaseModel):
+    grade: WordbookReviewGrade
+    interval: str
+    interval_hours: float
+
+
+class WordbookReviewPreviewResponse(BaseModel):
+    ok: bool = True
+    entry_id: int
+    current_interval: str
+    grades: list[WordbookReviewPreviewGrade]

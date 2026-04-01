@@ -15,6 +15,7 @@ from app.schemas.wordbook import (
     WordbookEntryResponse,
     WordbookListResponse,
     WordbookMutationResponse,
+    WordbookReviewPreviewResponse,
     WordbookReviewQueueResponse,
     WordbookReviewRequest,
     WordbookSourceLessonResponse,
@@ -25,6 +26,7 @@ from app.services.wordbook_service import (
     delete_wordbook_entry,
     list_wordbook_entry_payloads,
     list_wordbook_review_queue_payloads,
+    preview_wordbook_review_grades,
     review_wordbook_entry,
     update_wordbook_entry_status,
 )
@@ -74,6 +76,21 @@ def list_wordbook_review_queue(
         ok=True,
         items=[_entry_response_from_payload(item) for item in payload["items"]],
         total=int(payload["total"]),
+    )
+
+
+@router.get("/review-preview/{entry_id}", response_model=WordbookReviewPreviewResponse, responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}})
+def preview_wordbook_review(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    payload = preview_wordbook_review_grades(db, entry_id=entry_id, user_id=current_user.id)
+    return WordbookReviewPreviewResponse(
+        ok=True,
+        entry_id=int(payload["entry_id"]),
+        current_interval=str(payload["current_interval"]),
+        grades=payload["grades"],
     )
 
 
@@ -145,12 +162,14 @@ def review_wordbook(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    updated_payload = review_wordbook_entry(db, entry_id=entry_id, user_id=current_user.id, grade=payload.grade)
+    result = review_wordbook_entry(db, entry_id=entry_id, user_id=current_user.id, grade=payload.grade)
+    review_result_data = result.get("review_result")
     return WordbookMutationResponse(
         ok=True,
         message="已记录复习结果",
-        entry=_entry_response_from_payload(updated_payload["entry"]),
-        remaining_due=int(updated_payload["remaining_due"]),
+        entry=_entry_response_from_payload(result["entry"]),
+        remaining_due=int(result["remaining_due"]),
+        review_result=review_result_data,
     )
 
 

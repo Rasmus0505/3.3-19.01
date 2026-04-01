@@ -1,4 +1,4 @@
-import { BookOpenText, Trash2 } from "lucide-react";
+import { BookOpenText, Trash2, ExternalLink } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -18,6 +18,7 @@ import {
   SelectValue,
   Skeleton,
 } from "../../shared/ui";
+import { LessonPlayerPopup } from "./LessonPlayerPopup";
 
 const REVIEW_ACTIONS = [
   { grade: "again", label: "重来" },
@@ -57,6 +58,10 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
   const [busyEntryId, setBusyEntryId] = useState(0);
   const [dueCount, setDueCount] = useState(0);
   const [panelMode, setPanelMode] = useState("list");
+  const [reviewPreview, setReviewPreview] = useState(null);
+  const [todayCompleted, setTodayCompleted] = useState(0);
+  const [reviewFeedback, setReviewFeedback] = useState(null);
+  const [lessonPopup, setLessonPopup] = useState({ open: false, lessonId: null, sentenceIndex: 0 });
 
   const loadWordbook = useCallback(async () => {
     setLoading(true);
@@ -95,8 +100,22 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
     setSourceLessonId("all");
   }, [availableLessons, sourceLessonId]);
 
+  const loadReviewPreview = useCallback(async (entryId) => {
+    try {
+      const resp = await apiCall(`/api/wordbook/review-preview/${entryId}`);
+      const data = await parseResponse(resp);
+      if (resp.ok && data.grades) {
+        setReviewPreview(data);
+      }
+    } catch (_) {
+      setReviewPreview(null);
+    }
+  }, [apiCall]);
+
   async function loadReviewQueue() {
     setBusyEntryId(-1);
+    setReviewPreview(null);
+    setReviewFeedback(null);
     try {
       const resp = await apiCall("/api/wordbook/review-queue");
       const data = await parseResponse(resp);
@@ -107,7 +126,11 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
       const nextItems = Array.isArray(data.items) ? data.items : [];
       setReviewQueue(nextItems);
       setDueCount(Math.max(0, Number(data.total || 0)));
+      setTodayCompleted(0);
       setPanelMode("review");
+      if (nextItems.length > 0) {
+        void loadReviewPreview(nextItems[0].id);
+      }
       if (!nextItems.length) {
         toast.message("当前没有到期词条");
       }
@@ -154,9 +177,30 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
         toast.error(toErrorText(data, "提交复习结果失败"));
         return;
       }
-      toast.success(data.message || "已记录复习结果");
-      setReviewQueue((current) => current.slice(1));
+
+      const remainingItems = reviewQueue.slice(1);
+      setReviewQueue(remainingItems);
       setDueCount(Math.max(0, Number(data.remaining_due || 0)));
+      setTodayCompleted((prev) => prev + 1);
+      setReviewPreview(null);
+
+      if (data.review_result) {
+        const { previous_interval, new_interval, interval_change } = data.review_result;
+        setReviewFeedback({
+          message: `复习间隔：${previous_interval} → ${new_interval}`,
+          subtext: interval_change,
+        });
+        setTimeout(() => {
+          setReviewFeedback(null);
+        }, 1500);
+      } else {
+        toast.success(data.message || "已记录复习结果");
+      }
+
+      if (remainingItems.length > 0) {
+        void loadReviewPreview(remainingItems[0].id);
+      }
+
       await loadWordbook();
     } catch (error) {
       toast.error(`网络错误: ${String(error)}`);
@@ -166,6 +210,22 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
   }
 
   const reviewItem = reviewQueue[0] || null;
+  const todayTotal = todayCompleted + reviewQueue.length;
+  const progressPercent = todayTotal > 0 ? Math.round((todayCompleted / todayTotal) * 100) : 0;
+
+  const getIntervalLabel = (grade) => {
+    if (!reviewPreview?.grades) return "";
+    const gradeData = reviewPreview.grades.find((g) => g.grade === grade);
+    return gradeData?.interval || "";
+  };
+
+  const openLessonPopup = useCallback((lessonId, sentenceIndex) => {
+    setLessonPopup({ open: true, lessonId, sentenceIndex: sentenceIndex || 0 });
+  }, []);
+
+  const closeLessonPopup = useCallback(() => {
+    setLessonPopup({ open: false, lessonId: null, sentenceIndex: 0 });
+  }, []);
 
   return (
     <Card>
@@ -311,49 +371,98 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
           <div className="space-y-4 rounded-2xl border bg-muted/5 p-4">
             {!reviewItem ? (
               <div className="rounded-2xl border border-dashed bg-background px-6 py-10 text-center">
-                <p className="text-base font-medium">当前没有到期词条</p>
+                <p className="text-base font-medium">
+                  {todayCompleted > 0 ? "今日复习完成" : "当前没有到期词条"}
+                </p>
                 <p className="mt-2 text-sm text-muted-foreground">回到列表继续收集或稍后再来复习。</p>
               </div>
             ) : (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-medium">复习中</p>
-                    <p className="text-xs text-muted-foreground">剩余 {reviewQueue.length} 条到期词条</p>
+                    <p className="text-sm font-medium">今天复习进度：{todayCompleted} / {todayTotal} 张</p>
+                    <div className="mt-1 h-2 w-48 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-blue-500 transition-all duration-300"
+                        style={{ width: `${progressPercent}%` }}
+                      />
+                    </div>
                   </div>
-                  <Badge variant="outline">记忆率 {formatMemoryScore(reviewItem.memory_score)}</Badge>
-                </div>
-
-                <div className="space-y-2 rounded-2xl border bg-background p-4">
-                  <p className="text-lg font-semibold">{reviewItem.entry_text}</p>
-                  <p className="text-sm text-muted-foreground">英文语境：{reviewItem.latest_sentence_en || "暂无英文语境"}</p>
-                  <p className="text-sm text-muted-foreground">中文语境：{reviewItem.latest_sentence_zh || "暂无中文语境"}</p>
-                  <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                    <span>下次复习：{formatDateTime(reviewItem.next_review_at)}</span>
-                    <span>复习次数：{Number(reviewItem.review_count || 0)}</span>
-                    <span>答错次数：{Number(reviewItem.wrong_count || 0)}</span>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">记忆率 {formatMemoryScore(reviewItem.memory_score)}</Badge>
+                    <span className="text-xs text-muted-foreground">剩余 {reviewQueue.length} 条</span>
                   </div>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                  {REVIEW_ACTIONS.map((action) => (
-                    <Button
-                      key={action.grade}
-                      type="button"
-                      variant={action.grade === "good" ? "default" : "outline"}
-                      className="h-11 px-4"
-                      disabled={busyEntryId === Number(reviewItem.id || 0)}
-                      onClick={() => void handleReview(action.grade)}
-                    >
-                      {action.label}
-                    </Button>
-                  ))}
-                </div>
+                {reviewFeedback ? (
+                  <div className="rounded-2xl border border-green-200 bg-green-50 p-4 text-center dark:border-green-900 dark:bg-green-950">
+                    <p className="text-sm font-medium text-green-700 dark:text-green-300">✓ 已记录复习结果</p>
+                    <p className="mt-1 text-sm text-green-600 dark:text-green-400">{reviewFeedback.message}</p>
+                    {reviewFeedback.subtext && (
+                      <p className="text-xs text-green-500 dark:text-green-500">({reviewFeedback.subtext})</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2 rounded-2xl border bg-background p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <p className="text-lg font-semibold">{reviewItem.entry_text}</p>
+                        <p className="mt-2 text-sm text-muted-foreground">英文语境：{reviewItem.latest_sentence_en || "暂无英文语境"}</p>
+                        <p className="text-sm text-muted-foreground">中文语境：{reviewItem.latest_sentence_zh || "暂无中文语境"}</p>
+                        <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                          <span>下次复习：{formatDateTime(reviewItem.next_review_at)}</span>
+                          <span>复习次数：{Number(reviewItem.review_count || 0)}</span>
+                          <span>答错次数：{Number(reviewItem.wrong_count || 0)}</span>
+                        </div>
+                      </div>
+                      {reviewItem.source_lesson_id ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="shrink-0"
+                          onClick={() => void openLessonPopup(reviewItem.source_lesson_id, reviewItem.latest_sentence_idx)}
+                        >
+                          <ExternalLink className="size-4" />
+                          查看课程
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+
+                {!reviewFeedback ? (
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    {REVIEW_ACTIONS.map((action) => (
+                      <div key={action.grade} className="space-y-1">
+                        <Button
+                          type="button"
+                          variant={action.grade === "good" ? "default" : "outline"}
+                          className="h-11 w-full px-4"
+                          disabled={busyEntryId === Number(reviewItem.id || 0)}
+                          onClick={() => void handleReview(action.grade)}
+                        >
+                          {action.label}
+                        </Button>
+                        <p className="text-center text-xs text-muted-foreground">
+                          {getIntervalLabel(action.grade) || "—"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </>
             )}
           </div>
         )}
       </CardContent>
+
+      <LessonPlayerPopup
+        open={lessonPopup.open}
+        onClose={closeLessonPopup}
+        lessonId={lessonPopup.lessonId}
+        sentenceIndex={lessonPopup.sentenceIndex}
+      />
     </Card>
   );
 }
