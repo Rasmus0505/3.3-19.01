@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-03-31)
 
 Milestone: v2.2
 Phase: 14 (桌面程序与模型增量更新产品化) — EXECUTING
-Plan: 2 of 3 (completed)
-Status: Executing Phase 14 Plan 02 — COMPLETE
-Completed: 14-01 (badge + banner), 14-02 (download orchestration + restart trigger)
-Next: Execute Phase 14 Plan 03
+Plan: 3 of 3 (completed)
+Status: Executing Phase 14 Plan 03 — COMPLETE
+Completed: 14-01 (badge + banner), 14-02 (download orchestration + restart trigger), 14-03 (model delta update + asset boundary)
+Next: Execute Phase 14 Plan 04
 
 ## Milestone Status
 
@@ -53,9 +53,17 @@ Next: Execute Phase 14 Plan 03
 - Phase 14 execution progress:
   - 14-01: Complete (badgeVisible, acknowledge IPC, banner in UploadPanel)
   - 14-02: Complete (download orchestration, progress tracking, restart trigger)
-  - 14-03: In progress
+  - 14-03: Complete (model delta update with progress, file count N/M, current filename, plain-language errors, retry UI, asset boundary contract SECU-03)
+
+## Decisions
+
+| Decision | Phase | Summary |
+|----------|-------|---------|
+| Bundled model is read-only baseline | 14-03 | Delta computation integrity |
+| Model writes go to user-data only | 14-03 | Protects bundled assets |
+| Error messages use plain-language categories | 14-03 | User-friendly recovery |
 
 ## Next Step
 
-1. **Execute Phase 14 Plan 03** — 模型增量更新 UI 和健康路径
+1. **规划 Phase 14 Plan 04** — 公告能力产品化
 2. **手工验证 Phase 13 发布流程** — 按 `13-RELEASE-CHECKLIST.md` 验证 stable / preview / 签名 / 安装器体验
