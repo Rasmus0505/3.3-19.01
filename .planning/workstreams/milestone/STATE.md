@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: 桌面发布与体验收口
 status: planning
-last_updated: "2026-04-01T08:39:41.913Z"
+last_updated: "2026-04-01T10:45:08.883Z"
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 10
-  completed_plans: 8
+  total_plans: 13
+  completed_plans: 10
 ---
 
 # Project State
@@ -72,6 +72,7 @@ Next: /gsd-plan-phase 15
   - **Admin 入口** — 管理台新增独立「公告管理」Tab
   - **存储** — 后端数据库，登录用户专属，user_id 记录已读
   - **数据模型** — 最简版（title/content/type/status），ANNC-06 定时投放将来迁移
+  - **16-02 完成** — AdminAnnouncementsPage + 后端 CRUD API 已交付
 
 ## Decisions
 
@@ -93,7 +94,10 @@ Next: /gsd-plan-phase 15
 | Admin: new Announcements tab | 16 | Clear entry |
 | Announce DB: backend, login-required | 16 | Cross-device |
 | Announce model: minimal | 16 | ANNC-06 later |
+| Admin UI + API built in 16-02 | 16-02 | Backend-first approach |
+| Announcement CRUD API: FastAPI + SQLAlchemy | 16-02 | API pattern matches existing admin routes |
 
 ## Next Step
 
-1. **Phase 16 — 公告与更新日志系统** — Context gathered. Ready for planning.
+1. **Phase 16-03 — 用户端公告渲染** — 接 changelog/banner/modal 三种展示
+

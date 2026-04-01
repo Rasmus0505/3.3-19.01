@@ -84,7 +84,7 @@ _See: `.planning/milestones/v2.1-ROADMAP.md` for full phase details_
   2. 发布版桌面端的权限边界被记录并验证，而不是依赖默认或历史残留配置。
   3. 核心运行时暴露面相比当前基线收紧，且不破坏已有核心工作流。
 
-- [ ] **Phase 16: 公告与更新日志系统**
+- [ ] **Phase 16: 公告与更新日志系统** *(2/3 plans)*
   Goal: 在管理台建立一套面向 web/desktop 的统一公告系统，支持更新日志、横幅和弹窗。
   Requirements: ANNC-01, ANNC-02, ANNC-03, ANNC-04, ANNC-05
   Success criteria:
@@ -153,12 +153,12 @@ Plans:
 **Goal**: 在管理台建立一套面向 web/desktop 的统一公告系统，支持更新日志、横幅和弹窗。  
 **Depends on**: Phase 15  
 **Requirements**: ANNC-01, ANNC-02, ANNC-03, ANNC-04, ANNC-05  
-**Plans**: 0 plans
+**Plans**: 2/3
 
 Plans:
 
-- [ ] 16-01: 建立公告数据模型、后台接口与排序/置顶能力
-- [ ] 16-02: 完成管理台公告编辑、删除和投放配置
+- [x] 16-01: 建立公告数据模型、后台接口与排序/置顶能力
+- [x] 16-02: 完成管理台公告编辑、删除和投放配置
 - [ ] 16-03: 在 web/desktop 表面接入 changelog、banner、modal 渲染
 
 ### Phase 17: 生词本复习主流程重做
@@ -209,7 +209,7 @@ Plans:
 | 13. 桌面发布管线与签名安装包 | v2.2 | 0/0 | Planned | — |
 | 14. 桌面程序与模型增量更新产品化 | v2.2 | 0/0 | Planned | — |
 | 15. 桌面运行时边界加固 | v2.2 | 0/0 | Planned | — |
-| 16. 公告与更新日志系统 | v2.2 | 0/0 | Planned | — |
+| 16. 公告与更新日志系统 | v2.2 | 2/3 | Complete | 2026-04-01 |
 | 17. 生词本复习主流程重做 | v2.2 | 0/0 | Planned | — |
 | 18. 生词本管理收口与站内轻提示 | v2.2 | 0/0 | Planned | — |
 
