@@ -1,3 +1,4 @@
+from app.models.announcement import Announcement
 from app.models.billing import (
     AdminOperationLog,
     BillingModelRate,
@@ -14,6 +15,7 @@ from app.models.lesson import Lesson, LessonGenerationTask, LessonProgress, Less
 from app.models.user import User, UserLoginEvent
 
 __all__ = [
+    "Announcement",
     "User",
     "UserLoginEvent",
     "Lesson",
