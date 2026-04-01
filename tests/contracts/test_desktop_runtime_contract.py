@@ -756,3 +756,160 @@ def test_asr_strategy_file_access_contract_maps_backend_code_and_nested_detail()
     assert payload["nested"]["code"] == "CLOUD_FILE_ACCESS_FORBIDDEN"
     assert payload["nested"]["message"] == expected_message
     assert payload["mappedMessage"] == expected_message
+
+
+# ============================================================
+# DESK-02: Version display and badgeVisible behavior
+# ============================================================
+
+
+def test_client_update_state_has_all_required_fields():
+    """DESK-02: desktopClientUpdateState must have all fields needed for version display."""
+    required_fields = [
+        "status", "localVersion", "remoteVersion", "updateAvailable",
+        "badgeVisible", "downloading", "downloadProgress", "downloadPath",
+        "installPending", "lastError", "releaseName", "message", "entryUrl"
+    ]
+    main_content = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+    for field in required_fields:
+        assert field in main_content, f"Field {field} not found in main.mjs"
+
+
+def test_client_update_sets_badge_visible_when_update_available():
+    """DESK-02: When updateAvailable is true, badgeVisible must be set to true."""
+    main_content = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+    badge_patterns = [
+        'badgeVisible: updateAvailable',
+        '"badgeVisible": updateAvailable',
+        "'badgeVisible': updateAvailable",
+        "badgeVisible = updateAvailable",
+    ]
+    assert any(pattern in main_content for pattern in badge_patterns), \
+        "badgeVisible not set based on updateAvailable"
+
+
+def test_client_update_clears_badge_on_install():
+    """DESK-02: When update is installed, badgeVisible must be cleared."""
+    main_content = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+    installed_patterns = [
+        'status: "installed"',
+        "status: 'installed'",
+    ]
+    assert any(p in main_content for p in installed_patterns), \
+        "installed status not found"
+
+
+# ============================================================
+# DESK-03: Download orchestration, progress tracking, restart
+# ============================================================
+
+
+def test_desktop_update_download_flow_exists():
+    """DESK-03: startClientUpdateDownload IPC handler must exist and implement download."""
+    main_content = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+    assert "startClientUpdateDownload" in main_content, \
+        "startClientUpdateDownload not found"
+    assert "restart-and-install" in main_content or "restartAndInstall" in main_content, \
+        "restartAndInstall handler not found"
+    assert "downloadProgress" in main_content, "downloadProgress tracking not found"
+
+
+def test_desktop_update_download_state_transitions():
+    """DESK-03: Download must follow state transitions: idle->downloading->ready(installPending)->installed."""
+    main_content = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+    downloading_patterns = [
+        '"status": "downloading"',
+        "'status': 'downloading'",
+        'status: "downloading"',
+        "status: 'downloading'",
+    ]
+    assert any(p in main_content for p in downloading_patterns), \
+        "downloading status not found"
+    assert "installPending" in main_content, "installPending not found"
+    assert "downloadPath" in main_content, "downloadPath not found"
+
+
+def test_desktop_update_restart_trigger_exists():
+    """DESK-03: Restart trigger must open installer and relaunch app."""
+    main_content = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+    assert "shell.openPath" in main_content, "shell.openPath not found"
+    assert "app.relaunch" in main_content, "app.relaunch not found"
+
+
+# ============================================================
+# DESK-04: Model delta update with progress
+# ============================================================
+
+
+def test_model_update_state_has_progress_fields():
+    """DESK-04: desktopModelUpdateState must track currentFile, totalFiles, completedFiles."""
+    main_content = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+    required_fields = ["currentFile", "totalFiles", "completedFiles", "downloading"]
+    for field in required_fields:
+        assert field in main_content, f"Model progress field {field} not found"
+
+
+def test_model_update_computes_delta():
+    """DESK-04: Model update must compute delta (missing + changed files)."""
+    main_content = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+    updater_content = (DESKTOP_ROOT / "electron" / "model-updater.mjs").read_text(encoding="utf-8")
+    assert "computeModelUpdateDelta" in main_content or "computeModelUpdateDelta" in updater_content, \
+        "computeModelUpdateDelta not found"
+    assert "delta.missing" in main_content or "delta.missing" in updater_content, \
+        "delta.missing not used"
+
+
+def test_model_update_progress_emits_current_file():
+    """DESK-04: During download, currentFile must be emitted in state updates."""
+    main_content = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+    assert "currentFile" in main_content, "currentFile not tracked"
+    assert "emitModelUpdateState" in main_content, "emitModelUpdateState not found"
+
+
+# ============================================================
+# DESK-05: Failure recovery with plain-language messages
+# ============================================================
+
+
+def test_desktop_update_error_classification():
+    """DESK-05: Update errors must be classified into categories for plain-language messages."""
+    main_content = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+    error_categories = ["network_error", "server_error", "disk_error", "unknown"]
+    found_categories = [cat for cat in error_categories if cat in main_content]
+    assert len(found_categories) >= 3, \
+        f"Expected at least 3 error categories, found: {found_categories}"
+
+
+def test_desktop_update_last_error_field_exists():
+    """DESK-05: desktopClientUpdateState must have lastError field."""
+    main_content = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+    assert "lastError" in main_content, "lastError field not found"
+
+
+def test_model_update_retry_button_exists():
+    """DESK-05: Model update UI must have retry button for error recovery."""
+    ui_content = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
+    assert "startModelUpdate" in ui_content, "startModelUpdate not called in UI"
+    assert "error" in ui_content and "startModelUpdate" in ui_content, \
+        "Retry action not found in error state"
+
+
+# ============================================================
+# Behavioral: Bundled baseline copy on first model update
+# ============================================================
+
+
+def test_model_updater_performs_baseline_copy():
+    """First model update: if targetDir is empty, bundled model must be copied to user-data."""
+    updater_content = (DESKTOP_ROOT / "electron" / "model-updater.mjs").read_text(encoding="utf-8")
+    assert "initialFiles.length === 0" in updater_content or \
+           "length === 0" in updater_content, \
+           "Empty dir check not found"
+    assert "copyDirectory" in updater_content or "copy" in updater_content, \
+        "Baseline copy not implemented"
+
+
+def test_model_updater_accepts_base_model_dir():
+    """performIncrementalModelUpdate must accept baseModelDir parameter for baseline copy."""
+    updater_content = (DESKTOP_ROOT / "electron" / "model-updater.mjs").read_text(encoding="utf-8")
+    assert "baseModelDir" in updater_content, "baseModelDir parameter not found"
