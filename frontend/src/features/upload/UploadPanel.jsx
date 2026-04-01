@@ -7302,6 +7302,116 @@ export function UploadPanel({
                     </div>
                   ))}
                 </div>
+                {modelUpdateState ? (
+                  <div className="rounded-2xl border border-purple-200 bg-purple-50 p-4">
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-sm font-medium text-purple-900">Bottle 1.0 模型更新</p>
+                      <Badge variant="outline" className={
+                        modelUpdateState?.status === "downloading" ? "border-purple-500 text-purple-600" :
+                        modelUpdateState?.status === "error" ? "border-red-500 text-red-600" :
+                        modelUpdateState?.status === "installed" ? "border-green-500 text-green-600" :
+                        "border-purple-300 text-purple-500"
+                      }>
+                        {modelUpdateState?.status === "downloading" ? "更新中" :
+                         modelUpdateState?.status === "installed" ? "已是最新" :
+                         modelUpdateState?.status === "ready" ? "有更新" :
+                         modelUpdateState?.status === "error" ? "失败" :
+                         modelUpdateState?.status === "checking" ? "检查中" :
+                         modelUpdateState?.status === "idle" ? "未检查" : modelUpdateState?.status}
+                      </Badge>
+                    </div>
+                    {(modelUpdateState?.totalFiles > 0 || modelUpdateState?.completedFiles > 0) ? (
+                      <div className="mb-2 flex items-center justify-between text-xs text-purple-700">
+                        <span>{modelUpdateState?.completedFiles || 0}/{modelUpdateState?.totalFiles || 0} 个文件</span>
+                        {modelUpdateState?.downloading && (
+                          <span className="font-mono">{Math.round(((modelUpdateState?.completedFiles || 0) / (modelUpdateState?.totalFiles || 1)) * 100)}%</span>
+                        )}
+                      </div>
+                    ) : null}
+                    {modelUpdateState?.downloading && (
+                      <div className="mb-2 h-2 w-full overflow-hidden rounded-full bg-purple-100">
+                        <div
+                          className="h-full rounded-full bg-purple-500 transition-all duration-300"
+                          style={{
+                            width: modelUpdateState?.totalFiles > 0
+                              ? `${Math.round(((modelUpdateState?.completedFiles || 0) / modelUpdateState?.totalFiles) * 100)}%`
+                              : "0%",
+                          }}
+                        />
+                      </div>
+                    )}
+                    {modelUpdateState?.currentFile ? (
+                      <div className="mb-2 truncate text-xs text-purple-600">
+                        正在下载: {modelUpdateState.currentFile}
+                      </div>
+                    ) : null}
+                    {(modelUpdateState?.localVersion || modelUpdateState?.remoteVersion) ? (
+                      <div className="mb-2 flex items-center gap-3 text-xs">
+                        {modelUpdateState?.localVersion && (
+                          <span className="text-muted-foreground">本地: {modelUpdateState.localVersion}</span>
+                        )}
+                        {modelUpdateState?.remoteVersion && (
+                          <span className="text-purple-600">远程: {modelUpdateState.remoteVersion}</span>
+                        )}
+                      </div>
+                    ) : null}
+                    {modelUpdateState?.message ? (
+                      <div className="mb-2 text-xs text-muted-foreground">{modelUpdateState.message}</div>
+                    ) : null}
+                    {modelUpdateState?.status === "error" && (
+                      <div className="mb-2 text-xs text-red-600">
+                        {modelUpdateState?.lastError === "network_error" && "网络连接失败，请检查网络后重试"}
+                        {modelUpdateState?.lastError === "server_error" && "服务器暂时不可用，请稍后重试"}
+                        {modelUpdateState?.lastError === "disk_error" && "磁盘空间不足，请清理后重试"}
+                        {(!modelUpdateState?.lastError || modelUpdateState?.lastError === "unknown") && "更新遇到问题，请重试"}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      {(modelUpdateState?.status === "ready" || modelUpdateState?.status === "error") ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() => window.desktopRuntime?.startModelUpdate?.()}
+                        >
+                          {modelUpdateState?.status === "error" ? "重试更新" : "更新模型"}
+                        </Button>
+                      ) : null}
+                      {modelUpdateState?.status === "downloading" ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs text-muted-foreground"
+                          onClick={() => window.desktopRuntime?.cancelModelUpdate?.()}
+                        >
+                          取消
+                        </Button>
+                      ) : null}
+                      {modelUpdateState?.status === "idle" || modelUpdateState?.status === "checking" ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                          onClick={() => window.desktopRuntime?.checkModelUpdate?.()}
+                        >
+                          检查更新
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="rounded-2xl border border-muted bg-muted/20 p-3">
+                  <div className="text-xs font-medium text-muted-foreground">关于桌面客户端更新</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    程序更新随桌面安装包一起更新，由官方发布渠道推送。如有新版本，会在顶部提示下载安装。
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    模型/资源（如 ASR 模型）可以在客户端内单独增量更新，不需要重新安装程序。
+                  </div>
+                </div>
                 {desktopDiagnosticsError ? (
                   <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-700">{desktopDiagnosticsError}</div>
                 ) : null}
