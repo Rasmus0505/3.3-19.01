@@ -1312,10 +1312,6 @@ ipcMain.handle("desktop:get-model-update-status", () => desktopModelUpdateState)
 ipcMain.handle("desktop:check-model-update", async (_event, modelKey = DESKTOP_MODEL_UPDATE_KEY) => checkDesktopModelUpdate(modelKey));
 ipcMain.handle("desktop:start-model-update", async (_event, modelKey = DESKTOP_MODEL_UPDATE_KEY) => startDesktopModelUpdate(modelKey));
 ipcMain.handle("desktop:cancel-model-update", async () => cancelDesktopModelUpdate());
-ipcMain.handle("desktop:start-client-update-download", async () => ({
-  notImplemented: true,
-  message: "Download orchestration in next plan",
-}));
 ipcMain.handle("desktop:acknowledge-client-update", async () => {
   desktopClientUpdateState = {
     ...desktopClientUpdateState,
