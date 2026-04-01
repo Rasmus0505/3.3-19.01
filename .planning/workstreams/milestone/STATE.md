@@ -24,10 +24,8 @@ See: .planning/PROJECT.md (updated 2026-03-31)
 
 Milestone: v2.2
 Phase: 16
-Plan: Not started
-Status: Context gathered. Ready for planning.
-Completed: Phase 14 plans 14-01 through 14.2 all complete.
-Next: /gsd-plan-phase 15
+Plan: 16-01 complete, 16-02 complete, 16-03 pending
+Status: 16-01/02 executed. Next: 16-03 (user-facing rendering)
 
 ## Milestone Status
 
@@ -72,6 +70,7 @@ Next: /gsd-plan-phase 15
   - **Admin 入口** — 管理台新增独立「公告管理」Tab
   - **存储** — 后端数据库，登录用户专属，user_id 记录已读
   - **数据模型** — 最简版（title/content/type/status），ANNC-06 定时投放将来迁移
+  - **16-01 完成** — 后端公告数据层与 API（Announcement 模型、Schema、Repository、Admin CRUD、Public 端点）
   - **16-02 完成** — AdminAnnouncementsPage + 后端 CRUD API 已交付
 
 ## Decisions
@@ -96,6 +95,9 @@ Next: /gsd-plan-phase 15
 | Announce model: minimal | 16 | ANNC-06 later |
 | Admin UI + API built in 16-02 | 16-02 | Backend-first approach |
 | Announcement CRUD API: FastAPI + SQLAlchemy | 16-02 | API pattern matches existing admin routes |
+| Announcement model: now_shanghai_naive for timestamps | 16-01 | Consistent with other models |
+| Public /api/announcements/active is unauthenticated | 16-01 | Frontend controls login-gated visibility |
+| Admin endpoints via admin.py include_router | 16-01 | Keeps admin routes centralized |
 
 ## Next Step
 

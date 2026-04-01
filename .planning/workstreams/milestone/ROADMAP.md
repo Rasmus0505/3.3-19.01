@@ -67,7 +67,7 @@ _See: `.planning/milestones/v2.1-ROADMAP.md` for full phase details_
   2. 发布产物版本、安装包元数据和发布记录可以互相对应。
   3. 公共发布所需的签名步骤进入正式发布流程，并能验证结果。
 
-- [ ] **Phase 14: 桌面程序与模型增量更新产品化**
+- [x] **Phase 14: 桌面程序与模型增量更新产品化** (completed 2026-04-01)
   Goal: 把桌面端版本更新与 ASR 资源更新收口成真实可用、可诊断、可恢复的升级体验。
   Requirements: DESK-02, DESK-03, DESK-04, DESK-05, SECU-03
   Success criteria:
@@ -76,7 +76,7 @@ _See: `.planning/milestones/v2.1-ROADMAP.md` for full phase details_
   3. 模型/资源更新只下载变化文件，并能正确展示进度、完成状态和失败恢复入口。
   4. 团队能区分哪些资源是打包保护资产，哪些资源是按设计允许增量更新的资产。
 
-- [ ] **Phase 15: 桌面运行时边界加固**
+- [x] **Phase 15: 桌面运行时边界加固** (completed 2026-04-01)
   Goal: 审核并收紧桌面端主进程、预加载和渲染层边界，让正式发布版本具备更清晰的安全边界。
   Requirements: SECU-02
   Success criteria:
@@ -153,12 +153,12 @@ Plans:
 **Goal**: 在管理台建立一套面向 web/desktop 的统一公告系统，支持更新日志、横幅和弹窗。  
 **Depends on**: Phase 15  
 **Requirements**: ANNC-01, ANNC-02, ANNC-03, ANNC-04, ANNC-05  
-**Plans**: 0 plans
+**Plans**: 2/3 — IN PROGRESS
 
 Plans:
 
-- [ ] 16-01: 建立公告数据模型、后台接口与排序/置顶能力
-- [ ] 16-02: 完成管理台公告编辑、删除和投放配置
+- [x] 16-01: 建立公告数据模型、后台接口与排序/置顶能力 ✅ (2026-04-01)
+- [x] 16-02: 完成管理台公告编辑、删除和投放配置 ✅ (2026-04-01)
 - [ ] 16-03: 在 web/desktop 表面接入 changelog、banner、modal 渲染
 
 ### Phase 17: 生词本复习主流程重做
@@ -207,9 +207,9 @@ Plans:
 | 11. 盈利转化落地与回归收口 | v2.1 | 3/3 | Complete | 2026-03-30 |
 | 12. 沉浸学习前端交互优化 | v2.1 | 1/1 | Complete | 2026-03-31 |
 | 13. 桌面发布管线与签名安装包 | v2.2 | 0/0 | Planned | — |
-| 14. 桌面程序与模型增量更新产品化 | v2.2 | 3/3 | Planned | — |
-| 15. 桌面运行时边界加固 | v2.2 | 0/0 | Planned | — |
-| 16. 公告与更新日志系统 | v2.2 | 0/0 | Planned | — |
+| 14. 桌面程序与模型增量更新产品化 | v2.2 | 3/3 | Complete    | 2026-04-01 |
+| 15. 桌面运行时边界加固 | v2.2 | 0/0 | Complete    | 2026-04-01 |
+| 16. 公告与更新日志系统 | v2.2 | 2/3 | In Progress | — |
 | 17. 生词本复习主流程重做 | v2.2 | 0/0 | Planned | — |
 | 18. 生词本管理收口与站内轻提示 | v2.2 | 0/0 | Planned | — |
 
