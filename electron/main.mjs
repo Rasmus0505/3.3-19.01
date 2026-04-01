@@ -907,6 +907,7 @@ async function checkDesktopClientUpdate({ reason = "manual", notify = false } = 
     desktopClientUpdateState = {
       ...desktopClientUpdateState,
       status: "idle",
+      badgeVisible: false,
       message: "Update metadata URL is not configured.",
       lastCheckedAt: new Date().toISOString(),
     };
@@ -918,12 +919,14 @@ async function checkDesktopClientUpdate({ reason = "manual", notify = false } = 
     const response = await withTimeout(metadataUrl, {}, 5000);
     const payload = await response.json();
     const remoteVersion = trimText(payload?.latestVersion || payload?.version);
+    const updateAvailable = Boolean(remoteVersion && remoteVersion !== app.getVersion());
     desktopClientUpdateState = {
       ...desktopClientUpdateState,
       status: "ready",
       localVersion: app.getVersion(),
       remoteVersion,
-      updateAvailable: Boolean(remoteVersion && remoteVersion !== app.getVersion()),
+      updateAvailable,
+      badgeVisible: updateAvailable,
       metadataUrl,
       entryUrl: trimText(payload?.entryUrl) || trimText(payload?.downloadUrl) || trimText(desktopRuntimeConfig?.clientUpdate?.entryUrl),
       releaseName: trimText(payload?.releaseName),
@@ -934,6 +937,7 @@ async function checkDesktopClientUpdate({ reason = "manual", notify = false } = 
     desktopClientUpdateState = {
       ...desktopClientUpdateState,
       status: "error",
+      badgeVisible: false,
       message: error instanceof Error ? error.message : "Client update check failed.",
       lastCheckedAt: new Date().toISOString(),
     };
