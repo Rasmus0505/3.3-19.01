@@ -114,26 +114,26 @@ _See: `.planning/milestones/v2.1-ROADMAP.md` for full phase details_
 **Goal**: 把当前 Electron 工程从“能打包”提升到“能正式发布”，建立可追踪的 Windows 安装包与签名发布流程。  
 **Depends on**: Phase 12  
 **Requirements**: DESK-01, SECU-01  
-**Plans**: 0 plans
+**Plans**: 3/3 — COMPLETE ✅
 
 Plans:
 
-- [ ] 13-01: 收口正式下载页、release metadata 与 stable/preview 渠道规则
-- [ ] 13-02: 整理正式 Windows 打包与签名发布流水线
-- [ ] 13-03: 调整正式安装器表达、隐藏技术选项并补齐发布验证
+- [x] 13-01: 收口正式下载页、release metadata 与 stable/preview 渠道规则 ✅ (2026-03-31)
+- [x] 13-02: 整理正式 Windows 打包与签名发布流水线 ✅ (2026-03-31)
+- [x] 13-03: 调整正式安装器表达、隐藏技术选项并补齐发布验证 ✅ (2026-03-31)
 
 ### Phase 14: 桌面程序与模型增量更新产品化
 
 **Goal**: 把桌面端版本更新与 ASR 资源更新收口成真实可用、可诊断、可恢复的升级体验。  
 **Depends on**: Phase 13  
 **Requirements**: DESK-02, DESK-03, DESK-04, DESK-05, SECU-03  
-**Plans**: 3 plans
+**Plans**: 3/3 — COMPLETE ✅
 
 Plans:
 
-- [ ] 14-01: 接入正式程序更新元数据、版本显示与可用更新状态
-- [ ] 14-02: 产品化客户端内程序更新流程与失败恢复
-- [ ] 14-03: 收口模型/资源增量更新、进度反馈与资产边界说明
+- [x] 14-01: 接入正式程序更新元数据、版本显示与可用更新状态 ✅ (2026-04-01)
+- [x] 14-02: 产品化客户端内程序更新流程与失败恢复 ✅ (2026-04-01)
+- [x] 14-03: 收口模型/资源增量更新、进度反馈与资产边界说明 ✅ (2026-04-01)
 
 ### Phase 15: 桌面运行时边界加固
 
