@@ -112,3 +112,21 @@ class WordbookReviewPreviewResponse(BaseModel):
     entry_id: int
     current_interval: str
     grades: list[WordbookReviewPreviewGrade]
+
+
+class BatchStatusUpdate(BaseModel):
+    word_ids: list[int]
+    is_learned: bool
+
+
+class BatchMoveRequest(BaseModel):
+    word_ids: list[int]
+    target_list_id: int
+
+
+class BatchDeleteRequest(BaseModel):
+    word_ids: list[int]
+
+
+class BatchTranslateRequest(BaseModel):
+    word_ids: list[int]

@@ -99,6 +99,12 @@ from app.schemas.lesson import (
     LessonTaskStageResponse,
 )
 from app.schemas.practice import ProgressResponse, ProgressUpdateRequest, TokenCheckRequest, TokenCheckResponse, TokenResult
+from app.schemas.wordbook import (
+    BatchDeleteRequest,
+    BatchMoveRequest,
+    BatchStatusUpdate,
+    BatchTranslateRequest,
+)
 
 __all__ = [
     "SuccessResponse",
@@ -204,4 +210,8 @@ __all__ = [
     "AnnouncementListResponse",
     "AnnouncementType",
     "AnnouncementUpdate",
+    "BatchDeleteRequest",
+    "BatchMoveRequest",
+    "BatchStatusUpdate",
+    "BatchTranslateRequest",
 ]
