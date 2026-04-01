@@ -61,14 +61,22 @@ let desktopClientUpdateState = {
   releaseName: "",
   lastCheckedAt: "",
   message: "",
+  downloading: false,
+  downloadProgress: 0,
+  downloadPath: "",
+  installPending: false,
+  lastError: "",
+  badgeVisible: false,
 };
 let desktopModelUpdateState = {
   modelKey: DESKTOP_MODEL_UPDATE_KEY,
   status: "idle",
   updateAvailable: false,
   updating: false,
+  downloading: false,
   totalFiles: 0,
   completedFiles: 0,
+  currentFile: "",
   localVersion: "",
   remoteVersion: "",
   lastCheckedAt: "",
@@ -943,6 +951,89 @@ async function openClientUpdateLink(preferredUrl = "") {
   return true;
 }
 
+async function startClientUpdateDownload() {
+  const entryUrl = desktopClientUpdateState?.entryUrl;
+  if (!entryUrl) {
+    desktopClientUpdateState = {
+      ...desktopClientUpdateState,
+      status: "error",
+      lastError: "network_error",
+      message: "无法获取更新下载地址",
+    };
+    emitClientUpdateState();
+    return desktopClientUpdateState;
+  }
+
+  desktopClientUpdateState = {
+    ...desktopClientUpdateState,
+    status: "downloading",
+    downloading: true,
+    downloadProgress: 0,
+    lastError: "",
+    message: "正在下载更新...",
+  };
+  emitClientUpdateState();
+
+  try {
+    const response = await fetch(entryUrl);
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status}`);
+    }
+
+    const contentLength = Number(response.headers.get("content-length") || 0);
+    const chunks = [];
+    const reader = response.body.getReader();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      const received = chunks.reduce((sum, c) => sum + c.length, 0);
+      desktopClientUpdateState.downloadProgress = contentLength > 0
+        ? Math.round((received / contentLength) * 100) : 0;
+      desktopClientUpdateState.message = `正在下载... ${desktopClientUpdateState.downloadProgress}%`;
+      emitClientUpdateState();
+    }
+
+    const versionedFilename = `bottle-desktop-${desktopClientUpdateState.remoteVersion}.exe`;
+    const updatesDir = path.join(app.getPath("userData"), "updates");
+    await fs.mkdir(updatesDir, { recursive: true });
+    const installerPath = path.join(updatesDir, versionedFilename);
+    await fs.writeFile(installerPath, Buffer.concat(chunks));
+
+    desktopClientUpdateState = {
+      ...desktopClientUpdateState,
+      status: "ready",
+      downloading: false,
+      downloadProgress: 100,
+      downloadPath: installerPath,
+      installPending: true,
+      message: "下载完成，点击「重启并安装」完成更新",
+    };
+  } catch (error) {
+    let errorCategory = "unknown";
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    if (errorMsg.includes("fetch") || errorMsg.includes("network") || errorMsg.includes("ENOTFOUND") || errorMsg.includes("ECONNREFUSED")) {
+      errorCategory = "network_error";
+    } else if (errorMsg.includes("status") || errorMsg.includes("500") || errorMsg.includes("502") || errorMsg.includes("503")) {
+      errorCategory = "server_error";
+    } else if (errorMsg.includes("space") || errorMsg.includes("disk") || errorMsg.includes("ENOSPC")) {
+      errorCategory = "disk_error";
+    }
+
+    desktopClientUpdateState = {
+      ...desktopClientUpdateState,
+      status: "error",
+      downloading: false,
+      downloadProgress: 0,
+      lastError: errorCategory,
+      message: "下载失败，请重试",
+    };
+  }
+  emitClientUpdateState();
+  return desktopClientUpdateState;
+}
+
 async function openExternalUrl(targetUrl = "") {
   const normalizedUrl = trimText(targetUrl);
   if (!normalizedUrl) {
@@ -966,7 +1057,9 @@ async function checkDesktopModelUpdate(modelKey = DESKTOP_MODEL_UPDATE_KEY) {
     ...desktopModelUpdateState,
     modelKey,
     status: "checking",
+    downloading: false,
     message: "",
+    lastError: "",
   };
   emitModelUpdateState();
   try {
@@ -980,12 +1073,14 @@ async function checkDesktopModelUpdate(modelKey = DESKTOP_MODEL_UPDATE_KEY) {
       status: "ready",
       updateAvailable: fileCount > 0,
       updating: false,
+      downloading: false,
       totalFiles: fileCount,
       completedFiles: 0,
+      currentFile: "",
       localVersion: trimText(localManifest?.model_version),
       remoteVersion: trimText(remoteManifest?.model_version),
       lastCheckedAt: new Date().toISOString(),
-      message: fileCount > 0 ? "New Bottle 1.0 model update is available." : "Bottle 1.0 model is up to date.",
+      message: fileCount > 0 ? "有新的模型更新可用" : "模型已是最新版本",
       lastError: "",
     };
   } catch (error) {
@@ -994,9 +1089,10 @@ async function checkDesktopModelUpdate(modelKey = DESKTOP_MODEL_UPDATE_KEY) {
       modelKey,
       status: "error",
       updating: false,
+      downloading: false,
       lastCheckedAt: new Date().toISOString(),
       message: "",
-      lastError: error instanceof Error ? error.message : "Model update check failed.",
+      lastError: error instanceof Error ? error.message : "模型更新检查失败",
     };
   }
   emitModelUpdateState();
@@ -1007,45 +1103,109 @@ async function startDesktopModelUpdate(modelKey = DESKTOP_MODEL_UPDATE_KEY) {
   desktopModelUpdateState = {
     ...desktopModelUpdateState,
     modelKey,
-    status: "updating",
+    status: "downloading",
     updating: true,
+    downloading: true,
     completedFiles: 0,
-    message: "Updating Bottle 1.0 model...",
+    currentFile: "",
+    message: "正在更新模型...",
     lastError: "",
   };
   emitModelUpdateState();
   try {
     const remoteManifest = await fetchRemoteModelManifest(modelKey);
+    const localManifest = await readLocalManifest(trimText(desktopRuntimeConfig?.local?.modelDir), modelKey);
+    const delta = computeModelUpdateDelta(localManifest, remoteManifest);
+    const remoteFiles = [...delta.missing, ...delta.changed];
+    const totalFiles = remoteFiles.length;
+
+    desktopModelUpdateState = {
+      ...desktopModelUpdateState,
+      totalFiles,
+      completedFiles: 0,
+    };
+    emitModelUpdateState();
+
     const baseModelDir =
       trimText(desktopPackagedRuntime?.bundledModelDir) ||
       trimText(desktopRuntimeConfig?.local?.modelDir);
-    const result = await performIncrementalModelUpdate({
-      apiBaseUrl: runtimeCloudBaseUrl(),
-      modelKey,
-      remoteManifest,
-      baseModelDir,
-      targetModelDir: trimText(desktopRuntimeConfig?.local?.modelDir),
-    });
+    const targetModelDir = trimText(desktopRuntimeConfig?.local?.modelDir);
+
+    for (let i = 0; i < remoteFiles.length; i++) {
+      const file = remoteFiles[i];
+      const relativeName = trimText(file.name);
+
+      desktopModelUpdateState = {
+        ...desktopModelUpdateState,
+        currentFile: relativeName,
+        completedFiles: i,
+      };
+      emitModelUpdateState();
+
+      const targetPath = path.join(targetModelDir, ...relativeName.split("/"));
+      const backupDir = `${targetModelDir}.backup`;
+      const backupPath = path.join(backupDir, ...relativeName.split("/"));
+      await fs.mkdir(path.dirname(targetPath), { recursive: true });
+      if (await pathExists(targetPath)) {
+        await fs.mkdir(path.dirname(backupPath), { recursive: true });
+        await fs.copyFile(targetPath, backupPath);
+      }
+      const response = await fetch(
+        `${runtimeCloudBaseUrl().replace(/\/+$/, "")}/api/local-asr-assets/download-models/${encodeURIComponent(trimText(modelKey))}/files/${relativeName
+          .split("/")
+          .map((item) => encodeURIComponent(item))
+          .join("/")}`,
+      );
+      if (!response.ok) {
+        throw new Error(`Model update download failed: ${response.status} - ${relativeName}`);
+      }
+      const bytes = Buffer.from(await response.arrayBuffer());
+      await fs.writeFile(targetPath, bytes);
+
+      desktopModelUpdateState = {
+        ...desktopModelUpdateState,
+        completedFiles: i + 1,
+      };
+      emitModelUpdateState();
+    }
+
+    const nextManifest = {
+      model_key: trimText(remoteManifest?.model_key) || trimText(modelKey),
+      model_version: trimText(remoteManifest?.model_version) || trimText(localManifest?.model_version),
+      file_count: normalizeFiles(remoteManifest).length,
+      files: normalizeFiles(remoteManifest),
+    };
+    await fs.writeFile(path.join(targetModelDir, ".model-version.json"), JSON.stringify(nextManifest, null, 2), "utf8");
+
     desktopModelUpdateState = {
       ...desktopModelUpdateState,
-      status: "ready",
+      status: "installed",
       updating: false,
+      downloading: false,
       updateAvailable: false,
-      totalFiles: Number(remoteManifest?.file_count || remoteManifest?.files?.length || 0),
-      completedFiles: Number(remoteManifest?.file_count || remoteManifest?.files?.length || 0),
-      remoteVersion: trimText(remoteManifest?.model_version),
-      lastCheckedAt: new Date().toISOString(),
-      message: result?.updated ? "Bottle 1.0 model updated." : "Bottle 1.0 model is already up to date.",
+      currentFile: "",
+      message: `模型更新完成，共更新 ${totalFiles} 个文件`,
       lastError: "",
     };
   } catch (error) {
+    let errorCategory = "unknown";
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    if (errorMsg.includes("fetch") || errorMsg.includes("network") || errorMsg.includes("ENOTFOUND") || errorMsg.includes("ECONNREFUSED") || errorMsg.includes("Failed to fetch")) {
+      errorCategory = "network_error";
+    } else if (errorMsg.includes("status") && (errorMsg.includes("500") || errorMsg.includes("502") || errorMsg.includes("503"))) {
+      errorCategory = "server_error";
+    } else if (errorMsg.includes("space") || errorMsg.includes("disk") || errorMsg.includes("ENOSPC") || errorMsg.includes("no space")) {
+      errorCategory = "disk_error";
+    }
+
     desktopModelUpdateState = {
       ...desktopModelUpdateState,
       status: "error",
       updating: false,
-      lastCheckedAt: new Date().toISOString(),
-      message: "",
-      lastError: error instanceof Error ? error.message : "Model update failed.",
+      downloading: false,
+      currentFile: "",
+      lastError: errorCategory,
+      message: "模型更新失败，请重试",
     };
   }
   emitModelUpdateState();
@@ -1056,8 +1216,10 @@ async function cancelDesktopModelUpdate() {
   desktopModelUpdateState = {
     ...desktopModelUpdateState,
     updating: false,
+    downloading: false,
+    currentFile: "",
     status: "idle",
-    message: "Model update cancelled.",
+    message: "模型更新已取消",
   };
   emitModelUpdateState();
   return desktopModelUpdateState;
@@ -1100,6 +1262,9 @@ async function bootstrapRuntime() {
   if (desktopRuntimeConfig?.clientUpdate?.checkOnLaunch) {
     void checkDesktopClientUpdate({ reason: "launch", notify: false });
   }
+  if (desktopRuntimeConfig?.modelUpdate?.checkOnLaunch !== false) {
+    void checkDesktopModelUpdate();
+  }
 }
 
 ipcMain.handle("desktop:get-runtime-info", async () => buildRuntimeInfo());
@@ -1115,11 +1280,46 @@ ipcMain.handle("desktop:open-logs-directory", async () => openLogsDirectory());
 ipcMain.handle("desktop:get-client-update-status", () => desktopClientUpdateState);
 ipcMain.handle("desktop:check-client-update", async () => checkDesktopClientUpdate({ reason: "manual", notify: true }));
 ipcMain.handle("desktop:open-client-update-link", async (_event, preferredUrl = "") => openClientUpdateLink(preferredUrl));
+ipcMain.handle("desktop:start-client-update-download", async () => startClientUpdateDownload());
+ipcMain.handle("desktop:restart-and-install", async () => {
+  const downloadPath = desktopClientUpdateState?.downloadPath;
+  if (!downloadPath) return false;
+  try {
+    await shell.openPath(downloadPath);
+    setTimeout(() => {
+      app.relaunch();
+      app.quit();
+    }, 2000);
+    desktopClientUpdateState = {
+      ...desktopClientUpdateState,
+      status: "installed",
+      installPending: false,
+      badgeVisible: false,
+      message: "正在启动安装程序...",
+    };
+    emitClientUpdateState();
+    return true;
+  } catch {
+    return false;
+  }
+});
 ipcMain.handle("desktop:open-external-url", async (_event, targetUrl = "") => openExternalUrl(targetUrl));
 ipcMain.handle("desktop:get-model-update-status", () => desktopModelUpdateState);
 ipcMain.handle("desktop:check-model-update", async (_event, modelKey = DESKTOP_MODEL_UPDATE_KEY) => checkDesktopModelUpdate(modelKey));
 ipcMain.handle("desktop:start-model-update", async (_event, modelKey = DESKTOP_MODEL_UPDATE_KEY) => startDesktopModelUpdate(modelKey));
 ipcMain.handle("desktop:cancel-model-update", async () => cancelDesktopModelUpdate());
+ipcMain.handle("desktop:start-client-update-download", async () => ({
+  notImplemented: true,
+  message: "Download orchestration in next plan",
+}));
+ipcMain.handle("desktop:acknowledge-client-update", async () => {
+  desktopClientUpdateState = {
+    ...desktopClientUpdateState,
+    badgeVisible: false,
+  };
+  emitClientUpdateState();
+  return desktopClientUpdateState;
+});
 ipcMain.handle("desktop:auth-cache-session", async (_event, session = {}) => cacheAuthSession(session));
 ipcMain.handle("desktop:auth-restore-session", async (_event, options = {}) => restoreAuthSession(options));
 ipcMain.handle("desktop:auth-clear-session", async () => clearAuthSession());
