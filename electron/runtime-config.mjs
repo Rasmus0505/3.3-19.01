@@ -110,6 +110,19 @@ export function resolveDesktopRuntimeConfig({
         return true;
       })(),
     },
+    security: {
+      openExternalWhitelist: (() => {
+        const envValue = resolveEnvValue(env, "DESKTOP_EXTERNAL_WHITELIST");
+        if (envValue) {
+          return envValue.split(",").map((s) => s.trim()).filter(Boolean);
+        }
+        const stored = storedConfig?.security?.openExternalWhitelist;
+        if (Array.isArray(stored) && stored.length > 0) return stored;
+        const defaultList = defaultConfig?.security?.openExternalWhitelist;
+        if (Array.isArray(defaultList) && defaultList.length > 0) return defaultList;
+        return ["https://snapany.com", "https://www.snapany.com"];
+      })(),
+    },
   };
 
   ensureParentDir(resolvedConfigPath);
