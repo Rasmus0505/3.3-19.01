@@ -55,8 +55,9 @@ Last activity: 2026-03-31 — Implemented Phase 13 release surface, release pipe
 | 260331-imu | 听写入口轻提示：仅保留快捷键行并置顶，增加首页修改说明，2秒自动消失 | 2026-03-31 | — | [260331-imu-2](./quick/260331-imu-2/) |
 | 260331-kqa | 精听模式修复：Token 选词简化条件，播放速率固定状态在句间导航时正确处理 | 2026-03-31 | 7c89ee57 | [260331-kqa-token](./quick/260331-kqa-token/) |
 | 260331-qnj | 允许沉浸式学习和管理台数字输入框清空后重输，并为倍速输入框增加0.25步进内嵌上下调节按钮 | 2026-03-31 | 282a72c9 | [260331-qnj-0-25](./quick/260331-qnj-0-25/) |
+| 260401-wck | Fix wordbook UI issues: button colors, translation, pronunciation, player button | 2026-04-01 | 679cc9e0 | [260401-wck-fix-wordbook-ui-issues-button-colors-tra](./quick/260401-wck-fix-wordbook-ui-issues-button-colors-tra/) |
 
-**Last activity:** 2026-03-31 — Executed Phase 13: 官网下载页、stable/preview metadata、release-win 脚本、正式安装器默认完整安装
+**Last activity:** 2026-04-01 — Executed Phase 17: wordbook review improvements (review preview API, progress bar, interval feedback, lesson popup)
 
 ## Session Continuity
 
