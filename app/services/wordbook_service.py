@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.config import DASHSCOPE_API_KEY
 from app.core.timezone import now_shanghai_naive
 from app.models import WordbookEntry, WordbookEntrySource
 from app.repositories.lessons import get_sentence
@@ -368,3 +369,67 @@ def preview_wordbook_review_grades(db: Session, *, entry_id: int, user_id: int) 
         "current_interval": current_interval,
         "grades": grades,
     }
+
+
+def batch_update_status(db: Session, word_ids: list[int], is_learned: bool) -> int:
+    """Update is_learned status for multiple words. Returns count of updated."""
+    safe_status = WORD_STATUS_MASTERED if is_learned else WORD_STATUS_ACTIVE
+    result = db.query(WordbookEntry).filter(WordbookEntry.id.in_(word_ids)).update(
+        {"status": safe_status}, synchronize_session=False
+    )
+    db.commit()
+    return result
+
+
+def batch_move_words(db: Session, word_ids: list[int], target_lesson_id: int) -> int:
+    """Move words to another lesson. Returns count of moved."""
+    from app.models import Lesson
+
+    target_lesson = db.query(Lesson).filter(Lesson.id == target_lesson_id).first()
+    if not target_lesson:
+        raise HTTPException(status_code=404, detail=f"Lesson {target_lesson_id} not found")
+
+    result = db.query(WordbookEntry).filter(WordbookEntry.id.in_(word_ids)).update(
+        {"latest_lesson_id": target_lesson_id}, synchronize_session=False
+    )
+    db.commit()
+    return result
+
+
+def batch_delete_words(db: Session, word_ids: list[int]) -> int:
+    """Delete multiple words. Returns count of deleted."""
+    result = db.query(WordbookEntry).filter(WordbookEntry.id.in_(word_ids)).delete(
+        synchronize_session=False
+    )
+    db.commit()
+    return result
+
+
+def batch_translate_words(db: Session, word_ids: list[int]) -> list[dict]:
+    """Translate multiple words and save results. Returns list of translations."""
+    from app.services.translation_qwen_mt import translate_to_zh
+
+    words = db.query(WordbookEntry).filter(WordbookEntry.id.in_(word_ids)).all()
+    translations = []
+
+    for word in words:
+        try:
+            translated = translate_to_zh(word.entry_text, api_key=DASHSCOPE_API_KEY)
+            word.latest_sentence_zh = translated
+            translations.append({
+                "id": word.id,
+                "word": word.entry_text,
+                "translation": translated,
+                "success": True,
+            })
+        except Exception as e:
+            translations.append({
+                "id": word.id,
+                "word": word.entry_text,
+                "translation": None,
+                "success": False,
+                "error": str(e),
+            })
+
+    db.commit()
+    return translations
