@@ -92,7 +92,7 @@ _See: `.planning/milestones/v2.1-ROADMAP.md` for full phase details_
   2. 单条公告可以配置为 changelog、banner 或 modal 展示方式。
   3. 用户在对应表面只会看到当前有效且匹配端能力的公告内容。
 
-- [ ] **Phase 17: 生词本复习主流程重做**
+- [x] **Phase 17: 生词本复习主流程重做** (completed 2026-04-01)
   Goal: 把生词本从“功能存在”提升到“适合高频复习”，优先解决复习流、掌握度反馈和上下文回看。
   Requirements: WORD-01, WORD-02, WORD-04
   Success criteria:
@@ -210,7 +210,7 @@ Plans:
 | 14. 桌面程序与模型增量更新产品化 | v2.2 | 3/3 | Complete    | 2026-04-01 |
 | 15. 桌面运行时边界加固 | v2.2 | 0/0 | Complete    | 2026-04-01 |
 | 16. 公告与更新日志系统 | v2.2 | 3/3 | Complete    | 2026-04-01 |
-| 17. 生词本复习主流程重做 | v2.2 | 0/0 | Planned | — |
+| 17. 生词本复习主流程重做 | v2.2 | 0/0 | Complete    | 2026-04-01 |
 | 18. 生词本管理收口与站内轻提示 | v2.2 | 0/0 | Planned | — |
 
 **Overall:** 15/21 phases complete — v2.2 roadmap created
