@@ -42,6 +42,13 @@ from app.schemas.admin import (
     WalletLedgerItem,
 )
 from app.schemas.admin_console import AdminUserActivityItem, AdminUserActivityResponse, AdminUserActivitySummary, AdminUserActivitySummaryResponse
+from app.schemas.announcement import (
+    AnnouncementCreate,
+    AnnouncementItem,
+    AnnouncementListResponse,
+    AnnouncementType,
+    AnnouncementUpdate,
+)
 from app.schemas.auth import (
     AuthRequest,
     AuthResponse,
@@ -192,4 +199,9 @@ __all__ = [
     "AdminRedeemAuditItem",
     "AdminRedeemAuditListResponse",
     "AdminRedeemAuditExportRequest",
+    "AnnouncementCreate",
+    "AnnouncementItem",
+    "AnnouncementListResponse",
+    "AnnouncementType",
+    "AnnouncementUpdate",
 ]
