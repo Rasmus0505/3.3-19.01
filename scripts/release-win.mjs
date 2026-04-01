@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const desktopRoot = path.resolve(path.dirname(__filename), "..");
 const repoRoot = path.resolve(desktopRoot, "..");
-const DEFAULT_PUBLIC_DOWNLOAD_URL = "https://share.feijipan.com/s/1n2mH6fh";
+const DEFAULT_PUBLIC_DOWNLOAD_URL = "https://share.feijipan.com/s/rZ2nmSqi";
 
 
 function parseArgs(argv) {
