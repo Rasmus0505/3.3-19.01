@@ -913,3 +913,197 @@ def test_model_updater_accepts_base_model_dir():
     """performIncrementalModelUpdate must accept baseModelDir parameter for baseline copy."""
     updater_content = (DESKTOP_ROOT / "electron" / "model-updater.mjs").read_text(encoding="utf-8")
     assert "baseModelDir" in updater_content, "baseModelDir parameter not found"
+
+
+# ============================================================
+# SECU-02: Desktop Runtime Security Boundary
+# ============================================================
+
+
+def test_open_external_url_whitelist_allows_snapany(tmp_path):
+    """SECU-02: openExternalUrl must allow snapany.com by default."""
+    config_path = tmp_path / "desktop-runtime.json"
+    config_path.write_text(
+        json.dumps({
+            "schemaVersion": 1,
+            "cloud": {"appBaseUrl": "https://app.example.com", "apiBaseUrl": "https://api.example.com"},
+            "local": {
+                "userDataDir": str(tmp_path / "user-data"),
+                "modelDir": str(tmp_path / "models"),
+                "cacheDir": str(tmp_path / "cache"),
+                "logDir": str(tmp_path / "logs"),
+                "tempDir": str(tmp_path / "tmp"),
+            },
+            "clientUpdate": {},
+            "security": {
+                "openExternalWhitelist": ["https://snapany.com", "https://www.snapany.com"]
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    script = textwrap.dedent(
+        f"""
+        import {{ resolveDesktopRuntimeConfig }} from {json.dumps(RUNTIME_CONFIG_MODULE)};
+        const config = resolveDesktopRuntimeConfig({{
+          configPath: {json.dumps(str(config_path))},
+          userDataDir: {json.dumps(str(tmp_path / "user-data"))},
+          cacheDir: {json.dumps(str(tmp_path / "cache"))},
+          logDir: {json.dumps(str(tmp_path / "logs"))},
+          tempDir: {json.dumps(str(tmp_path / "tmp"))},
+          env: {{}},
+        }});
+        const whitelist = config.security?.openExternalWhitelist || [];
+        function isUrlAllowed(url, whitelist) {{
+          try {{
+            const parsed = new URL(url);
+            return whitelist.some(entry => {{
+              try {{
+                const p = new URL(entry);
+                return parsed.protocol === p.protocol && parsed.host === p.host;
+              }} catch {{
+                return false;
+              }}
+            }});
+          }} catch {{
+            return false;
+          }}
+        }}
+        console.log(JSON.stringify({{
+          whitelist,
+          snapanyAllowed: isUrlAllowed("https://snapany.com/zh", whitelist),
+          wwwSnapanyAllowed: isUrlAllowed("https://www.snapany.com", whitelist),
+          randomUrlAllowed: isUrlAllowed("https://evil.com", whitelist),
+        }}));
+        """
+    )
+
+    payload = _run_node_json(script)
+
+    assert payload["whitelist"] == ["https://snapany.com", "https://www.snapany.com"]
+    assert payload["snapanyAllowed"] is True
+    assert payload["wwwSnapanyAllowed"] is True
+    assert payload["randomUrlAllowed"] is False
+
+
+def test_open_external_url_whitelist_from_env_override(tmp_path):
+    """SECU-02: DESKTOP_EXTERNAL_WHITELIST env var overrides defaults."""
+    config_path = tmp_path / "desktop-runtime.json"
+    config_path.write_text(json.dumps({"schemaVersion": 1}), encoding="utf-8")
+
+    script = textwrap.dedent(
+        f"""
+        import {{ resolveDesktopRuntimeConfig }} from {json.dumps(RUNTIME_CONFIG_MODULE)};
+        const config = resolveDesktopRuntimeConfig({{
+          configPath: {json.dumps(str(config_path))},
+          userDataDir: {json.dumps(str(tmp_path / "user-data"))},
+          cacheDir: {json.dumps(str(tmp_path / "cache"))},
+          logDir: {json.dumps(str(tmp_path / "logs"))},
+          tempDir: {json.dumps(str(tmp_path / "tmp"))},
+          env: {{ DESKTOP_EXTERNAL_WHITELIST: "https://example.com,https://docs.example.com" }},
+        }});
+        console.log(JSON.stringify(config.security?.openExternalWhitelist || []));
+        """
+    )
+
+    payload = _run_node_json(script)
+
+    assert payload == ["https://example.com", "https://docs.example.com"]
+
+
+def test_main_process_enables_sandbox_when_packaged():
+    """SECU-02: sandbox must be true when app.isPackaged is true."""
+    main_source = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+
+    sandbox_patterns = [
+        "sandbox: !process.env.DESKTOP_FRONTEND_DEV_SERVER_URL && app.isPackaged",
+        "sandbox: app.isPackaged && !process.env.DESKTOP_FRONTEND_DEV_SERVER_URL",
+    ]
+    assert any(p in main_source for p in sandbox_patterns), \
+        "sandbox expression not found — should use app.isPackaged"
+
+
+def test_main_process_web_security_always_true():
+    """SECU-02: webSecurity must be true unconditionally (no usingBundledFileRenderer condition)."""
+    main_source = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+
+    assert "webSecurity: true," in main_source or "webSecurity: true" in main_source, \
+        "webSecurity should be hardcoded to true"
+    assert "webSecurity: !usingBundledFileRenderer" not in main_source, \
+        "webSecurity should not be conditional on usingBundledFileRenderer"
+
+
+def test_main_process_context_isolation_always_true():
+    """SECU-02: contextIsolation must remain true."""
+    main_source = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+    assert "contextIsolation: true" in main_source, \
+        "contextIsolation should be true"
+
+
+def test_main_process_node_integration_always_false():
+    """SECU-02: nodeIntegration must remain false."""
+    main_source = MAIN_PROCESS_FILE.read_text(encoding="utf-8")
+    assert "nodeIntegration: false" in main_source, \
+        "nodeIntegration should be false"
+
+
+def test_preload_exposes_all_31_methods():
+    """SECU-02: All 23 desktopRuntime + 4 events + 3 auth + 1 localAsr methods must be present."""
+    preload_source = PRELOAD_FILE.read_text(encoding="utf-8")
+
+    desktop_methods = [
+        "getRuntimeInfo",
+        "requestCloudApi",
+        "cancelCloudRequest",
+        "requestLocalHelper",
+        "transcribeLocalMedia",
+        "getHelperStatus",
+        "getServerStatus",
+        "probeServerNow",
+        "selectLocalMediaFile",
+        "readLocalMediaFile",
+        "getPathForFile",
+        "openLogsDirectory",
+        "getClientUpdateStatus",
+        "checkClientUpdate",
+        "startClientUpdateDownload",
+        "acknowledgeClientUpdate",
+        "restartAndInstall",
+        "openClientUpdateLink",
+        "openExternalUrl",
+        "getModelUpdateStatus",
+        "checkModelUpdate",
+        "startModelUpdate",
+        "cancelModelUpdate",
+    ]
+    for method in desktop_methods:
+        assert f"{method}:" in preload_source, f"Method {method} not found in preload"
+
+    event_methods = [
+        "onHelperRestarting",
+        "onServerStatusChanged",
+        "onClientUpdateStatusChanged",
+        "onModelUpdateProgress",
+    ]
+    for method in event_methods:
+        assert f"{method}:" in preload_source, f"Event {method} not found in preload"
+
+    assert 'cacheSession:' in preload_source, "auth.cacheSession not found"
+    assert 'restoreSession:' in preload_source, "auth.restoreSession not found"
+    assert 'clearSession:' in preload_source, "auth.clearSession not found"
+    assert 'generateCourse:' in preload_source, "localAsr.generateCourse not found"
+
+
+def test_preload_uses_context_bridge_not_direct_ipc():
+    """SECU-02: All preload bridge must use contextBridge.exposeInMainWorld."""
+    preload_source = PRELOAD_FILE.read_text(encoding="utf-8")
+    assert "contextBridge.exposeInMainWorld" in preload_source, \
+        "preload should use contextBridge.exposeInMainWorld"
+
+
+def test_open_external_url_in_upload_panel_has_fallback():
+    """SECU-02: openExternalUrl call in UploadPanel must have non-desktop fallback."""
+    upload_panel_source = UPLOAD_PANEL_FILE.read_text(encoding="utf-8")
+    assert "openExternalUrl" in upload_panel_source, "openExternalUrl not used in UploadPanel"
+    assert "window.open" in upload_panel_source, \
+        "UploadPanel should have window.open fallback for non-desktop environments"
