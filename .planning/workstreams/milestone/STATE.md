@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: 桌面发布与体验收口
-status: Phase 18 Plan 18-03 tooltip system enhancement complete
-last_updated: "2026-04-02T10:00:00.000Z"
+status: Phase 18 Plan 18-02 frontend batch selection & toolbar complete
+last_updated: "2026-04-02T11:00:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 14
-  completed_plans: 12
+  completed_plans: 13
 ---
 
 # Project State
@@ -24,8 +24,8 @@ See: .planning/PROJECT.md (updated 2026-03-31)
 
 Milestone: v2.2
 Phase: 18
-Plan: 18-03 (complete)
-Status: Phase 18 Plan 18-03 tooltip system enhancement complete
+Plan: 18-02 (complete)
+Status: Phase 18 Plan 18-02 frontend batch selection & toolbar complete
 
 ## Milestone Status
 
