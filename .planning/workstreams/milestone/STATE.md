@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 14 — 桌面程序与模型增量更新产品化
+**Current focus:** Phase 15 — 桌面运行时边界加固
 
 ## Current Position
 
 Milestone: v2.2
 Phase: 15
 Plan: Not started
-Status: All Phase 14 plans complete (including gap closures 14.1 and 14.2)
-Completed: 14-01 (badge + banner), 14-02 (download orchestration + restart trigger), 14-03 (model delta update + asset boundary SECU-03), 14.1 (gap closure: DESK-02 version card + auto-check default), 14.2 (gap closure: contract tests, optional chaining, baseline copy delegation)
-Next: Phase 14 UAT — run verification to confirm gap closures
+Status: Context gathered. Ready for planning.
+Completed: Phase 14 plans 14-01 through 14.2 all complete.
+Next: /gsd-plan-phase 15
 
 ## Milestone Status
 
@@ -56,6 +56,11 @@ Next: Phase 14 UAT — run verification to confirm gap closures
   - 14-03: Complete (model delta update with progress, file count N/M, current filename, plain-language errors, retry UI, asset boundary contract SECU-03) ✅
   - 14.1: Complete (gap closure: DESK-02 version card, auto-check default) ✅
   - 14.2: Complete (gap closure: contract tests DESK-02/03/04/05, optional chaining fix, baseline copy delegation) ✅
+- Phase 15 context captured decisions:
+  - 正式版强制开启 sandbox，开发模式保持关闭
+  - openExternalUrl 改为白名单模式，当前包含 snapany.com + 官方下载域名
+  - preload 暴露面审核纳入 Phase 15 交付，清理范围由审核决定
+  - 正式版 webSecurity 边界加测试验证，结果记录到 15-VALIDATION.md
 
 ## Decisions
 
@@ -66,8 +71,11 @@ Next: Phase 14 UAT — run verification to confirm gap closures
 | Error messages use plain-language categories | 14-03 | User-friendly recovery |
 | Export copyDirectory from model-updater.mjs | 14.2 | Reuse for baseline copy in main.mjs |
 | Double optional chaining on desktopRuntime bridge | 14.2 | Prevents TypeError when bridge unavailable |
+| Sandbox enabled in production builds | 15 | Defense-in-depth, no iframe usage |
+| openExternalUrl uses whitelist | 15 | Only snapany.com + official domains allowed |
+| Preload surface audited in Phase 15 | 15 | Historical methods reviewed for removal |
+| webSecurity prod mode tested with validation doc | 15 | SECU-02 evidence |
 
 ## Next Step
 
-1. **Phase 14 Complete** — All plans executed. Ready for Phase 15 (桌面运行时边界加固)
-2. **手工验证 Phase 13 发布流程** — 按 `13-RELEASE-CHECKLIST.md` 验证 stable / preview / 签名 / 安装器体验
+1. **Phase 15 — 桌面运行时边界加固** — Context gathered. Ready for planning.
