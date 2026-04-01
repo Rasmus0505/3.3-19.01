@@ -127,7 +127,7 @@ Plans:
 **Goal**: 把桌面端版本更新与 ASR 资源更新收口成真实可用、可诊断、可恢复的升级体验。  
 **Depends on**: Phase 13  
 **Requirements**: DESK-02, DESK-03, DESK-04, DESK-05, SECU-03  
-**Plans**: 0 plans
+**Plans**: 3 plans
 
 Plans:
 
@@ -207,7 +207,7 @@ Plans:
 | 11. 盈利转化落地与回归收口 | v2.1 | 3/3 | Complete | 2026-03-30 |
 | 12. 沉浸学习前端交互优化 | v2.1 | 1/1 | Complete | 2026-03-31 |
 | 13. 桌面发布管线与签名安装包 | v2.2 | 0/0 | Planned | — |
-| 14. 桌面程序与模型增量更新产品化 | v2.2 | 0/0 | Planned | — |
+| 14. 桌面程序与模型增量更新产品化 | v2.2 | 3/3 | Planned | — |
 | 15. 桌面运行时边界加固 | v2.2 | 0/0 | Planned | — |
 | 16. 公告与更新日志系统 | v2.2 | 0/0 | Planned | — |
 | 17. 生词本复习主流程重做 | v2.2 | 0/0 | Planned | — |
