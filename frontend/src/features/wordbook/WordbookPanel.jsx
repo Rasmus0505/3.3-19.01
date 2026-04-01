@@ -1,8 +1,14 @@
-import { BookOpenText, Trash2, Play } from "lucide-react";
+import { BookOpenText, Play, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { parseResponse, toErrorText } from "../../shared/api/client";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../../components/ui/tooltip";
 import {
   Badge,
   Button,
@@ -19,6 +25,7 @@ import {
   Skeleton,
 } from "../../shared/ui";
 import { LessonPlayerPopup } from "./LessonPlayerPopup";
+import { FloatingToolbar } from "./FloatingToolbar";
 
 const REVIEW_ACTIONS = [
   { grade: "again", label: "重来" },
@@ -62,6 +69,11 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
   const [todayCompleted, setTodayCompleted] = useState(0);
   const [reviewFeedback, setReviewFeedback] = useState(null);
   const [lessonPopup, setLessonPopup] = useState({ open: false, lessonId: null, sentenceIndex: 0 });
+  const [clickTooltip, setClickTooltip] = useState(null);
+
+  // Selection state for batch operations
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [lastSelectedId, setLastSelectedId] = useState(null);
 
   const loadWordbook = useCallback(async () => {
     setLoading(true);
@@ -190,8 +202,10 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
           message: `复习间隔：${previous_interval} → ${new_interval}`,
           subtext: interval_change,
         });
+        setClickTooltip(grade);
         setTimeout(() => {
           setReviewFeedback(null);
+          setClickTooltip(null);
         }, 1500);
       } else {
         toast.success(data.message || "已记录复习结果");
@@ -226,6 +240,141 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
   const closeLessonPopup = useCallback(() => {
     setLessonPopup({ open: false, lessonId: null, sentenceIndex: 0 });
   }, []);
+
+  // Selection helpers for batch operations
+  const sortedItems = items; // items already sorted by API
+
+  const handleItemSelect = useCallback((itemId, event) => {
+    const id = Number(itemId || 0);
+    if (event.shiftKey && lastSelectedId !== null) {
+      // Range selection
+      const lastIdx = sortedItems.findIndex((i) => Number(i.id) === lastSelectedId);
+      const currentIdx = sortedItems.findIndex((i) => Number(i.id) === id);
+      if (lastIdx !== -1 && currentIdx !== -1) {
+        const [start, end] = [lastIdx, currentIdx].sort((a, b) => a - b);
+        const rangeIds = sortedItems.slice(start, end + 1).map((i) => Number(i.id));
+        setSelectedIds((prev) => new Set([...prev, ...rangeIds]));
+      }
+    } else if (event.ctrlKey || event.metaKey) {
+      // Toggle single item
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+        return next;
+      });
+    } else {
+      // Direct click - checkbox behavior
+      setSelectedIds(new Set([id]));
+    }
+    setLastSelectedId(id);
+  }, [lastSelectedId, sortedItems]);
+
+  const handleSelectAll = useCallback(() => {
+    const allIds = sortedItems.map((i) => Number(i.id));
+    if (selectedIds.size === allIds.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(allIds));
+    }
+  }, [selectedIds.size, sortedItems]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    setLastSelectedId(null);
+  }, []);
+
+  // Batch operation handlers
+  async function handleBatchDelete() {
+    if (selectedIds.size === 0) return;
+    if (
+      !window.confirm(
+        `确定要删除选中的 ${selectedIds.size} 个词条吗？此操作不可撤销。`
+      )
+    ) {
+      return;
+    }
+    setBusyEntryId(-1);
+    try {
+      const resp = await apiCall("/api/wordbook/batch-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry_ids: Array.from(selectedIds) }),
+      });
+      const data = await parseResponse(resp);
+      if (!resp.ok) {
+        toast.error(toErrorText(data, "批量删除失败"));
+        return;
+      }
+      toast.success(`已删除 ${data.deleted_count} 个词条`);
+      clearSelection();
+      await loadWordbook();
+    } catch (error) {
+      toast.error(`网络错误: ${String(error)}`);
+    } finally {
+      setBusyEntryId(0);
+    }
+  }
+
+  async function handleBatchArchive() {
+    if (selectedIds.size === 0) return;
+    try {
+      const resp = await apiCall("/api/wordbook/batch-status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entry_ids: Array.from(selectedIds),
+          status: "mastered",
+        }),
+      });
+      const data = await parseResponse(resp);
+      if (!resp.ok) {
+        toast.error(toErrorText(data, "批量归档失败"));
+        return;
+      }
+      toast.success(`已将 ${data.updated_count} 个词条标记为已掌握`);
+      clearSelection();
+      await loadWordbook();
+    } catch (error) {
+      toast.error(`网络错误: ${String(error)}`);
+    }
+  }
+
+  async function handleBatchMove() {
+    if (selectedIds.size === 0) return;
+    const lessonIdStr = window.prompt(
+      `将 ${selectedIds.size} 个词条移动到课程 ID：`
+    );
+    if (!lessonIdStr) return;
+    const lessonId = parseInt(lessonIdStr, 10);
+    if (isNaN(lessonId) || lessonId <= 0) {
+      toast.error("请输入有效的课程 ID");
+      return;
+    }
+    try {
+      const resp = await apiCall("/api/wordbook/batch-move", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entry_ids: Array.from(selectedIds),
+          target_lesson_id: lessonId,
+        }),
+      });
+      const data = await parseResponse(resp);
+      if (!resp.ok) {
+        toast.error(toErrorText(data, "批量移动失败"));
+        return;
+      }
+      toast.success(`已将 ${data.moved_count} 个词条移动到新课程`);
+      clearSelection();
+      await loadWordbook();
+    } catch (error) {
+      toast.error(`网络错误: ${String(error)}`);
+    }
+  }
 
   return (
     <Card>
@@ -306,6 +455,15 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
 
             {statusText ? <p className="text-sm text-destructive">{statusText}</p> : null}
 
+            {/* FloatingToolbar renders at viewport level via position:fixed */}
+            <FloatingToolbar
+              selectedCount={selectedIds.size}
+              onDelete={handleBatchDelete}
+              onArchive={handleBatchArchive}
+              onMove={handleBatchMove}
+              onClear={clearSelection}
+            />
+
             {loading ? (
               <div className="space-y-3">
                 <Skeleton className="h-36 w-full rounded-2xl" />
@@ -324,31 +482,70 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
 
             {!loading ? (
               <div className="space-y-3">
+                {/* Select All row */}
+                {items.length > 0 && (
+                  <div className="flex items-center gap-2 rounded-lg border bg-muted/10 px-3 py-2 sticky top-0 z-10">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size === items.length && items.length > 0}
+                      onChange={handleSelectAll}
+                      className="h-4 w-4 rounded border-input"
+                    />
+                    <span className="text-sm text-muted-foreground">
+                      {selectedIds.size === items.length ? "取消全选" : "全选"}
+                    </span>
+                  </div>
+                )}
+
                 {items.map((item) => {
                   const busy = busyEntryId === Number(item.id || 0);
                   const isMastered = Number(item.memory_score || 0) >= 0.85;
+                  const isSelected = selectedIds.has(Number(item.id || 0));
                   return (
-                    <div key={item.id} className="rounded-2xl border bg-background p-4">
+                    <div
+                      key={item.id}
+                      className={`rounded-2xl border p-4 transition-colors ${
+                        isSelected ? "border-primary bg-primary/5" : "bg-background"
+                      }`}
+                      onClick={(e) => {
+                        if (e.target.type !== "checkbox") {
+                          handleItemSelect(item.id, e);
+                        }
+                      }}
+                    >
                       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                        <div className="min-w-0 space-y-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <div className="truncate text-lg font-semibold">{item.entry_text}</div>
-                            <Badge variant={isMastered ? "secondary" : "outline"}>
-                              {isMastered ? "已掌握" : `记忆率 ${formatMemoryScore(item.memory_score)}`}
-                            </Badge>
-                          </div>
-                          <div className="space-y-1 text-sm text-muted-foreground">
-                            <p>英文语境：{item.latest_sentence_en || "暂无英文语境"}</p>
-                            <p>中文语境：{item.latest_sentence_zh || "暂无中文语境"}</p>
-                            <p>下次复习：{formatDateTime(item.next_review_at)}</p>
-                            <p>复习次数：{Number(item.review_count || 0)}</p>
-                            <p>记忆率：{formatMemoryScore(item.memory_score)}</p>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                            <span>来源课程：{item.source_lesson_title || "未知课程"}</span>
-                            <span>收录记录：{Number(item.source_count || 0)} 条</span>
-                            <span>答错次数：{Number(item.wrong_count || 0)} 次</span>
-                            <span>最近收录：{formatDateTime(item.latest_collected_at)}</span>
+                        {/* Selection checkbox */}
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleItemSelect(item.id, e);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="mt-1 h-4 w-4 rounded border-input"
+                          />
+                          <div className="min-w-0 space-y-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="truncate text-lg font-semibold">{item.entry_text}</div>
+                              <Badge variant={isMastered ? "secondary" : "outline"}>
+                                {isMastered ? "已掌握" : `记忆率 ${formatMemoryScore(item.memory_score)}`}
+                              </Badge>
+                            </div>
+                            <div className="space-y-1 text-sm text-muted-foreground">
+                              <p>英文语境：{item.latest_sentence_en || "暂无英文语境"}</p>
+                              <p>中文语境：{item.latest_sentence_zh || "暂无中文语境"}</p>
+                              <p>下次复习：{formatDateTime(item.next_review_at)}</p>
+                              <p>复习次数：{Number(item.review_count || 0)}</p>
+                              <p>记忆率：{formatMemoryScore(item.memory_score)}</p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                              <span>来源课程：{item.source_lesson_title || "未知课程"}</span>
+                              <span>收录记录：{Number(item.source_count || 0)} 条</span>
+                              <span>答错次数：{Number(item.wrong_count || 0)} 次</span>
+                              <span>最近收录：{formatDateTime(item.latest_collected_at)}</span>
+                            </div>
                           </div>
                         </div>
 
@@ -373,6 +570,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
             ) : null}
           </>
         ) : (
+          <TooltipProvider delayDuration={300}>
           <div className="space-y-4 rounded-2xl border bg-muted/5 p-4">
             {!reviewItem ? (
               <div className="rounded-2xl border border-dashed bg-background px-6 py-10 text-center">
@@ -421,16 +619,23 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                         </div>
                       </div>
                       {reviewItem.source_lesson_id ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="shrink-0"
-                          onClick={() => void openLessonPopup(reviewItem.source_lesson_id, reviewItem.latest_sentence_idx)}
-                        >
-                          <Play className="size-4" />
-                          播放课程
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="shrink-0"
+                              onClick={() => void openLessonPopup(reviewItem.source_lesson_id, reviewItem.latest_sentence_idx)}
+                            >
+                              <Play className="size-4" />
+                              播放课程
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent className="bg-black/80 text-white border-0 backdrop-blur-sm">
+                            <p>查看来源课程并播放</p>
+                          </TooltipContent>
+                        </Tooltip>
                       ) : null}
                     </div>
                   </div>
@@ -438,27 +643,43 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
 
                 {!reviewFeedback ? (
                   <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                    {REVIEW_ACTIONS.map((action) => (
-                      <div key={action.grade} className="space-y-1">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-11 w-full px-4"
-                          disabled={busyEntryId === Number(reviewItem.id || 0)}
-                          onClick={() => void handleReview(action.grade)}
-                        >
-                          {action.label}
-                        </Button>
-                        <p className="text-center text-xs text-muted-foreground">
-                          {getIntervalLabel(action.grade) || "—"}
-                        </p>
-                      </div>
-                    ))}
+                    {REVIEW_ACTIONS.map((action) => {
+                      const tooltips = {
+                        again: "点击后会在 10 分钟后再次出现",
+                        hard: "点击后会间隔较短时间复习",
+                        good: "点击后正常间隔复习",
+                        easy: "点击后会间隔较长时间复习",
+                      };
+                      return (
+                        <div key={action.grade} className="space-y-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="h-11 w-full px-4"
+                                disabled={busyEntryId === Number(reviewItem.id || 0)}
+                                onClick={() => void handleReview(action.grade)}
+                              >
+                                {action.label}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-black/80 text-white border-0 backdrop-blur-sm">
+                              <p>{tooltips[action.grade]}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                          <p className="text-center text-xs text-muted-foreground">
+                            {getIntervalLabel(action.grade) || "—"}
+                          </p>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : null}
               </>
             )}
           </div>
+        </TooltipProvider>
         )}
       </CardContent>
 
@@ -468,6 +689,19 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
         lessonId={lessonPopup.lessonId}
         sentenceIndex={lessonPopup.sentenceIndex}
       />
+
+      {clickTooltip && (
+        <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-lg border bg-background/95 px-4 py-2 shadow-lg backdrop-blur-sm">
+          <p className="text-sm font-medium">
+            {{
+              again: "已安排 10 分钟后复习",
+              hard: "已安排约 4 小时后复习",
+              good: "已安排约 1 天后复习",
+              easy: "已安排约 4 天后复习",
+            }[clickTooltip]}
+          </p>
+        </div>
+      )}
     </Card>
   );
 }

@@ -22,3 +22,21 @@ export function TooltipContent({ className, sideOffset = 6, ...props }) {
   );
 }
 
+// Semi-transparent hint style for immersive learning buttons (D-18-04, D-18-05)
+export function TooltipHint({ children, content, side = "top", delayDuration = 300 }) {
+  return (
+    <TooltipProvider delayDuration={delayDuration}>
+      <Tooltip>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent
+          side={side}
+          className="bg-black/80 text-white border-0 shadow-xl backdrop-blur-sm"
+          sideOffset={4}
+        >
+          <p className="text-sm">{content}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
