@@ -107,6 +107,7 @@ from app.services.billing_service import (
     yuan_to_compat_cents,
 )
 from app.services.media import get_controlled_media_roots
+from app.api.routers.admin.announcements import router as announcement_router
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -1536,3 +1537,6 @@ def admin_export_redeem_audit(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+router.include_router(announcement_router)

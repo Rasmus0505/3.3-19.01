@@ -9,6 +9,7 @@ from app.api.routers.admin.router import router as admin
 from app.api.routers.admin.console import router as admin_console
 from app.api.routers.admin.sql_console import router as admin_sql_console
 from app.api.routers.admin.announcements import router as admin_announcements
+from app.api.routers.announcement_public import router as announcement_public
 from app.api.routers.practice import router as practice
 from app.api.routers.wordbook import router as wordbook
 from app.api.routers.media import router as media
@@ -34,6 +35,7 @@ __all__ = [
     "admin_console",
     "admin_sql_console",
     "admin_announcements",
+    "announcement_public",
     "lessons",
     "lessons_router",
     "practice",
