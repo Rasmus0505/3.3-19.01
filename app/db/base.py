@@ -24,6 +24,7 @@ BUSINESS_TABLES = (
     "redeem_codes",
     "redeem_code_attempts",
     "admin_operation_logs",
+    "announcements",
 )
 
 
