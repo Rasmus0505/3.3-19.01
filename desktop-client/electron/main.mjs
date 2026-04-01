@@ -1043,6 +1043,24 @@ async function openExternalUrl(targetUrl = "") {
   if (!normalizedUrl) {
     return false;
   }
+  const whitelist = desktopRuntimeConfig?.security?.openExternalWhitelist || [];
+  let allowed = false;
+  try {
+    const parsedUrl = new URL(normalizedUrl);
+    allowed = whitelist.some((allowedEntry) => {
+      try {
+        const p = new URL(allowedEntry);
+        return parsedUrl.protocol === p.protocol && parsedUrl.host === p.host;
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+  if (!allowed) {
+    return false;
+  }
   await shell.openExternal(normalizedUrl);
   return true;
 }
@@ -1250,8 +1268,8 @@ function createMainWindow() {
       preload: path.resolve(electronRoot, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
-      webSecurity: !usingBundledFileRenderer ? true : false,
+      sandbox: !process.env.DESKTOP_FRONTEND_DEV_SERVER_URL && app.isPackaged,
+      webSecurity: true,
     },
   });
 
