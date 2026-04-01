@@ -1,4 +1,4 @@
-import { BookOpenText, Trash2, ExternalLink } from "lucide-react";
+import { BookOpenText, Trash2, Play } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -423,8 +423,8 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                           className="shrink-0"
                           onClick={() => void openLessonPopup(reviewItem.source_lesson_id, reviewItem.latest_sentence_idx)}
                         >
-                          <ExternalLink className="size-4" />
-                          查看课程
+                          <Play className="size-4" />
+                          播放课程
                         </Button>
                       ) : null}
                     </div>
@@ -437,7 +437,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                       <div key={action.grade} className="space-y-1">
                         <Button
                           type="button"
-                          variant={action.grade === "good" ? "default" : "outline"}
+                          variant="outline"
                           className="h-11 w-full px-4"
                           disabled={busyEntryId === Number(reviewItem.id || 0)}
                           onClick={() => void handleReview(action.grade)}
