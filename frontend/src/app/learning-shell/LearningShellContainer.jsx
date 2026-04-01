@@ -34,6 +34,8 @@ import {
 import { resolveAdminNavItem } from "../../shared/lib/adminSearchParams";
 import { useAppStore } from "../../store";
 import { getDefaultMediaPreview } from "../../store/slices/mediaSlice";
+import { AnnouncementBanner } from "../../../components/AnnouncementBanner";
+import { AnnouncementModal } from "../../../components/AnnouncementModal";
 import { ConflictDialog } from "./ConflictDialog";
 import { LearningShellHeader } from "./LearningShellHeader";
 import { LearningShellPanelContent } from "./LearningShellPanelContent";
@@ -193,6 +195,7 @@ export function LearningShellContainer() {
   );
   const [latestGeneratedLessonId, setLatestGeneratedLessonId] = useState(0);
   const [wordbookRefreshToken, setWordbookRefreshToken] = useState(0);
+  const [announcements, setAnnouncements] = useState([]);
   const originalSubtitleRecoveryRef = useRef(new Map());
 
   useLearningShellBootstrap({
@@ -250,6 +253,30 @@ export function LearningShellContainer() {
     if (!accessToken || !isAdminRoute || adminAuthState !== "idle") return;
     void detectAdmin();
   }, [accessToken, adminAuthState, detectAdmin, isAdminRoute]);
+
+  useEffect(() => {
+    if (!accessToken) {
+      setAnnouncements([]);
+      return;
+    }
+    let canceled = false;
+    async function loadAnnouncements() {
+      try {
+        const resp = await api("/api/announcements/active", {}, accessToken);
+        if (canceled) return;
+        if (resp.ok) {
+          const data = await resp.json();
+          if (!canceled) setAnnouncements(Array.isArray(data) ? data : []);
+        }
+      } catch (_) {
+        // Silently ignore announcement fetch errors — non-critical UX feature.
+      }
+    }
+    void loadAnnouncements();
+    return () => {
+      canceled = true;
+    };
+  }, [accessToken]);
 
   useEffect(() => {
     setMobileNavOpen(false);
@@ -635,6 +662,19 @@ export function LearningShellContainer() {
             />
           ) : null}
 
+          {/* Announcement banners — only show for non-admin, logged-in users */}
+          {!isAdminRoute && accessToken && announcements.filter((a) => a.type === "banner").length > 0 ? (
+            <div className="container-wrapper py-0">
+              <div className="container space-y-2">
+                {announcements
+                  .filter((a) => a.type === "banner")
+                  .map((ann) => (
+                    <AnnouncementBanner key={ann.id} announcement={ann} />
+                  ))}
+              </div>
+            </div>
+          ) : null}
+
           <main className="container-wrapper min-w-0 py-3 md:py-6">
             <div className="container">
               {isAdminRoute ? (
@@ -728,6 +768,20 @@ export function LearningShellContainer() {
           </CommandDialog>
         </SidebarInset>
       </div>
+      {isDesktopEnv ? (
+        <ConflictDialog
+          open={conflictDialogOpen}
+          onOpenChange={setConflictDialogOpen}
+          conflicts={desktopSync.conflicts}
+          onResolve={desktopSync.resolveConflict}
+        />
+      ) : null}
+
+      {/* Announcement modals — only show for logged-in users */}
+      {accessToken ? (
+        <AnnouncementModal announcements={announcements.filter((a) => a.type === "modal")} />
+      ) : null}
+
       {isDesktopEnv ? (
         <ConflictDialog
           open={conflictDialogOpen}
