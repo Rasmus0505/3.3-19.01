@@ -24,8 +24,8 @@ See: .planning/PROJECT.md (updated 2026-03-31)
 
 Milestone: v2.2
 Phase: 16
-Plan: 16-01 complete, 16-02 complete, 16-03 pending
-Status: 16-01/02 executed. Next: 16-03 (user-facing rendering)
+Plan: 16-01 complete, 16-02 complete, 16-03 complete ✅
+Status: Phase 16 全部 3 个计划已完成
 
 ## Milestone Status
 
@@ -72,6 +72,7 @@ Status: 16-01/02 executed. Next: 16-03 (user-facing rendering)
   - **数据模型** — 最简版（title/content/type/status），ANNC-06 定时投放将来迁移
   - **16-01 完成** — 后端公告数据层与 API（Announcement 模型、Schema、Repository、Admin CRUD、Public 端点）
   - **16-02 完成** — AdminAnnouncementsPage + 后端 CRUD API 已交付
+  - **16-03 完成** — 用户端公告展示（AnnouncementBanner + AnnouncementModal + AccountPanel Changelog section）
 
 ## Decisions
 
@@ -101,5 +102,5 @@ Status: 16-01/02 executed. Next: 16-03 (user-facing rendering)
 
 ## Next Step
 
-1. **Phase 16-03 — 用户端公告渲染** — 接 changelog/banner/modal 三种展示
+1. **Phase 17 — 生词本复习主流程重做** — WORD-01/02/04，依赖 Phase 16 完成
 

@@ -84,7 +84,7 @@ _See: `.planning/milestones/v2.1-ROADMAP.md` for full phase details_
   2. 发布版桌面端的权限边界被记录并验证，而不是依赖默认或历史残留配置。
   3. 核心运行时暴露面相比当前基线收紧，且不破坏已有核心工作流。
 
-- [ ] **Phase 16: 公告与更新日志系统**
+- [x] **Phase 16: 公告与更新日志系统**
   Goal: 在管理台建立一套面向 web/desktop 的统一公告系统，支持更新日志、横幅和弹窗。
   Requirements: ANNC-01, ANNC-02, ANNC-03, ANNC-04, ANNC-05
   Success criteria:
@@ -153,13 +153,13 @@ Plans:
 **Goal**: 在管理台建立一套面向 web/desktop 的统一公告系统，支持更新日志、横幅和弹窗。  
 **Depends on**: Phase 15  
 **Requirements**: ANNC-01, ANNC-02, ANNC-03, ANNC-04, ANNC-05  
-**Plans**: 2/3 — IN PROGRESS
+**Plans**: 3/3 — COMPLETE
 
 Plans:
 
 - [x] 16-01: 建立公告数据模型、后台接口与排序/置顶能力 ✅ (2026-04-01)
 - [x] 16-02: 完成管理台公告编辑、删除和投放配置 ✅ (2026-04-01)
-- [ ] 16-03: 在 web/desktop 表面接入 changelog、banner、modal 渲染
+- [x] 16-03: 在 web/desktop 表面接入 changelog、banner、modal 渲染 ✅ (2026-04-01)
 
 ### Phase 17: 生词本复习主流程重做
 
