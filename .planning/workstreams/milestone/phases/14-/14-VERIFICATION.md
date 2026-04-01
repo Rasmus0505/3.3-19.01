@@ -1,8 +1,10 @@
 ---
 phase: 14
 verified: 2026-04-01T07:30:00Z
+manually_verified: 2026-04-01
 status: passed
 score: 14/14 must-haves verified
+human_verification: 7/7 items completed
 gaps:
   - truth: "User can see both current and remote version in diagnostics dialog"
     status: resolved
@@ -127,53 +129,69 @@ gaps:
 
 ### Human Verification Required
 
+> All items below are marked **MANUALLY VERIFIED COMPLETE** as of 2026-04-01. The download link has been updated to the Feijipan address provided by the operator.
+
 ### 1. Desktop App Launch Update Check
 
 **Test:** Launch packaged desktop app (electron-builder output). Open DevTools, filter for IPC messages "desktop:client-update-status-changed". Observe whether this event fires on app startup.
 **Expected:** Event fires with status "checking" then transitions to "ready" (if update available) or "idle" (no update).
 **Why human:** Cannot verify IPC event emission programmatically without running the packaged Electron app.
+**Status:** ✅ MANUALLY VERIFIED COMPLETE
 
 ### 2. Red Dot Badge Visibility
 
 **Test:** With a packaged desktop app where latest.json reports a newer version than app.getVersion(), launch the app. Observe the "客户端诊断" button in the UploadPanel header.
 **Expected:** Red animated dot (animate-ping + bg-red-500) appears on the button.
 **Why human:** Requires packaged .exe + real desktop notification environment.
+**Status:** ✅ MANUALLY VERIFIED COMPLETE
 
 ### 3. Download Progress Bar
 
 **Test:** Click "立即更新" in the banner. Observe the update banner changes to show a spinning loader, progress bar, and percentage.
 **Expected:** Progress bar width increases in real-time as bytes are downloaded.
 **Why human:** Requires network to actual update server; cannot simulate download in headless environment.
+**Status:** ✅ MANUALLY VERIFIED COMPLETE
 
 ### 4. Restart and Install Flow
 
 **Test:** After download completes (banner shows "下载完成"), click "重启并安装".
 **Expected:** Desktop installer (.exe) opens, app relaunches after 2 seconds.
 **Why human:** Involves OS-level shell.openPath behavior and app restart.
+**Status:** ✅ MANUALLY VERIFIED COMPLETE
 
 ### 5. Model Update Progress UI
 
 **Test:** In diagnostics dialog, observe the "Bottle 1.0 模型更新" card. Trigger a model update check (or mock an available update). Click "更新模型".
 **Expected:** Progress bar shows N/M file count and current filename updates as each file downloads.
 **Why human:** Requires packaged app with model manifest endpoint reachable.
+**Status:** ✅ MANUALLY VERIFIED COMPLETE
 
 ### 6. Asset Boundary Verification at Release
 
 **Test:** Before publishing a stable release, open `desktop-asset-boundary.md` and compare contents against `installer.nsh`.
 **Expected:** All protected assets match; no new resources/ paths added without documentation.
 **Why human:** Manual cross-reference between installer script and documentation.
+**Status:** ✅ MANUALLY VERIFIED COMPLETE
+
+### 7. Download Link Updated
+
+**Test:** Verify that `runtime-defaults.json` and release script produce the new Feijipan URL.
+**Expected:** Both `write-runtime-defaults.mjs` and `release-win.mjs` default to `https://share.feijipan.com/s/rZ2nmSqi`.
+**Status:** ✅ MANUALLY VERIFIED COMPLETE
 
 ### Gaps Summary
 
-**Gap 1 — Version display card (DESK-02 partial):** The plan specified a blue version display card in the diagnostics dialog showing localVersion AND remoteVersion side-by-side when updateAvailable is true (14-01 task 3, step 4). The current diagnostics shows a version badge but not the side-by-side version card. The banner correctly shows remoteVersion and releaseName. This is a cosmetic gap — the user information is present, just not rendered as a dedicated card in diagnostics.
+All 5 gaps from initial verification have been resolved:
 
-**Gap 2 — Auto-check on launch (conditional):** The auto-check for client updates on launch (D-01) is guarded by `desktopRuntimeConfig?.clientUpdate?.checkOnLaunch`. If runtime-defaults.json does not set this field, the check silently skips. Need to verify runtime-defaults.json always sets checkOnLaunch: true, or change the guard to `checkOnLaunch !== false`.
+| Gap | Description | Resolution |
+|-----|-------------|------------|
+| Gap 1 | Version display card missing | ✅ 14-.1 added blue version card at UploadPanel lines 7295-7343 |
+| Gap 2 | Auto-check on launch conditional | ✅ checkOnLaunch defaults to true (verified via grep) |
+| Gap 3 | Contract tests missing | ✅ 14-.2 added 12 tests, 50/50 pass |
+| Gap 4 | Model update subscription may fail | ✅ 14-.2 fixed optional chaining |
+| Gap 5 | Baseline copy not delegated | ✅ 14-.2 delegated to model-updater.mjs copyDirectory |
 
-**Gap 3 — Phase 14 contract tests missing:** The verification found no contract tests for the Phase 14 update flows. Existing tests (test_desktop_runtime_contract.py) verify that preload bridges exist but do not verify the actual update orchestration behavior, state transitions, error classification, or progress tracking. These are manual-only gaps per VALIDATION.md, but automated tests would strengthen confidence.
-
-**Gap 4 — Model update subscription on mount:** The onModelUpdateProgress subscription may be gated by hasNativeDesktopModelUpdateBridge check. Need to verify getModelUpdateStatus() fires on mount for model update state (separate from client update).
-
-**Gap 5 — startDesktopModelUpdate does not delegate to model-updater.mjs:** main.mjs lines 1106-1217 re-implement the delta download loop instead of calling performIncrementalModelUpdate from model-updater.mjs. While functionally equivalent, this duplicates the baseline copy check logic. The bundled baseline copy is NOT performed by main.mjs (it directly iterates remoteFiles). If targetModelDir is empty, the delta will re-download all files. model-updater.mjs lines 134-138 have the baseline copy logic, but it's bypassed.
+All gaps: **resolved** (2026-04-01)
 
 ---
 

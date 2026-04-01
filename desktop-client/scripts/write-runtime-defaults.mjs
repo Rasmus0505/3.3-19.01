@@ -9,7 +9,7 @@ const outputPath = path.resolve(desktopRoot, ".cache", "runtime-defaults.json");
 const configuredCloudAppUrl = String(process.env.DESKTOP_CLOUD_APP_URL || "").trim();
 const configuredCloudApiBaseUrl = String(process.env.DESKTOP_CLOUD_API_BASE_URL || "").trim();
 const normalizedCloudApiBaseUrl = configuredCloudApiBaseUrl.replace(/\/+$/, "");
-const defaultPublicDownloadUrl = String(process.env.DESKTOP_CLIENT_PUBLIC_DOWNLOAD_URL || "https://share.feijipan.com/s/1n2mH6fh").trim();
+const defaultPublicDownloadUrl = String(process.env.DESKTOP_CLIENT_PUBLIC_DOWNLOAD_URL || "https://share.feijipan.com/s/rZ2nmSqi").trim();
 const defaultMetadataPath = normalizedCloudApiBaseUrl ? `${normalizedCloudApiBaseUrl}/desktop/client/channels/stable.json` : "";
 const defaultEntryPath = defaultPublicDownloadUrl;
 
