@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: 桌面发布与体验收口
 status: completed
-last_updated: "2026-04-01T06:25:00.000Z"
+last_updated: "2026-04-01T07:04:28.046Z"
 progress:
   total_phases: 6
-  completed_phases: 1
-  total_plans: 9
+  completed_phases: 2
+  total_plans: 8
   completed_plans: 8
 ---
 
@@ -23,8 +23,8 @@ See: .planning/PROJECT.md (updated 2026-03-31)
 ## Current Position
 
 Milestone: v2.2
-Phase: 14 (桌面程序与模型增量更新产品化) — COMPLETE
-Plan: 4 of 4 (+ gap closure 14.1, 14.2)
+Phase: 15
+Plan: Not started
 Status: All Phase 14 plans complete (including gap closures 14.1 and 14.2)
 Completed: 14-01 (badge + banner), 14-02 (download orchestration + restart trigger), 14-03 (model delta update + asset boundary SECU-03), 14.1 (gap closure: DESK-02 version card + auto-check default), 14.2 (gap closure: contract tests, optional chaining, baseline copy delegation)
 Next: Phase 14 UAT — run verification to confirm gap closures
