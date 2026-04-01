@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: 桌面发布与体验收口
-status: completed
-last_updated: "2026-04-01T07:04:28.046Z"
+status: planning
+last_updated: "2026-04-01T08:39:41.913Z"
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 8
+  total_plans: 10
   completed_plans: 8
 ---
 
@@ -18,12 +18,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 15 — 桌面运行时边界加固
+**Current focus:** Phase 16 — 公告与更新日志系统
 
 ## Current Position
 
 Milestone: v2.2
-Phase: 15
+Phase: 16
 Plan: Not started
 Status: Context gathered. Ready for planning.
 Completed: Phase 14 plans 14-01 through 14.2 all complete.
@@ -62,6 +62,17 @@ Next: /gsd-plan-phase 15
   - preload 暴露面审核纳入 Phase 15 交付，清理范围由审核决定
   - 正式版 webSecurity 边界加测试验证，结果记录到 15-VALIDATION.md
 
+- Phase 16 context captured decisions:
+  - **公告术语全中文化** — changelog / banner / modal 所有文案改为中文运营人员可理解的术语
+  - **Banner 消失方式** — 手动关闭（X 按钮），关闭后当前会话不再出现
+  - **"重要公告"定义** — 服务器维护 / 系统故障 / 账号安全等需即时知晓的事件
+  - **Banner 触发** — 登录/打开 App 时自动弹出
+  - **Modal 范围** — 所有标记为 modal 的公告都弹出
+  - **Changelog 位置** — 个人中心/设置页面内嵌，不占独立路由
+  - **Admin 入口** — 管理台新增独立「公告管理」Tab
+  - **存储** — 后端数据库，登录用户专属，user_id 记录已读
+  - **数据模型** — 最简版（title/content/type/status），ANNC-06 定时投放将来迁移
+
 ## Decisions
 
 | Decision | Phase | Summary |
@@ -75,7 +86,14 @@ Next: /gsd-plan-phase 15
 | openExternalUrl uses whitelist | 15 | Only snapany.com + official domains allowed |
 | Preload surface audited in Phase 15 | 15 | Historical methods reviewed for removal |
 | webSecurity prod mode tested with validation doc | 15 | SECU-02 evidence |
+| Announcement: Chinese terms only | 16 | Operator comprehension |
+| Banner: auto-popup, manual X, session-only | 16 | Non-intrusive |
+| Modal: all marked, no priority filter | 16 | Simpler logic |
+| Changelog: in profile/settings, no route | 16 | Convenient |
+| Admin: new Announcements tab | 16 | Clear entry |
+| Announce DB: backend, login-required | 16 | Cross-device |
+| Announce model: minimal | 16 | ANNC-06 later |
 
 ## Next Step
 
-1. **Phase 15 — 桌面运行时边界加固** — Context gathered. Ready for planning.
+1. **Phase 16 — 公告与更新日志系统** — Context gathered. Ready for planning.
