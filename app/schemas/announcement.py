@@ -47,5 +47,7 @@ class AnnouncementItem(BaseModel):
 
 class AnnouncementListResponse(BaseModel):
     ok: bool = True
+    page: int = 1
+    page_size: int = 20
+    total: int = 0
     items: list[AnnouncementItem]
-    total: int
