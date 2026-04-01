@@ -7,8 +7,8 @@ last_updated: "2026-04-01T06:15:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 7
+  completed_plans: 7
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-03-31)
 
 Milestone: v2.2
 Phase: 14 (桌面程序与模型增量更新产品化) — EXECUTING
-Plan: 3 of 3
-Status: All Phase 14 plans complete
-Completed: 14-01 (badge + banner), 14-02 (download orchestration + restart trigger), 14-03 (model delta update + asset boundary SECU-03)
-Next: Phase 14 complete — move to Phase 15
+Plan: 4 of 4
+Status: All Phase 14 plans complete (including gap closure 14.1)
+Completed: 14-01 (badge + banner), 14-02 (download orchestration + restart trigger), 14-03 (model delta update + asset boundary SECU-03), 14.1 (gap closure: DESK-02 version card + auto-check default)
+Next: Phase 14 UAT — run verification to confirm gap closures
 
 ## Milestone Status
 
