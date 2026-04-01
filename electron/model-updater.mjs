@@ -63,7 +63,7 @@ async function listActualFiles(modelDir) {
   return output.sort((left, right) => left.name.localeCompare(right.name));
 }
 
-async function copyDirectory(sourceDir, targetDir) {
+export async function copyDirectory(sourceDir, targetDir) {
   await fs.mkdir(targetDir, { recursive: true });
   if (!(await pathExists(sourceDir))) {
     return;
