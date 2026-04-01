@@ -15,11 +15,11 @@
 
 ### Admin Announcements
 
-- [ ] **ANNC-01**: Admin can create an announcement with title and content for release communication.
-- [ ] **ANNC-02**: Admin can mark an announcement as changelog, banner, or modal so the same system can drive different user-facing placements.
-- [ ] **ANNC-03**: Admin can pin and sort announcements so important information appears first.
-- [ ] **ANNC-04**: Admin can delete announcements that should no longer be shown or managed.
-- [ ] **ANNC-05**: User only sees active announcements that are intended for the current surface (web, desktop, or both).
+- [x] **ANNC-01**: Admin can create an announcement with title and content for release communication.
+- [x] **ANNC-02**: Admin can mark an announcement as changelog, banner, or modal so the same system can drive different user-facing placements.
+- [x] **ANNC-03**: Admin can pin and sort announcements so important information appears first.
+- [x] **ANNC-04**: Admin can delete announcements that should no longer be shown or managed.
+- [x] **ANNC-05**: User only sees active announcements that are intended for the current surface (web, desktop, or both).
 
 ### Desktop Hardening
 
@@ -75,11 +75,11 @@
 | DESK-03 | Phase 14 | Pending |
 | DESK-04 | Phase 14 | Pending |
 | DESK-05 | Phase 14 | Pending |
-| ANNC-01 | Phase 16 | Pending |
-| ANNC-02 | Phase 16 | Pending |
-| ANNC-03 | Phase 16 | Pending |
-| ANNC-04 | Phase 16 | Pending |
-| ANNC-05 | Phase 16 | Pending |
+| ANNC-01 | Phase 16 | Complete |
+| ANNC-02 | Phase 16 | Complete |
+| ANNC-03 | Phase 16 | Complete |
+| ANNC-04 | Phase 16 | Complete |
+| ANNC-05 | Phase 16 | Complete |
 | SECU-01 | Phase 13 | Pending |
 | SECU-02 | Phase 15 | Pending |
 | SECU-03 | Phase 14 | Pending |

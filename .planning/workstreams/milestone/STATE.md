@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: 桌面发布与体验收口
-status: planning
-last_updated: "2026-04-01T10:45:08.883Z"
+status: Phase 16 全部 3 个计划已完成
+last_updated: "2026-04-01T11:03:41.989Z"
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 13
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Project State
@@ -23,8 +23,8 @@ See: .planning/PROJECT.md (updated 2026-03-31)
 ## Current Position
 
 Milestone: v2.2
-Phase: 16
-Plan: 16-01 complete, 16-02 complete, 16-03 complete ✅
+Phase: 17
+Plan: Not started
 Status: Phase 16 全部 3 个计划已完成
 
 ## Milestone Status
@@ -103,4 +103,3 @@ Status: Phase 16 全部 3 个计划已完成
 ## Next Step
 
 1. **Phase 17 — 生词本复习主流程重做** — WORD-01/02/04，依赖 Phase 16 完成
-
