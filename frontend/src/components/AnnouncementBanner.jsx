@@ -1,7 +1,7 @@
 import { X } from "lucide-react";
 import { useState } from "react";
 
-import { Badge } from "@/shared/ui";
+import { Badge } from "../shared/ui";
 
 /**
  * Banner-style announcement banner.

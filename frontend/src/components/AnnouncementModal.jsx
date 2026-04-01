@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { Badge, Button, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui";
+import { Badge, Button, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../shared/ui";
 
 /**
  * Modal-style announcement dialog.
