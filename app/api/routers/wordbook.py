@@ -9,6 +9,10 @@ from app.db import get_db
 from app.models import User
 from app.schemas import ErrorResponse
 from app.schemas.wordbook import (
+    BatchDeleteRequest,
+    BatchMoveRequest,
+    BatchStatusUpdate,
+    BatchTranslateRequest,
     WordbookCollectRequest,
     WordbookCollectResponse,
     WordbookDeleteResponse,
@@ -22,6 +26,10 @@ from app.schemas.wordbook import (
     WordbookStatusUpdateRequest,
 )
 from app.services.wordbook_service import (
+    batch_delete_words,
+    batch_move_words,
+    batch_translate_words,
+    batch_update_status,
     collect_wordbook_entry,
     delete_wordbook_entry,
     list_wordbook_entry_payloads,
@@ -185,3 +193,47 @@ def delete_wordbook_item(
 ):
     delete_wordbook_entry(db, entry_id=entry_id, user_id=current_user.id)
     return WordbookDeleteResponse(ok=True, entry_id=entry_id)
+
+
+@router.post("/batch/delete")
+async def batch_delete_words_endpoint(
+    request: BatchDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete multiple words by ID."""
+    count = batch_delete_words(db, request.word_ids)
+    return {"success": True, "deleted_count": count}
+
+
+@router.post("/batch/status")
+async def batch_update_status_endpoint(
+    request: BatchStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update is_learned status for multiple words."""
+    count = batch_update_status(db, request.word_ids, request.is_learned)
+    return {"success": True, "updated_count": count}
+
+
+@router.post("/batch/move")
+async def batch_move_words_endpoint(
+    request: BatchMoveRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Move multiple words to another lesson."""
+    count = batch_move_words(db, request.word_ids, request.target_list_id)
+    return {"success": True, "moved_count": count}
+
+
+@router.post("/batch/translate")
+async def batch_translate_words_endpoint(
+    request: BatchTranslateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Translate multiple words and save results."""
+    translations = batch_translate_words(db, request.word_ids)
+    return {"success": True, "translations": translations}
