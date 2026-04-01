@@ -6276,7 +6276,10 @@ export function UploadPanel({
                     size="sm"
                     variant="ghost"
                     className="h-7 text-xs text-muted-foreground"
-                    onClick={() => setUpdateBannerDismissed(true)}
+                    onClick={() => {
+                      setUpdateBannerDismissed(true);
+                      window.desktopRuntime?.acknowledgeClientUpdate?.();
+                    }}
                   >
                     稍后
                   </Button>
@@ -7426,6 +7429,9 @@ export function UploadPanel({
                 <Button type="button" variant="outline" className="h-9 px-3" onClick={() => void refreshDesktopDiagnostics()} disabled={desktopDiagnosticsLoading}>
                   <RefreshCcw className={cn("size-4", desktopDiagnosticsLoading ? "animate-spin" : "")} />
                   刷新状态
+                </Button>
+                <Button type="button" variant="outline" className="h-9 px-3" onClick={() => window.desktopRuntime?.checkClientUpdate?.()}>
+                  检查更新
                 </Button>
                 <Button type="button" className="h-9 px-3" onClick={() => void handleOpenLogsDirectory()}>
                   打开日志目录
