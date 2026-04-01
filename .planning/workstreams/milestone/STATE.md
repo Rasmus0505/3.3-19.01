@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: 桌面发布与体验收口
-status: Phase 16 全部 3 个计划已完成
-last_updated: "2026-04-01T17:02:27.573Z"
+status: Phase 18 Plan 18-03 tooltip system enhancement complete
+last_updated: "2026-04-02T10:00:00.000Z"
 progress:
   total_phases: 6
-  completed_phases: 3
-  total_plans: 13
-  completed_plans: 11
+  completed_phases: 4
+  total_plans: 14
+  completed_plans: 12
 ---
 
 # Project State
@@ -24,8 +24,8 @@ See: .planning/PROJECT.md (updated 2026-03-31)
 
 Milestone: v2.2
 Phase: 18
-Plan: Not started
-Status: Phase 16 全部 3 个计划已完成
+Plan: 18-03 (complete)
+Status: Phase 18 Plan 18-03 tooltip system enhancement complete
 
 ## Milestone Status
 
@@ -73,6 +73,22 @@ Status: Phase 16 全部 3 个计划已完成
   - **16-01 完成** — 后端公告数据层与 API（Announcement 模型、Schema、Repository、Admin CRUD、Public 端点）
   - **16-02 完成** — AdminAnnouncementsPage + 后端 CRUD API 已交付
   - **16-03 完成** — 用户端公告展示（AnnouncementBanner + AnnouncementModal + AccountPanel Changelog section）
+
+- Phase 18 context captured decisions:
+  - **批量操作**: 使用混合模式（Checkbox + Shift 多选）
+  - **顶部悬浮工具栏**: FloatingToolbar at viewport top
+  - **局部翻译**: 调用翻译 API 重新获取，非查看已存储翻译
+  - **轻提示组件**: 新建半透明悬浮样式组件
+  - **轻提示触发**: Hover
+  - **沉浸式学习按钮**: 都加上轻提示
+  - **shadcn 风格收口**: 列表 + 复习视图
+  - **局部翻译 API**: 使用 qwen-mt-flash 模型
+
+- Phase 18 execution progress:
+  - 18-01: Complete (batch API endpoints) ✅
+  - 18-02: Complete (frontend batch selection + FloatingToolbar) ✅
+  - 18-03: Complete (tooltip system enhancement) ✅
+  - 18-04: Pending (translation dialog & local translation)
 
 ## Decisions
 
