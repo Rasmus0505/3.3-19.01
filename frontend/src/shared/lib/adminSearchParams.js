@@ -81,6 +81,12 @@ export const ADMIN_NAV_ITEMS = [
     href: "/admin/redeem",
   },
   {
+    key: "announcements",
+    label: "公告管理",
+    description: "创建、编辑、置顶和删除公告",
+    href: "/admin/announcements",
+  },
+  {
     key: "troubleshooting",
     label: "排障中心",
     description: "健康、失败、安全维护与操作审计",
@@ -95,6 +101,7 @@ export function getAdminNavItemByKey(key) {
 export function resolveAdminNavKey(pathname, search = "") {
   if (pathname.startsWith("/admin/users")) return "users";
   if (pathname.startsWith("/admin/redeem")) return "redeem";
+  if (pathname.startsWith("/admin/announcements")) return "announcements";
   if (pathname.startsWith("/admin/troubleshooting") || pathname.startsWith("/admin/health")) return "troubleshooting";
   if (pathname.startsWith("/admin/security")) return "troubleshooting";
   if (pathname.startsWith("/admin/rates") || pathname.startsWith("/admin/logs") || pathname.startsWith("/admin/subtitle-settings")) return "users";

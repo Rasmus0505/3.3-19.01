@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
+import { AdminAnnouncementsPage } from "./features/admin-pages/AdminAnnouncementsPage";
 import { AdminRedeemPage } from "./features/admin-pages/AdminRedeemPage";
 import { AdminSecurityPage } from "./features/admin-pages/AdminSecurityPage";
 import { AdminUsersPage } from "./features/admin-pages/AdminUsersPage";
@@ -33,6 +34,7 @@ export function AdminApp({ apiCall }) {
         <Route path="security" element={<AdminSecurityPage apiCall={apiCall} />} />
         <Route path="users" element={<AdminUsersPage apiCall={apiCall} />} />
         <Route path="redeem" element={<AdminRedeemPage apiCall={apiCall} />} />
+        <Route path="announcements" element={<AdminAnnouncementsPage apiCall={apiCall} />} />
 
         <Route path="logs" element={<Navigate to="/admin/users?tab=wallet" replace />} />
         <Route path="rates" element={<Navigate to="/admin/users?tab=rates" replace />} />
