@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: 桌面发布与体验收口
-status: executing
-last_updated: "2026-04-01T06:15:00.000Z"
+status: completed
+last_updated: "2026-04-01T06:25:00.000Z"
 progress:
   total_phases: 6
-  completed_phases: 2
-  total_plans: 7
-  completed_plans: 7
+  completed_phases: 1
+  total_plans: 9
+  completed_plans: 8
 ---
 
 # Project State
@@ -23,10 +23,10 @@ See: .planning/PROJECT.md (updated 2026-03-31)
 ## Current Position
 
 Milestone: v2.2
-Phase: 14 (桌面程序与模型增量更新产品化) — EXECUTING
-Plan: 4 of 4
-Status: All Phase 14 plans complete (including gap closure 14.1)
-Completed: 14-01 (badge + banner), 14-02 (download orchestration + restart trigger), 14-03 (model delta update + asset boundary SECU-03), 14.1 (gap closure: DESK-02 version card + auto-check default)
+Phase: 14 (桌面程序与模型增量更新产品化) — COMPLETE
+Plan: 4 of 4 (+ gap closure 14.1, 14.2)
+Status: All Phase 14 plans complete (including gap closures 14.1 and 14.2)
+Completed: 14-01 (badge + banner), 14-02 (download orchestration + restart trigger), 14-03 (model delta update + asset boundary SECU-03), 14.1 (gap closure: DESK-02 version card + auto-check default), 14.2 (gap closure: contract tests, optional chaining, baseline copy delegation)
 Next: Phase 14 UAT — run verification to confirm gap closures
 
 ## Milestone Status
@@ -54,6 +54,8 @@ Next: Phase 14 UAT — run verification to confirm gap closures
   - 14-01: Complete (badgeVisible, acknowledge IPC, banner in UploadPanel) ✅
   - 14-02: Complete (download orchestration, progress tracking, restart trigger) ✅
   - 14-03: Complete (model delta update with progress, file count N/M, current filename, plain-language errors, retry UI, asset boundary contract SECU-03) ✅
+  - 14.1: Complete (gap closure: DESK-02 version card, auto-check default) ✅
+  - 14.2: Complete (gap closure: contract tests DESK-02/03/04/05, optional chaining fix, baseline copy delegation) ✅
 
 ## Decisions
 
@@ -62,6 +64,8 @@ Next: Phase 14 UAT — run verification to confirm gap closures
 | Bundled model is read-only baseline | 14-03 | Delta computation integrity |
 | Model writes go to user-data only | 14-03 | Protects bundled assets |
 | Error messages use plain-language categories | 14-03 | User-friendly recovery |
+| Export copyDirectory from model-updater.mjs | 14.2 | Reuse for baseline copy in main.mjs |
+| Double optional chaining on desktopRuntime bridge | 14.2 | Prevents TypeError when bridge unavailable |
 
 ## Next Step
 
