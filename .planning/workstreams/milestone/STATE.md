@@ -1,31 +1,47 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.2
-milestone_name: 桌面发布与体验收口
-status: completed
-last_updated: "2026-04-02T12:13:39.176Z"
+milestone: v2.3
+milestone_name: 学习体验与导入流程优化
+status: active
+last_updated: "2026-04-02T12:20:00.176Z"
 progress:
-  total_phases: 6
-  completed_phases: 4
-  total_plans: 14
-  completed_plans: 15
+  total_phases: 5
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-31)
+See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 16 — 公告与更新日志系统
+**Current focus:** Phase 19 — 沉浸式学习 Bug 修复
 
 ## Current Position
 
-Milestone: v2.2
-Phase: 18
-Plan: 18-02 (complete)
-Status: Phase 18 Plan 18-02 frontend batch selection & toolbar complete
+Milestone: v2.3
+Phase: 19
+Plan: (none yet)
+Status: Phase 19 context gathered — ready for planning
+
+## Milestone Status
+
+v2.2 shipped 2026-04-02 — see MILESTONES.md for summary.
+
+v2.3 started 2026-04-02:
+- Phase 19: 沉浸式学习 Bug 修复 — context gathered
+
+- Phase 19 context captured decisions:
+  - **Bug 1+4**: 倍速/循环切换时输入被清空 — 根因分析指向 auto-answer-replay 逻辑，修复方案：全面审查触发路径，增加 guard
+  - **Bug 2**: 上一句播放静默失败 — Web Speech API TTS fallback（无需 npm 包，web + desktop 均可使用）
+  - **Bug 3**: 答题框颜色区分 — AI 内容 amber-100 (#FEF3C7)、用户内容 emerald-100 (#D1FAE5)
+
+## Next Step
+
+1. **Phase 19 — 沉浸式学习 Bug 修复** — `/gsd-plan-phase 19`
 
 ## Milestone Status
 
