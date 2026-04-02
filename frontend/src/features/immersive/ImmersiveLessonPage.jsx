@@ -2347,13 +2347,13 @@ export function ImmersiveLessonPage({
   useEffect(() => {
     if (!immersiveActive) return;
     if (!sentenceTypingDone) return;
+    if (postAnswerReplayState !== "idle") return;
+    if (sentenceAdvanceLockedRef.current) return;
     if (autoReplayAnsweredSentence) {
       if (singleSentenceLoopEnabled) return;
-      if (postAnswerReplayState !== "completed") return;
     } else if (sentencePlaybackRequired && !sentencePlaybackDone) {
       return;
     }
-    if (sentenceAdvanceLockedRef.current) return;
     sentenceAdvanceLockedRef.current = true;
     dispatchSession({ type: SET_PHASE, phase: "transition" });
     setTimeout(() => {
@@ -2728,6 +2728,16 @@ export function ImmersiveLessonPage({
     [currentSentence, currentSentenceIndex, learningSettings.shortcuts.replay_sentence, needsBinding, togglePausePlayback],
   );
 
+  const speakPreviousSentenceTTS = (text, rate = 1.0) => {
+    if (!window.speechSynthesis) return false;
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "en-US";
+    utter.rate = rate;
+    window.speechSynthesis.speak(utter);
+    return true;
+  };
+
   const requestPlayPreviousSentence = useCallback(
     (source = "previous_sentence_speaker") => {
       if (!previousSentence) return;
@@ -2740,24 +2750,33 @@ export function ImmersiveLessonPage({
         sentenceIndex: currentSentenceIndex,
       });
       void (async () => {
+        // Tier 1: clip audio with main-video fallback
         const result = await playSentence(previousSentence, {
           initialRate: selectedPlaybackRate,
           rateSteps: [],
-        }, { skipSeek: true });
-        if (!result.ok) {
-          dispatchSession({ type: SET_PHASE, phase: "typing" });
-          setMediaError("播放上一句失败，请稍后重试。");
-          debugImmersiveLog("previous_sentence_speaker.failed", {
-            source,
-            sentenceIndex: currentSentenceIndex,
-            reason: result.reason || "unknown",
+        }, { skipSeek: false });
+        if (result.ok) return;
+        debugImmersiveLog("previous_sentence_speaker.clip_failed", {
+          source,
+          sentenceIndex: currentSentenceIndex,
+          reason: result.reason || "unknown",
+        });
+        // Tier 2: Web Speech API TTS
+        const ttsOk = speakPreviousSentenceTTS(previousSentence.text_en || "", selectedPlaybackRate);
+        if (ttsOk) {
+          dispatchSession({
+            type: PLAYBACK_STARTED,
+            phase: "playing",
+            translationDisplayMode: "previous",
           });
           return;
         }
-        dispatchSession({
-          type: PLAYBACK_STARTED,
-          phase: "playing",
-          translationDisplayMode: "previous",
+        // Tier 3: error
+        dispatchSession({ type: SET_PHASE, phase: "typing" });
+        setMediaError("上一句音频不可用，请稍后重试。");
+        debugImmersiveLog("previous_sentence_speaker.tts_failed", {
+          source,
+          sentenceIndex: currentSentenceIndex,
         });
       })();
     },
@@ -3129,6 +3148,7 @@ export function ImmersiveLessonPage({
   const handleKeyDown = useCallback(
     (event) => {
       if (!currentSentence) return;
+      setMediaError("");
 
       const key = event.key;
       if (
