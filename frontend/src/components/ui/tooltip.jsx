@@ -1,6 +1,5 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
-import { useState, useRef, useCallback, useLayoutEffect } from "react";
-import React from "react";
+import React, { useRef, useLayoutEffect, useCallback } from "react";
 import { cn } from "../../lib/utils";
 
 export const TooltipProvider = TooltipPrimitive.Provider;
@@ -24,33 +23,45 @@ export function TooltipContent({ className, sideOffset = 6, ...props }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// SimpleTooltip — lightweight tooltip with no Portal, no external CSS deps.
-// Renders the tooltip inline (not via Portal) at a fixed position calculated
-// from the trigger's bounding rect. This guarantees visibility inside
-// Electron fullscreen mode where Radix Portals can be buried under the
-// fullscreen video stacking context.
-// ---------------------------------------------------------------------------
-
+/**
+ * SimpleTooltip — CSS hover for visibility, direct DOM for positioning.
+ *
+ * Why not React state for visibility?
+ *   React 18's concurrent rendering can interrupt setState renders when
+ *   other state updates happen in the same event cycle (e.g. playing audio).
+ *   CSS :hover is synchronous and completely unaffected by React render
+ *   scheduling. JS only handles the tooltip position.
+ *
+ * Why direct DOM manipulation for position?
+ *   We need the tooltip's offsetWidth/Height to compute correct placement,
+ *   but hidden (display:none) elements report 0 dimensions. By keeping the
+ *   tooltip visible (but visually clipped) during measurement, we get
+ *   accurate measurements on the first show — no flicker.
+ */
 export function SimpleTooltip({ children, content, side = "top", className }) {
-  const [visible, setVisible] = useState(false);
   const triggerRef = useRef(null);
   const tooltipRef = useRef(null);
+  const measureKeyRef = useRef(0);
 
-  // Position the tooltip DOM directly (no state update, no re-render).
-  // RAF ensures the tooltip div is rendered and laid out before we read its dimensions.
-  useLayoutEffect(() => {
-    if (!visible || !triggerRef.current) return;
+  // Compute and apply tooltip position directly to DOM (no React re-render).
+  const position = useLayoutEffect(() => {
     const trigger = triggerRef.current;
-    const el = tooltipRef.current; // may be null on Strict Mode first pass
-    const frame = requestAnimationFrame(() => {
+    const tooltip = tooltipRef.current;
+    if (!trigger || !tooltip) return;
+
+    measureKeyRef.current += 1;
+    const key = measureKeyRef.current;
+
+    const apply = () => {
+      if (key !== measureKeyRef.current) return; // stale
       if (!triggerRef.current || !tooltipRef.current) return;
+
       const t = triggerRef.current;
-      const tooltipEl = tooltipRef.current;
-      const rect = t.getBoundingClientRect();
-      const TW = tooltipEl.offsetWidth || 160;
-      const TH = tooltipEl.offsetHeight || 32;
+      const el = tooltipRef.current;
+      const TW = el.offsetWidth || 160;
+      const TH = el.offsetHeight || 32;
       const PADDING = 6;
+      const rect = t.getBoundingClientRect();
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       let top = 0, left = 0;
@@ -73,72 +84,50 @@ export function SimpleTooltip({ children, content, side = "top", className }) {
         if (left < PADDING) left = rect.right + PADDING;
       }
 
-      tooltipEl.style.top = `${Math.max(PADDING, Math.min(top, vh - TH - PADDING))}px`;
-      tooltipEl.style.left = `${Math.max(PADDING, Math.min(left, vw - TW - PADDING))}px`;
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [visible, side, content]);
+      el.style.top = `${Math.max(PADDING, Math.min(top, vh - TH - PADDING))}px`;
+      el.style.left = `${Math.max(PADDING, Math.min(left, vw - TW - PADDING))}px`;
+    };
 
-  const triggerCallbackRef = useCallback(
-    (node) => {
-      triggerRef.current = node;
-      if (children.ref) {
-        if (typeof children.ref === "function") {
-          children.ref(node);
-        } else if (children.ref) {
-          children.ref.current = node;
-        }
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+    requestAnimationFrame(apply);
+  }, [side, content]);
 
-  const existingProps = children.props ?? {};
+  // Forward ref to the trigger element.
+  const setTriggerRef = useCallback((node) => {
+    triggerRef.current = node;
+    const child = React.Children.only(children);
+    if (child?.ref) {
+      if (typeof child.ref === "function") child.ref(node);
+      else child.ref.current = node;
+    }
+  }, [children]);
+
+  // Merge event handlers so we can position on hover/show.
+  const child = React.Children.only(children);
+  const childProps = child.props ?? {};
   const mergedProps = {
-    ...existingProps,
-    ref: triggerCallbackRef,
-    onMouseEnter: (e) => {
-      setVisible(true);
-      existingProps.onMouseEnter?.(e);
-    },
-    onMouseLeave: (e) => {
-      setVisible(false);
-      existingProps.onMouseLeave?.(e);
-    },
-    onFocus: (e) => {
-      setVisible(true);
-      existingProps.onFocus?.(e);
-    },
-    onBlur: (e) => {
-      setVisible(false);
-      existingProps.onBlur?.(e);
-    },
+    ...childProps,
+    ref: setTriggerRef,
   };
 
   return (
-    <>
-      {React.cloneElement(children, mergedProps)}
-      {visible ? (
-        <div
-          ref={tooltipRef}
-          className={cn(
-            "pointer-events-none fixed rounded-md border bg-black/80 px-2.5 py-1.5 text-sm text-white shadow-xl backdrop-blur-sm",
-            className,
-          )}
-          style={{ top: 0, left: 0, zIndex: 999999 }}
-          role="tooltip"
-        >
-          <p className="whitespace-nowrap">{content}</p>
-        </div>
-      ) : null}
-    </>
+    <div className="group/simplett relative inline-flex">
+      {React.cloneElement(child, mergedProps)}
+      <div
+        ref={tooltipRef}
+        className={cn(
+          "pointer-events-none fixed z-[999999] hidden rounded-md border bg-black/80 px-2.5 py-1.5 text-sm text-white shadow-xl backdrop-blur-sm",
+          "group-hover/simplett:block group-focus-within/simplett:block",
+          className,
+        )}
+        role="tooltip"
+      >
+        <p className="whitespace-nowrap">{content}</p>
+      </div>
+    </div>
   );
 }
 
 // Convenience wrapper matching the old TooltipHint API.
 export function TooltipHint({ children, content, side = "top" }) {
-  return (
-    <SimpleTooltip children={children} content={content} side={side} />
-  );
+  return <SimpleTooltip children={children} content={content} side={side} />;
 }
