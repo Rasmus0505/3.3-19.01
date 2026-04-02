@@ -616,7 +616,9 @@
 }
 
 .immersive-letter-cell--revealed {
+  color: #f59e0b;
   color: oklch(0.70 0.18 85);
+  border-bottom-color: #f59e0b;
   border-bottom-color: oklch(0.70 0.18 85);
 }
 
