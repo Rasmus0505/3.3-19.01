@@ -404,7 +404,7 @@ function normalizeComparableToken(token) {
   return normalizeToken(String(token || "")).replace(APOSTROPHE_RE, "");
 }
 
-function buildLetterSlots(expectedToken, inputValue) {
+function buildLetterSlots(expectedToken, inputValue, revealLength = 0) {
   const expected = String(expectedToken || "");
   const actual = normalizeComparableToken(inputValue);
   const slots = [];
@@ -425,7 +425,11 @@ function buildLetterSlots(expectedToken, inputValue) {
     const typedChar = actual[typedIndex] || "";
     let state = "empty";
     if (typedChar) {
-      state = typedChar.toLowerCase() === expectedChar.toLowerCase() ? "correct" : "wrong";
+      // 如果是 reveal 出来的（typedIndex < revealLength），标记为 revealed；否则为 user_typed
+      const charState = typedChar.toLowerCase() === expectedChar.toLowerCase()
+        ? (typedIndex < revealLength ? "revealed" : "correct")
+        : "wrong";
+      state = charState;
       typedIndex += 1;
     }
     slots.push({
@@ -884,6 +888,7 @@ export function ImmersiveLessonPage({
   const [wordInputs, setWordInputs] = useState([]);
   const [wordStatuses, setWordStatuses] = useState([]);
   const [answerBoxMode, setAnswerBoxMode] = useState("ai_content"); // 'ai_content' | 'user_typed'
+  const [wordRevealLengths, setWordRevealLengths] = useState([]); // 每个单词 reveal 出的字符数
   const [learningSettings, setLearningSettings] = useState(() => readLearningSettings());
   const [sessionState, dispatchSession] = useReducer(
     immersiveSessionReducer,
@@ -1781,6 +1786,7 @@ export function ImmersiveLessonPage({
       const next = createWordState(sentence?.tokens || []);
       applyWordSnapshot(next);
       setAnswerBoxMode("ai_content");
+      setWordRevealLengths([]); // 重置 reveal 追踪
       resetSentenceGate(playbackRequired);
     },
     [applyWordSnapshot, resetSentenceGate],
@@ -2615,6 +2621,15 @@ export function ImmersiveLessonPage({
         { revealLetterCount: 1, revealWordCount: 0 },
       );
       applyWordSnapshot(result.snapshot);
+      // 追踪 reveal 数量：reveal 出一个字母时增加当前单词的 reveal 长度
+      const currentIdx = result.snapshot.activeWordIndex;
+      if (currentIdx < expectedTokens.length) {
+        setWordRevealLengths((prev) => {
+          const updated = [...prev];
+          updated[currentIdx] = (updated[currentIdx] || 0) + 1;
+          return updated;
+        });
+      }
       if (result.completedSentence) {
         dispatchSession({
           type: ANSWER_COMPLETED,
@@ -3639,7 +3654,7 @@ export function ImmersiveLessonPage({
                 <div className={`immersive-word-row ${answerBoxMode === "user_typed" ? "bg-emerald-100" : "bg-amber-100"} ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""}`}>
                   {expectedTokens.map((token, index) => {
                     const status = wordStatuses[index] || "pending";
-                    const slots = buildLetterSlots(token, wordInputs[index] || "");
+                    const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealLengths[index] || 0);
                     return (
                       <div
                         key={`${token}-${index}`}
