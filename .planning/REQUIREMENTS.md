@@ -9,10 +9,10 @@ Requirements for v2.3 milestone. Each maps to roadmap phases.
 
 ### Immersive Learning Bug Fixes
 
-- [ ] **IMMERSE-01**: 点击固定按钮或调节倍速时，已输入的句子内容不被清空，且不触发自动重播 — `SET_PLAYBACK_RATE`/`SET_LOOP_ENABLED` 事件处理器不改变 `sentenceTypingDone`/`sentencePlaybackDone` 状态；验证：输入 3 个词后切换倍速，输入内容保持可见
-- [ ] **IMMERSE-02**: 点击"上一句"右侧小喇叭按钮时，只有在音频实际播放成功后才显示 playing 状态；音频不可用时显示明确的错误提示而非静默失败 — `requestPlayPreviousSentence` 先 `await playSentence`，检查 `result.ok` 后才 dispatch `PLAYBACK_STARTED`；`previousSentence.audio_url` 不存在时降级到主视频 seek 模式
-- [ ] **IMMERSE-03**: 沉浸式学习答题框中，AI/提示生成的内容以黄色背景显示，用户手打的内容以绿色背景显示 — 在 `ImmersiveLessonPage` 中添加 `answerBoxMode` 本地状态，reducer action 驱动颜色切换；颜色值：黄色 `#FEF3C7`，绿色 `#D1FAE5`
-- [ ] **IMMERSE-04**: 全面排查沉浸式学习中所有可能导致已输入句子被清空或触发自动重播的操作场景，确保仅在合理场景下（如进入下一句、上一句、手动重播）才触发状态重置 — 逐个审查 `requestNavigateSentence`、`requestReplay`、`SET_PLAYBACK_RATE`、`SET_LOOP_ENABLED`、`handleSentencePassed` 等事件路径，补充缺失的 guard 逻辑
+- [x] **IMMERSE-01**: 点击固定按钮或调节倍速时，已输入的句子内容不被清空，且不触发自动重播 — `SET_PLAYBACK_RATE`/`SET_LOOP_ENABLED` 事件处理器不改变 `sentenceTypingDone`/`sentencePlaybackDone` 状态；验证：输入 3 个词后切换倍速，输入内容保持可见
+- [x] **IMMERSE-02**: 点击"上一句"右侧小喇叭按钮时，只有在音频实际播放成功后才显示 playing 状态；音频不可用时显示明确的错误提示而非静默失败 — `requestPlayPreviousSentence` 先 `await playSentence`，检查 `result.ok` 后才 dispatch `PLAYBACK_STARTED`；`previousSentence.audio_url` 不存在时降级到主视频 seek 模式
+- [x] **IMMERSE-03**: 沉浸式学习答题框中，AI/提示生成的内容以黄色背景显示，用户手打的内容以绿色背景显示 — 在 `ImmersiveLessonPage` 中添加 `answerBoxMode` 本地状态，reducer action 驱动颜色切换；颜色值：黄色 `#FEF3C7`，绿色 `#D1FAE5`
+- [x] **IMMERSE-04**: 全面排查沉浸式学习中所有可能导致已输入句子被清空或触发自动重播的操作场景，确保仅在合理场景下（如进入下一句、上一句、手动重播）才触发状态重置 — 逐个审查 `requestNavigateSentence`、`requestReplay`、`SET_PLAYBACK_RATE`、`SET_LOOP_ENABLED`、`handleSentencePassed` 等事件路径，补充缺失的 guard 逻辑
 
 ### Wordbook Enhancements
 
@@ -46,10 +46,10 @@ Which phases cover which requirements.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| IMMERSE-01 | Phase 19 | Pending |
-| IMMERSE-02 | Phase 19 | Pending |
-| IMMERSE-03 | Phase 19 | Pending |
-| IMMERSE-04 | Phase 19 | Pending |
+| IMMERSE-01 | Phase 19 | Complete |
+| IMMERSE-02 | Phase 19 | Complete |
+| IMMERSE-03 | Phase 19 | Complete |
+| IMMERSE-04 | Phase 19 | Complete |
 | WB-01 | Phase 20 | Pending |
 | WB-02 | Phase 20 | Pending |
 | UPLOAD-01 | Phase 21 | Pending |

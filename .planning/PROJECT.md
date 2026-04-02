@@ -81,10 +81,10 @@ See `.planning/milestones/v2.2-REQUIREMENTS.md` for archived requirements.
 - ✓ Announcement system fully operational: CRUD, changelog/banner/modal delivery, admin management UI — validated in Phase 16
 - ✓ Wordbook review UX overhauled: due queue, mastery feedback, forgetting curve scheduling, batch ops, translation dialog — validated in Phase 17
 - ✓ Lightweight hint system applied across key buttons and ambiguous actions — validated in Phase 18
+- ✓ Immersive learning bug fixes: input-preserving rate/loop toggle, prev sentence TTS fallback, answer box color differentiation — validated in Phase 19
 
 ### Active
 
-- [ ] 沉浸式学习 Bug 收口：固定按钮/倍速清空句子、上一句播放失败、答题框颜色区分
 - [ ] 生词本词条增强：每个词条上方显示独立翻译、支持播放单词发音
 - [ ] 素材导入 UX 优化：默认链接 Tab、精简文案、自动填标题
 - [ ] 导入弹窗配置：点击"导入并开始生成"后弹窗选择功能开关与生成方式，视频内容提取单独配置，历史记录区分
