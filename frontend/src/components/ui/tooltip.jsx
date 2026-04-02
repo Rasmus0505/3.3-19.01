@@ -32,6 +32,40 @@ export function TooltipContent({ className, sideOffset = 6, ...props }) {
 // fullscreen video stacking context.
 // ---------------------------------------------------------------------------
 
+function getTriggerPosition(triggerEl, preferredSide) {
+  const rect = triggerEl.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const PADDING = 6;
+  const TW = 160;
+  const TH = 32;
+
+  let top, left;
+
+  if (preferredSide === "bottom") {
+    top = rect.bottom + PADDING;
+    left = rect.left + rect.width / 2 - TW / 2;
+    if (top + TH > vh) top = rect.top - TH - PADDING;
+  } else if (preferredSide === "top") {
+    top = rect.top - TH - PADDING;
+    left = rect.left + rect.width / 2 - TW / 2;
+    if (top < 0) top = rect.bottom + PADDING;
+  } else if (preferredSide === "right") {
+    left = rect.right + PADDING;
+    top = rect.top + rect.height / 2 - TH / 2;
+    if (left + TW > vw) left = rect.left - TW - PADDING;
+  } else if (preferredSide === "left") {
+    left = rect.left - TW - PADDING;
+    top = rect.top + rect.height / 2 - TH / 2;
+    if (left < 0) left = rect.right + PADDING;
+  }
+
+  left = Math.max(PADDING, Math.min(left, vw - TW - PADDING));
+  top = Math.max(PADDING, Math.min(top, vh - TH - PADDING));
+
+  return { top, left };
+}
+
 function getPosition(triggerEl, tooltipEl, preferredSide) {
   const rect = triggerEl.getBoundingClientRect();
   const vw = window.innerWidth;
@@ -71,21 +105,27 @@ export function SimpleTooltip({ children, content, side = "top", className }) {
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const triggerRef = useRef(null);
   const tooltipRef = useRef(null);
+  const measureKey = useRef(0);
 
-  // Must not gate render on a "ready" flag: tooltipRef only exists after the tooltip
-  // div mounts, but that div was previously only rendered when ready — deadlock.
-  // useLayoutEffect fires too early (offsetWidth/Height are 0 on first paint).
-  // We read position synchronously after the browser has laid out the tooltip,
-  // then update in the next frame via requestAnimationFrame.
+  // Phase 1: immediately position based on trigger dimensions (no flash at 0,0).
   useLayoutEffect(() => {
     if (!visible || !triggerRef.current) return;
-    const update = () => {
+    setPosition(getTriggerPosition(triggerRef.current, side));
+  }, [visible, side]);
+
+  // Phase 2: fine-tune with real tooltip dimensions after first paint.
+  useLayoutEffect(() => {
+    if (!visible) return;
+    measureKey.current += 1;
+    const key = measureKey.current;
+    const frame = requestAnimationFrame(() => {
+      if (key !== measureKey.current) return;
       if (triggerRef.current && tooltipRef.current) {
         setPosition(getPosition(triggerRef.current, tooltipRef.current, side));
       }
-    };
-    requestAnimationFrame(update);
-  }, [visible, side, content]);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [visible, side]);
 
   const triggerCallbackRef = useCallback(
     (node) => {
