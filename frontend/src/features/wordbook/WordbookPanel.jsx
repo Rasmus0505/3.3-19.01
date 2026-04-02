@@ -1,4 +1,4 @@
-import { BookOpenText, Play, Trash2 } from "lucide-react";
+import { BookOpenText, Languages, Play, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -26,6 +26,7 @@ import {
 } from "../../shared/ui";
 import { LessonPlayerPopup } from "./LessonPlayerPopup";
 import { FloatingToolbar } from "./FloatingToolbar";
+import { TranslationDialog } from "./TranslationDialog";
 
 const REVIEW_ACTIONS = [
   { grade: "again", label: "重来" },
@@ -70,6 +71,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
   const [reviewFeedback, setReviewFeedback] = useState(null);
   const [lessonPopup, setLessonPopup] = useState({ open: false, lessonId: null, sentenceIndex: 0 });
   const [clickTooltip, setClickTooltip] = useState(null);
+  const [translationDialog, setTranslationDialog] = useState({ open: false, text: "" });
 
   // Selection state for batch operations
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -239,6 +241,14 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
 
   const closeLessonPopup = useCallback(() => {
     setLessonPopup({ open: false, lessonId: null, sentenceIndex: 0 });
+  }, []);
+
+  const openTranslationDialog = useCallback((text) => {
+    setTranslationDialog({ open: true, text: text || "" });
+  }, []);
+
+  const closeTranslationDialog = useCallback(() => {
+    setTranslationDialog({ open: false, text: "" });
   }, []);
 
   // Selection helpers for batch operations
@@ -554,6 +564,16 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                             type="button"
                             size="sm"
                             variant="ghost"
+                            onClick={() => void openTranslationDialog(item.entry_text)}
+                            title="翻译"
+                          >
+                            <Languages className="size-4" />
+                            翻译
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
                             className="text-destructive hover:text-destructive"
                             disabled={busy}
                             onClick={() => void handleDelete(item.id)}
@@ -610,7 +630,20 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
                         <p className="text-lg font-semibold">{reviewItem.entry_text}</p>
-                        <p className="mt-2 text-sm text-muted-foreground">英文语境：{reviewItem.latest_sentence_en || "暂无英文语境"}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm text-muted-foreground flex-1">
+                            英文语境：{reviewItem.latest_sentence_en || "暂无英文语境"}
+                          </p>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2"
+                            onClick={() => void openTranslationDialog(reviewItem.latest_sentence_en)}
+                          >
+                            <Languages className="size-3" />
+                          </Button>
+                        </div>
                         <p className="text-sm text-muted-foreground">中文语境：{reviewItem.latest_sentence_zh || "暂无中文语境"}</p>
                         <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
                           <span>下次复习：{formatDateTime(reviewItem.next_review_at)}</span>
@@ -688,6 +721,13 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
         onClose={closeLessonPopup}
         lessonId={lessonPopup.lessonId}
         sentenceIndex={lessonPopup.sentenceIndex}
+      />
+
+      <TranslationDialog
+        open={translationDialog.open}
+        onClose={closeTranslationDialog}
+        text={translationDialog.text}
+        apiCall={apiCall}
       />
 
       {clickTooltip && (
