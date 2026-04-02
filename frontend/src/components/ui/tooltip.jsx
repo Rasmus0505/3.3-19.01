@@ -1,5 +1,5 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
-import React, { useRef, useLayoutEffect, useCallback } from "react";
+import React, { useState, useRef, useCallback, useLayoutEffect } from "react";
 import { cn } from "../../lib/utils";
 
 export const TooltipProvider = TooltipPrimitive.Provider;
@@ -24,44 +24,54 @@ export function TooltipContent({ className, sideOffset = 6, ...props }) {
 }
 
 /**
- * SimpleTooltip — CSS hover for visibility, direct DOM for positioning.
+ * SimpleTooltip — lightweight tooltip with no Radix Portal.
  *
- * Why not React state for visibility?
- *   React 18's concurrent rendering can interrupt setState renders when
- *   other state updates happen in the same event cycle (e.g. playing audio).
- *   CSS :hover is synchronous and completely unaffected by React render
- *   scheduling. JS only handles the tooltip position.
+ * Why a guard ref (visibleRef)?
+ *   React 18 concurrent mode can interrupt the setVisible(true) render and
+ *   postpone it behind a higher-priority update (e.g. audio play). The RAF
+ *   inside useLayoutEffect fires AFTER the DOM update is committed, so even if
+ *   React deferred the setVisible render, the tooltip div IS in the DOM by the
+ *   time RAF runs — visibleRef.current === true is a reliable sentinel.
+ *   Strict Mode double-invoke: the guard ref ensures we only position once
+ *   per hover sequence (skip the cleanup re-run that sees visibleRef=false).
  *
- * Why direct DOM manipulation for position?
- *   We need the tooltip's offsetWidth/Height to compute correct placement,
- *   but hidden (display:none) elements report 0 dimensions. By keeping the
- *   tooltip visible (but visually clipped) during measurement, we get
- *   accurate measurements on the first show — no flicker.
+ * Why RAF inside useLayoutEffect instead of useEffect?
+ *   useLayoutEffect fires synchronously after all DOM mutations. The tooltip
+ *   div is added to the DOM by the setVisible render, so by the time
+ *   useLayoutEffect runs the tooltip exists in the tree. RAF is still needed
+ *   because offsetWidth/offsetHeight are 0 until after layout/paint — we need
+ *   one more tick for the browser to compute dimensions.
  */
 export function SimpleTooltip({ children, content, side = "top", className }) {
+  const [visible, setVisible] = useState(false);
   const triggerRef = useRef(null);
   const tooltipRef = useRef(null);
-  const measureKeyRef = useRef(0);
+  const visibleRef = useRef(false);   // guard: true when tooltip should be shown
+  const guardKey = useRef(0);         // incremented on each show to cancel stale RAFs
 
-  // Compute and apply tooltip position directly to DOM (no React re-render).
-  const position = useLayoutEffect(() => {
-    const trigger = triggerRef.current;
-    const tooltip = tooltipRef.current;
-    if (!trigger || !tooltip) return;
+  useLayoutEffect(() => {
+    if (!visible) {
+      visibleRef.current = false;
+      return;
+    }
 
-    measureKeyRef.current += 1;
-    const key = measureKeyRef.current;
+    // New show sequence — bump the guard key to invalidate any RAF from a
+    // previous show/hide cycle.
+    guardKey.current += 1;
+    const key = guardKey.current;
+    visibleRef.current = true;
 
-    const apply = () => {
-      if (key !== measureKeyRef.current) return; // stale
+    const frame = requestAnimationFrame(() => {
+      // Cancelled or tooltip was hidden since we scheduled this frame.
+      if (key !== guardKey.current || !visibleRef.current) return;
       if (!triggerRef.current || !tooltipRef.current) return;
 
-      const t = triggerRef.current;
+      const trigger = triggerRef.current;
       const el = tooltipRef.current;
+      const rect = trigger.getBoundingClientRect();
       const TW = el.offsetWidth || 160;
       const TH = el.offsetHeight || 32;
       const PADDING = 6;
-      const rect = t.getBoundingClientRect();
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       let top = 0, left = 0;
@@ -86,12 +96,9 @@ export function SimpleTooltip({ children, content, side = "top", className }) {
 
       el.style.top = `${Math.max(PADDING, Math.min(top, vh - TH - PADDING))}px`;
       el.style.left = `${Math.max(PADDING, Math.min(left, vw - TW - PADDING))}px`;
-    };
+    });
+  }, [visible, side, content]);
 
-    requestAnimationFrame(apply);
-  }, [side, content]);
-
-  // Forward ref to the trigger element.
   const setTriggerRef = useCallback((node) => {
     triggerRef.current = node;
     const child = React.Children.only(children);
@@ -101,29 +108,34 @@ export function SimpleTooltip({ children, content, side = "top", className }) {
     }
   }, [children]);
 
-  // Merge event handlers so we can position on hover/show.
   const child = React.Children.only(children);
   const childProps = child.props ?? {};
   const mergedProps = {
     ...childProps,
     ref: setTriggerRef,
+    onMouseEnter: (e) => { setVisible(true); childProps.onMouseEnter?.(e); },
+    onMouseLeave: (e) => { setVisible(false); childProps.onMouseLeave?.(e); },
+    onFocus: (e) => { setVisible(true); childProps.onFocus?.(e); },
+    onBlur: (e) => { setVisible(false); childProps.onBlur?.(e); },
   };
 
   return (
-    <div className="group/simplett relative inline-flex">
+    <>
       {React.cloneElement(child, mergedProps)}
-      <div
-        ref={tooltipRef}
-        className={cn(
-          "pointer-events-none fixed z-[999999] hidden rounded-md border bg-black/80 px-2.5 py-1.5 text-sm text-white shadow-xl backdrop-blur-sm",
-          "group-hover/simplett:block group-focus-within/simplett:block",
-          className,
-        )}
-        role="tooltip"
-      >
-        <p className="whitespace-nowrap">{content}</p>
-      </div>
-    </div>
+      {visible && content ? (
+        <div
+          ref={tooltipRef}
+          style={{ position: "fixed", top: 0, left: 0, zIndex: 999999 }}
+          className={cn(
+            "pointer-events-none rounded-md border bg-black/80 px-2.5 py-1.5 text-sm text-white shadow-xl backdrop-blur-sm",
+            className,
+          )}
+          role="tooltip"
+        >
+          <p className="whitespace-nowrap">{content}</p>
+        </div>
+      ) : null}
+    </>
   );
 }
 
