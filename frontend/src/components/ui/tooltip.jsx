@@ -32,7 +32,6 @@ export function TooltipContent({ className, sideOffset = 6, ...props }) {
 // fullscreen video stacking context.
 // ---------------------------------------------------------------------------
 
-
 export function SimpleTooltip({ children, content, side = "top", className }) {
   const [visible, setVisible] = useState(false);
   const triggerRef = useRef(null);
