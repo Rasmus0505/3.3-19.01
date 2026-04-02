@@ -82,15 +82,45 @@ export function SimpleTooltip({ children, content, side = "top", className }) {
     }
   }, [visible, side]);
 
+  const triggerCallbackRef = useCallback(
+    (node) => {
+      triggerRef.current = node;
+      if (children.ref) {
+        if (typeof children.ref === "function") {
+          children.ref(node);
+        } else if (children.ref) {
+          children.ref.current = node;
+        }
+      }
+    },
+    [children.ref],
+  );
+
+  const existingProps = children.props ?? {};
+  const mergedProps = {
+    ...existingProps,
+    ref: triggerCallbackRef,
+    onMouseEnter: (e) => {
+      setVisible(true);
+      existingProps.onMouseEnter?.(e);
+    },
+    onMouseLeave: (e) => {
+      setVisible(false);
+      existingProps.onMouseLeave?.(e);
+    },
+    onFocus: (e) => {
+      setVisible(true);
+      existingProps.onFocus?.(e);
+    },
+    onBlur: (e) => {
+      setVisible(false);
+      existingProps.onBlur?.(e);
+    },
+  };
+
   return (
     <>
-      {React.cloneElement(children, {
-        ref: triggerRef,
-        onMouseEnter: () => setVisible(true),
-        onMouseLeave: () => setVisible(false),
-        onFocus: () => setVisible(true),
-        onBlur: () => setVisible(false),
-      })}
+      {React.cloneElement(children, mergedProps)}
       {visible && ready && (
         <div
           ref={tooltipRef}
