@@ -10,34 +10,33 @@ The product is intentionally split by runtime capability: the desktop client is 
 
 Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-## Current Milestone: v2.2 桌面发布与体验收口
+## Current Milestone: v2.3 学习体验与导入流程优化
 
-**Goal:** 把 Bottle 从“可开发可验证”推进到“可正式交付给真实用户使用”，补齐桌面端发布更新体系、后台运营公告能力、生词本复习体验，以及站内关键交互细节。
+**Goal:** 修复沉浸式学习已知 Bug、增强生词本词条信息完整性、优化素材导入 UI/UX 流程，提升产品细节体验。
 
 **Target features:**
-- 可发布给用户的桌面客户端安装包与发布流程
-- 桌面客户端程序本体更新能力，以及 ASR 模型/资源包增量更新能力
-- 管理台公告能力：发布公告/更新日志、弹窗/横幅公告、排序/置顶、删除
-- 桌面客户端代码保护与发布安全加固
-- 生词本完整重做与收口：更好的复习流、遗忘曲线/掌握度、批量操作、删除冗杂信息专注复习、例句/来源回看、shadcn 风格重做
-- 生词本增强候选项：对框选内容单独翻译、发音/音标支持（先做可行性评估）
-- 网站 UX/交互优化：为易疑惑按钮增加半透明悬浮轻提示并自动消失
+- 沉浸式学习 Bug 收口：固定按钮/倍速清空句子、上一句播放失败、答题框颜色区分
+- 生词本词条增强：独立翻译、发音播放
+- 素材导入 UX 优化：默认链接 Tab、精简文案、自动填标题、弹窗配置
+- 字幕遮挡板位置记忆策略调整
+- 快捷键配置界面紧凑化
 
 ## Current State
 
 <details>
-<summary>v2.1 归档摘要 (2026-03-31 shipped) — 点击展开</summary>
+<summary>v2.2 归档摘要 (2026-04-02 shipped) — 点击展开</summary>
 
-**v2.1 shipped on 2026-03-31.** Full v2.1 product delivered:
+**v2.2 shipped on 2026-04-02.** Full v2.2 product delivered:
 - v1.0 (2026-03-27): Foundation — shared cloud generation, ASR 403 self-heal, desktop local generation
 - v1.1 (2026-03-27): Bottle 1.0 billing/admin cleanup, canonical lesson pipeline, desktop link import
 - v2.0 (2026-03-28): Admin simplification, pricing-only billing, troubleshooting center, onboarding cleanup, billing UX
-- v2.1 (2026-03-31): Immersive learning refactor (reducer state machine, loop/rate/fullscreen), wordbook review flow, username account system, admin Chinese/yuan-first alignment, conversion copy rollout, desktop link-import bug fixes, Memo-style desktop public-link workflow
+- v2.1 (2026-03-31): Immersive learning refactor, wordbook review flow, username account system, admin Chinese/yuan-first alignment, conversion copy rollout, desktop link-import bug fixes, Memo-style desktop public-link workflow
+- v2.2 (2026-04-02): Desktop stable-only release channel, model delta update, runtime boundary hardening (preload audit 31 methods, sandbox, openExternalUrl whitelist), announcement system (CRUD + changelog/banner/modal), wordbook review UX overhaul (due queue, mastery feedback, forgetting curve scheduling), wordbook batch ops + translation dialog + lightweight hint system
 
-**22/22 v2.1 milestone requirements satisfied.**
+**18/18 v2.2 milestone phases satisfied.**
 
-See `.planning/milestones/v2.1-ROADMAP.md` for full phase details.
-See `.planning/v2.1-MILESTONE-AUDIT.md` for audit report.
+See `.planning/milestones/v2.2-ROADMAP.md` for full phase details.
+See `.planning/milestones/v2.2-REQUIREMENTS.md` for archived requirements.
 
 </details>
 
@@ -76,15 +75,22 @@ See `.planning/v2.1-MILESTONE-AUDIT.md` for audit report.
 - ✓ Desktop public-link import is now productized as a formal Memo-style workflow with explicit public-link promise, failure boundary, and release checklist — validated in Phase 07.1
 - ✓ Bottle 1.0 + link-import desktopSourcePath bug fixed: IPC serialization no longer strips the Object.defineProperty field — validated in Phase 11-04
 - ✓ Bottle 2.0 + link-import thumbnail bug fixed: yt-dlp thumbnail flows through poll response into lesson cover_data_url with file-extraction fallback — validated in Phase 11-04
+- ✓ Desktop stable-only release channel established with signed NSIS installer — validated in Phase 13
+- ✓ Desktop delta update system productized for both program and ASR model/resources — validated in Phase 14
+- ✓ Desktop runtime security boundaries hardened: 31 preload methods audited, renderer sandbox enforced, openExternalUrl whitelist active — validated in Phase 15
+- ✓ Announcement system fully operational: CRUD, changelog/banner/modal delivery, admin management UI — validated in Phase 16
+- ✓ Wordbook review UX overhauled: due queue, mastery feedback, forgetting curve scheduling, batch ops, translation dialog — validated in Phase 17
+- ✓ Lightweight hint system applied across key buttons and ambiguous actions — validated in Phase 18
 
 ### Active
 
-- [ ] 用户可以下载并安装可正式发布的桌面客户端，而不是只依赖本地开发产物
-- [ ] 桌面客户端可以检测程序新版本，并尽量通过增量方式完成程序与 ASR 模型/资源更新
-- ✓ 管理员可以在后台发布、排序、置顶和删除公告，并将其作为更新日志、弹窗或横幅投放到用户端 — validated in Phase 16
-- ✓ 桌面发布流程、stable-only channel、SECU-01/02/03 运行时边界 — validated in Phase 13, 14, 15
-- [ ] 生词本复习体验围绕“高频复习、低噪音界面、掌握度反馈”完成一次产品级重做
-- [ ] 网站关键按钮和易疑惑操作具备统一的轻提示与交互引导，减少理解成本
+- [ ] 沉浸式学习 Bug 收口：固定按钮/倍速清空句子、上一句播放失败、答题框颜色区分
+- [ ] 生词本词条增强：每个词条上方显示独立翻译、支持播放单词发音
+- [ ] 素材导入 UX 优化：默认链接 Tab、精简文案、自动填标题
+- [ ] 导入弹窗配置：点击"导入并开始生成"后弹窗选择功能开关与生成方式，视频内容提取单独配置，历史记录区分
+- [ ] 字幕遮挡板位置记忆策略调整：新视频居中恢复，启用状态记忆
+- [ ] 链接恢复增强：记住链接导入视频 URL，恢复时可按链接恢复
+- [ ] 快捷键配置界面紧凑化
 
 ### Out of Scope
 
@@ -102,10 +108,10 @@ See `.planning/v2.1-MILESTONE-AUDIT.md` for audit report.
 - Web and desktop already share a large part of the frontend and product model, which should be preserved rather than split into separate products.
 - Current product direction is not to rebuild from scratch, but to sharpen product boundaries, stabilize generation flows, reduce server load, and improve the learner experience.
 - Market reference pass for this milestone is based on official materials checked on 2026-03-28 from LingQ, Migaku, FluentU, and Glossika. Shared patterns: sentence-centric repetition, one-click vocabulary capture, due-review loops, strong scenario-based plan positioning, and premium upsell through convenience rather than raw feature count.
-- Current v2.2 direction is to close the gap between an internally usable Electron app and a user-deliverable desktop product with managed publishing, upgrade, and runtime protection boundaries.
-- Desktop code already contains partial client-update state handling and model delta-update logic, so this milestone should productize and verify that path rather than invent a second update system.
-- Frontend already ships Radix tooltip/popover primitives, making a consistent hint system feasible without introducing a new UI foundation.
-- Wordbook backend routes, review queue fields, and source-link context already exist; the largest opportunity is now the learning workflow, information architecture, and focused review surface.
+- v2.2 completed desktop publishing pipeline, announcement system, and wordbook review UX overhaul. v2.3 focuses on bug fixes and UX polish in learning and import flows.
+- Immersive learning already uses a reducer-driven state machine with explicit loop/rate/display contracts (Phase 8) — bug fixes in this milestone should not regress that architecture.
+- Wordbook already supports word-level translation field and pronunciation button — v2.3 extends these to display in the wordbook panel above each entry.
+- Upload surface already has link/file tabs — v2.3 changes the default tab and redesigns the link-import flow with a configuration modal.
 
 ## Constraints
 
@@ -116,24 +122,21 @@ See `.planning/v2.1-MILESTONE-AUDIT.md` for audit report.
 - **Billing**: Bottle 1.0 and Bottle 2.0 are both paid capabilities with prices managed in admin tooling.
 - **Brownfield Preservation**: Existing auth, wallet, admin, lesson, and desktop foundations should be optimized, not discarded.
 - **Auth Risk Control**: Username can expand identity and profile UX, but email/password remains the only login path.
-- **Desktop Security Boundary**: “避免核心代码泄露” means raising extraction and reuse cost for packaged desktop logic and assets, not claiming perfect anti-reverse-engineering guarantees.
+- **Desktop Security Boundary**: "避免核心代码泄露" means raising extraction and reuse cost for packaged desktop logic and assets, not claiming perfect anti-reverse-engineering guarantees.
 - **Update Reliability**: Desktop update flows must fail safely and explain recovery clearly; a broken updater is worse than a manual reinstall path.
-- **Scope Control**: 发音/音标与框选翻译先做可行性评估，再决定是否进入本里程碑硬承诺，避免把探索项直接写成已承诺交付。
+- **Immersive Architecture**: Immersive state machine contract from Phase 8 must be preserved — bug fixes should not remove reducer structure or re-introduce ad-hoc state transitions.
+- **Wordbook Backward Compatibility**: Wordbook review flow, due queue, and mastery scheduling from Phase 17 must be preserved — enhancements should layer on top, not replace.
 
-## Milestone: v2.1 Summary
+## Milestone: v2.2 Summary
 
-**Shipped:** 2026-03-31
-**Phases:** Phase 7, Phase 7.1, Phase 8, Phase 9, Phase 10, Phase 11
-**Plans:** 21 plans, 13 tasks
+**Shipped:** 2026-04-02
+**Phases:** Phase 13, 14, 15, 16, 17, 18
 **Key outcomes:**
-- Official competitor matrix and Bottle 1.0/2.0 positioning spec locks naming, boundary, and monetization narrative for all downstream phases
-- Memo-style desktop public-link import productized with explicit support promise, failure boundary, and release checklist
-- Immersive learning refactored into reducer-driven state machine: single-sentence loop, fixed 0.75x/0.90x/1.00x playback rate, fullscreen/mask/previous-sentence all preserved as display-only preferences
-- Wordbook upgraded from passive collection list to active due-review entry point with again/good grading and next-review scheduling
-- Account system added unique username registration, tabbed auth UI, and personal center shell
-- Admin fully Chinese-first, yuan-primary, Bottle 1.0/2.0 primary naming with technical names demoted to secondary notes
-- Conversion copy locked: model cards, recharge recovery, desktop CTA, and static web bundle all finalized
-- Two critical desktop link-import bugs fixed: desktopSourcePath IPC serialization loss and missing video cover from yt-dlp thumbnail
+- Desktop stable-only release channel with signed NSIS installer and publish pipeline
+- Desktop delta update system productized for both program binary and ASR model/resources
+- Desktop runtime security hardened: 31 preload methods audited, renderer sandbox enforced, openExternalUrl whitelist
+- Announcement system fully operational: CRUD, changelog/banner/modal delivery, admin management UI
+- Wordbook review UX overhauled: due queue, mastery feedback, forgetting curve scheduling, batch operations, translation dialog, lightweight hint system across key buttons
 
 ## Key Decisions
 
@@ -153,6 +156,10 @@ See `.planning/v2.1-MILESTONE-AUDIT.md` for audit report.
 | Final conversion landing should use exact model-card and blocked-state copy instead of adding new marketing layers | The final upload-surface pass had to follow the locked context precisely, including recharge, desktop, and complex-media wording | ✅ Validated in Phase 11 |
 | Desktop public-link import is a formal product capability with explicit support boundary | Public links are the primary onboarding path; helper/yt-dlp internals stay behind the scenes | ✅ Validated in Phase 07.1 |
 | Object.defineProperty fields do not survive Electron IPC serialization — always use plain data fields | The desktopSourcePath field was silently dropped causing link-import failures | ✅ Validated in Phase 11-04 |
+| Desktop stable-only channel with signed installer for v2.2 release | A/B or dev channels introduce user confusion for a learning product; stable-only simplifies support | ✅ Validated in Phase 13 |
+| Announcement system delivers changelog/banner/modal from admin CRUD | Operators need a way to communicate updates to learners without app store dependencies | ✅ Validated in Phase 16 |
+| Wordbook review uses spaced-repetition scheduling with again/good grading | Simple again/good with calculated next-review matches learner expectations without complexity of full SM-2 | ✅ Validated in Phase 17 |
+| Immersive answer box uses yellow for AI/hint content, green for user-typed content | Color differentiation helps learners see what they typed vs. what was suggested | ✅ Validated in v2.3 |
 
 ## Evolution
 
@@ -172,4 +179,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-31 after v2.2 milestone initialization*
+*Last updated: 2026-04-02 after v2.3 milestone initialization*

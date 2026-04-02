@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: 桌面发布与体验收口
-status: Phase 18 complete (all plans finished)
-last_updated: "2026-04-02T11:15:00.000Z"
+status: completed
+last_updated: "2026-04-02T12:13:39.176Z"
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 14
-  completed_plans: 13
+  completed_plans: 15
 ---
 
 # Project State
