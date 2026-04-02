@@ -111,7 +111,7 @@ _See: `.planning/milestones/v2.1-ROADMAP.md` for full phase details_
 
 ### 🚧 v2.3 学习体验与导入流程优化 (Planned)
 
-- [ ] **Phase 19: 沉浸式学习 Bug 修复**
+- [x] **Phase 19: 沉浸式学习 Bug 修复** (completed 2026-04-02)
   Goal: 沉浸式学习中已知 Bug 全部收口，用户在答题和播放过程中不再遇到句子被清空、播放静默失败、颜色显示错误等问题。
   Requirements: IMMERSE-01, IMMERSE-02, IMMERSE-03, IMMERSE-04
   Success criteria:
@@ -199,19 +199,7 @@ Plans:
 - [x] 18-03: 上线统一轻提示系统并覆盖关键困惑点 ✅ (2026-04-02)
 - [x] 18-04: 翻译对话框与局部翻译实现 ✅ (2026-04-02)
 
-### Phase 19: 沉浸式学习 Bug 修复
-
-**Goal**: 沉浸式学习中已知 Bug 全部收口，用户在答题和播放过程中不再遇到句子被清空、播放静默失败、颜色显示错误等问题  
-**Depends on**: Nothing (first phase of v2.3)  
-**Requirements**: IMMERSE-01, IMMERSE-02, IMMERSE-03, IMMERSE-04  
-**Plans**: TBD
-
-Plans:
-
-- [ ] 19-01: 答题框输入时切换倍速不触发重播
-- [ ] 19-02: 上一句小喇叭播放状态与错误提示
-- [ ] 19-03: 答题框颜色区分（AI 黄色 vs 用户绿色）
-- [ ] 19-04: 循环开关切换不触发重播
+- [x] Phase 19: 沉浸式学习 Bug 修复 (4/4 plans) — completed 2026-04-02
 
 ## Progress
 
@@ -238,6 +226,6 @@ Plans:
 | 16. 公告与更新日志系统 | v2.2 | 3/3 | Complete    | 2026-04-01 |
 | 17. 生词本复习主流程重做 | v2.2 | 0/0 | Complete    | 2026-04-01 |
 | 18. 生词本管理收口与站内轻提示 | v2.2 | 4/4 | Complete | 2026-04-02 |
-| 19. 沉浸式学习 Bug 修复 | v2.3 | 0/4 | Not started | - |
+| 19. 沉浸式学习 Bug 修复 | v2.3 | 0/4 | Complete    | 2026-04-02 |
 
 **Overall:** 18/23 phases complete
