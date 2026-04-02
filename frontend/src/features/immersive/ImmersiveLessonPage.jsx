@@ -3356,6 +3356,7 @@ export function ImmersiveLessonPage({
       >
         <CardHeader className="immersive-card-header">
           <div className="immersive-header">
+            <TooltipProvider delayDuration={300}>
             <div className={cinemaHeaderControlsClassName} onMouseEnter={wakeCinemaControls} onFocusCapture={wakeCinemaControls}>
               {immersiveActive && hasExitHandler && !cinemaFullscreenActive ? (
                 <Button variant="outline" size="sm" className={cinemaButtonClassName} onClick={() => void exitImmersive("button")}>
@@ -3399,6 +3400,7 @@ export function ImmersiveLessonPage({
                 第 {Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 句
               </CardDescription>
             ) : null}
+            </TooltipProvider>
           </div>
         </CardHeader>
 
@@ -3511,7 +3513,6 @@ export function ImmersiveLessonPage({
               请先在历史记录页顶部配置学习参数，再从课程卡片进入学习。
             </div>
           ) : (
-            <TooltipProvider delayDuration={300}>
             <div
               ref={typingPanelRef}
               className={`immersive-typing ${cinemaFullscreenActive ? "immersive-typing--cinema" : ""}`}
@@ -3839,7 +3840,6 @@ export function ImmersiveLessonPage({
           />
         </CardContent>
       </Card>
-      </TooltipProvider>
     </div>
   );
 }
