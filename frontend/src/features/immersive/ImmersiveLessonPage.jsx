@@ -3347,6 +3347,7 @@ export function ImmersiveLessonPage({
     .join(" ");
 
   return (
+    <TooltipProvider delayDuration={300}>
     <div ref={immersiveContainerRef} className={immersivePageShellClassName}>
       <Card
         className={`immersive-page ${immersiveActive ? "immersive-page--immersive" : ""} ${
@@ -3356,7 +3357,6 @@ export function ImmersiveLessonPage({
       >
         <CardHeader className="immersive-card-header">
           <div className="immersive-header">
-            <TooltipProvider delayDuration={300}>
             <div className={cinemaHeaderControlsClassName} onMouseEnter={wakeCinemaControls} onFocusCapture={wakeCinemaControls}>
               {immersiveActive && hasExitHandler && !cinemaFullscreenActive ? (
                 <Button variant="outline" size="sm" className={cinemaButtonClassName} onClick={() => void exitImmersive("button")}>
@@ -3841,6 +3841,7 @@ export function ImmersiveLessonPage({
         </CardContent>
       </Card>
     </div>
+    </TooltipProvider>
   );
 }
 

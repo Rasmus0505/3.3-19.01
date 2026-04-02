@@ -551,6 +551,9 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                                 {isMastered ? "已掌握" : `记忆率 ${formatMemoryScore(item.memory_score)}`}
                               </Badge>
                             </div>
+                            {item.word_translation ? (
+                              <p className="text-sm font-medium text-foreground">单词翻译：{item.word_translation}</p>
+                            ) : null}
                             <div className="space-y-1 text-sm text-muted-foreground">
                               <p>英文语境：{item.latest_sentence_en || "暂无英文语境"}</p>
                               <p>中文语境：{item.latest_sentence_zh || "暂无中文语境"}</p>
@@ -638,6 +641,9 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
                         <p className="text-lg font-semibold">{reviewItem.entry_text}</p>
+                        {reviewItem.word_translation ? (
+                          <p className="text-sm font-medium text-primary/80">单词翻译：{reviewItem.word_translation}</p>
+                        ) : null}
                         <div className="flex items-center gap-2">
                           <p className="text-sm text-muted-foreground flex-1">
                             英文语境：{reviewItem.latest_sentence_en || "暂无英文语境"}
