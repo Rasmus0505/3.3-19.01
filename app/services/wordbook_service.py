@@ -89,6 +89,7 @@ def _entry_payload_to_dict(payload: dict[str, object]) -> dict[str, object]:
         "latest_sentence_idx": int(entry.latest_sentence_idx or 0),
         "latest_sentence_en": str(entry.latest_sentence_en or ""),
         "latest_sentence_zh": str(entry.latest_sentence_zh or ""),
+        "word_translation": str(entry.word_translation or ""),
         "latest_collected_at": entry.latest_collected_at,
         "next_review_at": getattr(entry, "next_review_at", None),
         "last_reviewed_at": getattr(entry, "last_reviewed_at", None),
@@ -194,10 +195,10 @@ def schedule_async_translation(entry_id: int) -> None:
         db = SessionLocal()
         try:
             entry = db.query(WordbookEntry).filter(WordbookEntry.id == entry_id).first()
-            if entry and not entry.latest_sentence_zh:
+            if entry and not entry.word_translation:
                 try:
                     translated = translate_to_zh(entry.entry_text, api_key=DASHSCOPE_API_KEY)
-                    entry.latest_sentence_zh = translated
+                    entry.word_translation = translated
                     db.commit()
                 except Exception:
                     db.rollback()
@@ -440,7 +441,7 @@ def batch_translate_words(db: Session, word_ids: list[int]) -> list[dict]:
     for word in words:
         try:
             translated = translate_to_zh(word.entry_text, api_key=DASHSCOPE_API_KEY)
-            word.latest_sentence_zh = translated
+            word.word_translation = translated
             translations.append({
                 "id": word.id,
                 "word": word.entry_text,
