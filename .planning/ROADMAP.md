@@ -116,7 +116,9 @@ _See: `.planning/milestones/v2.2-ROADMAP.md` for full phase details_
 3. 用户点击词条的发音按钮后，浏览器播放该单词/短语的发音（Web Speech API，lang='en-US'）
 4. 发音按钮显示加载中状态；发音不可用时显示错误提示而非静默失败
 
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 20-01-PLAN.md — 翻译区块结构重组（WB-01）
+- [ ] 20-02-PLAN.md — 发音按钮 + Web Speech API（WB-02）
 
 **UI hint**: yes
 
@@ -206,7 +208,7 @@ _See: `.planning/milestones/v2.2-ROADMAP.md` for full phase details_
 | 17. 生词本复习主流程重做 | v2.2 | 3/3 | Complete | 2026-04-02 |
 | 18. 生词本管理收口与站内轻提示 | v2.2 | 4/4 | Complete | 2026-04-02 |
 | 19. 沉浸式学习 Bug 修复 | v2.3 | 0/4 | Not started | - |
-| 20. 生词本词条增强 | v2.3 | 0/4 | Not started | - |
+| 20. 生词本词条增强 | v2.3 | 2/2 | Not started | - |
 | 21. 素材导入 UX 优化 | v2.3 | 0/4 | Not started | - |
 | 22. 导入弹窗配置与视频内容提取 | v2.3 | 0/6 | Not started | - |
 | 23. 字幕遮挡板与链接恢复 | v2.3 | 0/5 | Not started | - |
