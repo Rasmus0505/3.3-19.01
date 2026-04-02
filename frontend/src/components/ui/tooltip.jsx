@@ -1,5 +1,5 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useLayoutEffect } from "react";
 import React from "react";
 import { cn } from "../../lib/utils";
 
@@ -69,18 +69,23 @@ function getPosition(triggerEl, tooltipEl, preferredSide) {
 export function SimpleTooltip({ children, content, side = "top", className }) {
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
-  const [ready, setReady] = useState(false);
   const triggerRef = useRef(null);
   const tooltipRef = useRef(null);
 
-  useEffect(() => {
-    if (visible && triggerRef.current && tooltipRef.current) {
-      setPosition(getPosition(triggerRef.current, tooltipRef.current, side));
-      setReady(true);
-    } else {
-      setReady(false);
-    }
-  }, [visible, side]);
+  // Must not gate render on a "ready" flag: tooltipRef only exists after the tooltip
+  // div mounts, but that div was previously only rendered when ready — deadlock.
+  // useLayoutEffect fires too early (offsetWidth/Height are 0 on first paint).
+  // We read position synchronously after the browser has laid out the tooltip,
+  // then update in the next frame via requestAnimationFrame.
+  useLayoutEffect(() => {
+    if (!visible || !triggerRef.current) return;
+    const update = () => {
+      if (triggerRef.current && tooltipRef.current) {
+        setPosition(getPosition(triggerRef.current, tooltipRef.current, side));
+      }
+    };
+    requestAnimationFrame(update);
+  }, [visible, side, content]);
 
   const triggerCallbackRef = useCallback(
     (node) => {
@@ -121,7 +126,7 @@ export function SimpleTooltip({ children, content, side = "top", className }) {
   return (
     <>
       {React.cloneElement(children, mergedProps)}
-      {visible && ready && (
+      {visible ? (
         <div
           ref={tooltipRef}
           className={cn(
@@ -133,7 +138,7 @@ export function SimpleTooltip({ children, content, side = "top", className }) {
         >
           <p className="text-sm whitespace-nowrap">{content}</p>
         </div>
-      )}
+      ) : null}
     </>
   );
 }
