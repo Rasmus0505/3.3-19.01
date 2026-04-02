@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v2.2
 milestone_name: 桌面发布与体验收口
-status: Phase 18 Plan 18-02 frontend batch selection & toolbar complete
-last_updated: "2026-04-02T11:00:00.000Z"
+status: Phase 18 complete (all plans finished)
+last_updated: "2026-04-02T11:15:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 4
@@ -88,7 +88,7 @@ Status: Phase 18 Plan 18-02 frontend batch selection & toolbar complete
   - 18-01: Complete (batch API endpoints) ✅
   - 18-02: Complete (frontend batch selection + FloatingToolbar) ✅
   - 18-03: Complete (tooltip system enhancement) ✅
-  - 18-04: Pending (translation dialog & local translation)
+  - 18-04: Complete (translation dialog & local translation) ✅
 
 ## Decisions
 
