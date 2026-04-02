@@ -14,10 +14,9 @@ export function TooltipContent({ className, sideOffset = 6, ...props }) {
         sideOffset={sideOffset}
         style={{ zIndex: 999999, ...props.style }}
         className={cn(
-          // tw-animate's animate-in/fade-in-0 can leave content stuck at opacity 0 in
-          // Electron fullscreen builds; use plain CSS opacity transition instead.
-          "overflow-hidden rounded-md border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md transition-opacity duration-150",
-          "data-[state=closed]:opacity-0 data-[state=open]:opacity-100",
+          // Use opacity instead of tw-animate's animate-in/fade-in-0, which can leave
+          // content stuck at opacity 0 in some Electron / build environments.
+          "overflow-hidden rounded-md border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md",
           className,
         )}
         {...props}
@@ -27,32 +26,19 @@ export function TooltipContent({ className, sideOffset = 6, ...props }) {
 }
 
 // Semi-transparent hint style for immersive learning buttons (D-18-04, D-18-05).
-// Uses controlled show/hide via React state and fixed positioning instead of Radix
-// state + CSS animation, to guarantee visibility across all environments (incl.
-// Electron fullscreen). z-index 999999 sits above video elements in fullscreen.
+// Uses a React state ref to detect hover on the trigger and show/hide the tooltip.
+// z-index 999999 sits above video elements even in Electron fullscreen mode.
 export function TooltipHint({ children, content, side = "top" }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        asChild
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-      >
-        {children}
-      </TooltipTrigger>
+    <Tooltip open={open} onOpenChange={setOpen}>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent
         side={side}
         sideOffset={4}
         className="bg-black/80 text-white border-0 shadow-xl backdrop-blur-sm"
-        style={{
-          display: open ? undefined : "none",
-          position: "fixed",
-          zIndex: 999999,
-        }}
+        style={{ zIndex: 999999 }}
       >
         <p className="text-sm">{content}</p>
       </TooltipContent>
