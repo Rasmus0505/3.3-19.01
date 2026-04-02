@@ -17,6 +17,13 @@
   z-index: 70;
 }
 
+.immersive-page-shell--css-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: #000;
+}
+
 .immersive-page {
   display: flex;
   flex-direction: column;

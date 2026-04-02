@@ -895,6 +895,7 @@ export function ImmersiveLessonPage({
   const [showEntryHintOverlay, setShowEntryHintOverlay] = useState(false);
   const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
   const [isFullscreenFallback, setIsFullscreenFallback] = useState(false);
+  const [isCssFullscreen, setIsCssFullscreen] = useState(false);
   const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(
     () => readLearningSettings().uiPreferences?.showFullscreenPreviousSentence ?? false,
   );
@@ -976,7 +977,7 @@ export function ImmersiveLessonPage({
     latestRect: null,
     captureElement: null,
   });
-  const cinemaFullscreenActive = isCinemaFullscreen || isFullscreenFallback;
+  const cinemaFullscreenActive = isCinemaFullscreen || isFullscreenFallback || isCssFullscreen;
   const isIpadSafari = useMemo(() => isIpadSafariBrowser(), []);
   const isTouchDevice = useMemo(() => isTouchPrimaryInputDevice(), []);
   const showPreviousSentenceBlock = !cinemaFullscreenActive || showFullscreenPreviousSentence;
@@ -2481,17 +2482,19 @@ export function ImmersiveLessonPage({
     async (source = "button") => {
       const handler = typeof onExitImmersive === "function" ? onExitImmersive : onBack;
       if (typeof handler !== "function") return;
-      if (isCinemaFullscreen || isFullscreenFallback) {
-        if (isCinemaFullscreen) {
-          markProgrammaticFullscreenExit();
-        }
+      if (isCinemaFullscreen) {
+        markProgrammaticFullscreenExit();
         await exitElementFullscreen().catch(() => {});
         setIsCinemaFullscreen(false);
+      } else if (isFullscreenFallback) {
         setIsFullscreenFallback(false);
+      }
+      if (isCssFullscreen) {
+        setIsCssFullscreen(false);
       }
       handler(source);
     },
-    [isCinemaFullscreen, isFullscreenFallback, markProgrammaticFullscreenExit, onBack, onExitImmersive],
+    [isCinemaFullscreen, isFullscreenFallback, isCssFullscreen, markProgrammaticFullscreenExit, onBack, onExitImmersive],
   );
 
   const exitCinemaFullscreen = useCallback(async () => {
@@ -2500,39 +2503,16 @@ export function ImmersiveLessonPage({
 
   const enterCinemaFullscreen = useCallback(async ({ source = "manual", showFailureToast = false } = {}) => {
     if (!immersiveActive) return { ok: false, reason: "immersive_inactive" };
-    if (isCinemaFullscreen || isFullscreenFallback) return { ok: true, reason: "already_active" };
-    const container = immersiveContainerRef.current;
-    if (!container) return { ok: false, reason: "fullscreen_target_missing" };
+    if (cinemaFullscreenActive) return { ok: true, reason: "already_active" };
 
     debugImmersiveLog("cinema_fullscreen.request", { source, lessonId: lesson?.id });
-    if (isIpadSafari) {
-      setIsCinemaFullscreen(false);
-      setIsFullscreenFallback(true);
-      debugImmersiveLog("cinema_fullscreen.ipad_fallback", { source, lessonId: lesson?.id });
-      return { ok: true, reason: "ipad_css_fallback" };
-    }
 
-    setIsFullscreenFallback(true);
-    try {
-      await requestElementFullscreen(container);
-      setIsFullscreenFallback(false);
-      setIsCinemaFullscreen(true);
-      debugImmersiveLog("cinema_fullscreen.success", { source, lessonId: lesson?.id });
-      return { ok: true, reason: "system_fullscreen" };
-    } catch (error) {
-      setIsCinemaFullscreen(false);
-      setIsFullscreenFallback(true);
-      debugImmersiveLog("cinema_fullscreen.fallback", {
-        source,
-        lessonId: lesson?.id,
-        error: String(error),
-      });
-      if (showFailureToast) {
-        toast.warning("浏览器拦截了全屏，请再点一次并允许全屏；本次已先进入铺满学习模式。");
-      }
-      return { ok: false, reason: "fallback_active", error };
-    }
-  }, [immersiveActive, isCinemaFullscreen, isFullscreenFallback, isIpadSafari, lesson?.id]);
+    // Always use CSS fullscreen — no browser fullscreen API, so Electron/touch
+    // quirks and pointer-lock issues disappear completely.
+    setIsCssFullscreen(true);
+    debugImmersiveLog("cinema_fullscreen.success", { source, lessonId: lesson?.id, reason: "css_fullscreen" });
+    return { ok: true, reason: "css_fullscreen" };
+  }, [immersiveActive, cinemaFullscreenActive, lesson?.id]);
 
   const interruptCurrentSentencePlayback = useCallback(
     (source = "interrupt") => {
@@ -3013,6 +2993,7 @@ export function ImmersiveLessonPage({
       await exitElementFullscreen().catch(() => {});
       setIsCinemaFullscreen(false);
       setIsFullscreenFallback(false);
+      setIsCssFullscreen(false);
     })();
   }, [cinemaFullscreenActive, immersiveActive]);
 
@@ -3329,7 +3310,8 @@ export function ImmersiveLessonPage({
   const immersivePageShellClassName = [
     "immersive-page-shell",
     cinemaFullscreenActive ? "immersive-page-shell--cinema" : "",
-    isFullscreenFallback ? "immersive-page-shell--fallback" : "",
+    isFullscreenFallback && !isCssFullscreen ? "immersive-page-shell--fallback" : "",
+    isCssFullscreen ? "immersive-page-shell--css-fullscreen" : "",
     isTouchDevice ? "immersive-page-shell--touch" : "",
     mobileViewportState.keyboardOpen ? "immersive-page-shell--keyboard-open" : "",
   ]
