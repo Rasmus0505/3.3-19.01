@@ -1784,7 +1784,6 @@ export function ImmersiveLessonPage({
     (sentence, playbackRequired = true) => {
       const next = createWordState(sentence?.tokens || []);
       applyWordSnapshot(next);
-      setAnswerBoxMode("ai_content");
       setWordRevealLengths([]); // 重置 reveal 追踪
       resetSentenceGate(playbackRequired);
     },
@@ -3252,7 +3251,6 @@ export function ImmersiveLessonPage({
 
       if (key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
         event.preventDefault();
-        setAnswerBoxMode("user_typed");
         playKeySound();
         const currentActiveIndex = activeWordIndexRef.current;
         const expected = expectedTokens[currentActiveIndex] || "";
