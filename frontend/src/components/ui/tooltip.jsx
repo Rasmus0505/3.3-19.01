@@ -38,38 +38,45 @@ export function SimpleTooltip({ children, content, side = "top", className }) {
   const tooltipRef = useRef(null);
 
   // Position the tooltip DOM directly (no state update, no re-render).
+  // RAF ensures the tooltip div is rendered and laid out before we read its dimensions.
   useLayoutEffect(() => {
-    if (!visible || !triggerRef.current || !tooltipRef.current) return;
-    const el = tooltipRef.current;
+    if (!visible || !triggerRef.current) return;
     const trigger = triggerRef.current;
-    const rect = trigger.getBoundingClientRect();
-    const TW = el.offsetWidth || 160;
-    const TH = el.offsetHeight || 32;
-    const PADDING = 6;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    let top = 0, left = 0;
+    const el = tooltipRef.current; // may be null on Strict Mode first pass
+    const frame = requestAnimationFrame(() => {
+      if (!triggerRef.current || !tooltipRef.current) return;
+      const t = triggerRef.current;
+      const tooltipEl = tooltipRef.current;
+      const rect = t.getBoundingClientRect();
+      const TW = tooltipEl.offsetWidth || 160;
+      const TH = tooltipEl.offsetHeight || 32;
+      const PADDING = 6;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      let top = 0, left = 0;
 
-    if (side === "top") {
-      top = rect.top - TH - PADDING;
-      left = rect.left + rect.width / 2 - TW / 2;
-      if (top < PADDING) top = rect.bottom + PADDING;
-    } else if (side === "bottom") {
-      top = rect.bottom + PADDING;
-      left = rect.left + rect.width / 2 - TW / 2;
-      if (top + TH > vh - PADDING) top = rect.top - TH - PADDING;
-    } else if (side === "right") {
-      left = rect.right + PADDING;
-      top = rect.top + rect.height / 2 - TH / 2;
-      if (left + TW > vw - PADDING) left = rect.left - TW - PADDING;
-    } else if (side === "left") {
-      left = rect.left - TW - PADDING;
-      top = rect.top + rect.height / 2 - TH / 2;
-      if (left < PADDING) left = rect.right + PADDING;
-    }
+      if (side === "top") {
+        top = rect.top - TH - PADDING;
+        left = rect.left + rect.width / 2 - TW / 2;
+        if (top < PADDING) top = rect.bottom + PADDING;
+      } else if (side === "bottom") {
+        top = rect.bottom + PADDING;
+        left = rect.left + rect.width / 2 - TW / 2;
+        if (top + TH > vh - PADDING) top = rect.top - TH - PADDING;
+      } else if (side === "right") {
+        left = rect.right + PADDING;
+        top = rect.top + rect.height / 2 - TH / 2;
+        if (left + TW > vw - PADDING) left = rect.left - TW - PADDING;
+      } else if (side === "left") {
+        left = rect.left - TW - PADDING;
+        top = rect.top + rect.height / 2 - TH / 2;
+        if (left < PADDING) left = rect.right + PADDING;
+      }
 
-    el.style.top = `${Math.max(PADDING, Math.min(top, vh - TH - PADDING))}px`;
-    el.style.left = `${Math.max(PADDING, Math.min(left, vw - TW - PADDING))}px`;
+      tooltipEl.style.top = `${Math.max(PADDING, Math.min(top, vh - TH - PADDING))}px`;
+      tooltipEl.style.left = `${Math.max(PADDING, Math.min(left, vw - TW - PADDING))}px`;
+    });
+    return () => cancelAnimationFrame(frame);
   }, [visible, side, content]);
 
   const triggerCallbackRef = useCallback(
