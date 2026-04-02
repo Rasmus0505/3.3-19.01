@@ -1,3 +1,4 @@
+import { useState } from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 
 import { cn } from "../../lib/utils";
@@ -13,7 +14,7 @@ export function TooltipContent({ className, sideOffset = 6, ...props }) {
         data-slot="tooltip-content"
         sideOffset={sideOffset}
         className={cn(
-          "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 z-50 overflow-hidden rounded-md border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md",
+          "z-[100] overflow-hidden rounded-md border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md",
           className,
         )}
         {...props}
@@ -23,20 +24,37 @@ export function TooltipContent({ className, sideOffset = 6, ...props }) {
 }
 
 // Semi-transparent hint style for immersive learning buttons (D-18-04, D-18-05)
-export function TooltipHint({ children, content, side = "top", delayDuration = 300 }) {
+// Uses controlled show/hide via React state and inline styles instead of Radix
+// state + CSS animation, to guarantee visibility across all environments (incl.
+// Electron fullscreen). The portal z-index is set to 999999 to sit above video
+// elements even in fullscreen mode.
+export function TooltipHint({ children, content, side = "top" }) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <TooltipProvider delayDuration={delayDuration}>
-      <Tooltip>
-        <TooltipTrigger asChild>{children}</TooltipTrigger>
-        <TooltipContent
-          side={side}
-          className="bg-black/80 text-white border-0 shadow-xl backdrop-blur-sm"
-          sideOffset={4}
-        >
-          <p className="text-sm">{content}</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger
+        asChild
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipContent
+        side={side}
+        sideOffset={4}
+        className="bg-black/80 text-white border-0 shadow-xl backdrop-blur-sm"
+        style={{
+          display: open ? undefined : "none",
+          position: "fixed",
+          zIndex: 999999,
+        }}
+      >
+        <p className="text-sm">{content}</p>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

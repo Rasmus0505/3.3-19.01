@@ -12,9 +12,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
+  TooltipHint,
 } from "../../shared/ui";
 import {
   LEARNING_SETTINGS_UPDATED_EVENT,
@@ -3560,21 +3558,16 @@ export function ImmersiveLessonPage({
                   >
                     下一句 ›
                   </button>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className={`immersive-session-toggle ${singleSentenceLoopEnabled ? "immersive-session-toggle--active" : ""}`}
-                        aria-pressed={singleSentenceLoopEnabled}
-                        onClick={handleToggleSingleSentenceLoop}
-                      >
-                        精听
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent className="bg-black/80 text-white border-0 backdrop-blur-sm">
-                      <p>重复播放当前句子，加强听力训练</p>
-                    </TooltipContent>
-                  </Tooltip>
+                  <TooltipHint content="重复播放当前句子，加强听力训练">
+                    <button
+                      type="button"
+                      className={`immersive-session-toggle ${singleSentenceLoopEnabled ? "immersive-session-toggle--active" : ""}`}
+                      aria-pressed={singleSentenceLoopEnabled}
+                      onClick={handleToggleSingleSentenceLoop}
+                    >
+                      精听
+                    </button>
+                  </TooltipHint>
                   <div className="h-6 w-px bg-border mx-1 shrink-0" aria-hidden="true" />
                   <label className="immersive-session-rate-field">
                     <span className="immersive-session-rate-label">倍速</span>
@@ -3613,31 +3606,24 @@ export function ImmersiveLessonPage({
                     </span>
                     <span className="immersive-session-rate-suffix">x</span>
                   </label>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button type="button" className="immersive-session-action" onClick={handleResetPlaybackRate}>
-                        重置
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent className="bg-black/80 text-white border-0 backdrop-blur-sm">
-                      <p>恢复默认倍速 1.0x</p>
-                    </TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className={`immersive-session-toggle ${playbackRatePinned ? "immersive-session-toggle--active" : ""}`}
-                        aria-pressed={playbackRatePinned}
-                        onClick={handleTogglePlaybackRatePinned}
-                      >
-                        固定
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent className="bg-black/80 text-white border-0 backdrop-blur-sm">
-                      <p>{playbackRatePinned ? "取消固定倍速" : "切换句子时保持倍速不变"}</p>
-                    </TooltipContent>
-                  </Tooltip>
+                  <TooltipHint content="恢复默认倍速 1.0x">
+                    <button type="button" className="immersive-session-action" onClick={handleResetPlaybackRate}>
+                      重置
+                    </button>
+                  </TooltipHint>
+                  <TooltipHint
+                    key={`fixed-${playbackRatePinned}`}
+                    content={playbackRatePinned ? "取消固定倍速" : "切换句子时保持倍速不变"}
+                  >
+                    <button
+                      type="button"
+                      className={`immersive-session-toggle ${playbackRatePinned ? "immersive-session-toggle--active" : ""}`}
+                      aria-pressed={playbackRatePinned}
+                      onClick={handleTogglePlaybackRatePinned}
+                    >
+                      固定
+                    </button>
+                  </TooltipHint>
                 </div>
                 {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
                 {isPlaybackPaused ? <Badge variant="outline">已暂停</Badge> : null}
