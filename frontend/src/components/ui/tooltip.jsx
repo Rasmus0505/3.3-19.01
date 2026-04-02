@@ -32,100 +32,46 @@ export function TooltipContent({ className, sideOffset = 6, ...props }) {
 // fullscreen video stacking context.
 // ---------------------------------------------------------------------------
 
-function getTriggerPosition(triggerEl, preferredSide) {
-  const rect = triggerEl.getBoundingClientRect();
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const PADDING = 6;
-  const TW = 160;
-  const TH = 32;
-
-  let top, left;
-
-  if (preferredSide === "bottom") {
-    top = rect.bottom + PADDING;
-    left = rect.left + rect.width / 2 - TW / 2;
-    if (top + TH > vh) top = rect.top - TH - PADDING;
-  } else if (preferredSide === "top") {
-    top = rect.top - TH - PADDING;
-    left = rect.left + rect.width / 2 - TW / 2;
-    if (top < 0) top = rect.bottom + PADDING;
-  } else if (preferredSide === "right") {
-    left = rect.right + PADDING;
-    top = rect.top + rect.height / 2 - TH / 2;
-    if (left + TW > vw) left = rect.left - TW - PADDING;
-  } else if (preferredSide === "left") {
-    left = rect.left - TW - PADDING;
-    top = rect.top + rect.height / 2 - TH / 2;
-    if (left < 0) left = rect.right + PADDING;
-  }
-
-  left = Math.max(PADDING, Math.min(left, vw - TW - PADDING));
-  top = Math.max(PADDING, Math.min(top, vh - TH - PADDING));
-
-  return { top, left };
-}
-
-function getPosition(triggerEl, tooltipEl, preferredSide) {
-  const rect = triggerEl.getBoundingClientRect();
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const PADDING = 6;
-  const TW = tooltipEl.offsetWidth || 160;
-  const TH = tooltipEl.offsetHeight || 32;
-
-  let top, left;
-
-  if (preferredSide === "bottom") {
-    top = rect.bottom + PADDING;
-    left = rect.left + rect.width / 2 - TW / 2;
-    if (top + TH > vh) top = rect.top - TH - PADDING;
-  } else if (preferredSide === "top") {
-    top = rect.top - TH - PADDING;
-    left = rect.left + rect.width / 2 - TW / 2;
-    if (top < 0) top = rect.bottom + PADDING;
-  } else if (preferredSide === "right") {
-    left = rect.right + PADDING;
-    top = rect.top + rect.height / 2 - TH / 2;
-    if (left + TW > vw) left = rect.left - TW - PADDING;
-  } else if (preferredSide === "left") {
-    left = rect.left - TW - PADDING;
-    top = rect.top + rect.height / 2 - TH / 2;
-    if (left < 0) left = rect.right + PADDING;
-  }
-
-  left = Math.max(PADDING, Math.min(left, vw - TW - PADDING));
-  top = Math.max(PADDING, Math.min(top, vh - TH - PADDING));
-
-  return { top, left };
-}
 
 export function SimpleTooltip({ children, content, side = "top", className }) {
   const [visible, setVisible] = useState(false);
-  const [position, setPosition] = useState({ top: 0, left: 0 });
   const triggerRef = useRef(null);
   const tooltipRef = useRef(null);
-  const measureKey = useRef(0);
 
-  // Phase 1: immediately position based on trigger dimensions (no flash at 0,0).
+  // Position the tooltip DOM directly (no state update, no re-render).
   useLayoutEffect(() => {
-    if (!visible || !triggerRef.current) return;
-    setPosition(getTriggerPosition(triggerRef.current, side));
-  }, [visible, side]);
+    if (!visible || !triggerRef.current || !tooltipRef.current) return;
+    const el = tooltipRef.current;
+    const trigger = triggerRef.current;
+    const rect = trigger.getBoundingClientRect();
+    const TW = el.offsetWidth || 160;
+    const TH = el.offsetHeight || 32;
+    const PADDING = 6;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let top = 0, left = 0;
 
-  // Phase 2: fine-tune with real tooltip dimensions after first paint.
-  useLayoutEffect(() => {
-    if (!visible) return;
-    measureKey.current += 1;
-    const key = measureKey.current;
-    const frame = requestAnimationFrame(() => {
-      if (key !== measureKey.current) return;
-      if (triggerRef.current && tooltipRef.current) {
-        setPosition(getPosition(triggerRef.current, tooltipRef.current, side));
-      }
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [visible, side]);
+    if (side === "top") {
+      top = rect.top - TH - PADDING;
+      left = rect.left + rect.width / 2 - TW / 2;
+      if (top < PADDING) top = rect.bottom + PADDING;
+    } else if (side === "bottom") {
+      top = rect.bottom + PADDING;
+      left = rect.left + rect.width / 2 - TW / 2;
+      if (top + TH > vh - PADDING) top = rect.top - TH - PADDING;
+    } else if (side === "right") {
+      left = rect.right + PADDING;
+      top = rect.top + rect.height / 2 - TH / 2;
+      if (left + TW > vw - PADDING) left = rect.left - TW - PADDING;
+    } else if (side === "left") {
+      left = rect.left - TW - PADDING;
+      top = rect.top + rect.height / 2 - TH / 2;
+      if (left < PADDING) left = rect.right + PADDING;
+    }
+
+    el.style.top = `${Math.max(PADDING, Math.min(top, vh - TH - PADDING))}px`;
+    el.style.left = `${Math.max(PADDING, Math.min(left, vw - TW - PADDING))}px`;
+  }, [visible, side, content]);
 
   const triggerCallbackRef = useCallback(
     (node) => {
@@ -138,7 +84,8 @@ export function SimpleTooltip({ children, content, side = "top", className }) {
         }
       }
     },
-    [children.ref],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
 
   const existingProps = children.props ?? {};
@@ -173,10 +120,10 @@ export function SimpleTooltip({ children, content, side = "top", className }) {
             "pointer-events-none fixed rounded-md border bg-black/80 px-2.5 py-1.5 text-sm text-white shadow-xl backdrop-blur-sm",
             className,
           )}
-          style={{ top: position.top, left: position.left, zIndex: 999999 }}
+          style={{ top: 0, left: 0, zIndex: 999999 }}
           role="tooltip"
         >
-          <p className="text-sm whitespace-nowrap">{content}</p>
+          <p className="whitespace-nowrap">{content}</p>
         </div>
       ) : null}
     </>
