@@ -3840,6 +3840,7 @@ export function ImmersiveLessonPage({
         </CardContent>
       </Card>
     </div>
+    </TooltipProvider>
   );
 }
 

@@ -57,8 +57,9 @@ Last activity: 2026-03-31 — Implemented Phase 13 release surface, release pipe
 | 260331-qnj | 允许沉浸式学习和管理台数字输入框清空后重输，并为倍速输入框增加0.25步进内嵌上下调节按钮 | 2026-03-31 | 282a72c9 | [260331-qnj-0-25](./quick/260331-qnj-0-25/) |
 | 260401-wck | Fix wordbook UI issues: button colors, translation, pronunciation, player button | 2026-04-01 | 679cc9e0 | [260401-wck-fix-wordbook-ui-issues-button-colors-tra](./quick/260401-wck-fix-wordbook-ui-issues-button-colors-tra/) |
 | 260402-wck | 生词本多选逻辑修复、翻译API、异步翻译、沉浸式学习Tooltip | 2026-04-02 | e582e4ca | — |
+| 260402-f14 | 修复生词本翻译保存和Tooltip问题：word_translation字段、卡片布局、TooltipProvider层级 | 2026-04-02 | e300741a | [260402-f14](./quick/260402-f14-tooltip-1-word-translation-2-tooltip/) |
 
-**Last activity:** 2026-04-02 — Fixed wordbook multi-select, added translate API, async translation on collect, immersive learning Tooltips
+**Last activity:** 2026-04-02 — 修复生词本翻译保存和Tooltip问题
 
 ## Session Continuity
 
