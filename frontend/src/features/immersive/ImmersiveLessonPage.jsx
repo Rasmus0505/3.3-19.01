@@ -404,6 +404,24 @@ function normalizeComparableToken(token) {
   return normalizeToken(String(token || "")).replace(APOSTROPHE_RE, "");
 }
 
+/** 精听辅助在快照间新增的「可比字符」数，累加到 wordRevealLengths（与 buildLetterSlots 的 revealLength 语义一致）。 */
+function mergeRevealLengthsAfterAssistance(beforeInputs, afterInputs, prevLengths) {
+  const maxIdx = Math.max(
+    Array.isArray(beforeInputs) ? beforeInputs.length : 0,
+    Array.isArray(afterInputs) ? afterInputs.length : 0,
+    Array.isArray(prevLengths) ? prevLengths.length : 0,
+  );
+  const next = Array.isArray(prevLengths) && prevLengths.length ? [...prevLengths] : [];
+  while (next.length < maxIdx) next.push(0);
+  for (let i = 0; i < maxIdx; i += 1) {
+    const beforeLen = normalizeComparableToken(beforeInputs[i] || "").length;
+    const afterLen = normalizeComparableToken(afterInputs[i] || "").length;
+    const delta = Math.max(0, afterLen - beforeLen);
+    if (delta > 0) next[i] = (next[i] || 0) + delta;
+  }
+  return next;
+}
+
 function buildLetterSlots(expectedToken, inputValue, revealLength = 0) {
   const expected = String(expectedToken || "");
   const actual = normalizeComparableToken(inputValue);
@@ -2613,18 +2631,19 @@ export function ImmersiveLessonPage({
   const revealCurrentLetter = useCallback(
     (source = "button_reveal_letter") => {
       if (!typingEnabled) return activeWordIndexRef.current;
+      // 必须在 assistance 之前取索引：揭示最后一个字母会完成当前词并推进 activeWordIndex，若用之后的索引会把计数记到下一词上
+      const wordIndexReceivingReveal = activeWordIndexRef.current;
       const result = applyReplayAssistanceToSnapshot(
         cloneWordSnapshot(activeWordIndexRef.current, currentWordInputRef.current, wordInputsRef.current, wordStatusesRef.current),
         expectedTokens,
         { revealLetterCount: 1, revealWordCount: 0 },
       );
       applyWordSnapshot(result.snapshot);
-      // 追踪 reveal 数量：reveal 出一个字母时增加当前单词的 reveal 长度
-      const currentIdx = result.snapshot.activeWordIndex;
-      if (currentIdx < expectedTokens.length) {
+      if (wordIndexReceivingReveal < expectedTokens.length) {
         setWordRevealLengths((prev) => {
-          const updated = [...prev];
-          updated[currentIdx] = (updated[currentIdx] || 0) + 1;
+          const updated = prev.length ? [...prev] : [];
+          while (updated.length <= wordIndexReceivingReveal) updated.push(0);
+          updated[wordIndexReceivingReveal] = (updated[wordIndexReceivingReveal] || 0) + 1;
           return updated;
         });
       }
@@ -2647,8 +2666,16 @@ export function ImmersiveLessonPage({
   const revealCurrentWord = useCallback(
     (source = "button_reveal") => {
       if (!typingEnabled) return activeWordIndexRef.current;
-      const expected = expectedTokens[activeWordIndexRef.current] || "";
+      const activeIdx = activeWordIndexRef.current;
+      const expected = expectedTokens[activeIdx] || "";
       if (!expected) return activeWordIndexRef.current;
+      const revealedComparableCount = normalizeComparableToken(expected).length;
+      setWordRevealLengths((prev) => {
+        const updated = prev.length ? [...prev] : [];
+        while (updated.length <= activeIdx) updated.push(0);
+        updated[activeIdx] = revealedComparableCount;
+        return updated;
+      });
       const nextActiveWordIndex = commitCorrectWord(expected);
       debugImmersiveLog("reveal_word", {
         source,
@@ -2665,12 +2692,16 @@ export function ImmersiveLessonPage({
       if (!currentSentence || mediaLoading || phase === "transition" || needsBinding) return;
       const nextStage = replayAssistStageRef.current + 1;
       const assistance = resolveReplayAssistance(learningSettings, nextStage);
-      const assistedSnapshot = applyReplayAssistanceToSnapshot(
-        cloneWordSnapshot(activeWordIndexRef.current, currentWordInputRef.current, wordInputsRef.current, wordStatusesRef.current),
-        expectedTokens,
-        assistance,
+      const snapshotForAssist = cloneWordSnapshot(
+        activeWordIndexRef.current,
+        currentWordInputRef.current,
+        wordInputsRef.current,
+        wordStatusesRef.current,
       );
+      const inputsBeforeAssist = snapshotForAssist.wordInputs.map((w) => String(w || ""));
+      const assistedSnapshot = applyReplayAssistanceToSnapshot(snapshotForAssist, expectedTokens, assistance);
       applyWordSnapshot(assistedSnapshot.snapshot);
+      setWordRevealLengths((prev) => mergeRevealLengthsAfterAssistance(inputsBeforeAssist, assistedSnapshot.snapshot.wordInputs, prev));
       if (assistedSnapshot.completedSentence) {
         dispatchSession({
           type: ANSWER_COMPLETED,
