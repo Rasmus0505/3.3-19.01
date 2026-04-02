@@ -6,7 +6,7 @@
 - ✅ **v1.1** — Phases 2.1, 3, 4 (shipped 2026-03-27)
 - ✅ **v2.0** — Phases 5, 6 (shipped 2026-03-28)
 - ✅ **v2.1 优化学习体验和管理体验** — Phases 7, 7.1, 8, 9, 10, 11, 12 (shipped 2026-03-31)
-- 📋 **v2.2 桌面发布与体验收口** — Phases 13, 14, 15, 16, 17, 18 (planned)
+- ✅ **v2.2 桌面发布与体验收口** — Phases 13, 14, 15, 16, 17, 18 (shipped 2026-04-02)
 
 ## Phases
 
@@ -211,6 +211,6 @@ Plans:
 | 15. 桌面运行时边界加固 | v2.2 | 0/0 | Planned | — |
 | 16. 公告与更新日志系统 | v2.2 | 2/3 | Complete | 2026-04-01 |
 | 17. 生词本复习主流程重做 | v2.2 | 0/0 | Planned | — |
-| 18. 生词本管理收口与站内轻提示 | v2.2 | 0/0 | Planned | — |
+| 18. 生词本管理收口与站内轻提示 | v2.2 | 4/4 | Complete | 2026-04-02 |
 
-**Overall:** 15/21 phases complete — v2.2 roadmap created
+**Overall:** 16/21 phases complete — v2.2 桌面发布与体验收口 milestone 完成！
