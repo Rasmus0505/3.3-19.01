@@ -6,16 +6,26 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-**Current focus:** Phase 19 (沉浸式学习 Bug 修复)
+**Current focus:** Phase 20 (生词本词条增强)
 
 ## Current Position
 
-Phase: 19 of 23 (沉浸式学习 Bug 修复)
-Plan: 0 of 4 in current phase
-Status: Ready to plan
-Last activity: 2026-04-02 — v2.3 roadmap created, 5 phases mapped
+Phase: 20 of 23 (生词本词条增强)
+Plan: 0 of ~4 in current phase
+Status: Context gathered — ready to plan
+Last activity: 2026-04-02 — Phase 20 context captured
 
 Progress: [░░░░░░░░░░] 0%
+
+## Milestone Status
+
+v2.3 学习体验与导入流程优化 (Phases 19–23):
+- Phase 19: 沉浸式学习 Bug 修复 — COMPLETE
+- Phase 20: 生词本词条增强 — context gathered
+
+## Phase 20 Context Summary
+
+卡片布局（上下堆叠，单词→翻译→语境）、翻译区块独立背景色、自适应高度、动态定位发音按钮、按钮状态变化反馈、Web Speech API 发音
 
 ## Performance Metrics
 
