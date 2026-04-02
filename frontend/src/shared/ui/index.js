@@ -43,5 +43,5 @@ export { Table, TableBody, TableCaption, TableCell, TableFooter, TableHead, Tabl
 export { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 export { Textarea } from "../../components/ui/textarea";
 export { Toaster } from "../../components/ui/sonner";
-export { Tooltip, TooltipContent, TooltipHint, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
+export { Tooltip, TooltipContent, TooltipHint, TooltipProvider, TooltipTrigger, SimpleTooltip } from "../../components/ui/tooltip";
 export { MediaCover } from "./MediaCover";

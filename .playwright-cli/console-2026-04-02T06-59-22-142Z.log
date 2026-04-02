@@ -1,0 +1,11 @@
+[     382ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:4174/favicon.ico:0
+[     455ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:4174/health:0
+[     457ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:4174/health:0
+[     761ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:4174/health:0
+[   30461ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:4174/health:0
+[   60768ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:4174/health:0
+[   90463ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:4174/health:0
+[  120772ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:4174/health:0
+[  150467ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:4174/health:0
+[  180770ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:4174/health:0
+[  210473ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:4174/health:0

@@ -12,7 +12,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  TooltipHint,
+  SimpleTooltip,
 } from "../../shared/ui";
 import {
   LEARNING_SETTINGS_UPDATED_EVENT,
@@ -3558,7 +3558,7 @@ export function ImmersiveLessonPage({
                   >
                     下一句 ›
                   </button>
-                  <TooltipHint content="重复播放当前句子，加强听力训练">
+                  <SimpleTooltip content="重复播放当前句子，加强听力训练" side="top">
                     <button
                       type="button"
                       className={`immersive-session-toggle ${singleSentenceLoopEnabled ? "immersive-session-toggle--active" : ""}`}
@@ -3567,7 +3567,7 @@ export function ImmersiveLessonPage({
                     >
                       精听
                     </button>
-                  </TooltipHint>
+                  </SimpleTooltip>
                   <div className="h-6 w-px bg-border mx-1 shrink-0" aria-hidden="true" />
                   <label className="immersive-session-rate-field">
                     <span className="immersive-session-rate-label">倍速</span>
@@ -3606,14 +3606,15 @@ export function ImmersiveLessonPage({
                     </span>
                     <span className="immersive-session-rate-suffix">x</span>
                   </label>
-                  <TooltipHint content="恢复默认倍速 1.0x">
-                    <button type="button" className="immersive-session-action" onClick={handleResetPlaybackRate}>
+                  <SimpleTooltip content="恢复默认倍速 1.0x" side="top">
+                    <button type="button" className="immersive-session-action" onClick={handleResetPlaybackRate}                    >
                       重置
                     </button>
-                  </TooltipHint>
-                  <TooltipHint
+                  </SimpleTooltip>
+                  <SimpleTooltip
                     key={`fixed-${playbackRatePinned}`}
                     content={playbackRatePinned ? "取消固定倍速" : "切换句子时保持倍速不变"}
+                    side="top"
                   >
                     <button
                       type="button"
@@ -3623,7 +3624,7 @@ export function ImmersiveLessonPage({
                     >
                       固定
                     </button>
-                  </TooltipHint>
+                  </SimpleTooltip>
                 </div>
                 {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
                 {isPlaybackPaused ? <Badge variant="outline">已暂停</Badge> : null}
