@@ -1,4 +1,4 @@
-import { BookOpenText, Languages, Play, Trash2 } from "lucide-react";
+import { BookOpenText, Languages, Play, Trash2, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -571,27 +571,41 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                         </div>
 
                         <div className="flex shrink-0 flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => void openTranslationDialog(item.entry_text)}
-                            title="翻译"
-                          >
-                            <Languages className="size-4" />
-                            翻译
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="text-destructive hover:text-destructive"
-                            disabled={busy}
-                            onClick={() => void handleDelete(item.id)}
-                          >
-                            <Trash2 className="size-4" />
-                            删除
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                disabled={busy}
+                                onClick={() => void openTranslationDialog(item.entry_text)}
+                              >
+                                <Languages className="size-4" />
+                                翻译
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-black/80 text-white border-0 backdrop-blur-sm">
+                              <p>翻译该单词</p>
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                disabled={busy}
+                                onClick={() => void handleDelete(item.id)}
+                              >
+                                {busy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                                {busy ? "删除中" : "删除"}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-black/80 text-white border-0 backdrop-blur-sm">
+                              <p>删除该词条</p>
+                            </TooltipContent>
+                          </Tooltip>
                         </div>
                       </div>
                     </div>
