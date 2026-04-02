@@ -1,6 +1,5 @@
-import { useState } from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
-
+import { useState } from "react";
 import { cn } from "../../lib/utils";
 
 export const TooltipProvider = TooltipPrimitive.Provider;
@@ -13,8 +12,12 @@ export function TooltipContent({ className, sideOffset = 6, ...props }) {
       <TooltipPrimitive.Content
         data-slot="tooltip-content"
         sideOffset={sideOffset}
+        style={{ zIndex: 999999, ...props.style }}
         className={cn(
-          "z-[100] overflow-hidden rounded-md border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md",
+          // tw-animate's animate-in/fade-in-0 can leave content stuck at opacity 0 in
+          // Electron fullscreen builds; use plain CSS opacity transition instead.
+          "overflow-hidden rounded-md border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md transition-opacity duration-150",
+          "data-[state=closed]:opacity-0 data-[state=open]:opacity-100",
           className,
         )}
         {...props}
@@ -23,11 +26,10 @@ export function TooltipContent({ className, sideOffset = 6, ...props }) {
   );
 }
 
-// Semi-transparent hint style for immersive learning buttons (D-18-04, D-18-05)
-// Uses controlled show/hide via React state and inline styles instead of Radix
+// Semi-transparent hint style for immersive learning buttons (D-18-04, D-18-05).
+// Uses controlled show/hide via React state and fixed positioning instead of Radix
 // state + CSS animation, to guarantee visibility across all environments (incl.
-// Electron fullscreen). The portal z-index is set to 999999 to sit above video
-// elements even in fullscreen mode.
+// Electron fullscreen). z-index 999999 sits above video elements in fullscreen.
 export function TooltipHint({ children, content, side = "top" }) {
   const [open, setOpen] = useState(false);
 
@@ -57,4 +59,3 @@ export function TooltipHint({ children, content, side = "top" }) {
     </Tooltip>
   );
 }
-
