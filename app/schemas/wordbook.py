@@ -115,21 +115,21 @@ class WordbookReviewPreviewResponse(BaseModel):
 
 
 class BatchStatusUpdate(BaseModel):
-    word_ids: list[int]
-    is_learned: bool
+    entry_ids: list[int]
+    status: str
 
 
 class BatchMoveRequest(BaseModel):
-    word_ids: list[int]
+    entry_ids: list[int]
     target_list_id: int
 
 
 class BatchDeleteRequest(BaseModel):
-    word_ids: list[int]
+    entry_ids: list[int]
 
 
 class BatchTranslateRequest(BaseModel):
-    word_ids: list[int]
+    entry_ids: list[int]
 
 
 class TranslateTextRequest(BaseModel):

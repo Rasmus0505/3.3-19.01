@@ -201,47 +201,47 @@ def delete_wordbook_item(
     return WordbookDeleteResponse(ok=True, entry_id=entry_id)
 
 
-@router.post("/batch/delete")
+@router.post("/batch-delete")
 async def batch_delete_words_endpoint(
     request: BatchDeleteRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Delete multiple words by ID."""
-    count = batch_delete_words(db, request.word_ids)
+    count = batch_delete_words(db, request.entry_ids)
     return {"success": True, "deleted_count": count}
 
 
-@router.post("/batch/status")
+@router.patch("/batch-status")
 async def batch_update_status_endpoint(
     request: BatchStatusUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Update is_learned status for multiple words."""
-    count = batch_update_status(db, request.word_ids, request.is_learned)
+    """Update status for multiple words (mark as mastered)."""
+    count = batch_update_status(db, request.entry_ids, request.status == "mastered")
     return {"success": True, "updated_count": count}
 
 
-@router.post("/batch/move")
+@router.patch("/batch-move")
 async def batch_move_words_endpoint(
     request: BatchMoveRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Move multiple words to another lesson."""
-    count = batch_move_words(db, request.word_ids, request.target_list_id)
+    count = batch_move_words(db, request.entry_ids, request.target_list_id)
     return {"success": True, "moved_count": count}
 
 
-@router.post("/batch/translate")
+@router.post("/batch-translate")
 async def batch_translate_words_endpoint(
     request: BatchTranslateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Translate multiple words and save results."""
-    translations = batch_translate_words(db, request.word_ids)
+    translations = batch_translate_words(db, request.entry_ids)
     return {"success": True, "translations": translations}
 
 
