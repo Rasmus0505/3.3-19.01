@@ -14,7 +14,6 @@ import {
   CardTitle,
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "../../shared/ui";
 import {
@@ -3347,9 +3346,8 @@ export function ImmersiveLessonPage({
     .join(" ");
 
   return (
-    <TooltipProvider delayDuration={300}>
       <div ref={immersiveContainerRef} className={immersivePageShellClassName}>
-      <Card
+        <Card
         className={`immersive-page ${immersiveActive ? "immersive-page--immersive" : ""} ${
           cinemaFullscreenActive ? "immersive-page--cinema" : ""
         }`}
@@ -3837,10 +3835,9 @@ export function ImmersiveLessonPage({
             spellCheck={false}
             readOnly={!typingEnabled}
           />
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
       </div>
-    </TooltipProvider>
   );
 }
 
