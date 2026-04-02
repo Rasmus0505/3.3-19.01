@@ -71,8 +71,14 @@ None yet.
 - Phase 20 (Pronunciation): Browser Web Speech API quality should be verified on Windows/Electron before committing to it as primary
 - Phase 22 (Video Extraction): Backend paragraph segmentation capability needs verification during planning — does ASR pipeline produce paragraph-level output?
 
+### Quick Tasks Completed
+
+|| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+|| 260403-0go | 沉浸式学习页面字母揭示时黄色显示修复（revealed 状态 CSS hex 回退色缺失） | 2026-04-03 | 50a13059 | [260403-0go](./quick/260403-0go/) |
+
 ## Session Continuity
 
-Last session: 2026-04-02
-Stopped at: v2.3 roadmap created, ready to plan Phase 19
+Last session: 2026-04-03
+Stopped at: Quick task 260403-0go completed — revealed-letter yellow CSS fix committed
 Resume file: None
