@@ -887,7 +887,6 @@ export function ImmersiveLessonPage({
   const [currentWordInput, setCurrentWordInput] = useState("");
   const [wordInputs, setWordInputs] = useState([]);
   const [wordStatuses, setWordStatuses] = useState([]);
-  const [answerBoxMode, setAnswerBoxMode] = useState("ai_content"); // 'ai_content' | 'user_typed'
   const [wordRevealLengths, setWordRevealLengths] = useState([]); // 每个单词 reveal 出的字符数
   const [learningSettings, setLearningSettings] = useState(() => readLearningSettings());
   const [sessionState, dispatchSession] = useReducer(
@@ -3651,7 +3650,7 @@ export function ImmersiveLessonPage({
               {waitingForInitialPlayback ? <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p> : null}
 
               <div className={cinemaFullscreenActive ? "immersive-word-row-frame immersive-word-row-frame--cinema" : ""}>
-                <div className={`immersive-word-row ${answerBoxMode === "user_typed" ? "bg-emerald-100" : "bg-amber-100"} ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""}`}>
+                <div className={`immersive-word-row ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""}`}>
                   {expectedTokens.map((token, index) => {
                     const status = wordStatuses[index] || "pending";
                     const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealLengths[index] || 0);
