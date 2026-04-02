@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 19 — 沉浸式学习 Bug 修复
+**Current focus:** Phase 21 — 素材导入 UX 优化
 
 ## Current Position
 
 Milestone: v2.3
-Phase: 19
+Phase: 21
 Plan: Not started
-Status: Executing Phase 19
+Status: Phase 21 context gathered
 
 ## Milestone Status
 
@@ -33,16 +33,19 @@ v2.2 shipped 2026-04-02 — see MILESTONES.md for summary.
 
 v2.3 started 2026-04-02:
 
-- Phase 19: 沉浸式学习 Bug 修复 — context gathered
+- Phase 19: 沉浸式学习 Bug 修复 — completed
+- Phase 20: 生词本词条增强 — context gathered
+- Phase 21: 素材导入 UX 优化 — context gathered
 
-- Phase 19 context captured decisions:
-  - **Bug 1+4**: 倍速/循环切换时输入被清空 — 根因分析指向 auto-answer-replay 逻辑，修复方案：全面审查触发路径，增加 guard
-  - **Bug 2**: 上一句播放静默失败 — Web Speech API TTS fallback（无需 npm 包，web + desktop 均可使用）
-  - **Bug 3**: 答题框颜色区分 — AI 内容 amber-100 (#FEF3C7)、用户内容 emerald-100 (#D1FAE5)
+- Phase 21 context captured decisions:
+  - **UPLOAD-01**: 默认选中"链接导入"Tab（改 `useState` 默认值）
+  - **UPLOAD-02**: 链接 Tab 文案精简，移除冗余段落，第②条"仅支持公开单条链接..."移除；底部仅保留 SnapAny 外链
+  - **UPLOAD-03**: 自动填标题 — **已在代码中实现**（`UploadPanel.jsx:3458, 3651`），无需开发
+  - **UPLOAD-04**: 快捷键配置改为两行紧凑网格（第一行 4 个，第二行 3 个），卡片宽度刚好包裹内容，不留空白
 
 ## Next Step
 
-1. **Phase 19 — 沉浸式学习 Bug 修复** — `/gsd-plan-phase 19`
+1. **Phase 21 — 素材导入 UX 优化** — `/gsd-plan-phase 21`
 
 ## Milestone Status
 
