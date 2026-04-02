@@ -3400,7 +3400,6 @@ export function ImmersiveLessonPage({
                 第 {Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 句
               </CardDescription>
             ) : null}
-            </TooltipProvider>
           </div>
         </CardHeader>
 
@@ -3841,7 +3840,6 @@ export function ImmersiveLessonPage({
         </CardContent>
       </Card>
     </div>
-    </TooltipProvider>
   );
 }
 
