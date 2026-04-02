@@ -130,3 +130,13 @@ class BatchDeleteRequest(BaseModel):
 
 class BatchTranslateRequest(BaseModel):
     word_ids: list[int]
+
+
+class TranslateTextRequest(BaseModel):
+    text: str
+
+
+class TranslateTextResponse(BaseModel):
+    ok: bool = True
+    text: str
+    translation: str

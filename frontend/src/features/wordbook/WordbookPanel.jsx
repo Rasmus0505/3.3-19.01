@@ -257,7 +257,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
   const handleItemSelect = useCallback((itemId, event) => {
     const id = Number(itemId || 0);
     if (event.shiftKey && lastSelectedId !== null) {
-      // Range selection
+      // Range selection with Shift
       const lastIdx = sortedItems.findIndex((i) => Number(i.id) === lastSelectedId);
       const currentIdx = sortedItems.findIndex((i) => Number(i.id) === id);
       if (lastIdx !== -1 && currentIdx !== -1) {
@@ -266,7 +266,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
         setSelectedIds((prev) => new Set([...prev, ...rangeIds]));
       }
     } else if (event.ctrlKey || event.metaKey) {
-      // Toggle single item
+      // Toggle single item with Ctrl/Cmd
       setSelectedIds((prev) => {
         const next = new Set(prev);
         if (next.has(id)) {
@@ -277,8 +277,16 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
         return next;
       });
     } else {
-      // Direct click - checkbox behavior
-      setSelectedIds(new Set([id]));
+      // Direct click - toggle checkbox behavior (no modifier = toggle selection)
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+        return next;
+      });
     }
     setLastSelectedId(id);
   }, [lastSelectedId, sortedItems]);

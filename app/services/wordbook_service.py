@@ -180,7 +180,32 @@ def collect_wordbook_entry(
     raw_payload = build_wordbook_entry_payload(db, entry_id=existing_entry.id, user_id=user_id)
     if not raw_payload:
         raise HTTPException(status_code=500, detail="词条保存后读取失败")
+
     return WordbookCollectResult(payload=_entry_payload_to_dict(raw_payload), created=created, updated_context=not created)
+
+
+def schedule_async_translation(entry_id: int) -> None:
+    """Schedule async translation for a wordbook entry in background."""
+    import threading
+    from app.infra.translation_qwen_mt import translate_to_zh
+
+    def _translate():
+        from app.db import SessionLocal
+        db = SessionLocal()
+        try:
+            entry = db.query(WordbookEntry).filter(WordbookEntry.id == entry_id).first()
+            if entry and not entry.latest_sentence_zh:
+                try:
+                    translated = translate_to_zh(entry.entry_text, api_key=DASHSCOPE_API_KEY)
+                    entry.latest_sentence_zh = translated
+                    db.commit()
+                except Exception:
+                    db.rollback()
+        finally:
+            db.close()
+
+    thread = threading.Thread(target=_translate, daemon=True)
+    thread.start()
 
 
 def list_wordbook_entry_payloads(

@@ -13,6 +13,8 @@ from app.schemas.wordbook import (
     BatchMoveRequest,
     BatchStatusUpdate,
     BatchTranslateRequest,
+    TranslateTextRequest,
+    TranslateTextResponse,
     WordbookCollectRequest,
     WordbookCollectResponse,
     WordbookDeleteResponse,
@@ -36,6 +38,7 @@ from app.services.wordbook_service import (
     list_wordbook_review_queue_payloads,
     preview_wordbook_review_grades,
     review_wordbook_entry,
+    schedule_async_translation,
     update_wordbook_entry_status,
 )
 
@@ -128,6 +131,9 @@ def collect_wordbook(
         start_token_index=payload.start_token_index,
         end_token_index=payload.end_token_index,
     )
+    # Schedule async translation for new entries
+    if result.created:
+        schedule_async_translation(result.payload["id"])
     return WordbookCollectResponse(
         ok=True,
         created=result.created,
@@ -237,3 +243,20 @@ async def batch_translate_words_endpoint(
     """Translate multiple words and save results."""
     translations = batch_translate_words(db, request.word_ids)
     return {"success": True, "translations": translations}
+
+
+@router.post("/translate", response_model=TranslateTextResponse, responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}})
+async def translate_text_endpoint(
+    request: TranslateTextRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Translate a single text."""
+    from app.infra.translation_qwen_mt import translate_to_zh
+    from app.core.config import DASHSCOPE_API_KEY
+
+    try:
+        translated = translate_to_zh(request.text, api_key=DASHSCOPE_API_KEY)
+        return TranslateTextResponse(ok=True, text=request.text, translation=translated)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"翻译失败: {str(e)}")
