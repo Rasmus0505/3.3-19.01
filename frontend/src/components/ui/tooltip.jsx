@@ -1,6 +1,5 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
-import { useState, useRef, useCallback, useLayoutEffect } from "react";
-import React from "react";
+import React, { useState, useRef, useCallback, useLayoutEffect } from "react";
 import { cn } from "../../lib/utils";
 
 export const TooltipProvider = TooltipPrimitive.Provider;
@@ -24,168 +23,138 @@ export function TooltipContent({ className, sideOffset = 6, ...props }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// SimpleTooltip — lightweight tooltip with no Portal, no external CSS deps.
-// Renders the tooltip inline (not via Portal) at a fixed position calculated
-// from the trigger's bounding rect. This guarantees visibility inside
-// Electron fullscreen mode where Radix Portals can be buried under the
-// fullscreen video stacking context.
-// ---------------------------------------------------------------------------
-
-function getTriggerPosition(triggerEl, preferredSide) {
-  const rect = triggerEl.getBoundingClientRect();
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const PADDING = 6;
-  const TW = 160;
-  const TH = 32;
-
-  let top, left;
-
-  if (preferredSide === "bottom") {
-    top = rect.bottom + PADDING;
-    left = rect.left + rect.width / 2 - TW / 2;
-    if (top + TH > vh) top = rect.top - TH - PADDING;
-  } else if (preferredSide === "top") {
-    top = rect.top - TH - PADDING;
-    left = rect.left + rect.width / 2 - TW / 2;
-    if (top < 0) top = rect.bottom + PADDING;
-  } else if (preferredSide === "right") {
-    left = rect.right + PADDING;
-    top = rect.top + rect.height / 2 - TH / 2;
-    if (left + TW > vw) left = rect.left - TW - PADDING;
-  } else if (preferredSide === "left") {
-    left = rect.left - TW - PADDING;
-    top = rect.top + rect.height / 2 - TH / 2;
-    if (left < 0) left = rect.right + PADDING;
-  }
-
-  left = Math.max(PADDING, Math.min(left, vw - TW - PADDING));
-  top = Math.max(PADDING, Math.min(top, vh - TH - PADDING));
-
-  return { top, left };
-}
-
-function getPosition(triggerEl, tooltipEl, preferredSide) {
-  const rect = triggerEl.getBoundingClientRect();
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const PADDING = 6;
-  const TW = tooltipEl.offsetWidth || 160;
-  const TH = tooltipEl.offsetHeight || 32;
-
-  let top, left;
-
-  if (preferredSide === "bottom") {
-    top = rect.bottom + PADDING;
-    left = rect.left + rect.width / 2 - TW / 2;
-    if (top + TH > vh) top = rect.top - TH - PADDING;
-  } else if (preferredSide === "top") {
-    top = rect.top - TH - PADDING;
-    left = rect.left + rect.width / 2 - TW / 2;
-    if (top < 0) top = rect.bottom + PADDING;
-  } else if (preferredSide === "right") {
-    left = rect.right + PADDING;
-    top = rect.top + rect.height / 2 - TH / 2;
-    if (left + TW > vw) left = rect.left - TW - PADDING;
-  } else if (preferredSide === "left") {
-    left = rect.left - TW - PADDING;
-    top = rect.top + rect.height / 2 - TH / 2;
-    if (left < 0) left = rect.right + PADDING;
-  }
-
-  left = Math.max(PADDING, Math.min(left, vw - TW - PADDING));
-  top = Math.max(PADDING, Math.min(top, vh - TH - PADDING));
-
-  return { top, left };
-}
-
+/**
+ * SimpleTooltip — no Radix Portal, no cloneElement.
+ * Renders the tooltip div inline as a sibling to the trigger.
+ * Uses Portal to document.body ONLY when in fullscreen to escape the
+ * fullscreen stacking context. Falls back to inline otherwise.
+ *
+ * Usage:
+ *   <SimpleTooltip content="tooltip text" side="top">
+ *     <button onClick={...}>Label</button>
+ *   </SimpleTooltip>
+ */
 export function SimpleTooltip({ children, content, side = "top", className }) {
   const [visible, setVisible] = useState(false);
-  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const [inFullscreen, setInFullscreen] = useState(false);
   const triggerRef = useRef(null);
   const tooltipRef = useRef(null);
-  const measureKey = useRef(0);
 
-  // Phase 1: immediately position based on trigger dimensions (no flash at 0,0).
+  // Detect fullscreen so we can Portal the tooltip to document.body.
+  useLayoutEffect(() => {
+    const check = () => {
+      const el =
+        document.fullscreenElement ||
+        document.webkitFullscreenElement ||
+        document.msFullscreenElement ||
+        (document.webkitIsFullScreen ? document.documentElement : null);
+      setInFullscreen(!!el);
+    };
+    check();
+    document.addEventListener("fullscreenchange", check);
+    document.addEventListener("webkitfullscreenchange", check);
+    return () => {
+      document.removeEventListener("fullscreenchange", check);
+      document.removeEventListener("webkitfullscreenchange", check);
+    };
+  }, []);
+
+  // Compute tooltip position when shown.
   useLayoutEffect(() => {
     if (!visible || !triggerRef.current) return;
-    setPosition(getTriggerPosition(triggerRef.current, side));
-  }, [visible, side]);
+    const trigger = triggerRef.current;
+    const rect = trigger.getBoundingClientRect();
+    const TW = tooltipRef.current ? tooltipRef.current.offsetWidth : 160;
+    const TH = tooltipRef.current ? tooltipRef.current.offsetHeight : 32;
+    const PADDING = 6;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let top = 0, left = 0;
 
-  // Phase 2: fine-tune with real tooltip dimensions after first paint.
-  useLayoutEffect(() => {
-    if (!visible) return;
-    measureKey.current += 1;
-    const key = measureKey.current;
-    const frame = requestAnimationFrame(() => {
-      if (key !== measureKey.current) return;
-      if (triggerRef.current && tooltipRef.current) {
-        setPosition(getPosition(triggerRef.current, tooltipRef.current, side));
-      }
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [visible, side]);
+    if (side === "top") {
+      top = rect.top - TH - PADDING;
+      left = rect.left + rect.width / 2 - TW / 2;
+      if (top < PADDING) top = rect.bottom + PADDING;
+    } else if (side === "bottom") {
+      top = rect.bottom + PADDING;
+      left = rect.left + rect.width / 2 - TW / 2;
+      if (top + TH > vh - PADDING) top = rect.top - TH - PADDING;
+    } else if (side === "right") {
+      left = rect.right + PADDING;
+      top = rect.top + rect.height / 2 - TH / 2;
+      if (left + TW > vw - PADDING) left = rect.left - TW - PADDING;
+    } else if (side === "left") {
+      left = rect.left - TW - PADDING;
+      top = rect.top + rect.height / 2 - TH / 2;
+      if (left < PADDING) left = rect.right + PADDING;
+    }
 
-  const triggerCallbackRef = useCallback(
-    (node) => {
-      triggerRef.current = node;
-      if (children.ref) {
-        if (typeof children.ref === "function") {
-          children.ref(node);
-        } else if (children.ref) {
-          children.ref.current = node;
-        }
-      }
-    },
-    [children.ref],
-  );
+    left = Math.max(PADDING, Math.min(left, vw - TW - PADDING));
+    top = Math.max(PADDING, Math.min(top, vh - TH - PADDING));
+    setPos({ top, left });
+  }, [visible, side, content]);
 
-  const existingProps = children.props ?? {};
+  const handleMouseEnter = useCallback(() => setVisible(true), []);
+  const handleMouseLeave = useCallback(() => setVisible(false), []);
+  const handleFocus = useCallback(() => setVisible(true), []);
+  const handleBlur = useCallback(() => setVisible(false), []);
+
+  // Extract the child element and merge event handlers + ref.
+  const child = React.Children.only(children);
+  const childProps = child.props ?? {};
+  const { ref: childRef, ...restChildProps } = childRefKey(child) ? child.ref ? { ref: child.ref } : {} : {};
+
+  // Build merged props: keep all original props, add our event/ref.
   const mergedProps = {
-    ...existingProps,
-    ref: triggerCallbackRef,
-    onMouseEnter: (e) => {
-      setVisible(true);
-      existingProps.onMouseEnter?.(e);
+    ...restChildProps,
+    ref: (node) => {
+      triggerRef.current = node;
+      if (childRef) {
+        if (typeof childRef === "function") childRef(node);
+        else childRef.current = node;
+      }
     },
-    onMouseLeave: (e) => {
-      setVisible(false);
-      existingProps.onMouseLeave?.(e);
-    },
-    onFocus: (e) => {
-      setVisible(true);
-      existingProps.onFocus?.(e);
-    },
-    onBlur: (e) => {
-      setVisible(false);
-      existingProps.onBlur?.(e);
-    },
+    onMouseEnter: (e) => { handleMouseEnter(); childProps.onMouseEnter?.(e); },
+    onMouseLeave: (e) => { handleMouseLeave(); childProps.onMouseLeave?.(e); },
+    onFocus: (e) => { handleFocus(); childProps.onFocus?.(e); },
+    onBlur: (e) => { handleBlur(); childProps.onBlur?.(e); },
   };
+
+  // In fullscreen: Portal to document.body to escape the fullscreen stacking context.
+  // Otherwise: render inline as a sibling in the same DOM tree.
+  const tooltipEl = (
+    <div
+      ref={tooltipRef}
+      style={{ top: pos.top, left: pos.left, zIndex: 999999 }}
+      className={cn(
+        "pointer-events-none fixed rounded-md border bg-black/80 px-2.5 py-1.5 text-sm text-white shadow-xl backdrop-blur-sm",
+        className,
+      )}
+      role="tooltip"
+    >
+      <p className="whitespace-nowrap">{content}</p>
+    </div>
+  );
 
   return (
     <>
-      {React.cloneElement(children, mergedProps)}
-      {visible ? (
-        <div
-          ref={tooltipRef}
-          className={cn(
-            "pointer-events-none fixed rounded-md border bg-black/80 px-2.5 py-1.5 text-sm text-white shadow-xl backdrop-blur-sm",
-            className,
-          )}
-          style={{ top: position.top, left: position.left, zIndex: 999999 }}
-          role="tooltip"
-        >
-          <p className="text-sm whitespace-nowrap">{content}</p>
-        </div>
+      {React.cloneElement(child, mergedProps)}
+      {visible && content ? (
+        inFullscreen
+          ? <TooltipPrimitive.Portal>{tooltipEl}</TooltipPrimitive.Portal>
+          : tooltipEl
       ) : null}
     </>
   );
 }
 
+/** Returns the ref key used by a React element (ref or null). */
+function childRefKey(child) {
+  return child && child.ref;
+}
+
 // Convenience wrapper matching the old TooltipHint API.
 export function TooltipHint({ children, content, side = "top" }) {
-  return (
-    <SimpleTooltip children={children} content={content} side={side} />
-  );
+  return <SimpleTooltip children={children} content={content} side={side} />;
 }
