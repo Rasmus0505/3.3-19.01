@@ -3348,7 +3348,7 @@ export function ImmersiveLessonPage({
 
   return (
     <TooltipProvider delayDuration={300}>
-    <div ref={immersiveContainerRef} className={immersivePageShellClassName}>
+      <div ref={immersiveContainerRef} className={immersivePageShellClassName}>
       <Card
         className={`immersive-page ${immersiveActive ? "immersive-page--immersive" : ""} ${
           cinemaFullscreenActive ? "immersive-page--cinema" : ""
@@ -3839,7 +3839,7 @@ export function ImmersiveLessonPage({
           />
         </CardContent>
       </Card>
-    </div>
+      </div>
     </TooltipProvider>
   );
 }
