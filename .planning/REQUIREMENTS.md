@@ -26,15 +26,6 @@ Requirements for v2.3 milestone. Each maps to roadmap phases.
 - [ ] **UPLOAD-03**: 素材上传页快捷键配置从两行改为一行紧凑布局，每个配置项宽度收缩（不再占据整行宽度），使整个配置区域在一屏内可见
 - [ ] **UPLOAD-04**: 加入生词本成功后的 toast 提示文字与按钮水平对齐，视觉上不生硬
 
-### Import Config Modal & Video Content Extraction
-
-- [ ] **UPLOAD-05**: 点击"导入并开始生成"后弹出 GenerationConfigModal 配置弹窗，弹窗保留链接粘贴后已自动填入的标题（用户修改过则以修改后的为准） — modal 通过 props 接收 `titleInput`，confirm handler 返回 `{ title, config }` 而非直接修改 panel state；auto-fill title 与用户编辑 title 的状态流不断裂
-- [ ] **UPLOAD-06**: GenerationConfigModal 包含功能开关选项（具体开关待最终确认，至少包含）：是否翻译（默认 ON）、是否自动提取词汇到生词本（默认 OFF）— Toggle Switch 组件，按钮即时响应无需确认
-- [ ] **UPLOAD-07**: GenerationConfigModal 提供生成方式二选一：English Materials（结构化课程，含字幕、翻译、练习）和 Video Content Extraction（纯视频内容提取，提取后保存为独立记录类型） — Radio 或 Segmented Control，首选 English Materials
-- [ ] **UPLOAD-08**: 选择 Video Content Extraction 后，弹窗下方展开单独配置区域：段落粒度 / 句子粒度（默认段落）、是否显示时间戳（默认 OFF） — 条件渲染，选择 English Materials 时隐藏
-- [ ] **UPLOAD-09**: 历史记录列表中，English Materials 记录和 Video Content Extraction 记录有明确的视觉区分：Lesson 记录显示蓝色 badge（"课程"），Transcript 记录显示琥珀色 badge（"内容提取"），支持按类型过滤
-- [ ] **UPLOAD-10**: 桌面客户端记住链接导入视频的原始 URL，存入 lesson 记录的 `source_url` 字段；恢复视频时若检测到该 lesson 有对应的 source URL，提供"按链接恢复"选项
-
 ### Translation Mask & Caption Recovery
 
 - [ ] **MASK-01**: 新视频加载时，字幕遮挡板位置恢复到屏幕正中（而非延续上一视频的位置）；遮挡板启用/关闭状态记忆（跨视频保持），遮挡板位置不记忆 — mask rect 以 normalized ratio（0-1）存储；新视频检测到 `lesson.id` 变更时强制使用居中默认 rect；旧视频恢复时使用存储的 normalized rect 按当前容器尺寸还原
@@ -56,20 +47,14 @@ Which phases cover which requirements.
 | UPLOAD-02 | Phase 21 | Pending |
 | UPLOAD-03 | Phase 21 | Pending |
 | UPLOAD-04 | Phase 21 | Pending |
-| UPLOAD-05 | Phase 22 | Pending |
-| UPLOAD-06 | Phase 22 | Pending |
-| UPLOAD-07 | Phase 22 | Pending |
-| UPLOAD-08 | Phase 22 | Pending |
-| UPLOAD-09 | Phase 22 | Pending |
-| UPLOAD-10 | Phase 22 | Pending |
 | MASK-01 | Phase 23 | Pending |
 | MASK-02 | Phase 23 | Pending |
 
 **Coverage:**
-- v2.3 requirements: 18 total
-- Mapped to phases: 18
+- v2.3 requirements: 12 total
+- Mapped to phases: 12
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-02*
-*Last updated: 2026-04-02 after v2.3 initial definition*
+*Last updated: 2026-04-03 after Phase 22 removal*
