@@ -10,33 +10,34 @@ The product is intentionally split by runtime capability: the desktop client is 
 
 Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-## Current Milestone: v2.3 学习体验与导入流程优化
+## Current Milestone: v2.3 学习体验与导入流程优化 — SHIPPED 2026-04-03
 
 **Goal:** 修复沉浸式学习已知 Bug、增强生词本词条信息完整性、优化素材导入 UI/UX 流程，提升产品细节体验。
 
-**Target features:**
-- 沉浸式学习 Bug 收口：固定按钮/倍速清空句子、上一句播放失败、答题框颜色区分
-- 生词本词条增强：独立翻译、发音播放
-- 素材导入 UX 优化：默认链接 Tab、精简文案、自动填标题、弹窗配置
-- 字幕遮挡板位置记忆策略调整
-- 快捷键配置界面紧凑化
+**Target features:** (all completed)
+- ✅ 沉浸式学习 Bug 收口：autoAdvanceGuard guard + TTS 三段降级 + 答题框颜色黄/绿区分
+- ✅ 生词本词条增强：翻译区块独立显示 + Web Speech API 发音按钮
+- ✅ 素材导入 UX 优化：默认链接 Tab + 文案精简 + 快捷键两行布局
+- ✅ 字幕遮挡板位置记忆：居中恢复 + 启用状态跨视频记忆
+- ✅ 链接恢复增强：source_url 检查 + 覆盖确认弹窗
 
 ## Current State
 
 <details>
-<summary>v2.2 归档摘要 (2026-04-02 shipped) — 点击展开</summary>
+<summary>v2.3 归档摘要 (2026-04-03 shipped) — 点击展开</summary>
 
-**v2.2 shipped on 2026-04-02.** Full v2.2 product delivered:
+**v2.3 shipped on 2026-04-03.** 4 phases, 10 plans, 12/12 requirements complete:
 - v1.0 (2026-03-27): Foundation — shared cloud generation, ASR 403 self-heal, desktop local generation
 - v1.1 (2026-03-27): Bottle 1.0 billing/admin cleanup, canonical lesson pipeline, desktop link import
 - v2.0 (2026-03-28): Admin simplification, pricing-only billing, troubleshooting center, onboarding cleanup, billing UX
 - v2.1 (2026-03-31): Immersive learning refactor, wordbook review flow, username account system, admin Chinese/yuan-first alignment, conversion copy rollout, desktop link-import bug fixes, Memo-style desktop public-link workflow
 - v2.2 (2026-04-02): Desktop stable-only release channel, model delta update, runtime boundary hardening (preload audit 31 methods, sandbox, openExternalUrl whitelist), announcement system (CRUD + changelog/banner/modal), wordbook review UX overhaul (due queue, mastery feedback, forgetting curve scheduling), wordbook batch ops + translation dialog + lightweight hint system
+- v2.3 (2026-04-03): Immersive learning bug fixes (4 bugs), wordbook entry enhancements (translation + pronunciation), material import UX optimization (default link tab, copy simplification, shortcut layout), subtitle mask position reset + link restore enhancement
 
-**18/18 v2.2 milestone phases satisfied.**
+**23/23 milestone phases satisfied (Phase 22 removed from scope).**
 
-See `.planning/milestones/v2.2-ROADMAP.md` for full phase details.
-See `.planning/milestones/v2.2-REQUIREMENTS.md` for archived requirements.
+See `.planning/milestones/v2.3-ROADMAP.md` for full phase details.
+See `.planning/milestones/v2.3-REQUIREMENTS.md` for archived requirements.
 
 </details>
 
@@ -82,15 +83,13 @@ See `.planning/milestones/v2.2-REQUIREMENTS.md` for archived requirements.
 - ✓ Wordbook review UX overhauled: due queue, mastery feedback, forgetting curve scheduling, batch ops, translation dialog — validated in Phase 17
 - ✓ Lightweight hint system applied across key buttons and ambiguous actions — validated in Phase 18
 - ✓ Immersive learning bug fixes: input-preserving rate/loop toggle, prev sentence TTS fallback, answer box color differentiation — validated in Phase 19
+- ✓ Wordbook entry enhancements: independent translation block above each entry, Web Speech API pronunciation button — validated in Phase 20
+- ✓ Material import UX: default link tab, simplified copy, auto-fill title, shortcut two-row layout — validated in Phase 21
+- ✓ Subtitle mask position reset (centered on new video, enabled state persists across videos) and link restore enhancement — validated in Phase 23
 
 ### Active
 
-- [ ] 生词本词条增强：每个词条上方显示独立翻译、支持播放单词发音
-- [ ] 素材导入 UX 优化：默认链接 Tab、精简文案、自动填标题
-- [ ] 导入弹窗配置：点击"导入并开始生成"后弹窗选择功能开关与生成方式，视频内容提取单独配置，历史记录区分
-- [ ] 字幕遮挡板位置记忆策略调整：新视频居中恢复，启用状态记忆
-- [ ] 链接恢复增强：记住链接导入视频 URL，恢复时可按链接恢复
-- [ ] 快捷键配置界面紧凑化
+_(All v2.3 requirements shipped — next milestone TBD)_
 
 ### Out of Scope
 
@@ -127,16 +126,16 @@ See `.planning/milestones/v2.2-REQUIREMENTS.md` for archived requirements.
 - **Immersive Architecture**: Immersive state machine contract from Phase 8 must be preserved — bug fixes should not remove reducer structure or re-introduce ad-hoc state transitions.
 - **Wordbook Backward Compatibility**: Wordbook review flow, due queue, and mastery scheduling from Phase 17 must be preserved — enhancements should layer on top, not replace.
 
-## Milestone: v2.2 Summary
+## Milestone: v2.3 Summary
 
-**Shipped:** 2026-04-02
-**Phases:** Phase 13, 14, 15, 16, 17, 18
+**Shipped:** 2026-04-03
+**Phases:** Phase 19, 20, 21, 23
 **Key outcomes:**
-- Desktop stable-only release channel with signed NSIS installer and publish pipeline
-- Desktop delta update system productized for both program binary and ASR model/resources
-- Desktop runtime security hardened: 31 preload methods audited, renderer sandbox enforced, openExternalUrl whitelist
-- Announcement system fully operational: CRUD, changelog/banner/modal delivery, admin management UI
-- Wordbook review UX overhauled: due queue, mastery feedback, forgetting curve scheduling, batch operations, translation dialog, lightweight hint system across key buttons
+- Immersive learning 4-bug fix: autoAdvanceGuard guard + TTS three-tier fallback + answer box yellow/green color differentiation
+- Wordbook entry enhancements: translation block with bg-muted/20 + Web Speech API pronunciation with spinner and 2s auto-recovery
+- Material import UX: default link tab, simplified copy, shortcut two-row layout
+- Subtitle mask position reset: prevLessonIdRef forces center on new lessonId, enabled state persists via localStorage
+- Link restore enhancement: source_url check + hasLessonMedia cache check before triggering yt-dlp re-download
 
 ## Key Decisions
 
@@ -159,7 +158,15 @@ See `.planning/milestones/v2.2-REQUIREMENTS.md` for archived requirements.
 | Desktop stable-only channel with signed installer for v2.2 release | A/B or dev channels introduce user confusion for a learning product; stable-only simplifies support | ✅ Validated in Phase 13 |
 | Announcement system delivers changelog/banner/modal from admin CRUD | Operators need a way to communicate updates to learners without app store dependencies | ✅ Validated in Phase 16 |
 | Wordbook review uses spaced-repetition scheduling with again/good grading | Simple again/good with calculated next-review matches learner expectations without complexity of full SM-2 | ✅ Validated in Phase 17 |
-| Immersive answer box uses yellow for AI/hint content, green for user-typed content | Color differentiation helps learners see what they typed vs. what was suggested | ✅ Validated in v2.3 |
+| Immersive answer box uses yellow for AI/hint content, green for user-typed content | Color differentiation helps learners see what they typed vs. what was suggested | ✅ Validated in Phase 19 |
+| autoAdvanceGuard: postAnswerReplayState !== "idle" blocks sentence advance during typing | Prevents unintended replay when switching rate/loop mid-typing | ✅ Validated in Phase 19 |
+| TTS three-tier fallback: clip → Web Speech API (en-US) → error message | Graceful degradation when previous sentence audio unavailable | ✅ Validated in Phase 19 |
+| Wordbook translation block: bg-muted/20, independent visual area above each entry | Clean separation without changing card layout or height | ✅ Validated in Phase 20 |
+| Wordbook pronunciation: Web Speech API (en-US), spinner while speaking, error icon 2s auto-recover | Zero-cost, browser-native, fails gracefully | ✅ Validated in Phase 20 |
+| Upload default tab: DESKTOP_UPLOAD_SOURCE_MODE_LINK | Link import is the common path; file upload is secondary | ✅ Validated in Phase 21 |
+| Subtitle mask: prevLessonIdRef forces center on new lessonId | Ensures mask position never persists across different videos | ✅ Validated in Phase 23 |
+| Subtitle mask: enabled state persists via localStorage | Verified existing code implements D-03 (enabled persistence) | ✅ Validated in Phase 23 |
+| Link restore: source_url check + hasLessonMedia cache check before download | Prevents unnecessary re-download if media already cached locally | ✅ Validated in Phase 23 |
 
 ## Current Milestone: v2.4 词汇等级预处理与 CEFR 沉浸式展示
 
@@ -192,4 +199,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-03 after v2.4 milestone initialization*
+*Last updated: 2026-04-03 after v2.3 milestone completion*

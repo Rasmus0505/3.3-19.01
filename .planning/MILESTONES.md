@@ -1,6 +1,17 @@
 # Milestones
 
-## v2.2 桌面发布与体验收口 (Shipped: 2026-04-02)
+## v2.3 学习体验与导入流程优化 (Shipped: 2026-04-03)
+
+**Phases completed:** 4 phases (19, 20, 21, 23), 10 plans, 4 tasks
+
+**Key accomplishments:**
+
+- Phase 19: 沉浸式学习 Bug 修复 — autoAdvanceGuard 防止打字时误触发重播，TTS 三段降级播放，答题框 AI 黄/用户绿颜色区分
+- Phase 20: 生词本词条增强 — 翻译区块独立显示 + Web Speech API 发音按钮
+- Phase 21: 素材导入 UX 优化 — 默认链接 Tab，文案精简，快捷键两行布局
+- Phase 23: 字幕遮挡板与链接恢复 — 新视频遮挡板居中，启用状态跨视频记忆，链接恢复增强
+
+---
 
 **Phases completed:** 6 phases, 14 plans, 33 tasks
 
