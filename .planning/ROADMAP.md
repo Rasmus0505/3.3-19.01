@@ -59,7 +59,11 @@
 9. "Selected for wordbook" feedback uses scale + border/badging — visually distinct from CEFR difficulty color, no background color change conflict
 10. Hover state on selectable words in the previous sentence shows subtle scale + cursor hint
 
-**Plans**: TBD
+**Plans**: 4 plans — PENDING
+- [ ] 25-01-PLAN.md — CSS foundation (CEFR color classes, wordbook animations)
+- [ ] 25-02-PLAN.md — Current sentence CEFR underlines (answer box word slots)
+- [ ] 25-03-PLAN.md — Previous sentence CEFR color bands + wordbook success animation
+- [ ] 25-04-PLAN.md — History list CEFR distribution badges
 **UI hint**: yes
 
 ---
@@ -69,7 +73,7 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 24. CEFR 基础设施与 i 水平设置 | 4/4 | Complete | 2026-04-03 |
-| 25. CEFR 沉浸式展示与历史徽章 | 0/N | Not started | - |
+| 25. CEFR 沉浸式展示与历史徽章 | 0/4 | Not started | - |
 
 ---
 
