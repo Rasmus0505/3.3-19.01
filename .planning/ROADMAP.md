@@ -82,7 +82,7 @@ _See: `.planning/milestones/v2.2-ROADMAP.md` for full phase details_
   - [x] 21-01: 默认 Tab + 文案精简（UPLOAD-01/02）✅
   - [x] 21-02: 快捷键两行布局（UPLOAD-04）✅
 - [ ] **Phase 22: 导入弹窗配置与视频内容提取** — 功能开关弹窗、视频内容提取单独记录类型
-- [ ] **Phase 23: 字幕遮挡板与链接恢复** — 新视频遮挡板居中、链接恢复增强
+- [ ] **Phase 23: 字幕遮挡板与链接恢复** (2 plans) — planned 2026-04-03
 
 ---
 
@@ -182,7 +182,9 @@ _See: `.planning/milestones/v2.2-ROADMAP.md` for full phase details_
 4. 桌面客户端恢复视频时，提供"文件恢复"和"链接恢复"两个入口选项
 5. 若视频曾通过链接导入且有 source URL，恢复界面提供"按链接恢复"直接重新下载，而非使用本地缓存
 
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 23-01: 遮挡板居中 + 宽度自适应（MASK-01/02）
+- [ ] 23-02: 链接恢复增强（MASK-04）
 
 ---
 
@@ -215,6 +217,6 @@ _See: `.planning/milestones/v2.2-ROADMAP.md` for full phase details_
 | 20. 生词本词条增强 | v2.3 | 2/2 | Not started | - |
 | 21. 素材导入 UX 优化 | v2.3 | 0/4 | Not started | - |
 | 22. 导入弹窗配置与视频内容提取 | v2.3 | 0/6 | Not started | - |
-| 23. 字幕遮挡板与链接恢复 | v2.3 | 0/5 | Not started | - |
+| 23. 字幕遮挡板与链接恢复 | v2.3 | 2/2 | In Progress | - |
 
 **Overall:** 18/23 phases complete
