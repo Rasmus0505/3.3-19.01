@@ -3,9 +3,9 @@ import { useEffect, useState } from "react";
 import { CircleUserRound, Save } from "lucide-react";
 import { toast } from "sonner";
 
-import { writeStoredUser } from "../../app/authStorage";
+import { writeStoredUser, writeCefrLevel } from "../../app/authStorage";
 import { parseResponse, toErrorText } from "../../shared/api/client";
-import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, ScrollArea } from "../../shared/ui";
+import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, RadioGroup, RadioGroupItem, ScrollArea } from "../../shared/ui";
 import { useAppStore } from "../../store";
 import { RedeemCodePanel } from "../wallet/components/RedeemCodePanel";
 
@@ -19,8 +19,19 @@ function formatDate(isoString) {
   }
 }
 
+const CEFR_LEVELS = [
+  { value: "A1", description: "能理解和使用熟悉的日常表达和非常简单的句子" },
+  { value: "A2", description: "能理解最直接相关领域的熟悉事物，能进行简单日常对话" },
+  { value: "B1", description: "在英语国家旅行时能应对大多数情况，能围绕熟悉话题简单连贯地表达" },
+  { value: "B2", description: "能与母语者比较流利地互动，能清晰详细地表达观点" },
+  { value: "C1", description: "能有效运用语言，能流畅自如地表达复杂思想" },
+  { value: "C2", description: "毫不费力地进行理解，能非常流利地精确表达" },
+];
+
 export function AccountPanel({ apiCall, currentUser, onWalletChanged }) {
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
+  const cefrLevel = useAppStore((state) => state.cefrLevel);
+  const setCefrLevel = useAppStore((state) => state.setCefrLevel);
   const [username, setUsername] = useState(currentUser?.username || "");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
@@ -106,6 +117,26 @@ export function AccountPanel({ apiCall, currentUser, onWalletChanged }) {
     }
   }
 
+  async function handleCefrLevelChange(newLevel) {
+    try {
+      const resp = await apiCall("/api/auth/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cefr_level: newLevel }),
+      });
+      const data = await parseResponse(resp);
+      if (!resp.ok) {
+        toast.error(toErrorText(data, "更新学习水平失败"));
+        return;
+      }
+      setCefrLevel(newLevel);
+      writeCefrLevel(newLevel);
+      toast.success("学习水平已更新");
+    } catch (error) {
+      toast.error(`网络错误: ${String(error)}`);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Card>
@@ -146,6 +177,34 @@ export function AccountPanel({ apiCall, currentUser, onWalletChanged }) {
               <AlertDescription>{status}</AlertDescription>
             </Alert>
           ) : null}
+        </CardContent>
+      </Card>
+
+      {/* CEFR Level Selector */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">学习水平</CardTitle>
+          <CardDescription>设置你的 CEFR 水平，影响生词高亮和内容推荐</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <RadioGroup
+            value={cefrLevel}
+            onValueChange={handleCefrLevelChange}
+            className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3"
+          >
+            {CEFR_LEVELS.map((level) => (
+              <div
+                key={level.value}
+                className="flex items-start gap-3 rounded-xl border p-3 hover:bg-muted/40 transition-colors"
+              >
+                <RadioGroupItem value={level.value} id={`cefr-${level.value}`} className="mt-0.5" />
+                <Label htmlFor={`cefr-${level.value}`} className="flex-1 cursor-pointer">
+                  <span className="text-sm font-bold text-foreground">{level.value}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">{level.description}</span>
+                </Label>
+              </div>
+            ))}
+          </RadioGroup>
         </CardContent>
       </Card>
 
