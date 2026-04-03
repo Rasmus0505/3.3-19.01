@@ -1292,7 +1292,8 @@ export function ImmersiveLessonPage({
   const hasWordbookAccess = Boolean(accessToken && lesson?.id);
   const cefrLevel = useAppStore((s) => s.cefrLevel) || "B1";
   const currentSentenceCefrMap = useMemo(() => {
-    const sentence = lesson?.sentences?.[currentSentenceIndex]?.en;
+    const row = lesson?.sentences?.[currentSentenceIndex];
+    const sentence = row?.text_en || row?.en || "";
     if (!sentence || !cefrAnalyzerRef.current?.isLoaded) return new Map();
     try {
       const result = cefrAnalyzerRef.current.analyzeSentence(sentence);
@@ -1304,7 +1305,7 @@ export function ImmersiveLessonPage({
     } catch (_) {
       return new Map();
     }
-  }, [lesson?.sentences?.[currentSentenceIndex]?.en, cefrLevel, cefrAnalyzerRef.current?.isLoaded]);
+  }, [lesson?.sentences?.[currentSentenceIndex]?.text_en, lesson?.sentences?.[currentSentenceIndex]?.en, cefrAnalyzerRef.current?.isLoaded]);
   const interactiveWordbookContext = useMemo(
     () =>
       resolveInteractiveWordbookContext({
@@ -1349,7 +1350,7 @@ export function ImmersiveLessonPage({
     } catch (_) {
       return new Map();
     }
-  }, [interactiveWordbookContext?.sentence, cefrLevel, cefrAnalyzerRef.current?.isLoaded]);
+  }, [interactiveWordbookContext?.sentence, cefrAnalyzerRef.current?.isLoaded]);
   const canRenderInteractiveWordbook = Boolean(interactiveWordbookContext);
   const wordbookSentence = interactiveWordbookContext?.sentence || null;
   const wordbookSentenceTokens = interactiveWordbookContext?.tokens || [];
