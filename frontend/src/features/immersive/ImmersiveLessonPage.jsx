@@ -53,6 +53,8 @@ import { getMediaExt, isAudioFilename, isVideoFilename, normalizeToken } from ".
 import { useImmersiveSessionController } from "./useImmersiveSessionController";
 import { useSentencePlayback } from "./useSentencePlayback";
 import { useTypingFeedbackSounds } from "./useTypingFeedbackSounds";
+import { cn } from "../../lib/utils";
+import { computeCefrClassName } from "./CefrBadge";
 import "./immersive.css";
 
 const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
@@ -1287,6 +1289,21 @@ export function ImmersiveLessonPage({
     [previousSentence?.text_en, previousSentence?.tokens],
   );
   const hasWordbookAccess = Boolean(accessToken && lesson?.id);
+  const cefrLevel = useAppStore((s) => s.cefrLevel) || "B1";
+  const currentSentenceCefrMap = useMemo(() => {
+    const sentence = lesson?.sentences?.[currentSentenceIndex]?.en;
+    if (!sentence || !cefrAnalyzerRef.current?.isLoaded) return new Map();
+    try {
+      const result = cefrAnalyzerRef.current.analyzeSentence(sentence);
+      const map = new Map();
+      for (const tokenInfo of result.tokens) {
+        map.set(tokenInfo.word.toLowerCase(), tokenInfo.level);
+      }
+      return map;
+    } catch (_) {
+      return new Map();
+    }
+  }, [lesson?.sentences?.[currentSentenceIndex]?.en, cefrLevel, cefrAnalyzerRef.current?.isLoaded]);
   const interactiveWordbookContext = useMemo(
     () =>
       resolveInteractiveWordbookContext({
@@ -3908,7 +3925,13 @@ export function ImmersiveLessonPage({
                     return (
                       <div
                         key={`${token}-${index}`}
-                        className={`immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`}
+                        className={cn(
+                          `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
+                          computeCefrClassName(
+                            currentSentenceCefrMap.get(token.toLowerCase()) || "SUPER",
+                            cefrLevel,
+                          ),
+                        )}
                       >
                         <div className="immersive-letter-row">
                           {slots.map((slot) => (
