@@ -82,7 +82,7 @@ _See: `.planning/milestones/v2.2-ROADMAP.md` for full phase details_
   - [x] 21-01: 默认 Tab + 文案精简（UPLOAD-01/02）✅
   - [x] 21-02: 快捷键两行布局（UPLOAD-04）✅
 - [ ] **Phase 22: 导入弹窗配置与视频内容提取** — 功能开关弹窗、视频内容提取单独记录类型
-- [ ] **Phase 23: 字幕遮挡板与链接恢复** (2 plans) — planned 2026-04-03
+- [x] **Phase 23: 字幕遮挡板与链接恢复** (2/2 plans) — completed 2026-04-03
 
 ---
 

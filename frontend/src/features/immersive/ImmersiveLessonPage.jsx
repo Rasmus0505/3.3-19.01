@@ -1592,9 +1592,14 @@ export function ImmersiveLessonPage({
     const viewportHeight = Math.max(0, Number(window.innerHeight || containerRect.height || 0));
     const orientation = viewportWidth >= viewportHeight ? "landscape" : "portrait";
     const minPreferredBottom = Math.min(TRANSLATION_MASK_MIN_HEIGHT_PX, videoRect.height);
+    // preferredBottom lives in video-local Y (0..videoRect.height). Typing panel coords are relative to
+    // the media container; subtract videoRect.top so letterboxed video aligns with mask metrics.
+    const typingTopInVideoSpace = typingRect
+      ? typingRect.top - containerRect.top - videoRect.top
+      : null;
     const preferredBottom = typingRect
       ? clampNumber(
-          typingRect.top - containerRect.top - TRANSLATION_MASK_VISIBLE_BOTTOM_GAP_PX,
+          typingTopInVideoSpace - TRANSLATION_MASK_VISIBLE_BOTTOM_GAP_PX,
           minPreferredBottom,
           videoRect.height,
         )
