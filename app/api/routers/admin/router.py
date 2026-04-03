@@ -569,8 +569,13 @@ def admin_delete_user(
             user_id=result.user_id,
             email=result.email,
             deleted_lessons=result.deleted_lessons,
+            deleted_lesson_sentences=result.deleted_lesson_sentences,
+            deleted_lesson_progress=result.deleted_lesson_progress,
+            deleted_media_assets=result.deleted_media_assets,
             deleted_ledger_rows=result.deleted_ledger_rows,
+            deleted_wallet_account=result.deleted_wallet_account,
             cleared_operator_refs=result.cleared_operator_refs,
+            cleared_task_refs=result.cleared_task_refs,
             file_cleanup_failed_dirs=result.file_cleanup_failed_dirs,
         )
     except AdminUserDeleteError as exc:
