@@ -5,6 +5,7 @@ import { TOKEN_KEY } from "../../app/authStorage";
 import { cn } from "../../lib/utils";
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import { saveLessonSubtitleCacheSeed, saveLessonSubtitleVariant } from "../../shared/media/localSubtitleStore.js";
+import { hasLessonMedia } from "../../shared/media/localMediaStore";
 import {
   Alert,
   AlertDescription,
@@ -57,6 +58,33 @@ const LOCAL_LESSON_UPDATE_EVENT = "bottle-local-lessons-updated";
 
 function hasLocalDbBridge() {
   return typeof window !== "undefined" && typeof window.localDb?.getCourses === "function";
+}
+
+function hasDesktopRuntimeBridge() {
+  return typeof window !== "undefined" && typeof window.desktopRuntime?.requestLocalHelper === "function";
+}
+
+const isDesktop = hasDesktopRuntimeBridge();
+
+async function requestDesktopLocalHelper(pathname, responseType = "json", options = {}) {
+  if (!hasDesktopRuntimeBridge()) {
+    throw new Error("Desktop local helper is unavailable");
+  }
+  const response = await window.desktopRuntime.requestLocalHelper({
+    path: String(pathname || ""),
+    method: String(options.method || "GET").toUpperCase(),
+    responseType,
+    body: options.body,
+  });
+  if (!response?.ok) {
+    const detail =
+      String(response?.data?.message || "").trim() ||
+      String(response?.data?.error_message || "").trim() ||
+      String(response?.data?.detail || "").trim() ||
+      String(response?.status || "").trim();
+    throw new Error(detail || "Desktop local helper request failed");
+  }
+  return response;
 }
 
 function sanitizeExportFileName(value, fallback = "lesson") {
@@ -318,6 +346,8 @@ export function LessonList({
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [menuLessonId, setMenuLessonId] = useState(null);
   const [restoringLessonId, setRestoringLessonId] = useState(null);
+  const [restoreChoiceOpen, setRestoreChoiceOpen] = useState(false);
+  const [overwriteConfirmOpen, setOverwriteConfirmOpen] = useState(false);
   const [status, setStatus] = useState("");
   const [exportingLessonId, setExportingLessonId] = useState("");
   const [actionLessonId, setActionLessonId] = useState("");
@@ -785,7 +815,12 @@ export function LessonList({
     if (!onRestoreMedia || !lesson) return;
     restoreTargetRef.current = lesson;
     setMenuLessonId(null);
-    restoreInputRef.current?.click();
+
+    if (lesson?.source_url) {
+      setRestoreChoiceOpen(true);
+    } else {
+      restoreInputRef.current?.click();
+    }
   }
 
   async function submitRestore(file) {
@@ -805,6 +840,57 @@ export function LessonList({
       restoreTargetRef.current = null;
     }
   }
+
+  async function handleLinkRestore() {
+    const lesson = restoreTargetRef.current;
+    if (!lesson?.source_url) return;
+
+    setRestoreChoiceOpen(false);
+
+    const hasLocal = await hasLessonMedia(lesson.id);
+    if (hasLocal) {
+      setOverwriteConfirmOpen(true);
+    } else {
+      await submitLinkRestore(lesson);
+    }
+  }
+
+  async function submitLinkRestore(lesson) {
+    if (!lesson?.source_url) return;
+
+    setRestoringLessonId(lesson.id);
+    setStatus("");
+    try {
+      const response = await requestDesktopLocalHelper("/api/desktop-asr/url-import/tasks", "json", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: { source_url: lesson.source_url },
+      });
+
+      if (response?.ok) {
+        setStatus("视频已更新");
+        if (onRestoreMedia) {
+          await onRestoreMedia(lesson, null);
+        }
+      } else {
+        setStatus(response?.message || "按链接恢复失败");
+      }
+    } catch (error) {
+      setStatus(error?.message || "按链接恢复失败");
+    } finally {
+      setRestoringLessonId(null);
+      restoreTargetRef.current = null;
+    }
+  }
+
+  async function handleOverwriteConfirm() {
+    const lesson = restoreTargetRef.current;
+    setOverwriteConfirmOpen(false);
+    if (lesson) {
+      await submitLinkRestore(lesson);
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -1331,6 +1417,46 @@ export function LessonList({
                 disabled={deleteBusy || !hasSelection}
               >
                 {deleteBusy ? "删除中..." : "确认批量删除"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={restoreChoiceOpen} onOpenChange={setRestoreChoiceOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>选择恢复方式</AlertDialogTitle>
+              <AlertDialogDescription>
+                该视频来自网络链接，请选择恢复方式。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <AlertDialogCancel onClick={() => restoreInputRef.current?.click()}>
+                恢复本地视频
+              </AlertDialogCancel>
+              {isDesktop && (
+                <AlertDialogAction onClick={handleLinkRestore}>
+                  按链接恢复
+                </AlertDialogAction>
+              )}
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={overwriteConfirmOpen} onOpenChange={setOverwriteConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>本地已有视频</AlertDialogTitle>
+              <AlertDialogDescription>
+                本地已有该视频，是否覆盖？
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setOverwriteConfirmOpen(false)}>
+                取消
+              </AlertDialogCancel>
+              <AlertDialogAction onClick={handleOverwriteConfirm}>
+                覆盖
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
