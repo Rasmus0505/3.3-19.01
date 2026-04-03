@@ -1395,7 +1395,7 @@ def admin_delete_redeem_code_post(
     current_admin: User = Depends(get_admin_user),
 ):
     """
-    硬删除兑换码，前端通过 POST /delete 调用。
+    硬删除兑换码，前端通过 POST /delete 调用 per D-04。
     数据库记录彻底移除，兑换码立即失效，不可恢复。
     """
     code = db.get(RedeemCode, code_id)
