@@ -1286,3 +1286,125 @@ input[type="number"]::-webkit-inner-spin-button {
 input[type="number"] {
   -moz-appearance: textfield;
 }
+
+/* ================================================================
+   CEFR Level Visual Classes
+   ================================================================
+   i+1 (within reach):   oklch(0.75 0.16 175) — teal-green
+   >i+1 (too hard):      oklch(0.65 0.20 40)  — amber-red
+   ≤i (mastered):        transparent (no underline)
+
+   These colors are intentionally different from letter-state colors:
+   - letter correct:  oklch(0.38 0.11 145) dark green text + oklch(0.67 0.16 145) border
+   - letter wrong:    oklch(0.49 0.19 25)  dark red text + oklch(0.64 0.22 25)  border
+   - letter revealed: oklch(0.70 0.18 85)  amber text + same amber border
+   ================================================================ */
+
+/* --- Current sentence: letter-level underlines on .immersive-letter-cell --- */
+
+.cefr-i-plus-one .immersive-letter-cell {
+  border-bottom-color: oklch(0.75 0.16 175);
+}
+
+.cefr-above-i-plus-one .immersive-letter-cell {
+  border-bottom-color: oklch(0.65 0.20 40);
+}
+
+/* ≤ i (mastered): use default border color (transparent) */
+.cefr-mastered .immersive-letter-cell {
+  border-bottom-color: transparent;
+}
+
+/* --- Previous sentence: word-level color bands on wordbook token buttons --- */
+
+.cefr-i-plus-one.immersive-wordbook-token {
+  border-bottom: 2px solid oklch(0.75 0.16 175);
+}
+
+.cefr-above-i-plus-one.immersive-wordbook-token {
+  border-bottom: 2px solid oklch(0.65 0.20 40);
+}
+
+.cefr-mastered.immersive-wordbook-token {
+  border-bottom: 2px solid transparent;
+}
+
+/* --- Wordbook success animation --- */
+
+@keyframes wordbook-success-scale {
+  0%   { transform: scale(1.0); }
+  40%  { transform: scale(1.08); }
+  100% { transform: scale(1.0); }
+}
+
+@keyframes wordbook-success-border-flash {
+  0%   { border-color: transparent; }
+  30%  { border-color: oklch(0.69 0.14 155); }
+  70%  { border-color: oklch(0.69 0.14 155); }
+  100% { border-color: transparent; }
+}
+
+.wordbook-token--success {
+  animation: wordbook-success-scale 200ms ease-out,
+             wordbook-success-border-flash 350ms ease-out;
+  transform-origin: center;
+}
+
+/* --- Previous sentence token hover state --- */
+.immersive-wordbook-token {
+  cursor: pointer;
+  transition: transform 150ms ease-out;
+}
+
+.immersive-wordbook-token:hover {
+  transform: scale(1.02);
+}
+
+/* --- CEFR distribution bar for history cards --- */
+.cefr-distribution-bar {
+  display: flex;
+  height: 4px;
+  width: 100%;
+  border-radius: 2px;
+  overflow: hidden;
+  gap: 1px;
+}
+
+.cefr-distribution-segment {
+  height: 100%;
+  transition: width 300ms ease-out;
+}
+
+.cefr-distribution-segment--i-plus-one {
+  background-color: oklch(0.75 0.16 175);
+}
+
+.cefr-distribution-segment--above-i-plus-one {
+  background-color: oklch(0.65 0.20 40);
+}
+
+.cefr-distribution-segment--mastered {
+  background-color: oklch(0.85 0 0);
+}
+
+/* --- History card CEFR badge --- */
+.history-card-cefr-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.history-card-cefr-badge--i-plus-one {
+  background-color: oklch(0.75 0.16 175 / 0.15);
+  color: oklch(0.75 0.16 175);
+}
+
+.history-card-cefr-badge--above-i-plus-one {
+  background-color: oklch(0.65 0.20 40 / 0.15);
+  color: oklch(0.65 0.20 40);
+}
