@@ -78,7 +78,9 @@ _See: `.planning/milestones/v2.2-ROADMAP.md` for full phase details_
 - [x] **Phase 20: 生词本词条增强** (2/2 plans) — completed 2026-04-02
   - [x] 20-01: 翻译区块结构重组（WB-01）✅
   - [x] 20-02: 发音按钮 + Web Speech API（WB-02）✅
-- [ ] **Phase 21: 素材导入 UX 优化** — 默认链接 Tab、精简文案、自动填标题、快捷键紧凑化
+- [x] **Phase 21: 素材导入 UX 优化** (2/2 plans) — completed 2026-04-02
+  - [x] 21-01: 默认 Tab + 文案精简（UPLOAD-01/02）✅
+  - [x] 21-02: 快捷键两行布局（UPLOAD-04）✅
 - [ ] **Phase 22: 导入弹窗配置与视频内容提取** — 功能开关弹窗、视频内容提取单独记录类型
 - [ ] **Phase 23: 字幕遮挡板与链接恢复** — 新视频遮挡板居中、链接恢复增强
 

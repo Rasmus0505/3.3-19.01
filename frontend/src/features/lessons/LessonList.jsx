@@ -897,32 +897,61 @@ export function LessonList({
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-foreground">快捷键配置</p>
               </div>
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                {SHORTCUT_ACTIONS.map((action) => {
-                  const recording = recordingShortcutActionId === action.id;
-                  return (
-                    <div key={action.id} className="flex h-full flex-col rounded-2xl border bg-background/80 p-3">
-                      <div className="flex flex-1 flex-col gap-3">
-                        <div className="min-w-0 space-y-1">
-                          <p className="text-sm font-semibold text-foreground">{action.label}</p>
-                          <p className="text-sm text-muted-foreground break-all">{getShortcutLabel(learningSettings.shortcuts[action.id])}</p>
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-row flex-wrap gap-3">
+                  {SHORTCUT_ACTIONS.slice(0, 3).map((action) => {
+                    const recording = recordingShortcutActionId === action.id;
+                    return (
+                      <div key={action.id} className="flex w-fit min-w-0 flex-col rounded-2xl border bg-background/80 p-3">
+                        <div className="flex flex-1 flex-col gap-3">
+                          <div className="min-w-0 space-y-1">
+                            <p className="text-sm font-semibold text-foreground">{action.label}</p>
+                            <p className="text-sm text-muted-foreground break-all">{getShortcutLabel(learningSettings.shortcuts[action.id])}</p>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={recording ? "default" : "outline"}
+                            className="mt-auto self-start"
+                            onClick={() => {
+                              setSettingsError("");
+                              setRecordingShortcutActionId((current) => (current === action.id ? "" : action.id));
+                            }}
+                          >
+                            {recording ? "请按键…" : "修改"}
+                          </Button>
                         </div>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={recording ? "default" : "outline"}
-                          className="mt-auto self-start"
-                          onClick={() => {
-                            setSettingsError("");
-                            setRecordingShortcutActionId((current) => (current === action.id ? "" : action.id));
-                          }}
-                        >
-                          {recording ? "请按键…" : "修改"}
-                        </Button>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+                <div className="flex flex-row flex-wrap gap-3 justify-center">
+                  {SHORTCUT_ACTIONS.slice(3, 6).map((action) => {
+                    const recording = recordingShortcutActionId === action.id;
+                    return (
+                      <div key={action.id} className="flex w-fit min-w-0 flex-col rounded-2xl border bg-background/80 p-3">
+                        <div className="flex flex-1 flex-col gap-3">
+                          <div className="min-w-0 space-y-1">
+                            <p className="text-sm font-semibold text-foreground">{action.label}</p>
+                            <p className="text-sm text-muted-foreground break-all">{getShortcutLabel(learningSettings.shortcuts[action.id])}</p>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={recording ? "default" : "outline"}
+                            className="mt-auto self-start"
+                            onClick={() => {
+                              setSettingsError("");
+                              setRecordingShortcutActionId((current) => (current === action.id ? "" : action.id));
+                            }}
+                          >
+                            {recording ? "请按键…" : "修改"}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 

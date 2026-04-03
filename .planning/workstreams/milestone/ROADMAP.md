@@ -109,7 +109,7 @@ _See: `.planning/milestones/v2.1-ROADMAP.md` for full phase details_
   3. 生词本界面完成一次一致的视觉与交互收口，减少非必要信息干扰。
   4. 网站关键困惑点具备统一的半透明轻提示，且提示能自动消失、不阻塞流程。
 
-### 🚧 v2.3 学习体验与导入流程优化 (In Progress: Phase 20/21)
+### 🚧 v2.3 学习体验与导入流程优化 (In Progress: Phase 22)
 
 - [x] **Phase 19: 沉浸式学习 Bug 修复** (completed 2026-04-02)
   Goal: 沉浸式学习中已知 Bug 全部收口，用户在答题和播放过程中不再遇到句子被清空、播放静默失败、颜色显示错误等问题。
@@ -137,6 +137,18 @@ _See: `.planning/milestones/v2.1-ROADMAP.md` for full phase details_
   Plans: 2/2 — COMPLETE ✅
   - [x] 20-01: 翻译区块结构重组 ✅ (2026-04-02)
   - [x] 20-02: 发音按钮 + Web Speech API ✅ (2026-04-02)
+
+- [x] **Phase 21: 素材导入 UX 优化** (completed 2026-04-02)
+  Goal: 素材导入界面更简洁高效，默认进入链接导入流程，文案精简无冗余。
+  Requirements: UPLOAD-01, UPLOAD-02, UPLOAD-03, UPLOAD-04
+  Success criteria:
+  1. 用户打开素材上传页时，默认选中"链接"Tab（而非文件上传 Tab）
+  2. 链接 Tab 的说明文案精简，冗余解释段落移除；"支持常见公开视频链接"改为输入框 placeholder 文案；底部仅保留 SnapAny 外链说明
+  3. 用户粘贴链接导入成功后，视频标题自动填入标题输入框，无需手动输入
+  4. 快捷键配置区域所有配置项在一屏内可见，采用一行紧凑布局，不再占据整行宽度
+  Plans: 2/2 — COMPLETE ✅
+  - [x] 21-01: 默认 Tab + 文案精简（UPLOAD-01/02）✅ (2026-04-02)
+  - [x] 21-02: 快捷键两行布局（UPLOAD-04）✅ (2026-04-02)
 
 ### Phase 13: 桌面发布管线与签名安装包
 
@@ -246,5 +258,6 @@ Plans:
 | 18. 生词本管理收口与站内轻提示 | v2.2 | 4/4 | Complete | 2026-04-02 |
 | 19. 沉浸式学习 Bug 修复 | v2.3 | 4/4 | Complete    | 2026-04-02 |
 | 20. 生词本词条增强 | v2.3 | 2/2 | Complete | 2026-04-02 |
+| 21. 素材导入 UX 优化 | v2.3 | 2/2 | Complete | 2026-04-02 |
 
-**Overall:** 19/23 phases complete
+**Overall:** 20/23 phases complete

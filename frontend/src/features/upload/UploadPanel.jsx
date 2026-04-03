@@ -1792,12 +1792,12 @@ export function UploadPanel({
   const [status, setStatus] = useState("");
   const [durationSec, setDurationSec] = useState(null);
   const [phase, setPhase] = useState("idle");
-  const [desktopSourceMode, setDesktopSourceMode] = useState(DESKTOP_UPLOAD_SOURCE_MODE_FILE);
+  const [desktopSourceMode, setDesktopSourceMode] = useState(DESKTOP_UPLOAD_SOURCE_MODE_LINK);
   const [desktopLinkInput, setDesktopLinkInput] = useState("");
   const [desktopLinkTitle, setDesktopLinkTitle] = useState("");
   const [desktopLinkTaskId, setDesktopLinkTaskId] = useState("");
   const [desktopSourceModeConfirmOpen, setDesktopSourceModeConfirmOpen] = useState(false);
-  const [pendingDesktopSourceMode, setPendingDesktopSourceMode] = useState(DESKTOP_UPLOAD_SOURCE_MODE_FILE);
+  const [pendingDesktopSourceMode, setPendingDesktopSourceMode] = useState(DESKTOP_UPLOAD_SOURCE_MODE_LINK);
   const [coverDataUrl, setCoverDataUrl] = useState("");
   const [coverAspectRatio, setCoverAspectRatio] = useState(0);
   const [coverWidth, setCoverWidth] = useState(0);
@@ -6820,7 +6820,7 @@ export function UploadPanel({
                   type="url"
                   inputMode="url"
                   className="h-11 w-full rounded-2xl border bg-background px-4 text-sm outline-none transition-colors focus:border-upload-brand/50"
-                  placeholder="粘贴公开单条视频链接，例如 https://www.youtube.com/watch?v=..."
+                  placeholder="粘贴 YouTube、B站等公开视频链接"
                   value={desktopLinkInput}
                   onChange={(event) => handleDesktopLinkInputChange(event.target.value)}
                   onPaste={(event) => {
@@ -6833,8 +6833,6 @@ export function UploadPanel({
                   }}
                   disabled={loading || localModeBusy}
                 />
-                <p className="text-xs text-muted-foreground">{DESKTOP_LINK_PUBLIC_SUPPORT_MESSAGE}</p>
-                <p className="text-xs text-muted-foreground">{DESKTOP_LINK_PUBLIC_ONLY_MESSAGE}</p>
                 <p className="text-xs text-muted-foreground">
                   无法导入时可改用{" "}
                   <button type="button" className="font-medium text-foreground underline underline-offset-2" onClick={() => void openSnapAnyFallback()}>
@@ -7092,8 +7090,6 @@ export function UploadPanel({
             <p className={cn("text-sm", getUploadToneStyles(taskTone).text)}>{status}</p>
             {desktopLinkModeActive ? (
               <div className="space-y-1 text-xs text-muted-foreground">
-                <p>{DESKTOP_LINK_PUBLIC_SUPPORT_MESSAGE}</p>
-                <p>{DESKTOP_LINK_PUBLIC_ONLY_MESSAGE}</p>
                 <p>
                   或改用{" "}
                   <button type="button" className="font-medium text-foreground underline underline-offset-2" onClick={() => void openSnapAnyFallback()}>

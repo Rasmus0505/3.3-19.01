@@ -6,9 +6,9 @@ status: executing
 last_updated: "2026-04-02T14:30:00.000Z"
 progress:
   total_phases: 7
-  completed_phases: 6
-  total_plans: 18
-  completed_plans: 21
+  completed_phases: 7
+  total_plans: 20
+  completed_plans: 23
 ---
 
 # Project State
@@ -31,7 +31,7 @@ v2.3 started 2026-04-02:
 
 - Phase 19: 沉浸式学习 Bug 修复 — completed
 - Phase 20: 生词本词条增强 — completed
-- Phase 21: 素材导入 UX 优化 — context gathered
+- Phase 21: 素材导入 UX 优化 — completed
 
 - Phase 21 context captured decisions:
   - **UPLOAD-01**: 默认选中"链接导入"Tab（改 `useState` 默认值）
