@@ -92,11 +92,13 @@ from app.services.billing_service import (
     REDEEM_CODE_STATUS_ABANDONED,
     REDEEM_CODE_STATUS_ACTIVE,
     REDEEM_CODE_STATUS_DISABLED,
+    abandon_redeem_batch,
     abandon_redeem_code_with_refund,
     append_admin_operation_log,
     bulk_disable_redeem_codes,
     copy_redeem_batch_and_codes,
     create_redeem_batch_and_codes,
+    delete_redeem_batch_and_codes,
     enforce_mt_flash_only_rates,
     ensure_default_billing_rates,
     get_subtitle_settings,
@@ -1156,6 +1158,50 @@ def admin_copy_redeem_batch(
             batch=_to_batch_item(batch, 0, now=_now()),
             generated_codes=[row.code_plain for row in rows],
         )
+    except BillingError as exc:
+        db.rollback()
+        return map_billing_error(exc)
+
+
+@router.delete(
+    "/redeem-batches/{batch_id}",
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_delete_redeem_batch(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    try:
+        result = delete_redeem_batch_and_codes(
+            db,
+            batch_id=batch_id,
+            operator_user_id=current_admin.id,
+        )
+        db.commit()
+        return {"ok": True, "batch_id": batch_id, "deleted_code_count": result["deleted_code_count"]}
+    except BillingError as exc:
+        db.rollback()
+        return map_billing_error(exc)
+
+
+@router.post(
+    "/redeem-batches/{batch_id}/abandon",
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_abandon_redeem_batch(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    try:
+        result = abandon_redeem_batch(
+            db,
+            batch_id=batch_id,
+            operator_user_id=current_admin.id,
+        )
+        db.commit()
+        return result
     except BillingError as exc:
         db.rollback()
         return map_billing_error(exc)

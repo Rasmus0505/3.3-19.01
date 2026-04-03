@@ -10,7 +10,7 @@ from decimal import Decimal, ROUND_CEILING
 from math import ceil
 from typing import Iterable
 
-from sqlalchemy import func, inspect, select, text
+from sqlalchemy import delete, func, inspect, select, text
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
@@ -1939,6 +1939,121 @@ def abandon_redeem_code_with_refund(
         "refund_amount": refund_amount,
         "user_id": redeemed_user_id,
         "balance_after": account.balance_points,
+    }
+
+
+def delete_redeem_batch_and_codes(
+    db: Session,
+    *,
+    batch_id: int,
+    operator_user_id: int,
+) -> dict[str, object]:
+    """
+    硬删除兑换码批次及所有关联兑换码 per D-04
+    """
+    batch = db.get(RedeemCodeBatch, batch_id)
+    if not batch:
+        raise BillingError("REDEEM_BATCH_NOT_FOUND", "批次不存在", str(batch_id))
+
+    code_count = int(
+        db.scalar(
+            select(func.count(RedeemCode.id)).where(RedeemCode.batch_id == batch_id)
+        )
+        or 0
+    )
+
+    db.execute(delete(RedeemCode).where(RedeemCode.batch_id == batch_id))
+    db.delete(batch)
+
+    append_admin_operation_log(
+        db,
+        operator_user_id=operator_user_id,
+        action_type="redeem_batch_hard_delete",
+        target_type="redeem_batch",
+        target_id=str(batch_id),
+        before_value={"batch_name": batch.batch_name, "code_count": code_count},
+        after_value={"deleted": True},
+        note="hard_delete",
+    )
+
+    return {"batch_id": batch_id, "deleted_code_count": code_count}
+
+
+def abandon_redeem_batch(
+    db: Session,
+    *,
+    batch_id: int,
+    operator_user_id: int,
+) -> dict[str, object]:
+    """
+    废弃兑换码批次：标记批次为 expired，并将所有已兑换码标记为 abandoned 且扣回钱包
+    per D-06, D-08（批次级别）
+    """
+    batch = db.get(RedeemCodeBatch, batch_id)
+    if not batch:
+        raise BillingError("REDEEM_BATCH_NOT_FOUND", "批次不存在", str(batch_id))
+
+    before_status = batch.status
+    batch.status = REDEEM_BATCH_STATUS_EXPIRED
+    db.add(batch)
+
+    redeemed_codes = (
+        db.scalars(
+            select(RedeemCode).where(
+                RedeemCode.batch_id == batch_id,
+                RedeemCode.status == REDEEM_CODE_STATUS_REDEEMED,
+            )
+        ).all()
+    )
+
+    total_refund = 0
+    refunded_users = 0
+    for code in redeemed_codes:
+        user_id = code.redeemed_by_user_id
+        if user_id is None:
+            continue
+        refund_amount = batch.face_value_points
+        account = get_or_create_wallet_account(db, user_id, for_update=True)
+        account.balance_points -= refund_amount
+        db.add(account)
+        _append_ledger(
+            db,
+            user_id=user_id,
+            operator_user_id=operator_user_id,
+            event_type="refund",
+            delta_points=-refund_amount,
+            balance_after=account.balance_points,
+            redeem_batch_id=batch.id,
+            redeem_code_id=code.id,
+            redeem_code_mask=code.masked_code,
+            note=f"废弃扣回:{code.masked_code}",
+        )
+        code.status = REDEEM_CODE_STATUS_ABANDONED
+        db.add(code)
+        total_refund += refund_amount
+        refunded_users += 1
+
+    append_admin_operation_log(
+        db,
+        operator_user_id=operator_user_id,
+        action_type="redeem_batch_abandon",
+        target_type="redeem_batch",
+        target_id=str(batch_id),
+        before_value={"status": before_status},
+        after_value={
+            "status": batch.status,
+            "total_refund": total_refund,
+            "refunded_users": refunded_users,
+        },
+        note="abandon_batch",
+    )
+
+    return {
+        "batch_id": batch_id,
+        "batch_status": batch.status,
+        "total_refund": total_refund,
+        "refunded_users": refunded_users,
+        "refunded_codes": len(redeemed_codes),
     }
 
 

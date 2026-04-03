@@ -1,4 +1,4 @@
-import { Gift, PauseCircle, PlayCircle, RefreshCcw, Ticket } from "lucide-react";
+import { Gift, RefreshCcw, Ticket } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -208,16 +208,21 @@ export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
     if (!actionDialog) return;
     setStatus("");
     clearError();
+    const isDelete = actionDialog.actionLabel === "删除";
+    const method = isDelete ? "DELETE" : "POST";
+    const endpoint = isDelete
+      ? `/api/admin/redeem-batches/${actionDialog.batchId}`
+      : `/api/admin/redeem-batches/${actionDialog.batchId}/${actionDialog.actionPath}`;
     try {
-      const resp = await apiCall(`/api/admin/redeem-batches/${actionDialog.batchId}/${actionDialog.actionPath}`, { method: "POST" });
+      const resp = await apiCall(endpoint, { method });
       const data = await parseJsonSafely(resp);
       if (!resp.ok) {
         const formattedError = captureError(
           formatResponseError(resp, data, {
             component: "AdminRedeemBatchesTab",
             action: actionDialog.actionLabel,
-            endpoint: `/api/admin/redeem-batches/${actionDialog.batchId}/${actionDialog.actionPath}`,
-            method: "POST",
+            endpoint,
+            method,
             meta: { batch_id: actionDialog.batchId, action_path: actionDialog.actionPath },
             fallbackMessage: `${actionDialog.actionLabel}失败`,
           }),
@@ -233,8 +238,8 @@ export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
         formatNetworkError(error, {
           component: "AdminRedeemBatchesTab",
           action: actionDialog.actionLabel,
-          endpoint: `/api/admin/redeem-batches/${actionDialog.batchId}/${actionDialog.actionPath}`,
-          method: "POST",
+          endpoint,
+          method,
         }),
       );
       setStatus(formattedError.displayMessage);
@@ -446,16 +451,11 @@ export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
                         <Button size="sm" variant="outline" asChild>
                           <Link to={`/admin/redeem?${buildScopedSearchParams("audit", { batch_id: item.id }).toString()}#admin-redeem-audit`}>审计</Link>
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => setActionDialog({ batchId: item.id, actionPath: "activate", actionLabel: "激活", batchName: item.batch_name })}>
-                          <PlayCircle className="size-4" />
-                          激活
+                        <Button size="sm" variant="destructive" onClick={() => setActionDialog({ batchId: item.id, actionPath: "delete", actionLabel: "删除", batchName: item.batch_name })}>
+                          删除
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => setActionDialog({ batchId: item.id, actionPath: "pause", actionLabel: "停用", batchName: item.batch_name })}>
-                          <PauseCircle className="size-4" />
-                          停用
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => setActionDialog({ batchId: item.id, actionPath: "expire", actionLabel: "提前失效", batchName: item.batch_name })}>
-                          提前失效
+                        <Button size="sm" onClick={() => setActionDialog({ batchId: item.id, actionPath: "abandon", actionLabel: "废弃", batchName: item.batch_name })}>
+                          废弃
                         </Button>
                         <Button size="sm" onClick={() => { setCopyBatchId(item.id); setCopyQuantity("100"); setCopyDialogOpen(true); }}>复制参数</Button>
                       </div>
@@ -501,7 +501,8 @@ export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
           <DialogHeader>
             <DialogTitle>确认批次操作</DialogTitle>
             <DialogDescription>
-              将对批次 `{actionDialog?.batchName || "-"}` 执行“{actionDialog?.actionLabel || "-"}”。
+              将对批次 `{actionDialog?.batchName || "-"}` 执行&quot;{actionDialog?.actionLabel || "-"}&quot;。
+              {actionDialog?.actionLabel === "删除" ? "此操作不可恢复。" : ""}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
