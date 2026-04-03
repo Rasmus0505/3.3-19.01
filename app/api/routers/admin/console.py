@@ -159,6 +159,7 @@ def _to_user_activity_item(row) -> AdminUserActivityItem:
     return AdminUserActivityItem(
         id=int(row.id),
         email=str(row.email or ""),
+        username=str(row.username or ""),  # 新增 per D-01
         created_at=to_shanghai_aware(row.created_at),
         last_login_at=to_shanghai_aware(row.last_login_at) if row.last_login_at else None,
         balance_points=int(row.balance_points or 0),
