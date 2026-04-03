@@ -1,131 +1,90 @@
-# Roadmap: Bottle English Learning
+# Roadmap: Bottle English Learning v2.4
 
-## Milestones
+**Milestone:** v2.4 词汇等级预处理与 CEFR 沉浸式展示
+**Started:** 2026-04-03
+**Granularity:** Standard (2 phases)
 
-- ✅ **v1.0 基础能力稳定化** — Phases 1, 1.1, 2 (shipped 2026-03-27)
-- ✅ **v1.1** — Phases 2.1, 3, 4 (shipped 2026-03-27)
-- ✅ **v2.0** — Phases 5, 6 (shipped 2026-03-28)
-- ✅ **v2.1 优化学习体验和管理体验** — Phases 7, 7.1, 8, 9, 10, 11, 12 (shipped 2026-03-31)
-- ✅ **v2.2 桌面发布与体验收口** — Phases 13, 14, 15, 16, 17, 18 (shipped 2026-04-02)
-- ✅ **v2.3 学习体验与导入流程优化** — Phases 19, 20, 21, 23 (shipped 2026-04-03)
+---
 
 ## Phases
 
-<details>
-<summary>✅ v1.0 基础能力稳定化 (Phases 1, 1.1, 2) — SHIPPED 2026-03-27</summary>
+- [ ] **Phase 24: CEFR 基础设施与 i 水平设置** — 批量预处理字幕文本、localStorage 缓存、chunked 执行、个人中心 CEFR 等级选择器、Zustand persist + PATCH API 同步
+- [ ] **Phase 25: CEFR 沉浸式展示与历史徽章** — 本句+上一句 CEFR 色块、i+1 计算逻辑、UI-SPEC 视觉契约、历史记录徽章、词选流畅放大动画
 
-- [x] Phase 1: Shared Cloud Generation (3/3 plans) — completed 2026-03-26
-- [x] Phase 1.1: Fix ASR 403 File Access Failures (2/2 plans) — completed 2026-03-27
-- [x] Phase 2: Desktop Local Generation (3/3 plans) — completed 2026-03-27
+---
 
-_See: `.planning/milestones/v1.0-ROADMAP.md` for full phase details_
+## Phase Details
 
-</details>
+### Phase 24: CEFR 基础设施与 i 水平设置
 
-<details>
-<summary>✅ v1.1 (Phases 2.1, 3, 4) — SHIPPED 2026-03-27</summary>
+**Goal**: 用户打开视频时一次性预处理所有字幕词汇，缓存结果；个人中心支持 CEFR 水平选择并同步到服务端和本地。
 
-- [x] Phase 2.1: Admin Bottle 1.0 Settings & Billing Cleanup (3/3 plans) — completed 2026-03-27
-- [x] Phase 3: Lesson Output Consistency (3/3 plans) — completed 2026-03-27
-- [x] Phase 4: Desktop Link Import (2/2 plans) — completed 2026-03-27
+**Depends on**: Nothing (first phase of v2.4)
 
-_See: `.planning/milestones/v2.0-ROADMAP.md` for archived v1.1 phase details_
+**Requirements**: CEFR-01, CEFR-02, CEFR-03, CEFR-04, CEFR-12, CEFR-13, CEFR-14, CEFR-15
 
-</details>
+**Success Criteria** (what must be TRUE):
 
-<details>
-<summary>✅ v2.0 — Billing, Admin & Polish (Phases 5, 6) — SHIPPED 2026-03-28</summary>
+1. User opens a lesson and all subtitle words are tagged with CEFR levels (A1/B1/B2/C1/C2/SUPER) via vocabAnalyzer lookup — batch processing completes within the first load
+2. Preprocessing results are cached in localStorage (`cefr_analysis_v1:{lessonId}`) — reopening the same lesson shows CEFR badges instantly without re-analysis
+3. Batch analysis uses chunked execution (`setTimeout(0)` or `requestIdleCallback`) — UI thread remains responsive on 500+ sentence videos with no visible stutter
+4. Unknown words not in cefr_vocab.json default to SUPER level — they always appear as hard/difficult regardless of user level
+5. Personal Center exposes a CEFR level selector (A1/A2/B1/B2/C1/C2, default B1) with Duolingo-style Chinese descriptions per level
+6. User's i level is persisted to their profile via PATCH API — level survives logout/login and works across devices
+7. User's i level is cached locally via Zustand persist — works offline; syncs with server on next online session
 
-- [x] Phase 5: Billing and Admin Alignment (3/3 plans) — completed 2026-03-28
-- [x] Phase 6: Product Polish and Fallbacks (2/2 plans) — completed 2026-03-28
+**Plans**: TBD
 
-_See: `.planning/milestones/v2.0-ROADMAP.md` for full phase details_
+---
 
-</details>
+### Phase 25: CEFR 沉浸式展示与历史徽章
 
-<details>
-<summary>✅ v2.1 优化学习体验和管理体验 (Phases 7, 7.1, 8, 9, 10, 11, 12) — SHIPPED 2026-03-31</summary>
+**Goal**: 沉浸式学习页面实时展示词汇 CEFR 等级色块（当前句+上一句），历史记录列表标注课程难度，词选入生词本提供流畅动画反馈。
 
-- [x] Phase 7: 竞品研究与产品规范 (2/2 plans) — completed 2026-03-28
-- [x] Phase 7.1: Memo 模式复刻与桌面媒体工作流产品化 (3/3 plans) — completed 2026-03-29
-- [x] Phase 8: 沉浸学习重构 (4/4 plans) — completed 2026-03-28
-- [x] Phase 9: 生词本、账号与网页模型边界 (4/4 plans) — completed 2026-03-28
-- [x] Phase 10: 管理台前后端收口 (4/4 plans) — completed 2026-03-29
-- [x] Phase 11: 盈利转化落地与回归收口 (3/3 plans) — completed 2026-03-30
-- [x] Phase 12: 沉浸学习前端交互优化 (1/1 plan) — completed 2026-03-31
+**Depends on**: Phase 24
 
-_See: `.planning/milestones/v2.1-ROADMAP.md` for full phase details_
+**Requirements**: CEFR-05, CEFR-06, CEFR-07, CEFR-08, CEFR-09, CEFR-10, CEFR-11, CEFR-16, CEFR-17, CEFR-18
 
-</details>
+**Success Criteria** (what must be TRUE):
 
-<details>
-<summary>✅ v2.2 桌面发布与体验收口 (Phases 13–18) — SHIPPED 2026-04-02</summary>
+1. Immersive answer board displays both current sentence and previous sentence — each word has a visible CEFR level badge overlay
+2. CEFR badge colors are teal/blue for i+1 (within reach) and amber/orange for above i+1 (too hard) — zero overlap with existing letter-state colors (green/red/yellow)
+3. CEFR badge overlays cover the word entirely but do NOT override letter colors — green/red/yellow letter states remain visible through or alongside CEFR overlays
+4. i+1 color calculation works correctly: word level == user_i_level + 1 → green badge; word level >= user_i_level + 2 → yellow badge; word level <= user_i_level → no badge
+5. UI-SPEC.md defines the exact CEFR visual contract (colors, badge shape, z-index layering) before any rendering code is written for Phase 25
+6. Lesson history list shows CEFR badges on each lesson card — color block + level text (e.g., teal block + "B2") — read from cached analysis results
+7. Lesson-level CEFR distribution is calculated as an aggregate percentage breakdown (e.g., "B1: 45%, B2: 30%, C1: 15%, Other: 10%")
+8. Tapping/selecting a word from the previous sentence to add to wordbook triggers a smooth scale-up animation (1.0 → 1.08, 200ms ease-out) as the primary feedback signal
+9. "Selected for wordbook" feedback uses scale + border/badging — visually distinct from CEFR difficulty color, no background color change conflict
+10. Hover state on selectable words in the previous sentence shows subtle scale + cursor hint
 
-- [x] Phase 13: 桌面发布管线与签名安装包 (3/3 plans) — completed 2026-04-01
-- [x] Phase 14: 桌面程序与模型增量更新产品化 (5/5 plans) — completed 2026-04-02
-- [x] Phase 15: 桌面运行时边界加固 (2/2 plans) — completed 2026-04-01
-- [x] Phase 16: 公告与更新日志系统 (3/3 plans) — completed 2026-04-01
-- [x] Phase 17: 生词本复习主流程重做 (3/3 plans) — completed 2026-04-02
-- [x] Phase 18: 生词本管理收口与站内轻提示 (4/4 plans) — completed 2026-04-02
-
-_See: `.planning/milestones/v2.2-ROADMAP.md` for full phase details_
-
-</details>
-
-<details>
-<summary>✅ v2.3 学习体验与导入流程优化 (Phases 19, 20, 21, 23) — SHIPPED 2026-04-03</summary>
-
-- [x] Phase 19: 沉浸式学习 Bug 修复 (4/4 plans) — completed 2026-04-02
-  - [x] 19-01: 答题框输入时切换倍速不触发重播（IMMERSE-01）✅
-  - [x] 19-02: 上一句小喇叭三段降级播放（IMMERSE-02）✅
-  - [x] 19-03: 答题框颜色区分黄/绿（IMMERSE-03）✅
-  - [x] 19-04: 循环开关切换不触发重播（IMMERSE-04）✅
-- [x] Phase 20: 生词本词条增强 (2/2 plans) — completed 2026-04-02
-  - [x] 20-01: 翻译区块结构重组（WB-01）✅
-  - [x] 20-02: 发音按钮 + Web Speech API（WB-02）✅
-- [x] Phase 21: 素材导入 UX 优化 (2/2 plans) — completed 2026-04-02
-  - [x] 21-01: 默认 Tab + 文案精简 + 自动填标题（UPLOAD-01/02/03）✅
-  - [x] 21-02: 快捷键两行布局（UPLOAD-04）✅
-- [x] Phase 23: 字幕遮挡板与链接恢复 (2/2 plans) — completed 2026-04-03
-  - [x] 23-01: 遮挡板居中 + 宽度自适应（MASK-01/02）✅
-  - [x] 23-02: 链接恢复增强（MASK-04）✅
-
-_Note: Phase 22 (导入弹窗配置) removed from scope — functionality merged into Phase 21 and Phase 23._
-
-_See: `.planning/milestones/v2.3-ROADMAP.md` for full phase details_
-
-</details>
+**Plans**: TBD
+**UI hint**: yes
 
 ---
 
 ## Progress
 
-| Phase | Milestone | Plans | Status | Completed |
-|-------|-----------|-------|--------|-----------|
-| 1. Shared Cloud Generation | v1.0 | 3/3 | Complete | 2026-03-26 |
-| 1.1. Fix ASR 403 | v1.0 | 2/2 | Complete | 2026-03-27 |
-| 2. Desktop Local Generation | v1.0 | 3/3 | Complete | 2026-03-27 |
-| 2.1. Admin Bottle 1.0 Settings & Billing | v1.1 | 3/3 | Complete | 2026-03-27 |
-| 3. Lesson Output Consistency | v1.1 | 3/3 | Complete | 2026-03-27 |
-| 4. Desktop Link Import | v1.1 | 2/2 | Complete | 2026-03-27 |
-| 5. Billing and Admin Alignment | v2.0 | 3/3 | Complete | 2026-03-28 |
-| 6. Product Polish and Fallbacks | v2.0 | 2/2 | Complete | 2026-03-28 |
-| 7. 竞品研究与产品规范 | v2.1 | 2/2 | Complete | 2026-03-28 |
-| 7.1. Memo 模式复刻 | v2.1 | 3/3 | Complete | 2026-03-29 |
-| 8. 沉浸学习重构 | v2.1 | 4/4 | Complete | 2026-03-28 |
-| 9. 生词本、账号与网页模型边界 | v2.1 | 4/4 | Complete | 2026-03-28 |
-| 10. 管理台前后端收口 | v2.1 | 4/4 | Complete | 2026-03-29 |
-| 11. 盈利转化落地与回归收口 | v2.1 | 3/3 | Complete | 2026-03-30 |
-| 12. 沉浸学习前端交互优化 | v2.1 | 1/1 | Complete | 2026-03-31 |
-| 13. 桌面发布管线与签名安装包 | v2.2 | 3/3 | Complete | 2026-04-01 |
-| 14. 桌面程序与模型增量更新产品化 | v2.2 | 5/5 | Complete | 2026-04-02 |
-| 15. 桌面运行时边界加固 | v2.2 | 2/2 | Complete | 2026-04-01 |
-| 16. 公告与更新日志系统 | v2.2 | 3/3 | Complete | 2026-04-01 |
-| 17. 生词本复习主流程重做 | v2.2 | 3/3 | Complete | 2026-04-02 |
-| 18. 生词本管理收口与站内轻提示 | v2.2 | 4/4 | Complete | 2026-04-02 |
-| 19. 沉浸式学习 Bug 修复 | v2.3 | 4/4 | Complete | 2026-04-02 |
-| 20. 生词本词条增强 | v2.3 | 2/2 | Complete | 2026-04-02 |
-| 21. 素材导入 UX 优化 | v2.3 | 2/2 | Complete | 2026-04-02 |
-| 23. 字幕遮挡板与链接恢复 | v2.3 | 2/2 | Complete | 2026-04-03 |
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 24. CEFR 基础设施与 i 水平设置 | 0/N | Not started | - |
+| 25. CEFR 沉浸式展示与历史徽章 | 0/N | Not started | - |
 
-**Overall:** 19/23 phases complete (Phase 22 removed from scope)
+---
+
+## Coverage
+
+**v2.4 Requirements: 18 total**
+**Mapped to phases: 18 / 18 ✓**
+**Unmapped: 0**
+
+---
+
+## Milestone Context
+
+**Previous milestone:** v2.3 (Phase 19–23) — 学习体验与导入流程优化, shipped 2026-04-03
+
+**Next milestone:** TBD (after v2.4)
+
+---
+*Roadmap created: 2026-04-03*

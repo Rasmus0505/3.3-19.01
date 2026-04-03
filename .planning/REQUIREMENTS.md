@@ -77,24 +77,24 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CEFR-01 | Phase 1 | Pending |
-| CEFR-02 | Phase 1 | Pending |
-| CEFR-03 | Phase 1 | Pending |
-| CEFR-04 | Phase 1 | Pending |
-| CEFR-05 | Phase 2 | Pending |
-| CEFR-06 | Phase 2 | Pending |
-| CEFR-07 | Phase 2 | Pending |
-| CEFR-08 | Phase 2 | Pending |
-| CEFR-09 | Phase 2 | Pending |
-| CEFR-10 | Phase 2 | Pending |
-| CEFR-11 | Phase 2 | Pending |
-| CEFR-12 | Phase 1 | Pending |
-| CEFR-13 | Phase 1 | Pending |
-| CEFR-14 | Phase 1 | Pending |
-| CEFR-15 | Phase 1 | Pending |
-| CEFR-16 | Phase 2 | Pending |
-| CEFR-17 | Phase 2 | Pending |
-| CEFR-18 | Phase 2 | Pending |
+| CEFR-01 | Phase 24 | Pending |
+| CEFR-02 | Phase 24 | Pending |
+| CEFR-03 | Phase 24 | Pending |
+| CEFR-04 | Phase 24 | Pending |
+| CEFR-05 | Phase 25 | Pending |
+| CEFR-06 | Phase 25 | Pending |
+| CEFR-07 | Phase 25 | Pending |
+| CEFR-08 | Phase 25 | Pending |
+| CEFR-09 | Phase 25 | Pending |
+| CEFR-10 | Phase 25 | Pending |
+| CEFR-11 | Phase 25 | Pending |
+| CEFR-12 | Phase 24 | Pending |
+| CEFR-13 | Phase 24 | Pending |
+| CEFR-14 | Phase 24 | Pending |
+| CEFR-15 | Phase 24 | Pending |
+| CEFR-16 | Phase 25 | Pending |
+| CEFR-17 | Phase 25 | Pending |
+| CEFR-18 | Phase 25 | Pending |
 
 **Coverage:**
 - v1 requirements: 18 total
@@ -103,4 +103,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-04-03*
-*Last updated: 2026-04-03 after initial definition*
+*Last updated: 2026-04-03 after roadmap creation (Phase 24/25)*
