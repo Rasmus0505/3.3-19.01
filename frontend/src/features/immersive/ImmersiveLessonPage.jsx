@@ -129,6 +129,15 @@ const TRANSLATION_MASK_RESIZE_HANDLES = [
   },
 ];
 
+function lookupCefrLevelFromMap(map, token) {
+  if (!(map instanceof Map) || map.size === 0) return undefined;
+  const key = normalizeToken(token);
+  if (map.has(key)) return map.get(key);
+  const noApos = key.replace(/'/g, "");
+  if (noApos && noApos !== key && map.has(noApos)) return map.get(noApos);
+  return undefined;
+}
+
 function clampNumber(value, min, max) {
   if (!Number.isFinite(value)) return min;
   if (!Number.isFinite(min) || !Number.isFinite(max)) return value;
@@ -1017,6 +1026,8 @@ export function ImmersiveLessonPage({
   const wordbookSuccessTimerRef = useRef(null);
   const cefrAnalyzerRef = useRef(null);
   const [cefrAnalysisStatus, setCefrAnalysisStatus] = useState("idle");
+  /** Bumps when VocabAnalyzer is ready — required because cache-hit path used to skip ref init, leaving CEFR maps empty. */
+  const [cefrVocabEngineTick, setCefrVocabEngineTick] = useState(0);
   const {
     phase,
     currentSentenceIndex,
@@ -1305,7 +1316,11 @@ export function ImmersiveLessonPage({
     } catch (_) {
       return new Map();
     }
-  }, [lesson?.sentences?.[currentSentenceIndex]?.text_en, lesson?.sentences?.[currentSentenceIndex]?.en, cefrAnalyzerRef.current?.isLoaded]);
+  }, [
+    lesson?.sentences?.[currentSentenceIndex]?.text_en,
+    lesson?.sentences?.[currentSentenceIndex]?.en,
+    cefrVocabEngineTick,
+  ]);
   const interactiveWordbookContext = useMemo(
     () =>
       resolveInteractiveWordbookContext({
@@ -1350,7 +1365,7 @@ export function ImmersiveLessonPage({
     } catch (_) {
       return new Map();
     }
-  }, [interactiveWordbookContext?.sentence, cefrAnalyzerRef.current?.isLoaded]);
+  }, [interactiveWordbookContext?.sentence, cefrVocabEngineTick]);
   const canRenderInteractiveWordbook = Boolean(interactiveWordbookContext);
   const wordbookSentence = interactiveWordbookContext?.sentence || null;
   const wordbookSentenceTokens = interactiveWordbookContext?.tokens || [];
@@ -2216,20 +2231,14 @@ export function ImmersiveLessonPage({
     setMediaMode(preferredMode);
   }, [learningSettings, lesson?.id, resetWordTyping, stopPlayback]);
 
-  // CEFR vocabulary analysis effect
+  // CEFR vocabulary analysis effect — always load VocabAnalyzer so per-sentence CEFR UI works even when lesson cache exists.
   useEffect(() => {
     if (!lesson?.id || !lesson?.sentences?.length) return;
     const lessonId = lesson.id;
     const cacheKey = CEFR_CACHE_KEY_PREFIX + String(lessonId);
-    const cached = localStorage.getItem(cacheKey);
-    if (cached) {
-      setCefrAnalysisStatus("complete");
-      return;
-    }
+    let canceled = false;
 
-    setCefrAnalysisStatus("analyzing");
-
-    async function runAnalysis() {
+    async function runCefrPipeline() {
       if (!cefrAnalyzerRef.current) {
         cefrAnalyzerRef.current = new VocabAnalyzer();
       }
@@ -2237,11 +2246,24 @@ export function ImmersiveLessonPage({
       if (!analyzer.isLoaded) {
         await analyzer.load();
       }
+      if (canceled) return;
+      setCefrVocabEngineTick((t) => t + 1);
+
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        setCefrAnalysisStatus("complete");
+        return;
+      }
+
+      setCefrAnalysisStatus("analyzing");
+      if (canceled) return;
+
       const userLevel = useAppStore.getState().cefrLevel || "B1";
       const allSentences = lesson.sentences.map((s) => s.text_en).filter(Boolean);
 
       const results = [];
       for (let i = 0; i < allSentences.length; i += CEFR_ANALYSIS_CHUNK_SIZE) {
+        if (canceled) return;
         const chunk = allSentences.slice(i, i + CEFR_ANALYSIS_CHUNK_SIZE);
         for (const sentence of chunk) {
           results.push(analyzer.analyzeSentence(sentence));
@@ -2259,11 +2281,15 @@ export function ImmersiveLessonPage({
         console.warn("[CEFR] Failed to cache analysis:", e);
       }
 
+      if (canceled) return;
       setCefrAnalysisStatus("complete");
       toast.success("词汇分析完成", { duration: 2000 });
     }
 
-    void runAnalysis();
+    void runCefrPipeline();
+    return () => {
+      canceled = true;
+    };
   }, [lesson?.id, lesson?.sentences]);
 
   useEffect(() => {
@@ -3951,7 +3977,7 @@ export function ImmersiveLessonPage({
                         className={cn(
                           `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
                           computeCefrClassName(
-                            currentSentenceCefrMap.get(token.toLowerCase()) || "SUPER",
+                            lookupCefrLevelFromMap(currentSentenceCefrMap, token) || "SUPER",
                             cefrLevel,
                           ),
                         )}
@@ -4004,7 +4030,7 @@ export function ImmersiveLessonPage({
                                     : "bg-slate-100/80 text-foreground hover:bg-slate-200/70 border-transparent",
                                   wordbookBusy ? "opacity-60" : "",
                                   computeCefrClassName(
-                                    wordbookSentenceCefrMap.get(token.toLowerCase()) || "SUPER",
+                                    lookupCefrLevelFromMap(wordbookSentenceCefrMap, token) || "SUPER",
                                     cefrLevel,
                                   ),
                                   wordbookSuccessAnimationIndexes.includes(index) ? "wordbook-token--success" : "",
