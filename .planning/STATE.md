@@ -6,22 +6,22 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-**Current focus:** Phase 24 — CEFR 基础设施与 i 水平设置 (Complete)
+**Current focus:** Phase 25 — CEFR 沉浸式展示与历史徽章 (Plan 01/04)
 
 ## Current Position
 
-Phase: 24 (Complete)
-Plan: —
-Status: Complete — next: Phase 25
-Last activity: 2026-04-03 — Phase 24 CEFR 基础设施完成
+Phase: 25 (In progress)
+Plan: 01 / 04
+Status: Plan 01 complete — next: Phase 25 Plan 02
+Last activity: 2026-04-04 — Phase 25 Plan 01 CSS foundation + CefrBadge complete
 
 ## Milestone Status
 
 v2.4 词汇等级预处理与 CEFR 沉浸式展示 (Phases 24–25):
 - Phase 24: CEFR 基础设施与 i 水平设置 — COMPLETE
-- Phase 25: CEFR 沉浸式展示与历史徽章 — Not started
+- Phase 25: CEFR 沉浸式展示与历史徽章 — IN PROGRESS (Plan 01/04)
 
-Progress: [████████████████████████████] 100%
+Progress: [░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 25%
 
 ## Milestone Status
 
@@ -39,15 +39,17 @@ v2.3 学习体验与导入流程优化 (Phases 19–23):
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 49 (across all previous milestones)
+- Total plans completed: 50 (across all previous milestones)
 - Average duration: ~15 min
-- Total execution time: ~12.25 hours
+- Total execution time: ~12.5 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | v1.0-v2.2 | 49 | 49 | ~15 min |
+| Phase 24 | 4 | 4 | ~15 min |
+| Phase 25 | 1 | 4 | 8 min |
 
 **Recent Trend:**
 - Last 5 plans: trending stable
@@ -92,6 +94,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-03
-Stopped at: Quick task 260403-0go completed — revealed-letter yellow CSS fix committed
+Last session: 2026-04-04
+Stopped at: Phase 25 Plan 01 complete — CSS foundation + CefrBadge utility committed
 Resume file: None

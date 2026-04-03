@@ -85,7 +85,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CEFR-06 | Phase 25 | Pending |
 | CEFR-07 | Phase 25 | Pending |
 | CEFR-08 | Phase 25 | Pending |
-| CEFR-09 | Phase 25 | Pending |
+| CEFR-09 | Phase 25 | UI-SPEC ✅ |
 | CEFR-10 | Phase 25 | Pending |
 | CEFR-11 | Phase 25 | Pending |
 | CEFR-12 | Phase 24 | Pending |
