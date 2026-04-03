@@ -1,0 +1,379 @@
+/**
+ * vocabAnalyzer.js — 词汇分析服务
+ * ==================================
+ * MIT License（基于 COCA 词频数据）
+ *
+ * 功能：
+ * 1. 加载本地词汇表（浏览器缓存）
+ * 2. 分析每句话的 CEFR 难度
+ * 3. 标注每个词的等级（用于 i+1 生词高亮）
+ * 4. 判断用户水平是否适合当前内容
+ *
+ * 使用方式：
+ *   const analyzer = new VocabAnalyzer();
+ *   await analyzer.load();                          // 首次加载词汇表
+ *   const result = analyzer.analyzeSentence(text);   // 分析单句
+ *   const report = analyzer.analyzeVideo(sentences); // 分析整段视频
+ */
+
+class VocabAnalyzer {
+  constructor(options = {}) {
+    // 词汇表路径（可以是本地路径或 CDN）
+    this.vocabPath = options.vocabPath || "/data/vocab/cefr_vocab.json";
+
+    // 词汇表数据
+    this.vocabData = null;      // 完整 JSON
+    this.wordMap = null;        // 词→{rank, level} 的 Map
+
+    // 是否已加载
+    this.isLoaded = false;
+
+    // 词形还原映射表（常见不规则变化）
+    this.lemmatizationMap = this._buildLemmatizationMap();
+
+    // 常见无意义词（stopwords）
+    this.stopwords = this._buildStopwords();
+  }
+
+  // ============================================================
+  // 公共 API
+  // ============================================================
+
+  /**
+   * 加载词汇表（首次调用或强制重新加载）
+   * @param {boolean} forceReload - 是否强制从网络重新加载
+   * @returns {Promise<void>}
+   */
+  async load(forceReload = false) {
+    if (this.isLoaded && !forceReload) {
+      return;
+    }
+
+    // 优先从浏览器缓存读取（避免重复下载）
+    const cached = sessionStorage.getItem("cefr_vocab_cache");
+    if (cached && !forceReload) {
+      this._initFromData(JSON.parse(cached));
+      return;
+    }
+
+    // 从网络加载
+    const response = await fetch(this.vocabPath);
+    if (!response.ok) {
+      throw new Error(`加载词汇表失败: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    // 缓存到 sessionStorage（会话内有效）
+    sessionStorage.setItem("cefr_vocab_cache", JSON.stringify(data));
+
+    this._initFromData(data);
+  }
+
+  /**
+   * 分析单句话
+   * @param {string} sentence - 英文句子
+   * @returns {VocabSentenceResult}
+   */
+  analyzeSentence(sentence) {
+    if (!this.isLoaded) {
+      throw new Error("词汇表未加载，请先调用 load()");
+    }
+
+    const tokens = this._tokenize(sentence);
+    const wordResults = [];
+    const levelCounts = { A1: 0, A2: 0, B1: 0, B2: 0, C1: 0, C2: 0, SUPER: 0 };
+    let totalRank = 0;
+
+    for (const token of tokens) {
+      const wordInfo = this._lookupWord(token);
+      if (!wordInfo) {
+        // 词不在表里（专有名词、数字等）—— 标记为 SUPER 级别
+        wordResults.push({ word: token, level: "SUPER", rank: null, isUnknown: true });
+        levelCounts["SUPER"]++;
+        continue;
+      }
+
+      wordResults.push(wordInfo);
+      levelCounts[wordInfo.level]++;
+      totalRank += wordInfo.rank;
+    }
+
+    // 计算平均难度排名
+    const avgRank = tokens.length > 0 ? totalRank / tokens.filter(t => this._lookupWord(t)).length : 0;
+
+    // 判断整体难度：第一个达到 90% 的等级
+    const grade = this._computeOverallLevel(levelCounts, tokens.length);
+
+    return {
+      original: sentence,
+      tokens: wordResults,
+      totalWords: tokens.length,
+      unknownWords: tokens.filter(t => this._lookupWord(t) === null).length,
+      levelCounts,
+      grade,
+      avgRank: Math.round(avgRank),
+      // 找出 i+1 生词（比用户水平高1-2级的词）
+      newVocab: this._findNewVocab(wordResults),
+    };
+  }
+
+  /**
+   * 分析整段视频（多句字幕）
+   * @param {string[]} sentences - 字幕句子数组
+   * @param {string} userLevel - 用户当前水平（默认 B1）
+   * @returns {VocabVideoResult}
+   */
+  analyzeVideo(sentences, userLevel = "B1") {
+    const sentenceResults = sentences.map(s => this.analyzeSentence(s));
+
+    // 汇总统计
+    const totalLevelCounts = { A1: 0, A2: 0, B1: 0, B2: 0, C1: 0, C2: 0, SUPER: 0 };
+    let totalRank = 0;
+    let totalWords = 0;
+    let totalUnknown = 0;
+    const allNewVocab = new Map();
+
+    for (const result of sentenceResults) {
+      for (const level in result.levelCounts) {
+        totalLevelCounts[level] += result.levelCounts[level];
+      }
+      totalRank += result.avgRank * result.totalWords;
+      totalWords += result.totalWords;
+      totalUnknown += result.unknownWords;
+
+      // 收集所有生词
+      for (const v of result.newVocab) {
+        const key = v.word;
+        if (allNewVocab.has(key)) {
+          allNewVocab.get(key).count++;
+        } else {
+          allNewVocab.set(key, { ...v, count: 1 });
+        }
+      }
+    }
+
+    // 按频率排序生词
+    const newVocabList = Array.from(allNewVocab.values())
+      .sort((a, b) => {
+        // 先按出现次数降序，再按难度升序
+        if (b.count !== a.count) return b.count - a.count;
+        return this._levelToNum(a.level) - this._levelToNum(b.level);
+      })
+      .slice(0, 50); // 最多返回50个生词
+
+    // 计算推荐等级（90% 覆盖率）
+    const overallGrade = this._computeOverallLevel(totalLevelCounts, totalWords);
+
+    // 计算用户适配度
+    const adaptInfo = this._computeAdaptability(totalLevelCounts, totalWords, userLevel);
+
+    return {
+      sentences: sentenceResults,
+      totalWords,
+      totalUnknown,
+      levelCounts: totalLevelCounts,
+      overallGrade,
+      avgRank: Math.round(totalRank / totalWords),
+      newVocab: newVocabList,
+      userAdaptability: adaptInfo,
+    };
+  }
+
+  /**
+   * 判断用户水平是否适合这段内容
+   * @param {VocabVideoResult} report - analyzeVideo 返回的报告
+   * @param {string} userLevel - 用户水平（A1-C2）
+   * @returns {{suitable: boolean, score: number, message: string}}
+   */
+  checkFit(report, userLevel) {
+    const userLevelNum = this._levelToNum(userLevel);
+    const contentLevelNum = this._levelToNum(report.overallGrade);
+    const diff = contentLevelNum - userLevelNum;
+
+    if (diff <= 0) {
+      return {
+        suitable: true,
+        score: 100,
+        message: `这段内容对你的水平来说偏简单，你可以尝试更高难度的内容。`,
+      };
+    } else if (diff === 1) {
+      return {
+        suitable: true,
+        score: 75,
+        message: `这段内容略高于你的水平，有少量生词，适合作为 i+1 学习材料。`,
+      };
+    } else if (diff === 2) {
+      return {
+        suitable: false,
+        score: 40,
+        message: `这段内容对你的水平来说偏难，建议先提升基础后再学习。`,
+      };
+    } else {
+      return {
+        suitable: false,
+        score: 10,
+        message: `这段内容远超你的当前水平，建议从更基础的内容开始。`,
+      };
+    }
+  }
+
+  // ============================================================
+  // 私有方法
+  // ============================================================
+
+  _initFromData(data) {
+    this.vocabData = data;
+    // 构建词→信息 的 Map，加速查询
+    this.wordMap = new Map(Object.entries(data.words));
+    this.isLoaded = true;
+  }
+
+  _lookupWord(word) {
+    const lower = word.toLowerCase();
+
+    // 1. 直接查表
+    if (this.wordMap.has(lower)) {
+      const info = this.wordMap.get(lower);
+      return { word: lower, level: info.level, rank: info.rank, isUnknown: false };
+    }
+
+    // 2. 尝试词形还原
+    const lemma = this._lemmatize(lower);
+    if (lemma !== lower && this.wordMap.has(lemma)) {
+      const info = this.wordMap.get(lemma);
+      return { word: lemma, level: info.level, rank: info.rank, isUnknown: false, original: lower };
+    }
+
+    // 3. 查不到
+    return null;
+  }
+
+  _tokenize(text) {
+    // 简单分词：只保留字母，去掉数字、标点、连字符词
+    return text
+      .replace(/[^a-zA-Z\s']/g, " ")
+      .split(/\s+/)
+      .filter(w => w.length > 1 && !this.stopwords.has(w.toLowerCase()));
+  }
+
+  _computeOverallLevel(levelCounts, totalWords) {
+    if (totalWords === 0) return "A1";
+
+    let cumulative = 0;
+    const levels = ["C2", "C1", "B2", "B1", "A2", "A1"]; // 从难到易
+
+    for (const level of levels) {
+      cumulative += levelCounts[level];
+      if (cumulative / totalWords >= 0.9) {
+        return level;
+      }
+    }
+
+    return "C2";
+  }
+
+  _findNewVocab(wordResults) {
+    // 找出所有不在表里的词（生词/超纲词）
+    return wordResults.filter(w => w.isUnknown || w.level === "SUPER");
+  }
+
+  _computeAdaptability(levelCounts, totalWords, userLevel) {
+    const userLevelNum = this._levelToNum(userLevel);
+    const levelOrder = ["A1", "A2", "B1", "B2", "C1", "C2", "SUPER"];
+
+    // 计算用户水平以下的词占比
+    let covered = 0;
+    for (let i = 0; i < userLevelNum; i++) {
+      covered += levelCounts[levelOrder[i]] || 0;
+    }
+
+    const coverage = totalWords > 0 ? Math.round(covered / totalWords * 100) : 0;
+
+    return {
+      userLevel,
+      coverage,
+      isSuitable: coverage >= 90,
+      message: coverage >= 90
+        ? `你的词汇量覆盖了这段内容的 ${coverage}%，非常适合你。`
+        : `你的词汇量只覆盖了这段内容的 ${coverage}%，建议先扩充词汇。`,
+    };
+  }
+
+  _levelToNum(level) {
+    const map = { A1: 0, A2: 1, B1: 2, B2: 3, C1: 4, C2: 5, SUPER: 6 };
+    return map[level] ?? 6;
+  }
+
+  _lemmatize(word) {
+    // 常见词形还原规则
+    const suffixRules = [
+      { suffix: "ies", replacement: "y" },      // stories → story
+      { suffix: "es", replacement: "" },       // watches → watch
+      { suffix: "ed", replacement: "" },       // walked → walk
+      { suffix: "ing", replacement: "" },      // walking → walk
+      { suffix: "ly", replacement: "" },       // quickly → quick
+      { suffix: "ness", replacement: "" },    // happiness → happy
+      { suffix: "ment", replacement: "" },    // development → develop
+      { suffix: "tion", replacement: "t" },   // education → educat
+      { suffix: "s", replacement: "" },        // cats → cat
+    ];
+
+    for (const rule of suffixRules) {
+      if (word.endsWith(rule.suffix) && word.length > rule.suffix.length + 2) {
+        const base = word.slice(0, -rule.suffix.length) + rule.replacement;
+        if (this.wordMap.has(base)) {
+          return base;
+        }
+      }
+    }
+
+    return word;
+  }
+
+  _buildLemmatizationMap() {
+    // 常见不规则词形还原映射
+    return {
+      "ran": "run",
+      "won": "win",
+      "begun": "begin",
+      "written": "write",
+      "taken": "take",
+      "given": "give",
+      "seen": "see",
+      "been": "be",
+      "gone": "go",
+      "come": "come",
+      "made": "make",
+      "known": "know",
+      "thought": "think",
+      "told": "tell",
+      "found": "find",
+      "said": "say",
+      "got": "get",
+    };
+  }
+
+  _buildStopwords() {
+    return new Set([
+      "the", "be", "to", "of", "and", "a", "in", "that", "have", "i",
+      "it", "for", "not", "on", "with", "he", "as", "you", "do", "at",
+      "this", "but", "his", "by", "from", "they", "we", "say", "her", "she",
+      "or", "an", "will", "my", "one", "all", "would", "there", "their", "what",
+      "so", "up", "out", "if", "about", "who", "get", "which", "go", "me",
+      "when", "make", "can", "like", "time", "no", "just", "him", "know", "take",
+      "people", "into", "year", "your", "good", "some", "could", "them", "see", "other",
+      "than", "then", "now", "look", "only", "come", "its", "over", "think", "also",
+      "back", "after", "use", "two", "how", "our", "work", "first", "well", "way",
+      "even", "new", "want", "because", "any", "these", "give", "day", "most", "us",
+    ]);
+  }
+}
+
+// ============================================================
+// 导出（兼容 ES Module 和 CommonJS）
+// ============================================================
+export { VocabAnalyzer };
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { VocabAnalyzer };
+}
