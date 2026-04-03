@@ -18,6 +18,8 @@ Last activity: 2026-04-03 — Milestone v2.4 started
 ## Milestone Status
 
 v2.4 词汇等级预处理与 CEFR 沉浸式展示 (Phases 24–25):
+- Phase 24: CEFR 基础设施与 i 水平设置 — Not started
+- Phase 25: CEFR 沉浸式展示与历史徽章 — Not started
 
 Progress: [████████████████████████████] 100%
 

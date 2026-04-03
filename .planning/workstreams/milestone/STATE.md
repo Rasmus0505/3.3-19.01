@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.3
-milestone_name: 学习体验与导入流程优化
-status: verifying
-last_updated: "2026-04-03T07:01:35.407Z"
+milestone: v2.4
+milestone_name: milestone
+status: executing
+last_updated: "2026-04-03T14:04:47.236Z"
 progress:
-  total_phases: 6
-  completed_phases: 4
-  total_plans: 14
-  completed_plans: 15
+  total_phases: 2
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 23 (字幕遮挡板与链接恢复) — COMPLETE
+**Current focus:** Phase 24 — CEFR 基础设施与 i 水平设置
 
 ## Current Position
 
 Milestone: v2.3
-Phase: 23
-Plan: 2 of 2 complete
-Status: Phase complete — ready for verification
+Phase: 24 (CEFR 基础设施与 i 水平设置) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 24
 
 v2.3 started 2026-04-02:
 

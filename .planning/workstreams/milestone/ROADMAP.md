@@ -8,7 +8,7 @@
 
 ## Phases
 
-- [ ] **Phase 24: CEFR 基础设施与 i 水平设置** — 批量预处理字幕文本、localStorage 缓存、chunked 执行、个人中心 CEFR 等级选择器、Zustand persist + PATCH API 同步
+- [x] **Phase 24: CEFR 基础设施与 i 水平设置** — 批量预处理字幕文本、localStorage 缓存、chunked 执行、个人中心 CEFR 等级选择器、Zustand persist + PATCH API 同步 ✅ COMPLETE (2026-04-03)
 - [ ] **Phase 25: CEFR 沉浸式展示与历史徽章** — 本句+上一句 CEFR 色块、i+1 计算逻辑、UI-SPEC 视觉契约、历史记录徽章、词选流畅放大动画
 
 ---
@@ -33,11 +33,13 @@
 6. User's i level is persisted to their profile via PATCH API — level survives logout/login and works across devices
 7. User's i level is cached locally via Zustand persist — works offline; syncs with server on next online session
 
-**Plans**: 4 plans
-- [ ] 24-01-PLAN.md — 后端数据层：User 模型 + PATCH profile API + cefr_level 字段
-- [ ] 24-02-PLAN.md — 前端持久化层：authStorage.js + authSlice.ts CEFR 状态管理
-- [ ] 24-03-PLAN.md — 个人中心 UI：CEFR 等级选择器（Radio Group A1-C2）
-- [ ] 24-04-PLAN.md — 词汇分析管线：vocabAnalyzer 集成 + localStorage 缓存 + chunked 执行
+**Plans**: 4 plans — COMPLETE ✅
+- [x] 24-01-PLAN.md — 后端数据层：User 模型 + PATCH profile API + cefr_level 字段
+- [x] 24-02-PLAN.md — 前端持久化层：authStorage.js + authSlice.ts CEFR 状态管理
+- [x] 24-03-PLAN.md — 个人中心 UI：CEFR 等级选择器（Radio Group A1-C2）
+- [x] 24-04-PLAN.md — 词汇分析管线：vocabAnalyzer 集成 + localStorage 缓存 + chunked 执行
+
+**Migration**: `migrations/versions/20260403_0033_add_cefr_level.py` — committed, pending production run
 
 ---
 
@@ -71,7 +73,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 24. CEFR 基础设施与 i 水平设置 | 0/N | Not started | - |
+| 24. CEFR 基础设施与 i 水平设置 | 4/4 | Complete | 2026-04-03 |
 | 25. CEFR 沉浸式展示与历史徽章 | 0/N | Not started | - |
 
 ---
@@ -92,3 +94,4 @@
 
 ---
 *Roadmap created: 2026-04-03*
+*Phase 24 completed: 2026-04-03*
