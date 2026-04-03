@@ -1,61 +1,106 @@
-# Requirements: Bottle English Learning
+# Requirements: Bottle English Learning v2.4
 
-**Defined:** 2026-04-02
+**Defined:** 2026-04-03
 **Core Value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-## v2.3 Requirements
+## v1 Requirements
 
-Requirements for v2.3 milestone. Each maps to roadmap phases.
+Requirements for initial release. Each maps to roadmap phases.
 
-### Immersive Learning Bug Fixes
+### CEFR Analysis
 
-- [x] **IMMERSE-01**: 点击固定按钮或调节倍速时，已输入的句子内容不被清空，且不触发自动重播 — `SET_PLAYBACK_RATE`/`SET_LOOP_ENABLED` 事件处理器不改变 `sentenceTypingDone`/`sentencePlaybackDone` 状态；验证：输入 3 个词后切换倍速，输入内容保持可见
-- [x] **IMMERSE-02**: 点击"上一句"右侧小喇叭按钮时，只有在音频实际播放成功后才显示 playing 状态；音频不可用时显示明确的错误提示而非静默失败 — `requestPlayPreviousSentence` 先 `await playSentence`，检查 `result.ok` 后才 dispatch `PLAYBACK_STARTED`；`previousSentence.audio_url` 不存在时降级到主视频 seek 模式
-- [x] **IMMERSE-03**: 沉浸式学习答题框中，AI/提示生成的内容以黄色背景显示，用户手打的内容以绿色背景显示 — 在 `ImmersiveLessonPage` 中添加 `answerBoxMode` 本地状态，reducer action 驱动颜色切换；颜色值：黄色 `#FEF3C7`，绿色 `#D1FAE5`
-- [x] **IMMERSE-04**: 全面排查沉浸式学习中所有可能导致已输入句子被清空或触发自动重播的操作场景，确保仅在合理场景下（如进入下一句、上一句、手动重播）才触发状态重置 — 逐个审查 `requestNavigateSentence`、`requestReplay`、`SET_PLAYBACK_RATE`、`SET_LOOP_ENABLED`、`handleSentencePassed` 等事件路径，补充缺失的 guard 逻辑
+- [ ] **CEFR-01**: User can preprocess all subtitle text when opening a lesson — each word is tagged with its CEFR level (A1/B1/B2/C1/C2/SUPER) via local vocabAnalyzer lookup
+- [ ] **CEFR-02**: Preprocessing results are cached in localStorage keyed by lessonId with version prefix (`cefr_analysis_v1:{lessonId}`) — subsequent opens skip re-analysis
+- [ ] **CEFR-03**: Batch analysis runs in chunked mode (`setTimeout(0)` or `requestIdleCallback`) to avoid blocking the UI thread during long videos
+- [ ] **CEFR-04**: Unknown words (not in cefr_vocab.json) default to SUPER level so they always appear as "hard"
 
-### Wordbook Enhancements
+### CEFR Display — Immersive Learning
 
-- [x] **WB-01**: 生词本每个词条卡片的翻译文字显示在该词条正上方，采用独立的视觉区块（背景色区分），而非内嵌在正文行内；卡片整体高度保持一致（使用 `min-h` 或固定高度容器），不受翻译文字长度影响 — 布局：翻译文字区块 → 分隔线 → 单词/短语 + 发音按钮 → 例句；卡片最小高度 `min-h-[4rem]`，超出部分 `text-overflow: ellipsis`
-- [x] **WB-02**: 生词本每个词条支持点击播放该单词/短语的发音 — 主要方案：浏览器 Web Speech API（`window.speechSynthesis.speak()`，lang='en-US'），无额外 API 成本；备选方案：使用该词所在句子的 sentence-level `audio_url` 作为发音来源；按钮显示加载中状态；发音不可用时显示错误提示而非静默失败
+- [ ] **CEFR-05**: Immersive answer board displays both current sentence and previous sentence — each word has a CEFR level badge overlay
+- [ ] **CEFR-06**: CEFR badge colors are distinct from existing letter-state colors: teal/blue for i+1 (within reach), amber/orange for above i+1 (too hard) — NO overlap with green/red/yellow letter states
+- [ ] **CEFR-07**: CEFR badge is a word-level overlay (covers entire word) — does NOT override letter colors (green=correct, red=wrong, yellow=hint remain visible)
+- [ ] **CEFR-08**: CEFR color calculation: green badge when word level == user_i_level + 1; yellow badge when word level >= user_i_level + 2; no badge for words at or below user_i_level
+- [ ] **CEFR-09**: CEFR display contract (exact colors, badge shape, z-index layering) is defined in UI-SPEC.md before any rendering code
 
-### Upload Import UX Optimization
+### CEFR Display — History & Badges
 
-- [x] **UPLOAD-01**: 素材上传页默认选中"链接"Tab（`defaultTab='link'`），而非文件上传 Tab
-- [x] **UPLOAD-02**: 素材上传页链接 Tab 区域精简文案 — 移除"支持常见公开视频链接：YouTube、B站..."等冗余说明段落；将"支持常见公开视频链接：YouTube、B站、常见播客页面、公开视频直链"作为输入框内的半透明 placeholder 文案；导入成功后自动用 yt-dlp 获取的视频标题填入标题输入框；底部说明仅保留"无法链接转视频时可改用 SnapAny"，其中"SnapAny"保持为可点击外链
-- [x] **UPLOAD-03**: 素材上传页快捷键配置从两行改为一行紧凑布局，每个配置项宽度收缩（不再占据整行宽度），使整个配置区域在一屏内可见
-- [x] **UPLOAD-04**: 加入生词本成功后的 toast 提示文字与按钮水平对齐，视觉上不生硬
+- [ ] **CEFR-10**: Lesson history list shows a CEFR badge on each lesson card — color block + level text (e.g., B1, B2) — read from cached analysis results
+- [ ] **CEFR-11**: Lesson-level CEFR distribution is calculated as aggregate from preprocessed word levels (e.g., "B1: 45%, B2: 30%, C1: 15%, Other: 10%")
 
-### Translation Mask & Caption Recovery
+### Personal Center — i Level Setting
 
-- [x] **MASK-01**: 新视频加载时，字幕遮挡板位置恢复到屏幕正中（而非延续上一视频的位置）；遮挡板启用/关闭状态记忆（跨视频保持），遮挡板位置不记忆 — mask rect 以 normalized ratio（0-1）存储；新视频检测到 `lesson.id` 变更时强制使用��中默认 rect；旧视频恢复时使用存储的 normalized rect 按当前容器尺寸还原
-- [x] **MASK-02**: 桌面客户端恢复本地视频时，提供"文件恢复"和"链接恢复"两个入口选项；若该视频曾通过链接导入且有 source URL，提供"按链接恢复"直接重新下载视频文件而非使用本地缓存
+- [ ] **CEFR-12**: Personal center exposes a CEFR level selector — user sets their i level (default B1, options: A1/A2/B1/B2/C1/C2)
+- [ ] **CEFR-13**: Level selector includes Duolingo-style Chinese descriptions for each level (e.g., "A1: 能理解和使用熟悉的日常表达和非常简单的句子")
+- [ ] **CEFR-14**: i level is stored in user profile (PATCH /api/users/me or equivalent) so it persists across devices
+- [ ] **CEFR-15**: i level is also cached locally (Zustand persist) for offline use — synced with server on next online
+
+### Wordbook Selection Interaction
+
+- [ ] **CEFR-16**: Tapping/selecting a word from the previous sentence to add to wordbook triggers a smooth scale-up animation (1.0 → 1.08, 200ms ease-out) as the primary feedback signal
+- [ ] **CEFR-17**: After a word is added to wordbook, its feedback distinguishes "selected for wordbook" from "CEFR difficulty color" — use scale + border/badging, NOT background color change (which now conflicts with CEFR display)
+- [ ] **CEFR-18**: Hover state on selectable words in previous sentence shows subtle scale + cursor hint
+
+## v2 Requirements
+
+Deferred to future release. Tracked but not in current roadmap.
+
+### Adaptive Learning
+
+- **CEFR-21**: Track per-word review accuracy and suggest i level adjustments based on performance
+- **CEFR-22**: Automatic CEFR level detection via short placement test (deferred — self-assessment with guidance preferred over test)
+
+### Advanced Analysis
+
+- **CEFR-23**: Paragraph-level CEFR distribution visualization in lesson detail view
+- **CEFR-24**: Per-sentence CEFR breakdown in video scrubber (shows difficulty at each segment)
+
+### Social
+
+- **CEFR-25**: Share lesson CEFR profile (e.g., "This video is B2 — 70% known words")
+- **CEFR-26**: Community CEFR rating (aggregate user reports for lessons without pre-analysis)
+
+## Out of Scope
+
+Explicitly excluded. Documented to prevent scope creep.
+
+| Feature | Reason |
+|---------|--------|
+| Server-side CEFR analysis on every request | Conflicts with goal of zero server load for vocabulary processing |
+| Dynamic CEFR reassessment based on user performance | Statistical noise from small samples; user manually updates level instead |
+| Per-word CEFR color in the current (typing) sentence | Visual clutter competes with typing task; previous sentence is sufficient |
+| Separate CEFR vocabulary database | 50K COCA-derived wordlist already exists in codebase |
+| Automatic CEFR level detection via test | Self-assessment with Duolingo-style descriptions is more reliable and lower friction |
 
 ## Traceability
 
-Which phases cover which requirements.
+Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| IMMERSE-01 | Phase 19 | Complete |
-| IMMERSE-02 | Phase 19 | Complete |
-| IMMERSE-03 | Phase 19 | Complete |
-| IMMERSE-04 | Phase 19 | Complete |
-| WB-01 | Phase 20 | Complete |
-| WB-02 | Phase 20 | Complete |
-| UPLOAD-01 | Phase 21 | Complete |
-| UPLOAD-02 | Phase 21 | Complete |
-| UPLOAD-03 | Phase 21 | Complete |
-| UPLOAD-04 | Phase 21 | Complete |
-| MASK-01 | Phase 23 | Complete |
-| MASK-02 | Phase 23 | Complete |
+| CEFR-01 | Phase 1 | Pending |
+| CEFR-02 | Phase 1 | Pending |
+| CEFR-03 | Phase 1 | Pending |
+| CEFR-04 | Phase 1 | Pending |
+| CEFR-05 | Phase 2 | Pending |
+| CEFR-06 | Phase 2 | Pending |
+| CEFR-07 | Phase 2 | Pending |
+| CEFR-08 | Phase 2 | Pending |
+| CEFR-09 | Phase 2 | Pending |
+| CEFR-10 | Phase 2 | Pending |
+| CEFR-11 | Phase 2 | Pending |
+| CEFR-12 | Phase 1 | Pending |
+| CEFR-13 | Phase 1 | Pending |
+| CEFR-14 | Phase 1 | Pending |
+| CEFR-15 | Phase 1 | Pending |
+| CEFR-16 | Phase 2 | Pending |
+| CEFR-17 | Phase 2 | Pending |
+| CEFR-18 | Phase 2 | Pending |
 
 **Coverage:**
-- v2.3 requirements: 12 total
-- Mapped to phases: 12
-- Complete: 12
-- Unmapped: 0
+- v1 requirements: 18 total
+- Mapped to phases: 18
+- Unmapped: 0 ✓
 
 ---
-*Requirements defined: 2026-04-02*
-*Last updated: 2026-04-03 after v2.3 completion*
+*Requirements defined: 2026-04-03*
+*Last updated: 2026-04-03 after initial definition*
