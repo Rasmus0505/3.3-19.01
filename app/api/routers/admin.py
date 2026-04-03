@@ -1333,6 +1333,45 @@ def admin_abandon_redeem_code(
         return map_billing_error(exc)
 
 
+@router.delete(
+    "/redeem-codes/{code_id}",
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_delete_redeem_code(
+    code_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    """
+    硬删除兑换码 per D-04
+    数据库记录彻底移除，兑换码立即失效，不可恢复。
+    """
+    code = db.get(RedeemCode, code_id)
+    if not code:
+        return error_response(404, "REDEEM_CODE_NOT_FOUND", "兑换码不存在")
+
+    append_admin_operation_log(
+        db,
+        operator_user_id=current_admin.id,
+        action_type="redeem_code_hard_delete",
+        target_type="redeem_code",
+        target_id=str(code.id),
+        before_value={
+            "code_id": code.id,
+            "batch_id": code.batch_id,
+            "status": code.status,
+            "masked_code": code.masked_code,
+        },
+        after_value={"deleted": True},
+        note="hard_delete",
+    )
+
+    db.delete(code)
+    db.commit()
+
+    return {"ok": True, "code_id": code_id, "deleted": True}
+
+
 @router.post(
     "/redeem-codes/bulk-disable",
     response_model=AdminRedeemCodeBulkDisableResponse,
