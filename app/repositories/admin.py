@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime
 import logging
@@ -500,8 +500,10 @@ def list_redeem_codes(
             code_table.c.id.label("code_id"),
             code_table.c.batch_id.label("code_batch_id"),
             code_table.c.masked_code.label("code_masked_code"),
+            code_table.c.code_plain.label("code_plain"),  # 新增 per D-10
             code_table.c.status.label("code_status"),
             code_table.c.created_by_user_id.label("code_created_by_user_id"),
+            code_table.c.redeemed_by_user_id.label("code_redeemed_by_user_id"),
             code_table.c.redeemed_at.label("code_redeemed_at"),
             code_table.c.created_at.label("code_created_at"),
             batch_table.c.id.label("batch_id"),
@@ -583,8 +585,10 @@ def list_redeem_codes(
                 id=int(row.code_id),
                 batch_id=int(row.code_batch_id),
                 masked_code=str(row.code_masked_code or ""),
+                code_plain=str(row.code_plain or ""),  # 新增 per D-10
                 status=str(row.code_status or ""),
                 created_by_user_id=row.code_created_by_user_id,
+                redeemed_by_user_id=row.code_redeemed_by_user_id,
                 redeemed_at=row.code_redeemed_at,
                 created_at=row.code_created_at,
             ),
