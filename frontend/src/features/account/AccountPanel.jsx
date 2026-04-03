@@ -122,7 +122,7 @@ export function AccountPanel({ apiCall, currentUser, onWalletChanged }) {
       const resp = await apiCall("/api/auth/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cefr_level: newLevel }),
+        body: JSON.stringify({ username: currentUser?.username, cefr_level: newLevel }),
       });
       const data = await parseResponse(resp);
       if (!resp.ok) {
