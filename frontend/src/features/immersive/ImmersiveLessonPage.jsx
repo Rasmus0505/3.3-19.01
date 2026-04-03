@@ -2,6 +2,7 @@ import { ArrowLeft, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, Volume2 } from
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { useAppStore } from "../../store";
 import { VocabAnalyzer } from "../../../app/frontend/src/utils/vocabAnalyzer";
 import { parseResponse, toErrorText } from "../../shared/api/client";
 import { getStorageEstimate, getLessonMedia, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
@@ -2196,7 +2197,7 @@ export function ImmersiveLessonPage({
       if (!analyzer.isLoaded) {
         await analyzer.load();
       }
-      const userLevel = "B1";
+      const userLevel = useAppStore.getState().cefrLevel || "B1";
       const allSentences = lesson.sentences.map((s) => s.text_en).filter(Boolean);
 
       const results = [];
