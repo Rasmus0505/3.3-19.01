@@ -4,6 +4,7 @@ export const USER_ID_KEY = "english_asr_user_id";
 export const USER_EMAIL_KEY = "english_asr_user_email";
 export const USER_USERNAME_KEY = "english_asr_user_username";
 export const USER_IS_ADMIN_KEY = "english_asr_user_is_admin";
+export const USER_CEFR_LEVEL_KEY = "BOTTLE_CEFR_LEVEL";
 
 function getStorage() {
   if (typeof window === "undefined" || !window.localStorage) {
@@ -158,6 +159,7 @@ export async function clearAuthStorage() {
     storage.removeItem(USER_EMAIL_KEY);
     storage.removeItem(USER_USERNAME_KEY);
     storage.removeItem(USER_IS_ADMIN_KEY);
+    storage.removeItem(USER_CEFR_LEVEL_KEY);
   }
   const desktopAuth = getDesktopAuthRuntime();
   if (desktopAuth?.clearSession) {
@@ -167,4 +169,26 @@ export async function clearAuthStorage() {
       // Ignore desktop cache cleanup failures after local storage has been cleared.
     }
   }
+}
+
+const VALID_CEFR_LEVELS = new Set(["A1", "A2", "B1", "B2", "C1", "C2"]);
+
+export function writeCefrLevel(cefrLevel) {
+  const storage = getStorage();
+  if (!storage) return;
+  if (cefrLevel && VALID_CEFR_LEVELS.has(String(cefrLevel))) {
+    storage.setItem(USER_CEFR_LEVEL_KEY, String(cefrLevel));
+  } else {
+    storage.removeItem(USER_CEFR_LEVEL_KEY);
+  }
+}
+
+export function readCefrLevel() {
+  const storage = getStorage();
+  if (!storage) return null;
+  const value = storage.getItem(USER_CEFR_LEVEL_KEY);
+  if (value && VALID_CEFR_LEVELS.has(value)) {
+    return value;
+  }
+  return null;
 }

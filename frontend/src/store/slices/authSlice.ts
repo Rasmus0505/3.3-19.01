@@ -1,5 +1,5 @@
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
-import { clearAuthStorage, restoreCachedAuthSession, TOKEN_KEY, USER_EMAIL_KEY, USER_ID_KEY, USER_IS_ADMIN_KEY, USER_USERNAME_KEY } from "../../app/authStorage";
+import { clearAuthStorage, restoreCachedAuthSession, TOKEN_KEY, USER_EMAIL_KEY, USER_ID_KEY, USER_IS_ADMIN_KEY, USER_USERNAME_KEY, writeCefrLevel, readCefrLevel } from "../../app/authStorage";
 
 type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
 type Getter = () => any;
@@ -39,6 +39,7 @@ function buildAuthInitialState() {
   const storedAccessToken = readStoredAccessToken();
   const currentUser = readStoredCurrentUser();
   const hasStoredToken = Boolean(storedAccessToken);
+  const cefrLevel = readCefrLevel() || "B1";
   return {
     accessToken: "",
     currentUser,
@@ -48,6 +49,7 @@ function buildAuthInitialState() {
     isAdminUser: false,
     adminAuthState: "idle",
     authBootstrapPending: hasStoredToken,
+    cefrLevel,
   };
 }
 
@@ -57,6 +59,11 @@ export function createAuthSlice(set: Setter, get: Getter) {
   return {
     ...buildAuthInitialState(),
     resetAuthState: () => set({ ...buildAuthInitialState() }),
+    setCefrLevel: (cefrLevel: string) => {
+      if (!cefrLevel) return;
+      set({ cefrLevel });
+      writeCefrLevel(cefrLevel);
+    },
     hydrateAccessToken: () => {
       const accessToken = readStoredAccessToken();
       const currentUser = readStoredCurrentUser();
