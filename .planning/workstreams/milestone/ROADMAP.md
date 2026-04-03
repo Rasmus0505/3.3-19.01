@@ -64,8 +64,11 @@
 9. "Selected for wordbook" feedback uses scale + border/badging — visually distinct from CEFR difficulty color, no background color change conflict
 10. Hover state on selectable words in the previous sentence shows subtle scale + cursor hint
 
-**Plans**: TBD
-**UI hint**: yes
+**Plans**: 4 plans — COMPLETE ✅
+- [x] 25-01-PLAN.md — CSS 类定义：CEFR 下划线 + 色带 + 动画 + 历史徽章 CSS
+- [x] 25-02-PLAN.md — 沉浸式当前句字母级 CEFR 下划线（i+1 / above-i+1）
+- [x] 25-03-PLAN.md — 沉浸式上一句词块级 CEFR 色带 + 词选流畅动画
+- [x] 25-04-PLAN.md — 历史记录列表课程卡片 CEFR 分布徽章 + 后台分析
 
 ---
 
@@ -74,7 +77,7 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 24. CEFR 基础设施与 i 水平设置 | 4/4 | Complete | 2026-04-03 |
-| 25. CEFR 沉浸式展示与历史徽章 | 0/N | Not started | - |
+| 25. CEFR 沉浸式展示与历史徽章 | 4/4 | Complete | 2026-04-04 |
 
 ---
 

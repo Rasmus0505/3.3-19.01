@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.4
 milestone_name: milestone
-status: executing
-last_updated: "2026-04-03T14:04:47.236Z"
+status: planning
+last_updated: "2026-04-04T00:15:00.000Z"
 progress:
   total_phases: 2
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  completed_phases: 2
+  total_plans: 8
+  completed_plans: 8
 ---
 
 # Project State
@@ -18,13 +18,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 25 — CEFR 沉浸式展示与历史徽章
+**Current focus:** Phase 25 — CEFR 沉浸式展示与历史徽章 — COMPLETE
 
 ## Current Position
 
 Milestone: v2.4
-Phase: 25 (CEFR 沉浸式展示与历史徽章) — CONTEXT GATHERED
-Status: Ready for planning
+Phase: 25 (CEFR 沉浸式展示与历史徽章) — COMPLETE
+Status: Phase 25 all 4 plans completed (25-01 through 25-04)
 
 v2.3 started 2026-04-02:
 
