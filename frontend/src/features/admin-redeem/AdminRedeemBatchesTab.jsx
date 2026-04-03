@@ -23,6 +23,19 @@ function parseYuanInputToCents(value) {
   return Math.round(normalized * 100);
 }
 
+function getRedeemBatchStatusLabel(status) {
+  switch (String(status || "").toLowerCase()) {
+    case "active":
+      return "生效中";
+    case "paused":
+      return "已暂停";
+    case "expired":
+      return "已失效";
+    default:
+      return status || "-";
+  }
+}
+
 export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
   const beijingNow = getBeijingNowForPicker();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -339,7 +352,7 @@ export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
       <div className="grid gap-3 md:grid-cols-3">
         <Card><CardContent className="space-y-1 p-4"><p className="text-xs text-muted-foreground">当前页总发放金额</p><p className="text-xl font-semibold">{formatStoredMoneyYuan(batchHealth.totalIssued)}</p></CardContent></Card>
         <Card><CardContent className="space-y-1 p-4"><p className="text-xs text-muted-foreground">当前页已发放金额</p><p className="text-xl font-semibold">{formatStoredMoneyYuan(batchHealth.totalRedeemed)}</p></CardContent></Card>
-        <Card><CardContent className="space-y-1 p-4"><p className="text-xs text-muted-foreground">当前页 active 批次数</p><p className="text-xl font-semibold">{batchHealth.activeCount}</p></CardContent></Card>
+        <Card><CardContent className="space-y-1 p-4"><p className="text-xs text-muted-foreground">当前页生效中批次数</p><p className="text-xl font-semibold">{batchHealth.activeCount}</p></CardContent></Card>
       </div>
 
       <Card>
@@ -371,9 +384,9 @@ export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
               <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="active">active</SelectItem>
-                <SelectItem value="paused">paused</SelectItem>
-                <SelectItem value="expired">expired</SelectItem>
+                <SelectItem value="active">生效中</SelectItem>
+                <SelectItem value="paused">已暂停</SelectItem>
+                <SelectItem value="expired">已失效</SelectItem>
               </SelectContent>
             </Select>
             <Button type="submit" variant="outline">查询</Button>
@@ -411,7 +424,17 @@ export function AdminRedeemBatchesTab({ apiCall, queryPrefix = "" }) {
                     <TableCell>{(Number(item.redeem_rate || 0) * 100).toFixed(2)}%</TableCell>
                     <TableCell>{formatStoredMoneyYuan(item.total_issued_points || 0)}</TableCell>
                     <TableCell>{formatStoredMoneyYuan(item.total_redeemed_points || 0)}</TableCell>
-                    <TableCell><Badge variant="outline">{item.status}</Badge></TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          item.status === "expired" ? "destructive"
+                          : item.status === "paused" ? "secondary"
+                          : "default"
+                        }
+                      >
+                        {getRedeemBatchStatusLabel(item.status)}
+                      </Badge>
+                    </TableCell>
                     <TableCell>{formatDateTimeBeijing(item.active_from)}</TableCell>
                     <TableCell>{formatDateTimeBeijing(item.expire_at)}</TableCell>
                     <TableCell>{item.effective_daily_limit}</TableCell>
