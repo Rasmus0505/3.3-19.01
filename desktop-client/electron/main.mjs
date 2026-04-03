@@ -483,26 +483,37 @@ async function helperRequest(request = {}) {
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(body);
   }
-  const response = await fetch(targetUrl, { method, headers, body });
-  if (responseType === "text") {
-    return { ok: response.ok, status: response.status, data: await response.text() };
-  }
-  if (responseType === "arrayBuffer") {
-    const bytes = Buffer.from(await response.arrayBuffer());
+  try {
+    const response = await fetch(targetUrl, { method, headers, body });
+    if (responseType === "text") {
+      return { ok: response.ok, status: response.status, data: await response.text() };
+    }
+    if (responseType === "arrayBuffer") {
+      const bytes = Buffer.from(await response.arrayBuffer());
+      return {
+        ok: response.ok,
+        status: response.status,
+        bodyBase64: bytes.toString("base64"),
+        contentType: response.headers.get("content-type") || "application/octet-stream",
+      };
+    }
+    let data = {};
+    try {
+      data = await response.json();
+    } catch {
+      data = {};
+    }
+    return { ok: response.ok, status: response.status, data };
+  } catch (error) {
     return {
-      ok: response.ok,
-      status: response.status,
-      bodyBase64: bytes.toString("base64"),
-      contentType: response.headers.get("content-type") || "application/octet-stream",
+      ok: false,
+      status: 0,
+      data: {
+        error_message: "Local helper is unreachable — is the desktop client running properly?",
+        detail: String(error?.message || error || ""),
+      },
     };
   }
-  let data = {};
-  try {
-    data = await response.json();
-  } catch {
-    data = {};
-  }
-  return { ok: response.ok, status: response.status, data };
 }
 
 async function requestLocalHelper(request = {}) {

@@ -375,6 +375,7 @@ class VocabAnalyzer {
 // ============================================================
 // 导出（兼容 ES Module 和 CommonJS）
 // ============================================================
+export { VocabAnalyzer };
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { VocabAnalyzer };
 }
