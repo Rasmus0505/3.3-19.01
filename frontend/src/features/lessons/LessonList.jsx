@@ -897,11 +897,11 @@ export function LessonList({
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-foreground">快捷键配置</p>
               </div>
-              <div className="flex flex-row flex-nowrap items-stretch gap-3 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+              <div className="flex flex-row flex-wrap items-stretch gap-3">
                 {SHORTCUT_ACTIONS.map((action) => {
                   const recording = recordingShortcutActionId === action.id;
                   return (
-                    <div key={action.id} className="flex w-fit shrink-0 flex-col rounded-2xl border bg-background/80 p-3">
+                    <div key={action.id} className="flex w-fit min-w-0 flex-col rounded-2xl border bg-background/80 p-3">
                       <div className="flex flex-1 flex-col gap-3">
                         <div className="min-w-0 space-y-1">
                           <p className="text-sm font-semibold text-foreground">{action.label}</p>
