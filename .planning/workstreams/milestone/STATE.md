@@ -18,14 +18,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 24 — CEFR 基础设施与 i 水平设置
+**Current focus:** Phase 25 — CEFR 沉浸式展示与历史徽章
 
 ## Current Position
 
-Milestone: v2.3
-Phase: 24 (CEFR 基础设施与 i 水平设置) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 24
+Milestone: v2.4
+Phase: 25 (CEFR 沉浸式展示与历史徽章) — CONTEXT GATHERED
+Status: Ready for planning
 
 v2.3 started 2026-04-02:
 
