@@ -1,279 +1,197 @@
-# Feature Research
+# Feature Research: CEFR Vocabulary Level Analysis and Display
 
-**Domain:** Import flow UX + video content extraction for English learning
-**Researched:** 2026-04-02
-**Confidence:** MEDIUM
+**Domain:** English language learning app - vocabulary difficulty visualization
+**Researched:** 2026-04-03
+**Confidence:** MEDIUM-HIGH (existing codebase provides strong implementation context)
 
-> Research based on analysis of LingQ, Migaku, FluentU, YouTube transcript tools (YouTube Text Tools, YouTranscript, YouTubeTranscript.dev), Anki, WordByWord, WordWise, and related language learning apps. Web-search-derived findings noted as MEDIUM confidence where not verifiable via official docs.
+## Executive Summary
 
----
+CEFR vocabulary level analysis is a well-established approach in language learning apps, grounded in Krashen's comprehensible input theory (i+1). The feature transforms passive subtitle consumption into active vocabulary learning by color-coding each word according to its difficulty relative to the user's declared CEFR level. The existing codebase already contains a 50,000-word CEFR vocabulary dataset derived from COCA frequency data, providing the foundation for batch preprocessing. Implementation focuses on four areas: vocabulary analysis pipeline, immersive color-coded display, interaction feedback for word selection, and user profile CEFR level configuration.
 
 ## Feature Landscape
 
 ### Table Stakes (Users Expect These)
 
+Core infrastructure without which the feature feels incomplete.
+
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Translation toggle in generation config | Users want control over whether translation is included — some want pure immersion, others need scaffold | LOW | LingQ exposes level selection; similar control expected here |
-| Generation mode selector (lesson vs transcript) | Users already mentally separate "learning content" from "raw transcript" — differentiating in UI matches mental model | LOW | YouTube transcript tools (YouTube Text Tools, YouTubeTranscript.dev) show paragraph/sentence modes — similar expectation |
-| Clear history differentiation by record type | Users accumulate both generated lessons and raw transcripts over time — confusion without distinction | MEDIUM | LingQ distinguishes library content from imports; same expectation applies |
-| Word-level translation display | Users need to verify word meaning independently of sentence context | LOW | WordByWord, WordPlus show translations directly adjacent to words; standard expectation |
-| Pronunciation playback for vocabulary | Audio reinforcement is fundamental to vocabulary acquisition | LOW | Anki TTS, dictionary apps (Dictionary.com) all have speaker button — baseline feature |
-| Answer input color differentiation | Visual feedback helps learners understand what they typed vs. what was suggested | LOW | Established pattern; PROJECT.md already specifies yellow=AI/hint, green=user |
+| CEFR level lookup per word | Essential for any vocabulary difficulty feature | LOW | Existing cefr_vocab.json (50k words, COCA-based) provides foundation |
+| User's i-level (input level) setting | Users need to declare their proficiency to receive calibrated input | LOW | Store in user profile, default B1 per PROJECT.md |
+| Color-coded word display | Visual differentiation is the primary UX signal for vocabulary difficulty | MEDIUM | Green (i+1) and Yellow (above i+1) per v2.4 spec |
+| Batch preprocessing at video open | All subtitle words analyzed once, cached for reuse | MEDIUM | localStorage caching, keyed by lesson ID |
+| Previous sentence CEFR display | Learners need context from prior sentence while typing current | MEDIUM | Reuse existing previous-sentence UI component |
 
 ### Differentiators (Competitive Advantage)
 
+Features that set this app apart from generic vocabulary tools.
+
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Video content extraction as separate record type | Transforms raw video content into studyable transcript while preserving the lesson for active learning — competitors like YouTube transcript tools are read-only | MEDIUM | Requires backend model to distinguish "video extraction" from "lesson generation" |
-| Auto-fill title from video metadata | Reduces friction — users shouldn't manually name what the platform can detect | LOW | yt-dlp provides title extraction; already exists in desktop link import |
-| Paragraph segmentation mode for transcripts | Paragraphs are easier to read and navigate than raw sentence dumps — Whisper alone produces poor paragraph structure | MEDIUM | LLM-based re-segmentation recommended (pyvideotrans approach); paragraph chunking from caption segments |
-| Sentence segmentation mode for transcripts | Some users prefer granular sentence-by-sentence study | LOW | Toggle between modes serves both preferences |
-| Word pronunciation speed control | Helps learners with difficult sounds — "slow down pronunciation audio" noted as advanced feature in dictionary apps | LOW | Reuse existing speed control from immersive learning |
-| Configuration modal with grouped toggles | Clean organization of generation options reduces cognitive load — toggle switches are best for binary settings | LOW | Group by function (content, display, behavior) |
+| Real-time i+1 calibration | Green/yellow feedback tells learners exactly which words are "learnable" vs. "too hard" right now | MEDIUM | Requires user-level setting and CEFR lookup per word |
+| Scale animation on word selection | Smooth tactile feedback distinguishes passive viewing from active word-collecting | LOW | CSS scale transform (1.0 → 1.08), 200ms ease-out |
+| Lesson-level CEFR badges in history | At-a-glance lesson difficulty helps learners choose appropriate content | LOW | Color block + CEFR label per lesson card |
+| Sentence-level CEFR distribution | Shows proportion of A1/B1/B2/C1+ words in a lesson — helps set expectations | MEDIUM | Aggregate from preprocessed word levels |
+| Word-level tapping for wordbook entry | Tap-to-collect from previous sentence with immediate visual feedback | LOW | Extend existing wordbook token UI with scale + color animation |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
+Features that seem valuable but create significant complexity or UX problems.
+
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Server-side heavy media processing | Users want "instant" results without local setup | Conflicts with server capacity limits; ASR workloads are expensive | Desktop-local processing remains primary; server fallback with clear messaging |
-| Automatic vocabulary extraction without review | Saves time — users don't want to curate manually | Low-quality extraction floods wordbook with noise | Semi-automatic: extract with one-tap "add to wordbook" confirmation |
-| Full transcript as single monolithic record | Simple to implement — one export, one record | Hard to navigate, hard to learn from, no sentence-level interaction | Chunked transcript with paragraph/sentence navigation |
-| Multiple simultaneous generation modes | "More is better" — users want all features available | Interface complexity; modal becomes overwhelming | Sequential: pick mode first, then configure that mode's options |
-
----
+| Server-side CEFR analysis on every request | Ensures always-up-to-date vocabulary data | Heavy server load for large subtitle files; adds latency per lesson | Preprocess client-side once, cache in localStorage, periodic background refresh |
+| Dynamic CEFR reassessment based on user performance | Adapts to learning progress automatically | Statistical noise from small sample sizes; confusing when same video shows different colors each viewing | Keep user-declared CEFR level static; let user manually update when they feel progress |
+| Per-word CEFR color in the CURRENT sentence while typing | Maximizes vocabulary feedback | Visual clutter competes with typing task; learner attention is split between letter-entry and color-scanning | Only color-code previous sentence; current sentence stays clean for typing focus |
+| Automatic CEFR level detection via test | Removes friction from manual level setting | Self-assessment is notoriously inaccurate; short tests have high error margins | Provide Duolingo-style level descriptions to guide manual selection |
+| Separate CEFR vocabulary database | Ensures coverage and accuracy | 50k COCA-derived wordlist already in codebase; adding another source creates inconsistency | Extend existing cefr_vocab.json rather than replacing it |
 
 ## Feature Dependencies
 
 ```
-Import Source Selection (Link Tab default)
-    │
-    ├──► Video Metadata Extraction (title auto-fill)
-    │        │
-    │        └──► Generation Configuration Modal
-    │                 │
-    │                 ├──► Function Toggles (translate, etc.)
-    │                 │        │
-    │                 │        └──► Wordbook with translations (Phase 17 foundation)
-    │                 │
-    │                 └──► Generation Mode Selection
-    │                          │
-    │                          ├──► English Materials Mode
-    │                          │        │
-    │                          │        └──► History Record: "Lesson"
-    │                          │
-    │                          └──► Video Content Extraction Mode
-    │                                   │
-    │                                   └──► History Record: "Transcript"
-    │                                            │
-    │                                            └──► Paragraph/Sentence Segmentation
-    │
-    └──► History List (differentiated records)
-             │
-             ├──► Lesson Records → Immersive Learning
-             │                           │
-             │                           └──► Answer Box (yellow=AI, green=user)
-             │
-             └──► Transcript Records → Basic Reading Mode
+[CEFR Vocabulary Dataset (cefr_vocab.json)]
+    └──provides──> [Vocabulary Analysis Pipeline]
+                          └──requires──> [User CEFR Level Setting]
+                                              └──drives──> [i+1 Color Calculation]
+                                                                ├──produces──> [Immersive CEFR Display]
+                                                                │                     └──uses──> [Previous Sentence Token UI]
+                                                                │                     └──enhances──> [Scale Animation Feedback]
+                                                                └──produces──> [Lesson CEFR Badge]
+                                                                                      └──used in──> [History List]
 ```
 
 ### Dependency Notes
 
-- **Generation modal** requires **link import** (Phase 4 foundation): modal triggers after source selection
-- **Word-level translation display** builds on Phase 17 wordbook structure: word entries already exist with translation field
-- **Pronunciation playback** builds on existing TTS infrastructure from immersive learning speed control
-- **Video content extraction** is a new record type that requires backend differentiation from "lesson" records
-- **Answer box coloring** was validated in v2.3 PROJECT.md: yellow for AI/hint, green for user-typed — already specified
-
----
+- **Vocabulary Analysis Pipeline requires User CEFR Level:** The i+1 color (green/yellow) depends on comparing word level against user level — no user level means no meaningful colors.
+- **Previous Sentence Token UI is prerequisite for Scale Animation:** The wordbook token selection UI already exists at lines 3889-3914 in ImmersiveLessonPage.jsx — animation layers on top.
+- **Immersive CEFR Display enhances Previous Sentence Token UI:** Color blocks and scale animation coexist on the same token component.
+- **History List is independent:** Lesson CEFR badge computation can happen during lesson generation and does not depend on immersive learning phase.
 
 ## MVP Definition
 
-### Launch With (v1)
+### Launch With (v2.4)
 
-- [ ] **Generation config modal with toggle switches** — grouped by function (content options, display options), immediate feedback, smart defaults. Toggle switches for binary settings per settings UI best practices.
-- [ ] **Translation toggle** — yes/no for including translation in generated content. Default: ON for beginners, OFF for intermediate+.
-- [ ] **Generation mode selector** — "English Materials" vs "Video Content Extraction" as two distinct paths in the modal.
-- [ ] **Video content extraction mode** — paragraph segmentation by default, sentence mode as toggle. Store as separate record type.
-- [ ] **Auto-fill title** — pull from yt-dlp metadata when extracting from link. Fallback to manual entry.
-- [ ] **History differentiation** — visual distinction between Lesson records and Transcript records (icon, badge, or label).
-- [ ] **Word-level translation display** — show translation above each word entry in wordbook panel. Speaker icon for pronunciation playback.
-- [ ] **Answer box coloring** — yellow (#FEF3C7 or similar) for AI/hint content, green (#D1FAE5 or similar) for user-typed. Per validated decision in PROJECT.md.
+Core loop validated before expanding scope.
 
-### Add After Validation (v1.x)
+- [ ] **Batch vocabulary preprocessing** — On video open, iterate all subtitle sentences, lookup each word in cefr_vocab.json, tag with CEFR level, cache result in localStorage keyed by lessonId. Unknown words default to "SUPER" level.
+- [ ] **User CEFR level setting in Personal Center** — 6-level selector (A1-C2), default B1, Duolingo-style Chinese descriptions per level, persist to user profile/backend.
+- [ ] **i+1 color calculation** — Given user level, compute each word's display color: green = word level is exactly one level above user level; yellow = word level is 2+ levels above user level; neutral = word level at or below user level.
+- [ ] **Previous sentence CEFR display** — Show color blocks over words in the previous sentence based on computed i+1 color. Only affects previous sentence (not current typing sentence).
+- [ ] **Scale animation on word selection** — When user taps a word in previous sentence to add to wordbook, apply CSS scale transform (1.0 → 1.08 → 1.0) over 200ms ease-out.
 
-- [ ] **Sentence segmentation mode** — toggle within video content extraction mode for users who prefer granular sentence study.
-- [ ] **Word pronunciation speed control** — reuse immersive learning speed slider in wordbook playback.
-- [ ] **Language level selector** — Beginner/Intermediate/Advanced assignment (LingQ pattern) for content filtering.
-- [ ] **Tags for records** — manual tagging for organization across record types.
-- [ ] **LLM-based paragraph re-segmentation** — if Whisper output quality is insufficient, apply re-segmentation step for better paragraph boundaries.
+### Add After Validation (v2.4.x)
 
----
+Features that enhance the core loop once it works.
 
-## Generation Modal Options
+- [ ] **Lesson-level CEFR distribution badge** — Show aggregate A1/B1/B2/C1+ percentages on lesson cards in history list.
+- [ ] **Toggle switch for CEFR display** — Let users turn color blocks on/off in immersive learning settings.
+- [ ] **localStorage cache invalidation** — Detect subtitle changes and recompute CEFR analysis; use content hash or version field.
 
-### Recommended Organization
+### Future Consideration (v2.5+)
 
-**Group by function, not by source:**
+Features that require deeper integration or UX research.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  Import Configuration                                   │
-├─────────────────────────────────────────────────────────┤
-│  GENERATION MODE                                        │
-│  ○ English Materials (structured lesson)               │
-│  ○ Video Content Extraction (raw transcript)           │
-├─────────────────────────────────────────────────────────┤
-│  CONTENT OPTIONS                                        │
-│  [Toggle] Include translations                          │
-│  [Toggle] Extract vocabulary automatically              │
-├─────────────────────────────────────────────────────────┤
-│  DISPLAY OPTIONS (Video Extraction only)                │
-│  Segmentation: [Paragraph ▼]                            │
-│  [Toggle] Show timestamps                               │
-├─────────────────────────────────────────────────────────┤
-│  Title: [Auto-filled from video...        ]             │
-│                                                         │
-│  [Cancel]                    [Import & Generate]         │
-└─────────────────────────────────────────────────────────┘
-```
+- [ ] **Sentence-level CEFR breakdown tooltip** — Tap lesson card to see CEFR distribution chart.
+- [ ] **Adaptive level suggestion** — After completing a lesson, suggest level adjustment based on word coverage percentage.
+- [ ] **CEFR display in current sentence (post-answer reveal)** — After learner completes a sentence, show CEFR colors on that sentence as a "review" mode.
 
-### Key Principles
+## Feature Prioritization Matrix
 
-1. **Mode first, options second** — Users pick what they're doing before configuring how
-2. **Conditional options** — Display Options section only shows when "Video Extraction" is selected
-3. **Toggle switches for binary** — Per Microsoft/Apple settings guidelines, toggles for on/off settings
-4. **Smart defaults** — Translation ON by default; Paragraph segmentation ON by default
-5. **Immediate feedback** — Toggle changes apply instantly, no "Apply" button needed within modal
+| Feature | User Value | Implementation Cost | Priority |
+|---------|------------|---------------------|----------|
+| Batch vocabulary preprocessing | HIGH | MEDIUM | P1 |
+| User CEFR level setting (Personal Center) | HIGH | LOW | P1 |
+| i+1 color calculation | HIGH | LOW | P1 |
+| Previous sentence CEFR color display | HIGH | MEDIUM | P1 |
+| Scale animation on word selection | MEDIUM | LOW | P1 |
+| Lesson CEFR badges in history list | MEDIUM | LOW | P2 |
+| CEFR display toggle | LOW | LOW | P2 |
+| Cache invalidation strategy | MEDIUM | MEDIUM | P2 |
+| Sentence-level CEFR breakdown | LOW | MEDIUM | P3 |
 
-### Sources
+**Priority key:**
+- P1: Must have for v2.4 launch
+- P2: Should have, add when possible
+- P3: Nice to have, future consideration
 
-- LingQ import options (title, level, tags, audio) — [LingQ Blog](https://www.lingq.com/blog/complete-guide-importing-lingq/)
-- Settings UI best practices: grouped sections, toggle switches, immediate feedback — [LogRocket](https://blog.logrocket.com/ux-design/designing-settings-screen-ui/), [Toptal](https://www.toptal.com/designers/ux/settings-ux), [Microsoft](https://learn.microsoft.com/en-us/windows/apps/design/app-settings/guidelines-for-app-settings)
-- Toggle switch anatomy and behavior — [SetProduct](https://www.setproduct.com/blog/toggle-switch-ui-design)
+## CEFR Level Definitions (for UX Copy)
 
----
+Based on the existing cefr_vocab.json meta descriptions and Duolingo-style Chinese descriptions:
 
-## History Record Differentiation
+| Level | Chinese Description (参考 Duolingo 风格) | User Expectation | Typical Learner |
+|-------|------------------------------------------|-----------------|-----------------|
+| **A1** | 零基础 — 最常用词汇，能进行简单日常对话 | Can understand "hello", "water", "the" | Complete beginner |
+| **A2** | 入门 — 基础词汇，能表达基本需求和想法 | Can understand common words for shopping, directions | ~6 months study |
+| **B1** | 中级 — 日常话题词汇，能处理工作、旅行等场景 | Can understand main points on familiar topics | ~1-2 years study |
+| **B2** | 中高级 — 进阶词汇，能讨论抽象话题和专业技术 | Can interact with native speakers fluently | ~2-3 years study |
+| **C1** | 高级 — 学术/专业词汇，能流畅表达复杂观点 | Can use language flexibly for social/academic purposes | Advanced learner |
+| **C2** | 精通级 — 接近母语者水平，掌握几乎所有词汇 | Can understand virtually everything heard or read | Near-native |
 
-### Recommended Approach
+## i+1 Color Coding System
 
-**Two primary record types with distinct visual treatment:**
+Based on comprehensible input theory (Krashen) and InfinLume's color-coded mastery approach:
 
-| Record Type | Icon | Badge Color | Entry Point | Actions |
-|-------------|------|-------------|-------------|---------|
-| Lesson (English Materials) | Book/Document | Blue/Primary | Immersive Learning, Practice | Review, Learn, Practice |
-| Transcript (Video Extraction) | Play/Transcript | Amber/Secondary | Basic Reading | Read, Extract Words |
+| Color | Meaning | When Applied | Example (User at B1) |
+|-------|---------|-------------|---------------------|
+| **Green** (#22c55e / oklch green) | i+1 — "learnable" word one level above current | Word CEFR = user CEFR + 1 level | B2 word for B1 user |
+| **Yellow** (#eab308 / oklch yellow) | Above i+1 — "too hard" word 2+ levels above current | Word CEFR >= user CEFR + 2 levels | C1/C2 word for B1 user |
+| **Neutral** (no highlight) | At or below current level — already known | Word CEFR <= user CEFR | A1/A2/B1 word for B1 user |
 
-### Visual Treatment
+**Color application rules:**
+- Only applied to **previous sentence** (not current typing sentence)
+- Applied to **every word token** in the previous sentence
+- Color rendered as a subtle background tint on the word token (not foreground text color)
+- Super (unknown words, rank 20001+) treated as Yellow
 
-**List item card design:**
+## Competitor Feature Analysis
 
-```
-┌────────────────────────────────────────────────────┐
-│ [📖]  Lesson Title Here                    [▶ 12m] │
-│       Lesson • B1 • 48 sentences                   │
-│       [Immersive Learning] [Practice]    [3d ago]  │
-└────────────────────────────────────────────────────┘
+| Feature | LingQ | Migaku | FluentU | Our Approach |
+|---------|-------|--------|---------|--------------|
+| CEFR vocabulary lookup | Yes — large vocabulary database | Yes — frequency-based | Yes — level-tagged content | Use existing cefr_vocab.json (50k COCA-based) |
+| i+1 color display | Word-level highlighting on reader | Color-coded cards by frequency | Color-coded phrases | Green/yellow on previous sentence tokens |
+| User level setting | Manual placement in reader | Deck leveling system | Path placement | Personal Center selector, default B1 |
+| Word selection animation | Tap to save, minimal animation | Highlight animation on save | Swipe gestures | Scale transform (1.08x) on tap |
+| Lesson difficulty badges | Difficulty rating on lessons | SRS intervals | Mastery indicators | CEFR color block + level name on history cards |
 
-┌────────────────────────────────────────────────────┐
-│ [▶]  Video Title Extraction                [▶ 24m] │
-│       Transcript • 156 paragraphs                 │
-│       [Read] [Extract Words]            [1h ago]   │
-└────────────────────────────────────────────────────┘
-```
+## Implementation Complexity by Category
 
-### Sources
+### CEFR Analysis
 
-- LingQ library vs import distinction — [LingQ Blog](https://www.lingq.com/blog/importing-on-lingq/)
-- Language level organization (Beginner 1-2, Intermediate 1-2, Advanced 1-2) — [LingQ Help](https://www.lingq.com/en/help/)
-- Record type visual badges — standard app pattern for differentiating content types
+- **Vocabulary preprocessing pipeline:** MEDIUM — iterate subtitles, tokenize, lookup in 50k word map, cache to localStorage
+- **i+1 color calculation:** LOW — simple level comparison: `wordLevel - userLevel` produces -2..+5 range
+- **Unknown word handling:** LOW — words not in cefr_vocab.json default to "SUPER" (rank 20001+)
+- **Cache management:** MEDIUM — key by lessonId, handle subtitle updates, localStorage quota
 
----
+### Immersive Display
 
-## Word-Level Translation Display
+- **Color overlay on word tokens:** MEDIUM — CSS class toggling based on CEFR level, cinema mode compatibility
+- **Previous sentence rendering:** LOW — existing component structure (lines 3875-3985 in ImmersiveLessonPage.jsx)
+- **Cinema mode compatibility:** LOW — reuse existing `.immersive-previous-sentence--cinema` CSS class
 
-### Recommended Placement and Styling
+### Interaction Feedback
 
-**Above each word entry in wordbook panel:**
+- **Scale animation on selection:** LOW — CSS `transform: scale()`, 200ms ease-out, toggle via class
+- **Wordbook token selection state:** LOW — existing `wordbookSelectedTokenIndexes` state already tracks selected tokens
+- **Accessibility:** LOW — `aria-pressed` attribute already in use; add scale animation without removing
 
-```
-┌────────────────────────────────────────────────────────┐
-│  translation here (translation appears first)          │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
-│  WORD                                    [🔊] [⋮]     │
-│  /wɜːrd/                                                  │
-│  ─────────────────────────────────────────────────────  │
-│  Example sentence with the word in context              │
-└────────────────────────────────────────────────────────┘
-```
+### Personal Center
 
-### Key Principles
-
-1. **Translation first** — Primary meaning visible without interaction
-2. **Pronunciation icon** — Speaker icon in accessible position (lower right per Dictionary.com pattern)
-3. **Tap to play** — Single tap triggers audio; icon visible only when audio available
-4. **IPA phonetic** — Optional secondary display for advanced learners
-
-### Sources
-
-- WordByWord: translations above words, double-tap lookup — [WordByWord](https://www.word-by-word.app/)
-- WordPlus: translations with synonyms, antonyms, examples — [WordPlus](https://site.wordplus.app/)
-- Speaker button placement: lower right of word entry — [Dictionary.com](https://help.dictionary.com/article/315-how-do-i-hear-audio-pronunciations-in-android/)
-- Audio TTS playback: configurable shortcuts (Anki F3/F4 pattern) — [Anki Manual](https://docs.ankiweb.net/templates/styling.html?highlight=Audio)
-
----
-
-## Answer Box Coloring
-
-### Recommended Implementation
-
-Per validated decision in PROJECT.md (Key Decisions, line 162):
-
-| Content Type | Color | Hex | Usage |
-|--------------|-------|-----|-------|
-| AI/Hint Content | Yellow/Amber | `#FEF3C7` (light) / `#F59E0B` (text) | Suggested answer, hint text, AI-generated |
-| User Typed Content | Green | `#D1FAE5` (light) / `#059669` (text) | User's input, user corrections |
-
-### Visual Example
-
-```
-┌────────────────────────────────────────────────────┐
-│  Suggested:  ┌──────────────────────────────┐     │
-│              │ The quick brown fox jumps     │     │
-│              └──────────────────────────────┘     │
-│                      (yellow background)            │
-│                                                     │
-│  Your answer:  ┌──────────────────────────────┐    │
-│                │ The quick brown fox jumps    │    │
-│                └──────────────────────────────┘    │
-│                        (green background)           │
-└────────────────────────────────────────────────────┘
-```
-
-### Key Principles
-
-1. **Consistent with PROJECT.md** — Yellow=AI/hint, green=user already validated
-2. **Subtle distinction** — Colors should differentiate, not clash
-3. **Both boxes visible** — Helps learners compare their input to suggestion
-4. **Accessible contrast** — Ensure WCAG AA compliance for text on colored backgrounds
-
----
+- **CEFR level selector:** LOW — radio button group or segmented control with 6 levels
+- **Chinese descriptions:** LOW — static content from cefr_vocab.json meta or Duolingo-style copy
+- **Persistence:** MEDIUM — save to user profile (backend API or localStorage for MVP)
 
 ## Sources
 
-- **LingQ**: Import options, library vs import, language levels, content types — [LingQ Blog](https://www.lingq.com/blog/complete-guide-importing-lingq/), [LingQ Help](https://www.lingq.com/en/help/)
-- **Migaku**: Word learning statuses, color-coded vocabulary tracking — [Migaku](https://migaku.com/), [Migaku Blog](https://migaku.com/blog/youtube/the-learning-statuses-migaku-browser-extension)
-- **FluentU**: Video import, language settings — [FluentU Help](http://fluentu.com/help/how-do-i-use-the-import-video-feature/)
-- **YouTube Transcript Tools**: Paragraph formatting, sentence segmentation, language support — [YouTube Text Tools](https://youtubetexttools.com/), [YouTranscript](https://youtranscript.ai/), [YouTubeTranscript.dev](https://youtubetranscript.dev/)
-- **Anki**: Audio flashcards, TTS playback, pronunciation triggers — [Anki Manual](https://docs.ankiweb.net/templates/styling.html?highlight=Audio), [AwesomeTTS](https://ankiatts.appspot.com/usage/on-the-fly)
-- **WordByWord**: Word lookup, translations — [WordByWord](https://www.word-by-word.app/)
-- **WordPlus/WordWise**: Vocabulary with translations, flashcards — [WordPlus](https://site.wordplus.app/), [WordWise](https://getwordwise.app/)
-- **Dictionary.com**: Speaker button placement, pronunciation playback — [Dictionary.com Help](https://help.dictionary.com/article/315-how-do-i-hear-audio-pronunciations-in-android/)
-- **Settings UI Best Practices**: Toggle switches, grouped sections, immediate feedback — [LogRocket](https://blog.logrocket.com/ux-design/designing-settings-screen-ui/), [Toptal](https://www.toptal.com/designers/ux/settings-ux), [Microsoft](https://learn.microsoft.com/en-us/windows/apps/design/app-settings/guidelines-for-app-settings)
-- **Video Segmentation**: Paragraph vs sentence, LLM re-segmentation — [pyvideotrans](https://en.pyvideotrans.com/blog/ai-resegment-whisper-srt/), [arXiv](https://arxiv.org/html/2512.24517v1)
+- [Promova AI-driven vocabulary adaptation](https://goodereader.com/blog/digital-publishing/personalized-english-learning-how-promova-uses-ai-to-adapt-reading-and-vocabulary-training)
+- [CEFR Word Level Methodology](https://cefrlookup.com/methodology)
+- [CVLA: CEFR-based Vocabulary Level Analyzer](https://cvla.langedu.jp/ver2/)
+- [InfinLume n+1 color-coded learning](https://www.infinlume.com/)
+- [Duolingo CEFR Level Alignment](https://duolingoguides.com/duolingo-language-levels-test-scores-cefr-proficiency-scale/)
+- [Lenguia Word Frequency Checker (color-coded CEFR)](https://www.lenguia.com/tools/word-frequency-checker)
+- [Maximax67/Words-CEFR-Dataset](https://github.com/Maximax67/Words-CEFR-Dataset)
+- Existing codebase: cefr_vocab.json (COCA-derived, 50k words), ImmersiveLessonPage.jsx, immersive.css
 
 ---
 
-*Feature research for: Import flow UX + video content extraction*
-*Researched: 2026-04-02*
+*Feature research for: CEFR vocabulary level analysis and display*
+*Researched: 2026-04-03*
