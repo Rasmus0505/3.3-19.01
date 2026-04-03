@@ -108,6 +108,7 @@ class AdminUserActivitySummaryResponse(BaseModel):
 class AdminUserActivityItem(BaseModel):
     id: int
     email: str
+    username: str = ""  # 新增字段 per D-01
     created_at: datetime
     last_login_at: datetime | None = None
     balance_points: int

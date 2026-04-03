@@ -359,6 +359,7 @@ class AdminRedeemCodeItem(BaseModel):
     batch_id: int
     batch_name: str
     code_mask: str
+    code_plain: str = ""  # 新增 per D-10，用于复制功能
     status: str
     effective_status: str
     face_value_points: int
