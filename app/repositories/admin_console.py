@@ -655,6 +655,7 @@ def list_admin_user_activity(
         select(
             User.id,
             User.email,
+            User.username,  # 新增 per D-01
             User.created_at,
             User.last_login_at,
             func.coalesce(WalletAccount.balance_amount_cents, 0).label("balance_points"),
