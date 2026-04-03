@@ -1,153 +1,157 @@
 # Project Research Summary
 
-**Project:** Bottle English Learning
-**Domain:** Import flow UX + video content extraction + immersive learning bug fixes + wordbook enhancements
-**Researched:** 2026-04-02
-**Confidence:** HIGH
+**Project:** Bottle English Learning v2.4 — CEFR Vocabulary Level Analysis
+**Domain:** English language learning app — vocabulary difficulty visualization
+**Researched:** 2026-04-03
+**Confidence:** HIGH (existing codebase + validated vocabulary data)
 
 ## Executive Summary
 
-The v2.3 milestone requires four categories of work: immersive learning bug fixes, wordbook word-level enhancements, import flow UX redesign, and translation mask behavior tuning. Research confirms all features are achievable using existing codebase patterns — no new major dependencies are needed.
+The v2.4 milestone adds CEFR vocabulary level analysis as a visual overlay to an existing immersive learning system. The core insight: this is **not** a new feature requiring new architecture — it's a data pipeline that layers on top of existing components (ImmersiveLessonPage, AccountPanel, LessonList). The existing React 18.3.1 + Zustand 5 + Tailwind 4 stack is fully capable with only CSS token extensions for CEFR colors. The 50K-word COCA-derived vocabulary dataset (`cefr_vocab.json`) and analysis engine (`vocabAnalyzer.js`) already exist, reducing the work to integration and display only.
 
-The **generation configuration modal** is the highest-complexity new feature. It should use existing Radix UI primitives (Dialog, Switch, Tabs, Select) already present in the codebase, organized with "generation mode" as the primary decision followed by mode-specific options. The modal must preserve the auto-filled title from the link paste step — a common pitfall is letting modal local state shadow the panel-level title state.
+The recommended approach is **client-side batch analysis with localStorage caching**. All vocabulary lookup happens in the browser, keyed by lesson ID, with results cached for instant reloads. The user's CEFR level (stored in profile, default B1) drives the i+1 color calculation — green for words one level above user, yellow for words 2+ levels above. This approach avoids server load, works offline, and provides instant feedback on return visits.
 
-**Video content extraction** as a separate record type is a meaningful differentiator. The key architectural decision is whether to use `lesson_type` on the existing Lesson model (simpler, one table) vs. a separate Transcript model (cleaner domain separation, more migration work). Recommended: add `lesson_type` column to Lesson with `standard` (default) and `video_extract` values, with `generation_mode`/`segmentation_mode` on the task.
-
-**Immersive answer box coloring** (yellow = AI/hint, green = user) was already validated in PROJECT.md Key Decisions. Implementation uses local React state driven by reducer action transitions.
-
-**Pronunciation playback** should use the browser Web Speech API as primary (zero cost, no API dependency) with sentence audio as fallback. Backend TTS endpoint is deferred unless browser TTS quality proves insufficient.
+The critical risk is **visual layer conflicts**: the existing letter-state system (green=correct, red=wrong, yellow=hint) and the new CEFR system must coexist without ambiguity. The plan allocates phase 1 to defining this visual contract before any rendering code is written.
 
 ## Key Findings
 
 ### Recommended Stack
 
-All UI components use existing Radix UI primitives — no new dependencies. Backend changes are additive:
-- **Lesson model**: add `lesson_type` column (`standard`/`video_extract`)
-- **Task schema**: add `generation_mode` + `segmentation_mode` fields
-- **New endpoint**: `GET /api/wordbook/{id}/pronunciation` (TTS, optional)
-- **Existing yt-dlp integration** from Phase 07.1 handles video metadata extraction
+The existing stack requires no new runtime dependencies. All requirements are satisfied by existing libraries:
+
+**Core technologies:**
+- **React 18.3.1** — sufficient for component-based word rendering, no changes needed
+- **Zustand 5.0.11** — `persist` middleware handles localStorage-backed user CEFR level storage with `partialize` to store only `userILevel`
+- **Tailwind CSS 4.2.1** — CSS `@theme` directive for CEFR color tokens (teal for i+1, orange for beyond)
+- **Radix UI 1.x** — accessible component primitives for CEFR level picker dropdown
+- **cefr_vocab.json (50K words)** — already embedded, COCA frequency-derived, loads once to sessionStorage
+
+**Supporting patterns:**
+- localStorage caching with version key (`cefr_analysis_v1:{lessonId}`) — simple and sufficient for <5MB per domain
+- CSS `transform: scale()` for word selection animation — spring-like overshoot via `cubic-bezier(0.34, 1.56, 0.64, 1)`
 
 ### Expected Features
 
 **Must have (table stakes):**
-- Immersive answer box: yellow for AI/hint, green for user input — per validated decision
-- Translation toggle in generation modal: yes/no for including translation in content
-- Word-level translation display above each wordbook entry
-- Pronunciation playback for wordbook entries (browser TTS primary)
-- History differentiation: visual distinction between Lesson and Transcript records
+- **Batch vocabulary preprocessing** — On video open, iterate all subtitle sentences, lookup each word in cefr_vocab.json, tag with CEFR level, cache result in localStorage keyed by lessonId. Unknown words default to "SUPER" level.
+- **User CEFR level setting in Personal Center** — 6-level selector (A1-C2), default B1, Duolingo-style Chinese descriptions per level, persist to user profile/backend.
+- **i+1 color calculation** — Given user level, compute each word's display color: green = word level is exactly one level above user level; yellow = word level is 2+ levels above user level; neutral = at or below user level.
+- **Previous sentence CEFR display** — Show color blocks over words in the previous sentence based on computed i+1 color. Only affects previous sentence (not current typing sentence).
 
-**Should have (competitive):**
-- Video content extraction as separate record type — transforms raw video into studyable transcript
-- Auto-fill title from video metadata (yt-dlp already provides this)
-- Generation modal: grouped toggle switches per settings UI best practices
-- Config modal organized: mode first, then mode-specific options (progressive disclosure)
+**Should have (differentiators):**
+- **Scale animation on word selection** — When user taps a word in previous sentence to add to wordbook, apply CSS scale transform (1.0 → 1.08) with spring overshoot over 200ms
+- **Lesson-level CEFR badges in history** — At-a-glance lesson difficulty helps learners choose appropriate content
 
-**Defer (v2+):**
-- LLM-based paragraph re-segmentation for better Whisper output boundaries
-- Word pronunciation speed control in wordbook
-- Language level selector (Beginner/Intermediate/Advanced)
-- Manual tags for records
+**Defer (v2.4.x+):**
+- Sentence-level CEFR breakdown tooltip
+- Adaptive level suggestion based on word coverage
+- CEFR display in current sentence post-answer reveal
 
 ### Architecture Approach
 
-Integration is additive — no refactoring of existing Phase 8/17 architecture:
-1. `UploadPanel.jsx` gets `GenerationConfigModal` child component
-2. Backend extends `LessonTaskCreateRequest` with `generation_mode`/`segmentation_mode`
-3. Lesson model gets `lesson_type` column (default `standard`)
-4. `LessonList` filters by `lesson_type` for history differentiation
-5. `WordbookPanel` gets pronunciation button + translation display above entries
-6. `ImmersiveLessonPage` extends session state with `answerBoxMode` for color transitions
+Four pipelines layer on existing architecture without modifying the session state machine:
+
+1. **Analysis Pipeline** — Triggered on video open. Check localStorage → if miss, load cefr_vocab.json → batch analyze all sentences → cache to localStorage. Uses chunked processing with `setTimeout(0)` yields to avoid UI blocking.
+
+2. **Display Pipeline** — Reads cached analysis + user level → renders color blocks on previous sentence tokens. CEFR state lives in React component state (not session reducer), keeping session machine focused on playback/typing.
+
+3. **Settings Pipeline** — Personal Center CEFR selector → PATCH profile API → update Zustand store → propagate to all listeners via `LEARNING_SETTINGS_UPDATED_EVENT`.
+
+4. **History Pipeline** — LessonList reads from same localStorage cache used by analysis. No backend migration needed for v2.4.
 
 ### Critical Pitfalls
 
-1. **Config modal breaks title contract** — modal must not shadow panel-level `titleInput` state; edited titles get lost if modal confirm handler reads from wrong source. Fix: modal props pass title down, confirm returns title+config separately.
-2. **Rate/loop buttons reset sentence state** — `SET_PLAYBACK_RATE` and `SET_LOOP_ENABLED` must never touch `sentenceTypingDone`/`sentencePlaybackDone`. Regression test: type words → change rate → words still visible.
-3. **Previous sentence playback silent fail** — `requestPlayPreviousSentence` must await `playSentence` result before dispatching `PLAYBACK_STARTED`. Must check `previousSentence.audio_url` exists.
-4. **Sentence vs paragraph toggle mismatch** — if backend ASR pipeline only produces sentence-level output, a paragraph-mode toggle in the modal would be a UI lie. Verify backend capability before exposing toggle.
-5. **Translation mask position carry-over** — store mask rect as normalized ratios (0-1), detect new video vs. resumed session, force centered rect on new video.
-6. **Pronunciation rate limits** — browser Web Speech API avoids backend TTS rate limits entirely. Show loading/error states on button.
+1. **Color conflict between letter states and CEFR levels** — Yellow means both "revealed by hint" and "CEFR level is hard". Mitigation: use distinct palettes (teal/blue for i+1, orange for beyond), never reuse existing letter-state colors.
+
+2. **Batch analysis blocking initial lesson load** — Synchronous for-loop over 500+ sentences blocks UI for 2-5 seconds. Mitigation: chunked processing with `requestIdleCallback`, progress indicator, graceful degradation showing lesson without CEFR badges until analysis completes.
+
+3. **Cache invalidation failures** — User changes CEFR level but old cached lessons still show stale difficulty badges. Mitigation: include user level and vocab version in cache key, implement cache TTL (30 days), clear analysis cache on level change.
+
+4. **Scale animation conflicting with wordbook click handlers** — CSS transforms create new stacking context and can intercept pointer events. Mitigation: use `pointer-events: none` on animated pseudo-elements, or animate a wrapper not the click target.
+
+5. **CEFR level setting not persisting or propagating** — Setting stored with different key than existing settings, or no update event dispatched. Mitigation: follow `learningSettings.js` pattern exactly, add to same settings object, dispatch `LEARNING_SETTINGS_UPDATED_EVENT`.
 
 ## Implications for Roadmap
 
-### Recommended Phase Structure
+Based on research, suggested phase structure (adapted to v2.4's 2-phase scope):
 
-**Phase 19: 沉浸式学习 Bug 修复**
-- B1: 固定按钮/倍速清空句子 → ensure rate/loop handlers dispatch correct events only
-- B2: 上一句播放失败 → add `result.ok` guard and `previousSentence.audio_url` check
-- B8: 答题框颜色区分 → add `answerBoxMode` state + color transitions
-- B9: 排查不应清空句子的情况 → comprehensive event audit + regression tests
+### Phase 1: CEFR Analysis Infrastructure + Personal Center Setting
+**Rationale:** User level setting is the prerequisite input for all CEFR display. Analysis pipeline must exist before display can render anything. Both are foundation-layer work.
 
-**Phase 20: 生词本词条增强**
-- F1: 独立翻译显示 → translation above word entry with consistent card height
-- F2: 发音播放 → browser TTS primary, sentence audio fallback, graceful error states
+**Delivers:**
+- `useVocabAnalysis` hook encapsulating analysis lifecycle
+- localStorage caching with version-based keys
+- User CEFR level selector in Personal Center
+- Zustand store extension with `persist` middleware
 
-**Phase 21: 素材导入 UX 优化**
-- F3: 默认链接 Tab → change `defaultTab` from 'file' to 'link'
-- F4: 精简文案 → remove explanatory text, auto-fill title, SnapAny link
-- B11: toast 对齐 → CSS fix for toast positioning
-- B12: 快捷键配置紧凑化 → one-line layout per config item
+**Implements:**
+- Batch preprocessing pipeline with chunked processing
+- CEFR level picker (Radix UI Select or button group)
+- Cache invalidation on level change
 
-**Phase 22: 导入弹窗配置与视频内容提取**
-- F5: 弹窗选择功能开关 → `GenerationConfigModal` with toggle switches
-- F5: 生成方式选择 (English Materials vs Video Extraction)
-- F5: 视频内容提取单独配置 → `segmentation_mode` toggle (paragraph/sentence)
-- F5: 历史记录区分 → `lesson_type` badge in lesson list
+**Avoids:** Pitfall #2 (cache invalidation), Pitfall #5 (persistence)
 
-**Phase 23: 字幕遮挡板与链接恢复**
-- F6: 新视频字幕遮挡板居中恢复 → normalize rect to ratios, detect new video, force center
-- F7: 链接恢复增强 → persist source URL, offer URL-based restore option
+### Phase 2: CEFR Display in Immersive Mode + History Badges
+**Rationale:** Display builds on analysis data. Previous sentence CEFR coloring is the core feature. History badges use the same cached data and can be added in parallel.
+
+**Delivers:**
+- CEFR color overlay on previous sentence word tokens
+- Reusable `CEFRBadge` component
+- Lesson list CEFR badges from localStorage cache
+- Scale animation on wordbook selection
+
+**Avoids:** Pitfall #1 (color conflicts — requires UI-SPEC.md first), Pitfall #3 (blocking — chunked processing in phase 1), Pitfall #4 (animation conflicts)
 
 ### Phase Ordering Rationale
 
-1. **Bug fixes first** — bugs are highest-urgency; fixes are isolated and low-risk regressions
-2. **Wordbook enhancements second** — independent of import flow; validates pronunciation infrastructure
-3. **Import UX third** — default tab + copy changes are trivial but high-visibility wins
-4. **Config modal last** — highest complexity; depends on understanding the full import pipeline
-5. **Translation mask + link restore last** — separate concern from import flow
+1. **Settings before display** — User level drives color calculation. Without settings, display has no meaning.
+2. **Analysis before display** — Cached analysis is the data source. Display degrades gracefully if analysis is pending.
+3. **UI-SPEC before phase 2 coding** — Color conflicts are irreversible once coded into components. Visual contract must be defined first.
+4. **Animation last in phase 2** — It layers on top of existing wordbook selection and doesn't affect core functionality.
 
 ### Research Flags
 
-- **Phase 22 (Video Extraction)**: The paragraph segmentation toggle requires backend verification — does the ASR pipeline produce paragraph-level output? If not, the modal toggle should be hidden or a backend post-processing step added first. Needs phase-specific research during planning.
-- **Phase 20 (Pronunciation)**: Browser Web Speech API quality should be verified on Windows (Electron) before committing to it as primary. If quality is poor on Windows, backend TTS becomes necessary earlier.
+Phases likely needing deeper research during planning:
+- **Phase 2:** CEFR display component — requires UI-SPEC.md to define visual contract and avoid color conflicts. Use `gsd-ui-phase` skill.
+
+Phases with standard patterns (skip research-phase):
+- **Phase 1:** Batch analysis and caching — well-documented localStorage patterns, chunked processing is standard React pattern
+- **Phase 1:** Personal Center CEFR setting — follow existing `learningSettings.js` pattern exactly
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All UI primitives confirmed in existing codebase; API changes are additive |
-| Features | HIGH | Wordbook translation/pronunciation already exist in codebase (Phase 17/18); modal patterns established |
-| Architecture | HIGH | Immersive reducer from Phase 8, wordbook from Phase 17, yt-dlp from Phase 07.1 — all well-documented |
-| Pitfalls | HIGH | All pitfalls traced to specific file+line references from Phase 8/17/04 research |
+| Stack | HIGH | All libraries confirmed in package.json; Zustand persist official docs |
+| Features | HIGH | Based on existing codebase + established CEFR methodology |
+| Architecture | HIGH | Pipeline patterns well-understood; session machine isolation sound |
+| Pitfalls | HIGH | Based on existing codebase analysis + CSS/React edge cases |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Paragraph segmentation backend capability**: Needs verification during Phase 22 planning — check if the ASR pipeline (Whisper) produces paragraph-level timestamps or only sentence-level segments. If sentence-only, add a post-processing step before exposing the toggle.
-- **Browser TTS quality on Windows**: Phase 20 should start with browser Web Speech API, but if quality is unsatisfactory on Electron/Windows, pivot to backend TTS with rate limiting.
+- **CEFR color palette finalization:** STACK.md suggests teal/orange, but design system may prefer different hues. Validate with UI-SPEC.md during phase 2 planning.
+- **Backend profile API contract:** AccountPanel PATCH endpoint schema not verified. Confirm `cefr_level` field is accepted or needs backend change.
+- **vocabAnalyzer.js integration:** Analysis engine exists but integration points with ImmersiveLessonPage not verified. Confirm `analyzeVideo()` API signature.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- `.planning/PROJECT.md` — Active requirements, Key Decisions, validated patterns
-- `.planning/milestones/v2.1-ROADMAP.md` — Phase 07.1 (Memo mode/link import), Phase 8 (Immersive state machine)
-- `.planning/milestones/v2.2-ROADMAP.md` — Phase 17 (Wordbook review UX), Phase 18 (Hint system)
-- `frontend/src/features/immersive/ImmersiveLessonPage.jsx` — Immersive state machine, rate/loop handlers
-- `frontend/src/features/immersive/immersiveSessionMachine.js` — Reducer actions and state contracts
-- `frontend/src/features/immersive/useSentencePlayback.js` — Playback hook, `playSentence` return types
-- `frontend/src/features/wordbook/WordbookPanel.jsx` — Wordbook panel with `word_translation` rendering
-- `frontend/src/features/upload/UploadPanel.jsx` — Upload flow, `generation_mode`, link import pattern
+- Zustand persist middleware: https://zustand.docs.pmnd.rs/middleware/persist
+- Tailwind CSS 4 theme customization: https://tailwindcss.com/docs/theme
+- Existing codebase: `cefr_vocab.json`, `vocabAnalyzer.js`, `ImmersiveLessonPage.jsx`, `learningSettings.js`
+- CEFR Word Level Methodology: https://cefrlookup.com/methodology
 
 ### Secondary (MEDIUM confidence)
-- Radix UI Dialog/Switch/Tabs documentation — existing patterns in codebase match docs
-- LingQ import options and library vs. import distinction — blog/documentation review
-- Microsoft/Apple settings UI guidelines for toggle switch organization — established best practices
-- YouTube transcript tools (YouTube Text Tools, YouTranscript) — paragraph vs. sentence modes
+- InfinLume n+1 color-coded learning: https://www.infinlume.com/
+- Duolingo CEFR Level Alignment: https://duolingoguides.com/duolingo-language-levels-test-scores-cefr-proficiency-scale/
+- Promova AI-driven vocabulary adaptation: https://goodereader.com/blog/digital-publishing/personalized-english-learning-how-promova-uses-ai-to-adapt-reading-and-vocabulary-training
 
 ### Tertiary (LOW confidence)
-- Browser Web Speech API quality on Windows/Electron — needs runtime verification
-- Backend paragraph re-segmentation post-processing — needs phase-specific research
+- localStorage best practices: WebSearch 2026 — general web guidance, no canonical source
 
 ---
-*Research completed: 2026-04-02*
+
+*Research completed: 2026-04-03*
 *Ready for roadmap: yes*
