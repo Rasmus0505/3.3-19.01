@@ -1,4 +1,4 @@
-import { Download, RefreshCcw, ShieldBan, Ticket } from "lucide-react";
+import { Download, RefreshCcw, ShieldBan, Ticket, Copy } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -16,6 +16,15 @@ function fileNameFromDisposition(disposition, fallback) {
   const match = String(disposition || "").match(/filename\*=UTF-8''([^;]+)|filename=\"?([^\";]+)\"?/i);
   const raw = match?.[1] || match?.[2];
   return raw ? decodeURIComponent(raw) : fallback;
+}
+
+function getRedeemCodeStatusLabel(status, effectiveStatus) {
+  if (effectiveStatus === "redeemed") return "已兑换";
+  if (effectiveStatus === "abandoned") return "废弃";
+  if (effectiveStatus === "expired") return "失效";
+  if (effectiveStatus === "disabled") return "停用";
+  if (status === "active") return "正常";
+  return "正常";
 }
 
 export function AdminRedeemCodesTab({ apiCall, queryPrefix = "" }) {
@@ -162,11 +171,11 @@ export function AdminRedeemCodesTab({ apiCall, queryPrefix = "" }) {
     }
   }
 
-  async function applyCodeAction(codeId, actionPath, actionLabel) {
+  async function applyCodeAction(codeId, actionPath, actionLabel, method = "POST") {
     setStatus("");
     clearError();
     try {
-      const resp = await apiCall(`/api/admin/redeem-codes/${codeId}/${actionPath}`, { method: "POST" });
+      const resp = await apiCall(`/api/admin/redeem-codes/${codeId}/${actionPath}`, { method });
       const data = await parseJsonSafely(resp);
       if (!resp.ok) {
         const formattedError = captureError(
@@ -383,7 +392,6 @@ export function AdminRedeemCodesTab({ apiCall, queryPrefix = "" }) {
                 <TableHead>批次</TableHead>
                 <TableHead>面额（元）</TableHead>
                 <TableHead>状态</TableHead>
-                <TableHead>有效状态</TableHead>
                 <TableHead>兑换用户</TableHead>
                 <TableHead>兑换时间</TableHead>
                 <TableHead>创建时间</TableHead>
@@ -407,16 +415,60 @@ export function AdminRedeemCodesTab({ apiCall, queryPrefix = "" }) {
                     <TableCell>{item.code_mask}</TableCell>
                     <TableCell>{item.batch_name} (#{item.batch_id})</TableCell>
                     <TableCell>{formatStoredMoneyYuan(item.face_value_amount_cents ?? item.face_value_points ?? 0)}</TableCell>
-                    <TableCell><Badge variant="outline">{item.status}</Badge></TableCell>
-                    <TableCell><Badge>{item.effective_status}</Badge></TableCell>
+                    <TableCell>
+                      {(() => {
+                        const label = getRedeemCodeStatusLabel(item.status, item.effective_status);
+                        const variant = item.effective_status === "abandoned" ? "destructive"
+                          : item.effective_status === "expired" ? "warning"
+                          : item.effective_status === "redeemed" ? "default"
+                          : "secondary";
+                        return <Badge variant={variant}>{label}</Badge>;
+                      })()}
+                    </TableCell>
                     <TableCell>{item.redeemed_user_email || "-"}</TableCell>
                     <TableCell>{formatDateTimeBeijing(item.redeemed_at)}</TableCell>
                     <TableCell>{formatDateTimeBeijing(item.created_at)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Button size="sm" variant="outline" onClick={() => setActionDialog({ codeId: item.id, actionPath: "enable", actionLabel: "启用", codeMask: item.code_mask })}>启用</Button>
-                        <Button size="sm" variant="outline" onClick={() => setActionDialog({ codeId: item.id, actionPath: "disable", actionLabel: "停用", codeMask: item.code_mask })}>停用</Button>
-                        <Button size="sm" onClick={() => setActionDialog({ codeId: item.id, actionPath: "abandon", actionLabel: "废弃", codeMask: item.code_mask })}>废弃</Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => setActionDialog({
+                            codeId: item.id,
+                            actionPath: "delete",
+                            actionLabel: "删除",
+                            codeMask: item.code_mask,
+                            codePlain: item.code_plain
+                          })}
+                        >
+                          删除
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => setActionDialog({
+                            codeId: item.id,
+                            actionPath: "abandon",
+                            actionLabel: "废弃",
+                            codeMask: item.code_mask,
+                            codePlain: item.code_plain
+                          })}
+                        >
+                          废弃
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(item.code_plain || item.code_mask);
+                              toast.success("兑换码已复制");
+                            } catch (err) {
+                              toast.error("复制失败");
+                            }
+                          }}
+                        >
+                          <Copy className="size-4" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -424,7 +476,7 @@ export function AdminRedeemCodesTab({ apiCall, queryPrefix = "" }) {
               })}
               {items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={11} className="text-muted-foreground">暂无数据</TableCell>
+                  <TableCell colSpan={10} className="text-muted-foreground">暂无数据</TableCell>
                 </TableRow>
               ) : null}
             </TableBody>
@@ -506,7 +558,7 @@ export function AdminRedeemCodesTab({ apiCall, queryPrefix = "" }) {
             </DialogHeader>
             <DialogFooter>
               <Button variant="outline" onClick={() => setActionDialog(null)}>取消</Button>
-              <Button onClick={() => actionDialog && applyCodeAction(actionDialog.codeId, actionDialog.actionPath, actionDialog.actionLabel)}>
+              <Button onClick={() => actionDialog && applyCodeAction(actionDialog.codeId, actionDialog.actionPath, actionDialog.actionLabel, actionDialog.actionLabel === "删除" ? "DELETE" : "POST")}>
                 确认执行
               </Button>
             </DialogFooter>
