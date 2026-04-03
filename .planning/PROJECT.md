@@ -86,10 +86,11 @@ See `.planning/milestones/v2.3-REQUIREMENTS.md` for archived requirements.
 - ✓ Wordbook entry enhancements: independent translation block above each entry, Web Speech API pronunciation button — validated in Phase 20
 - ✓ Material import UX: default link tab, simplified copy, auto-fill title, shortcut two-row layout — validated in Phase 21
 - ✓ Subtitle mask position reset (centered on new video, enabled state persists across videos) and link restore enhancement — validated in Phase 23
+- ✓ CEFR infrastructure: backend cefr_level field (DB + PATCH API), frontend Zustand state + localStorage persistence, AccountPanel CEFR level selector (A1-C2 RadioGroup), vocabAnalyzer integration with localStorage cache and setTimeout(0) chunking — validated in Phase 24
 
 ### Active
 
-_(All v2.3 requirements shipped — next milestone TBD)_
+_(All v2.4 Phase 24 requirements shipped — Phase 25 pending)_
 
 ### Out of Scope
 
@@ -167,8 +168,14 @@ _(All v2.3 requirements shipped — next milestone TBD)_
 | Subtitle mask: prevLessonIdRef forces center on new lessonId | Ensures mask position never persists across different videos | ✅ Validated in Phase 23 |
 | Subtitle mask: enabled state persists via localStorage | Verified existing code implements D-03 (enabled persistence) | ✅ Validated in Phase 23 |
 | Link restore: source_url check + hasLessonMedia cache check before download | Prevents unnecessary re-download if media already cached locally | ✅ Validated in Phase 23 |
+| CEFR level stored in `cefr_level` column (users table, default "B1") | Single source of truth for user's CEFR level, survives logout/login | ✅ Validated in Phase 24 |
+| PATCH /api/auth/profile handles `cefr_level` field | Keeps CEFR update in same endpoint as username update | ✅ Validated in Phase 24 |
+| `USER_CEFR_LEVEL_KEY = "BOTTLE_CEFR_LEVEL"` in localStorage | Local persistence of CEFR level, works offline | ✅ Validated in Phase 24 |
+| PATCH API + localStorage dual-write on CEFR level change | Server-first with local fallback; syncs on next online session | ✅ Validated in Phase 24 |
+| Unknown words (not in cefr_vocab.json) tagged as "SUPER" level | Ensures unknown words always appear as hard regardless of user level | ✅ Validated in Phase 24 |
+| `cefr_analysis_v1:{lessonId}` as localStorage cache key | Simple versioned key, sufficient for MIT-licensed COCA vocab | ✅ Validated in Phase 24 |
 
-## Current Milestone: v2.4 词汇等级预处理与 CEFR 沉浸式展示
+## Current Milestone: v2.4 词汇等级预处理与 CEFR 沉浸式展示 (Phase 24 COMPLETE — Phase 25 pending)
 
 **Goal:** 实现视频字幕一次性预处理分析，并在沉浸式学习中以颜色块实时标注每个词的 CEFR 等级，重构上一句词选入生词本的交互反馈。
 

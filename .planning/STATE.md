@@ -6,19 +6,19 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-**Current focus:** Phase 23 (字幕遮挡板与链接恢复)
+**Current focus:** Phase 24 — CEFR 基础设施与 i 水平设置 (Complete)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 24 (Complete)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-04-03 — Milestone v2.4 started
+Status: Complete — next: Phase 25
+Last activity: 2026-04-03 — Phase 24 CEFR 基础设施完成
 
 ## Milestone Status
 
 v2.4 词汇等级预处理与 CEFR 沉浸式展示 (Phases 24–25):
-- Phase 24: CEFR 基础设施与 i 水平设置 — Not started
+- Phase 24: CEFR 基础设施与 i 水平设置 — COMPLETE
 - Phase 25: CEFR 沉浸式展示与历史徽章 — Not started
 
 Progress: [████████████████████████████] 100%
