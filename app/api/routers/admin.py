@@ -110,7 +110,8 @@ from app.services.billing_service import (
     yuan_to_compat_cents,
 )
 from app.services.media import get_controlled_media_roots
-from app.api.routers.admin.announcements import router as announcement_router
+import app.api.routers.admin.announcements as _ann_mod  # noqa: E402  # explicit module load avoids __init__.py re-export
+announcement_router = _ann_mod.router
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
