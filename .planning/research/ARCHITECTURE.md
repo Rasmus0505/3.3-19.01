@@ -1,311 +1,483 @@
-# Architecture Research
+# Architecture Research: CEFR Vocabulary Level Analysis Integration
 
-**Domain:** Import flow UX + video content extraction integration
-**Researched:** 2026-04-02
+**Domain:** Vocabulary level analysis with immersive learning display
+**Project:** Bottle English Learning v2.4 — 词汇等级预处理与 CEFR 沉浸式展示
+**Researched:** 2026-04-03
 **Confidence:** HIGH
 
-## Standard Architecture
+## Executive Summary
 
-### System Overview
+The v2.4 milestone adds CEFR vocabulary level analysis as a new data pipeline that layers on top of the existing immersive learning architecture. The analysis pipeline (video open → batch analyze → cache) is entirely new. The display pipeline (read cache → render color blocks) requires modifications to ImmersiveLessonPage token rendering. The settings pipeline (profile → user level → read during session) extends AccountPanel and learningSettings. The history pipeline (lesson list → CEFR badge) extends LessonList.
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           FRONTEND (React/Vite)                        │
-├─────────────────────────────────────────────────────────────────────────┤
-│  UploadPanel.jsx                                                        │
-│  ┌─────────────────┐    ┌──────────────────────┐                       │
-│  │ Link/File Tabs │───▶│ Generation Config   │                       │
-│  │ (default: link)│    │ Modal (NEW)          │                       │
-│  └─────────────────┘    │  • Function toggles │                       │
-│                         │  • Mode: lesson vs   │                       │
-│                         │    video extraction  │                       │
-│                         └──────────┬───────────┘                       │
-│                                    │                                    │
-├────────────────────────────────────┼────────────────────────────────────┤
-│                                    ▼                                    │
-│                         ┌──────────────────┐                           │
-│                         │ Backend API      │                           │
-│                         │ /api/lessons/*   │                           │
-│                         └────────┬─────────┘                           │
-└──────────────────────────────────┼──────────────────────────────────────┘
-                                   │
-┌──────────────────────────────────┼──────────────────────────────────────┐
-│                           BACKEND (FastAPI)                            │
-├──────────────────────────────────┼──────────────────────────────────────┤
-│  ┌──────────────────┐  ┌────────┴─────────┐  ┌───────────────────┐   │
-│  │ LessonService     │  │ LessonCommandService│  │ TranscribeRouter  │   │
-│  │ • lesson CRUD     │  │ • create_lesson_*   │  │ • ASR pipeline    │   │
-│  │ • lesson_type     │◀─│   tasks            │  │ • fast/balanced   │   │
-│  └──────────────────┘  └───────────────────┘  └───────────────────┘   │
-│           │                         ▲                                   │
-│           ▼                         │                                   │
-│  ┌──────────────────┐  ┌────────────┴───────────┐                      │
-│  │ Lesson Model      │  │ LessonGenerationTask   │                      │
-│  │ • lesson_type     │  │ Model (NEW FIELD)      │                      │
-│  │   (standard/      │  │ • extraction_mode     │                      │
-│  │    video_extract) │  │   "lesson"|"video"    │                      │
-│  └──────────────────┘  └────────────────────────┘                      │
-└──────────────────────────────────────────────────────────────────────────┘
-```
+All pipelines use existing data flow patterns — localStorage for caching, React state for display, profile API for settings. No new architectural patterns are needed.
 
-### Component Responsibilities
-
-| Component | Responsibility | Integration |
-|-----------|----------------|-------------|
-| `UploadPanel.jsx` | Upload flow orchestration, tab switching, modal trigger | Parent: learning shell; Children: GenerationConfigModal |
-| `GenerationConfigModal` (NEW) | Function toggles, generation mode selection, submits to backend | Props: `isOpen`, `onSubmit`, `onCancel`; State: mode, toggles |
-| `LessonService` | Lesson CRUD, query with lesson_type filter | Called by lessons router |
-| `LessonCommandService` | Task creation, extraction_mode parameter | Adds `extraction_mode` to task |
-| `Lesson Model` | Database entity with `lesson_type` column (NEW) | Existing model, add field |
-| `ImmersiveLessonPage.jsx` | Immersive learning UI, reducer state machine | Answer box color from session state |
-| `WordbookPanel.jsx` | Wordbook list/review, translation display, pronunciation | Existing - add pronunciation button |
-
-## Generation Modal Architecture
-
-### Modal Flow
+## System Overview
 
 ```
-User clicks "Import and Generate"
-         │
-         ▼
-┌─────────────────────────┐
-│ GenerationConfigModal    │
-│ ┌─────────────────────┐ │
-│ │ Function Toggles     │ │
-│ │ □ Full lesson        │ │
-│ │ □ Video extraction   │ │
-│ │ □ Word collection    │ │
-│ ├─────────────────────┤ │
-│ │ Generation Mode      │ │
-│ │ ○ Fast (video only)  │ │
-│ │ ● Balanced (full)    │ │
-│ └─────────────────────┘ │
-│ [Cancel] [Confirm]       │
-└─────────────────────────┘
-         │
-         │ onSubmit({ mode, toggles })
-         ▼
-┌─────────────────────────────────┐
-│ Backend: /api/lessons/*         │
-│ Body: { extraction_mode, ... }  │
-└─────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              CEFR VOCABULARY PIPELINE                              │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                     │
+│  ┌──────────────────┐         ┌──────────────────┐         ┌──────────────────┐   │
+│  │   ANALYSIS        │         │   DISPLAY        │         │   SETTINGS       │   │
+│  │   PIPELINE        │         │   PIPELINE       │         │   PIPELINE       │   │
+│  ├──────────────────┤         ├──────────────────┤         ├──────────────────┤   │
+│  │ 1. Video opens    │         │ 1. Session start │         │ 1. User sets     │   │
+│  │ 2. Check cache    │         │ 2. Read cached   │         │    CEFR level    │   │
+│  │ 3. Batch analyze  │         │    analysis      │         │    in profile    │   │
+│  │ 4. Store results  │         │ 3. Render token  │         │ 2. API call      │   │
+│  │    in localStorage│         │    color blocks  │         │    PATCH profile │   │
+│  └────────┬─────────┘         └────────┬─────────┘         └────────┬─────────┘   │
+│           │                            │                            │              │
+│           ▼                            ▼                            ▼              │
+│  ┌──────────────────┐         ┌──────────────────┐         ┌──────────────────┐   │
+│  │   localStorage   │◀───────▶│ ImmersiveLesson  │◀────────│   AccountPanel   │   │
+│  │   cefr_analysis  │         │ Page.jsx         │         │   (Personal      │   │
+│  │   _by_lessonId   │         │                  │         │    Center)       │   │
+│  └──────────────────┘         └────────┬─────────┘         └──────────────────┘   │
+│                                       │                                        │
+│                                       ▼                                        │
+│                              ┌──────────────────┐                              │
+│                              │  HISTORY         │                              │
+│                              │  PIPELINE        │                              │
+│                              ├──────────────────┤                              │
+│                              │ 1. Lesson loads  │                              │
+│                              │ 2. Read cached   │                              │
+│                              │    CEFR stats    │                              │
+│                              │ 3. Display badge │                              │
+│                              │    in list       │                              │
+│                              └────────┬─────────┘                              │
+│                                       │                                        │
+│                              ┌────────▼─────────┐                              │
+│                              │   LessonList    │                              │
+│                              │   .jsx          │                              │
+│                              └─────────────────┘                              │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### API Integration
+## Component Architecture
 
-**Option: Extend existing endpoint**
+### New Components
 
-The current `/api/lessons/tasks` (in `app/api/routers/lessons.py`) accepts:
-- `source_file`: UploadFile
-- `title`: str
-- `asr_model`: str
-- `semantic_split_enabled`: bool
+| Component | Location | Responsibility |
+|-----------|----------|----------------|
+| `VocabAnalyzer` | `frontend/src/utils/vocabAnalyzer.js` | Core analysis engine (already exists) |
+| `useVocabAnalysis` (NEW) | `frontend/src/features/immersive/hooks/` | Analysis lifecycle hook |
+| `CEFRBadge` (NEW) | `frontend/src/shared/ui/` | Reusable CEFR level badge |
+| `UserLevelSelector` (NEW) | `frontend/src/features/account/` | CEFR level picker in personal center |
 
-**Recommended addition:**
-```python
-# In LessonTaskCreateRequest (app/schemas/lesson.py)
-extraction_mode: Literal["lesson", "video_extract"] = "lesson"
-function_toggles: dict[str, bool] = {}
-```
+### Modified Components
 
-**Backend flow:**
-```
-POST /api/lessons/tasks
-  → LessonCommandService.create_lesson_task_from_*(...)
-    → extraction_mode passed to task metadata
-    → Different pipeline branches based on mode:
-        "lesson" → Full ASR → sentences → translations
-        "video_extract" → Light extraction → metadata only
-```
+| Component | Current State | Modifications Required |
+|-----------|--------------|------------------------|
+| `ImmersiveLessonPage.jsx` | 3500+ line monolithic component | Add CEFR color overlay on token rendering; hook into lesson load lifecycle |
+| `AccountPanel.jsx` | User profile management | Add CEFR level selector section |
+| `LessonList.jsx` | History display | Add CEFR badge on lesson cards |
+| `learningSettings.js` | localStorage-backed settings | Optionally extend for CEFR level persistence |
 
-## Video Content Extraction Architecture
+### Data Files
 
-### Extraction Pipeline
-
-**Current pipeline (lesson generation):**
-```
-Upload → ASR (faster-whisper/dashscope) → Transcript → Sentences → Translations → Lesson
-```
-
-**Video extraction mode (lighter):**
-```
-Upload → yt-dlp metadata → Thumbnail + metadata → History record (no ASR)
-```
-
-| Mode | Pipeline | Cost | Output |
-|------|----------|------|--------|
-| `lesson` (balanced) | Full ASR → sentences → translations | High | Lesson with sentences |
-| `video_extract` (fast) | yt-dlp → metadata only | Low | History record |
-
-**Implementation approach:**
-- Use existing desktop yt-dlp integration from Phase 07.1
-- New backend endpoint: `POST /api/lessons/video-extract`
-- Returns: `{ record_id, thumbnail_url, metadata }`
-- No ASR/translation cost for video extraction mode
-
-### History Record Schema
-
-**Option: Add `lesson_type` column to Lesson model**
-
-```python
-# app/models/lesson.py - add to Lesson class
-lesson_type: Mapped[str] = mapped_column(
-    String(32), 
-    default="standard", 
-    nullable=False,
-    index=True
-)
-```
-
-| lesson_type | Meaning | Used for |
-|-------------|---------|----------|
-| `standard` | Full lesson with sentences | Regular learning |
-| `video_extract` | Video metadata only | Link import, no ASR |
-
-**Migration needed:**
-- Add column with default `standard` for existing lessons
-- Frontend filters history by `lesson_type` in API calls
-
-## Wordbook Enhancement Architecture
-
-### Translation Display
-
-**Current implementation (WordbookPanel.jsx lines 554-556):**
-```jsx
-{item.word_translation ? (
-  <p className="text-sm font-medium text-foreground">单词翻译：{item.word_translation}</p>
-) : null}
-```
-
-**Enhancement: Add pronunciation playback**
-
-The wordbook entry already has `word_translation` field (lesson.py line 132). Need to add pronunciation audio URL or use TTS.
-
-**Architecture for pronunciation:**
-```jsx
-// In wordbook card:
-<Button 
-  onClick={() => playPronunciation(item.entry_text)}
-  disabled={!item.pronunciation_url}
->
-  <Volume2 className="size-4" />
-</Button>
-```
-
-**Pronunciation sources (priority order):**
-1. Existing audio URL from wordbook entry (if available)
-2. Backend TTS generation: `GET /api/wordbook/{id}/pronunciation`
-3. Browser Web Speech API fallback
-
-**Backend endpoint (new):**
-```python
-@router.get("/api/wordbook/{entry_id}/pronunciation")
-async def get_word_pronunciation(entry_id: int, user = Depends(...)):
-    # Generate TTS or return cached URL
-    # Return: { audio_url: str }
-```
-
-### Pronunciation Playback
-
-**Frontend flow:**
-```javascript
-async function playPronunciation(text) {
-  // Option 1: Fetch TTS URL from backend
-  const { audio_url } = await apiCall(`/api/wordbook/${id}/pronunciation`);
-  const audio = new Audio(audio_url);
-  await audio.play();
-  
-  // Option 2: Browser TTS fallback
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'en-US';
-  speechSynthesis.speak(utterance);
-}
-```
-
-## Immersive Answer Box Architecture
-
-### Color Coding
-
-**Phase 8 validated decision (PROJECT.md):**
-- Yellow: AI/hint content
-- Green: User-typed content
-
-**Implementation: React state approach**
-
-```javascript
-// In ImmersiveLessonPage.jsx - extend session state
-const [answerBoxMode, setAnswerBoxMode] = useState('hint'); // 'hint' | 'user'
-
-// Session reducer handles transitions:
-// USER_TYPING → setAnswerBoxMode('user')
-// HINT_DISPLAY → setAnswerBoxMode('hint')
-```
-
-**CSS classes based on state:**
-```jsx
-<div className={cn(
-  "rounded-lg p-3 border",
-  answerBoxMode === 'hint' 
-    ? "bg-yellow-50 border-yellow-200" 
-    : "bg-emerald-50 border-emerald-200"
-)}>
-```
-
-**State transitions:**
-```
-[Initial state] ──▶ [Hint displayed] ──▶ [User starts typing] ──▶ [Answer submitted]
-                      (yellow)              (green)                 (reset)
-```
+| File | Purpose | Size Consideration |
+|------|---------|-------------------|
+| `app/data/vocab/cefr_vocab.json` | 50K word CEFR lookup table | ~8MB JSON, loads into `sessionStorage` on first use |
 
 ## Integration Points
 
-| Boundary | Integration | Notes |
-|----------|-------------|-------|
-| UploadPanel → GenerationConfigModal | Props: `onSubmit(config)`, `isOpen` | Modal appears after file/link selected, before submit |
-| GenerationConfigModal → Backend | `POST /api/lessons/tasks` with `extraction_mode` | Existing endpoint extended |
-| Backend → Lesson model | `lesson_type` column added | Migration for existing data |
-| LessonService → Frontend | Filter by `lesson_type` in history API | `GET /api/lessons?lesson_type=video_extract` |
-| WordbookPanel → Backend | `GET /api/wordbook/{id}/pronunciation` | New endpoint for TTS |
-| ImmersiveLessonPage → ImmersiveSessionMachine | `answerBoxMode` in local state | Driven by reducer actions |
+### 1. Analysis Pipeline Integration
 
-## Build Order
+**Trigger:** Video/media opens in ImmersiveLessonPage
 
-1. **Wordbook pronunciation (Phase 17.x)** — Independent, lowest risk, validates backend TTS integration
-   - Add backend `/api/wordbook/{id}/pronunciation` endpoint
-   - Add frontend pronunciation button in WordbookPanel
-   - Test with existing word_translation field
+**Flow:**
+```
+ImmersiveLessonPage loads lesson
+         │
+         ▼
+┌─────────────────────────────────┐
+│ useVocabAnalysis hook           │
+│ (NEW component)                 │
+├─────────────────────────────────┤
+│ 1. Check localStorage key:      │
+│    `cefr_analysis_${lessonId}`  │
+│                                 │
+│ 2. If cached:                   │
+│    → Return cached analysis     │
+│                                 │
+│ 3. If not cached:               │
+│    → Load cefr_vocab.json       │
+│    → Call vocabAnalyzer.analyzeVideo() │
+│    → Store in localStorage      │
+│    → Return fresh analysis      │
+└─────────────────────────────────┘
+```
 
-2. **Lesson type field + video extraction endpoint** — Database migration first
-   - Add `lesson_type` column to Lesson model
-   - Create `POST /api/lessons/video-extract` endpoint
-   - Test history filtering by lesson_type
+**Integration with existing ImmersiveLessonPage:**
+- Add `useEffect` on `lesson.id` change
+- Use `useCallback` for memoized analysis access
+- Store analysis in component `useState` or `useRef`
 
-3. **GenerationConfigModal** — New component, minimal risk
-   - Create modal component with function toggles + mode selection
-   - Integrate into UploadPanel flow
-   - Wire to existing submit logic with new params
+**localStorage key pattern:**
+```javascript
+const CACHE_KEY_PREFIX = "cefr_analysis_";
+const getAnalysisCacheKey = (lessonId) => `${CACHE_KEY_PREFIX}${lessonId}`;
+```
 
-4. **Immersive answer box color coding** — Small change, high visibility
-   - Add `answerBoxMode` state in ImmersiveLessonPage
-   - Map reducer actions to color transitions
-   - Test state transitions don't break existing flow
+**Cache structure:**
+```javascript
+{
+  lessonId: string,
+  analyzedAt: ISO timestamp,
+  overallGrade: "A1" | "A2" | "B1" | "B2" | "C1" | "C2",
+  avgRank: number,
+  totalWords: number,
+  levelCounts: { A1: number, A2: number, ... },
+  sentences: [
+    {
+      sentenceIndex: number,
+      original: string,
+      tokens: [{ word: string, level: string, rank: number }],
+      grade: string,
+    }
+  ]
+}
+```
 
-5. **History record type differentiation** — Depends on step 2
-   - Update lesson list to show type badges
-   - Filter by type in API calls
+### 2. Display Pipeline Integration
+
+**Location:** `ImmersiveLessonPage.jsx` token rendering (around line 3849-3871)
+
+**Current token rendering:**
+```jsx
+{expectedTokens.map((token, index) => {
+  const status = wordStatuses[index] || "pending";
+  const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealComparableIndices[index] || []);
+  return (
+    <div key={`${token}-${index}`} className={`immersive-word-slot immersive-word-slot--${status}`}>
+      {/* slots rendering */}
+    </div>
+  );
+})}
+```
+
+**Modified approach:**
+```jsx
+{expectedTokens.map((token, index) => {
+  const status = wordStatuses[index] || "pending";
+  const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealComparableIndices[index] || []);
+  const cefrLevel = currentSentenceAnalysis?.tokens[index]?.level;
+  const isAboveUserLevel = isWordAboveUserLevel(cefrLevel, userLevel);
+
+  return (
+    <div
+      key={`${token}-${index}`}
+      className={`immersive-word-slot immersive-word-slot--${status} ${getCEFRClassName(cefrLevel, isAboveUserLevel)}`}
+    >
+      {/* existing slots rendering */}
+    </div>
+  );
+})}
+```
+
+**CSS classes for CEFR coloring:**
+```css
+/* Word-level CEFR coloring */
+.cefr-level-a1 { border-bottom: 3px solid #10b981; }   /* emerald */
+.cefr-level-a2 { border-bottom: 3px solid #22c55e; }   /* green */
+.cefr-level-b1 { border-bottom: 3px solid #f59e0b; }   /* amber */
+.cefr-level-b2 { border-bottom: 3px solid #f97316; }   /* orange */
+.cefr-level-c1 { border-bottom: 3px solid #ef4444; }   /* red */
+.cefr-level-c2 { border-bottom: 3px solid #dc2626; }   /* dark red */
+
+/* Above user level (i+1) highlight */
+.cefr-above-user-level {
+  background-color: rgba(250, 204, 21, 0.15);  /* yellow highlight */
+  font-weight: 600;
+}
+
+/* Within user level */
+.cefr-within-level {
+  background-color: rgba(34, 197, 94, 0.1);   /* green tint */
+}
+```
+
+### 3. Settings Pipeline Integration
+
+**Profile API endpoint:** `/api/auth/profile` (PATCH)
+
+**Current AccountPanel structure:**
+```jsx
+<Card>
+  <CardHeader>
+    <CardTitle>个人中心</CardTitle>
+  </CardHeader>
+  <CardContent>
+    {/* username form */}
+    {/* redeem code */}
+  </CardContent>
+</Card>
+```
+
+**New CEFR level section:**
+```jsx
+<Card>
+  <CardHeader>
+    <CardTitle>个人中心</CardTitle>
+  </CardHeader>
+  <CardContent>
+    {/* existing username form */}
+    {/* existing redeem code */}
+
+    {/* NEW CEFR Level Section */}
+    <div className="space-y-2">
+      <label className="text-sm font-medium">英语水平</label>
+      <div className="flex flex-wrap gap-2">
+        {["A1", "A2", "B1", "B2", "C1", "C2"].map((level) => (
+          <Button
+            key={level}
+            variant={userLevel === level ? "default" : "outline"}
+            onClick={() => updateUserLevel(level)}
+          >
+            {level}
+          </Button>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {getLevelDescription(userLevel)}
+      </p>
+    </div>
+  </CardContent>
+</Card>
+```
+
+**Backend model change (if needed):**
+- Add `cefr_level` column to user/profile model
+- Extend PATCH `/api/auth/profile` to accept `cefr_level`
+
+**Reading user level during session:**
+```javascript
+// In ImmersiveLessonPage
+const userLevel = currentUser?.cefr_level || "B1"; // Default B1
+```
+
+### 4. History Pipeline Integration
+
+**Location:** `LessonList.jsx` lesson card rendering
+
+**Current lesson card structure (simplified):**
+```jsx
+<Card className="lesson-card">
+  <MediaCover src={lesson.cover_data_url} />
+  <CardContent>
+    <h3>{lesson.title}</h3>
+    <p>{lesson.sentence_count} sentences</p>
+  </CardContent>
+</Card>
+```
+
+**Modified with CEFR badge:**
+```jsx
+<Card className="lesson-card">
+  <MediaCover src={lesson.cover_data_url} />
+  <CardContent>
+    <div className="flex items-center gap-2">
+      <h3>{lesson.title}</h3>
+      {lesson.cefr_grade && (
+        <CEFRBadge level={lesson.cefr_grade} />
+      )}
+    </div>
+    <p>{lesson.sentence_count} sentences</p>
+    {lesson.cefr_stats && (
+      <div className="cefr-stats-bar">
+        <LevelBar counts={lesson.cefr_stats.levelCounts} />
+      </div>
+    )}
+  </CardContent>
+</Card>
+```
+
+**Lesson CEFR data source:**
+- Option A: Store CEFR analysis in lesson record on backend
+- Option B: Read from localStorage on frontend when displaying history
+
+**Recommendation:** Option B (frontend localStorage) for v2.4 — avoids backend migration. Lesson list reads from same localStorage cache used by analysis pipeline.
+
+## Data Flow Diagrams
+
+### Analysis Pipeline Flow
+
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────────┐     ┌──────────────┐
+│ Video Opens │────▶│ Check        │────▶│ Cache exists?   │────▶│ Return       │
+│             │     │ localStorage │     │                 │     │ cached       │
+└─────────────┘     └──────────────┘     └────────┬────────┘     └──────────────┘
+                                                 │
+                                                 │ No
+                                                 ▼
+                                        ┌─────────────────┐
+                                        │ Load cefr_vocab │
+                                        │ .json           │
+                                        └────────┬────────┘
+                                                 │
+                                                 ▼
+                                        ┌─────────────────┐
+                                        │ vocabAnalyzer   │
+                                        │ .analyzeVideo() │
+                                        └────────┬────────┘
+                                                 │
+                                                 ▼
+                                        ┌─────────────────┐     ┌──────────────┐
+                                        │ Store results   │────▶│ Return fresh │
+                                        │ in localStorage │     │ analysis     │
+                                        └─────────────────┘     └──────────────┘
+```
+
+### Display Pipeline Flow
+
+```
+┌──────────────────┐     ┌─────────────────┐     ┌──────────────────┐
+│ Session starts   │────▶│ Read user level │────▶│ Read cached      │
+│                  │     │ from profile    │     │ analysis         │
+└──────────────────┘     └─────────────────┘     └────────┬─────────┘
+                                                           │
+                                                           ▼
+                                                  ┌──────────────────┐
+                                                  │ For each token:  │
+                                                  │ - Get CEFR level │
+                                                  │ - Compare to     │
+                                                  │   user level     │
+                                                  └────────┬─────────┘
+                                                           │
+                                                           ▼
+                                                  ┌──────────────────┐
+                                                  │ Render with      │
+                                                  │ CEFR color class │
+                                                  └──────────────────┘
+```
+
+### Settings Pipeline Flow
+
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────────┐     ┌──────────────┐
+│ User opens  │────▶│ Show CEFR    │────▶│ User selects    │────▶│ API call     │
+│ Personal    │     │ level picker │     │ level          │     │ PATCH profile│
+│ Center      │     │              │     │                │     │              │
+└─────────────┘     └──────────────┘     └─────────────────┘     └──────┬───────┘
+                                                                       │
+                                                                       ▼
+                                                              ┌─────────────────┐
+                                                              │ Update local    │
+                                                              │ user state      │
+                                                              └─────────────────┘
+```
+
+## State Management
+
+### ImmersiveLessonPage State Extensions
+
+**New local state:**
+```javascript
+const [cefrAnalysis, setCefrAnalysis] = useState(null);      // Full video analysis
+const [cefrAnalysisLoading, setCefrAnalysisLoading] = useState(false);
+const [cefrError, setCefrError] = useState(null);
+```
+
+**Derived values:**
+```javascript
+const currentSentenceAnalysis = useMemo(() => {
+  if (!cefrAnalysis?.sentences) return null;
+  return cefrAnalysis.sentences[currentSentenceIndex];
+}, [cefrAnalysis, currentSentenceIndex]);
+
+const userLevel = currentUser?.cefr_level || "B1";  // Read from auth state
+```
+
+### Session Machine Considerations
+
+The `immersiveSessionMachine.js` reducer should NOT be modified for CEFR features. CEFR is display-only data that doesn't affect session state transitions. It reads from existing session state (`currentSentenceIndex`) and lesson data.
+
+**Design decision:** CEFR state lives in React component state, not in the session reducer. This keeps the session machine focused on playback/typing state while CEFR is an overlay concern.
+
+## Suggested Build Order
+
+Given dependencies between features, implement in this order:
+
+### Phase 1: Core Analysis Infrastructure
+1. **Create `useVocabAnalysis` hook** — encapsulates analysis lifecycle
+2. **Integrate with ImmersiveLessonPage** — load analysis on lesson change
+3. **Add CEFR token lookup** — derive level from analysis for current sentence
+4. **Add basic CSS classes** — color blocks without disrupting existing styling
+
+**Rationale:** This is the foundation. All other features depend on having CEFR data available.
+
+### Phase 2: Display Enhancement
+5. **Add CEFR color overlay** — apply color classes based on level vs user level
+6. **Polish CSS** — ensure colors don't conflict with existing word slot states
+7. **Test token interaction** — ensure CEFR colors don't break typing feedback
+
+**Rationale:** Display builds on analysis data. Needs to work with existing typing interaction.
+
+### Phase 3: Settings Integration
+8. **Extend AccountPanel** — add CEFR level selector
+9. **Backend API change** — add `cefr_level` to profile (if not already present)
+10. **Wire up user level reading** — pass user level into immersive session
+
+**Rationale:** Settings provides the user level input. Display reads from it.
+
+### Phase 4: History Display
+11. **Add CEFRBadge component** — reusable badge UI
+12. **Extend LessonList** — show CEFR badge on lesson cards
+13. **Read from localStorage** — leverage existing analysis cache
+
+**Rationale:** History is downstream from analysis. Can read from same cache.
+
+### Phase 5: Polish
+14. **Animation polish** — smooth scale animation on wordbook selection (separate requirement)
+15. **Performance optimization** — batch analysis if needed, lazy loading
+16. **Error handling** — graceful degradation if vocab file fails to load
+
+## Anti-Patterns to Avoid
+
+### Anti-Pattern 1: Blocking Analysis on Load
+
+**What people do:** Load CEFR analysis synchronously during lesson load, blocking UI.
+**Why it's wrong:** Large vocab file + analysis = visible lag on lesson entry.
+**Do this instead:** Load asynchronously, show "Analyzing..." briefly, cache for next visit.
+
+### Anti-Pattern 2: Duplicating CEFR State
+
+**What people do:** Store CEFR analysis in both Redux/ Zustand AND localStorage.
+**Why it's wrong:** Sync complexity, stale data, memory waste.
+**Do this instead:** localStorage is the source of truth for cached analysis. React state is derived copy.
+
+### Anti-Pattern 3: Modifying Session Reducer
+
+**What people do:** Add CEFR-related state to the immersive session reducer.
+**Why it's wrong:** Violates single responsibility. Session reducer handles playback/typing flow.
+**Do this instead:** Keep CEFR in component state as display-only overlay data.
+
+### Anti-Pattern 4: Inverting Analysis/Lesson Load Order
+
+**What people do:** Wait for analysis before showing lesson.
+**Why it's wrong:** Analysis takes time. User should see lesson immediately.
+**Do this instead:** Show lesson UI immediately, analyze in background, update colors when ready.
+
+## Scaling Considerations
+
+| Scale | Concern | Mitigation |
+|-------|---------|------------|
+| 0-100 lessons | localStorage adequate | No changes needed |
+| 100-1000 lessons | localStorage quota | Prune old analysis on analysis count threshold |
+| 1000+ lessons | Large vocab file | Consider IndexedDB, or server-side analysis |
+
+**Current approach is appropriate for v2.4 scope.** Recommend revisiting at v2.5 if project scales significantly.
 
 ## Sources
 
-- `frontend/src/features/upload/UploadPanel.jsx` — Current upload flow with generation_mode
-- `frontend/src/features/wordbook/WordbookPanel.jsx` — Existing wordbook implementation
-- `frontend/src/features/immersive/ImmersiveLessonPage.jsx` — Immersive reducer machine
-- `app/models/lesson.py` — Lesson and WordbookEntry models
-- `app/api/routers/lessons.py` — Lesson task endpoints
-- `app/services/lesson_command_service.py` — Task creation service
-- `.planning/PROJECT.md` — v2.3 milestone requirements
-- `.planning/milestones/v2.1-ROADMAP.md` — Phase 07.1 (Memo mode/link import)
-- `.planning/milestones/v2.1-ROADMAP.md` — Phase 8 (Immersive state machine)
+- Existing codebase: `ImmersiveLessonPage.jsx`, `learningSettings.js`, `immersiveSessionMachine.js`
+- Vocabulary data: `app/data/vocab/cefr_vocab.json` (COCA via vocabulary-list-statistics)
+- Analysis engine: `app/frontend/src/utils/vocabAnalyzer.js`
+- Project context: `.planning/PROJECT.md` v2.4 milestone definition
 
 ---
-*Architecture research for: Import flow UX + video content extraction*
-*Researched: 2026-04-02*
+
+*Architecture research for: CEFR vocabulary level analysis integration*
+*Researched: 2026-04-03*
