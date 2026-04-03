@@ -94,10 +94,13 @@ from app.services.billing_service import (
     REDEEM_CODE_STATUS_ABANDONED,
     REDEEM_CODE_STATUS_ACTIVE,
     REDEEM_CODE_STATUS_DISABLED,
+    abandon_redeem_batch,
+    abandon_redeem_code_with_refund,
     append_admin_operation_log,
     bulk_disable_redeem_codes,
     copy_redeem_batch_and_codes,
     create_redeem_batch_and_codes,
+    delete_redeem_batch_and_codes,
     enforce_mt_flash_only_rates,
     ensure_default_billing_rates,
     get_subtitle_settings,
@@ -1161,6 +1164,50 @@ def admin_copy_redeem_batch(
         return map_billing_error(exc)
 
 
+@router.delete(
+    "/redeem-batches/{batch_id}",
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_delete_redeem_batch(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    try:
+        result = delete_redeem_batch_and_codes(
+            db,
+            batch_id=batch_id,
+            operator_user_id=current_admin.id,
+        )
+        db.commit()
+        return {"ok": True, "batch_id": batch_id, "deleted_code_count": result["deleted_code_count"]}
+    except BillingError as exc:
+        db.rollback()
+        return map_billing_error(exc)
+
+
+@router.post(
+    "/redeem-batches/{batch_id}/abandon",
+    responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_abandon_redeem_batch(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    try:
+        result = abandon_redeem_batch(
+            db,
+            batch_id=batch_id,
+            operator_user_id=current_admin.id,
+        )
+        db.commit()
+        return result
+    except BillingError as exc:
+        db.rollback()
+        return map_billing_error(exc)
+
+
 @router.get(
     "/redeem-codes",
     response_model=AdminRedeemCodeListResponse,
@@ -1207,6 +1254,7 @@ def admin_list_redeem_codes(
             batch_id=batch.id,
             batch_name=batch.batch_name,
             code_mask=code.masked_code,
+            code_plain=code.code_plain,  # 新增 per D-10
             status=code.status,
             effective_status=_effective_code_status(
                 code_status=code.status,
@@ -1310,26 +1358,70 @@ def admin_abandon_redeem_code(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_admin_user),
 ):
+    """
+    废弃兑换码 per D-06, D-08
+    - 已兑换：扣除用户钱包余额（事务保护）
+    - 未兑换：直接标记为废弃
+    """
     try:
-        code = update_redeem_code_status(
+        result = abandon_redeem_code_with_refund(
             db,
             code_id=code_id,
-            next_status=REDEEM_CODE_STATUS_ABANDONED,
             operator_user_id=current_admin.id,
-            note="abandon",
         )
-        batch = db.get(RedeemCodeBatch, code.batch_id)
         db.commit()
-        effective = _effective_code_status(
-            code_status=code.status,
-            batch_status=batch.status if batch else REDEEM_BATCH_STATUS_ACTIVE,
-            expire_at=batch.expire_at if batch else _now(),
-            now=_now(),
+
+        return AdminRedeemCodeStatusActionResponse(
+            ok=True,
+            code_id=code_id,
+            status=result["status"],
+            effective_status=result["status"],
         )
-        return AdminRedeemCodeStatusActionResponse(ok=True, code_id=code.id, status=code.status, effective_status=effective)
     except BillingError as exc:
         db.rollback()
         return map_billing_error(exc)
+    except Exception as exc:
+        db.rollback()
+        return error_response(500, "INTERNAL_ERROR", "废弃兑换码失败", str(exc)[:1200])
+
+
+@router.delete(
+    "/redeem-codes/{code_id}",
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_delete_redeem_code(
+    code_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_admin_user),
+):
+    """
+    硬删除兑换码 per D-04
+    数据库记录彻底移除，兑换码立即失效，不可恢复。
+    """
+    code = db.get(RedeemCode, code_id)
+    if not code:
+        return error_response(404, "REDEEM_CODE_NOT_FOUND", "兑换码不存在")
+
+    append_admin_operation_log(
+        db,
+        operator_user_id=current_admin.id,
+        action_type="redeem_code_hard_delete",
+        target_type="redeem_code",
+        target_id=str(code.id),
+        before_value={
+            "code_id": code.id,
+            "batch_id": code.batch_id,
+            "status": code.status,
+            "masked_code": code.masked_code,
+        },
+        after_value={"deleted": True},
+        note="hard_delete",
+    )
+
+    db.delete(code)
+    db.commit()
+
+    return {"ok": True, "code_id": code_id, "deleted": True}
 
 
 @router.post(
