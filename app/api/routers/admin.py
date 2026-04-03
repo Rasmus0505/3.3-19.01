@@ -1206,6 +1206,7 @@ def admin_list_redeem_codes(
             batch_id=batch.id,
             batch_name=batch.batch_name,
             code_mask=code.masked_code,
+            code_plain=code.code_plain,  # 新增 per D-10
             status=code.status,
             effective_status=_effective_code_status(
                 code_status=code.status,
