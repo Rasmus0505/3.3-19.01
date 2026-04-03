@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from app.services.billing import (
     BillingError,
@@ -6,6 +6,7 @@ from app.services.billing import (
     EVENT_REDEEM_CODE,
     EVENT_REFUND_TRANSLATE,
     LOCAL_BROWSER_ASR_MODELS,
+    abandon_redeem_code_with_refund,
     append_translation_request_logs,
     REDEEM_BATCH_STATUS_ACTIVE,
     REDEEM_BATCH_STATUS_EXPIRED,
@@ -51,6 +52,7 @@ __all__ = [
     "EVENT_REDEEM_CODE",
     "EVENT_REFUND_TRANSLATE",
     "LOCAL_BROWSER_ASR_MODELS",
+    "abandon_redeem_code_with_refund",
     "append_translation_request_logs",
     "REDEEM_BATCH_STATUS_ACTIVE",
     "REDEEM_BATCH_STATUS_PAUSED",

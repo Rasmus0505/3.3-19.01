@@ -92,6 +92,7 @@ from app.services.billing_service import (
     REDEEM_CODE_STATUS_ABANDONED,
     REDEEM_CODE_STATUS_ACTIVE,
     REDEEM_CODE_STATUS_DISABLED,
+    abandon_redeem_code_with_refund,
     append_admin_operation_log,
     bulk_disable_redeem_codes,
     copy_redeem_batch_and_codes,

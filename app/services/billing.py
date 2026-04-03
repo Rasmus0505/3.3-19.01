@@ -1855,6 +1855,93 @@ def bulk_disable_redeem_codes(
     return len(rows)
 
 
+def abandon_redeem_code_with_refund(
+    db: Session,
+    *,
+    code_id: int,
+    operator_user_id: int,
+) -> dict[str, object]:
+    """
+    废弃兑换码并扣除已兑换用户钱包余额 per D-06, D-08
+    - 如果兑换码未兑换，直接标记为 abandoned
+    - 如果兑换码已兑换，生成负向钱包流水
+    - 所有操作在同一事务中完成
+    """
+    code = db.scalar(select(RedeemCode).where(RedeemCode.id == code_id).with_for_update())
+    if not code:
+        raise BillingError("REDEEM_CODE_NOT_FOUND", "兑换码不存在", str(code_id))
+
+    batch = db.get(RedeemCodeBatch, code.batch_id)
+    if not batch:
+        raise BillingError("REDEEM_BATCH_NOT_FOUND", "批次不存在", str(code.batch_id))
+
+    # 未兑换：直接废弃
+    if code.status != REDEEM_CODE_STATUS_REDEEMED:
+        before = {"status": code.status}
+        code.status = REDEEM_CODE_STATUS_ABANDONED
+        db.add(code)
+        db.flush()
+        append_admin_operation_log(
+            db,
+            operator_user_id=operator_user_id,
+            action_type="redeem_code_abandon",
+            target_type="redeem_code",
+            target_id=str(code.id),
+            before_value=before,
+            after_value={"status": code.status, "refund": False},
+            note="abandon_no_redeem",
+        )
+        return {"status": code.status, "refunded": False, "refund_amount": 0}
+
+    # 已兑换：扣除用户钱包余额 per D-06
+    redeemed_user_id = code.redeemed_by_user_id
+    if redeemed_user_id is None:
+        raise BillingError("REDEEM_CODE_NO_REDEEMER", "已兑换兑换码无兑换用户")
+
+    refund_amount = batch.face_value_points
+    account = get_or_create_wallet_account(db, redeemed_user_id, for_update=True)
+    account.balance_points -= refund_amount
+    db.add(account)
+
+    # 生成负向流水 per D-06 (use 'refund' event_type with negative delta_points)
+    _append_ledger(
+        db,
+        user_id=redeemed_user_id,
+        operator_user_id=operator_user_id,
+        event_type="refund",  # use 'refund' per DB CHECK constraint
+        delta_points=-refund_amount,
+        balance_after=account.balance_points,
+        redeem_batch_id=batch.id,
+        redeem_code_id=code.id,
+        redeem_code_mask=code.masked_code,
+        note=f"废弃扣回:{code.masked_code}",
+    )
+
+    before = {"status": code.status}
+    code.status = REDEEM_CODE_STATUS_ABANDONED
+    db.add(code)
+    db.flush()
+
+    append_admin_operation_log(
+        db,
+        operator_user_id=operator_user_id,
+        action_type="redeem_code_abandon",
+        target_type="redeem_code",
+        target_id=str(code.id),
+        before_value=before,
+        after_value={"status": code.status, "refund": True, "refund_amount": refund_amount},
+        note="abandon_with_refund",
+    )
+
+    return {
+        "status": code.status,
+        "refunded": True,
+        "refund_amount": refund_amount,
+        "user_id": redeemed_user_id,
+        "balance_after": account.balance_points,
+    }
+
+
 def _append_redeem_attempt(
     db: Session,
     *,

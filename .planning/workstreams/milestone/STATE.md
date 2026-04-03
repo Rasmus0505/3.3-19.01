@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: 学习体验与导入流程优化
-status: Phase 23 complete
-last_updated: "2026-04-03T05:30:00.000Z"
+status: verifying
+last_updated: "2026-04-03T06:56:42.662Z"
 progress:
-  total_phases: 7
-  completed_phases: 6
+  total_phases: 6
+  completed_phases: 4
   total_plans: 14
-  completed_plans: 17
+  completed_plans: 15
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 Milestone: v2.3
 Phase: 23
 Plan: 2 of 2 complete
-Status: Phase 23 complete — all milestone phases finished
+Status: Phase complete — ready for verification
 
 v2.3 started 2026-04-02:
 
@@ -134,6 +134,9 @@ v2.3 started 2026-04-02:
 | Mask: enabled state persists via localStorage | 23-01 | Verified — existing code already implements D-03 |
 | Link restore: unified entry with source_url check | 23-02 | openRestorePicker checks lesson?.source_url |
 | Link restore: cache check before yt-dlp trigger | 23-02 | hasLessonMedia(lesson.id) before download |
+
+- [Phase ?]: D-01: 用户列表增加用户名列（User.username 字段）
+- [Phase ?]: D-02: 用户列表增加注册时间列（User.created_at，北京时间格式化）
 
 ## Next Step
 
