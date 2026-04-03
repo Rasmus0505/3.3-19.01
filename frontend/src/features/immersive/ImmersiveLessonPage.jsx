@@ -1305,20 +1305,6 @@ export function ImmersiveLessonPage({
       return new Map();
     }
   }, [lesson?.sentences?.[currentSentenceIndex]?.en, cefrLevel, cefrAnalyzerRef.current?.isLoaded]);
-  const wordbookSentenceCefrMap = useMemo(() => {
-    const sentence = interactiveWordbookContext?.sentence;
-    if (!sentence || !cefrAnalyzerRef.current?.isLoaded) return new Map();
-    try {
-      const result = cefrAnalyzerRef.current.analyzeSentence(sentence.text_en || sentence.en || "");
-      const map = new Map();
-      for (const tokenInfo of result.tokens) {
-        map.set(tokenInfo.word.toLowerCase(), tokenInfo.level);
-      }
-      return map;
-    } catch (_) {
-      return new Map();
-    }
-  }, [interactiveWordbookContext?.sentence, cefrLevel, cefrAnalyzerRef.current?.isLoaded]);
   const interactiveWordbookContext = useMemo(
     () =>
       resolveInteractiveWordbookContext({
@@ -1350,6 +1336,20 @@ export function ImmersiveLessonPage({
       translationDisplayMode,
     ],
   );
+  const wordbookSentenceCefrMap = useMemo(() => {
+    const sentence = interactiveWordbookContext?.sentence;
+    if (!sentence || !cefrAnalyzerRef.current?.isLoaded) return new Map();
+    try {
+      const result = cefrAnalyzerRef.current.analyzeSentence(sentence.text_en || sentence.en || "");
+      const map = new Map();
+      for (const tokenInfo of result.tokens) {
+        map.set(tokenInfo.word.toLowerCase(), tokenInfo.level);
+      }
+      return map;
+    } catch (_) {
+      return new Map();
+    }
+  }, [interactiveWordbookContext?.sentence, cefrLevel, cefrAnalyzerRef.current?.isLoaded]);
   const canRenderInteractiveWordbook = Boolean(interactiveWordbookContext);
   const wordbookSentence = interactiveWordbookContext?.sentence || null;
   const wordbookSentenceTokens = interactiveWordbookContext?.tokens || [];

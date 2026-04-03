@@ -49,6 +49,7 @@ import {
   SHORTCUT_ACTIONS,
   writeLearningSettings,
 } from "../immersive/learningSettings";
+import "../immersive/immersive.css";
 
 /** @typedef {import("./types").Lesson} Lesson */
 /** @typedef {import("./types").LessonSentence} LessonSentence */
@@ -325,12 +326,16 @@ function getCefrAnalysisKey(lessonId) {
 }
 
 function computeCefrDistribution(analysisResult, userLevel) {
-  const { distribution, grade } = analysisResult;
+  // analyzeVideo() + immersive cache use levelCounts / overallGrade; older code may use distribution / grade
+  const distribution = analysisResult?.distribution ?? analysisResult?.levelCounts;
+  const grade = analysisResult?.grade ?? analysisResult?.overallGrade ?? "B1";
+  if (!distribution || typeof distribution !== "object") return null;
   const total = Object.values(distribution).reduce((sum, count) => sum + count, 0);
   if (total === 0) return null;
 
   const levelOrder = ["A1", "A2", "B1", "B2", "C1", "C2", "SUPER"];
-  const userIndex = levelOrder.indexOf(userLevel);
+  const rawUserIndex = levelOrder.indexOf(userLevel);
+  const userIndex = rawUserIndex === -1 ? levelOrder.indexOf("B1") : rawUserIndex;
 
   let iPlusOnePercent = 0;
   let aboveIPlusOnePercent = 0;
