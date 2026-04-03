@@ -6,22 +6,25 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-**Current focus:** Phase 20 (生词本词条增强)
+**Current focus:** Phase 23 (字幕遮挡板与链接恢复)
 
 ## Current Position
 
-Phase: 20 of 23 (生词本词条增强)
-Plan: 0 of ~4 in current phase
-Status: Context gathered — ready to plan
-Last activity: 2026-04-02 — Phase 20 context captured
+Phase: 23 of 23 (字幕遮挡板与链接恢复)
+Plan: 2 of 2 in current phase
+Status: Phase 23 complete — all plans finished
+Last activity: 2026-04-03 — Phase 23-02 context captured and executed
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████████████████████████] 100%
 
 ## Milestone Status
 
 v2.3 学习体验与导入流程优化 (Phases 19–23):
 - Phase 19: 沉浸式学习 Bug 修复 — COMPLETE
-- Phase 20: 生词本词条增强 — context gathered
+- Phase 20: 生词本词条增强 — COMPLETE
+- Phase 21: 素材导入 UX 优化 — COMPLETE
+- Phase 21.1: 后台管理用户运营优化 — IN PROGRESS
+- Phase 22: 字幕遮挡板与链接恢复 — COMPLETE
 
 ## Phase 20 Context Summary
 
@@ -47,6 +50,10 @@ v2.3 学习体验与导入流程优化 (Phases 19–23):
 *Updated after each plan completion*
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 21.1 inserted after Phase 21: 后台管理用户运营优化：用户列表显示用户名，兑换码操作精简为删除和废弃，兑换码增加复制按钮，状态改为中文显示（URGENT）
 
 ### Decisions
 

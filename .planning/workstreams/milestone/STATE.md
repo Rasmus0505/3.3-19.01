@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: 学习体验与导入流程优化
-status: Phase 21 context gathered
-last_updated: "2026-04-03T04:46:36.810Z"
+status: Phase 23 complete
+last_updated: "2026-04-03T05:30:00.000Z"
 progress:
-  total_phases: 6
-  completed_phases: 4
+  total_phases: 7
+  completed_phases: 6
   total_plans: 14
-  completed_plans: 15
+  completed_plans: 17
 ---
 
 # Project State
@@ -18,30 +18,28 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current focus:** Phase 21 — 素材导入 UX 优化
+**Current focus:** Phase 23 (字幕遮挡板与链接恢复) — COMPLETE
 
 ## Current Position
 
 Milestone: v2.3
-Phase: 21
-Plan: Not started
-Status: Phase 21 context gathered
+Phase: 23
+Plan: 2 of 2 complete
+Status: Phase 23 complete — all milestone phases finished
 
 v2.3 started 2026-04-02:
 
 - Phase 19: 沉浸式学习 Bug 修复 — completed
 - Phase 20: 生词本词条增强 — completed
 - Phase 21: 素材导入 UX 优化 — completed
-
-- Phase 21 context captured decisions:
-  - **UPLOAD-01**: 默认选中"链接导入"Tab（改 `useState` 默认值）
-  - **UPLOAD-02**: 链接 Tab 文案精简，移除冗余段落，第②条"仅支持公开单条链接..."移除；底部仅保留 SnapAny 外链
-  - **UPLOAD-03**: 自动填标题 — **已在代码中实现**（`UploadPanel.jsx:3458, 3651`），无需开发
-  - **UPLOAD-04**: 快捷键配置改为两行紧凑网格（第一行 4 个，第二行 3 个），卡片宽度刚好包裹内容，不留空白
+- Phase 21.1: 后台管理用户运营优化 — INSERTED (URGENT)
+- Phase 22: 字幕遮挡板与链接恢复 — COMPLETED (2026-04-03)
+  - 22-01: 遮挡板居中 + 宽度自适应 ✅
+  - 22-02: 链接恢复增强（MASK-04）✅
 
 ## Next Step
 
-1. **Phase 21 — 素材导入 UX 优化** — `/gsd-plan-phase 21`
+1. **Phase 21.1 — 后台管理用户运营优化** — `/gsd-plan-phase 21.1`
 
 ## Milestone Status
 
