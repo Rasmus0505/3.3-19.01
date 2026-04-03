@@ -986,6 +986,7 @@ export function ImmersiveLessonPage({
   );
   const [wordbookBusy, setWordbookBusy] = useState(false);
   const [wordbookSelectedTokenIndexes, setWordbookSelectedTokenIndexes] = useState([]);
+  const [wordbookSuccessAnimationIndexes, setWordbookSuccessAnimationIndexes] = useState([]);
   const [showEntryHintOverlay, setShowEntryHintOverlay] = useState(false);
   const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
   const [isFullscreenFallback, setIsFullscreenFallback] = useState(false);
@@ -1304,6 +1305,20 @@ export function ImmersiveLessonPage({
       return new Map();
     }
   }, [lesson?.sentences?.[currentSentenceIndex]?.en, cefrLevel, cefrAnalyzerRef.current?.isLoaded]);
+  const wordbookSentenceCefrMap = useMemo(() => {
+    const sentence = interactiveWordbookContext?.sentence;
+    if (!sentence || !cefrAnalyzerRef.current?.isLoaded) return new Map();
+    try {
+      const result = cefrAnalyzerRef.current.analyzeSentence(sentence.text_en || sentence.en || "");
+      const map = new Map();
+      for (const tokenInfo of result.tokens) {
+        map.set(tokenInfo.word.toLowerCase(), tokenInfo.level);
+      }
+      return map;
+    } catch (_) {
+      return new Map();
+    }
+  }, [interactiveWordbookContext?.sentence, cefrLevel, cefrAnalyzerRef.current?.isLoaded]);
   const interactiveWordbookContext = useMemo(
     () =>
       resolveInteractiveWordbookContext({
@@ -1833,6 +1848,13 @@ export function ImmersiveLessonPage({
         const message = data.message || (data.created ? "已加入生词本" : "已更新到最新语境");
         if (wordbookSuccessTimerRef.current) clearTimeout(wordbookSuccessTimerRef.current);
         setWordbookSuccessMessage(message);
+        // Trigger success animation on selected tokens
+        const indexes = wordbookSelectedTokenIndexes.slice();
+        setWordbookSuccessAnimationIndexes(indexes);
+        // Clear animation after 400ms (covers both 200ms scale + 350ms border flash)
+        setTimeout(() => {
+          setWordbookSuccessAnimationIndexes([]);
+        }, 400);
         wordbookSuccessTimerRef.current = setTimeout(() => {
           setWordbookSuccessMessage(null);
           wordbookSuccessTimerRef.current = null;
@@ -3974,11 +3996,18 @@ export function ImmersiveLessonPage({
                                 type="button"
                                 data-wordbook-token-index={index}
                                 aria-pressed={tokenSelected}
-                                className={`min-h-0 cursor-pointer rounded-md border border-transparent px-1.5 py-0.5 text-left text-sm leading-6 transition-colors select-none touch-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                                className={cn(
+                                  "min-h-0 cursor-pointer rounded-md border px-1.5 py-0.5 text-left text-sm leading-6 transition-colors select-none touch-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 immersive-wordbook-token",
                                   tokenSelected
-                                    ? "bg-slate-200 text-foreground shadow-sm"
-                                    : "bg-slate-100/80 text-foreground hover:bg-slate-200/70"
-                                } ${wordbookBusy ? "opacity-60" : ""}`}
+                                    ? "bg-slate-200 text-foreground shadow-sm border-transparent"
+                                    : "bg-slate-100/80 text-foreground hover:bg-slate-200/70 border-transparent",
+                                  wordbookBusy ? "opacity-60" : "",
+                                  computeCefrClassName(
+                                    wordbookSentenceCefrMap.get(token.toLowerCase()) || "SUPER",
+                                    cefrLevel,
+                                  ),
+                                  wordbookSuccessAnimationIndexes.includes(index) ? "wordbook-token--success" : "",
+                                )}
                                 disabled={wordbookBusy}
                                 onContextMenu={(event) => {
                                   event.preventDefault();
