@@ -17,321 +17,214 @@ created: 2026-04-03
 
 | Property | Value |
 |----------|-------|
-| Tool | Tailwind CSS + custom CSS |
+| Tool | none (Tailwind CSS v4 + custom CSS) |
 | Preset | not applicable |
-| Component library | shadcn/ui Card, Button |
-| Icon library | lucide-react (existing) |
-| Font | Geist Variable (existing) |
+| Component library | none |
+| Icon library | lucide-react |
+| Font | Geist Variable (sans), Geist Mono (mono/letter cells) |
+| Color system | CSS custom properties with oklch() |
+
+**Note:** No shadcn components.json found. This project uses Tailwind CSS v4 with custom CSS variables (defined in `frontend/src/index.css`) and component-style classes in `immersive.css`.
 
 ---
 
 ## Spacing Scale
 
-Declared values (multiples of 4):
+Declared values (must be multiples of 4):
 
 | Token | Value | Usage |
 |-------|-------|-------|
-| xs | 4px | Inline letter-cell padding |
-| sm | 8px | Compact element spacing |
+| xs | 4px | Icon gaps, inline padding |
+| sm | 8px | Compact element spacing, letter cell gaps |
 | md | 16px | Default element spacing |
 | lg | 24px | Section padding |
 | xl | 32px | Layout gaps |
 | 2xl | 48px | Major section breaks |
+| 3xl | 64px | Page-level spacing |
 
-**Exceptions:** None beyond existing Tailwind scale.
+**Exceptions:** None — CEFR feature uses standard scale only.
 
 ---
 
 ## Typography
 
-Pre-populated from existing design system (Geist).
+| Role | Size | Weight | Line Height | Usage |
+|------|------|--------|-------------|-------|
+| Body | 14px | 400 (normal) | 1.5 | Default UI text |
+| Label | 13px | 600 (semibold) | 1.4 | Toolbar labels, hints |
+| Heading | 16px | 600 | 1.3 | Section headings, card titles |
+| Display | — | — | — | Not used in this phase |
+| Letter cell | 18px | (mono font default) | 1.0 | Immersive answer box word slots |
 
-| Role | Size | Weight | Line Height |
-|------|------|--------|-------------|
-| Body | 14px | 400 | 1.5 |
-| Label | 13px | 600 | 1.4 |
-| Heading | 16px | 600 | 1.3 |
-| Display | 18px | 600 | 1.2 |
-
-**Notes:**
-- Letter cells in answer box: `font-mono`, 18px desktop / 16px mobile (existing `.immersive-letter-cell`)
-- Word tokens in previous sentence: `text-sm` (14px), `leading-6`
+**Source:** Existing `immersive-letter-cell` class uses 18px/1 line-height. Font family from `--font-mono`.
 
 ---
 
 ## Color
 
-### CEFR Semantic Colors (Phase 25 specific)
+### General Color Palette (from index.css)
 
-Pre-populated from CONTEXT.md locked decisions. These MUST NOT overlap with existing letter-state colors.
-
-| Role | Token | oklch | hex (approx) | Usage |
-|------|-------|-------|--------------|-------|
-| CEFR i+1 (踮脚够得到) | `cefr-i-plus-one` | `oklch(0.58 0.11 200)` | `#4a8fa8` | Green/teal for reachable words |
-| CEFR >i+1 (太难) | `cefr-hard` | `oklch(0.70 0.16 60)` | `#b8813a` | Amber/orange for too-difficult words |
-| CEFR mastered (≤i) | — | none | transparent | No badge, no underline |
-| Wordbook success border | — | `oklch(0.70 0.14 155)` | `#4db86a` | Green border flash on add success |
-
-**Contrast with existing letter states:**
-
-| Letter State | oklch | Usage |
-|--------------|-------|-------|
-| Correct letter | `oklch(0.38 0.11 145)` | User typed correctly |
-| Wrong letter | `oklch(0.49 0.19 25)` | User typed wrong |
-| Revealed letter | `oklch(0.70 0.18 85)` | Hinted/revealed |
-
-CEFR colors use hue 200 (teal) and hue 60 (amber) — clearly distinct from letter states (hue 145 green, hue 25 red, hue 85 yellow).
-
-### Global Design Tokens
-
-Pre-populated from `frontend/src/index.css` and `immersive.css`.
-
-| Role | oklch | Usage |
+| Role | Value | Usage |
 |------|-------|-------|
-| Dominant (60%) | `oklch(1 0 0)` | Page background |
-| Secondary (30%) | `oklch(0.97 0 0)` | Cards, sidebar, nav |
-| Primary | `oklch(0.205 0 0)` | Interactive elements |
-| Border | `oklch(0.922 0 0)` | Card/input borders |
+| Background | `oklch(1 0 0)` | Page background |
+| Surface | `oklch(0.97 0 0)` | Card backgrounds, elevated surfaces |
+| Primary text | `oklch(0.145 0 0)` | Body copy, labels |
+| Border | `oklch(0.922 0 0)` | Dividers, outlines |
+| Muted text | `oklch(0.556 0 0)` | Secondary labels, placeholders |
+| Destructive | `oklch(0.577 0.245 27.325)` | Error states, destructive actions |
 
----
+### CEFR Visual Contract (LOCKED from CONTEXT.md)
 
-## CEFR Badge Specifications
+**Critical: CEFR colors must NOT overlap with existing letter-state colors.**
 
-### Current Sentence (Letter-level Underline)
+| CEFR Level | Color Name | Hex / oklch | Usage |
+|------------|------------|-------------|-------|
+| ≤ i (mastered) | none | transparent | No underline in current sentence; no color band in previous sentence |
+| **i+1** (within reach) | teal-green | `oklch(0.75 0.16 175)` | Letter underlines (current sentence); color band (previous sentence) |
+| **> i+1** (too hard) | amber-red | `oklch(0.65 0.20 40)` | Letter underlines (current sentence); color band (previous sentence) |
 
-Pre-populated from CONTEXT.md — locked decision.
+**Why these values avoid conflict:**
+- Letter `--correct` (green): `oklch(0.38 0.11 145)` — dark, fully saturated green text + `oklch(0.67 0.16 145)` border
+- Letter `--wrong` (red): `oklch(0.49 0.19 25)` — dark red text + `oklch(0.64 0.22 25)` border
+- Letter `--revealed` (yellow): `oklch(0.70 0.18 85)` — amber text + same amber border
 
-**Location:** Answer box input area, each token's letter cells.
+CEFR colors use different lightness and chroma:
+- CEFR i+1: lightness `0.75` (light teal) vs letter-correct `0.67` (dark green)
+- CEFR >i+1: lightness `0.65` (amber) vs letter-wrong `0.49` (dark red)
 
-**Implementation:**
-- Add a second `border-bottom` line beneath each letter cell (stacked)
-- Bottom border = CEFR level color; top border = letter state color
-- Border thickness: 2px (matching existing letter cell border-bottom)
-- Always visible regardless of whether user has typed that word
-- z-index: renders above letter cell content
+**Letter underline vs color band distinction:**
+- Current sentence: 2px bottom border on `.immersive-letter-cell`, color = CEFR level → always visible regardless of typing progress
+- Previous sentence: 2px bottom border on word `<button>`, color = CEFR level, renders above `bg-slate-100/80` background
 
-**CEFR underline color rules:**
+### Previous Sentence Word Block States
 
-| Condition | Border-bottom color |
-|-----------|---------------------|
-| Word level == user_i_level | `transparent` (no CEFR underline) |
-| Word level == user_i_level + 1 | `cefr-i-plus-one` teal |
-| Word level >= user_i_level + 2 | `cefr-hard` amber |
-| Word level == SUPER | `cefr-hard` amber |
-| Word not in vocab | `cefr-hard` amber |
+| State | Class / Style | Visual |
+|-------|---------------|--------|
+| Normal | `bg-slate-100/80` | Light gray background |
+| Hover | `hover:bg-slate-200/70` | Deeper gray on hover |
+| Selected (for wordbook) | `bg-slate-200 text-foreground shadow-sm` | Darker gray + shadow |
+| CEFR color band | 2px bottom border, color per CEFR level above | Green/teal or amber-red, renders above background |
+| Added success | `scale(1.08)` + green border flash | Scale-up animation + success feedback |
 
-### Previous Sentence (Color Band)
+**Combinable states:** Selected + CEFR color band can coexist without visual conflict.
 
-Pre-populated from CONTEXT.md — locked decision.
+### Wordbook Success Feedback
 
-**Location:** Each word block in `.immersive-previous-sentence` row.
+| Effect | Value | Duration |
+|--------|-------|----------|
+| Scale up | `scale(1.0) → scale(1.08)` | 200ms ease-out |
+| Scale back | `scale(1.08) → scale(1.0)` | spring back (use `ease-out`) |
+| Green border flash | `border-color: transparent → oklch(0.69 0.14 155) → transparent` | 350ms total |
 
-**Implementation:**
-- 1-2px horizontal bar at the **bottom** of each word `<button>`
-- Renders above gray background (z-index layered correctly)
-- Width = 100% of word button width
-
-**CEFR band color rules:**
-
-| Condition | Band color |
-|-----------|------------|
-| Word level <= user_i_level | `transparent` (no band) |
-| Word level == user_i_level + 1 | `cefr-i-plus-one` teal |
-| Word level >= user_i_level + 2 | `cefr-hard` amber |
-| Word level == SUPER | `cefr-hard` amber |
-| Word not in vocab | `cefr-hard` amber |
+**Trigger:** Click "加入生词本" button (not word selection gesture).
+**Green border hex:** `oklch(0.69 0.14 155)` — this is `upload-success` from index.css, distinct from CEFR teal-green (`oklch(0.75 0.16 175)`).
 
 ### History Card CEFR Badge
 
-Pre-populated from CONTEXT.md decisions.
+| Element | Value | Position |
+|---------|-------|----------|
+| Distribution bar | Horizontal segmented progress bar, each segment = CEFR level proportion | Card bottom or upper-right area |
+| Representative color block | Single color block using dominant level color (teal-green `oklch(0.75 0.16 175)` for i+1, amber-red `oklch(0.65 0.20 40)` for >i+1) | Upper-right or bottom of card |
+| Percentage text | e.g. "B1: 45%" — Level text + percentage | Adjacent to color block |
+| Loading state | Progress bar animation + background auto-analysis indicator | Replaces badge until analysis complete |
 
-**Layout (per card):**
-
-1. **Distribution bar** (top or bottom of card):
-   - Horizontal segmented progress bar
-   - Each segment = one CEFR level, width proportional to word count
-   - Segment colors: teal (i+1), amber (>i+1), gray (≤i mastered)
-   - Height: 4px, border-radius: 2px
-   - Example: `[teal 40%][amber 35%][gray 25%]`
-
-2. **Representative badge** (card header or corner):
-   - Colored block (12×12px rounded) + level text (e.g., "B1: 45%")
-   - Color = dominant CEFR level in the lesson
-   - Font: 12px, semibold
-
-3. **First unanalyzed lesson:**
-   - Show skeleton loading bar
-   - Background auto-analysis triggered (Phase 24 infrastructure)
-
-### Z-Index Layering
-
-| Element | z-index | Notes |
-|---------|---------|-------|
-| CEFR underline (current sentence) | inline | Stacked border-bottom, same stacking context |
-| CEFR band (previous sentence) | inline | Absolute positioned pseudo-element |
-| Wordbook selected state | inline | `bg-slate-200` + shadow-sm |
-| Wordbook success border | 10 | Green border flash animation |
-| Letter state underline | inline | Top border-bottom for letter color |
+**Claude's Discretion (decided here):**
+- Badge position: **card upper-right corner** — consistent with modern dashboard card patterns
+- `lessonCardMetaMap` field: `cefrDistribution: { [level]: percentage }` (e.g., `{ B1: 45, B2: 30, C1: 15, Other: 10 }`)
 
 ---
 
-## Wordbook Animation Specifications
+## CEFR Rendering Specification
 
-Pre-populated from CONTEXT.md — locked decision.
+### Current Sentence (Typing Answer Box)
 
-### Scale Animation (Primary Feedback)
+Each `.immersive-letter-cell` gets a 2px bottom border whose color is determined by the word's CEFR level:
 
-**Trigger:** Click "加入生词本" button (not on word selection).
-
-**Effect:** Selected word block(s) animate:
-
-```
-scale: 1.0 → 1.08 → spring back to 1.0
-duration: 200ms
-timing: ease-out (cubic-bezier(0.25, 0.46, 0.45, 0.94))
-```
-
-**Implementation:**
 ```css
-.cefr-wordbook-success {
-  animation: cefr-wordbook-pop 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+/* i+1 level — teal underline */
+.cefr-i-plus-one .immersive-letter-cell {
+  border-bottom-color: oklch(0.75 0.16 175);
 }
 
-@keyframes cefr-wordbook-pop {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.08); }
-  100% { transform: scale(1); }
+/* > i+1 level — amber-red underline */
+.cefr-above-i-plus-one .immersive-letter-cell {
+  border-bottom-color: oklch(0.65 0.20 40);
+}
+
+/* ≤ i level — no CEFR color, use default border */
+.cefr-mastered .immersive-letter-cell {
+  border-bottom-color: transparent; /* or omit — defaults to var(--color-border) */
 }
 ```
 
-### Green Border Flash (Secondary Feedback)
+**Z-index:** CEFR underline renders via `border-bottom-color` on the letter cell, naturally layered above the cell background. Letter state colors (correct/wrong/revealed) set both `color` and `border-bottom-color` — CEFR underline color applies only to letter cells where letter state is NOT active (pending/empty).
 
-**Trigger:** Same as scale animation — both fire together.
+**Always visible:** CEFR underline color is shown from lesson start, regardless of whether the user has typed into that word slot.
 
-**Effect:** Green border appears around word block, then fades.
+### Previous Sentence (Review Wordbook Block)
 
-```
-border: 2px solid #4db86a (cefr-success-green)
-duration: 300ms total
-timing: ease-out
-sequence: instant on → fade out over 300ms
-```
+Each word `<button>` gets a 2px bottom border for CEFR:
 
-**Implementation:**
 ```css
-.cefr-wordbook-success {
-  border-color: #4db86a;
-  animation: cefr-wordbook-flash 300ms ease-out forwards;
+/* Previous sentence CEFR color band */
+.immersive-wordbook-token--cefr-i-plus-one {
+  border-bottom: 2px solid oklch(0.75 0.16 175);
 }
 
-@keyframes cefr-wordbook-flash {
-  0% { border-color: #4db86a; }
+.immersive-wordbook-token--cefr-above-i-plus-one {
+  border-bottom: 2px solid oklch(0.65 0.20 40);
+}
+
+.immersive-wordbook-token--cefr-mastered {
+  border-bottom: 2px solid transparent; /* or omit */
+}
+```
+
+**Rendering order:** `border-bottom` renders above `bg-slate-100/80` background automatically (CSS border is always on top of background).
+
+---
+
+## Animation Specification
+
+### Wordbook Success Animation (CSS)
+
+Add to `immersive.css`:
+
+```css
+/* Triggered by class toggle on the wordbook sentence container */
+@keyframes wordbook-success-scale {
+  0%   { transform: scale(1.0); }
+  40%  { transform: scale(1.08); }
+  100% { transform: scale(1.0); }
+}
+
+@keyframes wordbook-success-border-flash {
+  0%   { border-color: transparent; }
+  30%  { border-color: oklch(0.69 0.14 155); }
+  70%  { border-color: oklch(0.69 0.14 155); }
   100% { border-color: transparent; }
 }
-```
 
-### Animation Timing Sequence
-
-1. User clicks "加入生词本"
-2. `collectWordbookEntry` called
-3. API success response received
-4. `setWordbookSuccessMessage` set ("已加入生词本")
-5. Word block: `scale(1.0 → 1.08 → 1.0)` over 200ms
-6. Word block: green border flash over 300ms
-7. Success message fades out after 1500ms (existing timer)
-
----
-
-## Previous Sentence Word Block States
-
-Pre-populated from CONTEXT.md — combinable states.
-
-### State 1: Normal
-
-```css
-bg-slate-100/80
-hover: bg-slate-200/70
-```
-
-### State 2: Selected (for wordbook)
-
-```css
-bg-slate-200
-shadow-sm
-```
-
-**Coexists with State 3** — CEFR band renders above `bg-slate-200` background.
-
-### State 3: CEFR Color Band
-
-```css
-/* Absolute positioned bar at bottom of word button */
-.cefr-band {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background-color: var(--cefr-color); /* teal or amber */
+.immersive-previous-sentence__row--success {
+  animation: wordbook-success-scale 200ms ease-out,
+             wordbook-success-border-flash 350ms ease-out;
+  transform-origin: center;
 }
 ```
 
-### State 4: Added Success (Animation)
-
-```css
-.cefr-wordbook-success {
-  animation: cefr-wordbook-pop 200ms ease-out,
-             cefr-wordbook-flash 300ms ease-out forwards;
-}
-```
-
-### State Combinations
-
-| States | Visual Result |
-|--------|---------------|
-| 1 + 3 | Gray word, teal/amber band at bottom |
-| 2 + 3 | Light gray word, shadow, teal/amber band at bottom |
-| 1 + 4 | Gray word, scale pop + green border flash |
-| 2 + 4 | Light gray word, shadow, scale pop + green border flash |
-
-**No conflict:** States 3 and 4 are independent layers.
+**Trigger:** Add `immersive-previous-sentence__row--success` class on submit, remove after 350ms.
 
 ---
 
 ## Copywriting Contract
 
-Pre-populated from existing codebase patterns.
-
-| Element | Copy | Source |
-|---------|------|--------|
-| Primary CTA | 加入生词本 | Existing button in ImmersiveLessonPage.jsx |
-| Success message | 已加入生词本 / 已更新到最新语境 | Existing `wordbookSuccessMessage` state |
-| Loading | 加入中... | Existing `wordbookBusy` state |
-| Empty history | (none — history list always has items) | N/A |
-| Error | "加入生词本失败" + retry | Existing error handling |
-| Destructive | none | No destructive actions in this phase |
-
----
-
-## Component Inventory
-
-### ImmersiveLessonPage.jsx Changes
-
-| Component | Change | CSS Class/Location |
-|-----------|--------|---------------------|
-| Letter cell (current sentence) | Add CEFR underline | `.immersive-letter-cell::after` pseudo-element |
-| Word button (previous sentence) | Add CEFR band | `.cefr-band` absolute positioned |
-| Word button | Add animation class | `.cefr-wordbook-success` on success |
-| Word button | Selected state | `bg-slate-200 shadow-sm` (existing) |
-| Add button | Add disabled state | `opacity-60` when `wordbookBusy` |
-
-### LessonList.jsx Changes
-
-| Component | Change | Location |
-|-----------|--------|----------|
-| Lesson card | Add CEFR distribution bar | `.cefr-distribution-bar` |
-| Lesson card | Add representative badge | `.cefr-badge` top-right corner |
-| Lesson card | Add loading skeleton | For first-time analysis |
+| Element | Copy |
+|---------|------|
+| Primary CTA | "加入生词本" (add to wordbook) |
+| Empty state heading | "暂无上一句" (no previous sentence available) |
+| Empty state body | "当前课程尚无上一句内容。" |
+| Error state | "CEFR 分析失败，请刷新重试。" (problem) + "或前往个人中心重新选择您的 CEFR 等级。" (solution path) |
+| Destructive confirmation | None in this phase — no destructive actions |
 
 ---
 
@@ -339,117 +232,10 @@ Pre-populated from existing codebase patterns.
 
 | Registry | Blocks Used | Safety Gate |
 |----------|-------------|-------------|
-| shadcn official | Card, Button | not required |
+| shadcn official | none | not required |
+| Third-party | none | not required |
 
-**No third-party registries used in this phase.**
-
----
-
-## CSS Custom Properties
-
-Add to `frontend/src/features/immersive/immersive.css`:
-
-```css
-/* CEFR Band Colors */
-.cefr-i-plus-one {
-  background-color: oklch(0.58 0.11 200);
-}
-
-.cefr-hard {
-  background-color: oklch(0.70 0.16 60);
-}
-
-.cefr-success {
-  border-color: oklch(0.70 0.14 155);
-}
-
-/* Previous sentence word block with CEFR band */
-.immersive-previous-word {
-  position: relative;
-  display: inline-block;
-}
-
-.cefr-band {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  border-radius: 1px;
-}
-
-/* Wordbook success animation */
-.cefr-wordbook-success {
-  animation: cefr-wordbook-pop 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
-             cefr-wordbook-flash 300ms ease-out forwards;
-}
-
-@keyframes cefr-wordbook-pop {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.08); }
-  100% { transform: scale(1); }
-}
-
-@keyframes cefr-wordbook-flash {
-  0% { border-color: oklch(0.70 0.14 155); }
-  70% { border-color: oklch(0.70 0.14 155); }
-  100% { border-color: transparent; }
-}
-
-/* Current sentence CEFR underline */
-.cefr-underline-i-plus-one {
-  border-bottom-color: oklch(0.58 0.11 200);
-}
-
-.cefr-underline-hard {
-  border-bottom-color: oklch(0.70 0.16 60);
-}
-
-/* History card CEFR badge */
-.cefr-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.cefr-badge-i-plus-one {
-  background-color: oklch(0.58 0.11 200 / 0.15);
-  color: oklch(0.40 0.10 200);
-}
-
-.cefr-badge-hard {
-  background-color: oklch(0.70 0.16 60 / 0.15);
-  color: oklch(0.50 0.12 60);
-}
-
-.cefr-distribution-bar {
-  display: flex;
-  height: 4px;
-  border-radius: 2px;
-  overflow: hidden;
-  gap: 1px;
-}
-
-.cefr-distribution-segment {
-  height: 100%;
-  transition: width 200ms ease;
-}
-```
-
----
-
-## Implementation Notes (Claude's Discretion)
-
-From CONTEXT.md discretion areas:
-
-1. **Letter-level underline width:** Match existing `.immersive-letter-cell` border-bottom style (2px solid, same width as letter)
-2. **History card badge position:** Top-right corner of card, outside CardHeader — aligned with card edge
-3. **Green border flash duration:** 300ms total (70% hold, 30% fade) — distinct from 200ms scale animation
-4. **CEFR distribution field in `lessonCardMetaMap`:** Store as `cefrDistribution: { level: string, percentage: number }[]`
+**No third-party components.** All CEFR UI is built from existing Tailwind CSS classes and custom CSS.
 
 ---
 
@@ -466,6 +252,17 @@ From CONTEXT.md discretion areas:
 
 ---
 
+## Pre-Populated From
+
+| Source | Decisions Used |
+|--------|---------------|
+| 25-CONTEXT.md | CEFR color semantics (green=i+1, red=>i+1, none=≤i), current sentence underline approach, previous sentence color band approach, wordbook scale animation (200ms), green border flash duration (300-400ms), previous sentence state combinations, history badge distribution bar + color block pattern |
+| ROADMAP.md | Success criteria #2 (CEFR badge overlay does not override letter colors), #4 (i+1 calculation logic), #6-7 (history CEFR badges), #8-9 (wordbook animation feedback) |
+| REQUIREMENTS.md | CEFR visual requirements implicit in CEFR-05 through CEFR-18 |
+| immersive.css | Existing spacing scale, typography tokens, letter cell dimensions, word slot styles, previous sentence structure |
+| index.css | CSS custom properties, oklch color system, font variables |
+
+---
+
 *UI-SPEC created: 2026-04-03*
 *Phase: 25-cefr-display*
-*Pre-populated from: 25-CONTEXT.md (10 locked decisions), REQUIREMENTS.md (success criteria), existing codebase (immersive.css, index.css)*
