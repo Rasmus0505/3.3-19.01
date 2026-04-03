@@ -999,6 +999,9 @@ export function ImmersiveLessonPage({
     latestRect: null,
     captureElement: null,
   });
+  const prevLessonIdRef = useRef(null);
+  const sessionMaxWidthRatioRef = useRef(TRANSLATION_MASK_DEFAULT_WIDTH_RATIO);
+
   const cinemaFullscreenActive = isCinemaFullscreen || isFullscreenFallback || isCssFullscreen;
   const isIpadSafari = useMemo(() => isIpadSafariBrowser(), []);
   const isTouchDevice = useMemo(() => isTouchPrimaryInputDevice(), []);
@@ -1490,11 +1493,58 @@ export function ImmersiveLessonPage({
     setSentenceJumpEditing(false);
   }, [currentSentenceIndex, lesson?.id]);
 
+  useEffect(() => {
+    if (prevLessonIdRef.current !== null && prevLessonIdRef.current !== lesson?.id) {
+      if (translationMaskMetrics) {
+        const centeredRect = buildDefaultTranslationMaskRect(translationMaskMetrics, {
+          preferredBottom: translationMaskMetrics.height,
+        });
+        setTranslationMaskRect(centeredRect);
+        sessionMaxWidthRatioRef.current = TRANSLATION_MASK_DEFAULT_WIDTH_RATIO;
+      }
+    }
+    prevLessonIdRef.current = lesson?.id;
+  }, [lesson?.id, translationMaskMetrics]);
+
   const sentenceJumpInputValue = sentenceJumpEditing
     ? sentenceJumpValue
     : sentenceJumpValue !== ""
       ? sentenceJumpValue
       : String(currentSentenceIndex + 1);
+
+  const measureSubtitleWidth = useCallback((text, fontSize = 16) => {
+    if (!text || typeof document === "undefined") return 0;
+    const span = document.createElement("span");
+    span.style.cssText = `
+      position: absolute;
+      visibility: hidden;
+      white-space: nowrap;
+      font-size: ${fontSize}px;
+      font-family: inherit;
+    `;
+    span.textContent = text;
+    document.body.appendChild(span);
+    const width = span.getBoundingClientRect().width;
+    document.body.removeChild(span);
+    return width;
+  }, []);
+
+  useEffect(() => {
+    const currentSentence = lesson?.sentences?.[currentSentenceIndex];
+    if (!currentSentence || !currentSentence.text_en || !translationMaskMetrics) return;
+
+    const videoWidth = translationMaskMetrics.width || 1;
+    const subtitleWidth = measureSubtitleWidth(currentSentence.text_en, 16);
+    const newWidthRatio = subtitleWidth / videoWidth;
+
+    if (newWidthRatio > sessionMaxWidthRatioRef.current) {
+      sessionMaxWidthRatioRef.current = newWidthRatio;
+      setTranslationMaskRect((prev) => ({
+        ...prev,
+        width: newWidthRatio,
+      }));
+    }
+  }, [currentSentenceIndex, lesson?.sentences, translationMaskMetrics, measureSubtitleWidth]);
 
   const resetTranslationMaskGesture = useCallback(() => {
     const captureElement = translationMaskGestureRef.current.captureElement;
