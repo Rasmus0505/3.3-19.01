@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { toast } from "sonner";
 
 import { useAppStore } from "../../store";
-import { VocabAnalyzer } from "../../../../app/frontend/src/utils/vocabAnalyzer";
+import { VocabAnalyzer } from "@app/utils/vocabAnalyzer";
 import { parseResponse, toErrorText } from "../../shared/api/client";
 import { getStorageEstimate, getLessonMedia, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import {
