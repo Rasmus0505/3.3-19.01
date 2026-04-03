@@ -1606,10 +1606,17 @@ export function ImmersiveLessonPage({
       return;
     }
     const containerRect = container.getBoundingClientRect();
-    const videoRect = measureContainedVideoRect(containerRect, videoElement);
+    let videoRect = measureContainedVideoRect(containerRect, videoElement);
     if (!videoRect || videoRect.width <= 0 || videoRect.height <= 0) {
-      setTranslationMaskMetrics(null);
-      return;
+      const cw = containerRect.width;
+      const ch = containerRect.height;
+      if (cw > 0 && ch > 0) {
+        // Fallback when intrinsic size is still 0 or layout math fails (Electron / late decode).
+        videoRect = { left: 0, top: 0, width: cw, height: ch };
+      } else {
+        setTranslationMaskMetrics(null);
+        return;
+      }
     }
     const typingRect = typingPanelRef.current?.getBoundingClientRect() || null;
     const viewportWidth = Math.max(0, Number(window.innerWidth || containerRect.width || 0));
@@ -2295,6 +2302,17 @@ export function ImmersiveLessonPage({
     }
     updateTranslationMaskMetrics();
   }, [cinemaFullscreenActive, mediaMode, resetTranslationMaskGesture, updateTranslationMaskMetrics]);
+
+  useEffect(() => {
+    if (!cinemaFullscreenActive || mediaMode !== "video") return undefined;
+    if (typeof window === "undefined") return undefined;
+    const t1 = window.setTimeout(() => updateTranslationMaskMetrics(), 0);
+    const t2 = window.setTimeout(() => updateTranslationMaskMetrics(), 500);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [cinemaFullscreenActive, mediaMode, lesson?.id, updateTranslationMaskMetrics]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
@@ -3522,7 +3540,7 @@ export function ImmersiveLessonPage({
                       title={translationMaskEnabled ? "关闭字幕遮挡板" : "开启字幕遮挡板"}
                       onClick={handleTranslationMaskButtonClick}
                     >
-                      {translationMaskEnabled ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      {translationMaskEnabled ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
                       字幕遮挡板
                     </Button>
                   ) : null}
