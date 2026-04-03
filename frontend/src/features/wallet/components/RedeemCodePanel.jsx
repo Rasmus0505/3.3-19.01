@@ -77,13 +77,13 @@ export function RedeemCodePanel({ apiCall, onWalletChanged }) {
         <form className="space-y-3" onSubmit={submitRedeem}>
           <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="例如 ABCD-EFGH-IJKL-MNPQ" />
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" disabled={loading} className="h-9 px-4">
-              {loading ? "兑换中..." : "立即兑换"}
-            </Button>
             <Button asChild variant="outline" className="h-9 px-4">
               <a href={PURCHASE_REDEEM_CODE_URL} target="_blank" rel="noreferrer">
                 获取兑换码
               </a>
+            </Button>
+            <Button type="submit" disabled={loading} className="h-9 px-4">
+              {loading ? "兑换中..." : "立即兑换"}
             </Button>
           </div>
         </form>

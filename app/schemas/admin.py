@@ -121,7 +121,11 @@ class AdminUserDeleteResponse(BaseModel):
     user_id: int
     email: str
     deleted_lessons: int
+    deleted_lesson_sentences: int
+    deleted_lesson_progress: int
+    deleted_media_assets: int
     deleted_ledger_rows: int
+    deleted_wallet_account: bool
     cleared_operator_refs: int
     cleared_task_refs: int
     file_cleanup_failed_dirs: list[str]

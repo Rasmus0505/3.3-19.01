@@ -5,15 +5,17 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from app.core.config import BASE_DATA_DIR
-from app.models import User
+from app.models import User, WalletAccount
 from app.repositories.admin import (
     clear_billing_rate_updated_by_refs,
     clear_lesson_generation_task_refs,
     clear_redeem_related_user_refs,
     clear_wallet_ledger_operator_refs,
+    delete_user_owned_lesson_cascade,
     delete_wallet_ledger_for_user,
     list_lesson_ids_for_user,
 )
@@ -38,7 +40,11 @@ class AdminUserDeleteResult:
     user_id: int
     email: str
     deleted_lessons: int
+    deleted_lesson_sentences: int
+    deleted_lesson_progress: int
+    deleted_media_assets: int
     deleted_ledger_rows: int
+    deleted_wallet_account: bool
     cleared_operator_refs: int
     cleared_task_refs: int
     file_cleanup_failed_dirs: list[str]
@@ -83,6 +89,14 @@ def delete_user_hard(
         deleted_ledger_rows = delete_wallet_ledger_for_user(db, target_user.id)
         clear_billing_rate_updated_by_refs(db, target_user.id)
         cleared_task_refs = clear_lesson_generation_task_refs(db, target_user.id)
+
+        # Explicitly delete lesson subtree before the user so no FK ambiguity occurs
+        cascade_counts = delete_user_owned_lesson_cascade(db, target_user.id)
+
+        # WalletAccount has no ONDELETE and uses SQLAlchemy cascade; delete it explicitly
+        db.execute(delete(WalletAccount).where(WalletAccount.user_id == target_user.id))
+        deleted_wallet_account = True
+
         db.delete(target_user)
         db.commit()
     except Exception as exc:
@@ -93,8 +107,12 @@ def delete_user_hard(
     return AdminUserDeleteResult(
         user_id=target_user_id,
         email=target_email,
-        deleted_lessons=len(lesson_ids),
+        deleted_lessons=cascade_counts["lessons"],
+        deleted_lesson_sentences=cascade_counts["lesson_sentences"],
+        deleted_lesson_progress=cascade_counts["lesson_progress"],
+        deleted_media_assets=cascade_counts["media_assets"],
         deleted_ledger_rows=deleted_ledger_rows,
+        deleted_wallet_account=deleted_wallet_account,
         cleared_operator_refs=cleared_operator_refs,
         cleared_task_refs=cleared_task_refs,
         file_cleanup_failed_dirs=failed_dirs,

@@ -13,11 +13,15 @@ from app.models import (
     BillingModelRate,
     Lesson,
     LessonGenerationTask,
+    LessonProgress,
+    LessonSentence,
+    MediaAsset,
     RedeemCode,
     RedeemCodeAttempt,
     RedeemCodeBatch,
     TranslationRequestLog,
     User,
+    UserLoginEvent,
     WalletAccount,
     WalletLedger,
 )
@@ -818,6 +822,37 @@ def clear_billing_rate_updated_by_refs(db: Session, user_id: int) -> int:
         update(BillingModelRate).where(BillingModelRate.updated_by_user_id == user_id).values(updated_by_user_id=None)
     )
     return int(result.rowcount or 0)
+
+
+def delete_user_owned_lesson_cascade(db: Session, user_id: int) -> dict[str, int]:
+    """
+    Explicitly delete every table row that belongs to a user's lesson subtree,
+    in correct FK-dependency order.  This bypasses SQLAlchemy cascade to give
+    deterministic, observable row counts and avoid StaleDataError ambiguity.
+    """
+    counts: dict[str, int] = {}
+
+    # 1. Lesson → sentences / progress / media_assets (lesson_id FK)
+    rows = db.execute(delete(LessonSentence).where(LessonSentence.lesson_id.in_(
+        db.scalars(select(Lesson.id).where(Lesson.user_id == user_id))
+    ))).rowcount
+    counts["lesson_sentences"] = rows
+
+    rows = db.execute(delete(LessonProgress).where(LessonProgress.lesson_id.in_(
+        db.scalars(select(Lesson.id).where(Lesson.user_id == user_id))
+    ))).rowcount
+    counts["lesson_progress"] = rows
+
+    rows = db.execute(delete(MediaAsset).where(MediaAsset.lesson_id.in_(
+        db.scalars(select(Lesson.id).where(Lesson.user_id == user_id))
+    ))).rowcount
+    counts["media_assets"] = rows
+
+    # 2. Lesson rows themselves
+    rows = db.execute(delete(Lesson).where(Lesson.user_id == user_id)).rowcount
+    counts["lessons"] = rows
+
+    return counts
 
 
 def clear_lesson_generation_task_refs(db: Session, user_id: int) -> int:
