@@ -821,7 +821,5 @@ def clear_billing_rate_updated_by_refs(db: Session, user_id: int) -> int:
 
 
 def clear_lesson_generation_task_refs(db: Session, user_id: int) -> int:
-    result = db.execute(
-        update(LessonGenerationTask).where(LessonGenerationTask.owner_user_id == user_id).values(owner_user_id=None)
-    )
+    result = db.execute(delete(LessonGenerationTask).where(LessonGenerationTask.owner_user_id == user_id))
     return int(result.rowcount or 0)
