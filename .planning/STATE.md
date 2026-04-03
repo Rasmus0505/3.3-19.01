@@ -10,10 +10,14 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 
 ## Current Position
 
-Phase: 23 of 23 (字幕遮挡板与链接恢复)
-Plan: 2 of 2 in current phase
-Status: Phase 23 complete — all plans finished
-Last activity: 2026-04-03 — Phase 23-02 context captured and executed
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-03 — Milestone v2.4 started
+
+## Milestone Status
+
+v2.4 词汇等级预处理与 CEFR 沉浸式展示 (Phases 24–25):
 
 Progress: [████████████████████████████] 100%
 

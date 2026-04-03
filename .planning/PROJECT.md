@@ -161,6 +161,19 @@ See `.planning/milestones/v2.2-REQUIREMENTS.md` for archived requirements.
 | Wordbook review uses spaced-repetition scheduling with again/good grading | Simple again/good with calculated next-review matches learner expectations without complexity of full SM-2 | ✅ Validated in Phase 17 |
 | Immersive answer box uses yellow for AI/hint content, green for user-typed content | Color differentiation helps learners see what they typed vs. what was suggested | ✅ Validated in v2.3 |
 
+## Current Milestone: v2.4 词汇等级预处理与 CEFR 沉浸式展示
+
+**Goal:** 实现视频字幕一次性预处理分析，并在沉浸式学习中以颜色块实时标注每个词的 CEFR 等级，重构上一句词选入生词本的交互反馈。
+
+**Target features:**
+- 批量词汇预处理：视频首次打开时一次性分析所有字幕，查 cefr_vocab.json 给每个词标上 CEFR 等级，结果缓存到 localStorage
+- 沉浸式学习词汇色块高亮：本句 + 上一句每词叠加 CEFR 等级色块，绿色 = i+1，黄色 = 超出 i+1
+- 上一句生词本选择交互重构：选词入生词本后 token 块流畅放大动画（scale），不再只用背景色变化
+- 词汇难度色块复用：历史记录列表标注素材 CEFR 等级（色块 + 等级名）
+- 个人中心 i 水平设置：选择 CEFR 水平（默认 B1），含 Duolingo 风格中文说明
+
+---
+
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
@@ -179,4 +192,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-02 after v2.3 milestone initialization*
+*Last updated: 2026-04-03 after v2.4 milestone initialization*
