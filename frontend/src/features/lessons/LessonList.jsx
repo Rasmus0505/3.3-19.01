@@ -1,7 +1,9 @@
 import { CheckCircle2, Clock3, Download, History, MoreVertical, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { TOKEN_KEY } from "../../app/authStorage";
+import { TOKEN_KEY, readCefrLevel } from "../../app/authStorage";
+import { VocabAnalyzer } from "../../utils/vocabAnalyzer";
+import { useAppStore } from "../../store";
 import { cn } from "../../lib/utils";
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import { saveLessonSubtitleCacheSeed, saveLessonSubtitleVariant } from "../../shared/media/localSubtitleStore.js";
@@ -312,6 +314,83 @@ function buildLessonProgressState(progress, sentenceCount) {
   };
 }
 
+// ================================================================================
+// CEFR Analysis Utilities
+// ================================================================================
+
+const CEFR_ANALYSIS_KEY_PREFIX = "cefr_analysis_v1:";
+
+function getCefrAnalysisKey(lessonId) {
+  return `${CEFR_ANALYSIS_KEY_PREFIX}${lessonId}`;
+}
+
+function computeCefrDistribution(analysisResult, userLevel) {
+  const { distribution, grade } = analysisResult;
+  const total = Object.values(distribution).reduce((sum, count) => sum + count, 0);
+  if (total === 0) return null;
+
+  const levelOrder = ["A1", "A2", "B1", "B2", "C1", "C2", "SUPER"];
+  const userIndex = levelOrder.indexOf(userLevel);
+
+  let iPlusOnePercent = 0;
+  let aboveIPlusOnePercent = 0;
+  let masteredPercent = 0;
+
+  for (const [level, count] of Object.entries(distribution)) {
+    const levelIndex = levelOrder.indexOf(level);
+    const percent = (count / total) * 100;
+    if (levelIndex <= userIndex) {
+      masteredPercent += percent;
+    } else if (levelIndex === userIndex + 1) {
+      iPlusOnePercent += percent;
+    } else {
+      aboveIPlusOnePercent += percent;
+    }
+  }
+
+  return {
+    iPlusOnePercent: Math.round(iPlusOnePercent),
+    aboveIPlusOnePercent: Math.round(aboveIPlusOnePercent),
+    masteredPercent: Math.round(masteredPercent),
+    dominantLevel: grade,
+    rawDistribution: distribution,
+  };
+}
+
+async function ensureCefrAnalysis(lessonId, sentences) {
+  const key = getCefrAnalysisKey(lessonId);
+
+  if (typeof localStorage !== "undefined") {
+    const cached = localStorage.getItem(key);
+    if (cached) {
+      try {
+        const analysis = JSON.parse(cached);
+        const userLevel = readCefrLevel() || "B1";
+        const dist = computeCefrDistribution(analysis, userLevel);
+        if (dist) {
+          useAppStore.getState().mergeLessonCardMeta(lessonId, { cefrDistribution: dist });
+          return;
+        }
+      } catch (_) { /* fall through to re-analyze */ }
+    }
+  }
+
+  useAppStore.getState().mergeLessonCardMeta(lessonId, { cefrLoading: true });
+  try {
+    const analyzer = new VocabAnalyzer();
+    await analyzer.load();
+    const analysis = analyzer.analyzeVideo(sentences || []);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(key, JSON.stringify(analysis));
+    }
+    const userLevel = readCefrLevel() || "B1";
+    const dist = computeCefrDistribution(analysis, userLevel);
+    useAppStore.getState().mergeLessonCardMeta(lessonId, { cefrDistribution: dist, cefrLoading: false });
+  } catch (_) {
+    useAppStore.getState().mergeLessonCardMeta(lessonId, { cefrLoading: false });
+  }
+}
+
 function getCoverAssistiveText(lesson) {
   const title = String(lesson?.title || "").trim();
   return title ? `${title} 默认封面` : "课程默认封面";
@@ -437,6 +516,8 @@ export function LessonList({
           needsBinding,
           isLocalLesson,
           createdAtLabel: formatCreatedAt(lesson.created_at),
+          cefrLoading: Boolean(lessonCardMetaMap[lesson.id]?.cefrLoading),
+          cefrDistribution: lessonCardMetaMap[lesson.id]?.cefrDistribution || null,
         };
       }),
     [lessonCardMetaMap, lessonMediaMetaMap, progressOverrides, visibleLessons],
@@ -740,6 +821,18 @@ export function LessonList({
       setBulkDeleteOpen(false);
     }
   }, [loadedLessonIdSet, totalLessons]);
+
+  // Trigger background CEFR analysis for lessons that haven't been analyzed yet
+  useEffect(() => {
+    for (const card of cards) {
+      if (!card.isLocalLesson && !card.cefrLoading && !card.cefrDistribution) {
+        const sentences = card.lesson?.sentences?.map((s) => s.en || s.text_en) || [];
+        if (sentences.length > 0) {
+          void ensureCefrAnalysis(card.lesson.id, sentences);
+        }
+      }
+    }
+  }, [cards]);
 
   function openRenameDialog(lesson) {
     setRenamingLesson(lesson);
@@ -1076,7 +1169,7 @@ export function LessonList({
 
         {!loading ? (
           <div className="space-y-3">
-            {cards.map(({ lesson, mediaMeta, sentenceCount, progressState, actionLabel, needsBinding, isLocalLesson, createdAtLabel }) => {
+            {cards.map(({ lesson, mediaMeta, sentenceCount, progressState, actionLabel, needsBinding, isLocalLesson, createdAtLabel, cefrLoading, cefrDistribution }) => {
               const selected = currentLessonId === lesson.id;
               const isGuideTarget =
                 Number(guideTargetLessonId || 0) > 0 ? Number(guideTargetLessonId) === Number(lesson.id) : lesson.id === defaultGuideLessonId;
@@ -1182,6 +1275,44 @@ export function LessonList({
                             )}
                           </div>
                         </div>
+
+                        {/* CEFR distribution badge */}
+                        {cefrLoading ? (
+                          <div className="flex items-center gap-2">
+                            <div className="h-1 flex-1 animate-pulse rounded-full bg-muted" />
+                            <span className="text-xs text-muted-foreground">分析中...</span>
+                          </div>
+                        ) : cefrDistribution ? (
+                          <div className="flex items-center gap-2">
+                            <div className="cefr-distribution-bar flex-1">
+                              {cefrDistribution.masteredPercent > 0 && (
+                                <div
+                                  className="cefr-distribution-segment cefr-distribution-segment--mastered"
+                                  style={{ width: `${cefrDistribution.masteredPercent}%` }}
+                                />
+                              )}
+                              {cefrDistribution.iPlusOnePercent > 0 && (
+                                <div
+                                  className="cefr-distribution-segment cefr-distribution-segment--i-plus-one"
+                                  style={{ width: `${cefrDistribution.iPlusOnePercent}%` }}
+                                />
+                              )}
+                              {cefrDistribution.aboveIPlusOnePercent > 0 && (
+                                <div
+                                  className="cefr-distribution-segment cefr-distribution-segment--above-i-plus-one"
+                                  style={{ width: `${cefrDistribution.aboveIPlusOnePercent}%` }}
+                                />
+                              )}
+                            </div>
+                            <span className={`history-card-cefr-badge ${
+                              cefrDistribution.iPlusOnePercent >= cefrDistribution.aboveIPlusOnePercent
+                                ? "history-card-cefr-badge--i-plus-one"
+                                : "history-card-cefr-badge--above-i-plus-one"
+                            }`}>
+                              {cefrDistribution.dominantLevel}: {Math.max(cefrDistribution.iPlusOnePercent, cefrDistribution.aboveIPlusOnePercent)}%
+                            </span>
+                          </div>
+                        ) : null}
 
                         <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                           <span>{sentenceCount} 句</span>
