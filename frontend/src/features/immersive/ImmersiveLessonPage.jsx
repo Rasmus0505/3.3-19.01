@@ -2,6 +2,7 @@ import { ArrowLeft, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, Volume2 } from
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { VocabAnalyzer } from "../../../app/frontend/src/utils/vocabAnalyzer";
 import { parseResponse, toErrorText } from "../../shared/api/client";
 import { getStorageEstimate, getLessonMedia, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import {
@@ -69,6 +70,8 @@ const TRANSLATION_MASK_VISIBLE_BOTTOM_GAP_PX = 12;
 const IMMERSIVE_PLAYBACK_RATE_STEP = 0.25;
 const TRANSLATION_MASK_EMPTY_RECT = Object.freeze({ x: null, y: null, width: null, height: null });
 const ENTRY_HINT_ACTION_IDS = ["reveal_word", "replay_sentence", "next_sentence"];
+const CEFR_CACHE_KEY_PREFIX = "cefr_analysis_v1:";
+const CEFR_ANALYSIS_CHUNK_SIZE = 50;
 const MEDIA_TYPE_BY_EXTENSION = {
   ".mp4": "video/mp4",
   ".mov": "video/quicktime",
@@ -1008,6 +1011,8 @@ export function ImmersiveLessonPage({
   const [sentenceJumpEditing, setSentenceJumpEditing] = useState(false);
   const [wordbookSuccessMessage, setWordbookSuccessMessage] = useState(null);
   const wordbookSuccessTimerRef = useRef(null);
+  const cefrAnalyzerRef = useRef(null);
+  const [cefrAnalysisStatus, setCefrAnalysisStatus] = useState("idle");
   const {
     phase,
     currentSentenceIndex,
@@ -1687,15 +1692,9 @@ export function ImmersiveLessonPage({
     };
     const defaultRect = buildDefaultTranslationMaskRect(maskViewportRect, { preferredBottom });
     const isCompactPortrait = viewportWidth > 0 && viewportWidth < 768 && orientation === "portrait";
-    const isTabletLandscape = viewportWidth >= 768 && viewportWidth < 1024 && orientation === "landscape";
-    const isLargeLandscape = viewportWidth >= 1024 && orientation === "landscape";
-    const maxWidth = isLargeLandscape
-      ? Math.min(maskViewportRect.width, 680)
-      : isTabletLandscape
-        ? Math.min(maskViewportRect.width * 0.85, 560)
-        : isCompactPortrait
-          ? Math.min(maskViewportRect.width * 0.85, 400)
-          : maskViewportRect.width;
+    // Allow the mask to span the full letterboxed video width so users can cover long subtitles.
+    // (Previous caps like 680px stopped horizontal resize short of the actual video area on wide screens.)
+    const maxWidth = maskViewportRect.width;
     const minHeight = isCompactPortrait ? Math.min(maskViewportRect.height, 48) : TRANSLATION_MASK_MIN_HEIGHT_PX;
     const maxHeight = isCompactPortrait
       ? Math.min(maskViewportRect.height, Math.max(48, Math.min(viewportHeight * 0.15, 80)))
@@ -2175,6 +2174,56 @@ export function ImmersiveLessonPage({
     const preferredMode = isVideoFilename(fileName) ? "video" : resolveMediaModeFromFileName(fileName);
     setMediaMode(preferredMode);
   }, [learningSettings, lesson?.id, resetWordTyping, stopPlayback]);
+
+  // CEFR vocabulary analysis effect
+  useEffect(() => {
+    if (!lesson?.id || !lesson?.sentences?.length) return;
+    const lessonId = lesson.id;
+    const cacheKey = CEFR_CACHE_KEY_PREFIX + String(lessonId);
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      setCefrAnalysisStatus("complete");
+      return;
+    }
+
+    setCefrAnalysisStatus("analyzing");
+
+    async function runAnalysis() {
+      if (!cefrAnalyzerRef.current) {
+        cefrAnalyzerRef.current = new VocabAnalyzer();
+      }
+      const analyzer = cefrAnalyzerRef.current;
+      if (!analyzer.isLoaded) {
+        await analyzer.load();
+      }
+      const userLevel = "B1";
+      const allSentences = lesson.sentences.map((s) => s.text_en).filter(Boolean);
+
+      const results = [];
+      for (let i = 0; i < allSentences.length; i += CEFR_ANALYSIS_CHUNK_SIZE) {
+        const chunk = allSentences.slice(i, i + CEFR_ANALYSIS_CHUNK_SIZE);
+        for (const sentence of chunk) {
+          results.push(analyzer.analyzeSentence(sentence));
+        }
+        if (i + CEFR_ANALYSIS_CHUNK_SIZE < allSentences.length) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      }
+
+      const videoReport = analyzer.analyzeVideo(allSentences, userLevel);
+
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify(videoReport));
+      } catch (e) {
+        console.warn("[CEFR] Failed to cache analysis:", e);
+      }
+
+      setCefrAnalysisStatus("complete");
+      toast.success("词汇分析完成", { duration: 2000 });
+    }
+
+    void runAnalysis();
+  }, [lesson?.id, lesson?.sentences]);
 
   useEffect(() => {
     if (!lesson) return;

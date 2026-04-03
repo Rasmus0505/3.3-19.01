@@ -1,71 +1,37 @@
-# Phase 24-03: CEFR Level Selector in AccountPanel — Summary
+# Phase 24-03 执行摘要
 
-## Metadata
+**日期:** 2026-04-03  
+**状态:** ✅ 完成
 
-| Field | Value |
-|-------|-------|
-| **Phase** | 24-cefr-infra / 24-03 |
-| **Status** | ✅ Completed |
-| **Completed** | 2026-04-03 |
-| **Commit** | daccda1e |
-| **Requirements** | CEFR-12, CEFR-13, CEFR-14, CEFR-15 |
+## 变更文件
 
-## What Was Done
+| 文件 | 变更 |
+|------|------|
+| `frontend/src/features/account/AccountPanel.jsx` | 添加 CEFR 水平选择器 (RadioGroup) |
 
-Added a CEFR level selector (RadioGroup) to the AccountPanel UI in personal center.
+## 实现细节
 
-### Changes Made
+### CEFR_LEVELS 配置
 
-1. **Created `frontend/src/components/ui/radio-group.jsx`**
-   - New component using `@radix-ui/react-radio-group`
-   - Exports `RadioGroup` and `RadioGroupItem`
-   - Styled with Tailwind classes matching project design system
+| 等级 | 描述 |
+|------|------|
+| A1 | 能理解和使用熟悉的日常表达和非常简单的句子 |
+| A2 | 能理解最直接相关领域的熟悉事物，能进行简单日常对话 |
+| B1 | 在英语国家旅行时能应对大多数情况，能围绕熟悉话题简单连贯地表达 |
+| B2 | 能与母语者比较流利地互动，能清晰详细地表达观点 |
+| C1 | 能有效运用语言，能流畅自如地表达复杂思想 |
+| C2 | 毫不费力地进行理解，能非常流利地精确表达 |
 
-2. **Updated `frontend/src/shared/ui/index.js`**
-   - Added export for `RadioGroup` and `RadioGroupItem`
+### UI 实现
 
-3. **Updated `frontend/src/features/account/AccountPanel.jsx`**
-   - Added `writeCefrLevel` import from `authStorage`
-   - Added `RadioGroup`, `RadioGroupItem`, and `Label` imports from `shared/ui`
-   - Added `CEFR_LEVELS` constant with 6 levels (A1-C2) and Chinese descriptions
-   - Added `cefrLevel` and `setCefrLevel` state selectors from Zustand store
-   - Added `handleCefrLevelChange` async function that:
-     - Calls `PATCH /api/auth/profile` with `{ cefr_level: newLevel }`
-     - Updates Zustand state via `setCefrLevel(newLevel)`
-     - Syncs to localStorage via `writeCefrLevel(newLevel)`
-     - Shows toast messages for success/error
-   - Added CEFR selector Card UI with:
-     - RadioGroup with responsive grid layout (1/2/3 columns)
-     - 6 level options with radio buttons and Chinese descriptions
-     - Hover effects and accessibility via `htmlFor`/`id`
+- RadioGroup 布局: `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`
+- 默认选中 B1 (来自 authSlice 状态)
+- 选中时调用 PATCH `/api/auth/profile` + `{ cefr_level: newLevel }`
+- 成功后同步更新 Zustand (`setCefrLevel`) + localStorage (`writeCefrLevel`)
+- Toast 提示: "学习水平已更新"
 
-4. **Installed `@radix-ui/react-radio-group`** dependency
+## 验证
 
-### Files Modified
-
-- `frontend/src/components/ui/radio-group.jsx` (new)
-- `frontend/src/shared/ui/index.js`
-- `frontend/src/features/account/AccountPanel.jsx`
-- `frontend/package.json`
-- `frontend/package-lock.json`
-
-## Verification
-
-Verified all required code elements are present:
-
-- ✅ `CEFR_LEVELS` constant with 6 options
-- ✅ `handleCefrLevelChange` async handler
-- ✅ `cefr_level` in PATCH request body
-- ✅ `RadioGroup` and `RadioGroupItem` components
-- ✅ `setCefrLevel` state update call
-- ✅ `writeCefrLevel` localStorage sync call
-- ✅ No linter errors
-
-## Success Criteria Met
-
-- ✅ AccountPanel renders 6 CEFR level options (A1-A2-B1-B2-C1-C2) in a Radio Group
-- ✅ Default selection is B1 (from authSlice initial state)
-- ✅ Each option shows level letter + Chinese description
-- ✅ Selecting an option calls `PATCH /api/auth/profile` with `{ cefr_level: selectedLevel }`
-- ✅ After successful API response, Zustand state and localStorage are both updated
-- ✅ Toast success message shown after update
+```bash
+grep -n "CEFR_LEVELS\|handleCefrLevelChange\|RadioGroup" frontend/src/features/account/AccountPanel.jsx
+```

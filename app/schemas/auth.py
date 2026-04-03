@@ -16,6 +16,7 @@ class RegisterRequest(BaseModel):
 
 class ProfileUpdateRequest(BaseModel):
     username: str = Field(min_length=1, max_length=255)
+    cefr_level: str | None = Field(default=None, pattern="^(A1|A2|B1|B2|C1|C2)$")
 
 
 class DesktopTokenLoginRequest(BaseModel):
@@ -35,6 +36,7 @@ class UserResponse(BaseModel):
     email: str
     username: str
     is_admin: bool = False
+    cefr_level: str | None = "B1"
     created_at: datetime | None = None
 
 

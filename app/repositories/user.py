@@ -93,3 +93,12 @@ class UserRepository(Repository[User]):
         self.session.add(user)
         self.session.flush()
         return user
+
+    def update_cefr_level(self, user_id: int, cefr_level: str | None) -> Optional[User]:
+        user = self.get(user_id)
+        if not user:
+            return None
+        user.cefr_level = cefr_level
+        self.session.add(user)
+        self.session.flush()
+        return user

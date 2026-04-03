@@ -49,6 +49,7 @@ def to_user_response(user: User) -> UserResponse:
         email=user.email,
         username=str(getattr(user, "username", "") or ""),
         is_admin=bool(getattr(user, "is_admin", False)),
+        cefr_level=str(getattr(user, "cefr_level", "B1") or "B1"),
         created_at=to_shanghai_aware(user.created_at),
     )
 

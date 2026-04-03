@@ -93,9 +93,14 @@ def update_profile(
     updated_user = user_repo.update_username(current_user.id, username)
     if not updated_user:
         return error_response(404, "USER_NOT_FOUND", "用户不存在")
+    if payload.cefr_level is not None:
+        user_repo.update_cefr_level(current_user.id, payload.cefr_level)
     db.commit()
-    db.refresh(updated_user)
-    return to_user_response(updated_user)
+    refreshed_user = db.get(User, current_user.id)
+    if not refreshed_user:
+        return error_response(404, "USER_NOT_FOUND", "用户不存在")
+    db.refresh(refreshed_user)
+    return to_user_response(refreshed_user)
 
 
 @router.post("/refresh", response_model=AuthResponse, responses={401: {"model": ErrorResponse}})
