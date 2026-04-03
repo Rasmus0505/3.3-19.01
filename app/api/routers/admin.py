@@ -1311,26 +1311,31 @@ def admin_abandon_redeem_code(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_admin_user),
 ):
+    """
+    废弃兑换码 per D-06, D-08
+    - 已兑换：扣除用户钱包余额（事务保护）
+    - 未兑换：直接标记为废弃
+    """
     try:
-        code = update_redeem_code_status(
+        result = abandon_redeem_code_with_refund(
             db,
             code_id=code_id,
-            next_status=REDEEM_CODE_STATUS_ABANDONED,
             operator_user_id=current_admin.id,
-            note="abandon",
         )
-        batch = db.get(RedeemCodeBatch, code.batch_id)
         db.commit()
-        effective = _effective_code_status(
-            code_status=code.status,
-            batch_status=batch.status if batch else REDEEM_BATCH_STATUS_ACTIVE,
-            expire_at=batch.expire_at if batch else _now(),
-            now=_now(),
+
+        return AdminRedeemCodeStatusActionResponse(
+            ok=True,
+            code_id=code_id,
+            status=result["status"],
+            effective_status=result["status"],
         )
-        return AdminRedeemCodeStatusActionResponse(ok=True, code_id=code.id, status=code.status, effective_status=effective)
     except BillingError as exc:
         db.rollback()
         return map_billing_error(exc)
+    except Exception as exc:
+        db.rollback()
+        return error_response(500, "INTERNAL_ERROR", "废弃兑换码失败", str(exc)[:1200])
 
 
 @router.delete(
