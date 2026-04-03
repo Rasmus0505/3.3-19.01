@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronDown, ChevronUp, Eye, Loader2, Volume2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, Volume2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -181,10 +181,21 @@ function buildDefaultTranslationMaskRect(metrics, options = {}) {
 function measureContainedVideoRect(containerRect, videoElement) {
   const safeContainerWidth = Math.max(0, Number(containerRect?.width || 0));
   const safeContainerHeight = Math.max(0, Number(containerRect?.height || 0));
+  if (safeContainerWidth <= 0 || safeContainerHeight <= 0) {
+    return null;
+  }
   const intrinsicWidth = Math.max(0, Number(videoElement?.videoWidth || 0));
   const intrinsicHeight = Math.max(0, Number(videoElement?.videoHeight || 0));
-  if (safeContainerWidth <= 0 || safeContainerHeight <= 0 || intrinsicWidth <= 0 || intrinsicHeight <= 0) {
-    return null;
+  // Electron / some browsers report 0×0 intrinsic size until a frame decodes; use layout box vs container.
+  if (intrinsicWidth <= 0 || intrinsicHeight <= 0) {
+    const vb = videoElement?.getBoundingClientRect?.();
+    if (!vb || vb.width <= 0 || vb.height <= 0) return null;
+    return {
+      left: vb.left - containerRect.left,
+      top: vb.top - containerRect.top,
+      width: vb.width,
+      height: vb.height,
+    };
   }
 
   const containerAspectRatio = safeContainerWidth / safeContainerHeight;
@@ -404,7 +415,7 @@ function normalizeComparableToken(token) {
   return normalizeToken(String(token || "")).replace(APOSTROPHE_RE, "");
 }
 
-/** 精听辅助在快照间新增的「可比字符」数，累加到 wordRevealLengths（与 buildLetterSlots 的 revealLength 语义一致）。 */
+/** 精听辅助在快照间新增的「可比字符」数，累加到 wordRevealLengths（与 buildLetterSlots 的 revealComparableCount 语义一致）。 */
 function mergeRevealLengthsAfterAssistance(beforeInputs, afterInputs, prevLengths) {
   const maxIdx = Math.max(
     Array.isArray(beforeInputs) ? beforeInputs.length : 0,
@@ -422,9 +433,15 @@ function mergeRevealLengthsAfterAssistance(beforeInputs, afterInputs, prevLength
   return next;
 }
 
-function buildLetterSlots(expectedToken, inputValue, revealLength = 0) {
+function buildLetterSlots(expectedToken, inputValue, revealComparableCount = 0) {
   const expected = String(expectedToken || "");
   const actual = normalizeComparableToken(inputValue);
+  const comparableExpected = normalizeComparableToken(expected);
+  const L = actual.length;
+  const R = Math.max(0, Number(revealComparableCount) || 0);
+  const prefixOk = comparableExpected.startsWith(actual);
+  /** 在输入为正确前缀时：前 (L−R) 个可比字符为用户已输入，后 R 个为揭示；避免「已打出 pond 却从 p 开始变黄」。 */
+  const revealedComparableStart = prefixOk && R > 0 ? Math.max(0, L - R) : -1;
   const slots = [];
   let typedIndex = 0;
 
@@ -443,10 +460,16 @@ function buildLetterSlots(expectedToken, inputValue, revealLength = 0) {
     const typedChar = actual[typedIndex] || "";
     let state = "empty";
     if (typedChar) {
-      // 如果是 reveal 出来的（typedIndex < revealLength），标记为 revealed；否则为 user_typed
-      const charState = typedChar.toLowerCase() === expectedChar.toLowerCase()
-        ? (typedIndex < revealLength ? "revealed" : "correct")
-        : "wrong";
+      const match = typedChar.toLowerCase() === expectedChar.toLowerCase();
+      let charState = "wrong";
+      if (match) {
+        if (revealedComparableStart >= 0) {
+          charState = typedIndex >= revealedComparableStart ? "revealed" : "correct";
+        } else {
+          // 非正确前缀时沿用旧语义，避免错输状态下样式全乱
+          charState = typedIndex < R ? "revealed" : "correct";
+        }
+      }
       state = charState;
       typedIndex += 1;
     }
@@ -929,6 +952,7 @@ export function ImmersiveLessonPage({
     normalizeTranslationMaskRect(readLearningSettings().uiPreferences?.translationMask),
   );
   const [translationMaskMetrics, setTranslationMaskMetrics] = useState(null);
+  const translationMaskMetricsRef = useRef(null);
   const [translationMaskChromeVisible, setTranslationMaskChromeVisible] = useState(true);
   const [mobileViewportState, setMobileViewportState] = useState({
     height: 0,
@@ -1634,6 +1658,10 @@ export function ImmersiveLessonPage({
       minHeight,
     });
   }, [cinemaFullscreenActive, mediaMode]);
+
+  useEffect(() => {
+    translationMaskMetricsRef.current = translationMaskMetrics;
+  }, [translationMaskMetrics]);
 
   const toggleTranslationMask = useCallback(() => {
     persistTranslationMaskPreference(!translationMaskEnabled, translationMaskRect);
@@ -2947,10 +2975,14 @@ export function ImmersiveLessonPage({
 
   const handleTranslationMaskPointerDown = useCallback(
     (event, mode = "move") => {
-      if (!translationMaskEnabled || !resolvedTranslationMaskRect || !translationMaskMetrics) return;
-      if (typeof event.button === "number" && event.button !== 0) return;
+      // Guard only on the two things we actually need at pointer-down time.
+      // pointerId check prevents two simultaneous drags (e.g. touch + mouse on same gesture).
       const gesture = translationMaskGestureRef.current;
+      if (!translationMaskEnabled) return;
       if (gesture.pointerId !== null && gesture.pointerId !== event.pointerId) return;
+      if (typeof event.button === "number" && event.button !== 0) return;
+      const rectSnapshot = resolvedTranslationMaskRect;
+      if (!rectSnapshot) return;
       showTranslationMaskChrome();
       event.preventDefault();
       event.stopPropagation();
@@ -2958,8 +2990,8 @@ export function ImmersiveLessonPage({
       gesture.mode = mode;
       gesture.startX = event.clientX;
       gesture.startY = event.clientY;
-      gesture.startRect = { ...resolvedTranslationMaskRect };
-      gesture.latestRect = { ...resolvedTranslationMaskRect };
+      gesture.startRect = { ...rectSnapshot };
+      gesture.latestRect = { ...rectSnapshot };
       gesture.captureElement = event.currentTarget;
       if (typeof event.currentTarget?.setPointerCapture === "function") {
         try {
@@ -2969,7 +3001,7 @@ export function ImmersiveLessonPage({
         }
       }
     },
-    [resolvedTranslationMaskRect, showTranslationMaskChrome, translationMaskEnabled, translationMaskMetrics],
+    [resolvedTranslationMaskRect, showTranslationMaskChrome, translationMaskEnabled],
   );
 
   const handleTranslationMaskButtonClick = useCallback(() => {
@@ -3126,9 +3158,12 @@ export function ImmersiveLessonPage({
 
     const handlePointerMove = (event) => {
       const gesture = translationMaskGestureRef.current;
-      if (gesture.pointerId === null || gesture.pointerId !== event.pointerId || !gesture.mode || !translationMaskMetrics) {
+      if (gesture.pointerId === null || gesture.pointerId !== event.pointerId || !gesture.mode) {
         return;
       }
+      // Read metrics from ref so this handler never sees a stale viewport size.
+      const metrics = translationMaskMetricsRef.current;
+      if (!metrics) return;
       const startRect = gesture.startRect;
       if (!startRect) return;
       const deltaX = event.clientX - gesture.startX;
@@ -3137,20 +3172,21 @@ export function ImmersiveLessonPage({
         gesture.mode === "move"
           ? {
               ...startRect,
-              left: clampNumber(startRect.left + deltaX, 0, Math.max(0, translationMaskMetrics.width - startRect.width)),
-              top: clampNumber(startRect.top + deltaY, 0, Math.max(0, translationMaskMetrics.height - startRect.height)),
+              left: clampNumber(startRect.left + deltaX, 0, Math.max(0, metrics.width - startRect.width)),
+              top: clampNumber(startRect.top + deltaY, 0, Math.max(0, metrics.height - startRect.height)),
             }
-          : resolveTranslationMaskResizeRect(startRect, gesture.mode, deltaX, deltaY, translationMaskMetrics);
+          : resolveTranslationMaskResizeRect(startRect, gesture.mode, deltaX, deltaY, metrics);
       if (!nextRect) return;
       gesture.latestRect = nextRect;
-      setTranslationMaskRect(convertTranslationMaskRectToStored(nextRect, translationMaskMetrics));
+      setTranslationMaskRect(convertTranslationMaskRectToStored(nextRect, metrics));
     };
 
     const handlePointerFinish = (event) => {
       const gesture = translationMaskGestureRef.current;
       if (gesture.pointerId === null || (event && gesture.pointerId !== event.pointerId)) return;
-      if (gesture.latestRect) {
-        persistTranslationMaskPreference(translationMaskEnabled, convertTranslationMaskRectToStored(gesture.latestRect, translationMaskMetrics));
+      const metrics = translationMaskMetricsRef.current;
+      if (gesture.latestRect && metrics) {
+        persistTranslationMaskPreference(translationMaskEnabled, convertTranslationMaskRectToStored(gesture.latestRect, metrics));
       }
       resetTranslationMaskGesture();
       if (!translationMaskHoveredRef.current) {
@@ -3171,7 +3207,6 @@ export function ImmersiveLessonPage({
     queueTranslationMaskChromeHide,
     resetTranslationMaskGesture,
     translationMaskEnabled,
-    translationMaskMetrics,
   ]);
 
   useEffect(() => {
@@ -3487,7 +3522,7 @@ export function ImmersiveLessonPage({
                       title={translationMaskEnabled ? "关闭字幕遮挡板" : "开启字幕遮挡板"}
                       onClick={handleTranslationMaskButtonClick}
                     >
-                      <Eye className="size-4" />
+                      {translationMaskEnabled ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                       字幕遮挡板
                     </Button>
                   ) : null}
@@ -3511,6 +3546,12 @@ export function ImmersiveLessonPage({
               src={mediaBlobUrl || undefined}
               preload="metadata"
               onLoadedMetadata={() => setMediaReady(true)}
+              onLoadedData={() => {
+                updateTranslationMaskMetrics();
+                if (typeof window !== "undefined") {
+                  window.requestAnimationFrame(() => updateTranslationMaskMetrics());
+                }
+              }}
               onCanPlay={() => setMediaReady(true)}
               onError={handleMainMediaError}
               onTimeUpdate={onMainMediaTimeUpdate}
