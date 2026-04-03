@@ -1,4 +1,4 @@
-import { BookOpenText, Languages, Play, Trash2, Loader2 } from "lucide-react";
+import { BookOpenText, Languages, Play, Trash2, Loader2, Volume2, AlertCircle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -72,6 +72,35 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
   const [lessonPopup, setLessonPopup] = useState({ open: false, lessonId: null, sentenceIndex: 0 });
   const [clickTooltip, setClickTooltip] = useState(null);
   const [translationDialog, setTranslationDialog] = useState({ open: false, text: "" });
+
+  // Pronunciation state
+  const [speakingId, setSpeakingId] = useState(null);
+  const [speakingErrorId, setSpeakingErrorId] = useState(null);
+
+  // Pronunciation function using Web Speech API
+  const speakWord = useCallback((word) => {
+    if (!('speechSynthesis' in window)) {
+      toast.error('当前浏览器不支持语音合成');
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(word);
+    utterance.lang = 'en-US';
+    utterance.rate = 0.9;
+
+    utterance.onstart = () => setSpeakingId(word);
+    utterance.onend = () => setSpeakingId(null);
+    utterance.onerror = (event) => {
+      console.error('Speech synthesis error:', event.error);
+      setSpeakingId(null);
+      setSpeakingErrorId(word);
+      setTimeout(() => setSpeakingErrorId(null), 2000);
+    };
+
+    window.speechSynthesis.speak(utterance);
+  }, []);
 
   // Selection state for batch operations
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -546,13 +575,40 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                           />
                           <div className="min-w-0 space-y-3">
                             <div className="flex flex-wrap items-center gap-2">
-                              <div className="truncate text-lg font-semibold">{item.entry_text}</div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-lg font-semibold">{item.entry_text}</span>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-8 w-8 p-0"
+                                      disabled={speakingId === item.id}
+                                      onClick={() => speakWord(item.entry_text)}
+                                    >
+                                      {speakingId === item.id ? (
+                                        <Loader2 className="size-4 animate-spin" />
+                                      ) : speakingErrorId === item.id ? (
+                                        <AlertCircle className="size-4 text-destructive" />
+                                      ) : (
+                                        <Volume2 className="size-4" />
+                                      )}
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="bg-black/80 text-white border-0 backdrop-blur-sm">
+                                    <p>播放发音</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
                               <Badge variant={isMastered ? "secondary" : "outline"}>
                                 {isMastered ? "已掌握" : `记忆率 ${formatMemoryScore(item.memory_score)}`}
                               </Badge>
                             </div>
                             {item.word_translation ? (
-                              <p className="text-sm font-medium text-foreground">单词翻译：{item.word_translation}</p>
+                              <div className="rounded-lg bg-muted/20 px-3 py-2">
+                                <p className="text-sm font-medium text-foreground">{item.word_translation}</p>
+                              </div>
                             ) : null}
                             <div className="space-y-1 text-sm text-muted-foreground">
                               <p>英文语境：{item.latest_sentence_en || "暂无英文语境"}</p>
@@ -654,9 +710,36 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                   <div className="space-y-2 rounded-2xl border bg-background p-4">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
-                        <p className="text-lg font-semibold">{reviewItem.entry_text}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-lg font-semibold">{reviewItem.entry_text}</span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0"
+                                disabled={speakingId === reviewItem.id}
+                                onClick={() => speakWord(reviewItem.entry_text)}
+                              >
+                                {speakingId === reviewItem.id ? (
+                                  <Loader2 className="size-4 animate-spin" />
+                                ) : speakingErrorId === reviewItem.id ? (
+                                  <AlertCircle className="size-4 text-destructive" />
+                                ) : (
+                                  <Volume2 className="size-4" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-black/80 text-white border-0 backdrop-blur-sm">
+                              <p>播放发音</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
                         {reviewItem.word_translation ? (
-                          <p className="text-sm font-medium text-primary/80">单词翻译：{reviewItem.word_translation}</p>
+                          <div className="mt-2 rounded-lg bg-muted/20 px-3 py-2">
+                            <p className="text-sm font-medium text-foreground">{reviewItem.word_translation}</p>
+                          </div>
                         ) : null}
                         <div className="flex items-center gap-2">
                           <p className="text-sm text-muted-foreground flex-1">
