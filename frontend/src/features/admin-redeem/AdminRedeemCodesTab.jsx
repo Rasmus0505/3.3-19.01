@@ -174,16 +174,20 @@ export function AdminRedeemCodesTab({ apiCall, queryPrefix = "" }) {
   async function applyCodeAction(codeId, actionPath, actionLabel, method = "POST") {
     setStatus("");
     clearError();
+    const endpoint =
+      method === "DELETE"
+        ? `/api/admin/redeem-codes/${codeId}`
+        : `/api/admin/redeem-codes/${codeId}/${actionPath}`;
     try {
-      const resp = await apiCall(`/api/admin/redeem-codes/${codeId}/${actionPath}`, { method });
+      const resp = await apiCall(endpoint, { method });
       const data = await parseJsonSafely(resp);
       if (!resp.ok) {
         const formattedError = captureError(
           formatResponseError(resp, data, {
             component: "AdminRedeemCodesTab",
             action: actionLabel,
-            endpoint: `/api/admin/redeem-codes/${codeId}/${actionPath}`,
-            method: "POST",
+            endpoint,
+            method,
             meta: { code_id: codeId, action_path: actionPath },
             fallbackMessage: `${actionLabel}失败`,
           }),
@@ -199,8 +203,8 @@ export function AdminRedeemCodesTab({ apiCall, queryPrefix = "" }) {
         formatNetworkError(error, {
           component: "AdminRedeemCodesTab",
           action: actionLabel,
-          endpoint: `/api/admin/redeem-codes/${codeId}/${actionPath}`,
-          method: "POST",
+          endpoint,
+          method,
           meta: { code_id: codeId, action_path: actionPath },
         }),
       );

@@ -11,6 +11,7 @@ from app.core.config import BASE_DATA_DIR
 from app.models import User
 from app.repositories.admin import (
     clear_billing_rate_updated_by_refs,
+    clear_lesson_generation_task_refs,
     clear_redeem_related_user_refs,
     clear_wallet_ledger_operator_refs,
     delete_wallet_ledger_for_user,
@@ -39,6 +40,7 @@ class AdminUserDeleteResult:
     deleted_lessons: int
     deleted_ledger_rows: int
     cleared_operator_refs: int
+    cleared_task_refs: int
     file_cleanup_failed_dirs: list[str]
 
 
@@ -80,6 +82,7 @@ def delete_user_hard(
         clear_redeem_related_user_refs(db, target_user.id)
         deleted_ledger_rows = delete_wallet_ledger_for_user(db, target_user.id)
         clear_billing_rate_updated_by_refs(db, target_user.id)
+        cleared_task_refs = clear_lesson_generation_task_refs(db, target_user.id)
         db.delete(target_user)
         db.commit()
     except Exception as exc:
@@ -93,5 +96,6 @@ def delete_user_hard(
         deleted_lessons=len(lesson_ids),
         deleted_ledger_rows=deleted_ledger_rows,
         cleared_operator_refs=cleared_operator_refs,
+        cleared_task_refs=cleared_task_refs,
         file_cleanup_failed_dirs=failed_dirs,
     )

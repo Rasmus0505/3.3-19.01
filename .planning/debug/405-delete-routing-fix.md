@@ -1,14 +1,47 @@
-# 调试报告：HTTP 405 Method Not Allowed — DELETE /api/admin/redeem-batches/{batch_id}
+# 调试报告：HTTP 405 Method Not Allowed — DELETE /api/admin/redeem-batches/{batch_id} 及 405 兑换码删除
 
 **调试时间：** 2026-04-03
 **调试人：** Cursor AI Agent
-**根因类型：** 路由注册路径指向残缺的 `router.py` 而非完整的 `admin.py`；同时 `router.py` 存在功能退化
+**提交：** `eb4b1b72` fix(admin): add POST /redeem-codes/{code_id}/delete endpoint for frontend compatibility
+**关联提交：** `c3bd37ad` import_module 绕过 admin/ 目录包名冲突
 
 ---
 
 ## 1. 根因分析
 
-### 问题链路
+### 问题 A：AttributeError — `module 'app.api.routers.admin.router' has no attribute 'routes'`
+
+```
+app/api/routers/__init__.py 第8行（修复前）
+    └── from app.api.routers.admin import router as admin
+             ↑
+             └─ app/api/routers/admin/ 目录存在时
+                Python 将其解析为 package 而非 admin.py 文件
+                → 导入的是 admin/ 目录下的 __init__.py
+                → admin/__init__.py 不导出 router
+                → app.include_router(admin) 失败：AttributeError
+```
+
+**修复：** `from importlib import import_module as _imp; admin = _imp("app.api.routers.admin.router").router`
+
+### 问题 B：HTTP 405 删除兑换码
+
+```
+前端调用：POST /api/admin/redeem-codes/{code_id}/delete
+                    ↑ 注意末尾的 /delete 子路径
+
+后端注册：DELETE /api/admin/redeem-codes/{code_id}
+          ↑ 只有这个，无 /delete 后缀
+
+→ FastAPI 找不到 /redeem-codes/{code_id}/delete 的 POST 路由
+→ HTTP 405 Method Not Allowed
+```
+
+**修复：** 在 `router.py` 第1388行新增 `POST /redeem-codes/{code_id}/delete` 端点（与现有的 `DELETE` 共存）。
+
+---
+
+## 2. 发现并修复的所有问题
 
 ```
 app/api/routers/__init__.py 第8行（修复前）
@@ -52,25 +85,21 @@ router.py 缺少 @router.delete("/redeem-batches/{batch_id}") 端点
 
 ---
 
-## 2. 发现的所有不一致问题
+## 2. 发现并修复的所有问题
 
-### 2.1 路由方法缺失
+### 2.1 路由导入问题
 
-| 端点 | 前端方法 | `router.py`（被引用） | `admin.py`（正确） | 状态 |
-|---|---|---|---|---|
-| `DELETE /api/admin/redeem-batches/{batch_id}` | DELETE | ❌ 缺失（修复前） | ✅ 存在 | ✅ 已修复（同步文件） |
-| `DELETE /api/admin/redeem-codes/{code_id}` | DELETE | ❌ 缺失（修复前） | ✅ 存在 | ✅ 已修复（同步文件） |
-| `DELETE /api/admin/users/{user_id}` | DELETE | ❌ 缺失（修复前） | ✅ 存在 | ✅ 已修复（同步文件） |
-| `DELETE /api/admin/announcements/{announcement_id}` | DELETE | ❌ 缺失（修复前） | ✅ 存在 | ✅ 已修复（同步文件） |
+| 问题 | 位置 | 修复 | 状态 |
+|---|---|---|---|
+| `admin` 解析为 package 而非模块 | `__init__.py` 第8行 | 改用 `import_module("app.api.routers.admin.router").router` | ✅ 已提交 `c3bd37ad` |
 
-**说明：** `router.py` 虽然是 `admin.py` 的副本，但本身并不包含这些 DELETE 端点。问题在于 `__init__.py` 引用了 `router.py` 而非 `admin.py`。
+### 2.2 缺失的路由端点
 
-### 2.2 功能退化（数据层）
-
-| 位置 | 问题 | 状态 |
-|---|---|---|
-| `admin_list_redeem_codes` | 缺少 `code_plain` 字段 | ✅ 已修复 |
-| `admin_abandon_redeem_code` | 使用错误方法（不退款） | ✅ 已修复 |
+| 端点 | 前端调用 | 后端 | 状态 |
+|---|---|---|---|
+| `POST /api/admin/redeem-codes/{code_id}/delete` | POST `{actionPath: "delete"}` | 缺失 | ✅ 已新增 `eb4b1b72` |
+| `DELETE /api/admin/redeem-codes/{code_id}` | 直接 DELETE | 存在 | ✅ |
+| `DELETE /api/admin/redeem-batches/{batch_id}` | 直接 DELETE | 存在 | ✅ |
 
 ### 2.3 其他发现（无不一致）
 
@@ -124,93 +153,29 @@ router.py 缺少 @router.delete("/redeem-batches/{batch_id}") 端点
 
 ## 3. 修复内容
 
-### 3.1 文件 1：`app/api/routers/__init__.py`
+### 3.1 `app/api/routers/__init__.py`
 
-**改动：** 将第8行从引用 `admin` 子包改为直接引用 `admin/router.py`
+改用 `import_module` 绕过 package 解析：
 
 ```diff
 - from app.api.routers.admin import router as admin
-+ from app.api.routers.admin.router import router as admin
++ from importlib import import_module as _imp
++ admin = _imp("app.api.routers.admin.router").router
++ del _imp
 ```
 
-**效果：** 绕过有循环引用问题的 `admin/__init__.py`，直接加载 `router.py`。注意：`router.py` 已被同步到与 `admin.py` 功能一致。
+### 3.2 `app/api/routers/admin/router.py`
 
-### 3.2 文件 2：`app/api/routers/admin/router.py`
-
-**改动 1：** `admin_list_redeem_codes` 添加 `code_plain` 字段
-
-```diff
-         AdminRedeemCodeItem(
-             id=code.id,
-             batch_id=batch.id,
-             batch_name=batch.batch_name,
-             code_mask=code.masked_code,
-+            code_plain=code.code_plain,  # 新增 per D-10
-             status=code.status,
-```
-
-**改动 2：** `admin_abandon_redeem_code` 改为使用退款方法
-
-```diff
--    try:
--        code = update_redeem_code_status(
--            db,
--            code_id=code_id,
--            next_status=REDEEM_CODE_STATUS_ABANDONED,
--            operator_user_id=current_admin.id,
--            note="abandon",
--        )
--        batch = db.get(RedeemCodeBatch, code.batch_id)
--        db.commit()
--        effective = _effective_code_status(
--            code_status=code.status,
--            batch_status=batch.status if batch else REDEEM_BATCH_STATUS_ACTIVE,
--            expire_at=batch.expire_at if batch else _now(),
--            now=_now(),
--        )
--        return AdminRedeemCodeStatusActionResponse(ok=True, code_id=code.id, status=code.status, effective_status=effective)
-+    """
-+    废弃兑换码 per D-06, D-08
-+    - 已兑换：扣除用户钱包余额（事务保护）
-+    - 未兑换：直接标记为废弃
-+    """
-+    try:
-+        result = abandon_redeem_code_with_refund(
-+            db,
-+            code_id=code_id,
-+            operator_user_id=current_admin.id,
-+        )
-+        db.commit()
-+
-+        return AdminRedeemCodeStatusActionResponse(
-+            ok=True,
-+            code_id=code_id,
-+            status=result["status"],
-+            effective_status=result["status"],
-+        )
-```
-
-**效果：** 保持 `router.py` 与 `admin.py` 功能同步，解决 D-10 和废弃码退款问题。
-
-### 3.3 保留未改的文件
-
-- **`app/api/routers/admin.py`（顶层）：** 保持原样，仍是完整版本
-- **`app/api/routers/admin/__init__.py`：** 循环引用问题保留，但已被绕过
-- **`app/main.py`：** 保持原有 `include_router` 调用
-
----
+新增 `POST /redeem-codes/{code_id}/delete`（第1388行起），直接复用原有 `DELETE` 的逻辑，两端共存。
 
 ## 4. 验证清单
 
-- [x] 路由导入测试通过（Python import 无错误）
-- [x] `router.py` 包含 `DELETE /api/admin/redeem-batches/{batch_id}` 端点
-- [x] `router.py` 包含 `code_plain` 字段在兑换码列表中
-- [x] `router.py` 的 `abandon_redeem_code` 使用 `abandon_redeem_code_with_refund`
-- [ ] `DELETE /api/admin/redeem-batches/{batch_id}` 返回 200（需启动后端测试）
-- [ ] `DELETE /api/admin/redeem-codes/{code_id}` 返回 200（需启动后端测试）
-- [ ] `DELETE /api/admin/users/{user_id}` 返回 200（需启动后端测试）
-- [ ] `POST /api/admin/redeem-codes/{code_id}/abandon` 正确退款（需启动后端测试）
-- [ ] 启动后端无 import 错误
+- [x] `import_module("app.api.routers.admin.router").router` 返回正确的 APIRouter
+- [x] `from app.api.routers import admin; admin.routes` 正常（33条路由）
+- [x] `create_app()` 无 AttributeError
+- [x] `POST /api/admin/redeem-codes/{code_id}/delete` 存在于路由表中
+- [ ] 前端实际测试删除兑换码返回 200
+- [ ] 前端实际测试删除批次返回 200
 
 ---
 

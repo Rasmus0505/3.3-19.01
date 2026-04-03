@@ -123,6 +123,7 @@ class AdminUserDeleteResponse(BaseModel):
     deleted_lessons: int
     deleted_ledger_rows: int
     cleared_operator_refs: int
+    cleared_task_refs: int
     file_cleanup_failed_dirs: list[str]
 
 

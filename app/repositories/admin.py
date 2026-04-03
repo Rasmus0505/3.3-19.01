@@ -12,6 +12,7 @@ from app.models import (
     AdminOperationLog,
     BillingModelRate,
     Lesson,
+    LessonGenerationTask,
     RedeemCode,
     RedeemCodeAttempt,
     RedeemCodeBatch,
@@ -815,5 +816,12 @@ def delete_wallet_ledger_for_user(db: Session, user_id: int) -> int:
 def clear_billing_rate_updated_by_refs(db: Session, user_id: int) -> int:
     result = db.execute(
         update(BillingModelRate).where(BillingModelRate.updated_by_user_id == user_id).values(updated_by_user_id=None)
+    )
+    return int(result.rowcount or 0)
+
+
+def clear_lesson_generation_task_refs(db: Session, user_id: int) -> int:
+    result = db.execute(
+        update(LessonGenerationTask).where(LessonGenerationTask.owner_user_id == user_id).values(owner_user_id=None)
     )
     return int(result.rowcount or 0)
