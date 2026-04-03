@@ -108,6 +108,19 @@ const TRANSLATION_MASK_RESIZE_HANDLES = [
     className: "immersive-translation-mask__resize-handle immersive-translation-mask__resize-handle--bottom-right",
     ariaLabel: "从右下角调整字幕遮挡板尺寸",
   },
+  // Left / right edge — narrower touch target that only adjusts width without moving top/left.
+  {
+    key: "w",
+    mode: "resize-w",
+    className: "immersive-translation-mask__resize-handle immersive-translation-mask__resize-handle--left",
+    ariaLabel: "从左侧调整字幕遮挡板宽度",
+  },
+  {
+    key: "e",
+    mode: "resize-e",
+    className: "immersive-translation-mask__resize-handle immersive-translation-mask__resize-handle--right",
+    ariaLabel: "从右侧调整字幕遮挡板宽度",
+  },
 ];
 
 function clampNumber(value, min, max) {
@@ -291,6 +304,25 @@ function resolveTranslationMaskResizeRect(startRect, mode, deltaX, deltaY, metri
         height: clampNumber(bottom - top, minHeight, maxHeight),
       };
     }
+    // Left edge: adjust width and left, keep top/height unchanged.
+    case "resize-w": {
+      const left = clampNumber(startRect.left + deltaX, 0, Math.max(0, right - minWidth));
+      return {
+        left,
+        top: startRect.top,
+        width: clampNumber(right - left, minWidth, maxWidth),
+        height: startRect.height,
+      };
+    }
+    // Right edge: adjust width only, keep left/top/height unchanged.
+    case "resize-e": {
+      return {
+        left: startRect.left,
+        top: startRect.top,
+        width: clampNumber(startRect.width + deltaX, minWidth, Math.min(maxWidth, boundsWidth - startRect.left)),
+        height: startRect.height,
+      };
+    }
     default:
       return null;
   }
@@ -415,33 +447,48 @@ function normalizeComparableToken(token) {
   return normalizeToken(String(token || "")).replace(APOSTROPHE_RE, "");
 }
 
-/** 精听辅助在快照间新增的「可比字符」数，累加到 wordRevealLengths（与 buildLetterSlots 的 revealComparableCount 语义一致）。 */
-function mergeRevealLengthsAfterAssistance(beforeInputs, afterInputs, prevLengths) {
+function mergeSortedComparableIndices(base, additions) {
+  const next = new Set([...(Array.isArray(base) ? base : []), ...additions]);
+  return Array.from(next).sort((a, b) => a - b);
+}
+
+/** 精听辅助新增的每个可比位下标并入 wordRevealComparableIndices（与 buildLetterSlots 一致）。 */
+function mergeRevealComparableIndicesAfterAssistance(beforeInputs, afterInputs, prevArrays) {
   const maxIdx = Math.max(
     Array.isArray(beforeInputs) ? beforeInputs.length : 0,
     Array.isArray(afterInputs) ? afterInputs.length : 0,
-    Array.isArray(prevLengths) ? prevLengths.length : 0,
+    Array.isArray(prevArrays) ? prevArrays.length : 0,
   );
-  const next = Array.isArray(prevLengths) && prevLengths.length ? [...prevLengths] : [];
-  while (next.length < maxIdx) next.push(0);
+  const next = Array.isArray(prevArrays) && prevArrays.length ? [...prevArrays] : [];
+  while (next.length < maxIdx) next.push([]);
   for (let i = 0; i < maxIdx; i += 1) {
     const beforeLen = normalizeComparableToken(beforeInputs[i] || "").length;
     const afterLen = normalizeComparableToken(afterInputs[i] || "").length;
     const delta = Math.max(0, afterLen - beforeLen);
-    if (delta > 0) next[i] = (next[i] || 0) + delta;
+    if (delta > 0) {
+      const additions = Array.from({ length: delta }, (_, j) => beforeLen + j);
+      next[i] = mergeSortedComparableIndices(next[i], additions);
+    }
   }
   return next;
 }
 
-function buildLetterSlots(expectedToken, inputValue, revealComparableCount = 0) {
+function pruneRevealComparableIndicesForInputs(wordInputs, prevArrays) {
+  if (!Array.isArray(prevArrays) || !prevArrays.length) return prevArrays;
+  let changed = false;
+  const next = prevArrays.map((arr, i) => {
+    const len = normalizeComparableToken(wordInputs[i] || "").length;
+    const pruned = (arr || []).filter((idx) => idx < len);
+    if (pruned.length !== (arr || []).length) changed = true;
+    return pruned;
+  });
+  return changed ? next : prevArrays;
+}
+
+function buildLetterSlots(expectedToken, inputValue, revealedComparableIndices = []) {
   const expected = String(expectedToken || "");
   const actual = normalizeComparableToken(inputValue);
-  const comparableExpected = normalizeComparableToken(expected);
-  const L = actual.length;
-  const R = Math.max(0, Number(revealComparableCount) || 0);
-  const prefixOk = comparableExpected.startsWith(actual);
-  /** 在输入为正确前缀时：前 (L−R) 个可比字符为用户已输入，后 R 个为揭示；避免「已打出 pond 却从 p 开始变黄」。 */
-  const revealedComparableStart = prefixOk && R > 0 ? Math.max(0, L - R) : -1;
+  const revealedSet = new Set(Array.isArray(revealedComparableIndices) ? revealedComparableIndices : []);
   const slots = [];
   let typedIndex = 0;
 
@@ -463,12 +510,7 @@ function buildLetterSlots(expectedToken, inputValue, revealComparableCount = 0) 
       const match = typedChar.toLowerCase() === expectedChar.toLowerCase();
       let charState = "wrong";
       if (match) {
-        if (revealedComparableStart >= 0) {
-          charState = typedIndex >= revealedComparableStart ? "revealed" : "correct";
-        } else {
-          // 非正确前缀时沿用旧语义，避免错输状态下样式全乱
-          charState = typedIndex < R ? "revealed" : "correct";
-        }
+        charState = revealedSet.has(typedIndex) ? "revealed" : "correct";
       }
       state = charState;
       typedIndex += 1;
@@ -928,7 +970,8 @@ export function ImmersiveLessonPage({
   const [currentWordInput, setCurrentWordInput] = useState("");
   const [wordInputs, setWordInputs] = useState([]);
   const [wordStatuses, setWordStatuses] = useState([]);
-  const [wordRevealLengths, setWordRevealLengths] = useState([]); // 每个单词 reveal 出的字符数
+  /** 每个单词：由「揭示」填充的可比字符下标（0 起），与用户手打交错时仍能正确标黄 */
+  const [wordRevealComparableIndices, setWordRevealComparableIndices] = useState([]);
   const [learningSettings, setLearningSettings] = useState(() => readLearningSettings());
   const [sessionState, dispatchSession] = useReducer(
     immersiveSessionReducer,
@@ -1023,6 +1066,7 @@ export function ImmersiveLessonPage({
     latestRect: null,
     captureElement: null,
   });
+  const translationMaskDraggingRef = useRef(false); // true during active drag — skips auto-width effect
   const prevLessonIdRef = useRef(null);
   const sessionMaxWidthRatioRef = useRef(TRANSLATION_MASK_DEFAULT_WIDTH_RATIO);
 
@@ -1556,6 +1600,7 @@ export function ImmersiveLessonPage({
   useEffect(() => {
     const currentSentence = lesson?.sentences?.[currentSentenceIndex];
     if (!currentSentence || !currentSentence.text_en || !translationMaskMetrics) return;
+    if (translationMaskDraggingRef.current) return;
 
     const videoWidth = translationMaskMetrics.width || 1;
     const subtitleWidth = measureSubtitleWidth(currentSentence.text_en, 16);
@@ -1596,6 +1641,7 @@ export function ImmersiveLessonPage({
     translationMaskGestureRef.current.startRect = null;
     translationMaskGestureRef.current.latestRect = null;
     translationMaskGestureRef.current.captureElement = null;
+    translationMaskDraggingRef.current = false;
   }, []);
 
   const updateTranslationMaskMetrics = useCallback(() => {
@@ -1892,7 +1938,7 @@ export function ImmersiveLessonPage({
     (sentence, playbackRequired = true) => {
       const next = createWordState(sentence?.tokens || []);
       applyWordSnapshot(next);
-      setWordRevealLengths([]); // 重置 reveal 追踪
+      setWordRevealComparableIndices([]); // 重置 reveal 追踪
       resetSentenceGate(playbackRequired);
     },
     [applyWordSnapshot, resetSentenceGate],
@@ -1904,6 +1950,10 @@ export function ImmersiveLessonPage({
 
   useEffect(() => {
     wordInputsRef.current = wordInputs;
+  }, [wordInputs]);
+
+  useEffect(() => {
+    setWordRevealComparableIndices((prev) => pruneRevealComparableIndicesForInputs(wordInputs, prev));
   }, [wordInputs]);
 
   useEffect(() => {
@@ -2734,6 +2784,7 @@ export function ImmersiveLessonPage({
       if (!typingEnabled) return activeWordIndexRef.current;
       // 必须在 assistance 之前取索引：揭示最后一个字母会完成当前词并推进 activeWordIndex，若用之后的索引会把计数记到下一词上
       const wordIndexReceivingReveal = activeWordIndexRef.current;
+      const comparableBeforeReveal = normalizeComparableToken(currentWordInputRef.current).length;
       const result = applyReplayAssistanceToSnapshot(
         cloneWordSnapshot(activeWordIndexRef.current, currentWordInputRef.current, wordInputsRef.current, wordStatusesRef.current),
         expectedTokens,
@@ -2741,10 +2792,12 @@ export function ImmersiveLessonPage({
       );
       applyWordSnapshot(result.snapshot);
       if (wordIndexReceivingReveal < expectedTokens.length) {
-        setWordRevealLengths((prev) => {
+        setWordRevealComparableIndices((prev) => {
           const updated = prev.length ? [...prev] : [];
-          while (updated.length <= wordIndexReceivingReveal) updated.push(0);
-          updated[wordIndexReceivingReveal] = (updated[wordIndexReceivingReveal] || 0) + 1;
+          while (updated.length <= wordIndexReceivingReveal) updated.push([]);
+          updated[wordIndexReceivingReveal] = mergeSortedComparableIndices(updated[wordIndexReceivingReveal], [
+            comparableBeforeReveal,
+          ]);
           return updated;
         });
       }
@@ -2770,11 +2823,13 @@ export function ImmersiveLessonPage({
       const activeIdx = activeWordIndexRef.current;
       const expected = expectedTokens[activeIdx] || "";
       if (!expected) return activeWordIndexRef.current;
-      const revealedComparableCount = normalizeComparableToken(expected).length;
-      setWordRevealLengths((prev) => {
+      const beforeLen = normalizeComparableToken(currentWordInputRef.current).length;
+      const totalComparable = normalizeComparableToken(expected).length;
+      const additions = Array.from({ length: Math.max(0, totalComparable - beforeLen) }, (_, j) => beforeLen + j);
+      setWordRevealComparableIndices((prev) => {
         const updated = prev.length ? [...prev] : [];
-        while (updated.length <= activeIdx) updated.push(0);
-        updated[activeIdx] = revealedComparableCount;
+        while (updated.length <= activeIdx) updated.push([]);
+        updated[activeIdx] = mergeSortedComparableIndices(updated[activeIdx] || [], additions);
         return updated;
       });
       const nextActiveWordIndex = commitCorrectWord(expected);
@@ -2802,7 +2857,9 @@ export function ImmersiveLessonPage({
       const inputsBeforeAssist = snapshotForAssist.wordInputs.map((w) => String(w || ""));
       const assistedSnapshot = applyReplayAssistanceToSnapshot(snapshotForAssist, expectedTokens, assistance);
       applyWordSnapshot(assistedSnapshot.snapshot);
-      setWordRevealLengths((prev) => mergeRevealLengthsAfterAssistance(inputsBeforeAssist, assistedSnapshot.snapshot.wordInputs, prev));
+      setWordRevealComparableIndices((prev) =>
+        mergeRevealComparableIndicesAfterAssistance(inputsBeforeAssist, assistedSnapshot.snapshot.wordInputs, prev),
+      );
       if (assistedSnapshot.completedSentence) {
         dispatchSession({
           type: ANSWER_COMPLETED,
@@ -3011,6 +3068,7 @@ export function ImmersiveLessonPage({
       gesture.startRect = { ...rectSnapshot };
       gesture.latestRect = { ...rectSnapshot };
       gesture.captureElement = event.currentTarget;
+      translationMaskDraggingRef.current = true;
       if (typeof event.currentTarget?.setPointerCapture === "function") {
         try {
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -3796,7 +3854,7 @@ export function ImmersiveLessonPage({
                 <div className={`immersive-word-row ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""}`}>
                   {expectedTokens.map((token, index) => {
                     const status = wordStatuses[index] || "pending";
-                    const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealLengths[index] || 0);
+                    const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealComparableIndices[index] || []);
                     return (
                       <div
                         key={`${token}-${index}`}

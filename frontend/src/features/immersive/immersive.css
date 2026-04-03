@@ -732,9 +732,8 @@
 }
 
 .immersive-page--cinema .immersive-media-mask-layer {
-  z-index: 12;
-  isolation: isolate;
-  transform: translateZ(0);
+  z-index: 1;
+  /* No isolation/translateZ — let mask z-index compose naturally with typing z=2 above it. */
 }
 
 .immersive-translation-mask {
@@ -754,8 +753,7 @@
   isolation: isolate;
   backdrop-filter: blur(18px) saturate(1.45) brightness(0.86);
   -webkit-backdrop-filter: blur(18px) saturate(1.45) brightness(0.86);
-  will-change: left, top, width, height;
-  transition: width 100ms ease, height 100ms ease, opacity 100ms ease, transform 100ms ease, border-radius 100ms ease;
+  /* No transition / will-change here — they fight with JS-driven drag and cause lag. */
 }
 
 .immersive-translation-mask:active {
@@ -859,6 +857,41 @@
 
 .immersive-translation-mask__resize-handle--bottom-right::before {
   transform: rotate(180deg);
+}
+
+/* Left / right edge — thin vertical strip for horizontal resize. */
+.immersive-translation-mask__resize-handle--left {
+  top: 12px;
+  bottom: 12px;
+  left: 6px;
+  right: auto;
+  width: 10px;
+  height: auto;
+  border-radius: 999px;
+  cursor: ew-resize;
+  border: none;
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.immersive-translation-mask__resize-handle--left::before {
+  display: none;
+}
+
+.immersive-translation-mask__resize-handle--right {
+  top: 12px;
+  bottom: 12px;
+  right: 6px;
+  left: auto;
+  width: 10px;
+  height: auto;
+  border-radius: 999px;
+  cursor: ew-resize;
+  border: none;
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.immersive-translation-mask__resize-handle--right::before {
+  display: none;
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
