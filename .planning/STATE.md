@@ -6,20 +6,20 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-**Current focus:** Phase 25 — CEFR 沉浸式展示与历史徽章 (Plan 01/04)
+**Current focus:** Phase 25 — CEFR 沉浸式展示与历史徽章 (Plan 02/04)
 
 ## Current Position
 
 Phase: 25 (In progress)
-Plan: 01 / 04
-Status: Plan 01 complete — next: Phase 25 Plan 02
-Last activity: 2026-04-04 — Phase 25 Plan 01 CSS foundation + CefrBadge complete
+Plan: 02 / 04
+Status: Plan 02 complete — next: Phase 25 Plan 03
+Last activity: 2026-04-04 — Phase 25 Plan 02 CEFR underlines on answer box word slots complete
 
 ## Milestone Status
 
 v2.4 词汇等级预处理与 CEFR 沉浸式展示 (Phases 24–25):
 - Phase 24: CEFR 基础设施与 i 水平设置 — COMPLETE
-- Phase 25: CEFR 沉浸式展示与历史徽章 — IN PROGRESS (Plan 01/04)
+- Phase 25: CEFR 沉浸式展示与历史徽章 — IN PROGRESS (Plan 02/04)
 
 Progress: [░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 25%
 
@@ -49,7 +49,7 @@ v2.3 学习体验与导入流程优化 (Phases 19–23):
 |-------|-------|-------|----------|
 | v1.0-v2.2 | 49 | 49 | ~15 min |
 | Phase 24 | 4 | 4 | ~15 min |
-| Phase 25 | 1 | 4 | 8 min |
+| Phase 25 | 2 | 4 | ~10 min |
 
 **Recent Trend:**
 - Last 5 plans: trending stable
@@ -95,5 +95,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-04
-Stopped at: Phase 25 Plan 01 complete — CSS foundation + CefrBadge utility committed
+Stopped at: Phase 25 Plan 02 complete — CEFR underlines on answer box word slots committed
 Resume file: None
