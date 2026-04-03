@@ -129,7 +129,15 @@ v2.3 started 2026-04-02:
 | Announcement model: now_shanghai_naive for timestamps | 16-01 | Consistent with other models |
 | Public /api/announcements/active is unauthenticated | 16-01 | Frontend controls login-gated visibility |
 | Admin endpoints via admin.py include_router | 16-01 | Keeps admin routes centralized |
+| Mask: horizontal center on new lessonId | 23-01 | buildDefaultTranslationMaskRect on lessonId change |
+| Mask: width only expands upward within session | 23-01 | sessionMaxWidthRatioRef tracks max, only setState when larger |
+| Mask: enabled state persists via localStorage | 23-01 | Verified — existing code already implements D-03 |
+| Link restore: unified entry with source_url check | 23-02 | openRestorePicker checks lesson?.source_url |
+| Link restore: cache check before yt-dlp trigger | 23-02 | hasLessonMedia(lesson.id) before download |
 
 ## Next Step
 
-1. **Phase 17 — 生词本复习主流程重做** — WORD-01/02/04，依赖 Phase 16 完成
+1. **Phase 23 — 字幕遮挡板与链接恢复** — completed 2026-04-03
+   - MASK-01: 新视频遮挡板水平居中 + 宽度自适应 ✅
+   - MASK-02: 遮挡板启用状态跨视频记忆 ✅
+   - MASK-04: 链接恢复增强（弹窗 + yt-dlp）✅
