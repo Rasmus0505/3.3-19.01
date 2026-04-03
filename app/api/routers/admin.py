@@ -110,8 +110,6 @@ from app.services.billing_service import (
     yuan_to_compat_cents,
 )
 from app.services.media import get_controlled_media_roots
-import app.api.routers.admin.announcements as _ann_mod  # noqa: E402  # explicit module load avoids __init__.py re-export
-announcement_router = _ann_mod.router
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -1630,6 +1628,3 @@ def admin_export_redeem_audit(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
-
-
-router.include_router(announcement_router)

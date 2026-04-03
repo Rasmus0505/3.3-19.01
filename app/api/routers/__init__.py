@@ -5,7 +5,11 @@ import app.api.routers.lessons.router as lessons
 from app.api.routers.lessons.router import router as lessons_router
 from app.api.routers.billing.router import router as billing
 from app.api.routers.billing.wallet import router as wallet
-from app.api.routers.admin import router as admin
+# app/api/routers/admin/ (directory) shadows app/api/routers/admin.py (file).
+# Use __import__ to bypass the package and load router.py directly from the sub-package.
+from importlib import import_module as _imp
+admin = _imp("app.api.routers.admin.router").router
+del _imp
 from app.api.routers.admin.console import router as admin_console
 from app.api.routers.admin.sql_console import router as admin_sql_console
 from app.api.routers.admin.announcements import router as admin_announcements
