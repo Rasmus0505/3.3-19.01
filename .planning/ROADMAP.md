@@ -183,7 +183,7 @@ _See: `.planning/milestones/v2.2-ROADMAP.md` for full phase details_
 5. 若视频曾通过链接导入且有 source URL，恢复界面提供"按链接恢复"直接重新下载，而非使用本地缓存
 
 **Plans**: 2 plans
-- [ ] 23-01: 遮挡板居中 + 宽度自适应（MASK-01/02）
+- [x] 23-01: 遮挡板居中 + 宽度自适应（MASK-01/02）✅
 - [ ] 23-02: 链接恢复增强（MASK-04）
 
 ---
@@ -217,6 +217,6 @@ _See: `.planning/milestones/v2.2-ROADMAP.md` for full phase details_
 | 20. 生词本词条增强 | v2.3 | 2/2 | Not started | - |
 | 21. 素材导入 UX 优化 | v2.3 | 0/4 | Not started | - |
 | 22. 导入弹窗配置与视频内容提取 | v2.3 | 0/6 | Not started | - |
-| 23. 字幕遮挡板与链接恢复 | v2.3 | 2/2 | In Progress | - |
+| 23. 字幕遮挡板与链接恢复 | v2.3 | 1/2 | In Progress | - |
 
 **Overall:** 18/23 phases complete
