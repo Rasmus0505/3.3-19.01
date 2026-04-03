@@ -424,6 +424,23 @@ export function AdminUsersTab({ apiCall }) {
         render: (item) => item.email,
       },
       {
+        key: "username",
+        header: "用户名",
+        mobileLabel: "用户名",
+        render: (item) => item.username || "-",
+      },
+      {
+        key: "created_at",
+        header: (
+          <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("created_at")}>
+            注册时间
+            <ArrowUpDown className="size-3.5" />
+          </button>
+        ),
+        mobileLabel: "注册时间",
+        render: (item) => formatDateTimeBeijing(item.created_at),
+      },
+      {
         key: "last_login_at",
         header: (
           <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("last_login_at")}>
