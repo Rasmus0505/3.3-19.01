@@ -20,12 +20,12 @@ function formatDate(isoString) {
 }
 
 const CEFR_LEVELS = [
-  { value: "A1", description: "能理解和使用熟悉的日常表达和非常简单的句子" },
-  { value: "A2", description: "能理解最直接相关领域的熟悉事物，能进行简单日常对话" },
-  { value: "B1", description: "在英语国家旅行时能应对大多数情况，能围绕熟悉话题简单连贯地表达" },
-  { value: "B2", description: "能与母语者比较流利地互动，能清晰详细地表达观点" },
-  { value: "C1", description: "能有效运用语言，能流畅自如地表达复杂思想" },
-  { value: "C2", description: "毫不费力地进行理解，能非常流利地精确表达" },
+  { value: "A1", label: "A1", description: "能理解和使用熟悉的日常表达和非常简单的句子" },
+  { value: "A2", label: "A2", description: "能理解最直接相关领域的熟悉事物，能进行简单日常对话" },
+  { value: "B1", label: "B1", description: "在英语国家旅行时能应对大多数情况，能围绕熟悉话题简单连贯地表达" },
+  { value: "B2", label: "B2", description: "能与母语者比较流利地互动，能清晰详细地表达观点" },
+  { value: "C1", label: "C1", description: "能有效运用语言，能流畅自如地表达复杂思想" },
+  { value: "C2", label: "C2", description: "毫不费力地进行理解，能非常流利地精确表达" },
 ];
 
 export function AccountPanel({ apiCall, currentUser, onWalletChanged }) {
