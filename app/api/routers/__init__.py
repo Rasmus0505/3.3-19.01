@@ -20,6 +20,7 @@ from app.api.routers.media import router as media
 import app.api.routers.asr_models as asr_models
 from app.api.routers.asr_models import router as asr_models_router
 from app.api.routers.transcribe import router as transcribe
+from app.api.routers.soe import router as soe
 
 
 def _attach_wordbook_routes() -> None:
@@ -48,4 +49,5 @@ __all__ = [
     "asr_models",
     "asr_models_router",
     "wordbook",
+    "soe",
 ]

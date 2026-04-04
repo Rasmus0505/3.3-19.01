@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
-from app.api.routers import admin, admin_announcements, admin_console, admin_sql_console, announcement_public, asr_models, asr_models_router, auth, billing, lessons, lessons_router, media, practice, transcribe, wallet
+from app.api.routers import admin, admin_announcements, admin_console, admin_sql_console, announcement_public, asr_models, asr_models_router, auth, billing, lessons, lessons_router, media, practice, soe, transcribe, wallet
 from app.api.routers.announcement_public import router as announcement_public_router
 from app.api.routers.dashscope_upload import router as dashscope_upload_router
 from app.api.routers.local_asr_assets import router as local_asr_assets_router
@@ -739,6 +739,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(local_asr_assets_router)
     app.include_router(practice)
     app.include_router(media)
+    app.include_router(soe)
     app.include_router(announcement_public_router)
 
     @app.get("/{full_path:path}", include_in_schema=False)

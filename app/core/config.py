@@ -156,6 +156,10 @@ ASR_BUNDLE_ROOT_DIR = Path(
     os.getenv("ASR_BUNDLE_ROOT_DIR", str(_default_asr_bundle_root())).strip() or str(_default_asr_bundle_root())
 )
 
+TENCENT_SOE_APP_ID = os.getenv("TENCENT_SOE_APP_ID", "").strip()
+TENCENT_SECRET_ID = os.getenv("TENCENT_SECRET_ID", "").strip()
+TENCENT_SECRET_KEY = os.getenv("TENCENT_SECRET_KEY", "").strip()
+
 REDEEM_CODE_DEFAULT_VALID_DAYS = _get_env_int("REDEEM_CODE_DEFAULT_VALID_DAYS", 30)
 REDEEM_CODE_DEFAULT_DAILY_LIMIT = _get_env_int("REDEEM_CODE_DEFAULT_DAILY_LIMIT", 5)
 REDEEM_CODE_EXPORT_CONFIRM_TEXT = get_redeem_code_export_confirm_text()
