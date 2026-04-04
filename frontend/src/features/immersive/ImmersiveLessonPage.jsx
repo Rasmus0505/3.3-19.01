@@ -62,8 +62,10 @@ import "./immersive.css";
 const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
 const APOSTROPHE_RE = /[’']/g;
 
-function formatSoeAssessErrorMessage(data) {
-  if (!data || typeof data !== "object") return "评测失败";
+function formatSoeAssessErrorMessage(data, httpStatus = 0) {
+  if (!data || typeof data !== "object") {
+    return httpStatus ? `评测失败（HTTP ${httpStatus}）` : "评测失败";
+  }
   const detail = data.detail;
   if (typeof detail === "string" && detail.trim()) return detail.trim();
   if (Array.isArray(detail) && detail.length > 0) {
@@ -73,7 +75,9 @@ function formatSoeAssessErrorMessage(data) {
       if (typeof first.message === "string" && first.message.trim()) return first.message.trim();
     }
   }
-  return typeof data.message === "string" && data.message.trim() ? data.message.trim() : "评测失败";
+  const msg = typeof data.message === "string" && data.message.trim() ? data.message.trim() : "";
+  if (msg) return msg;
+  return httpStatus ? `评测失败（HTTP ${httpStatus}）` : "评测失败";
 }
 const CINEMA_CONTROLS_IDLE_MS = 3000;
 const WORD_TIMING_TOLERANCE_MS = 140;
@@ -4087,7 +4091,7 @@ export function ImmersiveLessonPage({
                                 }, accessToken);
                                 const data = await parseResponse(resp);
                                 if (!resp.ok || data?.ok === false) {
-                                  setSoeResult({ ok: false, message: formatSoeAssessErrorMessage(data) });
+                                  setSoeResult({ ok: false, message: formatSoeAssessErrorMessage(data, resp.status) });
                                 } else {
                                   setSoeResult(data);
                                 }
@@ -4215,7 +4219,7 @@ export function ImmersiveLessonPage({
                                 }, accessToken);
                                 const data = await parseResponse(resp);
                                 if (!resp.ok || data?.ok === false) {
-                                  setSoeResult({ ok: false, message: formatSoeAssessErrorMessage(data) });
+                                  setSoeResult({ ok: false, message: formatSoeAssessErrorMessage(data, resp.status) });
                                 } else {
                                   setSoeResult(data);
                                 }

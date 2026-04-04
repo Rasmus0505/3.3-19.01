@@ -9,7 +9,7 @@ psycopg2-binary==2.9.10
 passlib[bcrypt]==1.7.4
 PyJWT==2.10.1
 openai==1.65.4
-websocket-client>=1.9.0
+websockets>=12.0
 alembic==1.14.1
 spacy==3.7.5
 yt-dlp>=2025.2.19,<2027

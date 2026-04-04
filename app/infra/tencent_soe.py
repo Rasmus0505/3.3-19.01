@@ -3,24 +3,28 @@ from __future__ import annotations
 """
 腾讯云智聆口语评测（SOE）基础设施层
 
-基于 SDK: D:/GITHUB/tencentcloud-speech-sdk-python
 API 端点: wss://soe.cloud.tencent.com/soe/api/
-文档: D:/3.3-19.01/口语评测（新版） 智聆口语评测（新版）相关接口_腾讯云.md
+文档: 大模型调用参考文档/腾讯云/口语评测（新版） 智聆口语评测（新版）相关接口_腾讯云.md
+
+实现要点（与文档一致）:
+- 建立 WSS 后必须先收到服务端握手成功（code=0），再发送音频二进制，最后发送结束 JSON。
+- 使用 asyncio + websockets，避免 websocket-client 线程模型与握手/发送竞态。
 """
 
+import asyncio
 import base64
-import hmac
 import hashlib
+import hmac
 import json
 import random
 import sys
-import threading
 import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import websocket
+import websockets
+from websockets.exceptions import ConnectionClosed
 
 from app.core.config import TENCENT_SECRET_ID, TENCENT_SECRET_KEY
 
@@ -35,9 +39,8 @@ ENGINE_ZH = "16k_zh"
 VOICE_FORMAT_PCM = 0
 VOICE_FORMAT_WAV = 1
 
-# 文本模式
-TEXT_MODE_EVAL = 0   # 评测模式
-TEXT_MODE_TRANSFER = 1  # 传输模式
+# 文本模式（文档：0 普通文本，1 音素结构）
+TEXT_MODE_PLAIN = 0
 
 # 识别模式
 REC_MODE_STREAM = 0  # 流式评测
@@ -51,6 +54,7 @@ EVAL_MODE_SENTENCE = 1
 @dataclass
 class SOEResult:
     """口语评测结果"""
+
     voice_id: str
     code: int
     message: str
@@ -69,11 +73,11 @@ class SOEResult:
 
 class SOEConfigError(RuntimeError):
     """配置错误"""
-    pass
 
 
 class SOEAssessmentError(RuntimeError):
     """评测执行错误"""
+
     def __init__(self, code: int, message: str, detail: str = ""):
         super().__init__(message)
         self.code = code
@@ -84,18 +88,15 @@ class SOEAssessmentError(RuntimeError):
 def _quote_autho(s: str) -> str:
     if sys.version_info >= (3, 0):
         import urllib.parse as urlparse
+
         return urlparse.quote(s)
-    else:
-        import urllib
-        return urllib.quote(s)
+    import urllib
+
+    return urllib.quote(s)
 
 
 def _sign(signstr: str, secret_key: str) -> str:
-    hmacstr = hmac.new(
-        secret_key.encode("utf-8"),
-        signstr.encode("utf-8"),
-        hashlib.sha1,
-    ).digest()
+    hmacstr = hmac.new(secret_key.encode("utf-8"), signstr.encode("utf-8"), hashlib.sha1).digest()
     return base64.b64encode(hmacstr).decode("utf-8")
 
 
@@ -291,29 +292,92 @@ def _build_soe_result_from_tencent_payload(voice_id: str, resp: dict, result_dat
     )
 
 
-class _ResultCollector:
-    """收集 WebSocket 返回结果的辅助类"""
+def _parse_json_text(raw: str | bytes) -> dict:
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", errors="replace")
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise SOEAssessmentError(0, "评测响应格式异常", raw[:500])
+    return data
 
-    def __init__(self) -> None:
-        self.result: SOEResult | None = None
-        self.error: Exception | None = None
-        self.event = threading.Event()
 
-    def set_result(self, result: SOEResult) -> None:
-        self.result = result
-        self.event.set()
+async def _soe_assessment_file_async(
+    ws_url: str,
+    audio_bytes: bytes,
+    voice_id: str,
+    timeout: float,
+) -> SOEResult:
+    """
+    先收握手成功，再发整段音频（录音模式），再发结束帧，最后收评测结果。
+    """
+    last_result: SOEResult | None = None
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
 
-    def set_error(self, exc: Exception) -> None:
-        self.error = exc
-        self.event.set()
+    try:
+        async with websockets.connect(
+            ws_url,
+            open_timeout=min(30.0, timeout),
+            close_timeout=10.0,
+            max_size=None,
+        ) as ws:
+            # 1) 握手：必须先收到服务端 code=0
+            raw0 = await asyncio.wait_for(ws.recv(), timeout=min(30.0, max(5.0, deadline - loop.time())))
+            hs = _parse_json_text(raw0)
+            hs["voice_id"] = voice_id
+            if hs.get("code", -1) != 0:
+                raise SOEAssessmentError(
+                    int(hs.get("code", -1) or -1),
+                    str(hs.get("message", "握手失败")),
+                    json.dumps(hs, ensure_ascii=False)[:1200],
+                )
 
-    def wait(self, timeout: float = 60.0) -> SOEResult:
-        self.event.wait(timeout=timeout)
-        if self.error:
-            raise self.error
-        if self.result is None:
-            raise SOEAssessmentError(0, "评测超时，未收到结果")
-        return self.result
+            # 2) 上传音频（录音模式：单次二进制分片）
+            await ws.send(audio_bytes)
+            await asyncio.sleep(0.2)
+            await ws.send(json.dumps({"type": "end"}))
+
+            # 3) 识别结果（可能多条，最后一条 final=1）
+            while True:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    raise SOEAssessmentError(0, "评测超时，未收到结果")
+                raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
+                if isinstance(raw, bytes):
+                    continue
+
+                resp = _parse_json_text(raw)
+                resp["voice_id"] = voice_id
+                code = resp.get("code", -1)
+                if code != 0:
+                    raise SOEAssessmentError(
+                        int(code),
+                        str(resp.get("message", "评测失败")),
+                        json.dumps(resp, ensure_ascii=False)[:1200],
+                    )
+
+                result_data = _coerce_soe_result_dict(resp.get("result"))
+                if result_data:
+                    last_result = _build_soe_result_from_tencent_payload(voice_id, resp, result_data)
+
+                if resp.get("final") == 1:
+                    break
+
+    except ConnectionClosed as exc:
+        if last_result is not None:
+            return last_result
+        detail = ""
+        if exc.rcvd is not None:
+            detail = f"{exc.rcvd.code} {exc.rcvd.reason or ''}".strip()
+        raise SOEAssessmentError(0, detail or str(exc) or "评测连接已关闭") from exc
+    except asyncio.TimeoutError as exc:
+        if last_result is not None:
+            return last_result
+        raise SOEAssessmentError(0, "评测超时，未收到结果") from exc
+
+    if last_result is None:
+        raise SOEAssessmentError(0, "评测完成但未收到有效评分结果（请检查音频与参考文本是否匹配）")
+    return last_result
 
 
 def soe_assessment_file(
@@ -329,81 +393,19 @@ def soe_assessment_file(
     timeout: float = 60.0,
 ) -> SOEResult:
     """
-    对音频文件进行口语评测（录音文件评测模式）。
+    对音频文件进行口语评测（录音文件评测模式，rec_mode=1）。
 
     Args:
-        audio_path: 音频文件路径（16kHz、16bit、mono、wav 或 pcm）
+        audio_path: 16kHz、16bit、mono 的 wav（或文档允许的格式）
         ref_text: 参考文本（英文句子）
-        appid: 腾讯云 AppID
-        secret_id: SecretId
-        secret_key: SecretKey
-        engine_type: 引擎类型，默认 16k_en
-        voice_format: 音频格式，默认 1=wav
-        eval_mode: 评测模式，0=整句，1=单词
-        sentence_info_enabled: 是否返回句子详情，1=是
-        timeout: 等待结果超时时间（秒）
-
-    Returns:
-        SOEResult 对象
+        eval_mode: 1=句子模式（跟读句子），0=单词/单字模式
+        voice_format: 1=wav，0=pcm
     """
     audio_path = Path(audio_path)
     if not audio_path.exists():
         raise SOEAssessmentError(0, f"音频文件不存在: {audio_path}")
 
-    collector = _ResultCollector()
     voice_id = str(uuid.uuid1())
-
-    def on_message(ws, message: str) -> None:
-        try:
-            resp = json.loads(message)
-            resp["voice_id"] = voice_id
-
-            code = resp.get("code", -1)
-            if code != 0:
-                collector.set_error(
-                    SOEAssessmentError(
-                        code,
-                        resp.get("message", "评测失败"),
-                        message,
-                    )
-                )
-                ws.close()
-                return
-
-            final = resp.get("final", 0)
-            result_data = _coerce_soe_result_dict(resp.get("result"))
-            if result_data:
-                collector.set_result(_build_soe_result_from_tencent_payload(voice_id, resp, result_data))
-
-            if final == 1:
-                ws.close()
-
-        except Exception as e:
-            collector.set_error(e)
-            ws.close()
-
-    def on_error(ws, error) -> None:
-        collector.set_error(SOEAssessmentError(0, f"WebSocket 错误: {error}"))
-
-    def on_close(ws, *args) -> None:
-        pass
-
-    def on_open(ws) -> None:
-        nonlocal opened
-        opened = True
-
-        try:
-            with open(audio_path, "rb") as f:
-                audio_data = f.read()
-
-            ws.send_binary(audio_data)
-
-            time.sleep(0.5)
-            ws.send('{"type": "end"}')
-        except Exception as e:
-            collector.set_error(e)
-
-    opened = False
     ws_url = _build_ws_url(
         appid=appid,
         secret_id=secret_id,
@@ -411,23 +413,13 @@ def soe_assessment_file(
         engine_type=engine_type,
         voice_id=voice_id,
         voice_format=voice_format,
-        text_mode=TEXT_MODE_EVAL,
+        text_mode=TEXT_MODE_PLAIN,
         rec_mode=REC_MODE_FILE,
         ref_text=ref_text,
         eval_mode=eval_mode,
         sentence_info_enabled=sentence_info_enabled,
     )
 
-    ws = websocket.WebSocketApp(
-        ws_url,
-        on_message=on_message,
-        on_error=on_error,
-        on_close=on_close,
-        on_open=on_open,
-    )
+    audio_bytes = audio_path.read_bytes()
 
-    t = threading.Thread(target=ws.run_forever)
-    t.daemon = True
-    t.start()
-
-    return collector.wait(timeout=timeout)
+    return asyncio.run(_soe_assessment_file_async(ws_url, audio_bytes, voice_id, timeout))
