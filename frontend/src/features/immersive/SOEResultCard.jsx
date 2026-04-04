@@ -236,6 +236,103 @@ function badgeStyle(bg, text, border) {
   };
 }
 
+function PhoneDetailModal({ phoneModal, onClose }) {
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "rgba(0,0,0,0.6)",
+        zIndex: 10001,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          backgroundColor: "#fff",
+          borderRadius: "14px",
+          padding: "20px",
+          width: "360px",
+          maxWidth: "90vw",
+          boxShadow: "0 16px 32px rgba(0,0,0,0.2)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ fontSize: "15px", fontWeight: "600", color: "#1f2937", marginBottom: "12px" }}>
+          音素详情：{phoneModal.word}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "16px" }}>
+          {phoneModal.phones.map((p, i) => (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: "3px",
+                minWidth: "44px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "16px",
+                  fontWeight: "700",
+                  color: scoreColor(p.pronunciation_score),
+                  backgroundColor: "#f9fafb",
+                  border: `2px solid ${scoreColor(p.pronunciation_score)}`,
+                  borderRadius: "8px",
+                  padding: "4px 8px",
+                  textAlign: "center",
+                }}
+              >
+                {p.phone}
+              </div>
+              <div style={{ fontSize: "11px", color: "#6b7280" }}>
+                {Math.round(p.pronunciation_score)}
+              </div>
+              {p.detected_stress && (
+                <div style={{ fontSize: "9px", color: "#f97316" }}>重音</div>
+              )}
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: "11px", color: "#9ca3af", marginBottom: "8px" }}>
+          每个音素下方数字为发音精准度分数。低于60分请注意改进对应音素的发音。
+        </div>
+        <button
+          onClick={onClose}
+          style={{
+            width: "100%",
+            padding: "8px",
+            backgroundColor: "#3b82f6",
+            color: "#fff",
+            border: "none",
+            borderRadius: "8px",
+            fontSize: "14px",
+            cursor: "pointer",
+          }}
+        >
+          关闭
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function SOEResultCard({ result, onClose }) {
   const [visible, setVisible] = useState(false);
   const [showAllWords, setShowAllWords] = useState(false);
@@ -243,6 +340,17 @@ export default function SOEResultCard({ result, onClose }) {
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        handleClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   const handleClose = () => {
@@ -433,87 +541,10 @@ export default function SOEResultCard({ result, onClose }) {
 
       {/* Phone detail modal */}
       {phoneModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: "rgba(0,0,0,0.6)",
-            zIndex: 10001,
-          }}
-          onClick={() => setPhoneModal(null)}
-        >
-          <div
-            style={{
-              backgroundColor: "#fff",
-              borderRadius: "14px",
-              padding: "20px",
-              width: "360px",
-              maxWidth: "90vw",
-              boxShadow: "0 16px 32px rgba(0,0,0,0.2)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontSize: "15px", fontWeight: "600", color: "#1f2937", marginBottom: "12px" }}>
-              音素详情：{phoneModal.word}
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "16px" }}>
-              {phoneModal.phones.map((p, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: "3px",
-                    minWidth: "44px",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: "16px",
-                      fontWeight: "700",
-                      color: scoreColor(p.pronunciation_score),
-                      backgroundColor: "#f9fafb",
-                      border: `2px solid ${scoreColor(p.pronunciation_score)}`,
-                      borderRadius: "8px",
-                      padding: "4px 8px",
-                      textAlign: "center",
-                    }}
-                  >
-                    {p.phone}
-                  </div>
-                  <div style={{ fontSize: "11px", color: "#6b7280" }}>
-                    {Math.round(p.pronunciation_score)}
-                  </div>
-                  {p.detected_stress && (
-                    <div style={{ fontSize: "9px", color: "#f97316" }}>重音</div>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div style={{ fontSize: "11px", color: "#9ca3af", marginBottom: "8px" }}>
-              每个音素下方数字为发音精准度分数。低于60分请注意改进对应音素的发音。
-            </div>
-            <button
-              onClick={() => setPhoneModal(null)}
-              style={{
-                width: "100%",
-                padding: "8px",
-                backgroundColor: "#3b82f6",
-                color: "#fff",
-                border: "none",
-                borderRadius: "8px",
-                fontSize: "14px",
-                cursor: "pointer",
-              }}
-            >
-              关闭
-            </button>
-          </div>
-        </div>
+        <PhoneDetailModal
+          phoneModal={phoneModal}
+          onClose={() => setPhoneModal(null)}
+        />
       )}
     </>
   );
