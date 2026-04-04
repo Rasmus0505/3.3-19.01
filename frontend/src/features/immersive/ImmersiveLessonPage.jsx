@@ -67,7 +67,6 @@ function formatSoeAssessErrorMessage(data, httpStatus = 0) {
     return httpStatus ? `评测失败（HTTP ${httpStatus}）` : "评测失败";
   }
   const detail = data.detail;
-  if (typeof detail === "string" && detail.trim()) return detail.trim();
   if (Array.isArray(detail) && detail.length > 0) {
     const first = detail[0];
     if (first && typeof first === "object") {
@@ -76,7 +75,21 @@ function formatSoeAssessErrorMessage(data, httpStatus = 0) {
     }
   }
   const msg = typeof data.message === "string" && data.message.trim() ? data.message.trim() : "";
-  if (msg) return msg;
+  const code = typeof data.error_code === "string" && data.error_code.trim() ? data.error_code.trim() : "";
+  const detailStr = typeof detail === "string" && detail.trim() ? detail.trim() : "";
+
+  let out = msg;
+  if (code && !out.includes(code)) {
+    out = out ? `[${code}] ${out}` : `[${code}]`;
+  }
+  if (detailStr && detailStr !== msg) {
+    const shortMsg = msg.slice(0, 24);
+    if (!shortMsg || !detailStr.startsWith(shortMsg)) {
+      out = out ? `${out}\n${detailStr}` : detailStr;
+    }
+  }
+  if (out.trim()) return out.trim();
+  if (typeof detail === "string" && detail.trim()) return detail.trim();
   return httpStatus ? `评测失败（HTTP ${httpStatus}）` : "评测失败";
 }
 const CINEMA_CONTROLS_IDLE_MS = 3000;

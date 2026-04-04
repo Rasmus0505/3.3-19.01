@@ -16,6 +16,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import random
 import sys
 import time
@@ -26,8 +27,7 @@ from pathlib import Path
 import websockets
 from websockets.exceptions import ConnectionClosed
 
-from app.core.config import TENCENT_SECRET_ID, TENCENT_SECRET_KEY
-
+logger = logging.getLogger(__name__)
 
 SOE_WS_URL = "wss://soe.cloud.tencent.com/soe/api/"
 
@@ -421,5 +421,27 @@ def soe_assessment_file(
     )
 
     audio_bytes = audio_path.read_bytes()
-
-    return asyncio.run(_soe_assessment_file_async(ws_url, audio_bytes, voice_id, timeout))
+    logger.info(
+        "tencent_soe start voice_id=%s audio_bytes=%s ref_len=%s timeout=%s",
+        voice_id,
+        len(audio_bytes),
+        len(ref_text),
+        timeout,
+    )
+    try:
+        out = asyncio.run(_soe_assessment_file_async(ws_url, audio_bytes, voice_id, timeout))
+        logger.info(
+            "tencent_soe ok voice_id=%s total=%s pron=%s",
+            voice_id,
+            out.total_score,
+            out.pronunciation_score,
+        )
+        return out
+    except SOEAssessmentError as e:
+        logger.warning(
+            "tencent_soe fail voice_id=%s code=%s msg=%s",
+            voice_id,
+            e.code,
+            (e.message or "")[:500],
+        )
+        raise

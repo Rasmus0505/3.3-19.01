@@ -10,15 +10,14 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
-from app.core.config import BASE_TMP_DIR, REQUEST_TIMEOUT_SECONDS
 from app.core.errors import error_response
 from app.core.timezone import to_shanghai_aware
 from app.db import get_db
 from app.models import LessonSentence, User
 from app.schemas import SOEAssessResponse, SOEErrorResponse, SOEHistoryItem, SOEHistoryResponse, SOEWordResult
-from app.services.media import MediaError, cleanup_dir, create_request_dir, extract_audio_for_asr, probe_audio_duration_ms
-from app.services.tencent_soe_service import assess_sentence_practice, list_soe_results
-from app.infra.tencent_soe import SOEConfigError, SOEAssessmentError
+from app.services.media import cleanup_dir, create_request_dir, probe_audio_duration_ms
+from app.services.tencent_soe_service import SOEServiceResult, assess_sentence_practice, list_soe_results
+from app.infra.tencent_soe import SOEConfigError
 
 
 logger = logging.getLogger(__name__)
@@ -44,6 +43,16 @@ def _resolve_lesson_sentence_db_id(db: Session, lesson_id: int | None, sentence_
         .one_or_none()
     )
     return int(row.id) if row else None
+
+
+def _http_status_for_soe_failure(result: SOEServiceResult) -> int:
+    """区分配置缺失、腾讯云业务错误与本服务内部错误，便于前端与监控识别。"""
+    code = result.error_code
+    if code == 1:
+        return 503
+    if code is not None and code >= 4000:
+        return 502
+    return 500
 
 
 def _validate_suffix(filename: str) -> str:
@@ -141,16 +150,28 @@ async def assess_audio(
 
         resolved_sentence_id = _resolve_lesson_sentence_db_id(db, lesson_id, sentence_id)
 
-        # 调用评测服务（同步调用，在线程中执行避免阻塞）
+        logger.info(
+            "soe assess start user_id=%s lesson_id=%s sentence_idx=%s resolved_sentence_id=%s "
+            "audio_bytes=%s duration_ms=%s ref_len=%s",
+            current_user.id,
+            lesson_id,
+            sentence_id,
+            resolved_sentence_id,
+            audio_size,
+            duration_ms,
+            len(ref_text.strip()),
+        )
+
+        # 评测在独立线程中跑 asyncio/WebSocket；禁止把 FastAPI 的 db Session 传入子线程（非线程安全）
         result = await asyncio.wait_for(
             asyncio.to_thread(
                 assess_sentence_practice,
-                db=db,
-                audio_path=str(wav_path),
-                ref_text=ref_text.strip(),
-                user_id=current_user.id,
-                lesson_id=lesson_id,
-                sentence_id=resolved_sentence_id,
+                str(wav_path),
+                ref_text.strip(),
+                current_user.id,
+                lesson_id,
+                resolved_sentence_id,
+                db=None,
                 save_result=True,
             ),
             timeout=90.0,
@@ -159,11 +180,31 @@ async def assess_audio(
         elapsed_ms = int((time.monotonic() - started) * 1000)
 
         if not result.ok:
-            return error_response(
-                500 if not result.error_code else 500,
-                f"SOE_ERROR_{result.error_code or 'UNKNOWN'}",
-                result.error_message or "评测失败",
+            status = _http_status_for_soe_failure(result)
+            err_code = f"SOE_ERROR_{result.error_code if result.error_code is not None else 'UNKNOWN'}"
+            msg = result.error_message or "评测失败"
+            detail_out = (result.error_detail or "").strip()[:1500]
+            logger.warning(
+                "soe assess failed user_id=%s lesson_id=%s sentence_idx=%s http=%s err=%s msg=%s detail_len=%s elapsed_ms=%s",
+                current_user.id,
+                lesson_id,
+                sentence_id,
+                status,
+                err_code,
+                msg[:500],
+                len(detail_out),
+                elapsed_ms,
             )
+            return error_response(status, err_code, msg, detail_out)
+
+        logger.info(
+            "soe assess ok user_id=%s voice_id=%s total=%s elapsed_ms=%s saved_id=%s",
+            current_user.id,
+            result.voice_id,
+            result.total_score,
+            elapsed_ms,
+            result.saved_result_id,
+        )
 
         return SOEAssessResponse(
             ok=True,
@@ -179,14 +220,30 @@ async def assess_audio(
         )
 
     except asyncio.TimeoutError:
-        return error_response(504, "REQUEST_TIMEOUT", "评测超时，请重试", f"超过 90 秒")
+        logger.warning(
+            "soe assess timeout user_id=%s lesson_id=%s sentence_id=%s",
+            current_user.id,
+            lesson_id,
+            sentence_id,
+        )
+        return error_response(504, "REQUEST_TIMEOUT", "评测超时，请重试", "超过 90 秒")
     except SOEConfigError as e:
         return error_response(503, "SOE_CONFIG_ERROR", str(e))
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception("[DEBUG] soe.assess exception")
-        return error_response(500, "INTERNAL_ERROR", "评测服务内部错误", str(exc)[:1200])
+        logger.exception(
+            "soe assess internal error user_id=%s lesson_id=%s sentence_id=%s",
+            current_user.id,
+            lesson_id,
+            sentence_id,
+        )
+        return error_response(
+            500,
+            "INTERNAL_ERROR",
+            f"评测服务内部错误: {type(exc).__name__}",
+            str(exc)[:1200],
+        )
     finally:
         try:
             cleanup_dir(req_dir)

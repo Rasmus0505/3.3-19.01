@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
 from app.core.config import TENCENT_SECRET_ID, TENCENT_SECRET_KEY, TENCENT_SOE_APP_ID
+from app.db import SessionLocal
 from app.core.timezone import now_shanghai_naive
 from app.infra.tencent_soe import (
     ENGINE_EN,
@@ -16,6 +18,8 @@ from app.infra.tencent_soe import (
     soe_assessment_file,
 )
 from app.models import SOEResult as SOEResultModel
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -33,6 +37,7 @@ class SOEServiceResult:
     saved_result_id: int | None = None
     error_code: int | None = None
     error_message: str | None = None
+    error_detail: str | None = None
 
 
 def _check_config() -> tuple[int, str, str]:
@@ -72,7 +77,7 @@ def _map_soe_result(r: SOEResult) -> SOEServiceResult:
     )
 
 
-def _map_error(code: int, message: str, voice_id: str = "") -> SOEServiceResult:
+def _map_error(code: int, message: str, voice_id: str = "", detail: str = "") -> SOEServiceResult:
     return SOEServiceResult(
         ok=False,
         voice_id=voice_id,
@@ -86,16 +91,18 @@ def _map_error(code: int, message: str, voice_id: str = "") -> SOEServiceResult:
         saved_result_id=None,
         error_code=code,
         error_message=message,
+        error_detail=detail.strip() if detail else None,
     )
 
 
 def assess_sentence_practice(
-    db: Session,
     audio_path: str,
     ref_text: str,
     user_id: int,
     lesson_id: int | None = None,
     sentence_id: int | None = None,
+    *,
+    db: Session | None = None,
     engine_type: str = ENGINE_EN,
     save_result: bool = True,
 ) -> SOEServiceResult:
@@ -103,12 +110,13 @@ def assess_sentence_practice(
     对用户的跟读录音进行口语评测。
 
     Args:
-        db: 数据库 Session
         audio_path: 用户录音文件路径
         ref_text: 参考文本（英文句子，即课程句子的 text_en）
         user_id: 当前用户 ID
         lesson_id: 关联课程 ID（可选）
-        sentence_id: 关联课程句子 ID（可选）
+        sentence_id: 关联 lesson_sentences.id（可选）
+        db: 若传入则用于写入结果；若为 None 则在本函数内创建 SessionLocal（供 asyncio.to_thread
+            等工作线程调用，避免跨线程复用 FastAPI 注入的 Session）。
         engine_type: 引擎类型，默认 16k_en
         save_result: 是否保存评测结果到数据库，默认 True
 
@@ -134,12 +142,14 @@ def assess_sentence_practice(
             timeout=60.0,
         )
     except SOEAssessmentError as e:
-        return _map_error(e.code, e.message, voice_id="")
+        return _map_error(e.code, e.message, voice_id="", detail=getattr(e, "detail", "") or "")
 
     service_result = _map_soe_result(soe_res)
     service_result.ref_text = ref_text
 
     if save_result:
+        session = db if db is not None else SessionLocal()
+        own_session = db is None
         try:
             model = SOEResultModel(
                 user_id=user_id,
@@ -155,12 +165,22 @@ def assess_sentence_practice(
                 raw_response_json=soe_res.raw_response,
                 created_at=now_shanghai_naive(),
             )
-            db.add(model)
-            db.commit()
-            db.refresh(model)
+            session.add(model)
+            session.commit()
+            session.refresh(model)
             service_result.saved_result_id = model.id
         except Exception:
-            db.rollback()
+            session.rollback()
+            logger.exception(
+                "soe_results 写入失败 user_id=%s lesson_id=%s sentence_id=%s voice_id=%s",
+                user_id,
+                lesson_id,
+                sentence_id,
+                soe_res.voice_id,
+            )
+        finally:
+            if own_session:
+                session.close()
 
     return service_result
 

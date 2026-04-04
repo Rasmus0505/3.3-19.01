@@ -161,7 +161,18 @@ export default function SOEResultCard({ result, onClose }) {
         <WordHighlight words={result?.word_results} />
 
         {result?.message && !result?.ok && (
-          <div style={{ marginTop: "12px", padding: "8px 12px", backgroundColor: "#fee2e2", borderRadius: "8px", fontSize: "13px", color: "#991b1b" }}>
+          <div
+            style={{
+              marginTop: "12px",
+              padding: "8px 12px",
+              backgroundColor: "#fee2e2",
+              borderRadius: "8px",
+              fontSize: "13px",
+              color: "#991b1b",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+            }}
+          >
             {result.message}
           </div>
         )}
