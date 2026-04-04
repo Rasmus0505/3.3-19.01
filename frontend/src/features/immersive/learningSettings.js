@@ -58,7 +58,7 @@ const LEGACY_SHORTCUT_BINDINGS = {
   "shift+n": { code: "KeyN", key: "n", shift: true, ctrl: false, alt: false, meta: false },
   "shift+p": { code: "KeyP", key: "p", shift: true, ctrl: false, alt: false, meta: false },
   "shift+k": { code: "KeyK", key: "k", shift: true, ctrl: false, alt: false, meta: false },
-  "shift+alt": { code: "AltLeft", key: "alt", shift: true, ctrl: false, alt: true, meta: false },
+  "shift+alt": { code: "AltLeft", key: "Alt", shift: true, ctrl: false, alt: true, meta: false },
 };
 
 export const SHORTCUT_ACTIONS = [
@@ -303,6 +303,7 @@ function getShortcutKeyLabel(binding) {
   if (normalizedCode === "End") return "End";
   if (normalizedCode === "PageUp") return "PageUp";
   if (normalizedCode === "PageDown") return "PageDown";
+  if (normalizedCode === "AltLeft" || normalizedCode === "AltRight") return "Alt";
   if (/^F\d{1,2}$/i.test(normalizedCode)) return normalizedCode.toUpperCase();
   if (/^Key[A-Z]$/.test(normalizedCode)) return normalizedCode.slice(3);
   if (/^Digit\d$/.test(normalizedCode)) return normalizedCode.slice(5);
