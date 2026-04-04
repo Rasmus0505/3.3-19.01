@@ -61,6 +61,20 @@ import "./immersive.css";
 
 const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
 const APOSTROPHE_RE = /[’']/g;
+
+function formatSoeAssessErrorMessage(data) {
+  if (!data || typeof data !== "object") return "评测失败";
+  const detail = data.detail;
+  if (typeof detail === "string" && detail.trim()) return detail.trim();
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0];
+    if (first && typeof first === "object") {
+      if (typeof first.msg === "string" && first.msg.trim()) return first.msg.trim();
+      if (typeof first.message === "string" && first.message.trim()) return first.message.trim();
+    }
+  }
+  return typeof data.message === "string" && data.message.trim() ? data.message.trim() : "评测失败";
+}
 const CINEMA_CONTROLS_IDLE_MS = 3000;
 const WORD_TIMING_TOLERANCE_MS = 140;
 const PROGRAMMATIC_FULLSCREEN_EXIT_RESET_MS = 1000;
@@ -4072,7 +4086,11 @@ export function ImmersiveLessonPage({
                                   })(),
                                 }, accessToken);
                                 const data = await parseResponse(resp);
-                                setSoeResult(data.ok ? data : { ok: false, message: data?.message || "评测失败" });
+                                if (!resp.ok || data?.ok === false) {
+                                  setSoeResult({ ok: false, message: formatSoeAssessErrorMessage(data) });
+                                } else {
+                                  setSoeResult(data);
+                                }
                               } catch (err) {
                                 console.error("[SOE] Assessment failed:", err);
                                 toast.error("评测失败，请稍后重试");
@@ -4196,7 +4214,11 @@ export function ImmersiveLessonPage({
                                   })(),
                                 }, accessToken);
                                 const data = await parseResponse(resp);
-                                setSoeResult(data.ok ? data : { ok: false, message: data?.message || "评测失败" });
+                                if (!resp.ok || data?.ok === false) {
+                                  setSoeResult({ ok: false, message: formatSoeAssessErrorMessage(data) });
+                                } else {
+                                  setSoeResult(data);
+                                }
                               } catch (err) {
                                 console.error("[SOE] Assessment failed:", err);
                                 toast.error("评测失败，请稍后重试");

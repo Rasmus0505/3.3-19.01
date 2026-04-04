@@ -12,6 +12,7 @@ import base64
 import hmac
 import hashlib
 import json
+import random
 import sys
 import threading
 import time
@@ -30,9 +31,9 @@ SOE_WS_URL = "wss://soe.cloud.tencent.com/soe/api/"
 ENGINE_EN = "16k_en"
 ENGINE_ZH = "16k_zh"
 
-# 音频格式
+# 音频格式（与官方文档一致：0 pcm，1 wav，2 mp3）
+VOICE_FORMAT_PCM = 0
 VOICE_FORMAT_WAV = 1
-VOICE_FORMAT_PCM = 2
 
 # 文本模式
 TEXT_MODE_EVAL = 0   # 评测模式
@@ -42,9 +43,9 @@ TEXT_MODE_TRANSFER = 1  # 传输模式
 REC_MODE_STREAM = 0  # 流式评测
 REC_MODE_FILE = 1    # 录音文件评测
 
-# 评测模式
-EVAL_MODE_SENTENCE = 0  # 整句评测
-EVAL_MODE_WORD = 1      # 单词评测
+# 评测模式（智聆口语评测新版文档：0 单词/单字，1 句子，2 段落…）
+EVAL_MODE_WORD = 0
+EVAL_MODE_SENTENCE = 1
 
 
 @dataclass
@@ -134,7 +135,7 @@ def _build_ws_url(
     token: str = "",
 ) -> str:
     timestamp = str(int(time.time()))
-    nonce_str = nonce or timestamp
+    nonce_str = str(nonce) if nonce is not None else str(random.randint(1, 9999999999))
 
     params = {
         "appid": appid,
@@ -172,6 +173,122 @@ def _build_ws_url(
 
     signed_url = base_url + f"&signature={_quote_autho(signature)}"
     return signed_url
+
+
+def _coerce_soe_result_dict(raw: object) -> dict | None:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return None
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    if isinstance(raw, dict):
+        return raw
+    return None
+
+
+def _pick_float(d: dict, *keys: str, default: float | None = None) -> float | None:
+    for k in keys:
+        if k not in d or d[k] is None:
+            continue
+        try:
+            return float(d[k])
+        except (TypeError, ValueError):
+            continue
+    return default
+
+
+def _scale_fluency_completion(v: float) -> float:
+    """腾讯云 PronFluency / PronCompletion 为 0~1，前端环形图为 0~100。"""
+    if 0.0 <= v <= 1.0:
+        return round(v * 100.0, 2)
+    return round(v, 2)
+
+
+def _build_soe_result_from_tencent_payload(voice_id: str, resp: dict, result_data: dict) -> SOEResult:
+    """将腾讯云返回的 SentenceInfo（PascalCase）与旧字段名统一为内部 SOEResult。"""
+    words_src = result_data.get("word_list") or result_data.get("Words") or result_data.get("words") or []
+    if not isinstance(words_src, list):
+        words_src = []
+
+    word_results: list[dict] = []
+    for w in words_src:
+        if not isinstance(w, dict):
+            continue
+        pa = _pick_float(w, "pronunciation_score", "PronAccuracy", default=0.0) or 0.0
+        if pa < 0:
+            pa = 0.0
+        pf = _pick_float(w, "fluency_score", "PronFluency", default=0.0) or 0.0
+        ic = _pick_float(w, "integrity_score", "PronCompletion", default=0.0) or 0.0
+        word_results.append(
+            {
+                "word": str(w.get("word") or w.get("Word") or ""),
+                "start_time": int(w.get("start_time") or w.get("MemBeginTime") or 0),
+                "end_time": int(w.get("end_time") or w.get("MemEndTime") or 0),
+                "pronunciation_score": round(min(100.0, pa), 2),
+                "fluency_score": _scale_fluency_completion(pf),
+                "integrity_score": _scale_fluency_completion(ic),
+            }
+        )
+
+    user_text = str(
+        result_data.get("voice_text_str")
+        or result_data.get("VoiceTextStr")
+        or result_data.get("text")
+        or ""
+    ).strip()
+
+    pa_s = _pick_float(result_data, "PronAccuracy", "pronunciation_score")
+    pf_s = _pick_float(result_data, "PronFluency", "fluency_score")
+    pc_s = _pick_float(result_data, "PronCompletion", "completeness_score", "integrity_score")
+    suggested = _pick_float(result_data, "SuggestedScore", "total_score")
+
+    if pa_s is not None:
+        pronunciation = round(min(100.0, pa_s if pa_s >= 0 else 0.0), 2)
+    elif word_results:
+        pronunciation = round(
+            sum(w["pronunciation_score"] for w in word_results) / len(word_results),
+            2,
+        )
+    else:
+        pronunciation = 0.0
+
+    if pf_s is not None:
+        fluency = _scale_fluency_completion(pf_s)
+    elif word_results:
+        fluency = round(sum(w["fluency_score"] for w in word_results) / len(word_results), 2)
+    else:
+        fluency = 0.0
+
+    if pc_s is not None:
+        completeness = _scale_fluency_completion(pc_s)
+    else:
+        completeness = 0.0
+
+    if suggested is not None and suggested >= 0:
+        total = round(min(100.0, suggested), 2)
+    elif pronunciation or fluency or completeness:
+        total = round((pronunciation + fluency + completeness) / 3.0, 2)
+    else:
+        total = 0.0
+
+    return SOEResult(
+        voice_id=voice_id,
+        code=0,
+        message="success",
+        user_text=user_text,
+        total_score=total,
+        pronunciation_score=pronunciation,
+        fluency_score=fluency,
+        completeness_score=completeness,
+        word_results=word_results,
+        raw_response=resp,
+    )
 
 
 class _ResultCollector:
@@ -254,41 +371,9 @@ def soe_assessment_file(
                 return
 
             final = resp.get("final", 0)
-            result_data = resp.get("result")
-
-            if result_data is not None:
-                word_list = result_data.get("word_list", [])
-                total = 0.0
-                pron = 0.0
-                flu = 0.0
-                comp = 0.0
-                count = 0
-
-                for w in word_list:
-                    pron += float(w.get("pronunciation_score", 0))
-                    flu += float(w.get("fluency_score", 0))
-                    comp += float(w.get("integrity_score", 0))
-                    count += 1
-
-                if count > 0:
-                    total = (pron + flu + comp) / count
-                    pron = pron / count
-                    flu = flu / count
-                    comp = comp / count
-
-                soe_result = SOEResult(
-                    voice_id=voice_id,
-                    code=0,
-                    message="success",
-                    user_text=result_data.get("voice_text_str", ""),
-                    total_score=round(total, 2),
-                    pronunciation_score=round(pron, 2),
-                    fluency_score=round(flu, 2),
-                    completeness_score=round(comp, 2),
-                    word_results=word_list,
-                    raw_response=resp,
-                )
-                collector.set_result(soe_result)
+            result_data = _coerce_soe_result_dict(resp.get("result"))
+            if result_data:
+                collector.set_result(_build_soe_result_from_tencent_payload(voice_id, resp, result_data))
 
             if final == 1:
                 ws.close()

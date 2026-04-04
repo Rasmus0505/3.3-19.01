@@ -14,7 +14,7 @@ from app.core.config import BASE_TMP_DIR, REQUEST_TIMEOUT_SECONDS
 from app.core.errors import error_response
 from app.core.timezone import to_shanghai_aware
 from app.db import get_db
-from app.models import User
+from app.models import LessonSentence, User
 from app.schemas import SOEAssessResponse, SOEErrorResponse, SOEHistoryItem, SOEHistoryResponse, SOEWordResult
 from app.services.media import MediaError, cleanup_dir, create_request_dir, extract_audio_for_asr, probe_audio_duration_ms
 from app.services.tencent_soe_service import assess_sentence_practice, list_soe_results
@@ -27,6 +27,23 @@ router = APIRouter(prefix="/api/soe", tags=["soe"])
 
 # 允许上传的音频格式
 SUPPORTED_AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac", ".webm", ".opus"}
+
+
+def _resolve_lesson_sentence_db_id(db: Session, lesson_id: int | None, sentence_idx: int | None) -> int | None:
+    """
+    前端课程详情里的句子只有 idx（LessonSentenceResponse.idx），没有数据库主键 id。
+    口语评测表单里的 sentence_id 实际传的是 idx，在此解析为 lesson_sentences.id，避免外键写入失败或错绑。
+    """
+    if sentence_idx is None:
+        return None
+    if lesson_id is None:
+        return sentence_idx
+    row = (
+        db.query(LessonSentence)
+        .filter(LessonSentence.lesson_id == lesson_id, LessonSentence.idx == sentence_idx)
+        .one_or_none()
+    )
+    return int(row.id) if row else None
 
 
 def _validate_suffix(filename: str) -> str:
@@ -122,6 +139,8 @@ async def assess_audio(
         else:
             wav_path = tmp_input
 
+        resolved_sentence_id = _resolve_lesson_sentence_db_id(db, lesson_id, sentence_id)
+
         # 调用评测服务（同步调用，在线程中执行避免阻塞）
         result = await asyncio.wait_for(
             asyncio.to_thread(
@@ -131,7 +150,7 @@ async def assess_audio(
                 ref_text=ref_text.strip(),
                 user_id=current_user.id,
                 lesson_id=lesson_id,
-                sentence_id=sentence_id,
+                sentence_id=resolved_sentence_id,
                 save_result=True,
             ),
             timeout=90.0,
