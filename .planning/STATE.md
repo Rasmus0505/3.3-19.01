@@ -91,6 +91,7 @@ None yet.
 || # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 || 260403-0go | 沉浸式学习页面字母揭示时黄色显示修复（revealed 状态 CSS hex 回退色缺失） | 2026-04-03 | 50a13059 | [260403-0go](./quick/260403-0go/) |
+| 260404-lqq | 前端：口语评测功能快速上线 | 2026-04-04 | 0e018a3e | [260404-lqq](./quick/260404-lqq-soe-frontend/) |
 
 ## Session Continuity
 
