@@ -832,7 +832,7 @@ def admin_update_billing_rate(
     rate = db.get(BillingModelRate, model_name)
     if not rate:
         return error_response(404, "BILLING_RATE_NOT_FOUND", "计费模型不存在", model_name)
-    if payload.price_per_minute_yuan < 0 or payload.cost_per_minute_yuan < 0:
+    if payload.price_per_minute_yuan < 0:
         return error_response(400, "INVALID_BILLING_RATE", "分钟售价和分钟成本不能为负数")
     if payload.points_per_1k_tokens < 0:
         return error_response(400, "INVALID_BILLING_RATE", "1k Tokens 费率不能为负数")
@@ -844,17 +844,13 @@ def admin_update_billing_rate(
         return error_response(400, "INVALID_BILLING_UNIT", f"模型 {model_name} 仅支持 {expected_unit} 计费", payload.billing_unit)
     if expected_unit == "minute":
         price_per_minute_yuan = normalize_rate_yuan(payload.price_per_minute_yuan)
-        cost_per_minute_yuan = normalize_rate_yuan(payload.cost_per_minute_yuan)
     else:
         price_per_minute_yuan = normalize_rate_yuan(0)
-        # MT continues to charge by token, while this compatibility field stores
-        # the admin-only reference cost in yuan / 1k tokens.
-        cost_per_minute_yuan = normalize_rate_yuan(payload.cost_per_minute_yuan)
+    # Cost fields from the request body are silently ignored — system-fixed costs
+    # are served from SYSTEM_FIXED_COST_RATES and never written from the UI.
     rate.price_per_minute_yuan = price_per_minute_yuan
     rate.price_per_minute_cents_legacy = yuan_to_compat_cents(price_per_minute_yuan)
     rate.points_per_1k_tokens = payload.points_per_1k_tokens if expected_unit == "1k_tokens" else 0
-    rate.cost_per_minute_yuan = cost_per_minute_yuan
-    rate.cost_per_minute_cents_legacy = yuan_to_compat_cents(cost_per_minute_yuan)
     rate.billing_unit = expected_unit
     rate.is_active = payload.is_active
     rate.updated_by_user_id = current_admin.id

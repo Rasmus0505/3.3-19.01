@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
@@ -43,6 +43,9 @@ class BillingRateItem(BaseModel):
     is_active: bool
     runtime_kind: str = "cloud"
     updated_at: datetime
+    # System-fixed cost (cents per 1k tokens); read-only in UI
+    cost_per_1k_tokens_input_cents: int = 0
+    cost_per_1k_tokens_output_cents: int = 0
 
 
 class BillingRatesResponse(BaseModel):

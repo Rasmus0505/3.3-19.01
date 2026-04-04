@@ -163,19 +163,60 @@ def to_lesson_detail_response(lesson: Lesson, sentences: list[LessonSentence]) -
     )
 
 
+# System-fixed cost rates (cents per 1k tokens), keyed by model_name.
+# These are read-only; the UI never sends cost updates.
+SYSTEM_FIXED_COST_RATES: dict[str, dict[str, int]] = {
+    # ASR models — cost in cents per minute
+    "faster-whisper-medium": {
+        "cost_per_1k_tokens_input_cents": 0,
+        "cost_per_1k_tokens_output_cents": 0,
+        "cost_per_minute_cents": 14,  # 0.14 yuan/min
+    },
+    "qwen3-asr-flash-filetrans": {
+        "cost_per_1k_tokens_input_cents": 0,
+        "cost_per_1k_tokens_output_cents": 0,
+        "cost_per_minute_cents": 14,  # 0.14 yuan/min
+    },
+    # MT model — input/output cost in cents per 1k tokens
+    "qwen-mt-flash": {
+        "cost_per_1k_tokens_input_cents": 1,   # 0.7 yuan / 1M
+        "cost_per_1k_tokens_output_cents": 20,  # 1.95 yuan / 1M
+        "cost_per_minute_cents": 0,
+    },
+    # DeepSeek — input/output cost in cents per 1k tokens
+    "deepseek-v3.2": {
+        "cost_per_1k_tokens_input_cents": 2,   # 2 yuan / 1M
+        "cost_per_1k_tokens_output_cents": 3,  # 3 yuan / 1M
+        "cost_per_minute_cents": 0,
+    },
+    "deepseek-v3.2-fast": {
+        "cost_per_1k_tokens_input_cents": 2,
+        "cost_per_1k_tokens_output_cents": 3,
+        "cost_per_minute_cents": 0,
+    },
+}
+
+
+def _get_system_cost_for_model(model_name: str) -> dict[str, int]:
+    return SYSTEM_FIXED_COST_RATES.get(str(model_name or "").strip().lower(), {
+        "cost_per_1k_tokens_input_cents": 0,
+        "cost_per_1k_tokens_output_cents": 0,
+        "cost_per_minute_cents": 0,
+    })
+
+
 def to_rate_item(rate: BillingModelRate) -> BillingRateItem:
     display_name, runtime_kind = _rate_display_meta(rate.model_name)
+    fixed = _get_system_cost_for_model(rate.model_name)
     price_per_minute_yuan = _quantize_rate_yuan(
         getattr(rate, "price_per_minute_yuan", None),
         fallback_cents=int(getattr(rate, "price_per_minute_cents", 0) or getattr(rate, "points_per_minute", 0) or 0),
     )
-    cost_per_minute_yuan = _quantize_rate_yuan(
-        getattr(rate, "cost_per_minute_yuan", None),
-        fallback_cents=int(getattr(rate, "cost_per_minute_cents", 0) or 0),
-    )
+    cost_per_minute_cents = fixed["cost_per_minute_cents"]
+    cost_per_minute_yuan = Decimal(cost_per_minute_cents) / Decimal("100")
     gross_profit_per_minute_yuan = normalize_rate_yuan(price_per_minute_yuan - cost_per_minute_yuan)
     price_per_minute_cents = _compat_cents_from_yuan(price_per_minute_yuan)
-    cost_per_minute_cents = _compat_cents_from_yuan(cost_per_minute_yuan)
+    cost_per_minute_cents_out = _compat_cents_from_yuan(cost_per_minute_yuan)
     return BillingRateItem(
         model_name=rate.model_name,
         display_name=display_name,
@@ -185,12 +226,14 @@ def to_rate_item(rate: BillingModelRate) -> BillingRateItem:
         price_per_minute_cents=price_per_minute_cents,
         points_per_minute=price_per_minute_cents,
         points_per_1k_tokens=int(getattr(rate, "points_per_1k_tokens", 0) or 0),
-        cost_per_minute_cents=cost_per_minute_cents,
-        gross_profit_per_minute_cents=price_per_minute_cents - cost_per_minute_cents,
+        cost_per_minute_cents=cost_per_minute_cents_out,
+        gross_profit_per_minute_cents=price_per_minute_cents - cost_per_minute_cents_out,
         billing_unit=str(getattr(rate, "billing_unit", "minute") or "minute"),
         is_active=rate.is_active,
         runtime_kind=runtime_kind,
         updated_at=to_shanghai_aware(rate.updated_at),
+        cost_per_1k_tokens_input_cents=fixed["cost_per_1k_tokens_input_cents"],
+        cost_per_1k_tokens_output_cents=fixed["cost_per_1k_tokens_output_cents"],
     )
 
 

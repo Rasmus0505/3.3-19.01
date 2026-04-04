@@ -37,6 +37,19 @@ import {
   getRateDraftValidationMessage,
 } from "./rateDraftValidation";
 
+// System-fixed cost rates (cents per 1k tokens for MT/LLM; cents per minute for ASR)
+const SYSTEM_FIXED_COST_RATES = {
+  "faster-whisper-medium": { cost_per_minute_cents: 14, cost_per_1k_tokens_input_cents: 0, cost_per_1k_tokens_output_cents: 0 },
+  "qwen3-asr-flash-filetrans": { cost_per_minute_cents: 14, cost_per_1k_tokens_input_cents: 0, cost_per_1k_tokens_output_cents: 0 },
+  "qwen-mt-flash": { cost_per_minute_cents: 0, cost_per_1k_tokens_input_cents: 1, cost_per_1k_tokens_output_cents: 20 },
+  "deepseek-v3.2": { cost_per_minute_cents: 0, cost_per_1k_tokens_input_cents: 2, cost_per_1k_tokens_output_cents: 3 },
+  "deepseek-v3.2-fast": { cost_per_minute_cents: 0, cost_per_1k_tokens_input_cents: 2, cost_per_1k_tokens_output_cents: 3 },
+};
+
+function _systemCostFor(modelName) {
+  return SYSTEM_FIXED_COST_RATES[String(modelName || "").trim().toLowerCase()] || { cost_per_minute_cents: 0, cost_per_1k_tokens_input_cents: 0, cost_per_1k_tokens_output_cents: 0 };
+}
+
 function billingDisplayRank(item) {
   const displayName = String(item?.display_name || "").trim();
   const modelName = String(item?.model_name || "").trim();
@@ -76,43 +89,40 @@ function getTokenPriceYuan(draft) {
 }
 
 function getTokenCostYuan(draft) {
-  return parseDraftNumber(draft?.cost_per_minute_yuan);
+  // System-fixed cost; UI no longer sends this field
+  return 0;
 }
 
 function isDraftChanged(item, draft) {
   return (
     String(toMinuteRateDraftValue(item, "price_per_minute_yuan", "price_per_minute_cents")) !== String(draft.price_per_minute_yuan || "") ||
     Number(item.points_per_1k_tokens || 0) !== Number(draft.points_per_1k_tokens || 0) ||
-    String(toMinuteRateDraftValue(item, "cost_per_minute_yuan", "cost_per_minute_cents")) !== String(draft.cost_per_minute_yuan || "") ||
     String(item.billing_unit || "minute") !== String(draft.billing_unit || "minute") ||
     Boolean(item.is_active) !== Boolean(draft.is_active)
   );
 }
 
-function formatDraftSummary(item, draft) {
-  if (isTokenBilling(item) || isTokenBilling(draft)) {
-    return `售价 ${Number(draft.points_per_1k_tokens || 0)} / 1k Tokens · 成本 ${formatTokenYuanValue(draft.cost_per_minute_yuan)} 元 / 1k Tokens`;
+function _formatCostDisplay(item, draft) {
+  const tokenBilling = isTokenBilling(item) || isTokenBilling(draft);
+  if (tokenBilling) {
+    const inputCost = Number(item?.cost_per_1k_tokens_input_cents || 0);
+    const outputCost = Number(item?.cost_per_1k_tokens_output_cents || 0);
+    return `输入 ${inputCost} / 输出 ${outputCost} 分 / 1k Tokens`;
   }
-  return `${formatMoneyYuanPerMinute(draft.price_per_minute_yuan, {
-    minimumFractionDigits: 4,
-    maximumFractionDigits: 4,
-  })} / ${formatMoneyYuanPerMinute(draft.cost_per_minute_yuan, {
-    minimumFractionDigits: 4,
-    maximumFractionDigits: 4,
-  })}`;
+  const costCents = Number(item?.cost_per_minute_cents || _systemCostFor(item?.model_name).cost_per_minute_cents || 0);
+  return `${(costCents / 100).toFixed(4)} 元 / 分钟`;
+}
+
+function formatDraftSummary(item, draft) {
+  const tokenBilling = isTokenBilling(item) || isTokenBilling(draft);
+  const priceStr = tokenBilling
+    ? `售价 ${Number(draft.points_per_1k_tokens || 0)} / 1k Tokens`
+    : `${formatMoneyYuanPerMinute(draft.price_per_minute_yuan, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+  return `${priceStr} · 成本 ${_formatCostDisplay(item, draft)}`;
 }
 
 function formatItemSummary(item) {
-  if (isTokenBilling(item)) {
-    return `售价 ${Number(item.points_per_1k_tokens || 0)} / 1k Tokens · 成本 ${formatTokenYuanValue(item.cost_per_minute_yuan)} 元 / 1k Tokens`;
-  }
-  return `${formatMoneyYuanPerMinute(item.price_per_minute_yuan, {
-    minimumFractionDigits: 4,
-    maximumFractionDigits: 4,
-  })} / ${formatMoneyYuanPerMinute(item.cost_per_minute_yuan, {
-    minimumFractionDigits: 4,
-    maximumFractionDigits: 4,
-  })}`;
+  return _formatCostDisplay(item, item);
 }
 
 function buildDraftMap(list) {
@@ -121,9 +131,11 @@ function buildDraftMap(list) {
     draftMap[item.model_name] = {
       price_per_minute_yuan: toMinuteRateDraftValue(item, "price_per_minute_yuan", "price_per_minute_cents"),
       points_per_1k_tokens: String(Number(item.points_per_1k_tokens || 0)),
-      cost_per_minute_yuan: toMinuteRateDraftValue(item, "cost_per_minute_yuan", "cost_per_minute_cents"),
       billing_unit: String(item.billing_unit || "minute"),
       is_active: Boolean(item.is_active),
+      cost_per_1k_tokens_input_cents: Number(item.cost_per_1k_tokens_input_cents || 0),
+      cost_per_1k_tokens_output_cents: Number(item.cost_per_1k_tokens_output_cents || 0),
+      cost_per_minute_cents: Number(item.cost_per_minute_cents || 0),
     };
   });
   return draftMap;
@@ -199,7 +211,6 @@ export function AdminRatesTab({ apiCall }) {
         body: JSON.stringify({
           price_per_minute_yuan: parseDraftNumber(draft.price_per_minute_yuan),
           points_per_1k_tokens: Number(draft.points_per_1k_tokens || 0),
-          cost_per_minute_yuan: parseDraftNumber(draft.cost_per_minute_yuan),
           billing_unit: String(draft.billing_unit || "minute"),
           is_active: Boolean(draft.is_active),
         }),
@@ -353,7 +364,7 @@ export function AdminRatesTab({ apiCall }) {
                 <TableHead>计费单位</TableHead>
                 <TableHead>售价（元/分钟）</TableHead>
                 <TableHead>售价 / 1k Tokens</TableHead>
-                <TableHead>成本（元/分钟）</TableHead>
+                <TableHead>系统固定成本</TableHead>
                 <TableHead>毛利</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead>更新时间</TableHead>
@@ -369,10 +380,10 @@ export function AdminRatesTab({ apiCall }) {
                 const invalidFields = getInvalidRateFieldLabels(draft);
                 const priceInvalid = invalidFields.includes("售价（元/分钟）");
                 const tokenInvalid = invalidFields.includes(TOKEN_RATE_LABEL);
-                const costInvalid = invalidFields.includes(TOKEN_COST_LABEL) || invalidFields.includes("成本(元/分钟)");
+                const costSys = _systemCostFor(item.model_name);
                 const draftGrossProfit = tokenBilling
-                  ? getTokenPriceYuan(draft) - getTokenCostYuan(draft)
-                  : parseDraftNumber(draft.price_per_minute_yuan) - parseDraftNumber(draft.cost_per_minute_yuan);
+                  ? (Number(draft.points_per_1k_tokens || 0) - Number(item.cost_per_1k_tokens_input_cents || 0)) / 100
+                  : parseDraftNumber(draft.price_per_minute_yuan) - (costSys.cost_per_minute_cents / 100);
 
                 return (
                   <TableRow key={item.model_name}>
@@ -424,27 +435,26 @@ export function AdminRatesTab({ apiCall }) {
                       </p>
                     </TableCell>
                     <TableCell>
-                      <Input
-                        type="number"
-                        min={0}
-                        step="0.0001"
-                        value={draft.cost_per_minute_yuan}
-                        onChange={(event) => updateDraft(item.model_name, { cost_per_minute_yuan: event.target.value })}
-                        aria-invalid={costInvalid}
-                        className="max-w-[180px]"
-                      />
-                      <p className={`mt-1 text-xs ${costInvalid ? "text-destructive" : "text-muted-foreground"}`}>
-                        {tokenBilling
-                          ? costInvalid
-                            ? TOKEN_COST_DECIMAL_MESSAGE
-                            : `${formatTokenYuanValue(draft.cost_per_minute_yuan)} 元 / 1k Tokens`
-                          : costInvalid
-                            ? RATE_DECIMAL_YUAN_MESSAGE
-                            : formatMoneyYuanPerMinute(draft.cost_per_minute_yuan, {
-                                minimumFractionDigits: 4,
-                                maximumFractionDigits: 4,
-                              })}
-                      </p>
+                      {(() => {
+                        const inputCost = Number(item.cost_per_1k_tokens_input_cents || 0);
+                        const outputCost = Number(item.cost_per_1k_tokens_output_cents || 0);
+                        const minCost = Number(item.cost_per_minute_cents || 0);
+                        if (tokenBilling) {
+                          return (
+                            <div className="text-xs leading-relaxed">
+                              <div>输入：{inputCost} 分 / 1k</div>
+                              <div>输出：{outputCost} 分 / 1k</div>
+                              <div className="mt-1 font-medium text-muted-foreground">系统固定</div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="text-xs leading-relaxed">
+                            <div>{(minCost / 100).toFixed(4)} 元 / 分钟</div>
+                            <div className="font-medium text-muted-foreground">系统固定</div>
+                          </div>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell>
                       <div className="text-sm font-medium">
