@@ -1,6 +1,9 @@
 import { ArrowLeft, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, Volume2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
+import AudioRecorder from "../../shared/components/AudioRecorder";
+import SOEResultCard from "./SOEResultCard";
+import { assessSentence } from "../../shared/api/soeApi";
 
 import { useAppStore } from "../../store";
 import { VocabAnalyzer } from "../../utils/vocabAnalyzer";
@@ -1045,7 +1048,8 @@ export function ImmersiveLessonPage({
     formatPlaybackRateInputValue(DEFAULT_IMMERSIVE_PLAYBACK_RATE),
   );
   const [sentenceJumpEditing, setSentenceJumpEditing] = useState(false);
-  const [wordbookSuccessMessage, setWordbookSuccessMessage] = useState(null);
+  const [soeResult, setSoeResult] = useState(null);
+  const [soeLoading, setSoeLoading] = useState(false);
   const wordbookSuccessTimerRef = useRef(null);
   const cefrAnalyzerRef = useRef(null);
   const [cefrAnalysisStatus, setCefrAnalysisStatus] = useState("idle");
@@ -4132,6 +4136,23 @@ export function ImmersiveLessonPage({
                         <p className={`min-w-0 flex-1 ${cinemaFullscreenActive ? "overflow-x-auto whitespace-nowrap" : ""}`}>
                           {translationHeading}：{translationEn}
                         </p>
+                        {currentSentence ? (
+                          <AudioRecorder
+                            onRecordingComplete={async (audioBlob, durationMs) => {
+                              if (!apiClient || !currentSentence) return;
+                              setSoeLoading(true);
+                              try {
+                                const result = await assessSentence(apiClient, audioBlob, currentSentence.text_en, String(currentSentence.idx), currentLessonId);
+                                setSoeResult(result);
+                              } catch (err) {
+                                console.error("[SOE] Assessment failed:", err);
+                                toast.error("评测失败，请稍后重试");
+                              } finally {
+                                setSoeLoading(false);
+                              }
+                            }}
+                          />
+                        ) : null}
                         {previousSentence ? (
                           <button
                             type="button"
@@ -4203,6 +4224,30 @@ export function ImmersiveLessonPage({
             spellCheck={false}
             readOnly={!typingEnabled}
           />
+
+          {soeResult ? (
+            <SOEResultCard result={soeResult} onClose={() => setSoeResult(null)} />
+          ) : null}
+
+          {soeLoading ? (
+            <div style={{
+              position: "fixed",
+              bottom: "24px",
+              right: "24px",
+              backgroundColor: "#1f2937",
+              color: "#fff",
+              padding: "12px 16px",
+              borderRadius: "8px",
+              fontSize: "14px",
+              zIndex: 9998,
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+            }}>
+              <Loader2 className="size-4 animate-spin" />
+              评测中...
+            </div>
+          ) : null}
           </CardContent>
         </Card>
       </div>
