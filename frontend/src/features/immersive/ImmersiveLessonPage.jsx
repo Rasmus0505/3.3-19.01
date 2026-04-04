@@ -1022,6 +1022,7 @@ export function ImmersiveLessonPage({
   const [wordbookBusy, setWordbookBusy] = useState(false);
   const [wordbookSelectedTokenIndexes, setWordbookSelectedTokenIndexes] = useState([]);
   const [wordbookSuccessAnimationIndexes, setWordbookSuccessAnimationIndexes] = useState([]);
+  const [wordbookSuccessMessage, setWordbookSuccessMessage] = useState(null);
   const [showEntryHintOverlay, setShowEntryHintOverlay] = useState(false);
   const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
   const [isFullscreenFallback, setIsFullscreenFallback] = useState(false);
