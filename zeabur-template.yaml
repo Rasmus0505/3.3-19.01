@@ -1,4 +1,4 @@
-﻿# yaml-language-server: $schema=https://schema.zeabur.app/template.json
+# yaml-language-server: $schema=https://schema.zeabur.app/template.json
 apiVersion: zeabur.com/v1
 kind: Template
 metadata:
@@ -31,6 +31,18 @@ spec:
       type: STRING
       name: Redeem Export Confirm Text
       description: Strong secret phrase required before dangerous export actions.
+    - key: APP_TENCENT_SOE_APP_ID
+      type: STRING
+      name: Tencent SOE App ID
+      description: App ID for Tencent Cloud Speech Evaluation service (SOE).
+    - key: APP_TENCENT_SECRET_ID
+      type: STRING
+      name: Tencent Secret ID
+      description: Secret ID for Tencent Cloud account used by SOE service.
+    - key: APP_TENCENT_SECRET_KEY
+      type: STRING
+      name: Tencent Secret Key
+      description: Secret Key for Tencent Cloud account used by SOE service.
   readme: |-
     Preferred deployment path:
 
@@ -174,4 +186,10 @@ spec:
             default: "5"
           REDEEM_CODE_EXPORT_CONFIRM_TEXT:
             default: ${APP_REDEEM_EXPORT_CONFIRM_TEXT}
+          TENCENT_SOE_APP_ID:
+            default: ${APP_TENCENT_SOE_APP_ID}
+          TENCENT_SECRET_ID:
+            default: ${APP_TENCENT_SECRET_ID}
+          TENCENT_SECRET_KEY:
+            default: ${APP_TENCENT_SECRET_KEY}
 

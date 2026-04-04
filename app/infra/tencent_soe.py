@@ -438,7 +438,7 @@ def soe_assessment_file(
         )
         return out
     except SOEAssessmentError as e:
-        logger.warning(
+        logger.error(
             "tencent_soe fail voice_id=%s code=%s msg=%s",
             voice_id,
             e.code,

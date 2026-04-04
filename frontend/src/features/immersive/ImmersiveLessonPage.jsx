@@ -4110,7 +4110,9 @@ export function ImmersiveLessonPage({
                                 }
                               } catch (err) {
                                 console.error("[SOE] Assessment failed:", err);
-                                toast.error("评测失败，请稍后重试");
+                                const errMsg = err instanceof Error ? err.message : String(err);
+                                const short = errMsg.length > 80 ? errMsg.slice(0, 80) + "..." : errMsg;
+                                toast.error(short || "评测失败，请稍后重试");
                               } finally {
                                 setSoeLoading(false);
                               }
@@ -4238,7 +4240,9 @@ export function ImmersiveLessonPage({
                                 }
                               } catch (err) {
                                 console.error("[SOE] Assessment failed:", err);
-                                toast.error("评测失败，请稍后重试");
+                                const errMsg = err instanceof Error ? err.message : String(err);
+                                const short = errMsg.length > 80 ? errMsg.slice(0, 80) + "..." : errMsg;
+                                toast.error(short || "评测失败，请稍后重试");
                               } finally {
                                 setSoeLoading(false);
                               }

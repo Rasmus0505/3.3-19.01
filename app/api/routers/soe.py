@@ -184,7 +184,7 @@ async def assess_audio(
             err_code = f"SOE_ERROR_{result.error_code if result.error_code is not None else 'UNKNOWN'}"
             msg = result.error_message or "评测失败"
             detail_out = (result.error_detail or "").strip()[:1500]
-            logger.warning(
+            logger.error(
                 "soe assess failed user_id=%s lesson_id=%s sentence_idx=%s http=%s err=%s msg=%s detail_len=%s elapsed_ms=%s",
                 current_user.id,
                 lesson_id,
@@ -228,6 +228,13 @@ async def assess_audio(
         )
         return error_response(504, "REQUEST_TIMEOUT", "评测超时，请重试", "超过 90 秒")
     except SOEConfigError as e:
+        logger.error(
+            "soe assess config error user_id=%s lesson_id=%s sentence_id=%s detail=%s",
+            current_user.id,
+            lesson_id,
+            sentence_id,
+            str(e),
+        )
         return error_response(503, "SOE_CONFIG_ERROR", str(e))
     except HTTPException:
         raise

@@ -12,7 +12,10 @@
         "JWT_SECRET": "@secrets.JWT_SECRET",
         "APP_ENV": "production",
         "AUTO_MIGRATE_ON_START": "1",
-        "PORT": "8080"
+        "PORT": "8080",
+        "TENCENT_SOE_APP_ID": "@secrets.TENCENT_SOE_APP_ID",
+        "TENCENT_SECRET_ID": "@secrets.TENCENT_SECRET_ID",
+        "TENCENT_SECRET_KEY": "@secrets.TENCENT_SECRET_KEY"
       }
     },
     {

@@ -126,6 +126,7 @@ def assess_sentence_practice(
     try:
         appid, secret_id, secret_key = _check_config()
     except SOEConfigError as e:
+        logger.error("soe assess config error detail=%s", str(e))
         return _map_error(1, str(e))
 
     try:
@@ -142,6 +143,7 @@ def assess_sentence_practice(
             timeout=60.0,
         )
     except SOEAssessmentError as e:
+        logger.error("soe assess tencent_soe fail voice_id=unknown code=%s msg=%s", e.code, e.message)
         return _map_error(e.code, e.message, voice_id="", detail=getattr(e, "detail", "") or "")
 
     service_result = _map_soe_result(soe_res)
