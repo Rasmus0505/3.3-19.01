@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
+from app.core.config import BASE_TMP_DIR
 from app.core.errors import error_response
 from app.core.timezone import to_shanghai_aware
 from app.db import get_db
@@ -125,7 +126,7 @@ async def assess_audio(
     started = time.monotonic()
 
     suffix = _validate_suffix(audio_file.filename or "")
-    req_dir = create_request_dir()
+    req_dir = create_request_dir(BASE_TMP_DIR)
     tmp_input = req_dir / f"upload{suffix}"
 
     try:
