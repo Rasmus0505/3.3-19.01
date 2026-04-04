@@ -71,12 +71,12 @@ def upgrade() -> None:
 
     if schema is None:
         op.execute(
-            "ALTER TABLE wallet_ledger ADD COLUMN event_type VARCHAR(32) NOT NULL DEFAULT 'reserve' "
+            "ALTER TABLE wallet_ledger ADD COLUMN IF NOT EXISTS event_type VARCHAR(32) NOT NULL DEFAULT 'reserve' "
             "CHECK(event_type IN ('reserve','consume','refund','manual_adjust','redeem_code','consume_translate','refund_translate','consume_llm'))"
         )
     else:
         op.execute(
-            f"ALTER TABLE {schema}.wallet_ledger ADD COLUMN event_type VARCHAR(32) NOT NULL DEFAULT 'reserve'"
+            f"ALTER TABLE {schema}.wallet_ledger ADD COLUMN IF NOT EXISTS event_type VARCHAR(32) NOT NULL DEFAULT 'reserve'"
         )
 
 
