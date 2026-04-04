@@ -10,34 +10,28 @@ The product is intentionally split by runtime capability: the desktop client is 
 
 Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-## Current Milestone: v2.3 学习体验与导入流程优化 — SHIPPED 2026-04-03
+## Current Milestone: v2.4 词汇等级预处理与 CEFR 沉浸式展示 — SHIPPED 2026-04-04
 
-**Goal:** 修复沉浸式学习已知 Bug、增强生词本词条信息完整性、优化素材导入 UI/UX 流程，提升产品细节体验。
+**Goal:** 实现视频字幕一次性预处理分析，并在沉浸式学习中以颜色块实时标注每个词的 CEFR 等级，重构上一句词选入生词本的交互反馈。
 
 **Target features:** (all completed)
-- ✅ 沉浸式学习 Bug 收口：autoAdvanceGuard guard + TTS 三段降级 + 答题框颜色黄/绿区分
-- ✅ 生词本词条增强：翻译区块独立显示 + Web Speech API 发音按钮
-- ✅ 素材导入 UX 优化：默认链接 Tab + 文案精简 + 快捷键两行布局
-- ✅ 字幕遮挡板位置记忆：居中恢复 + 启用状态跨视频记忆
-- ✅ 链接恢复增强：source_url 检查 + 覆盖确认弹窗
+- ✅ CEFR 词汇基础设施：vocabAnalyzer 加载 250K 词 cefr_vocab.json，localStorage 缓存，setTimeout(0) 分块执行
+- ✅ 个人中心 CEFR 水平选择器：A1-C2 RadioGroup + Duolingo 风格中文说明，PATCH API + Zustand 双写持久化
+- ✅ 沉浸式 CEFR 下划线：答题框每词从开课即显示颜色下划线（绿=i+1，红=超纲，灰=已掌握）
+- ✅ 上一句 CEFR 色块 + 生词本动画：生词选入触发 scale + border flash 动画
+- ✅ 历史记录 CEFR 徽章：课程卡片显示 CEFR 分布条 + 主导等级徽章
 
 ## Current State
 
 <details>
-<summary>v2.3 归档摘要 (2026-04-03 shipped) — 点击展开</summary>
+<summary>v2.4 归档摘要 (2026-04-04 shipped) — 点击展开</summary>
 
-**v2.3 shipped on 2026-04-03.** 4 phases, 10 plans, 12/12 requirements complete:
-- v1.0 (2026-03-27): Foundation — shared cloud generation, ASR 403 self-heal, desktop local generation
-- v1.1 (2026-03-27): Bottle 1.0 billing/admin cleanup, canonical lesson pipeline, desktop link import
-- v2.0 (2026-03-28): Admin simplification, pricing-only billing, troubleshooting center, onboarding cleanup, billing UX
-- v2.1 (2026-03-31): Immersive learning refactor, wordbook review flow, username account system, admin Chinese/yuan-first alignment, conversion copy rollout, desktop link-import bug fixes, Memo-style desktop public-link workflow
-- v2.2 (2026-04-02): Desktop stable-only release channel, model delta update, runtime boundary hardening (preload audit 31 methods, sandbox, openExternalUrl whitelist), announcement system (CRUD + changelog/banner/modal), wordbook review UX overhaul (due queue, mastery feedback, forgetting curve scheduling), wordbook batch ops + translation dialog + lightweight hint system
-- v2.3 (2026-04-03): Immersive learning bug fixes (4 bugs), wordbook entry enhancements (translation + pronunciation), material import UX optimization (default link tab, copy simplification, shortcut layout), subtitle mask position reset + link restore enhancement
+**v2.4 shipped on 2026-04-04.** 2 phases, 8 plans, 18/18 requirements complete:
+- Phase 24: CEFR 基础设施 — 后端字段、Zustand 持久化、个人中心选择器、vocabAnalyzer 集成
+- Phase 25: CEFR 沉浸式展示 — CSS 基础、答题框下划线、生词本色块+动画、历史列表徽章
 
-**23/23 milestone phases satisfied (Phase 22 removed from scope).**
-
-See `.planning/milestones/v2.3-ROADMAP.md` for full phase details.
-See `.planning/milestones/v2.3-REQUIREMENTS.md` for archived requirements.
+See `.planning/milestones/v2.4-ROADMAP.md` for full phase details.
+See `.planning/milestones/v2.4-REQUIREMENTS.md` for archived requirements.
 
 </details>
 
@@ -87,10 +81,11 @@ See `.planning/milestones/v2.3-REQUIREMENTS.md` for archived requirements.
 - ✓ Material import UX: default link tab, simplified copy, auto-fill title, shortcut two-row layout — validated in Phase 21
 - ✓ Subtitle mask position reset (centered on new video, enabled state persists across videos) and link restore enhancement — validated in Phase 23
 - ✓ CEFR infrastructure: backend cefr_level field (DB + PATCH API), frontend Zustand state + localStorage persistence, AccountPanel CEFR level selector (A1-C2 RadioGroup), vocabAnalyzer integration with localStorage cache and setTimeout(0) chunking — validated in Phase 24
+- ✓ CEFR immersive display: CEFR underlines on answer box word slots, wordbook CEFR color bands, scale + border flash animation, history list CEFR distribution badges — validated in Phase 25
 
 ### Active
 
-_(All v2.4 Phase 24 requirements shipped — Phase 25 pending)_
+_(All v2.4 requirements shipped — v2.5 planning pending)_
 
 ### Out of Scope
 
@@ -174,19 +169,11 @@ _(All v2.4 Phase 24 requirements shipped — Phase 25 pending)_
 | PATCH API + localStorage dual-write on CEFR level change | Server-first with local fallback; syncs on next online session | ✅ Validated in Phase 24 |
 | Unknown words (not in cefr_vocab.json) tagged as "SUPER" level | Ensures unknown words always appear as hard regardless of user level | ✅ Validated in Phase 24 |
 | `cefr_analysis_v1:{lessonId}` as localStorage cache key | Simple versioned key, sufficient for MIT-licensed COCA vocab | ✅ Validated in Phase 24 |
-
-## Current Milestone: v2.4 词汇等级预处理与 CEFR 沉浸式展示 (Phase 24 COMPLETE — Phase 25 pending)
-
-**Goal:** 实现视频字幕一次性预处理分析，并在沉浸式学习中以颜色块实时标注每个词的 CEFR 等级，重构上一句词选入生词本的交互反馈。
-
-**Target features:**
-- 批量词汇预处理：视频首次打开时一次性分析所有字幕，查 cefr_vocab.json 给每个词标上 CEFR 等级，结果缓存到 localStorage
-- 沉浸式学习词汇色块高亮：本句 + 上一句每词叠加 CEFR 等级色块，绿色 = i+1，黄色 = 超出 i+1
-- 上一句生词本选择交互重构：选词入生词本后 token 块流畅放大动画（scale），不再只用背景色变化
-- 词汇难度色块复用：历史记录列表标注素材 CEFR 等级（色块 + 等级名）
-- 个人中心 i 水平设置：选择 CEFR 水平（默认 B1），含 Duolingo 风格中文说明
-
----
+| SUPER-level words always render as above-i+1 (red), never i+1 | SUPER is beyond all standard CEFR levels per Phase 24 context | ✅ Validated in Phase 25 |
+| `computeCefrClassName` treats null/undefined as `cefr-mastered` (gray) | Words not in vocab table appear gray, not red — explicit user requirement | ✅ Fixed in Phase 25 |
+| Above-i+1 color: `oklch(0.58 0.24 25)` — distinctly red, not orange | Visual correction after user feedback | ✅ Fixed in Phase 25 |
+| Wordbook success animation: scale (200ms) + green border flash (350ms) | Scale distinguishes "added to wordbook" from CEFR difficulty color | ✅ Validated in Phase 25 |
+| `mergeLessonCardMeta` via Zustand `getState()` (factory-pattern slice) | Workaround for lessonSlice factory; matches ImmersiveLessonPage pattern | ✅ Validated in Phase 25 |
 
 ## Evolution
 
@@ -206,4 +193,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-03 after v2.3 milestone completion*
+*Last updated: 2026-04-04 after v2.4 milestone completion*
