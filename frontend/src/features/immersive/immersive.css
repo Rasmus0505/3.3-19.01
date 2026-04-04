@@ -1307,7 +1307,7 @@ input[type="number"] {
 }
 
 .cefr-above-i-plus-one .immersive-letter-cell {
-  border-bottom-color: oklch(0.60 0.22 25);
+  border-bottom-color: oklch(0.58 0.24 25);
 }
 
 /* ≤ i / word-not-found: revealed underline reverts to neutral gray;
@@ -1326,7 +1326,7 @@ input[type="number"] {
 }
 
 .cefr-above-i-plus-one.immersive-wordbook-token {
-  border-bottom: 2px solid oklch(0.60 0.22 25);
+  border-bottom: 2px solid oklch(0.58 0.24 25);
 }
 
 .cefr-mastered.immersive-wordbook-token {
@@ -1384,7 +1384,7 @@ input[type="number"] {
 }
 
 .cefr-distribution-segment--above-i-plus-one {
-  background-color: oklch(0.60 0.22 25);
+  background-color: oklch(0.58 0.24 25);
 }
 
 .cefr-distribution-segment--mastered {
@@ -1409,6 +1409,6 @@ input[type="number"] {
 }
 
 .history-card-cefr-badge--above-i-plus-one {
-  background-color: oklch(0.65 0.20 40 / 0.15);
-  color: oklch(0.65 0.20 40);
+  background-color: oklch(0.58 0.24 25 / 0.15);
+  color: oklch(0.58 0.24 25);
 }
