@@ -156,9 +156,18 @@ ASR_BUNDLE_ROOT_DIR = Path(
     os.getenv("ASR_BUNDLE_ROOT_DIR", str(_default_asr_bundle_root())).strip() or str(_default_asr_bundle_root())
 )
 
-TENCENT_SOE_APP_ID = os.getenv("TENCENT_SOE_APP_ID", "").strip()
-TENCENT_SECRET_ID = os.getenv("TENCENT_SECRET_ID", "").strip()
-TENCENT_SECRET_KEY = os.getenv("TENCENT_SECRET_KEY", "").strip()
+# 优先 TENCENT_*（与 .zeabur/zeabur.json、Docker 环境一致）；兼容 Zeabur 模板里填写的 APP_TENCENT_* 变量名
+def _env_first(*keys: str) -> str:
+    for k in keys:
+        v = os.getenv(k)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    return ""
+
+
+TENCENT_SOE_APP_ID = _env_first("TENCENT_SOE_APP_ID", "APP_TENCENT_SOE_APP_ID")
+TENCENT_SECRET_ID = _env_first("TENCENT_SECRET_ID", "APP_TENCENT_SECRET_ID")
+TENCENT_SECRET_KEY = _env_first("TENCENT_SECRET_KEY", "APP_TENCENT_SECRET_KEY")
 
 REDEEM_CODE_DEFAULT_VALID_DAYS = _get_env_int("REDEEM_CODE_DEFAULT_VALID_DAYS", 30)
 REDEEM_CODE_DEFAULT_DAILY_LIMIT = _get_env_int("REDEEM_CODE_DEFAULT_DAILY_LIMIT", 5)
