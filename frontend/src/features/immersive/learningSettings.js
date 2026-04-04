@@ -5,7 +5,7 @@ const LEGACY_LEARNING_SETTINGS_STORAGE_KEY = "immersive_learning_settings_v1";
 export const LEARNING_SETTINGS_UPDATED_EVENT = "immersive-learning-settings-updated";
 
 const RESERVED_SHORTCUT_KEYS = new Set(["escape", "tab", "backspace", "delete"]);
-const MODIFIER_ONLY_KEYS = new Set(["shift", "control", "ctrl", "alt", "meta", "os"]);
+const MODIFIER_ONLY_KEYS = new Set(["shift", "control", "ctrl", "meta", "os"]);
 const BARE_ALLOWED_SHORTCUT_KEYS = new Set([
   "space",
   "enter",
@@ -58,6 +58,7 @@ const LEGACY_SHORTCUT_BINDINGS = {
   "shift+n": { code: "KeyN", key: "n", shift: true, ctrl: false, alt: false, meta: false },
   "shift+p": { code: "KeyP", key: "p", shift: true, ctrl: false, alt: false, meta: false },
   "shift+k": { code: "KeyK", key: "k", shift: true, ctrl: false, alt: false, meta: false },
+  "shift+alt": { code: "AltLeft", key: "alt", shift: true, ctrl: false, alt: true, meta: false },
 };
 
 export const SHORTCUT_ACTIONS = [
@@ -66,7 +67,8 @@ export const SHORTCUT_ACTIONS = [
   { id: "previous_sentence", label: "上一句" },
   { id: "next_sentence", label: "下一句" },
   { id: "replay_sentence", label: "重播" },
-  { id: "toggle_pause_playback", label: "暂停/继续播放" },
+  { id: "toggle_pause_playback", label: "播放" },
+  { id: "record_score", label: "录音评分" },
 ];
 
 export const DEFAULT_SHORTCUTS = {
@@ -76,6 +78,7 @@ export const DEFAULT_SHORTCUTS = {
   next_sentence: LEGACY_SHORTCUT_BINDINGS["shift+w"],
   replay_sentence: LEGACY_SHORTCUT_BINDINGS["shift+r"],
   toggle_pause_playback: LEGACY_SHORTCUT_BINDINGS.space,
+  record_score: LEGACY_SHORTCUT_BINDINGS["shift+alt"],
 };
 
 export const REPLAY_PRESET_OPTIONS = [
@@ -236,6 +239,7 @@ function inferShortcutCodeFromKey(key) {
   if (normalizedKey === "end") return "End";
   if (normalizedKey === "pageup") return "PageUp";
   if (normalizedKey === "pagedown") return "PageDown";
+  if (normalizedKey === "alt") return "AltLeft";
   if (isFunctionShortcutKey(normalizedKey)) return normalizedKey.toUpperCase();
   if (/^[a-z]$/.test(normalizedKey)) return `Key${normalizedKey.toUpperCase()}`;
   if (/^\d$/.test(normalizedKey)) return `Digit${normalizedKey}`;

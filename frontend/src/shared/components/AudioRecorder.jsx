@@ -1,5 +1,5 @@
 import { Mic, MicOff } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 const STATUS_IDLE = "idle";
 const STATUS_RECORDING = "recording";
@@ -12,7 +12,7 @@ function formatDuration(ms) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-export default function AudioRecorder({ onRecordingComplete, maxDuration = 30, compact = false }) {
+export default function AudioRecorder({ onRecordingComplete, maxDuration = 30, compact = false, triggerRef }) {
   const [status, setStatus] = useState(STATUS_IDLE);
   const [elapsedMs, setElapsedMs] = useState(0);
 
@@ -21,6 +21,17 @@ export default function AudioRecorder({ onRecordingComplete, maxDuration = 30, c
   const startTimeRef = useRef(null);
   const timerRef = useRef(null);
   const maxDurationMs = maxDuration * 1000;
+
+  useImperativeHandle(triggerRef, () => ({
+    trigger: () => {
+      if (status === STATUS_IDLE) {
+        startRecording();
+      } else if (status === STATUS_RECORDING) {
+        stopRecording();
+      }
+    },
+    isRecording: () => status === STATUS_RECORDING,
+  }), [status]);
 
   useEffect(() => {
     return () => {

@@ -1083,6 +1083,7 @@ export function ImmersiveLessonPage({
   const [soeLoading, setSoeLoading] = useState(false);
   const wordbookSuccessTimerRef = useRef(null);
   const cefrAnalyzerRef = useRef(null);
+  const audioRecorderRef = useRef(null);
   const [cefrAnalysisStatus, setCefrAnalysisStatus] = useState("idle");
   /** Bumps when VocabAnalyzer is ready — required because cache-hit path used to skip ref init, leaving CEFR maps empty. */
   const [cefrVocabEngineTick, setCefrVocabEngineTick] = useState(0);
@@ -3496,6 +3497,12 @@ export function ImmersiveLessonPage({
         requestTogglePausePlayback(`shortcut_${getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)}`);
         return;
       }
+      if (isShortcutPressed(event, learningSettings.shortcuts.record_score)) {
+        event.preventDefault();
+        event.stopPropagation();
+        audioRecorderRef.current?.trigger();
+        return;
+      }
       if (isShortcutPressed(event, learningSettings.shortcuts.previous_sentence)) {
         event.preventDefault();
         event.stopPropagation();
@@ -3570,6 +3577,12 @@ export function ImmersiveLessonPage({
         event.preventDefault();
         event.stopPropagation();
         requestTogglePausePlayback(`shortcut_${getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)}`);
+        return;
+      }
+      if (isShortcutPressed(event, learningSettings.shortcuts.record_score)) {
+        event.preventDefault();
+        event.stopPropagation();
+        audioRecorderRef.current?.trigger();
         return;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.previous_sentence)) {
@@ -4083,6 +4096,7 @@ export function ImmersiveLessonPage({
                         {wordbookSentence ? (
                           <AudioRecorder
                             compact
+                            triggerRef={audioRecorderRef}
                             onRecordingComplete={async (audioBlob, durationMs) => {
                               if (!apiClient || !wordbookSentence) return;
                               if (!audioBlob || audioBlob.size === 0) {
@@ -4208,6 +4222,7 @@ export function ImmersiveLessonPage({
                         {soeTargetSentence ? (
                           <AudioRecorder
                             compact
+                            triggerRef={audioRecorderRef}
                             onRecordingComplete={async (audioBlob, durationMs) => {
                               if (!apiClient) return;
                               const sentence = soeTargetSentence;
@@ -4280,7 +4295,8 @@ export function ImmersiveLessonPage({
                   {getShortcutLabel(learningSettings.shortcuts.previous_sentence)} 上一句，
                   {getShortcutLabel(learningSettings.shortcuts.next_sentence)} 下一句，
                   {getShortcutLabel(learningSettings.shortcuts.replay_sentence)} 重播，
-                  {getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)} 暂停/继续播放。
+                  {getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)} 播放，
+                  {getShortcutLabel(learningSettings.shortcuts.record_score)} 录音评分。
                 </p>
               ) : null}
               {!cinemaFullscreenActive && phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
