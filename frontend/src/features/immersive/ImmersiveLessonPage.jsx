@@ -1370,6 +1370,8 @@ export function ImmersiveLessonPage({
       translationDisplayMode,
     ],
   );
+  const wordbookSentence = interactiveWordbookContext?.sentence || null;
+  const wordbookSentenceTokens = interactiveWordbookContext?.tokens || [];
   const wordbookSentenceCefrMap = useMemo(() => {
     if (!Array.isArray(wordbookSentenceTokens) || !cefrAnalyzerRef.current?.isLoaded) return new Map();
     const map = new Map();
@@ -1380,8 +1382,6 @@ export function ImmersiveLessonPage({
     return map;
   }, [wordbookSentenceTokens, cefrVocabEngineTick]);
   const canRenderInteractiveWordbook = Boolean(interactiveWordbookContext);
-  const wordbookSentence = interactiveWordbookContext?.sentence || null;
-  const wordbookSentenceTokens = interactiveWordbookContext?.tokens || [];
   const wordbookSentenceHeading = interactiveWordbookContext?.heading || "上一句";
   const wordbookSentenceZh = interactiveWordbookContext?.zhText || "";
   const wordbookSentenceMode = interactiveWordbookContext?.mode || "previous";
