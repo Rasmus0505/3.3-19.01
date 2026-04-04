@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { toast } from "sonner";
 import AudioRecorder from "../../shared/components/AudioRecorder";
 import SOEResultCard from "./SOEResultCard";
-import { assessSentence } from "../../shared/api/soeApi";
 
 import { useAppStore } from "../../store";
 import { VocabAnalyzer } from "../../utils/vocabAnalyzer";
@@ -4054,8 +4053,19 @@ export function ImmersiveLessonPage({
                               if (!apiClient || !wordbookSentence) return;
                               setSoeLoading(true);
                               try {
-                                const result = await assessSentence(apiClient, audioBlob, wordbookSentence.text_en, String(wordbookSentence.idx), currentLessonId);
-                                setSoeResult(result);
+                                const resp = await apiClient("/api/soe/assess", {
+                                  method: "POST",
+                                  body: (() => {
+                                    const fd = new FormData();
+                                    fd.append("audio_file", audioBlob, "recording.webm");
+                                    fd.append("ref_text", wordbookSentence.text_en);
+                                    fd.append("sentence_id", String(wordbookSentence.idx));
+                                    if (currentLessonId) fd.append("lesson_id", currentLessonId);
+                                    return fd;
+                                  })(),
+                                }, accessToken);
+                                const data = await parseResponse(resp);
+                                setSoeResult(data.ok ? data : { ok: false, message: data?.message || "评测失败" });
                               } catch (err) {
                                 console.error("[SOE] Assessment failed:", err);
                                 toast.error("评测失败，请稍后重试");
@@ -4160,8 +4170,19 @@ export function ImmersiveLessonPage({
                               if (!sentence) return;
                               setSoeLoading(true);
                               try {
-                                const result = await assessSentence(apiClient, audioBlob, sentence.text_en, String(sentence.idx), currentLessonId);
-                                setSoeResult(result);
+                                const resp = await apiClient("/api/soe/assess", {
+                                  method: "POST",
+                                  body: (() => {
+                                    const fd = new FormData();
+                                    fd.append("audio_file", audioBlob, "recording.webm");
+                                    fd.append("ref_text", sentence.text_en);
+                                    fd.append("sentence_id", String(sentence.idx));
+                                    if (currentLessonId) fd.append("lesson_id", currentLessonId);
+                                    return fd;
+                                  })(),
+                                }, accessToken);
+                                const data = await parseResponse(resp);
+                                setSoeResult(data.ok ? data : { ok: false, message: data?.message || "评测失败" });
                               } catch (err) {
                                 console.error("[SOE] Assessment failed:", err);
                                 toast.error("评测失败，请稍后重试");
