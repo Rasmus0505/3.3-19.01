@@ -65,6 +65,12 @@ class SOEResult:
     completeness_score: float = 0.0
     word_results: list[dict] = field(default_factory=list)
     raw_response: dict = field(default_factory=dict)
+    # 新增：句子/单词匹配标签统计
+    matched_word_count: int = 0      # 匹配上的单词数（MatchTag=0）
+    total_word_count: int = 0         # 参考文本总单词数
+    added_word_count: int = 0          # 多读的单词数（MatchTag=1）
+    missing_word_count: int = 0        # 漏读的单词数（MatchTag=2）
+    misread_word_count: int = 0        # 错读的单词数（MatchTag=3）
 
     @property
     def is_success(self) -> bool:
@@ -204,11 +210,43 @@ def _pick_float(d: dict, *keys: str, default: float | None = None) -> float | No
     return default
 
 
+def _pick_int(d: dict, *keys: str, default: int = 0) -> int:
+    for k in keys:
+        if k not in d or d[k] is None:
+            continue
+        try:
+            return int(d[k])
+        except (TypeError, ValueError):
+            continue
+    return default
+
+
 def _scale_fluency_completion(v: float) -> float:
     """腾讯云 PronFluency / PronCompletion 为 0~1，前端环形图为 0~100。"""
     if 0.0 <= v <= 1.0:
         return round(v * 100.0, 2)
     return round(v, 2)
+
+
+def _parse_phone_result(phone: dict) -> dict:
+    """解析单个音素（PhoneInfo）结果"""
+    if not isinstance(phone, dict):
+        return {}
+    pa = _pick_float(phone, "PronAccuracy", default=0.0) or 0.0
+    if pa < 0:
+        pa = 0.0
+    ds = phone.get("DetectedStress", False)
+    is_stress = phone.get("Stress", False)
+    return {
+        "phone": str(phone.get("Phone") or phone.get("phone") or ""),
+        "reference_phone": str(phone.get("ReferencePhone") or phone.get("reference_phone") or ""),
+        "pronunciation_score": round(min(100.0, pa), 2),
+        "start_time": _pick_int(phone, "MemBeginTime", "mem_begin_time", default=0),
+        "end_time": _pick_int(phone, "MemEndTime", "mem_end_time", default=0),
+        "match_tag": _pick_int(phone, "MatchTag", "match_tag", default=0),
+        "detected_stress": bool(ds) if ds is not None else False,
+        "is_stress": bool(is_stress) if is_stress is not None else False,
+    }
 
 
 def _build_soe_result_from_tencent_payload(voice_id: str, resp: dict, result_data: dict) -> SOEResult:
@@ -221,19 +259,34 @@ def _build_soe_result_from_tencent_payload(voice_id: str, resp: dict, result_dat
     for w in words_src:
         if not isinstance(w, dict):
             continue
-        pa = _pick_float(w, "pronunciation_score", "PronAccuracy", default=0.0) or 0.0
+        pa = _pick_float(w, "PronAccuracy", default=0.0) or 0.0
         if pa < 0:
             pa = 0.0
-        pf = _pick_float(w, "fluency_score", "PronFluency", default=0.0) or 0.0
-        ic = _pick_float(w, "integrity_score", "PronCompletion", default=0.0) or 0.0
+        pf = _pick_float(w, "PronFluency", default=0.0) or 0.0
+        ic = _pick_float(w, "PronCompletion", "integrity_score", default=0.0) or 0.0
+        match_tag = _pick_int(w, "MatchTag", "match_tag", default=0)
+        is_keyword = bool(w.get("KeywordTag") or w.get("keyword_tag") or 0)
+
+        # 解析音素详情
+        phone_src = w.get("PhoneInfos") or w.get("phone_infos") or []
+        if not isinstance(phone_src, list):
+            phone_src = []
+        phone_results = [_parse_phone_result(p) for p in phone_src if isinstance(p, dict)]
+
+        word = str(w.get("Word") or w.get("word") or "")
+        ref_word = str(w.get("ReferenceWord") or w.get("reference_word") or "")
         word_results.append(
             {
-                "word": str(w.get("word") or w.get("Word") or ""),
-                "start_time": int(w.get("start_time") or w.get("MemBeginTime") or 0),
-                "end_time": int(w.get("end_time") or w.get("MemEndTime") or 0),
+                "word": word,
+                "reference_word": ref_word,
+                "start_time": _pick_int(w, "MemBeginTime", "mem_begin_time", default=0),
+                "end_time": _pick_int(w, "MemEndTime", "mem_end_time", default=0),
                 "pronunciation_score": round(min(100.0, pa), 2),
                 "fluency_score": _scale_fluency_completion(pf),
                 "integrity_score": _scale_fluency_completion(ic),
+                "match_tag": match_tag,
+                "is_keyword": is_keyword,
+                "phone_results": phone_results,
             }
         )
 
@@ -278,6 +331,13 @@ def _build_soe_result_from_tencent_payload(voice_id: str, resp: dict, result_dat
     else:
         total = 0.0
 
+    # 统计 MatchTag 分布
+    matched = sum(1 for w in word_results if w["match_tag"] == 0)
+    added = sum(1 for w in word_results if w["match_tag"] == 1)
+    missing = sum(1 for w in word_results if w["match_tag"] == 2)
+    misread = sum(1 for w in word_results if w["match_tag"] == 3)
+    total_w = len(word_results)
+
     return SOEResult(
         voice_id=voice_id,
         code=0,
@@ -289,6 +349,11 @@ def _build_soe_result_from_tencent_payload(voice_id: str, resp: dict, result_dat
         completeness_score=completeness,
         word_results=word_results,
         raw_response=resp,
+        matched_word_count=matched,
+        total_word_count=total_w,
+        added_word_count=added,
+        missing_word_count=missing,
+        misread_word_count=misread,
     )
 
 

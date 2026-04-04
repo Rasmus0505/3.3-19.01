@@ -15,7 +15,7 @@ from app.core.errors import error_response
 from app.core.timezone import to_shanghai_aware
 from app.db import get_db
 from app.models import LessonSentence, User
-from app.schemas import SOEAssessResponse, SOEErrorResponse, SOEHistoryItem, SOEHistoryResponse, SOEWordResult
+from app.schemas import SOEAssessResponse, SOEErrorResponse, SOEHistoryItem, SOEHistoryResponse, SOEPhoneResult, SOEWordResult
 from app.services.media import cleanup_dir, create_request_dir, probe_audio_duration_ms
 from app.services.tencent_soe_service import SOEServiceResult, assess_sentence_practice, list_soe_results
 from app.infra.tencent_soe import SOEConfigError
@@ -217,6 +217,11 @@ async def assess_audio(
             fluency_score=result.fluency_score,
             completeness_score=result.completeness_score,
             word_results=[SOEWordResult(**w) if isinstance(w, dict) else w for w in result.word_results],
+            matched_word_count=result.matched_word_count,
+            total_word_count=result.total_word_count,
+            added_word_count=result.added_word_count,
+            missing_word_count=result.missing_word_count,
+            misread_word_count=result.misread_word_count,
             saved_result_id=result.saved_result_id,
         )
 

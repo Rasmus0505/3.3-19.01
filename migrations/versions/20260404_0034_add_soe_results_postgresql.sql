@@ -28,6 +28,7 @@ BEGIN
             audio_duration_ms INTEGER,
             voice_id VARCHAR(64) NOT NULL,
             raw_response_json JSONB,
+            word_results_json JSONB,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 

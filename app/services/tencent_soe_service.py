@@ -34,6 +34,12 @@ class SOEServiceResult:
     fluency_score: float
     completeness_score: float
     word_results: list[dict] = field(default_factory=list)
+    # 单词匹配统计（来自腾讯云 MatchTag）
+    matched_word_count: int = 0
+    total_word_count: int = 0
+    added_word_count: int = 0
+    missing_word_count: int = 0
+    misread_word_count: int = 0
     saved_result_id: int | None = None
     error_code: int | None = None
     error_message: str | None = None
@@ -71,6 +77,11 @@ def _map_soe_result(r: SOEResult) -> SOEServiceResult:
         fluency_score=r.fluency_score,
         completeness_score=r.completeness_score,
         word_results=r.word_results,
+        matched_word_count=r.matched_word_count,
+        total_word_count=r.total_word_count,
+        added_word_count=r.added_word_count,
+        missing_word_count=r.missing_word_count,
+        misread_word_count=r.misread_word_count,
         saved_result_id=None,
         error_code=None,
         error_message=None,
@@ -165,6 +176,7 @@ def assess_sentence_practice(
                 completeness_score=soe_res.completeness_score,
                 voice_id=soe_res.voice_id,
                 raw_response_json=soe_res.raw_response,
+                word_results_json={"words": soe_res.word_results},
                 created_at=now_shanghai_naive(),
             )
             session.add(model)

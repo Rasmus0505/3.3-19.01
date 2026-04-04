@@ -39,6 +39,8 @@ class SOEResult(Base):
     audio_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     voice_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     raw_response_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # 结构化单词评测结果（含音素详情），与 raw_response_json 互为冗余存储
+    word_results_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=now_shanghai_naive, nullable=False, index=True
     )

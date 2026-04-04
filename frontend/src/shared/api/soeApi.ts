@@ -1,11 +1,27 @@
 import { parseResponse } from "./client";
 
+export interface SOEPhoneResult {
+  phone: string;
+  reference_phone: string;
+  pronunciation_score: number;
+  start_time: number;
+  end_time: number;
+  match_tag: number; // 0=匹配 1=新增 2=缺少 3=错读 4=未录入
+  detected_stress: boolean;
+  is_stress: boolean;
+}
+
 export interface SOEWordResult {
-  word: string;
-  score: number;
-  status?: string;
-  start_ms?: number;
-  end_ms?: number;
+  word: string;                  // 识别出的单词，如 "first"
+  reference_word: string;        // 参考文本中的原词，如 "1st"
+  pronunciation_score: number;   // 单词精准度 [0-100]
+  fluency_score: number;         // 单词流利度 [0-100]
+  integrity_score: number;       // 单词完整度 [0-100]
+  start_time: number;            // 开始时间 ms
+  end_time: number;             // 结束时间 ms
+  match_tag: number;             // 0=匹配 1=新增 2=缺少 3=错读 4=未录入
+  is_keyword: boolean;
+  phone_results: SOEPhoneResult[];
 }
 
 export interface SOEResult {
@@ -18,6 +34,12 @@ export interface SOEResult {
   fluency_score?: number;
   completeness_score?: number;
   word_results?: SOEWordResult[];
+  // 单词匹配统计
+  matched_word_count?: number;
+  total_word_count?: number;
+  added_word_count?: number;
+  missing_word_count?: number;
+  misread_word_count?: number;
   saved_result_id?: string;
   error_code?: string;
   message?: string;

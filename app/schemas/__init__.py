@@ -99,7 +99,7 @@ from app.schemas.lesson import (
     LessonTaskStageResponse,
 )
 from app.schemas.practice import ProgressResponse, ProgressUpdateRequest, TokenCheckRequest, TokenCheckResponse, TokenResult
-from app.schemas.soe import SOEAssessResponse, SOEErrorResponse, SOEHistoryItem, SOEHistoryResponse, SOEWordResult
+from app.schemas.soe import SOEAssessResponse, SOEErrorResponse, SOEHistoryItem, SOEHistoryResponse, SOEPhoneResult, SOEWordResult
 from app.schemas.wordbook import (
     BatchDeleteRequest,
     BatchMoveRequest,
@@ -160,6 +160,7 @@ __all__ = [
     "SOEHistoryItem",
     "SOEHistoryResponse",
     "SOEWordResult",
+    "SOEPhoneResult",
     "WalletMeResponse",
     "WalletRedeemCodeRequest",
     "WalletRedeemCodeResponse",
