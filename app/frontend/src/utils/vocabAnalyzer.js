@@ -273,6 +273,19 @@ class VocabAnalyzer {
     }
   }
 
+  /**
+   * 直接查询词表等级（不经停用词过滤）
+   * 用于沉浸式逐词着色：不依赖 analyzeSentence 的 tokenize 逻辑，
+   * 直接用原始 surface form 查表，保证 stopwords 也能查到等级。
+   * @param {string} surfaceForm - 未经 normalize 的原始 token（如 "that"、"And"、"he's"）
+   * @returns {string|null} 等级字符串（A1/A2/B1/B2/C1/C2）或 null（词表查不到）
+   */
+  lookupCefrLevelForSurfaceForm(surfaceForm) {
+    if (!this.isLoaded) return null;
+    const wordInfo = this._lookupWord(surfaceForm);
+    return wordInfo ? wordInfo.level : null;
+  }
+
   // ============================================================
   // 私有方法
   // ============================================================
