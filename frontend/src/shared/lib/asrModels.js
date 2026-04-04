@@ -2,6 +2,11 @@ export const ASR_MODEL_KEYS = {
   qwen: "qwen3-asr-flash-filetrans",
 };
 
+export const LLM_MODEL_KEYS = {
+  deepseekThinking: "deepseek-v3.2",
+  deepseekFast: "deepseek-v3.2-fast",
+};
+
 export const FALLBACK_ASR_MODEL_CATALOG = {
   [ASR_MODEL_KEYS.qwen]: {
     model_key: ASR_MODEL_KEYS.qwen,

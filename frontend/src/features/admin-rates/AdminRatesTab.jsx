@@ -39,9 +39,13 @@ import {
 
 function billingDisplayRank(item) {
   const displayName = String(item?.display_name || "").trim();
+  const modelName = String(item?.model_name || "").trim();
   if (displayName === "Bottle 1.0") return 0;
   if (displayName === "Bottle 2.0") return 1;
-  return 2;
+  if (modelName === "qwen-mt-flash") return 2;
+  if (modelName === "deepseek-v3.2") return 3;
+  if (modelName === "deepseek-v3.2-fast") return 4;
+  return 5;
 }
 
 function isTokenBilling(item) {

@@ -26,6 +26,7 @@ class User(Base):
     lessons: Mapped[list["Lesson"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     wallet_account: Mapped["WalletAccount | None"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
     login_events: Mapped[list["UserLoginEvent"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    llm_usage_logs: Mapped[list["LLMUsageLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class UserLoginEvent(Base):

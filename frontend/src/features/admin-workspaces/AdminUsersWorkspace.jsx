@@ -4,6 +4,7 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import { AdminLogsTab } from "../admin-logs/AdminLogsTab";
 import { AdminRatesTab } from "../admin-rates/AdminRatesTab";
+import { AdminLLMTab } from "../admin-llm/AdminLLMTab";
 import { AdminUsersTab } from "../admin-users/AdminUsersTab";
 import { mergeSearchParams, readStringParam } from "../../shared/lib/adminSearchParams";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Tabs, TabsContent, TabsList, TabsTrigger } from "../../shared/ui";
@@ -12,6 +13,7 @@ export const USERS_TABS = [
   { value: "list", label: "用户列表", description: "搜索用户、调账、查看最近行为。", component: AdminUsersTab },
   { value: "wallet", label: "余额流水", description: "按用户追踪元金额变动、退款、手工调账和兑换入账。", component: AdminLogsTab },
   { value: "rates", label: "计费价格", description: "统一维护 ASR 与翻译价格，不在这里调整运行时参数。", component: AdminRatesTab },
+  { value: "llm", label: "大模型消费", description: "统一查看 ASR / MT / LLM Token 消费明细、成本和利润。", component: AdminLLMTab },
 ];
 
 export function AdminUsersWorkspace({ apiCall, showTabsNavigation = true }) {

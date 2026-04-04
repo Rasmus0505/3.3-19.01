@@ -1,0 +1,238 @@
+"""
+LLM API Router — DeepSeek V3.2 endpoints for reading material generation.
+"""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from datetime import datetime
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
+from app.api.deps.auth import get_current_user
+from app.core.config import DASHSCOPE_API_KEY
+from app.core.errors import error_response
+from app.core.timezone import now_shanghai_naive
+from app.db import get_db
+from app.infra.llm.deepseek import call_deepseek, generate_reading_material
+from app.models import User
+from app.schemas import ErrorResponse
+from app.services.billing_service import (
+    EVENT_CONSUME_LLM,
+    consume_points,
+    get_model_rate,
+)
+from app.services.llm_usage_service import get_llm_usage_summary, list_user_llm_usage
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/llm", tags=["llm"])
+
+LLM_MODEL_DEEPSEEK_THINKING = "deepseek-v3.2"
+LLM_MODEL_DEEPSEEK_FAST = "deepseek-v3.2-fast"
+LLM_VALID_MODELS = {LLM_MODEL_DEEPSEEK_THINKING, LLM_MODEL_DEEPSEEK_FAST}
+CEFR_LEVELS = {"A1", "A2", "B1", "B2", "C1"}
+
+
+def _require_api_key() -> str:
+    key = DASHSCOPE_API_KEY
+    if not key or not str(key).strip():
+        raise HTTPException(status_code=503, detail="LLM API key not configured")
+    return str(key).strip()
+
+
+@router.post(
+    "/generate-reading-material",
+    responses={503: {"model": ErrorResponse}, 402: {"model": ErrorResponse}},
+)
+def generate_reading_material_endpoint(
+    words: list[dict[str, Any]],
+    target_level: str = Query(default="A2", max_length=4),
+    enable_thinking: bool = Query(default=False),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate reading material from word list using DeepSeek V3.2.
+    Charges the user according to the selected model rate.
+    """
+    if target_level.upper() not in CEFR_LEVELS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid target_level '{target_level}'. Must be one of: {', '.join(sorted(CEFR_LEVELS))}",
+        )
+
+    effective_model = LLM_MODEL_DEEPSEEK_THINKING if enable_thinking else LLM_MODEL_DEEPSEEK_FAST
+
+    try:
+        rate = get_model_rate(db, effective_model)
+    except Exception:
+        raise HTTPException(status_code=503, detail="LLM model not available")
+
+    if not words or not isinstance(words, list):
+        raise HTTPException(status_code=422, detail="words must be a non-empty list")
+
+    api_key = _require_api_key()
+    trace_id = str(uuid.uuid4())
+
+    try:
+        results = list(
+            generate_reading_material(
+                user_words=words,
+                target_level=target_level.upper(),
+                enable_thinking=enable_thinking,
+                api_key=api_key,
+            )
+        )
+    except Exception as exc:
+        logger.exception("[DEBUG] llm.generate_failed user_id=%s error=%s", current_user.id, str(exc)[:200])
+        raise HTTPException(status_code=502, detail=f"LLM call failed: {str(exc)[:200]}")
+
+    if not results:
+        raise HTTPException(status_code=502, detail="LLM returned empty result")
+
+    content, usage = results[0]
+    total_tokens = usage.prompt_tokens + usage.completion_tokens
+
+    from app.services.billing_service import calculate_llm_charge_by_tokens
+
+    charge_cents = calculate_llm_charge_by_tokens(
+        total_tokens=total_tokens,
+        points_per_1k_tokens=rate.points_per_1k_tokens,
+    )
+
+    try:
+        consume_points(
+            db,
+            user_id=current_user.id,
+            points=charge_cents,
+            model_name=effective_model,
+            lesson_id=None,
+            event_type=EVENT_CONSUME_LLM,
+            note=f"生成阅读材料，total_tokens={total_tokens}, enable_thinking={enable_thinking}",
+        )
+    except Exception as exc:
+        logger.warning(
+            "[DEBUG] llm.consume_failed user_id=%s charge_cents=%s error=%s",
+            current_user.id,
+            charge_cents,
+            str(exc)[:200],
+        )
+
+    from app.services.llm_usage_service import log_llm_usage
+
+    log_llm_usage(
+        db,
+        user_id=current_user.id,
+        model_name=effective_model,
+        category="llm",
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        reasoning_tokens=usage.reasoning_tokens,
+        total_tokens=total_tokens,
+        input_cost_cents=None,
+        charge_cents=charge_cents,
+        lesson_id=None,
+        enable_thinking=enable_thinking,
+        input_text_preview="",
+        trace_id=trace_id,
+    )
+
+    db.commit()
+
+    return {
+        "ok": True,
+        "content": content,
+        "model": effective_model,
+        "usage": {
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "reasoning_tokens": usage.reasoning_tokens,
+            "total_tokens": total_tokens,
+        },
+        "charge_cents": charge_cents,
+        "trace_id": trace_id,
+    }
+
+
+@router.get("/usage")
+def list_llm_usage_endpoint(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    category: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    List current user's LLM usage records.
+    """
+    rows, total = list_user_llm_usage(
+        db,
+        user_id=current_user.id,
+        page=page,
+        page_size=page_size,
+        date_from=date_from,
+        date_to=date_to,
+        category=category,
+    )
+    return {
+        "ok": True,
+        "records": [
+            {
+                "id": r.id,
+                "trace_id": r.trace_id,
+                "category": r.category,
+                "model_name": r.model_name,
+                "prompt_tokens": r.prompt_tokens,
+                "completion_tokens": r.completion_tokens,
+                "reasoning_tokens": r.reasoning_tokens,
+                "total_tokens": r.total_tokens,
+                "input_cost_cents": r.input_cost_cents,
+                "charge_cents": r.charge_cents,
+                "gross_profit_cents": r.gross_profit_cents,
+                "enable_thinking": r.enable_thinking,
+                "lesson_id": r.lesson_id,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.get("/models")
+def list_llm_models_endpoint(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    List available LLM models with pricing.
+    """
+    models = []
+    for model_name in sorted(LLM_VALID_MODELS):
+        try:
+            rate = get_model_rate(db, model_name)
+            models.append({
+                "model_name": model_name,
+                "display_name": (
+                    "DeepSeek V3.2 (思考模式)"
+                    if model_name == LLM_MODEL_DEEPSEEK_THINKING
+                    else "DeepSeek V3.2 (快速模式)"
+                ),
+                "enable_thinking": model_name == LLM_MODEL_DEEPSEEK_THINKING,
+                "points_per_1k_tokens": rate.points_per_1k_tokens,
+                "price_per_1k_tokens_yuan": rate.points_per_1k_tokens / 100.0,
+                "cost_per_1k_tokens_input_cents": rate.cost_per_1k_tokens_input_cents,
+                "cost_per_1k_tokens_output_cents": rate.cost_per_1k_tokens_output_cents,
+                "is_active": rate.is_active,
+            })
+        except Exception:
+            pass
+    return {"ok": True, "models": models}

@@ -70,7 +70,7 @@ class WalletLedger(Base):
     __tablename__ = "wallet_ledger"
     __table_args__ = table_args(
         CheckConstraint(
-            "event_type IN ('reserve','consume','refund','manual_adjust','redeem_code','consume_translate','refund_translate')",
+            "event_type IN ('reserve','consume','refund','manual_adjust','redeem_code','consume_translate','refund_translate','consume_llm')",
             name="ck_wallet_ledger_event_type",
         )
     )
@@ -197,6 +197,61 @@ class BillingModelRate(Base):
             normalize_rate_yuan(getattr(self, "price_per_minute_yuan", Decimal("0.0000")))
             - normalize_rate_yuan(getattr(self, "cost_per_minute_yuan", Decimal("0.0000")))
         )
+
+    @property
+    def cost_per_1k_tokens_input_cents(self) -> int:
+        """MT/LLM input cost per 1k tokens in cents (阿里云输入 0.7元/百万 ≈ 1分/千万token)."""
+        return max(0, int(getattr(self, "_cost_per_1k_tokens_input_cents", 0) or 0))
+
+    @cost_per_1k_tokens_input_cents.setter
+    def cost_per_1k_tokens_input_cents(self, value: int) -> None:
+        self._cost_per_1k_tokens_input_cents = max(0, int(value or 0))
+
+    @property
+    def cost_per_1k_tokens_output_cents(self) -> int:
+        """MT/LLM output cost per 1k tokens in cents (阿里云输出 1.95元/百万 ≈ 20分/千万token)."""
+        return max(0, int(getattr(self, "_cost_per_1k_tokens_output_cents", 0) or 0))
+
+    @cost_per_1k_tokens_output_cents.setter
+    def cost_per_1k_tokens_output_cents(self, value: int) -> None:
+        self._cost_per_1k_tokens_output_cents = max(0, int(value or 0))
+
+    def __init__(
+        self,
+        *,
+        model_name: str,
+        price_per_minute_cents_legacy: int = 0,
+        cost_per_1k_tokens_cents: int = 0,
+        cost_per_minute_cents_legacy: int = 0,
+        price_per_minute_yuan: Decimal = Decimal("0.0000"),
+        cost_per_minute_yuan: Decimal = Decimal("0.0000"),
+        billing_unit: str = "minute",
+        is_active: bool = True,
+        parallel_enabled: bool = False,
+        parallel_threshold_seconds: int = 900,
+        segment_seconds: int = 300,
+        max_concurrency: int = 2,
+        updated_at: datetime | None = None,
+        updated_by_user_id: int | None = None,
+        cost_per_1k_tokens_input_cents: int = 0,
+        cost_per_1k_tokens_output_cents: int = 0,
+    ) -> None:
+        self.model_name = model_name
+        self.price_per_minute_cents_legacy = price_per_minute_cents_legacy
+        self.cost_per_1k_tokens_cents = cost_per_1k_tokens_cents
+        self.cost_per_minute_cents_legacy = cost_per_minute_cents_legacy
+        self.price_per_minute_yuan = price_per_minute_yuan
+        self.cost_per_minute_yuan = cost_per_minute_yuan
+        self.billing_unit = billing_unit
+        self.is_active = is_active
+        self.parallel_enabled = parallel_enabled
+        self.parallel_threshold_seconds = parallel_threshold_seconds
+        self.segment_seconds = segment_seconds
+        self.max_concurrency = max_concurrency
+        self.updated_at = updated_at
+        self.updated_by_user_id = updated_by_user_id
+        self._cost_per_1k_tokens_input_cents = max(0, int(cost_per_1k_tokens_input_cents or 0))
+        self._cost_per_1k_tokens_output_cents = max(0, int(cost_per_1k_tokens_output_cents or 0))
 
 
 class SubtitleSetting(Base):

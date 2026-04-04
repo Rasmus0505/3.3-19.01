@@ -29,6 +29,7 @@ class Lesson(Base):
     sentences: Mapped[list["LessonSentence"]] = relationship(back_populates="lesson", cascade="all, delete-orphan")
     progress_records: Mapped[list["LessonProgress"]] = relationship(back_populates="lesson", cascade="all, delete-orphan")
     media_assets: Mapped[list["MediaAsset"]] = relationship(back_populates="lesson", cascade="all, delete-orphan")
+    llm_usage_logs: Mapped[list["LLMUsageLog"]] = relationship(back_populates="lesson", cascade="all, delete-orphan")
 
 
 class LessonSentence(Base):

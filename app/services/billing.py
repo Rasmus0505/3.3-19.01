@@ -40,6 +40,7 @@ EVENT_CONSUME = "consume"
 EVENT_REFUND = "refund"
 EVENT_CONSUME_TRANSLATE = "consume_translate"
 EVENT_REFUND_TRANSLATE = "refund_translate"
+EVENT_CONSUME_LLM = "consume_llm"
 EVENT_MANUAL_ADJUST = "manual_adjust"
 EVENT_REDEEM_CODE = "redeem_code"
 
@@ -69,6 +70,8 @@ ADMIN_BILLING_MODEL_ORDER: tuple[str, ...] = (
     FAST_CLOUD_MODEL,
     MT_FLASH_MODEL,
     FASTER_WHISPER_ASR_MODEL,  # "faster-whisper-medium" — Bottle 1.0 billing (per D-07)
+    "deepseek-v3.2",
+    "deepseek-v3.2-fast",
 )
 PUBLIC_BILLING_MODEL_ORDER: tuple[str, ...] = (
     FAST_CLOUD_MODEL,
@@ -84,6 +87,8 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
         "points_per_1k_tokens": 0,
         "cost_per_minute_cents": 0,
         "cost_per_minute_yuan": Decimal("0.0132"),
+        "cost_per_1k_tokens_input_cents": 0,
+        "cost_per_1k_tokens_output_cents": 0,
         "billing_unit": "minute",
         "parallel_enabled": True,
         "parallel_threshold_seconds": 600,
@@ -97,6 +102,8 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
         "points_per_1k_tokens": DEFAULT_MT_COST_PER_1K_TOKENS_CENTS,
         "cost_per_minute_cents": 0,
         "cost_per_minute_yuan": Decimal("0.0000"),
+        "cost_per_1k_tokens_input_cents": 1,
+        "cost_per_1k_tokens_output_cents": 20,
         "billing_unit": "1k_tokens",
         "parallel_enabled": False,
         "parallel_threshold_seconds": 600,
@@ -110,11 +117,45 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
         "points_per_1k_tokens": 0,
         "cost_per_minute_cents": 0,
         "cost_per_minute_yuan": Decimal("0.0000"),
+        "cost_per_1k_tokens_input_cents": 0,
+        "cost_per_1k_tokens_output_cents": 0,
         "billing_unit": "minute",
         "parallel_enabled": False,
         "parallel_threshold_seconds": 600,
         "segment_seconds": 300,
         "max_concurrency": 1,
+    },
+    {
+        "model_name": "deepseek-v3.2",
+        "points_per_minute": 0,
+        "price_per_minute_yuan": Decimal("0.0000"),
+        "points_per_1k_tokens": 16,
+        "cost_per_minute_cents": 0,
+        "cost_per_minute_yuan": Decimal("0.0000"),
+        "cost_per_1k_tokens_input_cents": 2,
+        "cost_per_1k_tokens_output_cents": 3,
+        "billing_unit": "1k_tokens",
+        "parallel_enabled": False,
+        "parallel_threshold_seconds": 600,
+        "segment_seconds": 300,
+        "max_concurrency": 1,
+        "enable_thinking": True,
+    },
+    {
+        "model_name": "deepseek-v3.2-fast",
+        "points_per_minute": 0,
+        "price_per_minute_yuan": Decimal("0.0000"),
+        "points_per_1k_tokens": 8,
+        "cost_per_minute_cents": 0,
+        "cost_per_minute_yuan": Decimal("0.0000"),
+        "cost_per_1k_tokens_input_cents": 2,
+        "cost_per_1k_tokens_output_cents": 3,
+        "billing_unit": "1k_tokens",
+        "parallel_enabled": False,
+        "parallel_threshold_seconds": 600,
+        "segment_seconds": 300,
+        "max_concurrency": 1,
+        "enable_thinking": False,
     },
 )
 
@@ -212,6 +253,8 @@ def build_rate_payload(item: dict[str, object]) -> dict[str, object]:
         "points_per_1k_tokens": max(0, int(item.get("points_per_1k_tokens") or 0)),
         "cost_per_minute_cents": yuan_to_compat_cents(cost_per_minute_yuan),
         "cost_per_minute_yuan": cost_per_minute_yuan,
+        "cost_per_1k_tokens_input_cents": max(0, int(item.get("cost_per_1k_tokens_input_cents") or 0)),
+        "cost_per_1k_tokens_output_cents": max(0, int(item.get("cost_per_1k_tokens_output_cents") or 0)),
         "billing_unit": str(item.get("billing_unit") or "minute").strip() or "minute",
         "parallel_enabled": bool(item.get("parallel_enabled")),
         "parallel_threshold_seconds": max(1, int(item.get("parallel_threshold_seconds") or 600)),
@@ -730,6 +773,8 @@ def _flash_mt_default_payload() -> dict[str, object]:
         "points_per_1k_tokens": DEFAULT_MT_COST_PER_1K_TOKENS_CENTS,
         "cost_per_minute_cents": 0,
         "cost_per_minute_yuan": Decimal("0.0000"),
+        "cost_per_1k_tokens_input_cents": 1,
+        "cost_per_1k_tokens_output_cents": 20,
         "billing_unit": "1k_tokens",
         "parallel_enabled": False,
         "parallel_threshold_seconds": 600,
@@ -1305,6 +1350,27 @@ def calculate_points(
 
 def calculate_token_points(total_tokens: int, points_per_1k_tokens: int) -> int:
     return calculate_cost_by_tokens(total_tokens, points_per_1k_tokens)
+
+
+def calculate_llm_cost_by_tokens(
+    prompt_tokens: int,
+    completion_tokens: int,
+    cost_per_1k_tokens_input_cents: int,
+    cost_per_1k_tokens_output_cents: int,
+) -> int:
+    """MT/LLM 实际成本计算（阿里云输入/输出分开计费）。
+
+    cost = ceil(prompt_tokens/1000) * cost_per_1k_tokens_input_cents
+         + ceil(completion_tokens/1000) * cost_per_1k_tokens_output_cents
+    """
+    input_cost = ceil(prompt_tokens / 1000) * max(0, int(cost_per_1k_tokens_input_cents or 0))
+    output_cost = ceil(completion_tokens / 1000) * max(0, int(cost_per_1k_tokens_output_cents or 0))
+    return input_cost + output_cost
+
+
+def calculate_llm_charge_by_tokens(total_tokens: int, points_per_1k_tokens: int) -> int:
+    """用户售价计算（单一费率 × total_tokens）。"""
+    return calculate_token_points(total_tokens, points_per_1k_tokens)
 
 
 def _append_ledger(

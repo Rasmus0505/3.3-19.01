@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.services.billing import (
     BillingError,
+    EVENT_CONSUME_LLM,
     EVENT_CONSUME_TRANSLATE,
     EVENT_REDEEM_CODE,
     EVENT_REFUND_TRANSLATE,
@@ -17,6 +18,8 @@ from app.services.billing import (
     REDEEM_CODE_STATUS_DISABLED,
     append_admin_operation_log,
     bulk_disable_redeem_codes,
+    calculate_llm_charge_by_tokens,
+    calculate_llm_cost_by_tokens,
     calculate_points,
     calculate_token_points,
     consume_points,
@@ -50,6 +53,7 @@ from app.services.billing import (
 
 __all__ = [
     "BillingError",
+    "EVENT_CONSUME_LLM",
     "EVENT_CONSUME_TRANSLATE",
     "EVENT_REDEEM_CODE",
     "EVENT_REFUND_TRANSLATE",
@@ -65,6 +69,8 @@ __all__ = [
     "REDEEM_CODE_STATUS_ABANDONED",
     "append_admin_operation_log",
     "bulk_disable_redeem_codes",
+    "calculate_llm_charge_by_tokens",
+    "calculate_llm_cost_by_tokens",
     "calculate_points",
     "calculate_token_points",
     "consume_points",

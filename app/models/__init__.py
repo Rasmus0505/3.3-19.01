@@ -12,6 +12,7 @@ from app.models.billing import (
     WalletLedger,
 )
 from app.models.lesson import Lesson, LessonGenerationTask, LessonProgress, LessonSentence, MediaAsset, WordbookEntry, WordbookEntrySource
+from app.models.llm_usage import LLMUsageLog
 from app.models.soe_result import SOEResult
 from app.models.user import User, UserLoginEvent
 
@@ -37,4 +38,5 @@ __all__ = [
     "RedeemCodeAttempt",
     "AdminOperationLog",
     "SOEResult",
+    "LLMUsageLog",
 ]

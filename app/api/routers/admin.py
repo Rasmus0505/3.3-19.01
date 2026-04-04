@@ -110,6 +110,7 @@ from app.services.billing_service import (
     yuan_to_compat_cents,
 )
 from app.services.media import get_controlled_media_roots
+from app.services.llm_usage_service import get_llm_usage_summary, list_all_llm_usage
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -1633,3 +1634,87 @@ def admin_export_redeem_audit(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+@router.get(
+    "/llm-usage",
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}},
+)
+def admin_llm_usage(
+    user_id: str = "",
+    model_name: str = "",
+    category: str = "",
+    page: int = 1,
+    page_size: int = 20,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    page = max(page, 1)
+    page_size = max(1, min(page_size, 100))
+    normalized_date_from = to_shanghai_naive(date_from)
+    normalized_date_to = to_shanghai_naive(date_to)
+
+    parsed_user_id: int | None = None
+    if user_id and str(user_id).strip():
+        try:
+            parsed_user_id = int(str(user_id).strip())
+        except (ValueError, TypeError):
+            pass
+
+    rows, total = list_all_llm_usage(
+        db,
+        page=page,
+        page_size=page_size,
+        model_name=model_name or None,
+        category=category or None,
+        date_from=normalized_date_from,
+        date_to=normalized_date_to,
+        user_id=parsed_user_id,
+    )
+
+    summary = get_llm_usage_summary(
+        db,
+        date_from=normalized_date_from,
+        date_to=normalized_date_to,
+        category=category or None,
+        user_id=parsed_user_id,
+    )
+
+    from app.models import User as UserModel
+
+    def _user_email(uid: int) -> str:
+        user = db.get(UserModel, uid)
+        return str(user.email) if user else ""
+
+    items = [
+        {
+            "id": r.id,
+            "user_id": r.user_id,
+            "user_email": _user_email(r.user_id),
+            "trace_id": r.trace_id,
+            "category": r.category,
+            "model_name": r.model_name,
+            "prompt_tokens": r.prompt_tokens,
+            "completion_tokens": r.completion_tokens,
+            "reasoning_tokens": r.reasoning_tokens,
+            "total_tokens": r.total_tokens,
+            "input_cost_cents": r.input_cost_cents,
+            "charge_cents": r.charge_cents,
+            "gross_profit_cents": r.gross_profit_cents,
+            "enable_thinking": r.enable_thinking,
+            "lesson_id": r.lesson_id,
+            "created_at": to_shanghai_aware(r.created_at).isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+    return {
+        "ok": True,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "records": items,
+        "summary": summary,
+    }

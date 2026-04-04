@@ -25,12 +25,15 @@ from app.core.config import (
     UPLOAD_MAX_BYTES,
 )
 from app.models import Lesson, LessonSentence, TranslationRequestLog
+from app.models.billing import BillingModelRate
 from app.repositories.progress import create_progress
 from app.services.asr_dashscope import AsrError, transcribe_audio_file, transcribe_signed_url
 from app.infra.dashscope_storage import get_file_signed_url, normalize_dashscope_file_url
 from app.services.billing_service import (
     EVENT_CONSUME_TRANSLATE,
     append_translation_request_logs,
+    calculate_llm_charge_by_tokens,
+    calculate_llm_cost_by_tokens,
     calculate_points,
     calculate_token_points,
     consume_points,
@@ -41,6 +44,7 @@ from app.services.billing_service import (
     reserve_points,
     settle_reserved_points,
 )
+from app.services.llm_usage_service import log_llm_usage
 from app.services.lesson_builder import (
     build_lesson_sentences,
     compose_text_from_words,
@@ -1275,6 +1279,25 @@ class LessonService:
                 event_type=EVENT_CONSUME_TRANSLATE,
                 note=f"本地课程生成翻译扣费，total_tokens={translation_total_tokens}",
             )
+            log_llm_usage(
+                db,
+                user_id=owner_id,
+                model_name=MT_MODEL,
+                category="mt",
+                prompt_tokens=int(translation_usage.get("prompt_tokens", 0) or 0),
+                completion_tokens=int(translation_usage.get("completion_tokens", 0) or 0),
+                total_tokens=translation_total_tokens,
+                input_cost_cents=calculate_llm_cost_by_tokens(
+                    prompt_tokens=int(translation_usage.get("prompt_tokens", 0) or 0),
+                    completion_tokens=int(translation_usage.get("completion_tokens", 0) or 0),
+                    cost_per_1k_tokens_input_cents=translation_rate.cost_per_1k_tokens_input_cents,
+                    cost_per_1k_tokens_output_cents=translation_rate.cost_per_1k_tokens_output_cents,
+                ),
+                charge_cents=translation_cost_amount_cents,
+                lesson_id=lesson.id,
+                enable_thinking=False,
+                input_text_preview="",
+            )
             record_consume(
                 db,
                 user_id=owner_id,
@@ -1365,6 +1388,7 @@ class LessonService:
         translation_cost_amount_cents: int = 0,
         settle_note: str = "",
         translation_consume_note: str = "",
+        translation_rate: BillingModelRate | None = None,
     ) -> SimpleNamespace:
         runtime_sentences = list(variant.get("sentences") or [])
         normalized_translation_debug = dict(translation_debug or {})
@@ -1437,6 +1461,28 @@ class LessonService:
                 translation_consume_note
                 or f"课程生成翻译扣费，total_tokens={int((translation_usage or {}).get('total_tokens', 0) or 0)}"
             ),
+        )
+        _effective_translation_rate = translation_rate
+        if _effective_translation_rate is None:
+            _effective_translation_rate = get_model_rate(db, MT_MODEL)
+        log_llm_usage(
+            db,
+            user_id=owner_id,
+            model_name=MT_MODEL,
+            category="mt",
+            prompt_tokens=int((translation_usage or {}).get("prompt_tokens", 0) or 0),
+            completion_tokens=int((translation_usage or {}).get("completion_tokens", 0) or 0),
+            total_tokens=int((translation_usage or {}).get("total_tokens", 0) or 0),
+            input_cost_cents=calculate_llm_cost_by_tokens(
+                prompt_tokens=int((translation_usage or {}).get("prompt_tokens", 0) or 0),
+                completion_tokens=int((translation_usage or {}).get("completion_tokens", 0) or 0),
+                cost_per_1k_tokens_input_cents=_effective_translation_rate.cost_per_1k_tokens_input_cents,
+                cost_per_1k_tokens_output_cents=_effective_translation_rate.cost_per_1k_tokens_output_cents,
+            ),
+            charge_cents=resolved_translation_cost_amount_cents,
+            lesson_id=lesson.id,
+            enable_thinking=False,
+            input_text_preview="",
         )
         return SimpleNamespace(errors=errors)
 
@@ -1842,6 +1888,25 @@ class LessonService:
                 lesson_id=lesson.id,
                 event_type=EVENT_CONSUME_TRANSLATE,
                 note=f"本地课程生成翻译扣费，total_tokens={int(translation_usage.get('total_tokens', 0) or 0)}",
+            )
+            log_llm_usage(
+                db,
+                user_id=owner_id,
+                model_name=MT_MODEL,
+                category="mt",
+                prompt_tokens=int(translation_usage.get("prompt_tokens", 0) or 0),
+                completion_tokens=int(translation_usage.get("completion_tokens", 0) or 0),
+                total_tokens=int(translation_usage.get("total_tokens", 0) or 0),
+                input_cost_cents=calculate_llm_cost_by_tokens(
+                    prompt_tokens=int(translation_usage.get("prompt_tokens", 0) or 0),
+                    completion_tokens=int(translation_usage.get("completion_tokens", 0) or 0),
+                    cost_per_1k_tokens_input_cents=translation_rate.cost_per_1k_tokens_input_cents,
+                    cost_per_1k_tokens_output_cents=translation_rate.cost_per_1k_tokens_output_cents,
+                ),
+                charge_cents=int(translation_cost_amount_cents),
+                lesson_id=lesson.id,
+                enable_thinking=False,
+                input_text_preview="",
             )
             record_consume(
                 db,
@@ -2629,6 +2694,25 @@ class LessonService:
                 event_type=EVENT_CONSUME_TRANSLATE,
                 note=f"课程生成翻译扣费，total_tokens={int(translation_usage.get('total_tokens', 0) or 0)}",
             )
+            log_llm_usage(
+                db,
+                user_id=owner_id,
+                model_name=MT_MODEL,
+                category="mt",
+                prompt_tokens=int(translation_usage.get("prompt_tokens", 0) or 0),
+                completion_tokens=int(translation_usage.get("completion_tokens", 0) or 0),
+                total_tokens=int(translation_usage.get("total_tokens", 0) or 0),
+                input_cost_cents=calculate_llm_cost_by_tokens(
+                    prompt_tokens=int(translation_usage.get("prompt_tokens", 0) or 0),
+                    completion_tokens=int(translation_usage.get("completion_tokens", 0) or 0),
+                    cost_per_1k_tokens_input_cents=translation_rate.cost_per_1k_tokens_input_cents,
+                    cost_per_1k_tokens_output_cents=translation_rate.cost_per_1k_tokens_output_cents,
+                ),
+                charge_cents=int(translation_cost_amount_cents),
+                lesson_id=lesson.id,
+                enable_thinking=False,
+                input_text_preview="",
+            )
             logger.info(
                 "[DEBUG] lesson.generate translate_cost owner_id=%s lesson_id=%s model=%s total_tokens=%s actual_cost_amount_cents=%s failed=%s requests=%s",
                 owner_id,
@@ -3097,6 +3181,7 @@ class LessonService:
                 translation_consume_note=(
                     f"课程生成翻译扣费（DashScope直传），total_tokens={int(translation_usage.get('total_tokens', 0) or 0)}"
                 ),
+                translation_rate=translation_rate,
             )
             if build_result.errors:
                 task_result_meta = {
