@@ -21,6 +21,7 @@ from app.api.routers.dashscope_upload import router as dashscope_upload_router
 from app.api.routers.local_asr_assets import router as local_asr_assets_router
 from app.api.routers.lessons.cloud_transcribe import router as cloud_transcribe_router
 from app.core.config import (
+    APP_DIR,
     BASE_DATA_DIR,
     BASE_TMP_DIR,
     DASHSCOPE_API_KEY,
@@ -50,6 +51,8 @@ logger = logging.getLogger(__name__)
 
 LESSON_TASK_REQUIRED_COLUMNS: tuple[str, ...] = tuple(str(column.name) for column in LessonGenerationTask.__table__.columns)
 
+
+CEFR_VOCAB_FILE = APP_DIR / "data" / "vocab" / "cefr_vocab.json"
 
 READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
     "users": ("is_admin", "last_login_at", "username", "username_normalized"),
@@ -611,6 +614,18 @@ async def app_lifespan(app: FastAPI):
 def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app = FastAPI(title=SERVICE_NAME, version="0.3.0", lifespan=app_lifespan if enable_lifespan else None)
     app.state.runtime_status = RuntimeStatus()
+
+    @app.get("/data/vocab/cefr_vocab.json", include_in_schema=False)
+    def serve_cefr_vocab() -> FileResponse:
+        """CEFR 词表：前端 VocabAnalyzer 默认从此 URL 拉取；此前未挂载导致全站词级分析失败（全部视为 SUPER / 橙色）。"""
+        if not CEFR_VOCAB_FILE.is_file():
+            raise HTTPException(status_code=404, detail="CEFR vocabulary file not found")
+        return FileResponse(
+            str(CEFR_VOCAB_FILE),
+            media_type="application/json",
+            filename="cefr_vocab.json",
+        )
+
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     @app.middleware("http")

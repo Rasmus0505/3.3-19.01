@@ -1310,10 +1310,7 @@ input[type="number"] {
   border-bottom-color: oklch(0.65 0.20 40);
 }
 
-/* ≤ i (mastered): use default border color (transparent) */
-.cefr-mastered .immersive-letter-cell {
-  border-bottom-color: transparent;
-}
+/* ≤ i (mastered): 不覆写下划线 —— 沿用 .immersive-letter-cell 默认灰 + correct/revealed/wrong 等状态色，避免盖住答对绿/揭示黄 */
 
 /* --- Previous sentence: word-level color bands on wordbook token buttons --- */
 

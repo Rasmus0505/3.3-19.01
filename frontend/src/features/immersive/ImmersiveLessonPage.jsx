@@ -129,8 +129,26 @@ const TRANSLATION_MASK_RESIZE_HANDLES = [
   },
 ];
 
+function addSentenceCefrTokensToMap(map, sentenceResult) {
+  if (!(map instanceof Map) || !sentenceResult?.tokens?.length) return;
+  for (const tokenInfo of sentenceResult.tokens) {
+    const level = tokenInfo.level;
+    const raw = String(tokenInfo.word || "").toLowerCase();
+    const keys = new Set([
+      raw,
+      normalizeToken(tokenInfo.word),
+      normalizeToken(raw),
+      raw.replace(/'/g, ""),
+      normalizeToken(String(tokenInfo.word || "")).replace(/'/g, ""),
+    ]);
+    for (const k of keys) {
+      if (k) map.set(k, level);
+    }
+  }
+}
+
 function lookupCefrLevelFromMap(map, token) {
-  if (!(map instanceof Map) || map.size === 0) return undefined;
+  if (!(map instanceof Map)) return undefined;
   const key = normalizeToken(token);
   if (map.has(key)) return map.get(key);
   const noApos = key.replace(/'/g, "");
@@ -1309,9 +1327,7 @@ export function ImmersiveLessonPage({
     try {
       const result = cefrAnalyzerRef.current.analyzeSentence(sentence);
       const map = new Map();
-      for (const tokenInfo of result.tokens) {
-        map.set(tokenInfo.word.toLowerCase(), tokenInfo.level);
-      }
+      addSentenceCefrTokensToMap(map, result);
       return map;
     } catch (_) {
       return new Map();
@@ -1358,9 +1374,7 @@ export function ImmersiveLessonPage({
     try {
       const result = cefrAnalyzerRef.current.analyzeSentence(sentence.text_en || sentence.en || "");
       const map = new Map();
-      for (const tokenInfo of result.tokens) {
-        map.set(tokenInfo.word.toLowerCase(), tokenInfo.level);
-      }
+      addSentenceCefrTokensToMap(map, result);
       return map;
     } catch (_) {
       return new Map();

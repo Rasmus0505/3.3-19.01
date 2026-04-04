@@ -16,6 +16,30 @@
  *   const report = analyzer.analyzeVideo(sentences); // 分析整段视频
  */
 
+function resolveCefrVocabFetchUrls(primaryPath) {
+  const urls = [];
+  const seen = new Set();
+  const add = (u) => {
+    if (!u || seen.has(u)) return;
+    seen.add(u);
+    urls.push(u);
+  };
+  add(primaryPath);
+  add("/data/vocab/cefr_vocab.json");
+  const base =
+    typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL
+      ? String(import.meta.env.BASE_URL).replace(/\/+$/, "")
+      : "";
+  if (base) {
+    add(`${base}/data/vocab/cefr_vocab.json`.replace(/([^:]\/)\/+/g, "$1"));
+  }
+  return urls;
+}
+
+function isValidCefrVocabPayload(data) {
+  return Boolean(data && typeof data === "object" && data.words && typeof data.words === "object");
+}
+
 class VocabAnalyzer {
   constructor(options = {}) {
     // 词汇表路径（可以是本地路径或 CDN）
@@ -50,24 +74,55 @@ class VocabAnalyzer {
     }
 
     // 优先从浏览器缓存读取（避免重复下载）
-    const cached = sessionStorage.getItem("cefr_vocab_cache");
-    if (cached && !forceReload) {
-      this._initFromData(JSON.parse(cached));
-      return;
+    if (!forceReload) {
+      const cached = sessionStorage.getItem("cefr_vocab_cache");
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (isValidCefrVocabPayload(parsed)) {
+            this._initFromData(parsed);
+            return;
+          }
+        } catch (_) {
+          /* 旧缓存可能是 HTML 404 页，丢弃 */
+        }
+        try {
+          sessionStorage.removeItem("cefr_vocab_cache");
+        } catch (_) {
+          /* ignore */
+        }
+      }
     }
 
-    // 从网络加载
-    const response = await fetch(this.vocabPath);
-    if (!response.ok) {
-      throw new Error(`加载词汇表失败: ${response.status}`);
+    const urls = resolveCefrVocabFetchUrls(this.vocabPath);
+    let lastError = null;
+
+    for (const url of urls) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          lastError = new Error(`加载词汇表失败 (${url}): ${response.status}`);
+          continue;
+        }
+        const data = await response.json();
+        if (!isValidCefrVocabPayload(data)) {
+          lastError = new Error(`词汇表格式无效 (${url})`);
+          continue;
+        }
+        try {
+          sessionStorage.setItem("cefr_vocab_cache", JSON.stringify(data));
+        } catch (_) {
+          /* 超大 JSON 在部分环境可能写满 — 仍可在内存中使用 */
+        }
+        this._initFromData(data);
+        this.vocabPath = url;
+        return;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+      }
     }
 
-    const data = await response.json();
-
-    // 缓存到 sessionStorage（会话内有效）
-    sessionStorage.setItem("cefr_vocab_cache", JSON.stringify(data));
-
-    this._initFromData(data);
+    throw lastError || new Error("加载词汇表失败: 无可用 URL");
   }
 
   /**
@@ -88,8 +143,8 @@ class VocabAnalyzer {
     for (const token of tokens) {
       const wordInfo = this._lookupWord(token);
       if (!wordInfo) {
-        // 词不在表里（专有名词、数字等）—— 标记为 SUPER 级别
-        wordResults.push({ word: token, level: "SUPER", rank: null, isUnknown: true });
+        // 词不在表里（专有名词、数字等）—— 标记为 SUPER 级别（统一小写便于与 UI token 对齐）
+        wordResults.push({ word: token.toLowerCase(), level: "SUPER", rank: null, isUnknown: true });
         levelCounts["SUPER"]++;
         continue;
       }
