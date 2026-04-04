@@ -1317,6 +1317,9 @@ export function ImmersiveLessonPage({
   const translationHeading = translationDisplayMode === "current_answered" ? "本句" : "上一句";
   const translationEn = translationDisplayMode === "current_answered" ? currentSentenceEn : previousSentenceEn;
   const translationZh = translationDisplayMode === "current_answered" ? currentSentenceZh : previousSentenceZh;
+  /** 与翻译区一致：仅当存在可评测句子时展示跟读麦；避免「上一句」模式下首句 previous 为空仍显示麦却静默不发 /api/soe/assess */
+  const soeTargetSentence =
+    translationDisplayMode === "current_answered" ? currentSentence : previousSentence;
   const entryHintItems = useMemo(() => buildImmersiveEntryHintItems(learningSettings), [learningSettings]);
   const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens : []), [currentSentence?.tokens]);
   const currentSentenceTokens = useMemo(
@@ -4051,6 +4054,10 @@ export function ImmersiveLessonPage({
                             compact
                             onRecordingComplete={async (audioBlob, durationMs) => {
                               if (!apiClient || !wordbookSentence) return;
+                              if (!audioBlob || audioBlob.size === 0) {
+                                toast.error("未采集到录音，请稍长按麦克风后再松开。");
+                                return;
+                              }
                               setSoeLoading(true);
                               try {
                                 const resp = await apiClient("/api/soe/assess", {
@@ -4161,13 +4168,20 @@ export function ImmersiveLessonPage({
                   ) : (
                     <>
                       <div className="immersive-previous-sentence__row">
-                        {(currentSentence || previousSentence) ? (
+                        {soeTargetSentence ? (
                           <AudioRecorder
                             compact
                             onRecordingComplete={async (audioBlob, durationMs) => {
                               if (!apiClient) return;
-                              const sentence = translationDisplayMode === "current_answered" ? currentSentence : previousSentence;
-                              if (!sentence) return;
+                              const sentence = soeTargetSentence;
+                              if (!sentence?.text_en) {
+                                toast.error("当前没有可用于评测的句子文本。");
+                                return;
+                              }
+                              if (!audioBlob || audioBlob.size === 0) {
+                                toast.error("未采集到录音，请稍长按麦克风后再松开。");
+                                return;
+                              }
                               setSoeLoading(true);
                               try {
                                 const resp = await apiClient("/api/soe/assess", {

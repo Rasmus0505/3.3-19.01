@@ -38,6 +38,13 @@ export default function AudioRecorder({ onRecordingComplete, maxDuration = 30, c
 
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state !== "inactive") {
+      try {
+        if (recorder.state === "recording") {
+          recorder.requestData();
+        }
+      } catch (_) {
+        /* ignore */
+      }
       recorder.stop();
     }
   }, []);
