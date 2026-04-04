@@ -1328,11 +1328,23 @@ export function ImmersiveLessonPage({
   const currentSentenceCefrMap = useMemo(() => {
     const sentence = lesson?.sentences?.[currentSentenceIndex];
     const tokens = sentence?.tokens;
+    if (typeof window !== "undefined") {
+      window.__cefrDebug = window.__cefrDebug || {};
+      window.__cefrDebug.enabled = true;
+      console.debug("[CEFR map] sentence index:", currentSentenceIndex, "tokens:", tokens);
+    }
     if (!Array.isArray(tokens) || !cefrAnalyzerRef.current?.isLoaded) return new Map();
     const map = new Map();
     for (const token of tokens) {
       const level = cefrAnalyzerRef.current.lookupCefrLevelForSurfaceForm(token);
+      if (typeof window !== "undefined") {
+        console.debug("[CEFR map token]", token, "→ level:", level, "SUPER?", level === null ? "YES (will be painted orange)" : "no");
+      }
       if (level) addTokenLevelToMap(map, token, level);
+    }
+    if (typeof window !== "undefined") {
+      window.__cefrDebug.lastMap = map;
+      console.debug("[CEFR map] built, size:", map.size, "entries:", [...map.entries()].slice(0, 10));
     }
     return map;
   }, [
@@ -1373,11 +1385,17 @@ export function ImmersiveLessonPage({
   const wordbookSentence = interactiveWordbookContext?.sentence || null;
   const wordbookSentenceTokens = interactiveWordbookContext?.tokens || [];
   const wordbookSentenceCefrMap = useMemo(() => {
+    if (typeof window !== "undefined") {
+      console.debug("[CEFR wordbookMap] wordbookSentenceTokens:", wordbookSentenceTokens);
+    }
     if (!Array.isArray(wordbookSentenceTokens) || !cefrAnalyzerRef.current?.isLoaded) return new Map();
     const map = new Map();
     for (const token of wordbookSentenceTokens) {
       const level = cefrAnalyzerRef.current.lookupCefrLevelForSurfaceForm(token);
       if (level) addTokenLevelToMap(map, token, level);
+    }
+    if (typeof window !== "undefined") {
+      console.debug("[CEFR wordbookMap] built, size:", map.size, "entries:", [...map.entries()].slice(0, 10));
     }
     return map;
   }, [wordbookSentenceTokens, cefrVocabEngineTick]);
@@ -3989,10 +4007,14 @@ export function ImmersiveLessonPage({
                         key={`${token}-${index}`}
                         className={cn(
                           `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
-                          computeCefrClassName(
-                            lookupCefrLevelFromMap(currentSentenceCefrMap, token) || "SUPER",
-                            cefrLevel,
-                          ),
+                          (() => {
+                            const lookupResult = lookupCefrLevelFromMap(currentSentenceCefrMap, token);
+                            const cefrClass = computeCefrClassName(lookupResult || "SUPER", cefrLevel);
+                            if (typeof window !== "undefined" && window.__cefrDebug?.enabled) {
+                              console.debug("[CEFR render]", { token, lookupResult, cefrLevel, cefrClass });
+                            }
+                            return cefrClass;
+                          })(),
                         )}
                       >
                         <div className="immersive-letter-row">

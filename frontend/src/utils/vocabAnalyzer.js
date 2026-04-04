@@ -283,6 +283,11 @@ class VocabAnalyzer {
   lookupCefrLevelForSurfaceForm(surfaceForm) {
     if (!this.isLoaded) return null;
     const wordInfo = this._lookupWord(surfaceForm);
+    if (typeof window !== "undefined") {
+      window.__cefrDebug = window.__cefrDebug || {};
+      window.__cefrDebug.lastLookup = { surfaceForm, level: wordInfo ? wordInfo.level : null };
+      console.debug("[CEFR surfaceLookup]", surfaceForm, "→", wordInfo ? wordInfo.level : "null");
+    }
     return wordInfo ? wordInfo.level : null;
   }
 
@@ -295,10 +300,19 @@ class VocabAnalyzer {
     // 构建词→信息 的 Map，加速查询
     this.wordMap = new Map(Object.entries(data.words));
     this.isLoaded = true;
+    if (typeof window !== "undefined") {
+      window.__cefrDebug = window.__cefrDebug || {};
+      window.__cefrDebug.wordMapSize = this.wordMap.size;
+      window.__cefrDebug.sampleKeys = [...this.wordMap.keys()].slice(0, 5);
+      console.debug("[CEFR] vocab loaded, wordMap size:", this.wordMap.size, "sample:", window.__cefrDebug.sampleKeys);
+    }
   }
 
   _lookupWord(word) {
     const lower = word.toLowerCase();
+    if (typeof window !== "undefined" && window.__cefrDebug?.enabled) {
+      console.debug("[CEFR lookup]", lower);
+    }
 
     // 1. 直接查表
     if (this.wordMap.has(lower)) {
