@@ -59,6 +59,7 @@ const LEGACY_SHORTCUT_BINDINGS = {
   "shift+p": { code: "KeyP", key: "p", shift: true, ctrl: false, alt: false, meta: false },
   "shift+k": { code: "KeyK", key: "k", shift: true, ctrl: false, alt: false, meta: false },
   "shift+alt": { code: "AltLeft", key: "Alt", shift: true, ctrl: false, alt: true, meta: false },
+  alt: { code: "AltLeft", key: "Alt", shift: false, ctrl: false, alt: true, meta: false },
 };
 
 export const SHORTCUT_ACTIONS = [
@@ -78,7 +79,7 @@ export const DEFAULT_SHORTCUTS = {
   next_sentence: LEGACY_SHORTCUT_BINDINGS["shift+w"],
   replay_sentence: LEGACY_SHORTCUT_BINDINGS["shift+r"],
   toggle_pause_playback: LEGACY_SHORTCUT_BINDINGS.space,
-  record_score: LEGACY_SHORTCUT_BINDINGS["shift+alt"],
+  record_score: LEGACY_SHORTCUT_BINDINGS.alt,
 };
 
 export const REPLAY_PRESET_OPTIONS = [
@@ -293,6 +294,42 @@ export function areShortcutBindingsEqual(left, right) {
 
 function getShortcutKeyLabel(binding) {
   const normalizedCode = normalizeShortcutCodeValue(binding?.code);
+  const normalizedKeyEarly = normalizeShortcutKeyValue(binding?.key);
+  // 组合键里「主键」就是 Alt/Shift 等物理键时，修饰位已表达含义，避免显示成 Alt+Shift+Alt
+  if (
+    binding?.alt &&
+    (normalizedCode === "AltLeft" ||
+      normalizedCode === "AltRight" ||
+      normalizedKeyEarly === "alt")
+  ) {
+    return "";
+  }
+  if (
+    binding?.shift &&
+    (normalizedCode === "ShiftLeft" ||
+      normalizedCode === "ShiftRight" ||
+      normalizedKeyEarly === "shift")
+  ) {
+    return "";
+  }
+  if (
+    binding?.ctrl &&
+    (normalizedCode === "ControlLeft" ||
+      normalizedCode === "ControlRight" ||
+      normalizedKeyEarly === "control" ||
+      normalizedKeyEarly === "ctrl")
+  ) {
+    return "";
+  }
+  if (
+    binding?.meta &&
+    (normalizedCode === "MetaLeft" ||
+      normalizedCode === "MetaRight" ||
+      normalizedKeyEarly === "meta" ||
+      normalizedKeyEarly === "os")
+  ) {
+    return "";
+  }
   if (normalizedCode === "Space") return "Space";
   if (normalizedCode === "Enter") return "Enter";
   if (normalizedCode === "ArrowLeft") return "ArrowLeft";
@@ -330,7 +367,9 @@ export function getShortcutLabel(bindingValue) {
   if (binding.alt) modifierLabels.push("Alt");
   if (binding.shift) modifierLabels.push("Shift");
   if (binding.meta) modifierLabels.push("Meta");
-  return [...modifierLabels, getShortcutKeyLabel(binding)].join("+");
+  const keyLabel = getShortcutKeyLabel(binding);
+  const parts = keyLabel ? [...modifierLabels, keyLabel] : modifierLabels;
+  return parts.length ? parts.join("+") : "未设置";
 }
 
 function getFirstAvailableShortcutBinding(excluded = new Set(), preferredActionId = "") {
