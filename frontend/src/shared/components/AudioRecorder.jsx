@@ -1,3 +1,4 @@
+import { Mic, MicOff } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const STATUS_IDLE = "idle";
@@ -11,7 +12,7 @@ function formatDuration(ms) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-export default function AudioRecorder({ onRecordingComplete, maxDuration = 30 }) {
+export default function AudioRecorder({ onRecordingComplete, maxDuration = 30, compact = false }) {
   const [status, setStatus] = useState(STATUS_IDLE);
   const [elapsedMs, setElapsedMs] = useState(0);
 
@@ -97,6 +98,39 @@ export default function AudioRecorder({ onRecordingComplete, maxDuration = 30 })
 
   const isRecording = status === STATUS_RECORDING;
   const isProcessing = status === STATUS_PROCESSING;
+
+  if (compact) {
+    const compactButtonStyle = {
+      appearance: "none",
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      width: "34px",
+      height: "34px",
+      borderRadius: "999px",
+      border: "1px solid color-mix(in oklch, var(--color-border) 88%, transparent)",
+      background: isRecording
+        ? "color-mix(in oklch, #ef4444 12%, var(--color-card))"
+        : "color-mix(in oklch, var(--color-card) 90%, var(--color-muted) 10%)",
+      color: isRecording ? "#ef4444" : "var(--color-foreground)",
+      cursor: isProcessing ? "not-allowed" : "pointer",
+      opacity: isProcessing ? 0.6 : 1,
+      transition: "border-color 140ms ease, background-color 140ms ease, transform 140ms ease",
+      flexShrink: 0,
+    };
+    return (
+      <button
+        style={compactButtonStyle}
+        onClick={handleClick}
+        disabled={isProcessing}
+        type="button"
+        aria-label={isRecording ? "停止录音" : "开始跟读"}
+        title={isRecording ? "停止录音" : "跟读"}
+      >
+        {isRecording ? <MicOff className="size-4" /> : <Mic className="size-4" />}
+      </button>
+    );
+  }
 
   const buttonStyle = {
     display: "inline-flex",

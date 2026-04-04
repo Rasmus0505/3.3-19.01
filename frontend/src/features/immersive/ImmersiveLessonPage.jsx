@@ -4047,6 +4047,24 @@ export function ImmersiveLessonPage({
                   {canRenderInteractiveWordbook ? (
                     <>
                       <div className="immersive-previous-sentence__row">
+                        {wordbookSentence ? (
+                          <AudioRecorder
+                            compact
+                            onRecordingComplete={async (audioBlob, durationMs) => {
+                              if (!apiClient || !wordbookSentence) return;
+                              setSoeLoading(true);
+                              try {
+                                const result = await assessSentence(apiClient, audioBlob, wordbookSentence.text_en, String(wordbookSentence.idx), currentLessonId);
+                                setSoeResult(result);
+                              } catch (err) {
+                                console.error("[SOE] Assessment failed:", err);
+                                toast.error("评测失败，请稍后重试");
+                              } finally {
+                                setSoeLoading(false);
+                              }
+                            }}
+                          />
+                        ) : null}
                         <div
                           className={`min-w-0 flex flex-1 items-center gap-x-1 gap-y-2 ${
                             cinemaFullscreenActive
@@ -4054,7 +4072,6 @@ export function ImmersiveLessonPage({
                               : "flex-wrap"
                           }`}
                         >
-                          <span className="shrink-0 text-foreground">{wordbookSentenceHeading}：</span>
                           {wordbookSentenceTokens.map((token, index) => {
                             const tokenSelected = wordbookSelectedTokenIndexes.includes(index);
                             return (
@@ -4127,23 +4144,23 @@ export function ImmersiveLessonPage({
                           </span>
                         ) : null}
                       </div>
-                      <p className={`pl-[4.5em] ${cinemaFullscreenActive ? "overflow-x-auto whitespace-nowrap" : ""}`}>
+                      <p className={`pl-0 ${cinemaFullscreenActive ? "overflow-x-auto whitespace-nowrap" : ""}`}>
                         {wordbookSentenceZh}
                       </p>
                     </>
                   ) : (
                     <>
                       <div className="immersive-previous-sentence__row">
-                        <p className={`min-w-0 flex-1 ${cinemaFullscreenActive ? "overflow-x-auto whitespace-nowrap" : ""}`}>
-                          {translationHeading}：{translationEn}
-                        </p>
-                        {currentSentence ? (
+                        {(currentSentence || previousSentence) ? (
                           <AudioRecorder
+                            compact
                             onRecordingComplete={async (audioBlob, durationMs) => {
-                              if (!apiClient || !currentSentence) return;
+                              if (!apiClient) return;
+                              const sentence = translationDisplayMode === "current_answered" ? currentSentence : previousSentence;
+                              if (!sentence) return;
                               setSoeLoading(true);
                               try {
-                                const result = await assessSentence(apiClient, audioBlob, currentSentence.text_en, String(currentSentence.idx), currentLessonId);
+                                const result = await assessSentence(apiClient, audioBlob, sentence.text_en, String(sentence.idx), currentLessonId);
                                 setSoeResult(result);
                               } catch (err) {
                                 console.error("[SOE] Assessment failed:", err);
@@ -4154,6 +4171,9 @@ export function ImmersiveLessonPage({
                             }}
                           />
                         ) : null}
+                        <p className={`min-w-0 flex-1 ${cinemaFullscreenActive ? "overflow-x-auto whitespace-nowrap" : ""}`}>
+                          {translationEn}
+                        </p>
                         {previousSentence ? (
                           <button
                             type="button"
@@ -4168,7 +4188,7 @@ export function ImmersiveLessonPage({
                           </button>
                         ) : null}
                       </div>
-                      <p className={`pl-[4.5em] ${cinemaFullscreenActive ? "overflow-x-auto whitespace-nowrap" : ""}`}>
+                      <p className={`pl-0 ${cinemaFullscreenActive ? "overflow-x-auto whitespace-nowrap" : ""}`}>
                         {translationZh}
                       </p>
                     </>
