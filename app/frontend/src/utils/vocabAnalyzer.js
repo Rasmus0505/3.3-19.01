@@ -295,6 +295,27 @@ class VocabAnalyzer {
   // 私有方法
   // ============================================================
 
+  /**
+   * 尝试将英语缩写还原为其主词形（仅在直接查表失败时调用）。
+   * 例: "weren't" → "were"  |  "it's" → "it"  |  "don't" → "do"
+   * 返回 null 表示不可还原（已还原过、数字词等）。
+   */
+  _stripContraction(word) {
+    // 常见 's / 't / 'd / 've / 're / 'll 缩写
+    const m = word.match(/^(.+?)n't$/i);
+    if (m) {
+      const base = m[1].toLowerCase();
+      // 特殊映射：won't → will，shan't → shall
+      const specialMap = { wont: "will", wonts: "will", wonted: "will" };
+      return specialMap[base] || base;
+    }
+    const m2 = word.match(/^(.+?)'(s|d|m|re|ve|ll)$/i);
+    if (m2) {
+      return m2[1].toLowerCase();
+    }
+    return null;
+  }
+
   _initFromData(data) {
     this.vocabData = data;
     // 构建词→信息 的 Map，加速查询
@@ -327,7 +348,14 @@ class VocabAnalyzer {
       return { word: lemma, level: info.level, rank: info.rank, isUnknown: false, original: lower };
     }
 
-    // 3. 查不到
+    // 3. 尝试还原英语缩写（weren't → were, don't → do …）
+    const stripped = this._stripContraction(lower);
+    if (stripped !== null && stripped !== lower && this.wordMap.has(stripped)) {
+      const info = this.wordMap.get(stripped);
+      return { word: stripped, level: info.level, rank: info.rank, isUnknown: false, original: lower };
+    }
+
+    // 4. 查不到
     return null;
   }
 

@@ -4009,7 +4009,7 @@ export function ImmersiveLessonPage({
                           `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
                           (() => {
                             const lookupResult = lookupCefrLevelFromMap(currentSentenceCefrMap, token);
-                            const cefrClass = computeCefrClassName(lookupResult || "SUPER", cefrLevel);
+                            const cefrClass = computeCefrClassName(lookupResult, cefrLevel);
                             if (typeof window !== "undefined" && window.__cefrDebug?.enabled) {
                               console.debug("[CEFR render]", { token, lookupResult, cefrLevel, cefrClass });
                             }
@@ -4065,7 +4065,7 @@ export function ImmersiveLessonPage({
                                     : "bg-slate-100/80 text-foreground hover:bg-slate-200/70 border-transparent",
                                   wordbookBusy ? "opacity-60" : "",
                                   computeCefrClassName(
-                                    lookupCefrLevelFromMap(wordbookSentenceCefrMap, token) || "SUPER",
+                                    lookupCefrLevelFromMap(wordbookSentenceCefrMap, token),
                                     cefrLevel,
                                   ),
                                   wordbookSuccessAnimationIndexes.includes(index) ? "wordbook-token--success" : "",

@@ -1307,7 +1307,14 @@ input[type="number"] {
 }
 
 .cefr-above-i-plus-one .immersive-letter-cell {
-  border-bottom-color: oklch(0.65 0.20 40);
+  border-bottom-color: oklch(0.60 0.22 25);
+}
+
+/* ≤ i / word-not-found: revealed underline reverts to neutral gray;
+   word-slot's cefr-mastered class has higher specificity than letter-cell--revealed */
+.cefr-mastered .immersive-letter-cell--revealed {
+  border-bottom-color: var(--color-border);
+  color: oklch(0.70 0.18 85); /* keep amber text — only underline goes gray */
 }
 
 /* ≤ i (mastered): 不覆写下划线 —— 沿用 .immersive-letter-cell 默认灰 + correct/revealed/wrong 等状态色，避免盖住答对绿/揭示黄 */
@@ -1319,7 +1326,7 @@ input[type="number"] {
 }
 
 .cefr-above-i-plus-one.immersive-wordbook-token {
-  border-bottom: 2px solid oklch(0.65 0.20 40);
+  border-bottom: 2px solid oklch(0.60 0.22 25);
 }
 
 .cefr-mastered.immersive-wordbook-token {
@@ -1377,7 +1384,7 @@ input[type="number"] {
 }
 
 .cefr-distribution-segment--above-i-plus-one {
-  background-color: oklch(0.65 0.20 40);
+  background-color: oklch(0.60 0.22 25);
 }
 
 .cefr-distribution-segment--mastered {

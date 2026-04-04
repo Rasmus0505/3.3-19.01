@@ -10,12 +10,19 @@ export function getCefrLevelIndex(level) {
 /**
  * Compute the CEFR CSS class name for a word given its level and the user's level.
  *
- * Logic (per ROADMAP SC#4):
- * - wordIndex <= userIndex  → "cefr-mastered"
- * - wordIndex === userIndex + 1 → "cefr-i-plus-one"
- * - wordIndex >= userIndex + 2 → "cefr-above-i-plus-one"
+ * Logic:
+ * - null / undefined / '' (word not found in vocab map) → "cefr-mastered" (gray — no colour)
+ * - wordIndex <= userIndex                      → "cefr-mastered"
+ * - wordIndex === userIndex + 1                 → "cefr-i-plus-one"  (green)
+ * - wordIndex >= userIndex + 2                  → "cefr-above-i-plus-one" (red)
+ * - "SUPER" (explicit rarest tier)             → "cefr-above-i-plus-one" (red)
  */
 export function computeCefrClassName(wordLevel, userLevel) {
+  // Word not in vocab table → neutral gray, not "above i+1 / red".
+  if (wordLevel === null || wordLevel === undefined || wordLevel === "") {
+    return "cefr-mastered";
+  }
+
   // SUPER is always above all standard CEFR levels — never within reach.
   if (wordLevel === "SUPER") {
     return "cefr-above-i-plus-one";
