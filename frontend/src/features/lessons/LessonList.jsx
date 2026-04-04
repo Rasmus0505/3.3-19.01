@@ -983,7 +983,7 @@ export function LessonList({
       <CardContent className="space-y-4">
         <section className="rounded-2xl border bg-muted/10 p-3 md:p-4">
           <p className="text-sm font-semibold text-foreground">学习参数</p>
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-3">
+          <div className="mt-2 flex items-center gap-3 border-b border-border/60 pb-3">
             <span className="text-sm text-foreground">答完自动重播本句</span>
             <Switch
               checked={learningSettings.playbackPreferences?.autoReplayAnsweredSentence !== false}
