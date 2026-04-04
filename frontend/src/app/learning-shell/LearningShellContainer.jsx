@@ -47,6 +47,7 @@ import { useDesktopSync } from "./hooks/useDesktopSync";
 import { useLearningShellBootstrap } from "./hooks/useLearningShellBootstrap";
 import { useLearningShellPrefetch } from "./hooks/useLearningShellPrefetch";
 import { useOfflineMode } from "../../hooks/useOfflineMode";
+import { getShortcutCompleteness, readLearningSettings } from "../../features/immersive/learningSettings";
 
 async function requestOriginalSubtitleVariant(accessToken, lessonId, asrPayload) {
   const resp = await api(
@@ -473,12 +474,24 @@ export function LearningShellContainer() {
 
   async function handleStartLesson(lessonId) {
     if (!lessonId) return;
+    const { complete, missingActions } = getShortcutCompleteness(readLearningSettings());
+    if (!complete) {
+      const names = missingActions.map((a) => a.label).join("、");
+      setGlobalStatus(`快捷键未配置完整：${names}。请先在下方「学习参数」区域配置好所有快捷键，再开始学习。`);
+      return;
+    }
     lastNonImmersivePanelRef.current = activePanel;
     await loadLessonDetail(lessonId, { autoEnterImmersive: true });
   }
 
   async function handleNavigateToGeneratedLesson(lessonId) {
     if (!lessonId) return;
+    const { complete, missingActions } = getShortcutCompleteness(readLearningSettings());
+    if (!complete) {
+      const names = missingActions.map((a) => a.label).join("、");
+      setGlobalStatus(`快捷键未配置完整：${names}。请先在下方「学习参数」区域配置好所有快捷键，再开始学习。`);
+      return;
+    }
     lastNonImmersivePanelRef.current = "history";
     navigate(getPanelPath("history"));
     await loadLessonDetail(lessonId, { autoEnterImmersive: true });

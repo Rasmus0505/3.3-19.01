@@ -27,6 +27,7 @@ import {
   saveLessonSubtitleVariant,
   setActiveLessonSubtitleVariant,
 } from "../shared/media/localSubtitleStore.js";
+import { getShortcutCompleteness, readLearningSettings } from "../features/immersive/learningSettings";
 import {
   Alert,
   AlertDescription,
@@ -423,6 +424,12 @@ export function LearningShellLocalSubtitles() {
 
   async function handleStartLesson(lessonId) {
     if (!lessonId) return;
+    const { complete, missingActions } = getShortcutCompleteness(readLearningSettings());
+    if (!complete) {
+      const names = missingActions.map((a) => a.label).join("、");
+      toast.error(`快捷键未配置完整：${names}。请先在「学习参数」区域配置好所有快捷键，再开始学习。`);
+      return;
+    }
     if (lessonId !== currentLesson?.id) {
       await loadLessonDetail(lessonId, { autoEnterImmersive: false });
     }

@@ -43,6 +43,7 @@ import {
 import {
   areShortcutBindingsEqual,
   captureShortcutFromKeyboardEvent,
+  getShortcutCompleteness,
   getShortcutLabel,
   readLearningSettings,
   sanitizeLearningSettings,
@@ -463,30 +464,6 @@ export function LessonList({
     });
   }
 
-  function handleCustomConfigChange(field, value) {
-    setSettingsError("");
-    setLearningSettings((current) => ({
-      ...current,
-      presetId: "custom",
-      customConfig: {
-        ...current.customConfig,
-        [field]: value,
-      },
-    }));
-  }
-
-  function handleCustomConfigToggle(field, checked) {
-    setSettingsError("");
-    updateLearningSettings((current) => ({
-      ...current,
-      presetId: "custom",
-      customConfig: {
-        ...current.customConfig,
-        [field]: checked,
-      },
-    }));
-  }
-
   function handlePlaybackPreferenceChange(field, checked) {
     setSettingsError("");
     updateLearningSettings((current) => ({
@@ -583,6 +560,12 @@ export function LessonList({
   }
 
   function startLessonFromHistory(lessonId) {
+    const { complete, missingActions } = getShortcutCompleteness(learningSettings);
+    if (!complete) {
+      const names = missingActions.map((a) => a.label).join("、");
+      setStatus(`快捷键未配置完整：${names}。请先在下方「学习参数」区域配置好所有快捷键，再开始学习。`);
+      return;
+    }
     void onStartLesson?.(lessonId);
   }
 
@@ -998,98 +981,29 @@ export function LessonList({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <section className="rounded-2xl border bg-muted/10 p-4 md:p-5">
-          <div className="space-y-1">
-            <p className="text-sm font-semibold text-foreground">学习参数</p>
+        <section className="rounded-2xl border bg-muted/10 p-3 md:p-4">
+          <p className="text-sm font-semibold text-foreground">学习参数</p>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-3">
+            <span className="text-sm text-foreground">答完自动重播本句</span>
+            <Switch
+              checked={learningSettings.playbackPreferences?.autoReplayAnsweredSentence !== false}
+              onCheckedChange={(checked) => handlePlaybackPreferenceChange("autoReplayAnsweredSentence", checked)}
+            />
           </div>
 
-          <div className="mt-4 space-y-4">
-            <div className="grid gap-3 lg:grid-cols-3">
-              <div className="rounded-2xl border bg-background/80 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-foreground">答完自动重播本句</p>
-                  <Switch
-                    checked={learningSettings.playbackPreferences?.autoReplayAnsweredSentence !== false}
-                    onCheckedChange={(checked) => handlePlaybackPreferenceChange("autoReplayAnsweredSentence", checked)}
-                  />
-                </div>
-              </div>
-
-              <div className="rounded-2xl border bg-background/80 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-foreground">字母揭示</p>
-                  <Switch
-                    checked={learningSettings.customConfig.revealLetterEnabled}
-                    onCheckedChange={(checked) => handleCustomConfigToggle("revealLetterEnabled", checked)}
-                  />
-                </div>
-                <div className={cn("mt-3 space-y-2", !learningSettings.customConfig.revealLetterEnabled && "opacity-60")}>
-                  <p className="text-xs font-medium text-foreground">开始阶段</p>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="8"
-                    step="1"
-                    className="h-9"
-                    disabled={!learningSettings.customConfig.revealLetterEnabled}
-                    value={learningSettings.customConfig.revealLetterAt}
-                    onChange={(event) => handleCustomConfigChange("revealLetterAt", event.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="rounded-2xl border bg-background/80 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-foreground">单词揭示</p>
-                  <Switch
-                    checked={learningSettings.customConfig.revealWordEnabled}
-                    onCheckedChange={(checked) => handleCustomConfigToggle("revealWordEnabled", checked)}
-                  />
-                </div>
-                <div className={cn("mt-3 grid gap-2 sm:grid-cols-2", !learningSettings.customConfig.revealWordEnabled && "opacity-60")}>
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-foreground">开始阶段</p>
-                    <Input
-                      type="number"
-                      min="0"
-                      max="8"
-                      step="1"
-                      className="h-9"
-                      disabled={!learningSettings.customConfig.revealWordEnabled}
-                      value={learningSettings.customConfig.revealWordAt}
-                      onChange={(event) => handleCustomConfigChange("revealWordAt", event.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-foreground">每次 + 词数</p>
-                    <Input
-                      type="number"
-                      min="0"
-                      max="4"
-                      step="1"
-                      className="h-9"
-                      disabled={!learningSettings.customConfig.revealWordEnabled}
-                      value={learningSettings.customConfig.extraRevealWordsPerReplay}
-                      onChange={(event) => handleCustomConfigChange("extraRevealWordsPerReplay", event.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-foreground">快捷键配置</p>
-              </div>
-              <div className="flex flex-row flex-wrap items-stretch gap-3">
+          <div className="mt-3 flex flex-row flex-wrap items-stretch gap-3">
                 {SHORTCUT_ACTIONS.map((action) => {
                   const recording = recordingShortcutActionId === action.id;
+                  const shortcutLabel = getShortcutLabel(learningSettings.shortcuts[action.id]);
+                  const shortcutMissing = shortcutLabel === "未设置";
                   return (
                     <div key={action.id} className="flex w-fit min-w-0 flex-col rounded-2xl border bg-background/80 p-3">
                       <div className="flex flex-1 flex-col gap-3">
                         <div className="min-w-0 space-y-1">
                           <p className="text-sm font-semibold text-foreground">{action.label}</p>
-                          <p className="text-sm text-muted-foreground break-all">{getShortcutLabel(learningSettings.shortcuts[action.id])}</p>
+                          <p className={cn("text-sm break-all", shortcutMissing ? "font-semibold text-orange-500" : "text-muted-foreground")}>
+                            {shortcutLabel}
+                          </p>
                         </div>
                         <Button
                           type="button"
@@ -1107,15 +1021,13 @@ export function LessonList({
                     </div>
                   );
                 })}
-              </div>
-            </div>
-
-            {settingsError ? (
-              <Alert variant="destructive">
-                <AlertDescription>{settingsError}</AlertDescription>
-              </Alert>
-            ) : null}
           </div>
+
+          {settingsError ? (
+            <Alert className="mt-3" variant="destructive">
+              <AlertDescription>{settingsError}</AlertDescription>
+            </Alert>
+          ) : null}
         </section>
 
         {Number(totalLessons || cards.length || 0) > 0 ? (

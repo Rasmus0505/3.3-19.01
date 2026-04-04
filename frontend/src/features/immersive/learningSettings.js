@@ -73,28 +73,13 @@ export const SHORTCUT_ACTIONS = [
 ];
 
 export const DEFAULT_SHORTCUTS = {
-  reveal_letter: LEGACY_SHORTCUT_BINDINGS["shift+a"],
-  reveal_word: LEGACY_SHORTCUT_BINDINGS["shift+s"],
-  previous_sentence: LEGACY_SHORTCUT_BINDINGS["shift+q"],
-  next_sentence: LEGACY_SHORTCUT_BINDINGS["shift+w"],
-  replay_sentence: LEGACY_SHORTCUT_BINDINGS["shift+r"],
-  toggle_pause_playback: LEGACY_SHORTCUT_BINDINGS.space,
-  record_score: LEGACY_SHORTCUT_BINDINGS.alt,
-};
-
-export const REPLAY_PRESET_OPTIONS = [
-  { id: "hard", label: "高难" },
-  { id: "standard", label: "标准" },
-  { id: "assist", label: "辅助" },
-  { id: "custom", label: "自定义" },
-];
-
-export const DEFAULT_CUSTOM_REPLAY_CONFIG = {
-  revealLetterEnabled: true,
-  revealLetterAt: 2,
-  revealWordEnabled: true,
-  revealWordAt: 3,
-  extraRevealWordsPerReplay: 1,
+  reveal_letter: null,
+  reveal_word: null,
+  previous_sentence: null,
+  next_sentence: null,
+  replay_sentence: null,
+  toggle_pause_playback: null,
+  record_score: null,
 };
 
 export const TRANSLATION_MASK_LAYOUT_VERSION = 3;
@@ -116,42 +101,6 @@ export const DEFAULT_PLAYBACK_PREFERENCES = {
   singleSentenceLoopEnabled: false,
   lessonPlaybackRateOverrides: {},
 };
-
-function normalizeLegacyPresetId(rawPresetId) {
-  const normalized = rawPresetId === "recall" ? "hard" : rawPresetId;
-  return REPLAY_PRESET_OPTIONS.some((item) => item.id === normalized) ? normalized : "standard";
-}
-
-function getCustomReplayConfigForPreset(presetId) {
-  if (presetId === "hard") {
-    return {
-      revealLetterEnabled: true,
-      revealLetterAt: 3,
-      revealWordEnabled: true,
-      revealWordAt: 4,
-      extraRevealWordsPerReplay: 0,
-    };
-  }
-  if (presetId === "assist") {
-    return {
-      revealLetterEnabled: true,
-      revealLetterAt: 1,
-      revealWordEnabled: true,
-      revealWordAt: 2,
-      extraRevealWordsPerReplay: 0,
-    };
-  }
-  return DEFAULT_CUSTOM_REPLAY_CONFIG;
-}
-
-function clampNumber(value, min, max, fallback, { integer = false } = {}) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  const clamped = Math.min(max, Math.max(min, parsed));
-  return integer ? Math.round(clamped) : Number(clamped.toFixed(2));
-}
 
 function sanitizeLessonPlaybackRateOverrides(rawOverrides = {}) {
   if (!rawOverrides || typeof rawOverrides !== "object" || Array.isArray(rawOverrides)) {
@@ -372,24 +321,9 @@ export function getShortcutLabel(bindingValue) {
   return parts.length ? parts.join("+") : "未设置";
 }
 
-function getFirstAvailableShortcutBinding(excluded = new Set(), preferredActionId = "") {
-  const candidates = [
-    DEFAULT_SHORTCUTS[preferredActionId],
-    ...SHORTCUT_ACTIONS.map((action) => DEFAULT_SHORTCUTS[action.id]),
-  ].filter(Boolean);
-  for (const candidate of candidates) {
-    const signature = getShortcutSignature(candidate);
-    if (signature && !excluded.has(signature)) {
-      return cloneShortcutBinding(candidate);
-    }
-  }
-  return cloneShortcutBinding(DEFAULT_SHORTCUTS.reveal_letter);
-}
-
 export function sanitizeShortcutMap(rawShortcutMap = {}) {
   const nextShortcutMap = {};
   const occupied = new Set();
-  const hasAnyShortcutSetting = SHORTCUT_ACTIONS.some((action) => Object.prototype.hasOwnProperty.call(rawShortcutMap, action.id));
   for (const action of SHORTCUT_ACTIONS) {
     const hasExplicitValue = Object.prototype.hasOwnProperty.call(rawShortcutMap, action.id);
     const rawValue = rawShortcutMap?.[action.id];
@@ -414,58 +348,27 @@ export function sanitizeShortcutMap(rawShortcutMap = {}) {
       continue;
     }
 
-    const fallbackBinding =
-      hasAnyShortcutSetting && action.id in DEFAULT_SHORTCUTS ? cloneShortcutBinding(DEFAULT_SHORTCUTS[action.id]) : cloneShortcutBinding(DEFAULT_SHORTCUTS[action.id]);
-    const fallbackSignature = getShortcutSignature(fallbackBinding);
-    if (fallbackSignature && !occupied.has(fallbackSignature)) {
-      nextShortcutMap[action.id] = fallbackBinding;
-      occupied.add(fallbackSignature);
-      continue;
-    }
-    nextShortcutMap[action.id] = hasAnyShortcutSetting ? null : getFirstAvailableShortcutBinding(occupied, action.id);
-    const resolvedSignature = getShortcutSignature(nextShortcutMap[action.id]);
-    if (resolvedSignature) {
-      occupied.add(resolvedSignature);
-    }
+    nextShortcutMap[action.id] = null;
   }
   return nextShortcutMap;
 }
 
-export function sanitizeCustomReplayConfig(rawConfig = {}) {
-  const revealLetterAt = clampNumber(rawConfig?.revealLetterAt, 0, 8, DEFAULT_CUSTOM_REPLAY_CONFIG.revealLetterAt, { integer: true });
-  const revealWordAt = clampNumber(rawConfig?.revealWordAt, 0, 8, DEFAULT_CUSTOM_REPLAY_CONFIG.revealWordAt, { integer: true });
-  return {
-    revealLetterEnabled:
-      typeof rawConfig?.revealLetterEnabled === "boolean"
-        ? rawConfig.revealLetterEnabled
-        : revealLetterAt > 0,
-    revealLetterAt,
-    revealWordEnabled:
-      typeof rawConfig?.revealWordEnabled === "boolean"
-        ? rawConfig.revealWordEnabled
-        : revealWordAt > 0,
-    revealWordAt,
-    extraRevealWordsPerReplay: clampNumber(
-      rawConfig?.extraRevealWordsPerReplay,
-      0,
-      4,
-      DEFAULT_CUSTOM_REPLAY_CONFIG.extraRevealWordsPerReplay,
-      { integer: true },
-    ),
-  };
+export function getShortcutCompleteness(learningSettings) {
+  const shortcuts = learningSettings?.shortcuts;
+  const result = { complete: true, missingActions: [] };
+  for (const action of SHORTCUT_ACTIONS) {
+    const binding = shortcuts?.[action.id];
+    if (!binding || !getShortcutSignature(binding)) {
+      result.complete = false;
+      result.missingActions.push(action);
+    }
+  }
+  return result;
 }
 
 export function sanitizeLearningSettings(rawSettings = {}) {
-  const legacyPresetId = normalizeLegacyPresetId(rawSettings?.presetId);
-  const presetId = "custom";
-  const derivedCustomConfig =
-    legacyPresetId === "custom" && rawSettings?.customConfig && typeof rawSettings.customConfig === "object"
-      ? rawSettings.customConfig
-      : getCustomReplayConfigForPreset(legacyPresetId);
   return {
-    presetId,
     shortcuts: sanitizeShortcutMap(rawSettings?.shortcuts),
-    customConfig: sanitizeCustomReplayConfig(derivedCustomConfig),
     uiPreferences: sanitizeUiPreferences(rawSettings?.uiPreferences),
     playbackPreferences: sanitizePlaybackPreferences(rawSettings?.playbackPreferences),
   };
@@ -493,59 +396,8 @@ export function writeLearningSettings(settings) {
   window.dispatchEvent(new CustomEvent(LEARNING_SETTINGS_UPDATED_EVENT, { detail: sanitized }));
 }
 
-export function getPresetSummaryLines(learningSettings) {
-  const presetId = learningSettings?.presetId || "standard";
-  if (presetId === "standard") {
-    return [
-      "固定倍速由沉浸学习面板控制",
-      "第2次重播开始可揭示当前词 1 个字母",
-      "第3次重播开始可揭示当前词 1 个完整单词",
-      "后续重播继续按辅助规则揭示更多单词",
-    ];
-  }
-  if (presetId === "hard") {
-    return [
-      "固定倍速由沉浸学习面板控制",
-      "前两次重播不额外提示",
-      "第3次重播开始揭示当前词 1 个字母",
-      "第4次起每次揭示 1 个单词",
-    ];
-  }
-  if (presetId === "assist") {
-    return [
-      "固定倍速由沉浸学习面板控制",
-      "第1次重播揭示当前词 1 个字母",
-      "第2次重播揭示当前词 1 个单词",
-      "第3次起继续逐步增加揭示",
-    ];
-  }
-  const customConfig = sanitizeCustomReplayConfig(learningSettings?.customConfig);
-  return [
-    customConfig.revealLetterEnabled
-      ? `字母揭示：已开启，从第 ${customConfig.revealLetterAt} 次重播开始`
-      : "字母揭示：已关闭",
-    customConfig.revealWordEnabled
-      ? `单词揭示：已开启，从第 ${customConfig.revealWordAt} 次重播开始，之后每次额外 +${customConfig.extraRevealWordsPerReplay} 个词`
-      : "单词揭示：已关闭",
-  ];
-}
-
-export function resolveReplayAssistance(learningSettings, stage) {
-  const safeStage = Math.max(1, Number(stage || 1));
-  const customConfig = sanitizeCustomReplayConfig(learningSettings?.customConfig);
-  const revealWordCount =
-    customConfig.revealWordEnabled && customConfig.revealWordAt > 0 && safeStage >= customConfig.revealWordAt
-      ? 1 + Math.max(0, safeStage - customConfig.revealWordAt) * customConfig.extraRevealWordsPerReplay
-      : 0;
-  return {
-    revealLetterCount:
-      revealWordCount > 0
-        ? 0
-        : customConfig.revealLetterEnabled && customConfig.revealLetterAt > 0 && safeStage === customConfig.revealLetterAt
-          ? 1
-          : 0,
-    revealWordCount,
-  };
+export function resolveReplayAssistance() {
+  return { revealLetterCount: 0, revealWordCount: 0 };
 }
 
 export function isShortcutPressed(event, shortcutValue) {
@@ -584,7 +436,7 @@ export function captureShortcutFromKeyboardEvent(event) {
   if (!hasModifier && isPrintableShortcutKey(key)) {
     return {
       value: null,
-      error: "裸字母、数字和标点会与拼写输入冲突，请改用功能键、方向键，或加上 Shift / Ctrl / Alt / Meta 组合。",
+      error: `「${key.toUpperCase()}」是单字母键，答题时会用到，容易误判。请改用 Shift+${key.toUpperCase()}、Ctrl+${key.toUpperCase()}、Alt+${key.toUpperCase()} 组合，或使用 F1-F12、功能键、方向键。`,
     };
   }
   if (!hasModifier && !isAllowedBareShortcut({ code, key })) {
