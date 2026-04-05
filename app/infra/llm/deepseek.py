@@ -20,8 +20,8 @@ from openai import OpenAI
 from app.core.timezone import now_shanghai_naive
 
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1").strip()
-DEEPSEEK_MODEL_THINKING = "deepseek-v3"
-DEEPSEEK_MODEL_FAST = "deepseek-v3"
+DEEPSEEK_MODEL_THINKING = "deepseek-v3.2"
+DEEPSEEK_MODEL_FAST = "deepseek-v3.2-fast"
 DEEPSEEK_TIMEOUT_SECONDS = max(10, int((os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "60") or "60").strip() or "60"))
 DEEPSEEK_MAX_TOKENS = max(100, int((os.getenv("DEEPSEEK_MAX_TOKENS", "4096") or "4096").strip() or "4096"))
 
