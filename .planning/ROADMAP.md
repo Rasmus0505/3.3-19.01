@@ -8,7 +8,7 @@
 
 - [ ] **Phase 32: Rewrite Persistence** — IndexedDB storage, auto-load on reopen, per-article toggle, history indicators
 - [ ] **Phase 33: Rewrite UI Enhancement** — Yellow highlight blocks, tooltips, CEFR underline priority
-- [ ] **Phase 34: Prompt Optimization** — New structured prompts, token estimation, quality testing
+- [x] **Phase 34: Prompt Optimization** — New structured prompts, token estimation, quality testing ✅ COMPLETE (2026-04-06)
 
 ---
 
@@ -84,7 +84,8 @@ Model returns:
 3. Before confirming a rewrite, the UI displays estimated token consumption and approximate cost — user can make an informed decision
 4. The new prompt is tested with at least 3 texts of varying difficulty and length; results show token savings of at least 20% compared to the original prompt while maintaining rewrite quality
 
-**Plans:** TBD
+**Plans:** 1 plan — PLANNED
+- [ ] 34-01-PLAN.md — 新 /simplify-words endpoint + Token 估算 API + 前端集成
 
 ---
 
@@ -94,7 +95,7 @@ Model returns:
 |-------|----------------|--------|-----------|
 | 32. Rewrite Persistence | 0/? | Not started | — |
 | 33. Rewrite UI Enhancement | 0/? | Not started | — |
-| 34. Prompt Optimization | 0/? | Not started | — |
+| 34. Prompt Optimization | 1/1 | Complete | 2026-04-06 |
 
 ---
 
@@ -111,9 +112,9 @@ Model returns:
 | UI-03 | Phase 33 | Pending |
 | UI-04 | Phase 33 | Pending |
 | UI-05 | Phase 33 | Pending |
-| PO-01 | Phase 34 | Pending |
-| PO-02 | Phase 34 | Pending |
-| PO-03 | Phase 34 | Pending |
+| PO-01 | Phase 34 | Done |
+| PO-02 | Phase 34 | Done |
+| PO-03 | Phase 34 | Done |
 | PO-04 | Phase 34 | Pending |
 
 **Coverage:** 13/13 v1 requirements mapped
