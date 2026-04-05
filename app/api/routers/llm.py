@@ -23,6 +23,7 @@ from app.models import User
 from app.schemas import ErrorResponse
 from app.services.billing_service import (
     EVENT_CONSUME_LLM,
+    calculate_llm_charge_by_tokens,
     consume_points,
     ensure_default_billing_rates,
     get_model_rate,
@@ -250,6 +251,223 @@ def list_llm_models_endpoint(
             pass
     return {"ok": True, "models": models}
 
+
+# ============================================================
+# 词汇简化 API — 新接口：精准替换超过目标级别的词汇
+# ============================================================
+
+VOCAB_SIMPLIFY_SYSTEM_PROMPT = (
+    "You are an English vocabulary simplifier for language learners.\n"
+    "Given context sentences and a list of words/phrases to simplify, "
+    "replace each word/phrase with a CEFR {target_level} level equivalent.\n"
+    "Rules:\n"
+    "- Each replacement can be a word OR a short phrase (e.g., 'very important' for 'crucial')\n"
+    "- Replacement order must exactly match the input order\n"
+    "- Keep replacements concise (max 5 words for phrases)\n"
+    "- Do NOT add any explanations or extra content\n"
+    "- Output format: one replacement per line, then a separator line '---', then 'usage: prompt_tokens:completion_tokens'\n"
+    "Example:\n"
+    "Input words: crucial, implement\n"
+    "Output:\n"
+    "very important\n"
+    "use\n"
+    "---\n"
+    "usage: 120:15"
+)
+
+VOCAB_SIMPLIFY_MAX_WORDS = 50
+VOCAB_SIMPLIFY_MAX_OUTPUT_TOKENS = 256
+
+
+class SimplifyVocabularyRequest(BaseModel):
+    """JSON body for POST /simplify-vocabulary."""
+
+    # 原文句子（语境参考，不修改）
+    sentences: list[str] = Field(..., min_length=1)
+    # 需要简化的词汇列表（按在句子中出现的顺序）
+    words_to_simplify: list[str] = Field(..., min_length=1)
+    # 目标 CEFR 级别
+    target_level: str = Field(default="A2", max_length=8)
+    enable_thinking: bool = False
+
+
+@router.post(
+    "/simplify-vocabulary",
+    responses={503: {"model": ErrorResponse}, 402: {"model": ErrorResponse}},
+)
+def simplify_vocabulary_endpoint(
+    body: SimplifyVocabularyRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    精准简化超过目标 CEFR 级别的词汇。
+
+    输入：
+    - sentences: 原文句子（语境参考）
+    - words_to_simplify: 需要简化的词汇列表（按顺序）
+    - target_level: 目标级别（如 B1 → 替换所有 > B1 的词，即 C1/C2/SUPER）
+
+    返回：
+    - replacements: 替换后的词汇列表（与输入顺序对应）
+    - usage: token 使用量
+    """
+    try:
+        ensure_default_billing_rates(db)
+    except Exception as e:
+        logger.exception("[DEBUG] llm.ensure_billing_rates_failed: %s", str(e)[:200])
+
+    sentences = [s.strip() for s in body.sentences if s.strip()]
+    words = [w.strip() for w in body.words_to_simplify if w.strip()]
+    target_level = body.target_level.strip().upper()
+    enable_thinking = body.enable_thinking
+
+    if target_level not in CEFR_LEVELS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid target_level '{target_level}'. Must be one of: {', '.join(sorted(CEFR_LEVELS))}",
+        )
+
+    if not sentences:
+        raise HTTPException(status_code=422, detail="sentences must be a non-empty list")
+
+    if not words:
+        raise HTTPException(status_code=422, detail="words_to_simplify must be a non-empty list")
+
+    if len(words) > VOCAB_SIMPLIFY_MAX_WORDS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Too many words ({len(words)}). Maximum is {VOCAB_SIMPLIFY_MAX_WORDS}.",
+        )
+
+    effective_model = LLM_MODEL_DEEPSEEK_THINKING if enable_thinking else LLM_MODEL_DEEPSEEK_FAST
+
+    try:
+        rate = get_model_rate(db, effective_model)
+    except Exception:
+        raise HTTPException(status_code=503, detail="LLM model not available")
+
+    api_key = _require_api_key()
+    trace_id = str(uuid.uuid4())
+
+    # 构建提示词
+    system_prompt = VOCAB_SIMPLIFY_SYSTEM_PROMPT.format(target_level=target_level)
+
+    sentences_block = "\n".join(f"- {s}" for s in sentences)
+    words_block = "\n".join(f"{i+1}. {w}" for i, w in enumerate(words))
+
+    user_prompt = (
+        f"【Context sentences (do not modify)】\n{sentences_block}\n\n"
+        f"【Words/phrases to simplify (replace each with {target_level} level)】\n{words_block}\n\n"
+        f"【Output format】\nOne replacement per line, then '---', then 'usage: prompt:completion'"
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    logger.info(
+        "[DEBUG] llm.simplify_start user_id=%s model=%s enable_thinking=%s words_count=%d target=%s",
+        current_user.id, effective_model, enable_thinking, len(words), target_level,
+    )
+
+    try:
+        raw_response, usage = call_deepseek(
+            messages=messages,
+            api_key=api_key,
+            enable_thinking=enable_thinking,
+            stream=False,
+            temperature=0.3,
+            max_tokens=VOCAB_SIMPLIFY_MAX_OUTPUT_TOKENS,
+        )
+    except Exception as exc:
+        logger.exception("[DEBUG] llm.simplify_failed user_id=%s error=%s", current_user.id, str(exc)[:200])
+        raise HTTPException(status_code=502, detail=f"LLM call failed: {str(exc)[:200]}")
+
+    if not raw_response:
+        raise HTTPException(status_code=502, detail="LLM returned empty result")
+
+    # 解析替换结果：按行分割，遇到 '---' 就停止
+    lines = raw_response.strip().split("\n")
+    replacements: list[str] = []
+    usage_line = ""
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "---":
+            break
+        if stripped.startswith("usage:"):
+            usage_line = stripped
+            break
+        if stripped:
+            replacements.append(stripped)
+
+    # 如果格式不对，尝试把整个响应作为 replacements 返回
+    if not replacements and raw_response.strip():
+        # 回退：用原始响应按行解析（去掉 usage 行）
+        for line in lines:
+            stripped = line.strip()
+            if stripped and stripped != "---" and not stripped.startswith("usage:"):
+                replacements.append(stripped)
+
+    total_tokens = usage.prompt_tokens + usage.completion_tokens
+
+    charge_cents = calculate_llm_charge_by_tokens(
+        total_tokens=total_tokens,
+        points_per_1k_tokens=rate.points_per_1k_tokens,
+    )
+
+    try:
+        consume_points(
+            db,
+            user_id=current_user.id,
+            points=charge_cents,
+            model_name=effective_model,
+            lesson_id=None,
+            event_type=EVENT_CONSUME_LLM,
+            note=f"简化词汇，替换词数={len(words)}, total_tokens={total_tokens}",
+        )
+    except Exception:
+        pass
+
+    log_llm_usage(
+        db,
+        user_id=current_user.id,
+        model_name=effective_model,
+        category="vocab_simplify",
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        reasoning_tokens=usage.reasoning_tokens,
+        total_tokens=total_tokens,
+        input_cost_cents=None,
+        charge_cents=charge_cents,
+        lesson_id=None,
+        enable_thinking=enable_thinking,
+        input_text_preview=f"words={len(words)} target={target_level}",
+        trace_id=trace_id,
+    )
+
+    db.commit()
+
+    return {
+        "ok": True,
+        "replacements": replacements,
+        "model": effective_model,
+        "usage": {
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "reasoning_tokens": usage.reasoning_tokens,
+            "total_tokens": total_tokens,
+        },
+        "charge_cents": charge_cents,
+        "trace_id": trace_id,
+    }
+
+
+# ============================================================
+# 原有的阅读材料生成接口
+# ============================================================
 
 REWRITE_SYSTEM_PROMPT = (
     "You are an English text simplifier for language learners.\n"
