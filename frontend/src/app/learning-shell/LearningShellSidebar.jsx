@@ -34,6 +34,10 @@ export const PANEL_ITEMS = [
     ...PANEL_ROUTE_ITEMS.find((item) => item.key === "upload"),
     icon: UploadCloud,
   },
+  {
+    ...PANEL_ROUTE_ITEMS.find((item) => item.key === "reading"),
+    icon: BookOpenText,
+  },
 ];
 
 export const SIDEBAR_STORAGE_KEY = "app-shell-sidebar-open";

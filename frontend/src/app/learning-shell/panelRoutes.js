@@ -25,6 +25,12 @@ export const PANEL_ROUTE_ITEMS = [
     path: "/upload",
     matchPaths: ["/upload"],
   },
+  {
+    key: "reading",
+    title: "阅读",
+    path: "/reading",
+    matchPaths: ["/reading"],
+  },
 ];
 
 export const LEARNING_PAGE_PATHS = Array.from(new Set(PANEL_ROUTE_ITEMS.flatMap((item) => item.matchPaths)));

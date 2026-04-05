@@ -10,16 +10,15 @@ The product is intentionally split by runtime capability: the desktop client is 
 
 Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-## Current Milestone: v2.4 词汇等级预处理与 CEFR 沉浸式展示 — SHIPPED 2026-04-04
+## Current Milestone: v2.5 阅读板块 + Pretext CEFR 排版 — Planning
 
 **Goal:** 实现视频字幕一次性预处理分析，并在沉浸式学习中以颜色块实时标注每个词的 CEFR 等级，重构上一句词选入生词本的交互反馈。
 
-**Target features:** (all completed)
-- ✅ CEFR 词汇基础设施：vocabAnalyzer 加载 250K 词 cefr_vocab.json，localStorage 缓存，setTimeout(0) 分块执行
-- ✅ 个人中心 CEFR 水平选择器：A1-C2 RadioGroup + Duolingo 风格中文说明，PATCH API + Zustand 双写持久化
-- ✅ 沉浸式 CEFR 下划线：答题框每词从开课即显示颜色下划线（绿=i+1，红=超纲，灰=已掌握）
-- ✅ 上一句 CEFR 色块 + 生词本动画：生词选入触发 scale + border flash 动画
-- ✅ 历史记录 CEFR 徽章：课程卡片显示 CEFR 分布条 + 主导等级徽章
+**Target features:** (in planning)
+- 🔄 Phase 26: Pretext 基础设施集成 — hook 封装、CEFR 分段合并、缓存策略
+- 🔄 Phase 27: 阅读板块核心 UI — 方案 A 布局、Pretext 渲染层、响应式边栏
+- 🔄 Phase 28: 词交互与生词本集成 — 选词、多选、加人生词本动画
+- 🔄 Phase 29: AI 重写与路由 — 重写 API、路由、导航入口
 
 ## Current State
 
@@ -111,6 +110,7 @@ _(All v2.4 requirements shipped — v2.5 planning pending)_
 ## Constraints
 
 - **Server Capacity**: Avoid heavy server-side media conversion and long-running ASR workloads — server performance is limited.
+- **Local-First Processing**: 所有 CEFR 分析、Pretext 测量、AI 重写结果缓存均在用户本地（浏览器 localStorage + IndexedDB）执行，不上传原文到服务器。服务器仅负责存储最小必要数据（重写结果 id + 引用关系）。
 - **User Simplicity**: Learners should not need to understand API keys, model setup, ffmpeg, or yt-dlp.
 - **Runtime Split**: Desktop must be the complete experience; web should provide only what browsers can reliably support.
 - **Web Delivery Contract**: 凡涉及网页端前端行为或路由的改动，完成标准必须包含同步并验证 `app/static`；仅修改 `frontend/src` 不视为网页端已完成。
@@ -174,6 +174,7 @@ _(All v2.4 requirements shipped — v2.5 planning pending)_
 | Above-i+1 color: `oklch(0.58 0.24 25)` — distinctly red, not orange | Visual correction after user feedback | ✅ Fixed in Phase 25 |
 | Wordbook success animation: scale (200ms) + green border flash (350ms) | Scale distinguishes "added to wordbook" from CEFR difficulty color | ✅ Validated in Phase 25 |
 | `mergeLessonCardMeta` via Zustand `getState()` (factory-pattern slice) | Workaround for lessonSlice factory; matches ImmersiveLessonPage pattern | ✅ Validated in Phase 25 |
+| 本地优先：CEFR 分析、Pretext 测量、AI 重写结果全部在用户本地（浏览器）执行，服务器零压力 | 服务器仅存储 rewrite_id 引用，原文和重写结果存 IndexedDB，CEFR 分析存 localStorage | ✅ Locked in v2.5 |
 
 ## Evolution
 

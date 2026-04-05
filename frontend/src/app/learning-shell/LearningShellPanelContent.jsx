@@ -11,6 +11,7 @@ const AccountPanel = lazy(() => import("../../features/account/AccountPanel.jsx"
 const LessonList = lazy(() => import("../../features/lessons/components/LessonList").then((module) => ({ default: module.LessonList })));
 const WordbookPanel = lazy(() => import("../../features/wordbook/WordbookPanel").then((module) => ({ default: module.WordbookPanel })));
 const UploadPanel = lazy(() => import("../../features/upload/UploadPanel").then((module) => ({ default: module.UploadPanel })));
+const ReadingPage = lazy(() => import("../../features/reading/ReadingPage").then((module) => ({ default: module.ReadingPage })));
 
 function PanelFallback() {
   return <div className="rounded-2xl border bg-card p-4 text-sm text-muted-foreground">内容加载中...</div>;
@@ -124,6 +125,14 @@ export function LearningShellPanelContent({
             onNavigateToLesson={onNavigateToGeneratedLesson}
             isOnline={isOnline}
           />
+        </Suspense>
+      );
+    }
+
+    if (activePanel === "reading") {
+      return (
+        <Suspense fallback={<PanelFallback />}>
+          <ReadingPage accessToken={accessToken} />
         </Suspense>
       );
     }
