@@ -3,7 +3,7 @@
  *
  * 新流程：识别高难度词 → /simplify-words → 本地按顺序替换
  */
-import { apiCall } from "../../shared/api/client.js";
+import { api } from "../../../shared/api/client.js";
 
 /**
  * 估算重写 token 消耗（用于显示费用）
@@ -12,7 +12,7 @@ import { apiCall } from "../../shared/api/client.js";
  * @returns {Promise<{estimatedTokens: number, estimatedChargeYuan: number}>}
  */
 export async function estimateRewriteTokens(text, accessToken) {
-  const resp = await apiCall("/api/llm/estimate-tokens?text=" + encodeURIComponent(text), {
+  const resp = await api("/api/llm/estimate-tokens?text=" + encodeURIComponent(text), {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!resp.ok) {
@@ -36,7 +36,7 @@ export async function estimateRewriteTokens(text, accessToken) {
  * @returns {Promise<{simplifiedWords: string[], chargeCents: number, traceId: string}>}
  */
 export async function simplifyWords(sentence, words, targetLevel, accessToken, enableThinking = false) {
-  const resp = await apiCall("/api/llm/simplify-words", {
+  const resp = await api("/api/llm/simplify-words", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

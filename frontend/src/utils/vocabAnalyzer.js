@@ -48,6 +48,11 @@ function isValidCefrVocabPayload(data) {
 
 class VocabAnalyzer {
   constructor(options = {}) {
+    // Expose instance globally for browser console debugging
+    if (typeof window !== "undefined") {
+      window.__vocabAnalyzer = this;
+    }
+
     // 词汇表路径（可以是本地路径或 CDN）
     this.vocabPath = options.vocabPath || "/data/vocab/cefr_vocab_fixed.json";
 

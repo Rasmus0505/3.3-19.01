@@ -47,6 +47,10 @@ async function getOrCreateAnalyzer(): Promise<VocabAnalyzer> {
   _analyzerLoadPromise = (async () => {
     _analyzerInstance = new VocabAnalyzer();
     await _analyzerInstance.load();
+    // Expose globally for browser console debugging
+    if (typeof window !== "undefined") {
+      (window as any).__vocabAnalyzer = _analyzerInstance;
+    }
     return _analyzerInstance;
   })();
   return _analyzerLoadPromise;
