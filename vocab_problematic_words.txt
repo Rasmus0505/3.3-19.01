@@ -1,0 +1,167 @@
+================================================================================
+CEFR VOCABULARY PROBLEMATIC WORDS REPORT
+================================================================================
+Total words in vocab: 50000
+Words to remove: 63
+
+## CATEGORY 1: Known normalizeNonstandardContraction entries
+  'dont' -> B2 (should map to 'do' -> A1) [SEVERITY: HIGH]
+  'cant' -> C1 (should map to 'can' -> A1) [SEVERITY: HIGH]
+  'wont' -> C1 (should map to 'will' -> A1) [SEVERITY: HIGH]
+  'im' -> C1 (should map to 'i' -> A1) [SEVERITY: HIGH]
+  'ive' -> C2 (should map to 'i' -> A1) [SEVERITY: HIGH]
+  'id' -> A2 (should map to 'i' -> A1) [SEVERITY: HIGH]
+  'ill' -> A2 (should map to 'i' -> A1) [SEVERITY: HIGH]
+  'weve' -> SUPER (should map to 'we' -> A1) [SEVERITY: HIGH]
+  'well' -> A1 (should map to 'we' -> A1) [SEVERITY: HIGH]
+  'wed' -> B2 (should map to 'we' -> A1) [SEVERITY: HIGH]
+  'youll' -> SUPER (should map to 'you' -> A1) [SEVERITY: HIGH]
+  'youd' -> SUPER (should map to 'you' -> A1) [SEVERITY: HIGH]
+  'its' -> A1 (should map to 'it' -> A1) [SEVERITY: HIGH]
+  'thats' -> C1 (should map to 'that' -> A1) [SEVERITY: HIGH]
+  'whats' -> C2 (should map to 'what' -> A1) [SEVERITY: HIGH]
+  'whos' -> SUPER (should map to 'who' -> A1) [SEVERITY: HIGH]
+  'wheres' -> SUPER (should map to 'where' -> A1) [SEVERITY: HIGH]
+  'hows' -> SUPER (should map to 'how' -> A1) [SEVERITY: HIGH]
+  'lets' -> B2 (should map to 'let' -> A1) [SEVERITY: HIGH]
+
+## CATEGORY 2: Additional nonstandard contractions found
+  'didnt' -> C2
+  'doesnt' -> SUPER
+  'isnt' -> SUPER
+  'havent' -> SUPER
+  'wasnt' -> SUPER
+  'couldnt' -> SUPER
+  'arent' -> SUPER
+  'wouldnt' -> SUPER
+  'shouldnt' -> SUPER
+
+## CATEGORY 3: Manual contractions to remove
+  'aint' -> SUPER
+  'arent' -> SUPER
+  'asap' -> C1
+  'b' -> B1
+  'btw' -> SUPER
+  'c' -> B1
+  'cant' -> C1
+  'coulda' -> C2
+  'couldnt' -> SUPER
+  'didnt' -> C2
+  'doesnt' -> SUPER
+  'dont' -> B2
+  'dunno' -> B2
+  'fyi' -> C2
+  'gimme' -> B2
+  'gonna' -> A1
+  'gotta' -> A1
+  'havent' -> SUPER
+  'hereby' -> C1
+  'heres' -> SUPER
+  'hows' -> SUPER
+  'id' -> A2
+  'ill' -> A2
+  'im' -> C1
+  'ima' -> SUPER
+  'isnt' -> SUPER
+  'its' -> A1
+  'ive' -> C2
+  'kinda' -> B1
+  'lemme' -> C2
+  'lets' -> B2
+  'lol' -> C2
+  'musta' -> SUPER
+  'n' -> B1
+  'omg' -> SUPER
+  'outta' -> B1
+  'r' -> B2
+  'rn' -> SUPER
+  'shoulda' -> C2
+  'shouldnt' -> SUPER
+  'sorta' -> C2
+  'thats' -> C1
+  'theres' -> C2
+  'theyre' -> SUPER
+  'u' -> B2
+  'ur' -> SUPER
+  'wanna' -> A1
+  'wasnt' -> SUPER
+  'wed' -> B2
+  'well' -> A1
+  'were' -> A1
+  'weve' -> SUPER
+  'whats' -> C2
+  'wheres' -> SUPER
+  'whos' -> SUPER
+  'wont' -> C1
+  'woulda' -> SUPER
+  'wouldnt' -> SUPER
+  'y' -> A2
+  'youd' -> SUPER
+  'youll' -> SUPER
+  'youre' -> C2
+  'youve' -> SUPER
+
+## FULL REMOVAL LIST
+  REMOVE: 'aint' -> SUPER
+  REMOVE: 'arent' -> SUPER
+  REMOVE: 'asap' -> C1
+  REMOVE: 'b' -> B1
+  REMOVE: 'btw' -> SUPER
+  REMOVE: 'c' -> B1
+  REMOVE: 'cant' -> C1
+  REMOVE: 'coulda' -> C2
+  REMOVE: 'couldnt' -> SUPER
+  REMOVE: 'didnt' -> C2
+  REMOVE: 'doesnt' -> SUPER
+  REMOVE: 'dont' -> B2
+  REMOVE: 'dunno' -> B2
+  REMOVE: 'fyi' -> C2
+  REMOVE: 'gimme' -> B2
+  REMOVE: 'gonna' -> A1
+  REMOVE: 'gotta' -> A1
+  REMOVE: 'havent' -> SUPER
+  REMOVE: 'hereby' -> C1
+  REMOVE: 'heres' -> SUPER
+  REMOVE: 'hows' -> SUPER
+  REMOVE: 'id' -> A2
+  REMOVE: 'ill' -> A2
+  REMOVE: 'im' -> C1
+  REMOVE: 'ima' -> SUPER
+  REMOVE: 'isnt' -> SUPER
+  REMOVE: 'its' -> A1
+  REMOVE: 'ive' -> C2
+  REMOVE: 'kinda' -> B1
+  REMOVE: 'lemme' -> C2
+  REMOVE: 'lets' -> B2
+  REMOVE: 'lol' -> C2
+  REMOVE: 'musta' -> SUPER
+  REMOVE: 'n' -> B1
+  REMOVE: 'omg' -> SUPER
+  REMOVE: 'outta' -> B1
+  REMOVE: 'r' -> B2
+  REMOVE: 'rn' -> SUPER
+  REMOVE: 'shoulda' -> C2
+  REMOVE: 'shouldnt' -> SUPER
+  REMOVE: 'sorta' -> C2
+  REMOVE: 'thats' -> C1
+  REMOVE: 'theres' -> C2
+  REMOVE: 'theyre' -> SUPER
+  REMOVE: 'u' -> B2
+  REMOVE: 'ur' -> SUPER
+  REMOVE: 'wanna' -> A1
+  REMOVE: 'wasnt' -> SUPER
+  REMOVE: 'wed' -> B2
+  REMOVE: 'well' -> A1
+  REMOVE: 'were' -> A1
+  REMOVE: 'weve' -> SUPER
+  REMOVE: 'whats' -> C2
+  REMOVE: 'wheres' -> SUPER
+  REMOVE: 'whos' -> SUPER
+  REMOVE: 'wont' -> C1
+  REMOVE: 'woulda' -> SUPER
+  REMOVE: 'wouldnt' -> SUPER
+  REMOVE: 'y' -> A2
+  REMOVE: 'youd' -> SUPER
+  REMOVE: 'youll' -> SUPER
+  REMOVE: 'youre' -> C2
+  REMOVE: 'youve' -> SUPER
