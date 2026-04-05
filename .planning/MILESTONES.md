@@ -20,7 +20,7 @@
 **Key outcomes:**
 - Phase 26: Pretext 基础设施集成 — hook 封装、CEFR 分段合并、5000+词性能验证
 - [x] Phase 27: 阅读板块核心 UI — 方案 A 布局、Pretext 驱动渲染、响应式断点 ✅
-- Phase 28: 词交互与生词本集成 — 词点击选入、多选 UI、批量加入生词本
+- [x] Phase 28: 词交互与生词本集成 — 词点击选入、多选 UI、批量加入生词本 ✅
 - Phase 29: AI 重写与路由 — 重写 API、路由、导航入口、全流程 E2E
 
 ---

@@ -20,7 +20,7 @@ import "./reading.css";
 const ARTICLE_FONT = "18px Inter";
 const ARTICLE_LINE_HEIGHT = 30;
 
-export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, selectedWords }) {
+export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, onLinesReady, selectedWords }) {
   const containerRef = useRef(null);
   const [measuredWidth, setMeasuredWidth] = useState(contentWidth);
   const userLevel = readCefrLevel() || "B1";
@@ -40,6 +40,13 @@ export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, s
   }, [onWidthChange]);
 
   const { lines, isReady, error } = useRichLayout(text, measuredWidth, ARTICLE_FONT, ARTICLE_LINE_HEIGHT);
+
+  // 布局完成后通知父组件（用于统计）
+  useEffect(() => {
+    if (isReady && lines.length > 0) {
+      onLinesReady?.(lines);
+    }
+  }, [isReady, lines, onLinesReady]);
 
   if (!isReady) {
     return (
@@ -93,11 +100,27 @@ export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, s
 }
 
 function ArticleWord({ segment, userLevel, onWordClick, isSelected }) {
-  const cefrLevel = segment.cefrLevel;
-  const cefrClass = computeCefrClassName(cefrLevel, userLevel);
+  const cefrClass = computeCefrClassName(segment.cefrLevel, userLevel);
+  const [animating, setAnimating] = useState(false);
+  const prevSelected = useRef(isSelected);
+
+  useEffect(() => {
+    if (!prevSelected.current && isSelected) {
+      setAnimating(true);
+      const timer = setTimeout(() => setAnimating(false), 420);
+      return () => clearTimeout(timer);
+    }
+    prevSelected.current = isSelected;
+  }, [isSelected]);
+
   return (
     <span
-      className={cn("article-word", cefrClass, isSelected && "article-word--selected")}
+      className={cn(
+        "article-word",
+        cefrClass,
+        isSelected && "article-word--selected",
+        animating && "article-word--success"
+      )}
       onClick={() => onWordClick?.(segment.text, segment)}
       title={`${segment.cefrLevel || "未知等级"} — ${segment.text}`}
     >
