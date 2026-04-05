@@ -6,12 +6,15 @@
  * 词选状态在 ReadingPage 内提升管理。
  *
  * Phase 28: 词选动画、翻译弹窗、批量加入生词本、难度分布统计
+ * Phase 29: AI 重写、原文/重写版丝滑切换
  */
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { readCefrLevel } from "../../app/authStorage";
 import { parseResponse } from "../../shared/api/client";
+import { cn } from "../../lib/utils";
 import { computeCefrClassName } from "./ArticlePanel";
 import { TranslationDialog } from "../wordbook/TranslationDialog";
+import { useReadingRewrite } from "../../hooks/useReadingRewrite";
 
 const ArticlePanel = lazy(() => import("./ArticlePanel").then((m) => ({ default: m.ArticlePanel })));
 const WordSidebar = lazy(() => import("./WordSidebar").then((m) => ({ default: m.WordSidebar })));
@@ -150,26 +153,66 @@ export function ReadingPage({ accessToken, apiCall }) {
     }
   }, [accessToken, apiCall, selectedWords]);
 
+  const {
+    rewrittenText,
+    viewMode,
+    setViewMode,
+    isRewriting,
+    handleRewrite,
+  } = useReadingRewrite({ apiCall, accessToken });
+
+  const activeText =
+    viewMode === "rewritten" && rewrittenText ? rewrittenText : DEMO_ARTICLE;
+
+  const showRewriteButton = !rewrittenText;
+
   return (
     <Suspense fallback={<PageFallback />}>
-      <div className="reading-layout">
-        <ArticlePanel
-          text={DEMO_ARTICLE}
-          contentWidth={contentWidth}
-          onWidthChange={setContentWidth}
-          onWordClick={handleWordClick}
-          onLinesReady={setArticleLines}
-          selectedWords={selectedWords}
-        />
-        <WordSidebar
-          selectedWords={selectedWords}
-          wordStats={wordStats}
-          onRemove={handleRemoveWord}
-          onAddAllToWordbook={handleAddAllToWordbook}
-          onClearAll={handleClearAll}
-          onTranslate={handleTranslate}
-          isAdding={isAddingToWordbook}
-        />
+      <div className="reading-container">
+        {rewrittenText ? (
+          <div className="reading-view-toggle">
+            <button
+              className={cn(
+                "reading-view-toggle__btn",
+                viewMode === "original" && "reading-view-toggle__btn--active"
+              )}
+              onClick={() => setViewMode("original")}
+            >
+              原文
+            </button>
+            <button
+              className={cn(
+                "reading-view-toggle__btn",
+                viewMode === "rewritten" && "reading-view-toggle__btn--active"
+              )}
+              onClick={() => setViewMode("rewritten")}
+            >
+              重写版
+            </button>
+          </div>
+        ) : null}
+
+        <div className="reading-layout">
+          <ArticlePanel
+            text={activeText}
+            contentWidth={contentWidth}
+            onWidthChange={setContentWidth}
+            onWordClick={handleWordClick}
+            onLinesReady={setArticleLines}
+            selectedWords={selectedWords}
+          />
+          <WordSidebar
+            selectedWords={selectedWords}
+            wordStats={wordStats}
+            onRemove={handleRemoveWord}
+            onAddAllToWordbook={handleAddAllToWordbook}
+            onClearAll={handleClearAll}
+            onTranslate={handleTranslate}
+            onRewrite={showRewriteButton ? () => handleRewrite(DEMO_ARTICLE) : null}
+            isAdding={isAddingToWordbook}
+            isRewriting={isRewriting}
+          />
+        </div>
       </div>
       <TranslationDialog
         open={translationDialog.open}

@@ -10,9 +10,11 @@
  *   onAddAllToWordbook {() => void}
  *   onClearAll    {() => void}
  *   onTranslate   {(item: WordItem) => void}
+ *   onRewrite     {(() => void)|null} — 重写全文按钮回调，null 时不显示按钮
  *   isAdding      {boolean}
+ *   isRewriting   {boolean}
  */
-import { BookPlus, BookOpenText, Languages, Loader2, X } from "lucide-react";
+import { BookPlus, BookOpenText, Languages, Loader2, Sparkles, X } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Button } from "../../shared/ui";
 
@@ -23,7 +25,9 @@ export function WordSidebar({
   onAddAllToWordbook,
   onClearAll,
   onTranslate,
+  onRewrite,
   isAdding = false,
+  isRewriting = false,
 }) {
   const count = selectedWords.length;
 
@@ -31,6 +35,13 @@ export function WordSidebar({
     <aside className="word-sidebar">
       {wordStats && wordStats.total > 0 ? (
         <WordSidebarStats stats={wordStats} />
+      ) : null}
+
+      {isRewriting ? (
+        <div className="word-sidebar__rewriting-hint">
+          <Loader2 className="size-3.5 animate-spin" />
+          <span>AI 重写中...</span>
+        </div>
       ) : null}
 
       <div className="word-sidebar__header">
@@ -47,6 +58,22 @@ export function WordSidebar({
               className="text-xs text-muted-foreground h-7 px-2"
             >
               清空
+            </Button>
+          ) : null}
+          {onRewrite !== null && onRewrite !== undefined ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onRewrite}
+              disabled={isRewriting}
+              className="word-sidebar__rewrite-btn"
+            >
+              {isRewriting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Sparkles className="size-4" />
+              )}
+              重写全文
             </Button>
           ) : null}
           {count > 0 ? (

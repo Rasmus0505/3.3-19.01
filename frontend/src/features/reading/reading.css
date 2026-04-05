@@ -6,6 +6,54 @@
  * CEFR class names are "cefr-i-plus-one", "cefr-above-i-plus-one", "cefr-mastered"
  */
 
+/* ─── 阅读容器 + 视图切换 ─────────────────────────────── */
+.reading-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+}
+
+.reading-view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: oklch(0.95 0.01 85);
+  border: 1px solid oklch(0.88 0.01 85);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  width: fit-content;
+}
+
+.reading-view-toggle__btn {
+  padding: 4px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: oklch(0.50 0.02 85);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.reading-view-toggle__btn:hover {
+  background: oklch(0.92 0.02 85);
+  color: oklch(0.30 0.02 85);
+}
+
+.reading-view-toggle__btn--active {
+  background: white;
+  color: oklch(0.20 0.02 85);
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.1);
+}
+
+.reading-view-toggle__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ─── 方案 A 整体布局 ─────────────────────────────────────── */
 .reading-layout {
   display: flex;
@@ -421,3 +469,31 @@
 .word-sidebar-stat-dot--c1 { background: oklch(0.60 0.16 25); }
 .word-sidebar-stat-dot--c2 { background: oklch(0.50 0.20 25); }
 .word-sidebar-stat-dot--super { background: oklch(0.45 0.02 85); }
+
+/* ─── 重写按钮 + 重写中提示 ───────────────────────────── */
+.word-sidebar__rewrite-btn {
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  color: oklch(0.50 0.10 275);
+  border-color: oklch(0.80 0.08 275);
+  background: oklch(0.98 0.02 275 / 0.3);
+}
+
+.word-sidebar__rewrite-btn:hover {
+  background: oklch(0.93 0.06 275 / 0.4);
+  border-color: oklch(0.70 0.12 275);
+}
+
+.word-sidebar__rewriting-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: oklch(0.55 0.02 85);
+  padding: 6px 8px;
+  background: oklch(0.97 0.02 275 / 0.2);
+  border-radius: 6px;
+  border: 1px solid oklch(0.88 0.02 275);
+  margin-bottom: 8px;
+}

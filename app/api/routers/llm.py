@@ -236,3 +236,139 @@ def list_llm_models_endpoint(
         except Exception:
             pass
     return {"ok": True, "models": models}
+
+
+REWRITE_SYSTEM_PROMPT = (
+    "You are an English text simplifier for language learners.\n"
+    "Rewrite the given text at CEFR {target_level} level.\n"
+    "Rules:\n"
+    "- Replace complex vocabulary with simpler CEFR {target_level} equivalents\n"
+    "- Keep sentence structure clear and understandable\n"
+    "- Preserve the original meaning and key information\n"
+    "- Output only the rewritten text, no explanations or markers\n"
+    "- Keep approximately the same length as the original\n"
+)
+
+REWRITE_MAX_INPUT_CHARS = 12000
+REWRITE_MAX_OUTPUT_TOKENS = 2048
+REWRITE_MAX_INPUT_TOKENS = 3000
+
+
+@router.post(
+    "/rewrite-text",
+    responses={503: {"model": ErrorResponse}, 402: {"model": ErrorResponse}},
+)
+def rewrite_text_endpoint(
+    text: str,
+    target_level: str = Query(default="B1", max_length=4),
+    enable_thinking: bool = Query(default=False),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Rewrite given English text at CEFR target_level using DeepSeek V3.2.
+    Charges the user according to the selected model rate.
+    """
+    if target_level.upper() not in CEFR_LEVELS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid target_level '{target_level}'. Must be one of: {', '.join(sorted(CEFR_LEVELS))}",
+        )
+
+    if not text or not isinstance(text, str) or not text.strip():
+        raise HTTPException(status_code=422, detail="text must be a non-empty string")
+
+    if len(text) > REWRITE_MAX_INPUT_CHARS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Text too long ({len(text)} chars). Maximum is {REWRITE_MAX_INPUT_CHARS} chars (~{REWRITE_MAX_INPUT_TOKENS} tokens).",
+        )
+
+    effective_model = LLM_MODEL_DEEPSEEK_THINKING if enable_thinking else LLM_MODEL_DEEPSEEK_FAST
+
+    try:
+        rate = get_model_rate(db, effective_model)
+    except Exception:
+        raise HTTPException(status_code=503, detail="LLM model not available")
+
+    api_key = _require_api_key()
+    trace_id = str(uuid.uuid4())
+
+    system_prompt = REWRITE_SYSTEM_PROMPT.format(target_level=target_level.upper())
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": text.strip()},
+    ]
+
+    try:
+        rewritten_text, usage = call_deepseek(
+            messages=messages,
+            api_key=api_key,
+            enable_thinking=enable_thinking,
+            stream=False,
+            temperature=0.3,
+            max_tokens=REWRITE_MAX_OUTPUT_TOKENS,
+        )
+    except Exception as exc:
+        logger.exception("[DEBUG] llm.rewrite_failed user_id=%s error=%s", current_user.id, str(exc)[:200])
+        raise HTTPException(status_code=502, detail=f"LLM call failed: {str(exc)[:200]}")
+
+    if not rewritten_text:
+        raise HTTPException(status_code=502, detail="LLM returned empty result")
+
+    total_tokens = usage.prompt_tokens + usage.completion_tokens
+
+    from app.services.billing_service import calculate_llm_charge_by_tokens
+
+    charge_cents = calculate_llm_charge_by_tokens(
+        total_tokens=total_tokens,
+        points_per_1k_tokens=rate.points_per_1k_tokens,
+    )
+
+    try:
+        consume_points(
+            db,
+            user_id=current_user.id,
+            points=charge_cents,
+            model_name=effective_model,
+            lesson_id=None,
+            event_type=EVENT_CONSUME_LLM,
+            note=f"重写文本，total_tokens={total_tokens}, enable_thinking={enable_thinking}",
+        )
+    except Exception:
+        pass
+
+    from app.services.llm_usage_service import log_llm_usage
+
+    log_llm_usage(
+        db,
+        user_id=current_user.id,
+        model_name=effective_model,
+        category="rewrite",
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        reasoning_tokens=usage.reasoning_tokens,
+        total_tokens=total_tokens,
+        input_cost_cents=None,
+        charge_cents=charge_cents,
+        lesson_id=None,
+        enable_thinking=enable_thinking,
+        input_text_preview=text.strip()[:200],
+        trace_id=trace_id,
+    )
+
+    db.commit()
+
+    return {
+        "ok": True,
+        "rewritten_text": rewritten_text,
+        "model": effective_model,
+        "usage": {
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "reasoning_tokens": usage.reasoning_tokens,
+            "total_tokens": total_tokens,
+        },
+        "charge_cents": charge_cents,
+        "trace_id": trace_id,
+    }
