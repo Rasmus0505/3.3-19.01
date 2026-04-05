@@ -36,8 +36,16 @@ function resolveCefrVocabFetchUrls(primaryPath) {
   return urls;
 }
 
+const CURRENT_VOCAB_VERSION = "fixed-v1";
+
 function isValidCefrVocabPayload(data) {
-  return Boolean(data && typeof data === "object" && data.words && typeof data.words === "object");
+  return Boolean(
+    data &&
+    typeof data === "object" &&
+    data.words &&
+    typeof data.words === "object" &&
+    data._vocab_version === CURRENT_VOCAB_VERSION
+  );
 }
 
 class VocabAnalyzer {
