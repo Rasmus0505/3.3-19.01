@@ -6,9 +6,8 @@
 
 ## Phases
 
-- [ ] **Phase 32: Rewrite Persistence** — IndexedDB storage, auto-load on reopen, per-article toggle, history indicators
-- [ ] **Phase 33: Rewrite UI Enhancement** — Yellow highlight blocks, tooltips, CEFR underline priority
-- [x] **Phase 34: Prompt Optimization** — New structured prompts, token estimation, quality testing ✅ COMPLETE (2026-04-06)
+- [x] **Phase 32: Rewrite Persistence** — IndexedDB storage, auto-load on reopen, per-article toggle, history indicators ✅ COMPLETE (2026-04-06)
+- [x] **Phase 33: Rewrite UI Enhancement** — Yellow highlight blocks, tooltips, CEFR underline priority ✅ COMPLETE (2026-04-06)
 
 ---
 
@@ -93,8 +92,8 @@ Model returns:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 32. Rewrite Persistence | 0/? | Not started | — |
-| 33. Rewrite UI Enhancement | 0/? | Not started | — |
+| 32. Rewrite Persistence | ?/? | Complete | 2026-04-06 |
+| 33. Rewrite UI Enhancement | 2/2 | Complete | 2026-04-06 |
 | 34. Prompt Optimization | 1/1 | Complete | 2026-04-06 |
 
 ---
@@ -103,15 +102,15 @@ Model returns:
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RP-01 | Phase 32 | Pending |
-| RP-02 | Phase 32 | Pending |
-| RP-03 | Phase 32 | Pending |
-| RP-04 | Phase 32 | Pending |
-| UI-01 | Phase 33 | Pending |
-| UI-02 | Phase 33 | Pending |
-| UI-03 | Phase 33 | Pending |
-| UI-04 | Phase 33 | Pending |
-| UI-05 | Phase 33 | Pending |
+| RP-01 | Phase 32 | Done |
+| RP-02 | Phase 32 | Done |
+| RP-03 | Phase 32 | Done |
+| RP-04 | Phase 32 | Done |
+| UI-01 | Phase 33 | Done |
+| UI-02 | Phase 33 | Done |
+| UI-03 | Phase 33 | Done |
+| UI-04 | Phase 33 | Done |
+| UI-05 | Phase 33 | Done |
 | PO-01 | Phase 34 | Done |
 | PO-02 | Phase 34 | Done |
 | PO-03 | Phase 34 | Done |
