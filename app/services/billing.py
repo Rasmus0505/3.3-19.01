@@ -71,7 +71,6 @@ ADMIN_BILLING_MODEL_ORDER: tuple[str, ...] = (
     MT_FLASH_MODEL,
     FASTER_WHISPER_ASR_MODEL,  # "faster-whisper-medium" — Bottle 1.0 billing (per D-07)
     "deepseek-v3.2",
-    "deepseek-v3.2-fast",
 )
 PUBLIC_BILLING_MODEL_ORDER: tuple[str, ...] = (
     FAST_CLOUD_MODEL,
@@ -139,23 +138,7 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
         "parallel_threshold_seconds": 600,
         "segment_seconds": 300,
         "max_concurrency": 1,
-        "enable_thinking": True,
-    },
-    {
-        "model_name": "deepseek-v3.2-fast",
-        "points_per_minute": 0,
-        "price_per_minute_yuan": Decimal("0.0000"),
-        "points_per_1k_tokens": 8,
-        "cost_per_minute_cents": 0,
-        "cost_per_minute_yuan": Decimal("0.0000"),
-        "cost_per_1k_tokens_input_cents": 2,
-        "cost_per_1k_tokens_output_cents": 3,
-        "billing_unit": "1k_tokens",
-        "parallel_enabled": False,
-        "parallel_threshold_seconds": 600,
-        "segment_seconds": 300,
-        "max_concurrency": 1,
-        "enable_thinking": False,
+        "enable_thinking": True,  # 支持两种模式
     },
 )
 

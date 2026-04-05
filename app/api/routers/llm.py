@@ -33,8 +33,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/llm", tags=["llm"])
 
 LLM_MODEL_DEEPSEEK_THINKING = "deepseek-v3.2"
-LLM_MODEL_DEEPSEEK_FAST = "deepseek-v3.2-fast"
-LLM_VALID_MODELS = {LLM_MODEL_DEEPSEEK_THINKING, LLM_MODEL_DEEPSEEK_FAST}
+LLM_MODEL_DEEPSEEK_FAST = "deepseek-v3.2"
+LLM_VALID_MODELS = {"deepseek-v3.2"}  # 你的 API Key 只有 deepseek-v3.2 的访问权限
 CEFR_LEVELS = {"A1", "A2", "B1", "B2", "C1", "C2"}
 
 

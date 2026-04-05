@@ -189,11 +189,6 @@ SYSTEM_FIXED_COST_RATES: dict[str, dict[str, int]] = {
         "cost_per_1k_tokens_output_cents": 3,  # 3 yuan / 1M
         "cost_per_minute_cents": 0,
     },
-    "deepseek-v3.2-fast": {
-        "cost_per_1k_tokens_input_cents": 2,
-        "cost_per_1k_tokens_output_cents": 3,
-        "cost_per_minute_cents": 0,
-    },
 }
 
 
