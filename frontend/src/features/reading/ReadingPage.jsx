@@ -1,13 +1,17 @@
 /**
  * ReadingPage.jsx — 阅读板块根组件
  * =================================
- * 方案 A 布局：文章主体（左侧）+ 词边栏（右侧固定）
- * CEFR 着色的词渲染由 ArticlePanel 提供，
- * 词选状态在 ReadingPage 内提升管理。
- *
  * Phase 28: 词选动画、翻译弹窗、批量加入生词本、难度分布统计
  * Phase 29: AI 重写、原文/重写版丝滑切换
- * 阅读素材：顶部文本框可粘贴/编辑正文（默认示例文章）
+ * Phase 30 (本文件): 新 UI 布局 — 顶部历史记录 + 左侧输入/阅读二合一 + 右侧分析面板
+ *
+ * 布局：
+ *   ┌─────────────────────────────────────────┐
+ *   │  HistoryPanel (顶部历史记录)              │
+ *   ├───────────────────────┬──────────────────┤
+ *   │  LeftPanel            │  AnalysisPanel   │
+ *   │  (输入模式 / 阅读模式)  │  (难度分布+词汇) │
+ *   └───────────────────────┴──────────────────┘
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -17,14 +21,10 @@ import { cn } from "../../lib/utils";
 import { computeCefrClassName } from "./ArticlePanel";
 import { TranslationDialog } from "../wordbook/TranslationDialog";
 import { useReadingRewrite } from "../../hooks/useReadingRewrite";
+import { HistoryPanel, saveHistoryRecord } from "./HistoryPanel";
+import { LeftPanel } from "./LeftPanel";
+import { AnalysisPanel, getDefaultActiveLevels } from "./AnalysisPanel";
 
-const ArticlePanel = lazy(() => import("./ArticlePanel").then((m) => ({ default: m.ArticlePanel })));
-const WordSidebar = lazy(() => import("./WordSidebar").then((m) => ({ default: m.WordSidebar })));
-
-/**
- * Demo 文章（约 400 词，CEFR B1-B2 难度）
- * Phase 29 将从课程列表或 API 动态加载真实文章。
- */
 const DEMO_ARTICLE = `The Art of Reading in a Digital Age
 
 In the modern world, reading has evolved beyond the traditional paper-and-ink experience. Digital platforms have transformed how we consume written content, offering new possibilities for language learners and avid readers alike.
@@ -81,23 +81,42 @@ function computeWordStats(lines) {
  * @param {Function} props.apiCall — API 调用函数（来自 LearningShell）
  */
 export function ReadingPage({ accessToken, apiCall }) {
+  const userLevel = useMemo(() => readCefrLevel() || "B1", []);
+  const defaultActiveLevels = useMemo(() => getDefaultActiveLevels(userLevel), [userLevel]);
+
   const [contentWidth, setContentWidth] = useState(640);
   const [selectedWords, setSelectedWords] = useState([]);
   const [articleLines, setArticleLines] = useState([]);
   const [isAddingToWordbook, setIsAddingToWordbook] = useState(false);
   const [translationDialog, setTranslationDialog] = useState({ open: false, text: "" });
 
+  // 面板模式: 'input' | 'reading'
+  const [mode, setMode] = useState("input");
+  const [activeArticleText, setActiveArticleText] = useState("");
+  const [activeHistoryId, setActiveHistoryId] = useState(null);
+  // 用户勾选的级别
+  const [activeLevels, setActiveLevels] = useState(defaultActiveLevels);
+
   const wordStats = useMemo(() => computeWordStats(articleLines), [articleLines]);
 
+  // 级别切换
+  const handleLevelToggle = useCallback((level) => {
+    setActiveLevels((prev) => {
+      if (prev.includes(level)) {
+        return prev.filter((l) => l !== level);
+      }
+      return [...prev, level];
+    });
+  }, []);
+
   const handleWordClick = useCallback((word, segment) => {
+    const cefrClass = computeCefrClassName(segment.cefrLevel, userLevel);
     setSelectedWords((prev) => {
       const exists = prev.some((w) => w.word === word);
       if (exists) return prev.filter((w) => w.word !== word);
-      const userLevel = readCefrLevel() || "B1";
-      const cefrClass = computeCefrClassName(segment.cefrLevel, userLevel);
       return [...prev, { word, cefrLevel: segment.cefrLevel, cefrClass }];
     });
-  }, []);
+  }, [userLevel]);
 
   const handleRemoveWord = useCallback((item) => {
     setSelectedWords((prev) => prev.filter((w) => w.word !== item.word));
@@ -158,14 +177,7 @@ export function ReadingPage({ accessToken, apiCall }) {
     }
   }, [accessToken, apiCall, selectedWords]);
 
-  const [articleDraft, setArticleDraft] = useState(DEMO_ARTICLE);
-  const [articleText, setArticleText] = useState(DEMO_ARTICLE);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setArticleText(articleDraft), 400);
-    return () => clearTimeout(timer);
-  }, [articleDraft]);
-
+  // ── AI 重写 ─────────────────────────────────────
   const {
     rewrittenText,
     viewMode,
@@ -176,70 +188,80 @@ export function ReadingPage({ accessToken, apiCall }) {
     handleRewrite,
   } = useReadingRewrite({ apiCall, accessToken });
 
-  const prevCommittedRef = useRef(articleText);
+  const prevCommittedRef = useRef(activeArticleText);
   useEffect(() => {
-    if (prevCommittedRef.current !== articleText && rewrittenText) {
+    if (prevCommittedRef.current !== activeArticleText && rewrittenText) {
       clearRewrite();
     }
-    prevCommittedRef.current = articleText;
-  }, [articleText, rewrittenText, clearRewrite]);
+    prevCommittedRef.current = activeArticleText;
+  }, [activeArticleText, rewrittenText, clearRewrite]);
 
   const activeText =
-    viewMode === "rewritten" && rewrittenText ? rewrittenText : articleText;
+    viewMode === "rewritten" && rewrittenText ? rewrittenText : activeArticleText;
 
   const showRewriteButton = !rewrittenText;
-  const draftPending = articleDraft !== articleText;
 
   const onRewriteClick = useCallback(() => {
-    const t = articleText.trim();
+    const t = activeArticleText.trim();
     if (!t) {
       toast.error("请先输入或粘贴阅读正文");
       return;
     }
     handleRewrite(t);
-  }, [articleText, handleRewrite]);
+  }, [activeArticleText, handleRewrite]);
+
+  // ── 文章提交（切换到阅读模式）────────────────────
+  const handleArticleSubmit = useCallback(
+    async (text) => {
+      setActiveArticleText(text);
+      setMode("reading");
+      setSelectedWords([]);
+      clearRewrite();
+      // 保存到历史记录
+      try {
+        await saveHistoryRecord({
+          id: crypto.randomUUID(),
+          text,
+          read_at: Date.now(),
+        });
+      } catch (e) {
+        console.error("Failed to save history:", e);
+      }
+    },
+    [clearRewrite]
+  );
+
+  // ── 重新输入 ─────────────────────────────────────
+  const handleEditAgain = useCallback(() => {
+    setMode("input");
+    clearRewrite();
+  }, [clearRewrite]);
+
+  // ── 点击历史记录 ─────────────────────────────────
+  const handleSelectHistory = useCallback(
+    async (record) => {
+      setActiveArticleText(record.text);
+      setActiveHistoryId(record.id);
+      setMode("reading");
+      setSelectedWords([]);
+      clearRewrite();
+    },
+    [clearRewrite]
+  );
+
+  // ── 原文/重写切换 ────────────────────────────────
+  const showViewToggle = Boolean(rewrittenText);
 
   return (
     <Suspense fallback={<PageFallback />}>
       <div className="reading-container">
-        <div className="reading-article-source">
-          <div className="reading-article-source__head">
-            <span className="reading-article-source__label">阅读素材</span>
-            <span className="reading-article-source__hint">
-              在此粘贴或编辑英文正文；下方正文会按词标注难度。修改后约半秒应用到分词视图。
-            </span>
-          </div>
-          <textarea
-            className="reading-article-source__textarea"
-            value={articleDraft}
-            onChange={(e) => setArticleDraft(e.target.value)}
-            rows={6}
-            spellCheck={false}
-            placeholder="粘贴你的阅读材料…"
-            aria-label="阅读素材正文"
-          />
-          <div className="reading-article-source__footer">
-            <button
-              type="button"
-              className="reading-article-source__btn-reset"
-              onClick={() => setArticleDraft(DEMO_ARTICLE)}
-            >
-              恢复内置示例
-            </button>
-            <span
-              className={
-                draftPending
-                  ? "reading-article-source__meta reading-article-source__meta--pending"
-                  : "reading-article-source__meta"
-              }
-            >
-              {articleDraft.length} 字符
-              {draftPending ? " · 正在应用到正文…" : ""}
-            </span>
-          </div>
-        </div>
+        {/* 顶部历史记录 */}
+        <HistoryPanel
+          onSelect={handleSelectHistory}
+          activeId={activeHistoryId}
+        />
 
-        {rewrittenText ? (
+        {showViewToggle ? (
           <div className="reading-view-toggle">
             <button
               className={cn(
@@ -262,18 +284,25 @@ export function ReadingPage({ accessToken, apiCall }) {
           </div>
         ) : null}
 
+        {/* 左右布局 */}
         <div className="reading-layout">
-          <ArticlePanel
-            text={activeText}
+          <LeftPanel
+            mode={mode}
+            articleText={activeText}
+            onSubmit={handleArticleSubmit}
+            onEditAgain={handleEditAgain}
             contentWidth={contentWidth}
             onWidthChange={setContentWidth}
-            onWordClick={handleWordClick}
             onLinesReady={setArticleLines}
             selectedWords={selectedWords}
+            onWordClick={handleWordClick}
           />
-          <WordSidebar
+          <AnalysisPanel
             selectedWords={selectedWords}
             wordStats={wordStats}
+            userLevel={userLevel}
+            activeLevels={activeLevels}
+            onLevelToggle={handleLevelToggle}
             onRemove={handleRemoveWord}
             onAddAllToWordbook={handleAddAllToWordbook}
             onClearAll={handleClearAll}

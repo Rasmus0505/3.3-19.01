@@ -20,7 +20,7 @@ import "./reading.css";
 const ARTICLE_FONT = "18px Inter";
 const ARTICLE_LINE_HEIGHT = 30;
 
-export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, onLinesReady, selectedWords }) {
+export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, onLinesReady, selectedWords, activeLevels }) {
   const containerRef = useRef(null);
   const [measuredWidth, setMeasuredWidth] = useState(contentWidth);
   const userLevel = readCefrLevel() || "B1";
@@ -88,6 +88,7 @@ export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, o
                     userLevel={userLevel}
                     onWordClick={onWordClick}
                     isSelected={isSelected}
+                    activeLevels={activeLevels}
                   />
                 );
               })}
@@ -99,8 +100,13 @@ export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, o
   );
 }
 
-function ArticleWord({ segment, userLevel, onWordClick, isSelected }) {
-  const cefrClass = computeCefrClassName(segment.cefrLevel, userLevel);
+function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels }) {
+  const rawClass = computeCefrClassName(segment.cefrLevel, userLevel);
+  // 如果 activeLevels 已配置，且当前词级不在其中，显示为已掌握（灰色）
+  const cefrClass =
+    activeLevels && activeLevels.length > 0 && segment.cefrLevel
+      ? activeLevels.includes(segment.cefrLevel) ? rawClass : "cefr-mastered"
+      : rawClass;
   const [animating, setAnimating] = useState(false);
   const prevSelected = useRef(isSelected);
 
