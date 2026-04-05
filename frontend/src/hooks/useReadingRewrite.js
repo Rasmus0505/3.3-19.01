@@ -11,7 +11,6 @@ import {
   saveRewriteRecord as dbSave,
   getRewriteRecord,
   updateViewMode as dbUpdateViewMode,
-  deleteRewriteRecord,
 } from "../features/reading/readingRewriteDB";
 
 /* ─── CEFR 等级计算 ──────────────────────────────────── */
@@ -76,18 +75,6 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
       cancelled = true;
     };
   }, [articleId]);
-
-  // ── 文章内容变化时清空重写状态（防止旧重写内容残留） ───
-  const prevArticleTextRef = useRef(null);
-  useEffect(() => {
-    const prev = prevArticleTextRef.current;
-    prevArticleTextRef.current = null; // reset immediately
-
-    if (prev !== null && prev !== rewrittenText) {
-      // 文章内容变了，但 rewrittenText 还存在，说明是用户切换了文章
-      // hook 外层（ReadingPage）会负责清空，这里只做防御
-    }
-  }, []);
 
   const handleSwitchView = useCallback(
     (mode) => {

@@ -57,15 +57,29 @@
 
 ### Phase 34: Prompt Optimization
 
-**Goal:** Rewrite prompt redesigned for sentence-level analysis, structured JSON output, and token efficiency; token cost displayed before rewrite; quality verified
+**Goal:** Rewrite prompt redesigned to return simplified words only (per-order array); token cost displayed before rewrite; quality verified
 
 **Depends on:** None (backend-only phase, can run in parallel with Phase 32 if needed)
 
 **Requirements:** PO-01, PO-02, PO-03, PO-04
 
+**Schema (simplified, per-order array):**
+
+User sends:
+```
+原文：I used to loathe and eschew perusing English.
+需要简化的词：loathe, eschew, perusing
+```
+
+Model returns:
+```json
+["hate", "avoid", "carefully reading"]
+```
+→ Frontend matches by order: `["loathe", "eschew", "perusing"]` → `["hate", "avoid", "carefully reading"]`
+
 **Success Criteria** (what must be TRUE):
 
-1. The new rewrite prompt outputs structured JSON containing: simplified word list, sentence context, and original-to-simplified mappings — no freeform description text
+1. The new rewrite prompt returns a JSON array of simplified words/phrases — one entry per input word, in the same order, no mapping objects, no freeform text
 2. Model responses preserve original sentence structure (only vocabulary replacement, minimal sentence restructuring) — verified by human review of 3+ sample outputs
 3. Before confirming a rewrite, the UI displays estimated token consumption and approximate cost — user can make an informed decision
 4. The new prompt is tested with at least 3 texts of varying difficulty and length; results show token savings of at least 20% compared to the original prompt while maintaining rewrite quality

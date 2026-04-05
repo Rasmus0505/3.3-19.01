@@ -156,12 +156,26 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
 
   const handleClearAll = useCallback(async () => {
     await clearAllHistory();
-    // 同步清除所有重写记录
-    try {
-      const db = await openDB();
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).clear();
-    } catch (_) {}
+    // 同步清除所有重写记录（打开另一个 DB 并清空）
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.open("reading_rewrites_v2", 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        try {
+          const db = req.result;
+          if (db.objectStoreNames.contains("rewrites")) {
+            const tx = db.transaction("rewrites", "readwrite");
+            tx.objectStore("rewrites").clear();
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          } else {
+            resolve();
+          }
+        } catch (_) {
+          resolve();
+        }
+      };
+    });
     setRecords([]);
     setRewrittenIds(new Set());
   }, []);
