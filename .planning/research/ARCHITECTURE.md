@@ -1,483 +1,255 @@
-# Architecture Research: CEFR Vocabulary Level Analysis Integration
+# Architecture Research: CEFR Vocabulary Dataset
 
-**Domain:** Vocabulary level analysis with immersive learning display
-**Project:** Bottle English Learning v2.4 — 词汇等级预处理与 CEFR 沉浸式展示
-**Researched:** 2026-04-03
+**Domain:** Static vocabulary dataset for client-side language learning analysis
+**Researched:** 2026-04-05
 **Confidence:** HIGH
 
 ## Executive Summary
 
-The v2.4 milestone adds CEFR vocabulary level analysis as a new data pipeline that layers on top of the existing immersive learning architecture. The analysis pipeline (video open → batch analyze → cache) is entirely new. The display pipeline (read cache → render color blocks) requires modifications to ImmersiveLessonPage token rendering. The settings pipeline (profile → user level → read during session) extends AccountPanel and learningSettings. The history pipeline (lesson list → CEFR badge) extends LessonList.
+清洗和规范化 CEFR 词汇数据集的核心挑战是：在静态文件约束下，平衡数据结构完整性、客户端加载性能和向后兼容性。当前 `vocabAnalyzer.js` 已设计为支持 `pos_entries` 扩展，关键决策点是文件版本标识、字段布局和部署流程。
 
-All pipelines use existing data flow patterns — localStorage for caching, React state for display, profile API for settings. No new architectural patterns are needed.
+## Recommended Architecture
 
-## System Overview
+### Data Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                              CEFR VOCABULARY PIPELINE                              │
-├─────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                     │
-│  ┌──────────────────┐         ┌──────────────────┐         ┌──────────────────┐   │
-│  │   ANALYSIS        │         │   DISPLAY        │         │   SETTINGS       │   │
-│  │   PIPELINE        │         │   PIPELINE       │         │   PIPELINE       │   │
-│  ├──────────────────┤         ├──────────────────┤         ├──────────────────┤   │
-│  │ 1. Video opens    │         │ 1. Session start │         │ 1. User sets     │   │
-│  │ 2. Check cache    │         │ 2. Read cached   │         │    CEFR level    │   │
-│  │ 3. Batch analyze  │         │    analysis      │         │    in profile    │   │
-│  │ 4. Store results  │         │ 3. Render token  │         │ 2. API call      │   │
-│  │    in localStorage│         │    color blocks  │         │    PATCH profile │   │
-│  └────────┬─────────┘         └────────┬─────────┘         └────────┬─────────┘   │
-│           │                            │                            │              │
-│           ▼                            ▼                            ▼              │
-│  ┌──────────────────┐         ┌──────────────────┐         ┌──────────────────┐   │
-│  │   localStorage   │◀───────▶│ ImmersiveLesson  │◀────────│   AccountPanel   │   │
-│  │   cefr_analysis  │         │ Page.jsx         │         │   (Personal      │   │
-│  │   _by_lessonId   │         │                  │         │    Center)       │   │
-│  └──────────────────┘         └────────┬─────────┘         └──────────────────┘   │
-│                                       │                                        │
-│                                       ▼                                        │
-│                              ┌──────────────────┐                              │
-│                              │  HISTORY         │                              │
-│                              │  PIPELINE        │                              │
-│                              ├──────────────────┤                              │
-│                              │ 1. Lesson loads  │                              │
-│                              │ 2. Read cached   │                              │
-│                              │    CEFR stats    │                              │
-│                              │ 3. Display badge │                              │
-│                              │    in list       │                              │
-│                              └────────┬─────────┘                              │
-│                                       │                                        │
-│                              ┌────────▼─────────┐                              │
-│                              │   LessonList    │                              │
-│                              │   .jsx          │                              │
-│                              └─────────────────┘                              │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+cefr_vocab.json (原始)
+        ↓
+fix_cefr_levels.py (CEFR-J 修正)
+        ↓
+cefr_vocab_fixed.json (清洗后)
+        ↓
+Build/Deploy (静态资源)
+        ↓
+VocabAnalyzer.load() (浏览器加载)
+        ↓
+Map<string, WordEntry> (内存)
 ```
 
-## Component Architecture
+### Word Entry Structure
 
-### New Components
-
-| Component | Location | Responsibility |
-|-----------|----------|----------------|
-| `VocabAnalyzer` | `frontend/src/utils/vocabAnalyzer.js` | Core analysis engine (already exists) |
-| `useVocabAnalysis` (NEW) | `frontend/src/features/immersive/hooks/` | Analysis lifecycle hook |
-| `CEFRBadge` (NEW) | `frontend/src/shared/ui/` | Reusable CEFR level badge |
-| `UserLevelSelector` (NEW) | `frontend/src/features/account/` | CEFR level picker in personal center |
-
-### Modified Components
-
-| Component | Current State | Modifications Required |
-|-----------|--------------|------------------------|
-| `ImmersiveLessonPage.jsx` | 3500+ line monolithic component | Add CEFR color overlay on token rendering; hook into lesson load lifecycle |
-| `AccountPanel.jsx` | User profile management | Add CEFR level selector section |
-| `LessonList.jsx` | History display | Add CEFR badge on lesson cards |
-| `learningSettings.js` | localStorage-backed settings | Optionally extend for CEFR level persistence |
-
-### Data Files
-
-| File | Purpose | Size Consideration |
-|------|---------|-------------------|
-| `app/data/vocab/cefr_vocab.json` | 50K word CEFR lookup table | ~8MB JSON, loads into `sessionStorage` on first use |
-
-## Integration Points
-
-### 1. Analysis Pipeline Integration
-
-**Trigger:** Video/media opens in ImmersiveLessonPage
-
-**Flow:**
-```
-ImmersiveLessonPage loads lesson
-         │
-         ▼
-┌─────────────────────────────────┐
-│ useVocabAnalysis hook           │
-│ (NEW component)                 │
-├─────────────────────────────────┤
-│ 1. Check localStorage key:      │
-│    `cefr_analysis_${lessonId}`  │
-│                                 │
-│ 2. If cached:                   │
-│    → Return cached analysis     │
-│                                 │
-│ 3. If not cached:               │
-│    → Load cefr_vocab.json       │
-│    → Call vocabAnalyzer.analyzeVideo() │
-│    → Store in localStorage      │
-│    → Return fresh analysis      │
-└─────────────────────────────────┘
-```
-
-**Integration with existing ImmersiveLessonPage:**
-- Add `useEffect` on `lesson.id` change
-- Use `useCallback` for memoized analysis access
-- Store analysis in component `useState` or `useRef`
-
-**localStorage key pattern:**
-```javascript
-const CACHE_KEY_PREFIX = "cefr_analysis_";
-const getAnalysisCacheKey = (lessonId) => `${CACHE_KEY_PREFIX}${lessonId}`;
-```
-
-**Cache structure:**
-```javascript
+```json
 {
-  lessonId: string,
-  analyzedAt: ISO timestamp,
-  overallGrade: "A1" | "A2" | "B1" | "B2" | "C1" | "C2",
-  avgRank: number,
-  totalWords: number,
-  levelCounts: { A1: number, A2: number, ... },
-  sentences: [
-    {
-      sentenceIndex: number,
-      original: string,
-      tokens: [{ word: string, level: string, rank: number }],
-      grade: string,
-    }
-  ]
+  "run": {
+    "rank": 42,
+    "level": "A1",
+    "count": 987654,
+    "pos_entries": [
+      { "pos": "verb",   "level": "A2", "source": "CEFR-J" },
+      { "pos": "noun",   "level": "B1", "source": "CEFR-J" }
+    ]
+  }
 }
 ```
 
-### 2. Display Pipeline Integration
+| Field | Type | Required | Purpose |
+|-------|------|----------|---------|
+| `rank` | number | Yes | COCA 词频排名 |
+| `level` | string | Yes | **主等级**（最低复杂度词性）— 向后兼容 |
+| `count` | number | Yes | 词频计数 |
+| `pos_entries` | array | Yes (可为空) | 完整词性列表 |
 
-**Location:** `ImmersiveLessonPage.jsx` token rendering (around line 3849-3871)
+### File Header Structure
 
-**Current token rendering:**
-```jsx
-{expectedTokens.map((token, index) => {
-  const status = wordStatuses[index] || "pending";
-  const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealComparableIndices[index] || []);
-  return (
-    <div key={`${token}-${index}`} className={`immersive-word-slot immersive-word-slot--${status}`}>
-      {/* slots rendering */}
-    </div>
+```json
+{
+  "_vocab_version": "fixed-v1",
+  "license": "MIT",
+  "source": "COCA via vocabulary-list-statistics",
+  "generated_at": "2026-04-05",
+  "total_words": 50000,
+  "cefr_thresholds": { "A1": 600, ... },
+  "words": { ... }
+}
+```
+
+## Key Decisions
+
+### 1. Keep Flat Structure (50K Top-Level Keys)
+
+**Decision:** 保持 `words` 对象为扁平的 50,000 个顶层 key-value 映射。
+
+**Rationale:**
+- `VocabAnalyzer` 使用 `new Map(Object.entries(data.words))` 转换为 JavaScript Map，O(1) 查找性能不受影响
+- 按 CEFR 级别拆分文件会破坏 `analyzeVideo()` 的全局统计逻辑（需要遍历所有词）
+- 单文件简化部署和版本管理
+
+**Trade-off:**
+- 约 4.6 MB 文件大小
+- gzip 压缩后 ~1.2 MB（可接受）
+
+### 2. `pos_entries` Inside Word Object
+
+**Decision:** 将 `pos_entries` 保留在每个词条对象内部，而非拆分独立文件。
+
+**Rationale:**
+- 单源一致性：修正后的等级和词性绑定在同一记录
+- `getWordInfo(word)` 已返回完整对象，无需 API 变更
+- 避免跨文件 JOIN 查询
+
+**Alternative considered:** 拆分 `pos_entries` 为独立索引文件 `{word: [pos_entry...]}`。  
+**Why rejected:** 增加加载复杂度，且大部分场景只需主等级字段。
+
+### 3. Backward Compatibility via `level` Field
+
+**Decision:** 每个词保留 `level` 字段作为主等级（取最简单词性对应的等级），确保旧版 `VocabAnalyzer` 兼容。
+
+**Implementation:**
+```
+pos_entries[最低优先级].level → word.level
+```
+
+**Rationale:**
+- `vocabAnalyzer._lookupWord()` 仅读取 `{word, level, rank}`
+- `analyzeSentence()` 仅依赖 `level` 做颜色标记
+- 新字段 `pos_entries` 是可选增强，不破坏现有功能
+
+### 4. Single File Deployment
+
+**Decision:** 不按 CEFR 级别拆分文件，统一部署单个 `cefr_vocab_fixed.json`。
+
+**Rationale:**
+- 当前 `vocabAnalyzer.load()` 只加载一个文件
+- 按级别拆分需要修改加载逻辑，且 `analyzeVideo()` 的全局统计会失效
+- 4.6 MB 单文件在 4G 网络下 < 1 秒加载时间可接受
+
+**If future optimization needed:** 考虑按级别分片懒加载（Phase 2+）
+
+## Integration Architecture
+
+### VocabAnalyzer Data Flow
+
+```
+load()
+  ├─→ fetch(/data/vocab/cefr_vocab_fixed.json)
+  ├─→ validate(isValidCefrVocabPayload) → 检查 _vocab_version
+  └─→ _initFromData()
+        └─→ this.wordMap = new Map(Object.entries(data.words))
+
+analyzeSentence(text)
+  └─→ _lookupWord(token) → wordMap.get(lower) → {word, level, rank}
+
+getWordInfo(word)
+  └─→ wordMap.get(word) → 完整对象含 pos_entries
+```
+
+### Version Control Strategy
+
+| Version | Description | VocabAnalyzer 支持 |
+|---------|-------------|-------------------|
+| `original` | 旧版 `{rank, level, count}` | 需要更新 `_vocab_version` 检查 |
+| `fixed-v1` | CEFR-J 修正版，含 `pos_entries` | 当前实现已支持 |
+
+**Migration path:** 文件名保留 `cefr_vocab_fixed.json`，版本通过 `_vocab_version` 字段控制。
+
+## Validation Strategy
+
+### Pre-Deployment Checks
+
+```python
+def validate_vocab(data):
+    assert "_vocab_version" in data
+    assert data["_vocab_version"] == "fixed-v1"
+    assert "words" in data
+    assert len(data["words"]) == 50000
+    
+    for word, info in data["words"].items():
+        assert "rank" in info
+        assert "level" in info
+        assert "count" in info
+        assert "pos_entries" in info
+        # pos_entries 可为空数组但必须有此字段
+```
+
+### Runtime Validation (VocabAnalyzer)
+
+```javascript
+function isValidCefrVocabPayload(data) {
+  return Boolean(
+    data &&
+    typeof data === "object" &&
+    data.words &&
+    typeof data.words === "object" &&
+    data._vocab_version === CURRENT_VOCAB_VERSION
   );
-})}
-```
-
-**Modified approach:**
-```jsx
-{expectedTokens.map((token, index) => {
-  const status = wordStatuses[index] || "pending";
-  const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealComparableIndices[index] || []);
-  const cefrLevel = currentSentenceAnalysis?.tokens[index]?.level;
-  const isAboveUserLevel = isWordAboveUserLevel(cefrLevel, userLevel);
-
-  return (
-    <div
-      key={`${token}-${index}`}
-      className={`immersive-word-slot immersive-word-slot--${status} ${getCEFRClassName(cefrLevel, isAboveUserLevel)}`}
-    >
-      {/* existing slots rendering */}
-    </div>
-  );
-})}
-```
-
-**CSS classes for CEFR coloring:**
-```css
-/* Word-level CEFR coloring */
-.cefr-level-a1 { border-bottom: 3px solid #10b981; }   /* emerald */
-.cefr-level-a2 { border-bottom: 3px solid #22c55e; }   /* green */
-.cefr-level-b1 { border-bottom: 3px solid #f59e0b; }   /* amber */
-.cefr-level-b2 { border-bottom: 3px solid #f97316; }   /* orange */
-.cefr-level-c1 { border-bottom: 3px solid #ef4444; }   /* red */
-.cefr-level-c2 { border-bottom: 3px solid #dc2626; }   /* dark red */
-
-/* Above user level (i+1) highlight */
-.cefr-above-user-level {
-  background-color: rgba(250, 204, 21, 0.15);  /* yellow highlight */
-  font-weight: 600;
-}
-
-/* Within user level */
-.cefr-within-level {
-  background-color: rgba(34, 197, 94, 0.1);   /* green tint */
 }
 ```
 
-### 3. Settings Pipeline Integration
-
-**Profile API endpoint:** `/api/auth/profile` (PATCH)
-
-**Current AccountPanel structure:**
-```jsx
-<Card>
-  <CardHeader>
-    <CardTitle>个人中心</CardTitle>
-  </CardHeader>
-  <CardContent>
-    {/* username form */}
-    {/* redeem code */}
-  </CardContent>
-</Card>
-```
-
-**New CEFR level section:**
-```jsx
-<Card>
-  <CardHeader>
-    <CardTitle>个人中心</CardTitle>
-  </CardHeader>
-  <CardContent>
-    {/* existing username form */}
-    {/* existing redeem code */}
-
-    {/* NEW CEFR Level Section */}
-    <div className="space-y-2">
-      <label className="text-sm font-medium">英语水平</label>
-      <div className="flex flex-wrap gap-2">
-        {["A1", "A2", "B1", "B2", "C1", "C2"].map((level) => (
-          <Button
-            key={level}
-            variant={userLevel === level ? "default" : "outline"}
-            onClick={() => updateUserLevel(level)}
-          >
-            {level}
-          </Button>
-        ))}
-      </div>
-      <p className="text-xs text-muted-foreground">
-        {getLevelDescription(userLevel)}
-      </p>
-    </div>
-  </CardContent>
-</Card>
-```
-
-**Backend model change (if needed):**
-- Add `cefr_level` column to user/profile model
-- Extend PATCH `/api/auth/profile` to accept `cefr_level`
-
-**Reading user level during session:**
-```javascript
-// In ImmersiveLessonPage
-const userLevel = currentUser?.cefr_level || "B1"; // Default B1
-```
-
-### 4. History Pipeline Integration
-
-**Location:** `LessonList.jsx` lesson card rendering
-
-**Current lesson card structure (simplified):**
-```jsx
-<Card className="lesson-card">
-  <MediaCover src={lesson.cover_data_url} />
-  <CardContent>
-    <h3>{lesson.title}</h3>
-    <p>{lesson.sentence_count} sentences</p>
-  </CardContent>
-</Card>
-```
-
-**Modified with CEFR badge:**
-```jsx
-<Card className="lesson-card">
-  <MediaCover src={lesson.cover_data_url} />
-  <CardContent>
-    <div className="flex items-center gap-2">
-      <h3>{lesson.title}</h3>
-      {lesson.cefr_grade && (
-        <CEFRBadge level={lesson.cefr_grade} />
-      )}
-    </div>
-    <p>{lesson.sentence_count} sentences</p>
-    {lesson.cefr_stats && (
-      <div className="cefr-stats-bar">
-        <LevelBar counts={lesson.cefr_stats.levelCounts} />
-      </div>
-    )}
-  </CardContent>
-</Card>
-```
-
-**Lesson CEFR data source:**
-- Option A: Store CEFR analysis in lesson record on backend
-- Option B: Read from localStorage on frontend when displaying history
-
-**Recommendation:** Option B (frontend localStorage) for v2.4 — avoids backend migration. Lesson list reads from same localStorage cache used by analysis pipeline.
-
-## Data Flow Diagrams
-
-### Analysis Pipeline Flow
+## Build/Deploy Pipeline
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────────┐     ┌──────────────┐
-│ Video Opens │────▶│ Check        │────▶│ Cache exists?   │────▶│ Return       │
-│             │     │ localStorage │     │                 │     │ cached       │
-└─────────────┘     └──────────────┘     └────────┬────────┘     └──────────────┘
-                                                 │
-                                                 │ No
-                                                 ▼
-                                        ┌─────────────────┐
-                                        │ Load cefr_vocab │
-                                        │ .json           │
-                                        └────────┬────────┘
-                                                 │
-                                                 ▼
-                                        ┌─────────────────┐
-                                        │ vocabAnalyzer   │
-                                        │ .analyzeVideo() │
-                                        └────────┬────────┘
-                                                 │
-                                                 ▼
-                                        ┌─────────────────┐     ┌──────────────┐
-                                        │ Store results   │────▶│ Return fresh │
-                                        │ in localStorage │     │ analysis     │
-                                        └─────────────────┘     └──────────────┘
+┌─────────────────────────────────────────────┐
+│  1. Source Data                             │
+│     app/data/vocab/cefr_vocab.json          │
+│     cefrj-vocabulary-profile-1.5.csv       │
+└─────────────────┬───────────────────────────┘
+                  ↓
+┌─────────────────────────────────────────────┐
+│  2. Run Fix Script                          │
+│     python fix_cefr_levels.py --save        │
+└─────────────────┬───────────────────────────┘
+                  ↓
+┌─────────────────────────────────────────────┐
+│  3. Output                                  │
+│     app/data/vocab/cefr_vocab_fixed.json    │
+│     (或自定义路径)                          │
+└─────────────────┬───────────────────────────┘
+                  ↓
+┌─────────────────────────────────────────────┐
+│  4. CI/CD 集成                              │
+│     build script 自动执行修正脚本           │
+│     输出到 app/data/vocab/                  │
+│     触发前端构建                             │
+└─────────────────────────────────────────────┘
 ```
 
-### Display Pipeline Flow
+## Anti-Patterns
 
-```
-┌──────────────────┐     ┌─────────────────┐     ┌──────────────────┐
-│ Session starts   │────▶│ Read user level │────▶│ Read cached      │
-│                  │     │ from profile    │     │ analysis         │
-└──────────────────┘     └─────────────────┘     └────────┬─────────┘
-                                                           │
-                                                           ▼
-                                                  ┌──────────────────┐
-                                                  │ For each token:  │
-                                                  │ - Get CEFR level │
-                                                  │ - Compare to     │
-                                                  │   user level     │
-                                                  └────────┬─────────┘
-                                                           │
-                                                           ▼
-                                                  ┌──────────────────┐
-                                                  │ Render with      │
-                                                  │ CEFR color class │
-                                                  └──────────────────┘
-```
+### Anti-Pattern 1: 按级别拆分为多个文件
 
-### Settings Pipeline Flow
+**What people do:** 按 CEFR 级别拆分 `a1_vocab.json`, `a2_vocab.json`...
 
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────────┐     ┌──────────────┐
-│ User opens  │────▶│ Show CEFR    │────▶│ User selects    │────▶│ API call     │
-│ Personal    │     │ level picker │     │ level          │     │ PATCH profile│
-│ Center      │     │              │     │                │     │              │
-└─────────────┘     └──────────────┘     └─────────────────┘     └──────┬───────┘
-                                                                       │
-                                                                       ▼
-                                                              ┌─────────────────┐
-                                                              │ Update local    │
-                                                              │ user state      │
-                                                              └─────────────────┘
-```
+**Why it's wrong:**
+- `analyzeVideo()` 需要全局统计，无法从单文件获取
+- 增加了 `VocabAnalyzer.load()` 的复杂度
+- 词的多词性分布在多个文件中无法统一查询
 
-## State Management
+**Do this instead:** 保持单文件，Phase 2+ 需要性能优化时再考虑懒加载。
 
-### ImmersiveLessonPage State Extensions
+### Anti-Pattern 2: 删除旧字段添加新字段
 
-**New local state:**
-```javascript
-const [cefrAnalysis, setCefrAnalysis] = useState(null);      // Full video analysis
-const [cefrAnalysisLoading, setCefrAnalysisLoading] = useState(false);
-const [cefrError, setCefrError] = useState(null);
-```
+**What people do:** 删除 `level` 用 `primary_level` 替代。
 
-**Derived values:**
-```javascript
-const currentSentenceAnalysis = useMemo(() => {
-  if (!cefrAnalysis?.sentences) return null;
-  return cefrAnalysis.sentences[currentSentenceIndex];
-}, [cefrAnalysis, currentSentenceIndex]);
+**Why it's wrong:**
+- 破坏 `VocabAnalyzer._lookupWord()` 的兼容性
+- 需要同时更新前后端代码
 
-const userLevel = currentUser?.cefr_level || "B1";  // Read from auth state
-```
+**Do this instead:** 保留 `level` 作为主等级，添加 `pos_entries` 作为可选扩展。
 
-### Session Machine Considerations
+### Anti-Pattern 3: 修改文件名而非版本字段
 
-The `immersiveSessionMachine.js` reducer should NOT be modified for CEFR features. CEFR is display-only data that doesn't affect session state transitions. It reads from existing session state (`currentSentenceIndex`) and lesson data.
+**What people do:** 每次修正后改名 `cefr_vocab_v2.json`, `cefr_vocab_v3.json`...
 
-**Design decision:** CEFR state lives in React component state, not in the session reducer. This keeps the session machine focused on playback/typing state while CEFR is an overlay concern.
+**Why it's wrong:**
+- 前端 URL 硬编码或需要配置更新
+- 版本历史追踪困难
 
-## Suggested Build Order
+**Do this instead:** 使用 `_vocab_version` 字段控制版本，文件名固定为 `cefr_vocab_fixed.json`。
 
-Given dependencies between features, implement in this order:
+## Performance Considerations
 
-### Phase 1: Core Analysis Infrastructure
-1. **Create `useVocabAnalysis` hook** — encapsulates analysis lifecycle
-2. **Integrate with ImmersiveLessonPage** — load analysis on lesson change
-3. **Add CEFR token lookup** — derive level from analysis for current sentence
-4. **Add basic CSS classes** — color blocks without disrupting existing styling
+| Metric | Value | Notes |
+|--------|-------|-------|
+| 文件大小 | ~4.6 MB | 修正后含 pos_entries |
+| gzip 后 | ~1.2 MB | 可接受 |
+| 首次加载 | < 1s (4G) | sessionStorage 缓存 |
+| 内存占用 | ~50k * 约200B ≈ 10 MB | Map 结构 |
+| 查询复杂度 | O(1) | Map 查找 |
 
-**Rationale:** This is the foundation. All other features depend on having CEFR data available.
-
-### Phase 2: Display Enhancement
-5. **Add CEFR color overlay** — apply color classes based on level vs user level
-6. **Polish CSS** — ensure colors don't conflict with existing word slot states
-7. **Test token interaction** — ensure CEFR colors don't break typing feedback
-
-**Rationale:** Display builds on analysis data. Needs to work with existing typing interaction.
-
-### Phase 3: Settings Integration
-8. **Extend AccountPanel** — add CEFR level selector
-9. **Backend API change** — add `cefr_level` to profile (if not already present)
-10. **Wire up user level reading** — pass user level into immersive session
-
-**Rationale:** Settings provides the user level input. Display reads from it.
-
-### Phase 4: History Display
-11. **Add CEFRBadge component** — reusable badge UI
-12. **Extend LessonList** — show CEFR badge on lesson cards
-13. **Read from localStorage** — leverage existing analysis cache
-
-**Rationale:** History is downstream from analysis. Can read from same cache.
-
-### Phase 5: Polish
-14. **Animation polish** — smooth scale animation on wordbook selection (separate requirement)
-15. **Performance optimization** — batch analysis if needed, lazy loading
-16. **Error handling** — graceful degradation if vocab file fails to load
-
-## Anti-Patterns to Avoid
-
-### Anti-Pattern 1: Blocking Analysis on Load
-
-**What people do:** Load CEFR analysis synchronously during lesson load, blocking UI.
-**Why it's wrong:** Large vocab file + analysis = visible lag on lesson entry.
-**Do this instead:** Load asynchronously, show "Analyzing..." briefly, cache for next visit.
-
-### Anti-Pattern 2: Duplicating CEFR State
-
-**What people do:** Store CEFR analysis in both Redux/ Zustand AND localStorage.
-**Why it's wrong:** Sync complexity, stale data, memory waste.
-**Do this instead:** localStorage is the source of truth for cached analysis. React state is derived copy.
-
-### Anti-Pattern 3: Modifying Session Reducer
-
-**What people do:** Add CEFR-related state to the immersive session reducer.
-**Why it's wrong:** Violates single responsibility. Session reducer handles playback/typing flow.
-**Do this instead:** Keep CEFR in component state as display-only overlay data.
-
-### Anti-Pattern 4: Inverting Analysis/Lesson Load Order
-
-**What people do:** Wait for analysis before showing lesson.
-**Why it's wrong:** Analysis takes time. User should see lesson immediately.
-**Do this instead:** Show lesson UI immediately, analyze in background, update colors when ready.
-
-## Scaling Considerations
-
-| Scale | Concern | Mitigation |
-|-------|---------|------------|
-| 0-100 lessons | localStorage adequate | No changes needed |
-| 100-1000 lessons | localStorage quota | Prune old analysis on analysis count threshold |
-| 1000+ lessons | Large vocab file | Consider IndexedDB, or server-side analysis |
-
-**Current approach is appropriate for v2.4 scope.** Recommend revisiting at v2.5 if project scales significantly.
+**SessionStorage 限制:** 部分浏览器 sessionStorage 有 5MB 限制，修正后的 JSON（约 4.6MB）序列化后可能接近限制。代码已处理此情况（写失败时仍可在内存使用）。
 
 ## Sources
 
-- Existing codebase: `ImmersiveLessonPage.jsx`, `learningSettings.js`, `immersiveSessionMachine.js`
-- Vocabulary data: `app/data/vocab/cefr_vocab.json` (COCA via vocabulary-list-statistics)
-- Analysis engine: `app/frontend/src/utils/vocabAnalyzer.js`
-- Project context: `.planning/PROJECT.md` v2.4 milestone definition
-
----
-
-*Architecture research for: CEFR vocabulary level analysis integration*
-*Researched: 2026-04-03*
+- `app/frontend/src/utils/vocabAnalyzer.js` — 客户端加载和查询逻辑
+- `fix_cefr_levels.py` — 修正脚本和目标数据结构定义
+- `app/data/vocab/cefr_vocab.json` — 当前数据结构

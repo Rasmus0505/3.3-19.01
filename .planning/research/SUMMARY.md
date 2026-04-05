@@ -1,157 +1,161 @@
 # Project Research Summary
 
-**Project:** Bottle English Learning v2.4 — CEFR Vocabulary Level Analysis
-**Domain:** English language learning app — vocabulary difficulty visualization
-**Researched:** 2026-04-03
-**Confidence:** HIGH (existing codebase + validated vocabulary data)
+**Project:** v2.6 清洗 CEFR 词典数据源
+**Domain:** Python data-processing tool for CEFR vocabulary cleaning and normalization
+**Researched:** 2026-04-05
+**Confidence:** HIGH (based on codebase analysis, CEFR-J reference, and established language learning standards)
 
 ## Executive Summary
 
-The v2.4 milestone adds CEFR vocabulary level analysis as a visual overlay to an existing immersive learning system. The core insight: this is **not** a new feature requiring new architecture — it's a data pipeline that layers on top of existing components (ImmersiveLessonPage, AccountPanel, LessonList). The existing React 18.3.1 + Zustand 5 + Tailwind 4 stack is fully capable with only CSS token extensions for CEFR colors. The 50K-word COCA-derived vocabulary dataset (`cefr_vocab.json`) and analysis engine (`vocabAnalyzer.js`) already exist, reducing the work to integration and display only.
+This milestone is a focused data-cleaning operation to replace inaccurate COCA rank-based CEFR levels with authoritative CEFR-J Vocabulary Profile levels, and to add Part-of-Speech (POS) tagging for the 14% of vocabulary covered by the reference dataset. The task has been extensively analyzed: the correction script (`fix_cefr_levels.py`) already exists with defined schema, the CEFR-J reference data (7,799 entries) is validated, and the frontend `vocabAnalyzer.js` is designed to accept the new `pos_entries` field without breaking existing functionality.
 
-The recommended approach is **client-side batch analysis with localStorage caching**. All vocabulary lookup happens in the browser, keyed by lesson ID, with results cached for instant reloads. The user's CEFR level (stored in profile, default B1) drives the i+1 color calculation — green for words one level above user, yellow for words 2+ levels above. This approach avoids server load, works offline, and provides instant feedback on return visits.
+**Recommended approach:** Execute the existing `fix_cefr_levels.py` script with proper version metadata, validate output coverage and level-change statistics, and deploy the corrected `cefr_vocab_fixed.json`. Key decisions include: keeping the flat 50K-key structure for O(1) lookup, deriving the primary `level` field from lowest POS entry for backward compatibility, and using `_vocab_version: "fixed-v1"` for cache-busting. **Do not** attempt to force-authoritative CEFR levels on the remaining 86% — use rank-based fallback with explicit `_source: "rank-based"` and `_confidence` indicators.
 
-The critical risk is **visual layer conflicts**: the existing letter-state system (green=correct, red=wrong, yellow=hint) and the new CEFR system must coexist without ambiguity. The plan allocates phase 1 to defining this visual contract before any rendering code is written.
+**Key risks:** Browser cache persistence (sessionStorage blocks updates), version field missing from output (causes silent fallback to SUPER), and frontend hardcoding of CEFR_LEVEL_ORDER array (blocks future level additions). All three are preventable with proper implementation checks.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The existing stack requires no new runtime dependencies. All requirements are satisfied by existing libraries:
+**Use Python standard library only — zero external dependencies needed.** The 50K-word JSON file (~4.6 MB) is trivially handled by `json.load()` (~300-500ms). Third-party libraries like `pandas` or `orjson` add dependency overhead with no meaningful benefit for this one-time (or infrequent) data-cleaning task.
 
 **Core technologies:**
-- **React 18.3.1** — sufficient for component-based word rendering, no changes needed
-- **Zustand 5.0.11** — `persist` middleware handles localStorage-backed user CEFR level storage with `partialize` to store only `userILevel`
-- **Tailwind CSS 4.2.1** — CSS `@theme` directive for CEFR color tokens (teal for i+1, orange for beyond)
-- **Radix UI 1.x** — accessible component primitives for CEFR level picker dropdown
-- **cefr_vocab.json (50K words)** — already embedded, COCA frequency-derived, loads once to sessionStorage
+- `json`: Read/write 50K-word JSON — standard library sufficient, no orjson/ujson needed
+- `csv.DictReader`: Load CEFR-J reference CSV — 7,799 rows handled instantly
+- `unicodedata`: Unicode normalization for variant handling (café vs cafe)
+- `collections.defaultdict`: Efficient grouping by (word, POS) for reference matching
 
-**Supporting patterns:**
-- localStorage caching with version key (`cefr_analysis_v1:{lessonId}`) — simple and sufficient for <5MB per domain
-- CSS `transform: scale()` for word selection animation — spring-like overshoot via `cubic-bezier(0.34, 1.56, 0.64, 1)`
+**No fuzzy matching needed:** CEFR-J provides exact-match headwords. String similarity libraries (rapidfuzz, textdistance) are unnecessary for this task.
 
 ### Expected Features
 
-**Must have (table stakes):**
-- **Batch vocabulary preprocessing** — On video open, iterate all subtitle sentences, lookup each word in cefr_vocab.json, tag with CEFR level, cache result in localStorage keyed by lessonId. Unknown words default to "SUPER" level.
-- **User CEFR level setting in Personal Center** — 6-level selector (A1-C2), default B1, Duolingo-style Chinese descriptions per level, persist to user profile/backend.
-- **i+1 color calculation** — Given user level, compute each word's display color: green = word level is exactly one level above user level; yellow = word level is 2+ levels above user level; neutral = at or below user level.
-- **Previous sentence CEFR display** — Show color blocks over words in the previous sentence based on computed i+1 color. Only affects previous sentence (not current typing sentence).
+**Must have (table stakes) — core fix:**
+- Authoritative CEFR levels for CEFR-J matched words (~7,020) — fixes 84.4% incorrect level rate
+- POS entry array (`pos_entries`) with verb, noun, adjective, adverb per word
+- Primary `level` field derived from lowest POS entry — backward compatible with `vocabAnalyzer`
+- Source attribution (`_source: "CEFR-J" | "rank-based"`) — distinguishes verified vs estimated
+- COCA presence flag (`_in_coca: true | false`) — separates "not in corpus" from "rare"
+- Version metadata (`_vocab_version: "fixed-v1"`) — enables frontend validation and cache-busting
+- Coverage report in output — shows % authoritative vs rank-based for QA
 
-**Should have (differentiators):**
-- **Scale animation on word selection** — When user taps a word in previous sentence to add to wordbook, apply CSS scale transform (1.0 → 1.08) with spring overshoot over 200ms
-- **Lesson-level CEFR badges in history** — At-a-glance lesson difficulty helps learners choose appropriate content
+**Should have (quality improvements):**
+- Confidence scores (`_confidence: "high" | "medium" | "low"`) based on source + rank thresholds
+- Core inventory flags from CEFR-J `CoreInventory` columns
+- Level change audit trail (`_original_level` preserved)
 
-**Defer (v2.4.x+):**
-- Sentence-level CEFR breakdown tooltip
-- Adaptive level suggestion based on word coverage
-- CEFR display in current sentence post-answer reveal
+**Defer to v2+ (requires external resources):**
+- Lemma grouping for inflectional forms (walk/walks/walking)
+- Additional CEFR references to augment 14% coverage
+- Multi-word expression support (phrasal verbs, idioms)
+- IPA transcription via CMU Pronouncing Dictionary
 
 ### Architecture Approach
 
-Four pipelines layer on existing architecture without modifying the session state machine:
+**Single-file flat structure with embedded POS entries.** The 50,000-word vocabulary stays as top-level keys in one JSON file (~4.6 MB, gzip ~1.2 MB). Each word object contains: `rank`, `level` (primary, backward-compatible), `count`, and `pos_entries` array. This structure is optimal because: `vocabAnalyzer.load()` already uses `new Map(Object.entries(data.words))` for O(1) lookups, `analyzeVideo()` requires global word statistics that need unified access, and the file fits in sessionStorage with proper error handling.
 
-1. **Analysis Pipeline** — Triggered on video open. Check localStorage → if miss, load cefr_vocab.json → batch analyze all sentences → cache to localStorage. Uses chunked processing with `setTimeout(0)` yields to avoid UI blocking.
+**Backward compatibility via derived `level` field.** The primary `level` is algorithmically derived as the lowest complexity POS entry level. Existing frontend code reading `word.level` continues to work unchanged. The new `pos_entries` field is optional — `vocabAnalyzer.getWordInfo()` returns it but existing components can ignore it.
 
-2. **Display Pipeline** — Reads cached analysis + user level → renders color blocks on previous sentence tokens. CEFR state lives in React component state (not session reducer), keeping session machine focused on playback/typing.
-
-3. **Settings Pipeline** — Personal Center CEFR selector → PATCH profile API → update Zustand store → propagate to all listeners via `LEARNING_SETTINGS_UPDATED_EVENT`.
-
-4. **History Pipeline** — LessonList reads from same localStorage cache used by analysis. No backend migration needed for v2.4.
+**Version control via `_vocab_version` field.** File name stays `cefr_vocab_fixed.json` permanently. Version tracked via `_vocab_version: "fixed-v1"` in the JSON header. VocabAnalyzer validates this before accepting the file.
 
 ### Critical Pitfalls
 
-1. **Color conflict between letter states and CEFR levels** — Yellow means both "revealed by hint" and "CEFR level is hard". Mitigation: use distinct palettes (teal/blue for i+1, orange for beyond), never reuse existing letter-state colors.
+1. **Vocab Version Mismatch Breaks All CEFR Analysis** — If `fix_cefr_levels.py` omits `_vocab_version`, `vocabAnalyzer` validation rejects the file, silently falling back to SUPER (orange) for all words. Prevention: always add `_vocab_version: "fixed-v1"` on output.
 
-2. **Batch analysis blocking initial lesson load** — Synchronous for-loop over 500+ sentences blocks UI for 2-5 seconds. Mitigation: chunked processing with `requestIdleCallback`, progress indicator, graceful degradation showing lesson without CEFR badges until analysis completes.
+2. **Browser Cache Blocks Vocabulary Updates** — `sessionStorage` caches old vocabulary. Users see stale levels for days. Prevention: bump `_vocab_version` on any structural change; test with `load(forceReload=true)`.
 
-3. **Cache invalidation failures** — User changes CEFR level but old cached lessons still show stale difficulty badges. Mitigation: include user level and vocab version in cache key, implement cache TTL (30 days), clear analysis cache on level change.
+3. **"SUPER" Level Hardcoded Throughout Frontend** — `CEFR_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2", "SUPER"]` is defined in 6+ files. Future level additions break silently. Prevention: extract to shared constant file (defer to future UI phase).
 
-4. **Scale animation conflicting with wordbook click handlers** — CSS transforms create new stacking context and can intercept pointer events. Mitigation: use `pointer-events: none` on animated pseudo-elements, or animate a wrapper not the click target.
+4. **CEFR-J Coverage Gap — Silent Misclassification** — 86.8% of words use rank-based fallback with no UI indication they're "estimated." Prevention: surface `_confidence` and `_source` fields in analytics; log coverage % for content analysis.
 
-5. **CEFR level setting not persisting or propagating** — Setting stored with different key than existing settings, or no update event dispatched. Mitigation: follow `learningSettings.js` pattern exactly, add to same settings object, dispatch `LEARNING_SETTINGS_UPDATED_EVENT`.
+5. **Multi-Word Expressions Not Handled** — Hyphenated words (well-known) and phrases (a lot of) cause lookup failures or inconsistent normalization. Prevention: standardize hyphen handling in normalization; document limitation.
+
+6. **Contraction Expansion Loses Semantics** — "it's" → "it" maps contraction to pronoun, losing "is" semantics. Prevention: add contractions as separate vocabulary entries (defer to future phase).
 
 ## Implications for Roadmap
 
-Based on research, suggested phase structure (adapted to v2.4's 2-phase scope):
+This is a single focused phase, not a multi-phase roadmap. The data-cleaning task is well-defined and executable in one pass. However, the research reveals clear follow-up work that should be planned.
 
-### Phase 1: CEFR Analysis Infrastructure + Personal Center Setting
-**Rationale:** User level setting is the prerequisite input for all CEFR display. Analysis pipeline must exist before display can render anything. Both are foundation-layer work.
-
-**Delivers:**
-- `useVocabAnalysis` hook encapsulating analysis lifecycle
-- localStorage caching with version-based keys
-- User CEFR level selector in Personal Center
-- Zustand store extension with `persist` middleware
-
-**Implements:**
-- Batch preprocessing pipeline with chunked processing
-- CEFR level picker (Radix UI Select or button group)
-- Cache invalidation on level change
-
-**Avoids:** Pitfall #2 (cache invalidation), Pitfall #5 (persistence)
-
-### Phase 2: CEFR Display in Immersive Mode + History Badges
-**Rationale:** Display builds on analysis data. Previous sentence CEFR coloring is the core feature. History badges use the same cached data and can be added in parallel.
+### Phase 1: Execute CEFR-J Data Correction
+**Rationale:** Core problem is 84.4% incorrect levels on CEFR-J-matched words. This is the only work needed to fix the authoritative subset.
 
 **Delivers:**
-- CEFR color overlay on previous sentence word tokens
-- Reusable `CEFRBadge` component
-- Lesson list CEFR badges from localStorage cache
-- Scale animation on wordbook selection
+- Corrected `cefr_vocab_fixed.json` with `_vocab_version: "fixed-v1"`
+- 7,020 words with accurate CEFR levels and POS entries
+- Coverage report: ~14% CEFR-J verified, ~86% rank-based fallback
 
-**Avoids:** Pitfall #1 (color conflicts — requires UI-SPEC.md first), Pitfall #3 (blocking — chunked processing in phase 1), Pitfall #4 (animation conflicts)
+**Addresses from FEATURES.md:**
+- Authoritative CEFR levels (P1)
+- POS entry array (P1)
+- Primary level field backward compat (P1)
+- Source attribution (P1)
+- COCA presence flag (P1)
+- Coverage report (P1)
 
-### Phase Ordering Rationale
+**Avoids from PITFALLS.md:**
+- Version mismatch (must add `_vocab_version`)
+- Browser cache blocks (must bump version on structural change)
 
-1. **Settings before display** — User level drives color calculation. Without settings, display has no meaning.
-2. **Analysis before display** — Cached analysis is the data source. Display degrades gracefully if analysis is pending.
-3. **UI-SPEC before phase 2 coding** — Color conflicts are irreversible once coded into components. Visual contract must be defined first.
-4. **Animation last in phase 2** — It layers on top of existing wordbook selection and doesn't affect core functionality.
+**Execution steps:**
+1. Run `fix_cefr_levels.py --dry-run` to preview statistics
+2. Review level-change count (should fix ~7,020 words)
+3. Run `fix_cefr_levels.py --save` to write output
+4. Validate output: check `_vocab_version`, word count (50,000), pos_entries populated
+5. Commit and trigger frontend build
 
-### Research Flags
+**Research flags:** None needed — implementation is well-defined, patterns are established in existing code.
 
-Phases likely needing deeper research during planning:
-- **Phase 2:** CEFR display component — requires UI-SPEC.md to define visual contract and avoid color conflicts. Use `gsd-ui-phase` skill.
+### Phase 2: Frontend VocabAnalyzer Enhancement (Future)
+**Rationale:** Expose POS information and confidence scores to users. Currently `pos_entries` is stored but not surfaced.
 
-Phases with standard patterns (skip research-phase):
-- **Phase 1:** Batch analysis and caching — well-documented localStorage patterns, chunked processing is standard React pattern
-- **Phase 1:** Personal Center CEFR setting — follow existing `learningSettings.js` pattern exactly
+**Delivers:**
+- Word info display showing all POS entries for multi-pos words
+- Confidence indicator ("verified" vs "estimated") in analysis panels
+- Coverage statistics in content analysis results
+
+**Dependencies:** Requires Phase 1 output
+
+### Phase 3: Shared CEFR Constants Refactor (Future)
+**Rationale:** `CEFR_LEVEL_ORDER` hardcoded in 6+ files blocks future level additions. Extract to shared module.
+
+**Delivers:**
+- `cefrLevels.js` constant file
+- All components reference shared constants
+- Future level additions require single-file edit
+
+**Note:** This is a refactor phase, not data-cleaning. Plan separately when UI work is needed.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All libraries confirmed in package.json; Zustand persist official docs |
-| Features | HIGH | Based on existing codebase + established CEFR methodology |
-| Architecture | HIGH | Pipeline patterns well-understood; session machine isolation sound |
-| Pitfalls | HIGH | Based on existing codebase analysis + CSS/React edge cases |
+| Stack | HIGH | Standard library proven sufficient; 50K JSON is trivial scale |
+| Features | HIGH | Based on CEFR-J reference data and existing correction script schema |
+| Architecture | HIGH | Flat structure validated by existing VocabAnalyzer implementation |
+| Pitfalls | HIGH | Based on existing codebase analysis and Vite config comments |
 
 **Overall confidence:** HIGH
 
-### Gaps to Address
-
-- **CEFR color palette finalization:** STACK.md suggests teal/orange, but design system may prefer different hues. Validate with UI-SPEC.md during phase 2 planning.
-- **Backend profile API contract:** AccountPanel PATCH endpoint schema not verified. Confirm `cefr_level` field is accepted or needs backend change.
-- **vocabAnalyzer.js integration:** Analysis engine exists but integration points with ImmersiveLessonPage not verified. Confirm `analyzeVideo()` API signature.
+**Gaps to Address:**
+- **SUPER bucket strategy:** ~30,000 words currently labeled SUPER (rank > 20,000). Research recommends better `_in_coca` flagging over attempting inference. Decision needed on whether to add more CEFR references or accept current coverage.
+- **Variant normalization:** `python` vs `Python` — research recommends storing variants in `_variants` array but defers implementation. Should confirm with frontend team whether case-variant dedup is needed.
+- **Inflectional forms:** `walk` vs `walked` — lemma grouping deferred to v2. No decision needed now.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- Zustand persist middleware: https://zustand.docs.pmnd.rs/middleware/persist
-- Tailwind CSS 4 theme customization: https://tailwindcss.com/docs/theme
-- Existing codebase: `cefr_vocab.json`, `vocabAnalyzer.js`, `ImmersiveLessonPage.jsx`, `learningSettings.js`
-- CEFR Word Level Methodology: https://cefrlookup.com/methodology
+- `cefrj-vocabulary-profile-1.5.csv` — 7,799 entries, authoritative CEFR-J Vocabulary Profile v1.5
+- `app/data/vocab/cefr_vocab.json` — 50,000 words with COCA rank-based levels
+- `fix_cefr_levels.py` — existing correction script defining target schema
+- `app/frontend/src/utils/vocabAnalyzer.js` — frontend vocabulary loading and lookup logic
 
 ### Secondary (MEDIUM confidence)
-- InfinLume n+1 color-coded learning: https://www.infinlume.com/
-- Duolingo CEFR Level Alignment: https://duolingoguides.com/duolingo-language-levels-test-scores-cefr-proficiency-scale/
-- Promova AI-driven vocabulary adaptation: https://goodereader.com/blog/digital-publishing/personalized-english-learning-how-promova-uses-ai-to-adapt-reading-and-vocabulary-training
+- COCA frequency methodology — rank-based thresholds are statistical proxies, not semantic classifications
+- CEFR classification methodology — level assignment varies by POS, confirmed by CEFR-J structure
 
 ### Tertiary (LOW confidence)
-- localStorage best practices: WebSearch 2026 — general web guidance, no canonical source
+- CEFR-J data freshness — v1.5 from ~2018; newer version existence unverified
 
 ---
 
-*Research completed: 2026-04-03*
-*Ready for roadmap: yes*
+*Research completed: 2026-04-05*
+*Ready for roadmap: yes (single-phase execution confirmed)*
