@@ -308,12 +308,19 @@ def rewrite_text_endpoint(
     try:
         rate = get_model_rate(db, effective_model)
     except Exception:
+        logger.exception("[DEBUG] llm.get_model_rate failed model=%s", effective_model)
         raise HTTPException(status_code=503, detail="LLM model not available")
 
     api_key = _require_api_key()
+    if not api_key:
+        logger.error("[DEBUG] llm.api_key_missing")
+        raise HTTPException(status_code=503, detail="LLM API key not configured")
+
     trace_id = str(uuid.uuid4())
 
     system_prompt = REWRITE_SYSTEM_PROMPT.format(target_level=target_level.upper())
+    logger.info("[DEBUG] llm.rewrite_start user_id=%s model=%s enable_thinking=%s text_len=%d",
+                 current_user.id, effective_model, enable_thinking, len(text))
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": text},
