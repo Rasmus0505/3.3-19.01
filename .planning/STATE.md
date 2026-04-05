@@ -1,73 +1,66 @@
-# Project State
+# STATE: Bottle English Learning — v2.6 清洗 CEFR 词典数据源
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-05)
-
-**Core value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-
-**Current focus:** Milestone v2.6 — 清洗 CEFR 词典数据源 (Planning)
+**Project:** Bottle English Learning
+**Core Value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
+**Current Milestone:** v2.6 清洗 CEFR 词典数据源
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-04-05 — Milestone v2.6 started
-
-## Milestone Status
-
-v2.6 清洗 CEFR 词典数据源 (Phases 30–34):
-- 🔄 Phase 30: CEFR 数据质量全面诊断 — PENDING
-- 🔄 Phase 31: CEFR 等级权威修正 — PENDING
-- 🔄 Phase 32: POS 词性信息补全 — PENDING
-- 🔄 Phase 33: 数据结构规范化 — PENDING
-- 🔄 Phase 34: 前后端适配验证 — PENDING
-
-Progress: [░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 0%
-
-## Previous Milestone Status
-
-v2.5 阅读板块 + Pretext CEFR 排版 (Phases 26–29):
-- Phase 26: Pretext 基础设施集成 — COMPLETE
-- Phase 27: 阅读板块核心 UI — COMPLETE
-- Phase 28: 词交互与生词本集成 — COMPLETE
-- Phase 29: AI 重写与路由 — COMPLETE
+**Phase:** 30
+**Plan:** Not started
+**Status:** Planning
+**Progress:** ●○○○○○○○○○ (0%)
 
 ## Performance Metrics
 
-**Velocity:**
-- Total plans completed: 50+ (across all previous milestones)
-- Average duration: ~15 min
+| Metric | Value |
+|--------|-------|
+| Total Phases | 2 |
+| Phase 30 Plans | 0/1 |
+| Phase 31 Plans | 0/1 |
+| Requirements | 14 total |
+| Completed | 0 |
+| In Progress | 0 |
 
-*Updated after each plan completion*
+## Milestone Context
+
+**v2.6 Goal:** 将旧 COCA rank-based CEFR 等级替换为权威 CEFR-J Vocabulary Profile 等级，补全词性（POS）信息，修复数据质量问题，为未来 CEFR 等级识别打好基础。
+
+**Previous milestone (v2.5) shipped 2026-04-05:**
+- Phase 26: Pretext 基础设施集成
+- Phase 27: 阅读板块核心 UI
+- Phase 28: 词交互与生词本集成
+- Phase 29: AI 重写与路由
 
 ## Accumulated Context
 
-### CEFR Data Quality Issues (v2.6 Pre-research)
+### Key Decisions
 
-Current state of `app/data/vocab/cefr_vocab.json`:
-- Total words: 50,000 (COCA frequency rank-based, MIT licensed)
-- CEFR-J Vocabulary Profile matched: 6,596 words (13.2%)
-- Of matched words, 5,564 (84.4%) have incorrect CEFR levels
-- Level assignment is purely rank-based (rank≤600=A1, etc.)
-- No POS (part-of-speech) information currently stored
-- `fix_cefr_levels.py` script exists with correction logic but not yet executed
+| Decision | Rationale |
+|----------|-----------|
+| _vocab_version: "fixed-v1" required | Prevents silent fallback to SUPER; enables cache-busting |
+| pos_entries as array per word | Derives primary `level` from lowest POS; backward compatible |
+| _source: "rank-based" on unmatched | Distinguishes verified (CEFR-J) vs estimated (frequency) |
+| Flat 50K-key structure preserved | O(1) lookup via vocabAnalyzer; existing pattern proven |
 
-Key quality problems:
-1. Many common words mislabeled as SUPER (e.g., `compute` rank=20,046 labeled SUPER, should be B2)
-2. CEFR-J Vocabulary Profile has 7,799 entries covering 7,020 unique headwords
-3. POS information (noun/verb/adjective/etc.) completely absent from current vocab
-4. Multiple POS entries per word not supported in current structure
+### Technical Notes
 
-### Decisions
+- `fix_cefr_levels.py` exists with defined schema; needs `_vocab_version` and `_source` fields added on output
+- CEFR-J reference: 7,799 entries covering ~14% of vocabulary
+- vocabAnalyzer.js uses `new Map(Object.entries(data.words))` — flat structure required
+- SUPER-level words always render as above-i+1 (red) regardless of user level
 
-Decisions are logged in PROJECT.md Key Decisions table.
+### Blockers
 
----
+- None currently
 
 ## Session Continuity
 
-Last session: 2026-04-05
-Stopped at: Starting new milestone v2.6 — 清洗 CEFR 词典数据源
-Resume file: None
+**Planning session started:** 2026-04-05
+**Next action:** `/gsd-plan-phase 30` — plan CEFR data execution
+
+---
+
+*Last updated: 2026-04-05*

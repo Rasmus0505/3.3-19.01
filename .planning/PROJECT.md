@@ -15,11 +15,8 @@ Users can turn real English media into usable learning lessons quickly, without 
 **Goal:** 将旧 COCA rank-based CEFR 等级替换为权威 CEFR-J Vocabulary Profile 等级，补全词性（POS）信息，修复数据质量问题，为未来 CEFR 等级识别打好基础。
 
 **Target features:** (in planning)
-- 🔄 Phase 30: CEFR 数据质量全面诊断 — 对比 fix_cefr_levels.py 分析结果，列出所有数据质量问题
-- 🔄 Phase 31: CEFR 等级权威修正 — 执行 CEFR-J 词表修正，写入修正后词表
-- 🔄 Phase 32: POS 词性信息补全 — 为匹配词补全 `pos_entries`，评估多词性问题
-- 🔄 Phase 33: 数据结构规范化 — 清理词形/大小写/特殊字符/多词条等问题
-- 🔄 Phase 34: 前后端适配验证 — 确保 vocabAnalyzer 和 computeCefrClassName 与新结构兼容
+- 🔄 Phase 30: CEFR 词表权威修正 — 执行 fix_cefr_levels.py，生成修正后词表 cefr_vocab_fixed.json
+- 🔄 Phase 31: 前后端适配验证 — 验证 vocabAnalyzer、computeCefrClassName 与新词表无缝衔接
 
 ## Current State
 
