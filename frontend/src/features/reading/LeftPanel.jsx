@@ -70,7 +70,6 @@ export function LeftPanel({
 }) {
   const [draft, setDraft] = useState("");
   const draftRef = useRef("");
-  const submitTimerRef = useRef(null);
 
   // 当 mode 变 input 时清空草稿
   useEffect(() => {
@@ -79,35 +78,30 @@ export function LeftPanel({
     }
   }, [mode]);
 
-  // 400ms debounce auto-submit
   const handleDraftChange = useCallback(
     (value) => {
       setDraft(value);
       draftRef.current = value;
-      if (submitTimerRef.current) clearTimeout(submitTimerRef.current);
-      submitTimerRef.current = setTimeout(() => {
-        const trimmed = value.trim();
-        if (trimmed.length > 0 && trimmed !== articleText) {
-          onSubmit(trimmed);
-        }
-      }, 400);
     },
-    [onSubmit, articleText]
+    []
   );
+
+  const handleConfirm = useCallback(() => {
+    const trimmed = draftRef.current.trim();
+    if (trimmed.length > 0) {
+      onSubmit(trimmed);
+    }
+  }, [onSubmit]);
 
   const handleKeyDown = useCallback(
     (e) => {
       // Ctrl/Cmd+Enter 立即提交
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        const trimmed = draftRef.current.trim();
-        if (trimmed) {
-          if (submitTimerRef.current) clearTimeout(submitTimerRef.current);
-          onSubmit(trimmed);
-        }
+        handleConfirm();
       }
     },
-    [onSubmit]
+    [handleConfirm]
   );
 
   const charCount = draft.length;
@@ -152,7 +146,9 @@ export function LeftPanel({
         {hasContent && (
           <div className="left-panel__input-footer">
             <span className="left-panel__char-count">{charCount} 字符</span>
-            <span className="left-panel__hint">Ctrl+Enter 立即分析</span>
+            <button className="left-panel__confirm-btn" onClick={handleConfirm}>
+              开始分析
+            </button>
           </div>
         )}
       </div>

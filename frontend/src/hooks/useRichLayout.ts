@@ -98,7 +98,8 @@ function extractLineSegments(lines: LayoutLine[], allSegments: RichSegment[]): R
         remaining = remaining.slice(seg.text.length).replace(/^\s+/, "");
         segmentIdx++;
       } else {
-        segmentIdx++;
+        // 标点或其他无法匹配的字符：消费 remaining 首字符，继续尝试匹配
+        remaining = remaining.slice(1);
       }
     }
 

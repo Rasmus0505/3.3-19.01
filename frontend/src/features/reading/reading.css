@@ -906,6 +906,23 @@
   color: oklch(0.65 0.02 85);
 }
 
+.left-panel__confirm-btn {
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  background: oklch(0.50 0.18 255);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.left-panel__confirm-btn:hover {
+  background: oklch(0.45 0.18 255);
+  box-shadow: 0 2px 8px oklch(0.50 0.18 255 / 0.4);
+}
+
 /* 重新输入按钮 */
 .left-panel__edit-again {
   position: absolute;
