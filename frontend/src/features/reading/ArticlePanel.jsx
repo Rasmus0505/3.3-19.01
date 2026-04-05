@@ -36,11 +36,22 @@ export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, o
       map.set(key, m.original);
       set.add(key);
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ff3acd'},body:JSON.stringify({sessionId:'ff3acd',location:'ArticlePanel.jsx:useMemo-rewriteMaps-end',message:'rewrittenSet size',data:{rewrittenSetSize:set.size,rewrittenToOriginalKeys:[...map.keys()].slice(0,5)},timestamp:Date.now(),runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     return { rewrittenSet: set, rewrittenToOriginal: map };
   }, [rewriteMappings]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const w = Math.floor(entry.contentRect.width);
+        if (w <= 0) return;
+        setMeasuredWidth(w);
+        onWidthChange?.(w);
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [onWidthChange]);
 
   const { lines, isReady, error } = useRichLayout(text, measuredWidth, ARTICLE_FONT, ARTICLE_LINE_HEIGHT);
 
@@ -134,10 +145,6 @@ function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels
   };
 
   const isRewritten = rewriteOriginal !== null && rewriteOriginal !== undefined;
-
-  // #region agent log
-  fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ff3acd'},body:JSON.stringify({sessionId:'ff3acd',location:'ArticleWord.jsx:render',message:'rewriteOriginal check',data:{text:segment.text,rewriteOriginal,isRewritten,isRewrittenStr:String(isRewritten)},timestamp:Date.now(),runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-  // #endregion
 
   return (
     <span
