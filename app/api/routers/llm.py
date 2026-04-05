@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
@@ -34,7 +35,15 @@ router = APIRouter(prefix="/api/llm", tags=["llm"])
 LLM_MODEL_DEEPSEEK_THINKING = "deepseek-v3.2"
 LLM_MODEL_DEEPSEEK_FAST = "deepseek-v3.2-fast"
 LLM_VALID_MODELS = {LLM_MODEL_DEEPSEEK_THINKING, LLM_MODEL_DEEPSEEK_FAST}
-CEFR_LEVELS = {"A1", "A2", "B1", "B2", "C1"}
+CEFR_LEVELS = {"A1", "A2", "B1", "B2", "C1", "C2"}
+
+
+class RewriteTextRequest(BaseModel):
+    """JSON body for POST /rewrite-text (matches frontend useReadingRewrite)."""
+
+    text: str = Field(..., min_length=1)
+    target_level: str = Field(default="B1", max_length=8)
+    enable_thinking: bool = False
 
 
 def _require_api_key() -> str:
@@ -259,23 +268,27 @@ REWRITE_MAX_INPUT_TOKENS = 3000
     responses={503: {"model": ErrorResponse}, 402: {"model": ErrorResponse}},
 )
 def rewrite_text_endpoint(
-    text: str,
-    target_level: str = Query(default="B1", max_length=4),
-    enable_thinking: bool = Query(default=False),
+    body: RewriteTextRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Rewrite given English text at CEFR target_level using DeepSeek V3.2.
     Charges the user according to the selected model rate.
+
+    Expects a JSON body: {"text": "...", "target_level": "B2", "enable_thinking": false}.
     """
+    text = body.text.strip()
+    target_level = body.target_level.strip()
+    enable_thinking = body.enable_thinking
+
     if target_level.upper() not in CEFR_LEVELS:
         raise HTTPException(
             status_code=422,
             detail=f"Invalid target_level '{target_level}'. Must be one of: {', '.join(sorted(CEFR_LEVELS))}",
         )
 
-    if not text or not isinstance(text, str) or not text.strip():
+    if not text:
         raise HTTPException(status_code=422, detail="text must be a non-empty string")
 
     if len(text) > REWRITE_MAX_INPUT_CHARS:
@@ -297,7 +310,7 @@ def rewrite_text_endpoint(
     system_prompt = REWRITE_SYSTEM_PROMPT.format(target_level=target_level.upper())
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": text.strip()},
+        {"role": "user", "content": text},
     ]
 
     try:
@@ -353,7 +366,7 @@ def rewrite_text_endpoint(
         charge_cents=charge_cents,
         lesson_id=None,
         enable_thinking=enable_thinking,
-        input_text_preview=text.strip()[:200],
+        input_text_preview=text[:200],
         trace_id=trace_id,
     )
 

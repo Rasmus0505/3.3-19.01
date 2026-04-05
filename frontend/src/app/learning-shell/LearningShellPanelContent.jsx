@@ -132,7 +132,9 @@ export function LearningShellPanelContent({
     if (activePanel === "reading") {
       return (
         <Suspense fallback={<PanelFallback />}>
-          <ReadingPage accessToken={accessToken} apiCall={apiCall} />
+          <div className="flex min-h-[calc(100dvh-8.5rem)] flex-col">
+            <ReadingPage accessToken={accessToken} apiCall={apiCall} />
+          </div>
         </Suspense>
       );
     }
