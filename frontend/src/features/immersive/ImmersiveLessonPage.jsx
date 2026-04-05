@@ -7,6 +7,7 @@ import SOEResultCard from "./SOEResultCard";
 import { useAppStore } from "../../store";
 import { VocabAnalyzer } from "../../utils/vocabAnalyzer";
 import { parseResponse, toErrorText } from "../../shared/api/client";
+import { readCefrLevel } from "../../app/authStorage";
 import { getStorageEstimate, getLessonMedia, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import {
   Badge,
@@ -4378,12 +4379,6 @@ export function ImmersiveLessonPage({
 // ============================================================
 // SimplifyVocabButton — 精准词汇简化按钮
 // ============================================================
-
-import { Loader2 } from "lucide-react";
-import { useCallback, useState } from "react";
-import { toast } from "sonner";
-import { parseResponse } from "../../shared/api/client";
-import { readCefrLevel } from "../../app/authStorage";
 
 const CEFR_ORDER_SV = ["A1", "A2", "B1", "B2", "C1", "C2", "SUPER"];
 
