@@ -22,9 +22,8 @@
  *   isAdding        {boolean}
  *   isRewriting     {boolean}
  *   rewriteError    {string|null}
- *   onRequestCollapse {() => void} — 收起右侧面板（由 ReadingPage 控制布局）
  */
-import { BookPlus, BookOpenText, ChevronDown, Languages, Loader2, Unlock, X } from "lucide-react";
+import { BookPlus, BookOpenText, Languages, Loader2, Unlock, X } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Button } from "../../shared/ui";
 
@@ -254,28 +253,9 @@ export function AnalysisPanel({
   isAdding = false,
   isRewriting = false,
   rewriteError = null,
-  onRequestCollapse,
 }) {
   return (
     <aside className="analysis-panel">
-      <div className="analysis-panel__chrome">
-        <h2 className="analysis-panel__heading">等级词汇表</h2>
-        {onRequestCollapse ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            className="analysis-panel__collapse text-muted-foreground hover:text-foreground shrink-0"
-            onClick={onRequestCollapse}
-            aria-expanded
-            aria-label="收起等级词汇表"
-            title="收起"
-          >
-            <ChevronDown className="size-4" aria-hidden />
-          </Button>
-        ) : null}
-      </div>
-
       {/* 用户级别指示 */}
       <div className="analysis-panel__user-level">
         <span className="analysis-panel__user-level-label">你的级别</span>

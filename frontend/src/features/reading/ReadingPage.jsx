@@ -14,7 +14,7 @@
  *   └───────────────────────┴──────────────────┘
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { readCefrLevel } from "../../app/authStorage";
 import { parseResponse } from "../../shared/api/client";
@@ -26,6 +26,37 @@ import { useReadingRewrite } from "../../hooks/useReadingRewrite";
 import { HistoryPanel, saveHistoryRecord } from "./HistoryPanel";
 import { LeftPanel } from "./LeftPanel";
 import { AnalysisPanel, getDefaultActiveLevels } from "./AnalysisPanel";
+
+/* ─── CollapseDivider ────────────────────────────── */
+/**
+ * 插入在 LeftPanel 和 AnalysisPanel 列之间的分隔线按钮，
+ * 居中于竖直分隔线位置。展开时显示「收起」，收起时显示「展开」。
+ */
+function CollapseDivider({ collapsed, onToggle, collapseLabel, expandLabel }) {
+  return (
+    <div className="reading-collapse-divider" aria-hidden={false}>
+      <button
+        type="button"
+        className={cn(
+          "reading-collapse-divider__btn",
+          collapsed && "reading-collapse-divider__btn--collapsed"
+        )}
+        onClick={onToggle}
+        aria-label={collapsed ? expandLabel : collapseLabel}
+        title={collapsed ? expandLabel : collapseLabel}
+      >
+        {collapsed ? (
+          <ChevronDown className="size-4 rotate-[-90deg]" />
+        ) : (
+          <>
+            <ChevronUp className="size-4" />
+            <span className="reading-collapse-divider__label">{collapseLabel}</span>
+          </>
+        )}
+      </button>
+    </div>
+  );
+}
 
 const DEMO_ARTICLE = `The Art of Reading in a Digital Age
 
@@ -306,6 +337,12 @@ export function ReadingPage({ accessToken, apiCall }) {
             activeLevels={activeLevels}
             rewriteMappings={rewriteMappings}
           />
+          <CollapseDivider
+            collapsed={!analysisPanelOpen}
+            onToggle={() => setAnalysisPanelOpen((v) => !v)}
+            collapseLabel="收起词汇表"
+            expandLabel="展开词汇表"
+          />
           <div
             className={cn(
               "reading-analysis-column",
@@ -330,20 +367,7 @@ export function ReadingPage({ accessToken, apiCall }) {
                 onRequestCollapse={() => setAnalysisPanelOpen(false)}
               />
             ) : (
-              <div className="reading-analysis-rail">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon-sm"
-                  className="reading-analysis-rail__btn shadow-sm"
-                  onClick={() => setAnalysisPanelOpen(true)}
-                  aria-expanded={false}
-                  aria-label="展开等级词汇表"
-                  title="展开等级词汇表"
-                >
-                  <ChevronDown className="size-4 rotate-[-90deg]" aria-hidden />
-                </Button>
-              </div>
+              <div className="reading-analysis-rail" />
             )}
           </div>
         </div>
