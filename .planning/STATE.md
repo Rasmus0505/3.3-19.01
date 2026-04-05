@@ -19,9 +19,9 @@
 |--------|-------|
 | Total Phases | 2 |
 | Phase 30 Plans | 1/1 |
-| Phase 31 Plans | 0/1 |
+| Phase 31 Plans | 1/1 |
 | Requirements | 14 total |
-| Completed | 1 (DATA-01~DATA-06) |
+| Completed | 2 (DATA-01~DATA-06, FRONT-01~FRONT-05, TEST-01~TEST-03) |
 | In Progress | 0 |
 
 ## Milestone Context

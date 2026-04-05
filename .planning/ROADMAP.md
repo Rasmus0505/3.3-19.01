@@ -8,7 +8,7 @@
 ## Phases
 
 - [x] **Phase 30: CEFR 词表权威修正** — 执行 fix_cefr_levels.py，将 7,020 个 CEFR-J 匹配词替换为权威等级，生成修正后词表
-- [ ] **Phase 31: 前后端适配验证** — 验证 vocabAnalyzer、computeCefrClassName 与新词表无缝衔接
+- [x] **Phase 31: 前后端适配验证** — 验证 vocabAnalyzer、computeCefrClassName 与新词表无缝衔接
 
 ---
 
@@ -59,7 +59,7 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 30. CEFR 词表权威修正 | 1/1 | ✓ COMPLETE | 2026-04-05 |
-| 31. 前后端适配验证 | 0/1 | Not started | - |
+| 31. 前后端适配验证 | 1/1 | ✓ COMPLETE | 2026-04-06 |
 
 ---
 
