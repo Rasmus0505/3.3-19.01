@@ -10,11 +10,14 @@ The product is intentionally split by runtime capability: the desktop client is 
 
 Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-## Current Milestone: v2.7 — (planning pending)
+## Current Milestone: v2.7 — 阅读板块重写增强
 
-**Goal:** _(use `/gsd-new-milestone` to define)_
+**Goal:** 持久化保存AI重写结果，改进重写词汇的视觉标记（黄色色块替代下划线），优化DeepSeek提示词以减少token消耗同时提升质量。
 
-**Target features:** _(in planning)_
+**Target features:**
+1. **重写文章持久化** — unlock后的重写结果保存到IndexedDB（原文+重写+mappings），阅读历史自动加载，支持原文/重写版模式切换
+2. **黄色色块UI** — 重写词/短语用黄色背景色块覆盖，悬停tooltip显示原词
+3. **提示词优化** — 参考Rewordify分级+句子级分析，输出结构化JSON减少token消耗
 
 ## Current State
 
@@ -110,7 +113,10 @@ See `.planning/milestones/v2.4-REQUIREMENTS.md` for archived requirements.
 
 ### Active
 
-_(All v2.6 requirements shipped — v2.7 planning pending)_
+<!-- v2.7 — 阅读板块重写增强 -->
+- [ ] 重写文章持久化：unlock后保存到IndexedDB，阅读历史自动加载，支持原文/重写版切换
+- [ ] 黄色色块UI：重写词汇用黄色背景色块覆盖，悬停显示原词
+- [ ] 提示词优化：参考Rewordify分级策略+句子级分析，结构化JSON减少token
 
 ### Out of Scope
 
@@ -129,6 +135,7 @@ _(All v2.6 requirements shipped — v2.7 planning pending)_
 - Current product direction is not to rebuild from scratch, but to sharpen product boundaries, stabilize generation flows, reduce server load, and improve the learner experience.
 - Market reference pass for this milestone is based on official materials checked on 2026-03-28 from LingQ, Migaku, FluentU, and Glossika. Shared patterns: sentence-centric repetition, one-click vocabulary capture, due-review loops, strong scenario-based plan positioning, and premium upsell through convenience rather than raw feature count.
 - v2.2 completed desktop publishing pipeline, announcement system, and wordbook review UX overhaul. v2.3 focuses on bug fixes and UX polish in learning and import flows.
+- Rewordify.com核心参考（2026-04-06调研）：分级难度系统（6级）+ 多显示模式（原文/重写并排、点击原词对照、词汇列表面板）+ 颜色高亮替代下划线（黄/紫、绿/浅红、蓝/橙）。内置50,000+简化词数据库。与本产品差异：CEFR词汇表（fixed-v1）可精准识别i+1词汇，比频率统计更可靠。
 - Immersive learning already uses a reducer-driven state machine with explicit loop/rate/display contracts (Phase 8) — bug fixes in this milestone should not regress that architecture.
 - Wordbook already supports word-level translation field and pronunciation button — v2.3 extends these to display in the wordbook panel above each entry.
 - Upload surface already has link/file tabs — v2.3 changes the default tab and redesigns the link-import flow with a configuration modal.
@@ -201,6 +208,9 @@ _(All v2.6 requirements shipped — v2.7 planning pending)_
 | Wordbook success animation: scale (200ms) + green border flash (350ms) | Scale distinguishes "added to wordbook" from CEFR difficulty color | ✅ Validated in Phase 25 |
 | `mergeLessonCardMeta` via Zustand `getState()` (factory-pattern slice) | Workaround for lessonSlice factory; matches ImmersiveLessonPage pattern | ✅ Validated in Phase 25 |
 | 本地优先：CEFR 分析、Pretext 测量、AI 重写结果全部在用户本地（浏览器）执行，服务器零压力 | 服务器仅存储 rewrite_id 引用，原文和重写结果存 IndexedDB，CEFR 分析存 localStorage | ✅ Locked in v2.5 |
+| 重写词汇黄色色块UI（覆盖式背景）+ tooltip原词对照 | 色块比下划线更明显，悬停显示原词符合Rewordify交互模式 | 🔄 v2.7 |
+| 重写结果按文章维度持久化到IndexedDB，阅读历史自动加载 | 避免重复请求API，用户可在任意时间切换原文/重写版 | 🔄 v2.7 |
+| Rewordify参考：分级难度+多显示模式+点击原词对照，本产品CEFR系统更精准 | Rewordify用频率统计，本产品用CEFR词汇表识别i+1词汇，可精准定位简化目标词 | 🔄 v2.7 |
 
 ## Evolution
 
