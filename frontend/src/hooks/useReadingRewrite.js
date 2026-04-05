@@ -3,6 +3,7 @@
  * ==============================================
  * Phase 29: AI 重写与路由
  * Phase 32: IndexedDB 持久化（articleId 主键，自动加载，视图偏好记忆）
+ * Phase 34: Prompt Optimization — 新 Schema：/simplify-words + 本地词替换
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { parseResponse } from "../shared/api/client";
@@ -12,6 +13,7 @@ import {
   getRewriteRecord,
   updateViewMode as dbUpdateViewMode,
 } from "../features/reading/readingRewriteDB";
+import { simplifyWords, estimateRewriteTokens } from "../features/reading/api/readingRewriteApi";
 
 /* ─── CEFR 等级计算 ──────────────────────────────────── */
 
@@ -21,6 +23,36 @@ function getTargetLevel(userLevel) {
   const userIdx = CEFR_ORDER.indexOf(userLevel);
   const targetIdx = Math.min(userIdx + 1, CEFR_ORDER.length - 1);
   return CEFR_ORDER[targetIdx];
+}
+
+/**
+ * 从 rewriteMappings 提取需要简化的原始词列表（按顺序）
+ * @param {Array<{original: string, rewritten: string}>} mappings
+ * @returns {string[]}
+ */
+function extractHighDiffWordsFromMappings(mappings) {
+  if (!mappings || mappings.length === 0) return [];
+  return mappings.map((m) => m.original);
+}
+
+/**
+ * 将原文中的高难度词按顺序替换为简化词
+ * 使用单词边界正则，避免部分匹配
+ * @param {string} originalText
+ * @param {string[]} words — 原始高难度词（按顺序）
+ * @param {string[]} replacements — 简化词（按顺序）
+ * @returns {string}
+ */
+function applySimplifiedWords(originalText, words, replacements) {
+  if (!words || words.length === 0) return originalText;
+  let result = originalText;
+  words.forEach((word, i) => {
+    const replacement = replacements[i] || word;
+    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`\\b${escaped}\\b`, "gi");
+    result = result.replace(regex, replacement);
+  });
+  return result;
 }
 
 /* ─── useReadingRewrite hook ──────────────────────────── */
@@ -97,6 +129,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
 
   const handleRewrite = useCallback(
     async (originalText) => {
+      // ── Phase 34 新流程：识别高难度词 → 简化 → 本地替换 ─────────────
       const { toast } = await import("sonner");
 
       if (!accessToken) {
@@ -123,50 +156,81 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         const userLevel = readCefrLevel() || "B1";
         const targetLevel = getTargetLevel(userLevel);
 
-        const resp = await apiCall("/api/llm/rewrite-text", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: originalText,
-            target_level: targetLevel,
-            enable_thinking: false,
-            include_mappings: true,
-          }),
-        });
-
-        const data = await parseResponse(resp);
-
-        if (!resp.ok || !data.ok || !data.rewritten_text) {
-          const msg = data?.message || "重写失败";
-          toast.error("重写失败：" + msg);
-          setRewriteError(msg);
-          return;
+        // Step 1: 估算 token 消耗，显示给用户（不阻塞主流程）
+        try {
+          const est = await estimateRewriteTokens(originalText, accessToken);
+          toast.info(
+            `预计消耗 ${est.estimatedChargeYuan.toFixed(2)} 元（约 ${est.estimatedTokens} tokens）`,
+            { duration: 4000 }
+          );
+        } catch (e) {
+          console.warn("Token estimation failed:", e);
         }
 
-        const id = data.trace_id || crypto.randomUUID();
+        // Step 2: 从 rewriteMappings 提取需要简化的原始词列表（按顺序）
+        // Phase 34 新 Schema：只简化 rewriteMappings 中记录的词
+        const wordsToSimplify = extractHighDiffWordsFromMappings(rewriteMappings);
 
-        // 保存到 IndexedDB（articleId 主键）
-        if (articleId) {
-          await dbSave({
-            articleId,
+        let rewrittenText = originalText;
+
+        // Step 3: 如果有高难度词，调用 /simplify-words
+        if (wordsToSimplify.length > 0) {
+          const result = await simplifyWords(
             originalText,
-            rewrittenText: data.rewritten_text,
-            mappings: data.rewrite_mappings || [],
-            viewMode: "rewritten",
-            rewrittenAt: Date.now(),
-          });
-          savedArticleIdRef.current = articleId;
-          onSuccess?.(articleId, data.rewritten_text);
+            wordsToSimplify,
+            targetLevel,
+            accessToken,
+            false
+          );
+          const simplifiedWords = result.simplifiedWords;
+          const chargeYuan = (result.chargeCents || 0) / 100;
+          toast.success("简化完成" + (chargeYuan > 0 ? "，消耗 " + chargeYuan.toFixed(2) + " 元" : ""));
+
+          // Step 4: 本地按顺序替换高难度词 → 生成重写文本
+          rewrittenText = applySimplifiedWords(originalText, wordsToSimplify, simplifiedWords);
+
+          // Step 5: 保存到 IndexedDB
+          const newMappings = wordsToSimplify.map((w, i) => ({
+            original: w,
+            rewritten: simplifiedWords[i] || w,
+          }));
+
+          if (articleId) {
+            await dbSave({
+              articleId,
+              originalText,
+              rewrittenText,
+              mappings: newMappings,
+              viewMode: "rewritten",
+              rewrittenAt: Date.now(),
+            });
+            savedArticleIdRef.current = articleId;
+            onSuccess?.(articleId, rewrittenText);
+          }
+
+          setRewrittenText(rewrittenText);
+          setRewriteMappings(newMappings);
+        } else {
+          // 无高难度词时，跳过 API 调用，原文即重写版
+          toast.info("当前没有需要简化的高难度词");
+          rewrittenText = originalText;
+          if (articleId) {
+            await dbSave({
+              articleId,
+              originalText,
+              rewrittenText,
+              mappings: [],
+              viewMode: "rewritten",
+              rewrittenAt: Date.now(),
+            });
+            savedArticleIdRef.current = articleId;
+            onSuccess?.(articleId, rewrittenText);
+          }
+          setRewrittenText(rewrittenText);
+          setRewriteMappings([]);
         }
 
-        setRewrittenText(data.rewritten_text);
-        setRewriteMappings(data.rewrite_mappings || []);
         setViewModeState("rewritten");
-
-        const chargeYuan = (data.charge_cents || 0) / 100;
-        toast.success(
-          "重写完成" + (chargeYuan > 0 ? "，消耗 " + chargeYuan.toFixed(2) + " 元" : "")
-        );
       } catch (err) {
         const msg = err?.message || "网络错误";
         toast.error("重写失败：" + msg);
@@ -175,7 +239,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         setIsRewriting(false);
       }
     },
-    [accessToken, apiCall, articleId]
+    [accessToken, apiCall, articleId, rewriteMappings]
   );
 
   return {

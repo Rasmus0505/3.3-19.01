@@ -1503,3 +1503,21 @@
   color: oklch(0.40 0.02 85);
 }
 
+/* ─── Phase 34: Token 估算费用预览 ─────────────────────── */
+.rewrite-estimate-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #92400e;
+  margin-bottom: 8px;
+}
+
+.rewrite-estimate-icon {
+  font-size: 14px;
+}
+
