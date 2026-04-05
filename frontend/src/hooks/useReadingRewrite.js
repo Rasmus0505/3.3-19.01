@@ -149,9 +149,8 @@ export function useReadingRewrite({ apiCall, accessToken }) {
         const userLevel = readCefrLevel() || "B1";
         const targetLevel = getTargetLevel(userLevel);
 
-        const authHeader = resp.headers.get("Authorization") || "(not set)";
         // #region agent log
-        fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f10f46'},body:JSON.stringify({sessionId:'f10f46',location:'useReadingRewrite.js:handleRewrite-before-call',message:'before rewrite apiCall',data:{hasAccessToken:!!accessToken,tokenPrefix:accessToken?(accessToken.slice(0,20)+'...'):'(empty)',hasApiCall:!!apiCall},timestamp:Date.now(),runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'0ec0eb'},body:JSON.stringify({sessionId:'0ec0eb',location:'useReadingRewrite.js:155-TDZ-line-removed',message:'TDZ line removed - authHeader was unused',data:{hasAccessToken:!!accessToken,hasApiCall:!!apiCall},timestamp:Date.now(),runId:'post-fix',hypothesisId:'FIX'})}).catch(()=>{});
         // #endregion
 
         const resp = await apiCall("/api/llm/rewrite-text", {
@@ -166,7 +165,7 @@ export function useReadingRewrite({ apiCall, accessToken }) {
         });
 
         // #region agent log
-        fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f10f46'},body:JSON.stringify({sessionId:'f10f46',location:'useReadingRewrite.js:handleRewrite-after-call',message:'after rewrite apiCall',data:{status:resp.status,statusText:resp.statusText,ok:resp.ok},timestamp:Date.now(),runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'0ec0eb'},body:JSON.stringify({sessionId:'0ec0eb',location:'useReadingRewrite.js:after-apiCall',message:'after apiCall response',data:{status:resp.status,statusText:resp.statusText,ok:resp.ok},timestamp:Date.now(),runId:'post-fix',hypothesisId:'B'})}).catch(()=>{});
         // #endregion
 
         const data = await parseResponse(resp);
@@ -193,7 +192,7 @@ export function useReadingRewrite({ apiCall, accessToken }) {
         setRewriteId(id);
         setRewrittenText(data.rewritten_text);
         // #region agent log
-        fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ff3acd'},body:JSON.stringify({sessionId:'ff3acd',location:'useReadingRewrite.js:handleRewrite-success',message:'rewrite response',data:{ok:data.ok,rewrittenTextLen:((data.rewritten_text)||'').length,mappingsLen:((data.rewrite_mappings)||[]).length,mappingsSample:((data.rewrite_mappings)||[]).slice(0,3).map(m=>({r:(m.rewritten||'').slice(0,20),o:(m.original||'').slice(0,20)}))},timestamp:Date.now(),runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'0ec0eb'},body:JSON.stringify({sessionId:'0ec0eb',location:'useReadingRewrite.js:rewrite-success',message:'rewrite success',data:{ok:data.ok,rewrittenTextLen:((data.rewritten_text)||'').length,mappingsLen:((data.rewrite_mappings)||[]).length},timestamp:Date.now(),runId:'post-fix',hypothesisId:'C'})}).catch(()=>{});
         // #endregion
         setRewriteMappings(data.rewrite_mappings || []);
         setViewModeState("rewritten");
