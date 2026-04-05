@@ -42,8 +42,7 @@ const SYSTEM_FIXED_COST_RATES = {
   "faster-whisper-medium": { cost_per_minute_cents: 14, cost_per_1k_tokens_input_cents: 0, cost_per_1k_tokens_output_cents: 0 },
   "qwen3-asr-flash-filetrans": { cost_per_minute_cents: 14, cost_per_1k_tokens_input_cents: 0, cost_per_1k_tokens_output_cents: 0 },
   "qwen-mt-flash": { cost_per_minute_cents: 0, cost_per_1k_tokens_input_cents: 1, cost_per_1k_tokens_output_cents: 20 },
-  "deepseek-v3.2": { cost_per_minute_cents: 0, cost_per_1k_tokens_input_cents: 2, cost_per_1k_tokens_output_cents: 3 },
-  "deepseek-v3.2-fast": { cost_per_minute_cents: 0, cost_per_1k_tokens_input_cents: 2, cost_per_1k_tokens_output_cents: 3 },
+  "deepseek-v3": { cost_per_minute_cents: 0, cost_per_1k_tokens_input_cents: 2, cost_per_1k_tokens_output_cents: 8 },
 };
 
 function _systemCostFor(modelName) {
@@ -56,8 +55,8 @@ function billingDisplayRank(item) {
   if (displayName === "Bottle 1.0") return 0;
   if (displayName === "Bottle 2.0") return 1;
   if (modelName === "qwen-mt-flash") return 2;
-  if (modelName === "deepseek-v3.2") return 3;
-  if (modelName === "deepseek-v3.2-fast") return 4;
+  if (modelName === "deepseek-v3") return 3;
+  if (modelName === "deepseek-v3") return 4;
   return 5;
 }
 

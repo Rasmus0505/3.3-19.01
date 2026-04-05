@@ -3,8 +3,8 @@ export const ASR_MODEL_KEYS = {
 };
 
 export const LLM_MODEL_KEYS = {
-  deepseekThinking: "deepseek-v3.2",
-  deepseekFast: "deepseek-v3.2-fast",
+  deepseekThinking: "deepseek-v3",
+  deepseekFast: "deepseek-v3",
 };
 
 export const FALLBACK_ASR_MODEL_CATALOG = {

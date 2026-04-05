@@ -208,8 +208,8 @@ export function AdminLLMTab({ apiCall }) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部模型</SelectItem>
-                <SelectItem value="deepseek-v3.2">DeepSeek V3.2 (思考)</SelectItem>
-                <SelectItem value="deepseek-v3.2-fast">DeepSeek V3.2 (快速)</SelectItem>
+                <SelectItem value="deepseek-v3">DeepSeek V3 (思考)</SelectItem>
+                <SelectItem value="deepseek-v3">DeepSeek V3 (快速)</SelectItem>
                 <SelectItem value="qwen-mt-flash">Qwen MT Flash</SelectItem>
                 <SelectItem value="qwen3-asr-flash-filetrans">Qwen ASR</SelectItem>
                 <SelectItem value="faster-whisper-medium">Faster Whisper</SelectItem>

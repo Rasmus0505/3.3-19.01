@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])
 
-LLM_MODEL_DEEPSEEK_THINKING = "deepseek-v3.2"
-LLM_MODEL_DEEPSEEK_FAST = "deepseek-v3.2-fast"
+LLM_MODEL_DEEPSEEK_THINKING = "deepseek-v3"
+LLM_MODEL_DEEPSEEK_FAST = "deepseek-v3"
 LLM_VALID_MODELS = {LLM_MODEL_DEEPSEEK_THINKING, LLM_MODEL_DEEPSEEK_FAST}
 CEFR_LEVELS = {"A1", "A2", "B1", "B2", "C1", "C2"}
 
