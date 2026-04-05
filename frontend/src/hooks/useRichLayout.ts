@@ -86,7 +86,9 @@ function extractLineSegments(lines: LayoutLine[], allSegments: RichSegment[]): R
     if (segmentIdx >= allSegments.length) break;
 
     let remaining = line.text;
-    while (remaining.length > 0 && segmentIdx < allSegments.length) {
+    let loopSafety = 0;
+    while (remaining.length > 0 && segmentIdx < allSegments.length && loopSafety < 9999) {
+      loopSafety++;
       const seg = allSegments[segmentIdx];
       const cleanSeg = cleanSegment(seg.text);
       if (!cleanSeg) {
@@ -95,7 +97,7 @@ function extractLineSegments(lines: LayoutLine[], allSegments: RichSegment[]): R
       }
       if (remaining.toLowerCase().startsWith(cleanSeg)) {
         lineSegments.push(seg);
-        remaining = remaining.slice(seg.text.length).replace(/^\s+/, "");
+        remaining = remaining.slice(cleanSeg.length).replace(/^\s+/, "");
         segmentIdx++;
       } else {
         // 标点或其他无法匹配的字符：消费 remaining 首字符，继续尝试匹配
@@ -109,6 +111,15 @@ function extractLineSegments(lines: LayoutLine[], allSegments: RichSegment[]): R
       segments: lineSegments,
     });
   }
+
+  // #region agent log
+  console.log("[DEBUG extractLineSegments]", {
+    lineCount: richLines.length,
+    firstLineSegs: richLines[0]?.segments?.length,
+    lastLineText: richLines[richLines.length - 1]?.text,
+    lastLineSegs: richLines[richLines.length - 1]?.segments?.length,
+  });
+  // #endregion
 
   return richLines;
 }
@@ -163,6 +174,13 @@ export function useRichLayout(
 
         // 3. layout
         const result = layoutWithLines(prepared, width, lineHeight);
+        console.log("[DEBUG pipeline]", {
+          textLen: textToMeasure.length,
+          width,
+          layoutLineCount: result.lines.length,
+          allSegmentsLen: segments.length,
+          allSegmentsFirst5: segments.slice(0, 5).map(s => s.text),
+        });
 
         // 4. 切分到行
         const richLines = extractLineSegments(result.lines, segments);
