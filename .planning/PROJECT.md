@@ -10,15 +10,27 @@ The product is intentionally split by runtime capability: the desktop client is 
 
 Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-## Current Milestone: v2.6 清洗 CEFR 词典数据源 — Planning
+## Current Milestone: v2.7 — (planning pending)
 
-**Goal:** 将旧 COCA rank-based CEFR 等级替换为权威 CEFR-J Vocabulary Profile 等级，补全词性（POS）信息，修复数据质量问题，为未来 CEFR 等级识别打好基础。
+**Goal:** _(use `/gsd-new-milestone` to define)_
 
-**Target features:** (in planning)
-- 🔄 Phase 30: CEFR 词表权威修正 — 执行 fix_cefr_levels.py，生成修正后词表 cefr_vocab_fixed.json
-- 🔄 Phase 31: 前后端适配验证 — 验证 vocabAnalyzer、computeCefrClassName 与新词表无缝衔接
+**Target features:** _(in planning)_
 
 ## Current State
+
+<details>
+<summary>v2.6 清洗 CEFR 词典数据源 归档摘要 (2026-04-06 shipped) — 点击展开</summary>
+
+**v2.6 shipped on 2026-04-06.** 2 phases, 2 plans, 14/14 requirements complete:
+- Phase 30: CEFR 词表权威修正 — fix_cefr_levels.py 执行，6,596 词等级修正（84.4%），`_vocab_version: "fixed-v1"` 生成
+- Phase 31: 前后端适配验证 — vocabAnalyzer、computeCefrClassName 完全向后兼容，无代码修改
+
+**Level distribution shift:** A1/A2/B1/B2 大幅增加，C1/C2/SUPER 相应减少，CEFR 分析精度提升。
+
+See `.planning/milestones/v2.6-ROADMAP.md` for full phase details.
+See `.planning/milestones/v2.6-REQUIREMENTS.md` for archived requirements.
+
+</details>
 
 <details>
 <summary>v2.5 阅读板块 + Pretext CEFR 排版 归档摘要 (2026-04-05 shipped) — 点击展开</summary>
@@ -93,10 +105,12 @@ See `.planning/milestones/v2.4-REQUIREMENTS.md` for archived requirements.
 - ✓ Subtitle mask position reset (centered on new video, enabled state persists across videos) and link restore enhancement — validated in Phase 23
 - ✓ CEFR infrastructure: backend cefr_level field (DB + PATCH API), frontend Zustand state + localStorage persistence, AccountPanel CEFR level selector (A1-C2 RadioGroup), vocabAnalyzer integration with localStorage cache and setTimeout(0) chunking — validated in Phase 24
 - ✓ CEFR immersive display: CEFR underlines on answer box word slots, wordbook CEFR color bands, scale + border flash animation, history list CEFR distribution badges — validated in Phase 25
+- ✓ CEFR vocabulary cleaned with authoritative CEFR-J levels: 6,596 words corrected (84.4%), 798 SUPER→valid upgrades, `_vocab_version: "fixed-v1"` prevents silent fallback — validated in Phase 30
+- ✓ CEFR vocabulary frontend compatibility: vocabAnalyzer loads fixed vocab, computeCefrClassName correct for all levels, backward compatible with no code changes — validated in Phase 31
 
 ### Active
 
-_(All v2.5 requirements shipped — v2.6 planning pending)_
+_(All v2.6 requirements shipped — v2.7 planning pending)_
 
 ### Out of Scope
 
@@ -206,4 +220,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-05 after v2.5 milestone completion, v2.6 started*
+*Last updated: 2026-04-06 after v2.6 milestone completion, v2.7 started*

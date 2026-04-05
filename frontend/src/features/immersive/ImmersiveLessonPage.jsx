@@ -185,12 +185,22 @@ function _addNormalizedKeysToMap(map, rawLower, level) {
   }
 }
 
-function lookupCefrLevelFromMap(map, token) {
+/**
+ * @param {Map} map - CEFR level map
+ * @param {string} token - raw token
+ * @param {VocabAnalyzer|null} [fallbackAnalyzer] - if provided, missing map entries are resolved via VocabAnalyzer
+ * @returns {string|undefined} CEFR level or undefined
+ */
+function lookupCefrLevelFromMap(map, token, fallbackAnalyzer) {
   if (!(map instanceof Map)) return undefined;
   const key = normalizeToken(token);
   if (map.has(key)) return map.get(key);
   const noApos = key.replace(/'/g, "");
   if (noApos && noApos !== key && map.has(noApos)) return map.get(noApos);
+  // Fallback: ask VocabAnalyzer directly (handles stopwords, nonstandard contractions, bare punctuation)
+  if (fallbackAnalyzer && fallbackAnalyzer.isLoaded) {
+    return fallbackAnalyzer.lookupCefrLevelForSurfaceForm(token) ?? undefined;
+  }
   return undefined;
 }
 
@@ -4070,7 +4080,7 @@ export function ImmersiveLessonPage({
                         className={cn(
                           `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
                           (() => {
-                            const lookupResult = lookupCefrLevelFromMap(currentSentenceCefrMap, token);
+                            const lookupResult = lookupCefrLevelFromMap(currentSentenceCefrMap, token, cefrAnalyzerRef.current);
                             const cefrClass = computeCefrClassName(lookupResult, cefrLevel);
                             if (typeof window !== "undefined" && window.__cefrDebug?.enabled) {
                               console.debug("[CEFR render]", { token, lookupResult, cefrLevel, cefrClass });
@@ -4166,7 +4176,7 @@ export function ImmersiveLessonPage({
                                     : "bg-slate-100/80 text-foreground hover:bg-slate-200/70 border-transparent",
                                   wordbookBusy ? "opacity-60" : "",
                                   computeCefrClassName(
-                                    lookupCefrLevelFromMap(wordbookSentenceCefrMap, token),
+                                    lookupCefrLevelFromMap(wordbookSentenceCefrMap, token, cefrAnalyzerRef.current),
                                     cefrLevel,
                                   ),
                                   wordbookSuccessAnimationIndexes.includes(index) ? "wordbook-token--success" : "",

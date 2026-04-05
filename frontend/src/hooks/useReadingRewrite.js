@@ -149,6 +149,11 @@ export function useReadingRewrite({ apiCall, accessToken }) {
         const userLevel = readCefrLevel() || "B1";
         const targetLevel = getTargetLevel(userLevel);
 
+        const authHeader = resp.headers.get("Authorization") || "(not set)";
+        // #region agent log
+        fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f10f46'},body:JSON.stringify({sessionId:'f10f46',location:'useReadingRewrite.js:handleRewrite-before-call',message:'before rewrite apiCall',data:{hasAccessToken:!!accessToken,tokenPrefix:accessToken?(accessToken.slice(0,20)+'...'):'(empty)',hasApiCall:!!apiCall},timestamp:Date.now(),runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+
         const resp = await apiCall("/api/llm/rewrite-text", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -159,6 +164,10 @@ export function useReadingRewrite({ apiCall, accessToken }) {
             include_mappings: true,
           }),
         });
+
+        // #region agent log
+        fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f10f46'},body:JSON.stringify({sessionId:'f10f46',location:'useReadingRewrite.js:handleRewrite-after-call',message:'after rewrite apiCall',data:{status:resp.status,statusText:resp.statusText,ok:resp.ok},timestamp:Date.now(),runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
 
         const data = await parseResponse(resp);
 

@@ -370,6 +370,44 @@ class VocabAnalyzer {
   // ============================================================
 
   /**
+   * 将 ASR/字幕中常见的不标准写法还原为标准词形（不经 VocabAnalyzer 的 _stripContraction）。
+   * 例: "dont" → "do"  |  "cant" → "can"  |  "im" → "i"  |  "wont" → "will"
+   * 返回 null 表示不需要还原。
+   */
+  _normalizeNonstandardContraction(word) {
+    const lower = word.toLowerCase();
+    // 不带撇号的不标准缩写映射
+    const map = {
+      "dont": "do",
+      "cant": "can",
+      "wont": "will",
+      "shant": "shall",
+      "im": "i",
+      "ive": "i",
+      "id": "i",
+      "ill": "i",
+      "theyve": "they",
+      "theyll": "they",
+      "theyd": "they",
+      "weve": "we",
+      "well": "we",
+      "wed": "we",
+      "youll": "you",
+      "youd": "you",
+      "its": "it",
+      "thats": "that",
+      "whats": "what",
+      "whos": "who",
+      "wheres": "where",
+      "whens": "when",
+      "hows": "how",
+      "lets": "let",
+    };
+    if (map[lower] !== undefined) return map[lower];
+    return null;
+  }
+
+  /**
    * 尝试将英语缩写还原为其主词形（仅在直接查表失败时调用）。
    * 例: "weren't" → "were"  |  "it's" → "it"  |  "don't" → "do"
    * 返回 null 表示不可还原（已还原过、数字词等）。
@@ -422,14 +460,21 @@ class VocabAnalyzer {
       return { word: lemma, level: info.level, rank: info.rank, isUnknown: false, original: lower };
     }
 
-    // 3. 尝试还原英语缩写（weren't → were, don't → do …）
+    // 3. 尝试还原不标准缩写（dont→do, cant→can …，不经撇号正则）
+    const nonstandard = this._normalizeNonstandardContraction(lower);
+    if (nonstandard !== null && nonstandard !== lower && this.wordMap.has(nonstandard)) {
+      const info = this.wordMap.get(nonstandard);
+      return { word: nonstandard, level: info.level, rank: info.rank, isUnknown: false, original: lower };
+    }
+
+    // 4. 尝试还原标准英语缩写（weren't → were, don't → do …）
     const stripped = this._stripContraction(lower);
     if (stripped !== null && stripped !== lower && this.wordMap.has(stripped)) {
       const info = this.wordMap.get(stripped);
       return { word: stripped, level: info.level, rank: info.rank, isUnknown: false, original: lower };
     }
 
-    // 4. 查不到
+    // 5. 查不到
     return null;
   }
 

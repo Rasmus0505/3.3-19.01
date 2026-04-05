@@ -349,8 +349,26 @@ def rewrite_text_endpoint(
         if include_mappings
         else REWRITE_SYSTEM_PROMPT.format(target_level=target_level.upper())
     )
-    logger.info("[DEBUG] llm.rewrite_start user_id=%s model=%s enable_thinking=%s include_mappings=%s text_len=%d",
+    logger.info("[DEBUG] llm.rewrite_auth_check user_id=%s effective_model=%s enable_thinking=%s include_mappings=%s text_len=%d",
                  current_user.id, effective_model, enable_thinking, include_mappings, len(text))
+    # #region agent log
+    with open("D:/3.3-19.01/debug-f10f46.log", "a", encoding="utf-8") as _log:
+        import json, datetime as _dt
+        _log.write(json.dumps({
+            "sessionId": "f10f46",
+            "location": "llm.py:rewrite_text_endpoint:auth_ok",
+            "message": "rewrite endpoint reached with auth OK",
+            "data": {
+                "user_id": current_user.id,
+                "model": effective_model,
+                "text_len": len(text),
+                "trace_id": trace_id,
+            },
+            "timestamp": int(_dt.datetime.now().timestamp() * 1000),
+            "runId": "run1",
+            "hypothesisId": "D",
+        }) + "\n")
+    # #endregion
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": text},
