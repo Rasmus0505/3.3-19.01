@@ -29,9 +29,6 @@ export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, o
 
   // Build lookup maps from rewrite mappings for fast per-segment resolution.
   const { rewrittenSet, rewrittenToOriginal } = useMemo(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ff3acd'},body:JSON.stringify({sessionId:'ff3acd',location:'ArticlePanel.jsx:useMemo-rewriteMaps',message:'rewriteMappings computed',data:{mappingsLength:(rewriteMappings??[]).length,mappingsSample:(rewriteMappings??[]).slice(0,3).map(m=>({r:m.rewritten,o:m.original}))},timestamp:Date.now(),runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     const map = new Map();
     const set = new Set();
     for (const m of rewriteMappings ?? []) {
@@ -44,20 +41,6 @@ export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, o
     // #endregion
     return { rewrittenSet: set, rewrittenToOriginal: map };
   }, [rewriteMappings]);
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const w = Math.floor(entry.contentRect.width);
-        if (w <= 0) return;
-        setMeasuredWidth(w);
-        onWidthChange?.(w);
-      }
-    });
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, [onWidthChange]);
 
   const { lines, isReady, error } = useRichLayout(text, measuredWidth, ARTICLE_FONT, ARTICLE_LINE_HEIGHT);
 

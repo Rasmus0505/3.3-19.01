@@ -7,7 +7,7 @@ const desktopRendererBuild = String(process.env.BOTTLE_DESKTOP_RENDERER_BUILD ||
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   base: desktopRendererBuild ? "./" : "/static/",
-  // 本地 dev：把 /data 代理到后端，否则 cefr_vocab.json 404 会导致 CEFR 全为 SUPER（橙色）
+  // 本地 dev：把 /data 代理到后端，否则 cefr_vocab_fixed.json 404 会导致 CEFR 全为 SUPER（橙色）
   server: desktopRendererBuild
     ? undefined
     : {

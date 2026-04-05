@@ -25,13 +25,13 @@ function resolveCefrVocabFetchUrls(primaryPath) {
     urls.push(u);
   };
   add(primaryPath);
-  add("/data/vocab/cefr_vocab.json");
-  const base =
-    typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL
-      ? String(import.meta.env.BASE_URL).replace(/\/+$/, "")
-      : "";
-  if (base) {
-    add(`${base}/data/vocab/cefr_vocab.json`.replace(/([^:]\/)\/+/g, "$1"));
+    add("/data/vocab/cefr_vocab_fixed.json");
+    const base =
+      typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL
+        ? String(import.meta.env.BASE_URL).replace(/\/+$/, "")
+        : "";
+    if (base) {
+      add(`${base}/data/vocab/cefr_vocab_fixed.json`.replace(/([^:]\/)\/+/g, "$1"));
   }
   return urls;
 }
@@ -43,7 +43,7 @@ function isValidCefrVocabPayload(data) {
 class VocabAnalyzer {
   constructor(options = {}) {
     // 词汇表路径（可以是本地路径或 CDN）
-    this.vocabPath = options.vocabPath || "/data/vocab/cefr_vocab.json";
+    this.vocabPath = options.vocabPath || "/data/vocab/cefr_vocab_fixed.json";
 
     // 词汇表数据
     this.vocabData = null;      // 完整 JSON
@@ -422,6 +422,28 @@ class VocabAnalyzer {
     }
 
     // 4. 查不到
+    return null;
+  }
+
+  /**
+   * 查询单词的完整信息（含所有词性条目）。
+   * 用于需要展示多词性的场景（如词性选择器）。
+   * @param {string} word - 英文单词
+   * @returns {object|null} 完整词表条目，含 pos_entries；或 null
+   */
+  getWordInfo(word) {
+    const lower = word.toLowerCase();
+    // 尝试词形还原链：原文 -> lemma -> 还原缩写
+    const candidates = [lower];
+    const lemma = this._lemmatize(lower);
+    if (lemma !== lower) candidates.push(lemma);
+    const stripped = this._stripContraction(lower);
+    if (stripped !== null && stripped !== lower) candidates.push(stripped);
+    for (const candidate of candidates) {
+      if (this.wordMap.has(candidate)) {
+        return this.wordMap.get(candidate);
+      }
+    }
     return null;
   }
 

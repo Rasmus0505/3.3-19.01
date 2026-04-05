@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 LESSON_TASK_REQUIRED_COLUMNS: tuple[str, ...] = tuple(str(column.name) for column in LessonGenerationTask.__table__.columns)
 
 
-CEFR_VOCAB_FILE = APP_DIR / "data" / "vocab" / "cefr_vocab.json"
+CEFR_VOCAB_FILE = APP_DIR / "data" / "vocab" / "cefr_vocab_fixed.json"
 
 READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
     "users": ("is_admin", "last_login_at", "username", "username_normalized"),
@@ -615,7 +615,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app = FastAPI(title=SERVICE_NAME, version="0.3.0", lifespan=app_lifespan if enable_lifespan else None)
     app.state.runtime_status = RuntimeStatus()
 
-    @app.get("/data/vocab/cefr_vocab.json", include_in_schema=False)
+    @app.get("/data/vocab/cefr_vocab_fixed.json", include_in_schema=False)
     def serve_cefr_vocab() -> FileResponse:
         """CEFR 词表：前端 VocabAnalyzer 默认从此 URL 拉取；此前未挂载导致全站词级分析失败（全部视为 SUPER / 橙色）。"""
         if not CEFR_VOCAB_FILE.is_file():
@@ -623,7 +623,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
         return FileResponse(
             str(CEFR_VOCAB_FILE),
             media_type="application/json",
-            filename="cefr_vocab.json",
+            filename="cefr_vocab_fixed.json",
         )
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

@@ -187,6 +187,10 @@ export function useRichLayout(
 
   const compute = useCallback(
     async (textToMeasure: string, width: number) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1b6cad'},body:JSON.stringify({sessionId:'1b6cad',location:'useRichLayout.ts:compute-start',message:'compute started - width changed',data:{textLen:textToMeasure.length,width,prevLinesCount:lines.length},timestamp:Date.now(),runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+
       if (!textToMeasure.trim()) {
         setLines([]);
         setIsReady(true);
@@ -195,36 +199,30 @@ export function useRichLayout(
       }
 
       try {
-        setIsReady(false);
-        setError(null);
-
+        // FIX: Don't set isReady(false) immediately. Instead:
+        // 1. Compute new layout first (keeping old content visible)
+        // 2. Only update state when new layout is ready
+        // This prevents the skeleton flicker during resize
         const prepared = prepareWithSegments(textToMeasure, font);
         preparedRef.current = prepared;
-
         const analyzer = await getOrCreateAnalyzer();
-
         const result = layoutWithLines(prepared, width, lineHeight);
         const richLines = layoutLinesToRichLines(prepared, result.lines, analyzer);
 
         // #region agent log
         const segTotal = richLines.reduce((n, l) => n + l.segments.length, 0);
-        const emptyLines = richLines.filter((l) => l.segments.length === 0).length;
-        console.log("[DEBUG pipeline post-fix]", {
-          runId: "post-fix",
-          textLen: textToMeasure.length,
-          width,
-          layoutLineCount: result.lines.length,
-          richLineCount: richLines.length,
-          renderedSegTotal: segTotal,
-          emptyLayoutLines: emptyLines,
-          lastLineSegs: richLines[richLines.length - 1]?.segments?.length,
-        });
+        fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1b6cad'},body:JSON.stringify({sessionId:'1b6cad',location:'useRichLayout.ts:compute-done',message:'new layout computed - now updating state',data:{textLen:textToMeasure.length,width,newLinesCount:richLines.length,newSegsTotal:segTotal},timestamp:Date.now(),runId:'run1',hypothesisId:'A'})}).catch(()=>{});
         // #endregion
 
+        // Only now update state - old content was still visible during computation
         setLines(richLines);
         setIsReady(true);
+        setError(null);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        // #region agent log
+        fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1b6cad'},body:JSON.stringify({sessionId:'1b6cad',location:'useRichLayout.ts:compute-error',message:'compute error',data:{error:msg},timestamp:Date.now(),runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         setError(msg);
         setLines([]);
         setIsReady(true);
