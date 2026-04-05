@@ -24,6 +24,7 @@ from app.schemas import ErrorResponse
 from app.services.billing_service import (
     EVENT_CONSUME_LLM,
     consume_points,
+    ensure_default_billing_rates,
     get_model_rate,
 )
 from app.services.llm_usage_service import get_llm_usage_summary, list_user_llm_usage
@@ -68,6 +69,9 @@ def generate_reading_material_endpoint(
     Generate reading material from word list using DeepSeek V3.2.
     Charges the user according to the selected model rate.
     """
+    # 确保计费配置已初始化
+    ensure_default_billing_rates(db)
+
     if target_level.upper() not in CEFR_LEVELS:
         raise HTTPException(
             status_code=422,
@@ -278,6 +282,8 @@ def rewrite_text_endpoint(
 
     Expects a JSON body: {"text": "...", "target_level": "B2", "enable_thinking": false}.
     """
+    # 确保计费配置已初始化
+    ensure_default_billing_rates(db)
     text = body.text.strip()
     target_level = body.target_level.strip()
     enable_thinking = body.enable_thinking

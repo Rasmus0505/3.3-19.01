@@ -81,7 +81,7 @@ def call_deepseek(
 
     extra_body: dict = {}
     if not enable_thinking:
-        extra_body["think"] = False
+        extra_body["enable_thinking"] = False
 
     response = client.chat.completions.create(
         model=model,
