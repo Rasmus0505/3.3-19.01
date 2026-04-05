@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
@@ -285,6 +285,208 @@ REWRITE_WITH_MAPPINGS_SYSTEM_PROMPT = (
 REWRITE_MAX_INPUT_CHARS = 12000
 REWRITE_MAX_OUTPUT_TOKENS = 2048
 REWRITE_MAX_INPUT_TOKENS = 3000
+
+# ── 新 Schema Prompt（简化词数组，按顺序）──────────────────────────────
+SIMPLIFY_WORDS_SYSTEM_PROMPT = (
+    "You are an English text simplifier for language learners.\n"
+    "Given a sentence and a list of words/phrases to simplify from that sentence,\n"
+    "return a JSON array of simplified replacements, IN THE SAME ORDER as the input list.\n"
+    "Rules:\n"
+    "- Return ONLY a valid JSON array of strings — no markdown fences, no extra text\n"
+    "- Each entry must be a concise simplified word or phrase for the corresponding input\n"
+    "- Preserve the original meaning and part of speech where possible\n"
+    "- If a word is already simple enough, keep it unchanged\n"
+    "- Do NOT reorder the array entries — match input order exactly\n"
+)
+
+SIMPLIFY_WORDS_EXAMPLE = """
+Example 1:
+原文：I used to loathe and eschew perusing English.
+需要简化的词：loathe, eschew, perusing
+返回：["hate", "avoid", "carefully reading"]
+
+Example 2:
+原文：The remuneration was insufficient for the arduous task.
+需要简化的词：remuneration, insufficient, arduous
+返回：["pay", "not enough", "hard"]
+"""
+
+
+class SimplifyWordsRequest(BaseModel):
+    """JSON body for POST /api/llm/simplify-words."""
+    sentence: str = Field(..., min_length=1)
+    words: list[str] = Field(..., min_length=1)
+    target_level: str = Field(default="B1", max_length=8)
+    enable_thinking: bool = False
+
+    @field_validator("sentence")
+    @classmethod
+    def sentence_max_length(cls, v: str) -> str:
+        if len(v) > 2000:
+            raise ValueError("Sentence too long (max 2000 chars)")
+        return v
+
+
+@router.get("/estimate-tokens")
+def estimate_tokens_endpoint(
+    text: str = Query(..., min_length=1),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    估算给定文本的 token 数量（用于在重写前显示费用估算）。
+    使用简单估算：英文约 4 字符/token。
+    """
+    from app.db.session import SessionLocal
+
+    char_count = len(text)
+    estimated_tokens = max(1, char_count // 4)
+    prompt_est = estimated_tokens
+    completion_est = estimated_tokens // 2
+    total_est = prompt_est + completion_est
+
+    db = SessionLocal()
+    try:
+        rate = get_model_rate(db, "deepseek-v3.2")
+        est_charge = int(total_est * rate.points_per_1k_tokens / 10)
+    except Exception:
+        est_charge = int(total_est * 5)
+    finally:
+        db.close()
+
+    return {
+        "ok": True,
+        "char_count": char_count,
+        "estimated_tokens": total_est,
+        "estimated_charge_cents": est_charge,
+        "estimated_charge_yuan": est_charge / 100.0,
+    }
+
+
+@router.post(
+    "/simplify-words",
+    responses={503: {"model": ErrorResponse}, 402: {"model": ErrorResponse}},
+)
+def simplify_words_endpoint(
+    body: SimplifyWordsRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Simplify a list of high-difficulty words/phrases from a given sentence.
+    Returns a JSON array of simplified replacements, in the same order as the input.
+
+    新 Schema（Phase 34）: 发送高难度词列表 → 只返回简化词数组
+    """
+    ensure_default_billing_rates(db)
+    if body.target_level.upper() not in CEFR_LEVELS:
+        raise HTTPException(status_code=422, detail=f"Invalid target_level '{body.target_level}'")
+    if not body.words:
+        raise HTTPException(status_code=422, detail="words must be non-empty list")
+    if len(body.sentence) > 2000:
+        raise HTTPException(status_code=413, detail="Sentence too long (max 2000 chars)")
+
+    effective_model = LLM_MODEL_DEEPSEEK_THINKING if body.enable_thinking else LLM_MODEL_DEEPSEEK_FAST
+
+    try:
+        rate = get_model_rate(db, effective_model)
+    except Exception:
+        raise HTTPException(status_code=503, detail="LLM model not available")
+
+    api_key = _require_api_key()
+    trace_id = str(uuid.uuid4())
+
+    user_message = f"原文：{body.sentence}\n需要简化的词：{', '.join(body.words)}"
+    system_prompt = SIMPLIFY_WORDS_SYSTEM_PROMPT + "\n\n" + SIMPLIFY_WORDS_EXAMPLE
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
+    ]
+
+    try:
+        raw_response, usage = call_deepseek(
+            messages=messages,
+            api_key=api_key,
+            enable_thinking=body.enable_thinking,
+            stream=False,
+            temperature=0.3,
+            max_tokens=512,
+        )
+    except Exception as exc:
+        logger.exception("[DEBUG] llm.simplify_words_failed user_id=%s error=%s", current_user.id, str(exc)[:200])
+        raise HTTPException(status_code=502, detail=f"LLM call failed: {str(exc)[:200]}")
+
+    if not raw_response:
+        raise HTTPException(status_code=502, detail="LLM returned empty result")
+
+    import json as _json
+    simplified_words: list[str] = []
+    try:
+        parsed = _json.loads(raw_response.strip())
+        if isinstance(parsed, list):
+            simplified_words = [str(item) for item in parsed]
+        else:
+            raise HTTPException(status_code=502, detail="Expected JSON array, got other type")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("[DEBUG] llm.simplify_words_parse_failed user_id=%s raw=%s error=%s",
+                       current_user.id, raw_response[:200], str(exc)[:100])
+        raise HTTPException(status_code=502, detail=f"Failed to parse model response: {str(exc)[:100]}")
+
+    total_tokens = usage.prompt_tokens + usage.completion_tokens
+    charge_cents = calculate_llm_charge_by_tokens(
+        total_tokens=total_tokens,
+        points_per_1k_tokens=rate.points_per_1k_tokens,
+    )
+
+    try:
+        consume_points(
+            db,
+            user_id=current_user.id,
+            points=charge_cents,
+            model_name=effective_model,
+            lesson_id=None,
+            event_type=EVENT_CONSUME_LLM,
+            note=f"简化词汇，total_tokens={total_tokens}",
+        )
+    except Exception:
+        pass
+
+    from app.services.llm_usage_service import log_llm_usage
+    log_llm_usage(
+        db,
+        user_id=current_user.id,
+        model_name=effective_model,
+        category="simplify_words",
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        reasoning_tokens=usage.reasoning_tokens,
+        total_tokens=total_tokens,
+        input_cost_cents=None,
+        charge_cents=charge_cents,
+        lesson_id=None,
+        enable_thinking=body.enable_thinking,
+        input_text_preview=body.sentence[:200],
+        trace_id=trace_id,
+    )
+
+    db.commit()
+
+    return {
+        "ok": True,
+        "simplified_words": simplified_words,
+        "input_words": body.words,
+        "model": effective_model,
+        "usage": {
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "reasoning_tokens": usage.reasoning_tokens,
+            "total_tokens": total_tokens,
+        },
+        "charge_cents": charge_cents,
+        "trace_id": trace_id,
+    }
 
 
 @router.post(
