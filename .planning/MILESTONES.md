@@ -1,6 +1,22 @@
 # Milestones
 
-## v2.5 阅读板块 + Pretext CEFR 排版 (Shipped: 2026-04-05)
+## v2.6 清洗 CEFR 词典数据源 (Shipped: 2026-04-06)
+
+**Phases completed:** 2 phases (30, 31), 2 plans
+
+**Key outcomes:**
+
+- Phase 30: CEFR 词表权威修正 — 执行 fix_cefr_levels.py，将 7,020 个 CEFR-J 匹配词替换为权威等级，生成修正后词表
+  - 5,564 个词等级被修正（84.4% 的 CEFR-J 匹配词）
+  - 798 个 SUPER 词被提升为有效 CEFR 等级（B1-B2）
+  - 6,596 个词获得 `pos_entries` 数组（含词性信息）
+  - 顶级添加 `_vocab_version: "fixed-v1"` 字段，支持缓存刷新
+- Phase 31: 前后端适配验证 — 验证 vocabAnalyzer、computeCefrClassName 与新词表无缝衔接
+  - 所有 8 项验证标准通过（FRONT-01~05, TEST-01~03）
+  - 无需修改前端代码，完全向后兼容
+  - SessionStorage 缓存自动刷新机制确认
+
+---
 
 **Phases completed:** 4 phases (26, 27, 28, 29), 10 plans
 
