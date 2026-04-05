@@ -133,6 +133,7 @@ export function ReadingPage({ accessToken, apiCall }) {
   const [activeLevels, setActiveLevels] = useState(defaultActiveLevels);
   // 右侧等级词汇表（分析面板）展开/收起
   const [analysisPanelOpen, setAnalysisPanelOpen] = useState(true);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
   const wordStats = useMemo(() => computeWordStats(articleLines), [articleLines]);
 
@@ -224,7 +225,12 @@ export function ReadingPage({ accessToken, apiCall }) {
     rewriteError,
     clearRewrite,
     handleRewrite,
-  } = useReadingRewrite({ apiCall, accessToken });
+  } = useReadingRewrite({
+    apiCall,
+    accessToken,
+    articleId: activeHistoryId,
+    onSuccess: () => setHistoryRefreshKey((k) => k + 1),
+  });
 
   const prevCommittedRef = useRef(activeArticleText);
   useEffect(() => {
@@ -251,14 +257,16 @@ export function ReadingPage({ accessToken, apiCall }) {
   // ── 文章提交（切换到阅读模式）────────────────────
   const handleArticleSubmit = useCallback(
     async (text) => {
+      const id = crypto.randomUUID();
       setActiveArticleText(text);
+      setActiveHistoryId(id);
       setMode("reading");
       setSelectedWords([]);
       clearRewrite();
       // 保存到历史记录
       try {
         await saveHistoryRecord({
-          id: crypto.randomUUID(),
+          id,
           text,
           read_at: Date.now(),
         });
@@ -276,15 +284,15 @@ export function ReadingPage({ accessToken, apiCall }) {
   }, [clearRewrite]);
 
   // ── 点击历史记录 ─────────────────────────────────
+  // 注意：不在此调用 clearRewrite()，auto-load effect 会自动处理状态切换
   const handleSelectHistory = useCallback(
     async (record) => {
       setActiveArticleText(record.text);
       setActiveHistoryId(record.id);
       setMode("reading");
       setSelectedWords([]);
-      clearRewrite();
     },
-    [clearRewrite]
+    []
   );
 
   // ── 原文/重写切换 ────────────────────────────────
@@ -297,6 +305,7 @@ export function ReadingPage({ accessToken, apiCall }) {
         <HistoryPanel
           onSelect={handleSelectHistory}
           activeId={activeHistoryId}
+          refreshKey={historyRefreshKey}
         />
 
         {showViewToggle ? (

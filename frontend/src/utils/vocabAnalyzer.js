@@ -440,6 +440,24 @@ class VocabAnalyzer {
     // 1. 直接查表
     if (this.wordMap.has(lower)) {
       const info = this.wordMap.get(lower);
+      // #region agent log H1/H2/H3
+      try {
+        const payload = {
+          sessionId: "c54ff8",
+          runId: "run1",
+          hypothesisId: ["im","cant","dont","say"].includes(lower) ? "H1" : undefined,
+          location: "vocabAnalyzer.js:441",
+          message: "step1_direct_hit",
+          data: { word: lower, level: info.level },
+          timestamp: Date.now(),
+        };
+        fetch("http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c54ff8" },
+          body: JSON.stringify(payload),
+        }).catch(() => {});
+      } catch (_) {}
+      // #endregion
       return { word: lower, level: info.level, isUnknown: false };
     }
 
@@ -447,6 +465,24 @@ class VocabAnalyzer {
     const lemma = this._lemmatize(lower);
     if (lemma !== lower && this.wordMap.has(lemma)) {
       const info = this.wordMap.get(lemma);
+      // #region agent log H1/H2/H3
+      try {
+        const payload = {
+          sessionId: "c54ff8",
+          runId: "run1",
+          hypothesisId: ["im","cant","dont","say"].includes(lower) ? "H2" : undefined,
+          location: "vocabAnalyzer.js:447",
+          message: "step2_lemma",
+          data: { word: lower, lemma, level: info.level },
+          timestamp: Date.now(),
+        };
+        fetch("http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c54ff8" },
+          body: JSON.stringify(payload),
+        }).catch(() => {});
+      } catch (_) {}
+      // #endregion
       return { word: lemma, level: info.level, isUnknown: false, original: lower };
     }
 
@@ -454,6 +490,24 @@ class VocabAnalyzer {
     const nonstandard = this._normalizeNonstandardContraction(lower);
     if (nonstandard !== null && nonstandard !== lower && this.wordMap.has(nonstandard)) {
       const info = this.wordMap.get(nonstandard);
+      // #region agent log H1/H2/H3
+      try {
+        const payload = {
+          sessionId: "c54ff8",
+          runId: "run1",
+          hypothesisId: ["im","cant","dont","say"].includes(lower) ? "H3" : undefined,
+          location: "vocabAnalyzer.js:454",
+          message: "step3_nonstandard_contraction",
+          data: { word: lower, nonstandard, level: info.level },
+          timestamp: Date.now(),
+        };
+        fetch("http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c54ff8" },
+          body: JSON.stringify(payload),
+        }).catch(() => {});
+      } catch (_) {}
+      // #endregion
       return { word: nonstandard, level: info.level, isUnknown: false, original: lower };
     }
 
@@ -461,10 +515,28 @@ class VocabAnalyzer {
     const stripped = this._stripContraction(lower);
     if (stripped !== null && stripped !== lower && this.wordMap.has(stripped)) {
       const info = this.wordMap.get(stripped);
+      // #region agent log
+      try {
+        const payload = {
+          sessionId: "c54ff8",
+          runId: "run1",
+          hypothesisId: ["im","cant","dont","say"].includes(lower) ? "H4" : undefined,
+          location: "vocabAnalyzer.js:462",
+          message: "step4_strip_contraction",
+          data: { word: lower, stripped, level: info.level },
+          timestamp: Date.now(),
+        };
+        fetch("http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "c54ff8" },
+          body: JSON.stringify(payload),
+        }).catch(() => {});
+      } catch (_) {}
+      // #endregion
       return { word: stripped, level: info.level, isUnknown: false, original: lower };
     }
 
-    // 5. 查不到
+    // 5. 查不到 → marked SUPER in analyzeSentence
     return null;
   }
 

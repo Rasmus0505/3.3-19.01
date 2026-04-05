@@ -1,82 +1,18 @@
 /**
  * useReadingRewrite.js — 阅读板块 AI 重写状态管理
  * ==============================================
- * 提供重写 API 调用、IndexedDB 本地存储、原文/重写版切换状态。
- *
  * Phase 29: AI 重写与路由
+ * Phase 32: IndexedDB 持久化（articleId 主键，自动加载，视图偏好记忆）
  */
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { parseResponse } from "../shared/api/client";
 import { readCefrLevel } from "../app/authStorage";
-
-/* ─── IndexedDB 存储 ─────────────────────────────────── */
-
-const DB_NAME = "reading_rewrites";
-const DB_VERSION = 1;
-const STORE_NAME = "rewrites";
-
-function openRewriteDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onerror = () => reject(req.error);
-    req.onsuccess = () => resolve(req.result);
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
-        store.createIndex("created_at", "created_at", { unique: false });
-      }
-    };
-  });
-}
-
-/**
- * 保存重写记录到 IndexedDB
- * @param {object} record — { id, lesson_id, original_text, rewritten_text, target_level, user_level, created_at }
- * @returns {Promise<string>} — rewrite id
- */
-export async function saveRewriteRecord(record) {
-  const db = await openRewriteDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.put(record);
-    req.onsuccess = () => resolve(record.id);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-/**
- * 根据 id 获取重写记录
- */
-export async function getRewriteRecordById(id) {
-  const db = await openRewriteDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readonly");
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.get(id);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-/**
- * 获取最近一条重写记录
- */
-export async function getLatestRewriteRecord() {
-  const db = await openRewriteDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readonly");
-    const store = tx.objectStore(STORE_NAME);
-    const index = store.index("created_at");
-    const req = index.openCursor(null, "prev");
-    req.onsuccess = () => {
-      const cursor = req.result;
-      resolve(cursor ? cursor.value : null);
-    };
-    req.onerror = () => reject(req.error);
-  });
-}
+import {
+  saveRewriteRecord as dbSave,
+  getRewriteRecord,
+  updateViewMode as dbUpdateViewMode,
+  deleteRewriteRecord,
+} from "../features/reading/readingRewriteDB";
 
 /* ─── CEFR 等级计算 ──────────────────────────────────── */
 
@@ -96,27 +32,78 @@ function getTargetLevel(userLevel) {
  * @param {object} props
  * @param {Function} props.apiCall — API 调用函数（来自 LearningShell）
  * @param {string} props.accessToken — 用户 access token
+ * @param {string|null} props.articleId — 当前文章 ID（来自 history record.id）
+ * @param {Function} props.onSuccess — 重写成功时回调（articleId, rewrittenText）
  */
-export function useReadingRewrite({ apiCall, accessToken }) {
+export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }) {
   const [rewrittenText, setRewrittenText] = useState(null);
   const [rewriteMappings, setRewriteMappings] = useState([]);
-  const [rewriteId, setRewriteId] = useState(null);
   const [viewMode, setViewModeState] = useState("original");
   const [isRewriting, setIsRewriting] = useState(false);
   const [rewriteError, setRewriteError] = useState(null);
+
+  // 上一次成功保存到 DB 的 articleId（用于检测文章切换时清空状态）
+  const savedArticleIdRef = useRef(null);
+
+  // ── 自动加载：当 articleId 变化时从 IndexedDB 读取 ─────
+  useEffect(() => {
+    if (!articleId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const record = await getRewriteRecord(articleId);
+        if (cancelled || !record) return;
+
+        // 换了文章但本地还有未保存的状态，先清空
+        if (savedArticleIdRef.current !== articleId) {
+          setRewrittenText(null);
+          setRewriteMappings([]);
+          setRewriteError(null);
+        }
+
+        savedArticleIdRef.current = articleId;
+        setRewrittenText(record.rewrittenText);
+        setRewriteMappings(record.mappings || []);
+        // 如果存储了 viewMode 使用它；否则默认显示重写版
+        setViewModeState(record.viewMode || "rewritten");
+      } catch (e) {
+        console.error("Failed to auto-load rewrite:", e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [articleId]);
+
+  // ── 文章内容变化时清空重写状态（防止旧重写内容残留） ───
+  const prevArticleTextRef = useRef(null);
+  useEffect(() => {
+    const prev = prevArticleTextRef.current;
+    prevArticleTextRef.current = null; // reset immediately
+
+    if (prev !== null && prev !== rewrittenText) {
+      // 文章内容变了，但 rewrittenText 还存在，说明是用户切换了文章
+      // hook 外层（ReadingPage）会负责清空，这里只做防御
+    }
+  }, []);
 
   const handleSwitchView = useCallback(
     (mode) => {
       if (mode === "rewritten" && !rewrittenText) return;
       setViewModeState(mode);
+      // 持久化视图偏好
+      if (articleId) {
+        dbUpdateViewMode(articleId, mode).catch(console.error);
+      }
     },
-    [rewrittenText]
+    [rewrittenText, articleId]
   );
 
   const clearRewrite = useCallback(() => {
     setRewrittenText(null);
     setRewriteMappings([]);
-    setRewriteId(null);
     setRewriteError(null);
     setViewModeState("original");
   }, []);
@@ -149,10 +136,6 @@ export function useReadingRewrite({ apiCall, accessToken }) {
         const userLevel = readCefrLevel() || "B1";
         const targetLevel = getTargetLevel(userLevel);
 
-        // #region agent log
-        fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'0ec0eb'},body:JSON.stringify({sessionId:'0ec0eb',location:'useReadingRewrite.js:155-TDZ-line-removed',message:'TDZ line removed - authHeader was unused',data:{hasAccessToken:!!accessToken,hasApiCall:!!apiCall},timestamp:Date.now(),runId:'post-fix',hypothesisId:'FIX'})}).catch(()=>{});
-        // #endregion
-
         const resp = await apiCall("/api/llm/rewrite-text", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -163,10 +146,6 @@ export function useReadingRewrite({ apiCall, accessToken }) {
             include_mappings: true,
           }),
         });
-
-        // #region agent log
-        fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'0ec0eb'},body:JSON.stringify({sessionId:'0ec0eb',location:'useReadingRewrite.js:after-apiCall',message:'after apiCall response',data:{status:resp.status,statusText:resp.statusText,ok:resp.ok},timestamp:Date.now(),runId:'post-fix',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
 
         const data = await parseResponse(resp);
 
@@ -179,21 +158,21 @@ export function useReadingRewrite({ apiCall, accessToken }) {
 
         const id = data.trace_id || crypto.randomUUID();
 
-        await saveRewriteRecord({
-          id,
-          lesson_id: null,
-          original_text: originalText,
-          rewritten_text: data.rewritten_text,
-          target_level: targetLevel,
-          user_level: userLevel,
-          created_at: Date.now(),
-        });
+        // 保存到 IndexedDB（articleId 主键）
+        if (articleId) {
+          await dbSave({
+            articleId,
+            originalText,
+            rewrittenText: data.rewritten_text,
+            mappings: data.rewrite_mappings || [],
+            viewMode: "rewritten",
+            rewrittenAt: Date.now(),
+          });
+          savedArticleIdRef.current = articleId;
+          onSuccess?.(articleId, data.rewritten_text);
+        }
 
-        setRewriteId(id);
         setRewrittenText(data.rewritten_text);
-        // #region agent log
-        fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'0ec0eb'},body:JSON.stringify({sessionId:'0ec0eb',location:'useReadingRewrite.js:rewrite-success',message:'rewrite success',data:{ok:data.ok,rewrittenTextLen:((data.rewritten_text)||'').length,mappingsLen:((data.rewrite_mappings)||[]).length},timestamp:Date.now(),runId:'post-fix',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         setRewriteMappings(data.rewrite_mappings || []);
         setViewModeState("rewritten");
 
@@ -209,13 +188,12 @@ export function useReadingRewrite({ apiCall, accessToken }) {
         setIsRewriting(false);
       }
     },
-    [accessToken, apiCall]
+    [accessToken, apiCall, articleId]
   );
 
   return {
     rewrittenText,
     rewriteMappings,
-    rewriteId,
     viewMode,
     setViewMode: handleSwitchView,
     isRewriting,
@@ -224,3 +202,7 @@ export function useReadingRewrite({ apiCall, accessToken }) {
     handleRewrite,
   };
 }
+
+/* ─── 历史遗留导出（兼容旧调用方） ────────────────────── */
+// eslint-disable-next-line no-unused-vars
+const _deprecated = null; // 原 saveRewriteRecord/getRewriteRecordById/getLatestRewriteRecord 已移除，请使用 readingRewriteDB.js

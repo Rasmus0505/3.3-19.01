@@ -3,11 +3,16 @@
  * ==========================================
  * 展示用户之前阅读过的文章列表，点击后加载到左侧阅读区。
  *
- * 存储使用 IndexedDB (reading_history 数据库)。
+ * 存储使用 IndexedDB：
+ *   - reading_history 数据库（历史记录）
+ *   - reading_rewrites_v2 数据库（重写持久化，Phase 32）
+ *
+ * Phase 32: 重写徽章（Sparkles 图标）标识已有重写记录的文章
  */
-import { Clock, Trash2 } from "lucide-react";
+import { Clock, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/utils";
+import { deleteRewriteRecord, getRewrittenArticleIds } from "./readingRewriteDB";
 
 /* ─── IndexedDB ─────────────────────────────────── */
 
@@ -67,6 +72,12 @@ export async function deleteHistoryRecord(id) {
   });
 }
 
+// 暴露清除历史时同步清除重写记录
+export async function deleteHistoryRecordWithRewrite(id) {
+  await deleteHistoryRecord(id);
+  await deleteRewriteRecord(id);
+}
+
 export async function clearAllHistory() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -104,16 +115,21 @@ function formatTime(ts) {
  * @param {Function} props.onSelect — 点击历史记录回调 (record) => void
  * @param {string|null} props.activeId — 当前选中的历史记录 id
  */
-export function HistoryPanel({ onSelect, activeId }) {
+export function HistoryPanel({ onSelect, activeId, refreshKey }) {
   const [records, setRecords] = useState([]);
+  const [rewrittenIds, setRewrittenIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [collapsed, setCollapsed] = useState(false);
   const fetched = useRef(false);
 
   const load = useCallback(async () => {
     try {
-      const data = await getAllHistoryRecords();
+      const [data, rewritten] = await Promise.all([
+        getAllHistoryRecords(),
+        getRewrittenArticleIds(),
+      ]);
       setRecords(data);
+      setRewrittenIds(rewritten);
     } catch (e) {
       console.error("Failed to load reading history:", e);
     } finally {
@@ -122,20 +138,32 @@ export function HistoryPanel({ onSelect, activeId }) {
   }, []);
 
   useEffect(() => {
-    if (fetched.current) return;
-    fetched.current = true;
+    fetched.current = false;
+    setLoading(true);
     load();
-  }, [load]);
+  }, [load, refreshKey]);
 
   const handleDelete = useCallback(async (e, id) => {
     e.stopPropagation();
-    await deleteHistoryRecord(id);
+    await deleteHistoryRecordWithRewrite(id);
     setRecords((prev) => prev.filter((r) => r.id !== id));
+    setRewrittenIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   }, []);
 
   const handleClearAll = useCallback(async () => {
     await clearAllHistory();
+    // 同步清除所有重写记录
+    try {
+      const db = await openDB();
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).clear();
+    } catch (_) {}
     setRecords([]);
+    setRewrittenIds(new Set());
   }, []);
 
   if (loading) {
@@ -196,6 +224,9 @@ export function HistoryPanel({ onSelect, activeId }) {
                   )}
                   onClick={() => onSelect?.(record)}
                 >
+                  {rewrittenIds.has(record.id) && (
+                    <Sparkles className="history-panel__item-sparkle size-3.5 shrink-0" />
+                  )}
                   <span className="history-panel__item-preview">{getPreview(record.text)}</span>
                   <div className="history-panel__item-meta">
                     <span className="history-panel__item-time">{formatTime(record.read_at)}</span>
