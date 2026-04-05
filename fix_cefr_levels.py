@@ -33,6 +33,7 @@
 import json
 import csv
 import argparse
+import os
 from collections import defaultdict
 
 # CEFR 等级优先级（数值越小越简单）
@@ -173,6 +174,7 @@ def fix_cefr_levels(vocab_path: str, reference: dict[str, list[dict]], dry_run: 
                 info["level"] = new_primary
                 info["_fixed"] = True
 
+            info["_source"] = "CEFR-J"
             info["_original_rank_level"] = original_rank_level
 
         else:
@@ -345,6 +347,9 @@ def main():
     print_report(report, changes)
 
     if not args.dry_run:
+        # 添加版本元数据字段
+        vocab["_vocab_version"] = "fixed-v1"
+        vocab["_generated_by"] = vocab.get("generated_by", "fix_cefr_levels.py")
         os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
         with open(args.output, "w", encoding="utf-8") as f:
             json.dump(vocab, f, ensure_ascii=False, indent=2)
@@ -355,5 +360,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import os
     main()
