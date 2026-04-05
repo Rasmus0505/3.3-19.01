@@ -207,7 +207,11 @@ See `.planning/milestones/v2.4-REQUIREMENTS.md` for archived requirements.
 | Above-i+1 color: `oklch(0.58 0.24 25)` — distinctly red, not orange | Visual correction after user feedback | ✅ Fixed in Phase 25 |
 | Wordbook success animation: scale (200ms) + green border flash (350ms) | Scale distinguishes "added to wordbook" from CEFR difficulty color | ✅ Validated in Phase 25 |
 | `mergeLessonCardMeta` via Zustand `getState()` (factory-pattern slice) | Workaround for lessonSlice factory; matches ImmersiveLessonPage pattern | ✅ Validated in Phase 25 |
-| 本地优先：CEFR 分析、Pretext 测量、AI 重写结果全部在用户本地（浏览器）执行，服务器零压力 | 服务器仅存储 rewrite_id 引用，原文和重写结果存 IndexedDB，CEFR 分析存 localStorage | ✅ Locked in v2.5 |
+| CEFR 词表用 CEFR-J Vocabulary Profile 替换 rank-based 等级 | 官方权威词表覆盖约 14% 词汇，84.4% 匹配词等级被修正，准确性显著提升 | ✅ Validated in Phase 30 |
+| `_vocab_version: "fixed-v1"` 顶级字段 | 防止静默回退到 SUPER；启用缓存刷新；前端 VocabAnalyzer 可校验版本 | ✅ Validated in Phase 30 |
+| `pos_entries` 数组结构（每词多词性条目） | 从最低 POS 派生 primary level；857 词含多 POS（如 run noun B1 + verb A1）；向后兼容 | ✅ Validated in Phase 30 |
+| 未匹配词保留 `_source: "rank-based"` 标记 | 区分已验证（CEFR-J）vs 估算（频率）等级；用户可知数据置信度 | ✅ Validated in Phase 30 |
+| 前端无需修改代码，完全向后兼容 | vocabAnalyzer.js 和 CefrBadge.jsx 与新词表完全兼容；SessionStorage 缓存自动刷新 | ✅ Validated in Phase 31 |
 | 重写词汇黄色色块UI（覆盖式背景）+ tooltip原词对照 | 色块比下划线更明显，悬停显示原词符合Rewordify交互模式 | 🔄 v2.7 |
 | 重写结果按文章维度持久化到IndexedDB，阅读历史自动加载 | 避免重复请求API，用户可在任意时间切换原文/重写版 | 🔄 v2.7 |
 | Rewordify参考：分级难度+多显示模式+点击原词对照，本产品CEFR系统更精准 | Rewordify用频率统计，本产品用CEFR词汇表识别i+1词汇，可精准定位简化目标词 | 🔄 v2.7 |
