@@ -16,6 +16,7 @@
  *   onLinesReady   {(lines: RichLine[]) => void}
  *   selectedWords  {WordItem[]}
  *   onWordClick    {(word, segment) => void}
+ *   rewriteMappings {{original, rewritten}[]}
  */
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/utils";
@@ -67,6 +68,7 @@ export function LeftPanel({
   selectedWords,
   onWordClick,
   activeLevels,
+  rewriteMappings,
 }) {
   const [draft, setDraft] = useState("");
   const draftRef = useRef("");
@@ -120,6 +122,7 @@ export function LeftPanel({
               onLinesReady={onLinesReady}
               selectedWords={selectedWords}
               activeLevels={activeLevels}
+              rewriteMappings={rewriteMappings}
             />
           </Suspense>
         </div>

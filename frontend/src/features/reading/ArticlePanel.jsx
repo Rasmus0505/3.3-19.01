@@ -2,6 +2,7 @@
  * ArticlePanel.jsx — 文章主体渲染面板
  * ====================================
  * 结合 useRichLayout + VocabAnalyzer，CEFR 着色逐词渲染。
+ * 当 rewriteMappings 非空时（重写版视图），显示原文对照悬浮提示。
  *
  * Props:
  *   text         {string}   — 文章纯文本
@@ -9,9 +10,10 @@
  *   onWidthChange {(w: number) => void}
  *   onWordClick  {(word: string, segment: RichSegment) => void}
  *   selectedWords {{ word: string, ... }[]}
+ *   rewriteMappings {{original: string, rewritten: string}[]}
  */
 import { BookOpenText } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../../lib/utils";
 import { readCefrLevel } from "../../app/authStorage";
 import { useRichLayout } from "../../hooks/useRichLayout";
@@ -20,10 +22,22 @@ import "./reading.css";
 const ARTICLE_FONT = "18px Inter";
 const ARTICLE_LINE_HEIGHT = 30;
 
-export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, onLinesReady, selectedWords, activeLevels }) {
+export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, onLinesReady, selectedWords, activeLevels, rewriteMappings }) {
   const containerRef = useRef(null);
   const [measuredWidth, setMeasuredWidth] = useState(contentWidth);
   const userLevel = readCefrLevel() || "B1";
+
+  // Build lookup maps from rewrite mappings for fast per-segment resolution.
+  const { rewrittenSet, rewrittenToOriginal } = useMemo(() => {
+    const map = new Map();
+    const set = new Set();
+    for (const m of rewriteMappings ?? []) {
+      const key = m.rewritten.toLowerCase();
+      map.set(key, m.original);
+      set.add(key);
+    }
+    return { rewrittenSet: set, rewrittenToOriginal: map };
+  }, [rewriteMappings]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -81,6 +95,10 @@ export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, o
                 const isSelected = Boolean(
                   selectedWords?.some((w) => w.word === seg.text || w.word === seg.word)
                 );
+                const segWord = seg.word?.toLowerCase();
+                const rewriteOriginal = rewriteMappings?.length && segWord
+                  ? rewrittenToOriginal.get(segWord) ?? null
+                  : null;
                 return (
                   <ArticleWord
                     key={segIdx}
@@ -89,6 +107,7 @@ export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, o
                     onWordClick={onWordClick}
                     isSelected={isSelected}
                     activeLevels={activeLevels}
+                    rewriteOriginal={rewriteOriginal}
                   />
                 );
               })}
@@ -100,7 +119,7 @@ export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, o
   );
 }
 
-function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels }) {
+function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels, rewriteOriginal }) {
   const rawClass = computeCefrClassName(segment.cefrLevel, userLevel);
   // 如果 activeLevels 已配置，且当前词级不在其中，显示为已掌握（灰色）
   const cefrClass =
@@ -119,18 +138,29 @@ function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels
     prevSelected.current = isSelected;
   }, [isSelected]);
 
+  const handleClick = () => {
+    const text = segment.text.trim();
+    if (!text || /^[.!?,;:—–\-"''''""（）()[\]【】《》]+$/.test(text)) return;
+    onWordClick?.(segment.text, segment);
+  };
+
+  const isRewritten = rewriteOriginal !== null && rewriteOriginal !== undefined;
+
   return (
     <span
       className={cn(
         "article-word",
-        cefrClass,
+        isRewritten ? "rewrite-highlight" : cefrClass,
         isSelected && "article-word--selected",
         animating && "article-word--success"
       )}
-      onClick={() => onWordClick?.(segment.text, segment)}
-      title={`${segment.cefrLevel || "未知等级"} — ${segment.text}`}
+      onClick={handleClick}
+      title={isRewritten ? `原文: ${rewriteOriginal}` : `${segment.cefrLevel || "未知等级"} — ${segment.text}`}
     >
       {segment.text}
+      {isRewritten && (
+        <span className="rewrite-tooltip">{rewriteOriginal}</span>
+      )}
     </span>
   );
 }

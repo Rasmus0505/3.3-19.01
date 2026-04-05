@@ -186,6 +186,7 @@ export function ReadingPage({ accessToken, apiCall }) {
   // ── AI 重写 ─────────────────────────────────────
   const {
     rewrittenText,
+    rewriteMappings,
     viewMode,
     setViewMode,
     isRewriting,
@@ -302,6 +303,8 @@ export function ReadingPage({ accessToken, apiCall }) {
             onLinesReady={setArticleLines}
             selectedWords={selectedWords}
             onWordClick={handleWordClick}
+            activeLevels={activeLevels}
+            rewriteMappings={rewriteMappings}
           />
           <div
             className={cn(

@@ -46,6 +46,7 @@ class RewriteTextRequest(BaseModel):
     text: str = Field(..., min_length=1)
     target_level: str = Field(default="B1", max_length=8)
     enable_thinking: bool = False
+    include_mappings: bool = Field(default=False, description="If true, return word/phrase rewrite mappings as JSON alongside rewritten text.")
 
 
 def _require_api_key() -> str:
@@ -267,6 +268,20 @@ REWRITE_SYSTEM_PROMPT = (
     "- Keep approximately the same length as the original\n"
 )
 
+REWRITE_WITH_MAPPINGS_SYSTEM_PROMPT = (
+    "You are an English text simplifier for language learners.\n"
+    "Rewrite the given text at CEFR {target_level} level.\n"
+    "Rules:\n"
+    "- Replace complex vocabulary with simpler CEFR {target_level} equivalents\n"
+    "- Keep sentence structure clear and understandable\n"
+    "- Preserve the original meaning and key information\n"
+    "- Keep approximately the same length as the original\n"
+    "\n"
+    "IMPORTANT: Output STRICTLY valid JSON with no markdown fences or extra text:\n"
+    '{{"rewritten_text": "...", "rewrite_mappings": [{{"original": "...", "rewritten": "..."}}, ...]}}\n'
+    "Each mapping entry must map one simplified word/phrase from the rewritten text back to the exact original word or phrase it replaced."
+)
+
 REWRITE_MAX_INPUT_CHARS = 12000
 REWRITE_MAX_OUTPUT_TOKENS = 2048
 REWRITE_MAX_INPUT_TOKENS = 3000
@@ -285,7 +300,8 @@ def rewrite_text_endpoint(
     Rewrite given English text at CEFR target_level using DeepSeek V3.2.
     Charges the user according to the selected model rate.
 
-    Expects a JSON body: {"text": "...", "target_level": "B2", "enable_thinking": false}.
+    Expects a JSON body: {"text": "...", "target_level": "B2", "enable_thinking": false, "include_mappings": true}.
+    When include_mappings is true, also returns an array of {original, rewritten} mapping pairs.
     """
     # 确保计费配置已初始化
     try:
@@ -296,6 +312,7 @@ def rewrite_text_endpoint(
     text = body.text.strip()
     target_level = body.target_level.strip()
     enable_thinking = body.enable_thinking
+    include_mappings = body.include_mappings
 
     if target_level.upper() not in CEFR_LEVELS:
         raise HTTPException(
@@ -327,16 +344,20 @@ def rewrite_text_endpoint(
 
     trace_id = str(uuid.uuid4())
 
-    system_prompt = REWRITE_SYSTEM_PROMPT.format(target_level=target_level.upper())
-    logger.info("[DEBUG] llm.rewrite_start user_id=%s model=%s enable_thinking=%s text_len=%d",
-                 current_user.id, effective_model, enable_thinking, len(text))
+    system_prompt = (
+        REWRITE_WITH_MAPPINGS_SYSTEM_PROMPT.format(target_level=target_level.upper())
+        if include_mappings
+        else REWRITE_SYSTEM_PROMPT.format(target_level=target_level.upper())
+    )
+    logger.info("[DEBUG] llm.rewrite_start user_id=%s model=%s enable_thinking=%s include_mappings=%s text_len=%d",
+                 current_user.id, effective_model, enable_thinking, include_mappings, len(text))
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": text},
     ]
 
     try:
-        rewritten_text, usage = call_deepseek(
+        raw_response, usage = call_deepseek(
             messages=messages,
             api_key=api_key,
             enable_thinking=enable_thinking,
@@ -348,8 +369,22 @@ def rewrite_text_endpoint(
         logger.exception("[DEBUG] llm.rewrite_failed user_id=%s error=%s", current_user.id, str(exc)[:200])
         raise HTTPException(status_code=502, detail=f"LLM call failed: {str(exc)[:200]}")
 
-    if not rewritten_text:
+    if not raw_response:
         raise HTTPException(status_code=502, detail="LLM returned empty result")
+
+    rewritten_text = raw_response
+    rewrite_mappings: list[dict] = []
+
+    if include_mappings:
+        import json
+        try:
+            parsed = json.loads(raw_response)
+            rewritten_text = parsed.get("rewritten_text", raw_response)
+            rewrite_mappings = parsed.get("rewrite_mappings", [])
+        except Exception as exc:
+            logger.warning("[DEBUG] llm.rewrite_mappings_parse_failed user_id=%s raw=%s error=%s",
+                           current_user.id, raw_response[:200], str(exc)[:100])
+            rewrite_mappings = []
 
     total_tokens = usage.prompt_tokens + usage.completion_tokens
 
@@ -397,6 +432,7 @@ def rewrite_text_endpoint(
     return {
         "ok": True,
         "rewritten_text": rewritten_text,
+        "rewrite_mappings": rewrite_mappings,
         "model": effective_model,
         "usage": {
             "prompt_tokens": usage.prompt_tokens,

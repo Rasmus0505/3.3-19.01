@@ -99,6 +99,7 @@ function getTargetLevel(userLevel) {
  */
 export function useReadingRewrite({ apiCall, accessToken }) {
   const [rewrittenText, setRewrittenText] = useState(null);
+  const [rewriteMappings, setRewriteMappings] = useState([]);
   const [rewriteId, setRewriteId] = useState(null);
   const [viewMode, setViewModeState] = useState("original");
   const [isRewriting, setIsRewriting] = useState(false);
@@ -114,6 +115,7 @@ export function useReadingRewrite({ apiCall, accessToken }) {
 
   const clearRewrite = useCallback(() => {
     setRewrittenText(null);
+    setRewriteMappings([]);
     setRewriteId(null);
     setRewriteError(null);
     setViewModeState("original");
@@ -154,6 +156,7 @@ export function useReadingRewrite({ apiCall, accessToken }) {
             text: originalText,
             target_level: targetLevel,
             enable_thinking: false,
+            include_mappings: true,
           }),
         });
 
@@ -180,6 +183,7 @@ export function useReadingRewrite({ apiCall, accessToken }) {
 
         setRewriteId(id);
         setRewrittenText(data.rewritten_text);
+        setRewriteMappings(data.rewrite_mappings || []);
         setViewModeState("rewritten");
 
         const chargeYuan = (data.charge_cents || 0) / 100;
@@ -199,6 +203,7 @@ export function useReadingRewrite({ apiCall, accessToken }) {
 
   return {
     rewrittenText,
+    rewriteMappings,
     rewriteId,
     viewMode,
     setViewMode: handleSwitchView,

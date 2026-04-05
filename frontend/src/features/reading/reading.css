@@ -317,6 +317,53 @@
   color: oklch(0.52 0.02 85);
 }
 
+/* ─── 重写版词级标记 ──────────────────────────────────────── */
+/* 重写版中所有被简化的词统一用 amber 色下划线，悬浮显示原文 */
+.article-content .article-word.rewrite-highlight {
+  border-bottom: 2px solid oklch(0.70 0.18 85);
+  color: oklch(0.20 0.02 85);
+  cursor: pointer;
+  position: relative;
+}
+
+.article-content .article-word.rewrite-highlight:hover {
+  background-color: oklch(0.95 0.04 85);
+}
+
+/* 悬浮提示气泡 */
+.article-content .article-word.rewrite-highlight .rewrite-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: oklch(0.25 0.02 85);
+  color: oklch(0.97 0 0);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  z-index: 100;
+  pointer-events: none;
+  box-shadow: 0 2px 8px oklch(0 0 0 / 0.2);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.article-content .article-word.rewrite-highlight:hover .rewrite-tooltip {
+  opacity: 1;
+}
+
+/* 小三角箭头 */
+.article-content .article-word.rewrite-highlight .rewrite-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: oklch(0.25 0.02 85);
+}
+
 /* ─── Loading / Empty / Error 态 ──────────────────────────── */
 .article-panel-loading {
   display: flex;

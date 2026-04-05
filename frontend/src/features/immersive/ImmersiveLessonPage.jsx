@@ -1895,14 +1895,25 @@ export function ImmersiveLessonPage({
 
   const toggleWordbookTokenSelection = useCallback((tokenIndex) => {
     if (!Number.isInteger(tokenIndex)) return;
+    const token = wordbookSentenceTokens[tokenIndex];
+    const text = (token || "").trim();
+    if (!text || /^[.!?,;:—–\-"''''""（）()[\]【】《》]+$/.test(text)) return;
     setWordbookSelectedTokenIndexes((current) => toggleWordbookTokenIndex(current, tokenIndex));
-  }, []);
+  }, [wordbookSentenceTokens]);
 
   const selectWordbookTokenRange = useCallback((startTokenIndex, endTokenIndex) => {
+    const startToken = wordbookSentenceTokens[startTokenIndex];
+    const endToken = wordbookSentenceTokens[endTokenIndex];
+    const startText = (startToken || "").trim();
+    const endText = (endToken || "").trim();
+    if (
+      (!startText || /^[.!?,;:—–\-"''''""（）()[\]【】《》]+$/.test(startText)) &&
+      (!endText || /^[.!?,;:—–\-"''''""（）()[\]【】《》]+$/.test(endText))
+    ) return;
     const nextRange = buildWordbookTokenRange(startTokenIndex, endTokenIndex);
     setWordbookSelectedTokenIndexes(nextRange);
     return nextRange;
-  }, []);
+  }, [wordbookSentenceTokens]);
 
   const collectWordbookEntry = useCallback(
     async ({ sentence, entryType, entryText, startTokenIndex, endTokenIndex }) => {
