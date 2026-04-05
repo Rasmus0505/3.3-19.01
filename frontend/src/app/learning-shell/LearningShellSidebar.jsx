@@ -115,7 +115,7 @@ export function LearningShellSidebar({
             </div>
             {expanded ? (
               <div className="min-w-0 space-y-2">
-                <p className="truncate text-sm font-semibold">Bottle English</p>
+                <p className="truncate text-sm font-semibold">Unlock Anything</p>
                 {accessToken ? <WalletBadge accessToken={accessToken} balancePoints={walletBalance} isOnline={isOnline} /> : null}
               </div>
             ) : null}

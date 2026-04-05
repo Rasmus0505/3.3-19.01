@@ -1,4 +1,4 @@
-import overviewImage from "../../assets/getting-started/step-01-overview.png";
+﻿import overviewImage from "../../assets/getting-started/step-01-overview.png";
 import loginImage from "../../assets/getting-started/step-02-login.png";
 import uploadImage from "../../assets/getting-started/step-03-upload.png";
 import generateImage from "../../assets/getting-started/step-04-generate.png";
@@ -27,7 +27,7 @@ export const GETTING_STARTED_STEPS = [
     title: "上传第一份素材",
     summary: "先选一段短英文素材，看到文件名后再继续。",
     image: uploadImage,
-    imageAlt: "上传页真实截图，标出选择文件按钮、文件名和开始生成课程按钮。",
+    imageAlt: "上传页真实截图，标出选择文件按钮、文件名和 Unlock 按钮。",
   },
   {
     id: "generate",

@@ -162,7 +162,7 @@ export function AccountPanel({ apiCall, currentUser, onWalletChanged }) {
           <form className="space-y-3" onSubmit={handleRename}>
             <div className="space-y-2">
               <p className="text-sm font-medium">修改用户名</p>
-              <Input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="例如 Bottle Learner" />
+              <Input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="例如 Unlock Anything Learner" />
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="submit" disabled={loading} className="h-9 px-4">
@@ -217,7 +217,7 @@ export function AccountPanel({ apiCall, currentUser, onWalletChanged }) {
             <Bell className="size-4" />
             更新日志
           </CardTitle>
-          <CardDescription>关注 Bottle 最新动态，不错过任何新功能</CardDescription>
+          <CardDescription>关注 Unlock Anything 最新动态，不错过任何新功能</CardDescription>
         </CardHeader>
         <CardContent>
           {changelogLoading ? (
@@ -225,7 +225,7 @@ export function AccountPanel({ apiCall, currentUser, onWalletChanged }) {
           ) : changelogItems.length === 0 ? (
             <div className="py-6 text-center">
               <p className="text-sm font-medium text-foreground">暂无更新日志</p>
-              <p className="mt-1 text-xs text-muted-foreground">关注 Bottle 最新动态，不错过任何新功能</p>
+              <p className="mt-1 text-xs text-muted-foreground">关注 Unlock Anything 最新动态，不错过任何新功能</p>
             </div>
           ) : (
             <ScrollArea className="max-h-96">

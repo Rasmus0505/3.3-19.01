@@ -641,7 +641,7 @@ export function LearningShellLocalSubtitles() {
               <Sparkles className="size-4" />
             </Button>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold">Bottle English</span>
+              <span className="text-sm font-semibold">Unlock Anything</span>
               <Badge variant="outline">{accessToken ? "已登录" : "未登录"}</Badge>
             </div>
             <Separator orientation="vertical" className="mx-1 hidden h-4 md:block" />

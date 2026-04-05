@@ -9,7 +9,7 @@ interface BottleMarkProps {
 export function BottleMark({
   size = 44,
   className,
-  title = "Bottle",
+  title = "Unlock Anything",
 }: BottleMarkProps) {
   return (
     <svg

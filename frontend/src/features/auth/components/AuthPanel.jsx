@@ -117,7 +117,7 @@ export function AuthPanel({ onAuthed, tokenKey, refreshKey }) {
       restorePending={restorePending}
       initialEmail={currentUser?.email || ""}
       initialUsername={currentUser?.username || ""}
-      appName="Bottle"
+      appName="Unlock Anything"
       badgeText="Account"
       onAuthenticate={handleAuthenticate}
     />

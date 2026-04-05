@@ -15,7 +15,7 @@
  *   isRewriting   {boolean}
  *   rewriteError  {string|null} — 最近一次重写/请求失败说明（便于排查）
  */
-import { BookPlus, BookOpenText, Languages, Loader2, Sparkles, X } from "lucide-react";
+import { BookPlus, BookOpenText, Languages, Loader2, Unlock, X } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Button } from "../../shared/ui";
 
@@ -72,17 +72,16 @@ export function WordSidebar({
           {onRewrite !== null && onRewrite !== undefined ? (
             <Button
               size="sm"
-              variant="outline"
+              className="btn-unlock"
               onClick={onRewrite}
               disabled={isRewriting}
-              className="word-sidebar__rewrite-btn"
             >
               {isRewriting ? (
-                <Loader2 className="size-4 animate-spin" />
+                <Loader2 className="size-4 btn-unlock__icon--spin" />
               ) : (
-                <Sparkles className="size-4" />
+                <Unlock className="size-4" />
               )}
-              重写全文
+              Unlock
             </Button>
           ) : null}
           {count > 0 ? (

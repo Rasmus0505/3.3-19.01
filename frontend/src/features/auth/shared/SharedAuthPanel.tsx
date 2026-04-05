@@ -40,13 +40,13 @@ function panelShadow() {
 export function SharedAuthPanel({
   title = "账号入口",
   description = "登录后即可继续上传、生成与学习。",
-  footerMessage = "使用你的 Bottle 账号继续。",
+  footerMessage = "使用你的 Unlock Anything 账号继续。",
   statusMessage = "",
   expired = false,
   restorePending = false,
   initialEmail = "",
   initialUsername = "",
-  appName = "Bottle",
+  appName = "Unlock Anything",
   badgeText = "Account",
   onAuthenticate,
 }: SharedAuthPanelProps) {
@@ -278,7 +278,7 @@ export function SharedAuthPanel({
                 <input
                   type="text"
                   autoComplete="nickname"
-                  placeholder="例如 Bottle Learner"
+                  placeholder="例如 Unlock Anything Learner"
                   value={username}
                   disabled={pending}
                   onChange={(event) => setUsername(event.target.value)}

@@ -79,10 +79,10 @@ export function AdminSystemTab({ apiCall, snapshot, loading = false, status = ""
           const formattedError = captureError(
             formatResponseError(runtimeResp, runtimeData, {
               component: "AdminSystemTab",
-              action: "加载 Bottle 运行就绪度",
+              action: "加载 Unlock Anything 运行就绪度",
               endpoint: "/api/admin/runtime-readiness",
               method: "GET",
-              fallbackMessage: "加载 Bottle 运行就绪度失败",
+              fallbackMessage: "加载 Unlock Anything 运行就绪度失败",
             }),
             { toast: false },
           );
@@ -99,10 +99,10 @@ export function AdminSystemTab({ apiCall, snapshot, loading = false, status = ""
         const formattedError = captureError(
           formatResponseError(runtimeResp, runtimeData, {
             component: "AdminSystemTab",
-            action: "加载 Bottle 运行就绪度",
+            action: "加载 Unlock Anything 运行就绪度",
             endpoint: "/api/admin/runtime-readiness",
             method: "GET",
-            fallbackMessage: "加载 Bottle 运行就绪度失败",
+            fallbackMessage: "加载 Unlock Anything 运行就绪度失败",
           }),
           { toast: false },
         );
@@ -235,8 +235,8 @@ export function AdminSystemTab({ apiCall, snapshot, loading = false, status = ""
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Bottle 运行就绪度</CardTitle>
-          <CardDescription>只读展示 Bottle 1.0 和 Bottle 2.0 的运行状态、可用性和诊断提示，不在这里暴露任何运行参数。</CardDescription>
+          <CardTitle className="text-base">Unlock Anything 运行就绪度</CardTitle>
+          <CardDescription>只读展示 Unlock Anything 1.0 和 Unlock Anything 2.0 的运行状态、可用性和诊断提示，不在这里暴露任何运行参数。</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 md:grid-cols-2">

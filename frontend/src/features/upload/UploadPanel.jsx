@@ -1,4 +1,4 @@
-import { CheckCircle2, FileJson, Loader2, RefreshCcw, UploadCloud } from "lucide-react";
+﻿import { CheckCircle2, FileJson, Loader2, RefreshCcw, Unlock, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -6971,34 +6971,20 @@ export function UploadPanel({
             <Button
               type={cancelablePrimaryAction ? "button" : "submit"}
               disabled={primaryActionDisabled}
-              className={cn(
-                "h-9 px-4",
-                phase === "upload_paused"
-                  ? getUploadToneStyles("recoverable").button
-                  : phase === "success"
-                    ? getUploadToneStyles("success").buttonSubtle
-                    : getUploadToneStyles("selected").button,
-              )}
+              className="btn-unlock"
               data-guide-id="upload-submit"
-                  onClick={localTranscribing || phase === DESKTOP_LOCAL_GENERATING_PHASE ? () => void stopLocalRecognition() : desktopLinkImporting ? () => void cancelDesktopLinkImport() : undefined}
+              onClick={localTranscribing || phase === DESKTOP_LOCAL_GENERATING_PHASE ? () => void stopLocalRecognition() : desktopLinkImporting ? () => void cancelDesktopLinkImport() : undefined}
             >
-              {localTranscribing || phase === DESKTOP_LOCAL_GENERATING_PHASE ? (
-                "停止生成"
-              ) : desktopLinkImporting ? (
-                "取消下载"
-              ) : desktopLinkModeActive ? (
-                "导入并生成课程"
-              ) : loading && (phase === "uploading" || phase === "processing" || phase === DESKTOP_LOCAL_GENERATING_PHASE) ? (
+              {(localTranscribing || phase === DESKTOP_LOCAL_GENERATING_PHASE || (loading && (phase === "uploading" || phase === "processing" || phase === DESKTOP_LOCAL_GENERATING_PHASE)) || desktopLinkImporting) ? (
                 <span className="inline-flex items-center gap-2">
-                  <Loader2 className="size-4 animate-spin" />
-                  {phase === "uploading" ? "上传中" : desktopLinkModeActive ? "下载中" : phase === DESKTOP_LOCAL_GENERATING_PHASE ? "本机生成中" : "生成中"}
+                  <Loader2 className="size-4 btn-unlock__icon--spin" />
+                  {localTranscribing || phase === DESKTOP_LOCAL_GENERATING_PHASE ? "停止" : desktopLinkImporting ? "取消" : "处理中"}
                 </span>
-              ) : phase === "success" ? (
-                "已生成完成"
-              ) : phase === "upload_paused" ? (
-                "继续上传当前素材"
               ) : (
-                "开始生成"
+                <span className="inline-flex items-center gap-2">
+                  <Unlock className="size-4" />
+                  {phase === "success" ? "Unlock" : phase === "upload_paused" ? "继续" : "Unlock"}
+                </span>
               )}
             </Button>
           )}

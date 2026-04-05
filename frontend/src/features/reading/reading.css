@@ -1,4 +1,4 @@
-/**
+﻿/**
  * reading.css — 阅读板块样式
  * ==================================
  * 方案 A 布局、CEFR 词着色、WordSidebar 样式
@@ -565,19 +565,6 @@
 .word-sidebar-stat-dot--super { background: oklch(0.45 0.02 85); }
 
 /* ─── 重写按钮 + 重写中提示 ───────────────────────────── */
-.word-sidebar__rewrite-btn {
-  font-size: 12px;
-  white-space: nowrap;
-  flex-shrink: 0;
-  color: oklch(0.50 0.10 275);
-  border-color: oklch(0.80 0.08 275);
-  background: oklch(0.98 0.02 275 / 0.3);
-}
-
-.word-sidebar__rewrite-btn:hover {
-  background: oklch(0.93 0.06 275 / 0.4);
-  border-color: oklch(0.70 0.12 275);
-}
 
 .word-sidebar__rewriting-hint {
   display: flex;
@@ -1123,19 +1110,6 @@
   margin-bottom: 8px;
 }
 
-.analysis-panel__rewrite-btn {
-  font-size: 12px;
-  white-space: nowrap;
-  flex-shrink: 0;
-  color: oklch(0.50 0.10 275);
-  border-color: oklch(0.80 0.08 275);
-  background: oklch(0.98 0.02 275 / 0.3);
-}
-
-.analysis-panel__rewrite-btn:hover {
-  background: oklch(0.93 0.06 275 / 0.4);
-  border-color: oklch(0.70 0.12 275);
-}
 
 .analysis-panel__rewriting-hint {
   display: flex;

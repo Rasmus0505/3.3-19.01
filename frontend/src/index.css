@@ -60,9 +60,9 @@
   --popover-foreground: oklch(0.145 0 0);
   --primary: oklch(0.205 0 0);
   --primary-foreground: oklch(0.985 0 0);
-  --upload-brand: oklch(0.58 0.11 238);
+  --upload-brand: oklch(0.58 0.15 158);
   --upload-brand-foreground: oklch(0.985 0.01 240);
-  --upload-brand-ink: oklch(0.38 0.08 238);
+  --upload-brand-ink: oklch(0.35 0.10 158);
   --upload-running: oklch(0.63 0.1 229);
   --upload-running-foreground: oklch(0.985 0.01 230);
   --upload-running-ink: oklch(0.4 0.07 229);
