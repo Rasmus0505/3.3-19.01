@@ -291,6 +291,72 @@ class VocabAnalyzer {
     return wordInfo ? wordInfo.level : null;
   }
 
+  /**
+   * 从句子中提取超过目标 CEFR 级别的词汇及其位置信息。
+   * 用于精准词汇简化：只把超纲词发给 LLM 替换。
+   *
+   * @param {string} sentence - 英文句子
+   * @param {string} targetLevel - 目标 CEFR 级别（如 "B1" → 提取所有 > B1 的词）
+   * @returns {{ word: string, startIndex: number, endIndex: number, level: string }[]}
+   *          按在句子中出现顺序返回
+   */
+  extractWordsAboveLevel(sentence, targetLevel) {
+    if (!this.isLoaded) {
+      throw new Error("词汇表未加载，请先调用 load()");
+    }
+
+    const targetLevelNum = this._levelToNum(targetLevel);
+    const results = [];
+
+    // 匹配单词（包括带撇号的缩写词如 "don't"）
+    const wordRegex = /[a-zA-Z]+(?:'[a-zA-Z]+)?/g;
+    let match;
+
+    while ((match = wordRegex.exec(sentence)) !== null) {
+      const surfaceForm = match[0];
+      const level = this.lookupCefrLevelForSurfaceForm(surfaceForm);
+
+      // 跳过查不到的词（专有名词、数字等）或者 stopwords
+      if (!level) continue;
+
+      const wordLevelNum = this._levelToNum(level);
+
+      // 只提取超过目标级别的词
+      if (wordLevelNum > targetLevelNum) {
+        results.push({
+          word: surfaceForm,
+          startIndex: match.index,
+          endIndex: match.index + surfaceForm.length,
+          level: level,
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * 从多句中提取超过目标级别的词汇（去重）。
+   * 用于批量词汇简化。
+   *
+   * @param {string[]} sentences - 英文句子数组
+   * @param {string} targetLevel - 目标 CEFR 级别
+   * @returns {{ words: string[], sentenceIndex: number, word: string, startIndex: number, endIndex: number, level: string }[]}
+   *          保留原始位置信息供前端替换
+   */
+  extractWordsAboveLevelFromSentences(sentences, targetLevel) {
+    const allResults = [];
+
+    sentences.forEach((sentence, sentenceIndex) => {
+      const results = this.extractWordsAboveLevel(sentence, targetLevel);
+      results.forEach((r) => {
+        allResults.push({ ...r, sentenceIndex });
+      });
+    });
+
+    return allResults;
+  }
+
   // ============================================================
   // 私有方法
   // ============================================================

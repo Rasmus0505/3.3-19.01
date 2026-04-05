@@ -4215,6 +4215,12 @@ export function ImmersiveLessonPage({
                       <p className={`pl-0 ${cinemaFullscreenActive ? "overflow-x-auto whitespace-nowrap" : ""}`}>
                         {wordbookSentenceZh}
                       </p>
+                      <SimplifyVocabButton
+                        sentence={wordbookSentence?.text_en}
+                        apiClient={apiClient}
+                        analyzerRef={cefrAnalyzerRef}
+                        accessToken={accessToken}
+                      />
                     </>
                   ) : (
                     <>
@@ -4366,6 +4372,173 @@ export function ImmersiveLessonPage({
           </CardContent>
         </Card>
       </div>
+  );
+}
+
+// ============================================================
+// SimplifyVocabButton — 精准词汇简化按钮
+// ============================================================
+
+import { Loader2 } from "lucide-react";
+import { useCallback, useState } from "react";
+import { toast } from "sonner";
+import { parseResponse } from "../../shared/api/client";
+import { readCefrLevel } from "../../app/authStorage";
+
+const CEFR_ORDER_SV = ["A1", "A2", "B1", "B2", "C1", "C2", "SUPER"];
+
+function getTargetLevelSv(userLevel) {
+  const idx = CEFR_ORDER_SV.indexOf(userLevel);
+  const targetIdx = Math.min(idx + 1, CEFR_ORDER_SV.length - 1);
+  return CEFR_ORDER_SV[targetIdx];
+}
+
+function applyReplacementsSv(sentence, replacements) {
+  let result = sentence;
+  for (const { original, replacement } of replacements) {
+    const regex = new RegExp(`\\b${original.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
+    result = result.replace(regex, replacement);
+  }
+  return result;
+}
+
+/**
+ * 精准词汇简化按钮
+ * 显示在上一句区域下方，点击后提取超纲词 → 发给 LLM → 返回替换列表 → 前端替换
+ */
+function SimplifyVocabButton({ sentence, apiClient, analyzerRef, accessToken }) {
+  const [loading, setLoading] = useState(false);
+  const [showResult, setShowResult] = useState(false);
+  const [simplified, setSimplified] = useState(null);
+  const [replacements, setReplacements] = useState([]);
+
+  const handleSimplify = useCallback(async () => {
+    if (!sentence?.trim()) return;
+
+    if (!accessToken) {
+      toast.error("请先登录后再使用词汇简化");
+      return;
+    }
+    if (!apiClient || !analyzerRef?.current?.isLoaded) {
+      toast.error("词汇表未加载，请稍后再试");
+      return;
+    }
+
+    const userLevel = readCefrLevel() || "B1";
+    const targetLevel = getTargetLevelSv(userLevel);
+    const analyzer = analyzerRef.current;
+
+    // Step 1: 提取超过目标级别的词汇
+    const highLevelWords = analyzer.extractWordsAboveLevel(sentence, targetLevel);
+
+    if (highLevelWords.length === 0) {
+      toast.info("当前句子没有需要简化的词汇");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const wordsToSimplify = highLevelWords.map((w) => w.word);
+
+      const resp = await apiClient("/api/llm/simplify-vocabulary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sentences: [sentence],
+          words_to_simplify: wordsToSimplify,
+          target_level: targetLevel,
+          enable_thinking: false,
+        }),
+      });
+
+      const data = await parseResponse(resp);
+
+      if (!resp.ok || !data.ok || !Array.isArray(data.replacements)) {
+        const msg = data?.message || data?.detail || "简化失败";
+        toast.error("简化失败：" + msg);
+        return;
+      }
+
+      // 构建替换对（按顺序）
+      const reps = wordsToSimplify.map((word, i) => ({
+        original: word,
+        replacement: data.replacements[i] || word,
+      }));
+
+      const simplifiedText = applyReplacementsSv(sentence, reps);
+
+      setReplacements(reps);
+      setSimplified(simplifiedText);
+      setShowResult(true);
+
+      const chargeYuan = (data.charge_cents || 0) / 100;
+      toast.success(
+        "简化完成" +
+          (chargeYuan > 0 ? "，消耗 " + chargeYuan.toFixed(2) + " 元" : "") +
+          `（替换了 ${reps.length} 个词）`
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "网络错误";
+      toast.error("简化失败：" + msg);
+    } finally {
+      setLoading(false);
+    }
+  }, [sentence, apiClient, analyzerRef, accessToken]);
+
+  if (!sentence?.trim()) return null;
+
+  return (
+    <div className="mt-2">
+      {!showResult ? (
+        <button
+          type="button"
+          onClick={handleSimplify}
+          disabled={loading}
+          className="text-xs px-3 py-1.5 rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {loading ? (
+            <>
+              <Loader2 className="inline size-3 mr-1 animate-spin" />
+              分析中...
+            </>
+          ) : (
+            "简化词汇"
+          )}
+        </button>
+      ) : (
+        <div className="mt-2 p-3 rounded-lg border border-blue-200 bg-blue-50">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-blue-700">简化后</span>
+            <button
+              type="button"
+              onClick={() => setShowResult(false)}
+              className="text-xs text-blue-500 hover:text-blue-700"
+            >
+              收起
+            </button>
+          </div>
+          <p className="text-sm text-gray-800 leading-relaxed">{simplified}</p>
+          {replacements.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-blue-200">
+              <span className="text-xs text-gray-500">替换：</span>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {replacements.map((rep, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded bg-white border border-gray-200"
+                  >
+                    <span className="line-through text-gray-400">{rep.original}</span>
+                    <span className="text-blue-600">→</span>
+                    <span className="text-green-600">{rep.replacement}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
