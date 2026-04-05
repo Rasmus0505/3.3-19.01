@@ -100,20 +100,43 @@ function getTargetLevel(userLevel) {
 export function useReadingRewrite({ apiCall, accessToken }) {
   const [rewrittenText, setRewrittenText] = useState(null);
   const [rewriteId, setRewriteId] = useState(null);
-  const [viewMode, setViewMode] = useState("original");
+  const [viewMode, setViewModeState] = useState("original");
   const [isRewriting, setIsRewriting] = useState(false);
   const [rewriteError, setRewriteError] = useState(null);
+
+  const handleSwitchView = useCallback(
+    (mode) => {
+      if (mode === "rewritten" && !rewrittenText) return;
+      setViewModeState(mode);
+    },
+    [rewrittenText]
+  );
+
+  const clearRewrite = useCallback(() => {
+    setRewrittenText(null);
+    setRewriteId(null);
+    setRewriteError(null);
+    setViewModeState("original");
+  }, []);
 
   const handleRewrite = useCallback(
     async (originalText) => {
       const { toast } = await import("sonner");
 
       if (!accessToken) {
-        toast.error("请先登录");
+        const msg = "请先登录后再使用 AI 重写";
+        toast.error(msg);
+        setRewriteError(msg);
         return;
       }
       if (!apiCall) {
-        toast.error("无法发起请求");
+        const devHint =
+          import.meta.env.DEV
+            ? "（开发）ReadingPage 未收到 apiCall，请在 LearningShellPanelContent 中传入 apiCall={apiCall}"
+            : "";
+        const msg = "未接入请求接口" + (devHint ? " " + devHint : "");
+        toast.error("无法发起重写：" + msg, { duration: import.meta.env.DEV ? 12000 : 6000 });
+        setRewriteError(msg);
         return;
       }
 
@@ -157,7 +180,7 @@ export function useReadingRewrite({ apiCall, accessToken }) {
 
         setRewriteId(id);
         setRewrittenText(data.rewritten_text);
-        setViewMode("rewritten");
+        setViewModeState("rewritten");
 
         const chargeYuan = (data.charge_cents || 0) / 100;
         toast.success(
@@ -174,14 +197,6 @@ export function useReadingRewrite({ apiCall, accessToken }) {
     [accessToken, apiCall]
   );
 
-  const handleSwitchView = useCallback(
-    (mode) => {
-      if (mode === "rewritten" && !rewrittenText) return;
-      setViewMode(mode);
-    },
-    [rewrittenText]
-  );
-
   return {
     rewrittenText,
     rewriteId,
@@ -189,6 +204,7 @@ export function useReadingRewrite({ apiCall, accessToken }) {
     setViewMode: handleSwitchView,
     isRewriting,
     rewriteError,
+    clearRewrite,
     handleRewrite,
   };
 }

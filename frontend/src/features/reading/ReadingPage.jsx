@@ -7,8 +7,10 @@
  *
  * Phase 28: 词选动画、翻译弹窗、批量加入生词本、难度分布统计
  * Phase 29: AI 重写、原文/重写版丝滑切换
+ * 阅读素材：顶部文本框可粘贴/编辑正文（默认示例文章）
  */
-import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { readCefrLevel } from "../../app/authStorage";
 import { parseResponse } from "../../shared/api/client";
 import { cn } from "../../lib/utils";
@@ -111,13 +113,16 @@ export function ReadingPage({ accessToken, apiCall }) {
 
   const handleAddAllToWordbook = useCallback(async () => {
     if (selectedWords.length === 0) return;
-    const { toast } = await import("sonner");
     if (!accessToken) {
       toast.error("请先登录");
       return;
     }
     if (!apiCall) {
-      toast.error("无法发起请求");
+      toast.error(
+        import.meta.env.DEV
+          ? "无法发起请求：apiCall 未传入（检查 LearningShellPanelContent 是否传给 ReadingPage）"
+          : "无法发起请求：客户端未接入接口"
+      );
       return;
     }
     setIsAddingToWordbook(true);
@@ -153,22 +158,87 @@ export function ReadingPage({ accessToken, apiCall }) {
     }
   }, [accessToken, apiCall, selectedWords]);
 
+  const [articleDraft, setArticleDraft] = useState(DEMO_ARTICLE);
+  const [articleText, setArticleText] = useState(DEMO_ARTICLE);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setArticleText(articleDraft), 400);
+    return () => clearTimeout(timer);
+  }, [articleDraft]);
+
   const {
     rewrittenText,
     viewMode,
     setViewMode,
     isRewriting,
+    rewriteError,
+    clearRewrite,
     handleRewrite,
   } = useReadingRewrite({ apiCall, accessToken });
 
+  const prevCommittedRef = useRef(articleText);
+  useEffect(() => {
+    if (prevCommittedRef.current !== articleText && rewrittenText) {
+      clearRewrite();
+    }
+    prevCommittedRef.current = articleText;
+  }, [articleText, rewrittenText, clearRewrite]);
+
   const activeText =
-    viewMode === "rewritten" && rewrittenText ? rewrittenText : DEMO_ARTICLE;
+    viewMode === "rewritten" && rewrittenText ? rewrittenText : articleText;
 
   const showRewriteButton = !rewrittenText;
+  const draftPending = articleDraft !== articleText;
+
+  const onRewriteClick = useCallback(() => {
+    const t = articleText.trim();
+    if (!t) {
+      toast.error("请先输入或粘贴阅读正文");
+      return;
+    }
+    handleRewrite(t);
+  }, [articleText, handleRewrite]);
 
   return (
     <Suspense fallback={<PageFallback />}>
       <div className="reading-container">
+        <div className="reading-article-source">
+          <div className="reading-article-source__head">
+            <span className="reading-article-source__label">阅读素材</span>
+            <span className="reading-article-source__hint">
+              在此粘贴或编辑英文正文；下方正文会按词标注难度。修改后约半秒应用到分词视图。
+            </span>
+          </div>
+          <textarea
+            className="reading-article-source__textarea"
+            value={articleDraft}
+            onChange={(e) => setArticleDraft(e.target.value)}
+            rows={6}
+            spellCheck={false}
+            placeholder="粘贴你的阅读材料…"
+            aria-label="阅读素材正文"
+          />
+          <div className="reading-article-source__footer">
+            <button
+              type="button"
+              className="reading-article-source__btn-reset"
+              onClick={() => setArticleDraft(DEMO_ARTICLE)}
+            >
+              恢复内置示例
+            </button>
+            <span
+              className={
+                draftPending
+                  ? "reading-article-source__meta reading-article-source__meta--pending"
+                  : "reading-article-source__meta"
+              }
+            >
+              {articleDraft.length} 字符
+              {draftPending ? " · 正在应用到正文…" : ""}
+            </span>
+          </div>
+        </div>
+
         {rewrittenText ? (
           <div className="reading-view-toggle">
             <button
@@ -208,9 +278,10 @@ export function ReadingPage({ accessToken, apiCall }) {
             onAddAllToWordbook={handleAddAllToWordbook}
             onClearAll={handleClearAll}
             onTranslate={handleTranslate}
-            onRewrite={showRewriteButton ? () => handleRewrite(DEMO_ARTICLE) : null}
+            onRewrite={showRewriteButton ? onRewriteClick : null}
             isAdding={isAddingToWordbook}
             isRewriting={isRewriting}
+            rewriteError={rewriteError}
           />
         </div>
       </div>

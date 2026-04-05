@@ -14,6 +14,91 @@
   width: 100%;
 }
 
+/* ─── 阅读素材（粘贴 / 编辑）────────────────────────────── */
+.reading-article-source {
+  max-width: 640px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: oklch(0.98 0.01 85);
+  border: 1px solid oklch(0.88 0.01 85);
+  border-radius: 10px;
+}
+
+.reading-article-source__head {
+  margin-bottom: 8px;
+}
+
+.reading-article-source__label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: oklch(0.28 0.02 85);
+}
+
+.reading-article-source__hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: oklch(0.52 0.02 85);
+}
+
+.reading-article-source__textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 120px;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  color: oklch(0.22 0.02 85);
+  background: white;
+  border: 1px solid oklch(0.86 0.01 85);
+  border-radius: 8px;
+  resize: vertical;
+}
+
+.reading-article-source__textarea:focus {
+  outline: 2px solid oklch(0.70 0.12 175);
+  outline-offset: 1px;
+  border-color: oklch(0.75 0.10 175);
+}
+
+.reading-article-source__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.reading-article-source__btn-reset {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid oklch(0.86 0.01 85);
+  background: white;
+  color: oklch(0.40 0.02 85);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.reading-article-source__btn-reset:hover {
+  background: oklch(0.96 0.01 85);
+  border-color: oklch(0.78 0.02 85);
+}
+
+.reading-article-source__meta {
+  font-size: 11px;
+  color: oklch(0.55 0.02 85);
+}
+
+.reading-article-source__meta--pending {
+  color: oklch(0.55 0.12 275);
+}
+
 .reading-view-toggle {
   display: flex;
   align-items: center;
@@ -496,4 +581,29 @@
   border-radius: 6px;
   border: 1px solid oklch(0.88 0.02 275);
   margin-bottom: 8px;
+}
+
+.word-sidebar__rewrite-error {
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  border: 1px solid oklch(0.88 0.15 25);
+  background: oklch(0.97 0.03 25);
+}
+
+.word-sidebar__rewrite-error-title {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: oklch(0.45 0.18 25);
+  margin-bottom: 4px;
+}
+
+.word-sidebar__rewrite-error-msg {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: oklch(0.38 0.14 25);
+  word-break: break-word;
+  white-space: pre-wrap;
 }

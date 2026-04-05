@@ -132,7 +132,7 @@ export function LearningShellPanelContent({
     if (activePanel === "reading") {
       return (
         <Suspense fallback={<PanelFallback />}>
-          <ReadingPage accessToken={accessToken} />
+          <ReadingPage accessToken={accessToken} apiCall={apiCall} />
         </Suspense>
       );
     }

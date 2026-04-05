@@ -13,6 +13,7 @@
  *   onRewrite     {(() => void)|null} — 重写全文按钮回调，null 时不显示按钮
  *   isAdding      {boolean}
  *   isRewriting   {boolean}
+ *   rewriteError  {string|null} — 最近一次重写/请求失败说明（便于排查）
  */
 import { BookPlus, BookOpenText, Languages, Loader2, Sparkles, X } from "lucide-react";
 import { cn } from "../../lib/utils";
@@ -28,6 +29,7 @@ export function WordSidebar({
   onRewrite,
   isAdding = false,
   isRewriting = false,
+  rewriteError = null,
 }) {
   const count = selectedWords.length;
 
@@ -41,6 +43,13 @@ export function WordSidebar({
         <div className="word-sidebar__rewriting-hint">
           <Loader2 className="size-3.5 animate-spin" />
           <span>AI 重写中...</span>
+        </div>
+      ) : null}
+
+      {rewriteError ? (
+        <div className="word-sidebar__rewrite-error" role="alert">
+          <span className="word-sidebar__rewrite-error-title">上次操作未成功</span>
+          <p className="word-sidebar__rewrite-error-msg">{rewriteError}</p>
         </div>
       ) : null}
 
