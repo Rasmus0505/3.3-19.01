@@ -64,10 +64,12 @@ function computeWordStats(lines) {
   let total = 0;
   for (const line of lines) {
     for (const seg of line.segments) {
+      // 空白等 Pretext 片段无 normalized word，不计入总词数
+      if (!seg.word) continue;
+      total++;
       if (seg.cefrLevel && cefrCounts[seg.cefrLevel] !== undefined) {
         cefrCounts[seg.cefrLevel]++;
       }
-      total++;
     }
   }
   return { total, cefrCounts };

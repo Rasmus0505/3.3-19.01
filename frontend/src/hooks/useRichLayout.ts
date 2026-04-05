@@ -6,9 +6,9 @@
  *
  * 流程：text + font
  *   → prepareWithSegments(text, font)
- *   → enrichWithCefr(text) → RichSegment[]
  *   → layoutWithLines(prepared, maxWidth, lineHeight)
- *   → extractLineSegments(lines, segments) → RichLine[]
+ *   → 用每条 LayoutLine 的 start/end 游标在 prepared.segments 上切片 → RichLine[]
+ *   （不再用 line.text 与 split(/\\s+/) 词做前缀匹配：Pretext 行内逗号等处无空格，会失步导致只渲染首行）
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -52,76 +52,120 @@ async function getOrCreateAnalyzer(): Promise<VocabAnalyzer> {
   return _analyzerLoadPromise;
 }
 
-/**
- * 对纯文本中每个词进行 CEFR 等级查询。
- * 使用 VocabAnalyzer.lookupCefrLevelForSurfaceForm —— 它不做 stopwords 过滤，
- * 保证所有词（包括介词、代词）都能查到等级。
- */
-async function enrichWithCefr(text: string): Promise<RichSegment[]> {
-  const analyzer = await getOrCreateAnalyzer();
-  // 按空格分词，保持与 prepareWithSegments 段数一致
-  const words = text.split(/\s+/).filter((w) => w.length > 0);
-  return words.map((word) => {
-    const level = analyzer.lookupCefrLevelForSurfaceForm(word);
-    const normalized = word.toLowerCase().replace(/[^a-zA-Z']/g, "");
-    return {
-      text: word,
-      cefrLevel: level,
-      word: normalized,
-    };
-  });
+/** 与 @chenglou/pretext buildLineTextFromRange 中 discretionary hyphen 判定一致 */
+function lineHasDiscretionaryHyphen(
+  kinds: readonly string[],
+  startSegmentIndex: number,
+  startGraphemeIndex: number,
+  endSegmentIndex: number
+): boolean {
+  return (
+    endSegmentIndex > 0 &&
+    kinds[endSegmentIndex - 1] === "soft-hyphen" &&
+    !(startSegmentIndex === endSegmentIndex && startGraphemeIndex > 0)
+  );
+}
+
+function getSegmentGraphemesFromCache(
+  segmentIndex: number,
+  segments: readonly string[],
+  cache: Map<number, string[]>
+): string[] {
+  let g = cache.get(segmentIndex);
+  if (g) return g;
+  const raw = segments[segmentIndex] ?? "";
+  const ge = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+  g = [];
+  for (const x of ge.segment(raw)) {
+    g.push(x.segment);
+  }
+  cache.set(segmentIndex, g);
+  return g;
+}
+
+function pushRichPiece(
+  out: RichSegment[],
+  piece: string,
+  kind: string,
+  analyzer: VocabAnalyzer
+): void {
+  if (!piece) return;
+  if (kind === "space" || kind === "preserved-space") {
+    out.push({ text: piece, cefrLevel: null, word: "" });
+    return;
+  }
+  if (kind === "zero-width-break" || kind === "tab" || kind === "glue") {
+    out.push({ text: piece, cefrLevel: null, word: "" });
+    return;
+  }
+  if (kind === "soft-hyphen" || kind === "hard-break") {
+    return;
+  }
+  const level = analyzer.lookupCefrLevelForSurfaceForm(piece);
+  const normalized = piece.toLowerCase().replace(/[^a-zA-Z']/g, "");
+  out.push({ text: piece, cefrLevel: level, word: normalized });
 }
 
 /**
- * 将 RichSegment[] 按 Pretext 行边界切分。
- * 策略：以 line.text 为准，用贪婪词匹配将 segments 分配到各行。
+ * 按 Pretext 的 segment 游标收集本行要渲染的片段（与 line.text 逐字对齐）
  */
-function extractLineSegments(lines: LayoutLine[], allSegments: RichSegment[]): RichLine[] {
-  const richLines: RichLine[] = [];
-  let segmentIdx = 0;
-  const cleanSegment = (s: string) => s.toLowerCase().replace(/[^a-zA-Z']/g, "");
+function collectRichSegmentsForLayoutLine(
+  prepared: PreparedTextWithSegments,
+  line: LayoutLine,
+  analyzer: VocabAnalyzer,
+  graphemeCache: Map<number, string[]>
+): RichSegment[] {
+  const segments = prepared.segments;
+  const kinds = prepared.kinds as readonly string[];
+  const out: RichSegment[] = [];
 
-  for (const line of lines) {
-    const lineSegments: RichSegment[] = [];
-    if (segmentIdx >= allSegments.length) break;
+  const si = line.start.segmentIndex;
+  const sg = line.start.graphemeIndex;
+  const ei = line.end.segmentIndex;
+  const eg = line.end.graphemeIndex;
 
-    let remaining = line.text;
-    let loopSafety = 0;
-    while (remaining.length > 0 && segmentIdx < allSegments.length && loopSafety < 9999) {
-      loopSafety++;
-      const seg = allSegments[segmentIdx];
-      const cleanSeg = cleanSegment(seg.text);
-      if (!cleanSeg) {
-        segmentIdx++;
-        continue;
-      }
-      if (remaining.toLowerCase().startsWith(cleanSeg)) {
-        lineSegments.push(seg);
-        remaining = remaining.slice(cleanSeg.length).replace(/^\s+/, "");
-        segmentIdx++;
-      } else {
-        // 标点或其他无法匹配的字符：消费 remaining 首字符，继续尝试匹配
-        remaining = remaining.slice(1);
-      }
+  const endsWithDiscretionaryHyphen = lineHasDiscretionaryHyphen(kinds, si, sg, ei);
+
+  for (let i = si; i < ei; i++) {
+    const kind = kinds[i] ?? "text";
+    if (kind === "soft-hyphen" || kind === "hard-break") continue;
+
+    let piece: string;
+    if (i === si && sg > 0) {
+      piece = getSegmentGraphemesFromCache(i, segments, graphemeCache).slice(sg).join("");
+    } else {
+      piece = segments[i] ?? "";
     }
-
-    richLines.push({
-      text: line.text,
-      width: line.width,
-      segments: lineSegments,
-    });
+    pushRichPiece(out, piece, kind, analyzer);
   }
 
-  // #region agent log
-  console.log("[DEBUG extractLineSegments]", {
-    lineCount: richLines.length,
-    firstLineSegs: richLines[0]?.segments?.length,
-    lastLineText: richLines[richLines.length - 1]?.text,
-    lastLineSegs: richLines[richLines.length - 1]?.segments?.length,
-  });
-  // #endregion
+  if (eg > 0) {
+    if (endsWithDiscretionaryHyphen) {
+      pushRichPiece(out, "-", "text", analyzer);
+    }
+    const gStart = si === ei ? sg : 0;
+    const graphemes = getSegmentGraphemesFromCache(ei, segments, graphemeCache);
+    const piece = graphemes.slice(gStart, eg).join("");
+    const endKind = kinds[ei] ?? "text";
+    pushRichPiece(out, piece, endKind, analyzer);
+  } else if (endsWithDiscretionaryHyphen) {
+    pushRichPiece(out, "-", "text", analyzer);
+  }
 
-  return richLines;
+  return out;
+}
+
+function layoutLinesToRichLines(
+  prepared: PreparedTextWithSegments,
+  lines: LayoutLine[],
+  analyzer: VocabAnalyzer
+): RichLine[] {
+  const graphemeCache = new Map<number, string[]>();
+  return lines.map((line) => ({
+    text: line.text,
+    width: line.width,
+    segments: collectRichSegmentsForLayoutLine(prepared, line, analyzer, graphemeCache),
+  }));
 }
 
 const DEFAULT_FONT = "16px Inter";
@@ -129,17 +173,6 @@ const DEFAULT_LINE_HEIGHT = 24;
 
 /**
  * useRichLayout — CEFR-aware Pretext 行布局 hook
- *
- * @param text - 要渲染的英文文章文本
- * @param maxWidth - 内容区最大宽度（px）
- * @param font - CSS font shorthand（默认 "16px Inter"）
- * @param lineHeight - 行高 px（默认 24）
- *
- * 返回值：
- * - lines: RichLine[] — 每行的文本、宽度和带 CEFR 标注的分段
- * - isReady: boolean — 初始加载完成（含 VocabAnalyzer.load）
- * - reload: (text: string, maxWidth: number) => void — 重新测量
- * - analyzeProgress: { current: number, total: number } | null — 分析进度
  */
 export function useRichLayout(
   text: string,
@@ -165,25 +198,29 @@ export function useRichLayout(
         setIsReady(false);
         setError(null);
 
-        // 1. Pretext prepare（快速，内部缓存）
         const prepared = prepareWithSegments(textToMeasure, font);
         preparedRef.current = prepared;
 
-        // 2. CEFR enrichment（异步，需要 load VocabAnalyzer）
-        const segments = await enrichWithCefr(textToMeasure);
+        const analyzer = await getOrCreateAnalyzer();
 
-        // 3. layout
         const result = layoutWithLines(prepared, width, lineHeight);
-        console.log("[DEBUG pipeline]", {
+        const richLines = layoutLinesToRichLines(prepared, result.lines, analyzer);
+
+        // #region agent log
+        const segTotal = richLines.reduce((n, l) => n + l.segments.length, 0);
+        const emptyLines = richLines.filter((l) => l.segments.length === 0).length;
+        console.log("[DEBUG pipeline post-fix]", {
+          runId: "post-fix",
           textLen: textToMeasure.length,
           width,
           layoutLineCount: result.lines.length,
-          allSegmentsLen: segments.length,
-          allSegmentsFirst5: segments.slice(0, 5).map(s => s.text),
+          richLineCount: richLines.length,
+          renderedSegTotal: segTotal,
+          emptyLayoutLines: emptyLines,
+          lastLineSegs: richLines[richLines.length - 1]?.segments?.length,
         });
+        // #endregion
 
-        // 4. 切分到行
-        const richLines = extractLineSegments(result.lines, segments);
         setLines(richLines);
         setIsReady(true);
       } catch (err) {
