@@ -1,56 +1,72 @@
-# STATE: Bottle English Learning — v2.7 阅读板块重写增强
+# State: Bottle English Learning — v2.7
+
+**Current Milestone:** v2.7 阅读板块重写增强
+**Started:** 2026-04-06
 
 ## Project Reference
 
-**Project:** Bottle English Learning
 **Core Value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
-**Current Milestone:** v2.7 阅读板块重写增强
+
+**Current Focus:** Phase 32: Rewrite Persistence
 
 ## Current Position
 
-**Phase:** Not started (defining requirements)
-**Plan:** —
-**Status:** Defining requirements
-**Last activity:** 2026-04-06 — Milestone v2.7 started
+**Milestone:** v2.7
+**Phase:** 32 (starting)
+**Plan:** Not started
+**Status:** Not started
 
-## Milestone Context
+## Milestone Progress
 
-**v2.7 Goal:** 持久化保存AI重写结果，改进重写词汇的视觉标记（黄色色块替代下划线），优化DeepSeek提示词以减少token消耗。
+| Phase | Name | Status | Plans |
+|-------|------|--------|-------|
+| 32 | Rewrite Persistence | Not started | 0/? |
+| 33 | Rewrite UI Enhancement | Not started | 0/? |
+| 34 | Prompt Optimization | Not started | 0/? |
 
-**Target features:**
-1. 重写文章持久化 — unlock后保存到IndexedDB，阅读历史自动加载，支持原文/重写版切换
-2. 黄色色块UI — 重写词汇用黄色背景色块覆盖，悬停显示原词
-3. 提示词优化 — 参考Rewordify分级策略+句子级分析，结构化JSON减少token
+## Performance Metrics
 
-**Previous milestone (v2.6 shipped 2026-04-06):**
-- Phase 30: CEFR 词表权威修正
-- Phase 31: 前后端适配验证
+**Milestone v2.7:**
+- Total phases: 3
+- Total requirements: 13
+- Completed: 0
+- Progress: 0%
+
+**Project-wide:**
+- Total phases completed: 31 (up to v2.6)
+- Total milestones shipped: 6 (v2.0–v2.6)
 
 ## Accumulated Context
 
-### Key Decisions (v2.7)
+### Key Technical Context
 
-|| Decision | Rationale |
+- IndexedDB `reading_rewrites` store already exists (Phase 29) — needs articleId extension
+- IndexedDB `reading_history` store already exists (Phase 29) — needs rewrite indicator
+- CEFR vocabulary (fixed-v1) already complete — used to identify which words to simplify
+- Current rewrite_mappings already support 1:1 word mapping
+- Backend: `app/api/routers/llm.py` has rewrite endpoint, system prompts at lines 260-283
+- Frontend: `frontend/src/features/reading/ArticlePanel.jsx` renders per-word CEFR + rewrite highlights
+- CSS: `frontend/src/features/reading/reading.css` has rewrite-highlight CSS + CEFR underline CSS
+
+### Key Decisions for v2.7
+
+| Decision | Rationale |
 |----------|-----------|
-| 重写词汇黄色色块UI（覆盖式背景）+ tooltip原词对照 | 色块比下划线更明显，悬停显示原词符合Rewordify交互模式 |
-| 重写结果按文章维度持久化到IndexedDB，阅读历史自动加载 | 避免重复请求API，用户可在任意时间切换原文/重写版 |
-| Rewordify参考：分级难度+多显示模式+点击原词对照，本产品CEFR系统更精准 | Rewordify用频率统计，本产品用CEFR词汇表识别i+1词汇，可精准定位简化目标词 |
-
-### Technical Notes
-
-- IndexedDB `reading_rewrites` 已有存储结构（Phase 29），需扩展 articleId 维度
-- IndexedDB `reading_history` 已有阅读历史存储（Phase 29），需关联重写结果
-- CEFR词汇表（fixed-v1，Phase 30/31）已完整，可精准识别i+1词汇
-- 当前rewrite_mappings已支持一对一词映射，黄色色块UI只需调整CSS
+| Rewrite persistence via IndexedDB (not server) | Local-first constraint: CEFR analysis, rewrite results all execute in browser |
+| Yellow highlight blocks replace CEFR underlines | Rewordify reference: color blocks are more visible than underlines |
+| Prompt redesign with sentence-level JSON output | Reduce token consumption while maintaining quality |
+| Phase 34 is independent (backend-only) | Can run in parallel with Phase 32 if team capacity allows |
 
 ### Blockers
 
-- None currently
+None currently.
 
 ## Session Continuity
 
-**Planning session started:** 2026-04-06
-**v2.7 milestone initialized:** 2026-04-06
+**Last session:** 2026-04-06 — v2.6 milestone completed, v2.7 started
+
+**Next action:** `/gsd-plan-phase 32` to create execution plan for Phase 32 (Rewrite Persistence)
 
 ---
+
 *Last updated: 2026-04-06*

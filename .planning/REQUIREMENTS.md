@@ -37,7 +37,7 @@
 
 ## Out of Scope
 
-|| Feature | Reason |
+| Feature | Reason |
 |---------|--------|
 | Server-side rewrite storage | Conflicts with local-first constraint; IndexedDB is sufficient |
 | Batch rewrite multiple articles | Per-article rewrite is the current model; batch is future scope |
@@ -48,27 +48,27 @@
 
 Which phases cover which requirements. Updated during roadmap creation.
 
-|| Requirement | Phase | Status |
+| Requirement | Phase | Status |
 |-------------|-------|--------|
-| RP-01 | — | Pending |
-| RP-02 | — | Pending |
-| RP-03 | — | Pending |
-| RP-04 | — | Pending |
-| UI-01 | — | Pending |
-| UI-02 | — | Pending |
-| UI-03 | — | Pending |
-| UI-04 | — | Pending |
-| UI-05 | — | Pending |
-| PO-01 | — | Pending |
-| PO-02 | — | Pending |
-| PO-03 | — | Pending |
-| PO-04 | — | Pending |
+| RP-01 | Phase 32 | Pending |
+| RP-02 | Phase 32 | Pending |
+| RP-03 | Phase 32 | Pending |
+| RP-04 | Phase 32 | Pending |
+| UI-01 | Phase 33 | Pending |
+| UI-02 | Phase 33 | Pending |
+| UI-03 | Phase 33 | Pending |
+| UI-04 | Phase 33 | Pending |
+| UI-05 | Phase 33 | Pending |
+| PO-01 | Phase 34 | Pending |
+| PO-02 | Phase 34 | Pending |
+| PO-03 | Phase 34 | Pending |
+| PO-04 | Phase 34 | Pending |
 
 **Coverage:**
 - v1 requirements: 13 total
-- Mapped to phases: 0
-- Unmapped: 13 ⚠️
+- Mapped to phases: 13
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-06*
-*Last updated: 2026-04-06 after initial definition*
+*Last updated: 2026-04-06 after roadmap creation*
