@@ -183,6 +183,9 @@ export function useReadingRewrite({ apiCall, accessToken }) {
 
         setRewriteId(id);
         setRewrittenText(data.rewritten_text);
+        // #region agent log
+        fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ff3acd'},body:JSON.stringify({sessionId:'ff3acd',location:'useReadingRewrite.js:handleRewrite-success',message:'rewrite response',data:{ok:data.ok,rewrittenTextLen:((data.rewritten_text)||'').length,mappingsLen:((data.rewrite_mappings)||[]).length,mappingsSample:((data.rewrite_mappings)||[]).slice(0,3).map(m=>({r:(m.rewritten||'').slice(0,20),o:(m.original||'').slice(0,20)}))},timestamp:Date.now(),runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         setRewriteMappings(data.rewrite_mappings || []);
         setViewModeState("rewritten");
 

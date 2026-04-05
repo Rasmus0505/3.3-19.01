@@ -29,6 +29,9 @@ export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, o
 
   // Build lookup maps from rewrite mappings for fast per-segment resolution.
   const { rewrittenSet, rewrittenToOriginal } = useMemo(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ff3acd'},body:JSON.stringify({sessionId:'ff3acd',location:'ArticlePanel.jsx:useMemo-rewriteMaps',message:'rewriteMappings computed',data:{mappingsLength:(rewriteMappings??[]).length,mappingsSample:(rewriteMappings??[]).slice(0,3).map(m=>({r:m.rewritten,o:m.original}))},timestamp:Date.now(),runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     const map = new Map();
     const set = new Set();
     for (const m of rewriteMappings ?? []) {
@@ -36,6 +39,9 @@ export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, o
       map.set(key, m.original);
       set.add(key);
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ff3acd'},body:JSON.stringify({sessionId:'ff3acd',location:'ArticlePanel.jsx:useMemo-rewriteMaps-end',message:'rewrittenSet size',data:{rewrittenSetSize:set.size,rewrittenToOriginalKeys:[...map.keys()].slice(0,5)},timestamp:Date.now(),runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     return { rewrittenSet: set, rewrittenToOriginal: map };
   }, [rewriteMappings]);
 
@@ -145,6 +151,10 @@ function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels
   };
 
   const isRewritten = rewriteOriginal !== null && rewriteOriginal !== undefined;
+
+  // #region agent log
+  fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ff3acd'},body:JSON.stringify({sessionId:'ff3acd',location:'ArticleWord.jsx:render',message:'rewriteOriginal check',data:{text:segment.text,rewriteOriginal,isRewritten,isRewrittenStr:String(isRewritten)},timestamp:Date.now(),runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
 
   return (
     <span
