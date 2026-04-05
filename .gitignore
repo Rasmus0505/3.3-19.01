@@ -11,7 +11,6 @@ frontend/dist/
 desktop-client/node_modules/
 desktop-client/.cache/
 desktop-client/dist/
-# Local Electron win-unpacked / fixed bundles (regenerate with package scripts; do not commit)
 desktop-client/dist-fixed/
 modelscope_whisper/
 
@@ -19,7 +18,6 @@ asr_test_results.json
 asr_filetrans_via_dashscope_files_results.json
 test_app.db
 
-# Frontend build output
 app/static/index.html
 app/static/assets/
 
@@ -27,6 +25,27 @@ run_asr_matrix.py
 run_filetrans_via_dashscope_files.py
 /Desktop/models
 /Docx/中文翻译
-/Docx/中文翻译
+
 AGENT.md
-AGENT.md
+
+# =============================================================================
+# Sensitive files — never commit keys, credentials, or env files
+# =============================================================================
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.*.local
+.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+credentials.json
+secrets.json
+token.json
+*.secret
+*.token
+config.json
