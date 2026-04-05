@@ -3,6 +3,7 @@ import { parseResponse } from "./client";
 export interface SOEPhoneResult {
   phone: string;
   reference_phone: string;
+  reference_letter: string; // 对应的原文字母，如 "s"
   pronunciation_score: number;
   start_time: number;
   end_time: number;

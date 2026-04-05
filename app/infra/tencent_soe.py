@@ -240,6 +240,7 @@ def _parse_phone_result(phone: dict) -> dict:
     return {
         "phone": str(phone.get("Phone") or phone.get("phone") or ""),
         "reference_phone": str(phone.get("ReferencePhone") or phone.get("reference_phone") or ""),
+        "reference_letter": str(phone.get("ReferenceLetter") or phone.get("reference_letter") or ""),
         "pronunciation_score": round(min(100.0, pa), 2),
         "start_time": _pick_int(phone, "MemBeginTime", "mem_begin_time", default=0),
         "end_time": _pick_int(phone, "MemEndTime", "mem_end_time", default=0),

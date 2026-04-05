@@ -1,5 +1,56 @@
 import { useEffect, useState } from "react";
 
+// ─── 智聆音素 → IPA 映射表（腾讯云官方文档） ───────────────────────────────
+const ARPABET_TO_IPA = {
+  ih: "ɪ",
+  ah: "ə",
+  ao: "ɒ",
+  uh: "ʊ",
+  "^": "ʌ",
+  eh: "e",
+  ae: "æ",
+  iy: "i",
+  er: "ɜ",
+  ax: "ə",
+  ix: "ɪ",
+  "": "",
+  "aa": "ɑ",
+  ey: "eɪ",
+  ay: "aɪ",
+  oy: "ɔɪ",
+  aw: "aʊ",
+  ow: "oʊ",
+  uw: "u",
+  p: "p",
+  b: "b",
+  t: "t",
+  d: "d",
+  k: "k",
+  g: "g",
+  f: "f",
+  v: "v",
+  th: "θ",
+  dh: "ð",
+  s: "s",
+  z: "z",
+  sh: "ʃ",
+  zh: "ʒ",
+  ch: "tʃ",
+  jh: "dʒ",
+  hh: "h",
+  m: "m",
+  n: "n",
+  ng: "ŋ",
+  l: "l",
+  r: "r",
+  y: "j",
+  w: "w",
+};
+
+function toIPA(phone) {
+  return ARPABET_TO_IPA[phone] ?? phone;
+}
+
 const MATCH_TAG_LABELS = {
   0: "匹配",
   1: "多读",
@@ -9,21 +60,57 @@ const MATCH_TAG_LABELS = {
 };
 
 const MATCH_TAG_COLORS = {
-  0: { bg: "#dcfce7", text: "#166534", border: "#86efac" },   // green - good
-  1: { bg: "#fef9c3", text: "#713f12", border: "#fde047" },   // yellow - extra
-  2: { bg: "#fee2e2", text: "#991b1b", border: "#fca5a5" },   // red - missing
-  3: { bg: "#fee2e2", text: "#991b1b", border: "#fca5a5" },   // red - misread
-  4: { bg: "#f3e8ff", text: "#6b21a8", border: "#d8b4fe" },   // purple - unknown
+  0: { bg: "#dcfce7", text: "#166534", border: "#86efac" },
+  1: { bg: "#fef9c3", text: "#713f12", border: "#fde047" },
+  2: { bg: "#fee2e2", text: "#991b1b", border: "#fca5a5" },
+  3: { bg: "#fee2e2", text: "#991b1b", border: "#fca5a5" },
+  4: { bg: "#f3e8ff", text: "#6b21a8", border: "#d8b4fe" },
 };
 
+// ─── 音素级别提示词（结合 IPA + 字母做诊断） ─────────────────────────────────
+const PHONE_HINTS = {
+  θ: "舌尖轻咬上下齿间，送气无声",
+  ð: "舌尖轻咬上下齿间，声带振动",
+  th: "舌尖轻咬上下齿间，送气无声，像中文'丝'但更轻",
+  dh: "舌尖轻咬上下齿间，声带振动，像中文'滋'带振动",
+  w: "双唇收圆并前伸，像吹蜡烛的口型",
+  r: "舌尖卷起但不抵上颚，像中文'日'但更轻",
+  l: "舌尖抵上齿龈，声音从两侧出来",
+  ng: "舌根抵软腭，鼻音，像中文'ang'的尾音",
+  v: "上齿轻咬下唇，声带振动",
+  s: "舌尖接近上齿龈，牙齿轻合，送气无声",
+  z: "舌尖接近上齿龈，牙齿轻合，声带振动",
+  sh: "舌尖后缩，双唇前撅，送气无声",
+  ʃ: "舌尖后缩，双唇前撅，送气无声（sh 的 IPA 写法）",
+  ch: "sh 音之后紧跟一个急促的 t 音",
+  tʃ: "sh 音之后紧跟一个急促的 t 音（ch 的 IPA 写法）",
+  jh: "sh 音之后紧跟一个急促的 d 音",
+  dʒ: "sh 音之后紧跟一个急促的 d 音（j 的 IPA 写法）",
+};
+
+const LOW_SCORE_THRESHOLD = 60;
+const MID_SCORE_THRESHOLD = 75;
+
 function scoreColor(score) {
-  if (score >= 80) return "#22c55e";
-  if (score >= 60) return "#eab308";
+  if (score >= MID_SCORE_THRESHOLD) return "#22c55e";
+  if (score >= LOW_SCORE_THRESHOLD) return "#eab308";
   if (score >= 40) return "#f97316";
   return "#ef4444";
 }
 
-function ScoreCircle({ score, label, color }) {
+function scoreLabel(score) {
+  if (score >= MID_SCORE_THRESHOLD) return "良好";
+  if (score >= LOW_SCORE_THRESHOLD) return "一般";
+  if (score >= 40) return "偏弱";
+  return "薄弱";
+}
+
+function getPhoneHint(ipa, letter) {
+  // 先用 IPA 查，再退回到原字母
+  return PHONE_HINTS[ipa] || PHONE_HINTS[letter] || null;
+}
+
+function ScoreCircle({ score, label, color, subLabel }) {
   const radius = 20;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (score / 100) * circumference;
@@ -32,8 +119,11 @@ function ScoreCircle({ score, label, color }) {
       <svg width="52" height="52" viewBox="0 0 52 52">
         <circle cx="26" cy="26" r={radius} fill="none" stroke="#e5e7eb" strokeWidth="4" />
         <circle
-          cx="26" cy="26" r={radius}
-          fill="none" stroke={color}
+          cx="26"
+          cy="26"
+          r={radius}
+          fill="none"
+          stroke={color}
           strokeWidth="4"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
@@ -46,52 +136,63 @@ function ScoreCircle({ score, label, color }) {
         </text>
       </svg>
       <span style={{ fontSize: "12px", color: "#6b7280" }}>{label}</span>
+      {subLabel && (
+        <span style={{ fontSize: "10px", color: "#9ca3af" }}>{subLabel}</span>
+      )}
     </div>
   );
 }
 
-function PhoneChip({ phone, score, matchTag }) {
+// ─── 单个音素：显示 IPA 音标 + 分数 + 可选提示 ───────────────────────────────
+function PhoneItem({ phone, score, hint }) {
+  const ipa = toIPA(phone);
   const color = scoreColor(score);
-  const tagColor = MATCH_TAG_COLORS[matchTag] || MATCH_TAG_COLORS[0];
+  const label = scoreLabel(score);
+
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: "1px",
-        marginRight: "2px",
-      }}
-    >
-      <span
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+      {/* IPA 音标 */}
+      <div
         style={{
-          fontSize: "11px",
-          fontWeight: "600",
-          color: tagColor.text,
-          backgroundColor: tagColor.bg,
-          border: `1px solid ${tagColor.border}`,
-          borderRadius: "4px",
-          padding: "1px 4px",
-          lineHeight: "1.4",
-          minWidth: "20px",
-          textAlign: "center",
+          fontSize: "13px",
+          fontWeight: "700",
+          color: color,
+          fontFamily: "Georgia, serif",
+          lineHeight: "1",
         }}
       >
-        {phone}
-      </span>
-      <span style={{ fontSize: "9px", color: color, fontWeight: "500" }}>
-        {Math.round(score)}
-      </span>
-    </span>
+        /{ipa}/
+      </div>
+      {/* 分数 + 评价 */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px" }}>
+        <span style={{ fontSize: "10px", fontWeight: "600", color }}>{Math.round(score)}</span>
+        {score < LOW_SCORE_THRESHOLD && hint && (
+          <span
+            title={hint}
+            style={{
+              fontSize: "9px",
+              color: "#ef4444",
+              cursor: "help",
+              borderBottom: "1px dashed #ef4444",
+            }}
+          >
+            {label}
+          </span>
+        )}
+        {score < LOW_SCORE_THRESHOLD && !hint && (
+          <span style={{ fontSize: "9px", color }}>{label}</span>
+        )}
+      </div>
+    </div>
   );
 }
 
-function WordFeedbackRow({ word, onShowPhones }) {
+// ─── 单词行：展示单词 IPA + 音素序列 + 最弱音素提示 ─────────────────────────
+function WordFeedbackRow({ word }) {
   const {
     word: recognized,
     reference_word: refWord,
     pronunciation_score: pronScore,
-    fluency_score: fluScore,
     match_tag: matchTag = 0,
     phone_results: phones = [],
   } = word;
@@ -99,126 +200,226 @@ function WordFeedbackRow({ word, onShowPhones }) {
   const tagInfo = MATCH_TAG_COLORS[matchTag] || MATCH_TAG_COLORS[0];
   const tagLabel = MATCH_TAG_LABELS[matchTag] || "匹配";
   const showPhones = matchTag !== 2 && phones.length > 0;
-  const hasPhoneIssues = showPhones && phones.some(p => (p.pronunciation_score || 0) < 60);
+
+  // 找出最弱的音素
+  const weakPhones = phones.filter((p) => (p.pronunciation_score || 0) < LOW_SCORE_THRESHOLD);
+  const weakestPhone = weakPhones.length > 0
+    ? weakPhones.reduce((a, b) =>
+        (a.pronunciation_score || 0) < (b.pronunciation_score || 0) ? a : b
+      )
+    : null;
+
+  const weakestHint = weakestPhone
+    ? getPhoneHint(toIPA(weakestPhone.phone), weakestPhone.reference_letter || weakestPhone.phone)
+    : null;
 
   const displayWord = matchTag === 2 ? (
     <s style={{ color: "#9ca3af" }}>{refWord || recognized}</s>
   ) : recognized || refWord;
 
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-      {/* Word chip */}
-      <span
-        style={{
-          fontSize: "13px",
-          fontWeight: "600",
-          color: tagInfo.text,
-          backgroundColor: tagInfo.bg,
-          border: `1px solid ${tagInfo.border}`,
-          borderRadius: "6px",
-          padding: "2px 8px",
-          minWidth: "40px",
-          textAlign: "center",
-          flexShrink: 0,
-        }}
-      >
-        {displayWord}
-      </span>
+  // 构建该单词的 IPA 音标字符串
+  const ipaStr = phones.map((p) => toIPA(p.phone)).join("");
 
-      {/* Score badge */}
-      {matchTag !== 2 && (
+  return (
+    <div style={{ marginBottom: "8px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+        {/* 单词主体 */}
         <span
           style={{
-            fontSize: "11px",
+            fontSize: "14px",
             fontWeight: "600",
-            color: scoreColor(pronScore),
-            backgroundColor: "#f9fafb",
-            border: "1px solid #e5e7eb",
+            color: tagInfo.text,
+            backgroundColor: tagInfo.bg,
+            border: `1px solid ${tagInfo.border}`,
+            borderRadius: "6px",
+            padding: "2px 8px",
+            flexShrink: 0,
+          }}
+        >
+          {displayWord}
+        </span>
+
+        {/* IPA 音标（如果有音素） */}
+        {ipaStr && (
+          <span
+            style={{
+              fontSize: "12px",
+              fontFamily: "Georgia, serif",
+              color: "#6b7280",
+              flexShrink: 0,
+            }}
+          >
+            /{ipaStr}/
+          </span>
+        )}
+
+        {/* 发音分 */}
+        {matchTag !== 2 && (
+          <span
+            style={{
+              fontSize: "11px",
+              fontWeight: "600",
+              color: scoreColor(pronScore),
+              backgroundColor: "#f9fafb",
+              border: "1px solid #e5e7eb",
+              borderRadius: "4px",
+              padding: "1px 5px",
+              flexShrink: 0,
+            }}
+          >
+            {Math.round(pronScore)}
+          </span>
+        )}
+
+        {/* 匹配标签 */}
+        <span
+          style={{
+            fontSize: "10px",
+            fontWeight: "500",
+            color: tagInfo.text,
+            backgroundColor: tagInfo.bg,
+            border: `1px solid ${tagInfo.border}`,
             borderRadius: "4px",
             padding: "1px 5px",
             flexShrink: 0,
           }}
         >
-          发音 {Math.round(pronScore)}
+          {tagLabel}
         </span>
-      )}
+      </div>
 
-      {/* Match tag badge */}
-      <span
-        style={{
-          fontSize: "10px",
-          fontWeight: "500",
-          color: tagInfo.text,
-          backgroundColor: tagInfo.bg,
-          border: `1px solid ${tagInfo.border}`,
-          borderRadius: "4px",
-          padding: "1px 5px",
-          flexShrink: 0,
-        }}
-      >
-        {tagLabel}
-      </span>
-
-      {/* Phone breakdown */}
+      {/* 音素横向排列 */}
       {showPhones && (
-        <div style={{ display: "flex", alignItems: "center", gap: "1px", flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "4px",
+            marginTop: "4px",
+            paddingLeft: "4px",
+            flexWrap: "wrap",
+          }}
+        >
           {phones.map((p, i) => (
-            <PhoneChip
+            <PhoneItem
               key={i}
               phone={p.phone}
               score={p.pronunciation_score}
-              matchTag={p.match_tag || 0}
+              hint={getPhoneHint(toIPA(p.phone), p.reference_letter || p.phone)}
             />
           ))}
-          {hasPhoneIssues && (
-            <button
-              onClick={() => onShowPhones?.(phones)}
-              style={{
-                fontSize: "10px",
-                color: "#6b7280",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: "2px 4px",
-                textDecoration: "underline",
-              }}
-            >
-              详细
-            </button>
-          )}
+        </div>
+      )}
+
+      {/* 最弱音素提示 */}
+      {weakestPhone && weakestHint && (
+        <div
+          style={{
+            fontSize: "11px",
+            color: "#b45309",
+            backgroundColor: "#fef3c7",
+            border: "1px solid #fde68a",
+            borderRadius: "6px",
+            padding: "3px 8px",
+            marginTop: "4px",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+        >
+          <span style={{ fontSize: "12px" }}>💡</span>
+          <span>
+            <strong>/{toIPA(weakestPhone.phone)}/</strong> 发音建议：{weakestHint}
+          </span>
         </div>
       )}
     </div>
   );
 }
 
-function MatchSummary({ matched, total, added, missing, misread }) {
-  const goodCount = matched;
-  const badCount = added + missing + misread;
-  if (badCount === 0) return null;
+// ─── 综合诊断区：整句层面的 AI 诊断提示 ──────────────────────────────────────
+function AIDiagnostic({ words, fluencyScore, completenessScore }) {
+  const allPhones = words.flatMap((w) => w.phone_results || []);
+  const weakPhones = allPhones.filter((p) => (p.pronunciation_score || 0) < LOW_SCORE_THRESHOLD);
+
+  // 统计各音素类型的问题频率
+  const phoneIssueCount = {};
+  weakPhones.forEach((p) => {
+    const key = toIPA(p.phone);
+    phoneIssueCount[key] = (phoneIssueCount[key] || 0) + 1;
+  });
+
+  // 找出最常出问题的音素
+  const sortedIssues = Object.entries(phoneIssueCount).sort((a, b) => b[1] - a[1]);
+  const topIssues = sortedIssues.slice(0, 2);
+
+  // 判断问题类型
+  const missingCount = (words.filter((w) => w.match_tag === 2) || []).length;
+  const misreadCount = (words.filter((w) => w.match_tag === 3) || []).length;
+  const fluencyLow = fluencyScore < 70;
+  const completenessLow = completenessScore < 70;
+
+  const tips = [];
+
+  if (topIssues.length > 0) {
+    const [phone, count] = topIssues[0];
+    tips.push(`${count > 1 ? `「${phone}」音出现了 ${count} 次偏弱` : `「${phone}」音偏弱`}，是本句需要重点练习的音。`);
+  }
+  if (topIssues.length > 1) {
+    const [phone2, count2] = topIssues[1];
+    tips.push(`「${phone2}」音也需注意。`);
+  }
+  if (missingCount > 0) {
+    tips.push(`漏读了 ${missingCount} 个词，完整读出所有单词可提升完整度分。`);
+  }
+  if (misreadCount > 0) {
+    tips.push(`有 ${misreadCount} 个词读音偏差较大，建议先听原音再跟读。`);
+  }
+  if (fluencyLow) {
+    tips.push(`流畅度偏低，注意语速不要太快，尽量保持均匀节奏，避免在词间过度停顿。`);
+  }
+  if (completenessLow) {
+    tips.push(`完整度偏低，请确保每个单词都读完整，不要吞音或跳过某些词。`);
+  }
+  if (tips.length === 0) {
+    tips.push("整体表现良好，继续保持！");
+  }
+
   return (
     <div
       style={{
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "6px",
-        marginBottom: "10px",
+        backgroundColor: "#eff6ff",
+        border: "1px solid #bfdbfe",
+        borderRadius: "10px",
+        padding: "10px 14px",
+        marginBottom: "12px",
       }}
     >
+      <div style={{ fontSize: "11px", fontWeight: "600", color: "#1d4ed8", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+        AI 诊断
+      </div>
+      {tips.map((tip, i) => (
+        <div key={i} style={{ fontSize: "12px", color: "#1e40af", lineHeight: "1.7" }}>
+          {tip}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MatchSummary({ matched, total, added, missing, misread }) {
+  const badCount = added + missing + misread;
+  if (badCount === 0) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
       {added > 0 && (
-        <span style={badgeStyle("#fef9c3", "#713f12", "#fde047")}>
-          多读了 {added} 个词
-        </span>
+        <span style={badgeStyle("#fef9c3", "#713f12", "#fde047")}>多读了 {added} 个词</span>
       )}
       {missing > 0 && (
-        <span style={badgeStyle("#fee2e2", "#991b1b", "#fca5a5")}>
-          漏读了 {missing} 个词
-        </span>
+        <span style={badgeStyle("#fee2e2", "#991b1b", "#fca5a5")}>漏读了 {missing} 个词</span>
       )}
       {misread > 0 && (
-        <span style={badgeStyle("#fee2e2", "#991b1b", "#fca5a5")}>
-          读错 {misread} 个词
-        </span>
+        <span style={badgeStyle("#fee2e2", "#991b1b", "#fca5a5")}>读错 {misread} 个词</span>
       )}
     </div>
   );
@@ -236,99 +437,10 @@ function badgeStyle(bg, text, border) {
   };
 }
 
-function PhoneDetailModal({ phoneModal, onClose }) {
-  useEffect(() => {
-    const onKeyDown = (e) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
+function ScoreExplanation() {
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "rgba(0,0,0,0.6)",
-        zIndex: 10001,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          backgroundColor: "#fff",
-          borderRadius: "14px",
-          padding: "20px",
-          width: "360px",
-          maxWidth: "90vw",
-          boxShadow: "0 16px 32px rgba(0,0,0,0.2)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ fontSize: "15px", fontWeight: "600", color: "#1f2937", marginBottom: "12px" }}>
-          音素详情：{phoneModal.word}
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "16px" }}>
-          {phoneModal.phones.map((p, i) => (
-            <div
-              key={i}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "3px",
-                minWidth: "44px",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: "16px",
-                  fontWeight: "700",
-                  color: scoreColor(p.pronunciation_score),
-                  backgroundColor: "#f9fafb",
-                  border: `2px solid ${scoreColor(p.pronunciation_score)}`,
-                  borderRadius: "8px",
-                  padding: "4px 8px",
-                  textAlign: "center",
-                }}
-              >
-                {p.phone}
-              </div>
-              <div style={{ fontSize: "11px", color: "#6b7280" }}>
-                {Math.round(p.pronunciation_score)}
-              </div>
-              {p.detected_stress && (
-                <div style={{ fontSize: "9px", color: "#f97316" }}>重音</div>
-              )}
-            </div>
-          ))}
-        </div>
-        <div style={{ fontSize: "11px", color: "#9ca3af", marginBottom: "8px" }}>
-          每个音素下方数字为发音精准度分数。低于60分请注意改进对应音素的发音。
-        </div>
-        <button
-          onClick={onClose}
-          style={{
-            width: "100%",
-            padding: "8px",
-            backgroundColor: "#3b82f6",
-            color: "#fff",
-            border: "none",
-            borderRadius: "8px",
-            fontSize: "14px",
-            cursor: "pointer",
-          }}
-        >
-          关闭
-        </button>
-      </div>
+    <div style={{ fontSize: "11px", color: "#9ca3af", textAlign: "center", marginBottom: "14px", lineHeight: "1.5" }}>
+      发音 · 流畅度（连读/弱读/停顿） · 完整度（是否读完所有词）
     </div>
   );
 }
@@ -336,7 +448,6 @@ function PhoneDetailModal({ phoneModal, onClose }) {
 export default function SOEResultCard({ result, onClose }) {
   const [visible, setVisible] = useState(false);
   const [showAllWords, setShowAllWords] = useState(false);
-  const [phoneModal, setPhoneModal] = useState(null);
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
@@ -370,7 +481,18 @@ export default function SOEResultCard({ result, onClose }) {
   const missing = result?.missing_word_count ?? 0;
   const misread = result?.misread_word_count ?? 0;
 
-  const displayWords = showAllWords ? words : words.slice(0, 10);
+  // 拆分有问题和无问题的词
+  const problemWords = words.filter((w) => {
+    const hasLowScore = (w.pronunciation_score || 0) < LOW_SCORE_THRESHOLD;
+    return w.match_tag !== 0 || hasLowScore;
+  });
+  const goodWords = words.filter((w) => {
+    const hasLowScore = (w.pronunciation_score || 0) < LOW_SCORE_THRESHOLD;
+    return w.match_tag === 0 && !hasLowScore;
+  });
+
+  const displayProblemWords = showAllWords ? problemWords : problemWords.slice(0, 15);
+  const displayGoodWords = showAllWords ? goodWords : goodWords.slice(0, 5);
 
   const cardStyle = {
     position: "fixed",
@@ -388,13 +510,14 @@ export default function SOEResultCard({ result, onClose }) {
     backgroundColor: "#fff",
     borderRadius: "16px",
     padding: "24px",
-    width: "420px",
+    width: "460px",
     maxWidth: "92vw",
     maxHeight: "88vh",
     overflowY: "auto",
     boxShadow: "0 20px 40px rgba(0,0,0,0.15)",
     transform: visible ? "scale(1)" : "scale(0.9)",
     transition: "transform 0.2s ease",
+    position: "relative",
   };
 
   return (
@@ -424,7 +547,7 @@ export default function SOEResultCard({ result, onClose }) {
           {/* Total score */}
           <div
             style={{
-              fontSize: "52px",
+              fontSize: "56px",
               fontWeight: "700",
               color: scoreColor(totalScore),
               textAlign: "center",
@@ -433,9 +556,12 @@ export default function SOEResultCard({ result, onClose }) {
           >
             {totalScore}
           </div>
-          <div style={{ textAlign: "center", fontSize: "13px", color: "#6b7280", marginBottom: "16px" }}>
-            综合评分 · {total > 0 ? `${matched}/${total} 词匹配` : ""}
+          <div style={{ textAlign: "center", fontSize: "13px", color: "#6b7280", marginBottom: "4px" }}>
+            综合评分{total > 0 ? ` · ${matched}/${total} 词匹配` : ""}
           </div>
+
+          {/* Score explanation */}
+          <ScoreExplanation />
 
           {/* Sub-scores */}
           <div style={{ display: "flex", justifyContent: "space-around", marginBottom: "16px" }}>
@@ -445,47 +571,40 @@ export default function SOEResultCard({ result, onClose }) {
           </div>
 
           {/* Match summary badges */}
-          <MatchSummary
-            matched={matched}
-            total={total}
-            added={added}
-            missing={missing}
-            misread={misread}
-          />
+          <MatchSummary matched={matched} total={total} added={added} missing={missing} misread={misread} />
 
-          {/* Word-level feedback */}
-          {words.length > 0 && (
+          {/* AI 诊断 */}
+          <AIDiagnostic words={words} fluencyScore={fluencyScore} completenessScore={completenessScore} />
+
+          {/* 问题词（有问题的放前面） */}
+          {problemWords.length > 0 && (
             <div style={{ marginBottom: "12px" }}>
               <div
                 style={{
-                  fontSize: "12px",
+                  fontSize: "11px",
                   color: "#9ca3af",
                   marginBottom: "6px",
-                  fontWeight: "500",
+                  fontWeight: "600",
                   textTransform: "uppercase",
                   letterSpacing: "0.05em",
                 }}
               >
-                逐词反馈
+                需改进 ({problemWords.length})
               </div>
               <div
                 style={{
-                  border: "1px solid #f3f4f6",
+                  border: "1px solid #fee2e2",
                   borderRadius: "10px",
                   padding: "10px 12px",
-                  backgroundColor: "#fafafa",
-                  maxHeight: showAllWords ? "none" : "220px",
+                  backgroundColor: "#fffafafa",
+                  maxHeight: showAllWords ? "none" : "240px",
                   overflowY: showAllWords ? "visible" : "auto",
                 }}
               >
-                {displayWords.map((w, i) => (
-                  <WordFeedbackRow
-                    key={i}
-                    word={w}
-                    onShowPhones={(phones) => setPhoneModal({ word: w.word || w.reference_word, phones })}
-                  />
+                {displayProblemWords.map((w, i) => (
+                  <WordFeedbackRow key={i} word={w} />
                 ))}
-                {!showAllWords && words.length > 10 && (
+                {!showAllWords && problemWords.length > 15 && (
                   <button
                     onClick={() => setShowAllWords(true)}
                     style={{
@@ -499,8 +618,43 @@ export default function SOEResultCard({ result, onClose }) {
                       textAlign: "center",
                     }}
                   >
-                    展开全部 {words.length} 个词 ↓
+                    展开全部 {problemWords.length} 个词 ↓
                   </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 良好词（高分且匹配正确的） */}
+          {goodWords.length > 0 && (
+            <div style={{ marginBottom: "12px" }}>
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "#9ca3af",
+                  marginBottom: "6px",
+                  fontWeight: "600",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                表现良好 ({goodWords.length})
+              </div>
+              <div
+                style={{
+                  border: "1px solid #dcfce7",
+                  borderRadius: "10px",
+                  padding: "8px 12px",
+                  backgroundColor: "#f0fdf4",
+                }}
+              >
+                {displayGoodWords.map((w, i) => (
+                  <WordFeedbackRow key={i} word={w} />
+                ))}
+                {!showAllWords && goodWords.length > 5 && (
+                  <div style={{ fontSize: "11px", color: "#6b7280", textAlign: "center", paddingTop: "4px" }}>
+                    其余 {goodWords.length - 5} 个词表现良好
+                  </div>
                 )}
               </div>
             </div>
@@ -538,14 +692,6 @@ export default function SOEResultCard({ result, onClose }) {
           )}
         </div>
       </div>
-
-      {/* Phone detail modal */}
-      {phoneModal && (
-        <PhoneDetailModal
-          phoneModal={phoneModal}
-          onClose={() => setPhoneModal(null)}
-        />
-      )}
     </>
   );
 }

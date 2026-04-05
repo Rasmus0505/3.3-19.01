@@ -9,9 +9,10 @@ class SOEPhoneResult(BaseModel):
     """音素（音节）评测结果，如 'f', 'er', 's', 't' 组成 'first'"""
     phone: str = ""                           # 识别的音素，如 "f", "er", "s"
     reference_phone: str = ""                 # 参考音素
-    pronunciation_score: float = 0.0          # 音素精准度 [0-100]
+    reference_letter: str = ""                # 对应的原文字母，如 "s" 对应字母 "s"（腾讯云新版字段）
+    pronunciation_score: float = 0.0           # 音素精准度 [0-100]
     start_time: int = 0                       # 音素开始时间 ms
-    end_time: int = 0                         # 音素结束时间 ms
+    end_time: int = 0                        # 音素结束时间 ms
     match_tag: int = 0                        # 0=匹配 1=新增 2=缺少 3=错读 4=未录入
     detected_stress: bool = False             # 是否检测到重音
     is_stress: bool = False                   # 是否应为重音
