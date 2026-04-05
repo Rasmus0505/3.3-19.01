@@ -10,17 +10,32 @@ The product is intentionally split by runtime capability: the desktop client is 
 
 Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-## Current Milestone: v2.5 阅读板块 + Pretext CEFR 排版 — Planning
+## Current Milestone: v2.6 清洗 CEFR 词典数据源 — Planning
 
-**Goal:** 实现视频字幕一次性预处理分析，并在沉浸式学习中以颜色块实时标注每个词的 CEFR 等级，重构上一句词选入生词本的交互反馈。
+**Goal:** 将旧 COCA rank-based CEFR 等级替换为权威 CEFR-J Vocabulary Profile 等级，补全词性（POS）信息，修复数据质量问题，为未来 CEFR 等级识别打好基础。
 
 **Target features:** (in planning)
-- 🔄 Phase 26: Pretext 基础设施集成 — hook 封装、CEFR 分段合并、缓存策略
-- 🔄 Phase 27: 阅读板块核心 UI — 方案 A 布局、Pretext 渲染层、响应式边栏
-- 🔄 Phase 28: 词交互与生词本集成 — 选词、多选、加人生词本动画
-- 🔄 Phase 29: AI 重写与路由 — 重写 API、路由、导航入口
+- 🔄 Phase 30: CEFR 数据质量全面诊断 — 对比 fix_cefr_levels.py 分析结果，列出所有数据质量问题
+- 🔄 Phase 31: CEFR 等级权威修正 — 执行 CEFR-J 词表修正，写入修正后词表
+- 🔄 Phase 32: POS 词性信息补全 — 为匹配词补全 `pos_entries`，评估多词性问题
+- 🔄 Phase 33: 数据结构规范化 — 清理词形/大小写/特殊字符/多词条等问题
+- 🔄 Phase 34: 前后端适配验证 — 确保 vocabAnalyzer 和 computeCefrClassName 与新结构兼容
 
 ## Current State
+
+<details>
+<summary>v2.5 阅读板块 + Pretext CEFR 排版 归档摘要 (2026-04-05 shipped) — 点击展开</summary>
+
+**v2.5 shipped on 2026-04-05.** 4 phases, 10 plans completed:
+- Phase 26: Pretext 基础设施集成 — hook 封装、CEFR 分段合并、5000+词性能验证
+- Phase 27: 阅读板块核心 UI — 方案 A 布局、Pretext 驱动渲染、响应式断点
+- Phase 28: 词交互与生词本集成 — 词点击选入、多选 UI、批量加入生词本
+- Phase 29: AI 重写与路由 — 重写 API、丝滑切换、IndexedDB 存储
+
+See `.planning/milestones/v2.5-ROADMAP.md` for full phase details.
+See `.planning/milestones/v2.5-REQUIREMENTS.md` for archived requirements.
+
+</details>
 
 <details>
 <summary>v2.4 归档摘要 (2026-04-04 shipped) — 点击展开</summary>
@@ -84,7 +99,7 @@ See `.planning/milestones/v2.4-REQUIREMENTS.md` for archived requirements.
 
 ### Active
 
-_(All v2.4 requirements shipped — v2.5 planning pending)_
+_(All v2.5 requirements shipped — v2.6 planning pending)_
 
 ### Out of Scope
 
@@ -194,4 +209,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-04 after v2.4 milestone completion*
+*Last updated: 2026-04-05 after v2.5 milestone completion, v2.6 started*

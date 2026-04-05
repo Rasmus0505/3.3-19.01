@@ -1,23 +1,11 @@
 # Milestones
 
-## v2.4 词汇等级预处理与 CEFR 沉浸式展示 (Shipped: 2026-04-04)
-
-**Phases completed:** 2 phases (24, 25), 8 plans
-
-**Key accomplishments:**
-
-- Phase 24: CEFR 基础设施 — 后端 cefr_level 字段、Zustand 持久化、个人中心 CEFR 水平选择器（A1-C2）、vocabAnalyzer 集成
-- Phase 25: CEFR 沉浸式展示 — 答题框 CEFR 下划线、生词本色块+动画、历史列表 CEFR 徽章
-
----
-
 ## v2.5 阅读板块 + Pretext CEFR 排版 (Shipped: 2026-04-05)
 
-**Phases:** Phase 26, 27, 28, 29
-
-**Goal:** 新增阅读板块，使用 `@chenglou/pretext` 作为文字测量和排版引擎，以方案 A（右侧词边栏）布局，在文章中 CEFR 着色每个词，实现边读边选词加人生词本的核心交互链路。
+**Phases completed:** 4 phases (26, 27, 28, 29), 10 plans
 
 **Key outcomes:**
+
 - Phase 26: Pretext 基础设施集成 — hook 封装、CEFR 分段合并、5000+词性能验证
 - Phase 27: 阅读板块核心 UI — 方案 A 布局、Pretext 驱动渲染、响应式断点
 - Phase 28: 词交互与生词本集成 — 词点击选入、多选 UI、批量加入生词本
@@ -25,7 +13,7 @@
 
 ---
 
-## v2.3 学习体验与导入流程优化 (Shipped: 2026-04-03)
+## v2.4 词汇等级预处理与 CEFR 沉浸式展示 (Shipped: 2026-04-04)
 
 **Phases completed:** 4 phases (19, 20, 21, 23), 10 plans, 4 tasks
 
