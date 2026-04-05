@@ -1,4 +1,4 @@
-﻿/**
+/**
  * reading.css — 阅读板块样式
  * ==================================
  * 方案 A 布局、CEFR 词着色、WordSidebar 样式
@@ -153,9 +153,70 @@
   min-height: 0;
 }
 
+/* 右侧等级词汇表列：展开宽度由列控制，收起为窄轨 + 展开按钮 */
+.reading-analysis-column {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  align-self: flex-start;
+  transition: width 0.2s ease, min-width 0.2s ease, max-width 0.2s ease;
+}
+
+.reading-analysis-column--open {
+  width: 300px;
+  min-width: 300px;
+  max-width: 300px;
+}
+
+.reading-analysis-column--closed {
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+}
+
+.reading-analysis-rail {
+  position: sticky;
+  top: 0;
+  flex: 1;
+  min-height: 120px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12px 6px;
+  border-left: 1px solid oklch(0.88 0.01 85);
+  background: oklch(0.98 0.01 85);
+  box-sizing: border-box;
+}
+
+.reading-analysis-rail__btn {
+  border-radius: 8px;
+}
+
 @media (max-width: 900px) {
   .reading-layout {
     flex-direction: column;
+  }
+
+  .reading-analysis-column--open {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .reading-analysis-column--closed {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .reading-analysis-rail {
+    border-left: none;
+    border-top: 1px solid oklch(0.88 0.01 85);
+    min-height: 0;
+    flex: 0 0 auto;
+    padding: 10px;
+    align-items: center;
   }
 }
 
@@ -226,9 +287,6 @@
 .article-word--selected {
   background-color: oklch(0.93 0.06 175 / 0.25);
   border-radius: 3px;
-  padding-left: 2px;
-  padding-right: 2px;
-  margin-left: -2px;
 }
 
 /* 词选成功动画（复用 Phase 25 .wordbook-token--success 模式） */
@@ -935,7 +993,9 @@
 
 /* ─── AnalysisPanel（替代原 WordSidebar）──────────────────── */
 .analysis-panel {
-  width: 300px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   flex-shrink: 0;
   border-left: 1px solid oklch(0.88 0.01 85);
   padding: 16px;
@@ -951,9 +1011,31 @@
   gap: 0;
 }
 
+.analysis-panel__chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid oklch(0.90 0.01 85);
+}
+
+.analysis-panel__heading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: oklch(0.28 0.02 85);
+  letter-spacing: 0.02em;
+}
+
+.analysis-panel__collapse {
+  border-radius: 6px;
+}
+
 @media (max-width: 900px) {
   .analysis-panel {
-    width: 100%;
     border-left: none;
     border-top: 1px solid oklch(0.88 0.01 85);
     position: static;

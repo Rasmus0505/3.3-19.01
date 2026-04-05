@@ -14,10 +14,12 @@
  *   └───────────────────────┴──────────────────┘
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { readCefrLevel } from "../../app/authStorage";
 import { parseResponse } from "../../shared/api/client";
 import { cn } from "../../lib/utils";
+import { Button } from "../../shared/ui";
 import { computeCefrClassName } from "./ArticlePanel";
 import { TranslationDialog } from "../wordbook/TranslationDialog";
 import { useReadingRewrite } from "../../hooks/useReadingRewrite";
@@ -98,6 +100,8 @@ export function ReadingPage({ accessToken, apiCall }) {
   const [activeHistoryId, setActiveHistoryId] = useState(null);
   // 用户勾选的级别
   const [activeLevels, setActiveLevels] = useState(defaultActiveLevels);
+  // 右侧等级词汇表（分析面板）展开/收起
+  const [analysisPanelOpen, setAnalysisPanelOpen] = useState(true);
 
   const wordStats = useMemo(() => computeWordStats(articleLines), [articleLines]);
 
@@ -299,21 +303,46 @@ export function ReadingPage({ accessToken, apiCall }) {
             selectedWords={selectedWords}
             onWordClick={handleWordClick}
           />
-          <AnalysisPanel
-            selectedWords={selectedWords}
-            wordStats={wordStats}
-            userLevel={userLevel}
-            activeLevels={activeLevels}
-            onLevelToggle={handleLevelToggle}
-            onRemove={handleRemoveWord}
-            onAddAllToWordbook={handleAddAllToWordbook}
-            onClearAll={handleClearAll}
-            onTranslate={handleTranslate}
-            onRewrite={showRewriteButton ? onRewriteClick : null}
-            isAdding={isAddingToWordbook}
-            isRewriting={isRewriting}
-            rewriteError={rewriteError}
-          />
+          <div
+            className={cn(
+              "reading-analysis-column",
+              analysisPanelOpen ? "reading-analysis-column--open" : "reading-analysis-column--closed"
+            )}
+          >
+            {analysisPanelOpen ? (
+              <AnalysisPanel
+                selectedWords={selectedWords}
+                wordStats={wordStats}
+                userLevel={userLevel}
+                activeLevels={activeLevels}
+                onLevelToggle={handleLevelToggle}
+                onRemove={handleRemoveWord}
+                onAddAllToWordbook={handleAddAllToWordbook}
+                onClearAll={handleClearAll}
+                onTranslate={handleTranslate}
+                onRewrite={showRewriteButton ? onRewriteClick : null}
+                isAdding={isAddingToWordbook}
+                isRewriting={isRewriting}
+                rewriteError={rewriteError}
+                onRequestCollapse={() => setAnalysisPanelOpen(false)}
+              />
+            ) : (
+              <div className="reading-analysis-rail">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  className="reading-analysis-rail__btn shadow-sm"
+                  onClick={() => setAnalysisPanelOpen(true)}
+                  aria-expanded={false}
+                  aria-label="展开等级词汇表"
+                  title="展开等级词汇表"
+                >
+                  <ChevronDown className="size-4 rotate-[-90deg]" aria-hidden />
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
       <TranslationDialog
