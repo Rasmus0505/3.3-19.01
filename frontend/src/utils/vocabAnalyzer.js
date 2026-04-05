@@ -36,15 +36,13 @@ function resolveCefrVocabFetchUrls(primaryPath) {
   return urls;
 }
 
-const CURRENT_VOCAB_VERSION = "fixed-v1";
-
 function isValidCefrVocabPayload(data) {
   return Boolean(
     data &&
     typeof data === "object" &&
     data.words &&
     typeof data.words === "object" &&
-    data._vocab_version === CURRENT_VOCAB_VERSION
+    data.total_words > 0
   );
 }
 
@@ -55,7 +53,7 @@ class VocabAnalyzer {
 
     // 词汇表数据
     this.vocabData = null;      // 完整 JSON
-    this.wordMap = null;        // 词→{rank, level} 的 Map
+    this.wordMap = null;        // 词→{level} 的 Map
 
     // 是否已加载
     this.isLoaded = false;
@@ -146,24 +144,19 @@ class VocabAnalyzer {
     const tokens = this._tokenize(sentence);
     const wordResults = [];
     const levelCounts = { A1: 0, A2: 0, B1: 0, B2: 0, C1: 0, C2: 0, SUPER: 0 };
-    let totalRank = 0;
 
     for (const token of tokens) {
       const wordInfo = this._lookupWord(token);
       if (!wordInfo) {
         // 词不在表里（专有名词、数字等）—— 标记为 SUPER 级别（统一小写便于与 UI token 对齐）
-        wordResults.push({ word: token.toLowerCase(), level: "SUPER", rank: null, isUnknown: true });
+        wordResults.push({ word: token.toLowerCase(), level: "SUPER", isUnknown: true });
         levelCounts["SUPER"]++;
         continue;
       }
 
       wordResults.push(wordInfo);
       levelCounts[wordInfo.level]++;
-      totalRank += wordInfo.rank;
     }
-
-    // 计算平均难度排名
-    const avgRank = tokens.length > 0 ? totalRank / tokens.filter(t => this._lookupWord(t)).length : 0;
 
     // 判断整体难度：第一个达到 90% 的等级
     const grade = this._computeOverallLevel(levelCounts, tokens.length);
@@ -175,7 +168,6 @@ class VocabAnalyzer {
       unknownWords: tokens.filter(t => this._lookupWord(t) === null).length,
       levelCounts,
       grade,
-      avgRank: Math.round(avgRank),
       // 找出 i+1 生词（比用户水平高1-2级的词）
       newVocab: this._findNewVocab(wordResults),
     };
@@ -201,7 +193,6 @@ class VocabAnalyzer {
       for (const level in result.levelCounts) {
         totalLevelCounts[level] += result.levelCounts[level];
       }
-      totalRank += result.avgRank * result.totalWords;
       totalWords += result.totalWords;
       totalUnknown += result.unknownWords;
 
@@ -237,7 +228,6 @@ class VocabAnalyzer {
       totalUnknown,
       levelCounts: totalLevelCounts,
       overallGrade,
-      avgRank: Math.round(totalRank / totalWords),
       newVocab: newVocabList,
       userAdaptability: adaptInfo,
     };
@@ -450,28 +440,28 @@ class VocabAnalyzer {
     // 1. 直接查表
     if (this.wordMap.has(lower)) {
       const info = this.wordMap.get(lower);
-      return { word: lower, level: info.level, rank: info.rank, isUnknown: false };
+      return { word: lower, level: info.level, isUnknown: false };
     }
 
     // 2. 尝试词形还原
     const lemma = this._lemmatize(lower);
     if (lemma !== lower && this.wordMap.has(lemma)) {
       const info = this.wordMap.get(lemma);
-      return { word: lemma, level: info.level, rank: info.rank, isUnknown: false, original: lower };
+      return { word: lemma, level: info.level, isUnknown: false, original: lower };
     }
 
     // 3. 尝试还原不标准缩写（dont→do, cant→can …，不经撇号正则）
     const nonstandard = this._normalizeNonstandardContraction(lower);
     if (nonstandard !== null && nonstandard !== lower && this.wordMap.has(nonstandard)) {
       const info = this.wordMap.get(nonstandard);
-      return { word: nonstandard, level: info.level, rank: info.rank, isUnknown: false, original: lower };
+      return { word: nonstandard, level: info.level, isUnknown: false, original: lower };
     }
 
     // 4. 尝试还原标准英语缩写（weren't → were, don't → do …）
     const stripped = this._stripContraction(lower);
     if (stripped !== null && stripped !== lower && this.wordMap.has(stripped)) {
       const info = this.wordMap.get(stripped);
-      return { word: stripped, level: info.level, rank: info.rank, isUnknown: false, original: lower };
+      return { word: stripped, level: info.level, isUnknown: false, original: lower };
     }
 
     // 5. 查不到
