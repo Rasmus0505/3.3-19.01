@@ -833,7 +833,23 @@ def filter_and_simplify_words_endpoint(
     - simplified_words: >i+1 词的重写版本（与 above_i1_words 一一对应）
     - word_levels: DeepSeek 重新判断的 CEFR 等级
     """
-    ensure_default_billing_rates(db)
+    try:
+        return _do_filter_and_simplify(body, current_user, db)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("[filter-simplify] Unexpected error: %s", str(e)[:500])
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)[:100]}")
+
+
+def _do_filter_and_simplify(body: FilterAndSimplifyRequest, current_user: User, db: Session):
+    """实际的业务逻辑"""
+    logger.info("[filter-simplify] Starting request for user_id=%s, words_count=%d", current_user.id, len(body.words))
+    try:
+        ensure_default_billing_rates(db)
+    except Exception as e:
+        logger.exception("[filter-simplify] ensure_default_billing_rates failed")
+        raise
 
     # 验证参数
     if body.target_level.upper() not in CEFR_LEVELS:
@@ -849,10 +865,18 @@ def filter_and_simplify_words_endpoint(
 
     try:
         rate = get_model_rate(db, effective_model)
-    except Exception:
+        logger.info("[filter-simplify] Got model rate for %s", effective_model)
+    except Exception as e:
+        logger.exception("[filter-simplify] get_model_rate failed")
         raise HTTPException(status_code=503, detail="LLM model not available")
 
-    api_key = _require_api_key()
+    try:
+        api_key = _require_api_key()
+        logger.info("[filter-simplify] API key OK")
+    except Exception as e:
+        logger.exception("[filter-simplify] _require_api_key failed")
+        raise
+
     trace_id = str(uuid.uuid4())
 
     # 构建用户消息
@@ -910,11 +934,13 @@ def filter_and_simplify_words_endpoint(
             temperature=0.3,
             max_tokens=768,
         )
+        logger.info("[filter-simplify] LLM call succeeded, response length=%d", len(raw_response) if raw_response else 0)
     except Exception as exc:
-        logger.exception("[DEBUG] llm.filter_simplify_failed user_id=%s error=%s", current_user.id, str(exc)[:200])
+        logger.exception("[filter-simplify] LLM call failed user_id=%s error=%s", current_user.id, str(exc)[:500])
         raise HTTPException(status_code=502, detail=f"LLM call failed: {str(exc)[:200]}")
 
     if not raw_response:
+        logger.warning("[filter-simplify] Empty response for user_id=%s", current_user.id)
         raise HTTPException(status_code=502, detail="LLM returned empty result")
 
     # 解析响应
@@ -930,9 +956,10 @@ def filter_and_simplify_words_endpoint(
 
     try:
         parsed = _json.loads(_strip_json_fences(raw_response))
+        logger.info("[filter-simplify] JSON parsed OK, keys=%s", list(parsed.keys()))
     except Exception as exc:
-        logger.warning("[DEBUG] llm.filter_simplify_parse_failed user_id=%s raw=%s error=%s",
-                       current_user.id, raw_response[:200], str(exc)[:100])
+        logger.warning("[filter-simplify] JSON parse failed user_id=%s raw=%s error=%s",
+                       current_user.id, raw_response[:300], str(exc)[:200])
         raise HTTPException(status_code=502, detail=f"Failed to parse model response: {str(exc)[:100]}")
 
     # 提取各字段
@@ -976,24 +1003,28 @@ def filter_and_simplify_words_endpoint(
         pass
 
     from app.services.llm_usage_service import log_llm_usage
-    log_llm_usage(
-        db,
-        user_id=current_user.id,
-        model_name=effective_model,
-        category="filter_and_simplify",
-        prompt_tokens=usage.prompt_tokens,
-        completion_tokens=usage.completion_tokens,
-        reasoning_tokens=usage.reasoning_tokens,
-        total_tokens=total_tokens,
-        input_cost_cents=None,
-        charge_cents=charge_cents,
-        lesson_id=None,
-        enable_thinking=body.enable_thinking,
-        input_text_preview=body.sentence[:200],
-        trace_id=trace_id,
-    )
-
-    db.commit()
+    try:
+        log_llm_usage(
+            db,
+            user_id=current_user.id,
+            model_name=effective_model,
+            category="filter_and_simplify",
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            reasoning_tokens=usage.reasoning_tokens,
+            total_tokens=total_tokens,
+            input_cost_cents=None,
+            charge_cents=charge_cents,
+            lesson_id=None,
+            enable_thinking=body.enable_thinking,
+            input_text_preview=body.sentence[:200],
+            trace_id=trace_id,
+        )
+        db.commit()
+        logger.info("[filter-simplify] Success for user_id=%s", current_user.id)
+    except Exception as e:
+        logger.exception("[filter-simplify] post-processing failed")
+        # 不抛出异常，让请求继续返回成功
 
     return {
         "ok": True,
