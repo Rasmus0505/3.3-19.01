@@ -319,7 +319,7 @@ SIMPLIFY_WORDS_SYSTEM_PROMPT = (
     "Given a sentence and a list of words/phrases to simplify from that sentence,\n"
     "return a JSON object with two fields:\n"
     "1. 'simplified_words': array of simplified replacements, IN THE SAME ORDER as the input list\n"
-    "2. 'word_levels': object mapping each input word to its CEFR level you judged (e.g. {'word': 'C1'})\n"
+    "2. 'word_levels': object mapping each input word to its CEFR level you judged (e.g. {{'word': 'C1'}})\n"
     "\n"
     "## CRITICAL: EXACT i+1 Simplification Rule\n"
     "- Simplify words ONLY to {target_level} level — NOT simpler, NOT harder\n"
@@ -524,7 +524,10 @@ def simplify_words_endpoint(
             for entry in words_with_meanings:
                 user_message_lines.append(entry)
 
-    user_message_lines.append(f"\n返回 JSON 数组（每个词对应一个简化词，或 \"\" 表示不需要简化）：")
+    user_message_lines.append(
+        '\n返回 JSON 对象：{"simplified_words":[...], "word_levels":{...}}；'
+        'simplified_words 与输入词顺序一致，"" 表示不简化；word_levels 的键为输入词（小写亦可）。'
+    )
     user_message = "\n".join(user_message_lines)
 
     system_prompt = SIMPLIFY_WORDS_SYSTEM_PROMPT.format(target_level=body.target_level.upper()) + "\n\n" + SIMPLIFY_WORDS_EXAMPLE
@@ -551,13 +554,33 @@ def simplify_words_endpoint(
         raise HTTPException(status_code=502, detail="LLM returned empty result")
 
     import json as _json
+    import re as _re
+
+    def _strip_llm_json_fences(text: str) -> str:
+        """Remove optional ```json ... ``` wrappers so json.loads succeeds."""
+        s = text.strip()
+        fence = _re.match(r"^```(?:json)?\s*\n?(.*?)\n?```\s*$", s, flags=_re.DOTALL | _re.IGNORECASE)
+        if fence:
+            return fence.group(1).strip()
+        return s
+
     simplified_words: list[str] = []
     word_levels: dict[str, str] = {}
     try:
-        parsed = _json.loads(raw_response.strip())
+        parsed = _json.loads(_strip_llm_json_fences(raw_response))
         if isinstance(parsed, dict):
-            simplified_words = [str(item) for item in parsed.get("simplified_words", [])]
-            word_levels = {str(k): str(v) for k, v in parsed.get("word_levels", {}).items()}
+            if "simplified_words" not in parsed or not isinstance(parsed.get("simplified_words"), list):
+                raise HTTPException(
+                    status_code=502,
+                    detail="Expected JSON object with 'simplified_words' array",
+                )
+            simplified_words = [str(item) for item in parsed["simplified_words"]]
+            wl_raw = parsed.get("word_levels")
+            if wl_raw is not None and not isinstance(wl_raw, dict):
+                raise HTTPException(status_code=502, detail="word_levels must be a JSON object")
+            word_levels = (
+                {str(k): str(v) for k, v in wl_raw.items()} if isinstance(wl_raw, dict) else {}
+            )
         elif isinstance(parsed, list):
             # 兼容旧格式
             simplified_words = [str(item) for item in parsed]
@@ -569,6 +592,22 @@ def simplify_words_endpoint(
         logger.warning("[DEBUG] llm.simplify_words_parse_failed user_id=%s raw=%s error=%s",
                        current_user.id, raw_response[:200], str(exc)[:100])
         raise HTTPException(status_code=502, detail=f"Failed to parse model response: {str(exc)[:100]}")
+
+    if len(simplified_words) != len(body.words):
+        logger.warning(
+            "[DEBUG] llm.simplify_words_count_mismatch user_id=%s expected=%s got=%s raw=%s",
+            current_user.id,
+            len(body.words),
+            len(simplified_words),
+            raw_response[:300],
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"simplified_words length {len(simplified_words)} does not match "
+                f"input words length {len(body.words)}"
+            ),
+        )
 
     total_tokens = usage.prompt_tokens + usage.completion_tokens
     charge_cents = calculate_llm_charge_by_tokens(
