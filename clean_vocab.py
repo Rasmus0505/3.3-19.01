@@ -499,6 +499,10 @@ def main():
         print(f"VERIFICATION: Simulated lookup after removal")
         print(f"{'='*70}")
         import re as re_mod
+        suffix_rules = [
+            ("ies", "y"), ("es", ""), ("ed", ""), ("ing", ""),
+            ("ly", ""), ("ness", ""), ("ment", ""), ("tion", "t"), ("s", "")
+        ]
 
         def verify_lookup(word, wmap):
             lower = word.lower()
