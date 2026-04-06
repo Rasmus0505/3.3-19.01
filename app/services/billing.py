@@ -24,6 +24,7 @@ from app.services.asr_model_registry import (
 from app.models import (
     AdminOperationLog,
     BillingModelRate,
+    LLMUsageLog,
     RedeemCode,
     RedeemCodeAttempt,
     RedeemCodeBatch,
@@ -457,6 +458,112 @@ def _ensure_translation_request_logs_schema(db: Session) -> bool:
             ",".join(item[0] for item in missing_columns),
         )
     return changed
+
+
+def _llm_usage_logs_schema_name(db: Session) -> str | None:
+    bind = db.get_bind()
+    if bind is None or bind.dialect.name == "sqlite":
+        return None
+    return LLMUsageLog.__table__.schema
+
+
+def _llm_usage_logs_column_names(db: Session) -> set[str]:
+    bind = db.get_bind()
+    if bind is None:
+        return set()
+    schema = _llm_usage_logs_schema_name(db)
+    inspector = inspect(bind)
+    if not inspector.has_table(LLMUsageLog.__tablename__, schema=schema):
+        return set()
+    return {str(item.get("name") or "").strip() for item in inspector.get_columns(LLMUsageLog.__tablename__, schema=schema)}
+
+
+def _qualified_llm_usage_logs_table(db: Session) -> str:
+    schema = _llm_usage_logs_schema_name(db)
+    return f"{schema}.{LLMUsageLog.__tablename__}" if schema else LLMUsageLog.__tablename__
+
+
+def _ensure_llm_usage_logs_schema(db: Session) -> bool:
+    """
+    Repair llm_usage_logs schema: add missing columns and fix wrong-size columns.
+    Handles the case where input_text_preview was created as VARCHAR(16) instead of VARCHAR(300).
+    """
+    bind = db.get_bind()
+    if bind is None:
+        return False
+    schema = _llm_usage_logs_schema_name(db)
+    inspector = inspect(bind)
+    changed = False
+
+    if bind.dialect.name != "sqlite":
+        db.execute(text("CREATE SCHEMA IF NOT EXISTS app"))
+        db.commit()
+
+    table_name = _qualified_llm_usage_logs_table(db)
+    dialect_name = bind.dialect.name
+
+    # If table doesn't exist, let SQLAlchemy create it
+    if not inspector.has_table(LLMUsageLog.__tablename__, schema=schema):
+        LLMUsageLog.__table__.create(bind=bind, checkfirst=True)
+        db.commit()
+        return True
+
+    existing_columns = _llm_usage_logs_column_names(db)
+
+    # Ensure all model columns exist
+    for col_name, col_attr in LLMUsageLog.__table__.columns.items():
+        if col_name not in existing_columns:
+            col_type = _sqlalchemy_column_type(col_attr.type, dialect_name)
+            db.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}"))
+            changed = True
+
+    # Fix input_text_preview size if wrong (only for PostgreSQL)
+    if dialect_name == "postgresql" and "input_text_preview" in existing_columns:
+        try:
+            result = db.execute(
+                text(
+                    "SELECT character_maximum_length FROM information_schema.columns "
+                    "WHERE table_schema = :schema AND table_name = :table AND column_name = :col"
+                ),
+                {"schema": schema or "public", "table": LLMUsageLog.__tablename__, "col": "input_text_preview"},
+            )
+            row = result.fetchone()
+            if row and row[0] is not None and row[0] < 300:
+                db.execute(
+                    text(
+                        f"ALTER TABLE {table_name} ALTER COLUMN input_text_preview TYPE VARCHAR(300)"
+                    )
+                )
+                changed = True
+                logger.warning("[DEBUG] llm_usage_logs.input_text_preview widened from %s to 300", row[0])
+        except Exception as exc:
+            logger.warning("[DEBUG] llm_usage_logs.input_text_preview resize check failed: %s", exc)
+
+    if changed:
+        db.commit()
+        logger.warning("[DEBUG] llm_usage_logs.schema_repair applied=true")
+
+    return changed
+
+
+def _sqlalchemy_column_type(col_type, dialect_name: str) -> str:
+    """Convert SQLAlchemy Column Type to SQL type string for ALTER ADD COLUMN."""
+    from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String, Text
+    if isinstance(col_type, String):
+        length = col_type.length or 255
+        return f"VARCHAR({length})"
+    if isinstance(col_type, Integer):
+        return "INTEGER"
+    if isinstance(col_type, BigInteger):
+        return "BIGINT"
+    if isinstance(col_type, Boolean):
+        return "BOOLEAN"
+    if isinstance(col_type, DateTime):
+        return "TIMESTAMP"
+    if isinstance(col_type, Text):
+        return "TEXT"
+    # fallback
+    return "VARCHAR(255)"
 
 
 def _sqlite_billing_rates_requires_rebuild(db: Session) -> bool:
@@ -904,6 +1011,7 @@ def ensure_default_billing_rates(
     _ensure_legacy_sqlite_billing_columns(db)
     _ensure_legacy_sqlite_wallet_ledger_event_types(db)
     _ensure_translation_request_logs_schema(db)
+    _ensure_llm_usage_logs_schema(db)
     ensure_default_subtitle_settings(db)
 
     changed = False
