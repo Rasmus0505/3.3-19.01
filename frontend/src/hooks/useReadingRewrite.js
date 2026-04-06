@@ -47,8 +47,12 @@ function applySimplifiedWords(originalText, words, replacements) {
   if (!words || words.length === 0) return originalText;
   let result = originalText;
   words.forEach((word, i) => {
-    const replacement = replacements[i] || word;
-    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const replacement = replacements[i];
+    if (replacement === "" || replacement == null) {
+      return; // 跳过，原文保留
+    }
+    const rawWord = typeof word === "string" ? word : word.word;
+    const escaped = rawWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const regex = new RegExp(`\\b${escaped}\\b`, "gi");
     result = result.replace(regex, replacement);
   });
@@ -69,7 +73,7 @@ function applySimplifiedWords(originalText, words, replacements) {
 export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }) {
   const [rewrittenText, setRewrittenText] = useState(null);
   const [rewriteMappings, setRewriteMappings] = useState([]);
-  const [viewMode, setViewModeState] = useState("original");
+  const [viewMode, setViewModeState] = useState("rewritten");
   const [isRewriting, setIsRewriting] = useState(false);
   const [rewriteError, setRewriteError] = useState(null);
 
@@ -124,7 +128,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
     setRewrittenText(null);
     setRewriteMappings([]);
     setRewriteError(null);
-    setViewModeState("original");
+    setViewModeState("rewritten");
   }, []);
 
   const handleRewrite = useCallback(
@@ -157,9 +161,21 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         const targetLevel = getTargetLevel(userLevel);
 
         // Step 2: 取词优先级：① 外部显式传入 → ② rewriteMappings（增量重写场景）
-        const wordsToSimplify = explicitWords && explicitWords.length > 0
+        // 注意：ReadingPage 传 {word, level}[]，rewriteMappings 是 {original}[]（旧格式无等级）
+        const rawWordsToSimplify = explicitWords && explicitWords.length > 0
           ? explicitWords
           : extractHighDiffWordsFromMappings(rewriteMappings);
+
+        // 判断是否为新格式 {word, level}[]
+        const isNewFormat = rawWordsToSimplify.length > 0 && typeof rawWordsToSimplify[0] === "object" && "word" in rawWordsToSimplify[0];
+        const wordsToSimplify = isNewFormat ? rawWordsToSimplify : rawWordsToSimplify.map(w => ({ word: w }));
+
+        // 构建 wordLevels dict
+        const wordLevels = {};
+        wordsToSimplify.forEach(w => {
+          wordLevels[w.word.toLowerCase()] = w.level || "B2";
+        });
+        const words = wordsToSimplify.map(w => w.word);
 
         let rewrittenText = originalText;
 
@@ -178,10 +194,11 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
 
           const result = await simplifyWords(
             originalText,
-            wordsToSimplify,
+            words,
             targetLevel,
             accessToken,
-            false
+            false,
+            wordLevels
           );
           const simplifiedWords = result.simplifiedWords;
           const chargeYuan = (result.chargeCents || 0) / 100;
@@ -190,11 +207,14 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
           // Step 4: 本地按顺序替换高难度词 → 生成重写文本
           rewrittenText = applySimplifiedWords(originalText, wordsToSimplify, simplifiedWords);
 
-          // Step 5: 保存到 IndexedDB
-          const newMappings = wordsToSimplify.map((w, i) => ({
-            original: w,
-            rewritten: simplifiedWords[i] || w,
-          }));
+          // Step 5: 保存到 IndexedDB（过滤空替换）
+          const newMappings = [];
+          wordsToSimplify.forEach((w, i) => {
+            const rewritten = simplifiedWords[i];
+            if (rewritten && rewritten !== "") {
+              newMappings.push({ original: w.word, rewritten });
+            }
+          });
 
           if (articleId) {
             await dbSave({

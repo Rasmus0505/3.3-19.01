@@ -295,20 +295,30 @@ SIMPLIFY_WORDS_SYSTEM_PROMPT = (
     "- Return ONLY a valid JSON array of strings — no markdown fences, no extra text\n"
     "- Each entry must be a concise simplified word or phrase for the corresponding input\n"
     "- Preserve the original meaning and part of speech where possible\n"
-    "- If a word is already simple enough, keep it unchanged\n"
+    "- If a word is already simple enough for a {target_level} learner in this context, return \"\" (empty string) — keep the original word unchanged\n"
     "- Do NOT reorder the array entries — match input order exactly\n"
+    "\n"
+    "IMPORTANT: Use \"\" (empty string) if a word's difficulty is borderline or the base form is simple (A1-A2 level), even if its CEFR tag is higher. Only simplify words that are genuinely above the user's level in this specific context."
 )
 
 SIMPLIFY_WORDS_EXAMPLE = """
 Example 1:
 原文：I used to loathe and eschew perusing English.
-需要简化的词：loathe, eschew, perusing
-返回：["hate", "avoid", "carefully reading"]
+目标等级：B1
+每个词的词典标注等级：
+loathe → B2
+eschew → C1
+perusing → B2
+返回：["hate", "", "reading carefully"]
+解释：eschew 是 C1，确实难，但 base form loathe 和 perusing 在语境下 B1 可以理解，需要简化。eschew 太难但语境有限，返回空。
 
 Example 2:
-原文：The remuneration was insufficient for the arduous task.
-需要简化的词：remuneration, insufficient, arduous
-返回：["pay", "not enough", "hard"]
+原文：He was fixing the machine when I arrived.
+目标等级：B1
+每个词的词典标注等级：
+fixing → B2
+返回：[""]
+解释：fixing 的 base 是 A2 词汇，对于 B1 学习者不需要简化，返回空字符串
 """
 
 
@@ -318,12 +328,27 @@ class SimplifyWordsRequest(BaseModel):
     words: list[str] = Field(..., min_length=1)
     target_level: str = Field(default="B1", max_length=8)
     enable_thinking: bool = False
+    word_levels: dict[str, str] | None = Field(
+        default=None,
+        description="每个词的 CEFR 等级，格式 {word: level}",
+    )
 
     @field_validator("sentence")
     @classmethod
     def sentence_max_length(cls, v: str) -> str:
         if len(v) > 2000:
             raise ValueError("Sentence too long (max 2000 chars)")
+        return v
+
+    @field_validator("word_levels")
+    @classmethod
+    def word_levels_validate(cls, v: dict[str, str] | None) -> dict[str, str] | None:
+        if v is None:
+            return v
+        valid_levels = {"A1", "A2", "B1", "B2", "C1", "C2", "SUPER"}
+        for word, level in v.items():
+            if level not in valid_levels:
+                raise ValueError(f"Invalid CEFR level '{level}' for word '{word}'. Must be one of: {', '.join(sorted(valid_levels))}")
         return v
 
 
@@ -395,8 +420,16 @@ def simplify_words_endpoint(
     api_key = _require_api_key()
     trace_id = str(uuid.uuid4())
 
-    user_message = f"原文：{body.sentence}\n需要简化的词：{', '.join(body.words)}"
-    system_prompt = SIMPLIFY_WORDS_SYSTEM_PROMPT + "\n\n" + SIMPLIFY_WORDS_EXAMPLE
+    user_message_lines = [f"原文：{body.sentence}", f"目标等级：{body.target_level.upper()}"]
+    if body.word_levels:
+        user_message_lines.append("\n每个词的词典标注等级（供参考，你来判断是否真的需要简化）：")
+        for word in body.words:
+            level = body.word_levels.get(word.lower(), "?")
+            user_message_lines.append(f"{word} → {level}")
+    user_message_lines.append(f"\n返回 JSON 数组（每个词对应一个简化词，或 \"\" 表示不需要简化）：")
+    user_message = "\n".join(user_message_lines)
+
+    system_prompt = SIMPLIFY_WORDS_SYSTEM_PROMPT.format(target_level=body.target_level.upper()) + "\n\n" + SIMPLIFY_WORDS_EXAMPLE
 
     messages = [
         {"role": "system", "content": system_prompt},

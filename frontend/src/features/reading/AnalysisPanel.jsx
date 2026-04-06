@@ -23,7 +23,7 @@
  *   isRewriting     {boolean}
  *   rewriteError    {string|null}
  */
-import { BookPlus, BookOpenText, Languages, Loader2, Unlock, X } from "lucide-react";
+import { BookPlus, BookOpenText, Languages, Loader2, RefreshCw, Sparkles, X } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Button } from "../../shared/ui";
 
@@ -249,9 +249,8 @@ export function AnalysisPanel({
   onAddAllToWordbook,
   onClearAll,
   onTranslate,
-  onRewrite,
+  rewriteMappings = [],
   isAdding = false,
-  isRewriting = false,
   rewriteError = null,
 }) {
   return (
@@ -270,14 +269,6 @@ export function AnalysisPanel({
       {/* 级别过滤 */}
       <LevelFilters userLevel={userLevel} activeLevels={activeLevels} onLevelToggle={onLevelToggle} />
 
-      {/* 重写中 / 错误提示 */}
-      {isRewriting ? (
-        <div className="analysis-panel__rewriting-hint">
-          <Loader2 className="size-3.5 animate-spin" />
-          <span>AI 重写中...</span>
-        </div>
-      ) : null}
-
       {rewriteError ? (
         <div className="analysis-panel__rewrite-error" role="alert">
           <span className="analysis-panel__rewrite-error-title">上次操作未成功</span>
@@ -295,22 +286,23 @@ export function AnalysisPanel({
         >
           清空选择
         </Button>
-        {onRewrite !== null && onRewrite !== undefined ? (
-          <Button
-            size="sm"
-            className="btn-unlock"
-            onClick={onRewrite}
-            disabled={isRewriting}
-          >
-            {isRewriting ? (
-              <Loader2 className="size-4 btn-unlock__icon--spin" />
-            ) : (
-              <Unlock className="size-4" />
-            )}
-            Unlock
-          </Button>
-        ) : null}
       </div>
+
+      {/* 简化对照 */}
+      {rewriteMappings && rewriteMappings.length > 0 ? (
+        <div className="analysis-section analysis-section--rewrite-summary">
+          <h3 className="rewrite-summary__title">简化对照</h3>
+          <ul className="rewrite-summary__list">
+            {rewriteMappings.map((m, i) => (
+              <li key={i} className="rewrite-summary__item">
+                <span className="rewrite-summary__original">{m.original}</span>
+                <span className="rewrite-summary__arrow">→</span>
+                <span className="rewrite-summary__rewritten">{m.rewritten}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {/* 生词列表 */}
       <WordList

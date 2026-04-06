@@ -13,7 +13,7 @@
  *   │  (输入模式 / 阅读模式)  │  (难度分布+词汇) │
  *   └───────────────────────┴──────────────────┘
  */
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { readCefrLevel } from "../../app/authStorage";
@@ -21,6 +21,7 @@ import { parseResponse } from "../../shared/api/client";
 import { cn } from "../../lib/utils";
 import { Button } from "../../shared/ui";
 import { computeCefrClassName } from "./ArticlePanel";
+import { getOrCreateAnalyzer } from "../../hooks/useRichLayout";
 import { TranslationDialog } from "../wordbook/TranslationDialog";
 import { useReadingRewrite } from "../../hooks/useReadingRewrite";
 import { HistoryPanel, saveHistoryRecord } from "./HistoryPanel";
@@ -123,12 +124,39 @@ function collectSimplifyCandidatesFromLines(lines, userLevel) {
         const lower = seg.word.toLowerCase();
         if (!seen.has(lower)) {
           seen.add(lower);
-          words.push(seg.word);
+          words.push({ word: seg.word, level: seg.cefrLevel || "SUPER" });
         }
       }
     }
   }
   return words;
+}
+
+/**
+ * 对原始文本直接分词并收集待简化候选词（不依赖 useRichLayout 渲染）。
+ * 使用 VocabAnalyzer 单例，先确保加载完成。
+ * @param {string} text — 原始文章文本
+ * @param {string} userLevel — 用户 CEFR 等级
+ * @returns {{ word: string, level: string }[]}
+ */
+async function collectSimplifyCandidatesFromRaw(text, userLevel) {
+  const analyzer = await getOrCreateAnalyzer();
+  // analyzeSentence 返回 tokens: [{ word, level, isUnknown }]
+  const result = await analyzer.analyzeSentence(text);
+  const seen = new Set();
+  const candidates = [];
+  for (const token of result.tokens) {
+    if (!token.word) continue;
+    const cefrClass = computeCefrClassName(token.level, userLevel);
+    if (cefrClass === "cefr-i-plus-one" || cefrClass === "cefr-above-i-plus-one") {
+      const lower = token.word.toLowerCase();
+      if (!seen.has(lower)) {
+        seen.add(lower);
+        candidates.push({ word: token.word, level: token.level || "SUPER" });
+      }
+    }
+  }
+  return candidates;
 }
 
 /**
@@ -255,34 +283,12 @@ export function ReadingPage({ accessToken, apiCall }) {
     onSuccess: () => setHistoryRefreshKey((k) => k + 1),
   });
 
-  const prevCommittedRef = useRef(activeArticleText);
-  useEffect(() => {
-    if (prevCommittedRef.current !== activeArticleText && rewrittenText) {
-      clearRewrite();
-    }
-    prevCommittedRef.current = activeArticleText;
-  }, [activeArticleText, rewrittenText, clearRewrite]);
+  // ── 文章切换时清空重写状态（由 auto-load effect 接管）─────
 
   const activeText =
     viewMode === "rewritten" && rewrittenText ? rewrittenText : activeArticleText;
 
-  const showRewriteButton = !rewrittenText;
-
-  const onRewriteClick = useCallback(() => {
-    const t = activeArticleText.trim();
-    if (!t) {
-      toast.error("请先输入或粘贴阅读正文");
-      return;
-    }
-    if (articleLines.length === 0) {
-      toast.error("文章尚未解析完成，请稍后重试");
-      return;
-    }
-    const wordsToSimplify = collectSimplifyCandidatesFromLines(articleLines, userLevel);
-    handleRewrite(t, { wordsToSimplify });
-  }, [activeArticleText, articleLines, userLevel, handleRewrite]);
-
-  // ── 文章提交（切换到阅读模式）────────────────────
+  // ── 文章提交（切换到阅读模式 + 自动触发重写）────────────
   const handleArticleSubmit = useCallback(
     async (text) => {
       const id = crypto.randomUUID();
@@ -301,8 +307,25 @@ export function ReadingPage({ accessToken, apiCall }) {
       } catch (e) {
         console.error("Failed to save history:", e);
       }
+
+      // 立即触发 AI 简化（不等 VocabAnalyzer 渲染）
+      if (!accessToken) {
+        toast.info("请先登录以解锁 AI 简化功能");
+        return;
+      }
+      try {
+        const candidates = await collectSimplifyCandidatesFromRaw(text, userLevel);
+        if (candidates.length === 0) {
+          toast.info("当前文章没有检测到高难度词");
+          // 没有高难度词，直接显示原文（rewrittenText = null，viewMode = original）
+          return;
+        }
+        handleRewrite(text, { wordsToSimplify: candidates });
+      } catch (e) {
+        console.error("Failed to collect simplify candidates:", e);
+      }
     },
-    [clearRewrite]
+    [clearRewrite, accessToken, userLevel, handleRewrite]
   );
 
   // ── 重新输入 ─────────────────────────────────────
@@ -312,13 +335,13 @@ export function ReadingPage({ accessToken, apiCall }) {
   }, [clearRewrite]);
 
   // ── 点击历史记录 ─────────────────────────────────
-  // 注意：不在此调用 clearRewrite()，auto-load effect 会自动处理状态切换
   const handleSelectHistory = useCallback(
     async (record) => {
       setActiveArticleText(record.text);
       setActiveHistoryId(record.id);
       setMode("reading");
       setSelectedWords([]);
+      // 重写状态由 useReadingRewrite 的 auto-load effect 自动处理
     },
     []
   );
@@ -368,11 +391,13 @@ export function ReadingPage({ accessToken, apiCall }) {
             onEditAgain={handleEditAgain}
             contentWidth={contentWidth}
             onWidthChange={setContentWidth}
-            onLinesReady={setArticleLines}
+            onLinesReady={undefined}
             selectedWords={selectedWords}
             onWordClick={handleWordClick}
             activeLevels={activeLevels}
             rewriteMappings={rewriteMappings}
+            isRewriting={isRewriting}
+            rewriteError={rewriteError}
           />
           <CollapseDivider
             collapsed={!analysisPanelOpen}
@@ -397,9 +422,8 @@ export function ReadingPage({ accessToken, apiCall }) {
                 onAddAllToWordbook={handleAddAllToWordbook}
                 onClearAll={handleClearAll}
                 onTranslate={handleTranslate}
-                onRewrite={showRewriteButton ? onRewriteClick : null}
+                rewriteMappings={rewriteMappings}
                 isAdding={isAddingToWordbook}
-                isRewriting={isRewriting}
                 rewriteError={rewriteError}
                 onRequestCollapse={() => setAnalysisPanelOpen(false)}
               />

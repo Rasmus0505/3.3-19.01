@@ -35,14 +35,20 @@ export async function estimateRewriteTokens(text, accessToken) {
  * @param {boolean} [enableThinking=false]
  * @returns {Promise<{simplifiedWords: string[], chargeCents: number, traceId: string}>}
  */
-export async function simplifyWords(sentence, words, targetLevel, accessToken, enableThinking = false) {
+export async function simplifyWords(sentence, words, targetLevel, accessToken, enableThinking = false, wordLevels = null) {
   const resp = await api("/api/llm/simplify-words", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({ sentence, words, target_level: targetLevel, enable_thinking: enableThinking }),
+    body: JSON.stringify({
+      sentence,
+      words,
+      target_level: targetLevel,
+      enable_thinking: enableThinking,
+      word_levels: wordLevels,
+    }),
   });
 
   if (!resp.ok) {

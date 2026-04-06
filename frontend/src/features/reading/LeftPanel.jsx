@@ -69,6 +69,8 @@ export function LeftPanel({
   onWordClick,
   activeLevels,
   rewriteMappings,
+  isRewriting = false,
+  rewriteError = null,
 }) {
   const [draft, setDraft] = useState("");
   const draftRef = useRef("");
@@ -113,13 +115,28 @@ export function LeftPanel({
     return (
       <div className="left-panel left-panel--reading">
         <div className="left-panel__reading-area">
+          {isRewriting ? (
+            <div className="left-panel__rewriting-overlay">
+              <div className="left-panel__rewriting-spinner" />
+              <p className="left-panel__rewriting-text">
+                正在分析文章难度并简化高难度词...
+              </p>
+              <p className="left-panel__rewriting-sub">
+                DeepSeek 正在判断每个词是否真的超过你的水平
+              </p>
+            </div>
+          ) : rewriteError ? (
+            <div className="left-panel__error-state">
+              <p className="left-panel__error-text">简化失败：{rewriteError}</p>
+            </div>
+          ) : null}
           <Suspense fallback={<LeftPanelSkeleton />}>
             <ArticlePanel
               text={articleText}
               contentWidth={contentWidth}
               onWidthChange={onWidthChange}
               onWordClick={onWordClick}
-              onLinesReady={onLinesReady}
+              onLinesReady={undefined}
               selectedWords={selectedWords}
               activeLevels={activeLevels}
               rewriteMappings={rewriteMappings}
