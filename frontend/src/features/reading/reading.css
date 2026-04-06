@@ -432,6 +432,23 @@
   border-top-color: oklch(0.25 0.02 85);
 }
 
+/* 重写版简化词：暖黄色背景（仅被简化替换的词显示），无下划线 */
+.article-content .article-word--simplified {
+  background-color: #FEF9C3;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: oklch(0.20 0.02 85);
+  cursor: pointer;
+  position: relative;
+  border-bottom: none;
+}
+
+/* 重写版非简化词：普通样式，无特殊背景 */
+.article-content .article-word--rewritten-normal {
+  border-bottom: none;
+  color: oklch(0.20 0.02 85);
+}
+
 /* ─── Loading / Empty / Error 态 ──────────────────────────── */
 .article-panel-loading {
   display: flex;

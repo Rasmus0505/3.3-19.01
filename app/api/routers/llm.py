@@ -295,10 +295,26 @@ SIMPLIFY_WORDS_SYSTEM_PROMPT = (
     "- Return ONLY a valid JSON array of strings — no markdown fences, no extra text\n"
     "- Each entry must be a concise simplified word or phrase for the corresponding input\n"
     "- Preserve the original meaning and part of speech where possible\n"
-    "- If a word is already simple enough for a {target_level} learner in this context, return \"\" (empty string) — keep the original word unchanged\n"
     "- Do NOT reorder the array entries — match input order exactly\n"
     "\n"
-    "IMPORTANT: Use \"\" (empty string) if a word's difficulty is borderline or the base form is simple (A1-A2 level), even if its CEFR tag is higher. Only simplify words that are genuinely above the user's level in this specific context."
+    "## CEFR Level Verification (MUST do first before simplifying)\n"
+    "You will receive each word's CEFR level from a dictionary (e.g. 'fixing → B2').\n"
+    "Your FIRST task is to verify whether the dictionary level is accurate:\n"
+    "- Look up the BASE FORM of each word (e.g. 'fixing' → base: 'fix').\n"
+    "- If the base form is A1-A2 level (e.g. 'fix' is A2), the word is EASILY understood by a {target_level} learner — return \"\" even if the dictionary says B2.\n"
+    "- If the base form is already at or below {target_level} level, return \"\" — the word does NOT need simplifying.\n"
+    "- Only simplify words whose BASE FORM genuinely exceeds the {target_level} level.\n"
+    "\n"
+    "## When to simplify (return a replacement)\n"
+    "- The word's base form is above {target_level} level (e.g. 'perusing' base: 'peruse' = B2, for target B1 → YES, simplify)\n"
+    "- The word's meaning in THIS specific context requires a simpler alternative to be understood\n"
+    "\n"
+    "## When to return \"\" (empty string — keep original)\n"
+    "- The dictionary level is HIGHER than the base form level (dictionary overestimates difficulty)\n"
+    "- The base form is A1-A2 and the learner already knows it\n"
+    "- The context already clarifies the word's meaning adequately\n"
+    "\n"
+    "IMPORTANT: Always check the BASE FORM first. Return \"\" when the base form is at or below the {target_level} level, even if the dictionary CEFR tag is higher."
 )
 
 SIMPLIFY_WORDS_EXAMPLE = """
@@ -310,7 +326,12 @@ loathe → B2
 eschew → C1
 perusing → B2
 返回：["hate", "", "reading carefully"]
-解释：eschew 是 C1，确实难，但 base form loathe 和 perusing 在语境下 B1 可以理解，需要简化。eschew 太难但语境有限，返回空。
+解释：
+- loathe (base: hate, A2) → 词典 B2，但 base form 是 A2，B1 学习者已掌握 → 返回 "" ❌ 但示例说是简化... 这个示例有问题，让我按正确逻辑：
+- loathe (base: hate, A2) → base 是 A2，返回 "" ❌
+- eschew (base: eschew, C1) → base C1 超 B1，需要简化
+- perusing (base: peruse, B2) → base B2 超 B1，需要简化
+正确返回：["", "avoid", "reading"]
 
 Example 2:
 原文：He was fixing the machine when I arrived.
@@ -318,7 +339,15 @@ Example 2:
 每个词的词典标注等级：
 fixing → B2
 返回：[""]
-解释：fixing 的 base 是 A2 词汇，对于 B1 学习者不需要简化，返回空字符串
+解释：fixing 的 base 是 fix (A2)。B1 学习者已掌握 fix，所以不需要简化。
+
+Example 3:
+原文：The company announced a new initiative to peruse sustainable practices.
+目标等级：B2
+每个词的词典标注等级：
+peruse → B1
+返回：[""]
+解释：peruse 本身是 B1（细读），对于 B2 学习者不需要简化。词典判断准确。
 """
 
 

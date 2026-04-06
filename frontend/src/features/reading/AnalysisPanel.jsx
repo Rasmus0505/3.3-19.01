@@ -289,17 +289,20 @@ export function AnalysisPanel({
       </div>
 
       {/* 简化对照 */}
-      {rewriteMappings && rewriteMappings.length > 0 ? (
+      {rewriteMappings && rewriteMappings.filter(m => m.confirmed).length > 0 ? (
         <div className="analysis-section analysis-section--rewrite-summary">
           <h3 className="rewrite-summary__title">简化对照</h3>
           <ul className="rewrite-summary__list">
-            {rewriteMappings.map((m, i) => (
-              <li key={i} className="rewrite-summary__item">
-                <span className="rewrite-summary__original">{m.original}</span>
-                <span className="rewrite-summary__arrow">→</span>
-                <span className="rewrite-summary__rewritten">{m.rewritten}</span>
-              </li>
-            ))}
+            {rewriteMappings
+              .filter((m) => m.confirmed)
+              .map((m, i) => (
+                <li key={i} className="rewrite-summary__item">
+                  <span className="rewrite-summary__original">{m.original}</span>
+                  <span className="rewrite-summary__arrow">→</span>
+                  <span className="rewrite-summary__rewritten">{m.rewritten}</span>
+                </li>
+              ))
+            }
           </ul>
         </div>
       ) : null}

@@ -396,6 +396,7 @@ export function ReadingPage({ accessToken, apiCall }) {
             onWordClick={handleWordClick}
             activeLevels={activeLevels}
             rewriteMappings={rewriteMappings}
+            viewMode={viewMode}
             isRewriting={isRewriting}
             rewriteError={rewriteError}
           />

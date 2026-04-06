@@ -2,15 +2,17 @@
  * ArticlePanel.jsx — 文章主体渲染面板
  * ====================================
  * 结合 useRichLayout + VocabAnalyzer，CEFR 着色逐词渲染。
- * 当 rewriteMappings 非空时（重写版视图），显示原文对照悬浮提示。
  *
  * Props:
- *   text         {string}   — 文章纯文本
- *   contentWidth {number}   — 内容区最大宽度（px）
- *   onWidthChange {(w: number) => void}
- *   onWordClick  {(word: string, segment: RichSegment) => void}
- *   selectedWords {{ word: string, ... }[]}
- *   rewriteMappings {{original: string, rewritten: string}[]}
+ *   text           {string}   — 文章纯文本（原文或重写版）
+ *   contentWidth   {number}   — 内容区最大宽度（px）
+ *   onWidthChange  {(w: number) => void}
+ *   onWordClick    {(word: string, segment: RichSegment) => void}
+ *   onLinesReady   {(lines: RichLine[]) => void}
+ *   selectedWords  {{ word: string, ... }[]}
+ *   activeLevels   {string[]}
+ *   rewriteMappings {{original: string, rewritten: string, confirmed: boolean, originalLevel: string}[]}
+ *   viewMode       {'original'|'rewritten'} — 决定渲染方式
  */
 import { BookOpenText } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -22,21 +24,34 @@ import "./reading.css";
 const ARTICLE_FONT = "18px Inter";
 const ARTICLE_LINE_HEIGHT = 30;
 
-export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, onLinesReady, selectedWords, activeLevels, rewriteMappings }) {
+export function ArticlePanel({
+  text,
+  contentWidth,
+  onWidthChange,
+  onWordClick,
+  onLinesReady,
+  selectedWords,
+  activeLevels,
+  rewriteMappings,
+  viewMode = "original",
+}) {
   const containerRef = useRef(null);
   const [measuredWidth, setMeasuredWidth] = useState(contentWidth);
   const userLevel = readCefrLevel() || "B1";
 
   // Build lookup maps from rewrite mappings for fast per-segment resolution.
-  const { rewrittenSet, rewrittenToOriginal } = useMemo(() => {
-    const map = new Map();
-    const set = new Set();
+  // Key = lower-case word, for case-insensitive matching.
+  const { confirmedOriginals, allRewrittenSet } = useMemo(() => {
+    const confirmed = new Map();   // rewritten → original (only confirmed)
+    const allSet = new Set();       // all rewritten words (for tooltip)
     for (const m of rewriteMappings ?? []) {
-      const key = m.rewritten.toLowerCase();
-      map.set(key, m.original);
-      set.add(key);
+      const rewrittenKey = m.rewritten.toLowerCase();
+      allSet.add(rewrittenKey);
+      if (m.confirmed) {
+        confirmed.set(rewrittenKey, m.original);
+      }
     }
-    return { rewrittenSet: set, rewrittenToOriginal: map };
+    return { confirmedOriginals: confirmed, allRewrittenSet: allSet };
   }, [rewriteMappings]);
 
   useEffect(() => {
@@ -95,10 +110,16 @@ export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, o
                 const isSelected = Boolean(
                   selectedWords?.some((w) => w.word === seg.text || w.word === seg.word)
                 );
-                const segWord = seg.word?.toLowerCase();
-                const rewriteOriginal = rewriteMappings?.length && segWord
-                  ? rewrittenToOriginal.get(segWord) ?? null
-                  : null;
+                const segWord = (seg.word || seg.text || "").toLowerCase();
+
+                // 判断是否为需要简化的词（confirmed 映射中的原文词）
+                const isConfirmed = (() => {
+                  for (const m of rewriteMappings ?? []) {
+                    if (m.original.toLowerCase() === segWord) return m.confirmed;
+                  }
+                  return false;
+                })();
+
                 return (
                   <ArticleWord
                     key={segIdx}
@@ -107,7 +128,9 @@ export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, o
                     onWordClick={onWordClick}
                     isSelected={isSelected}
                     activeLevels={activeLevels}
-                    rewriteOriginal={rewriteOriginal}
+                    isConfirmedSimplify={isConfirmed}
+                    rewriteMappings={rewriteMappings}
+                    viewMode={viewMode}
                   />
                 );
               })}
@@ -119,13 +142,19 @@ export function ArticlePanel({ text, contentWidth, onWidthChange, onWordClick, o
   );
 }
 
-function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels, rewriteOriginal }) {
+function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels, isConfirmedSimplify, rewriteMappings, viewMode }) {
   const rawClass = computeCefrClassName(segment.cefrLevel, userLevel);
-  // 如果 activeLevels 已配置，且当前词级不在其中，显示为已掌握（灰色）
+
+  // viewMode === 'rewritten'：全部词无 CEFR 下划线
+  // viewMode === 'original'：
+  //   - confirmed=true 的词：有下划线 + tooltip 显示简化对照
+  //   - confirmed=false 的词：无下划线（词典等级过低，不需要简化）
+  // activeLevels 也控制基础着色（灰色 = 已掌握的等级）
   const cefrClass =
     activeLevels && activeLevels.length > 0 && segment.cefrLevel
       ? activeLevels.includes(segment.cefrLevel) ? rawClass : "cefr-mastered"
       : rawClass;
+
   const [animating, setAnimating] = useState(false);
   const prevSelected = useRef(isSelected);
 
@@ -144,22 +173,39 @@ function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels
     onWordClick?.(segment.text, segment);
   };
 
-  const isRewritten = rewriteOriginal !== null && rewriteOriginal !== undefined;
+  // 在 rewriteMappings 中查找对应的简化对照
+  const segWord = (segment.word || segment.text || "").toLowerCase();
+  const mapping = rewriteMappings?.find(
+    (m) => m.original.toLowerCase() === segWord
+  );
+
+  // 判断视觉样式
+  const isSimplifiedWord = mapping?.confirmed && viewMode === "rewritten";
+  const showUnderline = viewMode === "original" && isConfirmedSimplify;
 
   return (
     <span
       className={cn(
         "article-word",
-        isRewritten ? "rewrite-highlight" : cefrClass,
+        // 重写版：黄色背景（仅简化词）或无样式（其余）
+        isSimplifiedWord && "article-word--simplified",
+        !isSimplifiedWord && viewMode === "rewritten" && "article-word--rewritten-normal",
+        // 原文版：CEFR 下划线（仅 confirmed=true）
+        viewMode === "original" && (showUnderline ? cefrClass : "cefr-mastered"),
         isSelected && "article-word--selected",
         animating && "article-word--success"
       )}
       onClick={handleClick}
-      title={isRewritten ? `原文: ${rewriteOriginal}` : `${segment.cefrLevel || "未知等级"} — ${segment.text}`}
+      title={
+        viewMode === "original" && mapping?.confirmed
+          ? `原文: ${mapping.original} → 简化: ${mapping.rewritten}`
+          : `${segment.cefrLevel || "未知等级"} — ${segment.text}`
+      }
     >
       {segment.text}
-      {isRewritten && (
-        <span className="rewrite-tooltip">{rewriteOriginal}</span>
+      {/* 原文 hover 时显示简化对照 tooltip */}
+      {viewMode === "original" && mapping?.confirmed && (
+        <span className="rewrite-tooltip">{mapping.rewritten}</span>
       )}
     </span>
   );

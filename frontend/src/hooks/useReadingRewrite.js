@@ -212,7 +212,20 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
           wordsToSimplify.forEach((w, i) => {
             const rewritten = simplifiedWords[i];
             if (rewritten && rewritten !== "") {
-              newMappings.push({ original: w.word, rewritten });
+              newMappings.push({
+                original: w.word,
+                rewritten,
+                confirmed: true,
+                originalLevel: w.level || "B2",
+              });
+            } else {
+              // DeepSeek 判定不需要简化（返回 ""），词典等级过低
+              newMappings.push({
+                original: w.word,
+                rewritten: w.word, // 本地不做替换
+                confirmed: false,
+                originalLevel: w.level || "B2",
+              });
             }
           });
 

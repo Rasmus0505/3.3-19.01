@@ -19,6 +19,7 @@
  *   rewriteMappings {{original, rewritten}[]}
  */
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Loader2, Unlock } from "lucide-react";
 import { cn } from "../../lib/utils";
 import "./reading.css";
 
@@ -69,6 +70,7 @@ export function LeftPanel({
   onWordClick,
   activeLevels,
   rewriteMappings,
+  viewMode = "original",
   isRewriting = false,
   rewriteError = null,
 }) {
@@ -119,7 +121,7 @@ export function LeftPanel({
             <div className="left-panel__rewriting-overlay">
               <div className="left-panel__rewriting-spinner" />
               <p className="left-panel__rewriting-text">
-                正在分析文章难度并简化高难度词...
+                Unlock 中...
               </p>
               <p className="left-panel__rewriting-sub">
                 DeepSeek 正在判断每个词是否真的超过你的水平
@@ -140,6 +142,7 @@ export function LeftPanel({
               selectedWords={selectedWords}
               activeLevels={activeLevels}
               rewriteMappings={rewriteMappings}
+              viewMode={viewMode}
             />
           </Suspense>
         </div>
@@ -166,8 +169,11 @@ export function LeftPanel({
         {hasContent && (
           <div className="left-panel__input-footer">
             <span className="left-panel__char-count">{charCount} 字符</span>
-            <button className="left-panel__confirm-btn" onClick={handleConfirm}>
-              开始分析
+            <button className="btn-unlock" onClick={handleConfirm}>
+              <span className="inline-flex items-center gap-2">
+                <Unlock className="size-4" />
+                Unlock
+              </span>
             </button>
           </div>
         )}
