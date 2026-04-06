@@ -284,19 +284,11 @@ class VocabAnalyzer {
    * @returns {string|null} 等级字符串（A1/A2/B1/B2/C1/C2）或 null（词表查不到）
    */
   lookupCefrLevelForSurfaceForm(surfaceForm) {
-    if (!this.isLoaded) {
-      // #region debug log
-      fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2f8618'},body:JSON.stringify({sessionId:'2f8618',location:'vocabAnalyzer.js:lookupCefrLevelForSurfaceForm',message:'Analyzer not loaded',data:{surfaceForm,isLoaded:this.isLoaded},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
-      return null;
-    }
+    if (!this.isLoaded) return null;
     const wordInfo = this._lookupWord(surfaceForm);
     if (typeof window !== "undefined") {
       window.__cefrDebug = window.__cefrDebug || {};
       window.__cefrDebug.lastLookup = { surfaceForm, level: wordInfo ? wordInfo.level : null };
-      // #region debug log
-      fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2f8618'},body:JSON.stringify({sessionId:'2f8618',location:'vocabAnalyzer.js:lookupCefrLevelForSurfaceForm',message:'Level lookup result',data:{surfaceForm,level:wordInfo?wordInfo.level:null,wordMapSize:this.wordMap?this.wordMap.size:0},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-      // #endregion
       console.debug("[CEFR surfaceLookup]", surfaceForm, "→", wordInfo ? wordInfo.level : "null");
     }
     return wordInfo ? wordInfo.level : null;
@@ -447,9 +439,6 @@ class VocabAnalyzer {
       window.__cefrDebug = window.__cefrDebug || {};
       window.__cefrDebug.wordMapSize = this.wordMap.size;
       window.__cefrDebug.sampleKeys = [...this.wordMap.keys()].slice(0, 5);
-      // #region debug log
-      fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2f8618'},body:JSON.stringify({sessionId:'2f8618',location:'vocabAnalyzer.js:_initFromData',message:'Vocab loaded',data:{wordMapSize:this.wordMap.size,sampleKeys:window.__cefrDebug.sampleKeys},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
       console.debug("[CEFR] vocab loaded, wordMap size:", this.wordMap.size, "sample:", window.__cefrDebug.sampleKeys);
     }
   }
