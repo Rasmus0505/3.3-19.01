@@ -50,7 +50,18 @@ export function ArticlePanel({
 
   // #region agent log
   const _scanNonStrings = (arr, label) =>
-    (arr || []).map((x, i) => ({ i, type: typeof x, sample: x == null ? x : typeof x === "object" ? Object.keys(x || {}) : String(x).slice(0, 80) })).filter((o) => o.type !== "string");
+    (arr || []).map((x, i) => ({
+      i,
+      type: typeof x,
+      val:
+        x == null
+          ? null
+          : typeof x === "object"
+          ? Object.keys(x || {})
+          : typeof x === "string"
+          ? x.slice(0, 80)
+          : x,
+    })).filter((o) => o.type !== "string");
   const _badI1 = _scanNonStrings(validI1Words, "i1");
   const _badAbove = _scanNonStrings(validAboveI1Words, "above");
   const _badRemoved = _scanNonStrings(removedWords, "removed");
@@ -68,7 +79,6 @@ export function ArticlePanel({
           badAbove: _badAbove,
           badRemoved: _badRemoved,
           badMappingOriginal: _badMapOrig,
-          removed0: removedWords?.[0] != null ? { type: typeof removedWords[0], keys: typeof removedWords[0] === "object" ? Object.keys(removedWords[0]) : null } : null,
         },
         timestamp: Date.now(),
         hypothesisId: _badRemoved.length ? "H1-removed-objects" : _badI1.length || _badAbove.length ? "H1-word-arrays" : "H2-mapping-original",
@@ -77,22 +87,33 @@ export function ArticlePanel({
   }
   // #endregion
 
-  // 构建 Set 用于快速查找
-  const validI1Set = useRef(new Set(validI1Words.map((w) => w.toLowerCase())));
-  const validAboveI1Set = useRef(new Set(validAboveI1Words.map((w) => w.toLowerCase())));
-  const removedWordsSet = useRef(new Set(removedWords.map((w) => w.toLowerCase())));
+  // ── 规范化：后端 removed_words 是 [{word,reason}] 对象数组 ──────────────────
+  // normalizeToStrings() 把对象只取 .word 字段，其余类型强制 toString，空值过滤
+  const normalizeToStrings = (arr) =>
+    (arr || [])
+      .map((x) => (typeof x === "object" && x !== null ? String(x.word ?? "") : String(x ?? "")))
+      .filter((s) => s.length > 0);
 
-  // 当 props 变化时更新 Set
+  const normI1 = normalizeToStrings(validI1Words);
+  const normAbove = normalizeToStrings(validAboveI1Words);
+  const normRemoved = normalizeToStrings(removedWords);
+
+  // 构建 Set 用于快速查找
+  const validI1Set = useRef(new Set(normI1.map((w) => w.toLowerCase())));
+  const validAboveI1Set = useRef(new Set(normAbove.map((w) => w.toLowerCase())));
+  const removedWordsSet = useRef(new Set(normRemoved.map((w) => w.toLowerCase())));
+
+  // 当 props 变化时更新 Set（使用规范化后的数组）
   useEffect(() => {
-    validI1Set.current = new Set(validI1Words.map((w) => w.toLowerCase()));
+    validI1Set.current = new Set(normalizeToStrings(validI1Words).map((w) => w.toLowerCase()));
   }, [validI1Words]);
 
   useEffect(() => {
-    validAboveI1Set.current = new Set(validAboveI1Words.map((w) => w.toLowerCase()));
+    validAboveI1Set.current = new Set(normalizeToStrings(validAboveI1Words).map((w) => w.toLowerCase()));
   }, [validAboveI1Words]);
 
   useEffect(() => {
-    removedWordsSet.current = new Set(removedWords.map((w) => w.toLowerCase()));
+    removedWordsSet.current = new Set(normalizeToStrings(removedWords).map((w) => w.toLowerCase()));
   }, [removedWords]);
 
   useEffect(() => {
@@ -193,10 +214,11 @@ function ArticleWord({
   // 重写版：按 original 匹配（applySimplifiedWords 已替换为简化词）
   // 原文视图：按 originalLower 匹配（原始词形）
   const mapping = rewriteMappings?.find((m) => {
+    if (typeof m !== "object" || m === null) return false;
     if (viewMode === "rewritten") {
-      return m.confirmed && m.original.toLowerCase() === segLower;
+      return m.confirmed && typeof m.original === "string" && m.original.toLowerCase() === segLower;
     }
-    return m.originalLower === segLower;
+    return typeof m.originalLower === "string" && m.originalLower === segLower;
   });
 
   // 原文视图：根据 validI1Set 和 validAboveI1Set 判断渲染样式
