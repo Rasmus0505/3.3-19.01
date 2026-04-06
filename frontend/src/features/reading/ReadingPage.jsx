@@ -118,7 +118,7 @@ function collectSimplifyCandidatesFromLines(lines, userLevel) {
   const words = [];
   for (const line of lines) {
     for (const seg of line.segments) {
-      if (!seg.word) continue;
+      if (!seg.word || typeof seg.word !== "string") continue;
       const cefrClass = computeCefrClassName(seg.cefrLevel, userLevel);
       if (cefrClass === "cefr-i-plus-one" || cefrClass === "cefr-above-i-plus-one") {
         const lower = seg.word.toLowerCase();
@@ -148,11 +148,12 @@ async function collectSimplifyCandidatesFromRaw(text, userLevel) {
   const seen = new Set();
   const candidates = [];
   for (const token of result.tokens) {
-    if (!token.word) continue;
+    if (!token.word || typeof token.word !== "string") continue;
     const cefrClass = computeCefrClassName(token.level, userLevel);
     if (cefrClass === "cefr-i-plus-one" || cefrClass === "cefr-above-i-plus-one") {
       // 用原文词形（original > word > token.word），避免 lemma 替换失败
-      const original = token.original || token.word;
+      const original = (token.original || token.word);
+      if (typeof original !== "string") continue;
       const lower = original.toLowerCase();
       if (!seen.has(lower)) {
         seen.add(lower);
