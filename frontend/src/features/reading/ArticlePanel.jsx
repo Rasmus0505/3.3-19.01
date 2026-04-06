@@ -117,13 +117,25 @@ export function ArticlePanel({
 }
 
 function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels, rewriteMappings, viewMode }) {
-  const rawClass = computeCefrClassName(segment.cefrLevel, userLevel);
+  const segText = (segment.text || "").toLowerCase();
+  // 重写版：按 original 匹配（applySimplifiedWords 以 lemma 替换，若替换成功原文词形保留；
+  // 若替换失败则 confirmed 全为 false，黄块本来就不应出现）
+  const mapping = rewriteMappings?.find((m) => {
+    if (viewMode === "rewritten") {
+      return m.confirmed && m.original.toLowerCase() === segText;
+    }
+    return m.original.toLowerCase() === segText;
+  });
+
+  // 如果有 DeepSeek 判断的等级，用它替代词典等级
+  const effectiveLevel = mapping?.dsLevel || segment.cefrLevel;
+  const rawClass = computeCefrClassName(effectiveLevel, userLevel);
 
   // viewMode === 'rewritten'：无 CEFR 下划线；confirmed 简化词用黄块
-  // viewMode === 'original'：CEFR 下划线由词典 + activeLevels 决定；rewriteMappings 仅用于对照 tooltip
+  // viewMode === 'original'：CEFR 下划线由有效等级（dsLevel > cefrLevel）决定；rewriteMappings 仅用于对照 tooltip
   const cefrClass =
-    activeLevels && activeLevels.length > 0 && segment.cefrLevel
-      ? activeLevels.includes(segment.cefrLevel) ? rawClass : "cefr-mastered"
+    activeLevels && activeLevels.length > 0 && effectiveLevel
+      ? activeLevels.includes(effectiveLevel) ? rawClass : "cefr-mastered"
       : rawClass;
 
   const [animating, setAnimating] = useState(false);
@@ -144,17 +156,8 @@ function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels
     onWordClick?.(segment.text, segment);
   };
 
-  const segText = (segment.text || "").toLowerCase();
-  // 重写版：按 original 匹配（applySimplifiedWords 以 lemma 替换，若替换成功原文词形保留；
-  // 若替换失败则 confirmed 全为 false，黄块本来就不应出现）
-  const mapping = rewriteMappings?.find((m) => {
-    if (viewMode === "rewritten") {
-      return m.confirmed && m.original.toLowerCase() === segText;
-    }
-    return m.original.toLowerCase() === segText;
-  });
-
-  const isSimplifiedWord = viewMode === "rewritten" && Boolean(mapping);
+  // 重写版中简化词用黄色块包裹，显示原文
+  const isSimplifiedWord = viewMode === "rewritten" && mapping?.confirmed;
 
   return (
     <span
@@ -168,12 +171,14 @@ function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels
       )}
       onClick={handleClick}
       title={
-        viewMode === "original" && mapping?.confirmed
-          ? `原文: ${mapping.original} → 简化: ${mapping.rewritten}`
-          : `${segment.cefrLevel || "未知等级"} — ${segment.text}`
+        viewMode === "rewritten" && mapping?.confirmed
+          ? `原文: ${mapping.original}`  // 重写版显示原文
+          : viewMode === "original" && mapping?.confirmed
+          ? `已简化为: ${mapping.rewritten}`  // 原文视图显示简化词
+          : `${effectiveLevel || "未知等级"} — ${segment.text}`
       }
     >
-      {segment.text}
+      {isSimplifiedWord ? mapping.original : segment.text}
       {/* 原文 hover 时显示简化对照 tooltip */}
       {viewMode === "original" && mapping?.confirmed && (
         <span className="rewrite-tooltip">{mapping.rewritten}</span>

@@ -317,31 +317,37 @@ COMMON_SIMPLIFY_WORD_MEANINGS: dict[str, str] = {
 SIMPLIFY_WORDS_SYSTEM_PROMPT = (
     "You are an English text simplifier for language learners.\n"
     "Given a sentence and a list of words/phrases to simplify from that sentence,\n"
-    "return a JSON array of simplified replacements, IN THE SAME ORDER as the input list.\n"
-    "Rules:\n"
-    "- Return ONLY a valid JSON array of strings — no markdown fences, no extra text\n"
-    "- Each entry must be a concise simplified word or phrase for the corresponding input\n"
-    "- Preserve the original meaning and part of speech where possible\n"
-    "- Do NOT reorder the array entries — match input order exactly\n"
+    "return a JSON object with two fields:\n"
+    "1. 'simplified_words': array of simplified replacements, IN THE SAME ORDER as the input list\n"
+    "2. 'word_levels': object mapping each input word to its CEFR level you judged (e.g. {'word': 'C1'})\n"
     "\n"
-    "## CEFR Level Verification (MUST do first before simplifying)\n"
-    "You will receive each word's CEFR level from a dictionary (e.g. 'fixing → B2').\n"
-    "Your FIRST task is to verify whether the dictionary level is accurate:\n"
-    "- Look up the BASE FORM of each word (e.g. 'fixing' → base: 'fix').\n"
-    "- If the base form is A1-A2 level (e.g. 'fix' is A2), the word is EASILY understood by a {target_level} learner — return \"\" even if the dictionary says B2.\n"
-    "- If the base form is already at or below {target_level} level, return \"\" — the word does NOT need simplifying.\n"
-    "- Only simplify words whose BASE FORM genuinely exceeds the {target_level} level.\n"
+    "## CRITICAL: EXACT i+1 Simplification Rule\n"
+    "- Simplify words ONLY to {target_level} level — NOT simpler, NOT harder\n"
+    "- For target B1: 'perusing' (B2) → 'reading' (B1), NOT 'looking at' (A1)\n"
+    "- For target B1: 'ambulate' (C1) → 'walk' (B1), NOT 'move' (A1)\n"
+    "- Oversimplification is WRONG: use a word at exactly {target_level}, not lower\n"
     "\n"
-    "## When to simplify (return a replacement)\n"
-    "- The word's base form is above {target_level} level (e.g. 'perusing' base: 'peruse' = B2, for target B1 → YES, simplify)\n"
-    "- The word's meaning in THIS specific context requires a simpler alternative to be understood\n"
+    "## CEFR Level Verification (MUST do first)\n"
+    "Your FIRST task is to verify each word's CEFR level:\n"
+    "- Look up the BASE FORM of each word (e.g. 'fixing' → base: 'fix')\n"
+    "- If base form is at or below {target_level} → level = '{target_level}' (no simplification needed)\n"
+    "- If base form exceeds {target_level} → assign actual level (B1, B2, C1, C2, etc.)\n"
+    "\n"
+    "## When to simplify (return a replacement at {target_level})\n"
+    "- The word's base form genuinely exceeds {target_level} level\n"
+    "- The replacement MUST be at EXACTLY {target_level} level\n"
     "\n"
     "## When to return \"\" (empty string — keep original)\n"
-    "- The dictionary level is HIGHER than the base form level (dictionary overestimates difficulty)\n"
-    "- The base form is A1-A2 and the learner already knows it\n"
+    "- Base form is at or below {target_level} (no simplification needed)\n"
     "- The context already clarifies the word's meaning adequately\n"
     "\n"
-    "IMPORTANT: Always check the BASE FORM first. Return \"\" when the base form is at or below the {target_level} level, even if the dictionary CEFR tag is higher."
+    "Rules:\n"
+    "- Return ONLY a valid JSON object with 'simplified_words' and 'word_levels' — no markdown fences, no extra text\n"
+    "- Each simplified_words entry must be at EXACTLY {target_level} level\n"
+    "- Preserve the original meaning and part of speech where possible\n"
+    "- Do NOT reorder — match input order exactly\n"
+    "\n"
+    "IMPORTANT: EXACT i+1 only. 'perusing' for B1 → 'reading', NOT 'looking at'. 'ambulate' for B1 → 'walk', NOT 'move'."
 )
 
 SIMPLIFY_WORDS_EXAMPLE = """
@@ -546,12 +552,17 @@ def simplify_words_endpoint(
 
     import json as _json
     simplified_words: list[str] = []
+    word_levels: dict[str, str] = {}
     try:
         parsed = _json.loads(raw_response.strip())
-        if isinstance(parsed, list):
+        if isinstance(parsed, dict):
+            simplified_words = [str(item) for item in parsed.get("simplified_words", [])]
+            word_levels = {str(k): str(v) for k, v in parsed.get("word_levels", {}).items()}
+        elif isinstance(parsed, list):
+            # 兼容旧格式
             simplified_words = [str(item) for item in parsed]
         else:
-            raise HTTPException(status_code=502, detail="Expected JSON array, got other type")
+            raise HTTPException(status_code=502, detail="Expected JSON object with 'simplified_words' and 'word_levels'")
     except HTTPException:
         raise
     except Exception as exc:
@@ -601,6 +612,7 @@ def simplify_words_endpoint(
     return {
         "ok": True,
         "simplified_words": simplified_words,
+        "word_levels": word_levels,  # DeepSeek 判断的 CEFR 等级
         "input_words": body.words,
         "model": effective_model,
         "usage": {

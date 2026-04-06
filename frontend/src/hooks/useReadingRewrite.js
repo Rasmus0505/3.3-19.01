@@ -202,6 +202,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
             wordLevels
           );
           const simplifiedWords = result.simplifiedWords;
+          const dsWordLevels = result.wordLevels || {};  // DeepSeek 判断的 CEFR 等级
           const chargeYuan = (result.chargeCents || 0) / 100;
           toast.success("简化完成" + (chargeYuan > 0 ? "，消耗 " + chargeYuan.toFixed(2) + " 元" : ""));
 
@@ -218,6 +219,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
                 rewritten,
                 confirmed: true,
                 originalLevel: w.level || "B2",
+                dsLevel: dsWordLevels[w.word.toLowerCase()] || w.level || "B2",  // DeepSeek 判断的等级
               });
             } else {
               // DeepSeek 判定不需要简化（返回 ""），词典等级过低
@@ -226,6 +228,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
                 rewritten: w.word, // 本地不做替换
                 confirmed: false,
                 originalLevel: w.level || "B2",
+                dsLevel: dsWordLevels[w.word.toLowerCase()] || w.level || "B2",  // DeepSeek 判断的等级
               });
             }
           });

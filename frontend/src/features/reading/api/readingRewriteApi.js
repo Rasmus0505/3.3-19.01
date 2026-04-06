@@ -58,6 +58,7 @@ export async function simplifyWords(sentence, words, targetLevel, accessToken, e
   const data = await resp.json();
   return {
     simplifiedWords: data.simplified_words,
+    wordLevels: data.word_levels || {},  // DeepSeek 判断的 CEFR 等级
     chargeCents: data.charge_cents,
     traceId: data.trace_id,
   };
