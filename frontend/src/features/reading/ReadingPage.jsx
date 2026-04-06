@@ -411,6 +411,7 @@ export function ReadingPage({ accessToken, apiCall }) {
             rewriteMappings={rewriteMappings}
             validI1Words={validI1Words}
             validAboveI1Words={validAboveI1Words}
+            removedWords={removedWords}
             viewMode={viewMode}
             isRewriting={isRewriting}
             rewriteError={rewriteError}

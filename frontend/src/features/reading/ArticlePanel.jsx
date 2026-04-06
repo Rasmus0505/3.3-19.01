@@ -41,6 +41,7 @@ export function ArticlePanel({
   rewriteMappings,
   validI1Words = [],
   validAboveI1Words = [],
+  removedWords = [],
   viewMode = "original",
 }) {
   const containerRef = useRef(null);
@@ -50,6 +51,7 @@ export function ArticlePanel({
   // 构建 Set 用于快速查找
   const validI1Set = useRef(new Set(validI1Words.map((w) => w.toLowerCase())));
   const validAboveI1Set = useRef(new Set(validAboveI1Words.map((w) => w.toLowerCase())));
+  const removedWordsSet = useRef(new Set(removedWords.map((w) => w.toLowerCase())));
 
   // 当 props 变化时更新 Set
   useEffect(() => {
@@ -59,6 +61,10 @@ export function ArticlePanel({
   useEffect(() => {
     validAboveI1Set.current = new Set(validAboveI1Words.map((w) => w.toLowerCase()));
   }, [validAboveI1Words]);
+
+  useEffect(() => {
+    removedWordsSet.current = new Set(removedWords.map((w) => w.toLowerCase()));
+  }, [removedWords]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -127,6 +133,7 @@ export function ArticlePanel({
                     rewriteMappings={rewriteMappings}
                     validI1Set={validI1Set.current}
                     validAboveI1Set={validAboveI1Set.current}
+                    removedWordsSet={removedWordsSet.current}
                     viewMode={viewMode}
                   />
                 );
@@ -148,6 +155,7 @@ function ArticleWord({
   rewriteMappings,
   validI1Set,
   validAboveI1Set,
+  removedWordsSet,
   viewMode,
 }) {
   const segText = (segment.text || "").trim();
@@ -168,9 +176,10 @@ function ArticleWord({
   let isAboveI1Word = false;
 
   if (viewMode === "original") {
-    // 优先判断是否是 i+1 或 >i+1 词
+    // 优先判断是否是 i+1 或 >i+1 词（DeepSeek 验证通过的）
     isI1Word = validI1Set.has(segLower);
     isAboveI1Word = validAboveI1Set.has(segLower);
+    const isRemovedWord = removedWordsSet?.has(segLower);
 
     if (isI1Word) {
       // activeLevels 为 CEFR 等级（如 B2），与 segment.cefrLevel 对齐；勿引用未传入的 validI1Words
@@ -183,6 +192,9 @@ function ArticleWord({
         activeLevels && activeLevels.length > 0
           ? activeLevels.includes(segment.cefrLevel) ? "cefr-above-i-plus-one" : "cefr-mastered"
           : "cefr-above-i-plus-one";
+    } else if (isRemovedWord) {
+      // DeepSeek 过滤掉的词 → 过于简单，不标下划线
+      cefrClass = "cefr-mastered";
     } else {
       // 不在有效词列表中，使用词典/CEFR 等级
       const effectiveLevel = mapping?.dsLevel || segment.cefrLevel;
