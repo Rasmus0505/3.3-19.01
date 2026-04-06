@@ -39,19 +39,20 @@ function extractHighDiffWordsFromMappings(mappings) {
  * 将原文中的高难度词按顺序替换为简化词
  * 使用单词边界正则，避免部分匹配
  * @param {string} originalText
- * @param {string[]} words — 原始高难度词（按顺序）
+ * @param {{ word: string }[]} words — 原始高难度词（按顺序，格式：{ word: 原文词形 }）
  * @param {string[]} replacements — 简化词（按顺序）
  * @returns {string}
  */
 function applySimplifiedWords(originalText, words, replacements) {
   if (!words || words.length === 0) return originalText;
   let result = originalText;
-  words.forEach((word, i) => {
+  words.forEach((w, i) => {
     const replacement = replacements[i];
     if (replacement === "" || replacement == null) {
       return; // 跳过，原文保留
     }
-    const rawWord = typeof word === "string" ? word : word.word;
+    // 使用原文词形（w.word）而非 lemma，确保替换的是原文实际出现的词形
+    const rawWord = typeof w === "string" ? w : w.word;
     const escaped = rawWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const regex = new RegExp(`\\b${escaped}\\b`, "gi");
     result = result.replace(regex, replacement);

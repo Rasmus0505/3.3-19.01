@@ -145,13 +145,14 @@ function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels
   };
 
   const segText = (segment.text || "").toLowerCase();
-  // 原文：按 original 匹配；重写版正文是替换后的词形，按 rewritten 匹配（否则黄块永远不出现）
-  const mapping =
-    viewMode === "rewritten"
-      ? rewriteMappings?.find(
-          (m) => m.confirmed && m.rewritten.toLowerCase() === segText
-        )
-      : rewriteMappings?.find((m) => m.original.toLowerCase() === segText);
+  // 重写版：按 original 匹配（applySimplifiedWords 以 lemma 替换，若替换成功原文词形保留；
+  // 若替换失败则 confirmed 全为 false，黄块本来就不应出现）
+  const mapping = rewriteMappings?.find((m) => {
+    if (viewMode === "rewritten") {
+      return m.confirmed && m.original.toLowerCase() === segText;
+    }
+    return m.original.toLowerCase() === segText;
+  });
 
   const isSimplifiedWord = viewMode === "rewritten" && Boolean(mapping);
 
