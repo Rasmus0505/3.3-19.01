@@ -48,6 +48,35 @@ export function ArticlePanel({
   const [measuredWidth, setMeasuredWidth] = useState(contentWidth);
   const userLevel = readCefrLevel() || "B1";
 
+  // #region agent log
+  const _scanNonStrings = (arr, label) =>
+    (arr || []).map((x, i) => ({ i, type: typeof x, sample: x == null ? x : typeof x === "object" ? Object.keys(x || {}) : String(x).slice(0, 80) })).filter((o) => o.type !== "string");
+  const _badI1 = _scanNonStrings(validI1Words, "i1");
+  const _badAbove = _scanNonStrings(validAboveI1Words, "above");
+  const _badRemoved = _scanNonStrings(removedWords, "removed");
+  const _badMapOrig = (rewriteMappings || []).map((m, i) => ({ i, origType: typeof m?.original })).filter((o) => o.origType !== "string");
+  if (_badI1.length || _badAbove.length || _badRemoved.length || _badMapOrig.length) {
+    fetch("http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "8a4a54" },
+      body: JSON.stringify({
+        sessionId: "8a4a54",
+        location: "ArticlePanel.jsx:pre-sets",
+        message: "toLowerCase risk scan",
+        data: {
+          badI1: _badI1,
+          badAbove: _badAbove,
+          badRemoved: _badRemoved,
+          badMappingOriginal: _badMapOrig,
+          removed0: removedWords?.[0] != null ? { type: typeof removedWords[0], keys: typeof removedWords[0] === "object" ? Object.keys(removedWords[0]) : null } : null,
+        },
+        timestamp: Date.now(),
+        hypothesisId: _badRemoved.length ? "H1-removed-objects" : _badI1.length || _badAbove.length ? "H1-word-arrays" : "H2-mapping-original",
+      }),
+    }).catch(() => {});
+  }
+  // #endregion
+
   // 构建 Set 用于快速查找
   const validI1Set = useRef(new Set(validI1Words.map((w) => w.toLowerCase())));
   const validAboveI1Set = useRef(new Set(validAboveI1Words.map((w) => w.toLowerCase())));
