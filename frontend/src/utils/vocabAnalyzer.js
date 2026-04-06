@@ -559,7 +559,13 @@ class VocabAnalyzer {
   }
 
   _lemmatize(word) {
-    // 常见词形还原规则
+    // 1. 先查不规则词形还原映射表（如 perusing → peruse）
+    const mapped = this.lemmatizationMap[word];
+    if (mapped && this.wordMap.has(mapped)) {
+      return mapped;
+    }
+
+    // 2. 再用后缀规则还原
     const suffixRules = [
       { suffix: "ies", replacement: "y" },      // stories → story
       { suffix: "es", replacement: "" },       // watches → watch
@@ -604,6 +610,12 @@ class VocabAnalyzer {
       "found": "find",
       "said": "say",
       "got": "get",
+      // 常见 B1-B2 动词的不规则-ing 形式（词干以 e 结尾，去 e 后 + ing）
+      "perusing": "peruse",
+      "pursuing": "pursue",
+      "creating": "create",
+      "sharing": "share",
+      "moving": "move",
     };
   }
 

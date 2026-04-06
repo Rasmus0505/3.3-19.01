@@ -286,6 +286,33 @@ REWRITE_MAX_INPUT_CHARS = 12000
 REWRITE_MAX_OUTPUT_TOKENS = 2048
 REWRITE_MAX_INPUT_TOKENS = 3000
 
+    # 高频误简化词的语义注释（帮助 LLM 区分近义词的细微差别）
+COMMON_SIMPLIFY_WORD_MEANINGS: dict[str, str] = {
+    "peruse": 'to read carefully or in detail (NOT just "read")',
+    "eschew": "to deliberately avoid or abstain from something",
+    "adverse": "preventing success or development; harmful (NOT just different)",
+    "affluent": "having a great deal of money; wealthy (NOT just full)",
+    "ambiguous": "open to more than one interpretation; unclear",
+    "coherent": "logical and consistent; clear (NOT just together)",
+    "concurrent": "existing or happening at the same time",
+    "correlate": "to have a mutual relationship or connection",
+    "diligent": "having or showing care and conscientiousness in one's work",
+    "eloquent": "fluent or persuasive in speaking or writing",
+    "feasible": "possible to do easily or conveniently",
+    "imminent": "about to happen (NOT just important)",
+    "implicit": "implied though not plainly expressed",
+    "inherent": "existing in something as a permanent characteristic",
+    "innovative": "introducing new ideas; original",
+    "obsolete": "no longer produced or used; out of date",
+    "phenomenon": "a fact or situation that is observed to exist or happen",
+    "pragmatic": "dealing with things sensibly and realistically (NOT just practical)",
+    "scrutinize": "to examine or inspect closely and thoroughly",
+    "subsequent": "coming after something in time; following",
+    "superficial": "existing or occurring on the surface; not deep",
+    "ubiquitous": "present, appearing, or found everywhere",
+    "viable": "capable of working successfully; feasible",
+}
+
 # ── 新 Schema Prompt（简化词数组，按顺序）──────────────────────────────
 SIMPLIFY_WORDS_SYSTEM_PROMPT = (
     "You are an English text simplifier for language learners.\n"
@@ -325,13 +352,14 @@ Example 1:
 loathe → B2
 eschew → C1
 perusing → B2
-返回：["hate", "", "reading carefully"]
+词义注释：
+eschew = to deliberately avoid or abstain from something
+perusing = to read carefully or in detail (NOT just "read")
+返回：["", "avoid", "reading carefully"]
 解释：
-- loathe (base: hate, A2) → 词典 B2，但 base form 是 A2，B1 学习者已掌握 → 返回 "" ❌ 但示例说是简化... 这个示例有问题，让我按正确逻辑：
-- loathe (base: hate, A2) → base 是 A2，返回 "" ❌
-- eschew (base: eschew, C1) → base C1 超 B1，需要简化
-- perusing (base: peruse, B2) → base B2 超 B1，需要简化
-正确返回：["", "avoid", "reading"]
+|- loathe (base: hate, A2) → base form 是 A2，B1 学习者已掌握 → 返回 ""
+|- eschew (base: eschew, C1) → C1 超 B1，且词义"刻意回避"≠普通 avoid，需要简化 → "avoid"
+|- perusing (base: peruse, B2) → B2 超 B1，词义"仔细阅读"≠普通 reading → "reading carefully"
 
 Example 2:
 原文：He was fixing the machine when I arrived.
@@ -345,9 +373,23 @@ Example 3:
 原文：The company announced a new initiative to peruse sustainable practices.
 目标等级：B2
 每个词的词典标注等级：
-peruse → B1
+perusing → B2
+词义注释：
+perusing = to read carefully or in detail (NOT just "read")
 返回：[""]
-解释：peruse 本身是 B1（细读），对于 B2 学习者不需要简化。词典判断准确。
+解释：peruse 本身是 B2，和目标 B2 同级，不需要简化。
+
+Example 4:
+原文：She was scrutinizing the contract closely.
+目标等级：B1
+每个词的词典标注等级：
+scrutinizing → B2
+词义注释：
+scrutinizing = to examine or inspect closely and thoroughly
+返回：["studying carefully", ""]
+解释：
+|- scrutinizing → 词义"仔细审视"，需要简化 → "studying carefully"
+|- closely → 副词，无需简化
 """
 
 
@@ -455,6 +497,27 @@ def simplify_words_endpoint(
         for word in body.words:
             level = body.word_levels.get(word.lower(), "?")
             user_message_lines.append(f"{word} → {level}")
+
+        # Inject semantic meanings for frequently-misunderstood words
+        words_with_meanings = []
+        for word in body.words:
+            base = word.lower()
+            for suffix, repl in [("ing", ""), ("es", ""), ("ed", ""), ("s", "")]:
+                if base.endswith(suffix) and len(base) > len(suffix) + 2:
+                    candidate = base[:-len(suffix)] + repl
+                    if candidate in COMMON_SIMPLIFY_WORD_MEANINGS:
+                        base = candidate
+                    break
+            meaning = COMMON_SIMPLIFY_WORD_MEANINGS.get(base)
+            if meaning:
+                words_with_meanings.append(f"{word} = {meaning}")
+        if words_with_meanings:
+            user_message_lines.append(
+                "\n以下词的语义注释：帮助你区分与简单近义词的细微差别："
+            )
+            for entry in words_with_meanings:
+                user_message_lines.append(entry)
+
     user_message_lines.append(f"\n返回 JSON 数组（每个词对应一个简化词，或 \"\" 表示不需要简化）：")
     user_message = "\n".join(user_message_lines)
 
