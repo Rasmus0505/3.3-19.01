@@ -1,4 +1,3 @@
-# ── Stage 1: Frontend builder ──────────────────────────────────────────────
 FROM node:22-alpine AS frontend-builder
 
 WORKDIR /frontend
@@ -8,10 +7,8 @@ COPY frontend/ ./
 RUN npm run build
 
 # Clean npm artifacts before copying
-RUN npm cache clean --force \
-    && rm -rf node_modules package-lock.json npm-shrinkwrap.json
+RUN npm cache clean --force && rm -rf node_modules package-lock.json
 
-# ── Stage 2: Python runtime ─────────────────────────────────────────────────
 FROM python:3.11-slim
 LABEL "language"="python"
 LABEL "framework"="fastapi"
@@ -22,27 +19,29 @@ ENV PORT=8080
 
 WORKDIR /app
 
-# Install runtime dependencies only
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ffmpeg \
-        ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
 
+# Install uv for fast Python package installation (10-100x faster than pip)
+RUN pip install --no-cache-dir uv
+
+# Copy requirements FIRST, then install dependencies
+# This enables layer caching - code changes won't trigger dependency reinstall
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt \
-    && rm -r /root/.cache/pip
 
-# Copy application code
+# Use uv to install dependencies (much faster than pip)
+RUN uv pip install --system --no-cache-dir -r requirements.txt
+
+# Copy application code (changes here won't trigger dependency reinstall)
 COPY alembic.ini ./
-COPY migrations/ ./migrations/
-COPY app/ ./app/
-COPY scripts/ ./scripts/
-
-# Copy pre-built frontend assets
+COPY migrations ./migrations
+COPY app ./app
+COPY scripts ./scripts
 COPY --from=frontend-builder /frontend/dist/ ./app/static/
+
+RUN chmod +x /app/scripts/start.sh
 
 EXPOSE 8080
 
-CMD ["sh", "/app/scripts/start.sh"]
+CMD ["/app/scripts/start.sh"]
