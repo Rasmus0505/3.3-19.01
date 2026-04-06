@@ -274,6 +274,9 @@ export function ReadingPage({ accessToken, apiCall }) {
   const {
     rewrittenText,
     rewriteMappings,
+    validI1Words,
+    validAboveI1Words,
+    removedWords,
     viewMode,
     setViewMode,
     isRewriting,
@@ -324,7 +327,13 @@ export function ReadingPage({ accessToken, apiCall }) {
           // 没有高难度词，直接显示原文（rewrittenText = null，viewMode = original）
           return;
         }
-        handleRewrite(text, { wordsToSimplify: candidates });
+        // 构建 wordLevels dict
+        const wordLevels = {};
+        candidates.forEach((w) => {
+          wordLevels[w.word.toLowerCase()] = w.level || "B2";
+        });
+        // 新流程：传入 { words, wordLevels } 格式
+        handleRewrite(text, { words: candidates, wordLevels });
       } catch (e) {
         console.error("Failed to collect simplify candidates:", e);
       }
@@ -400,6 +409,8 @@ export function ReadingPage({ accessToken, apiCall }) {
             onWordClick={handleWordClick}
             activeLevels={activeLevels}
             rewriteMappings={rewriteMappings}
+            validI1Words={validI1Words}
+            validAboveI1Words={validAboveI1Words}
             viewMode={viewMode}
             isRewriting={isRewriting}
             rewriteError={rewriteError}

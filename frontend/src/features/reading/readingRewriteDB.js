@@ -2,6 +2,7 @@
  * readingRewriteDB.js — IndexedDB 模块：重写结果持久化
  * ======================================================
  * Phase 32: Rewrite Persistence
+ * v2 Enhancement: 新流程支持（i+1 保留、>i+1 重写）
  *
  * 设计决策：
  * - articleId 为主键（每篇文章一条记录，与 history 表独立）
@@ -9,7 +10,7 @@
  * - viewMode 按文章独立记忆（原文/重写版切换偏好）
  * - 提供徽章查询：哪些文章已有重写记录
  */
-const DB_NAME = "reading_rewrites_v2";
+const DB_NAME = "reading_rewrites_v3";
 const DB_VERSION = 1;
 const STORE_NAME = "rewrites";
 
@@ -36,16 +37,19 @@ function openDB() {
  * @typedef {Object} RewriteRecord
  * @property {string}   articleId     — 文章 ID（主键，来自 history record.id）
  * @property {string}   originalText  — 原始文章全文
- * @property {string}   rewrittenText — AI 重写版全文
- * @property {object[]}  mappings      — 词汇替换映射
+ * @property {string}   rewrittenText — AI 重写版全文（>i+1 词已被替换）
+ * @property {object[]}  mappings      — >i+1 词汇替换映射
  *   每个条目：{
- *     original: string,     — 重写版中显示的词形（如 "Reading"）
- *     originalLower: string, — 原文词小写（如 "perusing"，原文视图匹配用）
- *     rewritten: string,    — 原文词形（如 "Perusing"，tooltip 对照用）
- *     confirmed: boolean,    — true=已简化，false=无需简化
- *     originalLevel: string, — 词典判定等级（如 "B2"）
- *     dsLevel: string        — DeepSeek 判断等级（用于 CEFR 下划线渲染）
+ *     original: string,      — 重写版中显示的词形（替换后的 i+1 词）
+ *     originalLower: string, — 原文词小写（原文视图匹配用）
+ *     rewritten: string,     — 原文词形（tooltip 对照用）
+ *     confirmed: boolean,    — true=已简化，false=无需简化（返回空字符串）
+ *     dsLevel: string       — DeepSeek 判断等级
  *   }
+ * @property {string[]}  validI1Words     — 有效的 i+1 词汇列表（原文视图用绿色下划线）
+ * @property {string[]}  validAboveI1Words — 有效的 >i+1 词汇列表（原文视图用红色下划线）
+ * @property {object[]}  removedWords      — 被过滤的词汇 [{word, reason}]
+ * @property {object}    wordLevels       — DeepSeek 判断的等级 {word: level}
  * @property {"original"|"rewritten"} viewMode — 用户偏好的视图
  * @property {number}    rewrittenAt  — 重写时间戳
  */

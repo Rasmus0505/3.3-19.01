@@ -399,6 +399,155 @@ scrutinizing = to examine or inspect closely and thoroughly
 """
 
 
+# ── 新流程 Prompt（Step 2：二次筛选 + 重写）────────────────────────────
+FILTER_AND_SIMPLIFY_SYSTEM_PROMPT = (
+    "You are an English language learning assistant helping learners read authentic content.\n"
+    "\n"
+    "## Your Task\n"
+    "Given a sentence, a user's current level ({user_level}), and words identified by a vocabulary analyzer,\n"
+    "you need to:\n"
+    "\n"
+    "1. **Verify each word**: Determine if it's truly appropriate as i+1 or above-i+1 vocabulary for this learner\n"
+    "2. **Filter out mistakes**: Remove words that are actually too simple (user already knows them)\n"
+    "3. **Simplify above-i+1 words**: Replace words above {target_level} with {target_level}-level equivalents\n"
+    "\n"
+    "## Definitions\n"
+    "- **i+1 words** (target: {target_level}): These are appropriate learning targets. Keep them.\n"
+    "- **above-i+1 words** (above {target_level}): Too difficult. Simplify to {target_level}.\n"
+    "- **Too simple words**: The analyzer may mark A1/A2 words as difficult due to edge cases.\n"
+    "  If a word is clearly within the user's existing knowledge (level ≤ {user_level}), mark it for removal.\n"
+    "\n"
+    "## Replacement Rules\n"
+    "- Simplifications MUST be at EXACTLY {target_level} level\n"
+    "- Can use single words OR short phrases (2-3 words max)\n"
+    "- Preserve the original meaning and part of speech\n"
+    "- Example: 'eschew' (C1) for B1 → 'avoid' (B1)\n"
+    "- Example: 'perusing' (B2) for B1 → 'reading' (B1) or 'reading carefully' (B1 phrase)\n"
+    "\n"
+    "## Output Format\n"
+    "Return ONLY a valid JSON object with these fields:\n"
+    "{{\n"
+    '  "valid_i1_words": ["word1", "word2"],      // Words at exactly {target_level} that are good learning targets\n'
+    '  "valid_above_i1_words": ["word3"],          // Words above {target_level} that need simplification\n'
+    '  "removed_words": [{{"word": "word4", "reason": "过于简单/词典误标"}}],  // Words to exclude from learning\n'
+    '  "simplified_words": ["simple1"],            // Simplified replacements, one per valid_above_i1_words entry\n'
+    '  "word_levels": {{"word1": "B2", "word3": "C1", "word4": "A2"}}  // Your judgment of each word\'s CEFR level\n'
+    "}}\n"
+    "\n"
+    "## Important\n"
+    "- valid_i1_words: Only words at EXACTLY {target_level}\n"
+    "- valid_above_i1_words: Only words ABOVE {target_level} (these get simplified)\n"
+    "- removed_words: Words that are actually too simple (≤ {user_level}) or shouldn't be learned\n"
+    "- simplified_words: MUST have the same length as valid_above_i1_words, in the same order\n"
+    "- Do NOT include words in multiple arrays\n"
+)
+
+FILTER_AND_SIMPLIFY_EXAMPLE = """
+Example 1:
+原文：I used to loathe and eschew perusing English.
+用户等级：B1
+目标等级：B2
+词典标注：
+loathe → B2
+eschew → C1
+perusing → B2
+
+分析：
+- loathe (B2) = 目标等级(B2) = i+1 → 保留
+- eschew (C1) > 目标等级(B2) → 需要简化
+- perusing (B2) = 目标等级(B2) = i+1 → 保留
+
+返回：
+{{
+  "valid_i1_words": ["loathe", "perusing"],
+  "valid_above_i1_words": ["eschew"],
+  "removed_words": [],
+  "simplified_words": ["avoid"],
+  "word_levels": {{"loathe": "B2", "eschew": "C1", "perusing": "B2"}}
+}}
+
+Example 2:
+原文：He was fixing the machine when I arrived.
+用户等级：B1
+目标等级：B2
+词典标注：
+fixing → B2
+
+分析：
+- fixing (base: fix, A2) → 词典标B2但实际是A2，≤用户等级B1 → 过于简单，移除
+
+返回：
+{{
+  "valid_i1_words": [],
+  "valid_above_i1_words": [],
+  "removed_words": [{{"word": "fixing", "reason": "词典误标，实际为A2水平"}}],
+  "simplified_words": [],
+  "word_levels": {{"fixing": "A2"}}
+}}
+
+Example 3:
+原文：The CEO announced a new initiative to scrutinize the budget carefully.
+用户等级：B1
+目标等级：B2
+词典标注：
+CEO → SUPER (专有名词)
+announced → B1
+new → A1
+initiative → B2
+scrutinize → B2
+budget → B1
+carefully → B2
+
+分析：
+- CEO → SUPER但实际是专有名词，用户无需学习 → 移除
+- announced (B1) < 目标等级(B2) → 太简单，移除
+- initiative (B2) = 目标等级(B2) = i+1 → 保留
+- scrutinize (B2) = 目标等级(B2) = i+1 → 保留
+- budget (B1) < 目标等级(B2) → 太简单，移除
+- carefully (B2) = 目标等级(B2) = i+1 → 保留
+
+返回：
+{{
+  "valid_i1_words": ["initiative", "scrutinize", "carefully"],
+  "valid_above_i1_words": [],
+  "removed_words": [
+    {{"word": "CEO", "reason": "专有名词，无需学习"}},
+    {{"word": "announced", "reason": "过于简单"}},
+    {{"word": "budget", "reason": "过于简单"}}
+  ],
+  "simplified_words": [],
+  "word_levels": {{"CEO": "SUPER", "announced": "B1", "initiative": "B2", "scrutinize": "B2", "budget": "B1", "carefully": "B2"}}
+}}
+"""
+
+
+class FilterAndSimplifyRequest(BaseModel):
+    """JSON body for POST /api/llm/filter-and-simplify-words."""
+    sentence: str = Field(..., min_length=1)
+    words: list[str] = Field(..., min_length=1, description="词典筛选出的候选词列表")
+    word_levels: dict[str, str] | None = Field(
+        default=None,
+        description="词典标注的等级 {word: level}",
+    )
+    target_level: str = Field(default="B1", max_length=8, description="目标等级（i+1）")
+    user_level: str = Field(default="A2", max_length=8, description="用户当前等级（i）")
+    enable_thinking: bool = False
+
+    @field_validator("sentence")
+    @classmethod
+    def sentence_max_length(cls, v: str) -> str:
+        if len(v) > 3000:
+            raise ValueError("Sentence too long (max 3000 chars)")
+        return v
+
+    @field_validator("target_level", "user_level")
+    @classmethod
+    def validate_levels(cls, v: str) -> str:
+        if v.upper() not in CEFR_LEVELS:
+            raise ValueError(f"Invalid CEFR level '{v}'. Must be one of: {', '.join(sorted(CEFR_LEVELS))}")
+        return v.upper()
+
+
 class SimplifyWordsRequest(BaseModel):
     """JSON body for POST /api/llm/simplify-words."""
     sentence: str = Field(..., min_length=1)
@@ -652,6 +801,207 @@ def simplify_words_endpoint(
         "ok": True,
         "simplified_words": simplified_words,
         "word_levels": word_levels,  # DeepSeek 判断的 CEFR 等级
+        "input_words": body.words,
+        "model": effective_model,
+        "usage": {
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "reasoning_tokens": usage.reasoning_tokens,
+            "total_tokens": total_tokens,
+        },
+        "charge_cents": charge_cents,
+        "trace_id": trace_id,
+    }
+
+
+@router.post(
+    "/filter-and-simplify-words",
+    responses={503: {"model": ErrorResponse}, 402: {"model": ErrorResponse}},
+)
+def filter_and_simplify_words_endpoint(
+    body: FilterAndSimplifyRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Step 2: DeepSeek 二次筛选 + 重写
+
+    接收词典初筛的候选词列表，返回：
+    - valid_i1_words: 有效的 i+1 词汇（DeepSeek 验证通过）
+    - valid_above_i1_words: 有效的 >i+1 词汇（需要且可以简化）
+    - removed_words: 被过滤的词汇（过于简单或词典误标）
+    - simplified_words: >i+1 词的重写版本（与 above_i1_words 一一对应）
+    - word_levels: DeepSeek 重新判断的 CEFR 等级
+    """
+    ensure_default_billing_rates(db)
+
+    # 验证参数
+    if body.target_level.upper() not in CEFR_LEVELS:
+        raise HTTPException(status_code=422, detail=f"Invalid target_level '{body.target_level}'")
+    if body.user_level.upper() not in CEFR_LEVELS:
+        raise HTTPException(status_code=422, detail=f"Invalid user_level '{body.user_level}'")
+    if not body.words:
+        raise HTTPException(status_code=422, detail="words must be non-empty list")
+    if len(body.sentence) > 3000:
+        raise HTTPException(status_code=413, detail="Sentence too long (max 3000 chars)")
+
+    effective_model = LLM_MODEL_DEEPSEEK_THINKING if body.enable_thinking else LLM_MODEL_DEEPSEEK_FAST
+
+    try:
+        rate = get_model_rate(db, effective_model)
+    except Exception:
+        raise HTTPException(status_code=503, detail="LLM model not available")
+
+    api_key = _require_api_key()
+    trace_id = str(uuid.uuid4())
+
+    # 构建用户消息
+    user_message_lines = [
+        f"原文：{body.sentence}",
+        f"用户等级：{body.user_level.upper()}",
+        f"目标等级：{body.target_level.upper()}（即 i+1）",
+    ]
+
+    if body.word_levels:
+        user_message_lines.append("\n词典标注等级：")
+        for word in body.words:
+            level = body.word_levels.get(word.lower(), "?")
+            user_message_lines.append(f"{word} → {level}")
+
+        # Inject semantic meanings
+        words_with_meanings = []
+        for word in body.words:
+            base = word.lower()
+            for suffix, repl in [("ing", ""), ("es", ""), ("ed", ""), ("s", "")]:
+                if base.endswith(suffix) and len(base) > len(suffix) + 2:
+                    candidate = base[:-len(suffix)] + repl
+                    if candidate in COMMON_SIMPLIFY_WORD_MEANINGS:
+                        base = candidate
+                    break
+            meaning = COMMON_SIMPLIFY_WORD_MEANINGS.get(base)
+            if meaning:
+                words_with_meanings.append(f"{word} = {meaning}")
+        if words_with_meanings:
+            user_message_lines.append("\n词义注释：")
+            for entry in words_with_meanings:
+                user_message_lines.append(entry)
+
+    user_message_lines.append(
+        '\n返回 JSON：{"valid_i1_words":[...],"valid_above_i1_words":[...],"removed_words":[...],"simplified_words":[...],"word_levels":{...}}'
+    )
+    user_message = "\n".join(user_message_lines)
+
+    system_prompt = FILTER_AND_SIMPLIFY_SYSTEM_PROMPT.format(
+        user_level=body.user_level.upper(),
+        target_level=body.target_level.upper(),
+    ) + "\n\n" + FILTER_AND_SIMPLIFY_EXAMPLE
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
+    ]
+
+    try:
+        raw_response, usage = call_deepseek(
+            messages=messages,
+            api_key=api_key,
+            enable_thinking=body.enable_thinking,
+            stream=False,
+            temperature=0.3,
+            max_tokens=768,
+        )
+    except Exception as exc:
+        logger.exception("[DEBUG] llm.filter_simplify_failed user_id=%s error=%s", current_user.id, str(exc)[:200])
+        raise HTTPException(status_code=502, detail=f"LLM call failed: {str(exc)[:200]}")
+
+    if not raw_response:
+        raise HTTPException(status_code=502, detail="LLM returned empty result")
+
+    # 解析响应
+    import json as _json
+    import re as _re
+
+    def _strip_json_fences(text: str) -> str:
+        s = text.strip()
+        fence = _re.match(r"^```(?:json)?\s*\n?(.*?)\n?```\s*$", s, flags=_re.DOTALL | _re.IGNORECASE)
+        if fence:
+            return fence.group(1).strip()
+        return s
+
+    try:
+        parsed = _json.loads(_strip_json_fences(raw_response))
+    except Exception as exc:
+        logger.warning("[DEBUG] llm.filter_simplify_parse_failed user_id=%s raw=%s error=%s",
+                       current_user.id, raw_response[:200], str(exc)[:100])
+        raise HTTPException(status_code=502, detail=f"Failed to parse model response: {str(exc)[:100]}")
+
+    # 提取各字段
+    valid_i1_words = parsed.get("valid_i1_words", [])
+    valid_above_i1_words = parsed.get("valid_above_i1_words", [])
+    removed_words = parsed.get("removed_words", [])
+    simplified_words = parsed.get("simplified_words", [])
+    word_levels = parsed.get("word_levels", {})
+
+    # 验证 simplified_words 和 valid_above_i1_words 长度一致
+    if len(simplified_words) != len(valid_above_i1_words):
+        logger.warning(
+            "[DEBUG] llm.filter_simplify_count_mismatch user_id=%s above_i1=%s simplified=%s",
+            current_user.id, len(valid_above_i1_words), len(simplified_words)
+        )
+        # 调整长度，丢弃多余的
+        if len(simplified_words) > len(valid_above_i1_words):
+            simplified_words = simplified_words[:len(valid_above_i1_words)]
+        else:
+            # 补空字符串
+            simplified_words = simplified_words + [""] * (len(valid_above_i1_words) - len(simplified_words))
+
+    # 计算费用
+    total_tokens = usage.prompt_tokens + usage.completion_tokens
+    charge_cents = calculate_llm_charge_by_tokens(
+        total_tokens=total_tokens,
+        points_per_1k_tokens=rate.points_per_1k_tokens,
+    )
+
+    try:
+        consume_points(
+            db,
+            user_id=current_user.id,
+            points=charge_cents,
+            model_name=effective_model,
+            lesson_id=None,
+            event_type=EVENT_CONSUME_LLM,
+            note=f"筛选并简化词汇，total_tokens={total_tokens}",
+        )
+    except Exception:
+        pass
+
+    from app.services.llm_usage_service import log_llm_usage
+    log_llm_usage(
+        db,
+        user_id=current_user.id,
+        model_name=effective_model,
+        category="filter_and_simplify",
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        reasoning_tokens=usage.reasoning_tokens,
+        total_tokens=total_tokens,
+        input_cost_cents=None,
+        charge_cents=charge_cents,
+        lesson_id=None,
+        enable_thinking=body.enable_thinking,
+        input_text_preview=body.sentence[:200],
+        trace_id=trace_id,
+    )
+
+    db.commit()
+
+    return {
+        "ok": True,
+        "valid_i1_words": valid_i1_words,
+        "valid_above_i1_words": valid_above_i1_words,
+        "removed_words": removed_words,
+        "simplified_words": simplified_words,
+        "word_levels": word_levels,
         "input_words": body.words,
         "model": effective_model,
         "usage": {

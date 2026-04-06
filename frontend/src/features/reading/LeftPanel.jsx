@@ -17,6 +17,8 @@
  *   selectedWords  {WordItem[]}
  *   onWordClick    {(word, segment) => void}
  *   rewriteMappings {{original, rewritten}[]}
+ *   validI1Words  {string[]} — 有效的 i+1 词汇列表
+ *   validAboveI1Words {string[]} — 有效的 >i+1 词汇列表
  */
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Unlock } from "lucide-react";
@@ -70,6 +72,8 @@ export function LeftPanel({
   onWordClick,
   activeLevels,
   rewriteMappings,
+  validI1Words = [],
+  validAboveI1Words = [],
   viewMode = "original",
   isRewriting = false,
   rewriteError = null,
@@ -142,6 +146,8 @@ export function LeftPanel({
               selectedWords={selectedWords}
               activeLevels={activeLevels}
               rewriteMappings={rewriteMappings}
+              validI1Words={validI1Words}
+              validAboveI1Words={validAboveI1Words}
               viewMode={viewMode}
             />
           </Suspense>

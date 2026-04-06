@@ -3,6 +3,10 @@
  * ====================================
  * 结合 useRichLayout + VocabAnalyzer，CEFR 着色逐词渲染。
  *
+ * 新流程 v2 (Phase 35):
+ * - 原文视图：i+1 绿色下划线、>i+1 红色下划线、重写词黄色块+悬浮原文
+ * - 重写版视图：简化后全文
+ *
  * Props:
  *   text           {string}   — 文章纯文本（原文或重写版）
  *   contentWidth   {number}   — 内容区最大宽度（px）
@@ -12,6 +16,8 @@
  *   selectedWords  {{ word: string, ... }[]}
  *   activeLevels   {string[]}
  *   rewriteMappings {{original: string, rewritten: string, confirmed: boolean, originalLevel: string}[]}
+ *   validI1Words  {string[]}  — 有效的 i+1 词汇列表（DeepSeek 验证通过）
+ *   validAboveI1Words {string[]} — 有效的 >i+1 词汇列表（需要简化的）
  *   viewMode       {'original'|'rewritten'} — 决定渲染方式
  */
 import { BookOpenText } from "lucide-react";
@@ -33,11 +39,26 @@ export function ArticlePanel({
   selectedWords,
   activeLevels,
   rewriteMappings,
+  validI1Words = [],
+  validAboveI1Words = [],
   viewMode = "original",
 }) {
   const containerRef = useRef(null);
   const [measuredWidth, setMeasuredWidth] = useState(contentWidth);
   const userLevel = readCefrLevel() || "B1";
+
+  // 构建 Set 用于快速查找
+  const validI1Set = useRef(new Set(validI1Words.map((w) => w.toLowerCase())));
+  const validAboveI1Set = useRef(new Set(validAboveI1Words.map((w) => w.toLowerCase())));
+
+  // 当 props 变化时更新 Set
+  useEffect(() => {
+    validI1Set.current = new Set(validI1Words.map((w) => w.toLowerCase()));
+  }, [validI1Words]);
+
+  useEffect(() => {
+    validAboveI1Set.current = new Set(validAboveI1Words.map((w) => w.toLowerCase()));
+  }, [validAboveI1Words]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -104,6 +125,8 @@ export function ArticlePanel({
                     isSelected={isSelected}
                     activeLevels={activeLevels}
                     rewriteMappings={rewriteMappings}
+                    validI1Set={validI1Set.current}
+                    validAboveI1Set={validAboveI1Set.current}
                     viewMode={viewMode}
                   />
                 );
@@ -116,7 +139,17 @@ export function ArticlePanel({
   );
 }
 
-function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels, rewriteMappings, viewMode }) {
+function ArticleWord({
+  segment,
+  userLevel,
+  onWordClick,
+  isSelected,
+  activeLevels,
+  rewriteMappings,
+  validI1Set,
+  validAboveI1Set,
+  viewMode,
+}) {
   const segText = (segment.text || "").trim();
   const segLower = segText.toLowerCase();
 
@@ -129,16 +162,33 @@ function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels
     return m.originalLower === segLower;
   });
 
-  // 如果有 DeepSeek 判断的等级，用它替代词典等级
-  const effectiveLevel = mapping?.dsLevel || segment.cefrLevel;
-  const rawClass = computeCefrClassName(effectiveLevel, userLevel);
+  // 原文视图：根据 validI1Set 和 validAboveI1Set 判断渲染样式
+  let cefrClass = "";
+  let isI1Word = false;
+  let isAboveI1Word = false;
 
-  // viewMode === 'rewritten'：无 CEFR 下划线；confirmed 简化词用黄块
-  // viewMode === 'original'：CEFR 下划线由有效等级（dsLevel > cefrLevel）决定；rewriteMappings 仅用于对照 tooltip
-  const cefrClass =
-    activeLevels && activeLevels.length > 0 && effectiveLevel
-      ? activeLevels.includes(effectiveLevel) ? rawClass : "cefr-mastered"
-      : rawClass;
+  if (viewMode === "original") {
+    // 优先判断是否是 i+1 或 >i+1 词
+    isI1Word = validI1Set.has(segLower);
+    isAboveI1Word = validAboveI1Set.has(segLower);
+
+    if (isI1Word) {
+      cefrClass = activeLevels && activeLevels.length > 0
+        ? activeLevels.includes(getTargetLevelForWord(segLower, validI1Words)) ? "cefr-i-plus-one" : "cefr-mastered"
+        : "cefr-i-plus-one";
+    } else if (isAboveI1Word) {
+      cefrClass = activeLevels && activeLevels.length > 0
+        ? activeLevels.includes(getTargetLevelForWord(segLower, validAboveI1Words)) ? "cefr-above-i-plus-one" : "cefr-mastered"
+        : "cefr-above-i-plus-one";
+    } else {
+      // 不在有效词列表中，使用词典/CEFR 等级
+      const effectiveLevel = mapping?.dsLevel || segment.cefrLevel;
+      cefrClass = computeCefrClassName(effectiveLevel, userLevel);
+    }
+  }
+
+  // 重写版渲染逻辑
+  const isSimplifiedWord = viewMode === "rewritten" && mapping?.confirmed;
 
   const [animating, setAnimating] = useState(false);
   const prevSelected = useRef(isSelected);
@@ -158,35 +208,58 @@ function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels
     onWordClick?.(segment.text, segment);
   };
 
-  // 重写版中简化词用黄色块包裹，显示原文
-  const isSimplifiedWord = viewMode === "rewritten" && mapping?.confirmed;
+  // 构建 className
+  const classNames = cn(
+    "article-word",
+    // 重写版样式
+    isSimplifiedWord && "article-word--simplified",
+    !isSimplifiedWord && viewMode === "rewritten" && "article-word--rewritten-normal",
+    // 原文视图 CEFR 样式
+    viewMode === "original" && cefrClass,
+    // 选中态
+    isSelected && "article-word--selected",
+    animating && "article-word--success"
+  );
+
+  // 构建 tooltip
+  let tooltipText = "";
+  if (viewMode === "rewritten" && mapping?.confirmed) {
+    tooltipText = `原文: ${mapping.rewritten}`;
+  } else if (viewMode === "original" && mapping?.confirmed) {
+    tooltipText = `已简化为: ${mapping.rewritten}`;
+  } else if (isI1Word) {
+    tooltipText = `${segment.cefrLevel || "i+1"} — ${segment.text}（可学习词汇）`;
+  } else if (isAboveI1Word) {
+    tooltipText = `${segment.cefrLevel || ">i+1"} — ${segment.text}（建议简化）`;
+  } else {
+    const effectiveLevel = mapping?.dsLevel || segment.cefrLevel;
+    tooltipText = `${effectiveLevel || "未知等级"} — ${segment.text}`;
+  }
 
   return (
     <span
-      className={cn(
-        "article-word",
-        isSimplifiedWord && "article-word--simplified",
-        !isSimplifiedWord && viewMode === "rewritten" && "article-word--rewritten-normal",
-        viewMode === "original" && cefrClass,
-        isSelected && "article-word--selected",
-        animating && "article-word--success"
-      )}
+      className={classNames}
       onClick={handleClick}
-      title={
-        viewMode === "rewritten" && mapping?.confirmed
-          ? `原文: ${mapping.original}`  // 重写版显示原文
-          : viewMode === "original" && mapping?.confirmed
-          ? `已简化为: ${mapping.rewritten}`  // 原文视图显示简化词
-          : `${effectiveLevel || "未知等级"} — ${segment.text}`
-      }
+      title={tooltipText}
     >
       {isSimplifiedWord ? mapping.original : segment.text}
-      {/* 原文 hover 时显示简化对照 tooltip */}
+      {/* 原文视图 hover 时显示简化对照 tooltip */}
       {viewMode === "original" && mapping?.confirmed && (
         <span className="rewrite-tooltip">{mapping.rewritten}</span>
       )}
     </span>
   );
+}
+
+/**
+ * 根据词汇列表获取目标等级
+ * 简化版本：对于 i+1 词返回 targetLevel，对于 >i+1 词返回 >targetLevel
+ */
+function getTargetLevelForWord(wordLower, validWords) {
+  if (!validWords || !Array.isArray(validWords)) return null;
+  // 找到匹配的词
+  const matched = validWords.find((w) => w.toLowerCase() === wordLower);
+  return matched ? matched : null;
 }
 
 function ArticlePanelSkeleton() {
