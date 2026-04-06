@@ -185,6 +185,9 @@ function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels
   // 判断视觉样式
   const isSimplifiedWord = mapping?.confirmed && viewMode === "rewritten";
   const showUnderline = viewMode === "original" && isConfirmedSimplify;
+  // #region debug log
+  fetch('http://127.0.0.1:7741/ingest/66ae8bbb-d4f3-40a4-b6d9-17b56f3fcb44',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2f8618'},body:JSON.stringify({sessionId:'2f8618',location:'ArticlePanel.jsx:ArticleWord',message:'Word styling decision',data:{word:segment.text,viewMode,isConfirmedSimplify,showUnderline,isSimplifiedWord,cefrLevel:segment.cefrLevel,cefrClass,activeLevels:activeLevels||[]},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+  // #endregion
 
   return (
     <span
