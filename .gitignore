@@ -49,3 +49,5 @@ token.json
 *.secret
 *.token
 config.json
+
+.worktrees/
