@@ -173,13 +173,16 @@ function ArticleWord({
     isAboveI1Word = validAboveI1Set.has(segLower);
 
     if (isI1Word) {
-      cefrClass = activeLevels && activeLevels.length > 0
-        ? activeLevels.includes(getTargetLevelForWord(segLower, validI1Words)) ? "cefr-i-plus-one" : "cefr-mastered"
-        : "cefr-i-plus-one";
+      // activeLevels 为 CEFR 等级（如 B2），与 segment.cefrLevel 对齐；勿引用未传入的 validI1Words
+      cefrClass =
+        activeLevels && activeLevels.length > 0
+          ? activeLevels.includes(segment.cefrLevel) ? "cefr-i-plus-one" : "cefr-mastered"
+          : "cefr-i-plus-one";
     } else if (isAboveI1Word) {
-      cefrClass = activeLevels && activeLevels.length > 0
-        ? activeLevels.includes(getTargetLevelForWord(segLower, validAboveI1Words)) ? "cefr-above-i-plus-one" : "cefr-mastered"
-        : "cefr-above-i-plus-one";
+      cefrClass =
+        activeLevels && activeLevels.length > 0
+          ? activeLevels.includes(segment.cefrLevel) ? "cefr-above-i-plus-one" : "cefr-mastered"
+          : "cefr-above-i-plus-one";
     } else {
       // 不在有效词列表中，使用词典/CEFR 等级
       const effectiveLevel = mapping?.dsLevel || segment.cefrLevel;
@@ -249,17 +252,6 @@ function ArticleWord({
       )}
     </span>
   );
-}
-
-/**
- * 根据词汇列表获取目标等级
- * 简化版本：对于 i+1 词返回 targetLevel，对于 >i+1 词返回 >targetLevel
- */
-function getTargetLevelForWord(wordLower, validWords) {
-  if (!validWords || !Array.isArray(validWords)) return null;
-  // 找到匹配的词
-  const matched = validWords.find((w) => w.toLowerCase() === wordLower);
-  return matched ? matched : null;
 }
 
 function ArticlePanelSkeleton() {
