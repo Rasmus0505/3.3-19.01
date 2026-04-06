@@ -37,7 +37,7 @@ export interface RichLine {
 let _analyzerInstance: VocabAnalyzer | null = null;
 let _analyzerLoadPromise: Promise<VocabAnalyzer> | null = null;
 
-async function getOrCreateAnalyzer(): Promise<VocabAnalyzer> {
+export async function getOrCreateAnalyzer(): Promise<VocabAnalyzer> {
   if (_analyzerInstance?.isLoaded) {
     return _analyzerInstance;
   }
