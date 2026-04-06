@@ -361,18 +361,18 @@ perusing → B2
 词义注释：
 eschew = to deliberately avoid or abstain from something
 perusing = to read carefully or in detail (NOT just "read")
-返回：["", "avoid", "reading carefully"]
+返回：{"simplified_words": ["", "avoid", "reading carefully"], "word_levels": {"loathe": "A2", "eschew": "C1", "perusing": "B2"}}
 解释：
-|- loathe (base: hate, A2) → base form 是 A2，B1 学习者已掌握 → 返回 ""
-|- eschew (base: eschew, C1) → C1 超 B1，且词义"刻意回避"≠普通 avoid，需要简化 → "avoid"
-|- perusing (base: peruse, B2) → B2 超 B1，词义"仔细阅读"≠普通 reading → "reading carefully"
+- loathe (base: hate, A2) → base form 是 A2，B1 学习者已掌握 → 返回 ""
+- eschew (base: eschew, C1) → C1 超 B1，且词义"刻意回避"≠普通 avoid，需要简化 → "avoid"
+- perusing (base: peruse, B2) → B2 超 B1，词义"仔细阅读"≠普通 reading → "reading carefully"
 
 Example 2:
 原文：He was fixing the machine when I arrived.
 目标等级：B1
 每个词的词典标注等级：
 fixing → B2
-返回：[""]
+返回：{"simplified_words": [""], "word_levels": {"fixing": "A2"}}
 解释：fixing 的 base 是 fix (A2)。B1 学习者已掌握 fix，所以不需要简化。
 
 Example 3:
@@ -382,7 +382,7 @@ Example 3:
 perusing → B2
 词义注释：
 perusing = to read carefully or in detail (NOT just "read")
-返回：[""]
+返回：{"simplified_words": [""], "word_levels": {"perusing": "B2"}}
 解释：peruse 本身是 B2，和目标 B2 同级，不需要简化。
 
 Example 4:
@@ -392,10 +392,10 @@ Example 4:
 scrutinizing → B2
 词义注释：
 scrutinizing = to examine or inspect closely and thoroughly
-返回：["studying carefully", ""]
+返回：{"simplified_words": ["studying carefully", ""], "word_levels": {"scrutinizing": "B2", "closely": "B1"}}
 解释：
-|- scrutinizing → 词义"仔细审视"，需要简化 → "studying carefully"
-|- closely → 副词，无需简化
+- scrutinizing → 词义"仔细审视"，需要简化 → "studying carefully"
+- closely → 副词，无需简化
 """
 
 
