@@ -209,26 +209,39 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
           // Step 4: 本地按顺序替换高难度词 → 生成重写文本
           rewrittenText = applySimplifiedWords(originalText, wordsToSimplify, simplifiedWords);
 
-          // Step 5: 保存到 IndexedDB（过滤空替换）
+          // Step 5: 保存到 IndexedDB
           const newMappings = [];
           wordsToSimplify.forEach((w, i) => {
             const rewritten = simplifiedWords[i];
             if (rewritten && rewritten !== "") {
+              // confirmed=true: original=替换后的词形(显示在重写版), originalLower=原文词小写(原文视图匹配用), rewritten=原文词(对照)
+              // 保持原文首字母大写规则（"Perusing" → "Reading"）
+              const origLower = w.word.toLowerCase();
+              let displayWord = rewritten;
+              if (w.word.charAt(0) === w.word.charAt(0).toUpperCase() && w.word.slice(1).toLowerCase() === w.word.slice(1)) {
+                // 原词首字母大写（如 Perusing）
+                displayWord = rewritten.charAt(0).toUpperCase() + rewritten.slice(1).toLowerCase();
+              } else if (w.word === w.word.toUpperCase()) {
+                // 全大写
+                displayWord = rewritten.toUpperCase();
+              }
               newMappings.push({
-                original: w.word,
-                rewritten,
+                original: displayWord,                      // 重写版中显示的词形
+                originalLower: origLower,                 // 原文视图匹配用
+                rewritten: w.word,                          // 原文词（tooltip 用）
                 confirmed: true,
                 originalLevel: w.level || "B2",
-                dsLevel: dsWordLevels[w.word.toLowerCase()] || w.level || "B2",  // DeepSeek 判断的等级
+                dsLevel: dsWordLevels[origLower] || w.level || "B2",
               });
             } else {
-              // DeepSeek 判定不需要简化（返回 ""），词典等级过低
+              // DeepSeek 判定不需要简化（返回 ""）
               newMappings.push({
                 original: w.word,
-                rewritten: w.word, // 本地不做替换
+                originalLower: w.word.toLowerCase(),
+                rewritten: w.word,
                 confirmed: false,
                 originalLevel: w.level || "B2",
-                dsLevel: dsWordLevels[w.word.toLowerCase()] || w.level || "B2",  // DeepSeek 判断的等级
+                dsLevel: dsWordLevels[w.word.toLowerCase()] || w.level || "B2",
               });
             }
           });

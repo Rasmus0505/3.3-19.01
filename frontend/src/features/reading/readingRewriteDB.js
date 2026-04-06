@@ -37,7 +37,15 @@ function openDB() {
  * @property {string}   articleId     — 文章 ID（主键，来自 history record.id）
  * @property {string}   originalText  — 原始文章全文
  * @property {string}   rewrittenText — AI 重写版全文
- * @property {object[]}  mappings      — 词汇替换映射 [{original, rewritten, sentence}]
+ * @property {object[]}  mappings      — 词汇替换映射
+ *   每个条目：{
+ *     original: string,     — 重写版中显示的词形（如 "Reading"）
+ *     originalLower: string, — 原文词小写（如 "perusing"，原文视图匹配用）
+ *     rewritten: string,    — 原文词形（如 "Perusing"，tooltip 对照用）
+ *     confirmed: boolean,    — true=已简化，false=无需简化
+ *     originalLevel: string, — 词典判定等级（如 "B2"）
+ *     dsLevel: string        — DeepSeek 判断等级（用于 CEFR 下划线渲染）
+ *   }
  * @property {"original"|"rewritten"} viewMode — 用户偏好的视图
  * @property {number}    rewrittenAt  — 重写时间戳
  */

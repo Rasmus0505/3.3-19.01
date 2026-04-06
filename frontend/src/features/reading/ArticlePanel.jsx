@@ -117,14 +117,16 @@ export function ArticlePanel({
 }
 
 function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels, rewriteMappings, viewMode }) {
-  const segText = (segment.text || "").toLowerCase();
-  // 重写版：按 original 匹配（applySimplifiedWords 以 lemma 替换，若替换成功原文词形保留；
-  // 若替换失败则 confirmed 全为 false，黄块本来就不应出现）
+  const segText = (segment.text || "").trim();
+  const segLower = segText.toLowerCase();
+
+  // 重写版：按 original 匹配（applySimplifiedWords 已替换为简化词）
+  // 原文视图：按 originalLower 匹配（原始词形）
   const mapping = rewriteMappings?.find((m) => {
     if (viewMode === "rewritten") {
-      return m.confirmed && m.original.toLowerCase() === segText;
+      return m.confirmed && m.original.toLowerCase() === segLower;
     }
-    return m.original.toLowerCase() === segText;
+    return m.originalLower === segLower;
   });
 
   // 如果有 DeepSeek 判断的等级，用它替代词典等级
