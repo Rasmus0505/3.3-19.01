@@ -113,9 +113,12 @@ export function ArticlePanel({
                 const segWord = (seg.word || seg.text || "").toLowerCase();
 
                 // 判断是否为需要简化的词（confirmed 映射中的原文词）
+                // 重要：m.original 存的是原文词形（如 perusing），seg.text 也是原文词形
+                // seg.word 是 lemma（如 peruse），两者不同，需用 seg.text 匹配
+                const segText = (seg.text || "").toLowerCase();
                 const isConfirmed = (() => {
                   for (const m of rewriteMappings ?? []) {
-                    if (m.original.toLowerCase() === segWord) return m.confirmed;
+                    if (m.original.toLowerCase() === segText) return m.confirmed;
                   }
                   return false;
                 })();
@@ -173,10 +176,10 @@ function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels
     onWordClick?.(segment.text, segment);
   };
 
-  // 在 rewriteMappings 中查找对应的简化对照
-  const segWord = (segment.word || segment.text || "").toLowerCase();
+  // 在 rewriteMappings 中查找对应的简化对照（用原文词形匹配）
+  const segText = (segment.text || "").toLowerCase();
   const mapping = rewriteMappings?.find(
-    (m) => m.original.toLowerCase() === segWord
+    (m) => m.original.toLowerCase() === segText
   );
 
   // 判断视觉样式

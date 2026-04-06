@@ -141,7 +141,9 @@ function collectSimplifyCandidatesFromLines(lines, userLevel) {
  */
 async function collectSimplifyCandidatesFromRaw(text, userLevel) {
   const analyzer = await getOrCreateAnalyzer();
-  // analyzeSentence 返回 tokens: [{ word, level, isUnknown }]
+  // analyzeSentence 返回 tokens: [{ word, level, isUnknown, original? }]
+  // word = lemma (词根), original = 原文词形（如 perusing）
+  // 注意：必须用 original（原文词形）传给 API，才能让 applySimplifiedWords 正确替换
   const result = await analyzer.analyzeSentence(text);
   const seen = new Set();
   const candidates = [];
@@ -149,10 +151,12 @@ async function collectSimplifyCandidatesFromRaw(text, userLevel) {
     if (!token.word) continue;
     const cefrClass = computeCefrClassName(token.level, userLevel);
     if (cefrClass === "cefr-i-plus-one" || cefrClass === "cefr-above-i-plus-one") {
-      const lower = token.word.toLowerCase();
+      // 用原文词形（original > word > token.word），避免 lemma 替换失败
+      const original = token.original || token.word;
+      const lower = original.toLowerCase();
       if (!seen.has(lower)) {
         seen.add(lower);
-        candidates.push({ word: token.word, level: token.level || "SUPER" });
+        candidates.push({ word: original, level: token.level || "SUPER" });
       }
     }
   }
