@@ -15,7 +15,7 @@
  *   viewMode       {'original'|'rewritten'} — 决定渲染方式
  */
 import { BookOpenText } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/utils";
 import { readCefrLevel } from "../../app/authStorage";
 import { useRichLayout } from "../../hooks/useRichLayout";
@@ -38,21 +38,6 @@ export function ArticlePanel({
   const containerRef = useRef(null);
   const [measuredWidth, setMeasuredWidth] = useState(contentWidth);
   const userLevel = readCefrLevel() || "B1";
-
-  // Build lookup maps from rewrite mappings for fast per-segment resolution.
-  // Key = lower-case word, for case-insensitive matching.
-  const { confirmedOriginals, allRewrittenSet } = useMemo(() => {
-    const confirmed = new Map();   // rewritten → original (only confirmed)
-    const allSet = new Set();       // all rewritten words (for tooltip)
-    for (const m of rewriteMappings ?? []) {
-      const rewrittenKey = m.rewritten.toLowerCase();
-      allSet.add(rewrittenKey);
-      if (m.confirmed) {
-        confirmed.set(rewrittenKey, m.original);
-      }
-    }
-    return { confirmedOriginals: confirmed, allRewrittenSet: allSet };
-  }, [rewriteMappings]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -110,19 +95,6 @@ export function ArticlePanel({
                 const isSelected = Boolean(
                   selectedWords?.some((w) => w.word === seg.text || w.word === seg.word)
                 );
-                const segWord = (seg.word || seg.text || "").toLowerCase();
-
-                // 判断是否为需要简化的词（confirmed 映射中的原文词）
-                // 重要：m.original 存的是原文词形（如 perusing），seg.text 也是原文词形
-                // seg.word 是 lemma（如 peruse），两者不同，需用 seg.text 匹配
-                const segText = (seg.text || "").toLowerCase();
-                const isConfirmed = (() => {
-                  for (const m of rewriteMappings ?? []) {
-                    if (m.original.toLowerCase() === segText) return m.confirmed;
-                  }
-                  return false;
-                })();
-
                 return (
                   <ArticleWord
                     key={segIdx}
@@ -131,7 +103,6 @@ export function ArticlePanel({
                     onWordClick={onWordClick}
                     isSelected={isSelected}
                     activeLevels={activeLevels}
-                    isConfirmedSimplify={isConfirmed}
                     rewriteMappings={rewriteMappings}
                     viewMode={viewMode}
                   />
@@ -145,14 +116,11 @@ export function ArticlePanel({
   );
 }
 
-function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels, isConfirmedSimplify, rewriteMappings, viewMode }) {
+function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels, rewriteMappings, viewMode }) {
   const rawClass = computeCefrClassName(segment.cefrLevel, userLevel);
 
-  // viewMode === 'rewritten'：全部词无 CEFR 下划线
-  // viewMode === 'original'：
-  //   - confirmed=true 的词：有下划线 + tooltip 显示简化对照
-  //   - confirmed=false 的词：无下划线（词典等级过低，不需要简化）
-  // activeLevels 也控制基础着色（灰色 = 已掌握的等级）
+  // viewMode === 'rewritten'：无 CEFR 下划线；confirmed 简化词用黄块
+  // viewMode === 'original'：CEFR 下划线由词典 + activeLevels 决定；rewriteMappings 仅用于对照 tooltip
   const cefrClass =
     activeLevels && activeLevels.length > 0 && segment.cefrLevel
       ? activeLevels.includes(segment.cefrLevel) ? rawClass : "cefr-mastered"
@@ -176,25 +144,24 @@ function ArticleWord({ segment, userLevel, onWordClick, isSelected, activeLevels
     onWordClick?.(segment.text, segment);
   };
 
-  // 在 rewriteMappings 中查找对应的简化对照（用原文词形匹配）
   const segText = (segment.text || "").toLowerCase();
-  const mapping = rewriteMappings?.find(
-    (m) => m.original.toLowerCase() === segText
-  );
+  // 原文：按 original 匹配；重写版正文是替换后的词形，按 rewritten 匹配（否则黄块永远不出现）
+  const mapping =
+    viewMode === "rewritten"
+      ? rewriteMappings?.find(
+          (m) => m.confirmed && m.rewritten.toLowerCase() === segText
+        )
+      : rewriteMappings?.find((m) => m.original.toLowerCase() === segText);
 
-  // 判断视觉样式
-  const isSimplifiedWord = mapping?.confirmed && viewMode === "rewritten";
-  const showUnderline = viewMode === "original" && isConfirmedSimplify;
+  const isSimplifiedWord = viewMode === "rewritten" && Boolean(mapping);
 
   return (
     <span
       className={cn(
         "article-word",
-        // 重写版：黄色背景（仅简化词）或无样式（其余）
         isSimplifiedWord && "article-word--simplified",
         !isSimplifiedWord && viewMode === "rewritten" && "article-word--rewritten-normal",
-        // 原文版：CEFR 下划线（仅 confirmed=true）
-        viewMode === "original" && (showUnderline ? cefrClass : "cefr-mastered"),
+        viewMode === "original" && cefrClass,
         isSelected && "article-word--selected",
         animating && "article-word--success"
       )}

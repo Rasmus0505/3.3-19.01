@@ -138,7 +138,7 @@ export function LeftPanel({
               contentWidth={contentWidth}
               onWidthChange={onWidthChange}
               onWordClick={onWordClick}
-              onLinesReady={undefined}
+              onLinesReady={onLinesReady}
               selectedWords={selectedWords}
               activeLevels={activeLevels}
               rewriteMappings={rewriteMappings}

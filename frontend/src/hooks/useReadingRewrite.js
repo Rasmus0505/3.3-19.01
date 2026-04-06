@@ -73,7 +73,7 @@ function applySimplifiedWords(originalText, words, replacements) {
 export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }) {
   const [rewrittenText, setRewrittenText] = useState(null);
   const [rewriteMappings, setRewriteMappings] = useState([]);
-  const [viewMode, setViewModeState] = useState("rewritten");
+  const [viewMode, setViewModeState] = useState("original");
   const [isRewriting, setIsRewriting] = useState(false);
   const [rewriteError, setRewriteError] = useState(null);
 
@@ -100,8 +100,8 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         savedArticleIdRef.current = articleId;
         setRewrittenText(record.rewrittenText);
         setRewriteMappings(record.mappings || []);
-        // 如果存储了 viewMode 使用它；否则默认显示重写版
-        setViewModeState(record.viewMode || "rewritten");
+        // 若未存过偏好则默认原文（便于先看到 CEFR 标注）
+        setViewModeState(record.viewMode || "original");
       } catch (e) {
         console.error("Failed to auto-load rewrite:", e);
       }
@@ -128,7 +128,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
     setRewrittenText(null);
     setRewriteMappings([]);
     setRewriteError(null);
-    setViewModeState("rewritten");
+    setViewModeState("original");
   }, []);
 
   const handleRewrite = useCallback(
@@ -235,7 +235,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
               originalText,
               rewrittenText,
               mappings: newMappings,
-              viewMode: "rewritten",
+              viewMode: "original",
               rewrittenAt: Date.now(),
             });
             savedArticleIdRef.current = articleId;
@@ -254,7 +254,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
               originalText,
               rewrittenText,
               mappings: [],
-              viewMode: "rewritten",
+              viewMode: "original",
               rewrittenAt: Date.now(),
             });
             savedArticleIdRef.current = articleId;
@@ -264,7 +264,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
           setRewriteMappings([]);
         }
 
-        setViewModeState("rewritten");
+        setViewModeState("original");
       } catch (err) {
         const msg = err?.message || "网络错误";
         toast.error("重写失败：" + msg);

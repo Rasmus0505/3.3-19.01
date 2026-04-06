@@ -395,7 +395,7 @@ export function ReadingPage({ accessToken, apiCall }) {
             onEditAgain={handleEditAgain}
             contentWidth={contentWidth}
             onWidthChange={setContentWidth}
-            onLinesReady={undefined}
+            onLinesReady={setArticleLines}
             selectedWords={selectedWords}
             onWordClick={handleWordClick}
             activeLevels={activeLevels}
