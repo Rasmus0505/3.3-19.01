@@ -109,6 +109,29 @@ function computeWordStats(lines) {
 }
 
 /**
+ * 从 articleLines 收集待简化候选词（按文档序，首次出现去重）。
+ * 同时收集 cefr-i-plus-one（i+1）和 cefr-above-i-plus-one（>i+1）的词。
+ */
+function collectSimplifyCandidatesFromLines(lines, userLevel) {
+  const seen = new Set();
+  const words = [];
+  for (const line of lines) {
+    for (const seg of line.segments) {
+      if (!seg.word) continue;
+      const cefrClass = computeCefrClassName(seg.cefrLevel, userLevel);
+      if (cefrClass === "cefr-i-plus-one" || cefrClass === "cefr-above-i-plus-one") {
+        const lower = seg.word.toLowerCase();
+        if (!seen.has(lower)) {
+          seen.add(lower);
+          words.push(seg.word);
+        }
+      }
+    }
+  }
+  return words;
+}
+
+/**
  * ReadingPage — 阅读板块入口组件
  *
  * @param {object} props
@@ -251,8 +274,13 @@ export function ReadingPage({ accessToken, apiCall }) {
       toast.error("请先输入或粘贴阅读正文");
       return;
     }
-    handleRewrite(t);
-  }, [activeArticleText, handleRewrite]);
+    if (articleLines.length === 0) {
+      toast.error("文章尚未解析完成，请稍后重试");
+      return;
+    }
+    const wordsToSimplify = collectSimplifyCandidatesFromLines(articleLines, userLevel);
+    handleRewrite(t, { wordsToSimplify });
+  }, [activeArticleText, articleLines, userLevel, handleRewrite]);
 
   // ── 文章提交（切换到阅读模式）────────────────────
   const handleArticleSubmit = useCallback(

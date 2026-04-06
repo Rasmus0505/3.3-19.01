@@ -128,7 +128,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
   }, []);
 
   const handleRewrite = useCallback(
-    async (originalText) => {
+    async (originalText, { wordsToSimplify: explicitWords } = {}) => {
       // ── Phase 34 新流程：识别高难度词 → 简化 → 本地替换 ─────────────
       const { toast } = await import("sonner");
 
@@ -156,25 +156,26 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         const userLevel = readCefrLevel() || "B1";
         const targetLevel = getTargetLevel(userLevel);
 
-        // Step 1: 估算 token 消耗，显示给用户（不阻塞主流程）
-        try {
-          const est = await estimateRewriteTokens(originalText, accessToken);
-          toast.info(
-            `预计消耗 ${est.estimatedChargeYuan.toFixed(2)} 元（约 ${est.estimatedTokens} tokens）`,
-            { duration: 4000 }
-          );
-        } catch (e) {
-          console.warn("Token estimation failed:", e);
-        }
-
-        // Step 2: 从 rewriteMappings 提取需要简化的原始词列表（按顺序）
-        // Phase 34 新 Schema：只简化 rewriteMappings 中记录的词
-        const wordsToSimplify = extractHighDiffWordsFromMappings(rewriteMappings);
+        // Step 2: 取词优先级：① 外部显式传入 → ② rewriteMappings（增量重写场景）
+        const wordsToSimplify = explicitWords && explicitWords.length > 0
+          ? explicitWords
+          : extractHighDiffWordsFromMappings(rewriteMappings);
 
         let rewrittenText = originalText;
 
         // Step 3: 如果有高难度词，调用 /simplify-words
         if (wordsToSimplify.length > 0) {
+          // Step 3a: 估算 token 消耗，显示给用户（仅在有待简化词时）
+          try {
+            const est = await estimateRewriteTokens(originalText, accessToken);
+            toast.info(
+              `预计消耗 ${est.estimatedChargeYuan.toFixed(2)} 元（约 ${est.estimatedTokens} tokens）`,
+              { duration: 4000 }
+            );
+          } catch (e) {
+            console.warn("Token estimation failed:", e);
+          }
+
           const result = await simplifyWords(
             originalText,
             wordsToSimplify,
