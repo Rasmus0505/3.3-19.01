@@ -246,11 +246,9 @@ function ArticleWord({
     } else if (isRemovedWord) {
       // DeepSeek 过滤掉的词 → 过于简单，不标下划线
       cefrClass = "cefr-mastered";
-    } else {
-      // 不在有效词列表中，使用词典/CEFR 等级
-      const effectiveLevel = mapping?.dsLevel || segment.cefrLevel;
-      cefrClass = computeCefrClassName(effectiveLevel, userLevel);
     }
+    // 注意：不在 DeepSeek 有效词列表中的词，不标下划线
+    // 下划线只基于 DeepSeek 二次筛选结果，不再依赖词典初筛的 segment.cefrLevel
   }
 
   // 重写版渲染逻辑
