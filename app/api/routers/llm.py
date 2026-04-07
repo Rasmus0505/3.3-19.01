@@ -719,6 +719,40 @@ def simplify_words_endpoint(
 
     simplified_words: list[str] = []
     word_levels: dict[str, str] = {}
+
+    def _recover_json_fallback(text: str) -> str | None:
+        if not text:
+            return None
+        s = text.strip()
+        fence = _re.match(r"^```(?:json)?\s*\n?(.*?)\n?```\s*$", s, flags=_re.DOTALL | _re.IGNORECASE)
+        if fence:
+            s = fence.group(1).strip()
+        for pattern, flags in [
+            (r'\{[\s\S]*\}', _re.DOTALL),
+            (r'\[[\s\S]*\]', _re.DOTALL),
+        ]:
+            m = _re.search(pattern, s, flags)
+            if m:
+                candidate = m.group(0)
+                last_complete = None
+                depth = 0
+                for i in range(len(candidate)):
+                    c = candidate[i]
+                    if c == '{':
+                        depth += 1
+                    elif c == '}':
+                        depth -= 1
+                        if depth == 0:
+                            last_complete = i
+                if last_complete is not None and last_complete + 1 < len(candidate):
+                    candidate = candidate[:last_complete + 1]
+                try:
+                    _json.loads(candidate)
+                    return candidate
+                except Exception:
+                    pass
+        return None
+
     try:
         parsed = _json.loads(_strip_llm_json_fences(raw_response))
         if isinstance(parsed, dict):
@@ -742,9 +776,20 @@ def simplify_words_endpoint(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.warning("[DEBUG] llm.simplify_words_parse_failed user_id=%s raw=%s error=%s",
-                       current_user.id, raw_response[:200], str(exc)[:100])
-        raise HTTPException(status_code=502, detail=f"模型响应格式错误，请稍后重试: {str(exc)[:80]}")
+        recovered = _recover_json_fallback(raw_response)
+        if recovered:
+            try:
+                parsed = _json.loads(recovered)
+                logger.warning(
+                    "[DEBUG] llm.simplify_words_recovered user_id=%s original_err=%s",
+                    current_user.id, str(exc)[:100]
+                )
+            except Exception:
+                parsed = None
+        if not parsed:
+            logger.warning("[DEBUG] llm.simplify_words_parse_failed user_id=%s raw=%s error=%s",
+                           current_user.id, raw_response[:200], str(exc)[:100])
+            raise HTTPException(status_code=502, detail=f"模型响应格式错误，请稍后重试: {str(exc)[:80]}")
 
     if len(simplified_words) != len(body.words):
         logger.warning(
@@ -962,13 +1007,70 @@ def _do_filter_and_simplify(body: FilterAndSimplifyRequest, current_user: User, 
             return fence.group(1).strip()
         return s
 
+    def _try_recover_json(text: str) -> str | None:
+        """尝试修复被截断、含非法字符或格式混乱的 JSON 字符串"""
+        if not text:
+            return None
+
+        # 移除 markdown 代码块标记
+        s = text.strip()
+        fence = _re.match(r"^```(?:json)?\s*\n?(.*?)\n?```\s*$", s, flags=_re.DOTALL | _re.IGNORECASE)
+        if fence:
+            s = fence.group(1).strip()
+
+        # 尝试用更宽松的 regex 找到 JSON 对象/数组
+        for pattern, flags in [
+            (r'\{[\s\S]*\}', _re.DOTALL),
+            (r'\[[\s\S]*\]', _re.DOTALL),
+        ]:
+            m = _re.search(pattern, s, flags)
+            if m:
+                candidate = m.group(0)
+                # 去掉末尾可能被截断的字段（逗号后无值、字符串未闭合等）
+                # 常见截断：..., "word": " vie error=...
+                # 把最后一个不完整的键值对截掉
+                # 策略：从后往前找最后一个完整的 }, 截断后面的内容
+                last_complete = None
+                depth = 0
+                for i in range(len(candidate)):
+                    c = candidate[i]
+                    if c == '{':
+                        depth += 1
+                    elif c == '}':
+                        depth -= 1
+                        if depth == 0:
+                            last_complete = i
+                if last_complete is not None and last_complete + 1 < len(candidate):
+                    candidate = candidate[:last_complete + 1]
+                # 尝试解析
+                try:
+                    _json.loads(candidate)
+                    return candidate
+                except Exception:
+                    pass
+        return None
+
     try:
         parsed = _json.loads(_strip_json_fences(raw_response))
         logger.info("[filter-simplify] JSON parsed OK, keys=%s", list(parsed.keys()))
     except Exception as exc:
-        logger.warning("[filter-simplify] JSON parse failed user_id=%s raw=%s error=%s",
-                       current_user.id, raw_response[:300], str(exc)[:200])
-        raise HTTPException(status_code=502, detail=f"模型响应格式错误，请稍后重试: {str(exc)[:80]}")
+        # 容错尝试：处理 markdown 代码块后多余换行、被截断的 JSON、非法字符
+        cleaned = _try_recover_json(_strip_json_fences(raw_response))
+        if cleaned:
+            try:
+                parsed = _json.loads(cleaned)
+                logger.warning(
+                    "[filter-simplify] JSON recovered after fix user_id=%s original_err=%s",
+                    current_user.id, str(exc)[:100]
+                )
+            except Exception:
+                parsed = None
+        if not parsed:
+            logger.warning(
+                "[filter-simplify] JSON parse failed user_id=%s raw=%s error=%s",
+                current_user.id, raw_response[:300], str(exc)[:200]
+            )
+            raise HTTPException(status_code=502, detail=f"模型响应格式错误，请稍后重试: {str(exc)[:80]}")
 
     # 提取各字段
     valid_i1_words = parsed.get("valid_i1_words", [])
