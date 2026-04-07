@@ -18,6 +18,7 @@
  *   rewriteMappings {{original: string, rewritten: string, confirmed: boolean, originalLevel: string}[]}
  *   validI1Words  {string[]}  — 有效的 i+1 词汇列表（DeepSeek 验证通过）
  *   validAboveI1Words {string[]} — 有效的 >i+1 词汇列表（需要简化的）
+ *   removedWords  {object[]}  — 被过滤的词汇 [{word, reason}]（词典误标等原因）
  *   viewMode       {'original'|'rewritten'} — 决定渲染方式
  */
 import { BookOpenText } from "lucide-react";
