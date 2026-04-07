@@ -24,6 +24,7 @@ import { computeCefrClassName } from "./ArticlePanel";
 import { getOrCreateAnalyzer } from "../../hooks/useRichLayout";
 import { TranslationDialog } from "../wordbook/TranslationDialog";
 import { useReadingRewrite } from "../../hooks/useReadingRewrite";
+import { useVocabularyFilter } from "./useVocabularyFilter";
 import { HistoryPanel, saveHistoryRecord } from "./HistoryPanel";
 import { LeftPanel } from "./LeftPanel";
 import { AnalysisPanel, getDefaultActiveLevels } from "./AnalysisPanel";
@@ -291,6 +292,17 @@ export function ReadingPage({ accessToken, apiCall }) {
     onSuccess: () => setHistoryRefreshKey((k) => k + 1),
   });
 
+  // ── 词汇筛选 Hook (Phase 36: 备用/增强) ───────────
+  // 新 Hook 提供独立的状态管理，可用于：
+  // 1. 不依赖 IndexedDB 的场景
+  // 2. 独立的筛选/重写流程
+  // 3. 替换 useReadingRewrite 的备用方案
+  const vocabularyFilter = useVocabularyFilter({
+    accessToken,
+    userLevel,
+    targetLevel: "B2",
+  });
+
   // ── 文章切换时清空重写状态（由 auto-load effect 接管）─────
 
   const activeText =
@@ -416,6 +428,8 @@ export function ReadingPage({ accessToken, apiCall }) {
             viewMode={viewMode}
             isRewriting={isRewriting}
             rewriteError={rewriteError}
+            // Phase 36: 新 Hook 数据（备用，可用于替换 useReadingRewrite）
+            vocabularyFilter={vocabularyFilter}
           />
           <CollapseDivider
             collapsed={!analysisPanelOpen}
@@ -444,6 +458,8 @@ export function ReadingPage({ accessToken, apiCall }) {
                 isAdding={isAddingToWordbook}
                 rewriteError={rewriteError}
                 onRequestCollapse={() => setAnalysisPanelOpen(false)}
+                // Phase 36: 新 Hook 数据（备用）
+                vocabularyFilter={vocabularyFilter}
               />
             ) : (
               <div className="reading-analysis-rail" />
