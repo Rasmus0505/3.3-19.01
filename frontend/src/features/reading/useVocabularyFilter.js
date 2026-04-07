@@ -100,13 +100,15 @@ function applySimplifiedWords(originalText, words, replacements) {
  *   removedWords: Array<{word: string, reason: string}>,
  *   rewriteMappings: Array<{original: string, originalLower: string, rewritten: string, confirmed: boolean, dsLevel: string}>,
  *   wordLevels: object,
- *   processArticle: (text: string, candidateWords: Array<{word: string, cefrLevel: string}>) => Promise<void>,
+ *   processArticle: (text: string, candidateWords: Array<{word: string, cefrLevel: string}>) => Promise<{success: boolean, rewrittenText?: string, error?: string}>,
  *   reset: () => void
  * }}
  */
 export function useVocabularyFilter({ accessToken, userLevel = "B1", targetLevel = "B2" }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
+
+  // 处理结果状态
   const [originalText, setOriginalText] = useState("");
   const [rewrittenText, setRewrittenText] = useState("");
   const [validI1Words, setValidI1Words] = useState([]);
@@ -119,87 +121,102 @@ export function useVocabularyFilter({ accessToken, userLevel = "B1", targetLevel
    * 处理文章：调用 DeepSeek 二次筛选并构建 rewriteMappings
    * @param {string} text - 原文
    * @param {Array<{word: string, cefrLevel: string}>} candidateWords - 词典分析结果
-   * @returns {Promise<void>}
+   * @returns {Promise<{success: boolean, rewrittenText?: string, error?: string}>}
    */
-  const processArticle = useCallback(
-    async (text, candidateWords) => {
-      // 参数校验
-      if (!text || typeof text !== "string") {
-        setError("原文不能为空");
-        return;
-      }
+  const processArticle = useCallback(async (text, candidateWords) => {
+    // 参数校验
+    if (!text || typeof text !== "string") {
+      const msg = "原文不能为空";
+      setError(msg);
+      return { success: false, error: msg };
+    }
 
-      if (!accessToken) {
-        setError("缺少 accessToken，请先登录");
-        return;
-      }
+    if (!accessToken) {
+      const msg = "缺少 accessToken，请先登录";
+      setError(msg);
+      return { success: false, error: msg };
+    }
 
-      setIsProcessing(true);
-      setError(null);
+    if (!candidateWords?.length) {
+      // 没有候选词，直接返回原文
       setOriginalText(text);
+      setRewrittenText(text);
+      setValidI1Words([]);
+      setValidAboveI1Words([]);
+      setRemovedWords([]);
+      setRewriteMappings([]);
+      setWordLevels({});
+      setError(null);
+      return { success: true, rewrittenText: text };
+    }
 
-      try {
-        // 准备 API 调用参数
-        const words = candidateWords.map((w) => w.word);
-        const wordLevelsMap = {};
-        candidateWords.forEach((w) => {
-          wordLevelsMap[w.word.toLowerCase()] = w.cefrLevel;
-        });
+    setIsProcessing(true);
+    setError(null);
+    setOriginalText(text);
 
-        // 调用 DeepSeek 二次筛选 API
-        const result = await filterAndSimplifyWords(
-          text,
-          words,
-          wordLevelsMap,
-          targetLevel,
-          userLevel,
-          accessToken,
-          false // enableThinking
-        );
+    try {
+      // 准备 API 调用参数
+      const words = candidateWords.map((w) => w.word);
+      const wordLevelsMap = {};
+      candidateWords.forEach((w) => {
+        wordLevelsMap[w.word.toLowerCase()] = w.cefrLevel || "B2";
+      });
 
-        const {
-          validI1Words: dsValidI1,
-          validAboveI1Words: dsValidAboveI1,
-          removedWords: dsRemoved,
-          simplifiedWords,
-          wordLevels: dsWordLevels,
-        } = result;
+      // 调用 DeepSeek 二次筛选 API
+      const result = await filterAndSimplifyWords(
+        text,
+        words,
+        wordLevelsMap,
+        targetLevel,
+        userLevel,
+        accessToken,
+        false // enableThinking
+      );
 
-        // 应用简化替换，生成重写文本
-        const rewritten = applySimplifiedWords(text, dsValidAboveI1, simplifiedWords);
+      const {
+        validI1Words: dsValidI1,
+        validAboveI1Words: dsValidAboveI1,
+        removedWords: dsRemoved,
+        simplifiedWords,
+        wordLevels: dsWordLevels,
+      } = result;
 
-        // 构建 rewriteMappings 数组（用于 ArticlePanel 渲染）
-        const mappings = dsValidAboveI1.map((word, i) => {
-          const replacement = simplifiedWords[i];
-          const isConfirmed = replacement && replacement !== "";
-          const originalLower = word.toLowerCase();
+      // 应用简化替换，生成重写文本
+      const rewritten = applySimplifiedWords(text, dsValidAboveI1, simplifiedWords);
 
-          return {
-            original: isConfirmed ? preserveCase(word, replacement) : word,
-            originalLower,
-            rewritten: word,
-            confirmed: isConfirmed,
-            dsLevel: dsWordLevels[originalLower] || targetLevel,
-          };
-        });
+      // 构建 rewriteMappings 数组（用于 ArticlePanel 渲染）
+      const mappings = dsValidAboveI1.map((word, i) => {
+        const replacement = simplifiedWords[i];
+        const isConfirmed = replacement && replacement !== "";
+        const originalLower = word.toLowerCase();
 
-        // 更新状态
-        setRewrittenText(rewritten);
-        setValidI1Words(dsValidI1);
-        setValidAboveI1Words(dsValidAboveI1);
-        setRemovedWords(dsRemoved);
-        setRewriteMappings(mappings);
-        setWordLevels(dsWordLevels);
-      } catch (err) {
-        const msg = err?.message || "处理失败，请重试";
-        setError(msg);
-        console.error("VocabularyFilter error:", err);
-      } finally {
-        setIsProcessing(false);
-      }
-    },
-    [accessToken, userLevel, targetLevel]
-  );
+        return {
+          original: isConfirmed ? preserveCase(word, replacement) : word,
+          originalLower,
+          rewritten: word,
+          confirmed: isConfirmed,
+          dsLevel: dsWordLevels[originalLower] || targetLevel,
+        };
+      });
+
+      // 更新状态
+      setRewrittenText(rewritten);
+      setValidI1Words(dsValidI1);
+      setValidAboveI1Words(dsValidAboveI1);
+      setRemovedWords(dsRemoved);
+      setRewriteMappings(mappings);
+      setWordLevels(dsWordLevels);
+
+      return { success: true, rewrittenText: rewritten };
+    } catch (err) {
+      const msg = err?.message || "处理失败，请重试";
+      setError(msg);
+      console.error("VocabularyFilter error:", err);
+      return { success: false, error: msg };
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [accessToken, userLevel, targetLevel]);
 
   /**
    * 重置所有状态
@@ -217,6 +234,7 @@ export function useVocabularyFilter({ accessToken, userLevel = "B1", targetLevel
   }, []);
 
   return {
+    // 状态
     isProcessing,
     error,
     originalText,
@@ -226,7 +244,10 @@ export function useVocabularyFilter({ accessToken, userLevel = "B1", targetLevel
     removedWords,
     rewriteMappings,
     wordLevels,
+    // 方法
     processArticle,
     reset,
   };
 }
+
+export default useVocabularyFilter;
