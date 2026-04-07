@@ -660,9 +660,13 @@ def extract_lemmas_endpoint(
             raise HTTPException(status_code=502, detail="LLM 返回格式错误")
 
     # 记录 LLM 使用
+    from app.services.billing_service import calculate_llm_charge_by_tokens
     from app.services.llm_usage_service import log_llm_usage
+
+    total_tokens = usage.prompt_tokens + usage.completion_tokens
     charge_cents = calculate_llm_charge_by_tokens(
-        db, LLM_MODEL_DEEPSEEK_FAST, usage.prompt_tokens, usage.completion_tokens
+        total_tokens=total_tokens,
+        points_per_1k_tokens=rate.points_per_1k_tokens,
     )
 
     log_llm_usage(
