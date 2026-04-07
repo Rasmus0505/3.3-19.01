@@ -672,7 +672,7 @@ def extract_lemmas_endpoint(
     log_llm_usage(
         db=db,
         user_id=current_user.id,
-        model=LLM_MODEL_DEEPSEEK_FAST,
+        model_name=LLM_MODEL_DEEPSEEK_FAST,
         category="extract_lemmas",
         prompt_tokens=usage.prompt_tokens,
         completion_tokens=usage.completion_tokens,
