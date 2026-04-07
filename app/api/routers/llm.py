@@ -536,6 +536,158 @@ class SimplifyWordsRequest(BaseModel):
         return v
 
 
+# ── 词形还原 Prompt ─────────────────────────────────────────────────────────
+LEMMA_EXTRACTION_SYSTEM_PROMPT = (
+    "You are an English vocabulary analyzer for language learning.\n"
+    "Given a sentence and a list of words from that sentence, return the BASE FORM (lemma) of each word.\n"
+    "Return ONLY a valid JSON object with a 'lemmas' array in the SAME ORDER as the input words.\n"
+    "\n"
+    "Rules:\n"
+    "- Nouns: return singular form (transformations → transformation, phenomena → phenomenon)\n"
+    "- Verbs: return infinitive form (transitions → transition, drew → draw)\n"
+    "- Adjectives: return base form (happier → happy, beautiful → beautiful)\n"
+    "- Adverbs: return base form (ultimately → finally/end, beautifully → beautiful)\n"
+    "- If word is already base form, return as-is\n"
+    "- Compound words: return the main root (workforce → work, household → house)\n"
+    "\n"
+    "Example:\n"
+    "Input words: [transformation, drawbacks, ultimately, organizations, commuting]\n"
+    "Output: {\"lemmas\": [\"transform\", \"drawback\", \"finally\", \"organization\", \"commute\"]}"
+)
+
+
+class ExtractLemmasRequest(BaseModel):
+    """JSON body for POST /api/llm/extract-lemmas."""
+    sentence: str = Field(..., min_length=1, max_length=3000)
+    words: list[str] = Field(..., min_length=1)
+
+    @field_validator("sentence")
+    @classmethod
+    def sentence_max_length(cls, v: str) -> str:
+        if len(v) > 3000:
+            raise ValueError("Sentence too long (max 3000 chars)")
+        return v
+
+
+@router.post(
+    "/extract-lemmas",
+    responses={503: {"model": ErrorResponse}, 402: {"model": ErrorResponse}},
+)
+def extract_lemmas_endpoint(
+    body: ExtractLemmasRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Extract base forms (lemmas) from a list of words.
+    Used to check if derived forms are based on vocabulary the user already knows.
+    """
+    ensure_default_billing_rates(db)
+
+    try:
+        rate = get_model_rate(db, LLM_MODEL_DEEPSEEK_FAST)
+    except Exception:
+        raise HTTPException(status_code=503, detail="LLM model not available")
+
+    api_key = _require_api_key()
+    trace_id = str(uuid.uuid4())
+
+    # 构建用户消息
+    words_list = "\n".join([f"{i+1}. {w}" for i, w in enumerate(body.words)])
+    user_message = (
+        f"原文：{body.sentence}\n\n"
+        f"需要还原的词列表：\n{words_list}\n\n"
+        f"返回 JSON 对象：{{\"lemmas\": [\"word1\", \"word2\", ...]}}\n"
+        f"lemmas 数组顺序必须与输入词列表顺序一致。"
+    )
+
+    messages = [
+        {"role": "system", "content": LEMMA_EXTRACTION_SYSTEM_PROMPT},
+        {"role": "user", "content": user_message},
+    ]
+
+    try:
+        raw_response, usage = call_deepseek(
+            messages=messages,
+            api_key=api_key,
+            enable_thinking=False,
+            stream=False,
+            temperature=0.1,
+            max_tokens=256,
+        )
+    except ValueError as exc:
+        logger.warning("[DEBUG] llm.extract_lemmas_empty user_id=%s error=%s", current_user.id, str(exc)[:200])
+        raise HTTPException(status_code=503, detail=f"模型返回为空: {str(exc)[:100]}")
+    except Exception as exc:
+        logger.exception("[DEBUG] llm.extract_lemmas_failed user_id=%s error=%s", current_user.id, str(exc)[:200])
+        raise HTTPException(status_code=502, detail=f"LLM 调用失败: {str(exc)[:150]}")
+
+    if not raw_response:
+        raise HTTPException(status_code=503, detail="模型返回为空")
+
+    import json as _json
+    import re as _re
+
+    def _strip_json_fences(text: str) -> str:
+        s = text.strip()
+        fence = _re.match(r"^```(?:json)?\s*\n?(.*?)\n?```\s*$", s, flags=_re.DOTALL | _re.IGNORECASE)
+        if fence:
+            return fence.group(1).strip()
+        return s
+
+    try:
+        parsed = _json.loads(_strip_json_fences(raw_response))
+        if not isinstance(parsed, dict) or "lemmas" not in parsed:
+            raise HTTPException(status_code=502, detail="Expected JSON object with 'lemmas' array")
+        lemmas = [str(item) for item in parsed["lemmas"]]
+        if len(lemmas) != len(body.words):
+            raise HTTPException(
+                status_code=502,
+                detail=f"lemmas count ({len(lemmas)}) != words count ({len(body.words)})"
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        # 尝试从响应中提取 JSON
+        m = _re.search(r'\{"lemmas":\s*\[.*?\]\}', raw_response, _re.DOTALL)
+        if m:
+            try:
+                parsed = _json.loads(m.group(0))
+                lemmas = [str(item) for item in parsed["lemmas"]]
+            except Exception:
+                raise HTTPException(status_code=502, detail="无法解析 LLM 返回的 JSON")
+        else:
+            raise HTTPException(status_code=502, detail="LLM 返回格式错误")
+
+    # 记录 LLM 使用
+    from app.services.llm_usage_service import log_llm_usage
+    charge_cents = calculate_llm_charge_by_tokens(
+        db, LLM_MODEL_DEEPSEEK_FAST, usage.prompt_tokens, usage.completion_tokens
+    )
+
+    log_llm_usage(
+        db=db,
+        user_id=current_user.id,
+        model=LLM_MODEL_DEEPSEEK_FAST,
+        category="extract_lemmas",
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        total_tokens=usage.total_tokens,
+        input_cost_cents=None,
+        charge_cents=charge_cents,
+        lesson_id=None,
+        enable_thinking=False,
+        input_text_preview=body.sentence[:200],
+        trace_id=trace_id,
+    )
+
+    return {
+        "ok": True,
+        "lemmas": lemmas,
+        "trace_id": trace_id,
+    }
+
+
 @router.get("/estimate-tokens")
 def estimate_tokens_endpoint(
     text: str = Query(..., min_length=1),

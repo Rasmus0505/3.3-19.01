@@ -1,10 +1,41 @@
 /**
  * readingRewriteApi.js — Phase 34: 新 Schema API 调用
  *
- * 新流程：识别高难度词 → /simplify-words → 本地按顺序替换
- * 新流程 v2: /filter-and-simplify-words → 二次筛选 + 重写
+ * 新流程 v3 (词形还原版):
+ * 1. 词典 extractWordsAboveLevel() → 提取 >i+1 的词
+ * 2. /extract-lemmas → 返回原型词列表
+ * 3. 词典二次判断原型等级
+ * 4. /simplify-words → 重写筛选后的词
  */
 import { api } from "../../../shared/api/client.js";
+
+/**
+ * Step 1: 提取词汇的原型词（词形还原）
+ * @param {string} sentence — 原文
+ * @param {string[]} words — 需要还原的词列表
+ * @param {string} accessToken
+ * @returns {Promise<{lemmas: string[], traceId: string}>}
+ */
+export async function extractLemmas(sentence, words, accessToken) {
+  const resp = await api("/api/llm/extract-lemmas", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ sentence, words }),
+  });
+
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({}));
+    throw new Error(data.detail || "提取原型词请求失败");
+  }
+  const data = await resp.json();
+  return {
+    lemmas: data.lemmas,
+    traceId: data.trace_id,
+  };
+}
 
 /**
  * 估算重写 token 消耗（用于显示费用）
