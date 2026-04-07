@@ -1050,6 +1050,7 @@ def _do_filter_and_simplify(body: FilterAndSimplifyRequest, current_user: User, 
                     pass
         return None
 
+    parsed = None
     try:
         parsed = _json.loads(_strip_json_fences(raw_response))
         logger.info("[filter-simplify] JSON parsed OK, keys=%s", list(parsed.keys()))
