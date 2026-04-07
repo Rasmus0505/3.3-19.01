@@ -636,9 +636,30 @@ class VocabAnalyzer {
 }
 
 // ============================================================
+// 单例管理
+// ============================================================
+
+let _sharedAnalyzer = null;
+
+/**
+ * 获取（或创建）全局 VocabAnalyzer 实例并加载词汇表。
+ * 适合直接调用，无需手动 new + load。
+ * @returns {Promise<VocabAnalyzer>}
+ */
+export async function getOrCreateAnalyzer() {
+  if (_sharedAnalyzer && _sharedAnalyzer.isLoaded) {
+    return _sharedAnalyzer;
+  }
+  const analyzer = new VocabAnalyzer();
+  await analyzer.load();
+  _sharedAnalyzer = analyzer;
+  return analyzer;
+}
+
+// ============================================================
 // 导出（兼容 ES Module 和 CommonJS）
 // ============================================================
 export { VocabAnalyzer };
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { VocabAnalyzer };
+  module.exports = { VocabAnalyzer, getOrCreateAnalyzer };
 }
