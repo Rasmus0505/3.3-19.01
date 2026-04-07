@@ -695,12 +695,16 @@ def simplify_words_endpoint(
             temperature=0.3,
             max_tokens=512,
         )
+    except ValueError as exc:
+        # Raised by call_deepseek when content is empty after retries
+        logger.warning("[DEBUG] llm.simplify_words_empty user_id=%s error=%s", current_user.id, str(exc)[:200])
+        raise HTTPException(status_code=503, detail=f"模型返回为空，请稍后重试: {str(exc)[:100]}")
     except Exception as exc:
         logger.exception("[DEBUG] llm.simplify_words_failed user_id=%s error=%s", current_user.id, str(exc)[:200])
-        raise HTTPException(status_code=502, detail=f"LLM call failed: {str(exc)[:200]}")
+        raise HTTPException(status_code=502, detail=f"LLM 调用失败: {str(exc)[:150]}")
 
     if not raw_response:
-        raise HTTPException(status_code=502, detail="LLM returned empty result")
+        raise HTTPException(status_code=503, detail="模型返回为空，请稍后重试")
 
     import json as _json
     import re as _re
@@ -740,7 +744,7 @@ def simplify_words_endpoint(
     except Exception as exc:
         logger.warning("[DEBUG] llm.simplify_words_parse_failed user_id=%s raw=%s error=%s",
                        current_user.id, raw_response[:200], str(exc)[:100])
-        raise HTTPException(status_code=502, detail=f"Failed to parse model response: {str(exc)[:100]}")
+        raise HTTPException(status_code=502, detail=f"模型响应格式错误，请稍后重试: {str(exc)[:80]}")
 
     if len(simplified_words) != len(body.words):
         logger.warning(
@@ -935,13 +939,17 @@ def _do_filter_and_simplify(body: FilterAndSimplifyRequest, current_user: User, 
             max_tokens=768,
         )
         logger.info("[filter-simplify] LLM call succeeded, response length=%d", len(raw_response) if raw_response else 0)
+    except ValueError as exc:
+        # Raised by call_deepseek when content is empty after retries
+        logger.warning("[filter-simplify] Empty content after retries user_id=%s error=%s", current_user.id, str(exc)[:200])
+        raise HTTPException(status_code=503, detail=f"模型返回为空，请稍后重试: {str(exc)[:100]}")
     except Exception as exc:
         logger.exception("[filter-simplify] LLM call failed user_id=%s error=%s", current_user.id, str(exc)[:500])
-        raise HTTPException(status_code=502, detail=f"LLM call failed: {str(exc)[:200]}")
+        raise HTTPException(status_code=502, detail=f"LLM 调用失败: {str(exc)[:150]}")
 
     if not raw_response:
         logger.warning("[filter-simplify] Empty response for user_id=%s", current_user.id)
-        raise HTTPException(status_code=502, detail="LLM returned empty result")
+        raise HTTPException(status_code=503, detail="模型返回为空，请稍后重试")
 
     # 解析响应
     import json as _json
@@ -960,7 +968,7 @@ def _do_filter_and_simplify(body: FilterAndSimplifyRequest, current_user: User, 
     except Exception as exc:
         logger.warning("[filter-simplify] JSON parse failed user_id=%s raw=%s error=%s",
                        current_user.id, raw_response[:300], str(exc)[:200])
-        raise HTTPException(status_code=502, detail=f"Failed to parse model response: {str(exc)[:100]}")
+        raise HTTPException(status_code=502, detail=f"模型响应格式错误，请稍后重试: {str(exc)[:80]}")
 
     # 提取各字段
     valid_i1_words = parsed.get("valid_i1_words", [])
@@ -1142,12 +1150,15 @@ def rewrite_text_endpoint(
             temperature=0.3,
             max_tokens=REWRITE_MAX_OUTPUT_TOKENS,
         )
+    except ValueError as exc:
+        logger.warning("[DEBUG] llm.rewrite_empty user_id=%s error=%s", current_user.id, str(exc)[:200])
+        raise HTTPException(status_code=503, detail=f"模型返回为空，请稍后重试: {str(exc)[:100]}")
     except Exception as exc:
         logger.exception("[DEBUG] llm.rewrite_failed user_id=%s error=%s", current_user.id, str(exc)[:200])
-        raise HTTPException(status_code=502, detail=f"LLM call failed: {str(exc)[:200]}")
+        raise HTTPException(status_code=502, detail=f"LLM 调用失败: {str(exc)[:150]}")
 
     if not raw_response:
-        raise HTTPException(status_code=502, detail="LLM returned empty result")
+        raise HTTPException(status_code=503, detail="模型返回为空，请稍后重试")
 
     rewritten_text = raw_response
     rewrite_mappings: list[dict] = []

@@ -69,11 +69,14 @@ def call_deepseek(
     stream: bool = False,
     temperature: float = 0.7,
     max_tokens: int | None = None,
+    _retry_count: int = 0,
 ) -> tuple[str, LLMTokenUsage]:
     """
     Call DeepSeek V3.2 API.
 
     Returns (content, usage).
+    Automatically retries on empty responses (up to 2 times).
+    Raises ValueError if content is empty after all retries.
     """
     client = _client(api_key)
     model = DEEPSEEK_MODEL_THINKING if enable_thinking else DEEPSEEK_MODEL_FAST
@@ -104,10 +107,32 @@ def call_deepseek(
         return content, usage
 
     if not response.choices:
-        return "", LLMTokenUsage(prompt_tokens=0, completion_tokens=0, reasoning_tokens=0, total_tokens=0)
+        if _retry_count < 2:
+            logger.warning(f"[call_deepseek] Empty choices, retrying ({_retry_count + 1}/2)")
+            return call_deepseek(
+                messages, api_key,
+                enable_thinking=enable_thinking, stream=stream,
+                temperature=temperature, max_tokens=max_tokens,
+                _retry_count=_retry_count + 1
+            )
+        raise ValueError("LLM returned no choices after retries")
 
     choice = response.choices[0]
-    content = str(getattr(choice.message, "content", "") or "").strip()
+    raw_content = getattr(choice.message, "content", "") or ""
+    content = str(raw_content).strip()
+
+    # Check for empty content with retry
+    if not content:
+        if _retry_count < 2:
+            logger.warning(f"[call_deepseek] Empty content, retrying ({_retry_count + 1}/2)")
+            return call_deepseek(
+                messages, api_key,
+                enable_thinking=enable_thinking, stream=stream,
+                temperature=temperature, max_tokens=max_tokens,
+                _retry_count=_retry_count + 1
+            )
+        raise ValueError("LLM returned empty content after retries")
+
     usage = _extract_usage(response)
     return content, usage
 
