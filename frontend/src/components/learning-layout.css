@@ -27,6 +27,7 @@
 .learning-layout__typing {
   position: relative;
   flex-shrink: 0;
+  width: 100%;
   background: var(--background);
   border-top: 1px solid var(--border);
   transition: height 0.1s ease;
