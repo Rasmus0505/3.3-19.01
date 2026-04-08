@@ -59,7 +59,6 @@ from app.services.billing.wallet import (
     consume_points,
     refund_points,
     refund_points_by_event,
-    settle_reserved_points,
     manual_adjust,
     calculate_amount_by_duration_ms,
     calculate_cost_by_tokens,
