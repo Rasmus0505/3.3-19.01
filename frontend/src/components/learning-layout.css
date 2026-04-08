@@ -56,7 +56,10 @@
 .learning-layout__typing-content {
   padding-top: 6px;
   height: 100%;
+  width: 100%;
+  max-width: 100%;
   overflow: auto;
+  box-sizing: border-box;
 }
 
 /* AISidebar 侧边栏样式 */
