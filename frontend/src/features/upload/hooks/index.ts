@@ -1,4 +1,4 @@
-"""上传面板 Hooks 导出模块。"""
+// 上传面板 Hooks 导出模块。
 export {
   useUploadPanelState,
   useActiveTaskState,

@@ -1,4 +1,4 @@
-"""沉浸式学习字幕展示组件。"""
+// 沉浸式学习字幕展示组件。
 import { memo } from 'react';
 import type { Sentence, Word } from './immersiveTypes';
 

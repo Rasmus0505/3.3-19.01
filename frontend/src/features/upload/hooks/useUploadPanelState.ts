@@ -1,7 +1,6 @@
-"""上传面板状态管理 Hook。
+// 上传面板状态管理 Hook。
+// 管理 UploadPanel 的核心状态逻辑。
 
-管理 UploadPanel 的核心状态逻辑。
-"""
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import {
@@ -11,7 +10,7 @@ import {
   getUploadPanelSuccessSnapshot,
   saveUploadPanelSuccessSnapshot,
   clearUploadPanelSuccessSnapshot,
-} from '../../shared/media/localTaskStore';
+} from '../../../shared/media/localTaskStore';
 
 export interface UploadPanelState {
   // 文件状态

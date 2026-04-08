@@ -1,4 +1,4 @@
-"""诊断信息弹窗组件。"""
+// 诊断信息弹窗组件。
 import { RefreshCcw } from 'lucide-react';
 import {
   Dialog,

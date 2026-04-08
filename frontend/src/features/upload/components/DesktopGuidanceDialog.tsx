@@ -1,5 +1,5 @@
 /**@jsxImportSource react*/
-"""桌面客户端引导弹窗组件。"""
+// 桌面客户端引导弹窗组件。
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Button } from '../../../shared/ui';
 
 interface DesktopGuidanceDialogProps {
