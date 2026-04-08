@@ -119,17 +119,9 @@ def wallet_consume(
                 user_id=current_user.id,
                 points=int(consume_amount_cents),
                 model_name=model_name,
-                lesson_id=lesson_id,
                 duration_ms=int(actual_seconds * 1000),
+                lesson_id=lesson_id,
                 note=f"客户端本地生成上报补记，runtime_kind={runtime_kind or 'unknown'}，actual_seconds={actual_seconds}",
-            )
-            consume_points(
-                db,
-                user_id=current_user.id,
-                model_name=model_name,
-                duration_ms=int(actual_seconds * 1000),
-                lesson_id=lesson_id,
-                note=f"客户端本地生成用量已上报，runtime_kind={runtime_kind or 'unknown'}，actual_seconds={actual_seconds}",
             )
             db.commit()
             db.refresh(account)

@@ -1250,6 +1250,7 @@ class LessonService:
             consume_points(
                 db,
                 user_id=owner_id,
+                points=int(actual_points),
                 model_name=asr_model,
                 duration_ms=reserved_duration_ms,
                 lesson_id=lesson.id,
@@ -1860,6 +1861,7 @@ class LessonService:
             consume_points(
                 db,
                 user_id=owner_id,
+                points=int(actual_points),
                 model_name=asr_model,
                 duration_ms=actual_duration_ms,
                 lesson_id=lesson.id,
@@ -2675,6 +2677,7 @@ class LessonService:
             consume_points(
                 db,
                 user_id=owner_id,
+                points=int(actual_points),
                 model_name=asr_model,
                 duration_ms=actual_duration_ms,
                 lesson_id=lesson.id,
@@ -3171,6 +3174,7 @@ class LessonService:
             consume_points(
                 db,
                 user_id=owner_id,
+                points=int(actual_points),
                 model_name=asr_model,
                 duration_ms=actual_duration_ms or 0,
                 lesson_id=lesson.id,
