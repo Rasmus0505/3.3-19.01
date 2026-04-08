@@ -181,3 +181,31 @@ def is_weak_confirm_text(value: str) -> bool:
     if normalized.upper() in WEAK_CONFIRM_TEXTS:
         return True
     return len(normalized) < 12
+
+
+# ===== TTS / Voice Cloning Configuration =====
+
+# Default model for non-realtime TTS synthesis with voice cloning
+TTS_VC_TARGET_MODEL = _get_env_text(
+    "TTS_VC_TARGET_MODEL",
+    default="qwen3-tts-vc-2026-01-22",
+)
+
+# Default model for realtime streaming TTS synthesis with voice cloning
+TTS_VC_REALTIME_MODEL = _get_env_text(
+    "TTS_VC_REALTIME_MODEL",
+    default="qwen3-tts-vc-realtime-2026-01-15",
+)
+
+# Voice cloning enrollment model (fixed value)
+TTS_VC_ENROLLMENT_MODEL = "qwen-voice-enrollment"
+
+# Platform predefined voices (JSON string, optional)
+# Format: [{"voice": "qwen-tts-vc-guanyu-xxx", "name": "关羽", "language": "zh"}, ...]
+TTS_PLATFORM_VOICES_JSON = os.getenv("TTS_PLATFORM_VOICES", "").strip()
+
+# Maximum number of voice profiles per user (soft limit enforced in app logic)
+TTS_MAX_VOICES_PER_USER = _get_env_int("TTS_MAX_VOICES_PER_USER", 10)
+
+# Voice profile auto-cleanup threshold in days (profiles unused for this period may be cleaned up)
+TTS_VOICE_CLEANUP_DAYS = _get_env_int("TTS_VOICE_CLEANUP_DAYS", 365)

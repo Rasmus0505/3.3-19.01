@@ -15,6 +15,7 @@ from app.models.lesson import Lesson, LessonGenerationTask, LessonProgress, Less
 from app.models.llm_usage import LLMUsageLog
 from app.models.soe_result import SOEResult
 from app.models.user import User, UserLoginEvent
+from app.models.voice_profile import VoiceProfile
 
 __all__ = [
     "Announcement",
@@ -39,4 +40,5 @@ __all__ = [
     "AdminOperationLog",
     "SOEResult",
     "LLMUsageLog",
+    "VoiceProfile",
 ]

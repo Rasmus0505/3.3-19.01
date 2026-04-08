@@ -106,6 +106,16 @@ from app.schemas.wordbook import (
     BatchStatusUpdate,
     BatchTranslateRequest,
 )
+from app.schemas.tts import (
+    CreateVoiceRequest,
+    CreateVoiceResponse,
+    TTSRequest,
+    TTSResponse,
+    VoiceInfoResponse,
+    VoiceListResponse,
+    VoiceProfileListResponse,
+    VoiceProfileResponse,
+)
 
 __all__ = [
     "SuccessResponse",
@@ -221,4 +231,12 @@ __all__ = [
     "BatchMoveRequest",
     "BatchStatusUpdate",
     "BatchTranslateRequest",
+    "CreateVoiceRequest",
+    "CreateVoiceResponse",
+    "TTSRequest",
+    "TTSResponse",
+    "VoiceInfoResponse",
+    "VoiceListResponse",
+    "VoiceProfileListResponse",
+    "VoiceProfileResponse",
 ]
