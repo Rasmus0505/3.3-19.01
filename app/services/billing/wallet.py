@@ -151,7 +151,7 @@ def get_model_rate(db: Session, model_name: str, *, require_active: bool = True)
     """获取模型费率。"""
     stmt = select(BillingModelRate).where(BillingModelRate.model_name == model_name)
     if require_active:
-        stmt = stmt.where(BillingModelRate.active == True)  # noqa: E712
+        stmt = stmt.where(BillingModelRate.is_active == True)  # noqa: E712
     rate = db.scalars(stmt).first()
     if rate is None:
         raise BillingError("BILLING_RATE_NOT_FOUND", f"未找到模型 {model_name} 的费率")
