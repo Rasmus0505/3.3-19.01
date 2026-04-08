@@ -194,7 +194,7 @@ def _append_ledger(
     """追加钱包流水记录。"""
     ledger = WalletLedger(
         user_id=account.user_id,
-        balance_after=account.balance + delta_points,
+        balance_after=account.balance_points + delta_points,
         event_type=event_type,
         delta_points=delta_points,
         note=note,
@@ -228,13 +228,13 @@ def reserve_points(
         raise BillingError("INVALID_POINTS", "预扣点数不能为负数", str(points))
 
     account = get_or_create_wallet_account(db, user_id, for_update=True)
-    if account.balance < points:
+    if account.balance_points < points:
         raise BillingError(
             "INSUFFICIENT_BALANCE",
             "余额不足，无法创建课程",
-            f"balance={account.balance}, required={points}",
+            f"balance={account.balance_points}, required={points}",
         )
-    account.balance -= points
+    account.balance_points -= points
     db.add(account)
     db.flush()
 
@@ -259,9 +259,9 @@ def record_consume(
         raise BillingError("INVALID_POINTS", f"消耗点数必须大于 0: {points}")
 
     account = get_or_create_wallet_account(db, user_id, for_update=True)
-    new_balance = account.balance - points
+    new_balance = account.balance_points - points
     if new_balance < 0:
-        raise BillingError("INSUFFICIENT_BALANCE", f"余额不足：需要 {points} 点，当前 {account.balance} 点")
+        raise BillingError("INSUFFICIENT_BALANCE", f"余额不足：需要 {points} 点，当前 {account.balance_points} 点")
 
     ledger = _append_ledger(
         db,
@@ -269,9 +269,8 @@ def record_consume(
         "consume",
         -points,
         note=reason,
-        extra={"event_types": "consume"},
     )
-    account.balance = new_balance
+    account.balance_points = new_balance
     db.flush()
     return account
 
@@ -289,9 +288,9 @@ def consume_points(
         raise BillingError("INVALID_POINTS", f"消耗点数必须大于 0: {points}")
 
     account = get_or_create_wallet_account(db, user_id, for_update=True)
-    new_balance = account.balance - points
+    new_balance = account.balance_points - points
     if new_balance < 0:
-        raise BillingError("INSUFFICIENT_BALANCE", f"余额不足：需要 {points} 点，当前 {account.balance} 点")
+        raise BillingError("INSUFFICIENT_BALANCE", f"余额不足：需要 {points} 点，当前 {account.balance_points} 点")
 
     note = reason
     if duration_ms > 0 and model_name:
@@ -303,9 +302,8 @@ def consume_points(
         "consume",
         -points,
         note=note,
-        extra={"event_types": "consume"},
     )
-    account.balance = new_balance
+    account.balance_points = new_balance
     db.flush()
     return account
 
@@ -327,9 +325,8 @@ def refund_points(
         "refund",
         points,
         note=reason,
-        extra={"event_types": "refund"},
     )
-    account.balance += points
+    account.balance_points += points
     db.flush()
     return account
 
@@ -353,7 +350,7 @@ def refund_points_by_event(
     if reserve_ledger.user_id != user_id:
         raise BillingError("INVALID_USER", "预扣记录不属于该用户")
 
-    if reserve_ledger.event != "reserve":
+    if reserve_ledger.event_type != "reserve":
         raise BillingError("INVALID_EVENT", "该记录不是预扣记录")
 
     if reserve_ledger.delta_points >= 0:
@@ -386,7 +383,7 @@ def settle_reserved_points(
     refund_points_amount = reserved_points - actual_points
 
     # 结算原预扣记录
-    reserve_ledger.event = "settled"
+    reserve_ledger.event_type = "settled"
     reserve_ledger.note = f"结算: {reason}"
 
     # 如果有剩余，退还
@@ -417,9 +414,8 @@ def manual_adjust(
         "manual_adjust",
         delta_points,
         note=reason,
-        extra={"event_types": "manual_adjust"},
     )
-    account.balance += delta_points
+    account.balance_points += delta_points
     db.flush()
 
     # 记录管理员操作

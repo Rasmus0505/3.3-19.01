@@ -1550,65 +1550,25 @@ def _append_ledger(
     return item
 
 
-def reserve_points(
-    db: Session,
-    *,
-    user_id: int,
-    points: int,
-    model_name: str,
-    duration_ms: int,
-    note: str = "",
-) -> WalletLedger:
-    if points < 0:
-        raise BillingError("INVALID_POINTS", "预扣点数不能为负数", str(points))
-    account = get_or_create_wallet_account(db, user_id, for_update=True)
-    if account.balance_points < points:
-        raise BillingError(
-            "INSUFFICIENT_BALANCE",
-            "余额不足，无法创建课程",
-            f"balance={account.balance_points}, required={points}",
-        )
-    account.balance_points -= points
-    db.add(account)
-    db.flush()
-    return _append_ledger(
-        db,
-        user_id=user_id,
-        operator_user_id=None,
-        event_type=EVENT_RESERVE,
-        delta_points=-points,
-        balance_after=account.balance_points,
-        model_name=model_name,
-        duration_ms=duration_ms,
-        note=note,
-    )
+# ── 其他计费函数定义在 billing 子模块中重新导出 ────────────────────────
+# 以下函数从 app.services.billing.wallet 重新导出：
+# - reserve_points
+# - record_consume
+# - consume_points
+# - refund_points
+# - refund_points_by_event
+# - settle_reserved_points
+# - manual_adjust
+# - calculate_amount_by_duration_ms
+# - calculate_cost_by_tokens
+# - calculate_points
+# - calculate_token_points
+# - calculate_llm_cost_by_tokens
+# - calculate_llm_charge_by_tokens
+# - get_model_rate
 
 
-def record_consume(
-    db: Session,
-    *,
-    user_id: int,
-    model_name: str,
-    duration_ms: int,
-    lesson_id: int,
-    note: str = "",
-) -> WalletLedger:
-    account = get_or_create_wallet_account(db, user_id, for_update=True)
-    return _append_ledger(
-        db,
-        user_id=user_id,
-        operator_user_id=None,
-        event_type=EVENT_CONSUME,
-        delta_points=0,
-        balance_after=account.balance_points,
-        model_name=model_name,
-        duration_ms=duration_ms,
-        lesson_id=lesson_id,
-        note=note,
-    )
-
-
-def consume_points(
+def redeem_code(
     db: Session,
     *,
     user_id: int,

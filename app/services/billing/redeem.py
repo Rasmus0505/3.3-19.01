@@ -410,7 +410,7 @@ def redeem_code(
         note=f"兑换码 {mask_redeem_code(normalized)}",
         extra={"event_types": "redeem_code", "code_id": redeem_code.id},
     )
-    account.balance += redeem_code.points
+    account.balance_points += redeem_code.points
 
     # 更新兑换码状态
     redeem_code.status = REDEEM_CODE_STATUS_REDEEMED
@@ -441,7 +441,7 @@ def refund_points_by_redeem(
         note=reason,
         extra={"event_types": "refund"},
     )
-    account.balance += points
+    account.balance_points += points
     db.flush()
     return account
 
