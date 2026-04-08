@@ -130,8 +130,8 @@ def consume_points(
     db.add(ledger)
     account.balance_points = new_balance
     db.execute(
-        text("UPDATE wallet_accounts SET balance_points = :balance WHERE id = :id"),
-        {"balance": new_balance, "id": account.id},
+        text("UPDATE wallet_accounts SET balance_points = :balance WHERE user_id = :user_id"),
+        {"balance": new_balance, "user_id": account.user_id},
     )
     db.flush()
     return account
@@ -175,8 +175,8 @@ def refund_points(
     db.add(ledger)
     account.balance_points = new_balance
     db.execute(
-        text("UPDATE wallet_accounts SET balance_points = :balance WHERE id = :id"),
-        {"balance": new_balance, "id": account.id},
+        text("UPDATE wallet_accounts SET balance_points = :balance WHERE user_id = :user_id"),
+        {"balance": new_balance, "user_id": account.user_id},
     )
     db.flush()
     return account
@@ -217,8 +217,8 @@ def refund_points_by_event(
     db.add(ledger)
     account.balance_points = new_balance
     db.execute(
-        text("UPDATE wallet_accounts SET balance_points = :balance WHERE id = :id"),
-        {"balance": new_balance, "id": account.id},
+        text("UPDATE wallet_accounts SET balance_points = :balance WHERE user_id = :user_id"),
+        {"balance": new_balance, "user_id": account.user_id},
     )
     db.flush()
     return account
@@ -258,8 +258,8 @@ def reserve_points(
     db.add(ledger)
     account.balance_points = new_balance
     db.execute(
-        text("UPDATE wallet_accounts SET balance_points = :balance WHERE id = :id"),
-        {"balance": new_balance, "id": account.id},
+        text("UPDATE wallet_accounts SET balance_points = :balance WHERE user_id = :user_id"),
+        {"balance": new_balance, "user_id": account.user_id},
     )
     db.flush()
     return ledger
@@ -301,8 +301,8 @@ def settle_reserved_points(
     account = get_or_create_wallet_account(db, user_id, for_update=True)
     account.balance_points -= diff
     db.execute(
-        text("UPDATE wallet_accounts SET balance_points = :balance WHERE id = :id"),
-        {"balance": account.balance_points, "id": account.id},
+        text("UPDATE wallet_accounts SET balance_points = :balance WHERE user_id = :user_id"),
+        {"balance": account.balance_points, "user_id": account.user_id},
     )
 
     ledger = WalletLedger(
