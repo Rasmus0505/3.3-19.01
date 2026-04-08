@@ -1522,18 +1522,14 @@ export function ImmersiveLessonPage({
       if (currentSentence.needs_explanation) {
         setShowExplanation(true);
 
-        // 如果已有讲解数据
-        if (currentSentence.explanation_text) {
-          try {
-            const explanation = typeof currentSentence.explanation_text === 'string'
-              ? JSON.parse(currentSentence.explanation_text)
-              : currentSentence.explanation_text;
-            setCurrentExplanation(explanation);
-            setExplanationAudioUrl(currentSentence.explanation_audio_url);
-          } catch (e) {
-            console.error('Failed to parse explanation:', e);
-          }
-        }
+        // 从分离的字段构建讲解对象
+        const explanation = {
+          simplified_sentence: currentSentence.simplified_sentence || currentSentence.text_en,
+          key_explanations: currentSentence.key_explanations_json || [],
+          listen_tips: currentSentence.explanation_text || "",
+        };
+        setCurrentExplanation(explanation);
+        setExplanationAudioUrl(currentSentence.explanation_audio_url);
       } else {
         setShowExplanation(false);
         setCurrentExplanation(null);

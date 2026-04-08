@@ -1845,6 +1845,17 @@ class LessonService:
             db.add(lesson)
             db.flush()
 
+            # 处理 CEFR 讲解信息（预生成讲解内容）
+            # 默认目标等级为 B1（i+1 难度），可根据用户水平调整
+            try:
+                runtime_sentences = process_sentences_with_cefr(
+                    sentences=runtime_sentences,
+                    target_level="B1",
+                    user_level=None,
+                )
+            except Exception:
+                logger.exception("[DEBUG] lesson.cefr_processing_failed, continuing without explanation")
+
             for sentence in runtime_sentences:
                 db.add(
                     LessonSentence(
@@ -1856,6 +1867,13 @@ class LessonService:
                         text_zh=str(sentence["text_zh"]),
                         tokens_json=[str(item) for item in list(sentence.get("tokens") or [])],
                         audio_clip_path=None,
+                        # CEFR 字段
+                        cefr_vocab_json=sentence.get("cefr_vocab_json"),
+                        needs_explanation=sentence.get("needs_explanation", False),
+                        explanation_text=sentence.get("explanation_text"),
+                        simplified_sentence=sentence.get("simplified_sentence"),
+                        explanation_audio_url=sentence.get("explanation_audio_url"),
+                        key_explanations_json=sentence.get("key_explanations_json"),
                     )
                 )
 
@@ -3315,3 +3333,115 @@ def generate_sentence_explanation(
     db = None
     service = CefrExplainService(db=db, target_level=target_level)
     return service.generate_explanation(sentence, words_above)
+
+
+def process_sentences_with_cefr(
+    sentences: list[dict],
+    target_level: str,
+    user_level: str | None = None,
+) -> list[dict]:
+    """
+    处理句子列表，生成 CEFR 讲解信息。
+
+    流程：
+    1. 提取高于目标 CEFR 等级的词汇（一次筛选）
+    2. 对原型词进行词典二次筛选
+    3. 对需要讲解的句子生成讲解内容（简化句 + 词汇解释 + TTS音频）
+
+    Args:
+        sentences: 句子列表，每个元素包含 text_en 等字段
+        target_level: 目标 CEFR 等级（i+1）
+        user_level: 用户当前 CEFR 等级（可选，用于计算 target_level）
+
+    Returns:
+        句子列表，每个元素增加 cefr_vocab_json, needs_explanation, explanation_text,
+        simplified_sentence, explanation_audio_url, key_explanations_json 字段
+    """
+    from app.services.cefr_explain_service import CefrExplainService
+
+    db = None
+    service = CefrExplainService(db=db, target_level=target_level)
+
+    # 如果没有指定 user_level，target_level 就是目标等级
+    if user_level is None:
+        user_level = target_level
+
+    # 1. 提取高于目标等级的词汇（一次筛选）
+    sentence_texts = [s.get("text_en", "") for s in sentences]
+    cefr_results = service.extract_cefr_words(sentence_texts)
+
+    # 2. 对每个句子进行词典二次筛选和讲解生成
+    enriched_sentences = []
+    for idx, sentence in enumerate(sentences):
+        sentence_text = sentence.get("text_en", "")
+        cefr_info = cefr_results[idx]
+
+        words_above = cefr_info.get("words_above", [])
+
+        if not words_above:
+            # 没有超纲词，不需要讲解
+            sentence["cefr_vocab_json"] = {"words": [], "filter_result": {}}
+            sentence["needs_explanation"] = False
+            sentence["explanation_text"] = None
+            sentence["simplified_sentence"] = None
+            sentence["explanation_audio_url"] = None
+            sentence["key_explanations_json"] = None
+            enriched_sentences.append(sentence)
+            continue
+
+        # 二次筛选
+        filter_result = service.filter_words_by_level(words_above)
+        valid_above_i1 = filter_result["valid_above_i1_words"]
+
+        if not valid_above_i1:
+            # 二次筛选后没有需要简化的词
+            sentence["cefr_vocab_json"] = {
+                "words": words_above,
+                "filter_result": filter_result,
+            }
+            sentence["needs_explanation"] = False
+            sentence["explanation_text"] = None
+            sentence["simplified_sentence"] = None
+            sentence["explanation_audio_url"] = None
+            sentence["key_explanations_json"] = None
+            enriched_sentences.append(sentence)
+            continue
+
+        # 3. 生成讲解内容
+        try:
+            explanation = service.generate_explanation(sentence_text, valid_above_i1)
+        except Exception:
+            explanation = {
+                "simplified_sentence": sentence_text,
+                "key_explanations": [],
+                "listen_tips": "",
+            }
+
+        # 4. 生成 TTS 音频
+        explanation_text = explanation.get("simplified_sentence", "")
+        if explanation.get("key_explanations"):
+            explanation_text += "\n\n" + "\n".join(
+                f"- {e.get('original_word', '')}: {e.get('explanation', '')}"
+                for e in explanation.get("key_explanations", [])
+            )
+
+        audio_url = ""
+        if explanation_text:
+            try:
+                audio_url = service.synthesize_explanation_audio(explanation_text)
+            except Exception:
+                audio_url = ""
+
+        # 存储结果
+        sentence["cefr_vocab_json"] = {
+            "words": words_above,
+            "filter_result": filter_result,
+        }
+        sentence["needs_explanation"] = True
+        sentence["explanation_text"] = explanation.get("listen_tips", "") or None
+        sentence["simplified_sentence"] = explanation.get("simplified_sentence", sentence_text)
+        sentence["explanation_audio_url"] = audio_url or None
+        sentence["key_explanations_json"] = explanation.get("key_explanations") or None
+        enriched_sentences.append(sentence)
+
+    return enriched_sentences

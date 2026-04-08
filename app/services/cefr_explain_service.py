@@ -45,6 +45,117 @@ Rules:
 - Return ONLY valid JSON, no markdown formatting or explanations
 """
 
+# 不规则词形还原映射表（复用 vocabAnalyzer.js 的逻辑）
+IRREGULAR_LEMMAS: dict[str, str] = {
+    "ran": "run",
+    "won": "win",
+    "begun": "begin",
+    "written": "write",
+    "taken": "take",
+    "given": "give",
+    "seen": "see",
+    "been": "be",
+    "gone": "go",
+    "come": "come",
+    "made": "make",
+    "known": "know",
+    "thought": "think",
+    "told": "tell",
+    "found": "find",
+    "said": "say",
+    "got": "get",
+    # 常见 B1-B2 动词的不规则 -ing 形式
+    "perusing": "peruse",
+    "pursuing": "pursue",
+    "creating": "create",
+    "sharing": "share",
+    "moving": "move",
+}
+
+# 后缀还原规则（复用 vocabAnalyzer.js 的逻辑）
+SUFFIX_RULES: list[tuple[str, str]] = [
+    ("ies", "y"),    # stories → story
+    ("es", ""),      # watches → watch
+    ("ed", ""),      # walked → walk
+    ("ing", ""),     # walking → walk
+    ("ly", ""),      # quickly → quick
+    ("ness", ""),    # happiness → happy
+    ("ment", ""),    # development → develop
+    ("tion", "t"),   # education → educat
+    ("s", ""),       # cats → cat
+]
+
+# 非标准缩写映射（不经撇号的缩写，如 dont → do）
+NONSTANDARD_CONTRACTIONS: dict[str, str] = {
+    "dont": "do",
+    "cant": "can",
+    "wont": "will",
+    "shant": "shall",
+    "im": "i",
+    "ive": "i",
+    "id": "i",
+    "ill": "i",
+    "theyve": "they",
+    "theyll": "they",
+    "theyd": "they",
+    "weve": "we",
+    "well": "we",
+    "wed": "we",
+    "youll": "you",
+    "youd": "you",
+    "its": "it",
+    "thats": "that",
+    "whats": "what",
+    "wheres": "where",
+    "whos": "who",
+    "whens": "when",
+    "hows": "how",
+    "lets": "let",
+    "didnt": "do",
+    "doesnt": "do",
+    "isnt": "is",
+    "wasnt": "be",
+    "arent": "be",
+    "werent": "be",
+    "havent": "have",
+    "hasnt": "have",
+    "hadnt": "have",
+    "couldnt": "can",
+    "wouldnt": "will",
+    "shouldnt": "shall",
+    "mustnt": "must",
+    "mightnt": "might",
+    "aint": "be",
+    "shes": "she",
+    "hes": "he",
+    "youre": "you",
+    "theyre": "they",
+    "youve": "you",
+    "gonna": "go",
+    "wanna": "want",
+    "gotta": "get",
+    "outta": "out",
+    "kinda": "kind",
+    "sorta": "sort",
+    "lemme": "let",
+    "gimme": "give",
+    "dunno": "know",
+    "shoulda": "should",
+    "coulda": "could",
+    "woulda": "would",
+    "musta": "must",
+    "ima": "i",
+    "u": "you",
+    "ur": "your",
+    "r": "are",
+    "b": "be",
+    "c": "see",
+    "y": "why",
+    "n": "and",
+    "rn": "right",
+    "yall": "you",
+}
+
 
 class CefrExplainService:
     """CEFR 讲解服务"""
@@ -64,7 +175,7 @@ class CefrExplainService:
         return {"words": {}}
 
     def _lookup_word(self, word: str) -> str | None:
-        """查询单词的 CEFR 等级"""
+        """查询单词的 CEFR 等级（复用 vocabAnalyzer.js 的 5 级查询逻辑）"""
         word_lower = word.lower()
         word_map = self.vocab_data.get("words", {})
 
@@ -72,31 +183,59 @@ class CefrExplainService:
         if word_lower in word_map:
             return word_map[word_lower].get("level")
 
-        # Step 2: 简单的词形还原 (常见规则)
+        # Step 2: 词形还原（不规则映射 + 后缀规则）
         lemma = self._lemmatize(word_lower)
-        if lemma in word_map:
+        if lemma != word_lower and lemma in word_map:
             return word_map[lemma].get("level")
+
+        # Step 3: 非标准缩写还原（dont → do, cant → can）
+        nonstandard = self._normalize_nonstandard_contraction(word_lower)
+        if nonstandard is not None and nonstandard != word_lower and nonstandard in word_map:
+            return word_map[nonstandard].get("level")
+
+        # Step 4: 标准缩写还原（don't → don't → do）
+        stripped = self._strip_contraction(word_lower)
+        if stripped is not None and stripped != word_lower and stripped in word_map:
+            return word_map[stripped].get("level")
 
         return None
 
     def _lemmatize(self, word: str) -> str:
-        """简单的词形还原"""
-        # 常见动词后缀
-        if word.endswith("ing") and len(word) > 5:
-            # 处理双写辅音的情况，如 running -> run
-            base = word[:-3]
-            if len(base) > 1 and base[-1] == base[-2]:
-                return base[:-1]
-            return base
-        if word.endswith("ed") and len(word) > 4:
-            base = word[:-2]
-            # 处理双写辅音: jumped -> jump
-            if len(base) > 1 and base[-1] == base[-2]:
-                return base[:-1]
-            return base
-        if word.endswith("s") and len(word) > 3:
-            return word[:-1]
+        """词形还原（复用 vocabAnalyzer.js 的逻辑）"""
+        word_map = self.vocab_data.get("words", {})
+
+        # 1. 先查不规则词形还原映射表
+        mapped = IRREGULAR_LEMMAS.get(word)
+        if mapped and mapped in word_map:
+            return mapped
+
+        # 2. 再用后缀规则还原
+        for suffix, replacement in SUFFIX_RULES:
+            if word.endswith(suffix) and len(word) > len(suffix) + 2:
+                base = word[:-len(suffix)] + replacement
+                if len(base) > 1 and base in word_map:
+                    return base
+
         return word
+
+    def _normalize_nonstandard_contraction(self, word: str) -> str | None:
+        """非标准缩写还原（不经撇号的缩写，如 dont → do）"""
+        return NONSTANDARD_CONTRACTIONS.get(word)
+
+    def _strip_contraction(self, word: str) -> str | None:
+        """标准缩写还原（weren't → were, don't → do）"""
+        # 处理 n't 结尾
+        m = re.match(r"^(.+?)n't$", word, re.IGNORECASE)
+        if m:
+            base = m.group(1).lower()
+            # 特殊映射
+            special_map = {"wont": "will"}
+            return special_map.get(base, base)
+        # 处理 's, 'd, 'm, 're, 've, 'll
+        m2 = re.match(r"^(.+?)'(s|d|m|re|ve|ll)$", word, re.IGNORECASE)
+        if m2:
+            return m2.group(1).lower()
+        return None
 
     def _level_num(self, level: str) -> int:
         """获取等级数值"""
@@ -134,6 +273,81 @@ class CefrExplainService:
             })
 
         return results
+
+    def filter_words_by_level(self, words_above: list[dict]) -> dict:
+        """
+        词典二次筛选 - 基于原型词等级进行分类
+
+        分类逻辑：
+        - 词典查到且原型等级 <= 目标等级 → 过滤（词典误标/过于简单）
+        - 词典查到且原型等级 = 目标等级 → i+1 词汇（保留）
+        - 词典查到且原型等级 > 目标等级 → 需简化词汇
+        - 词典查不到 → SUPER（需简化）
+
+        Returns:
+            dict: {
+                "valid_i1_words": [...],       # i+1 词汇（原型等级 == 目标等级）
+                "valid_above_i1_words": [...], # 需简化词汇（原型等级 > 目标等级 或 查不到）
+                "removed_words": [...],        # 被过滤的词（原型等级 <= 目标等级）
+            }
+        """
+        valid_i1 = []
+        valid_above_i1 = []
+        removed = []
+
+        for word_info in words_above:
+            word = word_info["word"]
+            surface_level = word_info["level"]
+
+            # 获取原型词
+            lemma = self._lemmatize(word)
+            # 尝试查询原型词等级（先直接查，再尝试还原）
+            lemma_level = None
+            word_map = self.vocab_data.get("words", {})
+
+            if lemma in word_map:
+                lemma_level = word_map[lemma].get("level")
+            else:
+                # 原型词查不到，尝试非标准缩写
+                nonstandard = self._normalize_nonstandard_contraction(lemma)
+                if nonstandard and nonstandard in word_map:
+                    lemma_level = word_map[nonstandard].get("level")
+
+            # 如果原型词查不到，标记为 SUPER
+            if lemma_level is None:
+                lemma_level = "SUPER"
+
+            lemma_level_num = self._level_num(lemma_level)
+
+            # 分类
+            if lemma_level_num <= self.target_num:
+                # 原型等级 <= 目标等级，过滤
+                removed.append({
+                    **word_info,
+                    "lemma": lemma,
+                    "lemma_level": lemma_level,
+                    "reason": "原型等级不高于目标等级"
+                })
+            elif lemma_level_num == self.target_num:
+                # 原型等级 == 目标等级，i+1 词汇
+                valid_i1.append({
+                    **word_info,
+                    "lemma": lemma,
+                    "lemma_level": lemma_level
+                })
+            else:
+                # 原型等级 > 目标等级，需简化
+                valid_above_i1.append({
+                    **word_info,
+                    "lemma": lemma,
+                    "lemma_level": lemma_level
+                })
+
+        return {
+            "valid_i1_words": valid_i1,
+            "valid_above_i1_words": valid_above_i1,
+            "removed_words": removed
+        }
 
     def generate_explanation(self, sentence: str, words_above: list[dict]) -> dict:
         """生成讲解内容（调用 LLM）"""
