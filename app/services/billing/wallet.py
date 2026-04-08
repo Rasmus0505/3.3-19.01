@@ -166,7 +166,7 @@ def get_or_create_wallet_account(db: Session, user_id: int, *, for_update: bool 
         stmt = stmt.with_for_update()
     account = db.scalars(stmt).first()
     if account is None:
-        account = WalletAccount(user_id=user_id, balance=0)
+        account = WalletAccount(user_id=user_id, balance_points=0)
         db.add(account)
         db.flush()
     return account
@@ -186,7 +186,7 @@ def get_model_rate(db: Session, model_name: str, *, require_active: bool = True)
 def _append_ledger(
     db: Session,
     account: WalletAccount,
-    event: str,
+    event_type: str,
     delta_points: int,
     note: str = "",
     extra: dict | None = None,
@@ -195,10 +195,11 @@ def _append_ledger(
     ledger = WalletLedger(
         user_id=account.user_id,
         balance_after=account.balance + delta_points,
-        event=event,
+        event_type=event_type,
         delta_points=delta_points,
         note=note,
-        event_types=extra.get("event_types", "") if extra else "",
+        model_name=extra.get("model_name") if extra else None,
+        duration_ms=extra.get("duration_ms") if extra else None,
     )
     db.add(ledger)
     return ledger
@@ -206,34 +207,45 @@ def _append_ledger(
 
 def reserve_points(
     db: Session,
+    *,
     user_id: int,
     points: int,
-    reason: str = "",
-    duration_seconds: int = 3600,
-) -> tuple[WalletAccount, int]:
-    """预扣点数。"""
-    if points <= 0:
-        raise BillingError("INVALID_POINTS", f"预扣点数必须大于 0: {points}")
+    model_name: str,
+    duration_ms: int,
+    note: str = "",
+) -> WalletLedger:
+    """预扣点数。
+
+    Args:
+        db: 数据库会话
+        user_id: 用户ID
+        points: 预扣点数
+        model_name: ASR模型名称
+        duration_ms: 音频时长（毫秒）
+        note: 备注信息
+    """
+    if points < 0:
+        raise BillingError("INVALID_POINTS", "预扣点数不能为负数", str(points))
 
     account = get_or_create_wallet_account(db, user_id, for_update=True)
-    new_balance = account.balance - points
-    if new_balance < 0:
-        raise BillingError("INSUFFICIENT_BALANCE", f"余额不足：需要 {points} 点，当前 {account.balance} 点")
+    if account.balance < points:
+        raise BillingError(
+            "INSUFFICIENT_BALANCE",
+            "余额不足，无法创建课程",
+            f"balance={account.balance}, required={points}",
+        )
+    account.balance -= points
+    db.add(account)
+    db.flush()
 
-    ledger = _append_ledger(
+    return _append_ledger(
         db,
         account,
         "reserve",
         -points,
-        note=reason,
-        extra={"event_types": "reserve"},
+        note=note,
+        extra={"model_name": model_name, "duration_ms": duration_ms},
     )
-    account.balance = new_balance
-    db.flush()
-
-    # 设置过期时间
-    expire_at = _now() + timedelta(seconds=duration_seconds)
-    return account, ledger.id
 
 
 def record_consume(
