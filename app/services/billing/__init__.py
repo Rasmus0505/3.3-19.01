@@ -102,7 +102,6 @@ def consume_points(
 ) -> "WalletAccount":
     """直接消耗点数（支持 lesson_id 和 event_type 参数）。"""
     from app.models import WalletLedger
-    from sqlalchemy import text
 
     if points <= 0:
         raise BillingError("INVALID_POINTS", f"消耗点数必须大于 0: {points}")
@@ -129,10 +128,7 @@ def consume_points(
     )
     db.add(ledger)
     account.balance_points = new_balance
-    db.execute(
-        text("UPDATE wallet_accounts SET balance_points = :balance WHERE user_id = :user_id"),
-        {"balance": new_balance, "user_id": account.user_id},
-    )
+    db.add(account)
     db.flush()
     return account
 
@@ -148,7 +144,6 @@ def refund_points(
 ) -> "WalletAccount":
     """退还点数（支持 model_name 和 duration_ms 参数）。"""
     from app.models import WalletLedger
-    from sqlalchemy import text
 
     if points <= 0:
         raise BillingError("INVALID_POINTS", f"退还点数必须大于 0: {points}")
@@ -174,10 +169,7 @@ def refund_points(
     )
     db.add(ledger)
     account.balance_points = new_balance
-    db.execute(
-        text("UPDATE wallet_accounts SET balance_points = :balance WHERE user_id = :user_id"),
-        {"balance": new_balance, "user_id": account.user_id},
-    )
+    db.add(account)
     db.flush()
     return account
 
@@ -195,7 +187,6 @@ def refund_points_by_event(
 ) -> "WalletAccount":
     """退还点数（支持 lesson_id 和 event_type 参数）。"""
     from app.models import WalletLedger
-    from sqlalchemy import text
 
     if points <= 0:
         raise BillingError("INVALID_POINTS", f"退还点数必须大于 0: {points}")
@@ -216,10 +207,7 @@ def refund_points_by_event(
     )
     db.add(ledger)
     account.balance_points = new_balance
-    db.execute(
-        text("UPDATE wallet_accounts SET balance_points = :balance WHERE user_id = :user_id"),
-        {"balance": new_balance, "user_id": account.user_id},
-    )
+    db.add(account)
     db.flush()
     return account
 
@@ -236,7 +224,6 @@ def reserve_points(
 ) -> "WalletLedger":
     """预扣点数（支持 lesson_id 参数）。"""
     from app.models import WalletLedger
-    from sqlalchemy import text
 
     if points <= 0:
         raise BillingError("INVALID_POINTS", f"预扣点数必须大于 0: {points}")
@@ -257,10 +244,7 @@ def reserve_points(
     )
     db.add(ledger)
     account.balance_points = new_balance
-    db.execute(
-        text("UPDATE wallet_accounts SET balance_points = :balance WHERE user_id = :user_id"),
-        {"balance": new_balance, "user_id": account.user_id},
-    )
+    db.add(account)
     db.flush()
     return ledger
 
@@ -277,7 +261,6 @@ def settle_reserved_points(
 ):
     """结算预扣点数（支持 model_name 和 duration_ms 参数）。"""
     from app.models import WalletLedger
-    from sqlalchemy import text
 
     if reserved_points < 0:
         raise BillingError("INVALID_POINTS", "预扣点数不能为负数", str(reserved_points))
@@ -300,10 +283,7 @@ def settle_reserved_points(
 
     account = get_or_create_wallet_account(db, user_id, for_update=True)
     account.balance_points -= diff
-    db.execute(
-        text("UPDATE wallet_accounts SET balance_points = :balance WHERE user_id = :user_id"),
-        {"balance": account.balance_points, "user_id": account.user_id},
-    )
+    db.add(account)
 
     ledger = WalletLedger(
         user_id=user_id,

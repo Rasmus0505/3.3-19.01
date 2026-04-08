@@ -41,13 +41,23 @@ class SubtitleSettingsSnapshot:
 
 def _ensure_subtitle_settings_schema(db: Session) -> bool:
     """确保字幕设置表结构正确。"""
-    inspector = __import__("sqlalchemy").inspect(db.bind)
+    import sqlalchemy
+    from app.db import is_sqlite_url, DATABASE_URL
+    inspector = sqlalchemy.inspect(db.bind)
     tables = inspector.get_table_names()
 
-    if "subtitle_settings" not in tables:
+    schema = None if is_sqlite_url(DATABASE_URL) else "app"
+
+    # SQLite: 直接用表名；PostgreSQL: 检查带 schema 的表名
+    full_table_name = f"{schema}.subtitle_settings" if schema else "subtitle_settings"
+    if schema and full_table_name not in tables:
+        # PostgreSQL 模式下，表可能不在 schema 下
         return False
 
-    columns = {c["name"] for c in inspector.get_columns("subtitle_settings")}
+    if "subtitle_settings" not in tables and full_table_name not in tables:
+        return False
+
+    columns = {c["name"] for c in inspector.get_columns("subtitle_settings", schema=schema)}
     required_columns = {
         "semantic_split_default_enabled",
         "default_asr_model",
@@ -60,7 +70,7 @@ def _ensure_subtitle_settings_schema(db: Session) -> bool:
     for col in required_columns - columns:
         try:
             with db.bind.connect() as conn:
-                conn.execute(text(f"ALTER TABLE subtitle_settings ADD COLUMN {col} TEXT"))
+                conn.execute(text(f"ALTER TABLE {full_table_name} ADD COLUMN {col} TEXT"))
                 conn.commit()
         except Exception as e:
             logger.warning("Failed to add column %s: %s", col, e)
