@@ -29,10 +29,7 @@ from sqlalchemy.orm import Session
 from app.core.config import LESSON_DEFAULT_ASR_MODEL, REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_DEFAULT_VALID_DAYS
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
 from app.repositories.billing_rates import list_billing_rates as query_billing_rates
-from app.services.asr_model_registry import (
-    FASTER_WHISPER_ASR_MODEL,
-    QWEN_ASR_MODEL as FAST_CLOUD_MODEL,
-)
+from app.services.asr_model_registry import QWEN_ASR_MODEL as FAST_CLOUD_MODEL
 from app.models import (
     AdminOperationLog,
     BillingModelRate,
@@ -60,12 +57,10 @@ MT_MODEL_PREFIX = "qwen-mt-"
 ADMIN_BILLING_MODEL_ORDER: tuple[str, ...] = (
     FAST_CLOUD_MODEL,
     MT_FLASH_MODEL,
-    FASTER_WHISPER_ASR_MODEL,  # "faster-whisper-medium" — Bottle 1.0 billing (per D-07)
     "deepseek-v3.2",
 )
 PUBLIC_BILLING_MODEL_ORDER: tuple[str, ...] = (
     FAST_CLOUD_MODEL,
-    FASTER_WHISPER_ASR_MODEL,
 )
 LOCAL_BROWSER_ASR_MODELS: tuple[str, ...] = ()
 
@@ -101,21 +96,6 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
         "max_concurrency": 1,
     },
     {
-        "model_name": FASTER_WHISPER_ASR_MODEL,
-        "points_per_minute": 130,
-        "price_per_minute_yuan": Decimal("1.3000"),
-        "points_per_1k_tokens": 0,
-        "cost_per_minute_cents": 0,
-        "cost_per_minute_yuan": Decimal("0.0000"),
-        "cost_per_1k_tokens_input_cents": 0,
-        "cost_per_1k_tokens_output_cents": 0,
-        "billing_unit": "minute",
-        "parallel_enabled": False,
-        "parallel_threshold_seconds": 600,
-        "segment_seconds": 300,
-        "max_concurrency": 1,
-    },
-    {
         "model_name": "deepseek-v3.2",
         "points_per_minute": 0,
         "price_per_minute_yuan": Decimal("0.0000"),
@@ -134,24 +114,18 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
 )
 
 DEFAULT_SUBTITLE_SETTINGS = {
-    "semantic_split_default_enabled": False,
     "default_asr_model": LESSON_DEFAULT_ASR_MODEL,
     "subtitle_split_enabled": True,
     "subtitle_split_target_words": 18,
     "subtitle_split_max_words": 28,
-    "semantic_split_max_words_threshold": 24,
-    "semantic_split_timeout_seconds": 40,
     "translation_batch_max_chars": 2600,
 }
 
 _SUBTITLE_SETTINGS_REQUIRED_COLUMN_SQL: tuple[tuple[str, str, str], ...] = (
-    ("semantic_split_default_enabled", "BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("default_asr_model", f"VARCHAR(100) NOT NULL DEFAULT '{LESSON_DEFAULT_ASR_MODEL}'", f"VARCHAR(100) NOT NULL DEFAULT '{LESSON_DEFAULT_ASR_MODEL}'"),
     ("subtitle_split_enabled", "BOOLEAN NOT NULL DEFAULT 1", "BOOLEAN NOT NULL DEFAULT TRUE"),
     ("subtitle_split_target_words", "INTEGER NOT NULL DEFAULT 18", "INTEGER NOT NULL DEFAULT 18"),
     ("subtitle_split_max_words", "INTEGER NOT NULL DEFAULT 28", "INTEGER NOT NULL DEFAULT 28"),
-    ("semantic_split_max_words_threshold", "INTEGER NOT NULL DEFAULT 24", "INTEGER NOT NULL DEFAULT 24"),
-    ("semantic_split_timeout_seconds", "INTEGER NOT NULL DEFAULT 40", "INTEGER NOT NULL DEFAULT 40"),
     ("translation_batch_max_chars", "INTEGER NOT NULL DEFAULT 2600", "INTEGER NOT NULL DEFAULT 2600"),
     ("updated_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP", "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"),
     ("updated_by_user_id", "INTEGER", "INTEGER"),
@@ -188,13 +162,10 @@ class BillingError(Exception):
 
 @dataclass(frozen=True)
 class SubtitleSettingsSnapshot:
-    semantic_split_default_enabled: bool
     default_asr_model: str
     subtitle_split_enabled: bool
     subtitle_split_target_words: int
     subtitle_split_max_words: int
-    semantic_split_max_words_threshold: int
-    semantic_split_timeout_seconds: int
     translation_batch_max_chars: int
 
 
@@ -1135,13 +1106,10 @@ def get_subtitle_settings(db: Session) -> SubtitleSetting:
 def get_subtitle_settings_snapshot(db: Session) -> SubtitleSettingsSnapshot:
     row = get_subtitle_settings(db)
     return SubtitleSettingsSnapshot(
-        semantic_split_default_enabled=bool(row.semantic_split_default_enabled),
         default_asr_model=str(getattr(row, "default_asr_model", "") or LESSON_DEFAULT_ASR_MODEL),
         subtitle_split_enabled=bool(row.subtitle_split_enabled),
         subtitle_split_target_words=int(row.subtitle_split_target_words),
         subtitle_split_max_words=int(row.subtitle_split_max_words),
-        semantic_split_max_words_threshold=int(row.semantic_split_max_words_threshold),
-        semantic_split_timeout_seconds=int(row.semantic_split_timeout_seconds),
         translation_batch_max_chars=max(1, min(12000, int(getattr(row, "translation_batch_max_chars", 2600) or 2600))),
     )
 
