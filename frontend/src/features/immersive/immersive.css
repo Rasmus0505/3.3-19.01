@@ -516,14 +516,14 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-start;
   width: 100%;
   min-width: 0;
   gap: 6px 8px;
 }
 
 .immersive-word-row--cinema {
-  justify-content: space-between;
+  justify-content: flex-start;
 }
 
 .immersive-word-row-frame--cinema {
