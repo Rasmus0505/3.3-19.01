@@ -109,13 +109,10 @@ READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "created_at",
     ),
     "subtitle_settings": (
-        "semantic_split_default_enabled",
         "default_asr_model",
         "subtitle_split_enabled",
         "subtitle_split_target_words",
         "subtitle_split_max_words",
-        "semantic_split_max_words_threshold",
-        "semantic_split_timeout_seconds",
         "translation_batch_max_chars",
     ),
     "lesson_generation_tasks": LESSON_TASK_REQUIRED_COLUMNS,

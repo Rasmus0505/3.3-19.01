@@ -84,7 +84,6 @@ class LessonGenerationTask(Base):
     lesson_id: Mapped[int | None] = mapped_column(ForeignKey(schema_fk("lessons.id")), nullable=True, index=True)
     source_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     asr_model: Mapped[str] = mapped_column(String(100), nullable=False)
-    semantic_split_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
     overall_percent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     current_text: Mapped[str] = mapped_column(String(255), default="等待处理", nullable=False)

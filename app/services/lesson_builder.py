@@ -277,42 +277,6 @@ def build_lesson_sentences(asr_payload: dict[str, Any]) -> dict[str, Any]:
     return {"sentences": raw_sentences, "chunks": [], "mode": "asr_sentences_raw"}
 
 
-def split_words_by_semantic_segments(word_chunk: list[dict[str, Any]], segment_texts: list[str]) -> list[list[dict[str, Any]]]:
-    if not word_chunk or len(segment_texts) <= 1:
-        return [word_chunk]
-    normalized_segments = [tokenize_sentence(item) for item in segment_texts if tokenize_sentence(item)]
-    if len(normalized_segments) <= 1:
-        return [word_chunk]
-
-    output: list[list[dict[str, Any]]] = []
-    cursor = 0
-    total_words = len(word_chunk)
-    for segment_index, segment_tokens in enumerate(normalized_segments):
-        if not segment_tokens:
-            continue
-        if segment_index == len(normalized_segments) - 1:
-            chunk = word_chunk[cursor:]
-            if chunk:
-                output.append(chunk)
-            break
-        take_count = len(segment_tokens)
-        next_cursor = min(total_words, cursor + take_count)
-        chunk = word_chunk[cursor:next_cursor]
-        if not chunk:
-            return [word_chunk]
-        output.append(chunk)
-        cursor = next_cursor
-
-    rebuilt = [compose_text_from_words(chunk) for chunk in output]
-    original_tokens = tokenize_sentence(compose_text_from_words(word_chunk))
-    rebuilt_tokens: list[str] = []
-    for item in rebuilt:
-        rebuilt_tokens.extend(tokenize_sentence(item))
-    if rebuilt_tokens != original_tokens:
-        return [word_chunk]
-    return output if output else [word_chunk]
-
-
 def estimate_duration_ms(asr_payload: dict[str, Any], sentences: list[dict[str, Any]]) -> int:
     props = asr_payload.get("properties")
     if isinstance(props, dict):

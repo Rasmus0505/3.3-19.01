@@ -56,7 +56,6 @@ class LessonGenerationService:
         asr_payload: dict[str, Any],
         db: Session,
         task_id: str | None = None,
-        semantic_split_enabled: bool | None = None,
         allow_partial_translation: bool = False,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:

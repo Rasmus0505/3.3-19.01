@@ -259,8 +259,6 @@ class SubtitleSetting(Base):
     __table_args__ = table_args(
         CheckConstraint("subtitle_split_target_words > 0", name="ck_subtitle_split_target_words_positive"),
         CheckConstraint("subtitle_split_max_words > 0", name="ck_subtitle_split_max_words_positive"),
-        CheckConstraint("semantic_split_max_words_threshold > 0", name="ck_semantic_split_threshold_positive"),
-        CheckConstraint("semantic_split_timeout_seconds > 0", name="ck_semantic_split_timeout_positive"),
         CheckConstraint(
             "translation_batch_max_chars > 0 AND translation_batch_max_chars <= 12000",
             name="ck_translation_batch_chars_range",
@@ -268,13 +266,10 @@ class SubtitleSetting(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    semantic_split_default_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     default_asr_model: Mapped[str] = mapped_column(String(100), default="qwen3-asr-flash-filetrans", nullable=False)
     subtitle_split_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     subtitle_split_target_words: Mapped[int] = mapped_column(Integer, default=18, nullable=False)
     subtitle_split_max_words: Mapped[int] = mapped_column(Integer, default=28, nullable=False)
-    semantic_split_max_words_threshold: Mapped[int] = mapped_column(Integer, default=24, nullable=False)
-    semantic_split_timeout_seconds: Mapped[int] = mapped_column(Integer, default=40, nullable=False)
     translation_batch_max_chars: Mapped[int] = mapped_column(Integer, default=2600, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
     updated_by_user_id: Mapped[int | None] = mapped_column(

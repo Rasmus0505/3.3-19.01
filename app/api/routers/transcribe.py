@@ -24,7 +24,6 @@ router = APIRouter(prefix="/api/transcribe", tags=["transcribe"])
 async def transcribe_file_with_model(
     video_file: UploadFile = File(...),
     model: str = Form(DEFAULT_MODEL),
-    semantic_split_enabled: bool | None = Form(None),
 ):
     selected_model = (model or "").strip() or DEFAULT_MODEL
     started = time.monotonic()

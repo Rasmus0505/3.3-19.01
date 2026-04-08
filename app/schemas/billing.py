@@ -24,7 +24,6 @@ class WalletRedeemCodeResponse(BaseModel):
 
 
 class PublicSubtitleSettings(BaseModel):
-    semantic_split_default_enabled: bool
     default_asr_model: str
 
 

@@ -52,7 +52,6 @@ from app.services.lesson_builder import (
     extract_sentences,
     extract_word_items,
     normalize_learning_english_text,
-    split_words_by_semantic_segments,
     tokenize_learning_sentence,
     tokenize_sentence,
 )
@@ -60,9 +59,7 @@ from app.services.lesson_task_manager import patch_task_artifacts, persist_lesso
 from app.services.media import MediaError, extract_audio_for_asr, probe_audio_duration_ms, resolve_media_command, run_cmd, save_upload_file_stream, validate_suffix
 from app.services.translation_qwen_mt import (
     MT_MODEL,
-    SemanticSplitError,
     TranslationError,
-    split_sentence_by_semantic,
     translate_sentences_to_zh,
     translation_batch_chars_scope,
 )
@@ -695,64 +692,20 @@ def _call_transcribe_segment(
         return payload
 
 
-def _apply_semantic_split(
-    chunks: list[list[dict[str, Any]]],
-    *,
-    enabled: bool,
-    threshold_words: int,
-    model: str,
-    timeout_seconds: int,
-) -> tuple[list[list[dict[str, Any]]], bool]:
-    if not enabled or not chunks:
-        return chunks, False
-
-    final_chunks: list[list[dict[str, Any]]] = []
-    semantic_applied = False
-    for chunk in chunks:
-        chunk_text = compose_text_from_words(chunk)
-        chunk_word_count = len(tokenize_sentence(chunk_text))
-        if chunk_word_count <= max(1, threshold_words):
-            final_chunks.append(chunk)
-            continue
-        try:
-            semantic_segments = split_sentence_by_semantic(
-                chunk_text,
-                api_key=DASHSCOPE_API_KEY,
-                model=model,
-                timeout_seconds=timeout_seconds,
-            )
-            semantic_chunks = split_words_by_semantic_segments(chunk, semantic_segments)
-        except SemanticSplitError as exc:
-            logger.warning(
-                "[DEBUG] lesson.generate semantic_split_failed words=%s detail=%s",
-                chunk_word_count,
-                str(exc)[:240],
-            )
-            final_chunks.append(chunk)
-            continue
-        if len(semantic_chunks) <= 1:
-            final_chunks.append(chunk)
-            continue
-        semantic_applied = True
-        final_chunks.extend(semantic_chunks)
-    return final_chunks, semantic_applied
-
-
 def _emit_subtitle_variant_progress(
     callback: Callable[[dict[str, Any]], None] | None,
     *,
     stage: str,
     message: str,
-    semantic_split_enabled: bool,
     translate_done: int = 0,
     translate_total: int = 0,
 ) -> None:
     if not callback:
         return
-    if stage in {"prepare", "semantic_split"}:
+    if stage == "prepare":
         stage_key = "build_lesson"
         stage_status = "running"
-        stage_ratio = 0.08 if stage == "prepare" else 0.55
+        stage_ratio = 0.08
         overall_percent = _progress_percent_by_stage("build_lesson", stage_ratio)
     elif stage == "translate":
         stage_key = "translate_zh"
@@ -782,7 +735,6 @@ def _emit_subtitle_variant_progress(
                     "translate_done": max(0, int(translate_done)),
                     "translate_total": max(0, int(translate_total)),
                 },
-                "semantic_split_enabled": bool(semantic_split_enabled),
             }
         )
     except Exception:
@@ -834,7 +786,6 @@ class LessonService:
         asr_payload: dict[str, Any],
         db: Session,
         task_id: str | None = None,
-        semantic_split_enabled: bool | None = None,
         allow_partial_translation: bool = False,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
         before_translate_callback: Callable[[int], None] | None = None,
@@ -845,16 +796,10 @@ class LessonService:
             raise MediaError("ASR_PAYLOAD_INVALID", "字幕源数据无效", "asr_payload 必须是对象")
 
         subtitle_settings = get_subtitle_settings_snapshot(db)
-        effective_semantic_split_enabled = (
-            subtitle_settings.semantic_split_default_enabled
-            if semantic_split_enabled is None
-            else bool(semantic_split_enabled)
-        )
         _emit_subtitle_variant_progress(
             progress_callback,
             stage="prepare",
             message="正在重切分句",
-            semantic_split_enabled=effective_semantic_split_enabled,
         )
 
         sentences = extract_sentences(asr_payload)
@@ -866,12 +811,6 @@ class LessonService:
             raise MediaError("ASR_SENTENCE_MISSING", "ASR 返回结果缺少句级信息", "未找到有效句子")
 
         source_word_count = len(extract_word_items(asr_payload))
-        if (
-            effective_semantic_split_enabled
-            and split_mode not in {"word_level_split", "word_level_split+semantic"}
-            and subtitle_settings.subtitle_split_enabled
-        ):
-            logger.warning("[DEBUG] lesson.subtitle_variant split_fallback mode=%s output_sentences=%s", split_mode, len(sentences))
 
         prepared_sentences, dropped_translation_sentences = _prepare_translation_sentences(sentences)
         if not prepared_sentences:
@@ -902,7 +841,6 @@ class LessonService:
             progress_callback,
             stage="translate",
             message=f"正在翻译 0/{len(sentences)}",
-            semantic_split_enabled=effective_semantic_split_enabled,
             translate_done=0,
             translate_total=len(sentences),
         )
@@ -921,10 +859,9 @@ class LessonService:
                 progress_callback,
                 stage="translate",
                 message=f"正在翻译 {done}/{total}",
-                semantic_split_enabled=effective_semantic_split_enabled,
                 translate_done=done,
                 translate_total=total,
-                )
+            )
 
         def _on_translation_checkpoint(checkpoint_payload: dict[str, Any]) -> None:
             if not translation_checkpoint_path:
@@ -989,12 +926,10 @@ class LessonService:
             progress_callback,
             stage="completed",
             message="字幕重新生成完成",
-            semantic_split_enabled=effective_semantic_split_enabled,
             translate_done=len(sentences),
             translate_total=len(sentences),
         )
         return {
-            "semantic_split_enabled": bool(effective_semantic_split_enabled),
             "split_mode": split_mode,
             "source_word_count": source_word_count,
             "strategy_version": 2 if split_mode == "asr_sentences" else 1,
@@ -1016,7 +951,6 @@ class LessonService:
     @staticmethod
     def build_subtitle_cache_seed(*, asr_payload: dict[str, Any], variant: dict[str, Any], runtime_kind: str = "") -> dict[str, Any]:
         payload = {
-            "semantic_split_enabled": bool(variant.get("semantic_split_enabled")),
             "split_mode": str(variant.get("split_mode") or ""),
             "source_word_count": int(variant.get("source_word_count", 0)),
             "strategy_version": int(variant.get("strategy_version", 1)),
@@ -1037,7 +971,6 @@ class LessonService:
         source_duration_ms: int,
         db: Session,
         task_id: str | None = None,
-        semantic_split_enabled: bool | None = None,
         progress_callback: ProgressCallback | None = None,
     ) -> dict[str, Any]:
         normalized_runtime_kind = str(runtime_kind or "local_browser").strip().lower() or "local_browser"
@@ -1045,7 +978,6 @@ class LessonService:
             asr_payload=asr_payload,
             db=db,
             task_id=task_id,
-            semantic_split_enabled=semantic_split_enabled,
             allow_partial_translation=True,
             progress_callback=progress_callback,
         )
@@ -1444,7 +1376,7 @@ class LessonService:
         asr_model: str,
         db: Session,
         progress_callback: ProgressCallback | None = None,
-        semantic_split_enabled: bool | None = None,
+
     ) -> Lesson:
         source_filename = (upload_file.filename or "unknown")[:255]
         suffix = validate_suffix(source_filename)
@@ -1459,7 +1391,7 @@ class LessonService:
             asr_model=asr_model,
             db=db,
             progress_callback=progress_callback,
-            semantic_split_enabled=semantic_split_enabled,
+
         )
 
     @staticmethod
@@ -1475,7 +1407,7 @@ class LessonService:
         db: Session,
         progress_callback: ProgressCallback | None = None,
         task_id: str | None = None,
-        semantic_split_enabled: bool | None = None,
+
     ) -> Lesson:
         asr_result_path = req_dir / _ASR_RESULT_FILE
         variant_result_path = req_dir / _VARIANT_RESULT_FILE
@@ -1690,7 +1622,7 @@ class LessonService:
                     asr_payload=asr_payload,
                     db=db,
                     task_id=task_id,
-                    semantic_split_enabled=semantic_split_enabled,
+        
                     allow_partial_translation=True,
                     before_translate_callback=_on_before_translation,
                     translation_progress_callback=_on_translation_progress,
@@ -2288,7 +2220,7 @@ class LessonService:
         db: Session,
         progress_callback: ProgressCallback | None = None,
         task_id: str | None = None,
-        semantic_split_enabled: bool | None = None,
+
     ) -> Lesson:
         opus_path = req_dir / "lesson_input.opus"
         asr_result_path = req_dir / _ASR_RESULT_FILE
@@ -2463,7 +2395,7 @@ class LessonService:
                     asr_payload=asr_payload,
                     db=db,
                     task_id=task_id,
-                    semantic_split_enabled=semantic_split_enabled,
+        
                     allow_partial_translation=True,
                     before_translate_callback=_on_before_translation,
                     translation_progress_callback=_on_translation_progress,
@@ -2749,7 +2681,7 @@ class LessonService:
         db: Session,
         progress_callback: ProgressCallback | None = None,
         task_id: str | None = None,
-        semantic_split_enabled: bool | None = None,
+
     ) -> Lesson:
         """Generate a lesson from a file already uploaded to DashScope OSS.
 
@@ -2772,7 +2704,6 @@ class LessonService:
             db: SQLAlchemy database session.
             progress_callback: Optional progress callback (same as generate_from_saved_file).
             task_id: Optional task ID for resuming from a checkpoint.
-            semantic_split_enabled: Optional semantic segmentation flag.
 
         Returns:
             The created or resumed ``Lesson`` instance.
@@ -3028,7 +2959,7 @@ class LessonService:
                     asr_payload=asr_payload,
                     db=db,
                     task_id=task_id,
-                    semantic_split_enabled=semantic_split_enabled,
+        
                     allow_partial_translation=True,
                     before_translate_callback=_on_before_translation,
                     translation_progress_callback=_on_translation_progress,

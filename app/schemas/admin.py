@@ -261,13 +261,10 @@ class AdminTranslationLogsResponse(BaseModel):
 
 
 class AdminSubtitleSettingsItem(BaseModel):
-    semantic_split_default_enabled: bool
     default_asr_model: str
     subtitle_split_enabled: bool
     subtitle_split_target_words: int
     subtitle_split_max_words: int
-    semantic_split_max_words_threshold: int
-    semantic_split_timeout_seconds: int
     translation_batch_max_chars: int
     updated_at: datetime
     updated_by_user_id: int | None = None
@@ -275,13 +272,10 @@ class AdminSubtitleSettingsItem(BaseModel):
 
 
 class AdminSubtitleSettingsUpdateRequest(BaseModel):
-    semantic_split_default_enabled: bool
     default_asr_model: str = Field(default="", max_length=100)
     subtitle_split_enabled: bool
     subtitle_split_target_words: int = Field(gt=0, le=200)
     subtitle_split_max_words: int = Field(gt=0, le=300)
-    semantic_split_max_words_threshold: int = Field(gt=0, le=300)
-    semantic_split_timeout_seconds: int = Field(gt=0, le=300)
     translation_batch_max_chars: int | None = Field(default=None, gt=0, le=12000)
 
 

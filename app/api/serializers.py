@@ -135,7 +135,6 @@ def to_lesson_detail_response(lesson: Lesson, sentences: list[LessonSentence]) -
     subtitle_cache_seed = None
     if isinstance(subtitle_cache_seed_payload, dict):
         subtitle_cache_seed = SubtitleCacheSeedResponse(
-            semantic_split_enabled=bool(subtitle_cache_seed_payload.get("semantic_split_enabled")),
             split_mode=str(subtitle_cache_seed_payload.get("split_mode") or ""),
             source_word_count=int(subtitle_cache_seed_payload.get("source_word_count", 0)),
             strategy_version=int(subtitle_cache_seed_payload.get("strategy_version", 1)),
@@ -227,20 +226,16 @@ def to_rate_item(rate: BillingModelRate) -> BillingRateItem:
 
 def to_public_subtitle_settings(item: SubtitleSetting) -> PublicSubtitleSettings:
     return PublicSubtitleSettings(
-        semantic_split_default_enabled=bool(item.semantic_split_default_enabled),
         default_asr_model=str(getattr(item, "default_asr_model", "") or ""),
     )
 
 
 def to_admin_subtitle_settings_item(item: SubtitleSetting) -> AdminSubtitleSettingsItem:
     return AdminSubtitleSettingsItem(
-        semantic_split_default_enabled=bool(item.semantic_split_default_enabled),
         default_asr_model=str(getattr(item, "default_asr_model", "") or ""),
         subtitle_split_enabled=bool(item.subtitle_split_enabled),
         subtitle_split_target_words=int(item.subtitle_split_target_words),
         subtitle_split_max_words=int(item.subtitle_split_max_words),
-        semantic_split_max_words_threshold=int(item.semantic_split_max_words_threshold),
-        semantic_split_timeout_seconds=int(item.semantic_split_timeout_seconds),
         translation_batch_max_chars=max(1, min(12000, int(getattr(item, "translation_batch_max_chars", 2600) or 2600))),
         updated_at=to_shanghai_aware(item.updated_at),
     )

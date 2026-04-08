@@ -82,7 +82,6 @@ def _to_lesson_subtitle_variant_response(lesson_id: int, variant: dict) -> Lesso
     return LessonSubtitleVariantResponse(
         ok=True,
         lesson_id=lesson_id,
-        semantic_split_enabled=bool(variant.get("semantic_split_enabled")),
         split_mode=str(variant.get("split_mode") or ""),
         source_word_count=int(variant.get("source_word_count", 0)),
         strategy_version=int(variant.get("strategy_version", 1)),
@@ -160,7 +159,6 @@ def _to_task_response(task: dict, db: Session) -> LessonTaskResponse:
 async def create_lesson(
     video_file: UploadFile = File(...),
     asr_model: str = Form(""),
-    semantic_split_enabled: bool | None = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -184,7 +182,6 @@ async def create_lesson(
                 selected_model,
                 db,
                 None,
-                semantic_split_enabled,
             ),
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
@@ -214,7 +211,6 @@ async def create_lesson(
 )
 async def create_lesson_task(
     asr_model: str = Form(""),
-    semantic_split_enabled: bool | None = Form(None),
     dashscope_file_id: str = Form(...),
     dashscope_file_url: str = Form(""),
     source_filename: str = Form(""),
@@ -238,7 +234,6 @@ async def create_lesson_task(
         payload = create_lesson_task_from_dashscope_file(
             owner_user_id=current_user.id,
             asr_model=selected_model,
-            semantic_split_enabled=semantic_split_enabled,
             dashscope_file_id=normalized_dashscope_file_id,
             dashscope_file_url=normalized_dashscope_file_url or None,
             source_filename=normalized_source_filename or None,
@@ -333,7 +328,6 @@ def create_local_asr_lesson_task(
             asr_payload=dict(payload.asr_payload or {}),
             owner_user_id=current_user.id,
             asr_model=selected_model,
-            semantic_split_enabled=False,
             db=db,
         )
         response_payload = LessonTaskCreateResponse(
@@ -607,13 +601,11 @@ def regenerate_lesson_subtitle_variant(
         variant = LessonService.build_subtitle_variant(
             asr_payload=payload.asr_payload,
             db=db,
-            semantic_split_enabled=payload.semantic_split_enabled,
         )
         logger.info(
-            "[DEBUG] lessons.subtitle_variant.success lesson_id=%s user_id=%s semantic_split_enabled=%s split_mode=%s",
+            "[DEBUG] lessons.subtitle_variant.success lesson_id=%s user_id=%s split_mode=%s",
             lesson.id,
             current_user.id,
-            bool(variant.get("semantic_split_enabled")),
             str(variant.get("split_mode") or ""),
         )
         return _to_lesson_subtitle_variant_response(lesson.id, variant)
@@ -646,21 +638,18 @@ def regenerate_lesson_subtitle_variant_stream(
                     message=str(progress_payload.get("message") or ""),
                     translate_done=int(progress_payload.get("translate_done", 0) or 0),
                     translate_total=int(progress_payload.get("translate_total", 0) or 0),
-                    semantic_split_enabled=bool(progress_payload.get("semantic_split_enabled")),
                 )
                 event_queue.put(("progress", event.model_dump()))
 
             variant = LessonService.build_subtitle_variant(
                 asr_payload=payload.asr_payload,
                 db=worker_db,
-                semantic_split_enabled=payload.semantic_split_enabled,
                 progress_callback=_progress,
             )
             logger.info(
-                "[DEBUG] lessons.subtitle_variant.stream.success lesson_id=%s user_id=%s semantic_split_enabled=%s split_mode=%s",
+                "[DEBUG] lessons.subtitle_variant.stream.success lesson_id=%s user_id=%s split_mode=%s",
                 lesson.id,
                 current_user.id,
-                bool(variant.get("semantic_split_enabled")),
                 str(variant.get("split_mode") or ""),
             )
             event_queue.put(("result", _to_lesson_subtitle_variant_response(lesson.id, variant).model_dump()))

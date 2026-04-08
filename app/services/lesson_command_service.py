@@ -251,7 +251,6 @@ def _build_task_start_kwargs(task: LessonGenerationTask) -> dict[str, object]:
         "req_dir": req_dir,
         "requested_asr_model": str(artifacts.get("requested_asr_model") or task.asr_model or ""),
         "effective_asr_model": str(artifacts.get("effective_asr_model") or task.asr_model or ""),
-        "semantic_split_enabled": bool(task.semantic_split_enabled),
         "input_mode": str(artifacts.get("input_mode") or "upload").strip().lower() or "upload",
         "source_duration_ms": int(artifacts.get("source_duration_ms") or 0),
     }
@@ -401,7 +400,7 @@ def run_lesson_generation_task(
     req_dir,
     requested_asr_model: str,
     effective_asr_model: str,
-    semantic_split_enabled: bool | None,
+
     session_factory: sessionmaker[Session],
     input_mode: str = "upload",
     source_duration_ms: int | None = None,
@@ -487,7 +486,6 @@ def run_lesson_generation_task(
                 "owner_id": owner_id,
                 "asr_model": effective_asr_model,
                 "task_id": task_id,
-                "semantic_split_enabled": semantic_split_enabled,
                 "db": db,
                 "progress_callback": _progress,
             }
@@ -505,7 +503,6 @@ def run_lesson_generation_task(
                 owner_id=owner_id,
                 asr_model=effective_asr_model,
                 task_id=task_id,
-                semantic_split_enabled=semantic_split_enabled,
                 db=db,
                 progress_callback=_progress,
             )
@@ -517,7 +514,6 @@ def run_lesson_generation_task(
                 owner_id=owner_id,
                 asr_model=effective_asr_model,
                 task_id=task_id,
-                semantic_split_enabled=semantic_split_enabled,
                 db=db,
                 progress_callback=_progress,
             )
@@ -695,7 +691,7 @@ def create_lesson_task_from_dashscope_file(
     *,
     owner_user_id: int,
     asr_model: str,
-    semantic_split_enabled: bool | None,
+
     dashscope_file_id: str,
     dashscope_file_url: str | None = None,
     source_filename: str | None = None,
@@ -736,7 +732,6 @@ def create_lesson_task_from_dashscope_file(
                 effective_asr_model=effective_asr_model,
                 model_fallback_applied=bool(model_resolution["model_fallback_applied"]),
                 model_fallback_reason=str(model_resolution["model_fallback_reason"]),
-                semantic_split_enabled=semantic_split_enabled,
                 work_dir=str(req_dir),
                 source_path=source_path_for_task,
                 db=db,
@@ -771,7 +766,7 @@ def create_lesson_task_from_local_asr(
     asr_payload: dict,
     owner_user_id: int,
     asr_model: str,
-    semantic_split_enabled: bool | None,
+
     db: Session,
 ) -> dict[str, object]:
     task_id = build_task_id()
@@ -809,7 +804,6 @@ def create_lesson_task_from_local_asr(
                 asr_model=asr_model,
                 requested_asr_model=asr_model,
                 effective_asr_model=asr_model,
-                semantic_split_enabled=semantic_split_enabled,
                 work_dir=str(req_dir),
                 source_path=str(payload_path),
                 db=db,

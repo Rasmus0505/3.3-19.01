@@ -316,13 +316,10 @@ def _subtitle_settings_item_from_dict(
     updated_by_user_email: str | None = None,
 ) -> AdminSubtitleSettingsItem:
     return AdminSubtitleSettingsItem(
-        semantic_split_default_enabled=bool(payload.get("semantic_split_default_enabled")),
         default_asr_model=str(payload.get("default_asr_model") or LESSON_DEFAULT_ASR_MODEL),
         subtitle_split_enabled=bool(payload.get("subtitle_split_enabled", True)),
         subtitle_split_target_words=int(payload.get("subtitle_split_target_words", 18) or 18),
         subtitle_split_max_words=int(payload.get("subtitle_split_max_words", 28) or 28),
-        semantic_split_max_words_threshold=int(payload.get("semantic_split_max_words_threshold", 24) or 24),
-        semantic_split_timeout_seconds=int(payload.get("semantic_split_timeout_seconds", 40) or 40),
         translation_batch_max_chars=max(1, min(12000, int(payload.get("translation_batch_max_chars", 2600) or 2600))),
         updated_at=to_shanghai_aware(updated_at),
         updated_by_user_id=updated_by_user_id,
@@ -912,13 +909,10 @@ def admin_update_subtitle_settings(
     if normalized_default_asr_model not in available_asr_models:
         return error_response(400, "INVALID_DEFAULT_ASR_MODEL", "默认 ASR 模型不在当前可用模型列表内", normalized_default_asr_model)
     before = to_admin_subtitle_settings_item(settings).model_dump(mode="json")
-    settings.semantic_split_default_enabled = payload.semantic_split_default_enabled
     settings.default_asr_model = normalized_default_asr_model
     settings.subtitle_split_enabled = payload.subtitle_split_enabled
     settings.subtitle_split_target_words = payload.subtitle_split_target_words
     settings.subtitle_split_max_words = payload.subtitle_split_max_words
-    settings.semantic_split_max_words_threshold = payload.semantic_split_max_words_threshold
-    settings.semantic_split_timeout_seconds = payload.semantic_split_timeout_seconds
     if payload.translation_batch_max_chars is not None:
         settings.translation_batch_max_chars = payload.translation_batch_max_chars
     settings.updated_by_user_id = current_admin.id
@@ -955,13 +949,10 @@ def admin_rollback_subtitle_settings_last(
     settings = get_subtitle_settings(db)
     before = _subtitle_settings_item_with_meta(settings).model_dump(mode="json")
     previous = rollback_candidate.settings
-    settings.semantic_split_default_enabled = previous.semantic_split_default_enabled
     settings.default_asr_model = previous.default_asr_model
     settings.subtitle_split_enabled = previous.subtitle_split_enabled
     settings.subtitle_split_target_words = previous.subtitle_split_target_words
     settings.subtitle_split_max_words = previous.subtitle_split_max_words
-    settings.semantic_split_max_words_threshold = previous.semantic_split_max_words_threshold
-    settings.semantic_split_timeout_seconds = previous.semantic_split_timeout_seconds
     settings.translation_batch_max_chars = previous.translation_batch_max_chars
     settings.updated_by_user_id = current_admin.id
     db.add(settings)
