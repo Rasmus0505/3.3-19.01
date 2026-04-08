@@ -1,7 +1,17 @@
-﻿import { CheckCircle2, FileJson, Loader2, RefreshCcw, Unlock, UploadCloud } from "lucide-react";
+import { CheckCircle2, FileJson, Loader2, RefreshCcw, Unlock, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+
+// 子组件导出（用于模块化重构）
+// 新代码建议使用这些子组件代替直接使用 UploadPanel
+export { UploadPanelHeader } from "./components/UploadPanelHeader";
+export { UploadProgress } from "./components/UploadProgress";
+export { DiagnosticsDialog } from "./components/DiagnosticsDialog";
+export { DesktopGuidanceDialog } from "./components/DesktopGuidanceDialog";
+
+// Hooks 导出
+export { useUploadPanelState, useActiveTaskState } from "./hooks";
 
 import { cn } from "../../lib/utils";
 import { api, createApiClient, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";

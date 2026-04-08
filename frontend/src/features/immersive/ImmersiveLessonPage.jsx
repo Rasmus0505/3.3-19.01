@@ -1,6 +1,18 @@
 import { ArrowLeft, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, Volume2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
+
+// 子组件导出（用于模块化重构）
+// 新代码建议使用这些子组件代替直接使用 ImmersiveLessonPage
+export { SubtitleDisplay } from "./components/SubtitleDisplay";
+export { PlaybackControls } from "./components/PlaybackControls";
+
+// Hooks 导出
+export { useImmersivePlayer } from "./hooks";
+
+// 类型导出
+export * from "./immersiveTypes";
+
 import AudioRecorder from "../../shared/components/AudioRecorder";
 import SOEResultCard from "./SOEResultCard";
 import ExplanationPanel from "./ExplanationPanel";

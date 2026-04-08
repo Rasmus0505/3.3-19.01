@@ -1,5 +1,23 @@
 # Milestones
 
+## v2.7 阅读板块重写增强 (Shipped: 2026-04-06)
+
+**Phases completed:** 3 phases (32, 33, 34), 3 plans
+
+**Key outcomes:**
+
+- Phase 32: Rewrite Persistence — IndexedDB `reading_rewrites` store，unlock后保存重写结果，自动加载，支持原文/重写版切换，历史列表重写徽章
+  - 4/4 requirements complete (RP-01~04)
+- Phase 33: Rewrite UI Enhancement — 黄色色块CSS (`oklch(0.93 0.16 85)`)，200ms tooltip，蓝色选中叠加层，ArticleWord CEFR suppression逻辑验证
+  - 5/5 requirements complete (UI-01~05)
+- Phase 34: Prompt Optimization — `/api/llm/simplify-words` 新端点，Token估算API，前端 `RewriteEstimateBanner` 组件
+  - 3/4 requirements complete (PO-01~03); PO-04 pending human verification
+
+**Known gaps:**
+- PO-04: Token节省验证需要人工测试真实API调用
+
+---
+
 ## v2.6 清洗 CEFR 词典数据源 (Shipped: 2026-04-06)
 
 **Phases completed:** 2 phases (30, 31), 2 plans

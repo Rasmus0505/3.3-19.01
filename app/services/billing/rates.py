@@ -191,4 +191,36 @@ __all__ = [
     "get_model_rate",
     "build_rate_payload",
     "enforce_mt_flash_only_rates",
+    "normalize_rate_yuan",
+    "yuan_to_compat_cents",
 ]
+
+
+def normalize_rate_yuan(value: object, *, fallback_cents: int = 0) -> Decimal:
+    """规范化费率（元）表示。
+
+    Args:
+        value: 费率值
+        fallback_cents: 当 value 无效时的备用值（以分为单位）
+
+    Returns:
+        规范化的费率（Decimal）
+    """
+    if value not in (None, ""):
+        normalized = model_normalize_rate_yuan(value)
+        if normalized > 0 or int(fallback_cents or 0) <= 0:
+            return normalized
+    fallback = max(0, int(fallback_cents or 0))
+    return cents_to_rate_yuan(fallback)
+
+
+def yuan_to_compat_cents(value: object) -> int:
+    """将元转换为兼容的 cents 表示。
+
+    Args:
+        value: 元值
+
+    Returns:
+        转换后的 cents
+    """
+    return rate_yuan_to_compat_cents(value)

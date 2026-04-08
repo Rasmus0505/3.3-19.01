@@ -42,12 +42,19 @@ from app.services.billing.redeem import (
     delete_redeem_batch_and_codes,
     abandon_redeem_batch,
     redeem_code,
+    normalize_redeem_code_input,
+    hash_redeem_code,
+    mask_redeem_code,
 )
 from app.services.billing.rates import (
     ensure_default_billing_rates,
     list_admin_rates,
     list_public_rates,
     get_model_rate,
+    build_rate_payload,
+    enforce_mt_flash_only_rates,
+    normalize_rate_yuan,
+    yuan_to_compat_cents,
 )
 from app.services.billing.settings import (
     SubtitleSettingsSnapshot,
@@ -78,6 +85,8 @@ from app.services.billing.constants import (
     PUBLIC_BILLING_MODEL_ORDER,
     LOCAL_BROWSER_ASR_MODELS,
 )
+from app.services.billing.translation_logs import append_translation_request_logs
+from app.services.billing.admin_ops import append_admin_operation_log
 
 __all__ = [
     # 异常
@@ -107,11 +116,16 @@ __all__ = [
     "delete_redeem_batch_and_codes",
     "abandon_redeem_batch",
     "redeem_code",
+    "normalize_redeem_code_input",
+    "hash_redeem_code",
+    "mask_redeem_code",
     # 费率
     "ensure_default_billing_rates",
     "list_admin_rates",
     "list_public_rates",
     "get_model_rate",
+    "normalize_rate_yuan",
+    "yuan_to_compat_cents",
     # 设置
     "SubtitleSettingsSnapshot",
     "ensure_default_subtitle_settings",
@@ -139,4 +153,8 @@ __all__ = [
     "ADMIN_BILLING_MODEL_ORDER",
     "PUBLIC_BILLING_MODEL_ORDER",
     "LOCAL_BROWSER_ASR_MODELS",
+    # 翻译日志
+    "append_translation_request_logs",
+    # 管理员操作日志
+    "append_admin_operation_log",
 ]
