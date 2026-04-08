@@ -2,6 +2,10 @@ import { ArrowLeft, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, Volume2 } from
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 
+// 布局组件
+import LearningLayout from "../../components/LearningLayout";
+import AISidebar from "../../components/AISidebar";
+
 // 子组件导出（用于模块化重构）
 // 新代码建议使用这些子组件代替直接使用 ImmersiveLessonPage
 export { SubtitleDisplay } from "./components/SubtitleDisplay";
@@ -3834,13 +3838,15 @@ export function ImmersiveLessonPage({
     .join(" ");
 
   return (
-      <div ref={immersiveContainerRef} className={immersivePageShellClassName}>
-        <Card
-        className={`immersive-page ${immersiveActive ? "immersive-page--immersive" : ""} ${
-          cinemaFullscreenActive ? "immersive-page--cinema" : ""
-        }`}
-        onClick={handleImmersivePageClick}
-      >
+      <LearningLayout
+        videoContent={
+          <div ref={immersiveContainerRef} className={immersivePageShellClassName}>
+            <Card
+            className={`immersive-page ${immersiveActive ? "immersive-page--immersive" : ""} ${
+              cinemaFullscreenActive ? "immersive-page--cinema" : ""
+            }`}
+            onClick={handleImmersivePageClick}
+          >
         <CardHeader className="immersive-card-header">
           <div className="immersive-header">
             <div className={cinemaHeaderControlsClassName} onMouseEnter={wakeCinemaControls} onFocusCapture={wakeCinemaControls}>
@@ -4459,6 +4465,25 @@ export function ImmersiveLessonPage({
           </CardContent>
         </Card>
       </div>
+        }
+        typingContent={
+          <div className="h-full">
+            {/* 拼写区域已经在 CardContent 中，这里预留插槽以便后续扩展 */}
+          </div>
+        }
+        leftSidebarTitle="AI 老师"
+        rightSidebarTitle="AI 陪看"
+        leftSidebarContent={
+          <div className="ai-sidebar-placeholder">
+            <p className="text-sm text-muted-foreground">AI 老师功能开发中...</p>
+          </div>
+        }
+        rightSidebarContent={
+          <div className="ai-sidebar-placeholder">
+            <p className="text-sm text-muted-foreground">AI 陪看功能开发中...</p>
+          </div>
+        }
+      />
   );
 }
 

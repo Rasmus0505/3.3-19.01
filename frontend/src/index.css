@@ -2,6 +2,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "./styles/style-vega.css";
+@import "./components/learning-layout.css";
 
 @theme inline {
   --font-sans: "Geist Variable", "Geist", "PingFang SC", "Microsoft YaHei",
