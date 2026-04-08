@@ -17,8 +17,8 @@
 # 子模块导出
 from app.services.billing.wallet import (
     BillingError,
-    get_or_create_wallet_account as _get_or_create,
-    reserve_points as _reserve_points,
+    get_or_create_wallet_account,
+    reserve_points,
     record_consume,
     manual_adjust,
     calculate_amount_by_duration_ms,
@@ -107,7 +107,7 @@ def consume_points(
     if points <= 0:
         raise BillingError("INVALID_POINTS", f"消耗点数必须大于 0: {points}")
 
-    account = _get_or_create(db, user_id, for_update=True)
+    account = get_or_create_wallet_account(db, user_id, for_update=True)
     new_balance = account.balance_points - points
     if new_balance < 0:
         raise BillingError("INSUFFICIENT_BALANCE", f"余额不足：需要 {points} 点，当前 {account.balance_points} 点")
@@ -153,7 +153,7 @@ def refund_points(
     if points <= 0:
         raise BillingError("INVALID_POINTS", f"退还点数必须大于 0: {points}")
 
-    account = _get_or_create(db, user_id, for_update=True)
+    account = get_or_create_wallet_account(db, user_id, for_update=True)
     new_balance = account.balance_points + points
 
     note_str = note
@@ -200,7 +200,7 @@ def refund_points_by_event(
     if points <= 0:
         raise BillingError("INVALID_POINTS", f"退还点数必须大于 0: {points}")
 
-    account = _get_or_create(db, user_id, for_update=True)
+    account = get_or_create_wallet_account(db, user_id, for_update=True)
     new_balance = account.balance_points + points
 
     ledger = WalletLedger(
@@ -241,7 +241,7 @@ def reserve_points(
     if points <= 0:
         raise BillingError("INVALID_POINTS", f"预扣点数必须大于 0: {points}")
 
-    account = _get_or_create(db, user_id, for_update=True)
+    account = get_or_create_wallet_account(db, user_id, for_update=True)
     new_balance = account.balance_points - points
 
     ledger = WalletLedger(
@@ -298,7 +298,7 @@ def settle_reserved_points(
             note=note or "结算退款",
         )
 
-    account = _get_or_create(db, user_id, for_update=True)
+    account = get_or_create_wallet_account(db, user_id, for_update=True)
     account.balance_points -= diff
     db.execute(
         text("UPDATE wallet_accounts SET balance_points = :balance WHERE id = :id"),
