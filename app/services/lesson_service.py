@@ -3293,3 +3293,25 @@ class LessonService:
                 except Exception:
                     db.rollback()
             raise
+
+
+def extract_cefr_from_sentences(sentences: list[str], target_level: str) -> list[dict]:
+    """从句子列表中提取 CEFR 词汇信息（后端一次筛选）"""
+    from app.services.cefr_explain_service import CefrExplainService
+
+    db = None  # 服务不需要 db
+    service = CefrExplainService(db=db, target_level=target_level)
+    return service.extract_cefr_words(sentences)
+
+
+def generate_sentence_explanation(
+    sentence: str,
+    words_above: list[dict],
+    target_level: str
+) -> dict:
+    """为单个句子生成讲解内容"""
+    from app.services.cefr_explain_service import CefrExplainService
+
+    db = None
+    service = CefrExplainService(db=db, target_level=target_level)
+    return service.generate_explanation(sentence, words_above)
