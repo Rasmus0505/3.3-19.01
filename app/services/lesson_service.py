@@ -866,15 +866,6 @@ class LessonService:
             raise MediaError("ASR_SENTENCE_MISSING", "ASR 返回结果缺少句级信息", "未找到有效句子")
 
         source_word_count = len(extract_word_items(asr_payload))
-        logger.info(
-            "[DEBUG] lesson.subtitle_variant split_mode=%s split_enabled=%s semantic_split_enabled=%s semantic_split_applied=%s source_words=%s output_sentences=%s",
-            split_mode,
-            subtitle_settings.subtitle_split_enabled,
-            effective_semantic_split_enabled,
-            semantic_split_applied,
-            source_word_count,
-            len(sentences),
-        )
         if (
             effective_semantic_split_enabled
             and split_mode not in {"word_level_split", "word_level_split+semantic"}
