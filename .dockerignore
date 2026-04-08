@@ -11,6 +11,13 @@ __pycache__/
 .gitignore
 .pytest_cache/
 .venv/
+.claude/
+.cursor/
+.vscode/
+.specstory/
+.planning/
+.worktrees/
+.desktop-runtime/
 
 # Local docs and coordination assets
 Docx/
