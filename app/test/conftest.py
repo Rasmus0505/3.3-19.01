@@ -2,6 +2,8 @@
 
 提供后端测试的 fixtures 和配置。
 """
+from decimal import Decimal
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
@@ -68,21 +70,21 @@ def test_billing_rates(db_session: Session) -> list[BillingModelRate]:
     rates = [
         BillingModelRate(
             model_name="qwen3-asr-flash-filetrans",
-            points_per_minute=130,
-            price_per_minute_yuan=1.30,
+            price_per_minute_cents_legacy=130,
+            price_per_minute_yuan=Decimal("1.30"),
             billing_unit="minute",
             is_active=True,
         ),
         BillingModelRate(
             model_name="qwen-mt-flash",
-            points_per_1k_tokens=15,
+            cost_per_1k_tokens_cents=15,
             billing_unit="1k_tokens",
             is_active=True,
         ),
         BillingModelRate(
             model_name="faster-whisper-medium",
-            points_per_minute=130,
-            price_per_minute_yuan=1.30,
+            price_per_minute_cents_legacy=130,
+            price_per_minute_yuan=Decimal("1.30"),
             billing_unit="minute",
             is_active=True,
         ),

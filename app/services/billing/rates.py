@@ -145,10 +145,10 @@ def _insert_default_rate(db: Session, model_name: str, rate_config: dict[str, ob
     """插入默认费率。"""
     rate = BillingModelRate(
         model_name=model_name,
-        points_per_minute=int(rate_config.get("points_per_minute", 0) or 0),
-        price_per_minute_yuan_display=rate_config.get("price_per_minute_yuan", Decimal("0")),
-        points_per_1k_tokens=int(rate_config.get("points_per_1k_tokens", 0) or 0),
-        cost_per_minute_cents=int(rate_config.get("cost_per_minute_cents", 0) or 0),
+        price_per_minute_cents_legacy=int(rate_config.get("points_per_minute", 0) or 0),
+        price_per_minute_yuan=Decimal(str(rate_config.get("price_per_minute_yuan", "0")) or "0"),
+        cost_per_1k_tokens_cents=int(rate_config.get("points_per_1k_tokens", 0) or 0),
+        cost_per_minute_cents_legacy=int(rate_config.get("cost_per_minute_cents", 0) or 0),
         cost_per_1k_tokens_input_cents=int(rate_config.get("cost_per_1k_tokens_input_cents", 0) or 0),
         cost_per_1k_tokens_output_cents=int(rate_config.get("cost_per_1k_tokens_output_cents", 0) or 0),
         billing_unit=str(rate_config.get("billing_unit", "minute")),
@@ -156,7 +156,7 @@ def _insert_default_rate(db: Session, model_name: str, rate_config: dict[str, ob
         parallel_threshold_seconds=int(rate_config.get("parallel_threshold_seconds", 0) or 0),
         segment_seconds=int(rate_config.get("segment_seconds", 0) or 0),
         max_concurrency=int(rate_config.get("max_concurrency", 1) or 1),
-        active=True,
+        is_active=True,
     )
     db.add(rate)
     db.flush()
