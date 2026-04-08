@@ -20,7 +20,7 @@ from app.api.routers.voice_cloning import router as voice_cloning_router
 from app.api.routers.tts import router as tts_router
 from app.api.routers.announcement_public import router as announcement_public_router
 from app.api.routers.dashscope_upload import router as dashscope_upload_router
-from app.api.routers.local_asr_assets import router as local_asr_assets_router
+# from app.api.routers.local_asr_assets import router as local_asr_assets_router  # TODO: 创建缺失模块
 from app.api.routers.lessons.cloud_transcribe import router as cloud_transcribe_router
 from app.core.config import (
     APP_DIR,
@@ -738,7 +738,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(cloud_transcribe_router)
     app.include_router(dashscope_upload_router)
     app.include_router(asr_models_router)
-    app.include_router(local_asr_assets_router)
+    # app.include_router(local_asr_assets_router)  # TODO: 创建缺失模块
     app.include_router(practice)
     app.include_router(media)
     app.include_router(soe)
