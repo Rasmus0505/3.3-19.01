@@ -17,7 +17,7 @@ def test_lesson(db_session: Session, test_user) -> Lesson:
         user_id=test_user.id,
         title="Test Lesson",
         source_filename="test_video.mp4",
-        asr_model="faster-whisper",
+        asr_model="qwen3-asr-flash-filetrans",
         duration_ms=60000,
         media_storage="server",
         source_duration_ms=60000,

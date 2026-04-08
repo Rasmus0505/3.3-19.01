@@ -1,6 +1,4 @@
 export const ASR_EXECUTION_STRATEGIES = Object.freeze({
-  BOTTLE1_LOCAL: "bottle1_local",
-  BOTTLE1_CLOUD: "bottle1_cloud",
   BOTTLE2_CLOUD: "bottle2_cloud",
 });
 
@@ -35,19 +33,6 @@ function tryParseJson(text) {
 function includesAny(text, patterns = []) {
   const lowered = normalizeText(text).toLowerCase();
   return patterns.some((pattern) => lowered.includes(String(pattern || "").toLowerCase()));
-}
-
-export function normalizeDesktopHelperStatus(payload = {}) {
-  return {
-    ok: Boolean(payload?.ok),
-    healthy: Boolean(payload?.healthy),
-    modelReady: Boolean(payload?.modelReady ?? payload?.model_ready),
-    modelStatus: normalizeText(payload?.modelStatus ?? payload?.model_status, "helper_not_started"),
-    helperMode: normalizeText(payload?.helperMode ?? payload?.helper_mode),
-    pythonVersion: normalizeText(payload?.pythonVersion ?? payload?.python_version),
-    statusCode: Math.max(0, Number(payload?.statusCode ?? payload?.status_code ?? 0)),
-    lastCheckedAt: normalizeText(payload?.lastCheckedAt ?? payload?.last_checked_at),
-  };
 }
 
 export function normalizeServerStatus(payload = {}) {
@@ -93,106 +78,23 @@ export function getConnectivityActionMessage({ browserOnline = true, serverStatu
   return "";
 }
 
-export function getLocalModeBlockedMessage(reason = "") {
-  switch (normalizeText(reason)) {
-    case "local_helper_unhealthy":
-      return "本机生成当前不可用，请稍后重试。";
-    case "local_bundle_missing":
-    case "local_model_not_ready":
-      return "本机资源未就绪，请先准备。";
-    default:
-      return "本机模式当前不可用，请稍后重试。";
-  }
-}
-
-export function getAutoDegradeBannerText(reason = "") {
-  switch (normalizeText(reason)) {
-    case "local_helper_unhealthy":
-      return "本机运行环境异常";
-    case "local_retry_exhausted":
-      return "Bottle 1.0 重试耗尽";
-    case "local_bundle_missing":
-    case "local_model_not_ready":
-      return "本机资源未就绪";
-    default:
-      return "已自动重试";
-  }
-}
-
-export function isModelCorruptionError(error = {}) {
-  const message = String(error?.message || error?.detail || "").toLowerCase();
-  const code = String(error?.code || error?.errorCode || "").toLowerCase();
-  const searchableText = `${message} ${code}`;
-
-  if (code === "model_corruption" || code === "model_invalid" || code === "model_missing") {
-    return true;
-  }
-  const corruptionIndicators = ["corrupt", "invalid", "missing", "damaged", "broken", "hash mismatch", "checksum failed"];
-  const modelIndicators = ["model", "weights", "bin file", "model file", "onnx", "safetensors"];
-  const hasCorruption = corruptionIndicators.some((indicator) => searchableText.includes(indicator));
-  const hasModelContext = modelIndicators.some((indicator) => searchableText.includes(indicator));
-  return hasCorruption && hasModelContext;
-}
-
-export function getModelRedownloadGuidance(error = {}) {
-  if (isModelCorruptionError(error)) {
-    return "模型文件可能损坏，请重新下载后重试。";
-  }
-  return "生成失败，请重试。";
-}
-
 export function resolveAsrStrategy({
   runtimeTrack = "cloud",
-  userExplicitTrack = false,
-  localHelperStatus = {},
   serverStatus = {},
-  localFailureCount = 0,
 } = {}) {
-  const helperStatus = normalizeDesktopHelperStatus(localHelperStatus);
   const serverReachable = serverStatus?.reachable !== false;
   const track = normalizeText(runtimeTrack, "cloud");
 
-  if (track === "desktop_local" && userExplicitTrack) {
-    return {
-      strategy: ASR_EXECUTION_STRATEGIES.BOTTLE1_LOCAL,
-      degraded: !helperStatus.healthy || !helperStatus.modelReady,
-      reason: !helperStatus.healthy
-        ? "local_helper_unhealthy"
-        : !helperStatus.modelReady
-          ? "local_model_not_ready"
-          : "",
-      manual: true,
-    };
-  }
-
-  if (Number(localFailureCount || 0) >= 2) {
+  if (!serverReachable) {
     return {
       strategy: ASR_EXECUTION_STRATEGIES.BOTTLE2_CLOUD,
       degraded: true,
-      reason: "local_retry_exhausted",
-      manual: false,
-    };
-  }
-
-  if (!serverReachable || !helperStatus.healthy) {
-    return {
-      strategy: ASR_EXECUTION_STRATEGIES.BOTTLE2_CLOUD,
-      degraded: true,
-      reason: !serverReachable ? "cloud_unavailable" : "local_helper_unhealthy",
-      manual: false,
-    };
-  }
-
-  if (!helperStatus.modelReady) {
-    return {
-      strategy: ASR_EXECUTION_STRATEGIES.BOTTLE2_CLOUD,
-      degraded: true,
-      reason: "local_model_not_ready",
+      reason: "cloud_unavailable",
       manual: false,
     };
   }
   return {
-    strategy: ASR_EXECUTION_STRATEGIES.BOTTLE1_LOCAL,
+    strategy: ASR_EXECUTION_STRATEGIES.BOTTLE2_CLOUD,
     degraded: false,
     reason: "",
     manual: false,

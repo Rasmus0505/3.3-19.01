@@ -28,7 +28,7 @@ def test_wallet(db_session: Session, test_user) -> WalletAccount:
 def test_billing_rate(db_session: Session, admin_user) -> BillingModelRate:
     """创建测试计费费率。"""
     rate = BillingModelRate(
-        model_name="faster-whisper",
+        model_name="qwen3-asr-flash-filetrans",
         rate_per_second_yuan=Decimal("0.001"),
         is_active=True,
         created_by=admin_user.id,

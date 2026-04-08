@@ -1,19 +1,12 @@
 """
-Unit tests for Phase 02.1 Plan 03: Billing Cleanup Verification
+Unit tests for Phase: Remove local model dependencies
 
 Verifies:
-- FASTER_WHISPER_ASR_MODEL is in ADMIN_BILLING_MODEL_ORDER
-- Faster Whisper settings endpoints are removed from admin router
-- GET /api/admin/billing-rates returns faster-whisper-medium
-- GET /api/billing/rates returns faster-whisper-medium
-
-Uses HTTP endpoint tests via TestClient + app dependency overrides,
-which properly handles SQLite schema translation for this project's
-PostgreSQL-schema models.
+- FASTER_WHISPER_ASR_MODEL is removed from billing constants
+- Faster Whisper settings endpoints remain removed
+- Billing rates endpoints work correctly without faster-whisper
 """
 from __future__ import annotations
-
-from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,7 +14,6 @@ from fastapi.testclient import TestClient
 from app.api.deps.auth import get_admin_user, get_current_user
 from app.db import get_db
 from app.main import create_app
-from app.services.asr_model_registry import FASTER_WHISPER_ASR_MODEL
 from app.services.billing import ADMIN_BILLING_MODEL_ORDER, PUBLIC_BILLING_MODEL_ORDER
 
 
@@ -85,7 +77,7 @@ def public_client():
             yield session
         finally:
             session.close()
-            engine.dispose()
+        engine.dispose()
 
     app.dependency_overrides[get_db] = _override_get_db
 
@@ -96,28 +88,27 @@ def public_client():
 
 
 # ---------------------------------------------------------------------------
-# Test 1: FASTER_WHISPER_ASR_MODEL in ADMIN_BILLING_MODEL_ORDER
+# Test 1: FASTER_WHISPER_ASR_MODEL removed from billing constants
 # ---------------------------------------------------------------------------
 
-def test_faster_whisper_in_admin_model_order():
-    """Verify FASTER_WHISPER_ASR_MODEL is in ADMIN_BILLING_MODEL_ORDER tuple."""
-    assert FASTER_WHISPER_ASR_MODEL in ADMIN_BILLING_MODEL_ORDER, (
-        f"FASTER_WHISPER_ASR_MODEL ('{FASTER_WHISPER_ASR_MODEL}') "
-        f"must be in ADMIN_BILLING_MODEL_ORDER {ADMIN_BILLING_MODEL_ORDER}"
+def test_faster_whisper_removed_from_admin_model_order():
+    """Verify FASTER_WHISPER_ASR_MODEL is NOT in ADMIN_BILLING_MODEL_ORDER tuple."""
+    assert "faster-whisper-medium" not in ADMIN_BILLING_MODEL_ORDER, (
+        f"faster-whisper-medium should not be in ADMIN_BILLING_MODEL_ORDER {ADMIN_BILLING_MODEL_ORDER}"
     )
 
 
-def test_admin_billing_model_order_has_three_models():
-    """Verify ADMIN_BILLING_MODEL_ORDER contains exactly 3 models: qwen-asr, qwen-mt-flash, faster-whisper-medium."""
+def test_admin_billing_model_order_count():
+    """Verify ADMIN_BILLING_MODEL_ORDER contains correct number of models after cleanup."""
     assert len(ADMIN_BILLING_MODEL_ORDER) == 3, (
         f"ADMIN_BILLING_MODEL_ORDER should have 3 models, got {len(ADMIN_BILLING_MODEL_ORDER)}: {ADMIN_BILLING_MODEL_ORDER}"
     )
 
 
-def test_public_billing_model_order_has_two_models():
-    """Verify PUBLIC_BILLING_MODEL_ORDER contains exactly 2 models: qwen-asr, faster-whisper-medium."""
-    assert len(PUBLIC_BILLING_MODEL_ORDER) == 2, (
-        f"PUBLIC_BILLING_MODEL_ORDER should have 2 models, got {len(PUBLIC_BILLING_MODEL_ORDER)}: {PUBLIC_BILLING_MODEL_ORDER}"
+def test_public_billing_model_order_count():
+    """Verify PUBLIC_BILLING_MODEL_ORDER contains only qwen-asr after cleanup."""
+    assert len(PUBLIC_BILLING_MODEL_ORDER) == 1, (
+        f"PUBLIC_BILLING_MODEL_ORDER should have 1 model, got {len(PUBLIC_BILLING_MODEL_ORDER)}: {PUBLIC_BILLING_MODEL_ORDER}"
     )
 
 
@@ -173,13 +164,12 @@ def test_faster_whisper_rollback_endpoint_removed(client: TestClient):
 
 
 # ---------------------------------------------------------------------------
-# Test 3 & 4: Billing rates endpoints return faster-whisper-medium
+# Test 3: Billing rates endpoints work without faster-whisper
 # ---------------------------------------------------------------------------
 
-def test_admin_billing_rates_endpoint_contains_faster_whisper(client: TestClient):
+def test_admin_billing_rates_no_faster_whisper(client: TestClient):
     """
-    Verify GET /api/admin/billing-rates returns a rate item for faster-whisper-medium.
-    This confirms Bottle 1.0 (faster-whisper-medium) is now in the admin billing rates list.
+    Verify GET /api/admin/billing-rates does not contain faster-whisper-medium.
     """
     response = client.get("/api/admin/billing-rates")
     assert response.status_code == 200, f"Expected 200, got {response.status_code}"
@@ -190,14 +180,14 @@ def test_admin_billing_rates_endpoint_contains_faster_whisper(client: TestClient
     rates = data.get("rates", [])
     model_names = {rate.get("model_name") for rate in rates}
 
-    assert FASTER_WHISPER_ASR_MODEL in model_names, (
-        f"faster-whisper-medium must be in /api/admin/billing-rates response. "
+    assert "faster-whisper-medium" not in model_names, (
+        f"faster-whisper-medium should NOT be in /api/admin/billing-rates response. "
         f"Got models: {model_names}"
     )
 
 
-def test_admin_billing_rates_has_three_models(client: TestClient):
-    """Verify /api/admin/billing-rates returns exactly 3 model rates."""
+def test_admin_billing_rates_count(client: TestClient):
+    """Verify /api/admin/billing-rates returns correct number of rates."""
     response = client.get("/api/admin/billing-rates")
     assert response.status_code == 200
 
@@ -216,10 +206,9 @@ def test_admin_billing_rates_response_omits_runtime_tuning_fields(client: TestCl
     assert "max_concurrency" not in first_rate
 
 
-def test_public_billing_rates_endpoint_contains_faster_whisper(public_client: TestClient):
+def test_public_billing_rates_no_faster_whisper(public_client: TestClient):
     """
-    Verify GET /api/billing/rates returns faster-whisper-medium.
-    This was already working before Phase 02.1, confirming no regression.
+    Verify GET /api/billing/rates does not contain faster-whisper-medium.
     """
     response = public_client.get("/api/billing/rates")
     assert response.status_code == 200, f"Expected 200, got {response.status_code}"
@@ -230,16 +219,16 @@ def test_public_billing_rates_endpoint_contains_faster_whisper(public_client: Te
     rates = data.get("rates", [])
     model_names = {rate.get("model_name") for rate in rates}
 
-    assert FASTER_WHISPER_ASR_MODEL in model_names, (
-        f"faster-whisper-medium must be in /api/billing/rates response. "
+    assert "faster-whisper-medium" not in model_names, (
+        f"faster-whisper-medium should NOT be in /api/billing/rates response. "
         f"Got models: {model_names}"
     )
 
 
-def test_public_billing_rates_has_two_models(public_client: TestClient):
-    """Verify /api/billing/rates returns exactly 2 model rates (qwen-asr, faster-whisper-medium)."""
+def test_public_billing_rates_count(public_client: TestClient):
+    """Verify /api/billing/rates returns only 1 model rate after cleanup."""
     response = public_client.get("/api/billing/rates")
     assert response.status_code == 200
 
     rates = response.json().get("rates", [])
-    assert len(rates) == 2, f"Expected 2 billing rates, got {len(rates)}: {[r.get('model_name') for r in rates]}"
+    assert len(rates) == 1, f"Expected 1 billing rate, got {len(rates)}: {[r.get('model_name') for r in rates]}"

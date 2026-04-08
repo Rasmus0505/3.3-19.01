@@ -20,21 +20,6 @@ QWEN_DEFAULT_MODEL = QWEN_ASR_MODEL
 SUPPORTED_MODELS = set(get_supported_transcribe_asr_model_keys())
 
 
-def _transcribe_audio_file_with_faster_whisper(
-    audio_path: str,
-    *,
-    known_duration_ms: int | None = None,
-    progress_callback=None,
-) -> dict[str, Any]:
-    from app.services.faster_whisper_asr import transcribe_audio_file_with_faster_whisper
-
-    return transcribe_audio_file_with_faster_whisper(
-        audio_path,
-        known_duration_ms=known_duration_ms,
-        progress_callback=progress_callback,
-    )
-
-
 # AsrError 和 AsrCancellationRequested 现在从 app.exceptions.asr 导入
 # 为了向后兼容，保留本地定义（与 app.exceptions.asr 中的类兼容）
 class AsrError(RuntimeError):
@@ -397,12 +382,6 @@ def transcribe_audio_file(
     model_name = (model or "").strip()
     if model_name not in SUPPORTED_MODELS:
         raise AsrError("INVALID_MODEL", "不支持的模型", model_name)
-    if model_name == "faster-whisper-medium":
-        return _transcribe_audio_file_with_faster_whisper(
-            audio_path,
-            known_duration_ms=known_duration_ms,
-            progress_callback=progress_callback,
-        )
     return _transcribe_audio_file_with_qwen(audio_path, model=model_name, requests_timeout=requests_timeout, progress_callback=progress_callback)
 
 

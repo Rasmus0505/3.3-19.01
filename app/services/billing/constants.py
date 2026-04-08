@@ -7,7 +7,6 @@ from decimal import Decimal
 
 from app.core.config import LESSON_DEFAULT_ASR_MODEL, REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_DEFAULT_VALID_DAYS
 from app.services.asr_model_registry import (
-    FASTER_WHISPER_ASR_MODEL,
     QWEN_ASR_MODEL as FAST_CLOUD_MODEL,
 )
 from app.models.billing import cents_to_rate_yuan, normalize_rate_yuan as model_normalize_rate_yuan, rate_yuan_to_compat_cents
@@ -71,12 +70,10 @@ MT_MODEL_PREFIX = "qwen-mt-"
 ADMIN_BILLING_MODEL_ORDER: tuple[str, ...] = (
     FAST_CLOUD_MODEL,
     MT_FLASH_MODEL,
-    FASTER_WHISPER_ASR_MODEL,  # "faster-whisper-medium" — Bottle 1.0 billing
     "deepseek-v3.2",
 )
 PUBLIC_BILLING_MODEL_ORDER: tuple[str, ...] = (
     FAST_CLOUD_MODEL,
-    FASTER_WHISPER_ASR_MODEL,
 )
 LOCAL_BROWSER_ASR_MODELS: tuple[str, ...] = ()
 
@@ -106,21 +103,6 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
         "cost_per_1k_tokens_input_cents": 1,
         "cost_per_1k_tokens_output_cents": 20,
         "billing_unit": "1k_tokens",
-        "parallel_enabled": False,
-        "parallel_threshold_seconds": 600,
-        "segment_seconds": 300,
-        "max_concurrency": 1,
-    },
-    {
-        "model_name": FASTER_WHISPER_ASR_MODEL,
-        "points_per_minute": 130,
-        "price_per_minute_yuan": Decimal("1.3000"),
-        "points_per_1k_tokens": 0,
-        "cost_per_minute_cents": 0,
-        "cost_per_minute_yuan": Decimal("0.0000"),
-        "cost_per_1k_tokens_input_cents": 0,
-        "cost_per_1k_tokens_output_cents": 0,
-        "billing_unit": "minute",
         "parallel_enabled": False,
         "parallel_threshold_seconds": 600,
         "segment_seconds": 300,

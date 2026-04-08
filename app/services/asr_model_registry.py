@@ -5,19 +5,17 @@ import os
 from app.core.config import DASHSCOPE_API_KEY
 
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
-FASTER_WHISPER_ASR_MODEL = "faster-whisper-medium"
 
 UPLOAD_ASR_MODEL_KEYS: tuple[str, ...] = (
     QWEN_ASR_MODEL,
 )
 TRANSCRIBE_ASR_MODEL_KEYS: tuple[str, ...] = (
     QWEN_ASR_MODEL,
-    FASTER_WHISPER_ASR_MODEL,
 )
 LOCAL_BROWSER_ASR_MODEL_KEYS: tuple[str, ...] = ()
-LOCAL_DESKTOP_ASR_MODEL_KEYS: tuple[str, ...] = (FASTER_WHISPER_ASR_MODEL,)
+LOCAL_DESKTOP_ASR_MODEL_KEYS: tuple[str, ...] = ()
 LOCAL_TASK_ASR_MODEL_KEYS: tuple[str, ...] = ()
-ALL_ASR_MODEL_KEYS: tuple[str, ...] = (QWEN_ASR_MODEL, FASTER_WHISPER_ASR_MODEL)
+ALL_ASR_MODEL_KEYS: tuple[str, ...] = (QWEN_ASR_MODEL,)
 
 STATUS_READY = "ready"
 STATUS_PREPARING = "preparing"
@@ -140,16 +138,12 @@ def _get_qwen_status() -> dict[str, object]:
 
 
 def list_asr_model_descriptors() -> list[dict[str, object]]:
-    return [_get_qwen_status(), get_asr_model_status(FASTER_WHISPER_ASR_MODEL)]
+    return [_get_qwen_status()]
 
 
 def get_asr_model_status(model_key: str) -> dict[str, object]:
     if model_key == QWEN_ASR_MODEL:
         return _get_qwen_status()
-    if model_key == FASTER_WHISPER_ASR_MODEL:
-        from app.services.faster_whisper_asr import get_faster_whisper_model_status
-
-        return get_faster_whisper_model_status()
     return {
         "model_key": str(model_key or "").strip() or "unknown",
         "status": STATUS_UNSUPPORTED,
@@ -161,21 +155,15 @@ def get_asr_model_status(model_key: str) -> dict[str, object]:
 
 
 def prepare_asr_model(model_key: str, *, force_refresh: bool = False) -> dict[str, object]:
-    if model_key == FASTER_WHISPER_ASR_MODEL:
-        from app.services.faster_whisper_asr import prepare_faster_whisper_model
-
-        return prepare_faster_whisper_model()
     return _get_qwen_status()
 
 
 def verify_asr_model(model_key: str) -> dict[str, object]:
-    if model_key == FASTER_WHISPER_ASR_MODEL:
-        return get_asr_model_status(model_key)
     return _get_qwen_status()
 
 
 def list_asr_models_with_status() -> list[dict[str, object]]:
-    return [_get_qwen_status(), get_asr_model_status(FASTER_WHISPER_ASR_MODEL)]
+    return [_get_qwen_status()]
 
 
 def get_supported_upload_asr_model_keys() -> tuple[str, ...]:
@@ -205,6 +193,4 @@ def get_supported_asr_model_keys() -> tuple[str, ...]:
 def get_asr_display_meta(model_key: str) -> tuple[str, str]:
     if model_key == QWEN_ASR_MODEL:
         return "Bottle 2.0", "cloud"
-    if model_key == FASTER_WHISPER_ASR_MODEL:
-        return "Bottle 1.0", "desktop_local"
     return str(model_key or "").strip() or "Unnamed model", "cloud"

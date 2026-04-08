@@ -164,18 +164,6 @@ spec:
             default: /tmp/zeabur3.3
           PERSISTENT_DATA_DIR:
             default: /data
-          ASR_BUNDLE_ROOT_DIR:
-            default: /data/asr-models
-          FASTER_WHISPER_MODELSCOPE_MODEL_ID:
-            default: Systran/faster-distil-whisper-small.en
-          FASTER_WHISPER_MODEL_DIR:
-            default: /data/asr-models/faster-distil-small.en
-          FASTER_WHISPER_PREFETCH_ON_START:
-            default: "0"
-          FASTER_WHISPER_COMPUTE_TYPE:
-            default: int8
-          FASTER_WHISPER_CPU_THREADS:
-            default: "4"
           MT_BASE_URL:
             default: https://dashscope.aliyuncs.com/compatible-mode/v1
           MT_MODEL:

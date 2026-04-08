@@ -33,8 +33,6 @@ def _compat_cents_from_yuan(value: Decimal) -> int:
 
 def _rate_display_meta(model_name: str) -> tuple[str, str]:
     normalized = str(model_name or "").strip()
-    if normalized == "faster-whisper-medium":
-        return "Bottle 1.0", "desktop_local"
     if normalized == "qwen3-asr-flash-filetrans":
         return "Bottle 2.0", "cloud_api"
     display_name, runtime_kind = get_asr_display_meta(normalized)
@@ -167,11 +165,6 @@ def to_lesson_detail_response(lesson: Lesson, sentences: list[LessonSentence]) -
 # These are read-only; the UI never sends cost updates.
 SYSTEM_FIXED_COST_RATES: dict[str, dict[str, int]] = {
     # ASR models — cost in cents per minute
-    "faster-whisper-medium": {
-        "cost_per_1k_tokens_input_cents": 0,
-        "cost_per_1k_tokens_output_cents": 0,
-        "cost_per_minute_cents": 14,  # 0.14 yuan/min
-    },
     "qwen3-asr-flash-filetrans": {
         "cost_per_1k_tokens_input_cents": 0,
         "cost_per_1k_tokens_output_cents": 0,
