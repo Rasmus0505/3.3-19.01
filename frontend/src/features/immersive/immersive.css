@@ -526,6 +526,18 @@
   justify-content: flex-start;
 }
 
+.immersive-word-row--centered {
+  justify-content: center;
+}
+
+.immersive-word-row--multi-line-left {
+  justify-content: flex-start;
+}
+
+.immersive-word-row--multi-line-first {
+  justify-content: space-between;
+}
+
 .immersive-word-row-frame--cinema {
   width: min(1120px, calc(100% - 8px));
   max-width: min(1120px, calc(100% - 8px));

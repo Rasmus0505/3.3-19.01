@@ -1142,6 +1142,9 @@ export function ImmersiveLessonPage({
   const typingInputRef = useRef(null);
   const bindingInputRef = useRef(null);
   const cinemaControlsIdleTimerRef = useRef(null);
+  const wordRowFrameRef = useRef(null);
+  const [isWordRowMultiLine, setIsWordRowMultiLine] = useState(false);
+  const [wordRowLines, setWordRowLines] = useState(null);
   const translationMaskChromeIdleTimerRef = useRef(null);
   const currentWordInputRef = useRef("");
   const activeWordIndexRef = useRef(0);
@@ -1748,6 +1751,51 @@ export function ImmersiveLessonPage({
       localStorage.setItem(`explanation_viewed_${currentSentence.id}`, 'true');
     }
   }, [currentSentence]);
+
+  // 检测 word-row 是否有多行，并计算每行的单词索引
+  useEffect(() => {
+    if (!wordRowFrameRef.current) return;
+    const container = wordRowFrameRef.current;
+    const slots = container.querySelectorAll('.immersive-word-slot');
+    if (slots.length === 0) return;
+
+    let maxTop = 0;
+    let minTop = Infinity;
+    slots.forEach((slot) => {
+      const top = slot.getBoundingClientRect().top;
+      if (top > maxTop) maxTop = top;
+      if (top < minTop) minTop = top;
+    });
+    // 如果有多个不同的 top 值，说明有多行
+    const hasMultiLine = maxTop - minTop > 20;
+    setIsWordRowMultiLine(hasMultiLine);
+
+    // 如果有多行，计算每行的单词索引
+    if (hasMultiLine) {
+      const rows: number[][] = [];
+      let currentRow: number[] = [];
+      let currentTop = -1;
+      slots.forEach((slot, index) => {
+        const top = slot.getBoundingClientRect().top;
+        if (currentTop === -1) {
+          currentTop = top;
+          currentRow.push(index);
+        } else if (Math.abs(top - currentTop) < 20) {
+          currentRow.push(index);
+        } else {
+          rows.push(currentRow);
+          currentRow = [index];
+          currentTop = top;
+        }
+      });
+      if (currentRow.length > 0) {
+        rows.push(currentRow);
+      }
+      setWordRowLines(rows);
+    } else {
+      setWordRowLines(null);
+    }
+  }, [expectedTokens, typingPanelRef.current]);
 
   useEffect(() => {
     setPlaybackRateInputValue(formatPlaybackRateInputValue(selectedPlaybackRate));
@@ -4147,42 +4195,92 @@ export function ImmersiveLessonPage({
               {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
               {waitingForInitialPlayback ? <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p> : null}
 
-              <div className={cinemaFullscreenActive ? "immersive-word-row-frame immersive-word-row-frame--cinema" : ""}>
-                <div className={`immersive-word-row ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""}`}>
-                  {expectedTokens.map((token, index) => {
-                    const status = wordStatuses[index] || "pending";
-                    const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealComparableIndices[index] || []);
-                    return (
-                      <div
-                        key={`${token}-${index}`}
-                        className={cn(
-                          `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
-                          (() => {
-                            const lookupResult = lookupCefrLevelFromMap(currentSentenceCefrMap, token, cefrAnalyzerRef.current);
-                            const cefrClass = computeCefrClassName(lookupResult, cefrLevel);
-                            if (typeof window !== "undefined" && window.__cefrDebug?.enabled) {
-                              console.debug("[CEFR render]", { token, lookupResult, cefrLevel, cefrClass });
-                            }
-                            return cefrClass;
-                          })(),
-                        )}
-                      >
-                        <div className="immersive-letter-row">
-                          {slots.map((slot) => (
-                            <span
-                              key={slot.key}
-                              className={`immersive-letter-cell immersive-letter-cell--${slot.state} ${
-                                slot.extra ? "immersive-letter-cell--extra" : ""
-                              }`}
-                            >
-                              <span className="immersive-letter-char">{slot.char}</span>
-                            </span>
-                          ))}
+              <div ref={wordRowFrameRef} className={cinemaFullscreenActive ? "immersive-word-row-frame immersive-word-row-frame--cinema" : ""}>
+                {wordRowLines ? (
+                  // 多行模式：第一行 space-between，其余 flex-start
+                  wordRowLines.map((lineIndices, rowIndex) => (
+                    <div
+                      key={rowIndex}
+                      className={cn(
+                        "immersive-word-row",
+                        cinemaFullscreenActive ? "immersive-word-row--cinema" : "",
+                        rowIndex === 0 ? "immersive-word-row--multi-line-first" : "immersive-word-row--multi-line-left",
+                      )}
+                    >
+                      {lineIndices.map((index) => {
+                        const token = expectedTokens[index];
+                        const status = wordStatuses[index] || "pending";
+                        const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealComparableIndices[index] || []);
+                        return (
+                          <div
+                            key={`${token}-${index}`}
+                            className={cn(
+                              `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
+                              (() => {
+                                const lookupResult = lookupCefrLevelFromMap(currentSentenceCefrMap, token, cefrAnalyzerRef.current);
+                                const cefrClass = computeCefrClassName(lookupResult, cefrLevel);
+                                if (typeof window !== "undefined" && window.__cefrDebug?.enabled) {
+                                  console.debug("[CEFR render]", { token, lookupResult, cefrLevel, cefrClass });
+                                }
+                                return cefrClass;
+                              })(),
+                            )}
+                          >
+                            <div className="immersive-letter-row">
+                              {slots.map((slot) => (
+                                <span
+                                  key={slot.key}
+                                  className={`immersive-letter-cell immersive-letter-cell--${slot.state} ${
+                                    slot.extra ? "immersive-letter-cell--extra" : ""
+                                  }`}
+                                >
+                                  <span className="immersive-letter-char">{slot.char}</span>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))
+                ) : (
+                  // 单行模式：居中
+                  <div className={`immersive-word-row immersive-word-row--centered ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""}`}>
+                    {expectedTokens.map((token, index) => {
+                      const status = wordStatuses[index] || "pending";
+                      const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealComparableIndices[index] || []);
+                      return (
+                        <div
+                          key={`${token}-${index}`}
+                          className={cn(
+                            `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
+                            (() => {
+                              const lookupResult = lookupCefrLevelFromMap(currentSentenceCefrMap, token, cefrAnalyzerRef.current);
+                              const cefrClass = computeCefrClassName(lookupResult, cefrLevel);
+                              if (typeof window !== "undefined" && window.__cefrDebug?.enabled) {
+                                console.debug("[CEFR render]", { token, lookupResult, cefrLevel, cefrClass });
+                              }
+                              return cefrClass;
+                            })(),
+                          )}
+                        >
+                          <div className="immersive-letter-row">
+                            {slots.map((slot) => (
+                              <span
+                                key={slot.key}
+                                className={`immersive-letter-cell immersive-letter-cell--${slot.state} ${
+                                  slot.extra ? "immersive-letter-cell--extra" : ""
+                                }`}
+                              >
+                                <span className="immersive-letter-char">{slot.char}</span>
+                              </span>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {showPreviousSentenceBlock ? (
