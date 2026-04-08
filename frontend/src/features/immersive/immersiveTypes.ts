@@ -1,4 +1,4 @@
-"""沉浸式学习类型定义。"""
+// 沉浸式学习类型定义。
 
 export interface ImmersiveLesson {
   id: number;
