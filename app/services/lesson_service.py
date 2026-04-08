@@ -1247,7 +1247,7 @@ class LessonService:
                 enable_thinking=False,
                 input_text_preview="",
             )
-            record_consume(
+            consume_points(
                 db,
                 user_id=owner_id,
                 model_name=asr_model,
@@ -1857,7 +1857,7 @@ class LessonService:
                 enable_thinking=False,
                 input_text_preview="",
             )
-            record_consume(
+            consume_points(
                 db,
                 user_id=owner_id,
                 model_name=asr_model,
@@ -2672,7 +2672,7 @@ class LessonService:
                 failed_count,
                 int(variant.get("translation_request_count", 0) or 0),
             )
-            record_consume(
+            consume_points(
                 db,
                 user_id=owner_id,
                 model_name=asr_model,
@@ -3168,7 +3168,7 @@ class LessonService:
                 int(variant.get("translate_failed_count", 0)),
                 int(variant.get("translation_request_count", 0) or 0),
             )
-            record_consume(
+            consume_points(
                 db,
                 user_id=owner_id,
                 model_name=asr_model,

@@ -123,7 +123,7 @@ def wallet_consume(
                 duration_ms=int(actual_seconds * 1000),
                 note=f"客户端本地生成上报补记，runtime_kind={runtime_kind or 'unknown'}，actual_seconds={actual_seconds}",
             )
-            record_consume(
+            consume_points(
                 db,
                 user_id=current_user.id,
                 model_name=model_name,
