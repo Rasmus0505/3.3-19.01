@@ -55,6 +55,23 @@ EVENT_CONSUME_LLM = "consume_llm"
 EVENT_MANUAL_ADJUST = "manual_adjust"
 EVENT_REDEEM_CODE = "redeem_code"
 
+REDEEM_BATCH_STATUS_ACTIVE = "active"
+REDEEM_BATCH_STATUS_PAUSED = "paused"
+REDEEM_BATCH_STATUS_EXPIRED = "expired"
+
+REDEEM_CODE_STATUS_ACTIVE = "active"
+REDEEM_CODE_STATUS_DISABLED = "disabled"
+REDEEM_CODE_STATUS_ABANDONED = "abandoned"
+REDEEM_CODE_STATUS_REDEEMED = "redeemed"
+
+REDEEM_FAIL_CODE_NOT_FOUND = "code_not_found"
+REDEEM_FAIL_ALREADY_USED = "already_used"
+REDEEM_FAIL_EXPIRED = "expired"
+REDEEM_FAIL_DISABLED = "disabled"
+REDEEM_FAIL_DAILY_LIMIT = "daily_limit_exceeded"
+REDEEM_FAIL_NOT_ACTIVE = "not_active"
+
+_REDEEM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 logger = logging.getLogger(__name__)
 
@@ -1396,6 +1413,110 @@ def calculate_token_points(total_tokens: int, points_per_1k_tokens: int) -> int:
     return calculate_cost_by_tokens(total_tokens, points_per_1k_tokens)
 
 
+def calculate_points(
+    duration_ms: int,
+    points_per_minute: int | None = None,
+    *,
+    price_per_minute_yuan: object | None = None,
+) -> int:
+    return calculate_amount_by_duration_ms(
+        duration_ms,
+        points_per_minute,
+        price_per_minute_yuan=price_per_minute_yuan,
+    )
+
+
+def reserve_points(
+    db: Session,
+    *,
+    user_id: int,
+    points: int,
+    model_name: str,
+    duration_ms: int,
+    note: str = "",
+) -> WalletLedger:
+    if points < 0:
+        raise BillingError("INVALID_POINTS", "预扣点数不能为负数", str(points))
+    account = get_or_create_wallet_account(db, user_id, for_update=True)
+    if account.balance_points < points:
+        raise BillingError(
+            "INSUFFICIENT_BALANCE",
+            "余额不足，无法创建课程",
+            f"balance={account.balance_points}, required={points}",
+        )
+    account.balance_points -= points
+    db.add(account)
+    db.flush()
+    return _append_ledger(
+        db,
+        user_id=user_id,
+        operator_user_id=None,
+        event_type=EVENT_RESERVE,
+        delta_points=-points,
+        balance_after=account.balance_points,
+        model_name=model_name,
+        duration_ms=duration_ms,
+        note=note,
+    )
+
+
+def record_consume(
+    db: Session,
+    *,
+    user_id: int,
+    model_name: str,
+    duration_ms: int,
+    lesson_id: int,
+    note: str = "",
+) -> WalletLedger:
+    account = get_or_create_wallet_account(db, user_id, for_update=True)
+    return _append_ledger(
+        db,
+        user_id=user_id,
+        operator_user_id=None,
+        event_type=EVENT_CONSUME,
+        delta_points=0,
+        balance_after=account.balance_points,
+        model_name=model_name,
+        duration_ms=duration_ms,
+        lesson_id=lesson_id,
+        note=note,
+    )
+
+
+def consume_points(
+    db: Session,
+    *,
+    user_id: int,
+    points: int,
+    model_name: str | None,
+    lesson_id: int | None,
+    event_type: str = EVENT_CONSUME,
+    duration_ms: int | None = None,
+    note: str = "",
+) -> WalletLedger | None:
+    if points < 0:
+        raise BillingError("INVALID_POINTS", "扣点不能为负数", str(points))
+    if points == 0:
+        return None
+    account = get_or_create_wallet_account(db, user_id, for_update=True)
+    account.balance_points -= points
+    db.add(account)
+    db.flush()
+    return _append_ledger(
+        db,
+        user_id=user_id,
+        operator_user_id=None,
+        event_type=event_type,
+        delta_points=-points,
+        balance_after=account.balance_points,
+        model_name=model_name,
+        duration_ms=duration_ms,
+        lesson_id=lesson_id,
+        note=note,
+    )
+
+
 def calculate_llm_cost_by_tokens(
     prompt_tokens: int,
     completion_tokens: int,
@@ -1470,39 +1591,6 @@ def _append_ledger(
 # - calculate_llm_cost_by_tokens
 # - calculate_llm_charge_by_tokens
 # - get_model_rate
-
-
-def redeem_code(
-    db: Session,
-    *,
-    user_id: int,
-    points: int,
-    model_name: str | None,
-    lesson_id: int | None,
-    event_type: str = EVENT_CONSUME,
-    duration_ms: int | None = None,
-    note: str = "",
-) -> WalletLedger | None:
-    if points < 0:
-        raise BillingError("INVALID_POINTS", "扣点不能为负数", str(points))
-    if points == 0:
-        return None
-    account = get_or_create_wallet_account(db, user_id, for_update=True)
-    account.balance_points -= points
-    db.add(account)
-    db.flush()
-    return _append_ledger(
-        db,
-        user_id=user_id,
-        operator_user_id=None,
-        event_type=event_type,
-        delta_points=-points,
-        balance_after=account.balance_points,
-        model_name=model_name,
-        duration_ms=duration_ms,
-        lesson_id=lesson_id,
-        note=note,
-    )
 
 
 def refund_points(
@@ -2169,7 +2257,7 @@ def _check_daily_limit(db: Session, *, user_id: int, limit: int, now: datetime) 
     return used_count < limit
 
 
-def redeem_code(
+def redeem_code_by_raw_code(
     db: Session,
     *,
     user_id: int,
@@ -2302,3 +2390,7 @@ def redeem_code(
         success=True,
     )
     return ledger
+
+
+# Alias for backward compatibility
+redeem_code = redeem_code_by_raw_code
