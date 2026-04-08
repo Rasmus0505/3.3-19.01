@@ -46,6 +46,16 @@ class LessonSentence(Base):
     tokens_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     audio_clip_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    # CEFR 相关字段
+    cefr_vocab_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # 句子中词汇的CEFR等级信息
+    needs_explanation: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # 讲解相关字段
+    explanation_text: Mapped[str | None] = mapped_column(String, nullable=True)  # 讲解文本
+    simplified_sentence: Mapped[str | None] = mapped_column(String, nullable=True)  # 简化后的句子
+    explanation_audio_url: Mapped[str | None] = mapped_column(String(500), nullable=True)  # 讲解音频URL
+    key_explanations_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # 关键词解释
+
     lesson: Mapped[Lesson] = relationship(back_populates="sentences")
 
 
