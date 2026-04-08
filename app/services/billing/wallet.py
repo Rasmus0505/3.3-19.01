@@ -93,7 +93,7 @@ def calculate_points(
         return 0
 
     if price_per_minute_yuan is not None:
-        rate_yuan = model_normalize_rate_yuan(price_per_minute_yuan, fallback_cents=0)
+        rate_yuan = model_normalize_rate_yuan(price_per_minute_yuan)
         if rate_yuan <= 0:
             return 0
         seconds = ceil(duration_ms / 1000)
