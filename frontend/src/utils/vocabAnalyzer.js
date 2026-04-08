@@ -285,6 +285,7 @@ class VocabAnalyzer {
    */
   lookupCefrLevelForSurfaceForm(surfaceForm) {
     if (!this.isLoaded) return null;
+    if (surfaceForm == null) return null;
     const wordInfo = this._lookupWord(surfaceForm);
     if (typeof window !== "undefined") {
       window.__cefrDebug = window.__cefrDebug || {};
@@ -444,6 +445,7 @@ class VocabAnalyzer {
   }
 
   _lookupWord(word) {
+    if (word == null) return null;
     const lower = word.toLowerCase();
     if (typeof window !== "undefined" && window.__cefrDebug?.enabled) {
       console.debug("[CEFR lookup]", lower);
