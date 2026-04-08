@@ -1488,20 +1488,6 @@ def calculate_cost_by_tokens(total_tokens: int, cost_per_1k_tokens_cents: int) -
         return 0
     return ceil((int(total_tokens) * int(cost_per_1k_tokens_cents)) / 1000)
 
-
-def calculate_points(
-    duration_ms: int,
-    points_per_minute: int | None = None,
-    *,
-    price_per_minute_yuan: object | None = None,
-) -> int:
-    return calculate_amount_by_duration_ms(
-        duration_ms,
-        points_per_minute,
-        price_per_minute_yuan=price_per_minute_yuan,
-    )
-
-
 def calculate_token_points(total_tokens: int, points_per_1k_tokens: int) -> int:
     return calculate_cost_by_tokens(total_tokens, points_per_1k_tokens)
 

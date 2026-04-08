@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_CEILING
+from math import ceil
 from typing import Iterable
 
 from sqlalchemy import delete, func, inspect, select, text
@@ -76,9 +77,33 @@ def calculate_cost_by_tokens(total_tokens: int, cost_per_1k_tokens_cents: int) -
     return int(total_tokens / 1000.0 * cost_per_1k_tokens_cents + 0.5)
 
 
-def calculate_points(duration_ms: int, points_per_minute: int) -> int:
-    """计算课程消耗的点数。"""
-    return calculate_amount_by_duration_ms(duration_ms, points_per_minute)
+def calculate_points(
+    duration_ms: int,
+    points_per_minute: int,
+    *,
+    price_per_minute_yuan: object | None = None,
+) -> int:
+    """计算课程消耗的点数。
+
+    支持两种模式：
+    - 旧模式：传入 points_per_minute（每分钟点数）
+    - 新模式：传入 price_per_minute_yuan（每分钟价格，元）
+    """
+    if duration_ms <= 0:
+        return 0
+
+    if price_per_minute_yuan is not None:
+        rate_yuan = model_normalize_rate_yuan(price_per_minute_yuan, fallback_cents=0)
+        if rate_yuan <= 0:
+            return 0
+        seconds = ceil(duration_ms / 1000)
+        amount_yuan = (Decimal(seconds) * rate_yuan) / Decimal("60")
+        return int((amount_yuan * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_CEILING))
+
+    if points_per_minute <= 0:
+        return 0
+    minutes = duration_ms / 60000.0
+    return int(minutes * points_per_minute + 0.5)
 
 
 def calculate_token_points(total_tokens: int, points_per_1k_tokens: int) -> int:

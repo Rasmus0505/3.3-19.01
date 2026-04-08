@@ -51,3 +51,4 @@ token.json
 config.json
 
 .worktrees/
+/.specstory

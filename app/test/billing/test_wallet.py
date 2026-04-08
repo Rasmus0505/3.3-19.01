@@ -67,6 +67,31 @@ class TestCalculateFunctions:
         result = calculate_points(60000, 100)
         assert result == 100
 
+    def test_calculate_points_with_price_per_minute_yuan(self):
+        """测试 calculate_points 使用 price_per_minute_yuan 模式。"""
+        result = calculate_points(60000, 100, price_per_minute_yuan=Decimal("1.30"))
+        assert result == 2
+
+    def test_calculate_points_with_price_per_minute_yuan_decimal(self):
+        """测试 calculate_points 使用 Decimal price_per_minute_yuan。"""
+        result = calculate_points(30000, 100, price_per_minute_yuan=Decimal("0.0132"))
+        assert result == 1
+
+    def test_calculate_points_with_zero_price_per_minute_yuan(self):
+        """测试 calculate_points 当 price_per_minute_yuan 为 0 时返回 0。"""
+        result = calculate_points(60000, 100, price_per_minute_yuan=Decimal("0"))
+        assert result == 0
+
+    def test_calculate_points_without_price_per_minute_yuan(self):
+        """测试 calculate_points 不传 price_per_minute_yuan 时使用旧模式。"""
+        result = calculate_points(60000, 100)
+        assert result == 100
+
+    def test_calculate_points_zero_duration(self):
+        """测试 calculate_points 零时长返回零。"""
+        result = calculate_points(0, 100)
+        assert result == 0
+
     def test_calculate_token_points_valid_input(self):
         """测试正常 token 点数计算。"""
         result = calculate_token_points(1000, 15)  # 1000 tokens, 15 points/1k
