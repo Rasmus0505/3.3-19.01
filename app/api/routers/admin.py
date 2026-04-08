@@ -50,6 +50,7 @@ from app.schemas import (
     AdminSubtitleSettingsResponse,
     AdminSubtitleSettingsUpdateRequest,
     AdminTranslationLogItem,
+    AdminTranslationLogsResponse,
     AdminRedeemAuditItem,
     AdminRedeemAuditListResponse,
     AdminRedeemBatchActionResponse,
