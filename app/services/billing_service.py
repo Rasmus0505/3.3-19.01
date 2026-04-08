@@ -1,5 +1,16 @@
+"""计费服务模块（门面）。
+
+此文件作为计费服务的统一入口点，支持两种导入路径：
+1. from app.services.billing import ...  (推荐)
+2. from app.services.billing_service import ...  (向后兼容)
+
+建议新代码直接使用：
+    from app.services.billing import reserve_points, redeem_code
+"""
+
 from __future__ import annotations
 
+# 从原 billing.py 重新导出所有内容（保持向后兼容）
 from app.services.billing import (
     BillingError,
     EVENT_CONSUME_LLM,

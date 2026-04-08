@@ -1,3 +1,15 @@
+"""计费服务模块。
+
+此文件保留以支持现有代码导入路径。未来将逐步迁移到 app/services/billing/ 子模块。
+
+建议新代码直接导入：
+    from app.services.billing import get_model_rate, reserve_points, ...
+    from app.services.billing.wallet import BillingError, get_or_create_wallet_account, ...
+    from app.services.billing.redeem import redeem_code, create_redeem_batch_and_codes, ...
+    from app.services.billing.rates import ensure_default_billing_rates, list_admin_rates, ...
+    from app.services.billing.settings import SubtitleSettingsSnapshot, get_subtitle_settings_snapshot, ...
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -35,33 +47,82 @@ from app.models import (
 )
 from app.models.billing import cents_to_rate_yuan, normalize_rate_yuan as model_normalize_rate_yuan, rate_yuan_to_compat_cents
 
+# ── 重新导出新模块的函数 ─────────────────────────────────────────────────
 
-EVENT_RESERVE = "reserve"
-EVENT_CONSUME = "consume"
-EVENT_REFUND = "refund"
+# 导出异常类
+from app.services.billing.wallet import BillingError
+
+# 从新模块重新导出（保持向后兼容）
+from app.services.billing.wallet import (
+    reserve_points,
+    record_consume,
+    consume_points,
+    refund_points,
+    refund_points_by_event,
+    settle_reserved_points,
+    manual_adjust,
+    calculate_amount_by_duration_ms,
+    calculate_cost_by_tokens,
+    calculate_points,
+    calculate_token_points,
+    calculate_llm_cost_by_tokens,
+    calculate_llm_charge_by_tokens,
+    get_model_rate,
+)
+from app.services.billing.redeem import (
+    create_redeem_batch_and_codes,
+    copy_redeem_batch_and_codes,
+    set_redeem_batch_status,
+    update_redeem_code_status,
+    bulk_disable_redeem_codes,
+    abandon_redeem_code_with_refund,
+    delete_redeem_batch_and_codes,
+    abandon_redeem_batch,
+    redeem_code,
+    normalize_redeem_code_input,
+    hash_redeem_code,
+    mask_redeem_code,
+)
+from app.services.billing.rates import (
+    ensure_default_billing_rates,
+    list_admin_rates,
+    list_public_rates,
+)
+from app.services.billing.settings import (
+    SubtitleSettingsSnapshot,
+    ensure_default_subtitle_settings,
+    get_subtitle_settings,
+    get_subtitle_settings_snapshot,
+    get_default_asr_model,
+)
+from app.services.billing.constants import (
+    EVENT_RESERVE,
+    EVENT_CONSUME,
+    EVENT_REFUND,
+    EVENT_CONSUME_TRANSLATE,
+    EVENT_REFUND_TRANSLATE,
+    EVENT_CONSUME_LLM,
+    EVENT_MANUAL_ADJUST,
+    EVENT_REDEEM_CODE,
+    REDEEM_BATCH_STATUS_ACTIVE,
+    REDEEM_BATCH_STATUS_PAUSED,
+    REDEEM_BATCH_STATUS_EXPIRED,
+    REDEEM_CODE_STATUS_ACTIVE,
+    REDEEM_CODE_STATUS_DISABLED,
+    REDEEM_CODE_STATUS_ABANDONED,
+    REDEEM_CODE_STATUS_REDEEMED,
+    DEFAULT_MODEL_RATES,
+    MT_FLASH_MODEL,
+    ADMIN_BILLING_MODEL_ORDER,
+    PUBLIC_BILLING_MODEL_ORDER,
+)
+
+
+# ── 事件类型常量 ──────────────────────────────────────────────────────────
+
 EVENT_CONSUME_TRANSLATE = "consume_translate"
-EVENT_REFUND_TRANSLATE = "refund_translate"
-EVENT_CONSUME_LLM = "consume_llm"
-EVENT_MANUAL_ADJUST = "manual_adjust"
-EVENT_REDEEM_CODE = "redeem_code"
 
-REDEEM_BATCH_STATUS_ACTIVE = "active"
-REDEEM_BATCH_STATUS_PAUSED = "paused"
-REDEEM_BATCH_STATUS_EXPIRED = "expired"
 
-REDEEM_CODE_STATUS_ACTIVE = "active"
-REDEEM_CODE_STATUS_DISABLED = "disabled"
-REDEEM_CODE_STATUS_ABANDONED = "abandoned"
-REDEEM_CODE_STATUS_REDEEMED = "redeemed"
-
-REDEEM_FAIL_CODE_NOT_FOUND = "code_not_found"
-REDEEM_FAIL_ALREADY_USED = "already_used"
-REDEEM_FAIL_EXPIRED = "expired"
-REDEEM_FAIL_DISABLED = "disabled"
-REDEEM_FAIL_DAILY_LIMIT = "daily_limit_exceeded"
-REDEEM_FAIL_NOT_ACTIVE = "not_active"
-
-_REDEEM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 logger = logging.getLogger(__name__)
 
 DEFAULT_MT_COST_PER_1K_TOKENS_CENTS = 15

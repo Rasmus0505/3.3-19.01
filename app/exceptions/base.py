@@ -1,12 +1,4 @@
-"""核心错误模块 - 向后兼容模块。
-
-此文件保留以支持现有代码导入路径，未来将逐步迁移到 app/exceptions/。
-
-建议新代码直接导入：
-    from app.exceptions import AppError, AuthError, NotFoundError, ...
-    from app.exceptions import BillingError, LessonError, AsrError, ...
-"""
-
+"""基础异常类和通用异常定义。"""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -19,35 +11,60 @@ if TYPE_CHECKING:
     from app.services.media import MediaError as _MediaError
 
 
-# ── 重新导出异常类（从 app.exceptions）────────────────────────────────────
+class AppError(Exception):
+    """应用业务异常基类。"""
 
-from app.exceptions.base import (
-    AppError,
-    AuthError,
-    NotFoundError,
-    ValidationError,
-    LessonError,
-    AdminError,
-)
+    status_code: int = 500
+    code: str = "INTERNAL_ERROR"
+    message: str = "Internal server error"
+
+    def __init__(self, message: str | None = None, detail: Any = None):
+        self.message = message or self.__class__.message
+        self.detail = detail
+        super().__init__(self.message)
+
+
+class AuthError(AppError):
+    status_code = 401
+    code = "AUTH_ERROR"
+    message = "Unauthorized"
+
+
+class NotFoundError(AppError):
+    status_code = 404
+    code = "NOT_FOUND"
+    message = "Resource not found"
+
+
+class ValidationError(AppError):
+    status_code = 422
+    code = "VALIDATION_ERROR"
+    message = "Validation error"
+
+
+class LessonError(AppError):
+    status_code = 400
+    code = "LESSON_ERROR"
+    message = "Lesson operation error"
 
 
 class BillingError(AppError):
-    """与 app.services.billing.BillingError 并存，供核心层使用。"""
+    """计费相关异常（保留以兼容旧代码）。"""
     status_code = 402
     code = "BILLING_ERROR"
     message = "Billing error"
 
 
-# ── 标准错误响应构造 ──────────────────────────────────────────────────────
+class AdminError(AppError):
+    status_code = 403
+    code = "ADMIN_ERROR"
+    message = "Admin operation error"
 
 
 def error_response(status_code: int, code: str, message: str, detail: Any = "") -> JSONResponse:
     """构建符合项目规范的 JSON 错误响应。"""
     payload = ErrorResponse(ok=False, error_code=code, message=message, detail=detail).model_dump()
     return JSONResponse(status_code=status_code, content=payload)
-
-
-# ── 异常映射 ───────────────────────────────────────────────────────────────
 
 
 def map_media_error(exc: Exception) -> JSONResponse:

@@ -7,6 +7,15 @@ import dashscope
 from dashscope.files import Files
 
 from app.core.config import ASR_TASK_POLL_SECONDS
+from app.exceptions.asr import (
+    AsrError,
+    AsrCancellationRequested,
+    AsrApiKeyMissingError,
+    AsrUploadError,
+    AsrTaskCreateError,
+    AsrTaskWaitError,
+    AsrResultError,
+)
 from app.infra.asr.base import ASRConfig, ASRProvider, ASRResult
 
 
@@ -29,16 +38,8 @@ def _init_supported_models() -> None:
         SUPPORTED_MODELS = {"qwen-audio"}
 
 
-class AsrError(RuntimeError):
-    def __init__(self, code: str, message: str, detail: str = ""):
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.detail = detail
-
-
-class AsrCancellationRequested(RuntimeError):
-    pass
+# 重新导出异常（从 app.exceptions.asr）
+# AsrError, AsrCancellationRequested 等已在 app.exceptions.asr 中定义
 
 
 def setup_dashscope(api_key: str) -> None:

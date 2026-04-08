@@ -12,6 +12,7 @@ from dashscope.files import Files
 from app.core.config import ASR_TASK_POLL_SECONDS
 from app.services.asr_model_registry import QWEN_ASR_MODEL, get_supported_transcribe_asr_model_keys
 from app.services.lesson_task_manager import is_task_terminate_requested, wait_for_task_terminate_request
+from app.exceptions.asr import AsrError, AsrCancellationRequested
 
 
 DEFAULT_MODEL = QWEN_ASR_MODEL
@@ -34,7 +35,10 @@ def _transcribe_audio_file_with_faster_whisper(
     )
 
 
+# AsrError 和 AsrCancellationRequested 现在从 app.exceptions.asr 导入
+# 为了向后兼容，保留本地定义（与 app.exceptions.asr 中的类兼容）
 class AsrError(RuntimeError):
+    """ASR 错误（向后兼容）。请使用 app.exceptions.asr.AsrError"""
     def __init__(self, code: str, message: str, detail: str = ""):
         super().__init__(message)
         self.code = code
@@ -43,6 +47,7 @@ class AsrError(RuntimeError):
 
 
 class AsrCancellationRequested(RuntimeError):
+    """ASR 取消请求（向后兼容）。请使用 app.exceptions.asr.AsrCancellationRequested"""
     pass
 
 
