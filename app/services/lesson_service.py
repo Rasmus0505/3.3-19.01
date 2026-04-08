@@ -52,7 +52,6 @@ from app.services.lesson_builder import (
     extract_sentences,
     extract_word_items,
     normalize_learning_english_text,
-    sentences_from_word_chunks,
     split_words_by_semantic_segments,
     tokenize_learning_sentence,
     tokenize_sentence,
@@ -858,53 +857,11 @@ class LessonService:
             semantic_split_enabled=effective_semantic_split_enabled,
         )
 
-        if effective_semantic_split_enabled:
-            sentence_result = build_lesson_sentences(
-                asr_payload,
-                split_enabled=subtitle_settings.subtitle_split_enabled,
-                target_words=subtitle_settings.subtitle_split_target_words,
-                max_words=subtitle_settings.subtitle_split_max_words,
-            )
-            sentences = sentence_result["sentences"]
-            chunks = sentence_result.get("chunks") or []
-            split_mode = sentence_result["mode"]
-        else:
-            sentences = extract_sentences(asr_payload)
-            chunks = []
-            split_mode = "asr_sentences"
-            if not sentences:
-                sentence_result = build_lesson_sentences(
-                    asr_payload,
-                    split_enabled=subtitle_settings.subtitle_split_enabled,
-                    target_words=subtitle_settings.subtitle_split_target_words,
-                    max_words=subtitle_settings.subtitle_split_max_words,
-                )
-                sentences = sentence_result["sentences"]
-                split_mode = sentence_result["mode"]
-        semantic_split_applied = False
-        if effective_semantic_split_enabled and chunks:
-            _emit_subtitle_variant_progress(
-                progress_callback,
-                stage="semantic_split",
-                message="正在执行语义分句",
-                semantic_split_enabled=effective_semantic_split_enabled,
-            )
-            chunks, semantic_split_applied = _apply_semantic_split(
-                chunks,
-                enabled=True,
-                threshold_words=subtitle_settings.semantic_split_max_words_threshold,
-                model=MT_MODEL,
-                timeout_seconds=subtitle_settings.semantic_split_timeout_seconds,
-            )
-            if semantic_split_applied:
-                sentences = sentences_from_word_chunks(chunks)
-                split_mode = "word_level_split+semantic"
-            _emit_subtitle_variant_progress(
-                progress_callback,
-                stage="semantic_split",
-                message="语义分句完成",
-                semantic_split_enabled=effective_semantic_split_enabled,
-            )
+        sentences = extract_sentences(asr_payload)
+        chunks = []
+        split_mode = "asr_sentences"
+        if not sentences:
+            raise MediaError("ASR_SENTENCE_MISSING", "ASR 返回结果缺少句级信息", "未找到有效句子")
         if not sentences:
             raise MediaError("ASR_SENTENCE_MISSING", "ASR 返回结果缺少句级信息", "未找到有效句子")
 
