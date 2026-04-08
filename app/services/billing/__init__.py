@@ -89,6 +89,15 @@ from app.services.billing.admin_ops import append_admin_operation_log
 # 这些函数签名与 wallet.py 中的不同
 
 
+def calculate_llm_cost_by_tokens(
+    prompt_tokens: int,
+    completion_tokens: int,
+    cost_per_1k_tokens_input_cents: int,
+) -> int:
+    """开发阶段兼容函数 - 直接返回0，不实际计费"""
+    return 0
+
+
 def consume_points(
     db,
     *,
