@@ -1772,8 +1772,8 @@ export function ImmersiveLessonPage({
 
     // 如果有多行，计算每行的单词索引
     if (hasMultiLine) {
-      const rows: number[][] = [];
-      let currentRow: number[] = [];
+      const rows = [];
+      let currentRow = [];
       let currentTop = -1;
       slots.forEach((slot, index) => {
         const top = slot.getBoundingClientRect().top;
