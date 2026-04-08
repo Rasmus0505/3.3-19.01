@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { toast } from "sonner";
 import AudioRecorder from "../../shared/components/AudioRecorder";
 import SOEResultCard from "./SOEResultCard";
+import ExplanationPanel from "./ExplanationPanel";
 
 import { useAppStore } from "../../store";
 import { VocabAnalyzer } from "../../utils/vocabAnalyzer";
@@ -1094,6 +1095,11 @@ export function ImmersiveLessonPage({
   const wordbookSuccessTimerRef = useRef(null);
   const cefrAnalyzerRef = useRef(null);
   const audioRecorderRef = useRef(null);
+  const explanationAudioRef = useRef(null);
+  // 讲解相关 state
+  const [showExplanation, setShowExplanation] = useState(false);
+  const [currentExplanation, setCurrentExplanation] = useState(null);
+  const [explanationAudioUrl, setExplanationAudioUrl] = useState(null);
   const [cefrAnalysisStatus, setCefrAnalysisStatus] = useState("idle");
   /** Bumps when VocabAnalyzer is ready — required because cache-hit path used to skip ref init, leaving CEFR maps empty. */
   const [cefrVocabEngineTick, setCefrVocabEngineTick] = useState(0);
@@ -1509,6 +1515,33 @@ export function ImmersiveLessonPage({
     return () => window.clearTimeout(id);
   }, [showEntryHintOverlay]);
 
+  // 检查当前句子是否需要讲解
+  useEffect(() => {
+    if (currentSentence) {
+      // 如果句子需要讲解
+      if (currentSentence.needs_explanation) {
+        setShowExplanation(true);
+
+        // 如果已有讲解数据
+        if (currentSentence.explanation_text) {
+          try {
+            const explanation = typeof currentSentence.explanation_text === 'string'
+              ? JSON.parse(currentSentence.explanation_text)
+              : currentSentence.explanation_text;
+            setCurrentExplanation(explanation);
+            setExplanationAudioUrl(currentSentence.explanation_audio_url);
+          } catch (e) {
+            console.error('Failed to parse explanation:', e);
+          }
+        }
+      } else {
+        setShowExplanation(false);
+        setCurrentExplanation(null);
+        setExplanationAudioUrl(null);
+      }
+    }
+  }, [currentSentence]);
+
   const syncLearningSettingsState = useCallback((nextSettings) => {
     const resolvedSettings = nextSettings && typeof nextSettings === "object" ? nextSettings : readLearningSettings();
     setLearningSettings(resolvedSettings);
@@ -1686,6 +1719,23 @@ export function ImmersiveLessonPage({
     setPlaybackRatePinned(nextPinned, selectedPlaybackRate);
     persistLessonPlaybackRate(nextPinned, selectedPlaybackRate);
   }, [persistLessonPlaybackRate, playbackRatePinned, selectedPlaybackRate, setPlaybackRatePinned]);
+
+  // 播放讲解音频
+  const playExplanationAudio = useCallback((url) => {
+    if (url && explanationAudioRef?.current) {
+      explanationAudioRef.current.src = url;
+      explanationAudioRef.current.play().catch(console.error);
+    }
+  }, [explanationAudioRef]);
+
+  // 从讲解切换到拼写
+  const handleStartPracticeFromExplanation = useCallback(() => {
+    setShowExplanation(false);
+    // 记录用户已看过讲解
+    if (currentSentence) {
+      localStorage.setItem(`explanation_viewed_${currentSentence.id}`, 'true');
+    }
+  }, [currentSentence]);
 
   useEffect(() => {
     setPlaybackRateInputValue(formatPlaybackRateInputValue(selectedPlaybackRate));
@@ -3941,6 +3991,20 @@ export function ImmersiveLessonPage({
           ) : null}
 
           </div>
+
+          {/* 添加隐藏的音频元素用于讲解 */}
+          <audio ref={explanationAudioRef} />
+
+          {/* 讲解面板 - 仅当需要讲解且有数据时显示 */}
+          {showExplanation && currentExplanation && (
+            <ExplanationPanel
+              sentence={currentSentence?.text_en}
+              explanation={currentExplanation}
+              audioUrl={explanationAudioUrl}
+              onReplay={() => playExplanationAudio(explanationAudioUrl)}
+              onStartPractice={handleStartPracticeFromExplanation}
+            />
+          )}
 
           {!immersiveActive ? (
             <div className="rounded-2xl border border-dashed bg-muted/15 px-6 py-8 text-sm text-muted-foreground">
