@@ -76,11 +76,11 @@ def _backfill_subtitle_settings_values(db: Session) -> bool:
         update(SubtitleSetting)
         .where(SubtitleSetting.semantic_split_default_enabled == None)
         .values(
-            semantic_split_default_enabled=str(DEFAULT_SUBTITLE_SETTINGS["semantic_split_default_enabled"]).lower(),
+            semantic_split_default_enabled=DEFAULT_SUBTITLE_SETTINGS["semantic_split_default_enabled"],
             default_asr_model=DEFAULT_SUBTITLE_SETTINGS["default_asr_model"],
-            subtitle_split_enabled=str(DEFAULT_SUBTITLE_SETTINGS["subtitle_split_enabled"]).lower(),
-            subtitle_split_target_words=str(DEFAULT_SUBTITLE_SETTINGS["subtitle_split_target_words"]),
-            subtitle_split_max_words=str(DEFAULT_SUBTITLE_SETTINGS["subtitle_split_max_words"]),
+            subtitle_split_enabled=DEFAULT_SUBTITLE_SETTINGS["subtitle_split_enabled"],
+            subtitle_split_target_words=DEFAULT_SUBTITLE_SETTINGS["subtitle_split_target_words"],
+            subtitle_split_max_words=DEFAULT_SUBTITLE_SETTINGS["subtitle_split_max_words"],
         )
     )
     db.flush()
@@ -93,15 +93,15 @@ def _normalize_subtitle_settings_row(row: SubtitleSetting) -> bool:
 
     updates = {}
     if row.semantic_split_default_enabled is None:
-        updates["semantic_split_default_enabled"] = "false"
+        updates["semantic_split_default_enabled"] = False
     if row.default_asr_model is None:
         updates["default_asr_model"] = DEFAULT_SUBTITLE_SETTINGS["default_asr_model"]
     if row.subtitle_split_enabled is None:
-        updates["subtitle_split_enabled"] = "true"
+        updates["subtitle_split_enabled"] = True
     if row.subtitle_split_target_words is None:
-        updates["subtitle_split_target_words"] = str(DEFAULT_SUBTITLE_SETTINGS["subtitle_split_target_words"])
+        updates["subtitle_split_target_words"] = DEFAULT_SUBTITLE_SETTINGS["subtitle_split_target_words"]
     if row.subtitle_split_max_words is None:
-        updates["subtitle_split_max_words"] = str(DEFAULT_SUBTITLE_SETTINGS["subtitle_split_max_words"])
+        updates["subtitle_split_max_words"] = DEFAULT_SUBTITLE_SETTINGS["subtitle_split_max_words"]
 
     if updates:
         db.execute(
@@ -124,11 +124,11 @@ def ensure_default_subtitle_settings(db: Session) -> SubtitleSetting:
 
     if settings is None:
         settings = SubtitleSetting(
-            semantic_split_default_enabled=str(DEFAULT_SUBTITLE_SETTINGS["semantic_split_default_enabled"]).lower(),
+            semantic_split_default_enabled=DEFAULT_SUBTITLE_SETTINGS["semantic_split_default_enabled"],
             default_asr_model=DEFAULT_SUBTITLE_SETTINGS["default_asr_model"],
-            subtitle_split_enabled=str(DEFAULT_SUBTITLE_SETTINGS["subtitle_split_enabled"]).lower(),
-            subtitle_split_target_words=str(DEFAULT_SUBTITLE_SETTINGS["subtitle_split_target_words"]),
-            subtitle_split_max_words=str(DEFAULT_SUBTITLE_SETTINGS["subtitle_split_max_words"]),
+            subtitle_split_enabled=DEFAULT_SUBTITLE_SETTINGS["subtitle_split_enabled"],
+            subtitle_split_target_words=DEFAULT_SUBTITLE_SETTINGS["subtitle_split_target_words"],
+            subtitle_split_max_words=DEFAULT_SUBTITLE_SETTINGS["subtitle_split_max_words"],
         )
         db.add(settings)
         db.flush()
