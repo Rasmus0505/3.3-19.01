@@ -1123,6 +1123,17 @@ class LessonService:
             db.add(lesson)
             db.flush()
 
+            # 处理 CEFR 讲解信息（预生成讲解内容）
+            # 默认目标等级为 B1（i+1 难度），可根据用户水平调整
+            try:
+                runtime_sentences = process_sentences_with_cefr(
+                    sentences=runtime_sentences,
+                    target_level="B1",
+                    user_level=None,
+                )
+            except Exception:
+                logger.exception("[DEBUG] lesson.cefr_processing_failed, continuing without explanation")
+
             for sentence in runtime_sentences:
                 db.add(
                     LessonSentence(
@@ -1134,6 +1145,12 @@ class LessonService:
                         text_zh=str(sentence["text_zh"]),
                         tokens_json=[str(item) for item in list(sentence.get("tokens") or [])],
                         audio_clip_path=None,
+                        cefr_vocab_json=sentence.get("cefr_vocab_json"),
+                        needs_explanation=sentence.get("needs_explanation", False),
+                        explanation_text=sentence.get("explanation_text"),
+                        simplified_sentence=sentence.get("simplified_sentence"),
+                        explanation_audio_url=sentence.get("explanation_audio_url"),
+                        key_explanations_json=sentence.get("key_explanations_json"),
                     )
                 )
 
@@ -1309,6 +1326,12 @@ class LessonService:
                         text_zh=str(sentence["text_zh"]),
                         tokens_json=[str(item) for item in list(sentence.get("tokens") or [])],
                         audio_clip_path=None,
+                        cefr_vocab_json=sentence.get("cefr_vocab_json"),
+                        needs_explanation=sentence.get("needs_explanation", False),
+                        explanation_text=sentence.get("explanation_text"),
+                        simplified_sentence=sentence.get("simplified_sentence"),
+                        explanation_audio_url=sentence.get("explanation_audio_url"),
+                        key_explanations_json=sentence.get("key_explanations_json"),
                     )
                 )
             except Exception as exc:
@@ -2551,6 +2574,17 @@ class LessonService:
                 reserved_duration_ms,
             )
 
+            # 处理 CEFR 讲解信息（预生成讲解内容）
+            # 默认目标等级为 B1（i+1 难度），可根据用户水平调整
+            try:
+                runtime_sentences = process_sentences_with_cefr(
+                    sentences=runtime_sentences,
+                    target_level="B1",
+                    user_level=None,
+                )
+            except Exception:
+                logger.exception("[DEBUG] lesson.cefr_processing_failed, continuing without explanation")
+
             for sentence in runtime_sentences:
                 db.add(
                     LessonSentence(
@@ -2562,6 +2596,12 @@ class LessonService:
                         text_zh=str(sentence["text_zh"]),
                         tokens_json=[str(item) for item in list(sentence.get("tokens") or [])],
                         audio_clip_path=None,
+                        cefr_vocab_json=sentence.get("cefr_vocab_json"),
+                        needs_explanation=sentence.get("needs_explanation", False),
+                        explanation_text=sentence.get("explanation_text"),
+                        simplified_sentence=sentence.get("simplified_sentence"),
+                        explanation_audio_url=sentence.get("explanation_audio_url"),
+                        key_explanations_json=sentence.get("key_explanations_json"),
                     )
                 )
 
@@ -3041,6 +3081,18 @@ class LessonService:
             )
             lesson: Lesson = Lesson()
             lesson.title = Path(source_filename or "lesson").stem[:200] or "lesson"
+
+            # 处理 CEFR 讲解信息（预生成讲解内容）
+            # 默认目标等级为 B1（i+1 难度），可根据用户水平调整
+            try:
+                variant["sentences"] = process_sentences_with_cefr(
+                    sentences=list(variant["sentences"]),
+                    target_level="B1",
+                    user_level=None,
+                )
+            except Exception:
+                logger.exception("[DEBUG] lesson.cefr_processing_failed, continuing without explanation")
+
             _emit_progress(
                 progress_callback,
                 stage_key="build_lesson",
