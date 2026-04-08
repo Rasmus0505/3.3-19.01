@@ -46,7 +46,14 @@ from app.models.billing import cents_to_rate_yuan, normalize_rate_yuan as model_
 
 # ── 事件类型常量 ──────────────────────────────────────────────────────────
 
+EVENT_RESERVE = "reserve"
+EVENT_CONSUME = "consume"
+EVENT_REFUND = "refund"
 EVENT_CONSUME_TRANSLATE = "consume_translate"
+EVENT_REFUND_TRANSLATE = "refund_translate"
+EVENT_CONSUME_LLM = "consume_llm"
+EVENT_MANUAL_ADJUST = "manual_adjust"
+EVENT_REDEEM_CODE = "redeem_code"
 
 
 logger = logging.getLogger(__name__)
