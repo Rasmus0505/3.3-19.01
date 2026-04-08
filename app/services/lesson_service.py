@@ -138,7 +138,7 @@ def _read_json_file(path: Path) -> dict[str, Any] | None:
         payload = json.loads(path.read_text(encoding="utf-8"))
         return payload if isinstance(payload, dict) else None
     except Exception:
-        logger.warning("[DEBUG] lesson.checkpoint.read_failed path=%s", path)
+        logger.warning("[DEBUG] lesson.checkpoint.read_failed path=%s", path, exc_info=True)
         return None
 
 
@@ -221,18 +221,19 @@ def _append_translation_request_logs_safe(
     lesson_id: int | None,
     records: list[dict[str, Any]] | None,
 ) -> None:
+    if not records:
+        return
     try:
-        with db.begin_nested():
-            append_translation_request_logs(
-                db,
-                trace_id=trace_id,
-                user_id=user_id,
-                task_id=task_id,
-                lesson_id=lesson_id,
-                records=list(records or []),
-            )
+        append_translation_request_logs(
+            db,
+            trace_id=trace_id,
+            user_id=user_id,
+            task_id=task_id,
+            lesson_id=lesson_id,
+            records=list(records),
+        )
     except Exception as exc:
-        logger.exception(
+        logger.warning(
             "[DEBUG] lesson.translation_logs.persist_failed task_id=%s lesson_id=%s detail=%s",
             task_id,
             lesson_id,

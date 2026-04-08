@@ -585,6 +585,9 @@ def run_lesson_generation_task(
                     .values(artifacts_json=merged_artifacts)
                 )
                 persistence_session.commit()
+        except Exception as exc:
+            persistence_session.rollback()
+            logger.error("[DEBUG] lessons.task.succeeded_but_artifacts_failed task_id=%s lesson_id=%s detail=%s", task_id, lesson.id, str(exc)[:400])
         finally:
             persistence_session.close()
         invalidate_lesson_related_queries(owner_id)
@@ -656,7 +659,16 @@ def run_lesson_generation_task(
         logger.warning("[DEBUG] lessons.task.translation_failed task_id=%s code=%s detail=%s", task_id, error_code, detail_excerpt[:240])
     except LessonTaskStorageNotReadyError as exc:
         db.rollback()
-        logger.exception("[DEBUG] lessons.task.storage_not_ready task_id=%s detail=%s", task_id, exc.detail)
+        logger.error("[DEBUG] lessons.task.storage_not_ready task_id=%s detail=%s", task_id, exc.detail)
+        mark_task_failed(
+            task_id,
+            error_code="STORAGE_NOT_READY",
+            message="存储服务未就绪",
+            exception_type="LessonTaskStorageNotReadyError",
+            detail_excerpt=str(exc.detail)[:1200],
+            traceback_excerpt="",
+            session_factory=session_factory,
+        )
     except Exception as exc:
         db.rollback()
         mark_task_failed(
