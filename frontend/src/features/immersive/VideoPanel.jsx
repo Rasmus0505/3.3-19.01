@@ -130,6 +130,7 @@ const VideoPanel = forwardRef(function VideoPanel(
     handleBindLocalFile,
     updateTranslationMaskMetrics,
     lookupCefrLevelFromMap,
+    showSessionControls = true,
   },
   ref
 ) {
@@ -263,95 +264,96 @@ const VideoPanel = forwardRef(function VideoPanel(
             ) : null}
           </div>
 
-          {/* 控制按钮行 - 视频下方 */}
-          <div className="immersive-video-controls">
-            <div className="immersive-session-controls" aria-label="沉浸学习控制">
-              <button
-                type="button"
-                className="immersive-session-action"
-                disabled={currentSentenceIndex <= 0}
-                onClick={() => requestNavigateSentence({ delta: -1, source: "status_prev" })}
-                aria-label="上一句"
-              >
-                ‹ 上一句
-              </button>
-              <button
-                type="button"
-                className="immersive-session-action"
-                disabled={currentSentenceIndex >= sentenceCount - 1}
-                onClick={() => requestNavigateSentence({ delta: 1, source: "status_next" })}
-                aria-label="下一句"
-              >
-                下一句 ›
-              </button>
-              <button
-                type="button"
-                className={`immersive-session-toggle ${singleSentenceLoopEnabled ? "immersive-session-toggle--active" : ""}`}
-                aria-pressed={singleSentenceLoopEnabled}
-                onClick={handleToggleSingleSentenceLoop}
-                title="重复播放当前句子，加强听力训练"
-              >
-                精听
-              </button>
-              <div className="h-6 w-px bg-border mx-1 shrink-0" aria-hidden="true" />
-              <label className="immersive-session-rate-field">
-                <span className="immersive-session-rate-label">倍速</span>
-                <span className="immersive-session-rate-input-wrap">
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    className="immersive-session-rate-input [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    style={{ MozAppearance: "textfield" }}
-                    value={playbackRateInputValue}
-                    onChange={handlePlaybackRateInputChange}
-                    onBlur={handlePlaybackRateInputBlur}
-                    onKeyDown={handlePlaybackRateInputKeyDown}
-                    aria-label="播放倍速"
-                  />
-                  <span className="immersive-session-rate-stepper">
-                    <button
-                      type="button"
-                      className="immersive-session-rate-stepper-button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => adjustPlaybackRateByStep(1)}
-                      aria-label="倍速增加 0.25"
-                    >
-                      <ChevronUp className="immersive-session-rate-stepper-icon" />
-                    </button>
-                    <button
-                      type="button"
-                      className="immersive-session-rate-stepper-button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => adjustPlaybackRateByStep(-1)}
-                      aria-label="倍速减少 0.25"
-                    >
-                      <ChevronDown className="immersive-session-rate-stepper-icon" />
-                    </button>
+          {showSessionControls ? (
+            <div className="immersive-video-controls">
+              <div className="immersive-session-controls" aria-label="沉浸学习控制">
+                <button
+                  type="button"
+                  className="immersive-session-action"
+                  disabled={currentSentenceIndex <= 0}
+                  onClick={() => requestNavigateSentence({ delta: -1, source: "status_prev" })}
+                  aria-label="上一句"
+                >
+                  ‹ 上一句
+                </button>
+                <button
+                  type="button"
+                  className="immersive-session-action"
+                  disabled={currentSentenceIndex >= sentenceCount - 1}
+                  onClick={() => requestNavigateSentence({ delta: 1, source: "status_next" })}
+                  aria-label="下一句"
+                >
+                  下一句 ›
+                </button>
+                <button
+                  type="button"
+                  className={`immersive-session-toggle ${singleSentenceLoopEnabled ? "immersive-session-toggle--active" : ""}`}
+                  aria-pressed={singleSentenceLoopEnabled}
+                  onClick={handleToggleSingleSentenceLoop}
+                  title="重复播放当前句子，加强听力训练"
+                >
+                  精听
+                </button>
+                <div className="h-6 w-px bg-border mx-1 shrink-0" aria-hidden="true" />
+                <label className="immersive-session-rate-field">
+                  <span className="immersive-session-rate-label">倍速</span>
+                  <span className="immersive-session-rate-input-wrap">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="immersive-session-rate-input [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      style={{ MozAppearance: "textfield" }}
+                      value={playbackRateInputValue}
+                      onChange={handlePlaybackRateInputChange}
+                      onBlur={handlePlaybackRateInputBlur}
+                      onKeyDown={handlePlaybackRateInputKeyDown}
+                      aria-label="播放倍速"
+                    />
+                    <span className="immersive-session-rate-stepper">
+                      <button
+                        type="button"
+                        className="immersive-session-rate-stepper-button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => adjustPlaybackRateByStep(1)}
+                        aria-label="倍速增加 0.25"
+                      >
+                        <ChevronUp className="immersive-session-rate-stepper-icon" />
+                      </button>
+                      <button
+                        type="button"
+                        className="immersive-session-rate-stepper-button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => adjustPlaybackRateByStep(-1)}
+                        aria-label="倍速减少 0.25"
+                      >
+                        <ChevronDown className="immersive-session-rate-stepper-icon" />
+                      </button>
+                    </span>
                   </span>
-                </span>
-                <span className="immersive-session-rate-suffix">x</span>
-              </label>
-              <button
-                type="button"
-                className="immersive-session-action"
-                onClick={handleResetPlaybackRate}
-                title="恢复默认倍速 1.0x"
-              >
-                重置
-              </button>
-              <button
-                type="button"
-                className={`immersive-session-toggle ${playbackRatePinned ? "immersive-session-toggle--active" : ""}`}
-                aria-pressed={playbackRatePinned}
-                onClick={handleTogglePlaybackRatePinned}
-                title={playbackRatePinned ? "取消固定倍速" : "切换句子时保持倍速不变"}
-              >
-                固定
-              </button>
+                  <span className="immersive-session-rate-suffix">x</span>
+                </label>
+                <button
+                  type="button"
+                  className="immersive-session-action"
+                  onClick={handleResetPlaybackRate}
+                  title="恢复默认倍速 1.0x"
+                >
+                  重置
+                </button>
+                <button
+                  type="button"
+                  className={`immersive-session-toggle ${playbackRatePinned ? "immersive-session-toggle--active" : ""}`}
+                  aria-pressed={playbackRatePinned}
+                  onClick={handleTogglePlaybackRatePinned}
+                  title={playbackRatePinned ? "取消固定倍速" : "切换句子时保持倍速不变"}
+                >
+                  固定
+                </button>
+              </div>
+              {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
+              {isPlaybackPaused ? <Badge variant="outline">已暂停</Badge> : null}
             </div>
-            {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
-            {isPlaybackPaused ? <Badge variant="outline">已暂停</Badge> : null}
-          </div>
+          ) : null}
 
           <input
             ref={bindingInputRef}

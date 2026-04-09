@@ -1327,17 +1327,11 @@ export function ImmersiveLessonPage({
   const wordbookSentence = interactiveWordbookContext?.sentence || null;
   const wordbookSentenceTokens = interactiveWordbookContext?.tokens || [];
   const wordbookSentenceCefrMap = useMemo(() => {
-    if (typeof window !== "undefined") {
-      console.debug("[CEFR wordbookMap] wordbookSentenceTokens:", wordbookSentenceTokens);
-    }
     if (!Array.isArray(wordbookSentenceTokens) || !cefrAnalyzerRef.current?.isLoaded) return new Map();
     const map = new Map();
     for (const token of wordbookSentenceTokens) {
       const level = cefrAnalyzerRef.current.lookupCefrLevelForSurfaceForm(token);
       if (level) addTokenLevelToMap(map, token, level);
-    }
-    if (typeof window !== "undefined") {
-      console.debug("[CEFR wordbookMap] built, size:", map.size, "entries:", [...map.entries()].slice(0, 10));
     }
     return map;
   }, [wordbookSentenceTokens, cefrVocabEngineTick]);
@@ -1384,7 +1378,6 @@ export function ImmersiveLessonPage({
   const { playKeySound, playWrongSound, playCorrectSound } = useTypingFeedbackSounds();
 
   useEffect(() => {
-    console.log("[DEBUG] useEffect 1: entry hint overlay");
     if (!immersiveActive || !lesson?.id) {
       setShowEntryHintOverlay(false);
       return;
@@ -1393,7 +1386,6 @@ export function ImmersiveLessonPage({
   }, [immersiveActive, lesson?.id]);
 
   useEffect(() => {
-    console.log("[DEBUG] useEffect 2: entry hint timeout");
     if (!showEntryHintOverlay) return undefined;
     const id = window.setTimeout(() => {
       setShowEntryHintOverlay(false);
@@ -1581,9 +1573,9 @@ export function ImmersiveLessonPage({
 
   // 从讲解切换到拼写
   const handleStartPracticeFromExplanation = useCallback(() => {
-    setShowExplanation(false);
     markExplanationViewed();
-  }, [setShowExplanation, markExplanationViewed]);
+    focusTypingInput(isTouchDevice);
+  }, [focusTypingInput, isTouchDevice, markExplanationViewed]);
 
   // 检测 word-row 是否有多行，并计算每行的单词索引
   useEffect(() => {
@@ -1639,7 +1631,6 @@ export function ImmersiveLessonPage({
   }, [currentSentenceIndex, lesson?.id]);
 
   useEffect(() => {
-    console.log("[DEBUG] useEffect 5: lesson change translation mask");
     if (prevLessonIdRef.current !== null && prevLessonIdRef.current !== lesson?.id) {
       if (translationMaskMetrics) {
         const centeredRect = buildDefaultTranslationMaskRect(translationMaskMetrics, {
@@ -1676,7 +1667,6 @@ export function ImmersiveLessonPage({
   }, []);
 
   useEffect(() => {
-    console.log("[DEBUG] useEffect 6: subtitle width measure");
     const currentSentence = lesson?.sentences?.[currentSentenceIndex];
     if (!currentSentence || !currentSentence.text_en || !translationMaskMetrics) return;
     if (translationMaskDraggingRef.current) return;
@@ -1728,7 +1718,6 @@ export function ImmersiveLessonPage({
   }, []);
 
   useEffect(() => {
-    console.log("[DEBUG] useEffect 4: translation mask metrics ref");
     translationMaskMetricsRef.current = translationMaskMetrics;
   }, [translationMaskMetrics]);
 
@@ -2211,7 +2200,6 @@ export function ImmersiveLessonPage({
   }, [learningSettings, lesson?.id, resetWordTyping, stopPlayback]);
 
   useEffect(() => {
-    console.log("[DEBUG] useEffect 3: media loading");
     if (!lesson) return;
     let canceled = false;
     let objectUrl = "";
@@ -2900,14 +2888,19 @@ export function ImmersiveLessonPage({
 
   // ExplanationSidebarContent handlers (defined after replayCurrentSentence to avoid TDZ)
   const handleReplay = useCallback(() => {
+    if (explanationAudioUrl) {
+      playExplanationAudio(explanationAudioUrl);
+      markExplanationViewed();
+      return;
+    }
     if (replayCurrentSentence) {
       replayCurrentSentence("sidebar_replay");
     }
-  }, [replayCurrentSentence]);
+  }, [explanationAudioUrl, markExplanationViewed, playExplanationAudio, replayCurrentSentence]);
 
   const handleStartPractice = useCallback(() => {
-    // TODO: implement practice mode
-  }, []);
+    handleStartPracticeFromExplanation();
+  }, [handleStartPracticeFromExplanation]);
 
   const handleTogglePausePlayback = useCallback(
     (source = "button_toggle_pause") => {
@@ -3470,10 +3463,10 @@ export function ImmersiveLessonPage({
           handleImmersivePageClick={handleImmersivePageClick}
           immersiveMediaRef={immersiveMediaRef}
           updateTranslationMaskMetrics={updateTranslationMaskMetrics}
+          showSessionControls={false}
         />
       }
-      leftBottomContent={null}
-      rightTopContent={
+      leftBottomContent={
         <div onClick={handleImmersivePageClick}>
           <SubtitleDisplay
             previousSentence={previousSentence ? { text_en: previousSentence.text_en, text_zh: previousSentence.text_zh || '' } : null}
@@ -3487,11 +3480,85 @@ export function ImmersiveLessonPage({
           />
         </div>
       }
+      rightTopContent={
+        <TypingPanel
+          ref={typingPanelRef}
+          sentenceCount={sentenceCount}
+          currentSentenceIndex={currentSentenceIndex}
+          sentenceJumpInputValue={sentenceJumpInputValue}
+          setSentenceJumpEditing={setSentenceJumpEditing}
+          sentenceJumpValue={sentenceJumpValue}
+          setSentenceJumpValue={setSentenceJumpValue}
+          handleSentenceJumpKeyDown={handleSentenceJumpKeyDown}
+          handleSentenceJumpBlur={handleSentenceJumpBlur}
+          requestNavigateSentence={requestNavigateSentence}
+          singleSentenceLoopEnabled={singleSentenceLoopEnabled}
+          handleToggleSingleSentenceLoop={handleToggleSingleSentenceLoop}
+          playbackRateInputValue={playbackRateInputValue}
+          handlePlaybackRateInputChange={handlePlaybackRateInputChange}
+          handlePlaybackRateInputBlur={handlePlaybackRateInputBlur}
+          handlePlaybackRateInputKeyDown={handlePlaybackRateInputKeyDown}
+          adjustPlaybackRateByStep={adjustPlaybackRateByStep}
+          handleResetPlaybackRate={handleResetPlaybackRate}
+          playbackRatePinned={playbackRatePinned}
+          handleTogglePlaybackRatePinned={handleTogglePlaybackRatePinned}
+          isPlaying={isPlaying}
+          isPlaybackPaused={isPlaybackPaused}
+          expectedTokens={expectedTokens}
+          wordStatuses={wordStatuses}
+          wordInputs={wordInputs}
+          wordRowLines={wordRowLines}
+          wordRowFrameRef={wordRowFrameRef}
+          currentSentenceCefrMap={currentSentenceCefrMap}
+          cefrAnalyzerRef={cefrAnalyzerRef}
+          cefrLevel={cefrLevel}
+          buildLetterSlots={buildLetterSlots}
+          wordRevealComparableIndices={wordRevealComparableIndices}
+          showPreviousSentenceBlock={showPreviousSentenceBlock}
+          canRenderInteractiveWordbook={canRenderInteractiveWordbook}
+          wordbookSentence={wordbookSentence}
+          wordbookSentenceTokens={wordbookSentenceTokens}
+          wordbookSelectedTokenIndexes={wordbookSelectedTokenIndexes}
+          wordbookBusy={wordbookBusy}
+          wordbookSuccessAnimationIndexes={wordbookSuccessAnimationIndexes}
+          handleWordbookTokenPointerDown={handleWordbookTokenPointerDown}
+          requestInteractiveWordbookSentencePlayback={requestInteractiveWordbookSentencePlayback}
+          wordbookSentencePlaybackLabel={wordbookSentencePlaybackLabel}
+          collectWordbookEntry={collectWordbookEntry}
+          selectedWordbookTokens={selectedWordbookTokens}
+          selectedWordbookStart={selectedWordbookStart}
+          selectedWordbookEnd={selectedWordbookEnd}
+          selectedWordbookText={selectedWordbookText}
+          wordbookSuccessMessage={wordbookSuccessMessage}
+          wordbookSentenceZh={wordbookSentenceZh}
+          soeTargetSentence={soeTargetSentence}
+          translationEn={translationEn}
+          previousSentence={previousSentence}
+          requestPreviousSentencePlayback={requestPreviousSentencePlayback}
+          mediaError={mediaError}
+          waitingForInitialPlayback={waitingForInitialPlayback}
+          phase={phase}
+          learningSettings={learningSettings}
+          soeLoading={soeLoading}
+          soeResult={soeResult}
+          setSoeResult={setSoeResult}
+          setSoeLoading={setSoeLoading}
+          apiClient={apiClient}
+          accessToken={accessToken}
+          currentLessonId={currentLessonId}
+          typingPanelRef={typingPanelRef}
+          audioRecorderRef={audioRecorderRef}
+          parseResponse={parseResponse}
+          wordbookSentenceCefrMap={wordbookSentenceCefrMap}
+          translationZh={translationZh}
+          lookupCefrLevelFromMap={lookupCefrLevelFromMap}
+        />
+      }
       rightBottomContent={
         <ExplanationSidebarContent
           sentence={currentSentence}
-          explanation={currentExplanation}
-          audioUrl={explanationAudioUrl}
+          explanation={showExplanation ? currentExplanation : null}
+          audioUrl={showExplanation ? explanationAudioUrl : null}
           onReplay={handleReplay}
           onStartPractice={handleStartPractice}
         />

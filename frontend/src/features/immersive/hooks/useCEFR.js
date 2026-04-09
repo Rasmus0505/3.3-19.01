@@ -57,11 +57,6 @@ export function useCEFR({ lesson, currentSentenceIndex }) {
     const sentence = lesson?.sentences?.[currentSentenceIndex];
     const tokens = sentence?.tokens;
     const wordLevels = sentence?.cefr_vocab_json?.word_levels;
-    if (typeof window !== "undefined") {
-      window.__cefrDebug = window.__cefrDebug || {};
-      window.__cefrDebug.enabled = true;
-      console.debug("[CEFR map] sentence index:", currentSentenceIndex, "tokens:", tokens, "wordLevels:", wordLevels);
-    }
     const map = new Map();
 
     // If word_levels is available from backend (new flow), use it for all words
@@ -76,14 +71,7 @@ export function useCEFR({ lesson, currentSentenceIndex }) {
           }
           // Also add lowercase version for fallback
           map.set(word.toLowerCase(), finalLevel);
-          if (typeof window !== "undefined") {
-            console.debug("[CEFR map word_levels]", word, "→ final_level:", finalLevel);
-          }
         }
-      }
-      if (typeof window !== "undefined") {
-        window.__cefrDebug.lastMap = map;
-        console.debug("[CEFR map] built from word_levels, size:", map.size, "entries:", [...map.entries()].slice(0, 10));
       }
       return map;
     }
@@ -92,21 +80,7 @@ export function useCEFR({ lesson, currentSentenceIndex }) {
     if (!Array.isArray(tokens) || !cefrAnalyzerRef.current?.isLoaded) return new Map();
     for (const token of tokens) {
       const level = cefrAnalyzerRef.current.lookupCefrLevelForSurfaceForm(token);
-      if (typeof window !== "undefined") {
-        console.debug(
-          "[CEFR map token]",
-          token,
-          "→ level:",
-          level,
-          "SUPER?",
-          level === null ? "YES (will be painted orange)" : "no"
-        );
-      }
       if (level) addTokenLevelToMap(map, token, level);
-    }
-    if (typeof window !== "undefined") {
-      window.__cefrDebug.lastMap = map;
-      console.debug("[CEFR map] built, size:", map.size, "entries:", [...map.entries()].slice(0, 10));
     }
     return map;
   }, [

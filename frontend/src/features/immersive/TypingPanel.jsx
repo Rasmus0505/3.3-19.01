@@ -99,6 +99,7 @@ const TypingPanel = forwardRef(function TypingPanel(
     soeLoading,
     soeResult,
     setSoeResult,
+    setSoeLoading,
     apiClient,
     accessToken,
     currentLessonId,
@@ -250,18 +251,14 @@ const TypingPanel = forwardRef(function TypingPanel(
                 return (
                   <div
                     key={`${token}-${index}`}
-                    className={cn(
-                      `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
-                      (() => {
-                        const lookupResult = lookupCefrLevelFromMap(currentSentenceCefrMap, token, cefrAnalyzerRef.current);
-                        const cefrClass = computeCefrClassName(lookupResult, cefrLevel);
-                        if (typeof window !== "undefined" && window.__cefrDebug?.enabled) {
-                          console.debug("[CEFR render]", { token, lookupResult, cefrLevel, cefrClass });
-                        }
-                        return cefrClass;
-                      })(),
-                    )}
-                  >
+                  className={cn(
+                    `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
+                    computeCefrClassName(
+                      lookupCefrLevelFromMap(currentSentenceCefrMap, token, cefrAnalyzerRef.current),
+                      cefrLevel,
+                    ),
+                  )}
+                >
                     <div className="immersive-letter-row">
                       {slots.map((slot) => (
                         <span
@@ -287,18 +284,14 @@ const TypingPanel = forwardRef(function TypingPanel(
               return (
                 <div
                   key={`${token}-${index}`}
-                  className={cn(
-                    `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
-                    (() => {
-                      const lookupResult = lookupCefrLevelFromMap(currentSentenceCefrMap, token, cefrAnalyzerRef.current);
-                      const cefrClass = computeCefrClassName(lookupResult, cefrLevel);
-                      if (typeof window !== "undefined" && window.__cefrDebug?.enabled) {
-                        console.debug("[CEFR render]", { token, lookupResult, cefrLevel, cefrClass });
-                      }
-                      return cefrClass;
-                    })(),
-                  )}
-                >
+                className={cn(
+                  `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
+                  computeCefrClassName(
+                    lookupCefrLevelFromMap(currentSentenceCefrMap, token, cefrAnalyzerRef.current),
+                    cefrLevel,
+                  ),
+                )}
+              >
                   <div className="immersive-letter-row">
                     {slots.map((slot) => (
                       <span
