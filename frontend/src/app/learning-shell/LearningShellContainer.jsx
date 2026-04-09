@@ -472,7 +472,7 @@ export function LearningShellContainer() {
     setImmersiveActive(true);
   }
 
-  async function handleStartLesson(lessonId) {
+  function handleStartLesson(lessonId) {
     if (!lessonId) return;
     const { complete, missingActions } = getShortcutCompleteness(readLearningSettings());
     if (!complete) {
@@ -481,7 +481,7 @@ export function LearningShellContainer() {
       return;
     }
     lastNonImmersivePanelRef.current = activePanel;
-    await loadLessonDetail(lessonId, { autoEnterImmersive: true });
+    navigate(`/immersive/${lessonId}`);
   }
 
   async function handleNavigateToGeneratedLesson(lessonId) {
