@@ -1210,3 +1210,527 @@ input[type="number"] {
   background: var(--color-muted);
   opacity: 0.4;
 }
+
+/* ================================================================
+   Workbench Redesign
+   ================================================================ */
+
+.immersive-layout {
+  gap: 18px !important;
+  padding: 16px !important;
+  min-height: calc(var(--immersive-shell-height) - 8px) !important;
+  background:
+    radial-gradient(circle at top left, color-mix(in oklch, var(--color-primary) 7%, transparent), transparent 28%),
+    linear-gradient(180deg, color-mix(in oklch, var(--color-muted) 45%, white 55%), color-mix(in oklch, var(--color-background) 92%, white 8%)) !important;
+}
+
+.immersive-layout__divider-horizontal,
+.immersive-layout__divider-vertical {
+  display: none !important;
+}
+
+.immersive-layout__left,
+.immersive-layout__right {
+  gap: 18px !important;
+  overflow: visible !important;
+}
+
+.immersive-layout__left-top,
+.immersive-layout__left-bottom,
+.immersive-layout__right-top,
+.immersive-layout__right-bottom {
+  overflow: hidden !important;
+}
+
+.immersive-page,
+.immersive-typing,
+.immersive-explanation-shell,
+.immersive-reserved-panel {
+  border-radius: 26px;
+  border: 1px solid color-mix(in oklch, var(--color-border) 80%, white 20%);
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--color-card) 94%, white 6%), var(--color-card)),
+    radial-gradient(circle at top left, color-mix(in oklch, var(--color-primary) 8%, transparent), transparent 34%);
+  box-shadow:
+    0 20px 56px rgba(15, 23, 42, 0.08),
+    0 2px 6px rgba(15, 23, 42, 0.04);
+}
+
+.immersive-page {
+  gap: 0;
+  overflow: hidden;
+}
+
+.immersive-card-header {
+  padding: 22px 24px 14px;
+  border-bottom: 1px solid color-mix(in oklch, var(--color-border) 80%, transparent);
+}
+
+.immersive-card-content {
+  padding: 18px 20px 20px !important;
+}
+
+.immersive-header {
+  align-items: flex-start;
+}
+
+.immersive-header-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.immersive-header-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.immersive-header-eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--color-muted-foreground);
+  text-transform: uppercase;
+}
+
+.immersive-header-title {
+  margin: 0;
+  font-size: clamp(1.2rem, 1.7vw, 1.6rem);
+  line-height: 1.15;
+  font-weight: 700;
+  color: var(--color-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.immersive-header-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.immersive-media {
+  min-height: min(46vh, calc(var(--immersive-visual-viewport-height) * 0.48));
+  border-radius: 22px;
+  border: 1px solid color-mix(in oklch, var(--color-border) 72%, white 28%);
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.08), transparent 36%),
+    linear-gradient(180deg, #111827, #0f172a);
+}
+
+.immersive-media video,
+.immersive-media audio {
+  max-height: min(56vh, calc(var(--immersive-visual-viewport-height) * 0.56));
+}
+
+.immersive-video-controls {
+  margin-top: 16px;
+  padding: 16px 0 0;
+  border-top: 1px solid color-mix(in oklch, var(--color-border) 82%, transparent);
+  background: transparent;
+}
+
+.immersive-session-controls {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.immersive-session-toggle,
+.immersive-session-action,
+.immersive-session-rate-field {
+  min-height: 38px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-card) 90%, var(--color-muted) 10%);
+}
+
+.immersive-session-rate-input {
+  width: 60px;
+}
+
+.immersive-reserved-panel {
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  background:
+    linear-gradient(135deg, color-mix(in oklch, var(--color-muted) 56%, white 44%), color-mix(in oklch, var(--color-card) 90%, transparent)),
+    radial-gradient(circle at bottom right, color-mix(in oklch, var(--color-primary) 6%, transparent), transparent 32%);
+}
+
+.immersive-typing {
+  height: 100%;
+  padding: 24px !important;
+  gap: 18px;
+  overflow-y: auto;
+}
+
+.immersive-typing__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.immersive-typing__header-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.immersive-typing__eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+.immersive-typing__title {
+  margin: 0;
+  font-size: clamp(1.15rem, 1.6vw, 1.4rem);
+  line-height: 1.15;
+}
+
+.immersive-typing__status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.immersive-typing__notice {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: color-mix(in oklch, var(--color-muted) 72%, var(--color-card));
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+
+.immersive-typing__notice--error {
+  background: color-mix(in oklch, var(--color-destructive) 10%, white 90%);
+  color: var(--color-destructive);
+}
+
+.immersive-sentence-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.immersive-sentence-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px 18px 16px;
+  border-radius: 22px;
+  border: 1px solid color-mix(in oklch, var(--color-border) 80%, transparent);
+  background: color-mix(in oklch, var(--color-card) 92%, white 8%);
+}
+
+.immersive-sentence-card--previous,
+.immersive-sentence-card--next {
+  background: color-mix(in oklch, var(--color-muted) 42%, white 58%);
+}
+
+.immersive-sentence-card--current {
+  border-color: color-mix(in oklch, var(--color-primary) 28%, var(--color-border));
+  background:
+    radial-gradient(circle at top left, color-mix(in oklch, var(--color-primary) 10%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in oklch, white 80%, var(--color-card) 20%), var(--color-card));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-primary) 10%, transparent);
+}
+
+.immersive-sentence-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.immersive-sentence-card__eyebrow {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+.immersive-sentence-card__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+  color: var(--color-foreground);
+}
+
+.immersive-sentence-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.immersive-sentence-card__text {
+  font-size: 1.02rem;
+  line-height: 1.75;
+  color: var(--color-foreground);
+}
+
+.immersive-sentence-card__text--next {
+  font-family: var(--font-mono);
+  color: var(--color-muted-foreground);
+  letter-spacing: 0.08em;
+}
+
+.immersive-sentence-card__translation {
+  margin: 0;
+  font-size: 0.94rem;
+  line-height: 1.7;
+  color: var(--color-muted-foreground);
+}
+
+.immersive-sentence-card__translation--current {
+  color: color-mix(in oklch, var(--color-foreground) 86%, var(--color-muted-foreground));
+}
+
+.immersive-sentence-card__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+}
+
+.immersive-sentence-card__footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.immersive-sentence-card__footer-text,
+.immersive-sentence-card__feedback {
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+}
+
+.immersive-sentence-card__token-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.immersive-sentence-card__token-wrap {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.immersive-word-row-frame--spotlight {
+  padding: 18px 18px 16px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in oklch, var(--color-border) 76%, white 24%);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.immersive-word-row-frame--spotlight .immersive-word-row--centered {
+  justify-content: flex-start;
+}
+
+.immersive-wordbook-token {
+  min-height: 32px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: color-mix(in oklch, var(--color-card) 86%, var(--color-muted) 14%);
+  color: var(--color-foreground);
+  font-size: 13px;
+  line-height: 1.2;
+  transition: background-color 140ms ease, transform 140ms ease, border-color 140ms ease;
+}
+
+.immersive-wordbook-token:hover {
+  transform: translateY(-1px);
+  background: color-mix(in oklch, var(--color-primary) 8%, var(--color-card));
+}
+
+.immersive-wordbook-token--selected {
+  background: color-mix(in oklch, var(--color-primary) 16%, white 84%);
+  border-color: color-mix(in oklch, var(--color-primary) 32%, transparent);
+}
+
+.immersive-explanation-shell {
+  height: 100%;
+  overflow: hidden;
+}
+
+.immersive-explanation-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px;
+}
+
+.immersive-explanation-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.immersive-explanation-panel__eyebrow {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+.immersive-explanation-panel__title {
+  margin: 0;
+  font-size: 1.15rem;
+  line-height: 1.15;
+}
+
+.immersive-explanation-panel__sentence {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: color-mix(in oklch, var(--color-muted) 42%, white 58%);
+  color: var(--color-foreground);
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+.immersive-explanation-panel__body {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  gap: 14px;
+  padding-right: 4px;
+}
+
+.immersive-explanation-panel__section {
+  display: grid;
+  gap: 8px;
+}
+
+.immersive-explanation-panel__section-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-muted-foreground);
+}
+
+.immersive-explanation-panel__surface,
+.immersive-explanation-panel__list-item,
+.immersive-explanation-panel__empty {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in oklch, var(--color-border) 78%, transparent);
+  background: color-mix(in oklch, var(--color-card) 92%, white 8%);
+}
+
+.immersive-explanation-panel__surface p,
+.immersive-explanation-panel__empty {
+  margin: 0;
+  font-size: 0.94rem;
+  line-height: 1.7;
+  color: var(--color-foreground);
+}
+
+.immersive-explanation-panel__list {
+  display: grid;
+  gap: 10px;
+}
+
+.immersive-explanation-panel__list-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+.immersive-explanation-panel__example {
+  margin: 10px 0 0;
+  padding-left: 42px;
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+}
+
+.immersive-explanation-panel__footer {
+  display: flex;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.immersive-typing__loading-badge {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 9998;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  color: white;
+  font-size: 13px;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.28);
+}
+
+@media (max-width: 768px) {
+  .immersive-layout {
+    gap: 14px !important;
+    padding: 12px !important;
+  }
+
+  .immersive-layout__left,
+  .immersive-layout__right {
+    gap: 14px !important;
+  }
+
+  .immersive-card-header,
+  .immersive-card-content,
+  .immersive-typing,
+  .immersive-explanation-panel {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  .immersive-header,
+  .immersive-typing__header,
+  .immersive-sentence-card__header,
+  .immersive-explanation-panel__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .immersive-header-badges,
+  .immersive-typing__status {
+    justify-content: flex-start;
+  }
+
+  .immersive-video-controls {
+    padding-top: 14px;
+  }
+
+  .immersive-sentence-card,
+  .immersive-reserved-panel {
+    min-height: auto;
+  }
+
+  .immersive-sentence-card__token-row,
+  .immersive-explanation-panel__footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

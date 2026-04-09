@@ -1,5 +1,5 @@
 import React, { forwardRef } from "react";
-import { ChevronDown, ChevronUp, Volume2 } from "lucide-react";
+import { Volume2 } from "lucide-react";
 import { toast } from "sonner";
 
 import AudioRecorder from "../../shared/components/AudioRecorder";
@@ -34,30 +34,79 @@ function formatSoeAssessErrorMessage(data, httpStatus = 0) {
   return out || "评测失败";
 }
 
+function textToUnderscores(text = "") {
+  return String(text)
+    .split("")
+    .map((char) => (char === " " ? " " : "_"))
+    .join("");
+}
+
+function renderWordSlots({
+  expectedTokens,
+  wordStatuses,
+  wordInputs,
+  wordRevealComparableIndices,
+  wordRowLines,
+  buildLetterSlots,
+  currentSentenceCefrMap,
+  cefrAnalyzerRef,
+  cefrLevel,
+  lookupCefrLevelFromMap,
+}) {
+  const renderToken = (token, index) => {
+    const status = wordStatuses[index] || "pending";
+    const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealComparableIndices[index] || []);
+
+    return (
+      <div
+        key={`${token}-${index}`}
+        className={cn(
+          `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
+          computeCefrClassName(
+            lookupCefrLevelFromMap(currentSentenceCefrMap, token, cefrAnalyzerRef.current),
+            cefrLevel,
+          ),
+        )}
+      >
+        <div className="immersive-letter-row">
+          {slots.map((slot) => (
+            <span
+              key={slot.key}
+              className={`immersive-letter-cell immersive-letter-cell--${slot.state} ${
+                slot.extra ? "immersive-letter-cell--extra" : ""
+              }`}
+            >
+              <span className="immersive-letter-char">{slot.char}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  if (wordRowLines?.length) {
+    return wordRowLines.map((lineIndices, rowIndex) => (
+      <div
+        key={rowIndex}
+        className={cn(
+          "immersive-word-row",
+          rowIndex === 0 ? "immersive-word-row--multi-line-first" : "immersive-word-row--multi-line-left",
+        )}
+      >
+        {lineIndices.map((index) => renderToken(expectedTokens[index], index))}
+      </div>
+    ));
+  }
+
+  return <div className="immersive-word-row immersive-word-row--centered">{expectedTokens.map(renderToken)}</div>;
+}
+
 const TypingPanel = forwardRef(function TypingPanel(
   {
-    // Status bar props
     sentenceCount,
     currentSentenceIndex,
-    sentenceJumpInputValue,
-    setSentenceJumpEditing,
-    setSentenceJumpValue,
-    handleSentenceJumpKeyDown,
-    handleSentenceJumpBlur,
-    requestNavigateSentence,
-    singleSentenceLoopEnabled,
-    handleToggleSingleSentenceLoop,
-    playbackRateInputValue,
-    handlePlaybackRateInputChange,
-    handlePlaybackRateInputBlur,
-    handlePlaybackRateInputKeyDown,
-    adjustPlaybackRateByStep,
-    handleResetPlaybackRate,
-    playbackRatePinned,
-    handleTogglePlaybackRatePinned,
     isPlaying,
     isPlaybackPaused,
-    // Word slots props
     expectedTokens,
     wordStatuses,
     wordInputs,
@@ -68,7 +117,6 @@ const TypingPanel = forwardRef(function TypingPanel(
     cefrLevel,
     buildLetterSlots,
     wordRevealComparableIndices,
-    // Previous sentence props
     showPreviousSentenceBlock,
     canRenderInteractiveWordbook,
     wordbookSentence,
@@ -87,15 +135,12 @@ const TypingPanel = forwardRef(function TypingPanel(
     wordbookSuccessMessage,
     wordbookSentenceZh,
     soeTargetSentence,
-    translationEn,
     previousSentence,
     requestPreviousSentencePlayback,
-    // Other props
     mediaError,
     waitingForInitialPlayback,
     phase,
     learningSettings,
-    // SOE props
     soeLoading,
     soeResult,
     setSoeResult,
@@ -103,408 +148,287 @@ const TypingPanel = forwardRef(function TypingPanel(
     apiClient,
     accessToken,
     currentLessonId,
-    // Refs
-    typingPanelRef,
-    // Additional refs
     audioRecorderRef,
     parseResponse,
     wordbookSentenceCefrMap,
     translationZh,
     lookupCefrLevelFromMap,
+    currentSentence,
+    nextSentence,
+    sentenceTypingDone,
   },
-  ref
+  ref,
 ) {
+  const previousSentenceZh = previousSentence?.text_zh || translationZh || "";
+
   return (
     <div ref={ref} className="immersive-typing">
-      <div className="immersive-typing-status">
-        <span className="immersive-status-chip flex items-center gap-1 text-sm">
-          <span className="text-muted-foreground">第</span>
-          <input
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            className="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-center text-sm focus:outline-none focus:ring-1 focus:ring-ring [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-            min={0}
-            max={sentenceCount}
-            value={sentenceJumpInputValue}
-            onFocus={() => {
-              setSentenceJumpEditing(true);
-              if (sentenceJumpValue === "") {
-                setSentenceJumpValue(String(currentSentenceIndex + 1));
-              }
-            }}
-            onChange={(e) => {
-              setSentenceJumpEditing(true);
-              setSentenceJumpValue(e.target.value);
-            }}
-            onKeyDown={handleSentenceJumpKeyDown}
-            onBlur={handleSentenceJumpBlur}
-            aria-label="跳转到指定句子"
-          />
-          <span className="text-muted-foreground">/ {sentenceCount} 句</span>
-        </span>
-        <div className="immersive-session-controls" aria-label="沉浸学习控制">
-          <button
-            type="button"
-            className="immersive-session-action"
-            disabled={currentSentenceIndex <= 0}
-            onClick={() => requestNavigateSentence({ delta: -1, source: "status_prev" })}
-            aria-label="上一句"
-          >
-            ‹ 上一句
-          </button>
-          <button
-            type="button"
-            className="immersive-session-action"
-            disabled={currentSentenceIndex >= sentenceCount - 1}
-            onClick={() => requestNavigateSentence({ delta: 1, source: "status_next" })}
-            aria-label="下一句"
-          >
-            下一句 ›
-          </button>
-          <button
-            type="button"
-            className={`immersive-session-toggle ${singleSentenceLoopEnabled ? "immersive-session-toggle--active" : ""}`}
-            aria-pressed={singleSentenceLoopEnabled}
-            onClick={handleToggleSingleSentenceLoop}
-            title="重复播放当前句子，加强听力训练"
-          >
-            精听
-          </button>
-          <div className="h-6 w-px bg-border mx-1 shrink-0" aria-hidden="true" />
-          <label className="immersive-session-rate-field">
-            <span className="immersive-session-rate-label">倍速</span>
-            <span className="immersive-session-rate-input-wrap">
-              <input
-                type="text"
-                inputMode="decimal"
-                className="immersive-session-rate-input [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                style={{ MozAppearance: "textfield" }}
-                value={playbackRateInputValue}
-                onChange={handlePlaybackRateInputChange}
-                onBlur={handlePlaybackRateInputBlur}
-                onKeyDown={handlePlaybackRateInputKeyDown}
-                aria-label="播放倍速"
-              />
-              <span className="immersive-session-rate-stepper">
-                <button
-                  type="button"
-                  className="immersive-session-rate-stepper-button"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => adjustPlaybackRateByStep(1)}
-                  aria-label="倍速增加 0.25"
-                >
-                  <ChevronUp className="immersive-session-rate-stepper-icon" />
-                </button>
-                <button
-                  type="button"
-                  className="immersive-session-rate-stepper-button"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => adjustPlaybackRateByStep(-1)}
-                  aria-label="倍速减少 0.25"
-                >
-                  <ChevronDown className="immersive-session-rate-stepper-icon" />
-                </button>
-              </span>
-            </span>
-            <span className="immersive-session-rate-suffix">x</span>
-          </label>
-          <button
-            type="button"
-            className="immersive-session-action"
-            onClick={handleResetPlaybackRate}
-            title="恢复默认倍速 1.0x"
-          >
-            重置
-          </button>
-          <button
-            type="button"
-            className={`immersive-session-toggle ${playbackRatePinned ? "immersive-session-toggle--active" : ""}`}
-            aria-pressed={playbackRatePinned}
-            onClick={handleTogglePlaybackRatePinned}
-            title={playbackRatePinned ? "取消固定倍速" : "切换句子时保持倍速不变"}
-          >
-            固定
-          </button>
+      <div className="immersive-typing__header">
+        <div className="immersive-typing__header-copy">
+          <p className="immersive-typing__eyebrow">字幕拼写</p>
+          <h2 className="immersive-typing__title">第 {currentSentenceIndex + 1} / {sentenceCount} 句</h2>
         </div>
-        {isPlaying ? <Badge variant="secondary">正在播放本句</Badge> : null}
-        {isPlaybackPaused ? <Badge variant="outline">已暂停</Badge> : null}
+        <div className="immersive-typing__status">
+          {isPlaying ? <Badge variant="secondary">播放中</Badge> : null}
+          {isPlaybackPaused ? <Badge variant="outline">已暂停</Badge> : null}
+          {sentenceTypingDone ? <Badge variant="secondary">本句完成</Badge> : <Badge variant="outline">拼写中</Badge>}
+        </div>
       </div>
 
-      {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
-      {waitingForInitialPlayback ? <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p> : null}
+      {mediaError ? <p className="immersive-typing__notice immersive-typing__notice--error">{mediaError}</p> : null}
+      {waitingForInitialPlayback ? (
+        <p className="immersive-typing__notice">输入已完成，等待本句播放结束。</p>
+      ) : null}
 
-      <div ref={wordRowFrameRef} className="immersive-word-row-frame">
-        {wordRowLines ? (
-          wordRowLines.map((lineIndices, rowIndex) => (
-            <div
-              key={rowIndex}
-              className={cn(
-                "immersive-word-row",
-                rowIndex === 0 ? "immersive-word-row--multi-line-first" : "immersive-word-row--multi-line-left",
-              )}
-            >
-              {lineIndices.map((index) => {
-                const token = expectedTokens[index];
-                const status = wordStatuses[index] || "pending";
-                const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealComparableIndices[index] || []);
-                return (
-                  <div
-                    key={`${token}-${index}`}
-                  className={cn(
-                    `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
-                    computeCefrClassName(
-                      lookupCefrLevelFromMap(currentSentenceCefrMap, token, cefrAnalyzerRef.current),
-                      cefrLevel,
-                    ),
-                  )}
-                >
-                    <div className="immersive-letter-row">
-                      {slots.map((slot) => (
-                        <span
-                          key={slot.key}
-                          className={`immersive-letter-cell immersive-letter-cell--${slot.state} ${
-                            slot.extra ? "immersive-letter-cell--extra" : ""
-                          }`}
-                        >
-                          <span className="immersive-letter-char">{slot.char}</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ))
-        ) : (
-          <div className="immersive-word-row immersive-word-row--centered">
-            {expectedTokens.map((token, index) => {
-              const status = wordStatuses[index] || "pending";
-              const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealComparableIndices[index] || []);
-              return (
-                <div
-                  key={`${token}-${index}`}
-                className={cn(
-                  `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
-                  computeCefrClassName(
-                    lookupCefrLevelFromMap(currentSentenceCefrMap, token, cefrAnalyzerRef.current),
-                    cefrLevel,
-                  ),
-                )}
-              >
-                  <div className="immersive-letter-row">
-                    {slots.map((slot) => (
-                      <span
-                        key={slot.key}
-                        className={`immersive-letter-cell immersive-letter-cell--${slot.state} ${
-                          slot.extra ? "immersive-letter-cell--extra" : ""
-                        }`}
-                      >
-                        <span className="immersive-letter-char">{slot.char}</span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {showPreviousSentenceBlock ? (
-        <div className="immersive-previous-sentence">
-          {canRenderInteractiveWordbook ? (
-            <>
-              <div className="immersive-previous-sentence__row">
-                {wordbookSentence ? (
-                  <AudioRecorder
-                    compact
-                    triggerRef={audioRecorderRef}
-                    onRecordingComplete={async (audioBlob, durationMs) => {
-                      if (!apiClient || !wordbookSentence) return;
-                      if (!audioBlob || audioBlob.size === 0) {
-                        toast.error("未采集到录音，请稍长按麦克风后再松开。");
-                        return;
-                      }
-                      setSoeLoading(true);
-                      try {
-                        const resp = await apiClient("/api/soe/assess", {
-                          method: "POST",
-                          body: (() => {
-                            const fd = new FormData();
-                            fd.append("audio_file", audioBlob, "recording.webm");
-                            fd.append("ref_text", wordbookSentence.text_en);
-                            fd.append("sentence_id", String(wordbookSentence.idx));
-                            if (currentLessonId) fd.append("lesson_id", currentLessonId);
-                            return fd;
-                          })(),
-                        }, accessToken);
-                        const data = await parseResponse(resp);
-                        if (!resp.ok || data?.ok === false) {
-                          setSoeResult({ ok: false, message: formatSoeAssessErrorMessage(data, resp.status) });
-                        } else {
-                          setSoeResult(data);
-                        }
-                      } catch (err) {
-                        console.error("[SOE] Assessment failed:", err);
-                        const errMsg = err instanceof Error ? err.message : String(err);
-                        const short = errMsg.length > 80 ? errMsg.slice(0, 80) + "..." : errMsg;
-                        toast.error(short || "评测失败，请稍后重试");
-                      } finally {
-                        setSoeLoading(false);
-                      }
-                    }}
-                  />
-                ) : null}
-                <div className={`min-w-0 flex flex-1 flex-wrap items-center gap-x-1 gap-y-2`}>
-                  {wordbookSentenceTokens.map((token, index) => {
-                    const tokenSelected = wordbookSelectedTokenIndexes.includes(index);
-                    return (
-                      <button
-                        key={`previous-wordbook-token-${token}-${index}`}
-                        type="button"
-                        data-wordbook-token-index={index}
-                        aria-pressed={tokenSelected}
-                        className={cn(
-                          "min-h-0 cursor-pointer rounded-md border px-1.5 py-0.5 text-left text-sm leading-6 transition-colors select-none touch-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 immersive-wordbook-token",
-                          tokenSelected
-                            ? "bg-slate-200 text-foreground shadow-sm border-transparent"
-                            : "bg-slate-100/80 text-foreground hover:bg-slate-200/70 border-transparent",
-                          wordbookBusy ? "opacity-60" : "",
-                          computeCefrClassName(
-                            lookupCefrLevelFromMap(wordbookSentenceCefrMap, token, cefrAnalyzerRef.current),
-                            cefrLevel,
-                          ),
-                          wordbookSuccessAnimationIndexes.includes(index) ? "wordbook-token--success" : "",
-                        )}
-                        disabled={wordbookBusy}
-                        onContextMenu={(event) => {
-                          event.preventDefault();
-                        }}
-                        onPointerDown={(event) => {
-                          handleWordbookTokenPointerDown(event, index);
-                        }}
-                      >
-                        {token}
-                      </button>
-                    );
-                  })}
-                </div>
-                <button
-                  type="button"
-                  className="immersive-previous-sentence__speaker"
-                  aria-label={wordbookSentencePlaybackLabel}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    requestInteractiveWordbookSentencePlayback("wordbook_sentence_speaker");
-                  }}
-                >
-                  <Volume2 className="size-4" />
-                </button>
+      <div className="immersive-sentence-stack">
+        {showPreviousSentenceBlock && (
+          <section className="immersive-sentence-card immersive-sentence-card--previous">
+            <div className="immersive-sentence-card__header">
+              <div>
+                <p className="immersive-sentence-card__eyebrow">上一句</p>
+                <h3 className="immersive-sentence-card__title">已完成内容</h3>
               </div>
-              <div className="immersive-previous-sentence__actions">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="shrink-0 text-foreground"
-                  disabled={wordbookBusy || selectedWordbookTokens.length === 0}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (!wordbookSentence) return;
-                    void collectWordbookEntry({
-                      sentence: wordbookSentence,
-                      entryType: selectedWordbookTokens.length > 1 ? "phrase" : "word",
-                      entryText: selectedWordbookText,
-                      startTokenIndex: selectedWordbookStart,
-                      endTokenIndex: selectedWordbookEnd,
-                    });
-                  }}
-                >
-                  {wordbookBusy ? "加入中..." : "加入生词本"}
-                </Button>
-                {wordbookSuccessMessage ? (
-                  <span className="text-sm text-emerald-600 font-medium animate-in fade-in duration-200">
-                    {wordbookSuccessMessage}
-                  </span>
-                ) : null}
-              </div>
-              <p className="pl-0">
-                {wordbookSentenceZh}
-              </p>
-            </>
-          ) : (
-            <>
-              <div className="immersive-previous-sentence__row">
-                {soeTargetSentence ? (
-                  <AudioRecorder
-                    compact
-                    triggerRef={audioRecorderRef}
-                    onRecordingComplete={async (audioBlob, durationMs) => {
-                      if (!apiClient) return;
-                      const sentence = soeTargetSentence;
-                      if (!sentence?.text_en) {
-                        toast.error("当前没有可用于评测的句子文本。");
-                        return;
-                      }
-                      if (!audioBlob || audioBlob.size === 0) {
-                        toast.error("未采集到录音，请稍长按麦克风后再松开。");
-                        return;
-                      }
-                      setSoeLoading(true);
-                      try {
-                        const resp = await apiClient("/api/soe/assess", {
-                          method: "POST",
-                          body: (() => {
-                            const fd = new FormData();
-                            fd.append("audio_file", audioBlob, "recording.webm");
-                            fd.append("ref_text", sentence.text_en);
-                            fd.append("sentence_id", String(sentence.idx));
-                            if (currentLessonId) fd.append("lesson_id", currentLessonId);
-                            return fd;
-                          })(),
-                        }, accessToken);
-                        const data = await parseResponse(resp);
-                        if (!resp.ok || data?.ok === false) {
-                          setSoeResult({ ok: false, message: formatSoeAssessErrorMessage(data, resp.status) });
-                        } else {
-                          setSoeResult(data);
-                        }
-                      } catch (err) {
-                        console.error("[SOE] Assessment failed:", err);
-                        const errMsg = err instanceof Error ? err.message : String(err);
-                        const short = errMsg.length > 80 ? errMsg.slice(0, 80) + "..." : errMsg;
-                        toast.error(short || "评测失败，请稍后重试");
-                      } finally {
-                        setSoeLoading(false);
-                      }
+              {canRenderInteractiveWordbook ? (
+                <div className="immersive-sentence-card__actions">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0"
+                    disabled={wordbookBusy || selectedWordbookTokens.length === 0}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (!wordbookSentence) return;
+                      void collectWordbookEntry({
+                        sentence: wordbookSentence,
+                        entryType: selectedWordbookTokens.length > 1 ? "phrase" : "word",
+                        entryText: selectedWordbookText,
+                        startTokenIndex: selectedWordbookStart,
+                        endTokenIndex: selectedWordbookEnd,
+                      });
                     }}
-                  />
-                ) : null}
-                <p className="min-w-0 flex-1">
-                  {translationEn}
-                </p>
-                {previousSentence ? (
+                  >
+                    {wordbookBusy ? "加入中..." : "加入生词本"}
+                  </Button>
                   <button
                     type="button"
                     className="immersive-previous-sentence__speaker"
-                    aria-label="播放上一句"
+                    aria-label={wordbookSentencePlaybackLabel}
                     onClick={(event) => {
                       event.stopPropagation();
-                      requestPreviousSentencePlayback("previous_sentence_speaker");
+                      requestInteractiveWordbookSentencePlayback("wordbook_sentence_speaker");
                     }}
                   >
                     <Volume2 className="size-4" />
                   </button>
+                </div>
+              ) : previousSentence ? (
+                <button
+                  type="button"
+                  className="immersive-previous-sentence__speaker"
+                  aria-label="播放上一句"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    requestPreviousSentencePlayback("previous_sentence_speaker");
+                  }}
+                >
+                  <Volume2 className="size-4" />
+                </button>
+              ) : null}
+            </div>
+
+            {canRenderInteractiveWordbook ? (
+              <>
+                <div className="immersive-sentence-card__token-row">
+                  {wordbookSentence ? (
+                    <AudioRecorder
+                      compact
+                      triggerRef={audioRecorderRef}
+                      onRecordingComplete={async (audioBlob) => {
+                        if (!apiClient || !wordbookSentence) return;
+                        if (!audioBlob || audioBlob.size === 0) {
+                          toast.error("未采集到录音，请稍长按麦克风后再松开。");
+                          return;
+                        }
+                        setSoeLoading(true);
+                        try {
+                          const resp = await apiClient(
+                            "/api/soe/assess",
+                            {
+                              method: "POST",
+                              body: (() => {
+                                const fd = new FormData();
+                                fd.append("audio_file", audioBlob, "recording.webm");
+                                fd.append("ref_text", wordbookSentence.text_en);
+                                fd.append("sentence_id", String(wordbookSentence.idx));
+                                if (currentLessonId) fd.append("lesson_id", currentLessonId);
+                                return fd;
+                              })(),
+                            },
+                            accessToken,
+                          );
+                          const data = await parseResponse(resp);
+                          if (!resp.ok || data?.ok === false) {
+                            setSoeResult({ ok: false, message: formatSoeAssessErrorMessage(data, resp.status) });
+                          } else {
+                            setSoeResult(data);
+                          }
+                        } catch (err) {
+                          const errMsg = err instanceof Error ? err.message : String(err);
+                          const short = errMsg.length > 80 ? `${errMsg.slice(0, 80)}...` : errMsg;
+                          toast.error(short || "评测失败，请稍后重试");
+                        } finally {
+                          setSoeLoading(false);
+                        }
+                      }}
+                    />
+                  ) : null}
+                  <div className="immersive-sentence-card__token-wrap">
+                    {wordbookSentenceTokens.map((token, index) => {
+                      const tokenSelected = wordbookSelectedTokenIndexes.includes(index);
+                      return (
+                        <button
+                          key={`previous-wordbook-token-${token}-${index}`}
+                          type="button"
+                          data-wordbook-token-index={index}
+                          aria-pressed={tokenSelected}
+                          className={cn(
+                            "immersive-wordbook-token",
+                            tokenSelected ? "immersive-wordbook-token--selected" : "",
+                            wordbookBusy ? "opacity-60" : "",
+                            computeCefrClassName(
+                              lookupCefrLevelFromMap(wordbookSentenceCefrMap, token, cefrAnalyzerRef.current),
+                              cefrLevel,
+                            ),
+                            wordbookSuccessAnimationIndexes.includes(index) ? "wordbook-token--success" : "",
+                          )}
+                          disabled={wordbookBusy}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                          }}
+                          onPointerDown={(event) => {
+                            handleWordbookTokenPointerDown(event, index);
+                          }}
+                        >
+                          {token}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <p className="immersive-sentence-card__translation">{wordbookSentenceZh}</p>
+                {wordbookSuccessMessage ? (
+                  <p className="immersive-sentence-card__feedback">{wordbookSuccessMessage}</p>
                 ) : null}
-              </div>
-              <p className="pl-0">
-                {translationZh}
-              </p>
-            </>
+              </>
+            ) : (
+              <>
+                <div className="immersive-sentence-card__text">{previousSentence?.text_en || ""}</div>
+                <p className="immersive-sentence-card__translation">{previousSentenceZh}</p>
+                {soeTargetSentence ? (
+                  <div className="immersive-sentence-card__footer">
+                    <AudioRecorder
+                      compact
+                      triggerRef={audioRecorderRef}
+                      onRecordingComplete={async (audioBlob) => {
+                        if (!apiClient) return;
+                        const sentence = soeTargetSentence;
+                        if (!sentence?.text_en) {
+                          toast.error("当前没有可用于评测的句子文本。");
+                          return;
+                        }
+                        if (!audioBlob || audioBlob.size === 0) {
+                          toast.error("未采集到录音，请稍长按麦克风后再松开。");
+                          return;
+                        }
+                        setSoeLoading(true);
+                        try {
+                          const resp = await apiClient(
+                            "/api/soe/assess",
+                            {
+                              method: "POST",
+                              body: (() => {
+                                const fd = new FormData();
+                                fd.append("audio_file", audioBlob, "recording.webm");
+                                fd.append("ref_text", sentence.text_en);
+                                fd.append("sentence_id", String(sentence.idx));
+                                if (currentLessonId) fd.append("lesson_id", currentLessonId);
+                                return fd;
+                              })(),
+                            },
+                            accessToken,
+                          );
+                          const data = await parseResponse(resp);
+                          if (!resp.ok || data?.ok === false) {
+                            setSoeResult({ ok: false, message: formatSoeAssessErrorMessage(data, resp.status) });
+                          } else {
+                            setSoeResult(data);
+                          }
+                        } catch (err) {
+                          const errMsg = err instanceof Error ? err.message : String(err);
+                          const short = errMsg.length > 80 ? `${errMsg.slice(0, 80)}...` : errMsg;
+                          toast.error(short || "评测失败，请稍后重试");
+                        } finally {
+                          setSoeLoading(false);
+                        }
+                      }}
+                    />
+                    <span className="immersive-sentence-card__footer-text">可对上一句进行跟读评分</span>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </section>
+        )}
+
+        <section className="immersive-sentence-card immersive-sentence-card--current">
+          <div className="immersive-sentence-card__header">
+            <div>
+              <p className="immersive-sentence-card__eyebrow">当前拼写句</p>
+              <h3 className="immersive-sentence-card__title">{currentSentence?.text_en ? "边听边拼写" : "当前句"}</h3>
+            </div>
+            <Badge variant={sentenceTypingDone ? "secondary" : "outline"}>
+              {sentenceTypingDone ? "已完成" : "输入中"}
+            </Badge>
+          </div>
+          <div ref={wordRowFrameRef} className="immersive-word-row-frame immersive-word-row-frame--spotlight">
+            {renderWordSlots({
+              expectedTokens,
+              wordStatuses,
+              wordInputs,
+              wordRevealComparableIndices,
+              wordRowLines,
+              buildLetterSlots,
+              currentSentenceCefrMap,
+              cefrAnalyzerRef,
+              cefrLevel,
+              lookupCefrLevelFromMap,
+            })}
+          </div>
+          {sentenceTypingDone && currentSentence?.text_zh ? (
+            <p className="immersive-sentence-card__translation immersive-sentence-card__translation--current">
+              {currentSentence.text_zh}
+            </p>
+          ) : (
+            <p className="immersive-sentence-card__hint">用户打多少显示多少，完成后显示中文翻译。</p>
           )}
-        </div>
-      ) : null}
+        </section>
+
+        {nextSentence ? (
+          <section className="immersive-sentence-card immersive-sentence-card--next">
+            <div className="immersive-sentence-card__header">
+              <div>
+                <p className="immersive-sentence-card__eyebrow">下一句</p>
+                <h3 className="immersive-sentence-card__title">仅预告轮廓</h3>
+              </div>
+            </div>
+            <div className="immersive-sentence-card__text immersive-sentence-card__text--next">
+              {textToUnderscores(nextSentence.text_en)}
+            </div>
+          </section>
+        ) : null}
+      </div>
+
       <p className="immersive-keyboard-hint text-xs text-muted-foreground">
         快捷键按历史页顶部配置生效：{getShortcutLabel(learningSettings.shortcuts.reveal_letter)} 揭示字母，
         {getShortcutLabel(learningSettings.shortcuts.reveal_word)} 揭示单词，
@@ -514,7 +438,14 @@ const TypingPanel = forwardRef(function TypingPanel(
         {getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)} 播放，
         {getShortcutLabel(learningSettings.shortcuts.record_score)} 录音评分。
       </p>
+
       {phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
+      {soeLoading ? (
+        <div className="immersive-typing__loading-badge">
+          <span className="inline-flex size-2 rounded-full bg-emerald-500" />
+          评测中...
+        </div>
+      ) : null}
     </div>
   );
 });

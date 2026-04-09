@@ -9,7 +9,6 @@ import {
   Button,
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
 } from "../../shared/ui";
 import { cn } from "../../lib/utils";
@@ -22,6 +21,7 @@ const VideoPanel = forwardRef(function VideoPanel(
     immersiveActive,
     hasExitHandler,
     exitImmersive,
+    lessonTitle,
     currentSentenceIndex,
     sentenceCount,
     // Media props
@@ -142,17 +142,24 @@ const VideoPanel = forwardRef(function VideoPanel(
       >
         <CardHeader className="immersive-card-header">
           <div className="immersive-header">
-            <div className="immersive-header-left">
-              {immersiveActive && hasExitHandler ? (
-                <Button variant="outline" size="sm" onClick={() => void exitImmersive("button")}>
-                  <ArrowLeft className="size-4" />
-                  退出
-                </Button>
-              ) : null}
+            <div className="immersive-header-main">
+              <div className="immersive-header-left">
+                {immersiveActive && hasExitHandler ? (
+                  <Button variant="outline" size="sm" onClick={() => void exitImmersive("button")}>
+                    <ArrowLeft className="size-4" />
+                    退出
+                  </Button>
+                ) : null}
+              </div>
+              <div className="immersive-header-copy">
+                <p className="immersive-header-eyebrow">沉浸学习</p>
+                <h1 className="immersive-header-title">{lessonTitle || "课程视频"}</h1>
+              </div>
             </div>
-            <CardDescription className="immersive-header-progress">
-              视频
-            </CardDescription>
+            <div className="immersive-header-badges">
+              <Badge variant="secondary">第 {currentSentenceIndex + 1} / {sentenceCount} 句</Badge>
+              <Badge variant="outline">{mediaMode === "video" ? "视频" : "音频"}</Badge>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="immersive-card-content space-y-4">

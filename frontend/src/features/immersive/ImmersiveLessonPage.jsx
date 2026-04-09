@@ -13,7 +13,6 @@ import TypingPanel from "./TypingPanel";
 // 子组件导出（用于模块化重构）
 // 新代码建议使用这些子组件代替直接使用 ImmersiveLessonPage
 export { SubtitleDisplay } from "./components/SubtitleDisplay";
-import { SubtitleDisplay } from "./components/SubtitleDisplay";
 export { PlaybackControls } from "./components/PlaybackControls";
 
 // Hooks 导出
@@ -1119,7 +1118,7 @@ export function ImmersiveLessonPage({
 
   const isIpadSafari = useMemo(() => isIpadSafariBrowser(), []);
   const isTouchDevice = useMemo(() => isTouchPrimaryInputDevice(), []);
-  const showPreviousSentenceBlock = showFullscreenPreviousSentence;
+  const showPreviousSentenceBlock = true;
   const hasExitHandler = typeof onExitImmersive === "function" || typeof onBack === "function";
   const typingEnabled =
     immersiveActive && Boolean(lesson?.sentences?.[currentSentenceIndex]) && phase !== "transition" && phase !== "lesson_completed";
@@ -3435,6 +3434,7 @@ export function ImmersiveLessonPage({
           immersiveActive={immersiveActive}
           hasExitHandler={hasExitHandler}
           exitImmersive={exitImmersive}
+          lessonTitle={lesson?.title || `TEco Lab · 第 ${lesson?.id ?? ""} 期`}
           currentSentenceIndex={currentSentenceIndex}
           sentenceCount={sentenceCount}
           mediaMode={mediaMode}
@@ -3463,45 +3463,16 @@ export function ImmersiveLessonPage({
           handleImmersivePageClick={handleImmersivePageClick}
           immersiveMediaRef={immersiveMediaRef}
           updateTranslationMaskMetrics={updateTranslationMaskMetrics}
-          showSessionControls={false}
         />
       }
       leftBottomContent={
-        <div onClick={handleImmersivePageClick}>
-          <SubtitleDisplay
-            previousSentence={previousSentence ? { text_en: previousSentence.text_en, text_zh: previousSentence.text_zh || '' } : null}
-            currentSentence={currentSentence ? { text_en: currentSentence.text_en, text_zh: currentSentence.text_zh || '' } : null}
-            nextSentence={nextSentence ? { text_en: nextSentence.text_en } : null}
-            wordInputs={wordInputs}
-            expectedTokens={expectedTokens}
-            currentSentenceCompleted={sentenceTypingDone}
-            sentenceCount={sentenceCount}
-            currentSentenceIndex={currentSentenceIndex}
-          />
-        </div>
+        <div className="immersive-reserved-panel" aria-hidden="true" />
       }
       rightTopContent={
         <TypingPanel
           ref={typingPanelRef}
           sentenceCount={sentenceCount}
           currentSentenceIndex={currentSentenceIndex}
-          sentenceJumpInputValue={sentenceJumpInputValue}
-          setSentenceJumpEditing={setSentenceJumpEditing}
-          sentenceJumpValue={sentenceJumpValue}
-          setSentenceJumpValue={setSentenceJumpValue}
-          handleSentenceJumpKeyDown={handleSentenceJumpKeyDown}
-          handleSentenceJumpBlur={handleSentenceJumpBlur}
-          requestNavigateSentence={requestNavigateSentence}
-          singleSentenceLoopEnabled={singleSentenceLoopEnabled}
-          handleToggleSingleSentenceLoop={handleToggleSingleSentenceLoop}
-          playbackRateInputValue={playbackRateInputValue}
-          handlePlaybackRateInputChange={handlePlaybackRateInputChange}
-          handlePlaybackRateInputBlur={handlePlaybackRateInputBlur}
-          handlePlaybackRateInputKeyDown={handlePlaybackRateInputKeyDown}
-          adjustPlaybackRateByStep={adjustPlaybackRateByStep}
-          handleResetPlaybackRate={handleResetPlaybackRate}
-          playbackRatePinned={playbackRatePinned}
-          handleTogglePlaybackRatePinned={handleTogglePlaybackRatePinned}
           isPlaying={isPlaying}
           isPlaybackPaused={isPlaybackPaused}
           expectedTokens={expectedTokens}
@@ -3552,16 +3523,21 @@ export function ImmersiveLessonPage({
           wordbookSentenceCefrMap={wordbookSentenceCefrMap}
           translationZh={translationZh}
           lookupCefrLevelFromMap={lookupCefrLevelFromMap}
+          currentSentence={currentSentence}
+          nextSentence={nextSentence}
+          sentenceTypingDone={sentenceTypingDone}
         />
       }
       rightBottomContent={
-        <ExplanationSidebarContent
-          sentence={currentSentence}
-          explanation={showExplanation ? currentExplanation : null}
-          audioUrl={showExplanation ? explanationAudioUrl : null}
-          onReplay={handleReplay}
-          onStartPractice={handleStartPractice}
-        />
+        <div className="immersive-explanation-shell">
+          <ExplanationSidebarContent
+            sentence={currentSentence}
+            explanation={showExplanation ? currentExplanation : null}
+            audioUrl={showExplanation ? explanationAudioUrl : null}
+            onReplay={handleReplay}
+            onStartPractice={handleStartPractice}
+          />
+        </div>
       }
     />
   );
