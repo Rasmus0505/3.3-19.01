@@ -14,6 +14,12 @@ class LessonSentenceResponse(BaseModel):
     text_zh: str
     tokens: list[str]
     audio_url: str | None
+    cefr_vocab_json: dict | None = None
+    needs_explanation: bool = False
+    explanation_text: str | None = None
+    simplified_sentence: str | None = None
+    explanation_audio_url: str | None = None
+    key_explanations_json: list | None = None
 
 
 class SubtitleCacheSeedResponse(BaseModel):

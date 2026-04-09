@@ -65,6 +65,12 @@ def to_sentence_response(lesson: Lesson, sentence: LessonSentence) -> LessonSent
         text_zh=sentence.text_zh,
         tokens=tokenize_learning_sentence(normalized_text_en),
         audio_url=audio_url,
+        cefr_vocab_json=sentence.cefr_vocab_json,
+        needs_explanation=sentence.needs_explanation,
+        explanation_text=sentence.explanation_text,
+        simplified_sentence=sentence.simplified_sentence,
+        explanation_audio_url=sentence.explanation_audio_url,
+        key_explanations_json=sentence.key_explanations_json,
     )
 
 
@@ -81,6 +87,12 @@ def to_runtime_sentence_response(sentence: dict, *, audio_url: str | None = None
         text_zh=str(sentence.get("text_zh") or ""),
         tokens=[str(item) for item in tokens],
         audio_url=audio_url,
+        cefr_vocab_json=sentence.get("cefr_vocab_json"),
+        needs_explanation=sentence.get("needs_explanation", False),
+        explanation_text=sentence.get("explanation_text"),
+        simplified_sentence=sentence.get("simplified_sentence"),
+        explanation_audio_url=sentence.get("explanation_audio_url"),
+        key_explanations_json=sentence.get("key_explanations_json"),
     )
 
 
