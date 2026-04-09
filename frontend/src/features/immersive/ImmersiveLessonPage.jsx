@@ -1138,7 +1138,6 @@ export function ImmersiveLessonPage({
   const prevLessonIdRef = useRef(null);
   const sessionMaxWidthRatioRef = useRef(TRANSLATION_MASK_DEFAULT_WIDTH_RATIO);
 
-  const cinemaFullscreenActive = false;
   const isIpadSafari = useMemo(() => isIpadSafariBrowser(), []);
   const isTouchDevice = useMemo(() => isTouchPrimaryInputDevice(), []);
   const showPreviousSentenceBlock = showFullscreenPreviousSentence;
