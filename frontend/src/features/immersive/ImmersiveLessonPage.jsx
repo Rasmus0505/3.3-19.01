@@ -1099,10 +1099,10 @@ export function ImmersiveLessonPage({
 
   // ExplanationSidebarContent handlers
   const handleReplay = useCallback(() => {
-    if (onReplayCurrentSentence) {
-      onReplayCurrentSentence("sidebar_replay");
+    if (replayCurrentSentence) {
+      replayCurrentSentence("sidebar_replay");
     }
-  }, [onReplayCurrentSentence]);
+  }, [replayCurrentSentence]);
 
   const handleStartPractice = useCallback(() => {
     // TODO: implement practice mode
