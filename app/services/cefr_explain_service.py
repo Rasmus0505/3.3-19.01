@@ -202,21 +202,22 @@ class CefrExplainService:
 
     def _lemmatize(self, word: str) -> str:
         """词形还原（复用 vocabAnalyzer.js 的逻辑）"""
+        word_lower = word.lower()
         word_map = self.vocab_data.get("words", {})
 
         # 1. 先查不规则词形还原映射表
-        mapped = IRREGULAR_LEMMAS.get(word)
+        mapped = IRREGULAR_LEMMAS.get(word_lower)
         if mapped and mapped in word_map:
             return mapped
 
-        # 2. 再用后缀规则还原
+        # 2. 再用后缀规则还原（用小写进行匹配和查找）
         for suffix, replacement in SUFFIX_RULES:
-            if word.endswith(suffix) and len(word) > len(suffix) + 2:
-                base = word[:-len(suffix)] + replacement
+            if word_lower.endswith(suffix) and len(word_lower) > len(suffix) + 2:
+                base = word_lower[:-len(suffix)] + replacement
                 if len(base) > 1 and base in word_map:
                     return base
 
-        return word
+        return word_lower
 
     def _normalize_nonstandard_contraction(self, word: str) -> str | None:
         """非标准缩写还原（不经撇号的缩写，如 dont → do）"""
