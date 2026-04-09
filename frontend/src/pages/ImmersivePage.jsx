@@ -89,7 +89,8 @@ export default function ImmersivePage() {
       lesson={lesson}
       accessToken={accessToken}
       apiClient={api}
-      onBack={handleBack}
+      immersiveActive={true}
+      onExitImmersive={handleBack}
     />
   );
 }
