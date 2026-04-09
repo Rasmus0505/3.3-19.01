@@ -545,6 +545,7 @@ const BOTTLE2_CLOUD_DISPLAY_STAGES = [
   { key: "submit_cloud_task", label: "提交云端任务" },
   { key: "transcribing", label: "转写中" },
   { key: "generating_lesson", label: "生成课程" },
+  { key: "cefr_explain", label: "生成讲解" },
   { key: "completed", label: "已完成" },
 ];
 
@@ -572,7 +573,9 @@ function getBottle2CloudStageDisplayItems({ phase, uploadPercent, taskSnapshot, 
   const isTaskFailed = taskStatus === "failed";
   const isTaskSucceeded = normalizedPhase === "success" || taskStatus === "succeeded";
   const isTranscribingStage = hasTask && (currentTaskStageKey === "convert_audio" || currentTaskStageKey === "asr_transcribe");
-  const isGeneratingStage = hasTask && ["build_lesson", "translate_zh", "cefr_explain", "write_lesson"].includes(currentTaskStageKey);
+  const isLessonBuildingStage = hasTask && (currentTaskStageKey === "build_lesson" || currentTaskStageKey === "translate_zh");
+  const isCefrStage = hasTask && (currentTaskStageKey === "cefr_explain" || currentTaskStageKey === "write_lesson");
+  const isGeneratingStage = isLessonBuildingStage || isCefrStage;
   const uploadStage = buildBottle2CloudStageItem({
     key: "upload",
     label: "上传素材",
@@ -592,18 +595,26 @@ function getBottle2CloudStageDisplayItems({ phase, uploadPercent, taskSnapshot, 
   const transcribingStage = buildBottle2CloudStageItem({
     key: "transcribing",
     label: "转写中",
-    status: isTaskFailed && isTranscribingStage ? "failed" : (isTaskSucceeded || isGeneratingStage ? "completed" : (isTranscribingStage ? "running" : "pending")),
-    progressPercent: isTaskSucceeded || isGeneratingStage ? 100 : (isTranscribingStage ? Math.max(8, clampPercent((Number(taskSnapshot?.overall_percent || 0) / 45) * 100)) : 0),
-    detailText: isTaskSucceeded || isGeneratingStage ? "1/1" : (isTranscribingStage ? `${Math.max(1, clampPercent(taskSnapshot?.overall_percent || 0))}%` : "--"),
-    statusText: isTaskFailed && isTranscribingStage ? (currentTaskText || "转写失败") : (isTaskSucceeded || isGeneratingStage ? "已完成" : (isTranscribingStage ? (currentTaskText || "转写中") : "等待开始")),
+    status: isTaskFailed && isTranscribingStage ? "failed" : (isTaskSucceeded || isLessonBuildingStage || isCefrStage ? "completed" : (isTranscribingStage ? "running" : "pending")),
+    progressPercent: isTaskSucceeded || isLessonBuildingStage || isCefrStage ? 100 : (isTranscribingStage ? Math.max(8, clampPercent((Number(taskSnapshot?.overall_percent || 0) / 45) * 100)) : 0),
+    detailText: isTaskSucceeded || isLessonBuildingStage || isCefrStage ? "1/1" : (isTranscribingStage ? `${Math.max(1, clampPercent(taskSnapshot?.overall_percent || 0))}%` : "--"),
+    statusText: isTaskFailed && isTranscribingStage ? (currentTaskText || "转写失败") : (isTaskSucceeded || isLessonBuildingStage || isCefrStage ? "已完成" : (isTranscribingStage ? (currentTaskText || "转写中") : "等待开始")),
   });
   const generatingStage = buildBottle2CloudStageItem({
     key: "generating_lesson",
     label: "生成课程",
-    status: isTaskFailed && !isTranscribingStage ? "failed" : (isTaskSucceeded ? "completed" : (isGeneratingStage ? "running" : "pending")),
-    progressPercent: isTaskSucceeded ? 100 : (isGeneratingStage ? Math.max(10, clampPercent(((Math.max(45, Number(taskSnapshot?.overall_percent || 0)) - 45) / 55) * 100)) : 0),
-    detailText: isTaskSucceeded ? "1/1" : (isGeneratingStage ? `${Math.max(45, clampPercent(taskSnapshot?.overall_percent || 0))}%` : "--"),
-    statusText: isTaskFailed && !isTranscribingStage ? (currentTaskText || "生成课程失败") : (isTaskSucceeded ? "已完成" : (isGeneratingStage ? (currentTaskText || "生成课程中") : "等待开始")),
+    status: isTaskFailed && !isTranscribingStage ? "failed" : (isTaskSucceeded || isCefrStage ? "completed" : (isLessonBuildingStage ? "running" : "pending")),
+    progressPercent: isTaskSucceeded || isCefrStage ? 100 : (isLessonBuildingStage ? Math.max(10, clampPercent(((Math.max(45, Number(taskSnapshot?.overall_percent || 0)) - 45) / 40) * 100)) : 0),
+    detailText: isTaskSucceeded || isCefrStage ? "1/1" : (isLessonBuildingStage ? `${Math.max(45, clampPercent(taskSnapshot?.overall_percent || 0))}%` : "--"),
+    statusText: isTaskFailed && !isTranscribingStage ? (currentTaskText || "生成课程失败") : (isTaskSucceeded || isCefrStage ? "已完成" : (isLessonBuildingStage ? (currentTaskText || "生成课程中") : "等待开始")),
+  });
+  const cefrStage = buildBottle2CloudStageItem({
+    key: "cefr_explain",
+    label: "生成讲解",
+    status: isTaskFailed && isCefrStage && !isLessonBuildingStage ? "failed" : (isTaskSucceeded ? "completed" : (isCefrStage ? "running" : "pending")),
+    progressPercent: isTaskSucceeded ? 100 : (isCefrStage ? Math.max(10, clampPercent(((Math.max(85, Number(taskSnapshot?.overall_percent || 0)) - 85) / 7) * 100)) : 0),
+    detailText: isTaskSucceeded ? "1/1" : (isCefrStage ? `${Math.max(85, clampPercent(taskSnapshot?.overall_percent || 0))}%` : "--"),
+    statusText: isTaskFailed && isCefrStage ? (currentTaskText || "生成讲解失败") : (isTaskSucceeded ? "已完成" : (isCefrStage ? (currentTaskText || "生成讲解中") : "等待开始")),
   });
   const completedStage = buildBottle2CloudStageItem({
     key: "completed",
@@ -613,7 +624,7 @@ function getBottle2CloudStageDisplayItems({ phase, uploadPercent, taskSnapshot, 
     detailText: isTaskSucceeded ? "1/1" : "--",
     statusText: isTaskSucceeded ? "课程已生成完成" : "等待完成",
   });
-  return [uploadStage, submitStage, transcribingStage, generatingStage, completedStage];
+  return [uploadStage, submitStage, transcribingStage, generatingStage, cefrStage, completedStage];
 }
 
 function getBottle2CloudProgressHeadline({ phase, uploadPercent, taskSnapshot, status = "" }) {
@@ -630,8 +641,11 @@ function getBottle2CloudProgressHeadline({ phase, uploadPercent, taskSnapshot, s
   if (currentTaskStageKey === "convert_audio" || currentTaskStageKey === "asr_transcribe") {
     return currentTaskText || "转写中";
   }
-  if (["build_lesson", "translate_zh", "cefr_explain", "write_lesson"].includes(currentTaskStageKey)) {
+  if (["build_lesson", "translate_zh"].includes(currentTaskStageKey)) {
     return currentTaskText || "生成课程";
+  }
+  if (["cefr_explain", "write_lesson"].includes(currentTaskStageKey)) {
+    return currentTaskText || "生成讲解";
   }
   return currentTaskText || "生成课程";
 }
