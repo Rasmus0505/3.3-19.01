@@ -1096,18 +1096,6 @@ export function ImmersiveLessonPage({
   const [translationMaskMetrics, setTranslationMaskMetrics] = useState(null);
   const translationMaskMetricsRef = useRef(null);
   const [translationMaskChromeVisible, setTranslationMaskChromeVisible] = useState(true);
-
-  // ExplanationSidebarContent handlers
-  const handleReplay = useCallback(() => {
-    if (replayCurrentSentence) {
-      replayCurrentSentence("sidebar_replay");
-    }
-  }, [replayCurrentSentence]);
-
-  const handleStartPractice = useCallback(() => {
-    // TODO: implement practice mode
-  }, []);
-
   const [mobileViewportState, setMobileViewportState] = useState({
     height: 0,
     keyboardInset: 0,
@@ -3264,6 +3252,17 @@ export function ImmersiveLessonPage({
     ],
   );
 
+  // ExplanationSidebarContent handlers (defined after replayCurrentSentence to avoid TDZ)
+  const handleReplay = useCallback(() => {
+    if (replayCurrentSentence) {
+      replayCurrentSentence("sidebar_replay");
+    }
+  }, [replayCurrentSentence]);
+
+  const handleStartPractice = useCallback(() => {
+    // TODO: implement practice mode
+  }, []);
+
   const handleTogglePausePlayback = useCallback(
     (source = "button_toggle_pause") => {
       if (!currentSentence || needsBinding) return;
@@ -4550,8 +4549,8 @@ export function ImmersiveLessonPage({
         <ExplanationSidebarContent
           explanation={currentExplanation}
           audioUrl={explanationAudioUrl}
-          onReplay={onReplay}
-          onStartPractice={onStartPractice}
+          onReplay={handleReplay}
+          onStartPractice={handleStartPractice}
         />
       </div>
     </div>
