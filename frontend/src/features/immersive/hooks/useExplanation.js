@@ -18,7 +18,7 @@ export function useExplanation({ currentSentence }) {
 
         // Build explanation object from separate fields
         const explanation = {
-          simplified_sentence: currentSentence.simplified_sentence || currentSentence.text_en,
+          simplified_sentence: currentSentence.simplified_sentence || null,
           key_explanations: currentSentence.key_explanations_json || [],
           listen_tips: currentSentence.explanation_text || "",
         };

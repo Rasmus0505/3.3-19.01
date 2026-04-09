@@ -20,30 +20,60 @@ logger = logging.getLogger(__name__)
 # CEFR 等级数值用于比较
 CEFR_LEVEL_NUM = {"A1": 1, "A2": 2, "B1": 3, "B2": 4, "C1": 5, "C2": 6}
 
-EXPLAIN_SENTENCE_SYSTEM_PROMPT = """You are an English listening comprehension tutor for language learning.
-When a sentence contains vocabulary above the user's target level (i+1),
-you need to generate an explanation that lowers the listening difficulty to i+1.
+EXPLAIN_SENTENCE_SYSTEM_PROMPT = """You are an English Listening Coach specializing in spoken English recognition for Chinese EFL learners.
 
-Output format:
+## Your Role
+
+You help learners understand natural spoken English by explaining:
+1. Why certain words/phrases are difficult to hear
+2. How native speakers actually pronounce them (linking, reduction, assimilation)
+3. Practical tips for recognizing them in real-time listening
+
+## Input You Receive
+
+- sentence: The original sentence (keep unchanged, for reference only)
+- target_level: The learner's CEFR target level (e.g., B1)
+- words_above: Words in the sentence that are above target_level
+
+## Your Task
+
+For each word in words_above, generate an explanation with these fields:
+
+1. **word** - The original word/phrase
+2. **phonetic_real** - How native speakers actually say it (IPA), in Chinese explanation
+3. **why_hard** - Why Chinese learners can't hear it (focus on pronunciation challenges)
+4. **recognition_tip** - Actionable technique to spot it when listening
+
+## Quality Standards
+
+- Explanations must be in Chinese (for Chinese learners)
+- Focus on SPOKEN English patterns, not written
+- Every tip must be actionable ("when you hear X, think Y")
+- If a word has common linking patterns, always mention them
+- Keep explanations concise but specific
+
+## Output Format
+
+Return ONLY valid JSON:
 {
-    "simplified_sentence": "简化后的句子，保留i+1词汇",
-    "key_explanations": [
+    "word_explanations": [
         {
-            "original_word": "原文词汇",
-            "explanation": "英文或中文解释（1-2句话）",
-            "simple_example": "简单例句（可选）"
+            "word": "get together",
+            "phonetic_real": "连读成 /ɡɛɾəˈɡɛðɚ/，'get'的t失爆，'to'弱读成/ə/",
+            "why_hard": "'get'的t在连读时失爆，'to'弱读成/ə/，三个词几乎变成一个音节",
+            "recognition_tip": "听到快速的/ɡɛɾə/后跟'ɡɛðɚ'，中间的停顿感就是分解点"
         }
     ],
-    "listen_tips": "听力技巧提示（可选）"
+    "sentence_tip": "这句话的关键是抓住实义词'get together'和'football'，其他都是填充词"
 }
 
-Rules:
-- Only simplify words strictly above target level
-- Keep all i+1 level vocabulary for learning
-- Explanation should be clear and concise
-- For listening practice, prioritize word substitution over complex grammar
-- Return ONLY valid JSON, no markdown formatting or explanations
-"""
+## Rules
+
+1. 原句保持不变，只用于参考
+2. 每个单词解释都要包含 why_hard 和 recognition_tip
+3. 如果某词有连读/弱读，必须标注具体音变
+4. 如果超过5个词，只选最难的前5个
+5. Return ONLY valid JSON, no explanations outside the JSON"""
 
 # 不规则词形还原映射表（复用 vocabAnalyzer.js 的逻辑）
 IRREGULAR_LEMMAS: dict[str, str] = {
@@ -457,7 +487,7 @@ Return ONLY valid JSON, no explanations."""
         """生成讲解内容（调用 LLM）"""
         if not words_above:
             return {
-                "simplified_sentence": sentence,
+                "simplified_sentence": None,
                 "key_explanations": [],
                 "listen_tips": ""
             }
@@ -467,12 +497,13 @@ Return ONLY valid JSON, no explanations."""
 
         user_prompt = f"""Sentence: {sentence}
 
+Target level: {self.target_level}
 Words above {self.target_level} level: {words_str}
 
-Please generate an explanation that:
-1. Creates a simplified version of the sentence (keeping i+1 vocabulary)
-2. Explains the key words that were simplified
-3. Provides listening tips if helpful
+Please generate detailed explanations for each word, focusing on:
+1. Why it's difficult to recognize in spoken English
+2. Specific pronunciation patterns (linking, reduction, assimilation)
+3. Practical tips for identifying it when listening
 
 Generate the explanation in the required JSON format."""
 
@@ -488,7 +519,7 @@ Generate the explanation in the required JSON format."""
                 enable_thinking=False,
                 stream=False,
                 temperature=0.3,
-                max_tokens=1000
+                max_tokens=1500
             )
 
             # 尝试解析 JSON
@@ -498,14 +529,70 @@ Generate the explanation in the required JSON format."""
                     content = content[4:]
             content = content.strip()
 
-            return json.loads(content)
+            result = json.loads(content)
+
+            # 兼容旧格式，转换为新格式
+            return self._convert_to_new_format(result, sentence)
+
         except Exception as e:
             logger.error(f"Failed to generate explanation: {e}")
             return {
-                "simplified_sentence": sentence,
-                "key_explanations": [{"original_word": w["word"], "explanation": "High level vocabulary"} for w in words_above],
-                "listen_tips": "Focus on the overall meaning rather than individual words."
+                "simplified_sentence": None,
+                "key_explanations": [
+                    {
+                        "word": w["word"],
+                        "phonetic_real": "",
+                        "why_hard": "高水平词汇",
+                        "recognition_tip": "集中注意这个词的整体声音"
+                    }
+                    for w in words_above
+                ],
+                "listen_tips": "集中注意句子中的实义词"
             }
+
+    def _convert_to_new_format(self, llm_result: dict, sentence: str) -> dict:
+        """
+        将 LLM 返回的新格式转换为旧格式以保持兼容性。
+
+        LLM 新格式 (word_explanations):
+        {
+            "word_explanations": [
+                {"word": "...", "phonetic_real": "...", "why_hard": "...", "recognition_tip": "..."}
+            ],
+            "sentence_tip": "..."
+        }
+
+        返回兼容旧格式:
+        {
+            "simplified_sentence": None,
+            "key_explanations": [...],
+            "listen_tips": "..."
+        }
+        """
+        word_explanations = llm_result.get("word_explanations", [])
+        sentence_tip = llm_result.get("sentence_tip", "")
+
+        # 转换为旧格式
+        key_explanations = []
+        for exp in word_explanations:
+            # 新格式: word, phonetic_real, why_hard, recognition_tip
+            # 旧格式: original_word, explanation (合并多个字段)
+            combined_explanation = f"【音标】{exp.get('phonetic_real', '')}"
+            if exp.get('why_hard'):
+                combined_explanation += f"\n【听力难点】{exp.get('why_hard', '')}"
+            if exp.get('recognition_tip'):
+                combined_explanation += f"\n【识别技巧】{exp.get('recognition_tip', '')}"
+
+            key_explanations.append({
+                "original_word": exp.get("word", ""),
+                "explanation": combined_explanation,
+            })
+
+        return {
+            "simplified_sentence": None,  # 不再生成简化句
+            "key_explanations": key_explanations,
+            "listen_tips": sentence_tip or ""
+        }
 
     # 系统音色默认值（qwen3-tts-flash 模型支持）
     DEFAULT_TTS_VOICE = "Serena"

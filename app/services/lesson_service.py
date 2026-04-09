@@ -3474,13 +3474,13 @@ def process_sentences_with_cefr(
             explanation = service.generate_explanation(sentence_text, valid_above_i1)
         except Exception:
             explanation = {
-                "simplified_sentence": sentence_text,
+                "simplified_sentence": None,
                 "key_explanations": [],
                 "listen_tips": "",
             }
 
         # 5. 生成 TTS 音频
-        explanation_text = explanation.get("simplified_sentence", "")
+        explanation_text = explanation.get("listen_tips", "") or ""
         if explanation.get("key_explanations"):
             explanation_text += "\n\n" + "\n".join(
                 f"- {e.get('original_word', '')}: {e.get('explanation', '')}"
@@ -3503,7 +3503,7 @@ def process_sentences_with_cefr(
         }
         sentence["needs_explanation"] = True
         sentence["explanation_text"] = explanation.get("listen_tips", "") or None
-        sentence["simplified_sentence"] = explanation.get("simplified_sentence", sentence_text)
+        sentence["simplified_sentence"] = None  # 不再生成简化句
         sentence["explanation_audio_url"] = audio_url or None
         sentence["key_explanations_json"] = explanation.get("key_explanations") or None
         enriched_sentences.append(sentence)

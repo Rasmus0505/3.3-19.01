@@ -48,13 +48,15 @@ const ExplanationPanel = ({
 
         <div className="border-t border-neutral-200 dark:border-neutral-800 my-4" />
 
-        {/* 简化句 */}
-        <div className="mb-6">
-          <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-2">简化句：</p>
-          <div className="italic bg-neutral-100 dark:bg-neutral-800 p-4 rounded-md">
-            <p className="text-base">{explanation.simplified_sentence}</p>
+        {/* 简化句 - 不再显示 */}
+        {explanation.simplified_sentence && (
+          <div className="mb-6">
+            <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-2">简化句：</p>
+            <div className="italic bg-neutral-100 dark:bg-neutral-800 p-4 rounded-md">
+              <p className="text-base">{explanation.simplified_sentence}</p>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* 关键词解释 */}
         {explanation.key_explanations?.length > 0 && (
