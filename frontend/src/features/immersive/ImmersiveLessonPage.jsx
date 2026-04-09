@@ -1402,13 +1402,40 @@ export function ImmersiveLessonPage({
   const currentSentenceCefrMap = useMemo(() => {
     const sentence = lesson?.sentences?.[currentSentenceIndex];
     const tokens = sentence?.tokens;
+    const wordLevels = sentence?.cefr_vocab_json?.word_levels;
     if (typeof window !== "undefined") {
       window.__cefrDebug = window.__cefrDebug || {};
       window.__cefrDebug.enabled = true;
-      console.debug("[CEFR map] sentence index:", currentSentenceIndex, "tokens:", tokens);
+      console.debug("[CEFR map] sentence index:", currentSentenceIndex, "tokens:", tokens, "wordLevels:", wordLevels);
     }
-    if (!Array.isArray(tokens) || !cefrAnalyzerRef.current?.isLoaded) return new Map();
     const map = new Map();
+
+    // If word_levels is available from backend (new flow), use it for all words
+    if (wordLevels && typeof wordLevels === "object" && Object.keys(wordLevels).length > 0) {
+      for (const [word, info] of Object.entries(wordLevels)) {
+        const finalLevel = info?.final_level;
+        if (finalLevel) {
+          // Normalize the word and add to map (same as addTokenLevelToMap logic)
+          const normalized = normalizeToken(word);
+          if (normalized) {
+            map.set(normalized, finalLevel);
+          }
+          // Also add lowercase version for fallback
+          map.set(word.toLowerCase(), finalLevel);
+          if (typeof window !== "undefined") {
+            console.debug("[CEFR map word_levels]", word, "→ final_level:", finalLevel);
+          }
+        }
+      }
+      if (typeof window !== "undefined") {
+        window.__cefrDebug.lastMap = map;
+        console.debug("[CEFR map] built from word_levels, size:", map.size, "entries:", [...map.entries()].slice(0, 10));
+      }
+      return map;
+    }
+
+    // Fallback to VocabAnalyzer (legacy flow for old lessons without word_levels)
+    if (!Array.isArray(tokens) || !cefrAnalyzerRef.current?.isLoaded) return new Map();
     for (const token of tokens) {
       const level = cefrAnalyzerRef.current.lookupCefrLevelForSurfaceForm(token);
       if (typeof window !== "undefined") {
@@ -1423,6 +1450,7 @@ export function ImmersiveLessonPage({
     return map;
   }, [
     lesson?.sentences?.[currentSentenceIndex]?.tokens,
+    lesson?.sentences?.[currentSentenceIndex]?.cefr_vocab_json,
     cefrVocabEngineTick,
   ]);
   const interactiveWordbookContext = useMemo(

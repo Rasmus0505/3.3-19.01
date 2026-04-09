@@ -242,6 +242,41 @@ class CefrExplainService:
         """获取等级数值"""
         return CEFR_LEVEL_NUM.get(level.upper(), 0)
 
+    def _get_final_lemma_level(self, word: str, llm_lemma: str | None = None) -> str:
+        """
+        获取单词的最终原型词等级（应用 LLM 还原后，再查词典）。
+
+        Args:
+            word: 原始单词
+            llm_lemma: LLM 还原后的原型词（可选）
+
+        Returns:
+            CEFR 等级字符串（如 "B1", "A1", "SUPER"）
+        """
+        # 确定使用哪个原型词
+        if llm_lemma:
+            lemma = llm_lemma
+        else:
+            lemma = self._lemmatize(word)
+
+        word_map = self.vocab_data.get("words", {})
+
+        # 尝试查询原型词等级
+        lemma_level = None
+        if lemma in word_map:
+            lemma_level = word_map[lemma].get("level")
+        else:
+            # 原型词查不到，尝试非标准缩写
+            nonstandard = self._normalize_nonstandard_contraction(lemma)
+            if nonstandard and nonstandard in word_map:
+                lemma_level = word_map[nonstandard].get("level")
+
+        # 如果原型词查不到，标记为 SUPER
+        if lemma_level is None:
+            lemma_level = "SUPER"
+
+        return lemma_level
+
     def extract_cefr_words(self, sentences: list[str]) -> list[dict]:
         """后端词典 CEFR 一次筛选 - 提取高于目标等级的词汇"""
         results = []

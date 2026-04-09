@@ -3383,15 +3383,64 @@ def process_sentences_with_cefr(
 
     # 3. 对每个句子进行词典二次筛选和讲解生成
     enriched_sentences = []
+    import re
+
     for idx, sentence in enumerate(sentences):
         sentence_text = sentence.get("text_en", "")
         cefr_info = cefr_results[idx]
 
         words_above = cefr_info.get("words_above", [])
 
+        # 构建所有单词的最终等级映射（用于前端显示）
+        # 对于 words_above 中的词：最终等级 = 原型词等级（二次筛选后）
+        # 对于其他词：如果表面等级 < 目标等级，最终等级 = 表面等级
+        word_levels: dict[str, dict] = {}
+        word_regex = re.compile(r"[a-zA-Z]+(?:'[a-zA-Z]+)?")
+
+        # 先处理 words_above 中的词，建立 word -> lemma 映射
+        words_above_set = {w["word"] for w in words_above}
+
+        # 收集 words_above 中每个词的 LLM lemma
+        above_word_lemmas: dict[str, str] = {}
+        for w in words_above:
+            if w["word"] in llm_lemmas:
+                above_word_lemmas[w["word"]] = llm_lemmas[w["word"]]
+
+        # 构建 words_above 中每个词的最终等级
+        for word_info in words_above:
+            word = word_info["word"]
+            surface_level = word_info["level"]
+            llm_lemma = above_word_lemmas.get(word)
+            final_level = service._get_final_lemma_level(word, llm_lemma)
+            word_levels[word] = {
+                "surface_level": surface_level,
+                "llm_lemma": llm_lemma,
+                "final_level": final_level,
+            }
+
+        # 处理不在 words_above 中的词（表面等级 < 目标等级，无需简化）
+        matches = word_regex.finditer(sentence_text)
+        for match in matches:
+            word = match.group()
+            if word not in words_above_set:
+                # 不在 words_above 中，说明表面等级 < 目标等级，不需要简化
+                surface_level = service._lookup_word(word)
+                if surface_level:
+                    word_levels[word] = {
+                        "surface_level": surface_level,
+                        "llm_lemma": None,
+                        "final_level": surface_level,
+                    }
+                # else: 词典查不到，不记录
+
         if not words_above:
             # 没有超纲词，不需要讲解
-            sentence["cefr_vocab_json"] = {"words": [], "filter_result": {}, "llm_lemmas": llm_lemmas if all_words_above else {}}
+            sentence["cefr_vocab_json"] = {
+                "words": [],
+                "filter_result": {},
+                "llm_lemmas": llm_lemmas if all_words_above else {},
+                "word_levels": word_levels,
+            }
             sentence["needs_explanation"] = False
             sentence["explanation_text"] = None
             sentence["simplified_sentence"] = None
@@ -3410,6 +3459,7 @@ def process_sentences_with_cefr(
                 "words": words_above,
                 "filter_result": filter_result,
                 "llm_lemmas": llm_lemmas if all_words_above else {},
+                "word_levels": word_levels,
             }
             sentence["needs_explanation"] = False
             sentence["explanation_text"] = None
@@ -3449,6 +3499,7 @@ def process_sentences_with_cefr(
             "words": words_above,
             "filter_result": filter_result,
             "llm_lemmas": llm_lemmas if all_words_above else {},
+            "word_levels": word_levels,
         }
         sentence["needs_explanation"] = True
         sentence["explanation_text"] = explanation.get("listen_tips", "") or None
