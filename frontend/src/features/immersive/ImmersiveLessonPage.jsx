@@ -1069,7 +1069,7 @@ export function ImmersiveLessonPage({
   const { showExplanation, setShowExplanation, currentExplanation, setCurrentExplanation, explanationAudioUrl, setExplanationAudioUrl, explanationAudioRef, playExplanationAudio, markExplanationViewed } = useExplanation({ currentSentence });
 
   // CEFR Hook
-  const { cefrAnalysisStatus, setCefrAnalysisStatus, cefrVocabEngineTick, cefrLevel, currentSentenceCefrMap, cefrAnalyzerRef, lookupCefrLevelFromMap } = useCEFR({ lesson, currentSentenceIndex });
+  const { cefrAnalysisStatus, setCefrAnalysisStatus, cefrVocabEngineTick, cefrLevel, currentSentenceCefrMap, cefrAnalyzerRef } = useCEFR({ lesson, currentSentenceIndex });
 
   const immersiveContainerRef = useRef(null);
   const immersiveMediaRef = useRef(null);
@@ -1266,6 +1266,7 @@ export function ImmersiveLessonPage({
   }, [isTouchDevice]);
 
   const currentLessonId = String(lesson?.id ?? "").trim();
+  const sentenceCount = lesson?.sentences?.length || 0;
   const previousSentence = currentSentenceIndex > 0 ? lesson?.sentences?.[currentSentenceIndex - 1] || null : null;
   const nextSentence = currentSentenceIndex < sentenceCount - 1 ? lesson?.sentences?.[currentSentenceIndex + 1] || null : null;
   const currentSentenceEn = currentSentence?.text_en || "(当前句英文暂缺)";
@@ -1364,7 +1365,6 @@ export function ImmersiveLessonPage({
     [lesson?.sentences, lesson?.subtitle_cache_seed?.asr_payload],
   );
   const currentSentenceTiming = sentenceWordTimingMap[currentSentenceIndex] || null;
-  const sentenceCount = lesson?.sentences?.length || 0;
   const expectedSourceDurationSec = Math.max(0, Number(lesson?.source_duration_ms || 0) / 1000);
   const resolvedTranslationMaskRect = useMemo(
     () => resolveTranslationMaskRect(translationMaskRect, translationMaskMetrics),
@@ -3499,4 +3499,3 @@ export function ImmersiveLessonPage({
     />
   );
 }
-
