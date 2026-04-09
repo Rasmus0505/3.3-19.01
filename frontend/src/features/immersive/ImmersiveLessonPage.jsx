@@ -3489,7 +3489,8 @@ export function ImmersiveLessonPage({
           updateTranslationMaskMetrics={updateTranslationMaskMetrics}
         />
       }
-      leftBottomContent={
+      leftBottomContent={null}
+      rightTopContent={
         <TypingPanel
           sentenceCount={sentenceCount}
           currentSentenceIndex={currentSentenceIndex}
@@ -3560,7 +3561,7 @@ export function ImmersiveLessonPage({
           lookupCefrLevelFromMap={lookupCefrLevelFromMap}
         />
       }
-      rightTopContent={
+      rightBottomContent={
         <ExplanationSidebarContent
           sentence={currentSentence}
           explanation={currentExplanation}

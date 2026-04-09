@@ -1098,7 +1098,7 @@ input[type="number"] {
   /* 拼写区样式由 TypingPanel 自身提供 */
 }
 
-/* 右列：讲解(50%) + 预留(50%) */
+/* 右列：拼写(60%) + 讲解(40%) */
 .immersive-layout__right {
   flex: 1 !important;
   min-width: 0 !important;
@@ -1110,17 +1110,17 @@ input[type="number"] {
 }
 
 .immersive-layout__right-top {
-  flex: 1 !important;
+  flex: 6 !important;
   min-height: 0 !important;
   overflow-y: auto !important;
-  /* 讲解区样式由 ExplanationPanel 自身提供 */
+  /* 拼写区样式由 TypingPanel 自身提供 */
 }
 
 .immersive-layout__right-bottom {
-  flex: 1 !important;
+  flex: 4 !important;
   min-height: 0 !important;
-  overflow: hidden !important;
-  /* 预留区空白，无特殊样式 */
+  overflow-y: auto !important;
+  /* 讲解区样式由 ExplanationPanel 自身提供 */
 }
 
 /* 水平分割线（左右列内部） */
