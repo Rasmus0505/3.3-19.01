@@ -406,12 +406,21 @@ Generate the explanation in the required JSON format."""
 
     def synthesize_explanation_audio(self, text: str, voice: str = None) -> str:
         """生成讲解 TTS 音频"""
+        from app.core.config import CEFR_EXPLAIN_TTS_VOICE
         from app.services.tts_service import synthesize_speech
 
-        result = synthesize_speech(
-            text=text,
-            voice=voice or "chrome",
-            model="qwen3-tts-vc-2026-01-22",
-            language_type="mixed",
-        )
-        return result.audio_url or ""
+        tts_voice = voice or CEFR_EXPLAIN_TTS_VOICE or ""
+        if not tts_voice:
+            return ""  # 未配置声音，跳过 TTS
+
+        try:
+            result = synthesize_speech(
+                text=text,
+                voice=tts_voice,
+                model="qwen3-tts-vc-2026-01-22",
+                language_type="mixed",
+            )
+            return result.audio_url or ""
+        except Exception:
+            logger.warning(f"TTS synthesis failed for text: {text[:50]}...")
+            return ""
