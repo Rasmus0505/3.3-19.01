@@ -3321,8 +3321,9 @@ def process_sentences_with_cefr(
 
     流程：
     1. 提取高于目标 CEFR 等级的词汇（一次筛选）
-    2. 对原型词进行词典二次筛选
-    3. 对需要讲解的句子生成讲解内容（简化句 + 词汇解释 + TTS音频）
+    2. 调用 LLM 对超纲词进行词形还原
+    3. 对原型词进行词典二次筛选（基于 LLM 还原结果）
+    4. 对需要讲解的句子生成讲解内容（简化句 + 词汇解释 + TTS音频）
 
     Args:
         sentences: 句子列表，每个元素包含 text_en 等字段
@@ -3346,7 +3347,17 @@ def process_sentences_with_cefr(
     sentence_texts = [s.get("text_en", "") for s in sentences]
     cefr_results = service.extract_cefr_words(sentence_texts)
 
-    # 2. 对每个句子进行词典二次筛选和讲解生成
+    # 2. 收集所有超纲词，调用 LLM 进行词形还原
+    all_words_above: list[str] = []
+    for cefr_info in cefr_results:
+        for word_info in cefr_info.get("words_above", []):
+            all_words_above.append(word_info["word"])
+
+    llm_lemmas = {}
+    if all_words_above:
+        llm_lemmas = service.llm_lemmatize(all_words_above)
+
+    # 3. 对每个句子进行词典二次筛选和讲解生成
     enriched_sentences = []
     for idx, sentence in enumerate(sentences):
         sentence_text = sentence.get("text_en", "")
@@ -3365,8 +3376,8 @@ def process_sentences_with_cefr(
             enriched_sentences.append(sentence)
             continue
 
-        # 二次筛选
-        filter_result = service.filter_words_by_level(words_above)
+        # 二次筛选（使用 LLM 还原的原型词）
+        filter_result = service.filter_words_by_level(words_above, llm_lemmas=llm_lemmas)
         valid_above_i1 = filter_result["valid_above_i1_words"]
 
         if not valid_above_i1:
@@ -3383,7 +3394,7 @@ def process_sentences_with_cefr(
             enriched_sentences.append(sentence)
             continue
 
-        # 3. 生成讲解内容
+        # 4. 生成讲解内容
         try:
             explanation = service.generate_explanation(sentence_text, valid_above_i1)
         except Exception:
@@ -3393,7 +3404,7 @@ def process_sentences_with_cefr(
                 "listen_tips": "",
             }
 
-        # 4. 生成 TTS 音频
+        # 5. 生成 TTS 音频
         explanation_text = explanation.get("simplified_sentence", "")
         if explanation.get("key_explanations"):
             explanation_text += "\n\n" + "\n".join(

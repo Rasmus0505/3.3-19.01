@@ -13,6 +13,8 @@ export default defineConfig({
     : {
         proxy: {
           "/data": { target: "http://127.0.0.1:8000", changeOrigin: true },
+          "/api": { target: "http://127.0.0.1:18080", changeOrigin: true },
+          "/health": { target: "http://127.0.0.1:18080", changeOrigin: true },
         },
       },
   // main.jsx 用 HashRouter 才能在 Electron file:// 下正常匹配路由；须与 BOTTLE_DESKTOP_RENDERER_BUILD 同步

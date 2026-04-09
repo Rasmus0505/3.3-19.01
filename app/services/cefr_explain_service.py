@@ -275,7 +275,62 @@ class CefrExplainService:
 
         return results
 
-    def filter_words_by_level(self, words_above: list[dict]) -> dict:
+    def llm_lemmatize(self, words: list[str]) -> dict[str, str]:
+        """
+        调用 LLM 对单词列表进行词形还原。
+
+        Args:
+            words: 单词列表（如 ["running", "children", "went"]）
+
+        Returns:
+            dict: {word: lemma} 映射（如 {"running": "run", "children": "child", "went": "go"}）
+        """
+        if not words:
+            return {}
+
+        words_str = ", ".join(sorted(set(words)))
+        user_prompt = f"""Words to lemmatize: {words_str}
+
+For each word, provide the base/lemma form (the dictionary form).
+Return ONLY valid JSON in this format:
+{{"word": "lemma", ...}}
+
+Rules:
+- Verbs: return infinitive form (running → run, jumped → jump, went → go)
+- Nouns: return singular form (children → child, mice → mouse)
+- Adjectives: return base form (better → good, worse → bad)
+- Keep already-base-form words unchanged
+
+Return ONLY valid JSON, no explanations."""
+
+        messages = [
+            {"role": "system", "content": "You are a lemmatization assistant. Return ONLY valid JSON."},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        try:
+            content, _ = call_deepseek(
+                messages=messages,
+                api_key=DASHSCOPE_API_KEY,
+                enable_thinking=False,
+                stream=False,
+                temperature=0.1,
+                max_tokens=500
+            )
+
+            # 解析 JSON
+            if content.startswith("```"):
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
+            content = content.strip()
+            return json.loads(content)
+        except Exception as e:
+            logger.error(f"LLM lemmatize failed: {e}")
+            # 失败时返回原始单词作为 lemma
+            return {w: w for w in words}
+
+    def filter_words_by_level(self, words_above: list[dict], llm_lemmas: dict[str, str] | None = None) -> dict:
         """
         词典二次筛选 - 基于原型词等级进行分类
 
@@ -284,6 +339,10 @@ class CefrExplainService:
         - 词典查到且原型等级 = 目标等级 → i+1 词汇（保留）
         - 词典查到且原型等级 > 目标等级 → 需简化词汇
         - 词典查不到 → SUPER（需简化）
+
+        Args:
+            words_above: 超纲词列表（来自一次筛选）
+            llm_lemmas: LLM 还原后的原型词映射，优先级高于规则还原
 
         Returns:
             dict: {
@@ -300,9 +359,13 @@ class CefrExplainService:
             word = word_info["word"]
             surface_level = word_info["level"]
 
-            # 获取原型词
-            lemma = self._lemmatize(word)
-            # 尝试查询原型词等级（先直接查，再尝试还原）
+            # 优先使用 LLM 还原的原型词，否则回退到规则还原
+            if llm_lemmas and word in llm_lemmas:
+                lemma = llm_lemmas[word]
+            else:
+                lemma = self._lemmatize(word)
+
+            # 尝试查询原型词等级（先直接查，再尝试非标准缩写还原）
             lemma_level = None
             word_map = self.vocab_data.get("words", {})
 
