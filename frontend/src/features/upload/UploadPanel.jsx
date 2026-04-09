@@ -523,6 +523,7 @@ const DISPLAY_STAGES = [
   { key: "asr_transcribe", label: "识别字幕" },
   { key: "build_lesson", label: "生成课程结构" },
   { key: "translate_zh", label: "翻译" },
+  { key: "cefr_explain", label: "生成讲解" },
   { key: "write_lesson", label: "保存完成" },
 ];
 function getStageLabelByKey(stageKey) {
@@ -535,7 +536,8 @@ const STAGE_PROGRESS_BOUNDS = {
   asr_transcribe: { start: 15, end: 45 },
   build_lesson: { start: 45, end: 60 },
   translate_zh: { start: 60, end: 85 },
-  write_lesson: { start: 85, end: 100 },
+  cefr_explain: { start: 85, end: 92 },
+  write_lesson: { start: 92, end: 100 },
 };
 
 const BOTTLE2_CLOUD_DISPLAY_STAGES = [
@@ -570,7 +572,7 @@ function getBottle2CloudStageDisplayItems({ phase, uploadPercent, taskSnapshot, 
   const isTaskFailed = taskStatus === "failed";
   const isTaskSucceeded = normalizedPhase === "success" || taskStatus === "succeeded";
   const isTranscribingStage = hasTask && (currentTaskStageKey === "convert_audio" || currentTaskStageKey === "asr_transcribe");
-  const isGeneratingStage = hasTask && ["build_lesson", "translate_zh", "write_lesson"].includes(currentTaskStageKey);
+  const isGeneratingStage = hasTask && ["build_lesson", "translate_zh", "cefr_explain", "write_lesson"].includes(currentTaskStageKey);
   const uploadStage = buildBottle2CloudStageItem({
     key: "upload",
     label: "上传素材",
@@ -628,7 +630,7 @@ function getBottle2CloudProgressHeadline({ phase, uploadPercent, taskSnapshot, s
   if (currentTaskStageKey === "convert_audio" || currentTaskStageKey === "asr_transcribe") {
     return currentTaskText || "转写中";
   }
-  if (["build_lesson", "translate_zh", "write_lesson"].includes(currentTaskStageKey)) {
+  if (["build_lesson", "translate_zh", "cefr_explain", "write_lesson"].includes(currentTaskStageKey)) {
     return currentTaskText || "生成课程";
   }
   return currentTaskText || "生成课程";
@@ -1251,6 +1253,7 @@ function getStageStatusText(taskSnapshot, stageKey, stageStatus, currentStageKey
     if (stageKey === "asr_transcribe") return "识别字幕中";
     if (stageKey === "build_lesson") return "生成课程结构中";
     if (stageKey === "translate_zh") return "翻译中";
+    if (stageKey === "cefr_explain") return "生成讲解中";
     if (stageKey === "write_lesson") return "保存中";
   }
   return "等待开始";

@@ -300,7 +300,9 @@ def _progress_percent_by_stage(stage_key: str, ratio: float = 1.0) -> int:
     if stage_key == "build_lesson":
         return int(48 + 20 * ratio)
     if stage_key == "translate_zh":
-        return int(68 + 24 * ratio)
+        return int(68 + 17 * ratio)
+    if stage_key == "cefr_explain":
+        return int(85 + 7 * ratio)
     if stage_key == "write_lesson":
         return int(92 + 8 * ratio)
     return 0
@@ -1123,16 +1125,7 @@ class LessonService:
             db.add(lesson)
             db.flush()
 
-            # 处理 CEFR 讲解信息（预生成讲解内容）
-            # 默认目标等级为 B1（i+1 难度），可根据用户水平调整
-            try:
-                runtime_sentences = process_sentences_with_cefr(
-                    sentences=runtime_sentences,
-                    target_level="B1",
-                    user_level=None,
-                )
-            except Exception:
-                logger.exception("[DEBUG] lesson.cefr_processing_failed, continuing without explanation")
+            # CEFR processing is done by the caller before _build_one_lesson
 
             for sentence in runtime_sentences:
                 db.add(
@@ -1288,6 +1281,7 @@ class LessonService:
         settle_note: str = "",
         translation_consume_note: str = "",
         translation_rate: BillingModelRate | None = None,
+        progress_callback: ProgressCallback | None = None,
     ) -> SimpleNamespace:
         runtime_sentences = list(variant.get("sentences") or [])
         normalized_translation_debug = dict(translation_debug or {})
@@ -1750,8 +1744,14 @@ class LessonService:
             db.add(lesson)
             db.flush()
 
-            # 处理 CEFR 讲解信息（预生成讲解内容）
-            # 默认目标等级为 B1（i+1 难度），可根据用户水平调整
+            _emit_progress(
+                progress_callback,
+                stage_key="cefr_explain",
+                stage_status="running",
+                overall_percent=_progress_percent_by_stage("cefr_explain", 0.0),
+                current_text="生成讲解内容",
+            )
+
             try:
                 runtime_sentences = process_sentences_with_cefr(
                     sentences=runtime_sentences,
@@ -1760,6 +1760,15 @@ class LessonService:
                 )
             except Exception:
                 logger.exception("[DEBUG] lesson.cefr_processing_failed, continuing without explanation")
+                runtime_sentences = list(variant.get("sentences") or [])
+
+            _emit_progress(
+                progress_callback,
+                stage_key="cefr_explain",
+                stage_status="completed",
+                overall_percent=_progress_percent_by_stage("cefr_explain", 1.0),
+                current_text="讲解内容生成完成",
+            )
 
             for sentence in runtime_sentences:
                 db.add(
@@ -2574,8 +2583,14 @@ class LessonService:
                 reserved_duration_ms,
             )
 
-            # 处理 CEFR 讲解信息（预生成讲解内容）
-            # 默认目标等级为 B1（i+1 难度），可根据用户水平调整
+            _emit_progress(
+                progress_callback,
+                stage_key="cefr_explain",
+                stage_status="running",
+                overall_percent=_progress_percent_by_stage("cefr_explain", 0.0),
+                current_text="生成讲解内容",
+            )
+
             try:
                 runtime_sentences = process_sentences_with_cefr(
                     sentences=runtime_sentences,
@@ -2584,6 +2599,15 @@ class LessonService:
                 )
             except Exception:
                 logger.exception("[DEBUG] lesson.cefr_processing_failed, continuing without explanation")
+                runtime_sentences = list(variant.get("sentences") or [])
+
+            _emit_progress(
+                progress_callback,
+                stage_key="cefr_explain",
+                stage_status="completed",
+                overall_percent=_progress_percent_by_stage("cefr_explain", 1.0),
+                current_text="讲解内容生成完成",
+            )
 
             for sentence in runtime_sentences:
                 db.add(
@@ -3081,9 +3105,15 @@ class LessonService:
             )
             lesson: Lesson = Lesson()
             lesson.title = Path(source_filename or "lesson").stem[:200] or "lesson"
-
             # 处理 CEFR 讲解信息（预生成讲解内容）
-            # 默认目标等级为 B1（i+1 难度），可根据用户水平调整
+            _emit_progress(
+                progress_callback,
+                stage_key="cefr_explain",
+                stage_status="running",
+                overall_percent=_progress_percent_by_stage("cefr_explain", 0.0),
+                current_text="生成讲解内容",
+            )
+
             try:
                 variant["sentences"] = process_sentences_with_cefr(
                     sentences=list(variant["sentences"]),
@@ -3092,6 +3122,15 @@ class LessonService:
                 )
             except Exception:
                 logger.exception("[DEBUG] lesson.cefr_processing_failed, continuing without explanation")
+                variant["sentences"] = list(variant.get("sentences") or [])
+
+            _emit_progress(
+                progress_callback,
+                stage_key="cefr_explain",
+                stage_status="completed",
+                overall_percent=_progress_percent_by_stage("cefr_explain", 1.0),
+                current_text="讲解内容生成完成",
+            )
 
             _emit_progress(
                 progress_callback,
@@ -3135,6 +3174,7 @@ class LessonService:
                     f"课程生成翻译扣费（DashScope直传），total_tokens={int(translation_usage.get('total_tokens', 0) or 0)}"
                 ),
                 translation_rate=translation_rate,
+                progress_callback=progress_callback,
             )
             if build_result.errors:
                 task_result_meta = {
