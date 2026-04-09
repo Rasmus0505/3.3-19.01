@@ -25,10 +25,15 @@ export default function ImmersiveLayout({
 
   return (
     <div className="immersive-layout">
-      {/* 左列：视频 + 答题 */}
+      {/* 左列：视频 + 答题（60:40 固定比例） */}
       <div className="immersive-layout__main">
-        {videoContent}
-        {typingContent}
+        <div className="immersive-layout__video-area">
+          {videoContent}
+        </div>
+        <div className="immersive-layout__divider" />
+        <div className="immersive-layout__typing-area">
+          {typingContent}
+        </div>
       </div>
 
       {/* 右列：讲解面板 */}
