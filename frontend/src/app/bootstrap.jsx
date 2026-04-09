@@ -4,6 +4,7 @@ import { LEARNING_PAGE_PATHS } from "./learning-shell/panelRoutes";
 
 const LearningPage = lazy(() => import("../pages/LearningPage").then((module) => ({ default: module.LearningPage })));
 const AdminPage = lazy(() => import("../pages/AdminPage").then((module) => ({ default: module.AdminPage })));
+const ImmersivePage = lazy(() => import("../pages/ImmersivePage").then((module) => ({ default: module.default })));
 
 export function BootstrapApp() {
   return (
@@ -14,6 +15,7 @@ export function BootstrapApp() {
         ))}
         <Route path="/models" element={<Navigate to="/upload" replace />} />
         <Route path="/admin/*" element={<AdminPage />} />
+        <Route path="/immersive/:lessonId" element={<ImmersivePage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
