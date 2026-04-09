@@ -3454,7 +3454,7 @@ export function ImmersiveLessonPage({
 
   return (
     <ImmersiveLayout
-      videoContent={
+      leftTopContent={
         <VideoPanel
           immersiveActive={immersiveActive}
           hasExitHandler={hasExitHandler}
@@ -3487,85 +3487,9 @@ export function ImmersiveLessonPage({
           handleImmersivePageClick={handleImmersivePageClick}
           immersiveMediaRef={immersiveMediaRef}
           updateTranslationMaskMetrics={updateTranslationMaskMetrics}
-          wordRevealComparableIndices={wordRevealComparableIndices}
-          sentenceJumpInputValue={sentenceJumpInputValue}
-          setSentenceJumpEditing={setSentenceJumpEditing}
-          sentenceJumpValue={sentenceJumpValue}
-          setSentenceJumpValue={setSentenceJumpValue}
-          handleSentenceJumpKeyDown={handleSentenceJumpKeyDown}
-          handleSentenceJumpBlur={handleSentenceJumpBlur}
-          requestNavigateSentence={requestNavigateSentence}
-          singleSentenceLoopEnabled={singleSentenceLoopEnabled}
-          handleToggleSingleSentenceLoop={handleToggleSingleSentenceLoop}
-          playbackRateInputValue={playbackRateInputValue}
-          handlePlaybackRateInputChange={handlePlaybackRateInputChange}
-          handlePlaybackRateInputBlur={handlePlaybackRateInputBlur}
-          handlePlaybackRateInputKeyDown={handlePlaybackRateInputKeyDown}
-          adjustPlaybackRateByStep={adjustPlaybackRateByStep}
-          handleResetPlaybackRate={handleResetPlaybackRate}
-          playbackRatePinned={playbackRatePinned}
-          handleTogglePlaybackRatePinned={handleTogglePlaybackRatePinned}
-          isPlaying={isPlaying}
-          isPlaybackPaused={isPlaybackPaused}
-          expectedTokens={expectedTokens}
-          wordStatuses={wordStatuses}
-          wordInputs={wordInputs}
-          wordRowLines={wordRowLines}
-          wordRowFrameRef={wordRowFrameRef}
-          currentSentenceCefrMap={currentSentenceCefrMap}
-          cefrAnalyzerRef={cefrAnalyzerRef}
-          cefrLevel={cefrLevel}
-          buildLetterSlots={buildLetterSlots}
-          showPreviousSentenceBlock={showPreviousSentenceBlock}
-          canRenderInteractiveWordbook={canRenderInteractiveWordbook}
-          wordbookSentence={wordbookSentence}
-          wordbookSentenceTokens={wordbookSentenceTokens}
-          wordbookSelectedTokenIndexes={wordbookSelectedTokenIndexes}
-          wordbookBusy={wordbookBusy}
-          wordbookSuccessAnimationIndexes={wordbookSuccessAnimationIndexes}
-          handleWordbookTokenPointerDown={handleWordbookTokenPointerDown}
-          requestInteractiveWordbookSentencePlayback={requestInteractiveWordbookSentencePlayback}
-          wordbookSentencePlaybackLabel={wordbookSentencePlaybackLabel}
-          collectWordbookEntry={collectWordbookEntry}
-          selectedWordbookTokens={selectedWordbookTokens}
-          selectedWordbookStart={selectedWordbookStart}
-          selectedWordbookEnd={selectedWordbookEnd}
-          selectedWordbookText={selectedWordbookText}
-          wordbookSuccessMessage={wordbookSuccessMessage}
-          wordbookSentenceZh={wordbookSentenceZh}
-          soeTargetSentence={soeTargetSentence}
-          translationEn={translationEn}
-          previousSentence={previousSentence}
-          requestPreviousSentencePlayback={requestPreviousSentencePlayback}
-          mediaError={mediaError}
-          waitingForInitialPlayback={waitingForInitialPlayback}
-          phase={phase}
-          learningSettings={learningSettings}
-          soeLoading={soeLoading}
-          soeResult={soeResult}
-          setSoeResult={setSoeResult}
-          apiClient={apiClient}
-          accessToken={accessToken}
-          currentLessonId={currentLessonId}
-          typingPanelRef={typingPanelRef}
-          typingInputRef={typingInputRef}
-          typingInputClassName={typingInputClassName}
-          currentWordInput={currentWordInput}
-          typingEnabled={typingEnabled}
-          handleKeyDown={handleKeyDown}
-          focusTypingInput={focusTypingInput}
-          isTouchDevice={isTouchDevice}
-          shouldKeepControlFocus={shouldKeepControlFocus}
-          audioRecorderRef={audioRecorderRef}
-          parseResponse={parseResponse}
-          wordbookSentenceCefrMap={wordbookSentenceCefrMap}
-          translationZh={translationZh}
-          bindingInputRef={bindingInputRef}
-          handleBindLocalFile={handleBindLocalFile}
-          lookupCefrLevelFromMap={lookupCefrLevelFromMap}
         />
       }
-      typingContent={
+      leftBottomContent={
         <TypingPanel
           sentenceCount={sentenceCount}
           currentSentenceIndex={currentSentenceIndex}
@@ -3636,10 +3560,15 @@ export function ImmersiveLessonPage({
           lookupCefrLevelFromMap={lookupCefrLevelFromMap}
         />
       }
-      explanation={currentExplanation}
-      audioUrl={explanationAudioUrl}
-      onReplay={handleReplay}
-      onStartPractice={handleStartPractice}
+      rightTopContent={
+        <ExplanationSidebarContent
+          sentence={currentSentence}
+          explanation={currentExplanation}
+          audioUrl={explanationAudioUrl}
+          onReplay={handleReplay}
+          onStartPractice={handleStartPractice}
+        />
+      }
     />
   );
 }

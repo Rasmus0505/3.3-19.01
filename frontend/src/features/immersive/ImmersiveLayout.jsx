@@ -1,65 +1,47 @@
 /**
- * ImmersiveLayout - 沉浸学习页面两列布局容器
+ * ImmersiveLayout - 沉浸学习页面左右均分布局
  *
- * 左列：视频窗口 + 答题区（flex column）
- * 右列：讲解面板（sticky）
+ * 左列 50%：视频区(60%) + 拼写区(40%)，中间水平分割线
+ * 右列 50%：讲解区(50%) + 预留区(50%)，中间水平分割线
+ * 左列右侧有垂直分割线，右列右侧贴网页边缘无分割线
  *
- * 使用 CSS Grid 实现，不依赖外部容器
+ * 全屏铺满，无边距间隔
  */
-import ExplanationSidebarContent from "./ExplanationSidebarContent";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useState } from "react";
-
 export default function ImmersiveLayout({
-  // 左列内容
-  videoContent,     // JSX: 视频区域（含 Card/CarHeader）
-  typingContent,    // JSX: 答题拼写区域
-
-  // 右列内容
-  explanation,      // object: 讲解数据
-  audioUrl,         // string: 讲解音频 URL
-  onReplay,         // function: 重播回调
-  onStartPractice,  // function: 开始练习回调
+  // 左列上方 - 视频区
+  leftTopContent,
+  // 左列下方 - 拼写区
+  leftBottomContent,
+  // 右列上方 - 讲解区
+  rightTopContent,
+  // 右列下方 - 预留区（可传空或 null）
+  rightBottomContent,
 }) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-
   return (
     <div className="immersive-layout">
-      {/* 左列：视频 + 答题（60:40 固定比例） */}
-      <div className="immersive-layout__main">
-        <div className="immersive-layout__video-area">
-          {videoContent}
+      {/* 左列：视频 + 拼写（60:40 固定比例） */}
+      <div className="immersive-layout__left">
+        <div className="immersive-layout__left-top">
+          {leftTopContent}
         </div>
-        <div className="immersive-layout__divider" />
-        <div className="immersive-layout__typing-area">
-          {typingContent}
+        <div className="immersive-layout__divider-horizontal" />
+        <div className="immersive-layout__left-bottom">
+          {leftBottomContent}
         </div>
       </div>
 
-      {/* 右列：讲解面板 */}
-      <div className="immersive-layout__sidebar">
-        {/* 折叠按钮 */}
-        <button
-          className="immersive-layout__sidebar-toggle"
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          title={sidebarCollapsed ? "展开讲解" : "收起讲解"}
-        >
-          {sidebarCollapsed ? (
-            <ChevronLeft className="size-3" />
-          ) : (
-            <ChevronRight className="size-3" />
-          )}
-        </button>
+      {/* 左右列之间的垂直分割线 */}
+      <div className="immersive-layout__divider-vertical" />
 
-        {/* 讲解内容 */}
-        {!sidebarCollapsed && (
-          <ExplanationSidebarContent
-            explanation={explanation}
-            audioUrl={audioUrl}
-            onReplay={onReplay}
-            onStartPractice={onStartPractice}
-          />
-        )}
+      {/* 右列：讲解 + 预留（50:50 固定比例） */}
+      <div className="immersive-layout__right">
+        <div className="immersive-layout__right-top">
+          {rightTopContent}
+        </div>
+        <div className="immersive-layout__divider-horizontal" />
+        <div className="immersive-layout__right-bottom">
+          {rightBottomContent}
+        </div>
       </div>
     </div>
   );
