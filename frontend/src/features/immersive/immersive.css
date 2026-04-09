@@ -1469,3 +1469,65 @@ input[type="number"] {
   background-color: oklch(0.58 0.24 25 / 0.15);
   color: oklch(0.58 0.24 25);
 }
+
+/* ================================================================
+   Learning Page Layout (ImmersiveLessonPage new layout)
+   ================================================================ */
+
+/* 整体页面布局：2列 */
+.learning-page-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 12px;
+  height: 100%;
+  align-items: start;
+}
+
+.learning-page-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.learning-page-video {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  background: #000;
+  max-height: 50vh;
+}
+
+.learning-page-video video {
+  width: 100%;
+  max-height: 50vh;
+  object-fit: contain;
+}
+
+.learning-page-typing {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.learning-page-sidebar {
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.learning-page-sidebar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 8px;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.learning-page-sidebar-toggle:hover {
+  background-color: var(--color-muted);
+}

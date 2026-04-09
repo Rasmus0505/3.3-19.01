@@ -5,7 +5,6 @@ import { toast } from "sonner";
 
 import { AuthPanel } from "../features/auth/components/AuthPanel";
 import { ImmersiveLessonPage } from "../features/immersive/ImmersiveLessonPage";
-import ExplanationSidebarContent from "../features/immersive/ExplanationSidebarContent";
 import { LessonListLocalSubtitles } from "../features/lessons/LessonListLocalSubtitles";
 import { UploadPanel } from "../features/upload/UploadPanel";
 import { RedeemCodePanel } from "../features/wallet/components/RedeemCodePanel";
@@ -104,9 +103,6 @@ export function LearningShellLocalSubtitles() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [currentLessonNeedsBinding, setCurrentLessonNeedsBinding] = useState(false);
   const [immersiveActive, setImmersiveActive] = useState(false);
-  const [showExplanation, setShowExplanation] = useState(false);
-  const [currentExplanation, setCurrentExplanation] = useState(null);
-  const [explanationAudioUrl, setExplanationAudioUrl] = useState(null);
   const [mediaRestoreTick, setMediaRestoreTick] = useState(0);
   const [subtitleCacheMetaMap, setSubtitleCacheMetaMap] = useState({});
 
@@ -730,7 +726,7 @@ export function LearningShellLocalSubtitles() {
       <main className={`container-wrapper transition-all duration-500 ease-out ${immersiveLayoutActive ? "pb-0" : "pb-6"}`}>
         <div
           className={`container grid gap-4 transition-all duration-500 ease-out ${
-            immersiveLayoutActive ? "pt-2 xl:grid-cols-[1fr_360px]" : "pt-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]"
+            immersiveLayoutActive ? "pt-2 xl:grid-cols-1" : "pt-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]"
           }`}
         >
           {!immersiveLayoutActive ? (
@@ -773,11 +769,6 @@ export function LearningShellLocalSubtitles() {
                 onExitImmersive={handleExitImmersive}
                 onStartImmersive={handleStartImmersive}
                 externalMediaReloadToken={mediaRestoreTick}
-                onExplanationChange={({ show, explanation, audioUrl }) => {
-                  setShowExplanation(show);
-                  setCurrentExplanation(explanation);
-                  setExplanationAudioUrl(audioUrl);
-                }}
               />
             ) : (
               <Card>
@@ -820,15 +811,6 @@ export function LearningShellLocalSubtitles() {
                   />
                 </>
               )}
-            </aside>
-          ) : (
-            <aside className="flex flex-col h-full">
-              <div className="flex-1 overflow-hidden">
-                <ExplanationSidebarContent
-                  explanation={showExplanation ? currentExplanation : null}
-                  audioUrl={showExplanation ? explanationAudioUrl : null}
-                />
-              </div>
             </aside>
           )}
         </div>

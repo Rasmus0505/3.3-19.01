@@ -3,8 +3,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { toast } from "sonner";
 
 // 布局组件
-import LearningLayout from "../../components/LearningLayout";
-import AISidebar from "../../components/AISidebar";
+import ExplanationSidebarContent from "./ExplanationSidebarContent";
 
 // 子组件导出（用于模块化重构）
 // 新代码建议使用这些子组件代替直接使用 ImmersiveLessonPage
@@ -1053,7 +1052,6 @@ export function ImmersiveLessonPage({
   onExitImmersive,
   onStartImmersive,
   externalMediaReloadToken = 0,
-  onExplanationChange,
 }) {
   const [mediaMode, setMediaMode] = useState("video");
   const [mediaBlobUrl, setMediaBlobUrl] = useState("");
@@ -1098,6 +1096,18 @@ export function ImmersiveLessonPage({
   const [translationMaskMetrics, setTranslationMaskMetrics] = useState(null);
   const translationMaskMetricsRef = useRef(null);
   const [translationMaskChromeVisible, setTranslationMaskChromeVisible] = useState(true);
+
+  // ExplanationSidebarContent handlers
+  const handleReplay = useCallback(() => {
+    if (onReplayCurrentSentence) {
+      onReplayCurrentSentence("sidebar_replay");
+    }
+  }, [onReplayCurrentSentence]);
+
+  const handleStartPractice = useCallback(() => {
+    // TODO: implement practice mode
+  }, []);
+
   const [mobileViewportState, setMobileViewportState] = useState({
     height: 0,
     keyboardInset: 0,
@@ -1585,17 +1595,6 @@ export function ImmersiveLessonPage({
       }
     }
   }, [currentSentence]);
-
-  // Notify parent (LearningShellLocalSubtitles) when explanation state changes
-  useEffect(() => {
-    if (onExplanationChange) {
-      onExplanationChange({
-        show: showExplanation,
-        explanation: showExplanation ? currentExplanation : null,
-        audioUrl: showExplanation ? explanationAudioUrl : null,
-      });
-    }
-  }, [showExplanation, currentExplanation, explanationAudioUrl, onExplanationChange]);
 
   const syncLearningSettingsState = useCallback((nextSettings) => {
     const resolvedSettings = nextSettings && typeof nextSettings === "object" ? nextSettings : readLearningSettings();
@@ -3926,9 +3925,9 @@ export function ImmersiveLessonPage({
     .join(" ");
 
   return (
-      <LearningLayout
-        videoContent={
-          <div ref={immersiveContainerRef} className={immersivePageShellClassName}>
+    <div className="learning-page-layout">
+      <div className="learning-page-main">
+        <div ref={immersiveContainerRef} className={immersivePageShellClassName}>
             <Card
             className={`immersive-page ${immersiveActive ? "immersive-page--immersive" : ""} ${
               cinemaFullscreenActive ? "immersive-page--cinema" : ""
@@ -4589,25 +4588,16 @@ export function ImmersiveLessonPage({
           </CardContent>
         </Card>
       </div>
-        }
-        typingContent={
-          <div className="h-full w-full">
-            {/* 拼写区域已经在 CardContent 中，这里预留插槽以便后续扩展 */}
-          </div>
-        }
-        leftSidebarTitle="AI 老师"
-        rightSidebarTitle="听力讲解"
-        leftSidebarContent={
-          <div className="ai-sidebar-placeholder">
-            <p className="text-sm text-muted-foreground">AI 老师功能开发中...</p>
-          </div>
-        }
-        rightSidebarContent={
-          <div className="ai-sidebar-placeholder">
-            <p className="text-sm text-muted-foreground">暂无讲解内容</p>
-          </div>
-        }
-      />
+      </div>
+      <div className="learning-page-sidebar">
+        <ExplanationSidebarContent
+          explanation={currentExplanation}
+          audioUrl={explanationAudioUrl}
+          onReplay={onReplay}
+          onStartPractice={onStartPractice}
+        />
+      </div>
+    </div>
   );
 }
 
