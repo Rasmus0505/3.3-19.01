@@ -726,7 +726,7 @@ export function LearningShellLocalSubtitles() {
       <main className={`container-wrapper transition-all duration-500 ease-out ${immersiveLayoutActive ? "pb-0" : "pb-6"}`}>
         <div
           className={`container grid gap-4 transition-all duration-500 ease-out ${
-            immersiveLayoutActive ? "pt-2 xl:grid-cols-1" : "pt-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]"
+            immersiveLayoutActive ? "pt-2 xl:grid-cols-[1fr_360px]" : "pt-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]"
           }`}
         >
           {!immersiveLayoutActive ? (
