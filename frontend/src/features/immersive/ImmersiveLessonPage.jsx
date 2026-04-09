@@ -21,6 +21,7 @@ import AudioRecorder from "../../shared/components/AudioRecorder";
 import SOEResultCard from "./SOEResultCard";
 import ExplanationPanel from "./ExplanationPanel";
 import ExplanationSidebarContent from "./ExplanationSidebarContent";
+import ExplanationFloatingPanel from "./ExplanationFloatingPanel";
 
 import { useAppStore } from "../../store";
 import { VocabAnalyzer } from "../../utils/vocabAnalyzer";
@@ -4080,6 +4081,15 @@ export function ImmersiveLessonPage({
               </div>
             </div>
           ) : null}
+
+          {/* 浮动讲解面板 - 沉浸模式视频区域右下角 */}
+          <ExplanationFloatingPanel
+            visible={showExplanation && !!currentExplanation}
+            explanation={currentExplanation}
+            audioUrl={explanationAudioUrl}
+            onReplay={() => playExplanationAudio(explanationAudioUrl)}
+            onStartPractice={handleStartPracticeFromExplanation}
+          />
 
           </div>
 
