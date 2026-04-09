@@ -404,21 +404,23 @@ Generate the explanation in the required JSON format."""
                 "listen_tips": "Focus on the overall meaning rather than individual words."
             }
 
+    # 系统音色默认值（qwen3-tts-flash 模型支持）
+    DEFAULT_TTS_VOICE = "Serena"
+    DEFAULT_TTS_MODEL = "qwen3-tts-flash"
+
     def synthesize_explanation_audio(self, text: str, voice: str = None) -> str:
         """生成讲解 TTS 音频"""
         from app.core.config import CEFR_EXPLAIN_TTS_VOICE
         from app.services.tts_service import synthesize_speech
 
-        tts_voice = voice or CEFR_EXPLAIN_TTS_VOICE or ""
-        if not tts_voice:
-            return ""  # 未配置声音，跳过 TTS
+        tts_voice = voice or CEFR_EXPLAIN_TTS_VOICE or self.DEFAULT_TTS_VOICE
 
         try:
             result = synthesize_speech(
                 text=text,
                 voice=tts_voice,
-                model="qwen3-tts-vc-2026-01-22",
-                language_type="mixed",
+                model=self.DEFAULT_TTS_MODEL,
+                language_type="Auto",
             )
             return result.audio_url or ""
         except Exception:
