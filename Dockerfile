@@ -1,10 +1,12 @@
 FROM node:22-alpine AS frontend-builder
 
+ARG BUILD_DATE=1970-01-01T00:00:00Z
+
 WORKDIR /frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
-RUN npm run build
+RUN echo "Building at ${BUILD_DATE}" && npm run build
 
 # Clean npm artifacts before copying
 RUN npm cache clean --force && rm -rf node_modules package-lock.json
