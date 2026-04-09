@@ -43,12 +43,6 @@ TASK_ACTIVE_CONTROL_STATUSES = {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_S
 TASK_TERMINATE_REQUESTABLE_STATUSES = {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING, TASK_STATUS_TERMINATING}
 ORPHANED_TASK_RECOVERY_MESSAGE = "上次生成已中断，可继续生成或重新开始。"
 
-_STAGE_LABELS: tuple[tuple[str, str], ...] = (
-    ("convert_audio", "转换音频格式"),
-    ("asr_transcribe", "ASR转写字幕"),
-    ("translate_zh", "翻译中文"),
-    ("write_lesson", "写入课程"),
-)
 
 logger = logging.getLogger(__name__)
 _STAGE_LABELS = (
@@ -56,6 +50,7 @@ _STAGE_LABELS = (
     ("asr_transcribe", "ASR转写字幕"),
     ("build_lesson", "生成课程结构"),
     ("translate_zh", "翻译中文字幕"),
+    ("cefr_explain", "生成讲解"),
     ("write_lesson", "写入课程"),
 )
 LESSON_TASK_REQUIRED_COLUMNS: tuple[str, ...] = tuple(str(column.name) for column in LessonGenerationTask.__table__.columns)
