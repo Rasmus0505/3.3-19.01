@@ -113,9 +113,7 @@ function formatSoeAssessErrorMessage(data, httpStatus = 0) {
   if (typeof detail === "string" && detail.trim()) return detail.trim();
   return httpStatus ? `评测失败（HTTP ${httpStatus}）` : "评测失败";
 }
-const CINEMA_CONTROLS_IDLE_MS = 3000;
 const WORD_TIMING_TOLERANCE_MS = 140;
-const PROGRAMMATIC_FULLSCREEN_EXIT_RESET_MS = 1000;
 const WORDBOOK_LONG_PRESS_MS = 260;
 const MOBILE_KEYBOARD_MIN_INSET_PX = 120;
 const TRANSLATION_MASK_MIN_WIDTH_PX = 120;
@@ -481,46 +479,6 @@ function isTouchPrimaryInputDevice() {
   if (touchPoints > 0) return true;
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
   return window.matchMedia("(pointer: coarse)").matches;
-}
-
-function getFullscreenElement() {
-  if (typeof document === "undefined") return null;
-  return (
-    document.fullscreenElement ||
-    document.webkitFullscreenElement ||
-    document.msFullscreenElement ||
-    (document.webkitIsFullScreen ? document.documentElement : null) ||
-    null
-  );
-}
-
-async function requestElementFullscreen(element) {
-  if (!element) {
-    throw new Error("fullscreen_target_missing");
-  }
-  if (typeof element.requestFullscreen === "function") {
-    return element.requestFullscreen();
-  }
-  if (typeof element.webkitRequestFullscreen === "function") {
-    return element.webkitRequestFullscreen();
-  }
-  if (typeof element.msRequestFullscreen === "function") {
-    return element.msRequestFullscreen();
-  }
-  throw new Error("fullscreen_not_supported");
-}
-
-async function exitElementFullscreen() {
-  if (typeof document === "undefined") return;
-  if (document.fullscreenElement && typeof document.exitFullscreen === "function") {
-    return document.exitFullscreen();
-  }
-  if (document.webkitFullscreenElement && typeof document.webkitExitFullscreen === "function") {
-    return document.webkitExitFullscreen();
-  }
-  if (document.msFullscreenElement && typeof document.msExitFullscreen === "function") {
-    return document.msExitFullscreen();
-  }
 }
 
 function countTokenInputErrors(inputValue, expectedToken) {
@@ -1085,13 +1043,9 @@ export function ImmersiveLessonPage({
   const [wordbookSuccessAnimationIndexes, setWordbookSuccessAnimationIndexes] = useState([]);
   const [wordbookSuccessMessage, setWordbookSuccessMessage] = useState(null);
   const [showEntryHintOverlay, setShowEntryHintOverlay] = useState(false);
-  const [isCinemaFullscreen, setIsCinemaFullscreen] = useState(false);
-  const [isFullscreenFallback, setIsFullscreenFallback] = useState(false);
-  const [isCssFullscreen, setIsCssFullscreen] = useState(false);
   const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(
     () => readLearningSettings().uiPreferences?.showFullscreenPreviousSentence ?? false,
   );
-  const [cinemaControlsIdle, setCinemaControlsIdle] = useState(false);
   const [translationMaskEnabled, setTranslationMaskEnabled] = useState(
     () => readLearningSettings().uiPreferences?.translationMask?.enabled !== false,
   );
@@ -1145,7 +1099,6 @@ export function ImmersiveLessonPage({
   const typingPanelRef = useRef(null);
   const typingInputRef = useRef(null);
   const bindingInputRef = useRef(null);
-  const cinemaControlsIdleTimerRef = useRef(null);
   const wordRowFrameRef = useRef(null);
   const [isWordRowMultiLine, setIsWordRowMultiLine] = useState(false);
   const [wordRowLines, setWordRowLines] = useState(null);
@@ -1167,9 +1120,6 @@ export function ImmersiveLessonPage({
   const playbackKindRef = useRef("initial");
   const replayAssistStageRef = useRef(0);
   const replayProgressAnchorRef = useRef(0);
-  const autoFullscreenAttemptKeyRef = useRef("");
-  const programmaticFullscreenExitRef = useRef(false);
-  const programmaticFullscreenExitTimerRef = useRef(null);
   const focusRestoreTimerRef = useRef(null);
   const wordbookActionRef = useRef(false);
   const viewportSyncFrameRef = useRef(null);
@@ -1188,10 +1138,10 @@ export function ImmersiveLessonPage({
   const prevLessonIdRef = useRef(null);
   const sessionMaxWidthRatioRef = useRef(TRANSLATION_MASK_DEFAULT_WIDTH_RATIO);
 
-  const cinemaFullscreenActive = isCinemaFullscreen || isFullscreenFallback || isCssFullscreen;
+  const cinemaFullscreenActive = false;
   const isIpadSafari = useMemo(() => isIpadSafariBrowser(), []);
   const isTouchDevice = useMemo(() => isTouchPrimaryInputDevice(), []);
-  const showPreviousSentenceBlock = !cinemaFullscreenActive || showFullscreenPreviousSentence;
+  const showPreviousSentenceBlock = showFullscreenPreviousSentence;
   const hasExitHandler = typeof onExitImmersive === "function" || typeof onBack === "function";
   const typingEnabled =
     immersiveActive && Boolean(lesson?.sentences?.[currentSentenceIndex]) && phase !== "transition" && phase !== "lesson_completed";
@@ -1212,13 +1162,6 @@ export function ImmersiveLessonPage({
   }, []);
   const setPlaybackRatePinned = useCallback((pinned, value) => {
     dispatchSession({ type: SET_PLAYBACK_RATE_PINNED, pinned, value });
-  }, []);
-
-  const clearCinemaControlsIdleTimer = useCallback(() => {
-    if (typeof window === "undefined") return;
-    if (cinemaControlsIdleTimerRef.current === null) return;
-    window.clearTimeout(cinemaControlsIdleTimerRef.current);
-    cinemaControlsIdleTimerRef.current = null;
   }, []);
 
   const clearTranslationMaskChromeIdleTimer = useCallback(() => {
@@ -1256,11 +1199,11 @@ export function ImmersiveLessonPage({
     const typingPanel = typingPanelRef.current;
     if (!typingPanel) return;
     typingPanel.scrollIntoView({
-      block: cinemaFullscreenActive ? "end" : "nearest",
+      block: "nearest",
       inline: "nearest",
       behavior: "auto",
     });
-  }, [cinemaFullscreenActive]);
+  }, []);
 
   const focusTypingInput = useCallback((restoreKeyboard = false) => {
     if (!typingEnabled || typeof window === "undefined") return;
@@ -1343,37 +1286,6 @@ export function ImmersiveLessonPage({
     container.style.setProperty("--immersive-visual-viewport-height", `${visualHeight}px`);
     container.style.setProperty("--immersive-keyboard-offset", `${keyboardInset}px`);
   }, [isTouchDevice]);
-
-  const wakeCinemaControls = useCallback(() => {
-    if (!cinemaFullscreenActive || typeof window === "undefined") return;
-    setCinemaControlsIdle((current) => (current ? false : current));
-    clearCinemaControlsIdleTimer();
-    cinemaControlsIdleTimerRef.current = window.setTimeout(() => {
-      cinemaControlsIdleTimerRef.current = null;
-      setCinemaControlsIdle(true);
-    }, CINEMA_CONTROLS_IDLE_MS);
-  }, [cinemaFullscreenActive, clearCinemaControlsIdleTimer]);
-
-  const clearProgrammaticFullscreenExit = useCallback(() => {
-    programmaticFullscreenExitRef.current = false;
-    if (typeof window === "undefined") return;
-    if (programmaticFullscreenExitTimerRef.current !== null) {
-      window.clearTimeout(programmaticFullscreenExitTimerRef.current);
-      programmaticFullscreenExitTimerRef.current = null;
-    }
-  }, []);
-
-  const markProgrammaticFullscreenExit = useCallback(() => {
-    programmaticFullscreenExitRef.current = true;
-    if (typeof window === "undefined") return;
-    if (programmaticFullscreenExitTimerRef.current !== null) {
-      window.clearTimeout(programmaticFullscreenExitTimerRef.current);
-    }
-    programmaticFullscreenExitTimerRef.current = window.setTimeout(() => {
-      programmaticFullscreenExitRef.current = false;
-      programmaticFullscreenExitTimerRef.current = null;
-    }, PROGRAMMATIC_FULLSCREEN_EXIT_RESET_MS);
-  }, []);
 
   const currentSentence = lesson?.sentences?.[currentSentenceIndex] || null;
   const currentLessonId = String(lesson?.id ?? "").trim();
@@ -1544,9 +1456,7 @@ export function ImmersiveLessonPage({
       height: `${resolvedTranslationMaskRect.height}px`,
     };
   }, [resolvedTranslationMaskRect, translationMaskMetrics]);
-  const canShowTranslationMask = Boolean(
-    cinemaFullscreenActive && mediaMode === "video" && translationMaskMetrics && resolvedTranslationMaskRect,
-  );
+  const canShowTranslationMask = false;
 
   const { playKeySound, playWrongSound, playCorrectSound } = useTypingFeedbackSounds();
 
@@ -1921,66 +1831,8 @@ export function ImmersiveLessonPage({
   }, []);
 
   const updateTranslationMaskMetrics = useCallback(() => {
-    const container = immersiveMediaRef.current;
-    const videoElement = mediaElementRef.current;
-    if (!container || !videoElement || !cinemaFullscreenActive || mediaMode !== "video") {
-      setTranslationMaskMetrics(null);
-      return;
-    }
-    const containerRect = container.getBoundingClientRect();
-    let videoRect = measureContainedVideoRect(containerRect, videoElement);
-    if (!videoRect || videoRect.width <= 0 || videoRect.height <= 0) {
-      const cw = containerRect.width;
-      const ch = containerRect.height;
-      if (cw > 0 && ch > 0) {
-        // Fallback when intrinsic size is still 0 or layout math fails (Electron / late decode).
-        videoRect = { left: 0, top: 0, width: cw, height: ch };
-      } else {
-        setTranslationMaskMetrics(null);
-        return;
-      }
-    }
-    const typingRect = typingPanelRef.current?.getBoundingClientRect() || null;
-    const viewportWidth = Math.max(0, Number(window.innerWidth || containerRect.width || 0));
-    const viewportHeight = Math.max(0, Number(window.innerHeight || containerRect.height || 0));
-    const orientation = viewportWidth >= viewportHeight ? "landscape" : "portrait";
-    const minPreferredBottom = Math.min(TRANSLATION_MASK_MIN_HEIGHT_PX, videoRect.height);
-    // preferredBottom lives in video-local Y (0..videoRect.height). Typing panel coords are relative to
-    // the media container; subtract videoRect.top so letterboxed video aligns with mask metrics.
-    const typingTopInVideoSpace = typingRect
-      ? typingRect.top - containerRect.top - videoRect.top
-      : null;
-    const preferredBottom = typingRect
-      ? clampNumber(
-          typingTopInVideoSpace - TRANSLATION_MASK_VISIBLE_BOTTOM_GAP_PX,
-          minPreferredBottom,
-          videoRect.height,
-        )
-      : videoRect.height;
-    const maskViewportRect = {
-      width: videoRect.width,
-      height: videoRect.height,
-    };
-    const defaultRect = buildDefaultTranslationMaskRect(maskViewportRect, { preferredBottom });
-    const isCompactPortrait = viewportWidth > 0 && viewportWidth < 768 && orientation === "portrait";
-    // Allow the mask to span the full letterboxed video width so users can cover long subtitles.
-    // (Previous caps like 680px stopped horizontal resize short of the actual video area on wide screens.)
-    const maxWidth = maskViewportRect.width;
-    const minHeight = isCompactPortrait ? Math.min(maskViewportRect.height, 48) : TRANSLATION_MASK_MIN_HEIGHT_PX;
-    const maxHeight = isCompactPortrait
-      ? Math.min(maskViewportRect.height, Math.max(48, Math.min(viewportHeight * 0.15, 80)))
-      : maskViewportRect.height;
-    setTranslationMaskMetrics({
-      width: maskViewportRect.width,
-      height: maskViewportRect.height,
-      offsetLeft: videoRect.left,
-      offsetTop: videoRect.top,
-      defaultRect,
-      maxWidth,
-      maxHeight,
-      minHeight,
-    });
-  }, [cinemaFullscreenActive, mediaMode]);
+    setTranslationMaskMetrics(null);
+  }, []);
 
   useEffect(() => {
     translationMaskMetricsRef.current = translationMaskMetrics;
@@ -2695,23 +2547,8 @@ export function ImmersiveLessonPage({
   }, [mediaMode, mediaReady, mediaReloadKey, updateTranslationMaskMetrics]);
 
   useEffect(() => {
-    if (!cinemaFullscreenActive || mediaMode !== "video") {
-      resetTranslationMaskGesture();
-      return;
-    }
-    updateTranslationMaskMetrics();
-  }, [cinemaFullscreenActive, mediaMode, resetTranslationMaskGesture, updateTranslationMaskMetrics]);
-
-  useEffect(() => {
-    if (!cinemaFullscreenActive || mediaMode !== "video") return undefined;
-    if (typeof window === "undefined") return undefined;
-    const t1 = window.setTimeout(() => updateTranslationMaskMetrics(), 0);
-    const t2 = window.setTimeout(() => updateTranslationMaskMetrics(), 500);
-    return () => {
-      window.clearTimeout(t1);
-      window.clearTimeout(t2);
-    };
-  }, [cinemaFullscreenActive, mediaMode, lesson?.id, updateTranslationMaskMetrics]);
+    resetTranslationMaskGesture();
+  }, [resetTranslationMaskGesture]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
@@ -2726,9 +2563,6 @@ export function ImmersiveLessonPage({
       frameId = window.requestAnimationFrame(() => {
         frameId = null;
         updateTranslationMaskMetrics();
-        if (cinemaFullscreenActive) {
-          wakeCinemaControls();
-        }
       });
       if (timeoutId !== null) {
         window.clearTimeout(timeoutId);
@@ -2760,7 +2594,7 @@ export function ImmersiveLessonPage({
         window.cancelAnimationFrame(frameId);
       }
     };
-  }, [cinemaFullscreenActive, immersiveActive, updateTranslationMaskMetrics, wakeCinemaControls]);
+  }, [immersiveActive, updateTranslationMaskMetrics]);
 
   useEffect(() => {
     if (!canShowTranslationMask) {
@@ -3005,37 +2839,10 @@ export function ImmersiveLessonPage({
     async (source = "button") => {
       const handler = typeof onExitImmersive === "function" ? onExitImmersive : onBack;
       if (typeof handler !== "function") return;
-      if (isCinemaFullscreen) {
-        markProgrammaticFullscreenExit();
-        await exitElementFullscreen().catch(() => {});
-        setIsCinemaFullscreen(false);
-      } else if (isFullscreenFallback) {
-        setIsFullscreenFallback(false);
-      }
-      if (isCssFullscreen) {
-        setIsCssFullscreen(false);
-      }
       handler(source);
     },
-    [isCinemaFullscreen, isFullscreenFallback, isCssFullscreen, markProgrammaticFullscreenExit, onBack, onExitImmersive],
+    [onBack, onExitImmersive],
   );
-
-  const exitCinemaFullscreen = useCallback(async () => {
-    await exitImmersive("button_exit_fullscreen");
-  }, [exitImmersive]);
-
-  const enterCinemaFullscreen = useCallback(async ({ source = "manual", showFailureToast = false } = {}) => {
-    if (!immersiveActive) return { ok: false, reason: "immersive_inactive" };
-    if (cinemaFullscreenActive) return { ok: true, reason: "already_active" };
-
-    debugImmersiveLog("cinema_fullscreen.request", { source, lessonId: lesson?.id });
-
-    // Always use CSS fullscreen — no browser fullscreen API, so Electron/touch
-    // quirks and pointer-lock issues disappear completely.
-    setIsCssFullscreen(true);
-    debugImmersiveLog("cinema_fullscreen.success", { source, lessonId: lesson?.id, reason: "css_fullscreen" });
-    return { ok: true, reason: "css_fullscreen" };
-  }, [immersiveActive, cinemaFullscreenActive, lesson?.id]);
 
   const interruptCurrentSentencePlayback = useCallback(
     (source = "interrupt") => {
@@ -3454,81 +3261,6 @@ export function ImmersiveLessonPage({
     queueTranslationMaskChromeHide();
   }, [queueTranslationMaskChromeHide]);
 
-  useEffect(() => {
-    if (typeof document === "undefined") return undefined;
-
-    const syncFullscreenState = () => {
-      const fullscreenElement = getFullscreenElement();
-      const nextIsNativeVideoFullscreen = Boolean(
-        isIpadSafari &&
-          mediaElementRef.current &&
-          (mediaElementRef.current.webkitDisplayingFullscreen || document.webkitIsFullScreen),
-      );
-      const nextIsCinemaFullscreen = Boolean(
-        nextIsNativeVideoFullscreen || (immersiveContainerRef.current && fullscreenElement === immersiveContainerRef.current),
-      );
-      const leftSystemFullscreen = isCinemaFullscreen && !nextIsCinemaFullscreen && !isFullscreenFallback;
-      setIsCinemaFullscreen(nextIsCinemaFullscreen);
-      if (!leftSystemFullscreen) {
-        return;
-      }
-      if (programmaticFullscreenExitRef.current) {
-        clearProgrammaticFullscreenExit();
-        return;
-      }
-      if (!immersiveActive || !hasExitHandler) {
-        return;
-      }
-      debugImmersiveLog("cinema_fullscreen.exit_via_system", {
-        lessonId: lesson?.id,
-      });
-      void exitImmersive("system_fullscreen_exit");
-    };
-
-    document.addEventListener("fullscreenchange", syncFullscreenState);
-    document.addEventListener("webkitfullscreenchange", syncFullscreenState);
-    document.addEventListener("MSFullscreenChange", syncFullscreenState);
-    return () => {
-      document.removeEventListener("fullscreenchange", syncFullscreenState);
-      document.removeEventListener("webkitfullscreenchange", syncFullscreenState);
-      document.removeEventListener("MSFullscreenChange", syncFullscreenState);
-    };
-  }, [clearProgrammaticFullscreenExit, exitImmersive, hasExitHandler, immersiveActive, isCinemaFullscreen, isFullscreenFallback, isIpadSafari, lesson?.id]);
-
-  useEffect(() => {
-    if (!immersiveActive) {
-      autoFullscreenAttemptKeyRef.current = "";
-      return;
-    }
-    if (!lesson?.id || sentenceCount <= 0) return;
-
-    const attemptKey = `${lesson.id}`;
-    if (autoFullscreenAttemptKeyRef.current === attemptKey) return;
-
-    autoFullscreenAttemptKeyRef.current = attemptKey;
-    console.debug("[DEBUG] immersive.auto_fullscreen.start", { lessonId: lesson.id });
-    void enterCinemaFullscreen({ source: "auto", showFailureToast: true });
-  }, [enterCinemaFullscreen, immersiveActive, lesson?.id, sentenceCount]);
-
-  useEffect(() => {
-    if (!cinemaFullscreenActive) return undefined;
-    if (typeof document === "undefined") return undefined;
-
-    const previousHtmlOverflow = document.documentElement.style.overflow;
-    const previousBodyOverflow = document.body.style.overflow;
-    document.documentElement.style.overflow = "hidden";
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.documentElement.style.overflow = previousHtmlOverflow;
-      document.body.style.overflow = previousBodyOverflow;
-    };
-  }, [cinemaFullscreenActive]);
-
-  useEffect(() => {
-    return () => {
-      clearCinemaControlsIdleTimer();
-    };
-  }, [clearCinemaControlsIdleTimer]);
 
   useEffect(() => {
     return () => {
@@ -3538,56 +3270,9 @@ export function ImmersiveLessonPage({
 
   useEffect(() => {
     return () => {
-      clearProgrammaticFullscreenExit();
-    };
-  }, [clearProgrammaticFullscreenExit]);
-
-  useEffect(() => {
-    return () => {
       clearFocusRestoreTimer();
     };
   }, [clearFocusRestoreTimer]);
-
-  useEffect(() => {
-    if (!cinemaFullscreenActive || typeof window === "undefined") {
-      clearCinemaControlsIdleTimer();
-      setCinemaControlsIdle(false);
-      return undefined;
-    }
-
-    wakeCinemaControls();
-    const markControlsActive = () => {
-      wakeCinemaControls();
-    };
-
-    window.addEventListener("pointermove", markControlsActive);
-    window.addEventListener("pointerdown", markControlsActive);
-    window.addEventListener("touchstart", markControlsActive);
-    window.addEventListener("keydown", markControlsActive);
-
-    return () => {
-      window.removeEventListener("pointermove", markControlsActive);
-      window.removeEventListener("pointerdown", markControlsActive);
-      window.removeEventListener("touchstart", markControlsActive);
-      window.removeEventListener("keydown", markControlsActive);
-      clearCinemaControlsIdleTimer();
-    };
-  }, [cinemaFullscreenActive, clearCinemaControlsIdleTimer, wakeCinemaControls]);
-
-  useEffect(() => {
-    if (immersiveActive || !cinemaFullscreenActive) return;
-    void (async () => {
-      await exitElementFullscreen().catch(() => {});
-      setIsCinemaFullscreen(false);
-      setIsFullscreenFallback(false);
-      setIsCssFullscreen(false);
-    })();
-  }, [cinemaFullscreenActive, immersiveActive]);
-
-  useEffect(() => {
-    if (!typingEnabled || !cinemaFullscreenActive) return;
-    focusTypingInput(isTouchDevice);
-  }, [cinemaFullscreenActive, focusTypingInput, isTouchDevice, typingEnabled]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -3889,17 +3574,8 @@ export function ImmersiveLessonPage({
 
   const showMediaLoadingOverlay = mediaLoading && !needsBinding && !mediaReady;
   const waitingForInitialPlayback = sentenceTypingDone && !sentencePlaybackDone && sentencePlaybackRequired;
-  const cinemaHeaderControlsClassName = [
-    "immersive-header-left",
-    cinemaFullscreenActive ? "immersive-header-left--cinema" : "",
-    cinemaFullscreenActive && cinemaControlsIdle ? "immersive-header-left--cinema-idle" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const cinemaButtonClassName = cinemaFullscreenActive ? "immersive-cinema-button" : undefined;
-  const showPlaybackRateBadge =
-    cinemaFullscreenActive && Math.abs(selectedPlaybackRate - DEFAULT_IMMERSIVE_PLAYBACK_RATE) > 0.001;
-  const showTranslationMaskToggle = cinemaFullscreenActive && mediaMode === "video" && !needsBinding;
+  const showPlaybackRateBadge = false;
+  const showTranslationMaskToggle = false;
   const playbackRateLabel = formatPlaybackRateLabel(selectedPlaybackRate);
   const allowNativeVideoFullscreen = isIpadSafari && mediaMode === "video";
   const translationMaskVisible = canShowTranslationMask && translationMaskEnabled;
@@ -3912,8 +3588,6 @@ export function ImmersiveLessonPage({
 
   const immersivePageShellClassName = [
     "immersive-page-shell",
-    isFullscreenFallback && !isCssFullscreen ? "immersive-page-shell--fallback" : "",
-    isCssFullscreen ? "immersive-page-shell--css-fullscreen" : "",
     isTouchDevice ? "immersive-page-shell--touch" : "",
     mobileViewportState.keyboardOpen ? "immersive-page-shell--keyboard-open" : "",
   ]
