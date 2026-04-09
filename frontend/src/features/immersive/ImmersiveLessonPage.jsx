@@ -13,6 +13,7 @@ import TypingPanel from "./TypingPanel";
 // 子组件导出（用于模块化重构）
 // 新代码建议使用这些子组件代替直接使用 ImmersiveLessonPage
 export { SubtitleDisplay } from "./components/SubtitleDisplay";
+import { SubtitleDisplay } from "./components/SubtitleDisplay";
 export { PlaybackControls } from "./components/PlaybackControls";
 
 // Hooks 导出
@@ -1291,6 +1292,7 @@ export function ImmersiveLessonPage({
 
   const currentLessonId = String(lesson?.id ?? "").trim();
   const previousSentence = currentSentenceIndex > 0 ? lesson?.sentences?.[currentSentenceIndex - 1] || null : null;
+  const nextSentence = currentSentenceIndex < sentenceCount - 1 ? lesson?.sentences?.[currentSentenceIndex + 1] || null : null;
   const currentSentenceEn = currentSentence?.text_en || "(当前句英文暂缺)";
   const currentSentenceZh = currentSentence ? currentSentence.text_zh || "(当前句中文翻译暂缺)" : "(暂无当前句中文翻译)";
   const previousSentenceEn = previousSentence?.text_en || "(当前是第一句，无上一句)";
@@ -3492,75 +3494,16 @@ export function ImmersiveLessonPage({
       leftBottomContent={null}
       rightTopContent={
         <div onClick={handleImmersivePageClick}>
-          <TypingPanel
+          <SubtitleDisplay
+            previousSentence={previousSentence ? { text_en: previousSentence.text_en, text_zh: previousSentence.text_zh || '' } : null}
+            currentSentence={currentSentence ? { text_en: currentSentence.text_en, text_zh: currentSentence.text_zh || '' } : null}
+            nextSentence={nextSentence ? { text_en: nextSentence.text_en } : null}
+            wordInputs={wordInputs}
+            expectedTokens={expectedTokens}
+            currentSentenceCompleted={sentenceTypingDone}
             sentenceCount={sentenceCount}
-          currentSentenceIndex={currentSentenceIndex}
-          sentenceJumpInputValue={sentenceJumpInputValue}
-          setSentenceJumpEditing={setSentenceJumpEditing}
-          setSentenceJumpValue={setSentenceJumpValue}
-          handleSentenceJumpKeyDown={handleSentenceJumpKeyDown}
-          handleSentenceJumpBlur={handleSentenceJumpBlur}
-          requestNavigateSentence={requestNavigateSentence}
-          singleSentenceLoopEnabled={singleSentenceLoopEnabled}
-          handleToggleSingleSentenceLoop={handleToggleSingleSentenceLoop}
-          playbackRateInputValue={playbackRateInputValue}
-          handlePlaybackRateInputChange={handlePlaybackRateInputChange}
-          handlePlaybackRateInputBlur={handlePlaybackRateInputBlur}
-          handlePlaybackRateInputKeyDown={handlePlaybackRateInputKeyDown}
-          adjustPlaybackRateByStep={adjustPlaybackRateByStep}
-          handleResetPlaybackRate={handleResetPlaybackRate}
-          playbackRatePinned={playbackRatePinned}
-          handleTogglePlaybackRatePinned={handleTogglePlaybackRatePinned}
-          isPlaying={isPlaying}
-          isPlaybackPaused={isPlaybackPaused}
-          expectedTokens={expectedTokens}
-          wordStatuses={wordStatuses}
-          wordInputs={wordInputs}
-          wordRowLines={wordRowLines}
-          wordRowFrameRef={wordRowFrameRef}
-          currentSentenceCefrMap={currentSentenceCefrMap}
-          cefrAnalyzerRef={cefrAnalyzerRef}
-          cefrLevel={cefrLevel}
-          buildLetterSlots={buildLetterSlots}
-          wordRevealComparableIndices={wordRevealComparableIndices}
-          showPreviousSentenceBlock={showPreviousSentenceBlock}
-          canRenderInteractiveWordbook={canRenderInteractiveWordbook}
-          wordbookSentence={wordbookSentence}
-          wordbookSentenceTokens={wordbookSentenceTokens}
-          wordbookSelectedTokenIndexes={wordbookSelectedTokenIndexes}
-          wordbookBusy={wordbookBusy}
-          wordbookSuccessAnimationIndexes={wordbookSuccessAnimationIndexes}
-          handleWordbookTokenPointerDown={handleWordbookTokenPointerDown}
-          requestInteractiveWordbookSentencePlayback={requestInteractiveWordbookSentencePlayback}
-          wordbookSentencePlaybackLabel={wordbookSentencePlaybackLabel}
-          collectWordbookEntry={collectWordbookEntry}
-          selectedWordbookTokens={selectedWordbookTokens}
-          selectedWordbookStart={selectedWordbookStart}
-          selectedWordbookEnd={selectedWordbookEnd}
-          selectedWordbookText={selectedWordbookText}
-          wordbookSuccessMessage={wordbookSuccessMessage}
-          wordbookSentenceZh={wordbookSentenceZh}
-          soeTargetSentence={soeTargetSentence}
-          translationEn={translationEn}
-          previousSentence={previousSentence}
-          requestPreviousSentencePlayback={requestPreviousSentencePlayback}
-          mediaError={mediaError}
-          waitingForInitialPlayback={waitingForInitialPlayback}
-          phase={phase}
-          learningSettings={learningSettings}
-          soeLoading={soeLoading}
-          soeResult={soeResult}
-          setSoeResult={setSoeResult}
-          apiClient={apiClient}
-          accessToken={accessToken}
-          currentLessonId={currentLessonId}
-          typingPanelRef={typingPanelRef}
-          audioRecorderRef={audioRecorderRef}
-          parseResponse={parseResponse}
-          wordbookSentenceCefrMap={wordbookSentenceCefrMap}
-          translationZh={translationZh}
-          lookupCefrLevelFromMap={lookupCefrLevelFromMap}
-        />
+            currentSentenceIndex={currentSentenceIndex}
+          />
         </div>
       }
       rightBottomContent={

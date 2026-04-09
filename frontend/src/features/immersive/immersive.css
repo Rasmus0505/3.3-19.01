@@ -1173,3 +1173,40 @@ input[type="number"] {
     align-self: auto !important;
   }
 }
+
+/* ================================================================
+   Video Controls (控制按钮行 - 视频下方)
+   ================================================================ */
+.immersive-video-controls {
+  padding: 8px 16px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-background);
+}
+
+/* ================================================================
+   Subtitle Display (滚动字幕区)
+   ================================================================ */
+.immersive-subtitle-display {
+  height: 100%;
+}
+
+.immersive-subtitle-card {
+  padding: 16px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+
+.immersive-subtitle-card--previous {
+  background: var(--color-muted);
+  opacity: 0.7;
+}
+
+.immersive-subtitle-card--current {
+  background: color-mix(in oklch, var(--color-primary) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-primary) 30%, transparent);
+}
+
+.immersive-subtitle-card--next {
+  background: var(--color-muted);
+  opacity: 0.4;
+}
