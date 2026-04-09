@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ImmersiveLessonPage } from "../features/immersive/ImmersiveLessonPage";
 import { api, parseResponse } from "../shared/api/client";
 import { TOKEN_KEY } from "../app/authStorage";
 
 export default function ImmersivePage() {
   const { lessonId } = useParams();
+  const navigate = useNavigate();
   const [lesson, setLesson] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const accessToken = typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) || "" : "";
+
+  const handleBack = useCallback(() => {
+    navigate(-1);
+  }, [navigate]);
 
   const loadLessonDetail = useCallback(async () => {
     if (!lessonId || !accessToken) {
@@ -84,6 +89,7 @@ export default function ImmersivePage() {
       lesson={lesson}
       accessToken={accessToken}
       apiClient={api}
+      onBack={handleBack}
     />
   );
 }

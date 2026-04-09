@@ -3491,8 +3491,9 @@ export function ImmersiveLessonPage({
       }
       leftBottomContent={null}
       rightTopContent={
-        <TypingPanel
-          sentenceCount={sentenceCount}
+        <div onClick={handleImmersivePageClick}>
+          <TypingPanel
+            sentenceCount={sentenceCount}
           currentSentenceIndex={currentSentenceIndex}
           sentenceJumpInputValue={sentenceJumpInputValue}
           setSentenceJumpEditing={setSentenceJumpEditing}
@@ -3560,6 +3561,7 @@ export function ImmersiveLessonPage({
           translationZh={translationZh}
           lookupCefrLevelFromMap={lookupCefrLevelFromMap}
         />
+        </div>
       }
       rightBottomContent={
         <ExplanationSidebarContent
