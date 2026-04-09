@@ -183,5 +183,3 @@ export function useTypingController({
     countTokenInputErrors,
   };
 }
-
-export { buildLetterSlots } from "../ImmersiveLessonPage";
