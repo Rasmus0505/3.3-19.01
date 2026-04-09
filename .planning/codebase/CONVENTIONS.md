@@ -1,67 +1,157 @@
-﻿# Conventions
+# CONVENTIONS
 
-## Backend Conventions
+## Python Backend
 
-### Configuration First
+### Imports
 
-- Runtime configuration is centralized in `app/core/config.py`.
-- Environment parsing helpers such as `_get_env_bool`, `_get_env_int`, and `resolve_database_url()` are reused instead of ad hoc environment reads scattered across routers.
+- Use `from __future__ import annotations` for forward refs
+- Absolute imports preferred within `app/`
+- Relative imports within same package
 
-### Standard Error Payloads
+### Error Handling
 
-- Routers commonly return `error_response(...)` from `app/core/errors.py`.
-- Business error mapping helpers exist for media and billing errors.
-- API responses use explicit error codes like `INVALID_MODEL`, `REQUEST_TIMEOUT`, `INVALID_CREDENTIALS`.
+- Use FastAPI's `HTTPException` for HTTP errors
+- Service layer raises custom exceptions; routers catch and convert
+- Structured error responses via `app/core/errors.py`
 
-### Service / Repository Split
+### Database
 
-- Route handlers generally call service modules rather than embedding heavy business logic directly.
-- Read/write concerns are frequently split, for example `lesson_command_service.py` vs `lesson_query_service.py`.
-- Repository modules under `app/repositories/` hold reusable persistence operations.
+- Always use `with engine.connect()` context manager
+- Session: `db = SessionLocal()` with try/finally close
+- Repository methods accept `db: Session`
+- All business tables in `app` schema (configured in `app/db/base.py`)
 
-### Security and Auth
+### Auth Pattern
 
-- Passwords are hashed with PBKDF2 in `app/security.py`.
-- JWT access/refresh tokens are created in the same module.
-- Admin rights are data-driven via `users.is_admin`, matching the README and readiness checks.
+```python
+from app.api.deps.auth import get_current_user, get_admin_user
 
-### Operational Readiness Checks
+@router.get("/endpoint")
+def endpoint(current_user = Depends(get_current_user)):
+    ...
 
-- `app/main.py` uses explicit readiness probes and can block `/api/*` when DB readiness fails.
-- `scripts/start.sh` logs startup decisions and gates auto-migration with `AUTO_MIGRATE_ON_START`.
+@router.get("/admin-only")
+def admin_only(admin_user = Depends(get_admin_user)):
+    ...
+```
 
-## Frontend Conventions
+### Schemas
 
-### Feature-Oriented Organization
+- Pydantic models in `app/schemas/`
+- Request: `*Create`, `*Update`, `*Batch`
+- Response: `*Response`, `*List`
+- Use `from __future__ import annotations`
 
-- Product behavior is grouped by feature under `frontend/src/features/`.
-- Shared abstractions live under `frontend/src/shared/`, `frontend/src/components/ui/`, and `frontend/src/store/`.
+### Logging
 
-### Desktop-Aware Shared Frontend
+```python
+import logging
+logger = logging.getLogger(__name__)
 
-- Web and desktop use the same renderer source.
-- `frontend/src/main.jsx` chooses router mode based on `VITE_DESKTOP_RENDERER_BUILD`.
-- `frontend/src/shared/api/client.js` hides whether requests go through browser fetch or Electron bridge.
+logger.info("[DEBUG] startup.begin")
+logger.warning("[DEBUG] readiness.missing_tables count=%s", count)
+logger.exception("[DEBUG] db.schema_error detail=%s", detail[:400])
+```
 
-### State and Utilities
+## React Frontend
 
-- Zustand slices are stored under `frontend/src/store/slices/`.
-- Utility formatting and domain helpers live under `frontend/src/shared/lib/` and `frontend/src/lib/utils.js`.
+### File Structure
 
-## Testing Conventions
+- One component per file
+- Named exports preferred for utilities
+- Default exports for page components
 
-- Test suite is intentionally layered: unit, integration, e2e, contracts.
-- Tests often construct SQLite databases with `create_database_engine(...)` for isolated verification.
-- Contract tests assert important file-level invariants in desktop and frontend integration code.
+### State Management (Zustand)
 
-## Naming and File Patterns
+```javascript
+// Store pattern
+export const useAuthStore = create((set) => ({
+  token: null,
+  user: null,
+  setAuth: (token, user) => set({ token, user }),
+  logout: () => set({ token: null, user: null }),
+}))
+```
 
-- Python backend uses snake_case file names.
-- React components largely use PascalCase file names.
-- Electron uses `.mjs` for main/runtime modules and `.cjs` for preload compatibility.
+### API Calls
 
-## Inconsistencies Worth Knowing
+- Use shared `client.js` for main API
+- Use `adminClient.js` for admin endpoints
+- All endpoints in `endpoints.js`
 
-- There are both flat and nested router module shapes in `app/api/routers/`.
-- There are mixed JS/TS files in the frontend (`.jsx`, `.js`, `.ts`, `.tsx`).
-- Generated artifacts are committed next to source in several directories, so directory contents do not strictly imply hand-written source only.
+### Component Patterns
+
+```jsx
+// UI components (Radix-based)
+import { Button } from '@/components/ui/button'
+
+// Feature components
+import { WordbookPanel } from '@/features/wordbook/WordbookPanel'
+
+// Hooks
+export function useOfflineMode() { ... }
+```
+
+### CSS / Styling
+
+- TailwindCSS utility classes
+- `tailwind-merge` + `clsx` for conditional classes
+- CSS custom properties in `frontend/src/styles/` (if present)
+
+## API Design
+
+### Response Format
+
+All API responses return JSON. Errors use structured format:
+
+```json
+{
+  "code": "ERROR_CODE",
+  "message": "Human readable",
+  "detail": "Technical detail"
+}
+```
+
+### Route Naming
+
+| Path Pattern | Purpose |
+|-------------|---------|
+| `/api/auth/*` | Authentication |
+| `/api/lessons/*` | Lessons |
+| `/api/wordbook/*` | Vocabulary |
+| `/api/billing/*` | Billing/Wallet |
+| `/api/admin/*` | Admin operations |
+| `/api/practice/*` | Practice sessions |
+| `/api/media/*` | Media assets |
+| `/api/tts/*` | Text-to-speech |
+| `/api/voice_cloning/*` | Voice cloning |
+| `/api/soe/*` | Speech evaluation |
+| `/api/transcribe/*` | Cloud transcription |
+
+## Testing
+
+### Backend (pytest)
+
+- Test files in `app/test/`
+- Pattern: `test_*.py`
+- Config: `pytest.ini`
+- Fixtures: `conftest.py` (if present)
+
+### Frontend (Vitest)
+
+- Test files co-located with `*.test.js`
+- Pattern: `*.test.js`
+- UI tests use `@testing-library/react`
+- Config: `vitest.config.js`
+
+## Documentation
+
+- API docs: FastAPI auto-generated at `/docs`
+- Inline comments: describe *why*, not *what*
+- Complex logic: add module-level docstrings
+
+## Git Conventions
+
+- Conventional commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`
+- No committed secrets — use environment variables
+- Feature branches from `main`

@@ -1,83 +1,117 @@
-﻿# Concerns
+# CONCERNS
 
-## Repository Hygiene
+## Technical Debt
 
-The repo currently contains a significant amount of generated or machine-local content:
+### Phase Directory Mismatch
 
-- `frontend/node_modules/` is present in the working tree
-- `frontend/dist/` and `frontend/dist-admin/` are present
-- `desktop-client/.cache/` is present
-- local SQLite files `app.db`, `app.db-shm`, `app.db-wal` are present
-- many `__pycache__/` directories and `*.pyc` files are present across `app/`, `tests/`, `migrations/`, and `asr-test/`
+- **Issue:** ROADMAP.md and `.planning/STATE.md` reference phases that don't exist on disk, and vice versa
+- **Severity:** MEDIUM
+- **Files:** `.planning/STATE.md`, `.planning/ROADMAP.md`, `*/` directories
 
-Observed counts during mapping:
+### Stale Desktop Client References
 
-- `frontend_node_modules_files=21460`
-- `desktop_cache_files=690`
-- `frontend_dist_files=27`
-- `__pycache__=32`
-- `pyc=230`
+- **Issue:** Legacy desktop client routes still in `main.py` (`desktop-client-version.json`, `DESKTOP_CLIENT_*` env vars)
+- **Severity:** LOW — legacy, may still be in use
 
-This increases clone weight, review noise, and the risk of stale artifacts affecting debugging.
+### TODO Comment
 
-## Mixed Source and Generated Output
+```python
+# app/api/routers/lessons/cloud_transcribe.py
+# from app.api.routers.local_asr_assets import router as local_asr_assets_router  # TODO: 创建缺失模块
+```
+- **Severity:** LOW — incomplete feature flag
 
-Multiple directories mix hand-written source with generated output or runtime caches:
+## Known Issues
 
-- `frontend/` mixes source, local build output, and `node_modules`
-- `desktop-client/` mixes source with `.cache/` helper/runtime/frontend artifacts
-- `asr-test/` mixes scripts, large model files, benchmark runs, and result archives
+### Database Migration Dependency
 
-This makes it harder to tell which files are canonical source of truth.
+- **Issue:** App returns 503 `DB_MIGRATION_REQUIRED` if Alembic migrations not run
+- **Severity:** HIGH — blocks all API requests in production after schema changes
+- **Workaround:** Run `alembic upgrade head` before deploying
 
-## Router / Module Shape Drift
+### Production SQLite Restriction
 
-The backend contains both legacy flat router files and nested router packages, for example:
+- **Issue:** `main.py` enforces `DATABASE_URL` pointing to PostgreSQL/MySQL in production
+- **Severity:** MEDIUM — easy to misconfigure
+- **Check:** `_database_policy_status()` in `main.py`
 
-- `app/api/routers/auth.py` and `app/api/routers/auth/router.py`
-- `app/api/routers/admin.py` and `app/api/routers/admin/router.py`
-- `app/api/routers/billing.py` and `app/api/routers/billing/router.py`
-- `app/api/routers/lessons.py` and `app/api/routers/lessons/router.py`
+### Redeem Code Export Guard
 
-This often indicates an in-progress refactor or compatibility layer and can confuse new contributors.
+- **Issue:** Production requires `REDEEM_CODE_EXPORT_CONFIRM_TEXT` to be non-weak
+- **Severity:** MEDIUM — blocks redeem code export in production
+- **Check:** `_export_guard_policy_status()` in `main.py`
 
-## Operational Complexity
+### FFmpeg Dependency
 
-The product surface spans:
+- **Issue:** Media pipeline requires `ffmpeg` and `ffprobe` on PATH
+- **Severity:** MEDIUM — media processing fails if missing
+- **Check:** `get_media_runtime_status()` at startup
 
-- web app
-- admin app
-- desktop client
-- local helper runtime
-- cloud ASR path
-- local ASR path
-- migration-sensitive backend readiness
+### DashScope API Key Required
 
-That breadth increases coordination cost and raises regression risk at boundaries, especially around auth/session, media handling, and packaging.
+- **Issue:** ASR endpoints fail without `DASHSCOPE_API_KEY`
+- **Severity:** MEDIUM — transcription unusable
+- **Check:** `dashscope_configured` in `RuntimeStatus`
 
-## Security / Safety Sensitivity
+## Fragile Areas
 
-The app includes several sensitive operational controls:
+### Media Upload Pipeline
 
-- JWT auth in `app/security.py`
-- admin bootstrap in `app/services/admin_bootstrap.py`
-- export-confirmation guard in `app/core/config.py`
-- SQL/admin console routes in `app/api/routers/admin_sql_console.py` and related modules
+```
+URL → yt-dlp download → DashScope ASR → Qwen MT → DB storage → DashScope Storage
+```
+- **Risk:** Any step failure breaks the entire pipeline
+- **Retry logic:** Not visible in codebase
 
-These areas deserve extra scrutiny in production because mistakes have outsized blast radius.
+### Spaced Repetition Scheduler
 
-## Testing Gaps Relative to Product Surface
+- **File:** `app/services/wordbook_review_scheduler.py`
+- **Risk:** No visible heartbeat/cron; relies on user activity triggers
 
-Backend testing is substantial, but UI/runtime integration breadth still exceeds what appears to be covered automatically:
+### JWT Secret in Memory
 
-- no browser-driven web UI test suite was observed
-- desktop renderer behavior relies heavily on contract tests and string assertions
-- admin web deployment path is separate from the main Docker build path, which can drift if not exercised regularly
+- **Files:** `app/security.py`, `app/api/deps/auth.py`
+- **Risk:** No token refresh mechanism visible; long-lived tokens
 
-## Deployment and Migration Risk
+## Security Considerations
 
-Readiness logic in `app/main.py` depends on schema completeness and strong production settings. That is good for safety, but it also means:
+### Admin SQL Console
 
-- partially migrated environments will fail readiness
-- config drift on `DATABASE_URL`, `ADMIN_BOOTSTRAP_PASSWORD`, or `REDEEM_CODE_EXPORT_CONFIRM_TEXT` can block rollout
-- startup behavior differs materially depending on `AUTO_MIGRATE_ON_START`
+- **File:** `app/api/routers/admin_sql_console.py`
+- **Risk:** Direct SQL execution — audit logging only
+- **Note:** Separate auth gate, still requires admin JWT
+
+### LLM Usage Tracking
+
+- **Files:** `app/services/llm_usage_service.py`, `app/models/llm_usage.py`
+- **Risk:** Tokens stored in DB; no visible cost caps
+
+### Media File Storage
+
+- **Module:** `app/infra/dashscope_storage.py`
+- **Risk:** No visible cleanup for orphaned files
+
+## Performance Concerns
+
+### N+1 Query Risk
+
+- **Likely locations:** `app/repositories/lesson.py`, `app/repositories/progress.py`
+- **Note:** Not confirmed; code review recommended for large lesson sets
+
+### Sync Media Status Check
+
+- **File:** `app/services/media.py` → `get_media_runtime_status()`
+- **Called:** Every `/health/ready` request
+- **Risk:** FFprobe call on each health check in production
+
+## Info
+
+### State File Phase Mismatch
+
+`STATE.md` references phase 32, but disk has phases 02, 20-31, 33-34. This is a planning inconsistency, not a code bug.
+
+### Admin Bootstrap on Every Startup
+
+- **File:** `app/services/admin_bootstrap.py` → `ensure_admin_users()`
+- **Called:** On every startup (when DB is ready)
+- **Risk:** LOW — idempotent operation

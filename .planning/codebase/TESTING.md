@@ -1,94 +1,99 @@
-﻿# Testing
+# TESTING
 
-## Test Layout
+## Backend Testing
 
-Configured in `pytest.ini`:
+### Framework
 
-- `tests/unit`
-- `tests/integration`
-- `tests/e2e`
-- `tests/contracts`
-- `tests/fixtures`
+**pytest** — configured in `pytest.ini`
 
-Pytest setup:
+```
+[pytest]
+testpaths = app/test
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+addopts = -v --tb=short
+```
 
-- `pythonpath = .`
-- test file pattern `test_*.py`
+### Test Structure
 
-## Unit Tests
+- **Location:** `app/test/`
+- **Naming:** `test_*.py`
+- **Fixtures:** Not visible in standard glob (likely `conftest.py`)
 
-Unit coverage includes focused behavior such as:
+### Example
 
-- `tests/unit/test_dashscope_upload_router.py`
-- `tests/unit/test_desktop_local_asr.py`
-- `tests/unit/test_faster_whisper_asr.py`
-- `tests/unit/test_security_hardening.py`
-- `tests/unit/test_spa_route_fallback.py`
-- `tests/unit/test_start_script_smoke.py`
-- `tests/unit/test_translation_qwen_mt.py`
+```python
+# app/test/test_example.py
+def test_something():
+    assert True
+```
 
-These tests heavily use monkeypatching and local SQLite/test clients.
+### Coverage
 
-## Integration Tests
+Run tests with coverage:
+```bash
+pytest --cov=app --cov-report=term-missing
+```
 
-Integration coverage includes:
+## Frontend Testing
 
-- admin bootstrap and admin console APIs
-- lesson task recovery and regression flows
-- production migration script behavior
-- lesson/practice/wordbook API routes
+### Framework
 
-Representative files:
+**Vitest** + **@testing-library/react**
 
-- `tests/integration/test_regression_api.py`
-- `tests/integration/test_run_prod_migration.py`
-- `tests/integration/api/test_lessons_api.py`
+```json
+// package.json scripts
+"test": "vitest",
+"test:ui": "vitest --ui",
+"test:coverage": "vitest run --coverage",
+"test:watch": "vitest --watch"
+```
 
-## End-to-End Tests
+### Test Files
 
-`tests/e2e/test_e2e_key_flows.py` exercises realistic flows such as:
+Co-located with source files:
 
-- auth register/login
-- lesson creation
-- practice/progress updates
-- wordbook collection and status changes
-- admin wallet adjustment flows
+```
+frontend/src/features/admin-rates/__tests__/rateDraftValidation.test.js
+frontend/src/app/learning-shell/__tests__/panelRoutes.test.js
+```
 
-The e2e layer still runs in-process with FastAPI `TestClient`; it is not browser-driven.
+### Example
 
-## Contract Tests
+```javascript
+// rateDraftValidation.test.js
+import { describe, it, expect } from 'vitest'
+import { validateRateDraft } from '../rateDraftValidation'
 
-A distinct strength of this repo is contract testing for file-level integration assumptions.
+describe('validateRateDraft', () => {
+  it('returns error for negative price', () => {
+    expect(validateRateDraft({ price_per_minute_yuan: -1 })).toBeDefined()
+  })
+})
+```
 
-Representative checks:
+### Testing Library Patterns
 
-- `tests/contracts/test_desktop_runtime_contract.py`
-- `tests/contracts/test_desktop_installer_contract.py`
-- `tests/contracts/test_dependency_manifest_contract.py`
-- `tests/contracts/test_build_context_contract.py`
+```javascript
+import { render, screen, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
-These tests assert that critical strings, file paths, packaging assumptions, and renderer/main-process hooks remain aligned.
+// Prefer userEvent over fireEvent for user interactions
+await userEvent.click(button)
+```
 
-## Fixtures and Helpers
+## CI/CD
 
-Reusable setup modules live in:
+- No visible CI config in root (likely in Zeabur or external CI)
+- Playwright tests may be in `.playwright-cli/` (manual runs)
 
-- `tests/fixtures/auth.py`
-- `tests/fixtures/billing.py`
-- `tests/fixtures/db.py`
-- `tests/fixtures/lessons.py`
-- `tests/conftest.py`
+## Coverage Target
 
-## Coverage Observations
+Per project rules: **80% minimum** test coverage
 
-Strong areas:
+## Known Test Gaps
 
-- backend API and service workflows
-- desktop runtime packaging contracts
-- startup and migration behavior
-
-Weaker / less visible areas from current inspection:
-
-- no browser automation suite for the React UI
-- no dedicated frontend unit test runner observed for `frontend/src/` beyond one feature-local test file
-- admin web nginx image path appears validated mainly through packaging/build assumptions rather than UI interaction tests
+- Backend: No visible `conftest.py` or detailed test structure
+- Integration tests: DB tests likely require test database
+- E2E tests: Playwright config present but not in CI

@@ -1,95 +1,148 @@
-﻿# Architecture
+# ARCHITECTURE
 
-## High-Level Shape
+## Overall Pattern
 
-This repository is a multi-surface application:
+**Full-stack SPA with monolithic backend.** The frontend is a React SPA served by FastAPI (static file mount). The backend exposes a REST API consumed exclusively by the SPA.
 
-- FastAPI backend in `app/`
-- React/Vite web UI in `frontend/`
-- Electron desktop shell in `desktop-client/`
-- Alembic migrations in `migrations/`
-- automated verification in `tests/`
+```
+Browser (React SPA)
+    │
+    │  HTTP / WebSocket
+    ▼
+FastAPI Backend (Python)
+    ├── API Routers (app/api/routers/)
+    ├── Domain Services (app/services/)
+    ├── Repositories (app/repositories/)
+    ├── Infrastructure (app/infra/)
+    └── Models / DB (app/models/, SQLAlchemy)
+```
 
-The web and desktop products share most product flows and API contracts. The desktop client wraps the existing frontend rather than re-implementing it.
+## Layers
 
-## Backend Layers
+### 1. API Routers (`app/api/routers/`)
 
-The backend follows a pragmatic layered structure rather than a strict framework-generated layout.
+Thin HTTP layer. Each router:
+- Validates request with Pydantic schemas (`app/schemas/`)
+- Delegates to domain services
+- Returns JSON responses
 
-### Entry / App Composition
+Key routers:
+- `auth/` — Login, JWT issuance
+- `lessons/` — Lesson CRUD, cloud transcription
+- `practice/` — Practice session logic
+- `wordbook/` — Vocabulary entries, spaced repetition
+- `billing/` — Wallet, billing rates
+- `admin/` — Admin operations
+- `media/` — Media asset management
+- `tts/` — Text-to-speech
+- `voice_cloning/` — Voice cloning
 
-- `app/main.py` creates the FastAPI app, mounts static files, exposes `/health` and `/health/ready`, registers middleware, and includes routers.
+### 2. Domain Services (`app/services/`)
 
-### API Layer
+Business logic. Stateless. Use repositories for data access.
 
-- `app/api/routers/*` contains route handlers for auth, billing, lessons, media, practice, wallet, admin, and transcription.
-- There is evidence of both flat router files and nested router packages, for example `app/api/routers/auth.py` alongside `app/api/routers/auth/router.py`, and `app/api/routers/admin.py` alongside `app/api/routers/admin/router.py`.
+Key services:
+- `asr_dashscope.py` — DashScope ASR orchestration
+- `transcription_service.py` — Transcription pipeline
+- `practice_service.py` — Practice session logic
+- `wordbook_service.py` — Wordbook + spaced repetition scheduler
+- `billing_service.py` — Billing rate management
+- `media.py` — Media file operations
+- `llm_usage_service.py` — LLM call tracking
 
-### Service Layer
+### 3. Repositories (`app/repositories/`)
 
-- `app/services/*` contains business workflows and orchestration.
-- Representative services: `lesson_command_service.py`, `lesson_query_service.py`, `lesson_task_manager.py`, `billing.py`, `billing_service.py`, `transcription_service.py`.
-- The lesson domain is split into command/query responsibilities rather than keeping all logic inside routers.
+Data access abstraction. Each repository wraps SQLAlchemy queries for a domain.
 
-### Repository / Persistence Layer
+Key repositories:
+- `lesson.py` / `lessons.py` — Lesson and sentence data
+- `progress.py` — User progress tracking
+- `wordbook.py` — Vocabulary entries
+- `wallet.py` / `wallet_ledger.py` — Wallet and ledger
+- `billing.py` / `billing_rates.py` — Billing
+- `media_assets.py` — Media asset metadata
+- `admin.py` / `admin_console.py` — Admin queries
 
-- `app/repositories/*` encapsulates database reads/writes.
-- Models live in `app/models/*`.
-- Pydantic-style response/request schemas live in `app/schemas/*`.
+### 4. Infrastructure (`app/infra/`)
 
-### Infra / Adapters
+External service wrappers (not business logic):
 
-- `app/infra/*` wraps external providers and local runtime utilities.
-- Examples: `app/infra/asr/dashscope.py`, `app/infra/translation/qwen_mt.py`, `app/infra/media_ffmpeg.py`, `app/infra/runtime_tools.py`.
+- `dashscope_storage.py` — DashScope object storage
+- `asr/` — ASR base class
+- `tts/` — TTS base + DashScope implementation
+- `translation/` — Translation base + Qwen MT
+- `tencent_soe.py` — Tencent SOE client
+- `llm/deepseek.py` — DeepSeek LLM wrapper
+- `media_ffmpeg.py` — FFmpeg wrapper
+- `translation_qwen_mt.py` — Qwen MT wrapper
 
-## Request and Data Flow
+### 5. Models (`app/models/`)
 
-Typical API flow:
+SQLAlchemy ORM models. `Base` from `app/db/base.py`.
 
-1. Router validates and normalizes request input.
-2. Router resolves auth/db dependencies.
-3. Service layer performs orchestration and billing/task decisions.
-4. Repository/model layer persists or reads state.
-5. Serializer/schema layer shapes response payloads.
+### 6. Database (`app/db/`)
 
-Examples:
+- `base.py` — Declarative base, schema config
+- `session.py` — `SessionLocal` factory, `engine`
+- `init.py` — DB initialization
+- `migration_bootstrap.py` — Migration utilities
 
-- Auth: `app/api/routers/auth/router.py` -> `app/security.py` + `app/services.billing_service.get_or_create_wallet_account`
-- Lesson upload: `app/api/routers/lessons/router.py` -> `app/services.lesson_command_service.py` / `app/services.lesson_service.py`
-- Readiness: `app/main.py` -> DB inspection + admin bootstrap + media/runtime probes
+## Data Flow
 
-## Web Frontend Architecture
+### Lesson Generation Pipeline
 
-- Application entry: `frontend/src/main.jsx`
-- Root app: `frontend/src/App.jsx`
-- Shared shell: `frontend/src/app/LearningShell.jsx`
-- Shared API client: `frontend/src/shared/api/client.js`
-- Global state: `frontend/src/store/` with Zustand slices
-- Feature folders under `frontend/src/features/` cover auth, upload, lessons, immersive learning, wallet, wordbook, and multiple admin workspaces
+```
+User uploads video URL
+  → /api/dashscope_upload (router)
+  → asr_dashscope.py (service)
+  → yt-dlp (download)
+  → DashScope Paraformer (ASR)
+  → Qwen MT (translation, optional)
+  → lesson stored in DB
+  → media stored in DashScope storage
+```
 
-Desktop-aware behavior is injected in the shared API client and entrypoint:
+### Authentication
 
-- `frontend/src/main.jsx` switches `BrowserRouter` vs `HashRouter`
-- `frontend/src/shared/api/client.js` uses `window.desktopRuntime.requestCloudApi(...)` when the app runs inside Electron
+```
+Login request → /api/auth
+  → verify credentials against DB
+  → issue JWT (PyJWT)
+  → subsequent requests: JWT in Authorization header
+  → get_current_user dependency decodes & validates
+```
 
-## Desktop Architecture
+## Frontend Architecture
 
-Electron follows a standard main/preload/renderer split:
+**State Management:** Zustand stores in `frontend/src/store/index.js`
 
-- Main process: `desktop-client/electron/main.mjs`
-- Preload bridge: `desktop-client/electron/preload.cjs`
-- Runtime config: `desktop-client/electron/runtime-config.mjs`
-- Helper/runtime packaging logic: `desktop-client/electron/helper-runtime.mjs`
-- Model update logic: `desktop-client/electron/model-updater.mjs`
+**Key stores:**
+- `useAuthStore` — Auth state
+- `localMediaStore` — Offline media
+- `localSubtitleStore` — Offline subtitles
+- `localTaskStore` — Offline task state
 
-The renderer is the shared frontend build. Local-only capabilities are exposed through the preload bridge instead of direct Node access.
+**API Client:** `frontend/src/shared/api/client.js`
 
-## Health and Safety Gates
+**Admin Client:** `frontend/src/shared/api/adminClient.js`
 
-`app/main.py` is more than a thin bootstrap file. It enforces:
+**Bootstrap Flow:**
+1. `main.jsx` → `App.jsx` → `LearningShell.jsx`
+2. Auth gate checks JWT → redirects to login if invalid
 
-- production DB policy
-- export confirmation guard policy
-- runtime readiness checks for ffmpeg/ffprobe and upload-capable ASR
-- API request blocking when the database is not ready
-- static SPA fallback behavior
+## Entry Points
+
+| Entry | File |
+|-------|------|
+| Backend | `app/main.py` → `create_app()` |
+| Frontend App | `frontend/src/main.jsx` |
+| Frontend Admin | `frontend/src/main-admin.jsx` |
+| Desktop Client | `frontend/src/main.jsx` (shared) |
+
+## Security
+
+- JWT Bearer tokens for API auth
+- Admin routes protected by `get_admin_user` dependency
+- `app/security.py` — Password hashing (bcrypt)
+- CORS configured in FastAPI (if needed)
+- Admin SQL console is a separate router with additional auth

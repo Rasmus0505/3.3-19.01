@@ -1,99 +1,95 @@
-﻿# Integrations
+# INTEGRATIONS
 
-## External Services
+## External APIs
 
-### DashScope
+### DashScope (Alibaba Cloud)
 
-Used for cloud ASR and translation-compatible calls.
+**Purpose:** ASR transcription + TTS voice synthesis
 
-Relevant files:
+- **Config:** `DASHSCOPE_API_KEY` environment variable
+- **Service:** `app/services/asr_dashscope.py`
+- **Models:** Paraformer ASR (upload-capable)
+- **Setup:** Called in `main.py` via `setup_dashscope()` at startup
 
-- `app/services/asr_dashscope.py`
-- `app/infra/asr/dashscope.py`
-- `app/api/routers/dashscope_upload.py`
-- `app/api/routers/lessons/cloud_transcribe.py`
-- `app/infra/translation_qwen_mt.py`
-- `README.md`
+### Tencent SOE (Speech Optimization Evaluation)
 
-Observed integration points:
+**Purpose:** Speech quality evaluation
 
-- Upload/file transcription endpoint: `POST /api/transcribe/file`
-- Lesson generation flow from saved DashScope file IDs in `app/api/routers/lessons/router.py`
-- Translation requests through the OpenAI SDK configured with `MT_BASE_URL` in `app/infra/translation_qwen_mt.py`
+- **Service:** `app/infra/tencent_soe.py`
+- **Service Wrapper:** `app/services/tencent_soe_service.py`
+- **Router:** `/api/soe` → `app/api/routers/soe.py`
 
-### Database
+### Qwen MT (Translation)
 
-The app uses SQLAlchemy sessions from `app/db/session.py` and Alembic migrations from `migrations/`.
+**Purpose:** Machine translation for subtitles
 
-Production path:
+- **Service:** `app/infra/translation_qwen_mt.py` (base) + `app/services/translation_qwen_mt.py`
+- **Router:** `/api/transcribe` (cloud translate endpoint)
 
-- PostgreSQL expected in `README.md`, `scripts/run_prod_migration.py`, and readiness checks in `app/main.py`
-- SQLite remains supported for local/dev/test paths via `resolve_database_url()` and schema translation helpers in `app/db/base.py`
+### OpenAI
 
-### Zeabur
+**Purpose:** LLM integration for various AI features
 
-Deployment and service assumptions are defined in:
-
-- `Dockerfile`
-- `zeabur-template.yaml`
-- `README.md`
-
-Integration assumptions:
-
-- `web` service on port `8080`
-- `postgresql` companion service
-- persistent volume mounted at `/data`
-
-## Local System Tools
-
-### ffmpeg / ffprobe
-
-Media extraction and readiness checks depend on ffmpeg binaries.
-
-Relevant files:
-
-- `app/infra/media_ffmpeg.py`
-- `app/services/media.py`
-- `app/main.py`
-- `tools/ffmpeg/bin/ffmpeg.exe`
-- `tools/ffmpeg/bin/ffprobe.exe`
+- **Usage:** LLM usage tracking (`app/services/llm_usage_service.py`), admin LLM config (`app/api/routers/llm.py`)
+- **Config:** API key via environment
 
 ### yt-dlp
 
-Local/public media ingestion and desktop packaging include `yt-dlp`.
+**Purpose:** Download videos from YouTube and other platforms
 
-Relevant files:
+- **Constraint:** `yt-dlp>=2025.2.19,<2027` (time-versioned constraint)
+- **Usage:** Media upload pipeline
 
-- `tools/yt-dlp/yt-dlp.exe`
-- `desktop-client/package.json`
-- `tests/unit/test_desktop_local_asr.py`
+## Storage
 
-## Desktop Runtime Bridge
+### DashScope Storage
 
-Electron adds a cloud/local bridge instead of reimplementing business APIs in the renderer.
+**Purpose:** Store and retrieve media assets
 
-Relevant files:
+- **Module:** `app/infra/dashscope_storage.py`
+- **Usage:** Uploaded media files, generated assets
 
-- `desktop-client/electron/main.mjs`
-- `desktop-client/electron/preload.cjs`
-- `frontend/src/shared/api/client.js`
-- `frontend/src/hooks/useOfflineMode.js`
+## Database
 
-Bridge responsibilities:
+### PostgreSQL (Production)
 
-- `window.desktopRuntime.requestCloudApi(...)` proxies cloud API requests through the Electron main process
-- auth session cache/restore in desktop user data
-- local helper requests for offline/local ASR tasks
-- update checks for the client and local models
+- **ORM:** SQLAlchemy 2.0
+- **Schema:** `app` schema for all business tables
+- **Tables:** See `app/db/base.py` `BUSINESS_TABLES`
 
-## Static Asset Integration
+### SQLite (Development)
 
-- Web build output is copied into `app/static/` by the root `Dockerfile`.
-- Admin web has a separate static build in `frontend/dist-admin/` and nginx image path in `admin-web/`.
-- Desktop build reuses the main frontend by copying `frontend/dist/` into `desktop-client/.cache/frontend-dist/`.
+- **Location:** Local file (configured via `DATABASE_URL`)
+- **Note:** Schema enforcement disabled for SQLite
 
-## Authentication / Security Integrations
+## Authentication Providers
 
-- JWT token creation and verification in `app/security.py`
-- Admin bootstrap and admin role enforcement in `app/services/admin_bootstrap.py` and admin routers
-- Export protection guard based on `REDEEM_CODE_EXPORT_CONFIRM_TEXT` in `app/core/config.py` and readiness checks in `app/main.py`
+| Provider | Implementation |
+|----------|----------------|
+| Local JWT | `app/security.py`, `app/api/deps/auth.py` |
+| Admin Auth | `get_admin_user` dependency |
+| User Auth | `get_current_user` dependency |
+
+## Admin Panel Integrations
+
+- **Framework:** Radix UI + TailwindCSS SPA
+- **Auth Gate:** `frontend/src/app/AdminShell/AdminAuthGate.jsx`
+- **Bootstrap:** `frontend/src/app/bootstrap-admin.jsx`
+- **Standalone:** `frontend/src/app/AdminShellStandalone.jsx`
+
+## Media Pipeline
+
+| Step | Component |
+|------|-----------|
+| Download | yt-dlp |
+| Transcribe | DashScope ASR (`asr_dashscope.py`) |
+| Translate | Qwen MT |
+| Store | DashScope Storage |
+| Playback | HTML5 Audio + React |
+
+## Desktop Client
+
+- **Distribution:** Windows installer via Feijipan (share.feijipan.com)
+- **Update Check:** `/desktop/client/latest.json`
+- **Channels:** `stable` (only channel)
+- **Config Env:** `DESKTOP_CLIENT_*` variables

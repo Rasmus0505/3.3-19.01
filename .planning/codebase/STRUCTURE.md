@@ -1,85 +1,224 @@
-﻿# Structure
+# STRUCTURE
 
-## Top-Level Layout
+## Project Root
 
-- `app/` - FastAPI application code
-- `frontend/` - React/Vite source plus local build artifacts
-- `desktop-client/` - Electron desktop client source plus cached packaged assets
-- `migrations/` - Alembic environment and revision history
-- `tests/` - unit, integration, e2e, contracts, fixtures
-- `scripts/` - migration, startup, desktop backend, git hook helpers
-- `tools/` - bundled local executables (`ffmpeg`, `ffprobe`, `yt-dlp`)
-- `asr-test/` - isolated local ASR lab, model files, benchmark scripts, result archives
-- `admin-web/` - standalone nginx-based admin static image path
-- `Docx/` - collaboration/task-pool documents, not runtime code
+```
+3.3-19.01/
+├── app/                        # Python backend
+├── frontend/                   # React SPA
+├── migrations/                 # Alembic migrations
+├── package/                    # Vocabulary data (en_2016_50k.txt, etc.)
+├── .planning/                  # GSD planning docs
+├── requirements.txt            # Python prod deps
+├── requirements-dev.txt        # Python dev deps
+├── pytest.ini                  # Pytest config
+├── alembic.ini                 # Alembic config
+└── zeabur-template.yaml       # Zeabur deployment config
+```
 
-## Backend Tree
+## Backend (`app/`)
 
-Important backend areas:
+```
+app/
+├── main.py                     # FastAPI app factory, entry point
+├── deps.py                     # FastAPI dependency injection helpers
+├── security.py                 # Password hashing, JWT utilities
+├── api/
+│   ├── deps/                   # Auth dependencies
+│   │   ├── __init__.py
+│   │   └── auth.py             # get_current_user, get_admin_user
+│   └── routers/                # API route modules
+│       ├── auth/               # Authentication
+│       ├── lessons/            # Lessons + cloud transcription
+│       ├── practice/           # Practice sessions
+│       ├── wordbook/           # Vocabulary
+│       ├── billing/            # Billing + wallet
+│       ├── admin/              # Admin operations
+│       ├── media/              # Media assets
+│       ├── tts/                # Text-to-speech
+│       ├── voice_cloning/      # Voice cloning
+│       ├── llm.py              # LLM config
+│       ├── soe.py              # Tencent SOE
+│       ├── transcribe.py       # Cloud transcription
+│       ├── asr_models.py       # ASR model registry
+│       └── admin_sql_console.py # SQL console for admins
+├── core/
+│   ├── config.py               # Environment config (APP_DIR, BASE_DATA_DIR, etc.)
+│   ├── logging.py              # Logging setup
+│   ├── timezone.py             # Timezone utilities
+│   └── errors.py               # Error response helpers
+├── db/
+│   ├── base.py                 # SQLAlchemy Base, schema config, BUSINESS_TABLES
+│   ├── session.py              # SessionLocal, engine
+│   └── init.py                 # DB init
+├── domain/                     # Domain entities + policies
+│   ├── lesson/
+│   │   ├── entities.py
+│   │   └── policy.py
+│   └── billing/
+│       ├── policy.py
+├── models/                     # SQLAlchemy ORM models
+│   ├── announcement.py
+│   ├── llm_usage.py
+│   └── soe_result.py
+├── repositories/               # Data access layer
+│   ├── base.py
+│   ├── lesson.py / lessons.py
+│   ├── progress.py
+│   ├── wordbook.py
+│   ├── wallet.py / wallet_ledger.py
+│   ├── billing.py / billing_rates.py
+│   ├── media_assets.py
+│   ├── admin.py / admin_console.py
+│   ├── announcement.py
+│   └── user.py
+├── schemas/                    # Pydantic request/response models
+│   ├── auth.py
+│   ├── practice.py
+│   ├── wordbook.py
+│   ├── admin_console.py
+│   ├── announcement.py
+│   ├── soe.py
+│   └── common.py
+├── services/                   # Business logic
+│   ├── asr_dashscope.py
+│   ├── transcription_service.py
+│   ├── practice_service.py
+│   ├── wordbook_service.py
+│   ├── wordbook_review_scheduler.py
+│   ├── billing_service.py
+│   ├── media.py
+│   ├── llm_usage_service.py
+│   ├── admin_service.py
+│   ├── admin_bootstrap.py
+│   ├── admin_sql_console.py
+│   ├── user_activity.py
+│   ├── query_cache.py
+│   ├── lesson_query_service.py
+│   └── asr_model_registry.py
+└── infra/                      # External service wrappers
+    ├── asr/                    # ASR base class
+    ├── tts/                    # TTS base + DashScope impl
+    ├── translation/            # Translation base + Qwen MT
+    ├── llm/
+    │   └── deepseek.py
+    ├── dashscope_storage.py
+    ├── tencent_soe.py
+    ├── media_ffmpeg.py
+    ├── translation_qwen_mt.py
+    └── runtime_tools.py
+```
 
-- `app/main.py` - application assembly, health endpoints, static serving, middleware
-- `app/core/` - configuration, logging, error helpers, timezone helpers
-- `app/db/` - engine/session/bootstrap/schema helpers
-- `app/models/` - SQLAlchemy models for users, lessons, billing
-- `app/api/deps/` - auth/db dependencies
-- `app/api/routers/` - route handlers and nested router packages
-- `app/repositories/` - persistence-oriented data access
-- `app/services/` - business logic and task orchestration
-- `app/infra/` - external service and local tool adapters
-- `app/domain/` - small policy/entity modules for lesson and billing concepts
-- `app/schemas/` - request/response models
+## Frontend (`frontend/src/`)
 
-## Frontend Tree
+```
+frontend/src/
+├── main.jsx                    # App entry (LearningShell)
+├── main-admin.jsx             # Admin entry
+├── App.jsx                    # Root component
+├── AdminApp.jsx               # Admin root component
+├── store/
+│   └── index.js               # Zustand store exports
+├── app/
+│   ├── LearningShell.jsx       # Main learning layout
+│   ├── AdminShell.jsx          # Admin layout
+│   ├── AdminShellStandalone.jsx
+│   ├── bootstrap.jsx            # Auth bootstrap
+│   ├── bootstrap-admin.jsx
+│   ├── authStorage.js
+│   ├── learning-shell/         # Learning shell features
+│   │   ├── LearningShellHeader.jsx
+│   │   ├── LearningShellPanelContent.jsx
+│   │   ├── LearningShellSidebar.jsx
+│   │   ├── hooks/
+│   │   ├── __tests__/
+│   │   └── panelRoutes.js
+│   └── AdminShell/
+│       └── AdminAuthGate.jsx
+├── pages/
+│   ├── LearningPage.jsx
+│   ├── AdminPage.jsx
+│   └── GettingStartedHelpPage.jsx
+├── features/
+│   ├── immersive/             # Immersive learning (CEFR, SOE)
+│   ├── lessons/               # Lesson list + player
+│   ├── wordbook/              # Wordbook panel + translation dialog
+│   ├── wallet/                # Wallet + redeem codes
+│   ├── practice/              # Practice panel
+│   ├── getting-started/       # Onboarding
+│   ├── admin-*/               # Admin feature modules
+│   │   ├── admin-overview/
+│   │   ├── admin-users/
+│   │   ├── admin-redeem/
+│   │   ├── admin-logs/
+│   │   ├── admin-workspaces/
+│   │   ├── admin-pages/
+│   │   ├── admin-llm/
+│   │   ├── admin-rates/
+│   │   ├── admin-system/
+│   │   ├── admin-sql-console/
+│   │   └── admin-operation-logs/
+│   ├── account/
+│   ├── reading/
+│   └── upload/
+├── components/
+│   ├── ui/                    # Radix UI primitive components
+│   │   ├── button.jsx, input.jsx, dialog.jsx, etc.
+│   │   └── sidebar.jsx, alert.jsx, badge.jsx, etc.
+│   ├── AnnouncementBanner.jsx
+│   └── AnnouncementModal.jsx
+├── shared/
+│   ├── api/
+│   │   ├── client.js           # Main API client
+│   │   ├── adminClient.js      # Admin API client
+│   │   └── endpoints.js        # Endpoint constants
+│   ├── components/            # Shared UI components
+│   ├── hooks/                  # Shared hooks
+│   ├── lib/
+│   │   ├── utils.js
+│   │   ├── datetime.js
+│   │   ├── money.js
+│   │   ├── asrModels.js
+│   │   ├── errorFormatter.js
+│   │   ├── adminSecurity.js
+│   │   └── adminSearchParams.js
+│   └── media/
+│       ├── localMediaStore.js
+│       ├── localSubtitleStore.js
+│       └── localTaskStore.js
+├── hooks/
+│   ├── useOfflineMode.js
+│   └── useReadingRewrite.js
+└── lib/
+    └── utils.js
+```
 
-Important frontend areas:
+## Migrations (`migrations/`)
 
-- `frontend/src/main.jsx` and `frontend/src/main-admin.jsx` - application entrypoints
-- `frontend/src/app/` - shell/bootstrap composition
-- `frontend/src/features/` - product feature slices
-- `frontend/src/shared/` - shared API/client/media helpers
-- `frontend/src/components/ui/` - reusable UI primitives
-- `frontend/src/store/` - Zustand store setup and slices
-- `frontend/src/pages/` - page-level composition
-- `frontend/src/assets/` - onboarding images and static assets
+```
+migrations/
+├── versions/                   # Alembic version scripts
+└── script.py.mako
+```
 
-Build output directories already present in the repo:
+## Vocabulary Data (`package/`)
 
-- `frontend/dist/`
-- `frontend/dist-admin/`
+```
+package/data/en/
+├── en_2016_50k.txt            # 50k word vocabulary list (2016)
+├── en_2018_50k.txt            # 50k word vocabulary list (2018)
+└── frequency-alpha-gcide.txt   # GCIDE frequency alphabet
+```
 
-## Desktop Tree
+## Key Naming Conventions
 
-Important desktop areas:
-
-- `desktop-client/electron/` - main/preload/runtime integration code
-- `desktop-client/scripts/` - dev/build/package scripts
-- `desktop-client/build/` - installer resources
-- `desktop-client/.cache/frontend-dist/` - cached renderer build
-- `desktop-client/.cache/helper-runtime/` - cached packaged helper runtime
-
-## Testing Tree
-
-- `tests/unit/` - isolated unit tests
-- `tests/integration/` - API/service integration tests
-- `tests/e2e/` - end-to-end workflow tests
-- `tests/contracts/` - file-content and packaging contract tests
-- `tests/fixtures/` - reusable db/auth/billing/lesson setup helpers
-
-## Migration Tree
-
-- `migrations/env.py` - Alembic environment
-- `migrations/versions/*.py` - 28 timestamped revisions observed
-- `migrations/README.md` - migration and production rules
-
-## Notable Mixed-In Artifacts
-
-The repository currently also contains non-source or generated content:
-
-- `app.db`, `app.db-shm`, `app.db-wal`
-- many `__pycache__/` directories and `*.pyc` files
-- `frontend/node_modules/`
-- `frontend/dist/` and `frontend/dist-admin/`
-- `desktop-client/.cache/`
-- ASR run/result archives under `asr-test/runs/` and `asr-test/results/`
-
-These artifacts materially affect repository size and developer ergonomics.
+| Layer | Convention |
+|-------|------------|
+| Python modules | `snake_case.py` |
+| Python classes | `PascalCase` |
+| Python functions | `snake_case` |
+| React components | `PascalCase.jsx` |
+| React hooks | `camelCase.js` (use prefix) |
+| Zustand stores | `camelCase` (use prefix) |
+| API routes | `snake_case` |
+| Directories | `kebab-case` |

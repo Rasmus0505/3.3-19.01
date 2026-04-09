@@ -1,68 +1,89 @@
-﻿# Stack
+# STACK
 
-## Runtime Layers
+## Languages & Runtime
 
-- Backend: Python 3.11 container running FastAPI from `app/main.py` via `uvicorn` in `scripts/start.sh`.
-- Frontend: React 18 + Vite 7 app in `frontend/` with Tailwind CSS 4 and Radix UI components.
-- Desktop client: Electron 35 shell in `desktop-client/` that hosts the same frontend and adds a local helper/runtime bridge.
-- Database: SQLAlchemy 2 + Alembic migrations in `migrations/`; production target is PostgreSQL, development commonly uses SQLite.
+| Layer | Technology |
+|-------|------------|
+| Backend | Python 3.11+ |
+| Frontend | JavaScript/JSX (React 18) |
+| Build | Vite 7 |
+| Runtime | Uvicorn (ASGI) |
 
-## Python Dependencies
+## Backend Stack
 
-Primary runtime dependencies from `requirements.txt`:
+| Component | Library |
+|-----------|---------|
+| Framework | FastAPI 0.115 |
+| ORM | SQLAlchemy 2.0 |
+| Migrations | Alembic 1.14 |
+| Database | PostgreSQL (SQLite for dev) |
+| Auth | PyJWT + passlib[bcrypt] |
+| HTTP Client | requests 2.32 |
+| File Downloads | yt-dlp |
+| API Docs | OpenAI SDK 1.65 |
 
-- Web/API: `fastapi`, `uvicorn`, `python-multipart`
-- Data: `sqlalchemy`, `psycopg2-binary`, `alembic`
-- Auth/security: `PyJWT`, `passlib[bcrypt]`
-- AI/media: `dashscope`, `faster-whisper`, `spacy`, `yt-dlp`, `requests`
-- Translation client: `openai` SDK is used in `app/infra/translation_qwen_mt.py` against a compatible base URL
+### Key Backend Dependencies
 
-Development extras from `requirements-dev.txt`:
+```
+fastapi==0.115.8
+uvicorn==0.34.0
+sqlalchemy==2.0.38
+psycopg2-binary==2.9.10
+passlib[bcrypt]==1.7.4
+PyJWT==2.10.1
+openai==1.65.4
+alembic==1.14.1
+yt-dlp>=2025.2.19
+dashscope==1.25.11
+```
 
-- `pytest`, `httpx`, `pyinstaller`
+## Frontend Stack
 
-## Frontend Dependencies
+| Component | Library |
+|-----------|---------|
+| Framework | React 18.3 |
+| Routing | React Router DOM 7 |
+| State | Zustand 5 |
+| Styling | TailwindCSS 4 + tw-animate-css |
+| UI Primitives | Radix UI |
+| Charts | Recharts 3 |
+| Toasts | Sonner |
+| Build | Vite 7 |
+| Testing | Vitest + Testing Library |
 
-Key packages from `frontend/package.json`:
+### Key Frontend Dependencies
 
-- `react`, `react-dom`, `react-router-dom`
-- UI primitives: `@radix-ui/*`, `lucide-react`, `sonner`
-- Styling: `tailwindcss`, `@tailwindcss/vite`, `class-variance-authority`, `tailwind-merge`
-- Charts/state: `recharts`, `zustand`
+```
+react==18.3.1
+react-router-dom==7.13.1
+zustand==5.0.11
+tailwindcss==4.2.1
+@radix-ui/* (dialog, tabs, select, etc.)
+recharts==3.8.0
+sonner==2.0.7
+vite==7.3.1
+vitest==3.2.0
+```
 
-## Desktop Dependencies
+## Infrastructure
 
-Key packages from `desktop-client/package.json`:
+| Concern | Technology |
+|---------|------------|
+| Storage | DashScope (Alibaba Cloud) |
+| Transcription | DashScope Paraformer ASR |
+| Speech Eval | Tencent SOE |
+| Translation | Qwen MT (Alibaba) |
+| Video Processing | FFmpeg |
+| Deployment | Zeabur (template: `zeabur-template.yaml`) |
 
-- `electron`
-- `electron-builder`
+## Configuration Files
 
-Packaged desktop resources include:
-
-- `desktop-client/electron/**/*`
-- `desktop-client/.cache/frontend-dist/**/*`
-- `tools/ffmpeg/bin/*`
-- `tools/yt-dlp/yt-dlp.exe`
-- `asr-test/models/faster-distil-small.en/*`
-
-## Configuration and Environment
-
-Backend configuration is centralized in `app/core/config.py`.
-
-Important environment variables surfaced by code and README:
-
-- `APP_ENV`, `PORT`, `DATABASE_URL`
-- `JWT_SECRET`
-- `DASHSCOPE_API_KEY`
-- `ADMIN_EMAILS`, `ADMIN_BOOTSTRAP_PASSWORD`
-- `REDEEM_CODE_EXPORT_CONFIRM_TEXT`
-- `AUTO_MIGRATE_ON_START`
-- `PERSISTENT_DATA_DIR`, `ASR_BUNDLE_ROOT_DIR`
-- `MT_BASE_URL`, `MT_MODEL`
-
-## Build and Packaging
-
-- Root `Dockerfile` performs a multi-stage build: Vite frontend -> Python runtime image -> copies built assets into `app/static/`.
-- `admin-web/Dockerfile` builds a separate admin static site behind nginx.
-- `frontend/vite.config.js` switches base path to `/static/` for web and `./` for desktop renderer builds.
-- `desktop-client/scripts/build.mjs` rebuilds the frontend with desktop flags and copies output into `desktop-client/.cache/frontend-dist/`.
+| File | Purpose |
+|------|---------|
+| `requirements.txt` | Python dependencies |
+| `requirements-dev.txt` | Python dev dependencies |
+| `pytest.ini` | Pytest configuration |
+| `alembic.ini` | Alembic migration config |
+| `frontend/package.json` | Node dependencies |
+| `vite.config.js` | Vite build config |
+| `zeabur-template.yaml` | Zeabur deployment |
