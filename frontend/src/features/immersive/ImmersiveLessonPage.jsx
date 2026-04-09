@@ -20,8 +20,6 @@ export * from "./immersiveTypes";
 import AudioRecorder from "../../shared/components/AudioRecorder";
 import SOEResultCard from "./SOEResultCard";
 import ExplanationPanel from "./ExplanationPanel";
-import ExplanationSidebarContent from "./ExplanationSidebarContent";
-import ExplanationFloatingPanel from "./ExplanationFloatingPanel";
 
 import { useAppStore } from "../../store";
 import { VocabAnalyzer } from "../../utils/vocabAnalyzer";
@@ -1055,6 +1053,7 @@ export function ImmersiveLessonPage({
   onExitImmersive,
   onStartImmersive,
   externalMediaReloadToken = 0,
+  onExplanationChange,
 }) {
   const [mediaMode, setMediaMode] = useState("video");
   const [mediaBlobUrl, setMediaBlobUrl] = useState("");
@@ -1586,6 +1585,17 @@ export function ImmersiveLessonPage({
       }
     }
   }, [currentSentence]);
+
+  // Notify parent (LearningShellLocalSubtitles) when explanation state changes
+  useEffect(() => {
+    if (onExplanationChange) {
+      onExplanationChange({
+        show: showExplanation,
+        explanation: showExplanation ? currentExplanation : null,
+        audioUrl: showExplanation ? explanationAudioUrl : null,
+      });
+    }
+  }, [showExplanation, currentExplanation, explanationAudioUrl, onExplanationChange]);
 
   const syncLearningSettingsState = useCallback((nextSettings) => {
     const resolvedSettings = nextSettings && typeof nextSettings === "object" ? nextSettings : readLearningSettings();
@@ -4082,15 +4092,6 @@ export function ImmersiveLessonPage({
             </div>
           ) : null}
 
-          {/* 浮动讲解面板 - 沉浸模式视频区域右下角 */}
-          <ExplanationFloatingPanel
-            visible={showExplanation && !!currentExplanation}
-            explanation={currentExplanation}
-            audioUrl={explanationAudioUrl}
-            onReplay={() => playExplanationAudio(explanationAudioUrl)}
-            onStartPractice={handleStartPracticeFromExplanation}
-          />
-
           </div>
 
           {!immersiveActive ? (
@@ -4602,19 +4603,9 @@ export function ImmersiveLessonPage({
           </div>
         }
         rightSidebarContent={
-          showExplanation && currentExplanation ? (
-            <ExplanationSidebarContent
-              sentence={currentSentence?.text_en}
-              explanation={currentExplanation}
-              audioUrl={explanationAudioUrl}
-              onReplay={() => playExplanationAudio(explanationAudioUrl)}
-              onStartPractice={handleStartPracticeFromExplanation}
-            />
-          ) : (
-            <div className="ai-sidebar-placeholder">
-              <p className="text-sm text-muted-foreground">暂无讲解内容</p>
-            </div>
-          )
+          <div className="ai-sidebar-placeholder">
+            <p className="text-sm text-muted-foreground">暂无讲解内容</p>
+          </div>
         }
       />
   );
