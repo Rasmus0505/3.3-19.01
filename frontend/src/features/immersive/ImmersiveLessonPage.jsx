@@ -3908,7 +3908,6 @@ export function ImmersiveLessonPage({
 
   const immersivePageShellClassName = [
     "immersive-page-shell",
-    cinemaFullscreenActive ? "immersive-page-shell--cinema" : "",
     isFullscreenFallback && !isCssFullscreen ? "immersive-page-shell--fallback" : "",
     isCssFullscreen ? "immersive-page-shell--css-fullscreen" : "",
     isTouchDevice ? "immersive-page-shell--touch" : "",
@@ -3929,62 +3928,27 @@ export function ImmersiveLessonPage({
       <div className="learning-page-main">
         <div ref={immersiveContainerRef} className={immersivePageShellClassName}>
             <Card
-            className={`immersive-page ${immersiveActive ? "immersive-page--immersive" : ""} ${
-              cinemaFullscreenActive ? "immersive-page--cinema" : ""
-            }`}
+            className={`immersive-page ${immersiveActive ? "immersive-page--immersive" : ""}`}
             onClick={handleImmersivePageClick}
           >
         <CardHeader className="immersive-card-header">
           <div className="immersive-header">
-            <div className={cinemaHeaderControlsClassName} onMouseEnter={wakeCinemaControls} onFocusCapture={wakeCinemaControls}>
-              {immersiveActive && hasExitHandler && !cinemaFullscreenActive ? (
-                <Button variant="outline" size="sm" className={cinemaButtonClassName} onClick={() => void exitImmersive("button")}>
+            <div className="immersive-header-left">
+              {immersiveActive && hasExitHandler ? (
+                <Button variant="outline" size="sm" onClick={() => void exitImmersive("button")}>
                   <ArrowLeft className="size-4" />
                   退出
                 </Button>
               ) : null}
-              {immersiveActive && cinemaFullscreenActive ? (
-                <>
-                  {showPlaybackRateBadge ? <Badge variant="secondary">{playbackRateLabel}</Badge> : null}
-                  <Button variant="outline" size="sm" className={cinemaButtonClassName} onClick={() => void exitCinemaFullscreen()} title="退出学习模式">
-                    退出学习
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className={cinemaButtonClassName}
-                    onClick={() => persistFullscreenPreviousSentencePreference(!showFullscreenPreviousSentence)}
-                    title={showFullscreenPreviousSentence ? "隐藏上一句" : "显示上一句"}
-                  >
-                    {showFullscreenPreviousSentence ? "隐藏上一句" : "显示上一句"}
-                  </Button>
-                  {showTranslationMaskToggle ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={cinemaButtonClassName}
-                      aria-pressed={translationMaskEnabled}
-                      aria-label={translationMaskEnabled ? "关闭字幕遮挡板" : "开启字幕遮挡板"}
-                      title={translationMaskEnabled ? "关闭字幕遮挡板" : "开启字幕遮挡板"}
-                      onClick={handleTranslationMaskButtonClick}
-                    >
-                      {translationMaskEnabled ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
-                      字幕遮挡板
-                    </Button>
-                  ) : null}
-                </>
-              ) : null}
             </div>
-            {!cinemaFullscreenActive ? (
-              <CardDescription className="immersive-header-progress">
-                第 {Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 句
-              </CardDescription>
-            ) : null}
+            <CardDescription className="immersive-header-progress">
+              第 {Math.min(currentSentenceIndex + 1, sentenceCount)} / {sentenceCount} 句
+            </CardDescription>
           </div>
         </CardHeader>
 
-        <CardContent className={`immersive-card-content ${cinemaFullscreenActive ? "immersive-card-content--cinema" : "space-y-4"}`}>
-          <div ref={immersiveMediaRef} className={`immersive-media ${cinemaFullscreenActive ? "immersive-media--cinema" : ""}`}>
+        <CardContent className="immersive-card-content space-y-4">
+          <div ref={immersiveMediaRef} className="immersive-media">
           {!needsBinding && mediaMode === "video" ? (
             <video
               ref={mediaElementRef}
@@ -4100,7 +4064,7 @@ export function ImmersiveLessonPage({
           ) : (
             <div
               ref={typingPanelRef}
-              className={`immersive-typing ${cinemaFullscreenActive ? "immersive-typing--cinema" : ""}`}
+              className="immersive-typing"
             >
               <div className="immersive-typing-status">
                 <span className="immersive-status-chip flex items-center gap-1 text-sm">
@@ -4220,7 +4184,7 @@ export function ImmersiveLessonPage({
               {mediaError ? <p className="text-xs text-destructive">{mediaError}</p> : null}
               {waitingForInitialPlayback ? <p className="text-xs text-muted-foreground">输入已完成，等待本句播放结束。</p> : null}
 
-              <div ref={wordRowFrameRef} className={cinemaFullscreenActive ? "immersive-word-row-frame immersive-word-row-frame--cinema" : ""}>
+              <div ref={wordRowFrameRef} className="immersive-word-row-frame">
                 {wordRowLines ? (
                   // 多行模式：第一行 space-between，其余 flex-start
                   wordRowLines.map((lineIndices, rowIndex) => (
@@ -4228,7 +4192,6 @@ export function ImmersiveLessonPage({
                       key={rowIndex}
                       className={cn(
                         "immersive-word-row",
-                        cinemaFullscreenActive ? "immersive-word-row--cinema" : "",
                         rowIndex === 0 ? "immersive-word-row--multi-line-first" : "immersive-word-row--multi-line-left",
                       )}
                     >
@@ -4270,7 +4233,7 @@ export function ImmersiveLessonPage({
                   ))
                 ) : (
                   // 单行模式：居中
-                  <div className={`immersive-word-row immersive-word-row--centered ${cinemaFullscreenActive ? "immersive-word-row--cinema" : ""}`}>
+                  <div className="immersive-word-row immersive-word-row--centered">
                     {expectedTokens.map((token, index) => {
                       const status = wordStatuses[index] || "pending";
                       const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealComparableIndices[index] || []);
@@ -4310,7 +4273,7 @@ export function ImmersiveLessonPage({
 
               {showPreviousSentenceBlock ? (
                 <div
-                  className={`immersive-previous-sentence ${cinemaFullscreenActive ? "immersive-previous-sentence--cinema" : ""}`}
+                  className="immersive-previous-sentence"
                 >
                   {canRenderInteractiveWordbook ? (
                     <>
@@ -4356,11 +4319,7 @@ export function ImmersiveLessonPage({
                           />
                         ) : null}
                         <div
-                          className={`min-w-0 flex flex-1 items-center gap-x-1 gap-y-2 ${
-                            cinemaFullscreenActive
-                              ? "overflow-x-auto whitespace-nowrap flex-nowrap"
-                              : "flex-wrap"
-                          }`}
+                          className={`min-w-0 flex flex-1 flex-wrap items-center gap-x-1 gap-y-2`}
                         >
                           {wordbookSentenceTokens.map((token, index) => {
                             const tokenSelected = wordbookSelectedTokenIndexes.includes(index);
@@ -4434,7 +4393,7 @@ export function ImmersiveLessonPage({
                           </span>
                         ) : null}
                       </div>
-                      <p className={`pl-0 ${cinemaFullscreenActive ? "overflow-x-auto whitespace-nowrap" : ""}`}>
+                      <p className="pl-0">
                         {wordbookSentenceZh}
                       </p>
                     </>
@@ -4486,7 +4445,7 @@ export function ImmersiveLessonPage({
                             }}
                           />
                         ) : null}
-                        <p className={`min-w-0 flex-1 ${cinemaFullscreenActive ? "overflow-x-auto whitespace-nowrap" : ""}`}>
+                        <p className="min-w-0 flex-1">
                           {translationEn}
                         </p>
                         {previousSentence ? (
@@ -4503,15 +4462,14 @@ export function ImmersiveLessonPage({
                           </button>
                         ) : null}
                       </div>
-                      <p className={`pl-0 ${cinemaFullscreenActive ? "overflow-x-auto whitespace-nowrap" : ""}`}>
+                      <p className="pl-0">
                         {translationZh}
                       </p>
                     </>
                   )}
                 </div>
               ) : null}
-              {!cinemaFullscreenActive ? (
-                <p className="immersive-keyboard-hint text-xs text-muted-foreground">
+              <p className="immersive-keyboard-hint text-xs text-muted-foreground">
                   快捷键按历史页顶部配置生效：{getShortcutLabel(learningSettings.shortcuts.reveal_letter)} 揭示字母，
                   {getShortcutLabel(learningSettings.shortcuts.reveal_word)} 揭示单词，
                   {getShortcutLabel(learningSettings.shortcuts.previous_sentence)} 上一句，
@@ -4520,8 +4478,7 @@ export function ImmersiveLessonPage({
                   {getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)} 播放，
                   {getShortcutLabel(learningSettings.shortcuts.record_score)} 录音评分。
                 </p>
-              ) : null}
-              {!cinemaFullscreenActive && phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
+              {phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
             </div>
           )}
 
