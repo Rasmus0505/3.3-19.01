@@ -4,9 +4,9 @@ ARG BUILD_DATE=1970-01-01T00:00:00Z
 
 WORKDIR /frontend
 COPY frontend/package*.json ./
-RUN npm ci
+RUN echo "FORCE_REBUILD=${BUILD_DATE}" > force_rebuild.txt && npm ci --prefer-offline || npm ci
 COPY frontend/ ./
-RUN echo "Building at ${BUILD_DATE}" && npm run build
+RUN npm run build
 
 # Clean npm artifacts before copying
 RUN npm cache clean --force && rm -rf node_modules package-lock.json

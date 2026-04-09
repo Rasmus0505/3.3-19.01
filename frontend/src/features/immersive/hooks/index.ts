@@ -3,7 +3,6 @@ export { useImmersivePlayer } from './useImmersivePlayer';
 export { useImmersiveSession } from './useImmersiveSession';
 export { useMediaController } from './useMediaController';
 export { useTypingController } from './useTypingController';
-export { buildLetterSlots } from '../letterComparable';
 export { useExplanation } from './useExplanation';
 export { useCEFR } from './useCEFR';
 
