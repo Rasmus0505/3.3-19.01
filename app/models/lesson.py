@@ -22,6 +22,7 @@ class Lesson(Base):
     media_storage: Mapped[str] = mapped_column(String(32), default="server", nullable=False)
     source_duration_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="ready", nullable=False)
+    user_cefr_level: Mapped[str | None] = mapped_column(String(10), nullable=True, comment="用户生成课程时的CEFR等级")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
 

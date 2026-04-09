@@ -1295,6 +1295,14 @@ class LessonService:
         resolved_translation_cost_amount_cents = max(0, int(translation_cost_amount_cents or 0))
 
         lesson.user_id = owner_id
+        # 记录用户生成课程时的 CEFR 等级，方便后续排查
+        try:
+            from app.models import User
+            user = db.query(User).filter(User.id == owner_id).first()
+            if user:
+                lesson.user_cefr_level = user.cefr_level
+        except Exception:
+            pass  # 不影响主流程
         if not str(getattr(lesson, "title", "") or "").strip():
             lesson.title = Path(source_filename or "lesson").stem[:200] or "lesson"
         lesson.source_filename = str(source_filename or getattr(lesson, "source_filename", "") or "")
@@ -1741,6 +1749,14 @@ class LessonService:
                 source_duration_ms=reserved_duration_ms,
                 status=lesson_status,
             )
+            # 记录用户生成课程时的 CEFR 等级
+            try:
+                from app.models import User
+                user = db.query(User).filter(User.id == owner_id).first()
+                if user:
+                    lesson.user_cefr_level = user.cefr_level
+            except Exception:
+                pass
             db.add(lesson)
             db.flush()
 
@@ -2575,6 +2591,14 @@ class LessonService:
                 source_duration_ms=reserved_duration_ms,
                 status=lesson_status,
             )
+            # 记录用户生成课程时的 CEFR 等级
+            try:
+                from app.models import User
+                user = db.query(User).filter(User.id == owner_id).first()
+                if user:
+                    lesson.user_cefr_level = user.cefr_level
+            except Exception:
+                pass
             db.add(lesson)
             db.flush()
             logger.info(
