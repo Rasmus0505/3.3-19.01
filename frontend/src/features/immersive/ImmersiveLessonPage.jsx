@@ -82,8 +82,11 @@ import { cn } from "../../lib/utils";
 import { computeCefrClassName } from "./CefrBadge";
 import "./immersive.css";
 
+// DEBUG: Top of module reached
+console.log("[ImmersiveLessonPage] Module top reached");
+
 const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
-const APOSTROPHE_RE = /[’']/g;
+const APOSTROPHE_RE = /[‘’]/g;
 
 function formatSoeAssessErrorMessage(data, httpStatus = 0) {
   if (!data || typeof data !== "object") {
@@ -1006,6 +1009,9 @@ function formatMediaLoadError(resp, payload) {
   return "媒体加载失败。";
 }
 
+// DEBUG: Module loaded
+console.log("[ImmersiveLessonPage] Module loaded, version:", Date.now());
+
 export function ImmersiveLessonPage({
   lesson,
   accessToken,
@@ -1018,6 +1024,8 @@ export function ImmersiveLessonPage({
   onStartImmersive,
   externalMediaReloadToken = 0,
 }) {
+  // DEBUG: Component rendered
+  console.log("[ImmersiveLessonPage] Component rendered, lesson:", lesson?.id);
   const [mediaMode, setMediaMode] = useState("video");
   const [mediaBlobUrl, setMediaBlobUrl] = useState("");
   const [mediaLoading, setMediaLoading] = useState(false);
