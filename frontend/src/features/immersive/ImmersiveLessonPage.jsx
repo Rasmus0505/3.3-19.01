@@ -4565,7 +4565,7 @@ export function ImmersiveLessonPage({
       </div>
         }
         typingContent={
-          <div className="h-full">
+          <div className="h-full w-full">
             {/* 拼写区域已经在 CardContent 中，这里预留插槽以便后续扩展 */}
           </div>
         }
