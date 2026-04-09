@@ -1476,8 +1476,9 @@ input[type="number"] {
 
 .immersive-layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  height: 100dvh;
+  grid-template-columns: 1fr 320px;
+  gap: 16px;
+  height: 100%;
   align-items: stretch;
 }
 
@@ -1486,12 +1487,15 @@ input[type="number"] {
   flex-direction: column;
   min-width: 0;
   height: 100%;
+  overflow: hidden;
 }
 
 .immersive-layout__video-area {
   flex: 6;
   min-height: 0;
   overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
 }
 
 .immersive-layout__divider {
@@ -1503,13 +1507,13 @@ input[type="number"] {
 .immersive-layout__typing-area {
   flex: 4;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .immersive-layout__sidebar {
   position: sticky;
   top: 0;
-  height: 100dvh;
+  height: 100%;
   overflow-y: auto;
   border-left: 1px solid var(--color-border);
 }
