@@ -82,9 +82,6 @@ import { cn } from "../../lib/utils";
 import { computeCefrClassName } from "./CefrBadge";
 import "./immersive.css";
 
-// DEBUG: Top of module reached
-console.log("[ImmersiveLessonPage] Module top reached");
-
 const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
 const APOSTROPHE_RE = /[‘’]/g;
 
@@ -1009,9 +1006,6 @@ function formatMediaLoadError(resp, payload) {
   return "媒体加载失败。";
 }
 
-// DEBUG: Module loaded
-console.log("[ImmersiveLessonPage] Module loaded, version:", Date.now());
-
 export function ImmersiveLessonPage({
   lesson,
   accessToken,
@@ -1024,8 +1018,6 @@ export function ImmersiveLessonPage({
   onStartImmersive,
   externalMediaReloadToken = 0,
 }) {
-  // DEBUG: Component rendered
-  console.log("[ImmersiveLessonPage] Component rendered, lesson:", lesson?.id);
   const [mediaMode, setMediaMode] = useState("video");
   const [mediaBlobUrl, setMediaBlobUrl] = useState("");
   const [mediaLoading, setMediaLoading] = useState(false);
@@ -1417,6 +1409,7 @@ export function ImmersiveLessonPage({
   const { playKeySound, playWrongSound, playCorrectSound } = useTypingFeedbackSounds();
 
   useEffect(() => {
+    console.log("[DEBUG] useEffect 1: entry hint overlay");
     if (!immersiveActive || !lesson?.id) {
       setShowEntryHintOverlay(false);
       return;
@@ -1425,6 +1418,7 @@ export function ImmersiveLessonPage({
   }, [immersiveActive, lesson?.id]);
 
   useEffect(() => {
+    console.log("[DEBUG] useEffect 2: entry hint timeout");
     if (!showEntryHintOverlay) return undefined;
     const id = window.setTimeout(() => {
       setShowEntryHintOverlay(false);
@@ -1670,6 +1664,7 @@ export function ImmersiveLessonPage({
   }, [currentSentenceIndex, lesson?.id]);
 
   useEffect(() => {
+    console.log("[DEBUG] useEffect 5: lesson change translation mask");
     if (prevLessonIdRef.current !== null && prevLessonIdRef.current !== lesson?.id) {
       if (translationMaskMetrics) {
         const centeredRect = buildDefaultTranslationMaskRect(translationMaskMetrics, {
@@ -1706,6 +1701,7 @@ export function ImmersiveLessonPage({
   }, []);
 
   useEffect(() => {
+    console.log("[DEBUG] useEffect 6: subtitle width measure");
     const currentSentence = lesson?.sentences?.[currentSentenceIndex];
     if (!currentSentence || !currentSentence.text_en || !translationMaskMetrics) return;
     if (translationMaskDraggingRef.current) return;
@@ -1757,6 +1753,7 @@ export function ImmersiveLessonPage({
   }, []);
 
   useEffect(() => {
+    console.log("[DEBUG] useEffect 4: translation mask metrics ref");
     translationMaskMetricsRef.current = translationMaskMetrics;
   }, [translationMaskMetrics]);
 
@@ -2239,6 +2236,7 @@ export function ImmersiveLessonPage({
   }, [learningSettings, lesson?.id, resetWordTyping, stopPlayback]);
 
   useEffect(() => {
+    console.log("[DEBUG] useEffect 3: media loading");
     if (!lesson) return;
     let canceled = false;
     let objectUrl = "";
