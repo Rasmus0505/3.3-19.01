@@ -1070,11 +1070,7 @@ export function ImmersiveLessonPage({
   const wordbookSuccessTimerRef = useRef(null);
   const audioRecorderRef = useRef(null);
 
-  // 讲解 Hook
-  const { showExplanation, setShowExplanation, currentExplanation, setCurrentExplanation, explanationAudioUrl, setExplanationAudioUrl, explanationAudioRef, playExplanationAudio, markExplanationViewed } = useExplanation({ currentSentence });
-
-  // CEFR Hook
-  const { cefrAnalysisStatus, setCefrAnalysisStatus, cefrVocabEngineTick, cefrLevel, currentSentenceCefrMap, cefrAnalyzerRef, lookupCefrLevelFromMap } = useCEFR({ lesson, currentSentenceIndex });
+  // 先从 sessionState 解构出 currentSentenceIndex（hook 依赖它）
   const {
     phase,
     currentSentenceIndex,
@@ -1089,6 +1085,15 @@ export function ImmersiveLessonPage({
     playbackRatePinned,
     selectedPlaybackRate,
   } = sessionState;
+
+  // currentSentence 必须在 hook 调用之前定义
+  const currentSentence = lesson?.sentences?.[currentSentenceIndex] || null;
+
+  // 讲解 Hook
+  const { showExplanation, setShowExplanation, currentExplanation, setCurrentExplanation, explanationAudioUrl, setExplanationAudioUrl, explanationAudioRef, playExplanationAudio, markExplanationViewed } = useExplanation({ currentSentence });
+
+  // CEFR Hook
+  const { cefrAnalysisStatus, setCefrAnalysisStatus, cefrVocabEngineTick, cefrLevel, currentSentenceCefrMap, cefrAnalyzerRef, lookupCefrLevelFromMap } = useCEFR({ lesson, currentSentenceIndex });
 
   const immersiveContainerRef = useRef(null);
   const immersiveMediaRef = useRef(null);
@@ -1284,7 +1289,6 @@ export function ImmersiveLessonPage({
     container.style.setProperty("--immersive-keyboard-offset", `${keyboardInset}px`);
   }, [isTouchDevice]);
 
-  const currentSentence = lesson?.sentences?.[currentSentenceIndex] || null;
   const currentLessonId = String(lesson?.id ?? "").trim();
   const previousSentence = currentSentenceIndex > 0 ? lesson?.sentences?.[currentSentenceIndex - 1] || null : null;
   const currentSentenceEn = currentSentence?.text_en || "(当前句英文暂缺)";
