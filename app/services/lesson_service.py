@@ -3367,7 +3367,7 @@ def process_sentences_with_cefr(
 
         if not words_above:
             # 没有超纲词，不需要讲解
-            sentence["cefr_vocab_json"] = {"words": [], "filter_result": {}}
+            sentence["cefr_vocab_json"] = {"words": [], "filter_result": {}, "llm_lemmas": llm_lemmas if all_words_above else {}}
             sentence["needs_explanation"] = False
             sentence["explanation_text"] = None
             sentence["simplified_sentence"] = None
@@ -3385,6 +3385,7 @@ def process_sentences_with_cefr(
             sentence["cefr_vocab_json"] = {
                 "words": words_above,
                 "filter_result": filter_result,
+                "llm_lemmas": llm_lemmas if all_words_above else {},
             }
             sentence["needs_explanation"] = False
             sentence["explanation_text"] = None
@@ -3423,6 +3424,7 @@ def process_sentences_with_cefr(
         sentence["cefr_vocab_json"] = {
             "words": words_above,
             "filter_result": filter_result,
+            "llm_lemmas": llm_lemmas if all_words_above else {},
         }
         sentence["needs_explanation"] = True
         sentence["explanation_text"] = explanation.get("listen_tips", "") or None

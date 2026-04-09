@@ -324,9 +324,12 @@ Return ONLY valid JSON, no explanations."""
                 if content.startswith("json"):
                     content = content[4:]
             content = content.strip()
-            return json.loads(content)
+            result = json.loads(content)
+            logger.info(f"[CEFR] LLM lemmatize called for {len(words)} words, returned {len(result)} lemmas: {result}")
+            return result
         except Exception as e:
             logger.error(f"LLM lemmatize failed: {e}")
+            logger.warning(f"LLM lemmatize fallback to original words for: {words}")
             # 失败时返回原始单词作为 lemma
             return {w: w for w in words}
 
