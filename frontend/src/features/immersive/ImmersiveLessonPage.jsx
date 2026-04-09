@@ -24,7 +24,6 @@ export * from "./immersiveTypes";
 
 import AudioRecorder from "../../shared/components/AudioRecorder";
 import SOEResultCard from "./SOEResultCard";
-import ExplanationPanel from "./ExplanationPanel";
 
 import { useAppStore } from "../../store";
 import { VocabAnalyzer } from "../../utils/vocabAnalyzer";
@@ -1065,7 +1064,19 @@ export function ImmersiveLessonPage({
   const currentSentence = lesson?.sentences?.[currentSentenceIndex] || null;
 
   // 讲解 Hook
-  const { showExplanation, setShowExplanation, currentExplanation, setCurrentExplanation, explanationAudioUrl, setExplanationAudioUrl, explanationAudioRef, playExplanationAudio, markExplanationViewed } = useExplanation({ currentSentence });
+  const {
+    showExplanation,
+    currentExplanation,
+    explanationAudioUrl,
+    explanationAudioRef,
+    isExplanationPlaying,
+    isExplanationPaused,
+    playExplanationAudio,
+    pauseExplanationAudio,
+    resumeExplanationAudio,
+    stopExplanationAudio,
+    markExplanationViewed,
+  } = useExplanation({ currentSentence });
 
   // CEFR Hook
   const { cefrAnalysisStatus, setCefrAnalysisStatus, cefrVocabEngineTick, cefrLevel, currentSentenceCefrMap, cefrAnalyzerRef } = useCEFR({ lesson, currentSentenceIndex });
@@ -2886,16 +2897,26 @@ export function ImmersiveLessonPage({
   );
 
   // ExplanationSidebarContent handlers (defined after replayCurrentSentence to avoid TDZ)
-  const handleReplay = useCallback(() => {
-    if (explanationAudioUrl) {
-      playExplanationAudio(explanationAudioUrl);
-      markExplanationViewed();
-      return;
-    }
-    if (replayCurrentSentence) {
-      replayCurrentSentence("sidebar_replay");
-    }
-  }, [explanationAudioUrl, markExplanationViewed, playExplanationAudio, replayCurrentSentence]);
+  const handlePlayExplanation = useCallback(() => {
+    if (!explanationAudioUrl) return;
+    void playExplanationAudio(explanationAudioUrl);
+    markExplanationViewed();
+  }, [explanationAudioUrl, markExplanationViewed, playExplanationAudio]);
+
+  const handlePauseExplanation = useCallback(() => {
+    pauseExplanationAudio();
+  }, [pauseExplanationAudio]);
+
+  const handleResumeExplanation = useCallback(() => {
+    void resumeExplanationAudio();
+    markExplanationViewed();
+  }, [markExplanationViewed, resumeExplanationAudio]);
+
+  const handleReplayExplanation = useCallback(() => {
+    if (!explanationAudioUrl) return;
+    void playExplanationAudio(explanationAudioUrl);
+    markExplanationViewed();
+  }, [explanationAudioUrl, markExplanationViewed, playExplanationAudio]);
 
   const handleStartPractice = useCallback(() => {
     handleStartPracticeFromExplanation();
@@ -2924,6 +2945,15 @@ export function ImmersiveLessonPage({
     },
     [currentSentence, currentSentenceIndex, learningSettings.shortcuts.replay_sentence, needsBinding, togglePausePlayback],
   );
+
+  useEffect(() => {
+    if (!showExplanation || !explanationAudioUrl) {
+      stopExplanationAudio({ resetPosition: true });
+      return;
+    }
+    void playExplanationAudio(explanationAudioUrl);
+    markExplanationViewed();
+  }, [explanationAudioUrl, markExplanationViewed, playExplanationAudio, showExplanation, stopExplanationAudio]);
 
   const speakPreviousSentenceTTS = (text, rate = 1.0) => {
     if (!window.speechSynthesis) return false;
@@ -3534,7 +3564,13 @@ export function ImmersiveLessonPage({
             sentence={currentSentence}
             explanation={showExplanation ? currentExplanation : null}
             audioUrl={showExplanation ? explanationAudioUrl : null}
-            onReplay={handleReplay}
+            audioRef={explanationAudioRef}
+            isAudioPlaying={isExplanationPlaying}
+            isAudioPaused={isExplanationPaused}
+            onPlayAudio={handlePlayExplanation}
+            onPauseAudio={handlePauseExplanation}
+            onResumeAudio={handleResumeExplanation}
+            onReplayAudio={handleReplayExplanation}
             onStartPractice={handleStartPractice}
           />
         </div>

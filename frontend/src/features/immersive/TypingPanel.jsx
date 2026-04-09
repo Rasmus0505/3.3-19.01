@@ -165,8 +165,7 @@ const TypingPanel = forwardRef(function TypingPanel(
     <div ref={ref} className="immersive-typing">
       <div className="immersive-typing__header">
         <div className="immersive-typing__header-copy">
-          <p className="immersive-typing__eyebrow">字幕拼写</p>
-          <h2 className="immersive-typing__title">第 {currentSentenceIndex + 1} / {sentenceCount} 句</h2>
+          <h2 className="immersive-typing__title">{currentSentenceIndex + 1} / {sentenceCount}</h2>
         </div>
         <div className="immersive-typing__status">
           {isPlaying ? <Badge variant="secondary">播放中</Badge> : null}
@@ -184,10 +183,7 @@ const TypingPanel = forwardRef(function TypingPanel(
         {showPreviousSentenceBlock && (
           <section className="immersive-sentence-card immersive-sentence-card--previous">
             <div className="immersive-sentence-card__header">
-              <div>
-                <p className="immersive-sentence-card__eyebrow">上一句</p>
-                <h3 className="immersive-sentence-card__title">已完成内容</h3>
-              </div>
+              <div className="immersive-sentence-card__marker" aria-hidden="true" />
               {canRenderInteractiveWordbook ? (
                 <div className="immersive-sentence-card__actions">
                   <Button
@@ -373,7 +369,6 @@ const TypingPanel = forwardRef(function TypingPanel(
                         }
                       }}
                     />
-                    <span className="immersive-sentence-card__footer-text">可对上一句进行跟读评分</span>
                   </div>
                 ) : null}
               </>
@@ -383,9 +378,8 @@ const TypingPanel = forwardRef(function TypingPanel(
 
         <section className="immersive-sentence-card immersive-sentence-card--current">
           <div className="immersive-sentence-card__header">
-            <div>
-              <p className="immersive-sentence-card__eyebrow">当前拼写句</p>
-              <h3 className="immersive-sentence-card__title">{currentSentence?.text_en ? "边听边拼写" : "当前句"}</h3>
+            <div className="immersive-sentence-card__meta">
+              <span className="immersive-sentence-card__index">#{currentSentenceIndex + 1}</span>
             </div>
             <Badge variant={sentenceTypingDone ? "secondary" : "outline"}>
               {sentenceTypingDone ? "已完成" : "输入中"}
@@ -409,19 +403,11 @@ const TypingPanel = forwardRef(function TypingPanel(
             <p className="immersive-sentence-card__translation immersive-sentence-card__translation--current">
               {currentSentence.text_zh}
             </p>
-          ) : (
-            <p className="immersive-sentence-card__hint">用户打多少显示多少，完成后显示中文翻译。</p>
-          )}
+          ) : null}
         </section>
 
         {nextSentence ? (
-          <section className="immersive-sentence-card immersive-sentence-card--next">
-            <div className="immersive-sentence-card__header">
-              <div>
-                <p className="immersive-sentence-card__eyebrow">下一句</p>
-                <h3 className="immersive-sentence-card__title">仅预告轮廓</h3>
-              </div>
-            </div>
+          <section className="immersive-sentence-card immersive-sentence-card--next" aria-label="下一句预览">
             <div className="immersive-sentence-card__text immersive-sentence-card__text--next">
               {textToUnderscores(nextSentence.text_en)}
             </div>
@@ -430,13 +416,13 @@ const TypingPanel = forwardRef(function TypingPanel(
       </div>
 
       <p className="immersive-keyboard-hint text-xs text-muted-foreground">
-        快捷键按历史页顶部配置生效：{getShortcutLabel(learningSettings.shortcuts.reveal_letter)} 揭示字母，
-        {getShortcutLabel(learningSettings.shortcuts.reveal_word)} 揭示单词，
-        {getShortcutLabel(learningSettings.shortcuts.previous_sentence)} 上一句，
-        {getShortcutLabel(learningSettings.shortcuts.next_sentence)} 下一句，
-        {getShortcutLabel(learningSettings.shortcuts.replay_sentence)} 重播，
-        {getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)} 播放，
-        {getShortcutLabel(learningSettings.shortcuts.record_score)} 录音评分。
+        {getShortcutLabel(learningSettings.shortcuts.reveal_letter)} 字母 ·
+        {" "}{getShortcutLabel(learningSettings.shortcuts.reveal_word)} 单词 ·
+        {" "}{getShortcutLabel(learningSettings.shortcuts.previous_sentence)} 上一句 ·
+        {" "}{getShortcutLabel(learningSettings.shortcuts.next_sentence)} 下一句 ·
+        {" "}{getShortcutLabel(learningSettings.shortcuts.replay_sentence)} 重播 ·
+        {" "}{getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)} 播放 ·
+        {" "}{getShortcutLabel(learningSettings.shortcuts.record_score)} 评分
       </p>
 
       {phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}

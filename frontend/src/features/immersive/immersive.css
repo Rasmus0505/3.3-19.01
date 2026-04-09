@@ -1378,21 +1378,13 @@ input[type="number"] {
 
 .immersive-typing__header-copy {
   display: grid;
-  gap: 4px;
-}
-
-.immersive-typing__eyebrow {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-muted-foreground);
+  gap: 2px;
 }
 
 .immersive-typing__title {
   margin: 0;
-  font-size: clamp(1.15rem, 1.6vw, 1.4rem);
+  font-size: clamp(1rem, 1.35vw, 1.2rem);
+  font-weight: 650;
   line-height: 1.15;
 }
 
@@ -1419,14 +1411,14 @@ input[type="number"] {
 
 .immersive-sentence-stack {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .immersive-sentence-card {
   display: grid;
-  gap: 14px;
-  padding: 18px 18px 16px;
-  border-radius: 22px;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 18px;
   border: 1px solid color-mix(in oklch, var(--color-border) 80%, transparent);
   background: color-mix(in oklch, var(--color-card) 92%, white 8%);
 }
@@ -1446,25 +1438,45 @@ input[type="number"] {
 
 .immersive-sentence-card__header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.immersive-sentence-card__eyebrow {
-  margin: 0 0 4px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.immersive-sentence-card__meta {
+  display: flex;
+  align-items: center;
+}
+
+.immersive-sentence-card__index,
+.immersive-sentence-card__marker {
+  display: inline-flex;
+  align-items: center;
   color: var(--color-muted-foreground);
 }
 
-.immersive-sentence-card__title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 650;
-  color: var(--color-foreground);
+.immersive-sentence-card__index {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.immersive-sentence-card__marker {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-primary) 22%, var(--color-border));
+}
+
+.immersive-sentence-card__footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.immersive-sentence-card__feedback {
+  font-size: 12px;
+  color: var(--color-muted-foreground);
 }
 
 .immersive-sentence-card__actions {
@@ -1474,8 +1486,8 @@ input[type="number"] {
 }
 
 .immersive-sentence-card__text {
-  font-size: 1.02rem;
-  line-height: 1.75;
+  font-size: 1rem;
+  line-height: 1.65;
   color: var(--color-foreground);
 }
 
@@ -1487,31 +1499,13 @@ input[type="number"] {
 
 .immersive-sentence-card__translation {
   margin: 0;
-  font-size: 0.94rem;
-  line-height: 1.7;
+  font-size: 0.92rem;
+  line-height: 1.58;
   color: var(--color-muted-foreground);
 }
 
 .immersive-sentence-card__translation--current {
   color: color-mix(in oklch, var(--color-foreground) 86%, var(--color-muted-foreground));
-}
-
-.immersive-sentence-card__hint {
-  margin: 0;
-  font-size: 12px;
-  color: var(--color-muted-foreground);
-}
-
-.immersive-sentence-card__footer {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.immersive-sentence-card__footer-text,
-.immersive-sentence-card__feedback {
-  font-size: 12px;
-  color: var(--color-muted-foreground);
 }
 
 .immersive-sentence-card__token-row {
@@ -1528,8 +1522,8 @@ input[type="number"] {
 }
 
 .immersive-word-row-frame--spotlight {
-  padding: 18px 18px 16px;
-  border-radius: 18px;
+  padding: 12px 14px;
+  border-radius: 14px;
   border: 1px solid color-mix(in oklch, var(--color-border) 76%, white 24%);
   background: rgba(255, 255, 255, 0.82);
 }
@@ -1569,78 +1563,72 @@ input[type="number"] {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 22px;
-}
-
-.immersive-explanation-panel__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
   gap: 12px;
-}
-
-.immersive-explanation-panel__eyebrow {
-  margin: 0 0 4px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-muted-foreground);
-}
-
-.immersive-explanation-panel__title {
-  margin: 0;
-  font-size: 1.15rem;
-  line-height: 1.15;
+  padding: 16px;
 }
 
 .immersive-explanation-panel__sentence {
   margin: 0;
-  padding: 12px 14px;
-  border-radius: 16px;
+  padding: 10px 12px;
+  border-radius: 14px;
   background: color-mix(in oklch, var(--color-muted) 42%, white 58%);
   color: var(--color-foreground);
-  font-size: 0.95rem;
-  line-height: 1.65;
+  font-size: 0.93rem;
+  line-height: 1.55;
+}
+
+.immersive-explanation-panel__controls {
+  display: flex;
+  gap: 8px;
 }
 
 .immersive-explanation-panel__body {
   flex: 1;
   overflow-y: auto;
   display: grid;
-  gap: 14px;
+  gap: 10px;
   padding-right: 4px;
-}
-
-.immersive-explanation-panel__section {
-  display: grid;
-  gap: 8px;
-}
-
-.immersive-explanation-panel__section-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--color-muted-foreground);
 }
 
 .immersive-explanation-panel__surface,
 .immersive-explanation-panel__list-item,
 .immersive-explanation-panel__empty {
-  padding: 14px 16px;
-  border-radius: 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
   border: 1px solid color-mix(in oklch, var(--color-border) 78%, transparent);
   background: color-mix(in oklch, var(--color-card) 92%, white 8%);
+}
+
+.immersive-explanation-panel__surface {
+  display: grid;
+  gap: 8px;
+}
+
+.immersive-explanation-panel__surface--summary {
+  grid-template-columns: auto 1fr;
+  align-items: flex-start;
+}
+
+.immersive-explanation-panel__surface--tip {
+  background: color-mix(in oklch, var(--color-muted) 34%, white 66%);
+}
+
+.immersive-explanation-panel__surface-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-primary) 10%, white 90%);
+  color: var(--color-primary);
 }
 
 .immersive-explanation-panel__surface p,
 .immersive-explanation-panel__empty {
   margin: 0;
-  font-size: 0.94rem;
-  line-height: 1.7;
+  font-size: 0.92rem;
+  line-height: 1.58;
   color: var(--color-foreground);
 }
 
@@ -1654,21 +1642,33 @@ input[type="number"] {
   align-items: flex-start;
   gap: 10px;
   font-size: 0.92rem;
-  line-height: 1.6;
+  line-height: 1.55;
+}
+
+.immersive-explanation-panel__term {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-primary) 8%, white 92%);
+  color: var(--color-foreground);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .immersive-explanation-panel__example {
-  margin: 10px 0 0;
-  padding-left: 42px;
+  margin: 8px 0 0;
+  padding-left: 46px;
   font-size: 12px;
   color: var(--color-muted-foreground);
 }
 
 .immersive-explanation-panel__footer {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   margin-top: auto;
-  padding-top: 4px;
+  padding-top: 2px;
 }
 
 .immersive-typing__loading-badge {
