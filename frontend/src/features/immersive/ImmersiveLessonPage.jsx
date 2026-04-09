@@ -20,6 +20,7 @@ export * from "./immersiveTypes";
 import AudioRecorder from "../../shared/components/AudioRecorder";
 import SOEResultCard from "./SOEResultCard";
 import ExplanationPanel from "./ExplanationPanel";
+import ExplanationSidebarContent from "./ExplanationSidebarContent";
 
 import { useAppStore } from "../../store";
 import { VocabAnalyzer } from "../../utils/vocabAnalyzer";
@@ -4082,20 +4083,6 @@ export function ImmersiveLessonPage({
 
           </div>
 
-          {/* 添加隐藏的音频元素用于讲解 */}
-          <audio ref={explanationAudioRef} />
-
-          {/* 讲解面板 - 仅当需要讲解且有数据时显示 */}
-          {showExplanation && currentExplanation && (
-            <ExplanationPanel
-              sentence={currentSentence?.text_en}
-              explanation={currentExplanation}
-              audioUrl={explanationAudioUrl}
-              onReplay={() => playExplanationAudio(explanationAudioUrl)}
-              onStartPractice={handleStartPracticeFromExplanation}
-            />
-          )}
-
           {!immersiveActive ? (
             <div className="rounded-2xl border border-dashed bg-muted/15 px-6 py-8 text-sm text-muted-foreground">
               请先在历史记录页顶部配置学习参数，再从课程卡片进入学习。
@@ -4598,16 +4585,26 @@ export function ImmersiveLessonPage({
           </div>
         }
         leftSidebarTitle="AI 老师"
-        rightSidebarTitle="AI 陪看"
+        rightSidebarTitle="听力讲解"
         leftSidebarContent={
           <div className="ai-sidebar-placeholder">
             <p className="text-sm text-muted-foreground">AI 老师功能开发中...</p>
           </div>
         }
         rightSidebarContent={
-          <div className="ai-sidebar-placeholder">
-            <p className="text-sm text-muted-foreground">AI 陪看功能开发中...</p>
-          </div>
+          showExplanation && currentExplanation ? (
+            <ExplanationSidebarContent
+              sentence={currentSentence?.text_en}
+              explanation={currentExplanation}
+              audioUrl={explanationAudioUrl}
+              onReplay={() => playExplanationAudio(explanationAudioUrl)}
+              onStartPractice={handleStartPracticeFromExplanation}
+            />
+          ) : (
+            <div className="ai-sidebar-placeholder">
+              <p className="text-sm text-muted-foreground">暂无讲解内容</p>
+            </div>
+          )
         }
       />
   );
