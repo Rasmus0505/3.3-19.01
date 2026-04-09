@@ -211,10 +211,8 @@
   border: 1px solid var(--color-border);
   background: var(--color-card);
   padding: 16px 0 !important;
-  margin-left: -24px;
-  margin-right: -24px;
-  width: calc(100% + 48px) !important;
   box-sizing: border-box;
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -939,6 +937,11 @@
   z-index: 3;
   padding: max(16px, env(safe-area-inset-top)) 20px 0;
   color: rgba(255, 255, 255, 0.92);
+}
+
+/* 默认模式下的 CardContent padding 设为 0，让 immersive-typing 占满宽度 */
+.immersive-card-content {
+  padding: 0 !important;
 }
 
 .immersive-page--cinema .immersive-card-content {
