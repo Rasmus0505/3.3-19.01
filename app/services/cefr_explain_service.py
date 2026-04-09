@@ -369,20 +369,22 @@ Return ONLY valid JSON, no explanations."""
                 lemma = self._lemmatize(word)
 
             # 尝试查询原型词等级（先直接查，再尝试非标准缩写还原）
+            # 注意：word_map 的 key 是小写，需要 lower() 后再查
             lemma_level = None
             word_map = self.vocab_data.get("words", {})
+            lemma_lower = lemma.lower()
 
-            if lemma in word_map:
-                lemma_level = word_map[lemma].get("level")
+            if lemma_lower in word_map:
+                lemma_level = word_map[lemma_lower].get("level")
             else:
-                # 原型词查不到，尝试非标准缩写
-                nonstandard = self._normalize_nonstandard_contraction(lemma)
+                # 原型词查不到，尝试非标准缩写（也需要小写）
+                nonstandard = self._normalize_nonstandard_contraction(lemma_lower)
                 if nonstandard and nonstandard in word_map:
                     lemma_level = word_map[nonstandard].get("level")
 
-            # 如果原型词查不到，标记为 SUPER
+            # 如果原型词查不到，回退到 surface_level；也没有则标记为 SUPER
             if lemma_level is None:
-                lemma_level = "SUPER"
+                lemma_level = surface_level if surface_level else "SUPER"
 
             lemma_level_num = self._level_num(lemma_level)
 
