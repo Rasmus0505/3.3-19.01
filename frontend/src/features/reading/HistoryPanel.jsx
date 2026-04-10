@@ -101,6 +101,21 @@ function getPreview(text) {
   return firstLine.length > 60 ? firstLine.slice(0, 60) + "…" : firstLine;
 }
 
+/**
+ * 根据 sourceMetadata.type 返回简短标签��字
+ * D-11: 小图标 + 文字标签
+ */
+function getSourceLabel(sourceMetadata) {
+  if (!sourceMetadata) return null;
+  switch (sourceMetadata.type) {
+    case "url": return "🔗 网页";
+    case "pdf": return "📄 PDF";
+    case "subtitle": return "🎬 字幕";
+    case "ocr": return "📷 OCR";
+    default: return null;
+  }
+}
+
 function formatTime(ts) {
   if (!ts) return "";
   const d = new Date(ts);
@@ -239,6 +254,7 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
                         : null;
                   const targetLabel = rewriteMeta?.diagnosticSnapshot?.selectedTargetLevel || null;
                   const difficultyLabel = rewriteMeta?.diagnosticSnapshot?.materialDifficulty || null;
+                  const sourceLabel = getSourceLabel(record.sourceMetadata);
 
                   return (
                     <button
@@ -253,8 +269,13 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
                     <Sparkles className="history-panel__item-sparkle size-3.5 shrink-0" />
                       )}
                       <span className="history-panel__item-preview">{getPreview(record.text)}</span>
-                      {statusLabel || targetLabel || difficultyLabel ? (
+                      {statusLabel || targetLabel || difficultyLabel || sourceLabel ? (
                         <div className="history-panel__item-badges">
+                          {sourceLabel ? (
+                            <span className="history-panel__item-badge history-panel__item-badge--source">
+                              {sourceLabel}
+                            </span>
+                          ) : null}
                           {statusLabel ? (
                             <span
                               className={cn(

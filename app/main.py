@@ -27,6 +27,7 @@ from app.api.routers.billing.wallet import router as wallet_router
 from app.api.routers.dashscope_upload import router as dashscope_upload_router
 from app.api.routers.lessons.cloud_transcribe import router as cloud_transcribe_router
 from app.api.routers.lessons.router import router as lessons_router
+from app.api.routers.extract import router as extract_router
 from app.api.routers.llm import router as llm_router
 from app.api.routers.media import router as media_router
 from app.api.routers.practice import router as practice_router
@@ -753,6 +754,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(soe_router)
     app.include_router(announcement_public_router)
     app.include_router(llm_router)
+    app.include_router(extract_router)
     app.include_router(voice_cloning_router)
     app.include_router(tts_router)
 

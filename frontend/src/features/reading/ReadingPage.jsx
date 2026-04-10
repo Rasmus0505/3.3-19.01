@@ -307,7 +307,7 @@ export function ReadingPage({ accessToken, apiCall }) {
     userLevel,
   ]);
 
-  const handleArticleSubmit = useCallback(async (text) => {
+  const handleArticleSubmit = useCallback(async (text, sourceMetadata = { type: "text" }) => {
     const id = crypto.randomUUID();
     setActiveArticleText(text);
     setActiveHistoryId(id);
@@ -320,6 +320,7 @@ export function ReadingPage({ accessToken, apiCall }) {
         id,
         text,
         read_at: Date.now(),
+        sourceMetadata,
       });
     } catch (error) {
       console.error("Failed to save history:", error);
@@ -588,6 +589,7 @@ export function ReadingPage({ accessToken, apiCall }) {
               viewMode={viewMode}
               isRewriting={isRewriting}
               rewriteError={rewriteError}
+              accessToken={accessToken}
             />
           </div>
         ) : null}
