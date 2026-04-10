@@ -20,60 +20,58 @@ logger = logging.getLogger(__name__)
 # CEFR 等级数值用于比较
 CEFR_LEVEL_NUM = {"A1": 1, "A2": 2, "B1": 3, "B2": 4, "C1": 5, "C2": 6, "SUPER": 7}
 
-EXPLAIN_SENTENCE_SYSTEM_PROMPT = """You are an English Listening Coach specializing in spoken English recognition for Chinese EFL learners.
+EXPLAIN_SENTENCE_SYSTEM_PROMPT = """你是一位英语词汇教学专家,专门为中国英语学习者讲解生词。
 
-## Your Role
+## 你的角色
 
-You help learners understand natural spoken English by explaining:
-1. Why certain words/phrases are difficult to hear
-2. How native speakers actually pronounce them (linking, reduction, assimilation)
-3. Practical tips for recognizing them in real-time listening
+帮助学习者理解句子中的高级词汇:
+1. 词汇的核心含义
+2. 在当前句子中的具体用法
+3. 常见搭配和使用场景
 
-## Input You Receive
+## 输入信息
 
-- sentence: The original sentence (keep unchanged, for reference only)
-- target_level: The learner's CEFR target level (e.g., B1)
-- words_above: Words in the sentence that are above target_level
+- sentence: 原句(保持不变,仅供参考)
+- target_level: 学习者的 CEFR 目标等级(如 B1)
+- words_above: 句子中远超目标等级的词汇(i+2 及以上)
 
-## Your Task
+## 你的任务
 
-For each word in words_above, generate an explanation with these fields:
+为 words_above 中的每个词生成简洁的讲解,包含以下字段:
 
-1. **word** - The original word/phrase
-2. **phonetic_real** - How native speakers actually say it (IPA), in Chinese explanation
-3. **why_hard** - Why Chinese learners can't hear it (focus on pronunciation challenges)
-4. **recognition_tip** - Actionable technique to spot it when listening
+1. **word** - 原词/短语
+2. **meaning** - 核心中文释义(1-2 个常用义项)
+3. **usage_in_sentence** - 在当前句子中的具体含义和用法
+4. **common_collocations** - 2-3 个常见搭配(可选)
 
-## Quality Standards
+## 质量标准
 
-- Explanations must be in Chinese (for Chinese learners)
-- Focus on SPOKEN English patterns, not written
-- Every tip must be actionable ("when you hear X, think Y")
-- If a word has common linking patterns, always mention them
-- Keep explanations concise but specific
+- 讲解必须用中文
+- 重点是词义和用法,不涉及发音
+- 每个词的讲解控制在 50 字以内
+- 如果超过 3 个词,只选最重要的 3 个
 
-## Output Format
+## 输出格式
 
-Return ONLY valid JSON:
+只返回有效的 JSON:
 {
-    "word_explanations": [
+    "key_explanations": [
         {
-            "word": "get together",
-            "phonetic_real": "连读成 /ɡɛɾəˈɡɛðɚ/，'get'的t失爆，'to'弱读成/ə/",
-            "why_hard": "'get'的t在连读时失爆，'to'弱读成/ə/，三个词几乎变成一个音节",
-            "recognition_tip": "听到快速的/ɡɛɾə/后跟'ɡɛðɚ'，中间的停顿感就是分解点"
+            "word": "peruse",
+            "meaning": "仔细阅读,审阅",
+            "usage_in_sentence": "在这里表示'仔细查看菜单'",
+            "common_collocations": "peruse a document, peruse the menu"
         }
     ],
-    "sentence_tip": "这句话的关键是抓住实义词'get together'和'football'，其他都是填充词"
+    "sentence_summary": "这句话的核心是描述在餐厅仔细看菜单的场景"
 }
 
-## Rules
+## 规则
 
-1. 原句保持不变，只用于参考
-2. 每个单词解释都要包含 why_hard 和 recognition_tip
-3. 如果某词有连读/弱读，必须标注具体音变
-4. 如果超过5个词，只选最难的前5个
-5. Return ONLY valid JSON, no explanations outside the JSON"""
+1. 原句保持不变,只用于理解上下文
+2. 每个词的讲解要简洁实用
+3. 如果某词有多个义项,只讲当前句子中的含义
+4. 只返回有效的 JSON,不要有其他解释"""
 
 # 不规则词形还原映射表（复用 vocabAnalyzer.js 的逻辑）
 IRREGULAR_LEMMAS: dict[str, str] = {
@@ -502,17 +500,12 @@ Return ONLY valid JSON, no explanations."""
         words_list = [w["word"] for w in words_above]
         words_str = ", ".join(words_list)
 
-        user_prompt = f"""Sentence: {sentence}
+        user_prompt = f"""句子: {sentence}
 
-Target level: {self.target_level}
-Words above {self.target_level} level: {words_str}
+目标等级: {self.target_level}
+需要讲解的词汇: {words_str}
 
-Please generate detailed explanations for each word, focusing on:
-1. Why it's difficult to recognize in spoken English
-2. Specific pronunciation patterns (linking, reduction, assimilation)
-3. Practical tips for identifying it when listening
-
-Generate the explanation in the required JSON format."""
+请为每个词生成简洁的词义和用法讲解,按照要求的 JSON 格式返回。"""
 
         messages = [
             {"role": "system", "content": EXPLAIN_SENTENCE_SYSTEM_PROMPT},
@@ -547,58 +540,55 @@ Generate the explanation in the required JSON format."""
                 "simplified_sentence": None,
                 "key_explanations": [
                     {
-                        "word": w["word"],
-                        "phonetic_real": "",
-                        "why_hard": "高水平词汇",
-                        "recognition_tip": "集中注意这个词的整体声音"
+                        "original_word": w["word"],
+                        "explanation": "释义: 高级词汇 | 用法: 建议查词典了解详细含义",
                     }
                     for w in words_above
                 ],
-                "listen_tips": "集中注意句子中的实义词"
+                "listen_tips": "句子中包含高级词汇,建议重点理解这些词的含义"
             }
 
     def _convert_to_new_format(self, llm_result: dict, sentence: str) -> dict:
         """
-        将 LLM 返回的新格式转换为旧格式以保持兼容性。
+        将 LLM 返回的词义讲解格式转换为存储格式。
 
-        LLM 新格式 (word_explanations):
+        LLM 格式:
         {
-            "word_explanations": [
-                {"word": "...", "phonetic_real": "...", "why_hard": "...", "recognition_tip": "..."}
+            "key_explanations": [
+                {"word": "...", "meaning": "...", "usage_in_sentence": "...", "common_collocations": "..."}
             ],
-            "sentence_tip": "..."
+            "sentence_summary": "..."
         }
 
-        返回兼容旧格式:
+        返回存储格式:
         {
             "simplified_sentence": None,
-            "key_explanations": [...],
+            "key_explanations": [{"original_word": "...", "explanation": "..."}],
             "listen_tips": "..."
         }
         """
-        word_explanations = llm_result.get("word_explanations", [])
-        sentence_tip = llm_result.get("sentence_tip", "")
+        raw_explanations = llm_result.get("key_explanations", [])
+        sentence_summary = llm_result.get("sentence_summary", "")
 
-        # 转换为旧格式
         key_explanations = []
-        for exp in word_explanations:
-            # 新格式: word, phonetic_real, why_hard, recognition_tip
-            # 旧格式: original_word, explanation (合并多个字段)
-            combined_explanation = f"【音标】{exp.get('phonetic_real', '')}"
-            if exp.get('why_hard'):
-                combined_explanation += f"\n【听力难点】{exp.get('why_hard', '')}"
-            if exp.get('recognition_tip'):
-                combined_explanation += f"\n【识别技巧】{exp.get('recognition_tip', '')}"
+        for item in raw_explanations:
+            parts = []
+            if item.get("meaning"):
+                parts.append(f"释义: {item['meaning']}")
+            if item.get("usage_in_sentence"):
+                parts.append(f"用法: {item['usage_in_sentence']}")
+            if item.get("common_collocations"):
+                parts.append(f"搭配: {item['common_collocations']}")
 
             key_explanations.append({
-                "original_word": exp.get("word", ""),
-                "explanation": combined_explanation,
+                "original_word": item.get("word", ""),
+                "explanation": " | ".join(parts),
             })
 
         return {
-            "simplified_sentence": None,  # 不再生成简化句
+            "simplified_sentence": None,
             "key_explanations": key_explanations,
-            "listen_tips": sentence_tip or ""
+            "listen_tips": sentence_summary or "",
         }
 
     # 系统音色默认值（qwen3-tts-flash 模型支持）

@@ -92,10 +92,8 @@ def process_sentences_with_cefr(
             continue
 
         filter_result = service.filter_words_by_level(words_above, llm_lemmas=llm_lemmas)
-        explanation_words = [
-            *list(filter_result.get("valid_i1_words") or []),
-            *list(filter_result.get("valid_above_i1_words") or []),
-        ]
+        # 只讲解 i+2 及以上的词汇,不讲解 i+1 词汇
+        explanation_words = list(filter_result.get("valid_above_i1_words") or [])
 
         if not explanation_words:
             sentence["cefr_vocab_json"] = {
@@ -121,20 +119,6 @@ def process_sentences_with_cefr(
                 "listen_tips": "",
             }
 
-        explanation_text = explanation.get("listen_tips", "") or ""
-        if explanation.get("key_explanations"):
-            explanation_text += "\n\n" + "\n".join(
-                f"- {item.get('original_word', '')}: {item.get('explanation', '')}"
-                for item in explanation.get("key_explanations", [])
-            )
-
-        audio_url = ""
-        if explanation_text:
-            try:
-                audio_url = service.synthesize_explanation_audio(explanation_text)
-            except Exception:
-                audio_url = ""
-
         sentence["cefr_vocab_json"] = {
             "words": words_above,
             "filter_result": filter_result,
@@ -144,7 +128,7 @@ def process_sentences_with_cefr(
         sentence["needs_explanation"] = True
         sentence["explanation_text"] = explanation.get("listen_tips", "") or None
         sentence["simplified_sentence"] = None
-        sentence["explanation_audio_url"] = audio_url or None
+        sentence["explanation_audio_url"] = None
         sentence["key_explanations_json"] = explanation.get("key_explanations") or None
         enriched_sentences.append(sentence)
 
