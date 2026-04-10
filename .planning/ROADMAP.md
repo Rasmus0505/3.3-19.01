@@ -19,7 +19,7 @@
 
 ### 🚧 v3.0 Unlock Anything
 
-- [ ] **Phase 38: Brand Rename** — Replace all "Bottle" user-visible surfaces with "Unlock" branding
+- [x] **Phase 38: Brand Rename** — Replace all "Bottle" user-visible surfaces with "Unlock" branding (completed 2026-04-10)
 - [ ] **Phase 39: Multi-Modal Input Pipeline** — Add webpage, PDF, subtitle, and OCR input sources into the reading pipeline
 - [ ] **Phase 40: Reading Pack Completion** — Finish vocab panel, wordbook collection, history reopen, and next-step actions in the reading pack
 - [ ] **Phase 41: Quiz Generation** — LLM-powered comprehension quizzes generated from reading pack content
@@ -133,7 +133,7 @@ Phases execute in numeric order: 38 → 39 → 40 → 41/42/43 (parallel-eligibl
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|---------------|--------|-----------|
-| 38. Brand Rename | v3.0 | 0/? | Not started | - |
+| 38. Brand Rename | v3.0 | 1/2 | Complete    | 2026-04-10 |
 | 39. Multi-Modal Input Pipeline | v3.0 | 0/? | Not started | - |
 | 40. Reading Pack Completion | v3.0 | 0/? | Not started | - |
 | 41. Quiz Generation | v3.0 | 0/? | Not started | - |
