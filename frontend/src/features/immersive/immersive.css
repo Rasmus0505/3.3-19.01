@@ -1790,6 +1790,7 @@ input[type="number"] {
   grid-column: 1 / -1;
   grid-row: 2;
   overflow: hidden;
+  max-height: min(42vh, 420px);
 }
 
 .immersive-layout__backdrop {
@@ -1843,6 +1844,34 @@ input[type="number"] {
   min-width: 0;
   display: grid;
   gap: 4px;
+}
+
+.immersive-stage__progress {
+  display: grid;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.immersive-stage__progress-track {
+  position: relative;
+  width: min(280px, 100%);
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-muted) 70%, white 30%);
+}
+
+.immersive-stage__progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in oklch, var(--color-primary) 72%, white 28%), color-mix(in oklch, var(--color-primary) 54%, black 4%));
+  box-shadow: 0 0 16px color-mix(in oklch, var(--color-primary) 22%, transparent);
+}
+
+.immersive-stage__progress-text {
+  font-size: 12px;
+  color: var(--color-muted-foreground);
 }
 
 .immersive-stage__eyebrow {
@@ -1983,6 +2012,12 @@ input[type="number"] {
   padding: 20px 22px;
 }
 
+.immersive-stage__focus--completed {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-primary) 12%, transparent),
+    0 24px 48px rgba(15, 23, 42, 0.08);
+}
+
 .immersive-stage__focus-label {
   font-size: 12px;
   font-weight: 700;
@@ -2003,6 +2038,25 @@ input[type="number"] {
   margin: 0;
   font-size: 0.95rem;
   line-height: 1.65;
+  color: var(--color-muted-foreground);
+}
+
+.immersive-stage__focus-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.immersive-stage__focus-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-card) 86%, var(--color-muted) 14%);
+  border: 1px solid color-mix(in oklch, var(--color-border) 82%, transparent);
+  font-size: 12px;
   color: var(--color-muted-foreground);
 }
 
@@ -2051,6 +2105,12 @@ input[type="number"] {
   font-size: 0.94rem;
   line-height: 1.6;
   color: var(--color-foreground);
+}
+
+.immersive-stage__preview-subtext {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--color-muted-foreground);
 }
 
 .immersive-typing--dock {
@@ -2200,6 +2260,24 @@ input[type="number"] {
   font-size: 1rem;
   line-height: 1.65;
   color: var(--color-foreground);
+}
+
+.immersive-sentence-card__dock-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.immersive-sentence-card__dock-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-primary) 8%, white 92%);
+  color: color-mix(in oklch, var(--color-primary) 56%, black 20%);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .immersive-sentence-card__helper {
@@ -2561,6 +2639,25 @@ input[type="number"] {
     border-radius: 20px;
   }
 
+  .immersive-layout__bottom {
+    max-height: none;
+  }
+
+  .immersive-layout__side {
+    top: auto;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+    max-height: min(76vh, calc(var(--immersive-visual-viewport-height) - 24px));
+    transform: translateY(calc(100% + 24px));
+    border-radius: 24px;
+  }
+
+  .immersive-layout--side-open .immersive-layout__side {
+    transform: translateY(0);
+  }
+
   .immersive-stage__toolbar-pill {
     justify-content: flex-start;
   }
@@ -2582,6 +2679,11 @@ input[type="number"] {
   .immersive-explanation-panel__footer {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .immersive-stage__focus-pills,
+  .immersive-sentence-card__dock-badges {
+    gap: 6px;
   }
 
   .immersive-typing__loading-badge {

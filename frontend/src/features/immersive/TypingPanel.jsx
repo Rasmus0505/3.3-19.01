@@ -210,6 +210,10 @@ const TypingPanel = forwardRef(function TypingPanel(
                 ? currentSentence?.text_en || "本句已完成"
                 : "听清这一句，然后直接在这里把它拼出来。"}
             </div>
+            <div className="immersive-sentence-card__dock-badges">
+              <span className="immersive-sentence-card__dock-badge">专注当前句</span>
+              <span className="immersive-sentence-card__dock-badge">完成后显示讲解</span>
+            </div>
             <div ref={wordRowFrameRef} className="immersive-word-row-frame immersive-word-row-frame--spotlight">
               {renderWordSlots({
                 expectedTokens,

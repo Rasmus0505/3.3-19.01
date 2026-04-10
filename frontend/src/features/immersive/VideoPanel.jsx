@@ -24,6 +24,13 @@ function buildNextSentencePreview(nextSentence) {
     .join("");
 }
 
+function buildSentenceProgressLabel(currentSentenceIndex, sentenceCount) {
+  const total = Math.max(1, Number(sentenceCount || 0));
+  const current = Math.min(total, Math.max(1, Number(currentSentenceIndex || 0) + 1));
+  const percent = Math.round((current / total) * 100);
+  return { current, total, percent };
+}
+
 const VideoPanel = forwardRef(function VideoPanel(
   {
     immersiveActive,
@@ -82,6 +89,7 @@ const VideoPanel = forwardRef(function VideoPanel(
   },
   ref,
 ) {
+  const { percent: progressPercent } = buildSentenceProgressLabel(currentSentenceIndex, sentenceCount);
   const mediaTypeLabel = mediaMode === "video" ? "视频模式" : mediaMode === "audio" ? "音频模式" : "逐句音频";
   const currentSentenceText = currentSentence?.text_en || "";
   const currentSentenceTranslation = currentSentence?.text_zh || "";
@@ -111,6 +119,15 @@ const VideoPanel = forwardRef(function VideoPanel(
                 <div className="immersive-stage__copy">
                   <p className="immersive-stage__eyebrow">Annie Immersive</p>
                   <h1 className="immersive-stage__title">{lessonTitle || "课程视频"}</h1>
+                  <div className="immersive-stage__progress">
+                    <div className="immersive-stage__progress-track" aria-hidden="true">
+                      <span
+                        className="immersive-stage__progress-fill"
+                        style={{ width: `${progressPercent}%` }}
+                      />
+                    </div>
+                    <span className="immersive-stage__progress-text">学习进度 {progressPercent}%</span>
+                  </div>
                 </div>
               </div>
               <div className="immersive-stage__meta">
@@ -126,7 +143,7 @@ const VideoPanel = forwardRef(function VideoPanel(
                   aria-pressed={explanationOpen}
                 >
                   {explanationOpen ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
-                  {explanationAvailable ? "讲解抽屉" : "讲解待解锁"}
+                  {explanationOpen ? "收起讲解" : explanationAvailable ? "打开讲解" : "讲解待解锁"}
                 </button>
               </div>
             </div>
@@ -345,10 +362,15 @@ const VideoPanel = forwardRef(function VideoPanel(
             </div>
 
             <div className="immersive-stage__narrative">
-              <div className="immersive-stage__focus">
+              <div className={`immersive-stage__focus ${sentenceTypingDone ? "immersive-stage__focus--completed" : ""}`}>
                 <span className="immersive-stage__focus-label">当前任务</span>
                 <h2 className="immersive-stage__focus-headline">{focusHeadline}</h2>
                 <p className="immersive-stage__focus-support">{focusSupport}</p>
+                <div className="immersive-stage__focus-pills">
+                  <span className="immersive-stage__focus-pill">主舞台听句子</span>
+                  <span className="immersive-stage__focus-pill">底部 Dock 输入</span>
+                  <span className="immersive-stage__focus-pill">右侧 Drawer 复盘</span>
+                </div>
               </div>
               <div className="immersive-stage__preview-grid">
                 <button
@@ -361,6 +383,9 @@ const VideoPanel = forwardRef(function VideoPanel(
                   <span className="immersive-stage__preview-text">
                     {previousSentence?.text_en || "还没有上一句"}
                   </span>
+                  {previousSentence?.text_zh ? (
+                    <span className="immersive-stage__preview-subtext">{previousSentence.text_zh}</span>
+                  ) : null}
                 </button>
                 <button
                   type="button"
@@ -370,6 +395,7 @@ const VideoPanel = forwardRef(function VideoPanel(
                 >
                   <span className="immersive-stage__preview-label">下一句</span>
                   <span className="immersive-stage__preview-text">{buildNextSentencePreview(nextSentence)}</span>
+                  <span className="immersive-stage__preview-subtext">完成当前句后可直接切换</span>
                 </button>
               </div>
             </div>

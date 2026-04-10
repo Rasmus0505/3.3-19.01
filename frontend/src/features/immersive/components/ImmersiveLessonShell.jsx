@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import ExplanationSidebarContent from "../ExplanationSidebarContent";
 import ImmersiveLayout from "../ImmersiveLayout";
@@ -12,6 +12,7 @@ export default function ImmersiveLessonShell({
 }) {
   const { ref: typingPanelRef, ...restTypingPanelProps } = typingPanelProps;
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const currentSentenceKey = restTypingPanelProps.currentSentence?.idx ?? restTypingPanelProps.currentSentenceIndex;
 
   const handleToggleDrawer = useCallback(() => {
     setDrawerOpen((current) => !current);
@@ -25,6 +26,10 @@ export default function ImmersiveLessonShell({
     setDrawerOpen(false);
     explanationProps.onStartPractice?.();
   }, [explanationProps]);
+
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [currentSentenceKey]);
 
   return (
     <ImmersiveLayout
