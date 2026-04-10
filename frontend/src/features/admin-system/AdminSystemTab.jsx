@@ -115,7 +115,7 @@ export function AdminSystemTab({ apiCall, snapshot, loading = false, status = ""
       const formattedError = captureError(
         formatNetworkError(requestError, {
           component: "AdminSystemTab",
-          action: includeHealthSnapshot ? "加载系统诊断" : "加载 Bottle 运行就绪度",
+          action: includeHealthSnapshot ? "加载系统诊断" : "加载 Unlock 运行就绪度",
           endpoint: includeHealthSnapshot ? "/health + /health/ready + /api/admin/runtime-readiness" : "/api/admin/runtime-readiness",
           method: "GET",
         }),
