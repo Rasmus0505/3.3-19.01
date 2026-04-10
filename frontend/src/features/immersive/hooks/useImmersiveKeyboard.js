@@ -152,6 +152,9 @@ export function useImmersiveKeyboard({
       if (!typingEnabled) return;
       if (event.ctrlKey || event.metaKey || event.altKey) return;
 
+      // 句子已填完，不再处理输入
+      if (activeWordIndexRef.current >= expectedTokens.length) return;
+
       if (key === "Backspace") {
         event.preventDefault();
         playKeySound();

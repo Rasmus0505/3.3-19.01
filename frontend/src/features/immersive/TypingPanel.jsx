@@ -52,9 +52,12 @@ function renderWordSlots({
   cefrAnalyzerRef,
   cefrLevel,
   lookupCefrLevelFromMap,
+  sentenceTypingDone,
 }) {
   const renderToken = (token, index) => {
     const status = wordStatuses[index] || "pending";
+    // 句子已完成时，跳过仍为 pending 的单词（多余下划线）
+    if (sentenceTypingDone && status === "pending") return null;
     const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealComparableIndices[index] || []);
 
     return (
@@ -98,7 +101,7 @@ function renderWordSlots({
     ));
   }
 
-  return <div className="immersive-word-row immersive-word-row--centered">{expectedTokens.map(renderToken)}</div>;
+  return <div className="immersive-word-row immersive-word-row--multi-line-left">{expectedTokens.map(renderToken)}</div>;
 }
 
 const TypingPanel = forwardRef(function TypingPanel(
@@ -186,6 +189,7 @@ const TypingPanel = forwardRef(function TypingPanel(
           cefrAnalyzerRef,
           cefrLevel,
           lookupCefrLevelFromMap,
+          sentenceTypingDone,
         })}
       </div>
 
