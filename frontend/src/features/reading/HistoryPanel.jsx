@@ -255,6 +255,7 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
                   const targetLabel = rewriteMeta?.diagnosticSnapshot?.selectedTargetLevel || null;
                   const difficultyLabel = rewriteMeta?.diagnosticSnapshot?.materialDifficulty || null;
                   const sourceLabel = getSourceLabel(record.sourceMetadata);
+                  const quizCount = rewriteMeta?.quiz?.questions?.length || 0;
 
                   return (
                     <button
@@ -269,7 +270,7 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
                     <Sparkles className="history-panel__item-sparkle size-3.5 shrink-0" />
                       )}
                       <span className="history-panel__item-preview">{getPreview(record.text)}</span>
-                      {statusLabel || targetLabel || difficultyLabel || sourceLabel ? (
+                      {statusLabel || targetLabel || difficultyLabel || sourceLabel || quizCount > 0 ? (
                         <div className="history-panel__item-badges">
                           {sourceLabel ? (
                             <span className="history-panel__item-badge history-panel__item-badge--source">
@@ -298,6 +299,11 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
                           {difficultyLabel ? (
                             <span className="history-panel__item-badge history-panel__item-badge--difficulty">
                               {difficultyLabel}
+                            </span>
+                          ) : null}
+                          {quizCount > 0 ? (
+                            <span className="history-panel__item-badge history-panel__item-badge--quiz">
+                              测验 {quizCount}题
                             </span>
                           ) : null}
                         </div>

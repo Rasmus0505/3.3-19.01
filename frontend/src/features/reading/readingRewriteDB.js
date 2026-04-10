@@ -59,6 +59,7 @@ function openDB() {
  * @property {"original"|"rewritten"} viewMode — 用户偏好的视图
  * @property {"original"|"rewritten"|"comparison"} packViewMode — 阅读包视图偏好
  * @property {number}    rewrittenAt  — 重写时间戳
+ * @property {{questions: object[], generatedAt: number}|null} quiz — Phase 41 测验数据
  */
 
 export function deriveFlowStatus(record = {}) {
@@ -90,6 +91,7 @@ export function normalizeRewriteRecord(record) {
     readingPack: record.readingPack || null,
     packViewMode: record.packViewMode || record.viewMode || "original",
     flowStatus: deriveFlowStatus(record),
+    quiz: record.quiz ?? null,
   };
 }
 
@@ -226,6 +228,18 @@ export async function getAllRewriteRecords() {
     req.onsuccess = () => resolve((req.result || []).map((record) => normalizeRewriteRecord(record)));
     req.onerror = () => reject(req.error);
   });
+}
+
+/**
+ * 保存测验数据到指定文章的记录
+ * @param {string} articleId
+ * @param {{questions: object[], generatedAt: number}} quiz
+ * @returns {Promise<void>}
+ */
+export async function saveQuizToRecord(articleId, quiz) {
+  const existing = await getRewriteRecord(articleId);
+  if (!existing) return;
+  await saveRewriteRecord({ ...existing, quiz });
 }
 
 export async function clearAllRewriteRecords() {

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { cn } from "../../lib/utils";
 import { ArticlePanel } from "./ArticlePanel";
+import { QuizPanel } from "./QuizPanel";
 
 function SummaryMetric({ label, value }) {
   return (
@@ -234,6 +235,7 @@ function NextStepsBar({ packViewMode, onPackViewModeChange, onShowVocab }) {
 
 export function ReadingPackPanel({
   pack,
+  articleId,
   packViewMode = "original",
   onPackViewModeChange,
   contentWidth,
@@ -248,6 +250,9 @@ export function ReadingPackPanel({
   if (!pack) {
     return null;
   }
+
+  const wordCount = (pack.rewrittenText || pack.originalText || "").split(/\s+/).filter(Boolean).length;
+  const isTooShort = wordCount < 100;
 
   const handleShowVocab = useCallback(() => {
     onPackViewModeChange("vocab");
@@ -293,6 +298,7 @@ export function ReadingPackPanel({
           <TabsTrigger value="rewritten">i+1</TabsTrigger>
           <TabsTrigger value="comparison">逐句对照</TabsTrigger>
           <TabsTrigger value="vocab">词汇</TabsTrigger>
+          {!isTooShort && <TabsTrigger value="quiz">测验</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="original" className="reading-pack__tab-panel">
@@ -338,6 +344,12 @@ export function ReadingPackPanel({
         <TabsContent value="vocab" className="reading-pack__tab-panel">
           <VocabPanel pack={pack} apiCall={apiCall} accessToken={accessToken} />
         </TabsContent>
+
+        {!isTooShort && (
+          <TabsContent value="quiz" className="reading-pack__tab-panel">
+            <QuizPanel pack={pack} articleId={articleId} apiCall={apiCall} accessToken={accessToken} />
+          </TabsContent>
+        )}
       </Tabs>
 
       <NextStepsBar

@@ -520,6 +520,7 @@ export function ReadingPage({ accessToken, apiCall }) {
                   targetLevel: diagnosticSnapshot?.selectedTargetLevel || "--",
                   comparisonCards: [],
                 }}
+                articleId={activeHistoryId}
                 packViewMode={packViewMode}
                 onPackViewModeChange={setPackViewMode}
                 contentWidth={contentWidth}
