@@ -172,6 +172,7 @@ const TypingPanel = forwardRef(function TypingPanel(
 
   return (
     <div ref={ref} className="immersive-typing immersive-typing--dock">
+      <span className="immersive-typing__label">拼写</span>
       {mediaError ? <p className="immersive-typing__notice immersive-typing__notice--error">{mediaError}</p> : null}
       {waitingForInitialPlayback ? (
         <p className="immersive-typing__notice">输入已完成，等待本句播放结束。</p>
