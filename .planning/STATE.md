@@ -1,3 +1,16 @@
+---
+gsd_state_version: 1.0
+milestone: v2.8
+milestone_name: 阅读生成流水线
+status: planning
+last_updated: "2026-04-10T06:52:33.877Z"
+progress:
+  total_phases: 3
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+---
+
 # State: Bottle English Learning — v2.8
 
 **Current Milestone:** v2.8 阅读生成流水线
@@ -27,12 +40,14 @@
 ## Performance Metrics
 
 **Milestone v2.8:**
+
 - Total phases: 3
 - Total requirements: 13
 - Completed: 0
 - Progress: 0%
 
 **Project-wide:**
+
 - Total phases completed: 34
 - Total milestones shipped: 7 (v2.0-v2.7)
 
@@ -66,7 +81,7 @@ None currently.
 
 ## Session Continuity
 
-**Last session:** 2026-04-10 — milestone scope refined from "reading rewrite" to "reading generation pipeline"
+**Last session:** 2026-04-10T06:52:33.874Z
 
 **Next action:** `/gsd-discuss-phase 35` to clarify the diagnostic-card and intake UX before planning
 
