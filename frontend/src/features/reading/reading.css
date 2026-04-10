@@ -1036,6 +1036,12 @@
   border: 1px solid oklch(0.88 0 0);
 }
 
+.history-panel__item-badge--difficulty {
+  background: oklch(0.96 0.04 255);
+  color: oklch(0.40 0.14 255);
+  border: 1px solid oklch(0.88 0.06 255);
+}
+
 .history-panel__item-meta {
   display: flex;
   align-items: center;
@@ -2426,6 +2432,200 @@
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* ─── Phase 40: VocabPanel ──────────────────────────────────── */
+.reading-pack__vocab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.reading-pack__vocab-empty {
+  padding: 32px;
+  text-align: center;
+  color: oklch(0.55 0 0);
+  font-size: 14px;
+}
+
+.reading-pack__vocab-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reading-pack__vocab-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reading-pack__vocab-section-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.reading-pack__vocab-section-tag--i1 {
+  background: oklch(0.93 0.08 175);
+  color: oklch(0.35 0.12 175);
+}
+
+.reading-pack__vocab-section-tag--above {
+  background: oklch(0.93 0.08 25);
+  color: oklch(0.40 0.15 25);
+}
+
+.reading-pack__vocab-section-count {
+  font-size: 12px;
+  color: oklch(0.55 0 0);
+}
+
+.reading-pack__vocab-section-hint {
+  margin: 0;
+  font-size: 13px;
+  color: oklch(0.52 0 0);
+  line-height: 1.5;
+}
+
+.reading-pack__vocab-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reading-pack__vocab-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: white;
+  border: 1px solid oklch(0.90 0 0);
+  border-radius: 10px;
+  gap: 8px;
+  transition: box-shadow 0.15s;
+}
+
+.reading-pack__vocab-item:hover {
+  box-shadow: 0 2px 8px oklch(0 0 0 / 0.06);
+}
+
+.reading-pack__vocab-item-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.reading-pack__vocab-word {
+  font-size: 14px;
+  font-weight: 600;
+  color: oklch(0.20 0 0);
+}
+
+.reading-pack__vocab-level {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.reading-pack__vocab-simplified {
+  font-size: 13px;
+  color: oklch(0.52 0 0);
+  font-style: italic;
+  flex-shrink: 0;
+}
+
+.reading-pack__vocab-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: oklch(0.42 0.14 175);
+  background: oklch(0.95 0.05 175);
+  border: 1px solid oklch(0.85 0.08 175);
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.reading-pack__vocab-add:hover:not(:disabled) {
+  background: oklch(0.90 0.08 175);
+  border-color: oklch(0.75 0.12 175);
+}
+
+.reading-pack__vocab-add--done {
+  color: oklch(0.45 0.10 145);
+  background: oklch(0.95 0.05 145);
+  border-color: oklch(0.85 0.06 145);
+  cursor: default;
+}
+
+.reading-pack__vocab-add:disabled {
+  opacity: 0.7;
+}
+
+/* ─── Phase 40: NextStepsBar ────────────────────────────────── */
+.reading-pack__next-steps {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 1px solid oklch(0.92 0 0);
+  background: oklch(0.985 0 0);
+  border-radius: 0 0 20px 20px;
+  margin: 0 -32px -32px;
+  flex-wrap: wrap;
+}
+
+.reading-pack__next-steps-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: oklch(0.52 0 0);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.reading-pack__next-steps-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.reading-pack__next-step-btn {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: oklch(0.38 0 0);
+  background: white;
+  border: 1px solid oklch(0.88 0 0);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.reading-pack__next-step-btn:hover {
+  background: oklch(0.96 0.04 158);
+  border-color: oklch(0.80 0.08 158);
+  color: oklch(0.30 0.10 158);
+}
+
+.reading-pack__next-step-btn--active {
+  background: oklch(0.95 0.06 158);
+  border-color: oklch(0.78 0.10 158);
+  color: oklch(0.30 0.12 158);
+  font-weight: 600;
 }
 
 /* ─── Rewrite Summary (AnalysisPanel) ───────────────────────── */

@@ -238,6 +238,7 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
                         ? "待生成"
                         : null;
                   const targetLabel = rewriteMeta?.diagnosticSnapshot?.selectedTargetLevel || null;
+                  const difficultyLabel = rewriteMeta?.diagnosticSnapshot?.materialDifficulty || null;
 
                   return (
                     <button
@@ -252,7 +253,7 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
                     <Sparkles className="history-panel__item-sparkle size-3.5 shrink-0" />
                       )}
                       <span className="history-panel__item-preview">{getPreview(record.text)}</span>
-                      {statusLabel || targetLabel ? (
+                      {statusLabel || targetLabel || difficultyLabel ? (
                         <div className="history-panel__item-badges">
                           {statusLabel ? (
                             <span
@@ -271,6 +272,11 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
                           {targetLabel ? (
                             <span className="history-panel__item-badge history-panel__item-badge--target">
                               {targetLabel}
+                            </span>
+                          ) : null}
+                          {difficultyLabel ? (
+                            <span className="history-panel__item-badge history-panel__item-badge--difficulty">
+                              {difficultyLabel}
                             </span>
                           ) : null}
                         </div>

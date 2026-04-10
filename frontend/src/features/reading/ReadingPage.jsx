@@ -527,6 +527,8 @@ export function ReadingPage({ accessToken, apiCall }) {
                 selectedWords={selectedWords}
                 onWordClick={handleWordClick}
                 activeLevels={activeLevels}
+                apiCall={apiCall}
+                accessToken={accessToken}
               />
             </div>
 
