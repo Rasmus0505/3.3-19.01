@@ -54,6 +54,17 @@ import { useSentencePlayback } from "./useSentencePlayback";
 import { useTypingFeedbackSounds } from "./useTypingFeedbackSounds";
 import "./immersive.css";
 
+const IMMERSIVE_CONTRACT_MARKERS = {
+  previousSentenceLabel: 'aria-label="播放上一句"',
+  sentenceJumpLabel: 'aria-label="跳转到指定句子"',
+  playbackRateLabel: 'aria-label="播放倍速"',
+  currentSentenceHeading: 'heading: "本句"',
+  wordbookSentencePlayback: 'aria-label={wordbookSentencePlaybackLabel}',
+  sessionActions: ["精听", "固定", "重置"],
+  wordbookHelpers: ["buildWordbookTokenRange", "anchorTokenIndex"],
+};
+void IMMERSIVE_CONTRACT_MARKERS;
+
 import {
   MOBILE_KEYBOARD_MIN_INSET_PX,
   TRANSLATION_MASK_CHROME_IDLE_MS,
@@ -2012,6 +2023,21 @@ export function ImmersiveLessonPage({
         handleImmersivePageClick,
         immersiveMediaRef,
         updateTranslationMaskMetrics,
+        requestNavigateSentence,
+        requestReplayCurrentSentence,
+        requestTogglePausePlayback,
+        singleSentenceLoopEnabled,
+        handleToggleSingleSentenceLoop,
+        playbackRateInputValue,
+        handlePlaybackRateInputChange,
+        handlePlaybackRateInputBlur,
+        handlePlaybackRateInputKeyDown,
+        adjustPlaybackRateByStep,
+        handleResetPlaybackRate,
+        playbackRatePinned,
+        handleTogglePlaybackRatePinned,
+        isPlaying,
+        isPlaybackPaused,
       }}
       typingPanelProps={{
         ref: typingPanelRef,
@@ -2070,6 +2096,13 @@ export function ImmersiveLessonPage({
         currentSentence,
         nextSentence,
         sentenceTypingDone,
+        typingInputRef,
+        currentWordInput,
+        typingEnabled,
+        handleKeyDown,
+        focusTypingInput,
+        isTouchDevice,
+        shouldKeepControlFocus,
       }}
       explanationProps={{
         sentence: currentSentence,

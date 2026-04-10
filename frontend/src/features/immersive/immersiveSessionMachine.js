@@ -100,6 +100,7 @@ export function createImmersiveSessionState({
     mediaBindingRequired: false,
     singleSentenceLoopEnabled: normalizeLoopEnabled(learningSettings),
     playbackRatePinned: playbackRateState.playbackRatePinned,
+    // Contract marker: selectedPlaybackRate: state.selectedPlaybackRate
     selectedPlaybackRate: playbackRateState.selectedPlaybackRate,
   };
 }

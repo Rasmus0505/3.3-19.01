@@ -1,48 +1,28 @@
-/**
- * ImmersiveLayout - 沉浸学习页面左右均分布局
- *
- * 左列 50%：视频区(60%) + 预留区(40%)，中间水平分割线
- * 右列 50%：拼写区(60%) + 讲解区(40%)，中间水平分割线
- * 左列右侧有垂直分割线，右列右侧贴网页边缘无分割线
- *
- * 全屏铺满，无边距间隔
- */
 export default function ImmersiveLayout({
-  // 左列上方 - 视频区
-  leftTopContent,
-  // 左列下方 - 拼写区
-  leftBottomContent,
-  // 右列上方 - 讲解区
-  rightTopContent,
-  // 右列下方 - 预留区（可传空或 null）
-  rightBottomContent,
+  mainContent,
+  bottomContent,
+  sideContent,
+  sideOpen = false,
+  onSideDismiss,
+  sideLabel = "讲解面板",
 }) {
   return (
-    <div className="immersive-layout">
-      {/* 左列：视频 + 拼写（60:40 固定比例） */}
-      <div className="immersive-layout__left">
-        <div className="immersive-layout__left-top">
-          {leftTopContent}
-        </div>
-        <div className="immersive-layout__divider-horizontal" />
-        <div className="immersive-layout__left-bottom">
-          {leftBottomContent}
-        </div>
-      </div>
-
-      {/* 左右列之间的垂直分割线 */}
-      <div className="immersive-layout__divider-vertical" />
-
-      {/* 右列：讲解 + 预留（50:50 固定比例） */}
-      <div className="immersive-layout__right">
-        <div className="immersive-layout__right-top">
-          {rightTopContent}
-        </div>
-        <div className="immersive-layout__divider-horizontal" />
-        <div className="immersive-layout__right-bottom">
-          {rightBottomContent}
-        </div>
-      </div>
+    <div className={`immersive-layout ${sideOpen ? "immersive-layout--side-open" : ""}`}>
+      <div className="immersive-layout__main">{mainContent}</div>
+      <button
+        type="button"
+        aria-label="关闭讲解面板"
+        className="immersive-layout__backdrop"
+        onClick={onSideDismiss}
+      />
+      <aside
+        className="immersive-layout__side"
+        aria-label={sideLabel}
+        aria-hidden={!sideOpen}
+      >
+        {sideContent}
+      </aside>
+      <div className="immersive-layout__bottom">{bottomContent}</div>
     </div>
   );
 }
