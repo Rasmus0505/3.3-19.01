@@ -114,6 +114,8 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
   const [viewMode, setViewModeState] = useState("original");
   const [isRewriting, setIsRewriting] = useState(false);
   const [rewriteError, setRewriteError] = useState(null);
+  const [diagnosticSnapshot, setDiagnosticSnapshot] = useState(null);
+  const [flowStatus, setFlowStatus] = useState("idle");
 
   // 上一次成功保存到 DB 的 articleId（用于检测文章切换时清空状态）
   const savedArticleIdRef = useRef(null);
@@ -126,17 +128,19 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
     (async () => {
       try {
         const record = await getRewriteRecord(articleId);
-        if (cancelled || !record) return;
-
-        // 换了文章但本地还有未保存的状态，先清空
         if (savedArticleIdRef.current !== articleId) {
           setRewrittenText(null);
           setRewriteMappings([]);
           setValidI1Words([]);
           setValidAboveI1Words([]);
           setRemovedWords([]);
+          setWordLevels({});
+          setDiagnosticSnapshot(null);
+          setFlowStatus("idle");
           setRewriteError(null);
+          setViewModeState("original");
         }
+        if (cancelled || !record) return;
 
         savedArticleIdRef.current = articleId;
         setRewrittenText(record.rewrittenText);
@@ -145,6 +149,11 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         setValidAboveI1Words(record.validAboveI1Words || []);
         setRemovedWords(record.removedWords || []);
         setWordLevels(record.wordLevels || {});
+        setDiagnosticSnapshot(record.diagnosticSnapshot || null);
+        setFlowStatus(
+          record.flowStatus ||
+            (record.rewrittenText ? "generated" : record.diagnosticSnapshot ? "diagnosed" : "idle")
+        );
         // 若未存过偏好则默认原文（便于先看到 CEFR 标注）
         setViewModeState(record.viewMode || "original");
       } catch (e) {
@@ -177,8 +186,60 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
     setRemovedWords([]);
     setWordLevels({});
     setRewriteError(null);
+    setDiagnosticSnapshot(null);
+    setFlowStatus("idle");
     setViewModeState("original");
   }, []);
+
+  const persistRecord = useCallback(
+    async (patch) => {
+      const resolvedArticleId = patch.articleId ?? articleId;
+      if (!resolvedArticleId) return null;
+      const existing = (await getRewriteRecord(resolvedArticleId)) || {};
+      const nextRecord = {
+        articleId: resolvedArticleId,
+        originalText: patch.originalText ?? existing.originalText ?? "",
+        rewrittenText: patch.rewrittenText ?? existing.rewrittenText ?? null,
+        mappings: patch.mappings ?? existing.mappings ?? [],
+        validI1Words: patch.validI1Words ?? existing.validI1Words ?? [],
+        validAboveI1Words: patch.validAboveI1Words ?? existing.validAboveI1Words ?? [],
+        removedWords: patch.removedWords ?? existing.removedWords ?? [],
+        wordLevels: patch.wordLevels ?? existing.wordLevels ?? {},
+        diagnosticSnapshot: patch.diagnosticSnapshot ?? existing.diagnosticSnapshot ?? null,
+        flowStatus: patch.flowStatus ?? existing.flowStatus ?? "idle",
+        viewMode: patch.viewMode ?? existing.viewMode ?? "original",
+        rewrittenAt: patch.rewrittenAt ?? existing.rewrittenAt ?? Date.now(),
+      };
+      await dbSave(nextRecord);
+      savedArticleIdRef.current = resolvedArticleId;
+      return nextRecord;
+    },
+    [articleId]
+  );
+
+  const saveDiagnosticSnapshot = useCallback(
+    async ({ articleId: articleIdOverride = null, originalText, snapshot }) => {
+      setDiagnosticSnapshot(snapshot);
+      setFlowStatus("diagnosed");
+      setRewriteError(null);
+      setViewModeState("original");
+      await persistRecord({
+        articleId: articleIdOverride,
+        originalText,
+        diagnosticSnapshot: snapshot,
+        flowStatus: "diagnosed",
+        rewrittenText: null,
+        mappings: [],
+        validI1Words: [],
+        validAboveI1Words: [],
+        removedWords: [],
+        wordLevels: {},
+        viewMode: "original",
+      });
+      onSuccess?.(articleIdOverride || articleId, snapshot);
+    },
+    [articleId, onSuccess, persistRecord]
+  );
 
   /**
    * 处理文章重写
@@ -192,7 +253,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
    * @param {{ words: Array<{word: string, level: string}> }} options
    */
   const handleRewrite = useCallback(
-    async (originalText, { words } = {}) => {
+    async (originalText, { words, targetLevel: targetLevelOverride = null, showEstimateToast = true } = {}) => {
       const { toast } = await import("sonner");
 
       if (!accessToken) {
@@ -217,7 +278,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
 
       try {
         const userLevel = readCefrLevel() || "B1";
-        const targetLevel = getTargetLevel(userLevel);
+        const targetLevel = targetLevelOverride || getTargetLevel(userLevel);
 
         // 如果没有传入候选词，生成空结果
         if (!words || words.length === 0) {
@@ -228,35 +289,37 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
             setValidAboveI1Words([]);
             setRemovedWords([]);
             setWordLevels({});
+            setFlowStatus("generated");
             setViewModeState("original");
             if (articleId) {
-              await dbSave({
-              articleId,
-              originalText,
-              rewrittenText: originalText,
-              mappings: [],
-              validI1Words: [],
-              validAboveI1Words: [],
-              removedWords: [],
-              wordLevels: {},
-              viewMode: "original",
-              rewrittenAt: Date.now(),
-            });
-            savedArticleIdRef.current = articleId;
-            onSuccess?.(articleId, originalText);
+              await persistRecord({
+                originalText,
+                rewrittenText: originalText,
+                mappings: [],
+                validI1Words: [],
+                validAboveI1Words: [],
+                removedWords: [],
+                wordLevels: {},
+                flowStatus: "generated",
+                viewMode: "original",
+                rewrittenAt: Date.now(),
+              });
+              onSuccess?.(articleId, originalText);
           }
           return;
         }
 
         // 估算 token 消耗
-        try {
-          const est = await estimateRewriteTokens(originalText, accessToken);
-          toast.info(
-            `预计消耗 ${est.estimatedChargeYuan.toFixed(2)} 元（约 ${est.estimatedTokens} tokens）`,
-            { duration: 4000 }
-          );
-        } catch (e) {
-          console.warn("Token estimation failed:", e);
+        if (showEstimateToast) {
+          try {
+            const est = await estimateRewriteTokens(originalText, accessToken);
+            toast.info(
+              `预计消耗 ${est.estimatedChargeYuan.toFixed(2)} 元（约 ${est.estimatedTokens} tokens）`,
+              { duration: 4000 }
+            );
+          } catch (e) {
+            console.warn("Token estimation failed:", e);
+          }
         }
 
         // ── Step 2: 调用 LLM 提取原型词 ───────────────────────────
@@ -369,24 +432,6 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         const uniqueValidI1Words = toUniqueLowerWordList(validI1WordsList);
         const uniqueFinalAboveI1Words = toUniqueLowerWordList(finalAboveI1Words);
 
-        // ── Step 6: 保存到 IndexedDB ───────────────────────────
-        if (articleId) {
-          await dbSave({
-            articleId,
-            originalText,
-            rewrittenText,
-            mappings: newMappings,
-            validI1Words: uniqueValidI1Words,
-            validAboveI1Words: uniqueFinalAboveI1Words,
-            removedWords: finalRemoved,
-            wordLevels: finalWordLevels,
-            viewMode: "original",
-            rewrittenAt: Date.now(),
-          });
-          savedArticleIdRef.current = articleId;
-          onSuccess?.(articleId, rewrittenText);
-        }
-
         // 更新状态
         setRewrittenText(rewrittenText);
         setRewriteMappings(newMappings);
@@ -394,7 +439,23 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         setValidAboveI1Words(uniqueFinalAboveI1Words);
         setRemovedWords(finalRemoved);
         setWordLevels(finalWordLevels);
+        setFlowStatus("generated");
         setViewModeState("original");
+        if (articleId) {
+          await persistRecord({
+            originalText,
+            rewrittenText,
+            mappings: newMappings,
+            validI1Words: uniqueValidI1Words,
+            validAboveI1Words: uniqueFinalAboveI1Words,
+            removedWords: finalRemoved,
+            wordLevels: finalWordLevels,
+            flowStatus: "generated",
+            viewMode: "original",
+            rewrittenAt: Date.now(),
+          });
+          onSuccess?.(articleId, rewrittenText);
+        }
       } catch (err) {
         const msg = err?.message || "网络错误";
         toast.error("重写失败：" + msg);
@@ -403,7 +464,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         setIsRewriting(false);
       }
     },
-    [accessToken, apiCall, articleId, onSuccess]
+    [accessToken, apiCall, articleId, onSuccess, persistRecord]
   );
 
   return {
@@ -417,6 +478,9 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
     setViewMode: handleSwitchView,
     isRewriting,
     rewriteError,
+    diagnosticSnapshot,
+    flowStatus,
+    saveDiagnosticSnapshot,
     clearRewrite,
     handleRewrite,
   };

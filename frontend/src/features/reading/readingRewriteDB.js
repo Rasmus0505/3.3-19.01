@@ -50,6 +50,8 @@ function openDB() {
  * @property {string[]}  validAboveI1Words — 有效的 >i+1 词汇列表（原文视图用红色下划线）
  * @property {object[]}  removedWords      — 被过滤的词汇 [{word, reason}]
  * @property {object}    wordLevels       — 二次筛选后的最终等级 {word: level}
+ * @property {object|null} diagnosticSnapshot — 诊断阶段快照（Phase 35）
+ * @property {string|null} flowStatus — idle | diagnosed | generated
  * @property {"original"|"rewritten"} viewMode — 用户偏好的视图
  * @property {number}    rewrittenAt  — 重写时间戳
  */
@@ -154,4 +156,26 @@ export async function getRewrittenArticleIds() {
 export async function hasRewrite(articleId) {
   const record = await getRewriteRecord(articleId);
   return record !== null;
+}
+
+export async function getAllRewriteRecords() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function clearAllRewriteRecords() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.clear();
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
 }
