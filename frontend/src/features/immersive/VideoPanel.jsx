@@ -4,8 +4,6 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
-  PanelRightClose,
-  PanelRightOpen,
 } from "lucide-react";
 
 import {
@@ -14,15 +12,6 @@ import {
   Card,
   CardContent,
 } from "../../shared/ui";
-
-function buildNextSentencePreview(nextSentence) {
-  if (!nextSentence?.text_en) return "完成当前句后解锁下一句";
-
-  return nextSentence.text_en
-    .split("")
-    .map((char) => (char === " " ? " " : "·"))
-    .join("");
-}
 
 function buildSentenceProgressLabel(currentSentenceIndex, sentenceCount) {
   const total = Math.max(1, Number(sentenceCount || 0));
@@ -63,13 +52,7 @@ const VideoPanel = forwardRef(function VideoPanel(
     handleImmersivePageClick,
     immersiveMediaRef,
     updateTranslationMaskMetrics,
-    currentSentence,
-    previousSentence,
-    nextSentence,
     sentenceTypingDone,
-    explanationAvailable,
-    explanationOpen,
-    onToggleExplanation,
     requestNavigateSentence,
     requestReplayCurrentSentence,
     requestTogglePausePlayback,
@@ -91,14 +74,6 @@ const VideoPanel = forwardRef(function VideoPanel(
 ) {
   const { percent: progressPercent } = buildSentenceProgressLabel(currentSentenceIndex, sentenceCount);
   const mediaTypeLabel = mediaMode === "video" ? "视频模式" : mediaMode === "audio" ? "音频模式" : "逐句音频";
-  const currentSentenceText = currentSentence?.text_en || "";
-  const currentSentenceTranslation = currentSentence?.text_zh || "";
-  const focusHeadline = sentenceTypingDone
-    ? currentSentenceText || "本句已完成"
-    : "专注听这一句，然后在底部 Dock 里拼出来";
-  const focusSupport = sentenceTypingDone
-    ? currentSentenceTranslation || "可以继续回放、查看讲解，或直接进入下一句。"
-    : "完成当前句后，会自动解锁整句展示和讲解内容。";
 
   return (
     <div ref={ref} className={immersivePageShellClassName}>
@@ -136,15 +111,6 @@ const VideoPanel = forwardRef(function VideoPanel(
                 <Badge variant={sentenceTypingDone ? "secondary" : "outline"}>
                   {sentenceTypingDone ? "本句完成" : isPlaying ? "正在播放" : isPlaybackPaused ? "已暂停" : "等待输入"}
                 </Badge>
-                <button
-                  type="button"
-                  className={`immersive-stage__drawer-toggle ${explanationOpen ? "immersive-stage__drawer-toggle--active" : ""}`}
-                  onClick={onToggleExplanation}
-                  aria-pressed={explanationOpen}
-                >
-                  {explanationOpen ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
-                  {explanationOpen ? "收起讲解" : explanationAvailable ? "打开讲解" : "讲解待解锁"}
-                </button>
               </div>
             </div>
 
@@ -359,45 +325,6 @@ const VideoPanel = forwardRef(function VideoPanel(
                   </div>
                 </div>
               ) : null}
-            </div>
-
-            <div className="immersive-stage__narrative">
-              <div className={`immersive-stage__focus ${sentenceTypingDone ? "immersive-stage__focus--completed" : ""}`}>
-                <span className="immersive-stage__focus-label">当前任务</span>
-                <h2 className="immersive-stage__focus-headline">{focusHeadline}</h2>
-                <p className="immersive-stage__focus-support">{focusSupport}</p>
-                <div className="immersive-stage__focus-pills">
-                  <span className="immersive-stage__focus-pill">主舞台听句子</span>
-                  <span className="immersive-stage__focus-pill">底部 Dock 输入</span>
-                  <span className="immersive-stage__focus-pill">右侧 Drawer 复盘</span>
-                </div>
-              </div>
-              <div className="immersive-stage__preview-grid">
-                <button
-                  type="button"
-                  className="immersive-stage__preview-card"
-                  disabled={currentSentenceIndex <= 0}
-                  onClick={() => requestNavigateSentence({ delta: -1, source: "preview_prev" })}
-                >
-                  <span className="immersive-stage__preview-label">上一句</span>
-                  <span className="immersive-stage__preview-text">
-                    {previousSentence?.text_en || "还没有上一句"}
-                  </span>
-                  {previousSentence?.text_zh ? (
-                    <span className="immersive-stage__preview-subtext">{previousSentence.text_zh}</span>
-                  ) : null}
-                </button>
-                <button
-                  type="button"
-                  className="immersive-stage__preview-card immersive-stage__preview-card--ghost"
-                  disabled={currentSentenceIndex >= sentenceCount - 1}
-                  onClick={() => requestNavigateSentence({ delta: 1, source: "preview_next" })}
-                >
-                  <span className="immersive-stage__preview-label">下一句</span>
-                  <span className="immersive-stage__preview-text">{buildNextSentencePreview(nextSentence)}</span>
-                  <span className="immersive-stage__preview-subtext">完成当前句后可直接切换</span>
-                </button>
-              </div>
             </div>
           </div>
         </CardContent>
