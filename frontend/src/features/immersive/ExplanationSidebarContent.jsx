@@ -8,8 +8,8 @@ export default function ExplanationSidebarContent({
     <div className="immersive-explanation-panel">
       <div className="immersive-explanation-panel__header">
         <div className="immersive-explanation-panel__header-copy">
-          <p className="immersive-explanation-panel__eyebrow">Key Expressions</p>
-          <h2 className="immersive-explanation-panel__title">English-only support</h2>
+          <p className="immersive-explanation-panel__eyebrow">讲解区 Key Expressions</p>
+          <h2 className="immersive-explanation-panel__title">关键表达讲解</h2>
         </div>
       </div>
 
@@ -62,7 +62,7 @@ export default function ExplanationSidebarContent({
         </div>
       ) : (
         <div className="immersive-explanation-panel__empty">
-          Expressions above your current level will appear here in simpler English.
+          当前句没有需要讲解的表达。Expressions above your current level will appear here.
         </div>
       )}
     </div>
