@@ -52,7 +52,7 @@ Exceptions: 44px minimum tap target for icon-only controls and collapsed rails; 
 | Heading | 20px | 600 | 1.2 |
 | Display | 28px | 600 | 1.2 |
 
-Article preview exception: keep the existing serif reading surface at `18px / 30px` with `22px / 36px` for the article title so the left pane still feels like reading, not form UI.
+Article preview exception: keep the existing serif reading surface by mapping preview body to the `Body` role in serif and preview title to the `Heading` role in serif, so the left pane still feels like reading, not form UI, without adding extra font sizes.
 
 ---
 
