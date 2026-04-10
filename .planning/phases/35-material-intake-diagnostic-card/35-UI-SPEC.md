@@ -1,10 +1,11 @@
 ---
 phase: 35
 slug: material-intake-diagnostic-card
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-04-10
+reviewed_at: 2026-04-10T15:14:32.7304162+08:00
 ---
 
 # Phase 35 — UI Design Contract
@@ -145,4 +146,4 @@ Diagnostic semantics reuse the existing reading colors: preserved i+1 metrics us
 - [ ] Dimension 5 Spacing: PASS
 - [ ] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved
