@@ -62,7 +62,7 @@ export default function ExplanationSidebarContent({
         </div>
       ) : (
         <div className="immersive-explanation-panel__empty">
-          当前句没有需要讲解的表达。Expressions above your current level will appear here.
+          当前句没有需要讲解的表达。
         </div>
       )}
     </div>

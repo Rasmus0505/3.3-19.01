@@ -133,7 +133,6 @@ const VideoPanel = forwardRef(function VideoPanel(
                   <div className="w-full px-6">
                     <div className="immersive-media-audio-placeholder">
                       <p>音频降级模式</p>
-                      <p className="immersive-hint">媒体不可用，已切换到逐句播放与底部拼写任务。</p>
                     </div>
                     <audio ref={clipAudioRef} controls />
                   </div>
