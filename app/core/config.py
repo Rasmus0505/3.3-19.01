@@ -213,3 +213,57 @@ TTS_VOICE_CLEANUP_DAYS = _get_env_int("TTS_VOICE_CLEANUP_DAYS", 365)
 # CEFR 讲解 TTS 声音名称（可选，未配置则跳过 TTS 音频生成）
 # 声音需通过语音克隆创建或由管理员配置在 TTS_PLATFORM_VOICES 中
 CEFR_EXPLAIN_TTS_VOICE = os.getenv("CEFR_EXPLAIN_TTS_VOICE", "").strip()
+
+# ===== Image Generation Configuration =====
+
+QWEN_IMAGE_BASE_URL = _get_env_text(
+    "QWEN_IMAGE_BASE_URL",
+    "IMAGE_GENERATION_BASE_URL",
+    default="https://dashscope.aliyuncs.com/api/v1",
+)
+
+QWEN_IMAGE_MODEL = _get_env_text(
+    "QWEN_IMAGE_MODEL",
+    "IMAGE_GENERATION_MODEL",
+    default="qwen-image-2.0-pro",
+)
+
+QWEN_IMAGE_DEFAULT_SIZE = _get_env_text(
+    "QWEN_IMAGE_DEFAULT_SIZE",
+    "IMAGE_GENERATION_DEFAULT_SIZE",
+    default="2048*2048",
+)
+
+QWEN_IMAGE_TIMEOUT_SECONDS = _get_env_int(
+    "QWEN_IMAGE_TIMEOUT_SECONDS",
+    180,
+)
+
+# ===== OCR Configuration =====
+
+QWEN_OCR_BASE_URL = _get_env_text(
+    "QWEN_OCR_BASE_URL",
+    "OCR_BASE_URL",
+    default="https://dashscope.aliyuncs.com/api/v1",
+)
+
+QWEN_OCR_MODEL = _get_env_text(
+    "QWEN_OCR_MODEL",
+    "OCR_MODEL",
+    default="qwen-vl-ocr-latest",
+)
+
+QWEN_OCR_DEFAULT_MIN_PIXELS = _get_env_non_negative_int(
+    "QWEN_OCR_DEFAULT_MIN_PIXELS",
+    32 * 32 * 3,
+)
+
+QWEN_OCR_DEFAULT_MAX_PIXELS = _get_env_int(
+    "QWEN_OCR_DEFAULT_MAX_PIXELS",
+    32 * 32 * 8192,
+)
+
+QWEN_OCR_TIMEOUT_SECONDS = _get_env_int(
+    "QWEN_OCR_TIMEOUT_SECONDS",
+    180,
+)
