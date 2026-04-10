@@ -1,10 +1,11 @@
 ---
 phase: 36
 slug: pipeline-orchestrator-reading-pack
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-04-10
+reviewed_at: 2026-04-10T16:33:21.1855212+08:00
 ---
 
 # Phase 36 — UI Design Contract
@@ -39,7 +40,7 @@ Declared values (must be multiples of 4):
 | 2xl | 48px | Primary CTA height, major dashboard sections |
 | 3xl | 64px | Page-level vertical rhythm between pipeline and pack sections |
 
-Exceptions: `44px` minimum touch target for icon-only rail/collapse controls; `56px` minimum height for target-level chips in the diagnostic and pack header zones
+Exceptions: none. Use only the declared scale values inside layout spacing and padding contracts.
 
 ---
 
@@ -52,7 +53,7 @@ Exceptions: `44px` minimum touch target for icon-only rail/collapse controls; `5
 | Heading | 20px | 600 | 1.2 |
 | Display | 28px | 600 | 1.2 |
 
-Reading prose exception: article content in `original` and `i+1` modes stays at `18px` serif with `30px` line height to preserve the existing reading contract.
+Reading prose in `original` and `i+1` modes keeps the existing serif stack but stays on the `Body` role size and line-height contract.
 
 ---
 
@@ -141,6 +142,8 @@ Accent reserved for: primary `生成阅读包` / `继续生成` actions, stage-p
 - Completed runs reopen directly into the pack page with the last selected pack mode preserved.
 - Do not auto-replay finished animations when reopening a completed pack.
 - Stage transitions may animate with short fades or progress fills, but motion must never delay content availability.
+- Icon-only rail/collapse controls use a `48px` square interactive box, must show a tooltip on hover/focus, and must expose `aria-label="展开阶段列表"` when collapsed and `aria-label="收起阶段列表"` when expanded.
+- Interactive target-level chips in the diagnostic and pack header zones use a minimum `48px` control height; treat this as component sizing guidance, not a new spacing token.
 - Mobile keeps all actions within thumb reach at the bottom of the stage card or pack header; avoid side-by-side tertiary controls on narrow screens.
 
 ---
@@ -156,11 +159,11 @@ Accent reserved for: primary `生成阅读包` / `继续生成` actions, stage-p
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved 2026-04-10
