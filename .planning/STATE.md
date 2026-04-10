@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.8
 milestone_name: 阅读生成流水线
-status: executing
-last_updated: "2026-04-10T08:41:45.840Z"
+status: planning
+last_updated: "2026-04-10T09:02:46.624Z"
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 1
-  percent: 25
+  completed_plans: 4
+  percent: 67
 ---
 
 # State: Bottle English Learning — v2.8
@@ -21,21 +21,21 @@ progress:
 
 **Core Value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-**Current Focus:** Phase 35: Material Intake & Diagnostic Card — NOT STARTED
+**Current Focus:** Phase 37: Learning Handoff & Pack Library — READY TO PLAN
 
 ## Current Position
 
 **Milestone:** v2.8
-**Phase:** 36
+**Phase:** 37
 **Plan:** Not started
-**Status:** Ready to execute
+**Status:** Ready to plan
 
 ## Milestone Progress
 
 | Phase | Name | Status | Plans |
 |-------|------|--------|-------|
-| 35 | Material Intake & Diagnostic Card | Not started | 0/? |
-| 36 | Pipeline Orchestrator & Reading Pack | Not started | 0/? |
+| 35 | Material Intake & Diagnostic Card | Complete | 1/1 |
+| 36 | Pipeline Orchestrator & Reading Pack | Complete | 3/3 |
 | 37 | Learning Handoff & Pack Library | Not started | 0/? |
 
 ## Performance Metrics
@@ -44,12 +44,12 @@ progress:
 
 - Total phases: 3
 - Total requirements: 13
-- Completed: 0
-- Progress: 0%
+- Completed: 9
+- Progress: 69%
 
 **Project-wide:**
 
-- Total phases completed: 34
+- Total phases completed: 36
 - Total milestones shipped: 7 (v2.0-v2.7)
 
 ## Accumulated Context
@@ -57,8 +57,9 @@ progress:
 ### Key Technical Context
 
 - Existing reading workflow already includes local CEFR analysis, original/rewrite toggles, history, analysis panels, and IndexedDB persistence in the reading feature.
-- `reading_rewrites_v3` already stores originalText, rewrittenText, mappings, validI1Words, validAboveI1Words, removedWords, wordLevels, and viewMode; v2.8 should evolve this into a reading-pack asset instead of replacing it.
-- `ReadingPage.jsx`, `useVocabularyFilter.js`, and `ArticlePanel.jsx` already contain the core pedagogical logic for distinguishing i+1 from above-i+1; the main gap is product orchestration and presentation.
+- `reading_rewrites_v3` now persists pipeline snapshots, reading-pack assets, comparison cards, and pack-view mode without introducing a second store.
+- `ReadingPage.jsx` now supports `input -> diagnostic -> pipeline -> pack`, with history reopen routing interrupted work to pipeline mode and finished work to pack mode.
+- `ReadingPackPanel.jsx` and `ReadingPipelinePanel.jsx` establish the new Phase 36 result and generation surfaces while keeping `ArticlePanel.jsx` as the original/i+1 renderer.
 - OpenMAIC is the reference for stage-based generation UX, progress storytelling, session recovery, and assetized outputs, not for multi-agent classroom scope.
 
 ### Key Product Context
@@ -66,6 +67,7 @@ progress:
 - v2.8 is competition-oriented: the primary demo story is "bring any English material, get a personalized i+1 reading pack".
 - The milestone should emphasize transformation clarity: before generation, during generation, and after generation must all be legible to judges and users.
 - The reading result must become a reusable learning asset with explicit next steps, not a one-off rewrite string.
+- Phase 36 now delivers the explicit stage flow, persistent reading-pack asset, and sentence-card comparison mode; the remaining milestone scope is learning handoff and pack-library surfacing.
 
 ### Key Decisions for v2.8
 
@@ -82,9 +84,9 @@ None currently.
 
 ## Session Continuity
 
-**Last session:** 2026-04-10T07:55:16.154Z
+**Last session:** 2026-04-10T09:02:46.624Z
 
-**Next action:** `/gsd-discuss-phase 35` to clarify the diagnostic-card and intake UX before planning
+**Next action:** `/gsd-discuss-phase 37` to define learning handoff and pack-library scope before planning
 
 ---
 

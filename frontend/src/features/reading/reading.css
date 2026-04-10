@@ -159,6 +159,38 @@
   min-height: 0;
 }
 
+.reading-pipeline-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.reading-pipeline-layout__original {
+  min-height: 0;
+  padding: 24px;
+  border: 1px solid oklch(0.9 0 0);
+  border-radius: 24px;
+  background: white;
+  box-shadow: 0 20px 48px oklch(0 0 0 / 0.06);
+}
+
+.reading-pack-layout {
+  display: flex;
+  gap: 0;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.reading-pack-layout__main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
 @media (max-width: 900px) {
   .reading-diagnostic-layout {
     grid-template-columns: 1fr;
@@ -166,6 +198,10 @@
 
   .reading-diagnostic-layout__dashboard {
     order: -1;
+  }
+
+  .reading-pack-layout {
+    flex-direction: column;
   }
 }
 
@@ -987,6 +1023,11 @@
 .history-panel__item-badge--generated {
   background: oklch(0.94 0.08 175);
   color: oklch(0.35 0.12 175);
+}
+
+.history-panel__item-badge--interrupted {
+  background: oklch(0.96 0.04 165);
+  color: oklch(0.36 0.11 165);
 }
 
 .history-panel__item-badge--target {
@@ -1987,6 +2028,359 @@
   line-height: 1.6;
 }
 
+/* ─── Phase 36: Pipeline + Pack ───────────────────────── */
+.reading-pipeline,
+.reading-pack {
+  border-radius: 24px;
+  border: 1px solid oklch(0.9 0 0);
+  background: white;
+  box-shadow: 0 20px 48px oklch(0 0 0 / 0.06);
+}
+
+.reading-pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 32px;
+}
+
+.reading-pipeline__header,
+.reading-pack__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.reading-pipeline__eyebrow,
+.reading-pack__eyebrow {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: oklch(0.46 0.06 158);
+  letter-spacing: 0.02em;
+}
+
+.reading-pipeline__title,
+.reading-pack__title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: oklch(0.2 0 0);
+}
+
+.reading-pipeline__copy,
+.reading-pack__copy {
+  margin: 12px 0 0;
+  max-width: 720px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: oklch(0.42 0 0);
+}
+
+.reading-pipeline__status,
+.reading-pack__status,
+.reading-pack__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.reading-pipeline__status,
+.reading-pack__status,
+.reading-pack__badge {
+  background: oklch(0.95 0.06 158);
+  color: oklch(0.34 0.1 158);
+}
+
+.reading-pipeline__status--failed {
+  background: oklch(0.97 0.03 25);
+  color: oklch(0.42 0.14 25);
+}
+
+.reading-pipeline__banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-radius: 16px;
+  background: oklch(0.97 0.03 158);
+  border: 1px solid oklch(0.88 0.04 158);
+  color: oklch(0.36 0.09 158);
+}
+
+.reading-pipeline__banner-title,
+.reading-pipeline__error-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.reading-pipeline__banner-copy,
+.reading-pipeline__error-copy {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.reading-pipeline__body {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.reading-pipeline__rail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  border-radius: 20px;
+  background: oklch(0.97 0 0);
+  border: 1px solid oklch(0.92 0 0);
+}
+
+.reading-pipeline__rail-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.reading-pipeline__rail-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: oklch(0.93 0 0);
+  color: oklch(0.45 0 0);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.reading-pipeline__rail-item--running .reading-pipeline__rail-marker,
+.reading-pipeline__rail-item--completed .reading-pipeline__rail-marker {
+  background: oklch(0.95 0.06 158);
+  color: oklch(0.34 0.1 158);
+}
+
+.reading-pipeline__rail-item--failed .reading-pipeline__rail-marker {
+  background: oklch(0.97 0.03 25);
+  color: oklch(0.42 0.14 25);
+}
+
+.reading-pipeline__rail-label {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: oklch(0.22 0 0);
+}
+
+.reading-pipeline__rail-state {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: oklch(0.46 0 0);
+}
+
+.reading-pipeline__card {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 24px;
+  border-radius: 20px;
+  background: oklch(0.985 0 0);
+  border: 1px solid oklch(0.92 0 0);
+}
+
+.reading-pipeline__card-top,
+.reading-pack__eyebrow-row,
+.reading-pack__meta-stack {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.reading-pipeline__card-label,
+.reading-pipeline__meta-label,
+.reading-pack__summary-label {
+  display: block;
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: oklch(0.48 0 0);
+}
+
+.reading-pipeline__card-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: oklch(0.18 0 0);
+}
+
+.reading-pipeline__card-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: oklch(0.95 0.06 158);
+  color: oklch(0.34 0.1 158);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.reading-pipeline__card-copy {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  color: oklch(0.4 0 0);
+}
+
+.reading-pipeline__progress {
+  height: 12px;
+}
+
+.reading-pipeline__progress [data-slot="progress-indicator"] {
+  background: oklch(0.58 0.15 158);
+}
+
+.reading-pipeline__meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.reading-pipeline__meta-card,
+.reading-pack__summary-metric {
+  padding: 16px;
+  border-radius: 16px;
+  background: white;
+  border: 1px solid oklch(0.92 0 0);
+}
+
+.reading-pipeline__meta-card--muted {
+  background: oklch(0.97 0 0);
+}
+
+.reading-pipeline__error {
+  padding: 16px 20px;
+  border-radius: 16px;
+  border: 1px solid oklch(0.88 0.14 25);
+  background: oklch(0.97 0.03 25);
+  color: oklch(0.4 0.12 25);
+}
+
+.reading-pipeline__actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.reading-pipeline__primary {
+  background: oklch(0.58 0.15 158);
+  color: white;
+}
+
+.reading-pipeline__primary:hover {
+  background: oklch(0.52 0.15 158);
+}
+
+.reading-pack {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 32px;
+  min-height: 0;
+}
+
+.reading-pack__meta-stack {
+  align-items: flex-start;
+}
+
+.reading-pack__badge--muted {
+  background: oklch(0.97 0 0);
+  color: oklch(0.4 0 0);
+}
+
+.reading-pack__summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.reading-pack__summary-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: oklch(0.18 0 0);
+}
+
+.reading-pack__tabs {
+  min-height: 0;
+}
+
+.reading-pack__tabs-list {
+  background: oklch(0.95 0 0);
+}
+
+.reading-pack__tab-panel {
+  margin-top: 16px;
+  min-height: 0;
+}
+
+.reading-pack__tab-panel--comparison {
+  display: flex;
+  flex-direction: column;
+}
+
+.reading-pack__comparison-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.reading-pack__comparison-card {
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+  border-radius: 20px;
+  border: 1px solid oklch(0.92 0 0);
+  background: oklch(0.985 0 0);
+}
+
+.reading-pack__comparison-block {
+  padding: 16px;
+  border-radius: 16px;
+  background: white;
+  border: 1px solid oklch(0.92 0 0);
+}
+
+.reading-pack__comparison-block--muted {
+  background: oklch(0.97 0 0);
+}
+
+.reading-pack__comparison-tag {
+  display: inline-flex;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: oklch(0.48 0 0);
+}
+
+.reading-pack__comparison-block p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.6;
+  color: oklch(0.22 0 0);
+}
+
 @media (max-width: 900px) {
   .diagnostic-panel {
     position: static;
@@ -2007,6 +2401,26 @@
 
   .diagnostic-panel__footer-actions {
     flex-direction: column;
+  }
+
+  .reading-pipeline {
+    padding: 24px;
+  }
+
+  .reading-pipeline__header,
+  .reading-pack__header,
+  .reading-pipeline__body {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .reading-pipeline__meta,
+  .reading-pack__summary {
+    grid-template-columns: 1fr;
+  }
+
+  .reading-pack {
+    padding: 24px;
   }
 }
 

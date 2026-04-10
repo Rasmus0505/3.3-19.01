@@ -2,6 +2,7 @@
  * ReadingPage.jsx — 阅读板块根组件
  * =================================
  * Phase 35: 材料诊断台 + 继续生成前置确认
+ * Phase 36: 显式阶段流水线 + 阅读包资产页
  */
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
@@ -18,6 +19,8 @@ import { HistoryPanel, saveHistoryRecord } from "./HistoryPanel";
 import { LeftPanel } from "./LeftPanel";
 import { AnalysisPanel, getDefaultActiveLevels } from "./AnalysisPanel";
 import { DiagnosticPanel } from "./DiagnosticPanel";
+import { ReadingPipelinePanel } from "./ReadingPipelinePanel";
+import { ReadingPackPanel } from "./ReadingPackPanel";
 import {
   buildDiagnosticSnapshot,
   splitDiagnosticText,
@@ -74,10 +77,10 @@ function computeWordStats(lines, wordLevels = {}) {
   for (const line of lines) {
     for (const seg of line.segments) {
       if (!seg.word) continue;
-      total++;
+      total += 1;
       const effectiveLevel = wordLevels[seg.word.toLowerCase()] || seg.cefrLevel;
       if (effectiveLevel && cefrCounts[effectiveLevel] !== undefined) {
-        cefrCounts[effectiveLevel]++;
+        cefrCounts[effectiveLevel] += 1;
       }
     }
   }
@@ -117,6 +120,7 @@ export function ReadingPage({ accessToken, apiCall }) {
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [diagnosticError, setDiagnosticError] = useState(null);
+  const [showPipelineOriginal, setShowPipelineOriginal] = useState(false);
 
   const {
     rewrittenText,
@@ -127,10 +131,14 @@ export function ReadingPage({ accessToken, apiCall }) {
     wordLevels,
     viewMode,
     setViewMode,
+    packViewMode,
+    setPackViewMode,
     isRewriting,
     rewriteError,
     diagnosticSnapshot,
     flowStatus,
+    pipelineState,
+    readingPack,
     saveDiagnosticSnapshot,
     clearRewrite,
     handleRewrite,
@@ -138,7 +146,7 @@ export function ReadingPage({ accessToken, apiCall }) {
     apiCall,
     accessToken,
     articleId: activeHistoryId,
-    onSuccess: () => setHistoryRefreshKey((k) => k + 1),
+    onSuccess: () => setHistoryRefreshKey((value) => value + 1),
   });
 
   const vocabularyFilter = useVocabularyFilter({
@@ -151,14 +159,26 @@ export function ReadingPage({ accessToken, apiCall }) {
 
   useEffect(() => {
     if (!activeHistoryId || isRewriting) return;
-    if (flowStatus === "generated" || rewrittenText) {
-      setMode("reading");
+    if (readingPack || flowStatus === "generated") {
+      setMode("pack");
+      return;
+    }
+    if (flowStatus === "pipeline" || flowStatus === "failed" || pipelineState?.currentStage || pipelineState?.lastCompletedStage) {
+      setMode("pipeline");
       return;
     }
     if (flowStatus === "diagnosed" || diagnosticSnapshot) {
       setMode("diagnostic");
+      return;
     }
-  }, [activeHistoryId, diagnosticSnapshot, flowStatus, isRewriting, rewrittenText]);
+    setMode("input");
+  }, [activeHistoryId, diagnosticSnapshot, flowStatus, isRewriting, pipelineState, readingPack]);
+
+  useEffect(() => {
+    if (mode !== "pipeline") {
+      setShowPipelineOriginal(false);
+    }
+  }, [mode]);
 
   const handleLevelToggle = useCallback((level) => {
     setActiveLevels((prev) => {
@@ -222,10 +242,10 @@ export function ReadingPage({ accessToken, apiCall }) {
           }),
         });
         await parseResponse(resp);
-        if (resp.ok) successCount++;
-        else failCount++;
+        if (resp.ok) successCount += 1;
+        else failCount += 1;
       } catch (_) {
-        failCount++;
+        failCount += 1;
       }
     }
     setIsAddingToWordbook(false);
@@ -292,6 +312,7 @@ export function ReadingPage({ accessToken, apiCall }) {
     setActiveArticleText(text);
     setActiveHistoryId(id);
     setSelectedWords([]);
+    setArticleLines([]);
     clearRewrite();
     setMode("diagnostic");
     try {
@@ -320,9 +341,20 @@ export function ReadingPage({ accessToken, apiCall }) {
     setActiveArticleText(record.text);
     setActiveHistoryId(record.id);
     setSelectedWords([]);
+    setArticleLines([]);
 
-    if (rewriteMeta?.rewrittenText) {
-      setMode("reading");
+    if (rewriteMeta?.readingPack?.status === "completed" || (rewriteMeta?.rewrittenText && rewriteMeta?.flowStatus === "generated")) {
+      setMode("pack");
+      return;
+    }
+
+    if (
+      rewriteMeta?.flowStatus === "pipeline" ||
+      rewriteMeta?.flowStatus === "failed" ||
+      rewriteMeta?.pipeline?.currentStage ||
+      rewriteMeta?.pipeline?.lastCompletedStage
+    ) {
+      setMode("pipeline");
       return;
     }
 
@@ -349,7 +381,8 @@ export function ReadingPage({ accessToken, apiCall }) {
       return;
     }
 
-    setMode("reading");
+    setMode("pipeline");
+    setShowPipelineOriginal(false);
     try {
       const candidates = await collectSimplifyCandidatesFromRaw(
         activeArticleText,
@@ -372,13 +405,12 @@ export function ReadingPage({ accessToken, apiCall }) {
     setActiveArticleText("");
     setActiveHistoryId(null);
     setSelectedWords([]);
+    setArticleLines([]);
     setDiagnosticError(null);
     clearRewrite();
   }, [clearRewrite]);
 
-  const activeText =
-    viewMode === "rewritten" && rewrittenText ? rewrittenText : activeArticleText;
-  const showViewToggle = mode === "reading" && Boolean(rewrittenText);
+  const showAnalysisPanel = mode === "pack";
 
   return (
     <Suspense fallback={<PageFallback />}>
@@ -388,29 +420,6 @@ export function ReadingPage({ accessToken, apiCall }) {
           activeId={activeHistoryId}
           refreshKey={historyRefreshKey}
         />
-
-        {showViewToggle ? (
-          <div className="reading-view-toggle">
-            <button
-              className={cn(
-                "reading-view-toggle__btn",
-                viewMode === "original" && "reading-view-toggle__btn--active"
-              )}
-              onClick={() => setViewMode("original")}
-            >
-              原文
-            </button>
-            <button
-              className={cn(
-                "reading-view-toggle__btn",
-                viewMode === "rewritten" && "reading-view-toggle__btn--active"
-              )}
-              onClick={() => setViewMode("rewritten")}
-            >
-              重写版
-            </button>
-          </div>
-        ) : null}
 
         {mode === "diagnostic" ? (
           <div className="reading-diagnostic-layout">
@@ -451,29 +460,76 @@ export function ReadingPage({ accessToken, apiCall }) {
               />
             </div>
           </div>
-        ) : (
-          <div className="reading-layout">
-            <LeftPanel
-              mode={mode}
-              articleText={activeText}
-              onSubmit={handleArticleSubmit}
-              onEditAgain={handleEditAgain}
-              contentWidth={contentWidth}
-              onWidthChange={setContentWidth}
-              onLinesReady={setArticleLines}
-              selectedWords={selectedWords}
-              onWordClick={handleWordClick}
-              activeLevels={activeLevels}
-              rewriteMappings={rewriteMappings}
-              validI1Words={validI1Words}
-              validAboveI1Words={validAboveI1Words}
-              removedWords={removedWords}
-              wordLevels={wordLevels}
-              viewMode={viewMode}
-              isRewriting={isRewriting}
-              rewriteError={rewriteError}
-              vocabularyFilter={vocabularyFilter}
+        ) : null}
+
+        {mode === "pipeline" ? (
+          <div className="reading-pipeline-layout">
+            <ReadingPipelinePanel
+              pipelineState={pipelineState}
+              isGenerating={isRewriting}
+              onContinue={handleContinueGeneration}
+              onViewOriginal={() => setShowPipelineOriginal((value) => !value)}
             />
+
+            {showPipelineOriginal ? (
+              <div className="reading-pipeline-layout__original">
+                <LeftPanel
+                  mode="reading"
+                  articleText={activeArticleText}
+                  onSubmit={handleArticleSubmit}
+                  onEditAgain={handleEditAgain}
+                  showEditAgain={false}
+                  contentWidth={contentWidth}
+                  onWidthChange={setContentWidth}
+                  onLinesReady={setArticleLines}
+                  selectedWords={[]}
+                  onWordClick={() => {}}
+                  activeLevels={[]}
+                  rewriteMappings={[]}
+                  validI1Words={[]}
+                  validAboveI1Words={[]}
+                  removedWords={[]}
+                  wordLevels={{}}
+                  viewMode="original"
+                  isRewriting={false}
+                  rewriteError={null}
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {mode === "pack" ? (
+          <div className="reading-pack-layout">
+            <div className="reading-pack-layout__main">
+              <ReadingPackPanel
+                pack={readingPack || {
+                  originalText: activeArticleText,
+                  rewrittenText: rewrittenText || activeArticleText,
+                  mappings: rewriteMappings,
+                  validI1Words,
+                  validAboveI1Words,
+                  removedWords,
+                  wordLevels,
+                  diagnosticSummary: {
+                    materialDifficulty: diagnosticSnapshot?.materialDifficulty || "--",
+                    preservedI1Count: diagnosticSnapshot?.preservedI1Count ?? 0,
+                    aboveI1Count: diagnosticSnapshot?.aboveI1Count ?? 0,
+                  },
+                  targetLevel: diagnosticSnapshot?.selectedTargetLevel || "--",
+                  comparisonCards: [],
+                }}
+                packViewMode={packViewMode}
+                onPackViewModeChange={setPackViewMode}
+                contentWidth={contentWidth}
+                onWidthChange={setContentWidth}
+                onLinesReady={setArticleLines}
+                selectedWords={selectedWords}
+                onWordClick={handleWordClick}
+                activeLevels={activeLevels}
+              />
+            </div>
+
             <CollapseDivider
               collapsed={!analysisPanelOpen}
               onToggle={() => setAnalysisPanelOpen((value) => !value)}
@@ -486,7 +542,7 @@ export function ReadingPage({ accessToken, apiCall }) {
                 analysisPanelOpen ? "reading-analysis-column--open" : "reading-analysis-column--closed"
               )}
             >
-              {analysisPanelOpen ? (
+              {showAnalysisPanel && analysisPanelOpen ? (
                 <AnalysisPanel
                   selectedWords={selectedWords}
                   wordStats={wordStats}
@@ -507,7 +563,32 @@ export function ReadingPage({ accessToken, apiCall }) {
               )}
             </div>
           </div>
-        )}
+        ) : null}
+
+        {mode === "input" ? (
+          <div className="reading-layout">
+            <LeftPanel
+              mode="input"
+              articleText=""
+              onSubmit={handleArticleSubmit}
+              onEditAgain={handleEditAgain}
+              contentWidth={contentWidth}
+              onWidthChange={setContentWidth}
+              onLinesReady={setArticleLines}
+              selectedWords={selectedWords}
+              onWordClick={handleWordClick}
+              activeLevels={activeLevels}
+              rewriteMappings={rewriteMappings}
+              validI1Words={validI1Words}
+              validAboveI1Words={validAboveI1Words}
+              removedWords={removedWords}
+              wordLevels={wordLevels}
+              viewMode={viewMode}
+              isRewriting={isRewriting}
+              rewriteError={rewriteError}
+            />
+          </div>
+        ) : null}
       </div>
       <TranslationDialog
         open={translationDialog.open}

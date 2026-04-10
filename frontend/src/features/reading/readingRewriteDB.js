@@ -10,6 +10,8 @@
  * - viewMode 按文章独立记忆（原文/重写版切换偏好）
  * - 提供徽章查询：哪些文章已有重写记录
  */
+import { createInitialPipelineState, normalizePipelineState } from "./readingPipelineMachine";
+
 const DB_NAME = "reading_rewrites_v3";
 const DB_VERSION = 1;
 const STORE_NAME = "rewrites";
@@ -51,10 +53,45 @@ function openDB() {
  * @property {object[]}  removedWords      — 被过滤的词汇 [{word, reason}]
  * @property {object}    wordLevels       — 二次筛选后的最终等级 {word: level}
  * @property {object|null} diagnosticSnapshot — 诊断阶段快照（Phase 35）
- * @property {string|null} flowStatus — idle | diagnosed | generated
+ * @property {object|null} pipeline    — Phase 36 显式阶段快照
+ * @property {object|null} readingPack — Phase 36 阅读包资产
+ * @property {string|null} flowStatus — idle | diagnosed | pipeline | failed | generated
  * @property {"original"|"rewritten"} viewMode — 用户偏好的视图
+ * @property {"original"|"rewritten"|"comparison"} packViewMode — 阅读包视图偏好
  * @property {number}    rewrittenAt  — 重写时间戳
  */
+
+export function deriveFlowStatus(record = {}) {
+  if (record.flowStatus) {
+    return record.flowStatus;
+  }
+  if (record.readingPack?.status === "completed" || record.rewrittenText) {
+    return "generated";
+  }
+  if (record.pipeline?.error?.stage) {
+    return "failed";
+  }
+  if (record.pipeline?.currentStage || record.pipeline?.lastCompletedStage) {
+    return "pipeline";
+  }
+  if (record.diagnosticSnapshot) {
+    return "diagnosed";
+  }
+  return "idle";
+}
+
+export function normalizeRewriteRecord(record) {
+  if (!record) {
+    return null;
+  }
+  return {
+    ...record,
+    pipeline: normalizePipelineState(record.pipeline || createInitialPipelineState()),
+    readingPack: record.readingPack || null,
+    packViewMode: record.packViewMode || record.viewMode || "original",
+    flowStatus: deriveFlowStatus(record),
+  };
+}
 
 /* ─── CRUD ───────────────────────────────────────────── */
 
@@ -65,11 +102,12 @@ function openDB() {
  */
 export async function saveRewriteRecord(record) {
   const db = await openDB();
+  const nextRecord = normalizeRewriteRecord(record);
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readwrite");
     const store = tx.objectStore(STORE_NAME);
-    store.put({ ...record, rewrittenAt: record.rewrittenAt ?? Date.now() });
-    tx.oncomplete = () => resolve(record.articleId);
+    store.put({ ...nextRecord, rewrittenAt: nextRecord.rewrittenAt ?? Date.now() });
+    tx.oncomplete = () => resolve(nextRecord.articleId);
     tx.onerror = () => reject(tx.error);
   });
 }
@@ -85,7 +123,7 @@ export async function getRewriteRecord(articleId) {
     const tx = db.transaction(STORE_NAME, "readonly");
     const store = tx.objectStore(STORE_NAME);
     const req = store.get(articleId);
-    req.onsuccess = () => resolve(req.result ?? null);
+    req.onsuccess = () => resolve(normalizeRewriteRecord(req.result ?? null));
     req.onerror = () => reject(req.error);
   });
 }
@@ -106,6 +144,27 @@ export async function updateViewMode(articleId, viewMode) {
       const record = getReq.result;
       if (!record) return resolve();
       record.viewMode = viewMode;
+      if (!record.packViewMode || viewMode === "original" || viewMode === "rewritten") {
+        record.packViewMode = viewMode;
+      }
+      const putReq = store.put(record);
+      putReq.onsuccess = () => resolve();
+      putReq.onerror = () => reject(putReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+}
+
+export async function updatePackViewMode(articleId, packViewMode) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const getReq = store.get(articleId);
+    getReq.onsuccess = () => {
+      const record = getReq.result;
+      if (!record) return resolve();
+      record.packViewMode = packViewMode;
       const putReq = store.put(record);
       putReq.onsuccess = () => resolve();
       putReq.onerror = () => reject(putReq.error);
@@ -164,7 +223,7 @@ export async function getAllRewriteRecords() {
     const tx = db.transaction(STORE_NAME, "readonly");
     const store = tx.objectStore(STORE_NAME);
     const req = store.getAll();
-    req.onsuccess = () => resolve(req.result || []);
+    req.onsuccess = () => resolve((req.result || []).map((record) => normalizeRewriteRecord(record)));
     req.onerror = () => reject(req.error);
   });
 }

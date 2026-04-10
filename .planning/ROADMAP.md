@@ -17,7 +17,7 @@
 ### 🚧 v2.8 阅读生成流水线
 
 - [x] **Phase 35: Material Intake & Diagnostic Card** — 把阅读输入升级为比赛可展示的材料诊断台 (completed 2026-04-10)
-- [ ] **Phase 36: Pipeline Orchestrator & Reading Pack** — 把一次性重写升级为显式阶段生成与阅读包产物
+- [x] **Phase 36: Pipeline Orchestrator & Reading Pack** — 把一次性重写升级为显式阶段生成与阅读包产物 (completed 2026-04-10)
 - [ ] **Phase 37: Learning Handoff & Pack Library** — 把阅读包变成可回看、可收词、可继续学习的资产
 
 ---
@@ -30,7 +30,7 @@
 | 33 | v2.7 | 2/2 | Complete | 2026-04-06 |
 | 34 | v2.7 | 1/1 | Complete | 2026-04-06 |
 | 35 | v2.8 | 1/1 | Complete    | 2026-04-10 |
-| 36 | v2.8 | 0/? | Not started | - |
+| 36 | v2.8 | 3/3 | Complete    | 2026-04-10 |
 | 37 | v2.8 | 0/? | Not started | - |
 
 ---
@@ -72,7 +72,7 @@
 4. Reading pack supports original view, i+1 view, and sentence-by-sentence comparison view without losing existing highlight and mapping accuracy.
 5. Refresh or navigation interruption can recover the latest saved generation state or reopen the finished reading pack instead of forcing a full restart.
 
-**Plans:** TBD
+**Plans:** 3/3 plans complete
 
 ---
 

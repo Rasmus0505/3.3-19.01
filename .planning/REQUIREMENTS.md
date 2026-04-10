@@ -14,14 +14,14 @@
 
 ### Generation Pipeline Experience
 
-- [ ] **PIPE-01**: User can watch a staged generation flow that explicitly shows material parsing, difficulty judgment, simplification planning, text rewriting, and reading-pack assembly.
-- [ ] **PIPE-02**: User can see stage-specific progress and failure states that explain what failed and whether the material can still be opened in original mode.
-- [ ] **PIPE-03**: If generation is interrupted by refresh or navigation, user can recover the latest in-progress state or completed output without restarting from scratch.
+- [x] **PIPE-01**: User can watch a staged generation flow that explicitly shows material parsing, difficulty judgment, simplification planning, text rewriting, and reading-pack assembly.
+- [x] **PIPE-02**: User can see stage-specific progress and failure states that explain what failed and whether the material can still be opened in original mode.
+- [x] **PIPE-03**: If generation is interrupted by refresh or navigation, user can recover the latest in-progress state or completed output without restarting from scratch.
 
 ### Reading Pack Output
 
-- [ ] **PACK-01**: User receives a persistent reading pack asset containing original text, i+1 rewritten text, target-level metadata, rewrite mappings, and diagnostic summary for one material.
-- [ ] **PACK-02**: User can switch between original view, i+1 view, and sentence-by-sentence comparison view inside the reading pack.
+- [x] **PACK-01**: User receives a persistent reading pack asset containing original text, i+1 rewritten text, target-level metadata, rewrite mappings, and diagnostic summary for one material.
+- [x] **PACK-02**: User can switch between original view, i+1 view, and sentence-by-sentence comparison view inside the reading pack.
 - [ ] **PACK-03**: User can inspect which words were preserved as i+1 learning opportunities and which expressions were simplified, through a structured explanation panel rather than only inline highlights.
 - [ ] **PACK-04**: User can reopen a previously generated reading pack from history and see its difficulty badge and generation status without regenerating.
 
@@ -61,11 +61,11 @@
 | DIAG-02 | Phase 35 | Complete |
 | DIAG-03 | Phase 35 | Complete |
 | DIAG-04 | Phase 35 | Complete |
-| PIPE-01 | Phase 36 | Pending |
-| PIPE-02 | Phase 36 | Pending |
-| PIPE-03 | Phase 36 | Pending |
-| PACK-01 | Phase 36 | Pending |
-| PACK-02 | Phase 36 | Pending |
+| PIPE-01 | Phase 36 | Complete |
+| PIPE-02 | Phase 36 | Complete |
+| PIPE-03 | Phase 36 | Complete |
+| PACK-01 | Phase 36 | Complete |
+| PACK-02 | Phase 36 | Complete |
 | PACK-03 | Phase 37 | Pending |
 | PACK-04 | Phase 37 | Pending |
 | HAND-01 | Phase 37 | Pending |

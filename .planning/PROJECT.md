@@ -115,8 +115,8 @@ See `.planning/milestones/v2.4-REQUIREMENTS.md` for archived requirements.
 ### Active
 
 <!-- v2.8 — 阅读生成流水线 -->
-- [ ] 用户可在生成前看到阅读材料的难度诊断、建议目标等级和 i+1 / 超纲表达统计
-- [ ] 用户可通过显式阶段化流程把任意阅读材料生成可回看的 i+1 阅读包，而不是只得到一次性重写文本
+- [x] 用户可在生成前看到阅读材料的难度诊断、建议目标等级和 i+1 / 超纲表达统计
+- [x] 用户可通过显式阶段化流程把任意阅读材料生成可回看的 i+1 阅读包，而不是只得到一次性重写文本
 - [ ] 用户可在阅读包内查看原文 / i+1 / 逐句对照和词汇处理说明，理解系统保留了什么、简化了什么
 - [ ] 用户可从阅读包直接进入生词本、历史回看和下一步学习动作，形成阅读后的学习闭环
 
@@ -239,4 +239,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-10 after v2.8 milestone draft*
+*Last updated: 2026-04-10 after Phase 36 completion*

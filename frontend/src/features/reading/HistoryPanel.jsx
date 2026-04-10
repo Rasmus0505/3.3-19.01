@@ -218,9 +218,25 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
               {records.map((record) => (
                 (() => {
                   const rewriteMeta = rewriteMetaMap.get(record.id) || null;
-                  const hasGenerated = Boolean(rewriteMeta?.rewrittenText);
+                  const hasGenerated = Boolean(
+                    rewriteMeta?.readingPack?.status === "completed" ||
+                    (rewriteMeta?.rewrittenText && rewriteMeta?.flowStatus === "generated")
+                  );
                   const hasDiagnostic = Boolean(rewriteMeta?.diagnosticSnapshot);
-                  const statusLabel = hasGenerated ? "已生成" : hasDiagnostic ? "待生成" : null;
+                  const hasInterruptedPipeline = Boolean(
+                    !hasGenerated &&
+                    (rewriteMeta?.flowStatus === "pipeline" ||
+                      rewriteMeta?.flowStatus === "failed" ||
+                      rewriteMeta?.pipeline?.currentStage ||
+                      rewriteMeta?.pipeline?.lastCompletedStage)
+                  );
+                  const statusLabel = hasGenerated
+                    ? "阅读包"
+                    : hasInterruptedPipeline
+                      ? "生成中断"
+                      : hasDiagnostic
+                        ? "待生成"
+                        : null;
                   const targetLabel = rewriteMeta?.diagnosticSnapshot?.selectedTargetLevel || null;
 
                   return (
@@ -244,6 +260,8 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
                                 "history-panel__item-badge",
                                 hasGenerated
                                   ? "history-panel__item-badge--generated"
+                                  : hasInterruptedPipeline
+                                    ? "history-panel__item-badge--interrupted"
                                   : "history-panel__item-badge--pending"
                               )}
                             >
