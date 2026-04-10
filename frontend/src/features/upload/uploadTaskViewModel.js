@@ -19,7 +19,7 @@ export function sanitizeUserFacingText(text) {
     .replace(/No module named ['"][^'"]+['"]/gi, "服务端依赖未安装")
     .replace(/本地识别/g, "识别")
     .replace(/本地模型/g, "模型")
-    .replace(/本地 Bottle 1\.0/g, "Bottle 1.0")
+    .replace(/本地 Bottle 1\.0/g, "Unlock 本地")
     .replace(/本地字幕/g, "字幕")
     .replace(/本地音频/g, "音频")
     .replace(/本地视频/g, "视频")
