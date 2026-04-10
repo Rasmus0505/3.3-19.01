@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Bottle is an English learning product for English learners. Users bring their own study materials, generate structured lessons from real media, and then practice through sentence-based learning, spelling, and review flows.
+Bottle is an English learning product for learners who want to study from materials they actually care about. Users bring their own English media and text, turn it into usable lessons or reading experiences, and then continue through sentence-based practice, review flows, and vocabulary study.
 
 The product is intentionally split by runtime capability: the desktop client is the full-power experience, while the web app provides the strongest browser-safe subset. The platform should stay easy for non-technical learners while keeping heavy media work off your server whenever possible.
 
@@ -10,14 +10,15 @@ The product is intentionally split by runtime capability: the desktop client is 
 
 Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-## Current Milestone: v2.7 — 阅读板块重写增强
+## Current Milestone: v2.8 — 阅读生成流水线
 
-**Goal:** 持久化保存AI重写结果，改进重写词汇的视觉标记（黄色色块替代下划线），优化DeepSeek提示词以减少token消耗同时提升质量。
+**Goal:** 把任意英语阅读材料转化为用户个性化的 i+1 阅读包，并用比赛导向的方式展示诊断、生成过程、对照结果和学习接力。
 
 **Target features:**
-1. **重写文章持久化** — unlock后的重写结果保存到IndexedDB（原文+重写+mappings），阅读历史自动加载，支持原文/重写版模式切换
-2. **黄色色块UI** — 重写词/短语用黄色背景色块覆盖，悬停tooltip显示原词
-3. **提示词优化** — 参考Rewordify分级+句子级分析，输出结构化JSON减少token消耗
+1. **材料诊断台** — 在生成前展示文章难度、用户等级、建议目标等级、i+1 词与超纲表达统计，而不是直接黑盒重写
+2. **阶段化生成流程** — 将阅读生成拆成可见的解析、判断、规划、重构、组装阶段，强化“任意材料 -> i+1 包”的产品叙事
+3. **阅读包结果页** — 将输出升级为可回看的阅读包资产，支持原文 / i+1 / 逐句对照以及词汇处理说明
+4. **学习接力** — 从阅读包直接进入生词本、历史资产回看和后续学习动作，而不是停留在一次性重写结果
 
 ## Current State
 
@@ -113,10 +114,11 @@ See `.planning/milestones/v2.4-REQUIREMENTS.md` for archived requirements.
 
 ### Active
 
-<!-- v2.7 — 阅读板块重写增强 -->
-- [ ] 重写文章持久化：unlock后保存到IndexedDB，阅读历史自动加载，支持原文/重写版切换
-- [ ] 黄色色块UI：重写词汇用黄色背景色块覆盖，悬停显示原词
-- [ ] 提示词优化：参考Rewordify分级策略+句子级分析，结构化JSON减少token
+<!-- v2.8 — 阅读生成流水线 -->
+- [ ] 用户可在生成前看到阅读材料的难度诊断、建议目标等级和 i+1 / 超纲表达统计
+- [ ] 用户可通过显式阶段化流程把任意阅读材料生成可回看的 i+1 阅读包，而不是只得到一次性重写文本
+- [ ] 用户可在阅读包内查看原文 / i+1 / 逐句对照和词汇处理说明，理解系统保留了什么、简化了什么
+- [ ] 用户可从阅读包直接进入生词本、历史回看和下一步学习动作，形成阅读后的学习闭环
 
 ### Out of Scope
 
@@ -136,6 +138,7 @@ See `.planning/milestones/v2.4-REQUIREMENTS.md` for archived requirements.
 - Market reference pass for this milestone is based on official materials checked on 2026-03-28 from LingQ, Migaku, FluentU, and Glossika. Shared patterns: sentence-centric repetition, one-click vocabulary capture, due-review loops, strong scenario-based plan positioning, and premium upsell through convenience rather than raw feature count.
 - v2.2 completed desktop publishing pipeline, announcement system, and wordbook review UX overhaul. v2.3 focuses on bug fixes and UX polish in learning and import flows.
 - Rewordify.com核心参考（2026-04-06调研）：分级难度系统（6级）+ 多显示模式（原文/重写并排、点击原词对照、词汇列表面板）+ 颜色高亮替代下划线（黄/紫、绿/浅红、蓝/橙）。内置50,000+简化词数据库。与本产品差异：CEFR词汇表（fixed-v1）可精准识别i+1词汇，比频率统计更可靠。
+- OpenMAIC 本地参考（2026-04-10梳理）：最值得复用的是“输入材料 -> 分阶段生成 -> 资产化结果”的比赛展示方式，包括诊断前置、阶段可视化、生成中间态和历史资产卡片；不复用其多智能体课堂范围。
 - Immersive learning already uses a reducer-driven state machine with explicit loop/rate/display contracts (Phase 8) — bug fixes in this milestone should not regress that architecture.
 - Wordbook already supports word-level translation field and pronunciation button — v2.3 extends these to display in the wordbook panel above each entry.
 - Upload surface already has link/file tabs — v2.3 changes the default tab and redesigns the link-import flow with a configuration modal.
@@ -155,16 +158,14 @@ See `.planning/milestones/v2.4-REQUIREMENTS.md` for archived requirements.
 - **Immersive Architecture**: Immersive state machine contract from Phase 8 must be preserved — bug fixes should not remove reducer structure or re-introduce ad-hoc state transitions.
 - **Wordbook Backward Compatibility**: Wordbook review flow, due queue, and mastery scheduling from Phase 17 must be preserved — enhancements should layer on top, not replace.
 
-## Milestone: v2.3 Summary
+## Milestone: v2.7 Summary
 
-**Shipped:** 2026-04-03
-**Phases:** Phase 19, 20, 21, 23
+**Shipped:** 2026-04-06
+**Phases:** Phase 32, 33, 34
 **Key outcomes:**
-- Immersive learning 4-bug fix: autoAdvanceGuard guard + TTS three-tier fallback + answer box yellow/green color differentiation
-- Wordbook entry enhancements: translation block with bg-muted/20 + Web Speech API pronunciation with spinner and 2s auto-recovery
-- Material import UX: default link tab, simplified copy, shortcut two-row layout
-- Subtitle mask position reset: prevLessonIdRef forces center on new lessonId, enabled state persists via localStorage
-- Link restore enhancement: source_url check + hasLessonMedia cache check before triggering yt-dlp re-download
+- Rewrite persistence: IndexedDB stores original text, rewritten text, mappings, and per-article view mode
+- Rewrite UI enhancement: yellow highlight blocks replaced underlines for rewritten spans, with hover/tooltips and selection overlay support
+- Prompt optimization: structured simplify endpoints and token-estimate banner reduced the "one click rewrite" blind spot, but the overall experience is still a rewrite tool rather than a full reading-generation workflow
 
 ## Key Decisions
 
@@ -215,6 +216,10 @@ See `.planning/milestones/v2.4-REQUIREMENTS.md` for archived requirements.
 | 重写词汇黄色色块UI（覆盖式背景）+ tooltip原词对照 | 色块比下划线更明显，悬停显示原词符合Rewordify交互模式 | 🔄 v2.7 |
 | 重写结果按文章维度持久化到IndexedDB，阅读历史自动加载 | 避免重复请求API，用户可在任意时间切换原文/重写版 | 🔄 v2.7 |
 | Rewordify参考：分级难度+多显示模式+点击原词对照，本产品CEFR系统更精准 | Rewordify用频率统计，本产品用CEFR词汇表识别i+1词汇，可精准定位简化目标词 | 🔄 v2.7 |
+| 阅读板块定位升级为“任意材料 -> i+1 阅读包”而不是“单次重写结果” | 更适合比赛展示，也更符合产品想让用户把兴趣材料转为可理解输入的核心定位 | 🔄 v2.8 |
+| 阅读生成必须显式展示诊断与阶段过程 | OpenMAIC 证明阶段感会显著提升可理解性和演示表现，黑盒 rewrite 不足以支撑比赛叙事 | 🔄 v2.8 |
+| OpenMAIC 作为编排与展示参考，而不是功能复制目标 | 复用其“输入材料 -> 分阶段生成 -> 资产化结果”的结构，避免把 Bottle 漂移成多智能体课堂产品 | 🔄 v2.8 |
+| 阅读结果以“阅读包资产”持久化，而不是只保存 rewrittenText | 历史回看、对照视图、词汇解释、学习接力都更容易围绕 pack 组织 | 🔄 v2.8 |
 
 ## Evolution
 
@@ -234,4 +239,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-06 after v2.6 milestone completion, v2.7 started*
+*Last updated: 2026-04-10 after v2.8 milestone draft*
