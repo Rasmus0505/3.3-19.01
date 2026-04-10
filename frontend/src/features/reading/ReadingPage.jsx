@@ -1,25 +1,14 @@
 /**
  * ReadingPage.jsx — 阅读板块根组件
  * =================================
- * Phase 28: 词选动画、翻译弹窗、批量加入生词本、难度分布统计
- * Phase 29: AI 重写、原文/重写版丝滑切换
- * Phase 30 (本文件): 新 UI 布局 — 顶部历史记录 + 左侧输入/阅读二合一 + 右侧分析面板
- *
- * 布局：
- *   ┌─────────────────────────────────────────┐
- *   │  HistoryPanel (顶部历史记录)              │
- *   ├───────────────────────┬──────────────────┤
- *   │  LeftPanel            │  AnalysisPanel   │
- *   │  (输入模式 / 阅读模式)  │  (难度分布+词汇) │
- *   └───────────────────────┴──────────────────┘
+ * Phase 35: 材料诊断台 + 继续生成前置确认
  */
-import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { readCefrLevel } from "../../app/authStorage";
 import { parseResponse } from "../../shared/api/client";
 import { cn } from "../../lib/utils";
-import { Button } from "../../shared/ui";
 import { computeCefrClassName } from "./ArticlePanel";
 import { getOrCreateAnalyzer } from "../../hooks/useRichLayout";
 import { TranslationDialog } from "../wordbook/TranslationDialog";
@@ -28,12 +17,14 @@ import { useVocabularyFilter } from "./useVocabularyFilter";
 import { HistoryPanel, saveHistoryRecord } from "./HistoryPanel";
 import { LeftPanel } from "./LeftPanel";
 import { AnalysisPanel, getDefaultActiveLevels } from "./AnalysisPanel";
+import { DiagnosticPanel } from "./DiagnosticPanel";
+import {
+  buildDiagnosticSnapshot,
+  splitDiagnosticText,
+  updateDiagnosticTarget,
+} from "./readingDiagnostics";
+import { estimateRewriteTokens } from "./api/readingRewriteApi";
 
-/* ─── CollapseDivider ────────────────────────────── */
-/**
- * 插入在 LeftPanel 和 AnalysisPanel 列之间的分隔线按钮，
- * 居中于竖直分隔线位置。展开时显示「收起」，收起时显示「展开」。
- */
 function CollapseDivider({ collapsed, onToggle, collapseLabel, expandLabel }) {
   return (
     <div className="reading-collapse-divider" aria-hidden={false}>
@@ -60,28 +51,12 @@ function CollapseDivider({ collapsed, onToggle, collapseLabel, expandLabel }) {
   );
 }
 
-const DEMO_ARTICLE = `The Art of Reading in a Digital Age
-
-In the modern world, reading has evolved beyond the traditional paper-and-ink experience. Digital platforms have transformed how we consume written content, offering new possibilities for language learners and avid readers alike.
-
-One of the most significant advantages of digital reading is accessibility. With a smartphone or tablet, learners can access thousands of texts at any moment. This democratization of knowledge has made it easier for people around the globe to improve their literacy skills and expand their vocabulary.
-
-However, this abundance of content also presents challenges. How can learners effectively navigate through the overwhelming amount of material available online? The answer lies in developing strategic reading habits and leveraging tools that support comprehension.
-
-Contextual vocabulary learning represents one of the most effective approaches to language acquisition. Rather than memorizing isolated words from flash cards, learners benefit from encountering new vocabulary in meaningful passages. This method allows readers to infer the meaning of unfamiliar words from surrounding context clues.
-
-The integration of technology into reading practice offers exciting opportunities. Adaptive platforms can analyze a reader's current proficiency level and select appropriate texts. Such personalization ensures that learners are consistently challenged without becoming frustrated by content that exceeds their current abilities.
-
-Moreover, the ability to interact with text—highlighting, annotating, and looking up words instantly—creates a more engaging learning experience. These interactive features transform passive reading into an active dialogue between the reader and the text.
-
-As we look to the future, the boundaries between reading, learning, and entertainment continue to blur. The most successful learners will be those who approach digital reading not as a chore, but as an adventure in discovery.`;
-
 function PageFallback() {
   return (
     <div className="flex gap-4">
       <div className="flex-1 space-y-3">
         {[80, 95, 70, 90, 60, 85, 75].map((w, i) => (
-          <div key={i} className="h-5 animate-pulse rounded bg-muted" style={{ width: w + "%" }} />
+          <div key={i} className="h-5 animate-pulse rounded bg-muted" style={{ width: `${w}%` }} />
         ))}
       </div>
       <div className="w-72 shrink-0 space-y-2 rounded-xl border bg-muted/30 p-4">
@@ -93,13 +68,11 @@ function PageFallback() {
   );
 }
 
-/** 计算文章的 CEFR 难度分布统计 */
 function computeWordStats(lines, wordLevels = {}) {
   const cefrCounts = { A1: 0, A2: 0, B1: 0, B2: 0, C1: 0, C2: 0, SUPER: 0 };
   let total = 0;
   for (const line of lines) {
     for (const seg of line.segments) {
-      // 空白等 Pretext 片段无 normalized word，不计入总词数
       if (!seg.word) continue;
       total++;
       const effectiveLevel = wordLevels[seg.word.toLowerCase()] || seg.cefrLevel;
@@ -111,39 +84,8 @@ function computeWordStats(lines, wordLevels = {}) {
   return { total, cefrCounts };
 }
 
-/**
- * 从 articleLines 收集待简化候选词（按文档序，首次出现去重）。
- * 同时收集 cefr-i-plus-one（i+1）和 cefr-above-i-plus-one（>i+1）的词。
- */
-function collectSimplifyCandidatesFromLines(lines, userLevel) {
-  const seen = new Set();
-  const words = [];
-  for (const line of lines) {
-    for (const seg of line.segments) {
-      if (!seg.word || typeof seg.word !== "string") continue;
-      const cefrClass = computeCefrClassName(seg.cefrLevel, userLevel);
-      if (cefrClass === "cefr-i-plus-one" || cefrClass === "cefr-above-i-plus-one") {
-        const lower = seg.word.toLowerCase();
-        if (!seen.has(lower)) {
-          seen.add(lower);
-          words.push({ word: seg.word, level: seg.cefrLevel || "SUPER" });
-        }
-      }
-    }
-  }
-  return words;
-}
-
-/**
- * 对原始文本直接分词并收集待简化候选词（不依赖 useRichLayout 渲染）。
- * 使用 VocabAnalyzer 单例，先确保加载完成。
- * @param {string} text — 原始文章文本
- * @param {string} userLevel — 用户 CEFR 等级
- * @returns {{ word: string, level: string }[]}
- */
-async function collectSimplifyCandidatesFromRaw(text, userLevel) {
+async function collectSimplifyCandidatesFromRaw(text, targetLevel) {
   const analyzer = await getOrCreateAnalyzer();
-  const targetLevel = getTargetLevel(userLevel);
   const result = analyzer.extractSurfaceWordsAtOrAboveLevel(text, targetLevel);
   const seen = new Set();
   const candidates = [];
@@ -158,13 +100,6 @@ async function collectSimplifyCandidatesFromRaw(text, userLevel) {
   return candidates;
 }
 
-/**
- * ReadingPage — 阅读板块入口组件
- *
- * @param {object} props
- * @param {string} props.accessToken — 用户 access token（用于 API 调用）
- * @param {Function} props.apiCall — API 调用函数（来自 LearningShell）
- */
 export function ReadingPage({ accessToken, apiCall }) {
   const userLevel = useMemo(() => readCefrLevel() || "B1", []);
   const defaultActiveLevels = useMemo(() => getDefaultActiveLevels(userLevel), [userLevel]);
@@ -174,24 +109,61 @@ export function ReadingPage({ accessToken, apiCall }) {
   const [articleLines, setArticleLines] = useState([]);
   const [isAddingToWordbook, setIsAddingToWordbook] = useState(false);
   const [translationDialog, setTranslationDialog] = useState({ open: false, text: "" });
-
-  // 面板模式: 'input' | 'reading'
   const [mode, setMode] = useState("input");
   const [activeArticleText, setActiveArticleText] = useState("");
   const [activeHistoryId, setActiveHistoryId] = useState(null);
-  // 用户勾选的级别
   const [activeLevels, setActiveLevels] = useState(defaultActiveLevels);
-  // 右侧等级词汇表（分析面板）展开/收起
   const [analysisPanelOpen, setAnalysisPanelOpen] = useState(true);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+  const [isDiagnosing, setIsDiagnosing] = useState(false);
+  const [diagnosticError, setDiagnosticError] = useState(null);
+
+  const {
+    rewrittenText,
+    rewriteMappings,
+    validI1Words,
+    validAboveI1Words,
+    removedWords,
+    wordLevels,
+    viewMode,
+    setViewMode,
+    isRewriting,
+    rewriteError,
+    diagnosticSnapshot,
+    flowStatus,
+    saveDiagnosticSnapshot,
+    clearRewrite,
+    handleRewrite,
+  } = useReadingRewrite({
+    apiCall,
+    accessToken,
+    articleId: activeHistoryId,
+    onSuccess: () => setHistoryRefreshKey((k) => k + 1),
+  });
+
+  const vocabularyFilter = useVocabularyFilter({
+    accessToken,
+    userLevel,
+    targetLevel: "B2",
+  });
 
   const wordStats = useMemo(() => computeWordStats(articleLines, wordLevels), [articleLines, wordLevels]);
 
-  // 级别切换
+  useEffect(() => {
+    if (!activeHistoryId || isRewriting) return;
+    if (flowStatus === "generated" || rewrittenText) {
+      setMode("reading");
+      return;
+    }
+    if (flowStatus === "diagnosed" || diagnosticSnapshot) {
+      setMode("diagnostic");
+    }
+  }, [activeHistoryId, diagnosticSnapshot, flowStatus, isRewriting, rewrittenText]);
+
   const handleLevelToggle = useCallback((level) => {
     setActiveLevels((prev) => {
       if (prev.includes(level)) {
-        return prev.filter((l) => l !== level);
+        return prev.filter((item) => item !== level);
       }
       return [...prev, level];
     });
@@ -200,14 +172,14 @@ export function ReadingPage({ accessToken, apiCall }) {
   const handleWordClick = useCallback((word, segment) => {
     const cefrClass = computeCefrClassName(segment.cefrLevel, userLevel);
     setSelectedWords((prev) => {
-      const exists = prev.some((w) => w.word === word);
-      if (exists) return prev.filter((w) => w.word !== word);
+      const exists = prev.some((item) => item.word === word);
+      if (exists) return prev.filter((item) => item.word !== word);
       return [...prev, { word, cefrLevel: segment.cefrLevel, cefrClass }];
     });
   }, [userLevel]);
 
   const handleRemoveWord = useCallback((item) => {
-    setSelectedWords((prev) => prev.filter((w) => w.word !== item.word));
+    setSelectedWords((prev) => prev.filter((word) => word.word !== item.word));
   }, []);
 
   const handleClearAll = useCallback(() => {
@@ -249,7 +221,7 @@ export function ReadingPage({ accessToken, apiCall }) {
             end_token_index: null,
           }),
         });
-        const data = await parseResponse(resp);
+        await parseResponse(resp);
         if (resp.ok) successCount++;
         else failCount++;
       } catch (_) {
@@ -258,115 +230,159 @@ export function ReadingPage({ accessToken, apiCall }) {
     }
     setIsAddingToWordbook(false);
     if (successCount > 0) {
-      toast.success("已加入 " + successCount + " 个词到生词本");
+      toast.success(`已加入 ${successCount} 个词到生词本`);
       setSelectedWords([]);
     } else if (failCount > 0) {
-      toast.error("加入失败 " + failCount + " 个");
+      toast.error(`加入失败 ${failCount} 个`);
     }
   }, [accessToken, apiCall, selectedWords]);
 
-  // ── AI 重写 ─────────────────────────────────────
-  const {
-    rewrittenText,
-    rewriteMappings,
-    validI1Words,
-    validAboveI1Words,
-    removedWords,
-    wordLevels,
-    viewMode,
-    setViewMode,
-    isRewriting,
-    rewriteError,
-    clearRewrite,
-    handleRewrite,
-  } = useReadingRewrite({
-    apiCall,
-    accessToken,
-    articleId: activeHistoryId,
-    onSuccess: () => setHistoryRefreshKey((k) => k + 1),
-  });
+  const runDiagnosis = useCallback(async (
+    text,
+    { articleId: articleIdOverride = null, selectedTargetLevel = null } = {}
+  ) => {
+    const normalized = String(text || "").trim();
+    if (!normalized) return;
 
-  // ── 词汇筛选 Hook (Phase 36: 备用/增强) ───────────
-  // 新 Hook 提供独立的状态管理，可用于：
-  // 1. 不依赖 IndexedDB 的场景
-  // 2. 独立的筛选/重写流程
-  // 3. 替换 useReadingRewrite 的备用方案
-  const vocabularyFilter = useVocabularyFilter({
-    accessToken,
-    userLevel,
-    targetLevel: "B2",
-  });
-
-  // ── 文章切换时清空重写状态（由 auto-load effect 接管）─────
-
-  const activeText =
-    viewMode === "rewritten" && rewrittenText ? rewrittenText : activeArticleText;
-
-  // ── 文章提交（切换到阅读模式 + 自动触发重写）────────────
-  const handleArticleSubmit = useCallback(
-    async (text) => {
-      const id = crypto.randomUUID();
-      setActiveArticleText(text);
-      setActiveHistoryId(id);
-      setMode("reading");
-      setSelectedWords([]);
-      clearRewrite();
-      // 保存到历史记录
-      try {
-        await saveHistoryRecord({
-          id,
-          text,
-          read_at: Date.now(),
-        });
-      } catch (e) {
-        console.error("Failed to save history:", e);
-      }
-
-      // 立即触发 AI 简化（不等 VocabAnalyzer 渲染）
-      if (!accessToken) {
-        toast.info("请先登录以解锁 AI 简化功能");
-        return;
-      }
-      try {
-        const candidates = await collectSimplifyCandidatesFromRaw(text, userLevel);
-        if (candidates.length === 0) {
-          toast.info("当前文章没有检测到高难度词");
-          // 没有高难度词，直接显示原文（rewrittenText = null，viewMode = original）
-          return;
+    setIsDiagnosing(true);
+    setDiagnosticError(null);
+    try {
+      const analyzer = await getOrCreateAnalyzer();
+      const segments = splitDiagnosticText(normalized);
+      const report = analyzer.analyzeVideo(segments.length > 0 ? segments : [normalized], userLevel);
+      let estimate = { estimatedTokens: null, estimatedChargeYuan: null };
+      if (accessToken) {
+        try {
+          estimate = await estimateRewriteTokens(normalized, accessToken);
+        } catch (error) {
+          console.warn("Diagnostic estimate failed:", error);
         }
-        handleRewrite(text, { words: candidates });
-      } catch (e) {
-        console.error("Failed to collect simplify candidates:", e);
       }
-    },
-    [clearRewrite, accessToken, userLevel, handleRewrite]
-  );
+      const snapshot = buildDiagnosticSnapshot({
+        text: normalized,
+        userLevel,
+        report,
+        selectedTargetLevel: selectedTargetLevel || diagnosticSnapshot?.selectedTargetLevel || null,
+        estimatedTokens: estimate.estimatedTokens,
+        estimatedChargeYuan: estimate.estimatedChargeYuan,
+      });
+      await saveDiagnosticSnapshot({
+        articleId: articleIdOverride || activeHistoryId,
+        originalText: normalized,
+        snapshot,
+      });
+      setMode("diagnostic");
+    } catch (error) {
+      const message = error?.message || "诊断失败，请稍后重试。";
+      setDiagnosticError(message);
+      toast.error(message);
+    } finally {
+      setIsDiagnosing(false);
+    }
+  }, [
+    accessToken,
+    activeHistoryId,
+    diagnosticSnapshot?.selectedTargetLevel,
+    saveDiagnosticSnapshot,
+    userLevel,
+  ]);
 
-  // ── 重新输入 ─────────────────────────────────────
+  const handleArticleSubmit = useCallback(async (text) => {
+    const id = crypto.randomUUID();
+    setActiveArticleText(text);
+    setActiveHistoryId(id);
+    setSelectedWords([]);
+    clearRewrite();
+    setMode("diagnostic");
+    try {
+      await saveHistoryRecord({
+        id,
+        text,
+        read_at: Date.now(),
+      });
+    } catch (error) {
+      console.error("Failed to save history:", error);
+    }
+    await runDiagnosis(text, { articleId: id });
+  }, [clearRewrite, runDiagnosis]);
+
+  const handleRetryDiagnosis = useCallback(async () => {
+    if (!activeArticleText) return;
+    await runDiagnosis(activeArticleText, {
+      articleId: activeHistoryId,
+      selectedTargetLevel: diagnosticSnapshot?.selectedTargetLevel || null,
+    });
+  }, [activeArticleText, activeHistoryId, diagnosticSnapshot?.selectedTargetLevel, runDiagnosis]);
+
+  const handleSelectHistory = useCallback(async (record, rewriteMeta) => {
+    clearRewrite();
+    setDiagnosticError(null);
+    setActiveArticleText(record.text);
+    setActiveHistoryId(record.id);
+    setSelectedWords([]);
+
+    if (rewriteMeta?.rewrittenText) {
+      setMode("reading");
+      return;
+    }
+
+    setMode("diagnostic");
+    if (!rewriteMeta?.diagnosticSnapshot) {
+      await runDiagnosis(record.text, { articleId: record.id });
+    }
+  }, [clearRewrite, runDiagnosis]);
+
+  const handleDiagnosticTargetChange = useCallback(async (level) => {
+    if (!diagnosticSnapshot) return;
+    const nextSnapshot = updateDiagnosticTarget(diagnosticSnapshot, level);
+    await saveDiagnosticSnapshot({
+      articleId: activeHistoryId,
+      originalText: activeArticleText,
+      snapshot: nextSnapshot,
+    });
+  }, [activeArticleText, activeHistoryId, diagnosticSnapshot, saveDiagnosticSnapshot]);
+
+  const handleContinueGeneration = useCallback(async () => {
+    if (!diagnosticSnapshot || !activeArticleText) return;
+    if (!accessToken) {
+      toast.info("请先登录后继续生成");
+      return;
+    }
+
+    setMode("reading");
+    try {
+      const candidates = await collectSimplifyCandidatesFromRaw(
+        activeArticleText,
+        diagnosticSnapshot.selectedTargetLevel
+      );
+      await handleRewrite(activeArticleText, {
+        words: candidates,
+        targetLevel: diagnosticSnapshot.selectedTargetLevel,
+        showEstimateToast: false,
+      });
+    } catch (error) {
+      const message = error?.message || "生成前准备失败，请稍后重试。";
+      toast.error(message);
+      setMode("diagnostic");
+    }
+  }, [accessToken, activeArticleText, diagnosticSnapshot, handleRewrite]);
+
   const handleEditAgain = useCallback(() => {
     setMode("input");
+    setActiveArticleText("");
+    setActiveHistoryId(null);
+    setSelectedWords([]);
+    setDiagnosticError(null);
     clearRewrite();
   }, [clearRewrite]);
 
-  // ── 点击历史记录 ─────────────────────────────────
-  const handleSelectHistory = useCallback(
-    async (record) => {
-      setActiveArticleText(record.text);
-      setActiveHistoryId(record.id);
-      setMode("reading");
-      setSelectedWords([]);
-      // 重写状态由 useReadingRewrite 的 auto-load effect 自动处理
-    },
-    []
-  );
-
-  // ── 原文/重写切换 ────────────────────────────────
-  const showViewToggle = Boolean(rewrittenText);
+  const activeText =
+    viewMode === "rewritten" && rewrittenText ? rewrittenText : activeArticleText;
+  const showViewToggle = mode === "reading" && Boolean(rewrittenText);
 
   return (
     <Suspense fallback={<PageFallback />}>
       <div className="reading-container">
-        {/* 顶部历史记录 */}
         <HistoryPanel
           onSelect={handleSelectHistory}
           activeId={activeHistoryId}
@@ -396,69 +412,106 @@ export function ReadingPage({ accessToken, apiCall }) {
           </div>
         ) : null}
 
-        {/* 左右布局 */}
-        <div className="reading-layout">
-          <LeftPanel
-            mode={mode}
-            articleText={activeText}
-            onSubmit={handleArticleSubmit}
-            onEditAgain={handleEditAgain}
-            contentWidth={contentWidth}
-            onWidthChange={setContentWidth}
-            onLinesReady={setArticleLines}
-            selectedWords={selectedWords}
-            onWordClick={handleWordClick}
-            activeLevels={activeLevels}
-            rewriteMappings={rewriteMappings}
-            validI1Words={validI1Words}
-            validAboveI1Words={validAboveI1Words}
-            removedWords={removedWords}
-            wordLevels={wordLevels}
-            viewMode={viewMode}
-            isRewriting={isRewriting}
-            rewriteError={rewriteError}
-            // Phase 36: 新 Hook 数据（备用，可用于替换 useReadingRewrite）
-            vocabularyFilter={vocabularyFilter}
-          />
-          <CollapseDivider
-            collapsed={!analysisPanelOpen}
-            onToggle={() => setAnalysisPanelOpen((v) => !v)}
-            collapseLabel="收起词汇表"
-            expandLabel="展开词汇表"
-          />
-          <div
-            className={cn(
-              "reading-analysis-column",
-              analysisPanelOpen ? "reading-analysis-column--open" : "reading-analysis-column--closed"
-            )}
-          >
-            {analysisPanelOpen ? (
-              <AnalysisPanel
-                selectedWords={selectedWords}
-                wordStats={wordStats}
-                userLevel={userLevel}
-                activeLevels={activeLevels}
-                onLevelToggle={handleLevelToggle}
-                onRemove={handleRemoveWord}
-                onAddAllToWordbook={handleAddAllToWordbook}
-                onClearAll={handleClearAll}
-                onTranslate={handleTranslate}
-                rewriteMappings={rewriteMappings}
-                isAdding={isAddingToWordbook}
-                rewriteError={rewriteError}
-                onRequestCollapse={() => setAnalysisPanelOpen(false)}
-                // Phase 36: 新 Hook 数据（备用）
-                vocabularyFilter={vocabularyFilter}
+        {mode === "diagnostic" ? (
+          <div className="reading-diagnostic-layout">
+            <div className="reading-diagnostic-layout__preview">
+              <LeftPanel
+                mode="reading"
+                articleText={activeArticleText}
+                onSubmit={handleArticleSubmit}
+                onEditAgain={handleEditAgain}
+                showEditAgain={false}
+                contentWidth={contentWidth}
+                onWidthChange={setContentWidth}
+                onLinesReady={setArticleLines}
+                selectedWords={[]}
+                onWordClick={() => {}}
+                activeLevels={[]}
+                rewriteMappings={[]}
+                validI1Words={[]}
+                validAboveI1Words={[]}
+                removedWords={[]}
+                wordLevels={{}}
+                viewMode="original"
+                isRewriting={false}
+                rewriteError={null}
               />
-            ) : (
-              <div className="reading-analysis-rail" />
-            )}
+            </div>
+            <div className="reading-diagnostic-layout__dashboard">
+              <DiagnosticPanel
+                userLevel={userLevel}
+                snapshot={diagnosticSnapshot}
+                isDiagnosing={isDiagnosing}
+                diagnosticError={diagnosticError}
+                isGenerating={isRewriting}
+                onTargetLevelChange={handleDiagnosticTargetChange}
+                onRetryDiagnosis={handleRetryDiagnosis}
+                onContinueGeneration={handleContinueGeneration}
+                onEditAgain={handleEditAgain}
+              />
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="reading-layout">
+            <LeftPanel
+              mode={mode}
+              articleText={activeText}
+              onSubmit={handleArticleSubmit}
+              onEditAgain={handleEditAgain}
+              contentWidth={contentWidth}
+              onWidthChange={setContentWidth}
+              onLinesReady={setArticleLines}
+              selectedWords={selectedWords}
+              onWordClick={handleWordClick}
+              activeLevels={activeLevels}
+              rewriteMappings={rewriteMappings}
+              validI1Words={validI1Words}
+              validAboveI1Words={validAboveI1Words}
+              removedWords={removedWords}
+              wordLevels={wordLevels}
+              viewMode={viewMode}
+              isRewriting={isRewriting}
+              rewriteError={rewriteError}
+              vocabularyFilter={vocabularyFilter}
+            />
+            <CollapseDivider
+              collapsed={!analysisPanelOpen}
+              onToggle={() => setAnalysisPanelOpen((value) => !value)}
+              collapseLabel="收起词汇表"
+              expandLabel="展开词汇表"
+            />
+            <div
+              className={cn(
+                "reading-analysis-column",
+                analysisPanelOpen ? "reading-analysis-column--open" : "reading-analysis-column--closed"
+              )}
+            >
+              {analysisPanelOpen ? (
+                <AnalysisPanel
+                  selectedWords={selectedWords}
+                  wordStats={wordStats}
+                  userLevel={userLevel}
+                  activeLevels={activeLevels}
+                  onLevelToggle={handleLevelToggle}
+                  onRemove={handleRemoveWord}
+                  onAddAllToWordbook={handleAddAllToWordbook}
+                  onClearAll={handleClearAll}
+                  onTranslate={handleTranslate}
+                  rewriteMappings={rewriteMappings}
+                  isAdding={isAddingToWordbook}
+                  rewriteError={rewriteError}
+                  vocabularyFilter={vocabularyFilter}
+                />
+              ) : (
+                <div className="reading-analysis-rail" />
+              )}
+            </div>
+          </div>
+        )}
       </div>
       <TranslationDialog
         open={translationDialog.open}
-        onClose={() => setTranslationDialog((s) => ({ ...s, open: false }))}
+        onClose={() => setTranslationDialog((state) => ({ ...state, open: false }))}
         text={translationDialog.text}
         apiCall={apiCall}
       />

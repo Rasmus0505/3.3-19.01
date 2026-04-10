@@ -12,7 +12,11 @@
 import { Clock, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/utils";
-import { deleteRewriteRecord, getRewrittenArticleIds } from "./readingRewriteDB";
+import {
+  clearAllRewriteRecords,
+  deleteRewriteRecord,
+  getAllRewriteRecords,
+} from "./readingRewriteDB";
 
 /* ─── IndexedDB ─────────────────────────────────── */
 
@@ -117,19 +121,20 @@ function formatTime(ts) {
  */
 export function HistoryPanel({ onSelect, activeId, refreshKey }) {
   const [records, setRecords] = useState([]);
-  const [rewrittenIds, setRewrittenIds] = useState(new Set());
+  const [rewriteMetaMap, setRewriteMetaMap] = useState(new Map());
   const [loading, setLoading] = useState(true);
   const [collapsed, setCollapsed] = useState(false);
   const fetched = useRef(false);
 
   const load = useCallback(async () => {
     try {
-      const [data, rewritten] = await Promise.all([
+      const [data, rewriteRecords] = await Promise.all([
         getAllHistoryRecords(),
-        getRewrittenArticleIds(),
+        getAllRewriteRecords(),
       ]);
+      const metaMap = new Map(rewriteRecords.map((record) => [record.articleId, record]));
       setRecords(data);
-      setRewrittenIds(rewritten);
+      setRewriteMetaMap(metaMap);
     } catch (e) {
       console.error("Failed to load reading history:", e);
     } finally {
@@ -147,8 +152,8 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
     e.stopPropagation();
     await deleteHistoryRecordWithRewrite(id);
     setRecords((prev) => prev.filter((r) => r.id !== id));
-    setRewrittenIds((prev) => {
-      const next = new Set(prev);
+    setRewriteMetaMap((prev) => {
+      const next = new Map(prev);
       next.delete(id);
       return next;
     });
@@ -156,28 +161,9 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
 
   const handleClearAll = useCallback(async () => {
     await clearAllHistory();
-    // 同步清除所有重写记录（打开另一个 DB 并清空）
-    await new Promise((resolve, reject) => {
-      const req = indexedDB.open("reading_rewrites_v2", 1);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => {
-        try {
-          const db = req.result;
-          if (db.objectStoreNames.contains("rewrites")) {
-            const tx = db.transaction("rewrites", "readwrite");
-            tx.objectStore("rewrites").clear();
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-          } else {
-            resolve();
-          }
-        } catch (_) {
-          resolve();
-        }
-      };
-    });
+    await clearAllRewriteRecords();
     setRecords([]);
-    setRewrittenIds(new Set());
+    setRewriteMetaMap(new Map());
   }, []);
 
   if (loading) {
@@ -230,29 +216,60 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
           ) : (
             <div className="history-panel__list">
               {records.map((record) => (
-                <button
-                  key={record.id}
-                  className={cn(
-                    "history-panel__item",
-                    activeId === record.id && "history-panel__item--active"
-                  )}
-                  onClick={() => onSelect?.(record)}
-                >
-                  {rewrittenIds.has(record.id) && (
-                    <Sparkles className="history-panel__item-sparkle size-3.5 shrink-0" />
-                  )}
-                  <span className="history-panel__item-preview">{getPreview(record.text)}</span>
-                  <div className="history-panel__item-meta">
-                    <span className="history-panel__item-time">{formatTime(record.read_at)}</span>
+                (() => {
+                  const rewriteMeta = rewriteMetaMap.get(record.id) || null;
+                  const hasGenerated = Boolean(rewriteMeta?.rewrittenText);
+                  const hasDiagnostic = Boolean(rewriteMeta?.diagnosticSnapshot);
+                  const statusLabel = hasGenerated ? "已生成" : hasDiagnostic ? "待生成" : null;
+                  const targetLabel = rewriteMeta?.diagnosticSnapshot?.selectedTargetLevel || null;
+
+                  return (
                     <button
-                      className="history-panel__item-delete"
-                      onClick={(e) => handleDelete(e, record.id)}
-                      aria-label="删除"
+                      key={record.id}
+                      className={cn(
+                        "history-panel__item",
+                        activeId === record.id && "history-panel__item--active"
+                      )}
+                      onClick={() => onSelect?.(record, rewriteMeta)}
                     >
-                      <Trash2 className="size-3" />
+                      {hasGenerated && (
+                    <Sparkles className="history-panel__item-sparkle size-3.5 shrink-0" />
+                      )}
+                      <span className="history-panel__item-preview">{getPreview(record.text)}</span>
+                      {statusLabel || targetLabel ? (
+                        <div className="history-panel__item-badges">
+                          {statusLabel ? (
+                            <span
+                              className={cn(
+                                "history-panel__item-badge",
+                                hasGenerated
+                                  ? "history-panel__item-badge--generated"
+                                  : "history-panel__item-badge--pending"
+                              )}
+                            >
+                              {statusLabel}
+                            </span>
+                          ) : null}
+                          {targetLabel ? (
+                            <span className="history-panel__item-badge history-panel__item-badge--target">
+                              {targetLabel}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      <div className="history-panel__item-meta">
+                        <span className="history-panel__item-time">{formatTime(record.read_at)}</span>
+                        <button
+                          className="history-panel__item-delete"
+                          onClick={(e) => handleDelete(e, record.id)}
+                          aria-label="删除"
+                        >
+                          <Trash2 className="size-3" />
+                        </button>
+                      </div>
                     </button>
-                  </div>
-                </button>
+                  );
+                })()
               ))}
             </div>
           )}

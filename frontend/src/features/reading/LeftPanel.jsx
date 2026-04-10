@@ -67,6 +67,7 @@ export function LeftPanel({
   articleText,
   onSubmit,
   onEditAgain,
+  showEditAgain = true,
   contentWidth,
   onWidthChange,
   onLinesReady,
@@ -158,7 +159,7 @@ export function LeftPanel({
             />
           </Suspense>
         </div>
-        <EditAgainButton onClick={onEditAgain} />
+        {showEditAgain ? <EditAgainButton onClick={onEditAgain} /> : null}
       </div>
     );
   }
