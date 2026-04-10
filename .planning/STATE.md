@@ -3,12 +3,13 @@ gsd_state_version: 1.0
 milestone: v2.8
 milestone_name: 阅读生成流水线
 status: planning
-last_updated: "2026-04-10T06:52:33.877Z"
+last_updated: "2026-04-10T07:34:25.514Z"
 progress:
   total_phases: 3
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  completed_phases: 1
+  total_plans: 1
+  completed_plans: 1
+  percent: 100
 ---
 
 # State: Bottle English Learning — v2.8
@@ -25,9 +26,9 @@ progress:
 ## Current Position
 
 **Milestone:** v2.8
-**Phase:** Not started
-**Plan:** —
-**Status:** Milestone drafted; ready for Phase 35 discussion/planning
+**Phase:** 36
+**Plan:** Not started
+**Status:** Ready to plan
 
 ## Milestone Progress
 
@@ -81,7 +82,7 @@ None currently.
 
 ## Session Continuity
 
-**Last session:** 2026-04-10T06:52:33.874Z
+**Last session:** 2026-04-10T07:14:58.358Z
 
 **Next action:** `/gsd-discuss-phase 35` to clarify the diagnostic-card and intake UX before planning
 

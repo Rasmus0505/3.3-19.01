@@ -16,7 +16,7 @@
 
 ### 🚧 v2.8 阅读生成流水线
 
-- [ ] **Phase 35: Material Intake & Diagnostic Card** — 把阅读输入升级为比赛可展示的材料诊断台
+- [x] **Phase 35: Material Intake & Diagnostic Card** — 把阅读输入升级为比赛可展示的材料诊断台 (completed 2026-04-10)
 - [ ] **Phase 36: Pipeline Orchestrator & Reading Pack** — 把一次性重写升级为显式阶段生成与阅读包产物
 - [ ] **Phase 37: Learning Handoff & Pack Library** — 把阅读包变成可回看、可收词、可继续学习的资产
 
@@ -29,7 +29,7 @@
 | 32 | v2.7 | 0/? | Complete | 2026-04-06 |
 | 33 | v2.7 | 2/2 | Complete | 2026-04-06 |
 | 34 | v2.7 | 1/1 | Complete | 2026-04-06 |
-| 35 | v2.8 | 0/? | Not started | - |
+| 35 | v2.8 | 1/1 | Complete    | 2026-04-10 |
 | 36 | v2.8 | 0/? | Not started | - |
 | 37 | v2.8 | 0/? | Not started | - |
 
@@ -52,7 +52,7 @@
 3. Diagnostic card exposes estimated generation cost/time and a clear confirm action, replacing the previous blind auto-rewrite behavior for the reading-pack flow.
 4. Diagnostic summary is persisted with the draft material session so the user can leave and return without losing the diagnosis.
 
-**Plans:** TBD
+**Plans:** 1/1 plans complete
 
 ---
 

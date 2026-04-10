@@ -7,10 +7,10 @@
 
 ### Material Intake & Diagnosis
 
-- [ ] **DIAG-01**: User can submit a reading material from the reading workspace and receive a pre-generation diagnostic card before any AI simplification starts.
-- [ ] **DIAG-02**: User can see the estimated material difficulty, the user's current CEFR level, and the recommended target i+1 level for that material.
-- [ ] **DIAG-03**: User can see counts of preserved i+1 words, above-i+1 expressions that need simplification, and the expected simplification impact for the material.
-- [ ] **DIAG-04**: User can review estimated cost/time and explicitly confirm generation from the diagnostic card instead of triggering a blind one-click rewrite.
+- [x] **DIAG-01**: User can submit a reading material from the reading workspace and receive a pre-generation diagnostic card before any AI simplification starts.
+- [x] **DIAG-02**: User can see the estimated material difficulty, the user's current CEFR level, and the recommended target i+1 level for that material.
+- [x] **DIAG-03**: User can see counts of preserved i+1 words, above-i+1 expressions that need simplification, and the expected simplification impact for the material.
+- [x] **DIAG-04**: User can review estimated cost/time and explicitly confirm generation from the diagnostic card instead of triggering a blind one-click rewrite.
 
 ### Generation Pipeline Experience
 
@@ -57,10 +57,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DIAG-01 | Phase 35 | Pending |
-| DIAG-02 | Phase 35 | Pending |
-| DIAG-03 | Phase 35 | Pending |
-| DIAG-04 | Phase 35 | Pending |
+| DIAG-01 | Phase 35 | Complete |
+| DIAG-02 | Phase 35 | Complete |
+| DIAG-03 | Phase 35 | Complete |
+| DIAG-04 | Phase 35 | Complete |
 | PIPE-01 | Phase 36 | Pending |
 | PIPE-02 | Phase 36 | Pending |
 | PIPE-03 | Phase 36 | Pending |
