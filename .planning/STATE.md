@@ -1,56 +1,54 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.8
-milestone_name: 阅读生成流水线
+milestone: v3.0
+milestone_name: Unlock Anything
 status: planning
-last_updated: "2026-04-10T09:02:46.624Z"
+last_updated: "2026-04-10T12:00:00.000Z"
 progress:
-  total_phases: 3
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
-  percent: 67
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
-# State: Bottle English Learning — v2.8
+# State: Unlock — v3.0
 
-**Current Milestone:** v2.8 阅读生成流水线
+**Current Milestone:** v3.0 Unlock Anything
 **Started:** 2026-04-10
 
 ## Project Reference
 
-**Core Value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
+**Core Value:** Users can unlock any English material into personalized i+1 learning packs — reading, vocabulary, comprehension, and dictation — powered by AI across the full pipeline.
 
-**Current Focus:** Phase 37: Learning Handoff & Pack Library — READY TO PLAN
+**Current Focus:** Defining requirements
 
 ## Current Position
 
-**Milestone:** v2.8
-**Phase:** 37
-**Plan:** Not started
-**Status:** Ready to plan
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-10 — Milestone v3.0 started
 
 ## Milestone Progress
 
 | Phase | Name | Status | Plans |
 |-------|------|--------|-------|
-| 35 | Material Intake & Diagnostic Card | Complete | 1/1 |
-| 36 | Pipeline Orchestrator & Reading Pack | Complete | 3/3 |
-| 37 | Learning Handoff & Pack Library | Not started | 0/? |
+| TBD | — | — | — |
 
 ## Performance Metrics
 
-**Milestone v2.8:**
+**Milestone v3.0:**
 
-- Total phases: 3
-- Total requirements: 13
-- Completed: 9
-- Progress: 69%
+- Total phases: TBD
+- Total requirements: TBD
+- Completed: 0
+- Progress: 0%
 
 **Project-wide:**
 
 - Total phases completed: 36
-- Total milestones shipped: 7 (v2.0-v2.7)
+- Total milestones shipped: 7 (v2.0-v2.7), v2.8 partial (Phase 35-36 complete)
 
 ## Accumulated Context
 
@@ -61,22 +59,26 @@ progress:
 - `ReadingPage.jsx` now supports `input -> diagnostic -> pipeline -> pack`, with history reopen routing interrupted work to pipeline mode and finished work to pack mode.
 - `ReadingPackPanel.jsx` and `ReadingPipelinePanel.jsx` establish the new Phase 36 result and generation surfaces while keeping `ArticlePanel.jsx` as the original/i+1 renderer.
 - OpenMAIC is the reference for stage-based generation UX, progress storytelling, session recovery, and assetized outputs, not for multi-agent classroom scope.
+- Product renamed from Bottle to Unlock in v3.0; all user-visible brand surfaces need updating.
 
 ### Key Product Context
 
-- v2.8 is competition-oriented: the primary demo story is "bring any English material, get a personalized i+1 reading pack".
-- The milestone should emphasize transformation clarity: before generation, during generation, and after generation must all be legible to judges and users.
-- The reading result must become a reusable learning asset with explicit next steps, not a one-off rewrite string.
-- Phase 36 now delivers the explicit stage flow, persistent reading-pack asset, and sentence-card comparison mode; the remaining milestone scope is learning handoff and pack-library surfacing.
+- v3.0 is the "Unlock Anything" milestone: any material input -> AI full pipeline -> complete learning pack + growth visualization.
+- Competition demo and product completeness are parallel priorities.
+- Learning pack = reading pack + comprehension quiz + vocabulary cards (with AI scene images) + dictation course.
+- Multi-modal input: webpage links, PDF, subtitle files (.srt/.vtt), image OCR.
+- Learning dashboard: CEFR progress, learning heatmap, unlock statistics.
+- AI conversation practice deferred to next milestone.
 
-### Key Decisions for v2.8
+### Key Decisions for v3.0
 
 | Decision | Rationale |
 |----------|-----------|
-| Reading milestone narrative is "material -> i+1 reading pack" | Stronger demo story than "reading rewrite enhancement" |
-| Generation must expose explicit stages before showing final output | Competition demos benefit from visible orchestration rather than black-box loading |
-| OpenMAIC reference informs UX choreography, not classroom feature scope | Keeps Bottle focused on reading pedagogy instead of drifting into another product category |
-| Reading pack becomes the persistent unit of value | History, comparison, and learning handoff all work better when output is treated as an asset |
+| Product renamed from Bottle to Unlock | "Unlock Anything" is the core narrative — brand name should directly express the value proposition |
+| Learning pack = reading + quiz + vocab cards + dictation | Four outputs cover read/test/memorize/write learning dimensions |
+| Multi-modal input: URL/PDF/SRT/OCR | Strengthens the "Anything" concept |
+| AI scene images for vocabulary cards only | Scoped image generation to highest-impact use case |
+| AI conversation practice deferred to post-v3.0 | v3.0 scope is already large; conversation needs full ASR+SOE+TTS+LLM chain |
 
 ### Blockers
 
@@ -84,9 +86,9 @@ None currently.
 
 ## Session Continuity
 
-**Last session:** 2026-04-10T09:02:46.624Z
+**Last session:** 2026-04-10
 
-**Next action:** `/gsd-discuss-phase 37` to define learning handoff and pack-library scope before planning
+**Next action:** Define requirements for v3.0 milestone
 
 ---
 
