@@ -185,6 +185,67 @@ def collect_wordbook_entry(
     return WordbookCollectResult(payload=_entry_payload_to_dict(raw_payload), created=created, updated_context=not created)
 
 
+def collect_wordbook_entry_freeform(
+    db: Session,
+    *,
+    user_id: int,
+    entry_text: str,
+    entry_type: str = "word",
+    context_sentence_en: str = "",
+    context_sentence_zh: str = "",
+) -> WordbookCollectResult:
+    """Collect a wordbook entry without requiring a lesson or sentence context.
+
+    Used when adding vocabulary from reading packs or other sources that are
+    not backed by a server-side lesson record.
+    """
+    safe_entry_type = str(entry_type or "word").strip().lower()
+    if safe_entry_type not in VALID_ENTRY_TYPES:
+        raise HTTPException(status_code=400, detail="词条类型无效")
+
+    normalized_text = _normalize_entry_text(entry_text)
+    if not normalized_text:
+        raise HTTPException(status_code=400, detail="词条文本无效")
+    canonical_text = normalized_text
+
+    existing_entry = get_wordbook_entry_by_identity(db, user_id=user_id, normalized_text=normalized_text, entry_type=safe_entry_type)
+    created = existing_entry is None
+    if existing_entry is None:
+        initial_review_state = build_initial_review_state()
+        existing_entry = WordbookEntry(
+            user_id=user_id,
+            latest_lesson_id=None,
+            entry_text=canonical_text,
+            normalized_text=normalized_text,
+            entry_type=safe_entry_type,
+            latest_sentence_idx=0,
+            latest_sentence_en=str(context_sentence_en or ""),
+            latest_sentence_zh=str(context_sentence_zh or ""),
+            latest_collected_at=now_shanghai_naive(),
+            next_review_at=initial_review_state.next_review_at,
+            last_reviewed_at=initial_review_state.last_reviewed_at,
+            review_count=initial_review_state.review_count,
+            wrong_count=initial_review_state.wrong_count,
+            memory_score=initial_review_state.memory_score,
+            status=initial_review_state.status,
+        )
+    else:
+        if context_sentence_en:
+            existing_entry.latest_sentence_en = str(context_sentence_en)
+        if context_sentence_zh:
+            existing_entry.latest_sentence_zh = str(context_sentence_zh)
+        existing_entry.latest_collected_at = now_shanghai_naive()
+
+    db.add(existing_entry)
+    db.commit()
+
+    raw_payload = build_wordbook_entry_payload(db, entry_id=existing_entry.id, user_id=user_id)
+    if not raw_payload:
+        raise HTTPException(status_code=500, detail="词条保存后读取失败")
+
+    return WordbookCollectResult(payload=_entry_payload_to_dict(raw_payload), created=created, updated_context=not created)
+
+
 def schedule_async_translation(entry_id: int) -> None:
     """Schedule async translation for a wordbook entry in background."""
     import threading

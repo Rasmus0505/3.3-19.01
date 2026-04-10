@@ -15,6 +15,7 @@ from app.schemas.wordbook import (
     BatchTranslateRequest,
     TranslateTextRequest,
     TranslateTextResponse,
+    WordbookCollectFreeformRequest,
     WordbookCollectRequest,
     WordbookCollectResponse,
     WordbookDeleteResponse,
@@ -33,6 +34,7 @@ from app.services.wordbook_service import (
     batch_translate_words,
     batch_update_status,
     collect_wordbook_entry,
+    collect_wordbook_entry_freeform,
     delete_wordbook_entry,
     list_wordbook_entry_payloads,
     list_wordbook_review_queue_payloads,
@@ -139,6 +141,35 @@ def collect_wordbook(
         created=result.created,
         updated_context=result.updated_context,
         message="\u5df2\u52a0\u5165\u751f\u8bcd\u672c" if result.created else "\u5df2\u66f4\u65b0\u5230\u6700\u65b0\u8bed\u5883",
+        entry=_entry_response_from_payload(result.payload),
+    )
+
+
+@router.post(
+    "/collect-freeform",
+    response_model=WordbookCollectResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}},
+)
+def collect_wordbook_freeform(
+    payload: WordbookCollectFreeformRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = collect_wordbook_entry_freeform(
+        db,
+        user_id=current_user.id,
+        entry_text=payload.entry_text,
+        entry_type=payload.entry_type,
+        context_sentence_en=payload.context_sentence_en,
+        context_sentence_zh=payload.context_sentence_zh,
+    )
+    if result.created:
+        schedule_async_translation(result.payload["id"])
+    return WordbookCollectResponse(
+        ok=True,
+        created=result.created,
+        updated_context=result.updated_context,
+        message="已加入生词本" if result.created else "已更新到最新语境",
         entry=_entry_response_from_payload(result.payload),
     )
 

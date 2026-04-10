@@ -396,8 +396,13 @@ export function writeLearningSettings(settings) {
   window.dispatchEvent(new CustomEvent(LEARNING_SETTINGS_UPDATED_EVENT, { detail: sanitized }));
 }
 
-export function resolveReplayAssistance() {
-  return { revealLetterCount: 0, revealWordCount: 0 };
+export function resolveReplayAssistance(_learningSettings, stage = 0) {
+  // Progressive assistance: each replay stage reveals more
+  // stage 1 → reveal 1 letter, stage 2 → reveal 2 letters, stage 3+ → reveal whole word
+  if (stage <= 0) return { revealLetterCount: 0, revealWordCount: 0 };
+  if (stage === 1) return { revealLetterCount: 1, revealWordCount: 0 };
+  if (stage === 2) return { revealLetterCount: 2, revealWordCount: 0 };
+  return { revealLetterCount: 0, revealWordCount: 1 };
 }
 
 export function isShortcutPressed(event, shortcutValue) {

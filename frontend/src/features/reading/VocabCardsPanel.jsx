@@ -241,16 +241,15 @@ export function VocabCardsPanel({ pack, articleId, apiCall, accessToken }) {
       toast.error("请先登录");
       return;
     }
-    const resp = await apiCall("/api/wordbook/collect", {
+    const card = cards.find((c) => c.word.toLowerCase() === word.toLowerCase());
+    const resp = await apiCall("/api/wordbook/collect-freeform", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        lesson_id: null,
-        sentence_index: null,
         entry_text: word,
         entry_type: "word",
-        start_token_index: null,
-        end_token_index: null,
+        context_sentence_en: card?.example_sentence || "",
+        context_sentence_zh: "",
       }),
     });
     if (resp.ok) {

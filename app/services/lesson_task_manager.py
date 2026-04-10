@@ -419,6 +419,49 @@ def cleanup_expired_tasks(*, db: Session | None = None, session_factory: Session
             session.close()
 
 
+ZOMBIE_TASK_TIMEOUT_MINUTES = 30
+
+
+def mark_stale_running_tasks_failed(
+    *,
+    db: Session | None = None,
+    session_factory: SessionFactory | None = None,
+    timeout_minutes: int = ZOMBIE_TASK_TIMEOUT_MINUTES,
+) -> int:
+    """Mark tasks stuck in 'running' for longer than timeout_minutes as failed.
+
+    Returns the number of tasks marked as failed.
+    """
+    session, owns_session = _session_scope(db=db, session_factory=session_factory)
+    try:
+        ensure_lesson_task_storage_ready(session)
+        cutoff = now_shanghai_naive() - timedelta(minutes=timeout_minutes)
+        stale_tasks = session.scalars(
+            select(LessonGenerationTask).where(
+                LessonGenerationTask.status == "running",
+                LessonGenerationTask.updated_at <= cutoff,
+            )
+        ).all()
+        count = 0
+        for task in stale_tasks:
+            stages = _copy_list(task.stages_json)
+            for stage in stages:
+                if stage.get("status") == "running":
+                    stage["status"] = "failed"
+            task.stages_json = stages
+            task.status = "failed"
+            task.error_code = "TASK_TIMEOUT"
+            task.message = f"任务超过 {timeout_minutes} 分钟未更新，已自动标记为失败"
+            task.failed_at = now_shanghai_naive()
+            count += 1
+        if count:
+            session.commit()
+        return count
+    finally:
+        if owns_session:
+            session.close()
+
+
 def create_task(
     *,
     task_id: str,
@@ -435,6 +478,7 @@ def create_task(
     session_factory: SessionFactory | None = None,
 ) -> str:
     cleanup_expired_tasks(db=db, session_factory=session_factory)
+    mark_stale_running_tasks_failed(db=db, session_factory=session_factory)
     session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
         ensure_lesson_task_storage_ready(session)

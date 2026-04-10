@@ -48,6 +48,13 @@ class WordbookCollectRequest(BaseModel):
     end_token_index: int = Field(ge=0)
 
 
+class WordbookCollectFreeformRequest(BaseModel):
+    entry_text: str = Field(min_length=1, max_length=255)
+    entry_type: WordbookEntryType = "word"
+    context_sentence_en: str = ""
+    context_sentence_zh: str = ""
+
+
 class WordbookCollectResponse(BaseModel):
     ok: bool = True
     created: bool
