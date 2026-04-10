@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.8
 milestone_name: 阅读生成流水线
-status: planning
-last_updated: "2026-04-10T07:55:16.159Z"
+status: executing
+last_updated: "2026-04-10T08:41:45.840Z"
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 1
+  total_plans: 4
   completed_plans: 1
-  percent: 100
+  percent: 25
 ---
 
 # State: Bottle English Learning — v2.8
@@ -28,7 +28,7 @@ progress:
 **Milestone:** v2.8
 **Phase:** 36
 **Plan:** Not started
-**Status:** Ready to plan
+**Status:** Ready to execute
 
 ## Milestone Progress
 
