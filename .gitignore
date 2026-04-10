@@ -52,3 +52,4 @@ config.json
 
 .worktrees/
 /.specstory
+/.workbuddy
