@@ -4,6 +4,7 @@ import {
   getShortcutLabel,
   resolveReplayAssistance,
 } from "./learningSettings";
+import { normalizePlaybackRate } from "./immersiveSessionMachine";
 import { getMediaExt, isAudioFilename, isVideoFilename, normalizeToken } from "./tokenNormalize";
 
 const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
