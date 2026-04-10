@@ -7,18 +7,10 @@ import {
 } from "lucide-react";
 
 import {
-  Badge,
   Button,
   Card,
   CardContent,
 } from "../../shared/ui";
-
-function buildSentenceProgressLabel(currentSentenceIndex, sentenceCount) {
-  const total = Math.max(1, Number(sentenceCount || 0));
-  const current = Math.min(total, Math.max(1, Number(currentSentenceIndex || 0) + 1));
-  const percent = Math.round((current / total) * 100);
-  return { current, total, percent };
-}
 
 const VideoPanel = forwardRef(function VideoPanel(
   {
@@ -72,9 +64,6 @@ const VideoPanel = forwardRef(function VideoPanel(
   },
   ref,
 ) {
-  const { percent: progressPercent } = buildSentenceProgressLabel(currentSentenceIndex, sentenceCount);
-  const mediaTypeLabel = mediaMode === "video" ? "视频模式" : mediaMode === "audio" ? "音频模式" : "逐句音频";
-
   return (
     <div ref={ref} className={immersivePageShellClassName}>
       <Card
@@ -83,7 +72,7 @@ const VideoPanel = forwardRef(function VideoPanel(
       >
         <CardContent className="immersive-card-content">
           <div className="immersive-stage">
-            <div className="immersive-stage__topbar">
+            <div className="immersive-stage__topbar immersive-stage__topbar--compact">
               <div className="immersive-stage__topbar-main">
                 {immersiveActive && hasExitHandler ? (
                   <Button variant="outline" size="sm" onClick={() => void exitImmersive("button")}>
@@ -91,26 +80,7 @@ const VideoPanel = forwardRef(function VideoPanel(
                     退出
                   </Button>
                 ) : null}
-                <div className="immersive-stage__copy">
-                  <p className="immersive-stage__eyebrow">Annie Immersive</p>
-                  <h1 className="immersive-stage__title">{lessonTitle || "课程视频"}</h1>
-                  <div className="immersive-stage__progress">
-                    <div className="immersive-stage__progress-track" aria-hidden="true">
-                      <span
-                        className="immersive-stage__progress-fill"
-                        style={{ width: `${progressPercent}%` }}
-                      />
-                    </div>
-                    <span className="immersive-stage__progress-text">学习进度 {progressPercent}%</span>
-                  </div>
-                </div>
-              </div>
-              <div className="immersive-stage__meta">
-                <Badge variant="secondary">第 {currentSentenceIndex + 1} / {sentenceCount} 句</Badge>
-                <Badge variant="outline">{mediaTypeLabel}</Badge>
-                <Badge variant={sentenceTypingDone ? "secondary" : "outline"}>
-                  {sentenceTypingDone ? "本句完成" : isPlaying ? "正在播放" : isPlaybackPaused ? "已暂停" : "等待输入"}
-                </Badge>
+                <h1 className="immersive-stage__title">{lessonTitle || "课程视频"}</h1>
               </div>
             </div>
 

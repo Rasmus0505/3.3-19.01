@@ -3,10 +3,9 @@ import { Loader2, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 
 import AudioRecorder from "../../shared/components/AudioRecorder";
-import { Badge, Button } from "../../shared/ui";
+import { Button } from "../../shared/ui";
 import { cn } from "../../lib/utils";
 import { computeCefrClassName } from "./CefrBadge";
-import { getShortcutLabel } from "./learningSettings";
 import SOEResultCard from "./SOEResultCard";
 
 function formatSoeAssessErrorMessage(data, httpStatus = 0) {
@@ -173,76 +172,25 @@ const TypingPanel = forwardRef(function TypingPanel(
 
   return (
     <div ref={ref} className="immersive-typing immersive-typing--dock">
-      <div className="immersive-typing__header">
-        <div className="immersive-typing__header-copy">
-          <p className="immersive-typing__eyebrow">Typing Dock</p>
-          <h2 className="immersive-typing__title">第 {currentSentenceIndex + 1} / {sentenceCount} 句</h2>
-          <p className="immersive-typing__subtitle">
-            当前句只保留一个任务焦点，复盘和预览都压到右侧信息轨。
-          </p>
-        </div>
-        <div className="immersive-typing__status">
-          {isPlaying ? <Badge variant="secondary">播放中</Badge> : null}
-          {isPlaybackPaused ? <Badge variant="outline">已暂停</Badge> : null}
-          {sentenceTypingDone ? <Badge variant="secondary">本句完成</Badge> : <Badge variant="outline">拼写中</Badge>}
-        </div>
-      </div>
-
       {mediaError ? <p className="immersive-typing__notice immersive-typing__notice--error">{mediaError}</p> : null}
       {waitingForInitialPlayback ? (
         <p className="immersive-typing__notice">输入已完成，等待本句播放结束。</p>
       ) : null}
 
-      <section className="immersive-sentence-card immersive-sentence-card--current">
-        <div className="immersive-sentence-card__header">
-          <div className="immersive-sentence-card__meta">
-            <span className="immersive-sentence-card__index">Current sentence</span>
-          </div>
-          <Badge variant={sentenceTypingDone ? "secondary" : "outline"}>
-            {sentenceTypingDone ? "Completed" : "Typing"}
-          </Badge>
-        </div>
-        <div className="immersive-sentence-card__lead">
-          {sentenceTypingDone
-            ? currentSentence?.text_en || "This sentence is complete."
-            : "Listen carefully and type the full sentence here."}
-        </div>
-        <div className="immersive-sentence-card__dock-badges">
-          <span className="immersive-sentence-card__dock-badge">Sentence-level dictation</span>
-          <span className="immersive-sentence-card__dock-badge">Video-first learning</span>
-        </div>
-        <div ref={wordRowFrameRef} className="immersive-word-row-frame immersive-word-row-frame--spotlight">
-          {renderWordSlots({
-            expectedTokens,
-            wordStatuses,
-            wordInputs,
-            wordRevealComparableIndices,
-            wordRowLines,
-            buildLetterSlots,
-            currentSentenceCefrMap,
-            cefrAnalyzerRef,
-            cefrLevel,
-            lookupCefrLevelFromMap,
-          })}
-        </div>
-        <p className="immersive-sentence-card__helper">
-          {sentenceTypingDone
-            ? "Good. Use the right-side support to review difficult expressions before moving on."
-            : "The video stays primary. This dock is only for spelling the current sentence."}
-        </p>
-      </section>
-
-      <section className="immersive-typing__shortcut-card">
-        <p className="immersive-typing__shortcut-title">Shortcuts</p>
-        <p className="immersive-keyboard-hint text-xs text-muted-foreground">
-          {getShortcutLabel(learningSettings.shortcuts.reveal_letter)} letter ·
-          {" "}{getShortcutLabel(learningSettings.shortcuts.reveal_word)} word ·
-          {" "}{getShortcutLabel(learningSettings.shortcuts.previous_sentence)} previous ·
-          {" "}{getShortcutLabel(learningSettings.shortcuts.next_sentence)} next ·
-          {" "}{getShortcutLabel(learningSettings.shortcuts.replay_sentence)} replay ·
-          {" "}{getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)} play
-        </p>
-      </section>
+      <div ref={wordRowFrameRef} className="immersive-word-row-frame immersive-word-row-frame--spotlight">
+        {renderWordSlots({
+          expectedTokens,
+          wordStatuses,
+          wordInputs,
+          wordRevealComparableIndices,
+          wordRowLines,
+          buildLetterSlots,
+          currentSentenceCefrMap,
+          cefrAnalyzerRef,
+          cefrLevel,
+          lookupCefrLevelFromMap,
+        })}
+      </div>
 
       {phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
 
