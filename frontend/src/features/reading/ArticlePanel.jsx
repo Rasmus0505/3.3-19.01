@@ -19,6 +19,7 @@
  *   validI1Words  {string[]}  — 有效的 i+1 词汇列表（DeepSeek 验证通过）
  *   validAboveI1Words {string[]} — 有效的 >i+1 词汇列表（需要简化的）
  *   removedWords  {object[]}  — 被过滤的词汇 [{word, reason}]（词典误标等原因）
+ *   wordLevels    {object}    — 二次筛选后的最终等级 {wordLower: level}
  *   viewMode       {'original'|'rewritten'} — 决定渲染方式
  */
 import { BookOpenText } from "lucide-react";
@@ -43,6 +44,7 @@ export function ArticlePanel({
   validI1Words = [],
   validAboveI1Words = [],
   removedWords = [],
+  wordLevels = {},
   viewMode = "original",
 }) {
   const containerRef = useRef(null);
@@ -185,6 +187,7 @@ export function ArticlePanel({
                     validI1Set={validI1Set.current}
                     validAboveI1Set={validAboveI1Set.current}
                     removedWordsSet={removedWordsSet.current}
+                    wordLevels={wordLevels}
                     viewMode={viewMode}
                   />
                 );
@@ -207,10 +210,12 @@ function ArticleWord({
   validI1Set,
   validAboveI1Set,
   removedWordsSet,
+  wordLevels,
   viewMode,
 }) {
   const segText = (segment.text || "").trim();
   const segLower = segText.toLowerCase();
+  const resolvedLevel = wordLevels?.[segLower] || segment.cefrLevel || null;
 
   // 重写版：按 original 匹配（applySimplifiedWords 已替换为简化词）
   // 原文视图：按 originalLower 匹配（原始词形）
@@ -234,15 +239,14 @@ function ArticleWord({
     const isRemovedWord = removedWordsSet?.has(segLower);
 
     if (isI1Word) {
-      // activeLevels 为 CEFR 等级（如 B2），与 segment.cefrLevel 对齐；勿引用未传入的 validI1Words
       cefrClass =
         activeLevels && activeLevels.length > 0
-          ? activeLevels.includes(segment.cefrLevel) ? "cefr-i-plus-one" : "cefr-mastered"
+          ? activeLevels.includes(resolvedLevel) ? "cefr-i-plus-one" : "cefr-mastered"
           : "cefr-i-plus-one";
     } else if (isAboveI1Word) {
       cefrClass =
         activeLevels && activeLevels.length > 0
-          ? activeLevels.includes(segment.cefrLevel) ? "cefr-above-i-plus-one" : "cefr-mastered"
+          ? activeLevels.includes(resolvedLevel) ? "cefr-above-i-plus-one" : "cefr-mastered"
           : "cefr-above-i-plus-one";
     } else if (isRemovedWord) {
       // DeepSeek 过滤掉的词 → 过于简单，不标下划线
@@ -270,7 +274,7 @@ function ArticleWord({
   const handleClick = () => {
     const text = segment.text.trim();
     if (!text || /^[.!?,;:—–\-"''''""（）()[\]【】《》]+$/.test(text)) return;
-    onWordClick?.(segment.text, segment);
+    onWordClick?.(segment.text, { ...segment, cefrLevel: resolvedLevel });
   };
 
   // 构建 className
@@ -293,11 +297,11 @@ function ArticleWord({
   } else if (viewMode === "original" && mapping?.confirmed) {
     tooltipText = `已简化为: ${mapping.rewritten}`;
   } else if (isI1Word) {
-    tooltipText = `${segment.cefrLevel || "i+1"} — ${segment.text}（可学习词汇）`;
+    tooltipText = `${resolvedLevel || "i+1"} — ${segment.text}（可学习词汇）`;
   } else if (isAboveI1Word) {
-    tooltipText = `${segment.cefrLevel || ">i+1"} — ${segment.text}（建议简化）`;
+    tooltipText = `${resolvedLevel || ">i+1"} — ${segment.text}（建议简化）`;
   } else {
-    const effectiveLevel = mapping?.dsLevel || segment.cefrLevel;
+    const effectiveLevel = mapping?.finalLevel || resolvedLevel;
     tooltipText = `${effectiveLevel || "未知等级"} — ${segment.text}`;
   }
 

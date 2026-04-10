@@ -23,6 +23,7 @@ from app.services.billing_service import (
     settle_reserved_points,
 )
 from app.services.lesson_builder import estimate_duration_ms
+from app.services.lessons.cefr import process_sentences_with_cefr
 from app.services.lesson_task_manager import persist_lesson_workspace_summary
 from app.services.llm_usage_service import log_llm_usage
 from app.services.media import MediaError
@@ -33,6 +34,19 @@ logger = logging.getLogger(__name__)
 
 BuildTaskResultMetaFn = Callable[..., dict[str, Any]]
 BuildSubtitleCacheSeedFn = Callable[..., dict[str, Any]]
+
+
+def _resolve_owner_user_cefr_level(db: Session, owner_id: int, fallback: str = "B1") -> str:
+    try:
+        from app.models import User
+
+        user = db.get(User, int(owner_id))
+        level = str(getattr(user, "cefr_level", "") or "").strip().upper()
+        if level:
+            return level
+    except Exception:
+        logger.warning("[DEBUG] lesson.cefr_level.resolve_failed owner_id=%s", owner_id, exc_info=True)
+    return fallback
 
 
 def _append_translation_request_logs_safe(
@@ -132,6 +146,16 @@ def create_lesson_from_local_generation_result(
     runtime_sentences = [dict(item) for item in list(variant.get("sentences") or []) if isinstance(item, dict)]
     if not runtime_sentences:
         raise MediaError("LOCAL_GENERATION_RESULT_EMPTY", "本地生成结果缺少字幕", "variant.sentences is empty")
+    resolved_user_level = _resolve_owner_user_cefr_level(db, owner_id)
+    try:
+        runtime_sentences = process_sentences_with_cefr(
+            sentences=runtime_sentences,
+            target_level=resolved_user_level,
+            user_level=resolved_user_level,
+        )
+        variant["sentences"] = runtime_sentences
+    except Exception:
+        logger.exception("[DEBUG] lesson.cefr_processing_failed.local_complete owner_id=%s", owner_id)
 
     reserved_duration_ms = max(1, int(source_duration_ms or local_generation_result.get("source_duration_ms") or 0))
     normalized_runtime_kind = str(local_generation_result.get("runtime_kind") or runtime_kind or "local_browser").strip().lower() or "local_browser"
@@ -218,6 +242,7 @@ def create_lesson_from_local_generation_result(
             source_duration_ms=reserved_duration_ms,
             status="partial_ready" if failed_count > 0 else "ready",
         )
+        lesson.user_cefr_level = resolved_user_level
         db.add(lesson)
         db.flush()
 

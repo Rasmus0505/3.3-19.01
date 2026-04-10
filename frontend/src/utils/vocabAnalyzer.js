@@ -296,6 +296,49 @@ class VocabAnalyzer {
   }
 
   /**
+   * 只按素材表面词形直接查表，不做词形还原。
+   * 用于阅读/听力首轮 surface screening。
+   * @param {string} surfaceForm
+   * @returns {string|null}
+   */
+  lookupCefrLevelForExactSurfaceForm(surfaceForm) {
+    if (!this.isLoaded) return null;
+    if (surfaceForm == null) return null;
+    const lower = String(surfaceForm).toLowerCase();
+    if (!this.wordMap.has(lower)) return null;
+    const info = this.wordMap.get(lower);
+    return info?.level || null;
+  }
+
+  /**
+   * 按词典词形查询最终等级。
+   * 输入通常是 LLM 返回的 lemma，不再走后缀词形还原，只允许缩写归一兜底。
+   * @param {string} form
+   * @returns {string|null}
+   */
+  lookupCefrLevelForDictionaryForm(form) {
+    if (!this.isLoaded) return null;
+    if (form == null) return null;
+    const lower = String(form).toLowerCase();
+
+    if (this.wordMap.has(lower)) {
+      return this.wordMap.get(lower)?.level || null;
+    }
+
+    const nonstandard = this._normalizeNonstandardContraction(lower);
+    if (nonstandard !== null && nonstandard !== lower && this.wordMap.has(nonstandard)) {
+      return this.wordMap.get(nonstandard)?.level || null;
+    }
+
+    const stripped = this._stripContraction(lower);
+    if (stripped !== null && stripped !== lower && this.wordMap.has(stripped)) {
+      return this.wordMap.get(stripped)?.level || null;
+    }
+
+    return null;
+  }
+
+  /**
    * 从句子中提取超过目标 CEFR 级别的词汇及其位置信息。
    * 用于精准词汇简化：只把超纲词发给 LLM 替换。
    *
@@ -332,6 +375,43 @@ class VocabAnalyzer {
           startIndex: match.index,
           endIndex: match.index + surfaceForm.length,
           level: level,
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * 仅基于表面词形进行首轮筛选，提取 >= targetLevel 的词。
+   * 用于阅读板块的首轮候选提取。
+   *
+   * @param {string} sentence
+   * @param {string} targetLevel
+   * @returns {{ word: string, startIndex: number, endIndex: number, level: string }[]}
+   */
+  extractSurfaceWordsAtOrAboveLevel(sentence, targetLevel) {
+    if (!this.isLoaded) {
+      throw new Error("词汇表未加载，请先调用 load()");
+    }
+
+    const targetLevelNum = this._levelToNum(targetLevel);
+    const results = [];
+    const wordRegex = /[a-zA-Z]+(?:'[a-zA-Z]+)?/g;
+    let match;
+
+    while ((match = wordRegex.exec(sentence)) !== null) {
+      const surfaceForm = match[0];
+      const level = this.lookupCefrLevelForExactSurfaceForm(surfaceForm);
+      if (!level) continue;
+
+      const wordLevelNum = this._levelToNum(level);
+      if (wordLevelNum >= targetLevelNum) {
+        results.push({
+          word: surfaceForm,
+          startIndex: match.index,
+          endIndex: match.index + surfaceForm.length,
+          level,
         });
       }
     }

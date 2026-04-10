@@ -637,6 +637,19 @@ def _call_transcribe_segment(
         return payload
 
 
+def _resolve_owner_user_cefr_level(db: Session, owner_id: int, fallback: str = "B1") -> str:
+    try:
+        from app.models import User
+
+        user = db.get(User, int(owner_id))
+        level = str(getattr(user, "cefr_level", "") or "").strip().upper()
+        if level:
+            return level
+    except Exception:
+        logger.warning("[DEBUG] lesson.cefr_level.resolve_failed owner_id=%s", owner_id, exc_info=True)
+    return fallback
+
+
 class LessonService:
     @staticmethod
     def _attach_task_result_metadata(
@@ -1151,14 +1164,8 @@ class LessonService:
                 source_duration_ms=reserved_duration_ms,
                 status=lesson_status,
             )
-            # 记录用户生成课程时的 CEFR 等级
-            try:
-                from app.models import User
-                user = db.query(User).filter(User.id == owner_id).first()
-                if user:
-                    lesson.user_cefr_level = user.cefr_level
-            except Exception:
-                pass
+            resolved_user_level = _resolve_owner_user_cefr_level(db, owner_id)
+            lesson.user_cefr_level = resolved_user_level
             db.add(lesson)
             db.flush()
 
@@ -1173,8 +1180,8 @@ class LessonService:
             try:
                 runtime_sentences = process_sentences_with_cefr(
                     sentences=runtime_sentences,
-                    target_level="B1",
-                    user_level=None,
+                    target_level=resolved_user_level,
+                    user_level=resolved_user_level,
                 )
             except Exception:
                 logger.exception("[DEBUG] lesson.cefr_processing_failed, continuing without explanation")
@@ -1993,14 +2000,8 @@ class LessonService:
                 source_duration_ms=reserved_duration_ms,
                 status=lesson_status,
             )
-            # 记录用户生成课程时的 CEFR 等级
-            try:
-                from app.models import User
-                user = db.query(User).filter(User.id == owner_id).first()
-                if user:
-                    lesson.user_cefr_level = user.cefr_level
-            except Exception:
-                pass
+            resolved_user_level = _resolve_owner_user_cefr_level(db, owner_id)
+            lesson.user_cefr_level = resolved_user_level
             db.add(lesson)
             db.flush()
             logger.info(
@@ -2020,8 +2021,8 @@ class LessonService:
             try:
                 runtime_sentences = process_sentences_with_cefr(
                     sentences=runtime_sentences,
-                    target_level="B1",
-                    user_level=None,
+                    target_level=resolved_user_level,
+                    user_level=resolved_user_level,
                 )
             except Exception:
                 logger.exception("[DEBUG] lesson.cefr_processing_failed, continuing without explanation")
@@ -2531,6 +2532,8 @@ class LessonService:
             )
             lesson: Lesson = Lesson()
             lesson.title = Path(source_filename or "lesson").stem[:200] or "lesson"
+            resolved_user_level = _resolve_owner_user_cefr_level(db, owner_id)
+            lesson.user_cefr_level = resolved_user_level
             # 处理 CEFR 讲解信息（预生成讲解内容）
             _emit_progress(
                 progress_callback,
@@ -2543,8 +2546,8 @@ class LessonService:
             try:
                 variant["sentences"] = process_sentences_with_cefr(
                     sentences=list(variant["sentences"]),
-                    target_level="B1",
-                    user_level=None,
+                    target_level=resolved_user_level,
+                    user_level=resolved_user_level,
                 )
             except Exception:
                 logger.exception("[DEBUG] lesson.cefr_processing_failed, continuing without explanation")

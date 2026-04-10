@@ -20,6 +20,7 @@
  *   validI1Words  {string[]} — 有效的 i+1 词汇列表
  *   validAboveI1Words {string[]} — 有效的 >i+1 词汇列表
  *   removedWords {string[]} — DeepSeek 过滤掉的词（过于简单，不再标红）
+ *   wordLevels {object} — 二次筛选后的最终等级 {wordLower: level}
  */
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Unlock } from "lucide-react";
@@ -76,6 +77,7 @@ export function LeftPanel({
   validI1Words = [],
   validAboveI1Words = [],
   removedWords = [],
+  wordLevels = {},
   viewMode = "original",
   isRewriting = false,
   rewriteError = null,
@@ -151,6 +153,7 @@ export function LeftPanel({
               validI1Words={validI1Words}
               validAboveI1Words={validAboveI1Words}
               removedWords={removedWords}
+              wordLevels={wordLevels}
               viewMode={viewMode}
             />
           </Suspense>

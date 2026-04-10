@@ -44,12 +44,12 @@ function openDB() {
  *     originalLower: string, — 原文词小写（原文视图匹配用）
  *     rewritten: string,     — 原文词形（tooltip 对照用）
  *     confirmed: boolean,    — true=已简化，false=无需简化（返回空字符串）
- *     dsLevel: string       — DeepSeek 判断等级
+ *     finalLevel: string     — 二次筛选后的最终等级
  *   }
  * @property {string[]}  validI1Words     — 有效的 i+1 词汇列表（原文视图用绿色下划线）
  * @property {string[]}  validAboveI1Words — 有效的 >i+1 词汇列表（原文视图用红色下划线）
  * @property {object[]}  removedWords      — 被过滤的词汇 [{word, reason}]
- * @property {object}    wordLevels       — DeepSeek 判断的等级 {word: level}
+ * @property {object}    wordLevels       — 二次筛选后的最终等级 {word: level}
  * @property {"original"|"rewritten"} viewMode — 用户偏好的视图
  * @property {number}    rewrittenAt  — 重写时间戳
  */

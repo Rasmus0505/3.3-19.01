@@ -94,7 +94,7 @@ function PageFallback() {
 }
 
 /** 计算文章的 CEFR 难度分布统计 */
-function computeWordStats(lines) {
+function computeWordStats(lines, wordLevels = {}) {
   const cefrCounts = { A1: 0, A2: 0, B1: 0, B2: 0, C1: 0, C2: 0, SUPER: 0 };
   let total = 0;
   for (const line of lines) {
@@ -102,8 +102,9 @@ function computeWordStats(lines) {
       // 空白等 Pretext 片段无 normalized word，不计入总词数
       if (!seg.word) continue;
       total++;
-      if (seg.cefrLevel && cefrCounts[seg.cefrLevel] !== undefined) {
-        cefrCounts[seg.cefrLevel]++;
+      const effectiveLevel = wordLevels[seg.word.toLowerCase()] || seg.cefrLevel;
+      if (effectiveLevel && cefrCounts[effectiveLevel] !== undefined) {
+        cefrCounts[effectiveLevel]++;
       }
     }
   }
@@ -142,24 +143,16 @@ function collectSimplifyCandidatesFromLines(lines, userLevel) {
  */
 async function collectSimplifyCandidatesFromRaw(text, userLevel) {
   const analyzer = await getOrCreateAnalyzer();
-  // analyzeSentence 返回 tokens: [{ word, level, isUnknown, original? }]
-  // word = lemma (词根), original = 原文词形（如 perusing）
-  // 注意：必须用 original（原文词形）传给 API，才能让 applySimplifiedWords 正确替换
-  const result = await analyzer.analyzeSentence(text);
+  const targetLevel = getTargetLevel(userLevel);
+  const result = analyzer.extractSurfaceWordsAtOrAboveLevel(text, targetLevel);
   const seen = new Set();
   const candidates = [];
-  for (const token of result.tokens) {
+  for (const token of result) {
     if (!token.word || typeof token.word !== "string") continue;
-    const cefrClass = computeCefrClassName(token.level, userLevel);
-    if (cefrClass === "cefr-i-plus-one" || cefrClass === "cefr-above-i-plus-one") {
-      // 用原文词形（original > word > token.word），避免 lemma 替换失败
-      const original = (token.original || token.word);
-      if (typeof original !== "string") continue;
-      const lower = original.toLowerCase();
-      if (!seen.has(lower)) {
-        seen.add(lower);
-        candidates.push({ word: original, level: token.level || "SUPER" });
-      }
+    const lower = token.word.toLowerCase();
+    if (!seen.has(lower)) {
+      seen.add(lower);
+      candidates.push({ word: token.word, level: token.level || "SUPER" });
     }
   }
   return candidates;
@@ -192,7 +185,7 @@ export function ReadingPage({ accessToken, apiCall }) {
   const [analysisPanelOpen, setAnalysisPanelOpen] = useState(true);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
-  const wordStats = useMemo(() => computeWordStats(articleLines), [articleLines]);
+  const wordStats = useMemo(() => computeWordStats(articleLines, wordLevels), [articleLines, wordLevels]);
 
   // 级别切换
   const handleLevelToggle = useCallback((level) => {
@@ -279,6 +272,7 @@ export function ReadingPage({ accessToken, apiCall }) {
     validI1Words,
     validAboveI1Words,
     removedWords,
+    wordLevels,
     viewMode,
     setViewMode,
     isRewriting,
@@ -340,13 +334,7 @@ export function ReadingPage({ accessToken, apiCall }) {
           // 没有高难度词，直接显示原文（rewrittenText = null，viewMode = original）
           return;
         }
-        // 构建 wordLevels dict
-        const wordLevels = {};
-        candidates.forEach((w) => {
-          wordLevels[w.word.toLowerCase()] = w.level || "B2";
-        });
-        // 新流程：传入 { words, wordLevels } 格式
-        handleRewrite(text, { words: candidates, wordLevels });
+        handleRewrite(text, { words: candidates });
       } catch (e) {
         console.error("Failed to collect simplify candidates:", e);
       }
@@ -425,6 +413,7 @@ export function ReadingPage({ accessToken, apiCall }) {
             validI1Words={validI1Words}
             validAboveI1Words={validAboveI1Words}
             removedWords={removedWords}
+            wordLevels={wordLevels}
             viewMode={viewMode}
             isRewriting={isRewriting}
             rewriteError={rewriteError}

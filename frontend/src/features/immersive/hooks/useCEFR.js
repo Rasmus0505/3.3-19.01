@@ -38,6 +38,9 @@ function lookupCefrLevelFromMap(map, token, fallbackAnalyzer) {
   if (map.has(key)) return map.get(key);
   const noApos = key.replace(/'/g, "");
   if (noApos && noApos !== key && map.has(noApos)) return map.get(noApos);
+  if (map.__disableFallback === true) {
+    return undefined;
+  }
   // Fallback: ask VocabAnalyzer directly (handles stopwords, nonstandard contractions, bare punctuation)
   if (fallbackAnalyzer && fallbackAnalyzer.isLoaded) {
     return fallbackAnalyzer.lookupCefrLevelForSurfaceForm(token) ?? undefined;
@@ -61,6 +64,7 @@ export function useCEFR({ lesson, currentSentenceIndex }) {
 
     // If word_levels is available from backend (new flow), use it for all words
     if (wordLevels && typeof wordLevels === "object" && Object.keys(wordLevels).length > 0) {
+      map.__disableFallback = true;
       for (const [word, info] of Object.entries(wordLevels)) {
         const finalLevel = info?.final_level;
         if (finalLevel) {

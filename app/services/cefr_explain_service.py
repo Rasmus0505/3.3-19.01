@@ -18,7 +18,7 @@ from app.infra.llm.deepseek import call_deepseek
 logger = logging.getLogger(__name__)
 
 # CEFR 等级数值用于比较
-CEFR_LEVEL_NUM = {"A1": 1, "A2": 2, "B1": 3, "B2": 4, "C1": 5, "C2": 6}
+CEFR_LEVEL_NUM = {"A1": 1, "A2": 2, "B1": 3, "B2": 4, "C1": 5, "C2": 6, "SUPER": 7}
 
 EXPLAIN_SENTENCE_SYSTEM_PROMPT = """You are an English Listening Coach specializing in spoken English recognition for Chinese EFL learners.
 
@@ -230,6 +230,38 @@ class CefrExplainService:
 
         return None
 
+    def _lookup_surface_word(self, word: str) -> str | None:
+        """查询表面词形的 CEFR 等级。
+
+        首筛只看素材里当前出现的词形，不提前做词形还原。
+        """
+        word_lower = word.lower()
+        word_map = self.vocab_data.get("words", {})
+        if word_lower in word_map:
+            return word_map[word_lower].get("level")
+        return None
+
+    def _lookup_dictionary_form_level(self, word: str) -> str | None:
+        """查询词典里的最终词形等级。
+
+        二次筛选阶段基于词形还原后的结果再次查词典。
+        """
+        word_lower = word.lower()
+        word_map = self.vocab_data.get("words", {})
+
+        if word_lower in word_map:
+            return word_map[word_lower].get("level")
+
+        nonstandard = self._normalize_nonstandard_contraction(word_lower)
+        if nonstandard and nonstandard in word_map:
+            return word_map[nonstandard].get("level")
+
+        stripped = self._strip_contraction(word_lower)
+        if stripped and stripped in word_map:
+            return word_map[stripped].get("level")
+
+        return None
+
     def _lemmatize(self, word: str) -> str:
         """词形还原（复用 vocabAnalyzer.js 的逻辑）"""
         word_lower = word.lower()
@@ -272,7 +304,12 @@ class CefrExplainService:
         """获取等级数值"""
         return CEFR_LEVEL_NUM.get(level.upper(), 0)
 
-    def _get_final_lemma_level(self, word: str, llm_lemma: str | None = None) -> str:
+    def _get_final_lemma_level(
+        self,
+        word: str,
+        llm_lemma: str | None = None,
+        surface_level: str | None = None,
+    ) -> str | None:
         """
         获取单词的最终原型词等级（应用 LLM 还原后，再查词典）。
 
@@ -283,29 +320,17 @@ class CefrExplainService:
         Returns:
             CEFR 等级字符串（如 "B1", "A1", "SUPER"）
         """
-        # 确定使用哪个原型词
         if llm_lemma:
             lemma = llm_lemma
         else:
             lemma = self._lemmatize(word)
 
-        word_map = self.vocab_data.get("words", {})
-
-        # 尝试查询原型词等级
-        lemma_level = None
-        if lemma in word_map:
-            lemma_level = word_map[lemma].get("level")
-        else:
-            # 原型词查不到，尝试非标准缩写
-            nonstandard = self._normalize_nonstandard_contraction(lemma)
-            if nonstandard and nonstandard in word_map:
-                lemma_level = word_map[nonstandard].get("level")
-
-        # 如果原型词查不到，标记为 SUPER
-        if lemma_level is None:
-            lemma_level = "SUPER"
-
-        return lemma_level
+        lemma_level = self._lookup_dictionary_form_level(lemma)
+        if lemma_level:
+            return lemma_level
+        if surface_level:
+            return surface_level
+        return None
 
     def extract_cefr_words(self, sentences: list[str]) -> list[dict]:
         """后端词典 CEFR 一次筛选 - 提取高于目标等级的词汇"""
@@ -318,12 +343,12 @@ class CefrExplainService:
 
             for match in matches:
                 word = match.group()
-                level = self._lookup_word(word)
+                level = self._lookup_surface_word(word)
 
                 if level:
                     level_num = self._level_num(level)
-                    # 高于目标等级才记录
-                    if level_num > self.target_num:
+                    # 大于等于 i+1 的表面词形才进入二次筛选
+                    if level_num >= self.target_num + 1:
                         words_above.append({
                             "word": word,
                             "level": level,
@@ -403,10 +428,9 @@ Return ONLY valid JSON, no explanations."""
         词典二次筛选 - 基于原型词等级进行分类
 
         分类逻辑：
-        - 词典查到且原型等级 <= 目标等级 → 过滤（词典误标/过于简单）
-        - 词典查到且原型等级 = 目标等级 → i+1 词汇（保留）
-        - 词典查到且原型等级 > 目标等级 → 需简化词汇
-        - 词典查不到 → SUPER（需简化）
+        - final_level <= 目标等级 → 过滤
+        - final_level == 目标等级 + 1 → i+1
+        - final_level >= 目标等级 + 2 / SUPER → above_i+1
 
         Args:
             words_above: 超纲词列表（来自一次筛选）
@@ -433,48 +457,31 @@ Return ONLY valid JSON, no explanations."""
             else:
                 lemma = self._lemmatize(word)
 
-            # 尝试查询原型词等级（先直接查，再尝试非标准缩写还原）
-            # 注意：word_map 的 key 是小写，需要 lower() 后再查
-            lemma_level = None
-            word_map = self.vocab_data.get("words", {})
-            lemma_lower = lemma.lower()
-
-            if lemma_lower in word_map:
-                lemma_level = word_map[lemma_lower].get("level")
-            else:
-                # 原型词查不到，尝试非标准缩写（也需要小写）
-                nonstandard = self._normalize_nonstandard_contraction(lemma_lower)
-                if nonstandard and nonstandard in word_map:
-                    lemma_level = word_map[nonstandard].get("level")
-
-            # 如果原型词查不到，回退到 surface_level；也没有则标记为 SUPER
-            if lemma_level is None:
-                lemma_level = surface_level if surface_level else "SUPER"
-
-            lemma_level_num = self._level_num(lemma_level)
+            final_level = self._get_final_lemma_level(word, llm_lemma=lemma, surface_level=surface_level)
+            final_level_num = self._level_num(final_level) if final_level else 0
 
             # 分类
-            if lemma_level_num <= self.target_num:
-                # 原型等级 <= 目标等级，过滤
+            if final_level_num <= self.target_num:
                 removed.append({
                     **word_info,
                     "lemma": lemma,
-                    "lemma_level": lemma_level,
+                    "lemma_level": final_level,
+                    "final_level": final_level,
                     "reason": "原型等级不高于目标等级"
                 })
-            elif lemma_level_num == self.target_num:
-                # 原型等级 == 目标等级，i+1 词汇
+            elif final_level_num == self.target_num + 1:
                 valid_i1.append({
                     **word_info,
                     "lemma": lemma,
-                    "lemma_level": lemma_level
+                    "lemma_level": final_level,
+                    "final_level": final_level,
                 })
             else:
-                # 原型等级 > 目标等级，需简化
                 valid_above_i1.append({
                     **word_info,
                     "lemma": lemma,
-                    "lemma_level": lemma_level
+                    "lemma_level": final_level,
+                    "final_level": final_level,
                 })
 
         return {

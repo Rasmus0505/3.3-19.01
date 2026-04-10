@@ -4,21 +4,20 @@
  * Phase 29: AI 重写与路由
  * Phase 32: IndexedDB 持久化（articleId 主键，自动加载，视图偏好记忆）
  * Phase 36: 词形还原版流程
- *   - Step 1: 词典初筛：提取 >userLevel 的词（i+1 和 >i+1）
+ *   - Step 1: surface form 首筛：提取 >= i+1 的词
  *   - Step 2: /extract-lemmas → 返回原型词列表
- *   - Step 3: 词典二次判断原型等级（前端本地查词表）
- *   - Step 4: 过滤原型等级 > targetLevel 的词
- *   - Step 5: /simplify-words → 重写为 i+1 水平
+ *   - Step 3: 本地词典二次判断 final_level
+ *   - Step 4: 仅把 >i+1 词发给 /simplify-words
+ *   - Step 5: 下划线/tooltip/重写统一基于 final_level
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { parseResponse } from "../shared/api/client";
 import { readCefrLevel } from "../app/authStorage";
 import {
   saveRewriteRecord as dbSave,
   getRewriteRecord,
   updateViewMode as dbUpdateViewMode,
 } from "../features/reading/readingRewriteDB";
-import { filterAndSimplifyWords, estimateRewriteTokens, extractLemmas } from "../features/reading/api/readingRewriteApi";
+import { simplifyWords, estimateRewriteTokens, extractLemmas } from "../features/reading/api/readingRewriteApi";
 import { getOrCreateAnalyzer } from "../utils/vocabAnalyzer";
 
 /* ─── CEFR 等级计算 ──────────────────────────────────── */
@@ -34,6 +33,18 @@ function getTargetLevel(userLevel) {
   const userIdx = CEFR_ORDER.indexOf(userLevel);
   const targetIdx = Math.min(userIdx + 1, CEFR_ORDER.length - 1);
   return CEFR_ORDER[targetIdx];
+}
+
+function toUniqueLowerWordList(words = []) {
+  const seen = new Set();
+  const out = [];
+  for (const word of words) {
+    const normalized = String(word || "").toLowerCase();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
 }
 
 /**
@@ -99,6 +110,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
   const [validI1Words, setValidI1Words] = useState([]);        // 有效的 i+1 词汇
   const [validAboveI1Words, setValidAboveI1Words] = useState([]); // 有效的 >i+1 词汇
   const [removedWords, setRemovedWords] = useState([]);        // 被过滤的词
+  const [wordLevels, setWordLevels] = useState({});            // 二次筛选后的最终等级
   const [viewMode, setViewModeState] = useState("original");
   const [isRewriting, setIsRewriting] = useState(false);
   const [rewriteError, setRewriteError] = useState(null);
@@ -132,6 +144,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         setValidI1Words(record.validI1Words || []);
         setValidAboveI1Words(record.validAboveI1Words || []);
         setRemovedWords(record.removedWords || []);
+        setWordLevels(record.wordLevels || {});
         // 若未存过偏好则默认原文（便于先看到 CEFR 标注）
         setViewModeState(record.viewMode || "original");
       } catch (e) {
@@ -162,6 +175,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
     setValidI1Words([]);
     setValidAboveI1Words([]);
     setRemovedWords([]);
+    setWordLevels({});
     setRewriteError(null);
     setViewModeState("original");
   }, []);
@@ -171,14 +185,14 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
    * 新流程 (Phase 36):
    *   Step 1: 词典初筛（调用方已传入 words）
    *   Step 2: /extract-lemmas → 获取原型词列表
-   *   Step 3: 词典二次判断原型等级（前端本地查词表）
-   *   Step 4: 过滤原型等级 <= targetLevel 的词
-   *   Step 5: /simplify-words → 重写筛选后的词
+   *   Step 3: 词典二次判断原型等级（前端本地查词表，产出 final_level）
+   *   Step 4: 仅把 >i+1 词发给 /simplify-words
+   *   Step 5: 原文高亮、tooltip、重写都基于 final_level
    * @param {string} originalText — 原始文章全文
-   * @param {{ words: Array<{word: string, level: string}>, wordLevels: object }} options
+   * @param {{ words: Array<{word: string, level: string}> }} options
    */
   const handleRewrite = useCallback(
-    async (originalText, { words, wordLevels } = {}) => {
+    async (originalText, { words } = {}) => {
       const { toast } = await import("sonner");
 
       if (!accessToken) {
@@ -209,13 +223,14 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         if (!words || words.length === 0) {
           toast.info("当前没有需要处理的高难度词");
           setRewrittenText(originalText);
-          setRewriteMappings([]);
-          setValidI1Words([]);
-          setValidAboveI1Words([]);
-          setRemovedWords([]);
-          setViewModeState("original");
-          if (articleId) {
-            await dbSave({
+            setRewriteMappings([]);
+            setValidI1Words([]);
+            setValidAboveI1Words([]);
+            setRemovedWords([]);
+            setWordLevels({});
+            setViewModeState("original");
+            if (articleId) {
+              await dbSave({
               articleId,
               originalText,
               rewrittenText: originalText,
@@ -258,67 +273,60 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
 
         // ── Step 3: 词典二次判断原型等级 ─────────────────────────
         const analyzer = await getOrCreateAnalyzer();
-        const validI1WordsList = [];      // i+1 词汇（原型等级 == targetLevel）
-        const validAboveI1WordsList = []; // >i+1 词汇（原型等级 > targetLevel）
-        const removedByLemmaWordsList = []; // 因原型等级 <= targetLevel 而被过滤的词
+        const validI1WordsList = [];
+        const validAboveI1WordsList = [];
+        const removedByLemmaWordsList = [];
+        const finalWordLevels = {};
+        const userLevelNum = _levelToNum(userLevel);
+        const targetLevelNum = _levelToNum(targetLevel);
 
         for (let i = 0; i < words.length; i++) {
           const originalWord = words[i].word;
           const lemma = lemmas[i] || originalWord.toLowerCase();
+          const surfaceLevel = String(words[i].level || "");
+          const finalLevel =
+            analyzer.lookupCefrLevelForDictionaryForm(lemma) ||
+            surfaceLevel ||
+            null;
+          const originalLower = originalWord.toLowerCase();
+          finalWordLevels[originalLower] = finalLevel || "";
 
-          // 查词典获取原型等级
-          const lemmaLevel = analyzer.lookupCefrLevelForSurfaceForm(lemma);
+          const finalLevelNum = _levelToNum(finalLevel);
 
-          const lemmaLevelNum = _levelToNum(lemmaLevel);
-          const targetLevelNum = _levelToNum(targetLevel);
-
-          if (lemmaLevelNum <= targetLevelNum) {
-            // 原型已在用户掌握范围内，过滤掉
+          if (finalLevelNum <= userLevelNum) {
             removedByLemmaWordsList.push({
               word: originalWord,
               lemma,
-              lemmaLevel: lemmaLevel || "unknown",
-              reason: `原型 "${lemma}" 等级为 ${lemmaLevel || "unknown"}，低于等于目标 ${targetLevel}`,
+              finalLevel: finalLevel || "unknown",
+              reason: `原型 "${lemma}" 最终等级为 ${finalLevel || "unknown"}，低于等于用户等级 ${userLevel}`,
             });
+          } else if (finalLevelNum === targetLevelNum) {
+            validI1WordsList.push(originalWord);
           } else {
-            // 原型等级 > targetLevel，需要简化
             validAboveI1WordsList.push(originalWord);
           }
         }
 
-        // i+1 词汇（词典初筛结果中原型等级 == targetLevel 的）
-        // 已在 Step 3 中被过滤到 validAboveI1WordsList 中
-        // validI1WordsList 存放的是词典初筛结果中等级 == targetLevel 的词（无需处理）
-        const dictI1Words = words
-          .filter((w) => _levelToNum(w.level || "B2") === _levelToNum(targetLevel))
-          .map((w) => w.word);
-        validI1WordsList.push(...dictI1Words);
-
-        // ── Step 4: 过滤后处理结果 ───────────────────────────────
         let simplifiedWords = [];
-        let dsWordLevels = {};
         let finalAboveI1Words = validAboveI1WordsList;
-        let finalRemoved = [...removedByLemmaWordsList];
+        const finalRemoved = [...removedByLemmaWordsList];
 
         if (validAboveI1WordsList.length > 0) {
-          // 调用 LLM 重写（只对原型等级 > targetLevel 的词）
+          const aboveWordLevels = {};
+          validAboveI1WordsList.forEach((word) => {
+            aboveWordLevels[word.toLowerCase()] = finalWordLevels[word.toLowerCase()] || targetLevel;
+          });
+
           try {
-            const result = await filterAndSimplifyWords(
+            const result = await simplifyWords(
               originalText,
               validAboveI1WordsList,
-              {}, // 不再传入词典等级，由 LLM 根据原型判断
               targetLevel,
-              userLevel,
               accessToken,
-              false
+              false,
+              aboveWordLevels,
             );
             simplifiedWords = result.simplifiedWords || [];
-            dsWordLevels = result.wordLevels || {};
-            finalAboveI1Words = result.validAboveI1Words || validAboveI1WordsList;
-            finalRemoved = [
-              ...removedByLemmaWordsList,
-              ...(result.removedWords || []),
-            ];
           } catch (e) {
             toast.error("重写失败：" + (e?.message || "请稍后重试"));
             setRewriteError(e?.message || "重写失败");
@@ -326,7 +334,6 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
           }
         }
 
-        const chargeYuan = 0; // 简化流程不单独计算
         toast.success(
           "处理完成" +
             (validI1WordsList.length > 0 ? `（${validI1WordsList.length} 个 i+1 词汇保留）` : "") +
@@ -346,7 +353,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
               originalLower: word.toLowerCase(),
               rewritten: word,
               confirmed: true,
-              dsLevel: dsWordLevels[word.toLowerCase()] || "B2",
+              finalLevel: finalWordLevels[word.toLowerCase()] || targetLevel,
             });
           } else {
             newMappings.push({
@@ -354,10 +361,13 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
               originalLower: word.toLowerCase(),
               rewritten: word,
               confirmed: false,
-              dsLevel: dsWordLevels[word.toLowerCase()] || "B2",
+              finalLevel: finalWordLevels[word.toLowerCase()] || targetLevel,
             });
           }
         });
+
+        const uniqueValidI1Words = toUniqueLowerWordList(validI1WordsList);
+        const uniqueFinalAboveI1Words = toUniqueLowerWordList(finalAboveI1Words);
 
         // ── Step 6: 保存到 IndexedDB ───────────────────────────
         if (articleId) {
@@ -366,10 +376,10 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
             originalText,
             rewrittenText,
             mappings: newMappings,
-            validI1Words: [...new Set(validI1WordsList)],
-            validAboveI1Words: finalAboveI1Words,
+            validI1Words: uniqueValidI1Words,
+            validAboveI1Words: uniqueFinalAboveI1Words,
             removedWords: finalRemoved,
-            wordLevels: dsWordLevels,
+            wordLevels: finalWordLevels,
             viewMode: "original",
             rewrittenAt: Date.now(),
           });
@@ -380,9 +390,10 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         // 更新状态
         setRewrittenText(rewrittenText);
         setRewriteMappings(newMappings);
-        setValidI1Words([...new Set(validI1WordsList)]);
-        setValidAboveI1Words(finalAboveI1Words);
+        setValidI1Words(uniqueValidI1Words);
+        setValidAboveI1Words(uniqueFinalAboveI1Words);
         setRemovedWords(finalRemoved);
+        setWordLevels(finalWordLevels);
         setViewModeState("original");
       } catch (err) {
         const msg = err?.message || "网络错误";
@@ -401,6 +412,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
     validI1Words,
     validAboveI1Words,
     removedWords,
+    wordLevels,
     viewMode,
     setViewMode: handleSwitchView,
     isRewriting,

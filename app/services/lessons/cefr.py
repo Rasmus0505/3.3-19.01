@@ -57,7 +57,7 @@ def process_sentences_with_cefr(
             word = word_info["word"]
             surface_level = word_info["level"]
             llm_lemma = above_word_lemmas.get(word)
-            final_level = service._get_final_lemma_level(word, llm_lemma)
+            final_level = service._get_final_lemma_level(word, llm_lemma, surface_level=surface_level)
             word_levels[word] = {
                 "surface_level": surface_level,
                 "llm_lemma": llm_lemma,
@@ -68,7 +68,7 @@ def process_sentences_with_cefr(
             word = match.group()
             if word in words_above_set:
                 continue
-            surface_level = service._lookup_word(word)
+            surface_level = service._lookup_surface_word(word)
             if surface_level:
                 word_levels[word] = {
                     "surface_level": surface_level,
@@ -92,9 +92,12 @@ def process_sentences_with_cefr(
             continue
 
         filter_result = service.filter_words_by_level(words_above, llm_lemmas=llm_lemmas)
-        valid_above_i1 = filter_result["valid_above_i1_words"]
+        explanation_words = [
+            *list(filter_result.get("valid_i1_words") or []),
+            *list(filter_result.get("valid_above_i1_words") or []),
+        ]
 
-        if not valid_above_i1:
+        if not explanation_words:
             sentence["cefr_vocab_json"] = {
                 "words": words_above,
                 "filter_result": filter_result,
@@ -110,7 +113,7 @@ def process_sentences_with_cefr(
             continue
 
         try:
-            explanation = service.generate_explanation(sentence_text, valid_above_i1)
+            explanation = service.generate_explanation(sentence_text, explanation_words)
         except Exception:
             explanation = {
                 "simplified_sentence": None,
