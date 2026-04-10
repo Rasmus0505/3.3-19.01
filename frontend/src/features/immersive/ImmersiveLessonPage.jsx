@@ -548,11 +548,15 @@ export function ImmersiveLessonPage({
   }, [focusTypingInput, isTouchDevice, markExplanationViewed]);
 
   // 检测 word-row 是否有多行，并计算每行的单词索引
-  useEffect(() => {
+  const measureWordRowLines = useCallback(() => {
     if (!wordRowFrameRef.current) return;
     const container = wordRowFrameRef.current;
     const slots = container.querySelectorAll('.immersive-word-slot');
-    if (slots.length === 0) return;
+    if (slots.length === 0) {
+      setIsWordRowMultiLine(false);
+      setWordRowLines(null);
+      return;
+    }
 
     let maxTop = 0;
     let minTop = Infinity;
@@ -561,11 +565,9 @@ export function ImmersiveLessonPage({
       if (top > maxTop) maxTop = top;
       if (top < minTop) minTop = top;
     });
-    // 如果有多个不同的 top 值，说明有多行
     const hasMultiLine = maxTop - minTop > 20;
     setIsWordRowMultiLine(hasMultiLine);
 
-    // 如果有多行，计算每行的单词索引
     if (hasMultiLine) {
       const rows = [];
       let currentRow = [];
@@ -590,7 +592,21 @@ export function ImmersiveLessonPage({
     } else {
       setWordRowLines(null);
     }
-  }, [expectedTokens, typingPanelRef.current]);
+  }, []);
+
+  useEffect(() => {
+    measureWordRowLines();
+  }, [expectedTokens, measureWordRowLines]);
+
+  useEffect(() => {
+    const container = wordRowFrameRef.current;
+    if (!container) return;
+    const observer = new ResizeObserver(() => {
+      measureWordRowLines();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [measureWordRowLines]);
 
   useEffect(() => {
     setSentenceJumpEditing(false);

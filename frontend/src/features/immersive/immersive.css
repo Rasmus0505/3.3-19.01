@@ -473,7 +473,7 @@
 }
 
 .immersive-word-row--multi-line-first {
-  justify-content: space-between;
+  justify-content: flex-start;
 }
 
 .immersive-word-slot {
@@ -957,13 +957,33 @@ input[type="number"] {
 
 /* --- Current sentence: letter-level underlines on .immersive-letter-cell --- */
 
-/* --- Current sentence: CEFR underline only for empty (not-yet-typed) cells --- */
+/* --- Current sentence: CEFR underline for all letter-cell states --- */
 
+/* i+1 (within reach): teal-green underline across all states */
 .cefr-i-plus-one .immersive-letter-cell--empty {
   border-bottom-color: oklch(0.75 0.16 175);
 }
+.cefr-i-plus-one .immersive-letter-cell--correct {
+  border-bottom-color: oklch(0.75 0.16 175);
+}
+.cefr-i-plus-one .immersive-letter-cell--revealed {
+  border-bottom-color: oklch(0.75 0.16 175);
+}
+.cefr-i-plus-one .immersive-letter-cell--wrong {
+  border-bottom-color: oklch(0.75 0.16 175);
+}
 
+/* above i+1 (out of reach): red underline across all states */
 .cefr-above-i-plus-one .immersive-letter-cell--empty {
+  border-bottom-color: oklch(0.58 0.24 25);
+}
+.cefr-above-i-plus-one .immersive-letter-cell--correct {
+  border-bottom-color: oklch(0.58 0.24 25);
+}
+.cefr-above-i-plus-one .immersive-letter-cell--revealed {
+  border-bottom-color: oklch(0.58 0.24 25);
+}
+.cefr-above-i-plus-one .immersive-letter-cell--wrong {
   border-bottom-color: oklch(0.58 0.24 25);
 }
 
@@ -2838,6 +2858,26 @@ input[type="number"] {
 .immersive-layout--workbench .immersive-letter-cell--revealed {
   color: oklch(0.62 0.22 70);
   border-bottom-color: oklch(0.62 0.22 70);
+}
+
+/* workbench: CEFR underline overrides for correct/revealed/wrong */
+.immersive-layout--workbench .cefr-i-plus-one .immersive-letter-cell--correct {
+  border-bottom-color: oklch(0.75 0.16 175);
+}
+.immersive-layout--workbench .cefr-i-plus-one .immersive-letter-cell--revealed {
+  border-bottom-color: oklch(0.75 0.16 175);
+}
+.immersive-layout--workbench .cefr-i-plus-one .immersive-letter-cell--wrong {
+  border-bottom-color: oklch(0.75 0.16 175);
+}
+.immersive-layout--workbench .cefr-above-i-plus-one .immersive-letter-cell--correct {
+  border-bottom-color: oklch(0.58 0.24 25);
+}
+.immersive-layout--workbench .cefr-above-i-plus-one .immersive-letter-cell--revealed {
+  border-bottom-color: oklch(0.58 0.24 25);
+}
+.immersive-layout--workbench .cefr-above-i-plus-one .immersive-letter-cell--wrong {
+  border-bottom-color: oklch(0.58 0.24 25);
 }
 
 .immersive-layout--workbench .immersive-sentence-card--current {
