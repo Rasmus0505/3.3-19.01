@@ -41,10 +41,10 @@ export function normalizeDesktopBundledModelSummary(payload = {}, modelKey = FAS
   const preinstalled = Boolean(payload?.preinstalled);
   const runtimeSource = String(payload?.runtime_source || "").trim() || "user_data";
   const message = available
-    ? "Bottle 1.0 is ready on this desktop client."
+    ? "Unlock 本地版 is ready on this desktop client."
     : installAvailable
-      ? "Bottle 1.0 can be prepared from this desktop client."
-      : "This installer does not contain a reusable Bottle 1.0 local bundle.";
+      ? "Unlock 本地版 can be prepared from this desktop client."
+      : "This installer does not contain a reusable Unlock 本地版 local bundle.";
   return {
     modelKey: normalizedModelKey,
     available,
@@ -165,11 +165,11 @@ export function logUploadLocalAsrDebug(message, extra = {}) {
 }
 
 export async function prepareAudioDataForLocalAsr() {
-  throw new Error("浏览器本地 ASR 已下线，请改用桌面端 Bottle 1.0 或网页端 Bottle 2.0。");
+  throw new Error("浏览器本地 ASR 已下线，请改用桌面端 Unlock 本地版或网页端 Unlock 云端。");
 }
 
 export async function runLocalAsrWithAutoParallelism() {
-  throw new Error("浏览器本地 ASR 已下线，请改用桌面端 Bottle 1.0 或网页端 Bottle 2.0。");
+  throw new Error("浏览器本地 ASR 已下线，请改用桌面端 Unlock 本地版或网页端 Unlock 云端。");
 }
 
 export async function requestWalletBalance(accessToken = "") {
