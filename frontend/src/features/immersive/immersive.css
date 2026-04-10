@@ -2,13 +2,21 @@
   --immersive-shell-height: 100dvh;
   --immersive-visual-viewport-height: 100dvh;
   --immersive-keyboard-offset: 0px;
+  display: flex;
+  height: 100%;
+  min-height: 0;
   min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .immersive-page {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 16px;
+  min-height: 0;
+  box-sizing: border-box;
 }
 
 .immersive-page--immersive {
@@ -1219,6 +1227,7 @@ input[type="number"] {
   gap: 18px !important;
   padding: 16px !important;
   min-height: calc(var(--immersive-shell-height) - 8px) !important;
+  box-sizing: border-box !important;
   background:
     radial-gradient(circle at top left, color-mix(in oklch, var(--color-primary) 7%, transparent), transparent 28%),
     linear-gradient(180deg, color-mix(in oklch, var(--color-muted) 45%, white 55%), color-mix(in oklch, var(--color-background) 92%, white 8%)) !important;
@@ -2703,8 +2712,10 @@ input[type="number"] {
   width: 100% !important;
   height: calc(var(--immersive-shell-height) - 24px) !important;
   max-height: calc(var(--immersive-shell-height) - 24px) !important;
+  min-height: 0 !important;
   padding: 18px !important;
   align-items: stretch !important;
+  box-sizing: border-box !important;
   overflow: hidden !important;
 }
 
@@ -2712,9 +2723,11 @@ input[type="number"] {
 .immersive-layout--workbench .immersive-layout__right {
   flex: 1 1 0;
   min-width: 0;
+  min-height: 0;
   display: flex !important;
   flex-direction: column !important;
   gap: 18px;
+  overflow: hidden !important;
 }
 
 .immersive-layout--workbench .immersive-layout__left-top,
@@ -2739,6 +2752,13 @@ input[type="number"] {
 .immersive-layout--workbench .immersive-page,
 .immersive-layout--workbench .immersive-typing {
   height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.immersive-layout--workbench .immersive-page-shell {
+  height: 100%;
+  min-height: 0;
 }
 
 .immersive-layout--workbench .immersive-page--immersive {
@@ -2755,14 +2775,19 @@ input[type="number"] {
 }
 
 .immersive-layout--workbench .immersive-card-content {
+  min-height: 0;
   overflow: hidden;
 }
 
 .immersive-layout--workbench .immersive-stage {
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
   overflow: hidden;
 }
 
 .immersive-layout--workbench .immersive-stage__media-shell {
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
