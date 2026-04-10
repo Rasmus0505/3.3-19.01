@@ -1689,13 +1689,8 @@ export function ImmersiveLessonPage({
   );
 
   useEffect(() => {
-    if (!showExplanation || !explanationAudioUrl) {
-      stopExplanationAudio({ resetPosition: true });
-      return;
-    }
-    void playExplanationAudio(explanationAudioUrl);
-    markExplanationViewed();
-  }, [explanationAudioUrl, markExplanationViewed, playExplanationAudio, showExplanation, stopExplanationAudio]);
+    stopExplanationAudio({ resetPosition: true });
+  }, [currentSentenceIndex, stopExplanationAudio]);
 
   const speakPreviousSentenceTTS = (text, rate = 1.0) => {
     if (!window.speechSynthesis) return false;
@@ -2116,6 +2111,11 @@ export function ImmersiveLessonPage({
         onResumeAudio: handleResumeExplanation,
         onReplayAudio: handleReplayExplanation,
         onStartPractice: handleStartPractice,
+      }}
+      questionProps={{
+        explanation: showExplanation ? currentExplanation : null,
+        currentSentenceIndex,
+        lessonSentences: lesson?.sentences || [],
       }}
     />
   );

@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
-
+import ComprehensionCheckPanel from "../ComprehensionCheckPanel";
 import ExplanationSidebarContent from "../ExplanationSidebarContent";
 import ImmersiveLayout from "../ImmersiveLayout";
 import TypingPanel from "../TypingPanel";
@@ -9,54 +8,31 @@ export default function ImmersiveLessonShell({
   videoPanelProps,
   typingPanelProps,
   explanationProps,
+  questionProps,
 }) {
   const { ref: typingPanelRef, ...restTypingPanelProps } = typingPanelProps;
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const currentSentenceKey = restTypingPanelProps.currentSentence?.idx ?? restTypingPanelProps.currentSentenceIndex;
-
-  const handleToggleDrawer = useCallback(() => {
-    setDrawerOpen((current) => !current);
-  }, []);
-
-  const handleCloseDrawer = useCallback(() => {
-    setDrawerOpen(false);
-  }, []);
-
-  const handleStartPractice = useCallback(() => {
-    setDrawerOpen(false);
-    explanationProps.onStartPractice?.();
-  }, [explanationProps]);
-
-  useEffect(() => {
-    setDrawerOpen(false);
-  }, [currentSentenceKey]);
 
   return (
     <ImmersiveLayout
-      sideOpen={drawerOpen}
-      onSideDismiss={handleCloseDrawer}
-      mainContent={
+      leftTopContent={
         <VideoPanel
           {...videoPanelProps}
           currentSentence={restTypingPanelProps.currentSentence}
           previousSentence={restTypingPanelProps.previousSentence}
           nextSentence={restTypingPanelProps.nextSentence}
           sentenceTypingDone={restTypingPanelProps.sentenceTypingDone}
-          explanationAvailable={Boolean(explanationProps.explanation)}
-          explanationOpen={drawerOpen}
-          onToggleExplanation={handleToggleDrawer}
         />
       }
-      bottomContent={<TypingPanel ref={typingPanelRef} {...restTypingPanelProps} />}
-      sideContent={
+      leftBottomContent={<TypingPanel ref={typingPanelRef} {...restTypingPanelProps} />}
+      rightTopContent={
         <div className="immersive-explanation-shell">
           <ExplanationSidebarContent
             {...explanationProps}
-            isOpen={drawerOpen}
-            onClose={handleCloseDrawer}
-            onStartPractice={handleStartPractice}
           />
         </div>
+      }
+      rightBottomContent={
+        <ComprehensionCheckPanel {...questionProps} />
       }
     />
   );
