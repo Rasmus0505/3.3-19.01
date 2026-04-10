@@ -16,8 +16,7 @@
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
-from pathlib import Path
+from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
@@ -67,14 +66,16 @@ class LessonGenerationService:
         # TODO: 迁移 lesson_service.py 中的 build_subtitle_variant 逻辑
         raise NotImplementedError("重构中")
 
-
-# 导出兼容层：允许新代码使用新模块，同时保持旧代码兼容
-from app.services.lesson_service import LessonService
-
-# 为了向后兼容，提供别名
-LegacyLessonService = LessonService
-
 __all__ = [
     "LessonGenerationService",
     "LegacyLessonService",
 ]
+
+
+def __getattr__(name: str):
+    if name != "LegacyLessonService":
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    from app.services.lesson_service import LessonService
+
+    globals()[name] = LessonService
+    return LessonService

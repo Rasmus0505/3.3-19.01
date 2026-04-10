@@ -1,56 +1,36 @@
-import { ArrowLeft, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, Volume2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { toast } from "sonner";
-
-// 布局组件
-import ExplanationSidebarContent from "./ExplanationSidebarContent";
-import ImmersiveLayout from "./ImmersiveLayout";
-
-// 子组件
-import VideoPanel from "./VideoPanel";
-import TypingPanel from "./TypingPanel";
 
 // 子组件导出（用于模块化重构）
 // 新代码建议使用这些子组件代替直接使用 ImmersiveLessonPage
 export { SubtitleDisplay } from "./components/SubtitleDisplay";
 export { PlaybackControls } from "./components/PlaybackControls";
+import ImmersiveLessonShell from "./components/ImmersiveLessonShell";
 
 // Hooks 导出
 export { useImmersivePlayer } from "./hooks";
-import { useImmersiveSession, useMediaController, useTypingController, useExplanation, useCEFR } from "./hooks";
+import { useExplanation, useCEFR } from "./hooks";
+import { useImmersiveKeyboard } from "./hooks/useImmersiveKeyboard";
+import { useImmersivePreferences } from "./hooks/useImmersivePreferences";
+import { useWordbookSelection } from "./hooks/useWordbookSelection";
 
 // 类型导出
 export * from "./immersiveTypes";
 
-import AudioRecorder from "../../shared/components/AudioRecorder";
-import SOEResultCard from "./SOEResultCard";
-
-import { useAppStore } from "../../store";
-import { VocabAnalyzer } from "../../utils/vocabAnalyzer";
-import { parseResponse, toErrorText } from "../../shared/api/client";
+import { parseResponse } from "../../shared/api/client";
 import { getStorageEstimate, getLessonMedia, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import {
-  Badge,
-  Button,
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "../../shared/ui";
 import {
-  LEARNING_SETTINGS_UPDATED_EVENT,
-  SHORTCUT_ACTIONS,
-  TRANSLATION_MASK_LAYOUT_VERSION,
   getShortcutLabel,
-  isShortcutPressed,
   readLearningSettings,
   resolveReplayAssistance,
-  writeLearningSettings,
 } from "./learningSettings";
 import {
   ANSWER_COMPLETED,
-  DEFAULT_IMMERSIVE_PLAYBACK_RATE,
   EXIT_IMMERSIVE,
   LESSON_LOADED,
   NAVIGATE_TO_SENTENCE,
@@ -60,924 +40,56 @@ import {
   POST_ANSWER_REPLAY_STARTED,
   RESET_SENTENCE_GATE,
   SENTENCE_PASSED,
-  SET_LOOP_ENABLED,
   SET_MEDIA_BINDING_REQUIRED,
   SET_POST_ANSWER_REPLAY_STATE,
   SET_PHASE,
-  SET_PLAYBACK_RATE,
-  SET_PLAYBACK_RATE_PINNED,
   SET_SENTENCE_JUMP_VALUE,
   SET_TRANSLATION_DISPLAY_MODE,
   createImmersiveSessionState,
   immersiveSessionReducer,
-  normalizePlaybackRate,
 } from "./immersiveSessionMachine";
-import { getMediaExt, isAudioFilename, isVideoFilename, normalizeToken } from "./tokenNormalize";
+import { isVideoFilename } from "./tokenNormalize";
 import { useImmersiveSessionController } from "./useImmersiveSessionController";
 import { useSentencePlayback } from "./useSentencePlayback";
 import { useTypingFeedbackSounds } from "./useTypingFeedbackSounds";
-import { cn } from "../../lib/utils";
-import { computeCefrClassName } from "./CefrBadge";
 import "./immersive.css";
 
-const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
-
-const APOSTROPHE_RE = /['']/g;
-function normalizeComparableToken(token) {
-  return normalizeToken(String(token || "")).replace(APOSTROPHE_RE, "");
-}
-function isApostropheChar(char) {
-  return char === "'" || char === "'";
-}
-function buildLetterSlots(expectedToken, inputValue, revealedComparableIndices = []) {
-  const expected = String(expectedToken || "");
-  const actual = normalizeComparableToken(inputValue);
-  const revealedSet = new Set(Array.isArray(revealedComparableIndices) ? revealedComparableIndices : []);
-  const slots = [];
-  let typedIndex = 0;
-  for (let idx = 0; idx < expected.length; idx += 1) {
-    const expectedChar = expected[idx];
-    if (isApostropheChar(expectedChar)) {
-      slots.push({ key: `slot-fixed-${idx}`, char: "'", state: "fixed", extra: false });
-      continue;
-    }
-    const typedChar = actual[typedIndex] || "";
-    let state = "empty";
-    if (typedChar) {
-      const match = typedChar.toLowerCase() === expectedChar.toLowerCase();
-      let charState = "wrong";
-      if (match) charState = revealedSet.has(typedIndex) ? "revealed" : "correct";
-      state = charState;
-      typedIndex += 1;
-    }
-    slots.push({ key: `slot-${idx}`, char: typedChar || "\u00A0", state, extra: false });
-  }
-  for (let idx = typedIndex; idx < actual.length; idx += 1) {
-    slots.push({ key: `extra-${idx}`, char: actual[idx] || "\u00A0", state: "wrong", extra: true });
-  }
-  if (!slots.length) return [{ key: "slot-empty", char: "\u00A0", state: "empty", extra: false }];
-  return slots;
-}
-
-function formatSoeAssessErrorMessage(data, httpStatus = 0) {
-  if (!data || typeof data !== "object") {
-    return httpStatus ? `评测失败（HTTP ${httpStatus}）` : "评测失败";
-  }
-  const detail = data.detail;
-  if (Array.isArray(detail) && detail.length > 0) {
-    const first = detail[0];
-    if (first && typeof first === "object") {
-      if (typeof first.msg === "string" && first.msg.trim()) return first.msg.trim();
-      if (typeof first.message === "string" && first.message.trim()) return first.message.trim();
-    }
-  }
-  const msg = typeof data.message === "string" && data.message.trim() ? data.message.trim() : "";
-  const code = typeof data.error_code === "string" && data.error_code.trim() ? data.error_code.trim() : "";
-  const detailStr = typeof detail === "string" && detail.trim() ? detail.trim() : "";
-
-  let out = msg;
-  if (code && !out.includes(code)) {
-    out = out ? `[${code}] ${out}` : `[${code}]`;
-  }
-  if (detailStr && detailStr !== msg) {
-    const shortMsg = msg.slice(0, 24);
-    if (!shortMsg || !detailStr.startsWith(shortMsg)) {
-      out = out ? `${out}\n${detailStr}` : detailStr;
-    }
-  }
-  if (out.trim()) return out.trim();
-  if (typeof detail === "string" && detail.trim()) return detail.trim();
-  return httpStatus ? `评测失败（HTTP ${httpStatus}）` : "评测失败";
-}
-const WORD_TIMING_TOLERANCE_MS = 140;
-const WORDBOOK_LONG_PRESS_MS = 260;
-const MOBILE_KEYBOARD_MIN_INSET_PX = 120;
-const TRANSLATION_MASK_MIN_WIDTH_PX = 120;
-const TRANSLATION_MASK_MIN_HEIGHT_PX = 52;
-const TRANSLATION_MASK_DEFAULT_WIDTH_RATIO = 0.58;
-const TRANSLATION_MASK_DEFAULT_BOTTOM_OFFSET_PX = 12;
-const TRANSLATION_MASK_CHROME_IDLE_MS = 1200;
-const TRANSLATION_MASK_VISIBLE_BOTTOM_GAP_PX = 12;
-const IMMERSIVE_PLAYBACK_RATE_STEP = 0.25;
-const TRANSLATION_MASK_EMPTY_RECT = Object.freeze({ x: null, y: null, width: null, height: null });
-const ENTRY_HINT_ACTION_IDS = ["reveal_word", "replay_sentence", "next_sentence"];
-const CEFR_CACHE_KEY_PREFIX = "cefr_analysis_v1:";
-const CEFR_ANALYSIS_CHUNK_SIZE = 50;
-const MEDIA_TYPE_BY_EXTENSION = {
-  ".mp4": "video/mp4",
-  ".mov": "video/quicktime",
-  ".mkv": "video/x-matroska",
-  ".avi": "video/x-msvideo",
-  ".webm": "video/webm",
-  ".mp3": "audio/mpeg",
-  ".wav": "audio/wav",
-  ".m4a": "audio/mp4",
-  ".flac": "audio/flac",
-  ".aac": "audio/aac",
-  ".ogg": "audio/ogg",
-  ".opus": "audio/ogg; codecs=opus",
-};
-const TRANSLATION_MASK_RESIZE_HANDLES = [
-  {
-    key: "nw",
-    mode: "resize-nw",
-    className: "immersive-translation-mask__resize-handle immersive-translation-mask__resize-handle--top-left",
-    ariaLabel: "从左上角调整字幕遮挡板尺寸",
-  },
-  {
-    key: "ne",
-    mode: "resize-ne",
-    className: "immersive-translation-mask__resize-handle immersive-translation-mask__resize-handle--top-right",
-    ariaLabel: "从右上角调整字幕遮挡板尺寸",
-  },
-  {
-    key: "sw",
-    mode: "resize-sw",
-    className: "immersive-translation-mask__resize-handle immersive-translation-mask__resize-handle--bottom-left",
-    ariaLabel: "从左下角调整字幕遮挡板尺寸",
-  },
-  {
-    key: "se",
-    mode: "resize-se",
-    className: "immersive-translation-mask__resize-handle immersive-translation-mask__resize-handle--bottom-right",
-    ariaLabel: "从右下角调整字幕遮挡板尺寸",
-  },
-  // Left / right edge — narrower touch target that only adjusts width without moving top/left.
-  {
-    key: "w",
-    mode: "resize-w",
-    className: "immersive-translation-mask__resize-handle immersive-translation-mask__resize-handle--left",
-    ariaLabel: "从左侧调整字幕遮挡板宽度",
-  },
-  {
-    key: "e",
-    mode: "resize-e",
-    className: "immersive-translation-mask__resize-handle immersive-translation-mask__resize-handle--right",
-    ariaLabel: "从右侧调整字幕遮挡板宽度",
-  },
-];
-
-function addSentenceCefrTokensToMap(map, sentenceResult) {
-  if (!(map instanceof Map) || !sentenceResult?.tokens?.length) return;
-  for (const tokenInfo of sentenceResult.tokens) {
-    _addNormalizedKeysToMap(map, String(tokenInfo.word || "").toLowerCase(), tokenInfo.level);
-  }
-}
-
-function addTokenLevelToMap(map, token, level) {
-  if (!(map instanceof Map) || !token) return;
-  _addNormalizedKeysToMap(map, String(token).toLowerCase(), level);
-}
-
-function _addNormalizedKeysToMap(map, rawLower, level) {
-  const keys = new Set([
-    rawLower,
-    normalizeToken(rawLower),
-    normalizeToken(rawLower).replace(/'/g, ""),
-  ]);
-  for (const k of keys) {
-    if (k) map.set(k, level);
-  }
-}
-
-/**
- * @param {Map} map - CEFR level map
- * @param {string} token - raw token
- * @param {VocabAnalyzer|null} [fallbackAnalyzer] - if provided, missing map entries are resolved via VocabAnalyzer
- * @returns {string|undefined} CEFR level or undefined
- */
-function lookupCefrLevelFromMap(map, token, fallbackAnalyzer) {
-  if (!(map instanceof Map)) return undefined;
-  const key = normalizeToken(token);
-  if (map.has(key)) return map.get(key);
-  const noApos = key.replace(/'/g, "");
-  if (noApos && noApos !== key && map.has(noApos)) return map.get(noApos);
-  // Fallback: ask VocabAnalyzer directly (handles stopwords, nonstandard contractions, bare punctuation)
-  if (fallbackAnalyzer && fallbackAnalyzer.isLoaded) {
-    return fallbackAnalyzer.lookupCefrLevelForSurfaceForm(token) ?? undefined;
-  }
-  return undefined;
-}
-
-function clampNumber(value, min, max) {
-  if (!Number.isFinite(value)) return min;
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return value;
-  if (max <= min) return min;
-  return Math.min(max, Math.max(min, value));
-}
-
-function normalizeTranslationMaskRect(rect) {
-  if (!rect || typeof rect !== "object") {
-    return { ...TRANSLATION_MASK_EMPTY_RECT };
-  }
-  const normalizeValue = (value) => {
-    if (value == null || value === "") return null;
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return null;
-    return Number(clampNumber(parsed, 0, 1).toFixed(4));
-  };
-  return {
-    x: normalizeValue(rect.x),
-    y: normalizeValue(rect.y),
-    width: normalizeValue(rect.width),
-    height: normalizeValue(rect.height),
-  };
-}
-
-function convertTranslationMaskRectToStored(rect, metrics) {
-  if (!metrics || !rect) {
-    return normalizeTranslationMaskRect(rect);
-  }
-  const width = Math.max(1, Number(metrics.width || 0));
-  const height = Math.max(1, Number(metrics.height || 0));
-  return normalizeTranslationMaskRect({
-    x: rect.left / width,
-    y: rect.top / height,
-    width: rect.width / width,
-    height: rect.height / height,
-  });
-}
-
-function buildTranslationMaskUiPreference(enabled, rect) {
-  const normalizedRect = normalizeTranslationMaskRect(rect);
-  return {
-    enabled: Boolean(enabled),
-    layoutVersion: TRANSLATION_MASK_LAYOUT_VERSION,
-    x: normalizedRect.x,
-    y: normalizedRect.y,
-    width: normalizedRect.width,
-    height: normalizedRect.height,
-  };
-}
-
-function buildDefaultTranslationMaskRect(metrics, options = {}) {
-  const safeWidth = Math.max(1, Number(metrics?.width || 0));
-  const safeHeight = Math.max(1, Number(metrics?.height || 0));
-  const minWidth = Math.min(TRANSLATION_MASK_MIN_WIDTH_PX, safeWidth);
-  const minHeight = Math.min(TRANSLATION_MASK_MIN_HEIGHT_PX, safeHeight);
-  const width = clampNumber(safeWidth * TRANSLATION_MASK_DEFAULT_WIDTH_RATIO, minWidth, safeWidth);
-  const height = minHeight;
-  const preferredBottom = clampNumber(Number(options?.preferredBottom ?? safeHeight), height, safeHeight);
-  const left = clampNumber((safeWidth - width) / 2, 0, Math.max(0, safeWidth - width));
-  const top = clampNumber(
-    preferredBottom - height - TRANSLATION_MASK_DEFAULT_BOTTOM_OFFSET_PX,
-    0,
-    Math.max(0, safeHeight - height),
-  );
-  return convertTranslationMaskRectToStored({ left, top, width, height }, { width: safeWidth, height: safeHeight });
-}
-
-function measureContainedVideoRect(containerRect, videoElement) {
-  const safeContainerWidth = Math.max(0, Number(containerRect?.width || 0));
-  const safeContainerHeight = Math.max(0, Number(containerRect?.height || 0));
-  if (safeContainerWidth <= 0 || safeContainerHeight <= 0) {
-    return null;
-  }
-  const intrinsicWidth = Math.max(0, Number(videoElement?.videoWidth || 0));
-  const intrinsicHeight = Math.max(0, Number(videoElement?.videoHeight || 0));
-  // Electron / some browsers report 0×0 intrinsic size until a frame decodes; use layout box vs container.
-  if (intrinsicWidth <= 0 || intrinsicHeight <= 0) {
-    const vb = videoElement?.getBoundingClientRect?.();
-    if (!vb || vb.width <= 0 || vb.height <= 0) return null;
-    return {
-      left: vb.left - containerRect.left,
-      top: vb.top - containerRect.top,
-      width: vb.width,
-      height: vb.height,
-    };
-  }
-
-  const containerAspectRatio = safeContainerWidth / safeContainerHeight;
-  const videoAspectRatio = intrinsicWidth / intrinsicHeight;
-
-  if (videoAspectRatio >= containerAspectRatio) {
-    const width = safeContainerWidth;
-    const height = width / videoAspectRatio;
-    return {
-      left: 0,
-      top: (safeContainerHeight - height) / 2,
-      width,
-      height,
-    };
-  }
-
-  const height = safeContainerHeight;
-  const width = height * videoAspectRatio;
-  return {
-    left: (safeContainerWidth - width) / 2,
-    top: 0,
-    width,
-    height,
-  };
-}
-
-function resolveTranslationMaskRect(maskRect, metrics) {
-  if (!metrics) return null;
-  const safeWidth = Math.max(1, Number(metrics.width || 0));
-  const safeHeight = Math.max(1, Number(metrics.height || 0));
-  const maxWidth = Math.min(safeWidth, Math.max(1, Number(metrics.maxWidth || safeWidth)));
-  const maxHeight = Math.min(safeHeight, Math.max(1, Number(metrics.maxHeight || safeHeight)));
-  const minWidth = Math.min(Math.max(1, Number(metrics.minWidth || TRANSLATION_MASK_MIN_WIDTH_PX)), maxWidth);
-  const minHeight = Math.min(Math.max(1, Number(metrics.minHeight || TRANSLATION_MASK_MIN_HEIGHT_PX)), maxHeight);
-  const normalizedRect = normalizeTranslationMaskRect(maskRect);
-  const fallbackRect = normalizeTranslationMaskRect(metrics.defaultRect);
-  const sourceRect =
-    normalizedRect.x == null || normalizedRect.y == null || normalizedRect.width == null || normalizedRect.height == null
-      ? fallbackRect
-      : normalizedRect;
-  const width = clampNumber((sourceRect.width ?? fallbackRect.width ?? 1) * safeWidth, minWidth, maxWidth);
-  const height = clampNumber((sourceRect.height ?? fallbackRect.height ?? 1) * safeHeight, minHeight, maxHeight);
-  const left = clampNumber((sourceRect.x ?? fallbackRect.x ?? 0) * safeWidth, 0, Math.max(0, safeWidth - width));
-  const top = clampNumber((sourceRect.y ?? fallbackRect.y ?? 0) * safeHeight, 0, Math.max(0, safeHeight - height));
-  return { left, top, width, height };
-}
-
-function resolveTranslationMaskResizeRect(startRect, mode, deltaX, deltaY, metrics) {
-  if (!startRect || !metrics) return null;
-  const boundsWidth = Math.max(1, Number(metrics.width || 0));
-  const boundsHeight = Math.max(1, Number(metrics.height || 0));
-  const maxWidth = Math.min(boundsWidth, Math.max(1, Number(metrics.maxWidth || boundsWidth)));
-  const maxHeight = Math.min(boundsHeight, Math.max(1, Number(metrics.maxHeight || boundsHeight)));
-  const minWidth = Math.min(Math.max(1, Number(metrics.minWidth || TRANSLATION_MASK_MIN_WIDTH_PX)), maxWidth);
-  const minHeight = Math.min(Math.max(1, Number(metrics.minHeight || TRANSLATION_MASK_MIN_HEIGHT_PX)), maxHeight);
-  const right = startRect.left + startRect.width;
-  const bottom = startRect.top + startRect.height;
-
-  switch (mode) {
-    case "resize":
-    case "resize-se":
-      return {
-        left: startRect.left,
-        top: startRect.top,
-        width: clampNumber(startRect.width + deltaX, minWidth, Math.min(maxWidth, boundsWidth - startRect.left)),
-        height: clampNumber(startRect.height + deltaY, minHeight, Math.min(maxHeight, boundsHeight - startRect.top)),
-      };
-    case "resize-sw": {
-      const left = clampNumber(startRect.left + deltaX, 0, Math.max(0, right - minWidth));
-      return {
-        left,
-        top: startRect.top,
-        width: clampNumber(right - left, minWidth, maxWidth),
-        height: clampNumber(startRect.height + deltaY, minHeight, Math.min(maxHeight, boundsHeight - startRect.top)),
-      };
-    }
-    case "resize-ne": {
-      const top = clampNumber(startRect.top + deltaY, 0, Math.max(0, bottom - minHeight));
-      return {
-        left: startRect.left,
-        top,
-        width: clampNumber(startRect.width + deltaX, minWidth, Math.min(maxWidth, boundsWidth - startRect.left)),
-        height: clampNumber(bottom - top, minHeight, maxHeight),
-      };
-    }
-    case "resize-nw": {
-      const left = clampNumber(startRect.left + deltaX, 0, Math.max(0, right - minWidth));
-      const top = clampNumber(startRect.top + deltaY, 0, Math.max(0, bottom - minHeight));
-      return {
-        left,
-        top,
-        width: clampNumber(right - left, minWidth, maxWidth),
-        height: clampNumber(bottom - top, minHeight, maxHeight),
-      };
-    }
-    // Left edge: adjust width and left, keep top/height unchanged.
-    case "resize-w": {
-      const left = clampNumber(startRect.left + deltaX, 0, Math.max(0, right - minWidth));
-      return {
-        left,
-        top: startRect.top,
-        width: clampNumber(right - left, minWidth, maxWidth),
-        height: startRect.height,
-      };
-    }
-    // Right edge: adjust width only, keep left/top/height unchanged.
-    case "resize-e": {
-      return {
-        left: startRect.left,
-        top: startRect.top,
-        width: clampNumber(startRect.width + deltaX, minWidth, Math.min(maxWidth, boundsWidth - startRect.left)),
-        height: startRect.height,
-      };
-    }
-    default:
-      return null;
-  }
-}
-
-function debugImmersiveLog(event, detail = {}) {
-  if (typeof console === "undefined" || typeof console.debug !== "function") return;
-  console.debug("[DEBUG] immersive.learning", event, detail);
-}
-
-function buildImmersiveEntryHintItems(learningSettings) {
-  const actionLabelMap = new Map(SHORTCUT_ACTIONS.map((action) => [action.id, action.label]));
-  const orderedActionIds = [...ENTRY_HINT_ACTION_IDS, ...SHORTCUT_ACTIONS.map((action) => action.id)];
-  const seen = new Set();
-  const items = [];
-  for (const actionId of orderedActionIds) {
-    if (seen.has(actionId)) continue;
-    seen.add(actionId);
-    const shortcutLabel = getShortcutLabel(learningSettings?.shortcuts?.[actionId]);
-    if (!shortcutLabel || shortcutLabel === "未设置") continue;
-    items.push({
-      id: actionId,
-      shortcutLabel,
-      actionLabel: actionLabelMap.get(actionId) || actionId,
-    });
-    if (items.length >= 3) {
-      break;
-    }
-  }
-  return items;
-}
-
-function formatPlaybackRateLabel(rate) {
-  return `${Number(rate || 1).toFixed(2)}x`;
-}
-
-function formatPlaybackRateInputValue(rate) {
-  return Number(normalizePlaybackRate(rate)).toFixed(2).replace(/\.00$/, "").replace(/0$/, "");
-}
-
-function isIpadSafariBrowser() {
-  if (typeof navigator === "undefined") return false;
-  const userAgent = String(navigator.userAgent || "");
-  const platform = String(navigator.platform || "");
-  const touchPoints = Number(navigator.maxTouchPoints || 0);
-  const isAppleTablet = /iPad/i.test(userAgent) || (platform === "MacIntel" && touchPoints > 1);
-  if (!isAppleTablet) return false;
-  return /Safari/i.test(userAgent) && !/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo/i.test(userAgent);
-}
-
-function isTouchPrimaryInputDevice() {
-  if (typeof navigator === "undefined") return false;
-  const touchPoints = Number(navigator.maxTouchPoints || 0);
-  if (touchPoints > 0) return true;
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
-  return window.matchMedia("(pointer: coarse)").matches;
-}
-
-function countTokenInputErrors(inputValue, expectedToken) {
-  const actual = normalizeComparableToken(inputValue);
-  const expected = normalizeComparableToken(expectedToken);
-  const sameLength = Math.min(actual.length, expected.length);
-
-  let mismatchCount = 0;
-  for (let idx = 0; idx < sameLength; idx += 1) {
-    if (actual[idx]?.toLowerCase() !== expected[idx]?.toLowerCase()) {
-      mismatchCount += 1;
-    }
-  }
-
-  if (actual.length > expected.length) {
-    mismatchCount += actual.length - expected.length;
-  }
-  return mismatchCount;
-}
-
-function mergeSortedComparableIndices(base, additions) {
-  const next = new Set([...(Array.isArray(base) ? base : []), ...additions]);
-  return Array.from(next).sort((a, b) => a - b);
-}
-
-/** 精听辅助新增的每个可比位下标并入 wordRevealComparableIndices（与 buildLetterSlots 一致）。 */
-function mergeRevealComparableIndicesAfterAssistance(beforeInputs, afterInputs, prevArrays) {
-  const maxIdx = Math.max(
-    Array.isArray(beforeInputs) ? beforeInputs.length : 0,
-    Array.isArray(afterInputs) ? afterInputs.length : 0,
-    Array.isArray(prevArrays) ? prevArrays.length : 0,
-  );
-  const next = Array.isArray(prevArrays) && prevArrays.length ? [...prevArrays] : [];
-  while (next.length < maxIdx) next.push([]);
-  for (let i = 0; i < maxIdx; i += 1) {
-    const beforeLen = normalizeComparableToken(beforeInputs[i] || "").length;
-    const afterLen = normalizeComparableToken(afterInputs[i] || "").length;
-    const delta = Math.max(0, afterLen - beforeLen);
-    if (delta > 0) {
-      const additions = Array.from({ length: delta }, (_, j) => beforeLen + j);
-      next[i] = mergeSortedComparableIndices(next[i], additions);
-    }
-  }
-  return next;
-}
-
-function pruneRevealComparableIndicesForInputs(wordInputs, prevArrays) {
-  if (!Array.isArray(prevArrays) || !prevArrays.length) return prevArrays;
-  let changed = false;
-  const next = prevArrays.map((arr, i) => {
-    const len = normalizeComparableToken(wordInputs[i] || "").length;
-    const pruned = (arr || []).filter((idx) => idx < len);
-    if (pruned.length !== (arr || []).length) changed = true;
-    return pruned;
-  });
-  return changed ? next : prevArrays;
-}
-
-function createWordState(tokens) {
-  const safeTokens = Array.isArray(tokens) ? tokens : [];
-  return {
-    activeWordIndex: 0,
-    currentWordInput: "",
-    wordInputs: safeTokens.map(() => ""),
-    wordStatuses: safeTokens.map((_, idx) => (idx === 0 ? "active" : "pending")),
-  };
-}
-
-function buildSelectableSentenceTokens(sentence) {
-  if (Array.isArray(sentence?.tokens) && sentence.tokens.length) {
-    return sentence.tokens;
-  }
-  return String(sentence?.text_en || "")
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter(Boolean);
-}
-
-function resolveInteractiveWordbookContext({
-  hasWordbookAccess = false,
-  showSentenceBlock = false,
-  translationDisplayMode = "previous",
-  singleSentenceLoopEnabled = false,
-  sentenceTypingDone = false,
-  postAnswerReplayState = "idle",
-  currentSentence = null,
-  currentSentenceTokens = [],
-  currentSentenceZh = "",
-  previousSentence = null,
-  previousSentenceTokens = [],
-  previousSentenceZh = "",
-} = {}) {
-  if (!hasWordbookAccess || !showSentenceBlock) {
-    return null;
-  }
-
-  const safeCurrentSentenceTokens = Array.isArray(currentSentenceTokens) ? currentSentenceTokens : [];
-  if (
-    translationDisplayMode === "current_answered" &&
-    currentSentence &&
-    safeCurrentSentenceTokens.length > 0
-  ) {
-    return {
-      mode: "current",
-      sentence: currentSentence,
-      tokens: safeCurrentSentenceTokens,
-      heading: "本句",
-      zhText: currentSentenceZh,
-    };
-  }
-
-  const safePreviousSentenceTokens = Array.isArray(previousSentenceTokens) ? previousSentenceTokens : [];
-  if (translationDisplayMode === "previous" && previousSentence && safePreviousSentenceTokens.length > 0) {
-    return {
-      mode: "previous",
-      sentence: previousSentence,
-      tokens: safePreviousSentenceTokens,
-      heading: "上一句",
-      zhText: previousSentenceZh,
-    };
-  }
-
-  return null;
-}
-
-function toggleWordbookTokenIndex(selectedIndexes, tokenIndex) {
-  if (!Number.isInteger(tokenIndex)) {
-    return Array.isArray(selectedIndexes) ? selectedIndexes : [];
-  }
-  const nextSelection = new Set(Array.isArray(selectedIndexes) ? selectedIndexes.filter(Number.isInteger) : []);
-  if (nextSelection.has(tokenIndex)) {
-    nextSelection.delete(tokenIndex);
-  } else {
-    nextSelection.add(tokenIndex);
-  }
-  return Array.from(nextSelection).sort((left, right) => left - right);
-}
-
-function buildWordbookTokenRange(startTokenIndex, endTokenIndex) {
-  if (!Number.isInteger(startTokenIndex) || !Number.isInteger(endTokenIndex)) {
-    return [];
-  }
-  const rangeStart = Math.min(startTokenIndex, endTokenIndex);
-  const rangeEnd = Math.max(startTokenIndex, endTokenIndex);
-  return Array.from({ length: rangeEnd - rangeStart + 1 }, (_, offset) => rangeStart + offset);
-}
-
-function cloneWordSnapshot(activeWordIndex, currentWordInput, wordInputs, wordStatuses) {
-  return {
-    activeWordIndex: Math.max(0, Number(activeWordIndex || 0)),
-    currentWordInput: String(currentWordInput || ""),
-    wordInputs: Array.isArray(wordInputs) ? [...wordInputs] : [],
-    wordStatuses: Array.isArray(wordStatuses) ? [...wordStatuses] : [],
-  };
-}
-
-function completeActiveWordInSnapshot(snapshot, tokens) {
-  const nextSnapshot = cloneWordSnapshot(
-    snapshot.activeWordIndex,
-    snapshot.currentWordInput,
-    snapshot.wordInputs,
-    snapshot.wordStatuses,
-  );
-  const activeIndex = nextSnapshot.activeWordIndex;
-  if (activeIndex < 0 || activeIndex >= tokens.length) {
-    return { snapshot: nextSnapshot, completedSentence: activeIndex >= tokens.length };
-  }
-  nextSnapshot.wordInputs[activeIndex] = String(tokens[activeIndex] || "");
-  nextSnapshot.wordStatuses[activeIndex] = "correct";
-  nextSnapshot.currentWordInput = "";
-  const nextIndex = activeIndex + 1;
-  if (nextIndex < tokens.length) {
-    nextSnapshot.wordStatuses[nextIndex] = "active";
-    nextSnapshot.activeWordIndex = nextIndex;
-    return { snapshot: nextSnapshot, completedSentence: false };
-  }
-  nextSnapshot.activeWordIndex = tokens.length;
-  return { snapshot: nextSnapshot, completedSentence: true };
-}
-
-function revealLetterInSnapshot(snapshot, tokens) {
-  const nextSnapshot = cloneWordSnapshot(
-    snapshot.activeWordIndex,
-    snapshot.currentWordInput,
-    snapshot.wordInputs,
-    snapshot.wordStatuses,
-  );
-  const activeIndex = nextSnapshot.activeWordIndex;
-  if (activeIndex < 0 || activeIndex >= tokens.length) {
-    return { snapshot: nextSnapshot, completedSentence: activeIndex >= tokens.length };
-  }
-  const normalizedExpected = normalizeComparableToken(tokens[activeIndex] || "");
-  if (!normalizedExpected) {
-    return completeActiveWordInSnapshot(nextSnapshot, tokens);
-  }
-  const currentLength = normalizeComparableToken(nextSnapshot.currentWordInput).length;
-  const nextInput = normalizedExpected.slice(0, Math.min(normalizedExpected.length, currentLength + 1));
-  nextSnapshot.currentWordInput = nextInput;
-  nextSnapshot.wordInputs[activeIndex] = nextInput;
-  nextSnapshot.wordStatuses[activeIndex] = "active";
-  if (nextInput.length >= normalizedExpected.length) {
-    return completeActiveWordInSnapshot(nextSnapshot, tokens);
-  }
-  return { snapshot: nextSnapshot, completedSentence: false };
-}
-
-function applyReplayAssistanceToSnapshot(snapshot, tokens, assistance) {
-  let nextSnapshot = cloneWordSnapshot(snapshot.activeWordIndex, snapshot.currentWordInput, snapshot.wordInputs, snapshot.wordStatuses);
-  let completedSentence = nextSnapshot.activeWordIndex >= tokens.length;
-
-  if (Number(assistance?.revealWordCount || 0) > 0) {
-    for (let count = 0; count < assistance.revealWordCount; count += 1) {
-      const result = completeActiveWordInSnapshot(nextSnapshot, tokens);
-      nextSnapshot = result.snapshot;
-      completedSentence = result.completedSentence;
-      if (completedSentence) break;
-    }
-    return { snapshot: nextSnapshot, completedSentence };
-  }
-
-  if (Number(assistance?.revealLetterCount || 0) > 0) {
-    for (let count = 0; count < assistance.revealLetterCount; count += 1) {
-      const result = revealLetterInSnapshot(nextSnapshot, tokens);
-      nextSnapshot = result.snapshot;
-      completedSentence = result.completedSentence;
-      if (completedSentence) break;
-    }
-  }
-
-  return { snapshot: nextSnapshot, completedSentence };
-}
-
-function readTimeMs(value, { seconds = false } = {}) {
-  const raw = Number(value);
-  if (!Number.isFinite(raw)) return 0;
-  return Math.max(0, Math.round(seconds ? raw * 1000 : raw));
-}
-
-function getWordBeginMs(item = {}) {
-  if (item.begin_ms != null) return readTimeMs(item.begin_ms);
-  if (item.begin_time != null) return readTimeMs(item.begin_time);
-  if (item.start_ms != null) return readTimeMs(item.start_ms);
-  if (item.start_time != null) return readTimeMs(item.start_time);
-  if (item.start != null) return readTimeMs(item.start, { seconds: true });
-  return 0;
-}
-
-function getWordEndMs(item = {}) {
-  if (item.end_ms != null) return readTimeMs(item.end_ms);
-  if (item.end_time != null) return readTimeMs(item.end_time);
-  if (item.stop_ms != null) return readTimeMs(item.stop_ms);
-  if (item.stop_time != null) return readTimeMs(item.stop_time);
-  if (item.end != null) return readTimeMs(item.end, { seconds: true });
-  if (item.stop != null) return readTimeMs(item.stop, { seconds: true });
-  return 0;
-}
-
-function toReplayWordItem(item) {
-  const surface = String(item?.surface || item?.text || item?.word || "").trim();
-  const beginMs = getWordBeginMs(item);
-  const endMs = getWordEndMs(item);
-  if (!surface || endMs <= beginMs) {
-    return null;
-  }
-  return {
-    surface,
-    normalized: normalizeComparableToken(surface),
-    beginMs,
-    endMs,
-  };
-}
-
-function collectReplayWords(asrPayload = {}) {
-  const output = [];
-  const transcripts = Array.isArray(asrPayload?.transcripts) ? asrPayload.transcripts : [];
-  const directSentences = Array.isArray(asrPayload?.sentences) ? asrPayload.sentences : [];
-
-  function pushWords(wordItems) {
-    for (const item of Array.isArray(wordItems) ? wordItems : []) {
-      const replayWord = toReplayWordItem(item);
-      if (replayWord) {
-        output.push(replayWord);
-      }
-    }
-  }
-
-  pushWords(asrPayload?.words);
-  for (const transcript of transcripts) {
-    pushWords(transcript?.words);
-    for (const sentence of Array.isArray(transcript?.sentences) ? transcript.sentences : []) {
-      pushWords(sentence?.words);
-    }
-  }
-  for (const sentence of directSentences) {
-    pushWords(sentence?.words);
-  }
-
-  const deduped = [];
-  const seen = new Set();
-  for (const item of output.sort((left, right) => left.beginMs - right.beginMs || left.endMs - right.endMs || left.surface.localeCompare(right.surface))) {
-    const dedupeKey = `${item.beginMs}:${item.endMs}:${item.surface}`;
-    if (seen.has(dedupeKey)) continue;
-    seen.add(dedupeKey);
-    deduped.push(item);
-  }
-  return deduped;
-}
-
-function alignSentenceTokenTimings(tokens, candidateWords) {
-  const safeTokens = Array.isArray(tokens) ? tokens : [];
-  const timings = safeTokens.map(() => null);
-  let cursor = 0;
-  for (let tokenIndex = 0; tokenIndex < safeTokens.length; tokenIndex += 1) {
-    const expected = normalizeComparableToken(safeTokens[tokenIndex]);
-    if (!expected) continue;
-    while (cursor < candidateWords.length) {
-      const candidate = candidateWords[cursor];
-      cursor += 1;
-      if (!candidate?.normalized) continue;
-      if (candidate.normalized === expected) {
-        timings[tokenIndex] = {
-          beginMs: candidate.beginMs,
-          endMs: candidate.endMs,
-          surface: candidate.surface,
-        };
-        break;
-      }
-    }
-  }
-  return timings;
-}
-
-function buildSentenceWordTimingMap(sentences, asrPayload) {
-  if (!Array.isArray(sentences) || !sentences.length) {
-    return [];
-  }
-  const replayWords = collectReplayWords(asrPayload);
-  if (!replayWords.length) {
-    return sentences.map(() => ({ tokenTimings: [], matchedCount: 0 }));
-  }
-
-  return sentences.map((sentence) => {
-    const sentenceStartMs = Math.max(0, Number(sentence?.begin_ms || 0));
-    const sentenceEndMs = Math.max(sentenceStartMs + 1, Number(sentence?.end_ms || 0));
-    const candidateWords = replayWords.filter(
-      (item) => item.endMs >= sentenceStartMs - WORD_TIMING_TOLERANCE_MS && item.beginMs <= sentenceEndMs + WORD_TIMING_TOLERANCE_MS,
-    );
-    const tokenTimings = alignSentenceTokenTimings(sentence?.tokens || [], candidateWords);
-    return {
-      tokenTimings,
-      matchedCount: tokenTimings.filter(Boolean).length,
-    };
-  });
-}
-
-function resolveReplayBoundaryMs(sentence, sentenceTiming, activeWordIndex) {
-  const sentenceStartMs = Math.max(0, Number(sentence?.begin_ms || 0));
-  if (activeWordIndex <= 0) {
-    return sentenceStartMs;
-  }
-  const tokenTimings = Array.isArray(sentenceTiming?.tokenTimings) ? sentenceTiming.tokenTimings : [];
-  for (let idx = activeWordIndex - 1; idx >= 0; idx -= 1) {
-    if (tokenTimings[idx]?.endMs) {
-      return tokenTimings[idx].endMs;
-    }
-  }
-  for (let idx = activeWordIndex; idx < tokenTimings.length; idx += 1) {
-    if (tokenTimings[idx]?.beginMs) {
-      return tokenTimings[idx].beginMs;
-    }
-  }
-  return null;
-}
-
-function buildReplayPlaybackPlan(sentence, sentenceTiming, activeWordIndex, selectedRate) {
-  const sentenceStartMs = Math.max(0, Number(sentence?.begin_ms || 0));
-  const sentenceEndMs = Math.max(sentenceStartMs + 1, Number(sentence?.end_ms || 0));
-  const resolvedBoundaryMs = resolveReplayBoundaryMs(sentence, sentenceTiming, activeWordIndex) || sentenceStartMs;
-  const safeInitialRate = normalizePlaybackRate(selectedRate);
-  return {
-    initialRate: safeInitialRate,
-    rateSteps: [],
-    preciseBoundary: Boolean(resolvedBoundaryMs),
-    tailBoundaryMs: resolvedBoundaryMs,
-    tailWindowMs: sentenceEndMs - sentenceStartMs,
-    speedMode: "fixed_rate",
-    fallbackReason: "",
-  };
-}
-
-function isEditableShortcutTarget(target) {
-  if (!target) return false;
-  if (target?.isContentEditable) return true;
-  const tagName = String(target?.tagName || "").toLowerCase();
-  return tagName === "input" || tagName === "textarea" || tagName === "select";
-}
-
-function shouldKeepControlFocus(target) {
-  if (!target || typeof target.closest !== "function") return false;
-  if (isEditableShortcutTarget(target)) return true;
-  return Boolean(target.closest("button, a, label, [role='button'], [role='link']"));
-}
-
-function resolveMediaModeFromFileName(fileName) {
-  if (isAudioFilename(fileName)) {
-    return "audio";
-  }
-  // Unknown extensions should still try loading main media once.
-  return "video";
-}
-
-function inferMediaModeFromContentType(contentType) {
-  const normalized = String(contentType || "").toLowerCase();
-  if (normalized.startsWith("video/")) {
-    return "video";
-  }
-  if (normalized.startsWith("audio/")) {
-    return "audio";
-  }
-  return "";
-}
-
-function inferMediaTypeFromFileName(fileName) {
-  const ext = getMediaExt(fileName);
-  return MEDIA_TYPE_BY_EXTENSION[ext] || "";
-}
-
-function resolveMediaModeByTypeAndName(mediaType, fileName) {
-  const byType = inferMediaModeFromContentType(mediaType);
-  if (byType) {
-    return byType;
-  }
-  return resolveMediaModeFromFileName(fileName);
-}
-
-function isLocalMediaRequiredPayload(resp, payload) {
-  return Number(resp?.status) === 409 && String(payload?.error_code || "").trim() === LOCAL_MEDIA_REQUIRED_CODE;
-}
-
-async function readErrorPayload(resp) {
-  try {
-    return await resp.clone().json();
-  } catch (_) {
-    return {};
-  }
-}
-
-function formatMediaLoadError(resp, payload) {
-  const statusText = Number(resp?.status) > 0 ? String(resp.status) : "";
-  const errorCode = String(payload?.error_code || "").trim();
-  const message = String(payload?.message || "").trim();
-  const head = [statusText, errorCode].filter(Boolean).join(" ");
-  if (head && message) {
-    return `媒体加载失败（${head}: ${message}）。`;
-  }
-  if (head) {
-    return `媒体加载失败（${head}）。`;
-  }
-  if (message) {
-    return `媒体加载失败（${message}）。`;
-  }
-  return "媒体加载失败。";
-}
+import {
+  MOBILE_KEYBOARD_MIN_INSET_PX,
+  TRANSLATION_MASK_CHROME_IDLE_MS,
+  TRANSLATION_MASK_DEFAULT_WIDTH_RATIO,
+  TRANSLATION_MASK_RESIZE_HANDLES,
+  addTokenLevelToMap,
+  applyReplayAssistanceToSnapshot,
+  buildDefaultTranslationMaskRect,
+  buildImmersiveEntryHintItems,
+  buildLetterSlots,
+  buildReplayPlaybackPlan,
+  buildSelectableSentenceTokens,
+  buildSentenceWordTimingMap,
+  clampNumber,
+  cloneWordSnapshot,
+  convertTranslationMaskRectToStored,
+  createWordState,
+  debugImmersiveLog,
+  formatMediaLoadError,
+  inferMediaTypeFromFileName,
+  isIpadSafariBrowser,
+  isLocalMediaRequiredPayload,
+  isTouchPrimaryInputDevice,
+  lookupCefrLevelFromMap,
+  mergeRevealComparableIndicesAfterAssistance,
+  mergeSortedComparableIndices,
+  normalizeComparableToken,
+  pruneRevealComparableIndicesForInputs,
+  readErrorPayload,
+  resolveInteractiveWordbookContext,
+  resolveMediaModeByTypeAndName,
+  resolveMediaModeFromFileName,
+  resolveTranslationMaskRect,
+  resolveTranslationMaskResizeRect,
+  shouldKeepControlFocus,
+} from "./immersivePageHelpers";
 
 export function ImmersiveLessonPage({
   lesson,
@@ -988,7 +100,6 @@ export function ImmersiveLessonPage({
   onWordbookChanged,
   immersiveActive = false,
   onExitImmersive,
-  onStartImmersive,
   externalMediaReloadToken = 0,
 }) {
   const [mediaMode, setMediaMode] = useState("video");
@@ -1007,26 +118,12 @@ export function ImmersiveLessonPage({
   const [wordStatuses, setWordStatuses] = useState([]);
   /** 每个单词：由「揭示」填充的可比字符下标（0 起），与用户手打交错时仍能正确标黄 */
   const [wordRevealComparableIndices, setWordRevealComparableIndices] = useState([]);
-  const [learningSettings, setLearningSettings] = useState(() => readLearningSettings());
   const [sessionState, dispatchSession] = useReducer(
     immersiveSessionReducer,
     null,
     () => createImmersiveSessionState({ lesson, learningSettings: readLearningSettings() }),
   );
-  const [wordbookBusy, setWordbookBusy] = useState(false);
-  const [wordbookSelectedTokenIndexes, setWordbookSelectedTokenIndexes] = useState([]);
-  const [wordbookSuccessAnimationIndexes, setWordbookSuccessAnimationIndexes] = useState([]);
-  const [wordbookSuccessMessage, setWordbookSuccessMessage] = useState(null);
   const [showEntryHintOverlay, setShowEntryHintOverlay] = useState(false);
-  const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(
-    () => readLearningSettings().uiPreferences?.showFullscreenPreviousSentence ?? false,
-  );
-  const [translationMaskEnabled, setTranslationMaskEnabled] = useState(
-    () => readLearningSettings().uiPreferences?.translationMask?.enabled !== false,
-  );
-  const [translationMaskRect, setTranslationMaskRect] = useState(() =>
-    normalizeTranslationMaskRect(readLearningSettings().uiPreferences?.translationMask),
-  );
   const [translationMaskMetrics, setTranslationMaskMetrics] = useState(null);
   const translationMaskMetricsRef = useRef(null);
   const [translationMaskChromeVisible, setTranslationMaskChromeVisible] = useState(true);
@@ -1035,13 +132,9 @@ export function ImmersiveLessonPage({
     keyboardInset: 0,
     keyboardOpen: false,
   });
-  const [playbackRateInputValue, setPlaybackRateInputValue] = useState(() =>
-    formatPlaybackRateInputValue(DEFAULT_IMMERSIVE_PLAYBACK_RATE),
-  );
   const [sentenceJumpEditing, setSentenceJumpEditing] = useState(false);
   const [soeResult, setSoeResult] = useState(null);
   const [soeLoading, setSoeLoading] = useState(false);
-  const wordbookSuccessTimerRef = useRef(null);
   const audioRecorderRef = useRef(null);
 
   // 先从 sessionState 解构出 currentSentenceIndex（hook 依赖它）
@@ -1079,7 +172,7 @@ export function ImmersiveLessonPage({
   } = useExplanation({ currentSentence });
 
   // CEFR Hook
-  const { cefrAnalysisStatus, setCefrAnalysisStatus, cefrVocabEngineTick, cefrLevel, currentSentenceCefrMap, cefrAnalyzerRef } = useCEFR({ lesson, currentSentenceIndex });
+  const { cefrVocabEngineTick, cefrLevel, currentSentenceCefrMap, cefrAnalyzerRef } = useCEFR({ lesson, currentSentenceIndex });
 
   const immersiveContainerRef = useRef(null);
   const immersiveMediaRef = useRef(null);
@@ -1098,19 +191,10 @@ export function ImmersiveLessonPage({
   const wordStatusesRef = useRef([]);
   const sentenceAdvanceLockedRef = useRef(false);
   const translationMaskHoveredRef = useRef(false);
-  const wordbookPointerGestureRef = useRef({
-    pointerId: null,
-    pressTokenIndex: null,
-    anchorTokenIndex: null,
-    currentTokenIndex: null,
-    longPressActive: false,
-    longPressTimerId: null,
-  });
   const playbackKindRef = useRef("initial");
   const replayAssistStageRef = useRef(0);
   const replayProgressAnchorRef = useRef(0);
   const focusRestoreTimerRef = useRef(null);
-  const wordbookActionRef = useRef(false);
   const viewportSyncFrameRef = useRef(null);
   const viewportBaselineHeightRef = useRef(0);
   const viewportOrientationRef = useRef("");
@@ -1126,6 +210,7 @@ export function ImmersiveLessonPage({
   const translationMaskDraggingRef = useRef(false); // true during active drag — skips auto-width effect
   const prevLessonIdRef = useRef(null);
   const sessionMaxWidthRatioRef = useRef(TRANSLATION_MASK_DEFAULT_WIDTH_RATIO);
+  const currentLessonId = String(lesson?.id ?? "").trim();
 
   const isIpadSafari = useMemo(() => isIpadSafariBrowser(), []);
   const isTouchDevice = useMemo(() => isTouchPrimaryInputDevice(), []);
@@ -1151,6 +236,32 @@ export function ImmersiveLessonPage({
   const setPlaybackRatePinned = useCallback((pinned, value) => {
     dispatchSession({ type: SET_PLAYBACK_RATE_PINNED, pinned, value });
   }, []);
+
+  const {
+    learningSettings,
+    translationMaskEnabled,
+    translationMaskRect,
+    playbackRateInputValue,
+    setTranslationMaskRect,
+    persistTranslationMaskPreference,
+    handleToggleSingleSentenceLoop,
+    handlePlaybackRateInputChange,
+    handlePlaybackRateInputKeyDown,
+    handlePlaybackRateInputBlur,
+    adjustPlaybackRateByStep,
+    handleResetPlaybackRate,
+    handleTogglePlaybackRatePinned,
+  } = useImmersivePreferences({
+    currentLessonId,
+    singleSentenceLoopEnabled,
+    playbackRatePinned,
+    selectedPlaybackRate,
+    setLoopEnabled,
+    setSelectedPlaybackRate,
+    setPlaybackRatePinned,
+    mediaElementRef,
+    clipAudioRef,
+  });
 
   const clearTranslationMaskChromeIdleTimer = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -1275,7 +386,6 @@ export function ImmersiveLessonPage({
     container.style.setProperty("--immersive-keyboard-offset", `${keyboardInset}px`);
   }, [isTouchDevice]);
 
-  const currentLessonId = String(lesson?.id ?? "").trim();
   const sentenceCount = lesson?.sentences?.length || 0;
   const previousSentence = currentSentenceIndex > 0 ? lesson?.sentences?.[currentSentenceIndex - 1] || null : null;
   const nextSentence = currentSentenceIndex < sentenceCount - 1 ? lesson?.sentences?.[currentSentenceIndex + 1] || null : null;
@@ -1346,13 +456,30 @@ export function ImmersiveLessonPage({
     return map;
   }, [wordbookSentenceTokens, cefrVocabEngineTick]);
   const canRenderInteractiveWordbook = Boolean(interactiveWordbookContext);
-  const wordbookSentenceHeading = interactiveWordbookContext?.heading || "上一句";
   const wordbookSentenceZh = interactiveWordbookContext?.zhText || "";
   const wordbookSentenceMode = interactiveWordbookContext?.mode || "previous";
   const wordbookSentencePlaybackLabel = wordbookSentenceMode === "current" ? "播放本句" : "播放上一句";
   const wordbookSentenceSourceKey = `${lesson?.id ?? "lesson"}:${wordbookSentenceMode}:${
     wordbookSentence?.idx ?? "none"
   }`;
+  const {
+    wordbookBusy,
+    wordbookSelectedTokenIndexes,
+    wordbookSuccessAnimationIndexes,
+    wordbookSuccessMessage,
+    wordbookActionRef,
+    handleWordbookTokenPointerDown,
+    collectWordbookEntry,
+  } = useWordbookSelection({
+    lessonId: lesson?.id,
+    accessToken,
+    apiClient,
+    parseResponse,
+    onWordbookChanged,
+    wordbookSentenceTokens,
+    wordbookSentenceSourceKey,
+    canRenderInteractiveWordbook,
+  });
   const hasWordbookSelection = wordbookSelectedTokenIndexes.length > 0;
   const selectedWordbookStart = hasWordbookSelection ? wordbookSelectedTokenIndexes[0] : -1;
   const selectedWordbookEnd = hasWordbookSelection ? wordbookSelectedTokenIndexes[wordbookSelectedTokenIndexes.length - 1] : -1;
@@ -1402,184 +529,6 @@ export function ImmersiveLessonPage({
     }, 2000);
     return () => window.clearTimeout(id);
   }, [showEntryHintOverlay]);
-
-  const syncLearningSettingsState = useCallback((nextSettings) => {
-    const resolvedSettings = nextSettings && typeof nextSettings === "object" ? nextSettings : readLearningSettings();
-    setLearningSettings(resolvedSettings);
-    setShowFullscreenPreviousSentence(resolvedSettings.uiPreferences?.showFullscreenPreviousSentence ?? false);
-    setTranslationMaskEnabled(resolvedSettings.uiPreferences?.translationMask?.enabled !== false);
-    setTranslationMaskRect(normalizeTranslationMaskRect(resolvedSettings.uiPreferences?.translationMask));
-    dispatchSession({
-      type: SET_LOOP_ENABLED,
-      enabled: resolvedSettings.playbackPreferences?.singleSentenceLoopEnabled === true,
-    });
-  }, []);
-
-  const persistUiPreferences = useCallback(
-    (updater) => {
-      const currentSettings = readLearningSettings();
-      const currentUiPreferences = currentSettings.uiPreferences || {};
-      const nextUiPreferences = typeof updater === "function" ? updater(currentUiPreferences) : updater;
-      writeLearningSettings({
-        ...currentSettings,
-        uiPreferences: {
-          ...currentUiPreferences,
-          ...nextUiPreferences,
-        },
-      });
-      syncLearningSettingsState(readLearningSettings());
-    },
-    [syncLearningSettingsState],
-  );
-
-  const persistPlaybackPreferences = useCallback(
-    (updater) => {
-      const currentSettings = readLearningSettings();
-      const currentPlaybackPreferences = currentSettings.playbackPreferences || {};
-      const nextPlaybackPreferences =
-        typeof updater === "function" ? updater(currentPlaybackPreferences) : updater;
-      writeLearningSettings({
-        ...currentSettings,
-        playbackPreferences: {
-          ...currentPlaybackPreferences,
-          ...nextPlaybackPreferences,
-        },
-      });
-      syncLearningSettingsState(readLearningSettings());
-    },
-    [syncLearningSettingsState],
-  );
-
-  const persistFullscreenPreviousSentencePreference = useCallback((nextVisible) => {
-    const safeVisible = Boolean(nextVisible);
-    setShowFullscreenPreviousSentence(safeVisible);
-    persistUiPreferences((currentUiPreferences) => ({
-      ...currentUiPreferences,
-      showFullscreenPreviousSentence: safeVisible,
-    }));
-  }, [persistUiPreferences]);
-
-  const persistTranslationMaskPreference = useCallback(
-    (nextEnabled, nextRect) => {
-      const nextPreference = buildTranslationMaskUiPreference(nextEnabled, nextRect);
-      setTranslationMaskEnabled(nextPreference.enabled);
-      setTranslationMaskRect(normalizeTranslationMaskRect(nextPreference));
-      persistUiPreferences((currentUiPreferences) => ({
-        ...currentUiPreferences,
-        translationMask: nextPreference,
-      }));
-    },
-    [persistUiPreferences],
-  );
-
-  const handleToggleSingleSentenceLoop = useCallback(() => {
-    const nextEnabled = !singleSentenceLoopEnabled;
-    setLoopEnabled(nextEnabled);
-    persistPlaybackPreferences((currentPlaybackPreferences) => ({
-      ...currentPlaybackPreferences,
-      singleSentenceLoopEnabled: nextEnabled,
-    }));
-  }, [persistPlaybackPreferences, setLoopEnabled, singleSentenceLoopEnabled]);
-
-  const persistLessonPlaybackRate = useCallback(
-    (nextPinned, nextRate) => {
-      persistPlaybackPreferences((currentPlaybackPreferences) => {
-        const nextOverrides = {
-          ...(currentPlaybackPreferences?.lessonPlaybackRateOverrides || {}),
-        };
-        if (currentLessonId && nextPinned) {
-          nextOverrides[currentLessonId] = {
-            pinned: true,
-            rate: normalizePlaybackRate(nextRate),
-          };
-        } else if (currentLessonId) {
-          delete nextOverrides[currentLessonId];
-        }
-        return {
-          ...currentPlaybackPreferences,
-          lessonPlaybackRateOverrides: nextOverrides,
-        };
-      });
-    },
-    [currentLessonId, persistPlaybackPreferences],
-  );
-
-  const applyPlaybackRate = useCallback(
-    (nextRate, { persistPinned = playbackRatePinned } = {}) => {
-      const resolvedRate = normalizePlaybackRate(nextRate);
-      setSelectedPlaybackRate(resolvedRate);
-      setPlaybackRateInputValue(formatPlaybackRateInputValue(resolvedRate));
-      const activeMedia = [mediaElementRef.current, clipAudioRef.current];
-      for (const media of activeMedia) {
-        if (!media) continue;
-        media.playbackRate = resolvedRate;
-        media.defaultPlaybackRate = resolvedRate;
-      }
-      if (persistPinned) {
-        persistLessonPlaybackRate(true, resolvedRate);
-      }
-      return resolvedRate;
-    },
-    [persistLessonPlaybackRate, playbackRatePinned, setSelectedPlaybackRate],
-  );
-
-  const commitPlaybackRateInput = useCallback((rawValue = playbackRateInputValue) => {
-    const normalizedValue = String(rawValue ?? "").trim();
-    if (!normalizedValue) {
-      const resetRate = applyPlaybackRate(DEFAULT_IMMERSIVE_PLAYBACK_RATE);
-      setPlaybackRateInputValue(formatPlaybackRateInputValue(resetRate));
-      return;
-    }
-    const committedRate = applyPlaybackRate(normalizedValue);
-    setPlaybackRateInputValue(formatPlaybackRateInputValue(committedRate));
-  }, [applyPlaybackRate, playbackRateInputValue]);
-
-  const handlePlaybackRateInputChange = useCallback((event) => {
-    setPlaybackRateInputValue(event.target.value);
-  }, []);
-
-  const handlePlaybackRateInputKeyDown = useCallback(
-    (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        commitPlaybackRateInput(event.currentTarget.value);
-        event.currentTarget.blur();
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setPlaybackRateInputValue(formatPlaybackRateInputValue(selectedPlaybackRate));
-        event.currentTarget.blur();
-      }
-    },
-    [commitPlaybackRateInput, selectedPlaybackRate],
-  );
-
-  const handlePlaybackRateInputBlur = useCallback(
-    (event) => {
-      commitPlaybackRateInput(event.currentTarget.value);
-    },
-    [commitPlaybackRateInput],
-  );
-
-  const adjustPlaybackRateByStep = useCallback(
-    (direction) => {
-      const draftValue = String(playbackRateInputValue ?? "").trim();
-      const parsedDraftValue = Number(draftValue);
-      const baseRate = Number.isFinite(parsedDraftValue) ? parsedDraftValue : selectedPlaybackRate;
-      applyPlaybackRate(baseRate + direction * IMMERSIVE_PLAYBACK_RATE_STEP);
-    },
-    [applyPlaybackRate, playbackRateInputValue, selectedPlaybackRate],
-  );
-
-  const handleResetPlaybackRate = useCallback(() => {
-    applyPlaybackRate(DEFAULT_IMMERSIVE_PLAYBACK_RATE);
-  }, [applyPlaybackRate]);
-
-  const handleTogglePlaybackRatePinned = useCallback(() => {
-    const nextPinned = !playbackRatePinned;
-    setPlaybackRatePinned(nextPinned, selectedPlaybackRate);
-    persistLessonPlaybackRate(nextPinned, selectedPlaybackRate);
-  }, [persistLessonPlaybackRate, playbackRatePinned, selectedPlaybackRate, setPlaybackRatePinned]);
 
   // 从讲解切换到拼写
   const handleStartPracticeFromExplanation = useCallback(() => {
@@ -1633,10 +582,6 @@ export function ImmersiveLessonPage({
   }, [expectedTokens, typingPanelRef.current]);
 
   useEffect(() => {
-    setPlaybackRateInputValue(formatPlaybackRateInputValue(selectedPlaybackRate));
-  }, [selectedPlaybackRate]);
-
-  useEffect(() => {
     setSentenceJumpEditing(false);
   }, [currentSentenceIndex, lesson?.id]);
 
@@ -1652,12 +597,6 @@ export function ImmersiveLessonPage({
     }
     prevLessonIdRef.current = lesson?.id;
   }, [lesson?.id, translationMaskMetrics]);
-
-  const sentenceJumpInputValue = sentenceJumpEditing
-    ? sentenceJumpValue
-    : sentenceJumpValue !== ""
-      ? sentenceJumpValue
-      : String(currentSentenceIndex + 1);
 
   const measureSubtitleWidth = useCallback((text, fontSize = 16) => {
     if (!text || typeof document === "undefined") return 0;
@@ -1766,195 +705,6 @@ export function ImmersiveLessonPage({
     },
     [accessToken, apiClient, lesson],
   );
-
-  const clearWordbookSelection = useCallback(() => {
-    setWordbookSelectedTokenIndexes([]);
-  }, []);
-
-  const clearWordbookGestureTimer = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const gesture = wordbookPointerGestureRef.current;
-    if (gesture.longPressTimerId !== null) {
-      window.clearTimeout(gesture.longPressTimerId);
-      gesture.longPressTimerId = null;
-    }
-  }, []);
-
-  const resetWordbookPointerGesture = useCallback(() => {
-    clearWordbookGestureTimer();
-    const gesture = wordbookPointerGestureRef.current;
-    gesture.pointerId = null;
-    gesture.pressTokenIndex = null;
-    gesture.anchorTokenIndex = null;
-    gesture.currentTokenIndex = null;
-    gesture.longPressActive = false;
-  }, [clearWordbookGestureTimer]);
-
-  const toggleWordbookTokenSelection = useCallback((tokenIndex) => {
-    if (!Number.isInteger(tokenIndex)) return;
-    const token = wordbookSentenceTokens[tokenIndex];
-    const text = (token || "").trim();
-    if (!text || /^[.!?,;:—–\-"''''""（）()[\]【】《》]+$/.test(text)) return;
-    setWordbookSelectedTokenIndexes((current) => toggleWordbookTokenIndex(current, tokenIndex));
-  }, [wordbookSentenceTokens]);
-
-  const selectWordbookTokenRange = useCallback((startTokenIndex, endTokenIndex) => {
-    const startToken = wordbookSentenceTokens[startTokenIndex];
-    const endToken = wordbookSentenceTokens[endTokenIndex];
-    const startText = (startToken || "").trim();
-    const endText = (endToken || "").trim();
-    if (
-      (!startText || /^[.!?,;:—–\-"''''""（）()[\]【】《》]+$/.test(startText)) &&
-      (!endText || /^[.!?,;:—–\-"''''""（）()[\]【】《》]+$/.test(endText))
-    ) return;
-    const nextRange = buildWordbookTokenRange(startTokenIndex, endTokenIndex);
-    setWordbookSelectedTokenIndexes(nextRange);
-    return nextRange;
-  }, [wordbookSentenceTokens]);
-
-  const collectWordbookEntry = useCallback(
-    async ({ sentence, entryType, entryText, startTokenIndex, endTokenIndex }) => {
-      if (!lesson?.id || !sentence || !accessToken) return;
-      wordbookActionRef.current = true;
-      setWordbookBusy(true);
-      try {
-        const resp = await apiClient(
-          "/api/wordbook/collect",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              lesson_id: lesson.id,
-              sentence_index: sentence.idx,
-              entry_text: entryText,
-              entry_type: entryType,
-              start_token_index: startTokenIndex,
-              end_token_index: endTokenIndex,
-            }),
-          },
-          accessToken,
-        );
-        const data = await parseResponse(resp);
-        if (!resp.ok) {
-          toast.error(toErrorText(data, "加入生词本失败"));
-          return;
-        }
-        const message = data.message || (data.created ? "已加入生词本" : "已更新到最新语境");
-        if (wordbookSuccessTimerRef.current) clearTimeout(wordbookSuccessTimerRef.current);
-        setWordbookSuccessMessage(message);
-        // Trigger success animation on selected tokens
-        const indexes = wordbookSelectedTokenIndexes.slice();
-        setWordbookSuccessAnimationIndexes(indexes);
-        // Clear animation after 400ms (covers both 200ms scale + 350ms border flash)
-        setTimeout(() => {
-          setWordbookSuccessAnimationIndexes([]);
-        }, 400);
-        wordbookSuccessTimerRef.current = setTimeout(() => {
-          setWordbookSuccessMessage(null);
-          wordbookSuccessTimerRef.current = null;
-        }, 1500);
-        clearWordbookSelection();
-      } catch (error) {
-        toast.error(`网络错误: ${String(error)}`);
-      } finally {
-        setWordbookBusy(false);
-        setTimeout(() => {
-          wordbookActionRef.current = false;
-        }, 0);
-      }
-    },
-    [accessToken, apiClient, clearWordbookSelection, lesson?.id],
-  );
-
-  const handleWordbookTokenPointerDown = useCallback(
-    (event, tokenIndex) => {
-      if (!canRenderInteractiveWordbook || wordbookBusy) return;
-      if (typeof event.button === "number" && event.button !== 0) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const pointerId = event.pointerId;
-      const gesture = wordbookPointerGestureRef.current;
-      if (gesture.pointerId !== null && gesture.pointerId !== pointerId) {
-        return;
-      }
-      clearWordbookGestureTimer();
-      gesture.pointerId = pointerId;
-      gesture.pressTokenIndex = tokenIndex;
-      gesture.anchorTokenIndex = tokenIndex;
-      gesture.currentTokenIndex = tokenIndex;
-      gesture.longPressActive = false;
-      gesture.longPressTimerId = window.setTimeout(() => {
-        const nextGesture = wordbookPointerGestureRef.current;
-        if (nextGesture.pointerId !== pointerId || nextGesture.pressTokenIndex !== tokenIndex) return;
-        nextGesture.longPressActive = true;
-        nextGesture.anchorTokenIndex = tokenIndex;
-        nextGesture.currentTokenIndex = tokenIndex;
-        selectWordbookTokenRange(tokenIndex, tokenIndex);
-      }, WORDBOOK_LONG_PRESS_MS);
-    },
-    [canRenderInteractiveWordbook, clearWordbookGestureTimer, selectWordbookTokenRange, wordbookBusy],
-  );
-
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof document === "undefined") return undefined;
-
-    const handlePointerMove = (event) => {
-      const gesture = wordbookPointerGestureRef.current;
-      if (gesture.pointerId === null || gesture.pointerId !== event.pointerId || !gesture.longPressActive) {
-        return;
-      }
-      const tokenElement = document.elementFromPoint(event.clientX, event.clientY)?.closest?.("[data-wordbook-token-index]");
-      if (!tokenElement) {
-        return;
-      }
-      const nextTokenIndex = Number(tokenElement.getAttribute("data-wordbook-token-index"));
-      if (!Number.isInteger(nextTokenIndex)) return;
-      const anchorTokenIndex = gesture.anchorTokenIndex;
-      if (!Number.isInteger(anchorTokenIndex)) return;
-      if (gesture.currentTokenIndex === nextTokenIndex) return;
-      gesture.currentTokenIndex = nextTokenIndex;
-      selectWordbookTokenRange(anchorTokenIndex, nextTokenIndex);
-    };
-
-    const handlePointerUp = (event) => {
-      const gesture = wordbookPointerGestureRef.current;
-      if (gesture.pointerId === null || gesture.pointerId !== event.pointerId) return;
-      const pressTokenIndex = gesture.pressTokenIndex;
-      const longPressActive = gesture.longPressActive;
-      resetWordbookPointerGesture();
-      if (!Number.isInteger(pressTokenIndex)) return;
-      if (!longPressActive) {
-        toggleWordbookTokenSelection(pressTokenIndex);
-      }
-    };
-
-    const handlePointerCancel = (event) => {
-      const gesture = wordbookPointerGestureRef.current;
-      if (gesture.pointerId === null || gesture.pointerId !== event.pointerId) return;
-      resetWordbookPointerGesture();
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerCancel);
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerCancel);
-      resetWordbookPointerGesture();
-    };
-  }, [resetWordbookPointerGesture, selectWordbookTokenRange, toggleWordbookTokenSelection]);
-
-  useEffect(() => {
-    clearWordbookSelection();
-    resetWordbookPointerGesture();
-  }, [clearWordbookSelection, resetWordbookPointerGesture, wordbookSentenceSourceKey]);
-
-  useEffect(() => {
-    if (canRenderInteractiveWordbook) return;
-    clearWordbookSelection();
-    resetWordbookPointerGesture();
-  }, [canRenderInteractiveWordbook, clearWordbookSelection, resetWordbookPointerGesture]);
 
   const applyWordSnapshot = useCallback((snapshot) => {
     activeWordIndexRef.current = snapshot.activeWordIndex;
@@ -2333,25 +1083,6 @@ export function ImmersiveLessonPage({
       dispatchSession({ type: SET_POST_ANSWER_REPLAY_STATE, value: "waiting_initial_finish" });
     }
   }, [autoReplayAnsweredSentence, immersiveActive, postAnswerReplayState, sentenceTypingDone]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-
-    const syncFromStorageEvent = (event) => {
-      if (event?.key && event.key !== "immersive_learning_settings_v2") return;
-      syncLearningSettingsState();
-    };
-    const syncFromCustomEvent = (event) => {
-      syncLearningSettingsState(event?.detail);
-    };
-
-    window.addEventListener("storage", syncFromStorageEvent);
-    window.addEventListener(LEARNING_SETTINGS_UPDATED_EVENT, syncFromCustomEvent);
-    return () => {
-      window.removeEventListener("storage", syncFromStorageEvent);
-      window.removeEventListener(LEARNING_SETTINGS_UPDATED_EVENT, syncFromCustomEvent);
-    };
-  }, [syncLearningSettingsState]);
 
   useEffect(() => {
     updateTranslationMaskMetrics();
@@ -3051,7 +1782,6 @@ export function ImmersiveLessonPage({
     requestNavigateSentence,
     requestRevealLetter,
     requestRevealWord,
-    requestHandleSentencePassed,
     requestPlayPreviousSentence: requestPreviousSentencePlayback,
   } = useImmersiveSessionController({
     canInteract: Boolean(immersiveActive),
@@ -3069,6 +1799,35 @@ export function ImmersiveLessonPage({
     },
     onInterruptCurrentSentencePlayback: interruptCurrentSentencePlayback,
     onPlayPreviousSentence: requestPlayPreviousSentence,
+  });
+
+  const { handleKeyDown } = useImmersiveKeyboard({
+    immersiveActive,
+    currentSentence,
+    learningSettings,
+    typingEnabled,
+    showEntryHintOverlay,
+    setShowEntryHintOverlay,
+    typingInputRef,
+    exitImmersive,
+    requestReplayCurrentSentence,
+    requestTogglePausePlayback,
+    audioRecorderRef,
+    requestNavigateSentence,
+    requestRevealLetter,
+    requestRevealWord,
+    setMediaError,
+    playKeySound,
+    activeWordIndexRef,
+    currentWordInputRef,
+    setCurrentWordInput,
+    setWordInputs,
+    setWordStatuses,
+    wordInputsRef,
+    wordStatusesRef,
+    expectedTokens,
+    commitCorrectWord,
+    commitWrongWord,
   });
 
   const handleTranslationMaskPointerDown = useCallback(
@@ -3186,236 +1945,7 @@ export function ImmersiveLessonPage({
     translationMaskEnabled,
   ]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
 
-    const onWindowKeyDown = (event) => {
-      const fromTypingInput = event.target === typingInputRef.current;
-      if (isEditableShortcutTarget(event.target) && !fromTypingInput) return;
-      if (!immersiveActive) return;
-
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        void exitImmersive("shortcut_esc");
-        return;
-      }
-      if (isShortcutPressed(event, learningSettings.shortcuts.replay_sentence)) {
-        event.preventDefault();
-        event.stopPropagation();
-        requestReplayCurrentSentence(`shortcut_${getShortcutLabel(learningSettings.shortcuts.replay_sentence)}`);
-        return;
-      }
-      if (isShortcutPressed(event, learningSettings.shortcuts.toggle_pause_playback)) {
-        event.preventDefault();
-        event.stopPropagation();
-        requestTogglePausePlayback(`shortcut_${getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)}`);
-        return;
-      }
-      if (isShortcutPressed(event, learningSettings.shortcuts.record_score)) {
-        event.preventDefault();
-        event.stopPropagation();
-        audioRecorderRef.current?.trigger();
-        return;
-      }
-      if (isShortcutPressed(event, learningSettings.shortcuts.previous_sentence)) {
-        event.preventDefault();
-        event.stopPropagation();
-        requestNavigateSentence({
-          delta: -1,
-          source: `shortcut_${getShortcutLabel(learningSettings.shortcuts.previous_sentence)}`,
-        });
-        return;
-      }
-      if (isShortcutPressed(event, learningSettings.shortcuts.next_sentence)) {
-        event.preventDefault();
-        event.stopPropagation();
-        requestNavigateSentence({
-          delta: 1,
-          source: `shortcut_${getShortcutLabel(learningSettings.shortcuts.next_sentence)}`,
-        });
-        return;
-      }
-      if (isShortcutPressed(event, learningSettings.shortcuts.reveal_letter)) {
-        event.preventDefault();
-        event.stopPropagation();
-        requestRevealLetter(`shortcut_${getShortcutLabel(learningSettings.shortcuts.reveal_letter)}`);
-        return;
-      }
-      if (isShortcutPressed(event, learningSettings.shortcuts.reveal_word)) {
-        event.preventDefault();
-        event.stopPropagation();
-        requestRevealWord(`shortcut_${getShortcutLabel(learningSettings.shortcuts.reveal_word)}`);
-      }
-    };
-
-    window.addEventListener("keydown", onWindowKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onWindowKeyDown);
-    };
-  }, [
-    exitImmersive,
-    immersiveActive,
-    learningSettings.shortcuts,
-    requestNavigateSentence,
-    requestReplayCurrentSentence,
-    requestRevealLetter,
-    requestRevealWord,
-    requestTogglePausePlayback,
-  ]);
-
-  const handleKeyDown = useCallback(
-    (event) => {
-      if (!currentSentence) return;
-      setMediaError("");
-
-      const key = event.key;
-      if (
-        showEntryHintOverlay &&
-        (key === "Backspace" || (key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey))
-      ) {
-        setShowEntryHintOverlay(false);
-      }
-      if (key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        void exitImmersive("shortcut_esc");
-        return;
-      }
-      if (isShortcutPressed(event, learningSettings.shortcuts.replay_sentence)) {
-        event.preventDefault();
-        event.stopPropagation();
-        requestReplayCurrentSentence(`shortcut_${getShortcutLabel(learningSettings.shortcuts.replay_sentence)}`);
-        return;
-      }
-      if (isShortcutPressed(event, learningSettings.shortcuts.toggle_pause_playback)) {
-        event.preventDefault();
-        event.stopPropagation();
-        requestTogglePausePlayback(`shortcut_${getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)}`);
-        return;
-      }
-      if (isShortcutPressed(event, learningSettings.shortcuts.record_score)) {
-        event.preventDefault();
-        event.stopPropagation();
-        audioRecorderRef.current?.trigger();
-        return;
-      }
-      if (isShortcutPressed(event, learningSettings.shortcuts.previous_sentence)) {
-        event.preventDefault();
-        event.stopPropagation();
-        requestNavigateSentence({
-          delta: -1,
-          source: `shortcut_${getShortcutLabel(learningSettings.shortcuts.previous_sentence)}`,
-        });
-        return;
-      }
-      if (isShortcutPressed(event, learningSettings.shortcuts.next_sentence)) {
-        event.preventDefault();
-        event.stopPropagation();
-        requestNavigateSentence({
-          delta: 1,
-          source: `shortcut_${getShortcutLabel(learningSettings.shortcuts.next_sentence)}`,
-        });
-        return;
-      }
-      if (isShortcutPressed(event, learningSettings.shortcuts.reveal_letter)) {
-        event.preventDefault();
-        event.stopPropagation();
-        requestRevealLetter(`shortcut_${getShortcutLabel(learningSettings.shortcuts.reveal_letter)}`);
-        return;
-      }
-      if (isShortcutPressed(event, learningSettings.shortcuts.reveal_word)) {
-        event.preventDefault();
-        event.stopPropagation();
-        requestRevealWord(`shortcut_${getShortcutLabel(learningSettings.shortcuts.reveal_word)}`);
-        return;
-      }
-
-      if (!typingEnabled) return;
-
-      if (event.ctrlKey || event.metaKey || event.altKey) {
-        return;
-      }
-
-      if (key === "Backspace") {
-        event.preventDefault();
-        playKeySound();
-        const currentActiveIndex = activeWordIndexRef.current;
-        const nextInput = currentWordInputRef.current.slice(0, -1);
-        currentWordInputRef.current = nextInput;
-        setCurrentWordInput(nextInput);
-        setWordInputs((prev) => {
-          const next = [...prev];
-          next[currentActiveIndex] = nextInput;
-          wordInputsRef.current = next;
-          return next;
-        });
-        setWordStatuses((prev) => {
-          const next = [...prev];
-          next[currentActiveIndex] = "active";
-          wordStatusesRef.current = next;
-          return next;
-        });
-        return;
-      }
-
-      if (key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        event.preventDefault();
-        playKeySound();
-        const currentActiveIndex = activeWordIndexRef.current;
-        const expected = expectedTokens[currentActiveIndex] || "";
-        if (!expected) return;
-
-        const nextInput = `${currentWordInputRef.current}${key}`;
-        currentWordInputRef.current = nextInput;
-        setCurrentWordInput(nextInput);
-        setWordInputs((prev) => {
-          const next = [...prev];
-          next[currentActiveIndex] = nextInput;
-          wordInputsRef.current = next;
-          return next;
-        });
-        setWordStatuses((prev) => {
-          const next = [...prev];
-          next[currentActiveIndex] = "active";
-          wordStatusesRef.current = next;
-          return next;
-        });
-
-        const errorCount = countTokenInputErrors(nextInput, expected);
-        if (errorCount > 2) {
-          commitWrongWord();
-          return;
-        }
-
-        const normalizedExpected = normalizeComparableToken(expected);
-        const normalizedInput = normalizeComparableToken(nextInput);
-        if (normalizedInput.length >= normalizedExpected.length) {
-          if (normalizedInput === normalizedExpected) {
-            commitCorrectWord(nextInput);
-          } else {
-            commitWrongWord();
-          }
-        }
-      }
-    },
-    [
-      commitCorrectWord,
-      commitWrongWord,
-      currentSentence,
-      exitImmersive,
-      expectedTokens,
-      learningSettings.shortcuts,
-      playKeySound,
-      requestNavigateSentence,
-      requestReplayCurrentSentence,
-      requestRevealLetter,
-      requestRevealWord,
-      requestTogglePausePlayback,
-      showEntryHintOverlay,
-      typingEnabled,
-    ],
-  );
 
   if (!lesson || !currentSentence) {
     return (
@@ -3430,9 +1960,6 @@ export function ImmersiveLessonPage({
 
   const showMediaLoadingOverlay = mediaLoading && !needsBinding && !mediaReady;
   const waitingForInitialPlayback = sentenceTypingDone && !sentencePlaybackDone && sentencePlaybackRequired;
-  const showPlaybackRateBadge = false;
-  const showTranslationMaskToggle = false;
-  const playbackRateLabel = formatPlaybackRateLabel(selectedPlaybackRate);
   const allowNativeVideoFullscreen = isIpadSafari && mediaMode === "video";
   const translationMaskVisible = canShowTranslationMask && translationMaskEnabled;
   const translationMaskClassName = [
@@ -3450,131 +1977,113 @@ export function ImmersiveLessonPage({
     .filter(Boolean)
     .join(" ");
 
-  const typingInputClassName = [
-    "immersive-hidden-input",
-    isTouchDevice ? "immersive-hidden-input--touch" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
   return (
-    <ImmersiveLayout
-      leftTopContent={
-        <VideoPanel
-          immersiveActive={immersiveActive}
-          hasExitHandler={hasExitHandler}
-          exitImmersive={exitImmersive}
-          lessonTitle={lesson?.title || `TEco Lab · 第 ${lesson?.id ?? ""} 期`}
-          currentSentenceIndex={currentSentenceIndex}
-          sentenceCount={sentenceCount}
-          mediaMode={mediaMode}
-          mediaBlobUrl={mediaBlobUrl}
-          needsBinding={needsBinding}
-          mediaReady={mediaReady}
-          setMediaReady={setMediaReady}
-          mediaElementRef={mediaElementRef}
-          clipAudioRef={clipAudioRef}
-          allowNativeVideoFullscreen={allowNativeVideoFullscreen}
-          handleMainMediaError={handleMainMediaError}
-          onMainMediaTimeUpdate={onMainMediaTimeUpdate}
-          showMediaLoadingOverlay={showMediaLoadingOverlay}
-          showEntryHintOverlay={showEntryHintOverlay}
-          entryHintItems={entryHintItems}
-          translationMaskVisible={translationMaskVisible}
-          translationMaskStyle={translationMaskStyle}
-          translationMaskClassName={translationMaskClassName}
-          translationMaskChromeVisible={translationMaskChromeVisible}
-          handleTranslationMaskPointerDown={handleTranslationMaskPointerDown}
-          handleTranslationMaskPointerEnter={handleTranslationMaskPointerEnter}
-          handleTranslationMaskPointerLeave={handleTranslationMaskPointerLeave}
-          TRANSLATION_MASK_RESIZE_HANDLES={TRANSLATION_MASK_RESIZE_HANDLES}
-          immersiveContainerRef={immersiveContainerRef}
-          immersivePageShellClassName={immersivePageShellClassName}
-          handleImmersivePageClick={handleImmersivePageClick}
-          immersiveMediaRef={immersiveMediaRef}
-          updateTranslationMaskMetrics={updateTranslationMaskMetrics}
-        />
-      }
-      leftBottomContent={
-        <div className="immersive-reserved-panel" aria-hidden="true" />
-      }
-      rightTopContent={
-        <TypingPanel
-          ref={typingPanelRef}
-          sentenceCount={sentenceCount}
-          currentSentenceIndex={currentSentenceIndex}
-          isPlaying={isPlaying}
-          isPlaybackPaused={isPlaybackPaused}
-          expectedTokens={expectedTokens}
-          wordStatuses={wordStatuses}
-          wordInputs={wordInputs}
-          wordRowLines={wordRowLines}
-          wordRowFrameRef={wordRowFrameRef}
-          currentSentenceCefrMap={currentSentenceCefrMap}
-          cefrAnalyzerRef={cefrAnalyzerRef}
-          cefrLevel={cefrLevel}
-          buildLetterSlots={buildLetterSlots}
-          wordRevealComparableIndices={wordRevealComparableIndices}
-          showPreviousSentenceBlock={showPreviousSentenceBlock}
-          canRenderInteractiveWordbook={canRenderInteractiveWordbook}
-          wordbookSentence={wordbookSentence}
-          wordbookSentenceTokens={wordbookSentenceTokens}
-          wordbookSelectedTokenIndexes={wordbookSelectedTokenIndexes}
-          wordbookBusy={wordbookBusy}
-          wordbookSuccessAnimationIndexes={wordbookSuccessAnimationIndexes}
-          handleWordbookTokenPointerDown={handleWordbookTokenPointerDown}
-          requestInteractiveWordbookSentencePlayback={requestInteractiveWordbookSentencePlayback}
-          wordbookSentencePlaybackLabel={wordbookSentencePlaybackLabel}
-          collectWordbookEntry={collectWordbookEntry}
-          selectedWordbookTokens={selectedWordbookTokens}
-          selectedWordbookStart={selectedWordbookStart}
-          selectedWordbookEnd={selectedWordbookEnd}
-          selectedWordbookText={selectedWordbookText}
-          wordbookSuccessMessage={wordbookSuccessMessage}
-          wordbookSentenceZh={wordbookSentenceZh}
-          soeTargetSentence={soeTargetSentence}
-          translationEn={translationEn}
-          previousSentence={previousSentence}
-          requestPreviousSentencePlayback={requestPreviousSentencePlayback}
-          mediaError={mediaError}
-          waitingForInitialPlayback={waitingForInitialPlayback}
-          phase={phase}
-          learningSettings={learningSettings}
-          soeLoading={soeLoading}
-          soeResult={soeResult}
-          setSoeResult={setSoeResult}
-          setSoeLoading={setSoeLoading}
-          apiClient={apiClient}
-          accessToken={accessToken}
-          currentLessonId={currentLessonId}
-          typingPanelRef={typingPanelRef}
-          audioRecorderRef={audioRecorderRef}
-          parseResponse={parseResponse}
-          wordbookSentenceCefrMap={wordbookSentenceCefrMap}
-          translationZh={translationZh}
-          lookupCefrLevelFromMap={lookupCefrLevelFromMap}
-          currentSentence={currentSentence}
-          nextSentence={nextSentence}
-          sentenceTypingDone={sentenceTypingDone}
-        />
-      }
-      rightBottomContent={
-        <div className="immersive-explanation-shell">
-          <ExplanationSidebarContent
-            sentence={currentSentence}
-            explanation={showExplanation ? currentExplanation : null}
-            audioUrl={showExplanation ? explanationAudioUrl : null}
-            audioRef={explanationAudioRef}
-            isAudioPlaying={isExplanationPlaying}
-            isAudioPaused={isExplanationPaused}
-            onPlayAudio={handlePlayExplanation}
-            onPauseAudio={handlePauseExplanation}
-            onResumeAudio={handleResumeExplanation}
-            onReplayAudio={handleReplayExplanation}
-            onStartPractice={handleStartPractice}
-          />
-        </div>
-      }
+    <ImmersiveLessonShell
+      videoPanelProps={{
+        immersiveActive,
+        hasExitHandler,
+        exitImmersive,
+        lessonTitle: lesson?.title || `TEco Lab · 第 ${lesson?.id ?? ""} 期`,
+        currentSentenceIndex,
+        sentenceCount,
+        mediaMode,
+        mediaBlobUrl,
+        needsBinding,
+        mediaReady,
+        setMediaReady,
+        mediaElementRef,
+        clipAudioRef,
+        allowNativeVideoFullscreen,
+        handleMainMediaError,
+        onMainMediaTimeUpdate,
+        showMediaLoadingOverlay,
+        showEntryHintOverlay,
+        entryHintItems,
+        translationMaskVisible,
+        translationMaskStyle,
+        translationMaskClassName,
+        translationMaskChromeVisible,
+        handleTranslationMaskPointerDown,
+        handleTranslationMaskPointerEnter,
+        handleTranslationMaskPointerLeave,
+        TRANSLATION_MASK_RESIZE_HANDLES,
+        immersiveContainerRef,
+        immersivePageShellClassName,
+        handleImmersivePageClick,
+        immersiveMediaRef,
+        updateTranslationMaskMetrics,
+      }}
+      typingPanelProps={{
+        ref: typingPanelRef,
+        sentenceCount,
+        currentSentenceIndex,
+        isPlaying,
+        isPlaybackPaused,
+        expectedTokens,
+        wordStatuses,
+        wordInputs,
+        wordRowLines,
+        wordRowFrameRef,
+        currentSentenceCefrMap,
+        cefrAnalyzerRef,
+        cefrLevel,
+        buildLetterSlots,
+        wordRevealComparableIndices,
+        showPreviousSentenceBlock,
+        canRenderInteractiveWordbook,
+        wordbookSentence,
+        wordbookSentenceTokens,
+        wordbookSelectedTokenIndexes,
+        wordbookBusy,
+        wordbookSuccessAnimationIndexes,
+        handleWordbookTokenPointerDown,
+        requestInteractiveWordbookSentencePlayback,
+        wordbookSentencePlaybackLabel,
+        collectWordbookEntry,
+        selectedWordbookTokens,
+        selectedWordbookStart,
+        selectedWordbookEnd,
+        selectedWordbookText,
+        wordbookSuccessMessage,
+        wordbookSentenceZh,
+        soeTargetSentence,
+        translationEn,
+        previousSentence,
+        requestPreviousSentencePlayback,
+        mediaError,
+        waitingForInitialPlayback,
+        phase,
+        learningSettings,
+        soeLoading,
+        soeResult,
+        setSoeResult,
+        setSoeLoading,
+        apiClient,
+        accessToken,
+        currentLessonId,
+        typingPanelRef,
+        audioRecorderRef,
+        parseResponse,
+        wordbookSentenceCefrMap,
+        translationZh,
+        lookupCefrLevelFromMap,
+        currentSentence,
+        nextSentence,
+        sentenceTypingDone,
+      }}
+      explanationProps={{
+        sentence: currentSentence,
+        explanation: showExplanation ? currentExplanation : null,
+        audioUrl: showExplanation ? explanationAudioUrl : null,
+        audioRef: explanationAudioRef,
+        isAudioPlaying: isExplanationPlaying,
+        isAudioPaused: isExplanationPaused,
+        onPlayAudio: handlePlayExplanation,
+        onPauseAudio: handlePauseExplanation,
+        onResumeAudio: handleResumeExplanation,
+        onReplayAudio: handleReplayExplanation,
+        onStartPractice: handleStartPractice,
+      }}
     />
   );
 }

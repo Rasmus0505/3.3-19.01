@@ -1,406 +1,41 @@
-import { CheckCircle2, Clock3, Download, History, MoreVertical, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
+import { History } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { TOKEN_KEY, readCefrLevel } from "../../app/authStorage";
-import { VocabAnalyzer } from "../../utils/vocabAnalyzer";
-import { useAppStore } from "../../store";
-import { cn } from "../../lib/utils";
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import { saveLessonSubtitleCacheSeed, saveLessonSubtitleVariant } from "../../shared/media/localSubtitleStore.js";
 import { hasLessonMedia } from "../../shared/media/localMediaStore";
-import {
-  Alert,
-  AlertDescription,
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Input,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-  MediaCover,
-  Skeleton,
-  Progress,
-  Switch,
-} from "../../shared/ui";
+import { Button, Card, CardContent, CardHeader, CardTitle, Skeleton } from "../../shared/ui";
 import {
   areShortcutBindingsEqual,
   captureShortcutFromKeyboardEvent,
   getShortcutCompleteness,
-  getShortcutLabel,
   readLearningSettings,
   sanitizeLearningSettings,
-  SHORTCUT_ACTIONS,
   writeLearningSettings,
 } from "../immersive/learningSettings";
+import { LessonHistoryCard } from "./components/LessonHistoryCard";
+import { LessonHistoryToolbar } from "./components/LessonHistoryToolbar";
+import { LessonLearningSettingsSection } from "./components/LessonLearningSettingsSection";
+import { LessonListDialogs } from "./components/LessonListDialogs";
+import {
+  LOCAL_LESSON_UPDATE_EVENT,
+  buildBottleLessonFilename,
+  buildLessonProgressState,
+  buildLocalLessonRecord,
+  buildRemoteLessonDetailPayload,
+  buildRemoteLessonExportPayload,
+  downloadJsonFile,
+  ensureCefrAnalysis,
+  formatCreatedAt,
+  hasLocalDbBridge,
+  hasProgressSnapshot,
+  isDesktop,
+  requestDesktopLocalHelper,
+} from "./lessonListHelpers";
 import "../immersive/immersive.css";
 
 /** @typedef {import("./types").Lesson} Lesson */
 /** @typedef {import("./types").LessonSentence} LessonSentence */
-
-const BOTTLE_LESSON_SCHEMA_VERSION = "1";
-const BOTTLE_LESSON_FILE_SUFFIX = ".bottle-lesson.json";
-const BOTTLE_DESKTOP_APP_VERSION = "0.2.0";
-const LOCAL_LESSON_UPDATE_EVENT = "bottle-local-lessons-updated";
-
-function hasLocalDbBridge() {
-  return typeof window !== "undefined" && typeof window.localDb?.getCourses === "function";
-}
-
-function hasDesktopRuntimeBridge() {
-  return typeof window !== "undefined" && typeof window.desktopRuntime?.requestLocalHelper === "function";
-}
-
-const isDesktop = hasDesktopRuntimeBridge();
-
-async function requestDesktopLocalHelper(pathname, responseType = "json", options = {}) {
-  if (!hasDesktopRuntimeBridge()) {
-    throw new Error("Desktop local helper is unavailable");
-  }
-  const response = await window.desktopRuntime.requestLocalHelper({
-    path: String(pathname || ""),
-    method: String(options.method || "GET").toUpperCase(),
-    responseType,
-    body: options.body,
-  });
-  if (!response?.ok) {
-    const detail =
-      String(response?.data?.message || "").trim() ||
-      String(response?.data?.error_message || "").trim() ||
-      String(response?.data?.detail || "").trim() ||
-      String(response?.status || "").trim();
-    throw new Error(detail || "Desktop local helper request failed");
-  }
-  return response;
-}
-
-function sanitizeExportFileName(value, fallback = "lesson") {
-  const normalized = String(value || "")
-    .trim()
-    .replace(/[\\/:*?"<>|]+/g, "-")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-  return normalized || fallback;
-}
-
-function buildBottleLessonFilename(lesson) {
-  const title = sanitizeExportFileName(lesson?.title, "");
-  const lessonId = sanitizeExportFileName(lesson?.id, "lesson");
-  return `${title || lessonId}${BOTTLE_LESSON_FILE_SUFFIX}`;
-}
-
-function downloadJsonFile(fileName, payload) {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
-  const objectUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = objectUrl;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(objectUrl);
-}
-
-function normalizeExportLesson(lesson = {}, source = "remote") {
-  const metadata = lesson?.metadata && typeof lesson.metadata === "object" && !Array.isArray(lesson.metadata) ? lesson.metadata : {};
-  return {
-    id: String(lesson?.id ?? "").trim(),
-    title: String(lesson?.title || ""),
-    source_filename: String(lesson?.source_filename || ""),
-    created_at: String(lesson?.created_at || ""),
-    updated_at: String(lesson?.updated_at || lesson?.created_at || ""),
-    source_duration_ms: Math.max(0, Number(lesson?.source_duration_ms ?? lesson?.duration_ms ?? 0) || 0),
-    media_storage: String(lesson?.media_storage || metadata.media_storage || source),
-    asr_model: String(lesson?.asr_model || ""),
-    metadata: {
-      ...metadata,
-      export_source: source,
-    },
-  };
-}
-
-function normalizeExportSentence(sentence = {}, index = 0) {
-  return {
-    id: sentence?.id == null ? `${index}` : String(sentence.id),
-    order_index: Number(sentence?.order_index ?? sentence?.sentence_index ?? index) || index,
-    text_en: String(sentence?.text_en || sentence?.english_text || sentence?.text || ""),
-    text_zh: String(sentence?.text_zh || sentence?.chinese_text || sentence?.translation || ""),
-    begin_ms: Math.max(0, Number(sentence?.begin_ms ?? sentence?.start_ms ?? 0) || 0),
-    end_ms: Math.max(0, Number(sentence?.end_ms ?? sentence?.end_time ?? 0) || 0),
-    tokens: Array.isArray(sentence?.tokens) ? sentence.tokens : Array.isArray(sentence?.words) ? sentence.words : [],
-    audio_url: sentence?.audio_url ?? null,
-    variant_key: String(sentence?.variant_key || ""),
-  };
-}
-
-function normalizeExportProgress(progress = {}) {
-  return {
-    current_sentence_index: Math.max(0, Number(progress?.current_sentence_index ?? progress?.current_index ?? 0) || 0),
-    completed_sentence_indexes: Array.isArray(progress?.completed_sentence_indexes)
-      ? progress.completed_sentence_indexes
-      : Array.isArray(progress?.completed_indices)
-        ? progress.completed_indices
-        : [],
-    last_played_at_ms: Math.max(0, Number(progress?.last_played_at_ms || 0) || 0),
-    started_at: progress?.started_at || null,
-    updated_at: progress?.updated_at || "",
-    user_id: String(progress?.user_id || ""),
-  };
-}
-
-function buildBottleLessonPayload({ lesson, sentences, progress, source }) {
-  return {
-    schema_version: BOTTLE_LESSON_SCHEMA_VERSION,
-    exported_at: new Date().toISOString(),
-    app_version: BOTTLE_DESKTOP_APP_VERSION,
-    lesson: normalizeExportLesson(lesson, source),
-    sentences: (Array.isArray(sentences) ? sentences : []).map((item, index) => normalizeExportSentence(item, index)),
-    progress: normalizeExportProgress(progress),
-  };
-}
-
-function buildLocalLessonRecord(course, sentences, progress) {
-  const metadata = course?.metadata && typeof course.metadata === "object" && !Array.isArray(course.metadata) ? course.metadata : {};
-  const progressSnapshot = normalizeExportProgress(progress);
-  const normalizedSentences = (Array.isArray(sentences) ? sentences : []).map((item, index) => normalizeExportSentence(item, index));
-  return {
-    id: String(course?.id ?? ""),
-    title: String(course?.title || metadata.title || "未命名课程"),
-    source_filename: String(course?.source_filename || metadata.source_filename || "本地导入课程"),
-    created_at: String(course?.created_at || ""),
-    updated_at: String(course?.updated_at || course?.created_at || ""),
-    source_duration_ms: Math.max(0, Number(metadata.source_duration_ms ?? course?.duration_ms ?? 0) || 0),
-    media_storage: "local_import",
-    asr_model: String(course?.asr_model || metadata.asr_model || ""),
-    sentences: normalizedSentences,
-    progress: progressSnapshot,
-    __bottleLocal: true,
-    __bottleCardMeta: {
-      sentenceCount: normalizedSentences.length,
-      progress: progressSnapshot,
-    },
-    __bottleExportPayload: buildBottleLessonPayload({
-      lesson: {
-        ...course,
-        source_duration_ms: metadata.source_duration_ms ?? course?.duration_ms ?? 0,
-        media_storage: metadata.media_storage || "local_import",
-        metadata,
-      },
-      sentences: normalizedSentences,
-      progress: progressSnapshot,
-      source: "local_db",
-    }),
-  };
-}
-
-async function buildRemoteLessonExportPayload(lessonId) {
-  const accessToken = typeof window !== "undefined" && window.localStorage ? window.localStorage.getItem(TOKEN_KEY) || "" : "";
-  if (!accessToken) {
-    throw new Error("当前未登录，无法导出云端课程。");
-  }
-
-  const [detailResp, progressResp] = await Promise.all([
-    api(`/api/lessons/${lessonId}`, {}, accessToken),
-    api(`/api/lessons/${lessonId}/progress`, {}, accessToken),
-  ]);
-  const detailData = await parseResponse(detailResp);
-  const progressData = await parseResponse(progressResp);
-
-  if (!detailResp.ok) {
-    throw new Error(toErrorText(detailData, "加载课程详情失败"));
-  }
-  if (!progressResp.ok && progressResp.status !== 404) {
-    throw new Error(toErrorText(progressData, "加载课程进度失败"));
-  }
-
-  return buildBottleLessonPayload({
-    lesson: detailData,
-    sentences: Array.isArray(detailData?.sentences) ? detailData.sentences : [],
-    progress: progressResp.ok ? progressData : null,
-    source: "remote_api",
-  });
-}
-
-async function buildRemoteLessonDetailPayload(lessonId) {
-  const accessToken = typeof window !== "undefined" && window.localStorage ? window.localStorage.getItem(TOKEN_KEY) || "" : "";
-  if (!accessToken) {
-    throw new Error("当前未登录，无法读取课程详情。");
-  }
-  const detailResp = await api(`/api/lessons/${lessonId}`, {}, accessToken);
-  const detailData = await parseResponse(detailResp);
-  if (!detailResp.ok) {
-    throw new Error(toErrorText(detailData, "加载课程详情失败"));
-  }
-  return { accessToken, detail: detailData };
-}
-
-function formatCreatedAt(createdAt) {
-  if (!createdAt) return "时间未知";
-  try {
-    return new Intl.DateTimeFormat("zh-CN", {
-      month: "numeric",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(createdAt));
-  } catch (_) {
-    return "时间未知";
-  }
-}
-
-function hasProgressSnapshot(progress) {
-  if (!progress) return false;
-  const currentIndex = Number(progress.current_sentence_index || 0);
-  const completedCount = Array.isArray(progress.completed_sentence_indexes) ? progress.completed_sentence_indexes.length : 0;
-  const lastPlayedAtMs = Number(progress.last_played_at_ms || 0);
-  return currentIndex > 0 || completedCount > 0 || lastPlayedAtMs > 0;
-}
-
-function getCurrentSentenceCount(progress, totalCount) {
-  if (!totalCount || totalCount <= 0 || !hasProgressSnapshot(progress)) {
-    return 0;
-  }
-  const currentIndex = Number(progress?.current_sentence_index || 0);
-  if (!Number.isFinite(currentIndex)) {
-    return 1;
-  }
-  return Math.min(totalCount, Math.max(1, Math.trunc(currentIndex) + 1));
-}
-
-function buildLessonProgressState(progress, sentenceCount) {
-  const normalizedTotal = Number(sentenceCount || 0);
-  const totalCount = Number.isFinite(normalizedTotal) && normalizedTotal > 0 ? Math.max(0, Math.trunc(normalizedTotal)) : 0;
-  const currentCount = getCurrentSentenceCount(progress, totalCount);
-  const completedCount = Array.isArray(progress?.completed_sentence_indexes)
-    ? Math.min(totalCount || Number.MAX_SAFE_INTEGER, progress.completed_sentence_indexes.length)
-    : 0;
-  const isComplete = totalCount > 0 && (currentCount >= totalCount || completedCount >= totalCount);
-  const ratio = totalCount > 0 ? (isComplete ? 1 : currentCount / totalCount) : 0;
-  const clampedPercent = Math.max(0, Math.min(100, ratio * 100));
-
-  return {
-    completedCount,
-    currentCount,
-    totalCount,
-    percent: clampedPercent,
-    progressLabel: totalCount > 0 ? `${currentCount}/${totalCount}` : "\u53e5\u6570\u5f85\u540c\u6b65",
-    statusLabel:
-      totalCount <= 0
-        ? "\u5b66\u4e60\u8fdb\u5ea6"
-        : isComplete
-          ? "\u5df2\u5b8c\u6210"
-          : currentCount > 0
-            ? "\u5f53\u524d\u8fdb\u5ea6"
-            : "\u5c1a\u672a\u5f00\u59cb",
-    isComplete,
-    isActive: totalCount > 0 && currentCount > 0 && !isComplete,
-    hasTrack: totalCount > 0,
-  };
-}
-
-// ================================================================================
-// CEFR Analysis Utilities
-// ================================================================================
-
-const CEFR_ANALYSIS_KEY_PREFIX = "cefr_analysis_v1:";
-
-function getCefrAnalysisKey(lessonId) {
-  return `${CEFR_ANALYSIS_KEY_PREFIX}${lessonId}`;
-}
-
-function computeCefrDistribution(analysisResult, userLevel) {
-  // analyzeVideo() + immersive cache use levelCounts / overallGrade; older code may use distribution / grade
-  const distribution = analysisResult?.distribution ?? analysisResult?.levelCounts;
-  const grade = analysisResult?.grade ?? analysisResult?.overallGrade ?? "B1";
-  if (!distribution || typeof distribution !== "object") return null;
-  const total = Object.values(distribution).reduce((sum, count) => sum + count, 0);
-  if (total === 0) return null;
-
-  const levelOrder = ["A1", "A2", "B1", "B2", "C1", "C2", "SUPER"];
-  const rawUserIndex = levelOrder.indexOf(userLevel);
-  const userIndex = rawUserIndex === -1 ? levelOrder.indexOf("B1") : rawUserIndex;
-
-  let iPlusOnePercent = 0;
-  let aboveIPlusOnePercent = 0;
-  let masteredPercent = 0;
-
-  for (const [level, count] of Object.entries(distribution)) {
-    const levelIndex = levelOrder.indexOf(level);
-    const percent = (count / total) * 100;
-    if (levelIndex <= userIndex) {
-      masteredPercent += percent;
-    } else if (levelIndex === userIndex + 1) {
-      iPlusOnePercent += percent;
-    } else {
-      aboveIPlusOnePercent += percent;
-    }
-  }
-
-  return {
-    iPlusOnePercent: Math.round(iPlusOnePercent),
-    aboveIPlusOnePercent: Math.round(aboveIPlusOnePercent),
-    masteredPercent: Math.round(masteredPercent),
-    dominantLevel: grade,
-    rawDistribution: distribution,
-  };
-}
-
-async function ensureCefrAnalysis(lessonId, sentences) {
-  const key = getCefrAnalysisKey(lessonId);
-
-  if (typeof localStorage !== "undefined") {
-    const cached = localStorage.getItem(key);
-    if (cached) {
-      try {
-        const analysis = JSON.parse(cached);
-        const userLevel = readCefrLevel() || "B1";
-        const dist = computeCefrDistribution(analysis, userLevel);
-        if (dist) {
-          useAppStore.getState().mergeLessonCardMeta(lessonId, { cefrDistribution: dist });
-          return;
-        }
-      } catch (_) { /* fall through to re-analyze */ }
-    }
-  }
-
-  useAppStore.getState().mergeLessonCardMeta(lessonId, { cefrLoading: true });
-  try {
-    const analyzer = new VocabAnalyzer();
-    await analyzer.load();
-    const analysis = analyzer.analyzeVideo(sentences || []);
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem(key, JSON.stringify(analysis));
-    }
-    const userLevel = readCefrLevel() || "B1";
-    const dist = computeCefrDistribution(analysis, userLevel);
-    useAppStore.getState().mergeLessonCardMeta(lessonId, { cefrDistribution: dist, cefrLoading: false });
-  } catch (_) {
-    useAppStore.getState().mergeLessonCardMeta(lessonId, { cefrLoading: false });
-  }
-}
-
-function getCoverAssistiveText(lesson) {
-  const title = String(lesson?.title || "").trim();
-  return title ? `${title} 默认封面` : "课程默认封面";
-}
 
 export function LessonList({
   lessons,
@@ -445,6 +80,7 @@ export function LessonList({
   const [recordingShortcutActionId, setRecordingShortcutActionId] = useState("");
   const restoreInputRef = useRef(null);
   const restoreTargetRef = useRef(null);
+
   const visibleLessons = useMemo(() => {
     if (!localLessons.length) {
       return lessons;
@@ -452,6 +88,7 @@ export function LessonList({
     const localLessonIdSet = new Set(localLessons.map((lesson) => String(lesson?.id ?? "")));
     return [...localLessons, ...lessons.filter((lesson) => !localLessonIdSet.has(String(lesson?.id ?? "")))];
   }, [lessons, localLessons]);
+
   const loadedLessonIds = useMemo(() => visibleLessons.map((lesson) => Number(lesson.id || 0)).filter((item) => item > 0), [visibleLessons]);
   const loadedLessonIdSet = useMemo(() => new Set(loadedLessonIds), [loadedLessonIds]);
   const selectedLessonIdSet = useMemo(() => new Set(selectedLessonIds), [selectedLessonIds]);
@@ -475,6 +112,11 @@ export function LessonList({
     }));
   }
 
+  function handleRecordingShortcutActionChange(actionId) {
+    setSettingsError("");
+    setRecordingShortcutActionId((current) => (current === actionId ? "" : actionId));
+  }
+
   const cards = useMemo(
     () =>
       visibleLessons.map((lesson) => {
@@ -487,15 +129,12 @@ export function LessonList({
         const mediaMeta = lessonMediaMetaMap[lesson.id] || {};
         const sentenceCount = Number(meta.sentenceCount || lesson.sentences?.length || 0);
         const progressState = buildLessonProgressState(meta.progress, sentenceCount);
-        const actionLabel = isLocalLesson ? "本地导入" : hasProgressSnapshot(meta.progress) ? "继续学习" : "开始学习";
-        const needsBinding = !isLocalLesson && lesson.media_storage === "client_indexeddb" && !mediaMeta.hasMedia;
         return {
           lesson,
           mediaMeta,
           sentenceCount,
           progressState,
-          actionLabel,
-          needsBinding,
+          actionLabel: isLocalLesson ? "本地导入" : hasProgressSnapshot(meta.progress) ? "继续学习" : "开始学习",
           isLocalLesson,
           createdAtLabel: formatCreatedAt(lesson.created_at),
           cefrLoading: Boolean(lessonCardMetaMap[lesson.id]?.cefrLoading),
@@ -504,6 +143,7 @@ export function LessonList({
       }),
     [lessonCardMetaMap, lessonMediaMetaMap, progressOverrides, visibleLessons],
   );
+
   const defaultGuideLessonId = useMemo(() => cards.find((item) => !item.isLocalLesson)?.lesson.id ?? cards[0]?.lesson.id ?? 0, [cards]);
   const allHistorySelected = selectionMode === "all" && Number(totalLessons || 0) > 0;
   const selectedCount = allHistorySelected ? Math.max(0, Number(totalLessons || 0) - excludedLessonIds.length) : selectedLessonIds.length;
@@ -562,7 +202,7 @@ export function LessonList({
   function startLessonFromHistory(lessonId) {
     const { complete, missingActions } = getShortcutCompleteness(learningSettings);
     if (!complete) {
-      const names = missingActions.map((a) => a.label).join("、");
+      const names = missingActions.map((action) => action.label).join("、");
       setStatus(`快捷键未配置完整：${names}。请先在下方「学习参数」区域配置好所有快捷键，再开始学习。`);
       return;
     }
@@ -625,6 +265,7 @@ export function LessonList({
         throw new Error("当前课程暂无可完成的句子。");
       }
       const completedSentenceIndexes = Array.from({ length: sentenceCount }, (_, index) => index);
+      const lastPlayedAtMs = completed ? Number(detail?.duration_ms || detail?.source_duration_ms || 0) : 0;
       const progressResp = await api(
         `/api/lessons/${lesson.id}/progress`,
         {
@@ -633,7 +274,7 @@ export function LessonList({
           body: JSON.stringify({
             current_sentence_index: completed ? Math.max(0, sentenceCount - 1) : 0,
             completed_sentence_indexes: completed ? completedSentenceIndexes : [],
-            last_played_at_ms: completed ? Number(detail?.duration_ms || detail?.source_duration_ms || 0) : 0,
+            last_played_at_ms: lastPlayedAtMs,
           }),
         },
         accessToken,
@@ -647,7 +288,7 @@ export function LessonList({
         [lesson.id]: {
           current_sentence_index: completed ? Math.max(0, sentenceCount - 1) : 0,
           completed_sentence_indexes: completed ? completedSentenceIndexes : [],
-          last_played_at_ms: completed ? Number(detail?.duration_ms || detail?.source_duration_ms || 0) : 0,
+          last_played_at_ms: lastPlayedAtMs,
         },
       }));
       await onRefreshHistory?.();
@@ -810,11 +451,10 @@ export function LessonList({
     }
   }, [loadedLessonIdSet, totalLessons]);
 
-  // Trigger background CEFR analysis for lessons that haven't been analyzed yet
   useEffect(() => {
     for (const card of cards) {
       if (!card.isLocalLesson && !card.cefrLoading && !card.cefrDistribution) {
-        const sentences = card.lesson?.sentences?.map((s) => s.en || s.text_en) || [];
+        const sentences = card.lesson?.sentences?.map((sentence) => sentence.en || sentence.text_en) || [];
         if (sentences.length > 0) {
           void ensureCefrAnalysis(card.lesson.id, sentences);
         }
@@ -826,6 +466,12 @@ export function LessonList({
     setRenamingLesson(lesson);
     setRenameTitle(String(lesson.title || ""));
     setStatus("");
+  }
+
+  function closeRenameDialog() {
+    if (renameBusy) return;
+    setRenamingLesson(null);
+    setRenameTitle("");
   }
 
   async function submitRename() {
@@ -851,6 +497,11 @@ export function LessonList({
     }
   }
 
+  function closeDeleteDialog() {
+    if (deleteBusy) return;
+    setDeletingLesson(null);
+  }
+
   async function submitDelete() {
     if (!deletingLesson || !onDelete) return;
     setDeleteBusy(true);
@@ -867,19 +518,19 @@ export function LessonList({
     }
   }
 
+  function handleBulkDeleteOpenChange(open) {
+    if (!open && deleteBusy) return;
+    setBulkDeleteOpen(open);
+  }
+
   async function submitBulkDelete() {
     if (!onBulkDelete || !hasSelection) return;
     setDeleteBusy(true);
     try {
-      let deletePayload;
-      if (allHistorySelected) {
-        // Compute the explicit list of IDs to delete (all - excluded)
-        const idsToDelete = loadedLessonIds.filter((id) => !excludedLessonIdSet.has(id));
-        deletePayload = { deleteAll: false, lessonIds: idsToDelete, excludedLessonIds: [] };
-      } else {
-        deletePayload = { deleteAll: false, lessonIds: selectedLessonIds, excludedLessonIds: [] };
-      }
-      const result = await onBulkDelete(deletePayload);
+      const lessonIds = allHistorySelected
+        ? loadedLessonIds.filter((id) => !excludedLessonIdSet.has(id))
+        : selectedLessonIds;
+      const result = await onBulkDelete({ deleteAll: false, lessonIds, excludedLessonIds: [] });
       if (result?.ok) {
         clearSelection();
         setBulkDeleteOpen(false);
@@ -911,11 +562,7 @@ export function LessonList({
     setStatus("");
     try {
       const result = await onRestoreMedia(lesson, file);
-      if (result?.ok) {
-        setStatus(result?.message || "恢复视频成功");
-      } else {
-        setStatus(result?.message || "恢复视频失败");
-      }
+      setStatus(result?.message || (result?.ok ? "恢复视频成功" : "恢复视频失败"));
     } finally {
       setRestoringLessonId(null);
       restoreTargetRef.current = null;
@@ -957,7 +604,7 @@ export function LessonList({
         setStatus(response?.message || "按链接恢复失败");
       }
     } catch (error) {
-      setStatus(error?.message || "按链接恢复失败");
+      setStatus(error instanceof Error && error.message ? error.message : "按链接恢复失败");
     } finally {
       setRestoringLessonId(null);
       restoreTargetRef.current = null;
@@ -981,88 +628,26 @@ export function LessonList({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <section className="rounded-2xl border bg-muted/10 p-3 md:p-4">
-          <p className="text-sm font-semibold text-foreground">学习参数</p>
-          <div className="mt-2 flex items-center gap-3 border-b border-border/60 pb-3">
-            <span className="text-sm text-foreground">答完自动重播本句</span>
-            <Switch
-              checked={learningSettings.playbackPreferences?.autoReplayAnsweredSentence !== false}
-              onCheckedChange={(checked) => handlePlaybackPreferenceChange("autoReplayAnsweredSentence", checked)}
-            />
-          </div>
-
-          <div className="mt-3 flex flex-row flex-wrap items-stretch gap-3">
-                {SHORTCUT_ACTIONS.map((action) => {
-                  const recording = recordingShortcutActionId === action.id;
-                  const shortcutLabel = getShortcutLabel(learningSettings.shortcuts[action.id]);
-                  const shortcutMissing = shortcutLabel === "未设置";
-                  return (
-                    <div key={action.id} className="flex w-fit min-w-0 flex-col rounded-2xl border bg-background/80 p-3">
-                      <div className="flex flex-1 flex-col gap-3">
-                        <div className="min-w-0 space-y-1">
-                          <p className="text-sm font-semibold text-foreground">{action.label}</p>
-                          <p className={cn("text-sm break-all", shortcutMissing ? "font-semibold text-orange-500" : "text-muted-foreground")}>
-                            {shortcutLabel}
-                          </p>
-                        </div>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={recording ? "default" : "outline"}
-                          className="mt-auto self-start"
-                          onClick={() => {
-                            setSettingsError("");
-                            setRecordingShortcutActionId((current) => (current === action.id ? "" : action.id));
-                          }}
-                        >
-                          {recording ? "请按键…" : "修改"}
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-          </div>
-
-          {settingsError ? (
-            <Alert className="mt-3" variant="destructive">
-              <AlertDescription>{settingsError}</AlertDescription>
-            </Alert>
-          ) : null}
-        </section>
+        <LessonLearningSettingsSection
+          learningSettings={learningSettings}
+          settingsError={settingsError}
+          recordingShortcutActionId={recordingShortcutActionId}
+          onPlaybackPreferenceChange={handlePlaybackPreferenceChange}
+          onRecordingShortcutActionChange={handleRecordingShortcutActionChange}
+        />
 
         {Number(totalLessons || cards.length || 0) > 0 ? (
-          <div className="sticky top-14 z-10 rounded-2xl border bg-background/95 px-3 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85 md:top-16 md:px-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="flex flex-wrap items-center gap-2">
-                {allHistorySelected ? (
-                  <Button type="button" variant="outline" onClick={clearSelection} disabled={deleteBusy}>
-                    取消全选
-                  </Button>
-                ) : (
-                  <Button type="button" variant="outline" onClick={selectAllHistory} disabled={deleteBusy}>
-                    全选全部历史
-                  </Button>
-                )}
-                {hasSelection ? (
-                  <p className="text-sm text-muted-foreground">
-                    {allHistorySelected
-                      ? excludedLessonIds.length > 0
-                        ? `已选其余 ${selectedCount} 项，已排除 ${excludedLessonIds.length} 项`
-                        : `已选全部历史 ${selectedCount} 项`
-                      : `已选 ${selectedCount} 项`}
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">选择要删除的记录</p>
-                )}
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" variant="destructive" className="min-h-11 w-full sm:w-auto" disabled={!hasSelection || deleteBusy || !onBulkDelete} onClick={() => setBulkDeleteOpen(true)}>
-                  <Trash2 className="size-4" />
-                  批量删除
-                </Button>
-              </div>
-            </div>
-          </div>
+          <LessonHistoryToolbar
+            allHistorySelected={allHistorySelected}
+            selectedCount={selectedCount}
+            excludedLessonCount={excludedLessonIds.length}
+            hasSelection={hasSelection}
+            deleteBusy={deleteBusy}
+            bulkDeleteEnabled={Boolean(onBulkDelete)}
+            onClearSelection={clearSelection}
+            onSelectAllHistory={selectAllHistory}
+            onOpenBulkDelete={() => setBulkDeleteOpen(true)}
+          />
         ) : null}
 
         {loading ? (
@@ -1086,277 +671,41 @@ export function LessonList({
 
         {!loading ? (
           <div className="space-y-3">
-            {cards.map(({ lesson, mediaMeta, sentenceCount, progressState, actionLabel, needsBinding, isLocalLesson, createdAtLabel, cefrLoading, cefrDistribution }) => {
+            {cards.map((card) => {
+              const { lesson } = card;
               const selected = currentLessonId === lesson.id;
               const isGuideTarget =
                 Number(guideTargetLessonId || 0) > 0 ? Number(guideTargetLessonId) === Number(lesson.id) : lesson.id === defaultGuideLessonId;
               return (
-                <div
+                <LessonHistoryCard
                   key={lesson.id}
-                  className={cn(
-                    "overflow-hidden rounded-2xl border transition-all",
-                    progressState.isComplete
-                      ? selected
-                        ? "border-emerald-500 bg-emerald-50/95 shadow-sm"
-                        : "border-emerald-200 bg-[linear-gradient(180deg,rgba(236,253,245,0.92),rgba(240,253,250,0.96))] hover:border-emerald-300 hover:bg-[linear-gradient(180deg,rgba(220,252,231,0.96),rgba(236,253,245,0.98))]"
-                      : selected
-                        ? "border-primary bg-primary/5 shadow-sm"
-                        : "border-border bg-background hover:border-primary/30 hover:bg-muted/10",
-                  )}
-                >
-                  <div className="flex flex-col gap-4 p-3 sm:p-4 md:flex-row">
-                    <label className="flex shrink-0 items-start pt-1">
-                      <input
-                        type="checkbox"
-                        className="size-4 rounded border-input accent-primary"
-                        checked={isLessonSelected(lesson.id)}
-                        disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || isLocalLesson}
-                        onChange={(event) => toggleLessonSelection(lesson.id, event.target.checked)}
-                        onClick={(event) => event.stopPropagation()}
-                        aria-label={`选择课程 ${lesson.title || lesson.source_filename || lesson.id}`}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="flex min-w-0 flex-1 flex-col items-stretch gap-4 text-left sm:flex-row"
-                      onClick={() => {
-                        if (!isLocalLesson) {
-                          startLessonFromHistory(lesson.id);
-                        }
-                      }}
-                      disabled={isLocalLesson}
-                    >
-                      <MediaCover
-                        coverDataUrl={mediaMeta.coverDataUrl}
-                        alt={getCoverAssistiveText(lesson)}
-                        aspectRatio={mediaMeta.aspectRatio}
-                        className="w-full shrink-0 sm:max-w-[11rem] md:w-44"
-                      />
-
-                      <div className="flex min-w-0 flex-1 flex-col justify-between gap-3">
-                        <div className="space-y-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <div className="truncate text-lg font-semibold">{lesson.title}</div>
-                            {selected ? <Badge variant="outline">当前课程</Badge> : null}
-                            {selected && currentLessonNeedsBinding ? <Badge variant="secondary">需绑定本地视频</Badge> : null}
-                          </div>
-                          <p className="line-clamp-2 text-sm text-muted-foreground">{lesson.source_filename || "未命名素材"}</p>
-                          <div
-                            className={cn(
-                              "rounded-2xl border px-3 py-3",
-                              progressState.isComplete
-                                ? "border-emerald-200/80 bg-emerald-50/70"
-                                : progressState.isActive
-                                  ? "border-border/80 bg-background/90"
-                                  : "border-border/70 bg-background/80",
-                            )}
-                          >
-                            <div className="mb-2 flex items-center justify-between gap-3">
-                              <span
-                                className={cn(
-                                  "text-xs font-medium",
-                                  progressState.isComplete
-                                    ? "text-emerald-700"
-                                    : progressState.isActive
-                                      ? "text-foreground"
-                                      : "text-muted-foreground",
-                                )}
-                              >
-                                {progressState.statusLabel}
-                              </span>
-                              <span
-                                className={cn(
-                                  "text-sm font-semibold tabular-nums",
-                                  progressState.isComplete ? "text-emerald-700" : "text-foreground",
-                                )}
-                              >
-                                {progressState.progressLabel}
-                              </span>
-                            </div>
-                            {progressState.hasTrack ? (
-                              <Progress
-                                value={progressState.percent}
-                                className={cn(
-                                  "h-2.5 rounded-full",
-                                  progressState.isComplete
-                                    ? "bg-emerald-100/90 [&>[data-slot=progress-indicator]]:bg-emerald-500"
-                                    : progressState.isActive
-                                      ? "bg-muted/90 [&>[data-slot=progress-indicator]]:bg-primary"
-                                      : "bg-muted/80 [&>[data-slot=progress-indicator]]:bg-primary/70",
-                                )}
-                              />
-                            ) : (
-                              <div className="rounded-full border border-dashed border-border/80 bg-background/80 px-3 py-2 text-xs text-muted-foreground">
-                                {"\u53e5\u6570\u5f85\u540c\u6b65"}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* CEFR distribution badge */}
-                        {cefrLoading ? (
-                          <div className="flex items-center gap-2">
-                            <div className="h-1 flex-1 animate-pulse rounded-full bg-muted" />
-                            <span className="text-xs text-muted-foreground">分析中...</span>
-                          </div>
-                        ) : cefrDistribution ? (
-                          <div className="flex items-center gap-2">
-                            <div className="cefr-distribution-bar flex-1">
-                              {cefrDistribution.masteredPercent > 0 && (
-                                <div
-                                  className="cefr-distribution-segment cefr-distribution-segment--mastered"
-                                  style={{ width: `${cefrDistribution.masteredPercent}%` }}
-                                />
-                              )}
-                              {cefrDistribution.iPlusOnePercent > 0 && (
-                                <div
-                                  className="cefr-distribution-segment cefr-distribution-segment--i-plus-one"
-                                  style={{ width: `${cefrDistribution.iPlusOnePercent}%` }}
-                                />
-                              )}
-                              {cefrDistribution.aboveIPlusOnePercent > 0 && (
-                                <div
-                                  className="cefr-distribution-segment cefr-distribution-segment--above-i-plus-one"
-                                  style={{ width: `${cefrDistribution.aboveIPlusOnePercent}%` }}
-                                />
-                              )}
-                            </div>
-                            <span className={`history-card-cefr-badge ${
-                              cefrDistribution.iPlusOnePercent >= cefrDistribution.aboveIPlusOnePercent
-                                ? "history-card-cefr-badge--i-plus-one"
-                                : "history-card-cefr-badge--above-i-plus-one"
-                            }`}>
-                              {cefrDistribution.dominantLevel}: {Math.max(cefrDistribution.iPlusOnePercent, cefrDistribution.aboveIPlusOnePercent)}%
-                            </span>
-                          </div>
-                        ) : null}
-
-                        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                          <span>{sentenceCount} 句</span>
-                          <span className="inline-flex items-center gap-1">
-                            <Clock3 className="size-4" />
-                            {createdAtLabel}
-                          </span>
-                        </div>
-                      </div>
-                    </button>
-
-                    <div className="flex shrink-0 flex-row gap-2 md:w-40 md:flex-col">
-                      <Button
-                        type="button"
-                        className="min-h-11 flex-1 md:w-full"
-                        onClick={() => startLessonFromHistory(lesson.id)}
-                        disabled={isLocalLesson}
-                        data-guide-id={isGuideTarget ? "history-start-latest" : undefined}
-                      >
-                        <Play className="size-4" />
-                        {actionLabel}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="min-h-11 flex-1 md:w-full"
-                        onClick={() => void handleExportLesson(lesson)}
-                        disabled={Boolean(exportingLessonId) || renameBusy || deleteBusy || Boolean(restoringLessonId)}
-                      >
-                        <Download className="size-4" />
-                        {exportingLessonId === String(lesson.id) ? "导出中..." : "导出"}
-                      </Button>
-                      {!isLocalLesson ? (
-                        <Popover
-                          open={menuLessonId === lesson.id}
-                          onOpenChange={(open) => {
-                            setMenuLessonId(open ? lesson.id : null);
-                          }}
-                        >
-                          <PopoverTrigger asChild>
-                            <Button
-                              type="button"
-                              size="icon-sm"
-                              variant="outline"
-                              className="min-h-11 w-11 shrink-0 self-stretch md:w-auto md:self-end"
-                              aria-label="open-lesson-menu"
-                              disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
-                            >
-                              <MoreVertical className="size-4" />
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent align="end" sideOffset={8} className="w-[min(92vw,14rem)] p-2">
-                            <div className="flex flex-col gap-1">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="w-full justify-start"
-                                onClick={() => {
-                                  openRenameDialog(lesson);
-                                  setMenuLessonId(null);
-                                }}
-                                disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || Boolean(actionLessonId)}
-                              >
-                                <Pencil className="size-4" />
-                                修改标题
-                              </Button>
-                              {lesson.status === "partial_ready" ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  className="w-full justify-start"
-                                  onClick={() => void handleRecoverTranslation(lesson)}
-                                  disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || Boolean(actionLessonId)}
-                                >
-                                  <RotateCcw className="size-4" />
-                                  {actionLessonId === String(lesson.id) ? "补翻译中..." : "补翻译"}
-                                </Button>
-                              ) : null}
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="w-full justify-start"
-                                onClick={() => void handleSetLessonCompletion(lesson, !progressState.isComplete)}
-                                disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || Boolean(actionLessonId)}
-                              >
-                                <CheckCircle2 className="size-4" />
-                                {actionLessonId === String(lesson.id)
-                                  ? "处理中..."
-                                  : progressState.isComplete
-                                    ? "标记未完成"
-                                    : "标记学完"}
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="w-full justify-start"
-                                onClick={() => openRestorePicker(lesson)}
-                                disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || Boolean(actionLessonId)}
-                              >
-                                <RotateCcw className="size-4" />
-                                恢复本地视频
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="w-full justify-start text-destructive hover:text-destructive"
-                                onClick={() => {
-                                  setDeletingLesson(lesson);
-                                  setMenuLessonId(null);
-                                }}
-                                disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || Boolean(actionLessonId)}
-                              >
-                                <Trash2 className="size-4" />
-                                删除
-                              </Button>
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
+                  card={card}
+                  selected={selected}
+                  currentLessonNeedsBinding={currentLessonNeedsBinding}
+                  isGuideTarget={isGuideTarget}
+                  menuOpen={menuLessonId === lesson.id}
+                  exportingLessonId={exportingLessonId}
+                  renameBusy={renameBusy}
+                  deleteBusy={deleteBusy}
+                  restoringLessonId={restoringLessonId}
+                  actionLessonId={actionLessonId}
+                  isSelected={isLessonSelected(lesson.id)}
+                  onSelectionChange={toggleLessonSelection}
+                  onStart={startLessonFromHistory}
+                  onExport={(nextLesson) => void handleExportLesson(nextLesson)}
+                  onMenuOpenChange={(open) => setMenuLessonId(open ? lesson.id : null)}
+                  onRename={(nextLesson) => {
+                    openRenameDialog(nextLesson);
+                    setMenuLessonId(null);
+                  }}
+                  onRecoverTranslation={(nextLesson) => void handleRecoverTranslation(nextLesson)}
+                  onSetCompletion={(nextLesson, completed) => void handleSetLessonCompletion(nextLesson, completed)}
+                  onRestoreMedia={(nextLesson) => openRestorePicker(nextLesson)}
+                  onDelete={(nextLesson) => {
+                    setDeletingLesson(nextLesson);
+                    setMenuLessonId(null);
+                  }}
+                />
               );
             })}
             {hasMore ? (
@@ -1369,165 +718,35 @@ export function LessonList({
           </div>
         ) : null}
 
-        <Dialog
-          open={Boolean(renamingLesson)}
-          onOpenChange={(open) => {
-            if (!open && !renameBusy) {
-              setRenamingLesson(null);
-              setRenameTitle("");
-            }
-          }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>修改课程标题</DialogTitle>
-              <DialogDescription>保存后会立即显示在课程列表里。</DialogDescription>
-            </DialogHeader>
-            <Input
-              value={renameTitle}
-              onChange={(event) => setRenameTitle(event.target.value)}
-              placeholder="输入新的课程标题"
-              maxLength={255}
-              disabled={renameBusy}
-            />
-            <DialogFooter>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  if (renameBusy) return;
-                  setRenamingLesson(null);
-                  setRenameTitle("");
-                }}
-              >
-                取消
-              </Button>
-              <Button onClick={() => void submitRename()} disabled={renameBusy}>
-                {renameBusy ? "保存中..." : "保存"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <AlertDialog
-          open={Boolean(deletingLesson)}
-          onOpenChange={(open) => {
-            if (!open && !deleteBusy) {
-              setDeletingLesson(null);
-            }
-          }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>确认删除这节课程？</AlertDialogTitle>
-              <AlertDialogDescription>课程、学习进度和相关记录都会被删除，删除后不可恢复。</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={deleteBusy}>取消</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={(event) => {
-                  event.preventDefault();
-                  void submitDelete();
-                }}
-                disabled={deleteBusy}
-              >
-                {deleteBusy ? "删除中..." : "确认删除"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        <AlertDialog
-          open={bulkDeleteOpen}
-          onOpenChange={(open) => {
-            if (!open && !deleteBusy) {
-              setBulkDeleteOpen(false);
-            }
-          }}
-        >
-          <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>确认删除选中的历史记录？</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    {allHistorySelected
-                      ? excludedLessonIds.length > 0
-                        ? `将删除除已取消勾选的 ${excludedLessonIds.length} 项外，其余 ${selectedCount} 项历史记录；课程、学习进度和相关记录都会被删除，删除后不可恢复。`
-                        : `将删除全部历史记录中的 ${selectedCount} 项，课程、学习进度和相关记录都会被删除，删除后不可恢复。`
-                      : `将删除当前选中的 ${selectedCount} 项历史记录，课程、学习进度和相关记录都会被删除，删除后不可恢复。`}
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={deleteBusy}>取消</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={(event) => {
-                  event.preventDefault();
-                  void submitBulkDelete();
-                }}
-                disabled={deleteBusy || !hasSelection}
-              >
-                {deleteBusy ? "删除中..." : "确认批量删除"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        <AlertDialog open={restoreChoiceOpen} onOpenChange={setRestoreChoiceOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>选择恢复方式</AlertDialogTitle>
-              <AlertDialogDescription>
-                该视频来自网络链接，请选择恢复方式。
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <AlertDialogCancel onClick={() => restoreInputRef.current?.click()}>
-                恢复本地视频
-              </AlertDialogCancel>
-              {isDesktop && (
-                <AlertDialogAction onClick={handleLinkRestore}>
-                  按链接恢复
-                </AlertDialogAction>
-              )}
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        <AlertDialog open={overwriteConfirmOpen} onOpenChange={setOverwriteConfirmOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>本地已有视频</AlertDialogTitle>
-              <AlertDialogDescription>
-                本地已有该视频，是否覆盖？
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setOverwriteConfirmOpen(false)}>
-                取消
-              </AlertDialogCancel>
-              <AlertDialogAction onClick={handleOverwriteConfirm}>
-                覆盖
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        {status ? (
-          <Alert>
-            <AlertDescription>{status}</AlertDescription>
-          </Alert>
-        ) : null}
-
-        <input
-          ref={restoreInputRef}
-          type="file"
-          accept="video/*,audio/*"
-          className="hidden"
-          onChange={(event) => {
-            const nextFile = event.target.files?.[0] ?? null;
-            if (nextFile) {
-              void submitRestore(nextFile);
-            }
-            event.target.value = "";
-          }}
+        <LessonListDialogs
+          renamingLesson={renamingLesson}
+          renameTitle={renameTitle}
+          renameBusy={renameBusy}
+          onRenameTitleChange={setRenameTitle}
+          onCloseRename={closeRenameDialog}
+          onSubmitRename={() => void submitRename()}
+          deletingLesson={deletingLesson}
+          deleteBusy={deleteBusy}
+          onCloseDelete={closeDeleteDialog}
+          onSubmitDelete={() => void submitDelete()}
+          bulkDeleteOpen={bulkDeleteOpen}
+          onBulkDeleteOpenChange={handleBulkDeleteOpenChange}
+          allHistorySelected={allHistorySelected}
+          excludedLessonCount={excludedLessonIds.length}
+          selectedCount={selectedCount}
+          hasSelection={hasSelection}
+          onSubmitBulkDelete={() => void submitBulkDelete()}
+          restoreChoiceOpen={restoreChoiceOpen}
+          onRestoreChoiceOpenChange={setRestoreChoiceOpen}
+          isDesktop={isDesktop}
+          onPickRestoreFile={() => restoreInputRef.current?.click()}
+          onLinkRestore={() => void handleLinkRestore()}
+          overwriteConfirmOpen={overwriteConfirmOpen}
+          onOverwriteConfirmOpenChange={setOverwriteConfirmOpen}
+          onConfirmOverwrite={() => void handleOverwriteConfirm()}
+          status={status}
+          restoreInputRef={restoreInputRef}
+          onRestoreInputChange={(file) => void submitRestore(file)}
         />
       </CardContent>
     </Card>

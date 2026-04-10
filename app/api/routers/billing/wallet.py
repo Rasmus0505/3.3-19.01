@@ -11,7 +11,7 @@ from app.db import get_db
 from app.models import User
 from app.models.billing import WalletLedger
 from app.schemas import ErrorResponse, WalletMeResponse, WalletRedeemCodeRequest, WalletRedeemCodeResponse
-from app.services.billing_service import BillingError, calculate_points, consume_points, get_model_rate, get_or_create_wallet_account, record_consume, redeem_code
+from app.services.billing import BillingError, calculate_points, consume_points, get_model_rate, get_or_create_wallet_account, record_consume, redeem_code
 
 
 router = APIRouter(prefix="/api/wallet", tags=["wallet"])

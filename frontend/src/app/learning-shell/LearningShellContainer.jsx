@@ -1,25 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { toast } from "sonner";
-
-import { AdminApp } from "../../AdminApp";
-import { api, parseResponse, toErrorText } from "../../shared/api/client";
-import { getLessonMediaPreview, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
+import { api } from "../../shared/api/client";
 import {
-  getCachedLessonSubtitleVariant,
-  getLessonSubtitleAvailability,
-  getLessonSubtitleCache,
-  saveLessonSubtitleCacheSeed,
-  saveLessonSubtitleVariant,
-  setActiveLessonSubtitleVariant,
-} from "../../shared/media/localSubtitleStore.js";
-import {
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
   CommandDialog,
   CommandEmpty,
   CommandGroup,
@@ -29,104 +9,24 @@ import {
   Sidebar,
   SidebarInset,
   SidebarProvider,
-  Skeleton,
 } from "../../shared/ui";
-import { resolveAdminNavItem } from "../../shared/lib/adminSearchParams";
 import { useAppStore } from "../../store";
-import { getDefaultMediaPreview } from "../../store/slices/mediaSlice";
 import { AnnouncementBanner } from "../../components/AnnouncementBanner";
 import { AnnouncementModal } from "../../components/AnnouncementModal";
+import { LearningShellAdminContent } from "./LearningShellAdminContent";
 import { ConflictDialog } from "./ConflictDialog";
 import { LearningShellHeader } from "./LearningShellHeader";
 import { LearningShellPanelContent } from "./LearningShellPanelContent";
-import { PANEL_ITEMS, SIDEBAR_STORAGE_KEY, LearningShellSidebar } from "./LearningShellSidebar";
-import { getPanelItemByPathname, getPanelPath } from "./panelRoutes";
+import { SIDEBAR_STORAGE_KEY, LearningShellSidebar } from "./LearningShellSidebar";
 import { UploadTaskFloatingCard } from "./UploadTaskFloatingCard";
+import { useLearningShellController } from "./hooks/useLearningShellController";
 import { useCurrentLessonMediaBinding } from "./hooks/useCurrentLessonMediaBinding";
 import { useDesktopSync } from "./hooks/useDesktopSync";
 import { useLearningShellBootstrap } from "./hooks/useLearningShellBootstrap";
 import { useLearningShellPrefetch } from "./hooks/useLearningShellPrefetch";
 import { useOfflineMode } from "../../hooks/useOfflineMode";
-import { getShortcutCompleteness, readLearningSettings } from "../../features/immersive/learningSettings";
-
-async function requestOriginalSubtitleVariant(accessToken, lessonId, asrPayload) {
-  const resp = await api(
-    `/api/lessons/${lessonId}/subtitle-variants`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        asr_payload: asrPayload,
-        semantic_split_enabled: false,
-      }),
-    },
-    accessToken,
-  );
-  const data = await parseResponse(resp);
-  if (!resp.ok) {
-    const message = toErrorText(data, "重新生成字幕失败");
-    const error = new Error(message);
-    error.userMessage = message;
-    throw error;
-  }
-  return data;
-}
-
-function mergeLessonWithSubtitleVariant(lesson, variant) {
-  if (!lesson || !variant || !Array.isArray(variant.sentences) || variant.sentences.length === 0) {
-    return lesson;
-  }
-  return {
-    ...lesson,
-    sentences: variant.sentences,
-    subtitle_variant_state: {
-      semantic_split_enabled: false,
-      split_mode: String(variant.split_mode || ""),
-      source_word_count: Number(variant.source_word_count || 0),
-      local_only: true,
-    },
-  };
-}
-
-function applyLessonSubtitleVariantToStore(lessonId, activeVariant) {
-  useAppStore.setState((state) => ({
-    currentLesson: state.currentLesson?.id === lessonId ? mergeLessonWithSubtitleVariant(state.currentLesson, activeVariant) : state.currentLesson,
-    lessonCardMetaMap: {
-      ...state.lessonCardMetaMap,
-      [lessonId]: {
-        ...(state.lessonCardMetaMap[lessonId] || {}),
-        sentenceCount: Array.isArray(activeVariant?.sentences)
-          ? activeVariant.sentences.length
-          : Number(state.lessonCardMetaMap[lessonId]?.sentenceCount || 0),
-      },
-    },
-  }));
-}
-
-function buildCreatedLessonMediaPreview(lesson, mediaPreview, mediaPersisted) {
-  const rawLessonId = lesson?.id ?? mediaPreview?.lessonId ?? null;
-  const lessonId =
-    typeof rawLessonId === "number"
-      ? rawLessonId
-      : String(rawLessonId ?? "").trim() || 0;
-  return {
-    ...getDefaultMediaPreview(lessonId),
-    ...(mediaPreview || {}),
-    lessonId,
-    hasMedia: Boolean(mediaPersisted && (mediaPreview?.hasMedia ?? true)),
-    mediaType: String(mediaPreview?.mediaType || ""),
-    coverDataUrl: String(mediaPreview?.coverDataUrl || ""),
-    aspectRatio: Number(mediaPreview?.aspectRatio || 0),
-    fileName: String(mediaPreview?.fileName || lesson?.source_filename || ""),
-  };
-}
-
-const MOBILE_MEDIA_QUERY = "(max-width: 767px)";
 
 export function LearningShellContainer() {
-  const location = useLocation();
-  const navigate = useNavigate();
-
   const accessToken = useAppStore((state) => state.accessToken);
   const hasStoredToken = useAppStore((state) => state.hasStoredToken);
   const authStatus = useAppStore((state) => state.authStatus);
@@ -150,7 +50,6 @@ export function LearningShellContainer() {
   const billingRates = useAppStore((state) => state.billingRates);
   const subtitleSettings = useAppStore((state) => state.subtitleSettings);
   const lessonCardMetaMap = useAppStore((state) => state.lessonCardMetaMap);
-
   const lessonMediaMetaMap = useAppStore((state) => state.lessonMediaMetaMap);
   const currentLessonNeedsBinding = useAppStore((state) => state.currentLessonNeedsBinding);
   const mediaRestoreTick = useAppStore((state) => state.mediaRestoreTick);
@@ -171,7 +70,6 @@ export function LearningShellContainer() {
   const deleteLesson = useAppStore((state) => state.deleteLesson);
   const deleteLessonsBulk = useAppStore((state) => state.deleteLessonsBulk);
   const refreshSubtitleCacheMeta = useAppStore((state) => state.refreshSubtitleCacheMeta);
-
   const prefetchLessonMediaMeta = useAppStore((state) => state.prefetchLessonMediaMeta);
   const detectCurrentLessonMediaBinding = useAppStore((state) => state.detectCurrentLessonMediaBinding);
   const mergeLessonMediaMeta = useAppStore((state) => state.mergeLessonMediaMeta);
@@ -185,40 +83,13 @@ export function LearningShellContainer() {
   const setImmersiveActive = useAppStore((state) => state.setImmersiveActive);
   const setUploadTaskState = useAppStore((state) => state.setUploadTaskState);
 
-  const [adminNavExpanded, setAdminNavExpanded] = useState(false);
-  const isAdminRoute = location.pathname.startsWith("/admin");
-  const activeAdminItem = useMemo(() => resolveAdminNavItem(location.pathname, location.search), [location.pathname, location.search]);
-  const activePanel = isAdminRoute ? null : getPanelItemByPathname(location.pathname).key;
-  const immersiveLayoutActive = Boolean(accessToken && currentLesson?.id && immersiveActive);
-  const lastNonImmersivePanelRef = useRef(getPanelItemByPathname(location.pathname).key);
-  const [isMobileViewport, setIsMobileViewport] = useState(() =>
-    typeof window !== "undefined" ? window.matchMedia(MOBILE_MEDIA_QUERY).matches : false,
-  );
-  const [latestGeneratedLessonId, setLatestGeneratedLessonId] = useState(0);
-  const [wordbookRefreshToken, setWordbookRefreshToken] = useState(0);
-  const [announcements, setAnnouncements] = useState([]);
-  const originalSubtitleRecoveryRef = useRef(new Map());
-
   useLearningShellBootstrap({
     accessToken,
     loadCatalog,
     loadWallet,
     loadBillingRates,
   });
-  useLearningShellPrefetch({
-    accessToken,
-    activePanel,
-    immersiveLayoutActive,
-    lessons,
-    prefetchLessonMediaMeta,
-    refreshSubtitleCacheMeta,
-  });
-  useCurrentLessonMediaBinding({
-    currentLesson,
-    detectCurrentLessonMediaBinding,
-  });
 
-  const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
   const isDesktopEnv = Boolean(typeof window !== "undefined" && window.syncEngine);
   const desktopSync = useDesktopSync({ accessToken, isDesktop: isDesktopEnv });
 
@@ -231,407 +102,91 @@ export function LearningShellContainer() {
     },
   });
 
-  useEffect(() => {
-    if (desktopSync.conflicts.length > 0 && !conflictDialogOpen) {
-      setConflictDialogOpen(true);
-    }
-  }, [desktopSync.conflicts.length, conflictDialogOpen]);
+  const controller = useLearningShellController({
+    accessToken,
+    hasStoredToken,
+    authStatus,
+    authStatusMessage,
+    currentLesson,
+    currentUser,
+    lessons,
+    lessonsTotal,
+    lessonsPage,
+    lessonsQuery,
+    hasMoreLessons,
+    loadingLessons,
+    loadingMoreLessons,
+    walletBalance,
+    billingRates,
+    subtitleSettings,
+    lessonCardMetaMap,
+    lessonMediaMetaMap,
+    currentLessonNeedsBinding,
+    mediaRestoreTick,
+    globalStatus,
+    commandOpen,
+    commandQuery,
+    immersiveActive,
+    loadCatalog,
+    loadLessonDetail,
+    loadWallet,
+    refreshCurrentLesson,
+    renameLesson,
+    deleteLesson,
+    deleteLessonsBulk,
+    refreshSubtitleCacheMeta,
+    mergeLessonMediaMeta,
+    setCurrentLessonNeedsBinding,
+    bumpMediaRestoreTick,
+    setGlobalStatus,
+    setCommandOpen,
+    setCommandQuery,
+    setMobileNavOpen,
+    setImmersiveActive,
+    setUploadTaskState,
+    hydrateAccessToken,
+    logout,
+    detectAdmin,
+    isAdminUser,
+    adminAuthState,
+    desktopSync,
+  });
 
-  useEffect(() => {
-    if (!immersiveLayoutActive) {
-      if (activePanel) {
-        lastNonImmersivePanelRef.current = activePanel;
-      }
-    }
-  }, [activeAdminItem.key, activePanel, immersiveLayoutActive, isAdminRoute, location.pathname]);
-
-  useEffect(() => {
-    if (!isAdminRoute) return;
-    setAdminNavExpanded(true);
-  }, [isAdminRoute]);
-
-  useEffect(() => {
-    if (!accessToken || !isAdminRoute || adminAuthState !== "idle") return;
-    void detectAdmin();
-  }, [accessToken, adminAuthState, detectAdmin, isAdminRoute]);
-
-  useEffect(() => {
-    if (!accessToken) {
-      setAnnouncements([]);
-      return;
-    }
-    let canceled = false;
-    async function loadAnnouncements() {
-      try {
-        const resp = await api("/api/announcements/active", {}, accessToken);
-        if (canceled) return;
-        if (resp.ok) {
-          const data = await resp.json();
-          if (!canceled) setAnnouncements(Array.isArray(data) ? data : []);
-        }
-      } catch (_) {
-        // Silently ignore announcement fetch errors — non-critical UX feature.
-      }
-    }
-    void loadAnnouncements();
-    return () => {
-      canceled = true;
-    };
-  }, [accessToken]);
-
-  useEffect(() => {
-    setMobileNavOpen(false);
-  }, [location.pathname, setMobileNavOpen]);
-
-  useEffect(() => {
-    if (!accessToken || !commandOpen) return undefined;
-    const timer = setTimeout(() => {
-      void loadCatalog({
-        page: 1,
-        query: commandQuery,
-        preferredLessonId: currentLesson?.id || null,
-      });
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [accessToken, commandOpen, commandQuery, currentLesson?.id, loadCatalog]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const mediaQueryList = window.matchMedia(MOBILE_MEDIA_QUERY);
-    const updateViewport = () => setIsMobileViewport(mediaQueryList.matches);
-    updateViewport();
-    if (typeof mediaQueryList.addEventListener === "function") {
-      mediaQueryList.addEventListener("change", updateViewport);
-      return () => mediaQueryList.removeEventListener("change", updateViewport);
-    }
-    mediaQueryList.addListener(updateViewport);
-    return () => mediaQueryList.removeListener(updateViewport);
-  }, []);
-
-  const filteredLessons = useMemo(() => lessons, [lessons]);
-  const currentPanel = isAdminRoute
-    ? { title: activeAdminItem.label }
-    : PANEL_ITEMS.find((item) => item.key === activePanel) || PANEL_ITEMS[0];
-
-  async function persistLessonSubtitleCacheSeed(lesson) {
-    if (!lesson?.id || !lesson?.subtitle_cache_seed) return;
-    try {
-      await saveLessonSubtitleCacheSeed(lesson.id, lesson.subtitle_cache_seed);
-      await refreshSubtitleCacheMeta([{ id: lesson.id }], { merge: true });
-    } catch (_) {
-      // Ignore local subtitle cache write failures.
-    }
-  }
-
-  useEffect(() => {
-    const lessonId = Number(currentLesson?.id || 0);
-    if (!accessToken || lessonId <= 0) return;
-
-    const recoveryState = originalSubtitleRecoveryRef.current.get(lessonId);
-    if (recoveryState === "pending" || recoveryState === "done" || recoveryState === "missing") {
-      return;
-    }
-
-    let canceled = false;
-    originalSubtitleRecoveryRef.current.set(lessonId, "pending");
-
-    async function ensureOriginalAsrLesson() {
-      try {
-        if (currentLesson?.subtitle_cache_seed) {
-          await persistLessonSubtitleCacheSeed(currentLesson);
-        }
-
-        let activeVariant = await getCachedLessonSubtitleVariant(lessonId, false);
-        if (activeVariant) {
-          await setActiveLessonSubtitleVariant(lessonId, false);
-        } else {
-          const subtitleCacheMeta = await getLessonSubtitleAvailability(lessonId);
-          if (!subtitleCacheMeta?.hasSource) {
-            originalSubtitleRecoveryRef.current.set(lessonId, "missing");
-            return;
-          }
-          const rawCache = await getLessonSubtitleCache(lessonId);
-          const asrPayload = rawCache?.asr_payload || currentLesson?.subtitle_cache_seed?.asr_payload || null;
-          if (!asrPayload || typeof asrPayload !== "object") {
-            originalSubtitleRecoveryRef.current.set(lessonId, "missing");
-            return;
-          }
-          const data = await requestOriginalSubtitleVariant(accessToken, lessonId, asrPayload);
-          activeVariant = await saveLessonSubtitleVariant(lessonId, data);
-        }
-
-        if (!activeVariant) {
-          originalSubtitleRecoveryRef.current.set(lessonId, "missing");
-          return;
-        }
-
-        if (canceled) {
-          originalSubtitleRecoveryRef.current.delete(lessonId);
-          return;
-        }
-        applyLessonSubtitleVariantToStore(lessonId, activeVariant);
-        await refreshSubtitleCacheMeta([{ id: lessonId }], { merge: true });
-        originalSubtitleRecoveryRef.current.set(lessonId, "done");
-      } catch (_) {
-        originalSubtitleRecoveryRef.current.delete(lessonId);
-      }
-    }
-
-    void ensureOriginalAsrLesson();
-    return () => {
-      canceled = true;
-      if (originalSubtitleRecoveryRef.current.get(lessonId) === "pending") {
-        originalSubtitleRecoveryRef.current.delete(lessonId);
-      }
-    };
-  }, [accessToken, currentLesson, refreshSubtitleCacheMeta]);
-
-  function handleAuthed() {
-    hydrateAccessToken();
-    setGlobalStatus("");
-    setUploadTaskState(null);
-  }
-
-  function handleGoToLogin() {
-    navigate(getPanelPath("history"));
-  }
-
-  function handleGoToHistoryPanel() {
-    navigate(getPanelPath("history"));
-    setMobileNavOpen(false);
-  }
-
-  function handlePanelChange(nextPanel) {
-    if (immersiveLayoutActive) {
-      setImmersiveActive(false);
-    }
-    navigate(getPanelPath(nextPanel));
-    setMobileNavOpen(false);
-  }
-
-  function handleAdminToggle(nextExpanded) {
-    setAdminNavExpanded((prev) => (typeof nextExpanded === "boolean" ? nextExpanded : !prev));
-  }
-
-  function handleAdminSelect(item) {
-    setAdminNavExpanded(true);
-    setMobileNavOpen(false);
-    navigate(item.href);
-  }
-
-  function handleLogout() {
-    logout();
-    navigate("/");
-  }
-
-  function handleExitImmersive() {
-    setImmersiveActive(false);
-    navigate(getPanelPath(lastNonImmersivePanelRef.current));
-  }
-
-  function handleWordbookChanged() {
-    setWordbookRefreshToken((current) => current + 1);
-  }
-
-  async function handleLessonCreated(payload) {
-    const lesson = payload?.lesson || null;
-    const lessonId = lesson?.id;
-    if (!lessonId) return;
-    setLatestGeneratedLessonId(Number(lessonId));
-
-    const mediaPersisted = Boolean(payload?.mediaPersisted);
-    const needsBinding = lesson.media_storage === "client_indexeddb" && !mediaPersisted;
-    const mediaPreview = buildCreatedLessonMediaPreview(lesson, payload?.mediaPreview, mediaPersisted);
-
-    lastNonImmersivePanelRef.current = "history";
-    setImmersiveActive(false);
-    navigate(getPanelPath("history"));
-    mergeLessonMediaMeta({ [lessonId]: mediaPreview });
-    await persistLessonSubtitleCacheSeed(lesson);
-    await loadCatalog({ page: 1, query: "", preferredLessonId: lessonId, autoEnterImmersive: false });
-    await loadWallet();
-    setCurrentLessonNeedsBinding(needsBinding);
-  }
-
-  async function handleCommandSelect(lessonId) {
-    if (!lessonId) return;
-    setCommandOpen(false);
-    setCommandQuery("");
-    navigate("/");
-    if (lessonId !== currentLesson?.id) {
-      await loadLessonDetail(lessonId, { autoEnterImmersive: false });
-    }
-    if (lessonsQuery) {
-      void loadCatalog({ page: 1, query: "" });
-    }
-  }
-
-  function handleStartImmersive() {
-    if (!currentLesson?.id) return;
-    lastNonImmersivePanelRef.current = activePanel;
-    setImmersiveActive(true);
-  }
-
-  function handleStartLesson(lessonId) {
-    if (!lessonId) return;
-    const { complete, missingActions } = getShortcutCompleteness(readLearningSettings());
-    if (!complete) {
-      const names = missingActions.map((a) => a.label).join("、");
-      setGlobalStatus(`快捷键未配置完整：${names}。请先在下方「学习参数」区域配置好所有快捷键，再开始学习。`);
-      return;
-    }
-    lastNonImmersivePanelRef.current = activePanel;
-    navigate(`/immersive/${lessonId}`);
-  }
-
-  async function handleNavigateToGeneratedLesson(lessonId) {
-    if (!lessonId) return;
-    const { complete, missingActions } = getShortcutCompleteness(readLearningSettings());
-    if (!complete) {
-      const names = missingActions.map((a) => a.label).join("、");
-      setGlobalStatus(`快捷键未配置完整：${names}。请先在下方「学习参数」区域配置好所有快捷键，再开始学习。`);
-      return;
-    }
-    lastNonImmersivePanelRef.current = "history";
-    navigate(getPanelPath("history"));
-    await loadLessonDetail(lessonId, { autoEnterImmersive: true });
-  }
-
-  async function handleRenameLesson(lessonId, title) {
-    return renameLesson(lessonId, title);
-  }
-
-  async function handleDeleteLesson(lessonId) {
-    const result = await deleteLesson(lessonId);
-    if (result.ok) {
-      toast.success("删除历史成功");
-    }
-    return result;
-  }
-
-  async function handleBulkDeleteLessons(payload = {}) {
-    const result = await deleteLessonsBulk(payload);
-    if (result.ok) {
-      toast.success(result.message || `已删除 ${Number(result.deletedCount || 0)} 条历史记录`);
-    }
-    return result;
-  }
-
-  async function handleRestoreLessonMedia(lesson, file) {
-    if (!lesson?.id || !file) {
-      return { ok: false, message: "恢复视频参数无效" };
-    }
-    try {
-      const expectedSourceDurationSec = Math.max(0, Number(lesson.source_duration_ms || 0) / 1000);
-      if (expectedSourceDurationSec > 0) {
-        const localDurationSec = await readMediaDurationSeconds(file, file.name || lesson.source_filename || "");
-        const delta = Math.abs(localDurationSec - expectedSourceDurationSec);
-        if (delta > 0.5) {
-          const message = `恢复失败：文件时长差 ${delta.toFixed(3)} 秒，超过 0.5 秒阈值（本地 ${localDurationSec.toFixed(
-            3,
-          )} 秒，课程 ${expectedSourceDurationSec.toFixed(3)} 秒）。`;
-          return { ok: false, message };
-        }
-      }
-
-      await requestPersistentStorage();
-      await saveLessonMedia(lesson.id, file);
-      const mediaPreview = await getLessonMediaPreview(lesson.id);
-      mergeLessonMediaMeta({ [lesson.id]: mediaPreview });
-      if (currentLesson?.id === lesson.id) {
-        setCurrentLessonNeedsBinding(false);
-      }
-      bumpMediaRestoreTick();
-      return { ok: true, message: "恢复视频成功" };
-    } catch (error) {
-      const message = `恢复失败：${String(error)}`;
-      return { ok: false, message };
-    }
-  }
-
-  async function handleLoadMoreLessons() {
-    if (loadingMoreLessons || !hasMoreLessons) return;
-    await loadCatalog({
-      page: lessonsPage + 1,
-      query: lessonsQuery,
-      append: true,
-    });
-  }
-
-  function renderAdminContent() {
-    if (!accessToken) {
-      const expired = authStatus === "expired";
-      return (
-        <Card>
-          <CardHeader>
-            <CardTitle>{expired ? "登录已失效" : "未登录"}</CardTitle>
-            <CardDescription>{expired ? authStatusMessage || "请返回学习页重新登录后再访问管理台。" : "请先登录后再访问管理台。"}</CardDescription>
-          </CardHeader>
-          <CardContent className="flex gap-2">
-            <Button onClick={() => navigate("/")}>返回学习页登录</Button>
-            {hasStoredToken ? (
-              <Button variant="outline" onClick={handleLogout}>
-                退出登录
-              </Button>
-            ) : null}
-          </CardContent>
-        </Card>
-      );
-    }
-
-    if (adminAuthState === "idle" || adminAuthState === "checking") {
-      return (
-        <Card>
-          <CardContent className="space-y-3 p-6">
-            <p className="text-sm text-muted-foreground">正在验证管理员权限...</p>
-            <Skeleton className="h-4 w-52" />
-          </CardContent>
-        </Card>
-      );
-    }
-
-    if (!isAdminUser) {
-      return (
-        <Card>
-          <CardHeader>
-            <CardTitle>权限不足</CardTitle>
-            <CardDescription>需要管理员权限</CardDescription>
-          </CardHeader>
-          <CardContent className="flex gap-2">
-            <Button variant="outline" onClick={() => navigate("/")}>
-              返回学习页
-            </Button>
-            <Button onClick={handleLogout}>退出登录</Button>
-          </CardContent>
-        </Card>
-      );
-    }
-
-    return <AdminApp apiCall={(path, options = {}) => api(path, options, accessToken)} onLogout={handleLogout} />;
-  }
+  useLearningShellPrefetch({
+    accessToken,
+    activePanel: controller.activePanel,
+    immersiveLayoutActive: controller.immersiveLayoutActive,
+    lessons,
+    prefetchLessonMediaMeta,
+    refreshSubtitleCacheMeta,
+  });
+  useCurrentLessonMediaBinding({
+    currentLesson,
+    detectCurrentLessonMediaBinding,
+  });
 
   return (
     <SidebarProvider storageKey={SIDEBAR_STORAGE_KEY}>
       <div className="section-soft min-h-screen overflow-x-clip bg-background md:flex">
-        {!immersiveLayoutActive ? (
+        {!controller.immersiveLayoutActive ? (
           <Sidebar className="bg-background/95">
             <LearningShellSidebar
-              activePanel={activePanel}
-              onPanelSelect={handlePanelChange}
+              activePanel={controller.activePanel}
+              onPanelSelect={controller.handlePanelChange}
               accessToken={accessToken}
               walletBalance={walletBalance}
               hasLessons={lessons.length > 0}
               onOpenSearch={() => setCommandOpen(true)}
-              onLogout={handleLogout}
+              onLogout={controller.handleLogout}
               hasStoredToken={hasStoredToken}
               authStatus={authStatus}
               authStatusMessage={authStatusMessage}
               isAdminUser={isAdminUser}
-              isAdminRoute={isAdminRoute}
-              activeAdminKey={activeAdminItem.key}
-              adminNavExpanded={adminNavExpanded}
-              onAdminToggle={handleAdminToggle}
-              onAdminSelect={handleAdminSelect}
+              isAdminRoute={controller.isAdminRoute}
+              activeAdminKey={controller.activeAdminItem.key}
+              adminNavExpanded={controller.adminNavExpanded}
+              onAdminToggle={controller.handleAdminToggle}
+              onAdminSelect={controller.handleAdminSelect}
               isDesktopSync={isDesktopEnv}
               syncStatus={desktopSync.syncStatus}
               syncInProgress={desktopSync.syncStatus === "syncing"}
@@ -640,7 +195,7 @@ export function LearningShellContainer() {
               lastSyncDisplay={desktopSync.lastSyncDisplay}
               onForceSync={desktopSync.forceSync}
               pendingCounts={desktopSync.pendingCounts}
-              onOpenConflicts={() => setConflictDialogOpen(true)}
+              onOpenConflicts={() => controller.setConflictDialogOpen(true)}
               isOnline={offlineMode.isOnline}
               isSyncing={offlineMode.isSyncing}
               connectionStatus={offlineMode.syncStatus}
@@ -651,35 +206,34 @@ export function LearningShellContainer() {
         ) : null}
 
         <SidebarInset className="min-w-0">
-          {!immersiveLayoutActive ? (
+          {!controller.immersiveLayoutActive ? (
             <LearningShellHeader
-              currentPanel={currentPanel}
+              currentPanel={controller.currentPanel}
               accessToken={accessToken}
               lessonsCount={lessons.length}
               walletBalance={walletBalance}
               mobileNavOpen={mobileNavOpen}
               setMobileNavOpen={setMobileNavOpen}
-              activePanel={activePanel}
-              onPanelSelect={handlePanelChange}
+              activePanel={controller.activePanel}
+              onPanelSelect={controller.handlePanelChange}
               onOpenSearch={() => setCommandOpen(true)}
-              onLogout={handleLogout}
+              onLogout={controller.handleLogout}
               hasStoredToken={hasStoredToken}
               authStatus={authStatus}
               authStatusMessage={authStatusMessage}
               isAdminUser={isAdminUser}
-              isAdminRoute={isAdminRoute}
-              activeAdminKey={activeAdminItem.key}
-              adminNavExpanded={adminNavExpanded}
-              onAdminToggle={handleAdminToggle}
-              onAdminSelect={handleAdminSelect}
+              isAdminRoute={controller.isAdminRoute}
+              activeAdminKey={controller.activeAdminItem.key}
+              adminNavExpanded={controller.adminNavExpanded}
+              onAdminToggle={controller.handleAdminToggle}
+              onAdminSelect={controller.handleAdminSelect}
             />
           ) : null}
 
-          {/* Announcement banners — only show for non-admin, logged-in users */}
-          {!isAdminRoute && accessToken && announcements.filter((a) => a.type === "banner").length > 0 ? (
+          {!controller.isAdminRoute && accessToken && controller.announcements.filter((a) => a.type === "banner").length > 0 ? (
             <div className="container-wrapper py-0">
               <div className="container space-y-2">
-                {announcements
+                {controller.announcements
                   .filter((a) => a.type === "banner")
                   .map((ann) => (
                     <AnnouncementBanner key={ann.id} announcement={ann} />
@@ -690,21 +244,32 @@ export function LearningShellContainer() {
 
           <main className="container-wrapper min-w-0 py-3 md:py-6">
             <div className="container">
-              {isAdminRoute ? (
-                renderAdminContent()
+              {controller.isAdminRoute ? (
+                <LearningShellAdminContent
+                  accessToken={accessToken}
+                  hasStoredToken={hasStoredToken}
+                  authStatus={authStatus}
+                  authStatusMessage={authStatusMessage}
+                  adminAuthState={adminAuthState}
+                  isAdminUser={isAdminUser}
+                  onGoToLogin={controller.handleGoToLogin}
+                  onGoToHistory={controller.handleGoToHistoryPanel}
+                  onLogout={controller.handleLogout}
+                  apiCall={(path, options = {}) => api(path, options, accessToken)}
+                />
               ) : (
                 <LearningShellPanelContent
-                  activePanel={activePanel}
+                  activePanel={controller.activePanel}
                   accessToken={accessToken}
                   currentLesson={currentLesson}
                   currentUser={currentUser}
-                  immersiveLayoutActive={immersiveLayoutActive}
+                  immersiveLayoutActive={controller.immersiveLayoutActive}
                   mediaRestoreTick={mediaRestoreTick}
                   globalStatus={globalStatus}
-                  onAuthed={handleAuthed}
+                  onAuthed={controller.handleAuthed}
                   onProgressSynced={refreshCurrentLesson}
-                  onExitImmersive={handleExitImmersive}
-                  onStartImmersive={handleStartImmersive}
+                  onExitImmersive={controller.handleExitImmersive}
+                  onStartImmersive={controller.handleStartImmersive}
                   lessons={lessons}
                   totalLessons={lessonsTotal}
                   currentLessonNeedsBinding={currentLessonNeedsBinding}
@@ -713,40 +278,40 @@ export function LearningShellContainer() {
                   loadingLessons={loadingLessons}
                   hasMoreLessons={hasMoreLessons}
                   loadingMoreLessons={loadingMoreLessons}
-                  onLoadMoreLessons={handleLoadMoreLessons}
-                  onStartLesson={handleStartLesson}
-                  onRenameLesson={handleRenameLesson}
-                  onDeleteLesson={handleDeleteLesson}
-                  onBulkDeleteLessons={handleBulkDeleteLessons}
-                  onRestoreLessonMedia={handleRestoreLessonMedia}
+                  onLoadMoreLessons={controller.handleLoadMoreLessons}
+                  onStartLesson={controller.handleStartLesson}
+                  onRenameLesson={controller.handleRenameLesson}
+                  onDeleteLesson={controller.handleDeleteLesson}
+                  onBulkDeleteLessons={controller.handleBulkDeleteLessons}
+                  onRestoreLessonMedia={controller.handleRestoreLessonMedia}
                   onRefreshHistory={() => loadCatalog({ page: 1, query: lessonsQuery, autoEnterImmersive: false })}
-                  onSwitchToUpload={() => handlePanelChange("upload")}
+                  onSwitchToUpload={() => controller.handlePanelChange("upload")}
                   walletBalance={walletBalance}
                   billingRates={billingRates}
                   subtitleSettings={subtitleSettings}
-                  onCreatedLesson={handleLessonCreated}
+                  onCreatedLesson={controller.handleLessonCreated}
                   onWalletChanged={loadWallet}
                   onTaskStateChange={setUploadTaskState}
-                  onNavigateToGeneratedLesson={handleNavigateToGeneratedLesson}
+                  onNavigateToGeneratedLesson={controller.handleNavigateToGeneratedLesson}
                   apiCall={(path, options = {}) => api(path, options, accessToken)}
-                  isMobileViewport={isMobileViewport}
-                  onGoToLogin={handleGoToLogin}
-                  onGoToHistory={handleGoToHistoryPanel}
-                  guideTargetLessonId={latestGeneratedLessonId}
-                  wordbookRefreshToken={wordbookRefreshToken}
-                  onWordbookChanged={handleWordbookChanged}
+                  isMobileViewport={controller.isMobileViewport}
+                  onGoToLogin={controller.handleGoToLogin}
+                  onGoToHistory={controller.handleGoToHistoryPanel}
+                  guideTargetLessonId={controller.latestGeneratedLessonId}
+                  wordbookRefreshToken={controller.wordbookRefreshToken}
+                  onWordbookChanged={controller.handleWordbookChanged}
                   isOnline={offlineMode.isOnline}
                 />
               )}
             </div>
           </main>
 
-          {!isAdminRoute ? (
+          {!controller.isAdminRoute ? (
             <UploadTaskFloatingCard
-              activePanel={activePanel}
+              activePanel={controller.activePanel}
               accessToken={accessToken}
               uploadTaskState={uploadTaskState}
-              onOpenUpload={() => handlePanelChange("upload")}
+              onOpenUpload={() => controller.handlePanelChange("upload")}
             />
           ) : null}
 
@@ -766,8 +331,12 @@ export function LearningShellContainer() {
             <CommandList>
               <CommandEmpty>没有找到匹配的课程</CommandEmpty>
               <CommandGroup heading="课程">
-                {filteredLessons.map((lesson) => (
-                  <CommandItem key={lesson.id} value={`${lesson.title || ""} ${lesson.asr_model || ""} ${lesson.id}`} onSelect={() => void handleCommandSelect(lesson.id)}>
+                {controller.filteredLessons.map((lesson) => (
+                  <CommandItem
+                    key={lesson.id}
+                    value={`${lesson.title || ""} ${lesson.asr_model || ""} ${lesson.id}`}
+                    onSelect={() => void controller.handleCommandSelect(lesson.id)}
+                  >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{lesson.title || `课程 ${lesson.id}`}</p>
                       <p className="truncate text-xs text-muted-foreground">
@@ -781,27 +350,18 @@ export function LearningShellContainer() {
           </CommandDialog>
         </SidebarInset>
       </div>
+
       {isDesktopEnv ? (
         <ConflictDialog
-          open={conflictDialogOpen}
-          onOpenChange={setConflictDialogOpen}
+          open={controller.conflictDialogOpen}
+          onOpenChange={controller.setConflictDialogOpen}
           conflicts={desktopSync.conflicts}
           onResolve={desktopSync.resolveConflict}
         />
       ) : null}
 
-      {/* Announcement modals — only show for logged-in users */}
       {accessToken ? (
-        <AnnouncementModal announcements={announcements.filter((a) => a.type === "modal")} />
-      ) : null}
-
-      {isDesktopEnv ? (
-        <ConflictDialog
-          open={conflictDialogOpen}
-          onOpenChange={setConflictDialogOpen}
-          conflicts={desktopSync.conflicts}
-          onResolve={desktopSync.resolveConflict}
-        />
+        <AnnouncementModal announcements={controller.announcements.filter((a) => a.type === "modal")} />
       ) : null}
     </SidebarProvider>
   );

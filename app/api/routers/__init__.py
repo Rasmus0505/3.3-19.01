@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from app.api.routers.auth.router import router as auth
+from app.api.routers.auth import router as auth
 import app.api.routers.lessons as lessons
 from app.api.routers.lessons import router as lessons_router
-from app.api.routers.billing.router import router as billing
+from app.api.routers.billing import router as billing
 from app.api.routers.billing.wallet import router as wallet
-# app/api/routers/admin/ (directory) shadows app/api/routers/admin.py (file).
-# Use __import__ to bypass the package and load router.py directly from the sub-package.
 from app.api.routers.admin import router as admin
 from app.api.routers.admin.console import router as admin_console
 from app.api.routers.admin.sql_console import router as admin_sql_console

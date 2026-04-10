@@ -5,6 +5,9 @@ export { useMediaController } from './useMediaController';
 export { useTypingController } from './useTypingController';
 export { useExplanation } from './useExplanation';
 export { useCEFR } from './useCEFR';
+export { useImmersiveKeyboard } from './useImmersiveKeyboard';
+export { useImmersivePreferences } from './useImmersivePreferences';
+export { useWordbookSelection } from './useWordbookSelection';
 
 export type {
   PlayerState,

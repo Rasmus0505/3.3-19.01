@@ -15,13 +15,25 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
-from app.api.routers import admin, admin_announcements, admin_console, admin_sql_console, announcement_public, asr_models, asr_models_router, auth, billing, lessons, lessons_router, llm, media, practice, soe, transcribe, wallet
-from app.api.routers.voice_cloning import router as voice_cloning_router
-from app.api.routers.tts import router as tts_router
+from app.api.routers.admin.announcements import router as admin_announcements_router
+from app.api.routers.admin.console import router as admin_console_router
+from app.api.routers.admin.router import router as admin_router
+from app.api.routers.admin.sql_console import router as admin_sql_console_router
 from app.api.routers.announcement_public import router as announcement_public_router
+from app.api.routers.asr_models import router as asr_models_router
+from app.api.routers.auth.router import router as auth_router
+from app.api.routers.billing.router import router as billing_router
+from app.api.routers.billing.wallet import router as wallet_router
 from app.api.routers.dashscope_upload import router as dashscope_upload_router
-# from app.api.routers.local_asr_assets import router as local_asr_assets_router  # TODO: 创建缺失模块
 from app.api.routers.lessons.cloud_transcribe import router as cloud_transcribe_router
+from app.api.routers.lessons.router import router as lessons_router
+from app.api.routers.llm import router as llm_router
+from app.api.routers.media import router as media_router
+from app.api.routers.practice import router as practice_router
+from app.api.routers.soe import router as soe_router
+from app.api.routers.transcribe import router as transcribe_router
+from app.api.routers.tts import router as tts_router
+from app.api.routers.voice_cloning import router as voice_cloning_router
 from app.core.config import (
     APP_DIR,
     BASE_DATA_DIR,
@@ -42,7 +54,7 @@ from app.models import LessonGenerationTask
 from app.services.admin_bootstrap import ensure_admin_users
 from app.services.asr_dashscope import setup_dashscope
 from app.services.asr_model_registry import list_asr_models_with_status
-from app.services.billing_service import ensure_default_billing_rates
+from app.services.billing import ensure_default_billing_rates
 from app.services.media import get_media_runtime_status
 from app.services.user_activity import ensure_user_activity_schema
 
@@ -723,24 +735,24 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
             return payload
         return JSONResponse(status_code=503, content=payload)
 
-    app.include_router(auth)
-    app.include_router(wallet)
-    app.include_router(billing)
-    app.include_router(admin)
-    app.include_router(admin_console)
-    app.include_router(admin_sql_console)
-    app.include_router(admin_announcements)
-    app.include_router(transcribe)
+    app.include_router(auth_router)
+    app.include_router(wallet_router)
+    app.include_router(billing_router)
+    app.include_router(admin_router)
+    app.include_router(admin_console_router)
+    app.include_router(admin_sql_console_router)
+    app.include_router(admin_announcements_router)
+    app.include_router(transcribe_router)
     app.include_router(lessons_router)
     app.include_router(cloud_transcribe_router)
     app.include_router(dashscope_upload_router)
     app.include_router(asr_models_router)
     # app.include_router(local_asr_assets_router)  # TODO: 创建缺失模块
-    app.include_router(practice)
-    app.include_router(media)
-    app.include_router(soe)
+    app.include_router(practice_router)
+    app.include_router(media_router)
+    app.include_router(soe_router)
     app.include_router(announcement_public_router)
-    app.include_router(llm.router)
+    app.include_router(llm_router)
     app.include_router(voice_cloning_router)
     app.include_router(tts_router)
 

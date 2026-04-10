@@ -8,7 +8,7 @@ const ImmersiveLessonPage = lazy(() =>
   import("../../features/immersive/ImmersiveLessonPage").then((module) => ({ default: module.ImmersiveLessonPage })),
 );
 const AccountPanel = lazy(() => import("../../features/account/AccountPanel.jsx").then((module) => ({ default: module.AccountPanel })));
-const LessonList = lazy(() => import("../../features/lessons/components/LessonList").then((module) => ({ default: module.LessonList })));
+const LessonList = lazy(() => import("../../features/lessons/LessonList").then((module) => ({ default: module.LessonList })));
 const WordbookPanel = lazy(() => import("../../features/wordbook/WordbookPanel").then((module) => ({ default: module.WordbookPanel })));
 const UploadPanel = lazy(() => import("../../features/upload/UploadPanel").then((module) => ({ default: module.UploadPanel })));
 const ReadingPage = lazy(() => import("../../features/reading/ReadingPage").then((module) => ({ default: module.ReadingPage })));

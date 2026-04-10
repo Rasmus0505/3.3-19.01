@@ -55,6 +55,23 @@ from app.services.lesson_builder import (
     tokenize_learning_sentence,
     tokenize_sentence,
 )
+from app.services.lessons.cefr import (
+    extract_cefr_from_sentences as _extract_cefr_from_sentences_impl,
+    generate_sentence_explanation as _generate_sentence_explanation_impl,
+    process_sentences_with_cefr as _process_sentences_with_cefr_impl,
+)
+from app.services.lessons.persistence import (
+    attach_task_result_metadata as _attach_task_result_metadata_impl,
+    build_one_lesson as _build_one_lesson_impl,
+    create_lesson_from_local_generation_result as _create_lesson_from_local_generation_result_impl,
+)
+from app.services.lessons.variants import (
+    build_local_generation_result as _build_local_generation_result_impl,
+    build_subtitle_cache_seed as _build_subtitle_cache_seed_impl,
+    build_subtitle_variant as _build_subtitle_variant_impl,
+    build_task_result_meta as _build_task_result_meta_impl,
+    normalize_runtime_sentences as _normalize_runtime_sentences_impl,
+)
 from app.services.lesson_task_manager import patch_task_artifacts, persist_lesson_workspace_summary
 from app.services.media import MediaError, extract_audio_for_asr, probe_audio_duration_ms, resolve_media_command, run_cmd, save_upload_file_stream, validate_suffix
 from app.services.translation_qwen_mt import (
@@ -160,54 +177,6 @@ def _emit_progress(callback: ProgressCallback | None, **payload: Any) -> None:
         logger.exception("[DEBUG] lesson.progress.emit_failed payload=%s", payload)
 
 
-def _sanitize_translation_text(text: str) -> str:
-    normalized = str(text or "")
-    normalized = _TRANSLATION_ZERO_WIDTH_RE.sub("", normalized)
-    normalized = _TRANSLATION_CONTROL_CHAR_RE.sub(" ", normalized)
-    normalized = re.sub(r"\s+", " ", normalized).strip()
-    return normalized
-
-
-def _prepare_translation_sentences(sentences: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
-    cleaned_sentences: list[dict[str, Any]] = []
-    dropped_count = 0
-    for sentence in sentences:
-        cleaned = dict(sentence)
-        cleaned_text = _sanitize_translation_text(str(sentence.get("text") or ""))
-        if not cleaned_text:
-            dropped_count += 1
-            continue
-        cleaned["text"] = cleaned_text
-        cleaned_sentences.append(cleaned)
-    return cleaned_sentences, dropped_count
-
-
-def _build_translation_failure_debug(
-    *,
-    total_sentences: int,
-    failed_sentences: int,
-    request_count: int,
-    success_request_count: int,
-    latest_error_summary: str,
-    prompt_tokens: int = 0,
-    completion_tokens: int = 0,
-    total_tokens: int = 0,
-) -> dict[str, Any]:
-    return {
-        "total_sentences": int(total_sentences),
-        "failed_sentences": int(failed_sentences),
-        "request_count": int(request_count),
-        "success_request_count": int(success_request_count),
-        "usage": {
-            "prompt_tokens": int(prompt_tokens),
-            "completion_tokens": int(completion_tokens),
-            "total_tokens": int(total_tokens),
-            "charged_points": 0,
-        },
-        "latest_error_summary": str(latest_error_summary or "").strip(),
-    }
-
-
 def _append_translation_request_logs_safe(
     db: Session,
     *,
@@ -263,32 +232,6 @@ def _call_transcribe_audio_file(
             if "unexpected keyword argument" not in str(fallback_exc):
                 raise
             return transcribe_audio_file(audio_path, model=model)
-
-
-def _call_translate_sentences_to_zh(
-    sentences: list[str],
-    *,
-    api_key: str,
-    progress_callback: Callable[[int, int], None] | None = None,
-    resume_state: dict[str, Any] | None = None,
-    checkpoint_callback: Callable[[dict[str, Any]], None] | None = None,
-):
-    kwargs: dict[str, Any] = {"api_key": api_key}
-    if progress_callback is not None:
-        kwargs["progress_callback"] = progress_callback
-    if resume_state is not None:
-        kwargs["resume_state"] = resume_state
-    if checkpoint_callback is not None:
-        kwargs["checkpoint_callback"] = checkpoint_callback
-    try:
-        return translate_sentences_to_zh(sentences, **kwargs)
-    except TypeError as exc:
-        if "unexpected keyword argument" not in str(exc):
-            raise
-        legacy_kwargs: dict[str, Any] = {"api_key": api_key}
-        if progress_callback is not None:
-            legacy_kwargs["progress_callback"] = progress_callback
-        return translate_sentences_to_zh(sentences, **legacy_kwargs)
 
 
 def _progress_percent_by_stage(stage_key: str, ratio: float = 1.0) -> int:
@@ -694,55 +637,6 @@ def _call_transcribe_segment(
         return payload
 
 
-def _emit_subtitle_variant_progress(
-    callback: Callable[[dict[str, Any]], None] | None,
-    *,
-    stage: str,
-    message: str,
-    translate_done: int = 0,
-    translate_total: int = 0,
-) -> None:
-    if not callback:
-        return
-    if stage == "prepare":
-        stage_key = "build_lesson"
-        stage_status = "running"
-        stage_ratio = 0.08
-        overall_percent = _progress_percent_by_stage("build_lesson", stage_ratio)
-    elif stage == "translate":
-        stage_key = "translate_zh"
-        stage_status = "running"
-        stage_ratio = 0.0 if translate_total <= 0 else max(0.0, min(1.0, translate_done / max(translate_total, 1)))
-        overall_percent = _progress_percent_by_stage("translate_zh", stage_ratio)
-    elif stage == "completed":
-        stage_key = "translate_zh"
-        stage_status = "completed"
-        overall_percent = _progress_percent_by_stage("translate_zh", 1.0)
-    else:
-        stage_key = ""
-        stage_status = ""
-        overall_percent = None
-    try:
-        callback(
-            {
-                "stage": stage,
-                "stage_key": stage_key,
-                "stage_status": stage_status,
-                "message": message,
-                "current_text": message,
-                "overall_percent": overall_percent,
-                "translate_done": max(0, int(translate_done)),
-                "translate_total": max(0, int(translate_total)),
-                "counters": {
-                    "translate_done": max(0, int(translate_done)),
-                    "translate_total": max(0, int(translate_total)),
-                },
-            }
-        )
-    except Exception:
-        logger.exception("[DEBUG] lesson.subtitle_variant_progress.emit_failed stage=%s", stage)
-
-
 class LessonService:
     @staticmethod
     def _attach_task_result_metadata(
@@ -755,32 +649,19 @@ class LessonService:
         partial_failure_code: str = "",
         partial_failure_message: str = "",
     ) -> Lesson:
-        lesson.task_translation_debug = dict(translation_debug) if isinstance(translation_debug, dict) else None
-        lesson.task_result_kind = str(result_kind or "full_success").strip() or "full_success"
-        lesson.task_result_message = str(result_message or "").strip()
-        lesson.task_partial_failure_stage = str(partial_failure_stage or "").strip()
-        lesson.task_partial_failure_code = str(partial_failure_code or "").strip()
-        lesson.task_partial_failure_message = str(partial_failure_message or "").strip()
-        return lesson
+        return _attach_task_result_metadata_impl(
+            lesson,
+            translation_debug=translation_debug,
+            result_kind=result_kind,
+            result_message=result_message,
+            partial_failure_stage=partial_failure_stage,
+            partial_failure_code=partial_failure_code,
+            partial_failure_message=partial_failure_message,
+        )
 
     @staticmethod
     def _normalize_runtime_sentences(sentences: list[dict[str, Any]], zh_list: list[str]) -> list[dict[str, Any]]:
-        normalized_sentences: list[dict[str, Any]] = []
-        for idx, sentence in enumerate(sentences):
-            normalized_text_en = normalize_learning_english_text(str(sentence["text"]))
-            normalized_tokens = tokenize_learning_sentence(normalized_text_en)
-            normalized_sentences.append(
-                {
-                    "idx": idx,
-                    "begin_ms": int(sentence["begin_ms"]),
-                    "end_ms": int(sentence["end_ms"]),
-                    "text_en": normalized_text_en,
-                    "text_zh": zh_list[idx] if idx < len(zh_list) else "",
-                    "tokens": normalized_tokens,
-                    "audio_url": None,
-                }
-            )
-        return normalized_sentences
+        return _normalize_runtime_sentences_impl(sentences, zh_list)
 
     @staticmethod
     def build_subtitle_variant(
@@ -794,175 +675,21 @@ class LessonService:
         translation_progress_callback: Callable[[int, int], None] | None = None,
         translation_checkpoint_path: Path | None = None,
     ) -> dict[str, Any]:
-        if not isinstance(asr_payload, dict):
-            raise MediaError("ASR_PAYLOAD_INVALID", "字幕源数据无效", "asr_payload 必须是对象")
-
-        subtitle_settings = get_subtitle_settings_snapshot(db)
-        _emit_subtitle_variant_progress(
-            progress_callback,
-            stage="prepare",
-            message="正在重切分句",
+        return _build_subtitle_variant_impl(
+            asr_payload=asr_payload,
+            db=db,
+            task_id=task_id,
+            allow_partial_translation=allow_partial_translation,
+            progress_callback=progress_callback,
+            before_translate_callback=before_translate_callback,
+            translation_progress_callback=translation_progress_callback,
+            translation_checkpoint_path=translation_checkpoint_path,
+            normalize_runtime_sentences_fn=LessonService._normalize_runtime_sentences,
         )
-
-        sentences = extract_sentences(asr_payload)
-        chunks = []
-        split_mode = "asr_sentences"
-        if not sentences:
-            raise MediaError("ASR_SENTENCE_MISSING", "ASR 返回结果缺少句级信息", "未找到有效句子")
-        if not sentences:
-            raise MediaError("ASR_SENTENCE_MISSING", "ASR 返回结果缺少句级信息", "未找到有效句子")
-
-        source_word_count = len(extract_word_items(asr_payload))
-
-        prepared_sentences, dropped_translation_sentences = _prepare_translation_sentences(sentences)
-        if not prepared_sentences:
-            raise TranslationError(
-                "翻译阶段失败，请重试",
-                code="TRANSLATION_INPUT_EMPTY",
-                detail="识别结果清洗后没有可翻译内容",
-                translation_debug={
-                    "total_sentences": 0,
-                    "failed_sentences": 0,
-                    "request_count": 0,
-                    "success_request_count": 0,
-                    "latest_error_summary": "识别结果清洗后没有可翻译内容",
-                },
-            )
-        if dropped_translation_sentences:
-            logger.warning(
-                "[DEBUG] lesson.translation_input.dropped count=%s before=%s after=%s",
-                dropped_translation_sentences,
-                len(sentences),
-                len(prepared_sentences),
-            )
-        sentences = prepared_sentences
-
-        if before_translate_callback:
-            before_translate_callback(len(sentences))
-        _emit_subtitle_variant_progress(
-            progress_callback,
-            stage="translate",
-            message=f"正在翻译 0/{len(sentences)}",
-            translate_done=0,
-            translate_total=len(sentences),
-        )
-        translation_source_texts = [str(x["text"]) for x in sentences]
-        translation_resume_state = _read_json_file(translation_checkpoint_path) if translation_checkpoint_path else None
-        if (
-            not isinstance(translation_resume_state, dict)
-            or list(translation_resume_state.get("source_texts") or []) != translation_source_texts
-        ):
-            translation_resume_state = None
-
-        def _on_translation_progress(done: int, total: int) -> None:
-            if translation_progress_callback:
-                translation_progress_callback(done, total)
-            _emit_subtitle_variant_progress(
-                progress_callback,
-                stage="translate",
-                message=f"正在翻译 {done}/{total}",
-                translate_done=done,
-                translate_total=total,
-            )
-
-        def _on_translation_checkpoint(checkpoint_payload: dict[str, Any]) -> None:
-            if not translation_checkpoint_path:
-                return
-            _write_json_file(
-                translation_checkpoint_path,
-                {
-                    "source_texts": translation_source_texts,
-                    "translated_texts": list(checkpoint_payload.get("translated_texts") or []),
-                    "completed_indexes": list(checkpoint_payload.get("completed_indexes") or []),
-                    "attempt_records": list(checkpoint_payload.get("attempt_records") or []),
-                    "latest_error_summary": str(checkpoint_payload.get("latest_error_summary") or ""),
-                },
-            )
-
-        translation_batch_max_chars = max(
-            1,
-            min(
-                12000,
-                int(getattr(subtitle_settings, "translation_batch_max_chars", 2600) or 2600),
-            ),
-        )
-        logger.info(
-            "[DEBUG] lesson.subtitle_variant translation_batch_chars=%s sentence_total=%s",
-            translation_batch_max_chars,
-            len(sentences),
-        )
-        with translation_batch_chars_scope(translation_batch_max_chars):
-            translation_result = _call_translate_sentences_to_zh(
-                [x["text"] for x in sentences],
-                api_key=DASHSCOPE_API_KEY,
-                progress_callback=_on_translation_progress,
-                resume_state=translation_resume_state,
-                checkpoint_callback=_on_translation_checkpoint,
-            )
-        if int(translation_result.failed_count or 0) > 0 and not allow_partial_translation:
-            latest_error_summary = str(translation_result.latest_error_summary or "").strip() or "翻译存在失败句子"
-            raise TranslationError(
-                "翻译阶段失败，请重试",
-                code="TRANSLATION_INCOMPLETE",
-                detail=latest_error_summary,
-                translation_debug=_build_translation_failure_debug(
-                    total_sentences=len(sentences),
-                    failed_sentences=int(translation_result.failed_count or 0),
-                    request_count=int(translation_result.total_requests or 0),
-                    success_request_count=int(translation_result.success_request_count or 0),
-                    latest_error_summary=latest_error_summary,
-                    prompt_tokens=int(translation_result.success_prompt_tokens or 0),
-                    completion_tokens=int(translation_result.success_completion_tokens or 0),
-                    total_tokens=int(translation_result.success_total_tokens or 0),
-                ),
-            )
-        if int(translation_result.failed_count or 0) > 0 and allow_partial_translation:
-            logger.warning(
-                "[DEBUG] lesson.subtitle_variant.partial_translation task_id=%s failed_count=%s latest_error=%s",
-                task_id,
-                int(translation_result.failed_count or 0),
-                str(translation_result.latest_error_summary or "")[:240],
-            )
-        normalized_sentences = LessonService._normalize_runtime_sentences(sentences, translation_result.texts)
-        _emit_subtitle_variant_progress(
-            progress_callback,
-            stage="completed",
-            message="字幕重新生成完成",
-            translate_done=len(sentences),
-            translate_total=len(sentences),
-        )
-        return {
-            "split_mode": split_mode,
-            "source_word_count": source_word_count,
-            "strategy_version": 2 if split_mode == "asr_sentences" else 1,
-            "sentences": normalized_sentences,
-            "translate_failed_count": int(translation_result.failed_count),
-            "translation_attempt_records": list(translation_result.attempt_records),
-            "translation_request_count": int(translation_result.total_requests),
-            "translation_success_request_count": int(translation_result.success_request_count),
-            "translation_usage": {
-                "prompt_tokens": int(translation_result.success_prompt_tokens),
-                "completion_tokens": int(translation_result.success_completion_tokens),
-                "total_tokens": int(translation_result.success_total_tokens),
-                "charged_points": 0,
-            },
-            "latest_translate_error_summary": str(translation_result.latest_error_summary or ""),
-            "task_id": task_id,
-        }
 
     @staticmethod
     def build_subtitle_cache_seed(*, asr_payload: dict[str, Any], variant: dict[str, Any], runtime_kind: str = "") -> dict[str, Any]:
-        payload = {
-            "split_mode": str(variant.get("split_mode") or ""),
-            "source_word_count": int(variant.get("source_word_count", 0)),
-            "strategy_version": int(variant.get("strategy_version", 1)),
-            "asr_payload": dict(asr_payload or {}),
-            "sentences": [dict(item) for item in list(variant.get("sentences") or []) if isinstance(item, dict)],
-        }
-        normalized_runtime_kind = str(runtime_kind or "").strip().lower()
-        if normalized_runtime_kind:
-            payload["runtime_kind"] = normalized_runtime_kind
-        return payload
+        return _build_subtitle_cache_seed_impl(asr_payload=asr_payload, variant=variant, runtime_kind=runtime_kind)
 
     @staticmethod
     def build_local_generation_result(
@@ -975,43 +702,18 @@ class LessonService:
         task_id: str | None = None,
         progress_callback: ProgressCallback | None = None,
     ) -> dict[str, Any]:
-        normalized_runtime_kind = str(runtime_kind or "local_browser").strip().lower() or "local_browser"
-        variant = LessonService.build_subtitle_variant(
+        return _build_local_generation_result_impl(
             asr_payload=asr_payload,
+            runtime_kind=runtime_kind,
+            asr_model=asr_model,
+            source_duration_ms=source_duration_ms,
             db=db,
             task_id=task_id,
-            allow_partial_translation=True,
             progress_callback=progress_callback,
+            build_subtitle_variant_fn=LessonService.build_subtitle_variant,
+            build_task_result_meta_fn=LessonService._build_task_result_meta,
+            build_subtitle_cache_seed_fn=LessonService.build_subtitle_cache_seed,
         )
-        runtime_sentences = [dict(item) for item in list(variant.get("sentences") or []) if isinstance(item, dict)]
-        translation_usage = dict(variant.get("translation_usage") or {})
-        translation_usage["charged_points"] = 0
-        translation_usage["charged_amount_cents"] = 0
-        translation_usage["actual_cost_amount_cents"] = 0
-        failed_count = int(variant.get("translate_failed_count", 0) or 0)
-        translation_debug = {
-            "total_sentences": len(runtime_sentences),
-            "failed_sentences": failed_count,
-            "request_count": int(variant.get("translation_request_count", 0) or 0),
-            "success_request_count": int(variant.get("translation_success_request_count", 0) or 0),
-            "usage": translation_usage,
-            "latest_error_summary": str(variant.get("latest_translate_error_summary") or ""),
-        }
-        return {
-            "runtime_kind": normalized_runtime_kind,
-            "lesson_status": "partial_ready" if failed_count > 0 else "ready",
-            "duration_ms": estimate_duration_ms(asr_payload, runtime_sentences),
-            "source_duration_ms": max(1, int(source_duration_ms or 0)),
-            "variant": dict(variant),
-            "translation_debug": translation_debug,
-            "task_result_meta": LessonService._build_task_result_meta(variant=variant, translation_debug=translation_debug),
-            "subtitle_cache_seed": LessonService.build_subtitle_cache_seed(
-                asr_payload=asr_payload,
-                variant=variant,
-                runtime_kind=normalized_runtime_kind,
-            ),
-            "asr_model": str(asr_model or "").strip(),
-        }
 
     @staticmethod
     def create_lesson_from_local_generation_result(
@@ -1025,237 +727,22 @@ class LessonService:
         local_generation_result: dict[str, Any],
         db: Session,
     ) -> Lesson:
-        if not isinstance(asr_payload, dict):
-            raise MediaError("ASR_PAYLOAD_INVALID", "本地 ASR 结果无效", "asr_payload 必须是对象")
-        if not isinstance(local_generation_result, dict):
-            raise MediaError("LOCAL_GENERATION_RESULT_INVALID", "本地生成结果无效", "local_generation_result 必须是对象")
-
-        variant = dict(local_generation_result.get("variant") or {})
-        runtime_sentences = [dict(item) for item in list(variant.get("sentences") or []) if isinstance(item, dict)]
-        if not runtime_sentences:
-            raise MediaError("LOCAL_GENERATION_RESULT_EMPTY", "本地生成结果缺少字幕", "variant.sentences is empty")
-
-        reserved_duration_ms = max(1, int(source_duration_ms or local_generation_result.get("source_duration_ms") or 0))
-        normalized_runtime_kind = str(
-            local_generation_result.get("runtime_kind") or runtime_kind or "local_browser"
-        ).strip().lower() or "local_browser"
-        translation_debug = dict(local_generation_result.get("translation_debug") or {})
-        translation_usage = dict(translation_debug.get("usage") or {})
-        translation_debug["usage"] = translation_usage
-        failed_count = int(translation_debug.get("failed_sentences", variant.get("translate_failed_count", 0)) or 0)
-        translation_debug["failed_sentences"] = failed_count
-        translation_debug["total_sentences"] = int(translation_debug.get("total_sentences", len(runtime_sentences)) or len(runtime_sentences))
-        translation_debug["request_count"] = int(translation_debug.get("request_count", variant.get("translation_request_count", 0)) or 0)
-        translation_debug["success_request_count"] = int(
-            translation_debug.get("success_request_count", variant.get("translation_success_request_count", 0)) or 0
+        return _create_lesson_from_local_generation_result_impl(
+            asr_payload=asr_payload,
+            source_filename=source_filename,
+            source_duration_ms=source_duration_ms,
+            runtime_kind=runtime_kind,
+            owner_id=owner_id,
+            asr_model=asr_model,
+            local_generation_result=local_generation_result,
+            db=db,
+            build_task_result_meta_fn=LessonService._build_task_result_meta,
+            build_subtitle_cache_seed_fn=LessonService.build_subtitle_cache_seed,
         )
-        translation_debug["latest_error_summary"] = str(
-            translation_debug.get("latest_error_summary") or variant.get("latest_translate_error_summary") or ""
-        )
-        task_result_meta = dict(local_generation_result.get("task_result_meta") or {})
-        if not task_result_meta:
-            task_result_meta = LessonService._build_task_result_meta(variant=variant, translation_debug=translation_debug)
-        subtitle_cache_seed = dict(local_generation_result.get("subtitle_cache_seed") or {})
-        if not subtitle_cache_seed:
-            subtitle_cache_seed = LessonService.build_subtitle_cache_seed(
-                asr_payload=asr_payload,
-                variant=variant,
-                runtime_kind=normalized_runtime_kind,
-            )
-
-        reserved_points = 0
-        reserve_ledger_id: int | None = None
-        try:
-            rate = get_model_rate(db, asr_model)
-            reserved_points = calculate_points(
-                reserved_duration_ms,
-                rate.points_per_minute,
-                price_per_minute_yuan=getattr(rate, "price_per_minute_yuan", None),
-            )
-            reserve_ledger = reserve_points(
-                db,
-                user_id=owner_id,
-                points=reserved_points,
-                model_name=asr_model,
-                duration_ms=reserved_duration_ms,
-                note=f"本地生成结果入库预扣，模型={asr_model}，runtime={normalized_runtime_kind}",
-            )
-            reserve_ledger_id = reserve_ledger.id
-            db.commit()
-
-            duration_ms = max(1, int(local_generation_result.get("duration_ms") or estimate_duration_ms(asr_payload, runtime_sentences)))
-            translation_rate = get_model_rate(db, MT_MODEL)
-            translation_total_tokens = int(translation_usage.get("total_tokens", 0) or 0)
-            translation_cost_amount_cents = calculate_token_points(
-                translation_total_tokens,
-                int(getattr(translation_rate, "points_per_1k_tokens", 0) or 0),
-            )
-            translation_usage["charged_points"] = translation_cost_amount_cents
-            translation_usage["charged_amount_cents"] = translation_cost_amount_cents
-            translation_usage["actual_cost_amount_cents"] = translation_cost_amount_cents
-
-            actual_points = calculate_points(
-                reserved_duration_ms,
-                rate.points_per_minute,
-                price_per_minute_yuan=getattr(rate, "price_per_minute_yuan", None),
-            )
-            actual_cost_amount_cents = calculate_points(
-                reserved_duration_ms,
-                int(getattr(rate, "cost_per_minute_cents", 0) or 0),
-                price_per_minute_yuan=getattr(rate, "cost_per_minute_yuan", None),
-            ) + translation_cost_amount_cents
-            gross_profit_amount_cents = int(actual_points) - int(actual_cost_amount_cents)
-            translation_debug["estimated_charge_amount_cents"] = int(reserved_points) + int(translation_cost_amount_cents)
-            translation_debug["actual_charge_amount_cents"] = int(actual_points) + int(translation_cost_amount_cents)
-            translation_debug["actual_cost_amount_cents"] = int(actual_cost_amount_cents)
-            translation_debug["gross_profit_amount_cents"] = int(gross_profit_amount_cents)
-            translation_usage["actual_revenue_amount_cents"] = int(actual_points) + int(translation_cost_amount_cents)
-            translation_usage["gross_profit_amount_cents"] = int(gross_profit_amount_cents)
-
-            lesson = Lesson(
-                user_id=owner_id,
-                title=Path(source_filename or "lesson").stem[:200] or "lesson",
-                source_filename=source_filename,
-                asr_model=asr_model,
-                duration_ms=duration_ms,
-                media_storage="client_indexeddb",
-                source_duration_ms=reserved_duration_ms,
-                status="partial_ready" if failed_count > 0 else "ready",
-            )
-            db.add(lesson)
-            db.flush()
-
-            # CEFR processing is done by the caller before _build_one_lesson
-
-            for sentence in runtime_sentences:
-                db.add(
-                    LessonSentence(
-                        lesson_id=lesson.id,
-                        idx=int(sentence["idx"]),
-                        begin_ms=int(sentence["begin_ms"]),
-                        end_ms=int(sentence["end_ms"]),
-                        text_en=str(sentence["text_en"]),
-                        text_zh=str(sentence["text_zh"]),
-                        tokens_json=[str(item) for item in list(sentence.get("tokens") or [])],
-                        audio_clip_path=None,
-                        cefr_vocab_json=sentence.get("cefr_vocab_json"),
-                        needs_explanation=sentence.get("needs_explanation", False),
-                        explanation_text=sentence.get("explanation_text"),
-                        simplified_sentence=sentence.get("simplified_sentence"),
-                        explanation_audio_url=sentence.get("explanation_audio_url"),
-                        key_explanations_json=sentence.get("key_explanations_json"),
-                    )
-                )
-
-            create_progress(db, lesson_id=lesson.id, user_id=owner_id)
-            points_diff = int(actual_points) - int(reserved_points)
-            settle_reserved_points(
-                db,
-                user_id=owner_id,
-                model_name=asr_model,
-                reserved_points=reserved_points,
-                actual_points=actual_points,
-                duration_ms=reserved_duration_ms,
-                note=(
-                    f"本地生成结果入库结算，预扣流水#{reserve_ledger_id}，预扣金额={reserved_points}分，实耗金额={actual_points}分，差额={points_diff}分，"
-                    f"runtime={normalized_runtime_kind}"
-                ),
-            )
-            consume_points(
-                db,
-                user_id=owner_id,
-                points=int(translation_cost_amount_cents),
-                model_name=MT_MODEL,
-                lesson_id=lesson.id,
-                event_type=EVENT_CONSUME_TRANSLATE,
-                note=f"本地课程生成翻译扣费，total_tokens={translation_total_tokens}",
-            )
-            log_llm_usage(
-                db,
-                user_id=owner_id,
-                model_name=MT_MODEL,
-                category="mt",
-                prompt_tokens=int(translation_usage.get("prompt_tokens", 0) or 0),
-                completion_tokens=int(translation_usage.get("completion_tokens", 0) or 0),
-                total_tokens=translation_total_tokens,
-                input_cost_cents=calculate_llm_cost_by_tokens(
-                    prompt_tokens=int(translation_usage.get("prompt_tokens", 0) or 0),
-                    completion_tokens=int(translation_usage.get("completion_tokens", 0) or 0),
-                    cost_per_1k_tokens_input_cents=translation_rate.cost_per_1k_tokens_input_cents,
-                    cost_per_1k_tokens_output_cents=translation_rate.cost_per_1k_tokens_output_cents,
-                ),
-                charge_cents=translation_cost_amount_cents,
-                lesson_id=lesson.id,
-                enable_thinking=False,
-                input_text_preview="",
-            )
-            consume_points(
-                db,
-                user_id=owner_id,
-                points=int(actual_points),
-                model_name=asr_model,
-                duration_ms=reserved_duration_ms,
-                lesson_id=lesson.id,
-                note=(
-                    f"本地生成结果入库完成，预扣流水#{reserve_ledger_id}，预扣金额={reserved_points}分，实耗金额={actual_points}分，差额={points_diff}分，"
-                    f"runtime={normalized_runtime_kind}"
-                ),
-            )
-            db.commit()
-            db.refresh(lesson)
-            lesson.subtitle_cache_seed = subtitle_cache_seed
-            lesson.task_result_meta = dict(task_result_meta)
-            lesson.translation_debug = dict(translation_debug)
-            lesson.workspace_summary = persist_lesson_workspace_summary(
-                owner_user_id=owner_id,
-                lesson_id=int(lesson.id),
-                source_filename=source_filename,
-                source_duration_ms=reserved_duration_ms,
-                input_mode="local_asr_complete",
-                runtime_kind=normalized_runtime_kind,
-                task_id="",
-                status="succeeded",
-                current_text=str(task_result_meta.get("result_message") or "课程已生成完成"),
-                subtitle_cache_seed=subtitle_cache_seed,
-                translation_debug=translation_debug,
-            )
-            return lesson
-        except Exception:
-            db.rollback()
-            if reserve_ledger_id is not None:
-                try:
-                    refund_points(
-                        db,
-                        user_id=owner_id,
-                        points=reserved_points,
-                        model_name=asr_model,
-                        duration_ms=reserved_duration_ms,
-                        note=f"本地生成结果入库失败，退回预扣金额，预扣流水#{reserve_ledger_id}",
-                    )
-                    db.commit()
-                except Exception:
-                    db.rollback()
-            raise
 
     @staticmethod
     def _build_task_result_meta(*, variant: dict[str, Any], translation_debug: dict[str, Any]) -> dict[str, Any]:
-        failed_sentences = int(translation_debug.get("failed_sentences", 0) or 0)
-        latest_error_summary = str(translation_debug.get("latest_error_summary") or "").strip()
-        if failed_sentences > 0:
-            return {
-                "result_kind": "asr_only",
-                "result_message": "课程已生成，翻译失败，可先使用原文字幕学习。",
-                "partial_failure_stage": "translate_zh",
-                "partial_failure_code": "TRANSLATION_INCOMPLETE",
-                "partial_failure_message": latest_error_summary or "翻译阶段失败",
-            }
-        return {
-            "result_kind": "full_success",
-            "result_message": "课程已生成完成",
-            "partial_failure_stage": "",
-            "partial_failure_code": "",
-            "partial_failure_message": "",
-        }
+        return _build_task_result_meta_impl(variant=variant, translation_debug=translation_debug)
 
     @staticmethod
     def _build_one_lesson(
@@ -1283,115 +770,30 @@ class LessonService:
         translation_rate: BillingModelRate | None = None,
         progress_callback: ProgressCallback | None = None,
     ) -> SimpleNamespace:
-        runtime_sentences = list(variant.get("sentences") or [])
-        normalized_translation_debug = dict(translation_debug or {})
-        failed_sentences = int(
-            normalized_translation_debug.get("failed_sentences", variant.get("translate_failed_count", 0)) or 0
-        )
-        resolved_duration_ms = max(1, int(duration_ms or estimate_duration_ms(asr_payload, runtime_sentences) or 1))
-        resolved_source_duration_ms = max(1, int(source_duration_ms or lesson.source_duration_ms or resolved_duration_ms or 1))
-        resolved_actual_points = max(0, int(actual_points or 0))
-        resolved_reserved_points = max(0, int(reserved_points or 0))
-        resolved_translation_cost_amount_cents = max(0, int(translation_cost_amount_cents or 0))
-
-        lesson.user_id = owner_id
-        # 记录用户生成课程时的 CEFR 等级，方便后续排查
-        try:
-            from app.models import User
-            user = db.query(User).filter(User.id == owner_id).first()
-            if user:
-                lesson.user_cefr_level = user.cefr_level
-        except Exception:
-            pass  # 不影响主流程
-        if not str(getattr(lesson, "title", "") or "").strip():
-            lesson.title = Path(source_filename or "lesson").stem[:200] or "lesson"
-        lesson.source_filename = str(source_filename or getattr(lesson, "source_filename", "") or "")
-        lesson.asr_model = str(asr_model or getattr(lesson, "asr_model", "") or "")
-        lesson.duration_ms = resolved_duration_ms
-        lesson.media_storage = str(media_storage or getattr(lesson, "media_storage", "") or "client_indexeddb")
-        lesson.source_duration_ms = resolved_source_duration_ms
-        lesson.status = str(lesson_status or getattr(lesson, "status", "") or ("partial_ready" if failed_sentences > 0 else "ready"))
-
-        db.add(lesson)
-        db.flush()
-
-        errors: list[str] = []
-        for sentence in runtime_sentences:
-            try:
-                db.add(
-                    LessonSentence(
-                        lesson_id=lesson.id,
-                        idx=int(sentence["idx"]),
-                        begin_ms=int(sentence["begin_ms"]),
-                        end_ms=int(sentence["end_ms"]),
-                        text_en=str(sentence["text_en"]),
-                        text_zh=str(sentence["text_zh"]),
-                        tokens_json=[str(item) for item in list(sentence.get("tokens") or [])],
-                        audio_clip_path=None,
-                        cefr_vocab_json=sentence.get("cefr_vocab_json"),
-                        needs_explanation=sentence.get("needs_explanation", False),
-                        explanation_text=sentence.get("explanation_text"),
-                        simplified_sentence=sentence.get("simplified_sentence"),
-                        explanation_audio_url=sentence.get("explanation_audio_url"),
-                        key_explanations_json=sentence.get("key_explanations_json"),
-                    )
-                )
-            except Exception as exc:
-                errors.append(str(exc))
-
-        create_progress(db, lesson_id=lesson.id, user_id=owner_id)
-        _append_translation_request_logs_safe(
-            db,
-            trace_id=translation_trace_id,
-            user_id=owner_id,
+        return _build_one_lesson_impl(
+            lesson,
+            owner_id=owner_id,
+            asr_payload=asr_payload,
+            variant=variant,
+            db=db,
+            source_filename=source_filename,
+            asr_model=asr_model,
+            source_duration_ms=source_duration_ms,
+            media_storage=media_storage,
+            translation_trace_id=translation_trace_id,
             task_id=task_id,
-            lesson_id=lesson.id,
-            records=list(variant.get("translation_attempt_records") or []),
+            translation_usage=translation_usage,
+            translation_debug=translation_debug,
+            duration_ms=duration_ms,
+            lesson_status=lesson_status,
+            reserved_points=reserved_points,
+            actual_points=actual_points,
+            translation_cost_amount_cents=translation_cost_amount_cents,
+            settle_note=settle_note,
+            translation_consume_note=translation_consume_note,
+            translation_rate=translation_rate,
+            progress_callback=progress_callback,
         )
-        settle_reserved_points(
-            db,
-            user_id=owner_id,
-            model_name=lesson.asr_model,
-            reserved_points=resolved_reserved_points,
-            actual_points=resolved_actual_points,
-            duration_ms=resolved_source_duration_ms,
-            note=str(settle_note or f"课程生成结算，lesson_id={lesson.id}"),
-        )
-        consume_points(
-            db,
-            user_id=owner_id,
-            points=resolved_translation_cost_amount_cents,
-            model_name=MT_MODEL,
-            lesson_id=lesson.id,
-            event_type=EVENT_CONSUME_TRANSLATE,
-            note=str(
-                translation_consume_note
-                or f"课程生成翻译扣费，total_tokens={int((translation_usage or {}).get('total_tokens', 0) or 0)}"
-            ),
-        )
-        _effective_translation_rate = translation_rate
-        if _effective_translation_rate is None:
-            _effective_translation_rate = get_model_rate(db, MT_MODEL)
-        log_llm_usage(
-            db,
-            user_id=owner_id,
-            model_name=MT_MODEL,
-            category="mt",
-            prompt_tokens=int((translation_usage or {}).get("prompt_tokens", 0) or 0),
-            completion_tokens=int((translation_usage or {}).get("completion_tokens", 0) or 0),
-            total_tokens=int((translation_usage or {}).get("total_tokens", 0) or 0),
-            input_cost_cents=calculate_llm_cost_by_tokens(
-                prompt_tokens=int((translation_usage or {}).get("prompt_tokens", 0) or 0),
-                completion_tokens=int((translation_usage or {}).get("completion_tokens", 0) or 0),
-                cost_per_1k_tokens_input_cents=_effective_translation_rate.cost_per_1k_tokens_input_cents,
-                cost_per_1k_tokens_output_cents=_effective_translation_rate.cost_per_1k_tokens_output_cents,
-            ),
-            charge_cents=resolved_translation_cost_amount_cents,
-            lesson_id=lesson.id,
-            enable_thinking=False,
-            input_text_preview="",
-        )
-        return SimpleNamespace(errors=errors)
 
     @staticmethod
     def generate_from_upload(
@@ -3314,12 +2716,7 @@ class LessonService:
 
 
 def extract_cefr_from_sentences(sentences: list[str], target_level: str) -> list[dict]:
-    """从句子列表中提取 CEFR 词汇信息（后端一次筛选）"""
-    from app.services.cefr_explain_service import CefrExplainService
-
-    db = None  # 服务不需要 db
-    service = CefrExplainService(db=db, target_level=target_level)
-    return service.extract_cefr_words(sentences)
+    return _extract_cefr_from_sentences_impl(sentences, target_level)
 
 
 def generate_sentence_explanation(
@@ -3327,12 +2724,7 @@ def generate_sentence_explanation(
     words_above: list[dict],
     target_level: str
 ) -> dict:
-    """为单个句子生成讲解内容"""
-    from app.services.cefr_explain_service import CefrExplainService
-
-    db = None
-    service = CefrExplainService(db=db, target_level=target_level)
-    return service.generate_explanation(sentence, words_above)
+    return _generate_sentence_explanation_impl(sentence, words_above, target_level)
 
 
 def process_sentences_with_cefr(
@@ -3340,172 +2732,4 @@ def process_sentences_with_cefr(
     target_level: str,
     user_level: str | None = None,
 ) -> list[dict]:
-    """
-    处理句子列表，生成 CEFR 讲解信息。
-
-    流程：
-    1. 提取高于目标 CEFR 等级的词汇（一次筛选）
-    2. 调用 LLM 对超纲词进行词形还原
-    3. 对原型词进行词典二次筛选（基于 LLM 还原结果）
-    4. 对需要讲解的句子生成讲解内容（简化句 + 词汇解释 + TTS音频）
-
-    Args:
-        sentences: 句子列表，每个元素包含 text_en 等字段
-        target_level: 目标 CEFR 等级（i+1）
-        user_level: 用户当前 CEFR 等级（可选，用于计算 target_level）
-
-    Returns:
-        句子列表，每个元素增加 cefr_vocab_json, needs_explanation, explanation_text,
-        simplified_sentence, explanation_audio_url, key_explanations_json 字段
-    """
-    from app.services.cefr_explain_service import CefrExplainService
-
-    db = None
-    service = CefrExplainService(db=db, target_level=target_level)
-
-    # 如果没有指定 user_level，target_level 就是目标等级
-    if user_level is None:
-        user_level = target_level
-
-    # 1. 提取高于目标等级的词汇（一次筛选）
-    sentence_texts = [s.get("text_en", "") for s in sentences]
-    cefr_results = service.extract_cefr_words(sentence_texts)
-
-    # 2. 收集所有超纲词，调用 LLM 进行词形还原
-    all_words_above: list[str] = []
-    for cefr_info in cefr_results:
-        for word_info in cefr_info.get("words_above", []):
-            all_words_above.append(word_info["word"])
-
-    llm_lemmas = {}
-    if all_words_above:
-        llm_lemmas = service.llm_lemmatize(all_words_above)
-
-    # 3. 对每个句子进行词典二次筛选和讲解生成
-    enriched_sentences = []
-    import re
-
-    for idx, sentence in enumerate(sentences):
-        sentence_text = sentence.get("text_en", "")
-        cefr_info = cefr_results[idx]
-
-        words_above = cefr_info.get("words_above", [])
-
-        # 构建所有单词的最终等级映射（用于前端显示）
-        # 对于 words_above 中的词：最终等级 = 原型词等级（二次筛选后）
-        # 对于其他词：如果表面等级 < 目标等级，最终等级 = 表面等级
-        word_levels: dict[str, dict] = {}
-        word_regex = re.compile(r"[a-zA-Z]+(?:'[a-zA-Z]+)?")
-
-        # 先处理 words_above 中的词，建立 word -> lemma 映射
-        words_above_set = {w["word"] for w in words_above}
-
-        # 收集 words_above 中每个词的 LLM lemma
-        above_word_lemmas: dict[str, str] = {}
-        for w in words_above:
-            if w["word"] in llm_lemmas:
-                above_word_lemmas[w["word"]] = llm_lemmas[w["word"]]
-
-        # 构建 words_above 中每个词的最终等级
-        for word_info in words_above:
-            word = word_info["word"]
-            surface_level = word_info["level"]
-            llm_lemma = above_word_lemmas.get(word)
-            final_level = service._get_final_lemma_level(word, llm_lemma)
-            word_levels[word] = {
-                "surface_level": surface_level,
-                "llm_lemma": llm_lemma,
-                "final_level": final_level,
-            }
-
-        # 处理不在 words_above 中的词（表面等级 < 目标等级，无需简化）
-        matches = word_regex.finditer(sentence_text)
-        for match in matches:
-            word = match.group()
-            if word not in words_above_set:
-                # 不在 words_above 中，说明表面等级 < 目标等级，不需要简化
-                surface_level = service._lookup_word(word)
-                if surface_level:
-                    word_levels[word] = {
-                        "surface_level": surface_level,
-                        "llm_lemma": None,
-                        "final_level": surface_level,
-                    }
-                # else: 词典查不到，不记录
-
-        if not words_above:
-            # 没有超纲词，不需要讲解
-            sentence["cefr_vocab_json"] = {
-                "words": [],
-                "filter_result": {},
-                "llm_lemmas": llm_lemmas if all_words_above else {},
-                "word_levels": word_levels,
-            }
-            sentence["needs_explanation"] = False
-            sentence["explanation_text"] = None
-            sentence["simplified_sentence"] = None
-            sentence["explanation_audio_url"] = None
-            sentence["key_explanations_json"] = None
-            enriched_sentences.append(sentence)
-            continue
-
-        # 二次筛选（使用 LLM 还原的原型词）
-        filter_result = service.filter_words_by_level(words_above, llm_lemmas=llm_lemmas)
-        valid_above_i1 = filter_result["valid_above_i1_words"]
-
-        if not valid_above_i1:
-            # 二次筛选后没有需要简化的词
-            sentence["cefr_vocab_json"] = {
-                "words": words_above,
-                "filter_result": filter_result,
-                "llm_lemmas": llm_lemmas if all_words_above else {},
-                "word_levels": word_levels,
-            }
-            sentence["needs_explanation"] = False
-            sentence["explanation_text"] = None
-            sentence["simplified_sentence"] = None
-            sentence["explanation_audio_url"] = None
-            sentence["key_explanations_json"] = None
-            enriched_sentences.append(sentence)
-            continue
-
-        # 4. 生成讲解内容
-        try:
-            explanation = service.generate_explanation(sentence_text, valid_above_i1)
-        except Exception:
-            explanation = {
-                "simplified_sentence": None,
-                "key_explanations": [],
-                "listen_tips": "",
-            }
-
-        # 5. 生成 TTS 音频
-        explanation_text = explanation.get("listen_tips", "") or ""
-        if explanation.get("key_explanations"):
-            explanation_text += "\n\n" + "\n".join(
-                f"- {e.get('original_word', '')}: {e.get('explanation', '')}"
-                for e in explanation.get("key_explanations", [])
-            )
-
-        audio_url = ""
-        if explanation_text:
-            try:
-                audio_url = service.synthesize_explanation_audio(explanation_text)
-            except Exception:
-                audio_url = ""
-
-        # 存储结果
-        sentence["cefr_vocab_json"] = {
-            "words": words_above,
-            "filter_result": filter_result,
-            "llm_lemmas": llm_lemmas if all_words_above else {},
-            "word_levels": word_levels,
-        }
-        sentence["needs_explanation"] = True
-        sentence["explanation_text"] = explanation.get("listen_tips", "") or None
-        sentence["simplified_sentence"] = None  # 不再生成简化句
-        sentence["explanation_audio_url"] = audio_url or None
-        sentence["key_explanations_json"] = explanation.get("key_explanations") or None
-        enriched_sentences.append(sentence)
-
-    return enriched_sentences
+    return _process_sentences_with_cefr_impl(sentences, target_level, user_level)

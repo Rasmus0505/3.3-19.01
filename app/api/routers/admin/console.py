@@ -9,6 +9,7 @@ from app.api.deps.auth import get_admin_user
 from app.core.errors import error_response
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
 from app.db import get_db
+from app.db.schema_guards import LessonTaskStorageNotReadyError
 from app.models import User
 from app.repositories.admin_console import (
     get_admin_lesson_task_log_detail,
@@ -38,8 +39,8 @@ from app.schemas.admin_console import (
     AdminUserActivitySummary,
     AdminUserActivitySummaryResponse,
 )
-from app.services.billing_service import append_admin_operation_log
-from app.services.lesson_task_manager import LessonTaskStorageNotReadyError, purge_task_raw_debug
+from app.services.billing import append_admin_operation_log
+from app.services.lesson_task_manager import purge_task_raw_debug
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 

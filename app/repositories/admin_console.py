@@ -18,10 +18,9 @@ from app.models import (
     WalletAccount,
     WalletLedger,
 )
+from app.core.query_cache import query_cache
+from app.db.schema_guards import ensure_lesson_task_storage_ready, ensure_user_activity_schema
 from app.repositories.admin import admin_storage_ready, list_redeem_batches
-from app.services.query_cache import query_cache
-from app.services.lesson_task_manager import ensure_lesson_task_storage_ready
-from app.services.user_activity import ensure_user_activity_schema
 
 CHART_COLORS = {
     "blue": "#2563eb",

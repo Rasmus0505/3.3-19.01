@@ -23,7 +23,7 @@ from app.services.admin_sql_console import (
     issue_confirm_token,
     prepare_sql,
 )
-from app.services.billing_service import append_admin_operation_log
+from app.services.billing import append_admin_operation_log
 
 
 router = APIRouter(prefix="/api/admin/sql-console", tags=["admin"])

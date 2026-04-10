@@ -12,11 +12,12 @@ export { DesktopGuidanceDialog } from "./components/DesktopGuidanceDialog";
 
 // Hooks 导出
 export { useUploadPanelState, useActiveTaskState } from "./hooks";
+export { useUploadWorkflow } from "./hooks";
 
 import { cn } from "../../lib/utils";
-import { api, createApiClient, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
-import { ASR_MODEL_KEYS, buildAsrModelCatalogMap, getAsrModelCatalogItem, isAsrModelPreparing, isAsrModelReady } from "../../shared/lib/asrModels";
-import { formatMoneyCents, formatMoneyYuan, formatMoneyYuanPerMinute } from "../../shared/lib/money";
+import { api, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
+import { buildAsrModelCatalogMap, isAsrModelPreparing, isAsrModelReady } from "../../shared/lib/asrModels";
+import { formatMoneyCents } from "../../shared/lib/money";
 import { extractMediaCoverPreview, getLessonMediaPreview, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import {
   clearActiveGenerationTask,
@@ -29,51 +30,126 @@ import {
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, MediaCover, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
 import { useAppStore } from "../../store";
 import { ASR_STRATEGY_CLOUD, resolveAsrStrategy, mapCloudAsrFailureToMessage } from "./asrStrategy";
+import {
+  ACTIVE_SERVER_TASK_STATUSES,
+  ASR_MODELS_API_BASE,
+  BOTTLE1_DESKTOP_ONLY_MESSAGE,
+  BOTTLE_LESSON_FILE_SUFFIX,
+  BOTTLE_LESSON_SCHEMA_VERSION,
+  DEFAULT_ASR_MODEL_CATALOG_MAP,
+  DEFAULT_FAST_UPLOAD_MODEL,
+  DESKTOP_CLIENT_DISTRIBUTION_NOTE,
+  DESKTOP_CLIENT_ENTRY_URL,
+  DESKTOP_CLIENT_INSUFFICIENT_BALANCE_MESSAGE,
+  DESKTOP_CLIENT_OFFLINE_MESSAGE,
+  DESKTOP_LINK_IMPORTING_PHASE,
+  DESKTOP_LINK_INVALID_MESSAGE,
+  DESKTOP_LINK_PUBLIC_ONLY_MESSAGE,
+  DESKTOP_LINK_PUBLIC_SUPPORT_MESSAGE,
+  DESKTOP_LOCAL_GENERATING_PHASE,
+  DESKTOP_LOCAL_TRANSCRIBING_PHASE,
+  DESKTOP_UPLOAD_SOURCE_MODE_FILE,
+  DESKTOP_UPLOAD_SOURCE_MODE_LINK,
+  ESTIMATED_MT_TOKENS_PER_MINUTE,
+  FAST_RUNTIME_TRACK_BROWSER_LOCAL,
+  FAST_RUNTIME_TRACK_CLOUD,
+  FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
+  FASTER_WHISPER_MODEL,
+  FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE,
+  FILE_PICKER_ACTION_SELECT,
+  LARGE_FILE_DESKTOP_RECOMMEND_MESSAGE,
+  LINK_IMPORT_DESKTOP_ONLY_MESSAGE,
+  LOCAL_ASR_ASSET_BASE_URL,
+  LOCAL_ASR_FILE_ACCEPT,
+  LOCAL_ASR_LONG_AUDIO_HINT_SECONDS,
+  LOCAL_ASR_STORAGE_MODE_BROWSER,
+  LOCAL_ASR_TARGET_SAMPLE_RATE,
+  LOCAL_BROWSER_ASR_ENABLED,
+  LOCAL_BROWSER_RUNTIME_BASE_URL,
+  LOCAL_LESSON_UPDATE_EVENT,
+  LOCAL_RECOGNITION_STOPPED_MESSAGE,
+  LOCAL_STAGE_PROGRESS_INTERVAL_MS,
+  MT_PRICE_MODEL,
+  POLL_RETRY_DELAY_MS,
+  POLL_RETRY_LIMIT,
+  QWEN_MODEL,
+  RECOVERABLE_SERVER_TASK_STATUSES,
+  RESTORE_BANNER_MODES,
+  SERVER_PREPARABLE_MODELS,
+  SNAPANY_FALLBACK_URL,
+  STOPPABLE_SERVER_TASK_STATUSES,
+  UPLOAD_MODEL_OPTIONS,
+  UPLOAD_PROGRESS_PERSIST_INTERVAL_MS,
+} from "./uploadConstants";
+import {
+  browserLocalRuntimeApi,
+  cancelDesktopModelUpdate,
+  checkDesktopModelUpdate,
+  decodeBase64Bytes,
+  getDefaultFasterWhisperRuntimeTrack,
+  getDesktopBundledAsrModelSummary,
+  hasBrowserLocalRuntimeBridge,
+  hasDesktopFileReadBridge,
+  hasDesktopModelUpdateBridge,
+  hasDesktopRuntimeBridge,
+  hasLocalCourseGeneratorBridge,
+  installDesktopBundledAsrModel,
+  logUploadLocalAsrDebug,
+  onDesktopModelUpdateProgress,
+  prepareAudioDataForLocalAsr,
+  reportLocalGenerationUsage,
+  requestDesktopLocalHelper,
+  requestWalletBalance,
+  runLocalAsrWithAutoParallelism,
+  startDesktopModelUpdate,
+} from "./uploadRuntime";
+import {
+  calculateChargeCentsBySeconds,
+  calculateChargeCentsByTokens,
+  clampPercent,
+  detectLocalAsrSupport,
+  estimateMtTokensByDuration,
+  formatBinarySize,
+  formatDateTimeLabel,
+  formatDurationLabel,
+  formatLatencyLabel,
+  getDefaultBalancedModelKey,
+  getDefaultFastUploadModelKey,
+  getDefaultUploadModelKey,
+  getDiagnosticBadgeClassName,
+  getLocalBalancedModelUnavailableReason,
+  getLocalModelMeta,
+  getRateByModel,
+  getRatePricePer1kTokensYuan,
+  getRatePricePerMinuteYuan,
+  getUploadCardActionMeta,
+  getUploadModelMeta,
+  getUploadModelPriceLabel,
+  isLocalBalancedModelUploadEnabled,
+  isServerRuntimeModel,
+  mergeCatalogIntoUploadModelMeta,
+  shouldRecommendDesktopForBottle2Cloud,
+  simplifyLongAudioWarning,
+} from "./uploadHelpers";
+import {
+  buildDesktopLinkErrorMessage,
+  buildLocalProgressSnapshot,
+  buildTaskState,
+  getBottle2CloudProgressHeadline,
+  getBottle2CloudStageDisplayItems,
+  getCurrentTaskStageKey,
+  getInterruptedLocalAsrStatus,
+  getProgressHeadline,
+  getRecoveryBannerText,
+  getStageDisplayItems,
+  getStageLabelByKey,
+  getTaskStatusCardText,
+  getVisualProgress,
+  sanitizeDesktopLinkInput,
+  sanitizeUserFacingText,
+} from "./uploadTaskViewModel";
 import { getUploadModelTone, getUploadRestoreTone, getUploadStageTone, getUploadTaskTone, getUploadToneStyles } from "./uploadStatusTheme";
-
-const QWEN_MODEL = "qwen3-asr-flash-filetrans";
-const FASTER_WHISPER_MODEL = "faster-whisper-medium";
-const MT_PRICE_MODEL = "qwen-mt-flash";
-const ESTIMATED_MT_TOKENS_PER_MINUTE = 320;
-const UPLOAD_PROGRESS_PERSIST_INTERVAL_MS = 800;
-const ASR_MODELS_API_BASE = "/api/asr-models";
-const DESKTOP_CLIENT_OFFLINE_MESSAGE = "离线模式下无法生成课程，请联网后重试";
-const DESKTOP_CLIENT_INSUFFICIENT_BALANCE_MESSAGE = "余额不足，充值后即可继续生成当前内容";
-const BOTTLE1_DESKTOP_ONLY_MESSAGE = "Bottle 1.0 仅支持在客户端使用，请下载桌面端继续";
-const LINK_IMPORT_DESKTOP_ONLY_MESSAGE = "链接导入仅支持在客户端使用，请下载桌面端继续";
-const LARGE_FILE_DESKTOP_RECOMMEND_MESSAGE = "当前素材推荐使用客户端生成，效果和稳定性更好";
-const DEFAULT_ASR_MODEL_CATALOG_MAP = buildAsrModelCatalogMap();
-const DEFAULT_FAST_UPLOAD_MODEL = QWEN_MODEL;
-const FAST_RUNTIME_TRACK_CLOUD = "cloud";
-const FAST_RUNTIME_TRACK_BROWSER_LOCAL = "browser_local";
-const FAST_RUNTIME_TRACK_DESKTOP_LOCAL = "desktop_local";
-const DESKTOP_LOCAL_TRANSCRIBING_PHASE = "desktop_local_transcribing";
-const DESKTOP_LINK_IMPORTING_PHASE = "desktop_link_importing";
-const DESKTOP_LOCAL_GENERATING_PHASE = "desktop_local_generating";
-const DESKTOP_UPLOAD_SOURCE_MODE_FILE = "file";
-const DESKTOP_UPLOAD_SOURCE_MODE_LINK = "link";
-const FILE_PICKER_ACTION_SELECT = "select";
-const FILE_PICKER_ACTION_DESKTOP_LOCAL_GENERATE = "desktop_local_generate";
-const LOCAL_BROWSER_ASR_ENABLED = import.meta.env.VITE_LOCAL_BROWSER_ASR_ENABLED === "true";
-const LOCAL_ASR_ASSET_BASE_URL = import.meta.env.VITE_LOCAL_ASR_ASSET_BASE_URL || "/static/assets/asr-assets";
-const LOCAL_BROWSER_RUNTIME_BASE_URL = String(import.meta.env.VITE_LOCAL_BROWSER_RUNTIME_BASE_URL || "").trim().replace(/\/+$/, "");
-const LOCAL_ASR_LONG_AUDIO_HINT_SECONDS = 300;
-const LOCAL_ASR_STORAGE_MODE_BROWSER = "browser";
-const LOCAL_ASR_TARGET_SAMPLE_RATE = 16000;
-const LOCAL_ASR_FILE_ACCEPT = ".mp3,.mp4,.m4a,.wav,.flac,.ogg,.aac,.webm,.mkv,.mov";
-const LOCAL_STAGE_PROGRESS_INTERVAL_MS = 500;
-const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止生成，可重新开始。";
-const DESKTOP_CLIENT_ENTRY_URL = String(import.meta.env.VITE_DESKTOP_CLIENT_ENTRY_URL || import.meta.env.VITE_DESKTOP_CLIENT_DOWNLOAD_URL || "/download/desktop").trim();
-const DESKTOP_CLIENT_DISTRIBUTION_NOTE = String(import.meta.env.VITE_DESKTOP_CLIENT_DISTRIBUTION_NOTE || "").trim();
-const BOTTLE2_CLOUD_DESKTOP_RECOMMEND_SIZE_BYTES = 300 * 1024 * 1024;
-const BOTTLE2_CLOUD_DESKTOP_RECOMMEND_DURATION_SECONDS = 45 * 60;
-const SNAPANY_FALLBACK_URL = "https://snapany.com/zh";
-const DESKTOP_LINK_INVALID_MESSAGE = "未识别到可导入链接。";
-const DESKTOP_LINK_RESTRICTED_MESSAGE = "该链接可能需要登录或平台限制，建议改用 SnapAny";
-const DESKTOP_LINK_UNSUPPORTED_MESSAGE = "当前桌面工具暂不支持该链接，建议改用 SnapAny";
-const DESKTOP_LINK_PUBLIC_SUPPORT_MESSAGE = "支持常见公开视频链接：YouTube、B站、常见播客页面、公开视频直链";
-const DESKTOP_LINK_PUBLIC_ONLY_MESSAGE = "仅支持公开单条链接，不支持 cookies、账号登录、会员内容、受限内容导入";
-const browserLocalRuntimeApi = LOCAL_BROWSER_RUNTIME_BASE_URL ? createApiClient({ baseUrl: LOCAL_BROWSER_RUNTIME_BASE_URL }) : null;
+import { useUploadWorkflow } from "./hooks/useUploadWorkflow";
 
 function localAsrDirectoryBindingSupported() {
   return typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
@@ -98,27 +174,6 @@ function buildLocalAsrLongAudioWarning(durationSec, hintSeconds) {
 }
 function releaseLocalAsrWorkerAssetPayload(modelKey) {}
 
-function formatBinarySize(bytes) {
-  const safeBytes = Math.max(0, Number(bytes || 0));
-  if (!safeBytes) return "0 B";
-  if (safeBytes >= 1024 * 1024 * 1024) {
-    return `${(safeBytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-  }
-  if (safeBytes >= 1024 * 1024) {
-    return `${Math.max(1, Math.round(safeBytes / (1024 * 1024)))} MB`;
-  }
-  if (safeBytes >= 1024) {
-    return `${Math.max(1, Math.round(safeBytes / 1024))} KB`;
-  }
-  return `${safeBytes} B`;
-}
-
-function shouldRecommendDesktopForBottle2Cloud(fileLike, durationSeconds) {
-  const sizeBytes = Math.max(0, Number(fileLike?.size || 0));
-  const safeDurationSeconds = Math.max(0, Number(durationSeconds || 0));
-  return sizeBytes >= BOTTLE2_CLOUD_DESKTOP_RECOMMEND_SIZE_BYTES || safeDurationSeconds >= BOTTLE2_CLOUD_DESKTOP_RECOMMEND_DURATION_SECONDS;
-}
-
 function estimateLocalAsrStageRatio(elapsedMs, durationSec) {
   if (!durationSec || durationSec <= 0) return 0;
   return Math.max(0, Math.min(1, elapsedMs / (durationSec * 1000 * 0.9)));
@@ -139,167 +194,6 @@ function persistLocalAsrSession(taskSnapshot) {}
 function loadLocalAsrSession() { return null; }
 function clearLocalAsrSession() {}
 function releaseAllLocalAsrWorkerAssetPayloads() {}
-
-function hasLocalCourseGeneratorBridge() {
-  return typeof window !== "undefined" && typeof window.localAsr?.generateCourse === "function";
-}
-
-function hasBrowserLocalRuntimeBridge() {
-  return Boolean(browserLocalRuntimeApi);
-}
-
-function hasNativeDesktopModelUpdateBridge() {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.desktopRuntime?.getModelUpdateStatus === "function" &&
-    typeof window.desktopRuntime?.checkModelUpdate === "function" &&
-    typeof window.desktopRuntime?.startModelUpdate === "function" &&
-    typeof window.desktopRuntime?.cancelModelUpdate === "function"
-  );
-}
-
-function desktopModelUpdateSupported() {
-  return hasNativeDesktopModelUpdateBridge();
-}
-
-function normalizeDesktopBundledModelSummary(payload = {}, modelKey = FASTER_WHISPER_MODEL) {
-  const normalizedModelKey = String(payload?.model_key || modelKey || FASTER_WHISPER_MODEL).trim() || FASTER_WHISPER_MODEL;
-  const available = Boolean(payload?.available);
-  const installAvailable = Boolean(payload?.install_available);
-  const sourceAvailable = Boolean(payload?.source_available);
-  const preinstalled = Boolean(payload?.preinstalled);
-  const runtimeSource = String(payload?.runtime_source || "").trim() || "user_data";
-  const message = available
-    ? "Bottle 1.0 is ready on this desktop client."
-    : installAvailable
-      ? "Bottle 1.0 can be prepared from this desktop client."
-      : "This installer does not contain a reusable Bottle 1.0 local bundle.";
-  return {
-    modelKey: normalizedModelKey,
-    available,
-    installAvailable,
-    sourceAvailable,
-    preinstalled,
-    runtimeSource,
-    installSelected: typeof payload?.install_selected === "boolean" ? payload.install_selected : null,
-    installChoice: String(payload?.install_choice || "").trim(),
-    sourceBundleDir: String(payload?.source_bundle_dir || ""),
-    targetBundleDir: String(payload?.bundle_dir || ""),
-    fileCount: Number(payload?.file_count || 0),
-    message,
-  };
-}
-
-async function getDesktopBundledAsrModelSummary(modelKey) {
-  if (!hasDesktopRuntimeBridge()) {
-    throw new Error("Desktop local helper is unavailable");
-  }
-  const helperModelKey = encodeURIComponent(String(modelKey || FASTER_WHISPER_MODEL).trim() || FASTER_WHISPER_MODEL);
-  const response = await requestDesktopLocalHelper(`/api/local-asr-assets/download-models/${helperModelKey}`, "json");
-  return normalizeDesktopBundledModelSummary(response?.data, modelKey);
-}
-
-async function installDesktopBundledAsrModel(modelKey) {
-  if (!hasDesktopRuntimeBridge()) {
-    throw new Error("Desktop local helper is unavailable");
-  }
-  const helperModelKey = encodeURIComponent(String(modelKey || FASTER_WHISPER_MODEL).trim() || FASTER_WHISPER_MODEL);
-  const response = await requestDesktopLocalHelper(
-    `/api/local-asr-assets/download-models/${helperModelKey}/install`,
-    "json",
-    { method: "POST" },
-  );
-  return normalizeDesktopBundledModelSummary(response?.data, modelKey);
-}
-
-async function checkDesktopModelUpdate(modelKey) {
-  if (!hasNativeDesktopModelUpdateBridge()) {
-    throw new Error("Desktop model update bridge is unavailable");
-  }
-  return window.desktopRuntime.checkModelUpdate(String(modelKey || FASTER_WHISPER_MODEL).trim() || FASTER_WHISPER_MODEL);
-}
-
-async function startDesktopModelUpdate(modelKey) {
-  if (!hasNativeDesktopModelUpdateBridge()) {
-    throw new Error("Desktop model update bridge is unavailable");
-  }
-  return window.desktopRuntime.startModelUpdate(String(modelKey || FASTER_WHISPER_MODEL).trim() || FASTER_WHISPER_MODEL);
-}
-
-async function cancelDesktopModelUpdate() {
-  if (!hasNativeDesktopModelUpdateBridge()) {
-    throw new Error("Desktop model update bridge is unavailable");
-  }
-  return window.desktopRuntime.cancelModelUpdate();
-}
-
-function onDesktopModelUpdateProgress(callback) {
-  if (!hasNativeDesktopModelUpdateBridge() || typeof window.desktopRuntime?.onModelUpdateProgress !== "function") {
-    return () => {};
-  }
-  return window.desktopRuntime.onModelUpdateProgress((payload) => {
-    callback?.(payload || {});
-  });
-}
-
-function logUploadLocalAsrDebug(message, extra = {}) {
-  if (typeof console === "undefined" || typeof console.debug !== "function") return;
-  console.debug("[DEBUG] upload.local_asr", message, extra);
-}
-
-async function prepareAudioDataForLocalAsr() {
-  throw new Error("浏览器本地 ASR 已下线，请改用桌面端 Bottle 1.0 或网页端 Bottle 2.0。");
-}
-
-async function runLocalAsrWithAutoParallelism() {
-  throw new Error("浏览器本地 ASR 已下线，请改用桌面端 Bottle 1.0 或网页端 Bottle 2.0。");
-}
-
-function hasDesktopFileReadBridge() {
-  return typeof window !== "undefined" && typeof window.desktopRuntime?.readLocalMediaFile === "function";
-}
-
-function hasDesktopRuntimeBridge() {
-  return typeof window !== "undefined" && typeof window.desktopRuntime?.requestLocalHelper === "function";
-}
-
-function hasDesktopModelUpdateBridge() {
-  return desktopModelUpdateSupported();
-}
-
-function decodeBase64Bytes(base64Text) {
-  const safeText = String(base64Text || "").trim();
-  if (!safeText || typeof atob !== "function") {
-    return new Uint8Array();
-  }
-  const decoded = atob(safeText);
-  const bytes = new Uint8Array(decoded.length);
-  for (let index = 0; index < decoded.length; index += 1) {
-    bytes[index] = decoded.charCodeAt(index);
-  }
-  return bytes;
-}
-
-async function requestDesktopLocalHelper(pathname, responseType = "json", options = {}) {
-  if (!hasDesktopRuntimeBridge()) {
-    throw new Error("Desktop local helper is unavailable");
-  }
-  const response = await window.desktopRuntime.requestLocalHelper({
-    path: String(pathname || ""),
-    method: String(options.method || "GET").toUpperCase(),
-    responseType,
-    body: options.body,
-  });
-  if (!response?.ok) {
-    const detail =
-      String(response?.data?.message || "").trim() ||
-      String(response?.data?.error_message || "").trim() ||
-      String(response?.data?.detail || "").trim() ||
-      String(response?.status || "").trim();
-    throw new Error(detail || "Desktop local helper request failed");
-  }
-  return response;
-}
 
 async function transcribeDesktopLocalAsr(modelKey, sourceFile) {
   if (!hasDesktopRuntimeBridge()) {
@@ -322,46 +216,6 @@ async function transcribeDesktopLocalAsr(modelKey, sourceFile) {
   };
 }
 
-async function requestWalletBalance(accessToken = "") {
-  const response = await api("/api/wallet/balance", { method: "GET" }, accessToken);
-  const payload = await parseResponse(response);
-  if (!response.ok) {
-    throw new Error(toErrorText(payload, "读取余额失败"));
-  }
-  return {
-    ok: payload?.ok !== false,
-    balanceAmountCents: Math.max(0, Number(payload?.balance_amount_cents ?? payload?.balance ?? 0)),
-    currency: String(payload?.currency || "CNY").trim() || "CNY",
-    updatedAt: String(payload?.updated_at || "").trim(),
-  };
-}
-
-async function reportLocalGenerationUsage(accessToken = "", payload = {}) {
-  const response = await api(
-    "/api/wallet/consume",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload || {}),
-    },
-    accessToken,
-  );
-  const data = await parseResponse(response);
-  if (!response.ok) {
-    throw new Error(toErrorText(data, "上报本地生成用量失败"));
-  }
-  return data;
-}
-
-function getDefaultFasterWhisperRuntimeTrack() {
-  if (hasDesktopRuntimeBridge()) {
-    return FAST_RUNTIME_TRACK_DESKTOP_LOCAL;
-  }
-  if (hasBrowserLocalRuntimeBridge() && !isMobileUploadViewport()) {
-    return FAST_RUNTIME_TRACK_BROWSER_LOCAL;
-  }
-  return FAST_RUNTIME_TRACK_CLOUD;
-}
 
 function normalizeServerStatus(payload = {}) {
   return {
@@ -490,384 +344,6 @@ function buildDashscopeStorageUploadFailureMessage(uploadResult = {}) {
   return details.length ? `${prefix}: ${details.join("; ")}` : prefix;
 }
 
-const LOCAL_MODEL_OPTIONS = [
-  {
-    key: ASR_MODEL_KEYS.fasterWhisper,
-    workerModelId: ASR_MODEL_KEYS.fasterWhisper,
-    title: "Bottle 1.0",
-    subtitle: "先准备桌面端模型，再开始生成。",
-    uploadEnabled: true,
-    sizeEstimateMb: { wasm: 180 },
-  },
-];
-const UPLOAD_MODEL_OPTIONS = [
-  {
-    key: FASTER_WHISPER_MODEL,
-    title: "Bottle 1.0",
-    subtitle: "更注重字幕质量，需改用桌面端。",
-    mode: "fast",
-    note: "下载桌面端后处理。",
-    sourceModelId: "Systran/faster-distil-whisper-small.en",
-    deployPath: "D:\\3.3-19.01\\asr-test\\models\\faster-distil-small.en",
-  },
-  {
-    key: QWEN_MODEL,
-    title: "Bottle 2.0",
-    subtitle: "网页端默认路径。",
-    mode: "fast",
-    note: "无需准备模型，选中文件后可直接开始。",
-  },
-];
-const DISPLAY_STAGES = [
-  { key: "convert_audio", label: "抽音频" },
-  { key: "asr_transcribe", label: "识别字幕" },
-  { key: "build_lesson", label: "生成课程结构" },
-  { key: "translate_zh", label: "翻译" },
-  { key: "cefr_explain", label: "生成讲解" },
-  { key: "write_lesson", label: "保存完成" },
-];
-function getStageLabelByKey(stageKey) {
-  if (!stageKey) return "";
-  const stage = DISPLAY_STAGES.find((item) => item.key === stageKey);
-  return stage ? stage.label : stageKey;
-}
-const STAGE_PROGRESS_BOUNDS = {
-  convert_audio: { start: 0, end: 15 },
-  asr_transcribe: { start: 15, end: 45 },
-  build_lesson: { start: 45, end: 60 },
-  translate_zh: { start: 60, end: 85 },
-  cefr_explain: { start: 85, end: 92 },
-  write_lesson: { start: 92, end: 100 },
-};
-
-const BOTTLE2_CLOUD_DISPLAY_STAGES = [
-  { key: "upload", label: "上传素材" },
-  { key: "submit_cloud_task", label: "提交云端任务" },
-  { key: "transcribing", label: "转写中" },
-  { key: "generating_lesson", label: "生成课程" },
-  { key: "cefr_explain", label: "生成讲解" },
-  { key: "completed", label: "已完成" },
-];
-
-function buildBottle2CloudStageItem({ key, label, status = "pending", progressPercent = 0, detailText = "--", statusText = "等待开始" }) {
-  return {
-    key,
-    label,
-    status,
-    progressPercent: clampPercent(progressPercent),
-    detailText: detailText || "--",
-    statusText,
-  };
-}
-
-function getBottle2CloudStageDisplayItems({ phase, uploadPercent, taskSnapshot, status = "" }) {
-  const normalizedPhase = String(phase || "").trim();
-  const normalizedStatusText = sanitizeUserFacingText(status);
-  const taskStatus = String(taskSnapshot?.status || "").trim().toLowerCase();
-  const currentTaskStageKey = taskSnapshot ? getCurrentTaskStageKey(taskSnapshot) : "";
-  const currentTaskText = sanitizeUserFacingText(taskSnapshot?.current_text || "");
-  const hasTask = Boolean(taskSnapshot);
-  const isSubmittingTask = normalizedPhase === "uploading" && normalizedStatusText.includes("提交云端任务");
-  const isUploadFailed = normalizedPhase === "error" && !hasTask && clampPercent(uploadPercent) < 100;
-  const isSubmitFailed = normalizedPhase === "error" && !hasTask && clampPercent(uploadPercent) >= 100;
-  const isTaskFailed = taskStatus === "failed";
-  const isTaskSucceeded = normalizedPhase === "success" || taskStatus === "succeeded";
-  const isTranscribingStage = hasTask && (currentTaskStageKey === "convert_audio" || currentTaskStageKey === "asr_transcribe");
-  const isLessonBuildingStage = hasTask && (currentTaskStageKey === "build_lesson" || currentTaskStageKey === "translate_zh");
-  const isCefrStage = hasTask && (currentTaskStageKey === "cefr_explain" || currentTaskStageKey === "write_lesson");
-  const isGeneratingStage = isLessonBuildingStage || isCefrStage;
-  const uploadStage = buildBottle2CloudStageItem({
-    key: "upload",
-    label: "上传素材",
-    status: isUploadFailed ? "failed" : normalizedPhase === "uploading" && !isSubmittingTask ? "running" : (hasTask || normalizedPhase === "processing" || isSubmittingTask || isTaskSucceeded || isSubmitFailed ? "completed" : "pending"),
-    progressPercent: normalizedPhase === "uploading" && !isSubmittingTask ? Math.max(6, clampPercent(uploadPercent)) : (hasTask || normalizedPhase === "processing" || isSubmittingTask || isTaskSucceeded || isSubmitFailed ? 100 : 0),
-    detailText: normalizedPhase === "uploading" && !isSubmittingTask ? `${clampPercent(uploadPercent)}%` : (hasTask || normalizedPhase === "processing" || isSubmittingTask || isTaskSucceeded || isSubmitFailed ? "1/1" : "--"),
-    statusText: isUploadFailed ? (normalizedStatusText || "上传失败") : normalizedPhase === "uploading" && !isSubmittingTask ? (normalizedStatusText || "上传中") : (hasTask || normalizedPhase === "processing" || isSubmittingTask || isTaskSucceeded || isSubmitFailed ? "已完成" : "等待开始"),
-  });
-  const submitStage = buildBottle2CloudStageItem({
-    key: "submit_cloud_task",
-    label: "提交云端任务",
-    status: isSubmitFailed ? "failed" : (hasTask || normalizedPhase === "processing" || isTaskSucceeded ? "completed" : (isSubmittingTask ? "running" : "pending")),
-    progressPercent: hasTask || normalizedPhase === "processing" || isTaskSucceeded ? 100 : (isSubmittingTask ? 70 : 0),
-    detailText: hasTask || normalizedPhase === "processing" || isTaskSucceeded ? "1/1" : (isSubmittingTask ? "进行中" : "--"),
-    statusText: isSubmitFailed ? (normalizedStatusText || "提交失败") : (hasTask || normalizedPhase === "processing" || isTaskSucceeded ? "已完成" : (isSubmittingTask ? (normalizedStatusText || "提交中") : "等待开始")),
-  });
-  const transcribingStage = buildBottle2CloudStageItem({
-    key: "transcribing",
-    label: "转写中",
-    status: isTaskFailed && isTranscribingStage ? "failed" : (isTaskSucceeded || isLessonBuildingStage || isCefrStage ? "completed" : (isTranscribingStage ? "running" : "pending")),
-    progressPercent: isTaskSucceeded || isLessonBuildingStage || isCefrStage ? 100 : (isTranscribingStage ? Math.max(8, clampPercent((Number(taskSnapshot?.overall_percent || 0) / 45) * 100)) : 0),
-    detailText: isTaskSucceeded || isLessonBuildingStage || isCefrStage ? "1/1" : (isTranscribingStage ? `${Math.max(1, clampPercent(taskSnapshot?.overall_percent || 0))}%` : "--"),
-    statusText: isTaskFailed && isTranscribingStage ? (currentTaskText || "转写失败") : (isTaskSucceeded || isLessonBuildingStage || isCefrStage ? "已完成" : (isTranscribingStage ? (currentTaskText || "转写中") : "等待开始")),
-  });
-  const generatingStage = buildBottle2CloudStageItem({
-    key: "generating_lesson",
-    label: "生成课程",
-    status: isTaskFailed && !isTranscribingStage ? "failed" : (isTaskSucceeded || isCefrStage ? "completed" : (isLessonBuildingStage ? "running" : "pending")),
-    progressPercent: isTaskSucceeded || isCefrStage ? 100 : (isLessonBuildingStage ? Math.max(10, clampPercent(((Math.max(45, Number(taskSnapshot?.overall_percent || 0)) - 45) / 40) * 100)) : 0),
-    detailText: isTaskSucceeded || isCefrStage ? "1/1" : (isLessonBuildingStage ? `${Math.max(45, clampPercent(taskSnapshot?.overall_percent || 0))}%` : "--"),
-    statusText: isTaskFailed && !isTranscribingStage ? (currentTaskText || "生成课程失败") : (isTaskSucceeded || isCefrStage ? "已完成" : (isLessonBuildingStage ? (currentTaskText || "生成课程中") : "等待开始")),
-  });
-  const cefrStage = buildBottle2CloudStageItem({
-    key: "cefr_explain",
-    label: "生成讲解",
-    status: isTaskFailed && isCefrStage && !isLessonBuildingStage ? "failed" : (isTaskSucceeded ? "completed" : (isCefrStage ? "running" : "pending")),
-    progressPercent: isTaskSucceeded ? 100 : (isCefrStage ? Math.max(10, clampPercent(((Math.max(85, Number(taskSnapshot?.overall_percent || 0)) - 85) / 7) * 100)) : 0),
-    detailText: isTaskSucceeded ? "1/1" : (isCefrStage ? `${Math.max(85, clampPercent(taskSnapshot?.overall_percent || 0))}%` : "--"),
-    statusText: isTaskFailed && isCefrStage ? (currentTaskText || "生成讲解失败") : (isTaskSucceeded ? "已完成" : (isCefrStage ? (currentTaskText || "生成讲解中") : "等待开始")),
-  });
-  const completedStage = buildBottle2CloudStageItem({
-    key: "completed",
-    label: "已完成",
-    status: isTaskSucceeded ? "completed" : "pending",
-    progressPercent: isTaskSucceeded ? 100 : 0,
-    detailText: isTaskSucceeded ? "1/1" : "--",
-    statusText: isTaskSucceeded ? "课程已生成完成" : "等待完成",
-  });
-  return [uploadStage, submitStage, transcribingStage, generatingStage, cefrStage, completedStage];
-}
-
-function getBottle2CloudProgressHeadline({ phase, uploadPercent, taskSnapshot, status = "" }) {
-  const normalizedPhase = String(phase || "").trim();
-  const normalizedStatusText = sanitizeUserFacingText(status);
-  if (normalizedPhase === "uploading") {
-    return normalizedStatusText.includes("提交云端任务") ? "提交云端任务" : `上传素材 ${clampPercent(uploadPercent)}%`;
-  }
-  if (normalizedPhase === "success") return "生成课程完成";
-  if (normalizedPhase === "error") return "生成课程失败";
-  if (!taskSnapshot) return "等待上传";
-  const currentTaskStageKey = getCurrentTaskStageKey(taskSnapshot);
-  const currentTaskText = sanitizeUserFacingText(taskSnapshot?.current_text || "");
-  if (currentTaskStageKey === "convert_audio" || currentTaskStageKey === "asr_transcribe") {
-    return currentTaskText || "转写中";
-  }
-  if (["build_lesson", "translate_zh"].includes(currentTaskStageKey)) {
-    return currentTaskText || "生成课程";
-  }
-  if (["cefr_explain", "write_lesson"].includes(currentTaskStageKey)) {
-    return currentTaskText || "生成讲解";
-  }
-  return currentTaskText || "生成课程";
-}
-const SERVER_PREPARABLE_MODELS = new Set([FASTER_WHISPER_MODEL]);
-const ACTIVE_SERVER_TASK_STATUSES = new Set(["pending", "running", "pausing", "terminating"]);
-const STOPPABLE_SERVER_TASK_STATUSES = new Set(["pending", "running"]);
-const RECOVERABLE_SERVER_TASK_STATUSES = new Set(["paused", "terminated"]);
-const RESTORE_BANNER_MODES = {
-  NONE: "none",
-  VERIFYING: "verifying",
-  STALE: "stale",
-  INTERRUPTED: "interrupted",
-};
-const BOTTLE_LESSON_SCHEMA_VERSION = "1";
-const BOTTLE_LESSON_FILE_SUFFIX = ".bottle-lesson.json";
-const LOCAL_LESSON_UPDATE_EVENT = "bottle-local-lessons-updated";
-const POLL_RETRY_LIMIT = 3;
-const POLL_RETRY_DELAY_MS = 1500;
-
-function clampPercent(value) {
-  return Math.max(0, Math.min(100, Number(value) || 0));
-}
-
-function getRateByModel(rates, modelName) {
-  return rates.find((item) => item.model_name === modelName && item.is_active);
-}
-
-function isServerRuntimeModel(rate) {
-  return Boolean(rate) && String(rate.runtime_kind || "cloud") !== "local" && String(rate.billing_unit || "minute") === "minute";
-}
-
-function getRatePricePerMinuteYuan(rate) {
-  const directYuan = Number(rate?.price_per_minute_yuan ?? 0);
-  if (Number.isFinite(directYuan) && directYuan > 0) {
-    return directYuan;
-  }
-  const fallbackCents = Number(rate?.price_per_minute_cents ?? rate?.points_per_minute ?? 0);
-  if (!Number.isFinite(fallbackCents) || fallbackCents <= 0) {
-    return 0;
-  }
-  return fallbackCents / 100;
-}
-
-function getRatePricePer1kTokensYuan(rate) {
-  const tokenCents = Number(rate?.points_per_1k_tokens ?? 0);
-  if (!Number.isFinite(tokenCents) || tokenCents <= 0) {
-    return 0;
-  }
-  return tokenCents / 100;
-}
-
-function calculateChargeCentsBySeconds(seconds, pricePerMinuteYuan) {
-  if (!Number.isFinite(seconds) || seconds <= 0 || !Number.isFinite(pricePerMinuteYuan) || pricePerMinuteYuan <= 0) return 0;
-  const roundedSeconds = Math.ceil(seconds);
-  const yuanPerMinuteScaled = Math.round(pricePerMinuteYuan * 10000);
-  return Math.ceil((roundedSeconds * yuanPerMinuteScaled) / 6000);
-}
-
-function calculateChargeCentsByTokens(totalTokens, centsPer1kTokens) {
-  if (!Number.isFinite(totalTokens) || totalTokens <= 0 || !Number.isFinite(centsPer1kTokens) || centsPer1kTokens <= 0) return 0;
-  return Math.ceil((Math.ceil(totalTokens) * Math.ceil(centsPer1kTokens)) / 1000);
-}
-
-function estimateMtTokensByDuration(seconds) {
-  if (!Number.isFinite(seconds) || seconds <= 0) return 0;
-  return Math.max(1, Math.ceil((Math.ceil(seconds) * ESTIMATED_MT_TOKENS_PER_MINUTE) / 60));
-}
-
-function getLocalModelMeta(modelKey) {
-  return LOCAL_MODEL_OPTIONS.find((item) => item.key === modelKey) || LOCAL_MODEL_OPTIONS[0];
-}
-
-function getDefaultBalancedModelKey(configuredModel = "") {
-  const normalizedConfiguredModel = String(configuredModel || "").trim();
-  const configuredMeta = LOCAL_MODEL_OPTIONS.find((item) => item.key === normalizedConfiguredModel);
-  if (configuredMeta?.uploadEnabled) return configuredMeta.key;
-  return LOCAL_MODEL_OPTIONS.find((item) => item.uploadEnabled)?.key || LOCAL_MODEL_OPTIONS[0].key;
-}
-
-function getUploadModelMeta(modelKey = "") {
-  return UPLOAD_MODEL_OPTIONS.find((item) => item.key === modelKey) || UPLOAD_MODEL_OPTIONS[0];
-}
-
-function getDefaultFastUploadModelKey(configuredModel = "") {
-  const normalizedConfiguredModel = String(configuredModel || "").trim();
-  if (normalizedConfiguredModel === FASTER_WHISPER_MODEL || normalizedConfiguredModel === QWEN_MODEL) {
-    return normalizedConfiguredModel;
-  }
-  return DEFAULT_FAST_UPLOAD_MODEL;
-}
-
-function getDefaultUploadModelKey(configuredModel = "") {
-  const normalizedConfiguredModel = String(configuredModel || "").trim();
-  if (normalizedConfiguredModel === FASTER_WHISPER_MODEL || normalizedConfiguredModel === QWEN_MODEL) {
-    return normalizedConfiguredModel;
-  }
-  return QWEN_MODEL;
-}
-
-function isLocalBalancedModelUploadEnabled(modelKey) {
-  return Boolean(getLocalModelMeta(modelKey)?.uploadEnabled);
-}
-
-function getLocalBalancedModelUnavailableReason(modelKey) {
-  return String(getLocalModelMeta(modelKey)?.unavailableReason || "").trim();
-}
-
-function detectLocalAsrSupport() {
-  if (typeof window === "undefined" || typeof navigator === "undefined") {
-    return { supported: false, reason: "当前环境暂不支持这个模型", browserName: "", webgpuSupported: false };
-  }
-  const userAgent = String(navigator.userAgent || "");
-  const isMobile = Boolean(navigator.userAgentData?.mobile) || /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent);
-  const isEdge = /\bEdg\//.test(userAgent);
-  const isChrome = /\bChrome\//.test(userAgent) && !/\bEdg\//.test(userAgent) && !/\bOPR\//.test(userAgent);
-  const browserName = isEdge ? "Edge" : isChrome ? "Chrome" : "";
-  const webgpuSupported = typeof navigator.gpu !== "undefined";
-  if (isMobile) {
-    return { supported: false, reason: "请改用桌面端 Chrome 或 Edge", browserName, webgpuSupported };
-  }
-  if (!browserName) {
-    return { supported: false, reason: "请改用桌面端 Chrome 或 Edge", browserName: "", webgpuSupported };
-  }
-  return { supported: true, reason: "", browserName, webgpuSupported };
-}
-
-function simplifyLongAudioWarning(text) {
-  return String(text || "")
-    .replace(/WASM 模式会明显较慢，更建议改用高速模式。?/g, "当前素材较长，生成会慢一些。")
-    .trim();
-}
-
-function getUploadModelPriceLabel(item, rates) {
-  const pricingModelKey = item.mode === "balanced" ? DEFAULT_FAST_UPLOAD_MODEL : item.key;
-  const rate = getRateByModel(rates, pricingModelKey) || getRateByModel(rates, item.key);
-  const pricePerMinuteYuan = getRatePricePerMinuteYuan(rate);
-  return pricePerMinuteYuan > 0 ? formatMoneyYuanPerMinute(pricePerMinuteYuan) : "未设置价格";
-}
-
-function mergeCatalogIntoUploadModelMeta(modelKey, catalogMap) {
-  const fallback = getUploadModelMeta(modelKey);
-  const catalogItem = getAsrModelCatalogItem(modelKey, catalogMap);
-  if (!catalogItem) return fallback;
-  return {
-    ...fallback,
-    title: String(catalogItem.display_name || fallback.title || ""),
-    subtitle: String(catalogItem.subtitle || fallback.subtitle || ""),
-    note: String(catalogItem.note || fallback.note || ""),
-    sourceModelId: String(catalogItem.source_model_id || fallback.sourceModelId || ""),
-    deployPath: String(catalogItem.deploy_path || fallback.deployPath || ""),
-    runtimeKind: String(catalogItem.runtime_kind || ""),
-    runtimeLabel: String(catalogItem.runtime_label || ""),
-    prepareMode: String(catalogItem.prepare_mode || ""),
-  };
-}
-
-function getUploadCardActionMeta({
-  item,
-  uploadActionBusy,
-  localTranscribing,
-  localAsrSupport,
-  localWorkerReady,
-  localCardBusy,
-  localCardDownloaded,
-  fasterModelReady,
-  fasterModelPreparing,
-  fasterModelBusy,
-}) {
-  if (item.key === FASTER_WHISPER_MODEL) {
-    return {
-      label: fasterModelReady ? "已就绪" : fasterModelPreparing || fasterModelBusy ? "准备中" : "准备模型",
-      disabled: fasterModelReady || uploadActionBusy || fasterModelBusy || fasterModelPreparing || localTranscribing,
-    };
-  }
-  return {
-    label: "无需准备",
-    disabled: true,
-  };
-}
-
-function formatDurationLabel(seconds) {
-  const safeSeconds = Math.max(0, Math.round(Number(seconds) || 0));
-  const minutes = Math.floor(safeSeconds / 60);
-  const remainSeconds = safeSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
-}
-
-function formatSubtitleTimestamp(ms) {
-  const safeSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-  const seconds = safeSeconds % 60;
-  if (hours > 0) {
-    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
-function formatSubtitleTimeRange(beginMs, endMs) {
-  const safeBeginMs = Math.max(0, Number(beginMs || 0));
-  const safeEndMs = Math.max(safeBeginMs, Number(endMs || 0));
-  if (safeBeginMs <= 0 && safeEndMs <= 0) {
-    return "";
-  }
-  return `${formatSubtitleTimestamp(safeBeginMs)} - ${formatSubtitleTimestamp(safeEndMs)}`;
-}
-
-function formatDateTimeLabel(value) {
-  const normalized = String(value || "").trim();
-  if (!normalized) return "";
-  const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-}
 
 function hasLocalLessonImportBridge() {
   return (
@@ -985,20 +461,6 @@ function buildImportedProgressRecord(courseId, progress = null) {
     synced_at: progress?.synced_at || null,
     version: Math.max(1, Number(progress?.version || 1) || 1),
   };
-}
-
-function formatLatencyLabel(latencyMs) {
-  if (!Number.isFinite(Number(latencyMs))) {
-    return "";
-  }
-  return `${Math.max(0, Math.round(Number(latencyMs)))} ms`;
-}
-
-function getDiagnosticBadgeClassName(tone = "neutral") {
-  if (tone === "success") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
-  if (tone === "warning") return "border-amber-500/30 bg-amber-500/10 text-amber-700";
-  if (tone === "danger") return "border-rose-500/30 bg-rose-500/10 text-rose-700";
-  return "border-slate-500/20 bg-slate-500/10 text-slate-700";
 }
 
 function getDesktopServerDiagnostic(serverStatus = {}, runtimeInfo = null) {
@@ -1143,255 +605,6 @@ function buildWorkerRequestId(sequence) {
   return `upload-${Date.now()}-${sequence}`;
 }
 
-function getStageItems(taskSnapshot) {
-  const map = Object.fromEntries((Array.isArray(taskSnapshot?.stages) ? taskSnapshot.stages : []).map((item) => [item.key, item.status || "pending"]));
-  return DISPLAY_STAGES.map((item) => ({ ...item, status: map[item.key] || "pending" }));
-}
-
-function getCurrentTaskStageKey(taskSnapshot) {
-  const items = getStageItems(taskSnapshot);
-  return items.find((item) => item.status === "running")?.key || items.find((item) => item.status === "failed")?.key || items.find((item) => item.status !== "completed")?.key || "write_lesson";
-}
-
-function getStageProgressRatioFromOverall(stageKey, overallPercent) {
-  const bounds = STAGE_PROGRESS_BOUNDS[stageKey] || { start: 0, end: 100 };
-  const safeOverallPercent = clampPercent(overallPercent);
-  const span = Math.max(1, Number(bounds.end || 100) - Number(bounds.start || 0));
-  if (safeOverallPercent <= bounds.start) return 0;
-  if (safeOverallPercent >= bounds.end) return 1;
-  return (safeOverallPercent - bounds.start) / span;
-}
-
-function buildStageCounterDisplay(done, total, fallbackRatio, fallbackTotal = 0) {
-  const safeDone = Math.max(0, Number(done || 0));
-  const safeTotal = Math.max(safeDone, Number(total || 0));
-  if (safeTotal > 0) {
-    return {
-      detailText: `${safeDone}/${safeTotal}`,
-      progressPercent: clampPercent((safeDone / safeTotal) * 100),
-    };
-  }
-  const safeFallbackRatio = Math.max(0, Math.min(1, Number(fallbackRatio) || 0));
-  const normalizedFallbackTotal = Math.max(0, Number(fallbackTotal || 0));
-  if (normalizedFallbackTotal <= 0) {
-    return {
-      detailText: "--",
-      progressPercent: clampPercent(safeFallbackRatio * 100),
-    };
-  }
-  const fallbackDone = safeFallbackRatio >= 1 ? normalizedFallbackTotal : Math.max(0, Math.floor(normalizedFallbackTotal * safeFallbackRatio));
-  return {
-    detailText: `${fallbackDone}/${normalizedFallbackTotal}`,
-    progressPercent: clampPercent(safeFallbackRatio * 100),
-  };
-}
-
-function sanitizeUserFacingText(text) {
-  return String(text || "")
-    .replace(/(?:funasr|faster-whisper|ctranslate2) import failed:[^\n]*/gi, "当前模型运行环境未就绪，请联系管理员检查服务端依赖。")
-    .replace(/No module named ['"][^'"]+['"]/gi, "服务端依赖未安装")
-    .replace(/本地识别/g, "识别")
-    .replace(/本地模型/g, "模型")
-    .replace(/本地 Bottle 1\.0/g, "Bottle 1.0")
-    .replace(/本地字幕/g, "字幕")
-    .replace(/本地音频/g, "音频")
-    .replace(/本地视频/g, "视频")
-    .replace(/本地解码/g, "直接解码")
-    .replace(/本地解析/g, "解析")
-    .replace(/在本地直接/g, "直接")
-    .replace(/在本地运行/g, "运行")
-    .replace(/本地运行/g, "运行")
-    .replace(/本地/g, "")
-    .replace(/均衡模式/g, "当前模型")
-    .replace(/高速模式/g, "另一个模型")
-    .replace(/WASM 模式/g, "当前模式")
-    .replace(/WASM/g, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
-function extractFirstSupportedUrl(text) {
-  const matches = String(text || "").match(/https?:\/\/[^\s<>'"，。；！？、\])}]+/gi) || [];
-  for (const match of matches) {
-    const candidate = String(match || "").trim().replace(/[.,!?;:)"'\]}，。；！？、]+$/g, "");
-    if (candidate) {
-      return candidate;
-    }
-  }
-  return "";
-}
-
-function sanitizeDesktopLinkInput(text) {
-  const extracted = extractFirstSupportedUrl(text);
-  if (extracted) {
-    return extracted;
-  }
-  const normalized = String(text || "").trim();
-  if (/^https?:\/\//i.test(normalized)) {
-    return normalized.replace(/[.,!?;:)"'\]}，。；！？、]+$/g, "");
-  }
-  return "";
-}
-
-function buildDesktopLinkErrorMessage(errorLike = "") {
-  const normalized = sanitizeUserFacingText(
-    typeof errorLike === "string" ? errorLike : errorLike?.message || errorLike?.detail || errorLike?.error_message || "",
-  );
-  const lowered = normalized.toLowerCase();
-  if (!normalized) {
-    return DESKTOP_LINK_UNSUPPORTED_MESSAGE;
-  }
-  if (normalized.includes(DESKTOP_LINK_INVALID_MESSAGE)) {
-    return `${DESKTOP_LINK_INVALID_MESSAGE} ${DESKTOP_LINK_PUBLIC_SUPPORT_MESSAGE}，或改用 SnapAny`;
-  }
-  if (normalized.includes("登录") || normalized.includes("限制") || lowered.includes("login") || lowered.includes("cookie")) {
-    return DESKTOP_LINK_RESTRICTED_MESSAGE;
-  }
-  if (normalized.includes("不支持") || lowered.includes("unsupported")) {
-    return DESKTOP_LINK_UNSUPPORTED_MESSAGE;
-  }
-  return normalized;
-}
-
-function trimStageCounterSuffix(text) {
-  return sanitizeUserFacingText(text).replace(/\s+\d+\/\d+$/, "").trim();
-}
-
-function getStageStatusText(taskSnapshot, stageKey, stageStatus, currentStageKey) {
-  const currentText = trimStageCounterSuffix(taskSnapshot?.current_text);
-  if (stageStatus === "completed") return "已完成";
-  if (stageStatus === "failed") return currentText || "执行失败";
-  if (stageStatus === "running") {
-    if (stageKey === currentStageKey && currentText) return currentText;
-    if (stageKey === "convert_audio") return "抽音频中";
-    if (stageKey === "asr_transcribe") return "识别字幕中";
-    if (stageKey === "build_lesson") return "生成课程结构中";
-    if (stageKey === "translate_zh") return "翻译中";
-    if (stageKey === "cefr_explain") return "生成讲解中";
-    if (stageKey === "write_lesson") return "保存中";
-  }
-  return "等待开始";
-}
-
-function getStageDisplayMeta(taskSnapshot, stageKey, stageStatus, currentStageKey) {
-  const counters = taskSnapshot?.counters || {};
-  const fallbackRatio = stageStatus === "completed" ? 1 : stageStatus === "pending" ? 0 : getStageProgressRatioFromOverall(stageKey, taskSnapshot?.overall_percent);
-  let progressMeta;
-
-  if (stageKey === "convert_audio" || stageKey === "build_lesson" || stageKey === "write_lesson") {
-    progressMeta = buildStageCounterDisplay(stageStatus === "completed" ? 1 : 0, 1, fallbackRatio, 1);
-  } else if (stageKey === "asr_transcribe") {
-    const segmentDone = Math.max(0, Number(counters.segment_done || 0));
-    const segmentTotal = Math.max(segmentDone, Number(counters.segment_total || 0));
-    if (segmentTotal > 0) {
-      progressMeta = buildStageCounterDisplay(segmentDone, segmentTotal, fallbackRatio, segmentTotal);
-    } else {
-      const done = Math.max(0, Number(counters.asr_done || 0));
-      const total = Math.max(done, Number(counters.asr_estimated || 0));
-      progressMeta = total > 0 ? buildStageCounterDisplay(done, total, fallbackRatio, total) : buildStageCounterDisplay(0, 0, fallbackRatio, 0);
-    }
-  } else if (stageKey === "translate_zh") {
-    const done = Math.max(0, Number(counters.translate_done || 0));
-    const total = Math.max(done, Number(counters.translate_total || 0));
-    progressMeta = buildStageCounterDisplay(done, total, fallbackRatio, Math.max(1, total));
-  } else {
-    progressMeta = buildStageCounterDisplay(stageStatus === "completed" ? 1 : 0, 1, fallbackRatio, 1);
-  }
-
-  return {
-    ...progressMeta,
-    statusText: getStageStatusText(taskSnapshot, stageKey, stageStatus, currentStageKey),
-  };
-}
-
-function getStageDisplayItems(taskSnapshot) {
-  const currentStageKey = getCurrentTaskStageKey(taskSnapshot);
-  return getStageItems(taskSnapshot).map((item) => ({
-    ...item,
-    ...getStageDisplayMeta(taskSnapshot, item.key, item.status, currentStageKey),
-  }));
-}
-
-function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
-  if (phase === "uploading") return `上传素材 ${clampPercent(uploadPercent)}%`;
-  if (phase === "upload_paused") return `上传素材 ${clampPercent(uploadPercent)}%`;
-  if (phase === DESKTOP_LINK_IMPORTING_PHASE) {
-    const nextPercent = taskSnapshot ? clampPercent(taskSnapshot?.overall_percent) : clampPercent(uploadPercent);
-    return `下载素材 ${nextPercent}%`;
-  }
-  if (phase === DESKTOP_LOCAL_GENERATING_PHASE) {
-    return `本机生成课程 ${clampPercent(uploadPercent)}%`;
-  }
-  if (!taskSnapshot) return phase === "success" ? "生成课程完成" : phase === "error" ? "生成课程失败" : "等待上传";
-  if (phase === "success") return "生成课程完成";
-  const taskStatus = String(taskSnapshot.status || "").toLowerCase();
-  if (taskStatus === "paused" || taskStatus === "terminated") {
-    return sanitizeUserFacingText(taskSnapshot.current_text || taskSnapshot.message || "已停止当前生成");
-  }
-  const counters = taskSnapshot.counters || {};
-  const stageKey = getCurrentTaskStageKey(taskSnapshot);
-  if (stageKey === "asr_transcribe") {
-    const segmentDone = Math.max(0, Number(counters.segment_done || 0));
-    const segmentTotal = Math.max(segmentDone, Number(counters.segment_total || 0));
-    if (segmentTotal > 0) return `识别中 ${segmentDone}/${segmentTotal}`;
-    const done = Math.max(0, Number(counters.asr_done || 0));
-    const total = Math.max(done, Number(counters.asr_estimated || 0));
-    if (done > 0 && total > 0) return `识别中 ${done}/${total}`;
-    return sanitizeUserFacingText(taskSnapshot.current_text || "识别中");
-  }
-  if (stageKey === "build_lesson") return sanitizeUserFacingText(taskSnapshot.current_text || "生成课程结构");
-  if (stageKey === "translate_zh") {
-    const done = Math.max(0, Number(counters.translate_done || 0));
-    const total = Math.max(done, Number(counters.translate_total || 0));
-    return total > 0 ? `翻译字幕 ${done}/${total}` : sanitizeUserFacingText(taskSnapshot.current_text || "翻译字幕");
-  }
-  if (stageKey === "convert_audio") return sanitizeUserFacingText(taskSnapshot.current_text || "抽音频");
-  if (stageKey === "write_lesson") return sanitizeUserFacingText(taskSnapshot.current_text || "保存完成");
-  return sanitizeUserFacingText(taskSnapshot.current_text || "等待处理");
-}
-
-function getVisualProgress(phase, uploadPercent, taskSnapshot) {
-  if (phase === "success") return 100;
-  if (phase === DESKTOP_LINK_IMPORTING_PHASE) {
-    return taskSnapshot ? clampPercent(taskSnapshot?.overall_percent) : clampPercent(uploadPercent);
-  }
-  if (phase === DESKTOP_LOCAL_GENERATING_PHASE) {
-    return clampPercent(uploadPercent);
-  }
-  if (phase === "local_transcribing" || phase === DESKTOP_LOCAL_TRANSCRIBING_PHASE) {
-    return taskSnapshot ? clampPercent(taskSnapshot?.overall_percent) : 28;
-  }
-  if (phase === "processing" || taskSnapshot) return Math.round(42 + clampPercent(taskSnapshot?.overall_percent) * 0.58);
-  if (phase === "uploading" || phase === "upload_paused") return Math.round(Math.max(3, Math.min(42, clampPercent(uploadPercent) * 0.42)));
-  return 0;
-}
-
-function getStageProgressPercent(stageKey, ratio = 1) {
-  const safeRatio = Math.max(0, Math.min(1, Number(ratio) || 0));
-  if (stageKey === "convert_audio") return Math.round(15 * safeRatio);
-  if (stageKey === "asr_transcribe") return Math.round(15 + 30 * safeRatio);
-  if (stageKey === "build_lesson") return Math.round(45 + 15 * safeRatio);
-  if (stageKey === "translate_zh") return Math.round(60 + 25 * safeRatio);
-  if (stageKey === "write_lesson") return Math.round(85 + 15 * safeRatio);
-  return 0;
-}
-
-function buildLocalProgressSnapshot({ stageKey, stageStatus = "running", ratio = 0, currentText = "", counters = {} }) {
-  const stageIndex = DISPLAY_STAGES.findIndex((item) => item.key === stageKey);
-  return {
-    overall_percent: getStageProgressPercent(stageKey, ratio),
-    current_text: String(currentText || ""),
-    counters: { ...(counters || {}) },
-    stages: DISPLAY_STAGES.map((item, index) => {
-      let status = "pending";
-      if (stageIndex >= 0) {
-        if (index < stageIndex) status = "completed";
-        if (index === stageIndex) status = stageStatus;
-      }
-      return { key: item.key, status };
-    }),
-  };
-}
 
 function createFileFromBlob(blob, fileName, mediaType) {
   if (!(blob instanceof Blob)) return null;
@@ -1631,57 +844,6 @@ function restoreSavedSourceFile(saved = {}) {
   return decorateDesktopSourcePath(restoredDescriptor, sourcePath);
 }
 
-function buildTaskState({ phase, taskId, taskSnapshot, uploadPercent, status }) {
-  if (!taskId && !taskSnapshot && phase === "idle") return null;
-  return {
-    taskId: String(taskId || taskSnapshot?.task_id || ""),
-    phase,
-    tone: getUploadTaskTone({
-      phase,
-      resumeAvailable: Boolean(taskSnapshot?.resume_available),
-      taskStatus: taskSnapshot?.status,
-    }),
-    headline: sanitizeUserFacingText(getProgressHeadline(phase, uploadPercent, taskSnapshot)),
-    progressPercent: getVisualProgress(phase, uploadPercent, taskSnapshot),
-    statusText: sanitizeUserFacingText(status),
-    taskSnapshot,
-    lessonId: Number(taskSnapshot?.lesson?.id || 0),
-    resumeAvailable: Boolean(taskSnapshot?.resume_available),
-  };
-}
-
-function getRecoveryBannerText(taskSnapshot) {
-  const taskStatus = String(taskSnapshot?.status || "").toLowerCase();
-  const currentText = sanitizeUserFacingText(String(taskSnapshot?.current_text || taskSnapshot?.message || ""));
-  if (taskStatus === "paused") {
-    return currentText || "已暂停当前生成，可继续生成或重新开始。";
-  }
-  if (taskStatus === "terminated") {
-    return currentText || "已终止当前生成，素材仍保留，可重新开始。";
-  }
-  return "";
-}
-
-function getInterruptedLocalAsrStatus(hasFile) {
-  return hasFile ? "上次生成已中断，请重新开始。" : "";
-}
-
-function getTaskStatusCardText(restoreBannerMode, taskSnapshot, statusText = "") {
-  if (restoreBannerMode === RESTORE_BANNER_MODES.VERIFYING) {
-    return "正在检查上次任务状态...";
-  }
-  if (restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED) {
-    if (Boolean(taskSnapshot?.resume_available)) {
-      return "上次生成已中断，可继续生成或重新开始。";
-    }
-    return "上次生成已中断，可重新开始或清空这次记录。";
-  }
-  if (restoreBannerMode === RESTORE_BANNER_MODES.STALE) {
-    return String(statusText || "上次生成记录已失效，可重新开始或清空这次记录。");
-  }
-  return "";
-}
-
 function buildSubtitleDraftItems(sentences, { isFinal = false, source = "workspace" } = {}) {
   return (Array.isArray(sentences) ? sentences : [])
     .map((item, index) => {
@@ -1852,7 +1014,9 @@ export function UploadPanel({
   });
   const [bindingCompleted, setBindingCompleted] = useState(false);
   const [selectedUploadModel, setSelectedUploadModel] = useState(() => getDefaultUploadModelKey(configuredDefaultAsrModel));
-  const [fasterWhisperRuntimeTrack, setFasterWhisperRuntimeTrack] = useState(() => getDefaultFasterWhisperRuntimeTrack());
+  const [fasterWhisperRuntimeTrack, setFasterWhisperRuntimeTrack] = useState(() =>
+    getDefaultFasterWhisperRuntimeTrack({ isMobileViewport: isMobileUploadViewport() }),
+  );
   const [mode, setMode] = useState("fast");
   const [asrModelCatalogMap, setAsrModelCatalogMap] = useState(DEFAULT_ASR_MODEL_CATALOG_MAP);
   const [localWorkerEpoch, setLocalWorkerEpoch] = useState(0);
@@ -3287,633 +2451,104 @@ export function UploadPanel({
     successStateOriginRef.current = "none";
   }
 
-  async function persistSession(overrides = {}) {
-    const nextFile = overrides.file ?? file;
-    const nextTaskId = overrides.taskId ?? taskId;
-    const nextPhase = overrides.phase ?? phase;
-    const nextMode = overrides.mode ?? mode;
-    const nextDesktopSourcePath = resolveDesktopSelectedSourcePath(nextFile);
-    const restorablePhase =
-      nextPhase === "local_transcribing" || nextPhase === DESKTOP_LOCAL_TRANSCRIBING_PHASE ? (nextFile ? "ready" : "idle") : nextPhase;
-    const restorableStatus =
-      nextPhase === "local_transcribing" || nextPhase === DESKTOP_LOCAL_TRANSCRIBING_PHASE
-        ? getInterruptedLocalAsrStatus(Boolean(nextFile))
-        : String(overrides.status ?? status ?? "");
-    if (!ownerUserId) return;
-    if (!nextFile && !nextTaskId && restorablePhase === "idle") {
-      await clearActiveGenerationTask(ownerUserId);
-      return;
-    }
-    await saveActiveGenerationTask(ownerUserId, {
-      task_id: nextTaskId,
-      phase: restorablePhase,
-      task_snapshot: overrides.taskSnapshot ?? taskSnapshot,
-      selected_upload_model: String(overrides.selectedUploadModel ?? selectedUploadModel ?? ""),
-      file_blob: isBlobBackedSourceFile(nextFile) ? nextFile : null,
-      file_name: String(nextFile?.name || ""),
-      media_type: String(nextFile?.type || ""),
-      file_size_bytes: Math.max(0, Number(nextFile?.size || 0)),
-      file_last_modified_ms: Math.max(0, Number(nextFile?.lastModified || 0)),
-      desktop_source_path: nextDesktopSourcePath,
-      cover_data_url: String(overrides.coverDataUrl ?? coverDataUrl ?? ""),
-      cover_width: Number(overrides.coverWidth ?? coverWidth ?? 0),
-      cover_height: Number(overrides.coverHeight ?? coverHeight ?? 0),
-      aspect_ratio: Number(overrides.aspectRatio ?? coverAspectRatio ?? 0),
-      duration_seconds: Number(overrides.durationSec ?? durationSec ?? 0),
-      is_video_source: Boolean(overrides.isVideoSource ?? isVideoSource),
-      generation_mode: nextMode === "fast" ? "fast" : "balanced",
-      upload_percent: Number(overrides.uploadPercent ?? uploadPercent ?? 0),
-      status_text: restorableStatus,
-      semantic_split_enabled: false,
-      binding_completed: Boolean(overrides.bindingCompleted ?? bindingCompleted),
-    });
-  }
-
-  async function applyTaskViewState({
-    nextTaskId = taskId,
-    nextTaskSnapshot = taskSnapshot,
-    nextPhase = phase,
-    nextStatus = status,
-    nextUploadPercent = uploadPercent,
-    nextLoading = loading,
-    nextRestoreBannerMode = restoreBannerMode,
-    nextBindingCompleted = bindingCompleted,
-    persistState = true,
-  } = {}) {
-    const normalizedTaskId = String(nextTaskId || "");
-    const normalizedStatus = String(nextStatus || "");
-    const normalizedUploadPercent = clampPercent(nextUploadPercent);
-    const normalizedTaskSnapshot = nextTaskSnapshot ?? null;
-    setTaskId(normalizedTaskId);
-    setTaskSnapshot(normalizedTaskSnapshot);
-    setPhase(nextPhase);
-    setStatus(normalizedStatus);
-    setLoading(Boolean(nextLoading));
-    setUploadPercent(normalizedUploadPercent);
-    setRestoreBannerMode(nextRestoreBannerMode);
-    setBindingCompleted(Boolean(nextBindingCompleted));
-    if (persistState) {
-      await persistSession({
-        taskId: normalizedTaskId,
-        phase: nextPhase,
-        taskSnapshot: normalizedTaskSnapshot,
-        uploadPercent: normalizedUploadPercent,
-        status: normalizedStatus,
-        bindingCompleted: Boolean(nextBindingCompleted),
-      });
-    }
-  }
-
-  async function handleTaskFailureState({
-    message,
-    nextTaskId = taskId,
-    nextTaskSnapshot = taskSnapshot,
-    nextUploadPercent = uploadPercent,
-    nextRestoreBannerMode = restoreBannerMode,
-    nextBindingCompleted = bindingCompleted,
-    showToast = true,
-    refreshWallet = false,
-    persistState = true,
-  } = {}) {
-    desktopBillingReportRef.current = null;
-    const normalizedMessage = String(message || "").trim() || "生成失败";
-    await applyTaskViewState({
-      nextTaskId,
-      nextTaskSnapshot,
-      nextPhase: "error",
-      nextStatus: normalizedMessage,
-      nextUploadPercent,
-      nextLoading: false,
-      nextRestoreBannerMode,
-      nextBindingCompleted,
-      persistState,
-    });
-    if (refreshWallet) {
-      await onWalletChanged?.();
-    }
-    if (showToast) {
-      toast.error(normalizedMessage);
-    }
-  }
-
-  async function resetSession() {
-    desktopBillingReportRef.current = null;
-    setPendingPersistedRestore(null);
-    resetLocalSessionState();
-    setDesktopLinkInput("");
-    setDesktopLinkTitle("");
-    if (!ownerUserId) return;
-    await clearUploadPanelSuccessSnapshot(ownerUserId);
-    await clearActiveGenerationTask(ownerUserId);
-  }
-
-  async function continuePersistedSessionRestore(snapshot = pendingPersistedRestore) {
-    if (!snapshot) return;
-    setPendingPersistedRestore(null);
-    if (snapshot.successSnapshot?.task_snapshot?.lesson?.id) {
-      await restoreSuccessSnapshot(snapshot.successSnapshot);
-      return;
-    }
-    if (snapshot.taskSnapshot) {
-      await restorePersistedTaskSnapshot(snapshot.taskSnapshot);
-    }
-  }
-
-  async function startNewTaskFromPersistedRestore() {
-    setPendingPersistedRestore(null);
-    desktopBillingReportRef.current = null;
-    resetLocalSessionState();
-    setDesktopLinkInput("");
-    setDesktopLinkTitle("");
-    if (!ownerUserId) return;
-    await clearUploadPanelSuccessSnapshot(ownerUserId);
-    await clearActiveGenerationTask(ownerUserId);
-  }
-
-  async function cancelDesktopLinkImport(options = {}) {
-    const { showToast = true } = options;
-    const activeTaskId = desktopLinkTaskIdRef.current || desktopLinkTaskId;
-    if (!activeTaskId) {
-      clearDesktopLinkTaskTracking(true);
-      return;
-    }
-    try {
-      await requestDesktopLocalHelper(`/api/desktop-asr/url-import/tasks/${encodeURIComponent(activeTaskId)}/cancel`, "json", {
-        method: "POST",
-      });
-      setStatus("正在取消下载");
-      setLoading(true);
-      updateDesktopLinkProgressState(uploadPercent, "正在取消下载");
-    } catch (error) {
-      const message = error instanceof Error && error.message ? error.message : String(error);
-      if (showToast) {
-        toast.error(message);
-      }
-      await handleTaskFailureState({
-        message,
-        nextTaskId: "",
-        nextTaskSnapshot: null,
-        nextUploadPercent: 0,
-        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
-        nextBindingCompleted: false,
-        persistState: false,
-      });
-    }
-  }
-
-  async function pollDesktopLinkImportTask(linkTaskId, pollToken) {
-    if (!linkTaskId || pollToken !== desktopLinkPollTokenRef.current) {
-      return;
-    }
-    try {
-      const response = await requestDesktopLocalHelper(`/api/desktop-asr/url-import/tasks/${encodeURIComponent(linkTaskId)}`, "json");
-      if (pollToken !== desktopLinkPollTokenRef.current) {
-        return;
-      }
-      const payload = response.data || {};
-      const nextStatus = String(payload.status || "").trim().toLowerCase();
-      const nextMessage = sanitizeUserFacingText(String(payload.status_text || "正在下载素材"));
-      setLoading(true);
-      setPhase(DESKTOP_LINK_IMPORTING_PHASE);
-      setStatus(nextMessage);
-      updateDesktopLinkProgressState(Number(payload.progress_percent || 0), nextMessage);
-
-      if (nextStatus === "succeeded") {
-        setStatus("素材下载完成，正在载入文件");
-        updateDesktopLinkProgressState(100, "素材下载完成，正在载入文件");
-        if (payload?.title) {
-          setDesktopLinkTitle((prev) => prev || String(payload.title || "").trim());
-        }
-        const thumbnailUrl = String(payload?.thumbnail || "").trim();
-        const sourceFile = await loadDesktopImportedSourceFile(payload);
-        if (pollToken !== desktopLinkPollTokenRef.current) {
-          return;
-        }
-        // yt-dlp 封面 URL 附加到 sourceFile
-        if (thumbnailUrl) {
-          try {
-            Object.defineProperty(sourceFile, "thumbnail", { value: thumbnailUrl, configurable: true, writable: true });
-          } catch (_) {
-            try {
-              sourceFile.thumbnail = thumbnailUrl;
-            } catch (_) {
-              void 0;
-            }
-          }
-        } else if (String(sourceFile?.desktopSourcePath || sourceFile?.path || "").trim()) {
-          // 直链无 yt-dlp 封面时，从已下载本地文件提取封面
-          try {
-            const materializedFile = await materializeDesktopSelectedFile(sourceFile);
-            if (materializedFile && isBlobBackedSourceFile(materializedFile)) {
-              const coverPreview = await extractMediaCoverPreview(materializedFile, materializedFile.name || "");
-              if (coverPreview?.coverDataUrl) {
-                try {
-                  Object.defineProperty(sourceFile, "thumbnail", { value: coverPreview.coverDataUrl, configurable: true, writable: true });
-                } catch (_) {
-                  try {
-                    sourceFile.thumbnail = coverPreview.coverDataUrl;
-                  } catch (_) {
-                    void 0;
-                  }
-                }
-              }
-            }
-          } catch (_fallbackErr) {
-            // 封面提取失败不影响主流程
-          }
-        }
-        clearDesktopLinkTaskTracking(false);
-        const selectionMeta = await onSelectFile(sourceFile);
-        const sourceDurationSeconds = Number(selectionMeta?.durationSec || payload.duration_seconds || 0);
-        await submit({
-          sourceFile,
-          sourceDurationSec: sourceDurationSeconds,
-          skipDesktopRecommendation: true,
-          bypassDesktopLinkMode: true,
-        });
-        return;
-      }
-
-      if (nextStatus === "failed") {
-        clearDesktopLinkTaskTracking(false);
-        setLocalProgressSnapshot(null);
-        await handleTaskFailureState({
-          message: buildDesktopLinkErrorMessage(payload.error_message || nextMessage || "下载链接素材失败"),
-          nextTaskId: "",
-          nextTaskSnapshot: null,
-          nextUploadPercent: 0,
-          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
-          nextBindingCompleted: false,
-          persistState: false,
-        });
-        return;
-      }
-
-      if (nextStatus === "cancelled") {
-        clearDesktopLinkTaskTracking(false);
-        setLocalProgressSnapshot(null);
-        await handleTaskFailureState({
-          message: nextMessage || "已取消链接下载，可重新开始。",
-          nextTaskId: "",
-          nextTaskSnapshot: null,
-          nextUploadPercent: 0,
-          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
-          nextBindingCompleted: false,
-          showToast: false,
-          persistState: false,
-        });
-        return;
-      }
-
-      setTimeout(() => {
-        void pollDesktopLinkImportTask(linkTaskId, pollToken);
-      }, 1000);
-    } catch (error) {
-      if (pollToken !== desktopLinkPollTokenRef.current) {
-        return;
-      }
-      clearDesktopLinkTaskTracking(false);
-      setLocalProgressSnapshot(null);
-      const message = error instanceof Error && error.message ? error.message : `网络错误: ${String(error)}`;
-      await handleTaskFailureState({
-        message: buildDesktopLinkErrorMessage(message),
-        nextTaskId: "",
-        nextTaskSnapshot: null,
-        nextUploadPercent: 0,
-        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
-        nextBindingCompleted: false,
-        persistState: false,
-      });
-    }
-  }
-
-  async function submitDesktopLinkImport() {
-    const sanitizedLinkInput = sanitizeDesktopLinkInput(desktopLinkInput);
-    if (!desktopRuntimeAvailable) {
-      await handleTaskFailureState({
-        message: LINK_IMPORT_DESKTOP_ONLY_MESSAGE,
-        nextTaskId: "",
-        nextTaskSnapshot: null,
-        nextUploadPercent: 0,
-        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
-        nextBindingCompleted: false,
-        persistState: false,
-      });
-      return;
-    }
-    if (!desktopLinkModeSupported) {
-      await handleTaskFailureState({
-        message: LINK_IMPORT_DESKTOP_ONLY_MESSAGE,
-        nextTaskId: "",
-        nextTaskSnapshot: null,
-        nextUploadPercent: 0,
-        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
-        nextBindingCompleted: false,
-        persistState: false,
-      });
-      return;
-    }
-    if (!networkOnline) {
-      await handleTaskFailureState({
-        message: DESKTOP_CLIENT_OFFLINE_MESSAGE,
-        nextTaskId: "",
-        nextTaskSnapshot: null,
-        nextUploadPercent: 0,
-        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
-        nextBindingCompleted: false,
-        persistState: false,
-      });
-      return;
-    }
-    if (!sanitizedLinkInput) {
-      setDesktopLinkInput("");
-      await handleTaskFailureState({
-        message: `${DESKTOP_LINK_INVALID_MESSAGE} ${DESKTOP_LINK_PUBLIC_SUPPORT_MESSAGE}，或改用 SnapAny`,
-        nextTaskId: "",
-        nextTaskSnapshot: null,
-        nextUploadPercent: 0,
-        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
-        nextBindingCompleted: false,
-        persistState: false,
-      });
-      return;
-    }
-    setDesktopLinkInput(sanitizedLinkInput);
-
-    if (ownerUserId) {
-      await clearUploadPanelSuccessSnapshot(ownerUserId);
-    }
-    successStateOriginRef.current = "none";
-    stopPollingSession();
-    resetUploadPersistState();
-    uploadAbortRef.current?.abort();
-    uploadAbortRef.current = null;
-    localRunAbortRef.current?.abort();
-    localRunAbortRef.current = null;
-    clearLocalStageProgressTimer();
-    clearDesktopLinkTaskTracking(true);
-    setTaskId("");
-    setTaskSnapshot(null);
-    setUploadPercent(0);
-    setLoading(true);
-    setStatus("正在解析链接");
-    setPhase(DESKTOP_LINK_IMPORTING_PHASE);
-    setBindingCompleted(false);
-    updateDesktopLinkProgressState(0, "正在解析链接");
-
-    try {
-      const response = await requestDesktopLocalHelper("/api/desktop-asr/url-import/tasks", "json", {
-        method: "POST",
-        body: { source_url: sanitizedLinkInput },
-      });
-      const payload = response.data || {};
-      const nextTaskId = String(payload.task_id || "");
-      if (!nextTaskId) {
-        throw new Error("链接下载任务创建成功但缺少 task_id");
-      }
-      const linkPollToken = desktopLinkPollTokenRef.current || 1;
-      desktopLinkTaskIdRef.current = nextTaskId;
-      setDesktopLinkTaskId(nextTaskId);
-      if (!desktopLinkTitle && payload?.title) {
-        setDesktopLinkTitle(String(payload.title || "").trim());
-      }
-      setStatus(sanitizeUserFacingText(String(payload.status_text || "正在下载素材")));
-      updateDesktopLinkProgressState(Number(payload.progress_percent || 0), sanitizeUserFacingText(String(payload.status_text || "正在下载素材")));
-      await pollDesktopLinkImportTask(nextTaskId, linkPollToken);
-    } catch (error) {
-      clearDesktopLinkTaskTracking(false);
-      setLocalProgressSnapshot(null);
-      const message = buildDesktopLinkErrorMessage(error instanceof Error ? error.message : String(error));
-      await handleTaskFailureState({
-        message,
-        nextTaskId: "",
-        nextTaskSnapshot: null,
-        nextUploadPercent: 0,
-        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
-        nextBindingCompleted: false,
-        persistState: false,
-      });
-    }
-  }
-
-  async function saveSuccessSnapshot(sourceFile, data, nextStatus = "") {
-    if (!ownerUserId || !data?.lesson?.id) return;
-    await saveUploadPanelSuccessSnapshot(ownerUserId, {
-      phase: "success",
-      task_snapshot: data,
-      selected_upload_model: String(selectedUploadModel || ""),
-      file_blob: isBlobBackedSourceFile(sourceFile) ? sourceFile : null,
-      file_name: String(sourceFile?.name || data.lesson.source_filename || ""),
-      media_type: String(sourceFile?.type || ""),
-      file_size_bytes: Math.max(0, Number(sourceFile?.size || 0)),
-      file_last_modified_ms: Math.max(0, Number(sourceFile?.lastModified || 0)),
-      desktop_source_path: resolveDesktopSelectedSourcePath(sourceFile),
-      cover_data_url: String(coverDataUrl || ""),
-      cover_width: Number(coverWidth || 0),
-      cover_height: Number(coverHeight || 0),
-      aspect_ratio: Number(coverAspectRatio || 0),
-      duration_seconds: Number(durationSec || 0),
-      is_video_source: Boolean(isVideoSource),
-      generation_mode: mode === "fast" ? "fast" : "balanced",
-      upload_percent: 100,
-      status_text: String(nextStatus || status || ""),
-      binding_completed: Boolean(bindingCompleted),
-    });
-  }
-
-  async function restoreSuccessSnapshot(saved) {
-    const restoredFile = restoreSavedSourceFile(saved);
-    const restoredMode = String(saved?.generation_mode || "").trim().toLowerCase() === "balanced" ? "balanced" : "fast";
-    const restoredModelKey = String(saved?.selected_upload_model || configuredDefaultAsrModel || "");
-    setFile(restoredFile);
-    setTaskId("");
-    setLoading(false);
-    setStatus(String(saved?.status_text || ""));
-    setDurationSec(Number(saved?.duration_seconds || 0) || null);
-    setPhase("success");
-    setMode(restoredMode);
-    setSelectedUploadModel(getDefaultUploadModelKey(restoredModelKey));
-    setSelectedBalancedModel(getDefaultBalancedModelKey(restoredModelKey));
-    setCoverDataUrl(String(saved?.cover_data_url || ""));
-    setCoverWidth(Number(saved?.cover_width || 0));
-    setCoverHeight(Number(saved?.cover_height || 0));
-    setCoverAspectRatio(Number(saved?.aspect_ratio || 0));
-    setIsVideoSource(Boolean(saved?.is_video_source));
-    setTaskSnapshot(saved?.task_snapshot || null);
-    setUploadPercent(100);
-    uploadPersistRef.current.latestPercent = 100;
-    setBindingCompleted(Boolean(saved?.binding_completed));
-    setLocalBusyModelKey("");
-    setLocalBusyText("");
-    successStateOriginRef.current = "revisit";
-    if (ownerUserId) {
-      await clearActiveGenerationTask(ownerUserId);
-      await clearUploadPanelSuccessSnapshot(ownerUserId);
-    }
-  }
-
-  function applyRestoredMediaState(saved, restoredFile) {
-    setFile(restoredFile);
-    setCoverDataUrl(String(saved?.cover_data_url || ""));
-    setCoverWidth(Number(saved?.cover_width || 0));
-    setCoverHeight(Number(saved?.cover_height || 0));
-    setCoverAspectRatio(Number(saved?.aspect_ratio || 0));
-    setDurationSec(Number(saved?.duration_seconds || 0) || null);
-    setIsVideoSource(Boolean(saved?.is_video_source));
-  }
-
-  async function restorePersistedTaskSnapshot(saved) {
-    const restoredFile = restoreSavedSourceFile(saved);
-    const restoredMode = String(saved?.generation_mode || "").trim().toLowerCase() === "balanced" ? "balanced" : "fast";
-    const restoredModelKey = String(saved?.selected_upload_model || configuredDefaultAsrModel || "");
-    const restoredTaskId = String(saved?.task_id || saved?.task_snapshot?.task_id || "");
-    const restoredTaskSnapshot = saved?.task_snapshot || null;
-    const restoredPhase = String(saved?.phase || "").trim().toLowerCase();
-    const restoredStatus = String(saved?.status_text || "").trim();
-    const restoredUploadPercent = clampPercent(saved?.upload_percent || 0);
-    const restoredBindingCompleted = Boolean(saved?.binding_completed);
-    const hasRestoredFile = Boolean(restoredFile);
-
-    applyRestoredMediaState(saved, restoredFile);
-    setMode(restoredMode);
-    setSelectedUploadModel(getDefaultUploadModelKey(restoredModelKey));
-    setSelectedBalancedModel(getDefaultBalancedModelKey(restoredModelKey));
-    setLocalProgressSnapshot(null);
-    setLocalBusyModelKey("");
-    setLocalBusyText("");
-    setServerBusyModelKey("");
-    setServerBusyText("");
-    successStateOriginRef.current = "revisit";
-    fallbackToastTaskRef.current = "";
-
-    if (restoredTaskSnapshot?.lesson?.id && String(restoredTaskSnapshot?.status || "").trim().toLowerCase() === "succeeded") {
-      if (ownerUserId) {
-        await clearActiveGenerationTask(ownerUserId);
-      }
-      await restoreSuccessSnapshot(saved);
-      return;
-    }
-
-    if (restoredPhase === "processing" && restoredTaskId) {
-      setTaskId(restoredTaskId);
-      setTaskSnapshot(restoredTaskSnapshot);
-      setPhase("processing");
-      setStatus(restoredStatus);
-      setLoading(true);
-      setUploadPercent(100);
-      uploadPersistRef.current.latestPercent = 100;
-      setBindingCompleted(restoredBindingCompleted);
-      setRestoreBannerMode(RESTORE_BANNER_MODES.VERIFYING);
-      await persistSession({
-        file: restoredFile,
-        taskId: restoredTaskId,
-        phase: "processing",
-        taskSnapshot: restoredTaskSnapshot,
-        selectedUploadModel: getDefaultUploadModelKey(restoredModelKey),
-        durationSec: Number(saved?.duration_seconds || 0) || null,
-        coverDataUrl: String(saved?.cover_data_url || ""),
-        coverWidth: Number(saved?.cover_width || 0),
-        coverHeight: Number(saved?.cover_height || 0),
-        aspectRatio: Number(saved?.aspect_ratio || 0),
-        isVideoSource: Boolean(saved?.is_video_source),
-        uploadPercent: 100,
-        status: restoredStatus,
-        bindingCompleted: restoredBindingCompleted,
-      });
-      return;
-    }
-
-    if ((restoredPhase === "uploading" || restoredPhase === "upload_paused") && hasRestoredFile) {
-      const nextStatus = restoredStatus || "上次上传已中断，可继续上传当前素材。";
-      setTaskId("");
-      setTaskSnapshot(null);
-      setPhase("upload_paused");
-      setStatus(nextStatus);
-      setLoading(false);
-      setUploadPercent(restoredUploadPercent);
-      uploadPersistRef.current.latestPercent = restoredUploadPercent;
-      setBindingCompleted(false);
-      setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
-      await persistSession({
-        file: restoredFile,
-        taskId: "",
-        phase: "upload_paused",
-        taskSnapshot: null,
-        selectedUploadModel: getDefaultUploadModelKey(restoredModelKey),
-        durationSec: Number(saved?.duration_seconds || 0) || null,
-        coverDataUrl: String(saved?.cover_data_url || ""),
-        coverWidth: Number(saved?.cover_width || 0),
-        coverHeight: Number(saved?.cover_height || 0),
-        aspectRatio: Number(saved?.aspect_ratio || 0),
-        isVideoSource: Boolean(saved?.is_video_source),
-        uploadPercent: restoredUploadPercent,
-        status: nextStatus,
-        bindingCompleted: false,
-      });
-      return;
-    }
-
-    setTaskId(restoredTaskId);
-    setTaskSnapshot(restoredTaskSnapshot);
-    setPhase(hasRestoredFile ? (restoredPhase === "error" ? "error" : "ready") : "idle");
-    setStatus(restoredStatus);
-    setLoading(false);
-    setUploadPercent(restoredPhase === "error" ? restoredUploadPercent : 0);
-    uploadPersistRef.current.latestPercent = restoredPhase === "error" ? restoredUploadPercent : 0;
-    setBindingCompleted(restoredBindingCompleted);
-    setRestoreBannerMode(
-      restoredPhase === "error" && restoredTaskId && Boolean(restoredTaskSnapshot?.resume_available)
-        ? RESTORE_BANNER_MODES.INTERRUPTED
-        : RESTORE_BANNER_MODES.NONE,
-    );
-    await persistSession({
-      file: restoredFile,
-      taskId: restoredTaskId,
-      phase: hasRestoredFile ? (restoredPhase === "error" ? "error" : "ready") : "idle",
-      taskSnapshot: restoredTaskSnapshot,
-      selectedUploadModel: getDefaultUploadModelKey(restoredModelKey),
-      durationSec: Number(saved?.duration_seconds || 0) || null,
-      coverDataUrl: String(saved?.cover_data_url || ""),
-      coverWidth: Number(saved?.cover_width || 0),
-      coverHeight: Number(saved?.cover_height || 0),
-      aspectRatio: Number(saved?.aspect_ratio || 0),
-      isVideoSource: Boolean(saved?.is_video_source),
-      uploadPercent: restoredPhase === "error" ? restoredUploadPercent : 0,
-      status: restoredStatus,
-      bindingCompleted: restoredBindingCompleted,
-    });
-  }
-
-  function persistUploadProgress(nextPercent, sourceFileOverride = undefined) {
-    const persistedFile = sourceFileOverride ?? file;
-    if (!ownerUserId || !persistedFile) return;
-    const normalizedPercent = clampPercent(nextPercent);
-    uploadPersistRef.current.latestPercent = normalizedPercent;
-    const now = Date.now();
-    const elapsed = now - Number(uploadPersistRef.current.lastSavedAt || 0);
-    const shouldPersistImmediately =
-      uploadPersistRef.current.lastSavedPercent < 0 ||
-      normalizedPercent >= 100 ||
-      elapsed >= UPLOAD_PROGRESS_PERSIST_INTERVAL_MS;
-
-    clearUploadPersistTimer();
-
-    const flush = () => {
-      uploadPersistRef.current.lastSavedAt = Date.now();
-      uploadPersistRef.current.lastSavedPercent = normalizedPercent;
-      void persistSession({ file: persistedFile, phase: "uploading", uploadPercent: normalizedPercent, status: "" });
-    };
-
-    if (shouldPersistImmediately) {
-      flush();
-      return;
-    }
-
-    uploadPersistRef.current.timer = setTimeout(() => {
-      uploadPersistRef.current.timer = null;
-      flush();
-    }, Math.max(80, UPLOAD_PROGRESS_PERSIST_INTERVAL_MS - elapsed));
-  }
+  const {
+    applyTaskViewState,
+    cancelDesktopLinkImport,
+    continuePersistedSessionRestore,
+    handleTaskFailureState,
+    persistSession,
+    persistUploadProgress,
+    resetSession,
+    restorePersistedTaskSnapshot,
+    restoreSuccessSnapshot,
+    saveSuccessSnapshot,
+    startNewTaskFromPersistedRestore,
+    submitDesktopLinkImport,
+  } = useUploadWorkflow({
+    file,
+    taskId,
+    phase,
+    mode,
+    taskSnapshot,
+    selectedUploadModel,
+    coverDataUrl,
+    coverWidth,
+    coverHeight,
+    coverAspectRatio,
+    durationSec,
+    isVideoSource,
+    uploadPercent,
+    status,
+    bindingCompleted,
+    loading,
+    restoreBannerMode,
+    pendingPersistedRestore,
+    ownerUserId,
+    configuredDefaultAsrModel,
+    desktopRuntimeAvailable,
+    desktopLinkModeSupported,
+    networkOnline,
+    desktopLinkInput,
+    desktopLinkTitle,
+    desktopLinkTaskId,
+    onWalletChanged,
+    setPendingPersistedRestore,
+    setDesktopLinkInput,
+    setDesktopLinkTitle,
+    setDesktopLinkTaskId,
+    setFile,
+    setTaskId,
+    setLoading,
+    setStatus,
+    setDurationSec,
+    setPhase,
+    setCoverDataUrl,
+    setCoverAspectRatio,
+    setCoverWidth,
+    setCoverHeight,
+    setIsVideoSource,
+    setTaskSnapshot,
+    setUploadPercent,
+    setLocalProgressSnapshot,
+    setBindingCompleted,
+    setLocalBusyModelKey,
+    setLocalBusyText,
+    setServerBusyModelKey,
+    setServerBusyText,
+    setMode,
+    setSelectedUploadModel,
+    setSelectedBalancedModel,
+    setRestoreBannerMode,
+    clearActiveGenerationTask,
+    clearUploadPanelSuccessSnapshot,
+    saveUploadPanelSuccessSnapshot,
+    saveActiveGenerationTask,
+    resolveDesktopSelectedSourcePath,
+    isBlobBackedSourceFile,
+    resetLocalSessionState,
+    updateDesktopLinkProgressState,
+    clearDesktopLinkTaskTracking,
+    stopPollingSession,
+    resetUploadPersistState,
+    clearLocalStageProgressTimer,
+    requestDesktopLocalHelper,
+    loadDesktopImportedSourceFile,
+    materializeDesktopSelectedFile,
+    extractMediaCoverPreview,
+    onSelectFile,
+    submit,
+    desktopBillingReportRef,
+    uploadAbortRef,
+    localRunAbortRef,
+    desktopLinkPollTokenRef,
+    desktopLinkTaskIdRef,
+    localRunTokenRef,
+    uploadPersistRef,
+    successStateOriginRef,
+    fallbackToastTaskRef,
+    clearUploadPersistTimer,
+    restoreSavedSourceFile,
+  });
 
   async function pauseUpload(nextStatus = "上传已暂停，可继续上传当前素材") {
     stopPollingSession();
