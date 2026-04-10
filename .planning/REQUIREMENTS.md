@@ -78,30 +78,31 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BRAND-01 | TBD | Pending |
-| BRAND-02 | TBD | Pending |
-| INPUT-01 | TBD | Pending |
-| INPUT-02 | TBD | Pending |
-| INPUT-03 | TBD | Pending |
-| INPUT-04 | TBD | Pending |
-| PACK-01 | TBD | Pending |
-| PACK-02 | TBD | Pending |
-| PACK-03 | TBD | Pending |
-| PACK-04 | TBD | Pending |
-| QUIZ-01 | TBD | Pending |
-| QUIZ-02 | TBD | Pending |
-| VOCAB-01 | TBD | Pending |
-| VOCAB-02 | TBD | Pending |
-| VOCAB-03 | TBD | Pending |
-| DICT-01 | TBD | Pending |
-| DASH-01 | TBD | Pending |
-| DASH-02 | TBD | Pending |
-| DASH-03 | TBD | Pending |
+| BRAND-01 | Phase 38 | Pending |
+| BRAND-02 | Phase 38 | Pending |
+| INPUT-01 | Phase 39 | Pending |
+| INPUT-02 | Phase 39 | Pending |
+| INPUT-03 | Phase 39 | Pending |
+| INPUT-04 | Phase 39 | Pending |
+| PACK-01 | Phase 40 | Pending |
+| PACK-02 | Phase 40 | Pending |
+| PACK-03 | Phase 40 | Pending |
+| PACK-04 | Phase 40 | Pending |
+| QUIZ-01 | Phase 41 | Pending |
+| QUIZ-02 | Phase 41 | Pending |
+| VOCAB-01 | Phase 42 | Pending |
+| VOCAB-02 | Phase 42 | Pending |
+| VOCAB-03 | Phase 42 | Pending |
+| DICT-01 | Phase 43 | Pending |
+| DASH-01 | Phase 44 | Pending |
+| DASH-02 | Phase 44 | Pending |
+| DASH-03 | Phase 44 | Pending |
 
 **Coverage:**
 - v1 requirements: 19 total
-- Mapped to phases: 0 (awaiting roadmap)
-- Unmapped: 19
+- Mapped to phases: 19
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-10*
+*Traceability updated: 2026-04-10*

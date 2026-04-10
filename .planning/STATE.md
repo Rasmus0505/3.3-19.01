@@ -1,17 +1,3 @@
----
-gsd_state_version: 1.0
-milestone: v3.0
-milestone_name: Unlock Anything
-status: planning
-last_updated: "2026-04-10T12:00:00.000Z"
-progress:
-  total_phases: 0
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
----
-
 # State: Unlock — v3.0
 
 **Current Milestone:** v3.0 Unlock Anything
@@ -21,64 +7,58 @@ progress:
 
 **Core Value:** Users can unlock any English material into personalized i+1 learning packs — reading, vocabulary, comprehension, and dictation — powered by AI across the full pipeline.
 
-**Current Focus:** Defining requirements
+**Current Focus:** Phase 38 — Brand Rename (ready to plan)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-04-10 — Milestone v3.0 started
+Phase: 38 (1 of 7 in v3.0) — Brand Rename
+Plan: 0 of ? in current phase
+Status: Ready to plan
+Last activity: 2026-04-10 — Roadmap created for v3.0
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Milestone Progress
 
 | Phase | Name | Status | Plans |
 |-------|------|--------|-------|
-| TBD | — | — | — |
+| 38 | Brand Rename | Not started | 0/? |
+| 39 | Multi-Modal Input Pipeline | Not started | 0/? |
+| 40 | Reading Pack Completion | Not started | 0/? |
+| 41 | Quiz Generation | Not started | 0/? |
+| 42 | Vocabulary Cards & AI Images | Not started | 0/? |
+| 43 | Dictation Course Generation | Not started | 0/? |
+| 44 | Learning Dashboard | Not started | 0/? |
 
 ## Performance Metrics
 
 **Milestone v3.0:**
-
-- Total phases: TBD
-- Total requirements: TBD
+- Total phases: 7 (Phases 38-44)
+- Total requirements: 19
 - Completed: 0
 - Progress: 0%
 
 **Project-wide:**
-
 - Total phases completed: 36
-- Total milestones shipped: 7 (v2.0-v2.7), v2.8 partial (Phase 35-36 complete)
+- Total milestones shipped: 7 (v2.0-v2.7), v2.8 partial (Phases 35-36)
 
 ## Accumulated Context
 
 ### Key Technical Context
 
-- Existing reading workflow already includes local CEFR analysis, original/rewrite toggles, history, analysis panels, and IndexedDB persistence in the reading feature.
-- `reading_rewrites_v3` now persists pipeline snapshots, reading-pack assets, comparison cards, and pack-view mode without introducing a second store.
-- `ReadingPage.jsx` now supports `input -> diagnostic -> pipeline -> pack`, with history reopen routing interrupted work to pipeline mode and finished work to pack mode.
-- `ReadingPackPanel.jsx` and `ReadingPipelinePanel.jsx` establish the new Phase 36 result and generation surfaces while keeping `ArticlePanel.jsx` as the original/i+1 renderer.
-- OpenMAIC is the reference for stage-based generation UX, progress storytelling, session recovery, and assetized outputs, not for multi-agent classroom scope.
-- Product renamed from Bottle to Unlock in v3.0; all user-visible brand surfaces need updating.
-
-### Key Product Context
-
-- v3.0 is the "Unlock Anything" milestone: any material input -> AI full pipeline -> complete learning pack + growth visualization.
-- Competition demo and product completeness are parallel priorities.
-- Learning pack = reading pack + comprehension quiz + vocabulary cards (with AI scene images) + dictation course.
-- Multi-modal input: webpage links, PDF, subtitle files (.srt/.vtt), image OCR.
-- Learning dashboard: CEFR progress, learning heatmap, unlock statistics.
-- AI conversation practice deferred to next milestone.
+- `reading_rewrites_v3` IndexedDB store persists pipeline snapshots, reading-pack assets, and pack-view mode.
+- `ReadingPage.jsx` supports `input -> diagnostic -> pipeline -> pack` flow with history reopen routing.
+- `ReadingPackPanel.jsx` and `ReadingPipelinePanel.jsx` are the Phase 36 generation/result surfaces.
+- Immersive learning uses reducer-driven state machine — must not regress (Phase 8 architecture).
+- Wordbook has spaced-repetition scheduling, due queue, and word-level translation (Phase 17/20).
 
 ### Key Decisions for v3.0
 
-| Decision | Rationale |
-|----------|-----------|
-| Product renamed from Bottle to Unlock | "Unlock Anything" is the core narrative — brand name should directly express the value proposition |
-| Learning pack = reading + quiz + vocab cards + dictation | Four outputs cover read/test/memorize/write learning dimensions |
-| Multi-modal input: URL/PDF/SRT/OCR | Strengthens the "Anything" concept |
-| AI scene images for vocabulary cards only | Scoped image generation to highest-impact use case |
-| AI conversation practice deferred to post-v3.0 | v3.0 scope is already large; conversation needs full ASR+SOE+TTS+LLM chain |
+- Product renamed from Bottle to Unlock — brand name expresses "Unlock Anything" value
+- Learning pack = reading + quiz + vocab cards + dictation (four learning dimensions)
+- Multi-modal input: URL/PDF/SRT/OCR strengthens "Anything" concept
+- AI scene images scoped to vocabulary cards only (highest impact)
+- AI conversation practice deferred to post-v3.0 milestone
 
 ### Blockers
 
@@ -87,9 +67,8 @@ None currently.
 ## Session Continuity
 
 **Last session:** 2026-04-10
-
-**Next action:** Define requirements for v3.0 milestone
+**Stopped at:** Roadmap created, ready to plan Phase 38
+**Next action:** `/gsd-plan-phase 38` (Brand Rename)
 
 ---
-
 *Last updated: 2026-04-10*
