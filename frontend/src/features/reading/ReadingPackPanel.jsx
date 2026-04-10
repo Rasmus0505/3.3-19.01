@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/ta
 import { cn } from "../../lib/utils";
 import { ArticlePanel } from "./ArticlePanel";
 import { QuizPanel } from "./QuizPanel";
+import { VocabCardsPanel } from "./VocabCardsPanel";
 
 function SummaryMetric({ label, value }) {
   return (
@@ -199,7 +200,7 @@ function VocabPanel({ pack, apiCall, accessToken }) {
 /**
  * 下一步操作栏（PACK-04）
  */
-function NextStepsBar({ packViewMode, onPackViewModeChange, onShowVocab }) {
+function NextStepsBar({ packViewMode, onPackViewModeChange, onShowVocab, onGenerateDictation, dictationLoading }) {
   return (
     <div className="reading-pack__next-steps">
       <span className="reading-pack__next-steps-label">下一步</span>
@@ -228,6 +229,15 @@ function NextStepsBar({ packViewMode, onPackViewModeChange, onShowVocab }) {
         >
           收集单词
         </button>
+        {onGenerateDictation ? (
+          <button
+            className="reading-pack__next-step-btn"
+            onClick={onGenerateDictation}
+            disabled={dictationLoading}
+          >
+            {dictationLoading ? "生成中…" : "生成听写"}
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -246,6 +256,8 @@ export function ReadingPackPanel({
   activeLevels = [],
   apiCall,
   accessToken,
+  onGenerateDictation,
+  dictationLoading = false,
 }) {
   if (!pack) {
     return null;
@@ -298,6 +310,7 @@ export function ReadingPackPanel({
           <TabsTrigger value="rewritten">i+1</TabsTrigger>
           <TabsTrigger value="comparison">逐句对照</TabsTrigger>
           <TabsTrigger value="vocab">词汇</TabsTrigger>
+          <TabsTrigger value="cards">卡片</TabsTrigger>
           {!isTooShort && <TabsTrigger value="quiz">测验</TabsTrigger>}
         </TabsList>
 
@@ -345,6 +358,10 @@ export function ReadingPackPanel({
           <VocabPanel pack={pack} apiCall={apiCall} accessToken={accessToken} />
         </TabsContent>
 
+        <TabsContent value="cards" className="reading-pack__tab-panel">
+          <VocabCardsPanel pack={pack} articleId={articleId} apiCall={apiCall} accessToken={accessToken} />
+        </TabsContent>
+
         {!isTooShort && (
           <TabsContent value="quiz" className="reading-pack__tab-panel">
             <QuizPanel pack={pack} articleId={articleId} apiCall={apiCall} accessToken={accessToken} />
@@ -356,6 +373,8 @@ export function ReadingPackPanel({
         packViewMode={packViewMode}
         onPackViewModeChange={onPackViewModeChange}
         onShowVocab={handleShowVocab}
+        onGenerateDictation={onGenerateDictation}
+        dictationLoading={dictationLoading}
       />
     </section>
   );

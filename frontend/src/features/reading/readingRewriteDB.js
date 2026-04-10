@@ -92,6 +92,7 @@ export function normalizeRewriteRecord(record) {
     packViewMode: record.packViewMode || record.viewMode || "original",
     flowStatus: deriveFlowStatus(record),
     quiz: record.quiz ?? null,
+    vocabCards: record.vocabCards ?? null,
   };
 }
 
