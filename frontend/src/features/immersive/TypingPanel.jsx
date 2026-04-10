@@ -178,7 +178,7 @@ const TypingPanel = forwardRef(function TypingPanel(
         <p className="immersive-typing__notice">输入已完成，等待本句播放结束。</p>
       ) : null}
 
-      <div ref={wordRowFrameRef} className="immersive-word-row-frame immersive-word-row-frame--spotlight">
+      <div ref={wordRowFrameRef} className="immersive-word-row-frame">
         {renderWordSlots({
           expectedTokens,
           wordStatuses,

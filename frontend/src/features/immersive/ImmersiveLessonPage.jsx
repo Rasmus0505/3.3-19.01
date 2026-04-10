@@ -414,7 +414,7 @@ export function ImmersiveLessonPage({
   const soeTargetSentence =
     translationDisplayMode === "current_answered" ? currentSentence : previousSentence;
   const entryHintItems = useMemo(() => buildImmersiveEntryHintItems(learningSettings), [learningSettings]);
-  const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens : []), [currentSentence?.tokens]);
+  const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens.filter((t) => typeof t === "string" && t.trim()) : []), [currentSentence?.tokens]);
   const currentSentenceTokens = useMemo(
     () => buildSelectableSentenceTokens(currentSentence),
     [currentSentence?.text_en, currentSentence?.tokens],

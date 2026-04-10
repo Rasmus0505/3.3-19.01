@@ -501,7 +501,7 @@ function pruneRevealComparableIndicesForInputs(wordInputs, prevArrays) {
 }
 
 function createWordState(tokens) {
-  const safeTokens = Array.isArray(tokens) ? tokens : [];
+  const safeTokens = Array.isArray(tokens) ? tokens.filter((t) => typeof t === "string" && t.trim()) : [];
   return {
     activeWordIndex: 0,
     currentWordInput: "",

@@ -1532,17 +1532,6 @@ input[type="number"] {
   gap: 8px;
 }
 
-.immersive-word-row-frame--spotlight {
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid color-mix(in oklch, var(--color-border) 76%, white 24%);
-  background: rgba(255, 255, 255, 0.82);
-}
-
-.immersive-word-row-frame--spotlight .immersive-word-row--centered {
-  justify-content: flex-start;
-}
-
 .immersive-wordbook-token {
   min-height: 32px;
   padding: 4px 10px;
@@ -2350,19 +2339,6 @@ input[type="number"] {
   flex: 1;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-.immersive-word-row-frame--spotlight {
-  padding: 18px;
-  border-radius: 18px;
-  border: 1px solid color-mix(in oklch, var(--color-border) 74%, white 26%);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.7)),
-    radial-gradient(circle at top left, color-mix(in oklch, var(--color-primary) 6%, transparent), transparent 34%);
-}
-
-.immersive-word-row-frame--spotlight .immersive-word-row--centered {
-  justify-content: flex-start;
 }
 
 .immersive-typing__shortcut-card {
