@@ -8,7 +8,7 @@ export const UPLOAD_PROGRESS_PERSIST_INTERVAL_MS = 800;
 export const ASR_MODELS_API_BASE = "/api/asr-models";
 export const DESKTOP_CLIENT_OFFLINE_MESSAGE = "离线模式下无法生成课程，请联网后重试";
 export const DESKTOP_CLIENT_INSUFFICIENT_BALANCE_MESSAGE = "余额不足，充值后即可继续生成当前内容";
-export const BOTTLE1_DESKTOP_ONLY_MESSAGE = "Unlock 本地版仅支持在客户端使用，请下载桌面端继续";
+export const BOTTLE1_DESKTOP_ONLY_MESSAGE = "Bottle 1.0 仅支持在客户端使用，请下载桌面端继续";
 export const LINK_IMPORT_DESKTOP_ONLY_MESSAGE = "链接导入仅支持在客户端使用，请下载桌面端继续";
 export const LARGE_FILE_DESKTOP_RECOMMEND_MESSAGE = "当前素材推荐使用客户端生成，效果和稳定性更好";
 export const DEFAULT_ASR_MODEL_CATALOG_MAP = buildAsrModelCatalogMap();
@@ -47,7 +47,7 @@ export const LOCAL_MODEL_OPTIONS = [
   {
     key: ASR_MODEL_KEYS.fasterWhisper,
     workerModelId: ASR_MODEL_KEYS.fasterWhisper,
-    title: "Unlock 本地",
+    title: "Bottle 1.0",
     subtitle: "先准备桌面端模型，再开始生成。",
     uploadEnabled: true,
     sizeEstimateMb: { wasm: 180 },
@@ -57,7 +57,7 @@ export const LOCAL_MODEL_OPTIONS = [
 export const UPLOAD_MODEL_OPTIONS = [
   {
     key: FASTER_WHISPER_MODEL,
-    title: "Unlock 本地",
+    title: "Bottle 1.0",
     subtitle: "更注重字幕质量，需改用桌面端。",
     mode: "fast",
     note: "下载桌面端后处理。",
@@ -66,7 +66,7 @@ export const UPLOAD_MODEL_OPTIONS = [
   },
   {
     key: QWEN_MODEL,
-    title: "Unlock 云端",
+    title: "Bottle 2.0",
     subtitle: "网页端默认路径。",
     mode: "fast",
     note: "无需准备模型，选中文件后可直接开始。",

@@ -14,7 +14,7 @@ import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitl
 const SECTION_PANELS = {
   health: [
     { value: "overview", label: "运行总览", description: "先看趋势、异常和快捷入口，再决定排查顺序。", component: AdminOverviewTab },
-    { value: "system", label: "系统检查", description: "确认服务、数据库、媒体依赖和 Unlock 运行状态。", component: AdminSystemTab },
+    { value: "system", label: "系统检查", description: "确认服务、数据库、媒体依赖和 Bottle 运行状态。", component: AdminSystemTab },
   ],
   tasks: [
     { value: "task-failures", label: "生成失败", description: "按任务、课程和阶段定位失败原因。", component: AdminLessonTaskLogsTab },

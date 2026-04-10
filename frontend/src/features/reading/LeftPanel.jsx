@@ -2,13 +2,20 @@
  * LeftPanel.jsx — 阅读板块左侧面板
  * =================================
  * 两种模式：
- * - 输入模式（空状态 / 有内容）：textarea 可粘贴/输入
+ * - 输入模式（空状态 / 有内容）：tab bar + 输入区域
  * - 阅读模式：渲染 ArticlePanel，带「重新输入」按钮
+ *
+ * Phase 39: 新增多模态输入标签栏
+ *   - 文本（默认）：textarea 直接粘贴/输入
+ *   - 网页链接：URL 输入框，调用后端 /api/extract/url
+ *   - PDF：文件拖放，客户端 pdf.js 提取
+ *   - 字幕：.srt/.vtt 文件拖放，客户端解析
+ *   - 图片OCR：图片上传，调用后端 /api/extract/ocr
  *
  * Props:
  *   mode           {'input'|'reading'}
  *   articleText    {string} — 当前文章文本（阅读模式使用）
- *   onSubmit       {(text: string) => void} — 提交文章，切换到阅读模式
+ *   onSubmit       {(text: string, sourceMetadata?: object) => void} — 提交文章
  *   onEditAgain    {() => void} — 重新输入
  *   contentWidth   {number}
  *   onWidthChange  {(w: number) => void}
@@ -21,15 +28,29 @@
  *   validAboveI1Words {string[]} — 有效的 >i+1 词汇列表
  *   removedWords {string[]} — DeepSeek 过滤掉的词（过于简单，不再标红）
  *   wordLevels {object} — 二次筛选后的最终等级 {wordLower: level}
+ *   accessToken {string} — 当前用户 token（URL/OCR tab 需要）
  */
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Unlock } from "lucide-react";
+import { lazy, Suspense, useCallback, useRef, useState } from "react";
+import { Captions, FileText, Globe, Image, Loader2, Unlock } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { readSubtitleFile } from "./inputAdapters/subtitleParser";
+import { extractPdfText } from "./inputAdapters/pdfExtractor";
+import { extractUrl, extractOcr } from "./api/extractApi";
 import "./reading.css";
 
 const ArticlePanel = lazy(() => import("./ArticlePanel").then((m) => ({ default: m.ArticlePanel })));
 
-/* ─── 输入模式占位提示 ─────────────────────────── */
+/* ─── 标签定义 ─────────────────────────────────────── */
+
+const INPUT_TABS = [
+  { id: "text", label: "文本" },
+  { id: "url", label: "网页链接", icon: Globe },
+  { id: "pdf", label: "PDF", icon: FileText },
+  { id: "subtitle", label: "字幕", icon: Captions },
+  { id: "ocr", label: "图片OCR", icon: Image },
+];
+
+/* ─── 输入模式占位提示 ─────────────────────────────── */
 
 function InputPlaceholder() {
   return (
@@ -50,7 +71,7 @@ function InputPlaceholder() {
   );
 }
 
-/* ─── 重新输入按钮 ─────────────────────────────── */
+/* ─── 重新输入按钮 ─────────────────────────────────── */
 
 function EditAgainButton({ onClick }) {
   return (
@@ -60,7 +81,281 @@ function EditAgainButton({ onClick }) {
   );
 }
 
-/* ─── LeftPanel ───────────────────────────────── */
+/* ─── 文本 Tab ─────────────────────────────────────── */
+
+function TextTab({ onSubmit }) {
+  const [draft, setDraft] = useState("");
+  const draftRef = useRef("");
+
+  const handleDraftChange = useCallback((value) => {
+    setDraft(value);
+    draftRef.current = value;
+  }, []);
+
+  const handleConfirm = useCallback(() => {
+    const trimmed = draftRef.current.trim();
+    if (trimmed.length > 0) {
+      onSubmit(trimmed, { type: "text" });
+    }
+  }, [onSubmit]);
+
+  const handleKeyDown = useCallback(
+    (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handleConfirm();
+      }
+    },
+    [handleConfirm]
+  );
+
+  const charCount = draft.length;
+  const hasContent = draft.trim().length > 0;
+
+  return (
+    <>
+      {!hasContent && <InputPlaceholder />}
+      <div className={cn("left-panel__input-area", !hasContent && "left-panel__input-area--empty")}>
+        <textarea
+          className="left-panel__textarea"
+          value={draft}
+          onChange={(e) => handleDraftChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder=""
+          spellCheck={false}
+          autoFocus
+          aria-label="输入或粘贴英文文章"
+        />
+        {hasContent && (
+          <div className="left-panel__input-footer">
+            <span className="left-panel__char-count">{charCount} 字符</span>
+            <button className="btn-unlock" onClick={handleConfirm}>
+              <span className="inline-flex items-center gap-2">
+                <Unlock className="size-4" />
+                Unlock
+              </span>
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/* ─── URL Tab ──────────────────────────────────────── */
+
+function UrlTab({ onSubmit, accessToken }) {
+  const [url, setUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleExtract = useCallback(async () => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await extractUrl(trimmed, accessToken);
+      onSubmit(result.text, { type: "url", sourceUrl: trimmed, title: result.title });
+    } catch (err) {
+      setError(err.message || "无法提取该网页内容，请检查链接是否正确");
+    } finally {
+      setLoading(false);
+    }
+  }, [url, accessToken, onSubmit]);
+
+  const handleKeyDown = useCallback(
+    (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleExtract();
+      }
+    },
+    [handleExtract]
+  );
+
+  return (
+    <div className="left-panel__source-tab">
+      <p className="left-panel__source-hint">
+        粘贴英文网页链接，自动提取文章正文
+      </p>
+      <div className="left-panel__url-row">
+        <input
+          className="left-panel__url-input"
+          type="url"
+          value={url}
+          onChange={(e) => { setUrl(e.target.value); setError(null); }}
+          onKeyDown={handleKeyDown}
+          placeholder="https://example.com/article"
+          disabled={loading}
+          autoFocus
+        />
+        <button
+          className="btn-unlock left-panel__source-btn"
+          onClick={handleExtract}
+          disabled={!url.trim() || loading}
+        >
+          {loading ? <Loader2 className="size-4 animate-spin" /> : <Globe className="size-4" />}
+          {loading ? "提取中…" : "提取"}
+        </button>
+      </div>
+      {error && <p className="left-panel__source-error">{error}</p>}
+    </div>
+  );
+}
+
+/* ─── 文件拖放区域 ─────────────────────────────────── */
+
+function FileDropzone({ accept, hint, onFile, loading, disabled }) {
+  const inputRef = useRef(null);
+  const [dragging, setDragging] = useState(false);
+
+  const handleFile = useCallback(
+    (file) => {
+      if (!file) return;
+      onFile(file);
+    },
+    [onFile]
+  );
+
+  const handleDrop = useCallback(
+    (e) => {
+      e.preventDefault();
+      setDragging(false);
+      const file = e.dataTransfer.files[0];
+      handleFile(file);
+    },
+    [handleFile]
+  );
+
+  return (
+    <div
+      className={cn("left-panel__dropzone", dragging && "left-panel__dropzone--drag", (loading || disabled) && "left-panel__dropzone--disabled")}
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={handleDrop}
+      onClick={() => !loading && !disabled && inputRef.current?.click()}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        className="sr-only"
+        onChange={(e) => handleFile(e.target.files?.[0])}
+        disabled={loading || disabled}
+      />
+      {loading ? (
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      ) : (
+        <>
+          <p className="left-panel__dropzone-hint">{hint}</p>
+          <p className="left-panel__dropzone-sub">点击选择或拖放文件</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ─── PDF Tab ──────────────────────────────────────── */
+
+function PdfTab({ onSubmit }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleFile = useCallback(async (file) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await extractPdfText(file);
+      onSubmit(result.text, { type: "pdf", filename: file.name, pageCount: result.pageCount });
+    } catch (err) {
+      setError(err.message || "无法解析该 PDF 文件");
+    } finally {
+      setLoading(false);
+    }
+  }, [onSubmit]);
+
+  return (
+    <div className="left-panel__source-tab">
+      <p className="left-panel__source-hint">上传 PDF 文件，自动提取英文文字</p>
+      <FileDropzone
+        accept=".pdf,application/pdf"
+        hint="选择 PDF 文件（最大 10MB）"
+        onFile={handleFile}
+        loading={loading}
+      />
+      {error && <p className="left-panel__source-error">{error}</p>}
+    </div>
+  );
+}
+
+/* ─── 字幕 Tab ─────────────────────────────────────── */
+
+function SubtitleTab({ onSubmit }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleFile = useCallback(async (file) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await readSubtitleFile(file);
+      onSubmit(result.text, { type: "subtitle", filename: file.name, format: result.format });
+    } catch (err) {
+      setError(err.message || "无法解析字幕文件格式");
+    } finally {
+      setLoading(false);
+    }
+  }, [onSubmit]);
+
+  return (
+    <div className="left-panel__source-tab">
+      <p className="left-panel__source-hint">上传字幕文件，提取英文对白文本</p>
+      <FileDropzone
+        accept=".srt,.vtt,text/plain"
+        hint="选择 .srt 或 .vtt 字幕文件（最大 2MB）"
+        onFile={handleFile}
+        loading={loading}
+      />
+      {error && <p className="left-panel__source-error">{error}</p>}
+    </div>
+  );
+}
+
+/* ─── OCR Tab ──────────────────────────────────────── */
+
+function OcrTab({ onSubmit, accessToken }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleFile = useCallback(async (file) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await extractOcr(file, accessToken);
+      onSubmit(result.text, { type: "ocr", filename: file.name });
+    } catch (err) {
+      setError(err.message || "图片识别失败，请确保图片清晰且包含英文文字");
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken, onSubmit]);
+
+  return (
+    <div className="left-panel__source-tab">
+      <p className="left-panel__source-hint">上传含英文文字的图片，自动识别文本</p>
+      <FileDropzone
+        accept="image/*"
+        hint="选择图片文件（最大 5MB）"
+        onFile={handleFile}
+        loading={loading}
+      />
+      {error && <p className="left-panel__source-error">{error}</p>}
+    </div>
+  );
+}
+
+/* ─── LeftPanel ───────────────────────────────────── */
 
 export function LeftPanel({
   mode,
@@ -82,45 +377,16 @@ export function LeftPanel({
   viewMode = "original",
   isRewriting = false,
   rewriteError = null,
+  accessToken = "",
 }) {
-  const [draft, setDraft] = useState("");
-  const draftRef = useRef("");
+  const [activeTab, setActiveTab] = useState("text");
 
-  // 当 mode 变 input 时清空草稿
-  useEffect(() => {
-    if (mode === "input") {
-      // keep last draft for user convenience, don't clear
-    }
-  }, [mode]);
-
-  const handleDraftChange = useCallback(
-    (value) => {
-      setDraft(value);
-      draftRef.current = value;
+  const handleTabSubmit = useCallback(
+    (text, sourceMetadata) => {
+      onSubmit(text, sourceMetadata);
     },
-    []
+    [onSubmit]
   );
-
-  const handleConfirm = useCallback(() => {
-    const trimmed = draftRef.current.trim();
-    if (trimmed.length > 0) {
-      onSubmit(trimmed);
-    }
-  }, [onSubmit]);
-
-  const handleKeyDown = useCallback(
-    (e) => {
-      // Ctrl/Cmd+Enter 立即提交
-      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        handleConfirm();
-      }
-    },
-    [handleConfirm]
-  );
-
-  const charCount = draft.length;
-  const hasContent = draft.trim().length > 0;
 
   if (mode === "reading") {
     return (
@@ -167,29 +433,32 @@ export function LeftPanel({
   // mode === 'input'
   return (
     <div className="left-panel left-panel--input">
-      {!hasContent && <InputPlaceholder />}
-      <div className={cn("left-panel__input-area", !hasContent && "left-panel__input-area--empty")}>
-        <textarea
-          className="left-panel__textarea"
-          value={draft}
-          onChange={(e) => handleDraftChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder=""
-          spellCheck={false}
-          autoFocus
-          aria-label="输入或粘贴英文文章"
-        />
-        {hasContent && (
-          <div className="left-panel__input-footer">
-            <span className="left-panel__char-count">{charCount} 字符</span>
-            <button className="btn-unlock" onClick={handleConfirm}>
-              <span className="inline-flex items-center gap-2">
-                <Unlock className="size-4" />
-                Unlock
-              </span>
+      {/* 标签栏 */}
+      <div className="left-panel__tabs" role="tablist">
+        {INPUT_TABS.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              className={cn("left-panel__tab", activeTab === tab.id && "left-panel__tab--active")}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {Icon && <Icon className="size-3.5" />}
+              {tab.label}
             </button>
-          </div>
-        )}
+          );
+        })}
+      </div>
+
+      {/* 标签内容 */}
+      <div className="left-panel__tab-content">
+        {activeTab === "text" && <TextTab onSubmit={handleTabSubmit} />}
+        {activeTab === "url" && <UrlTab onSubmit={handleTabSubmit} accessToken={accessToken} />}
+        {activeTab === "pdf" && <PdfTab onSubmit={handleTabSubmit} />}
+        {activeTab === "subtitle" && <SubtitleTab onSubmit={handleTabSubmit} />}
+        {activeTab === "ocr" && <OcrTab onSubmit={handleTabSubmit} accessToken={accessToken} />}
       </div>
     </div>
   );

@@ -266,7 +266,7 @@ function getCloudFailureMessage(errorLike = "", serverStatus = {}, fallback = ""
     return mapCloudAsrFailureToMessage(
       {
         error_code: errorLike?.error_code ?? errorLike?.code ?? "",
-        message: errorLike?.message || toErrorText(errorLike, fallback || "Unlock 云端当前不可用"),
+        message: errorLike?.message || toErrorText(errorLike, fallback || "Bottle 2.0 当前不可用"),
         detail: errorLike?.detail ?? "",
       },
       normalizedServerStatus,
@@ -1488,7 +1488,7 @@ export function UploadPanel({
   const desktopGuidanceTitle = desktopGuidanceIsLargeFile
     ? "建议改用桌面端"
     : desktopGuidanceIsBottle1Only
-      ? "Unlock 本地版仅支持客户端"
+      ? "Bottle 1.0 仅支持客户端"
       : "链接导入仅支持客户端";
   const desktopGuidanceLeadText = desktopGuidanceIsLargeFile
     ? LARGE_FILE_DESKTOP_RECOMMEND_MESSAGE
@@ -1502,7 +1502,7 @@ export function UploadPanel({
         desktopGuidanceContext.durationSec > 0 ? `，时长约 ${formatDurationLabel(desktopGuidanceContext.durationSec)}` : ""
       }。`
     : desktopGuidanceIsBottle1Only
-      ? "网页端当前不会执行 Unlock 本地版，本次仅保留下载桌面端继续的路径。"
+      ? "网页端当前不会执行 Bottle 1.0，本次仅保留下载桌面端继续的路径。"
       : "如果你不想走桌面端，也可以先切回本地文件上传继续当前网页流程。";
   const showProgress =
     !isRestoreVerifying &&
@@ -2275,7 +2275,7 @@ export function UploadPanel({
         const promptKey = `${String(payload?.remoteVersion || "")}:${String(payload?.localVersion || "")}`;
         if (desktopModelUpdatePromptRef.current !== promptKey) {
           desktopModelUpdatePromptRef.current = promptKey;
-          toast.message("发现新的 Unlock 本地版模型，可点击更新");
+          toast.message("发现新的 Bottle 1.0 模型版本，可点击更新");
         }
       }
     });
@@ -3749,7 +3749,7 @@ export function UploadPanel({
         throw new Error("当前未识别出可用字幕，请改用云端运行或更换素材。");
       }
       const sentenceCount = localSentences.length;
-      setLocalProgress("asr_transcribe", "completed", 1, `Unlock 本地版完成，共 ${sentenceCount} 段字幕`, {
+      setLocalProgress("asr_transcribe", "completed", 1, `Bottle 1.0 完成，共 ${sentenceCount} 段字幕`, {
         asr_done: sentenceCount,
         asr_estimated: sentenceCount,
         translate_done: 0,
@@ -6001,7 +6001,7 @@ export function UploadPanel({
                 {modelUpdateState ? (
                   <div className="rounded-2xl border border-purple-200 bg-purple-50 p-4">
                     <div className="mb-2 flex items-center justify-between">
-                      <p className="text-sm font-medium text-purple-900">Unlock 本地版更新</p>
+                      <p className="text-sm font-medium text-purple-900">Bottle 1.0 模型更新</p>
                       <Badge variant="outline" className={
                         modelUpdateState?.status === "downloading" ? "border-purple-500 text-purple-600" :
                         modelUpdateState?.status === "error" ? "border-red-500 text-red-600" :
@@ -6154,7 +6154,7 @@ export function UploadPanel({
                   <p>{desktopGuidanceDetail}</p>
                   {desktopGuidanceIsLargeFile ? (
                     <>
-                      <p>Unlock 云端当前仍支持音频与视频文件直传；当素材特别大或网络不稳定时，优先改用桌面端会更可靠。</p>
+                      <p>Bottle 2.0 当前仍支持音频与视频文件直传；当素材特别大或网络不稳定时，优先改用桌面端会更可靠。</p>
                       <p>当前建议阈值不是硬性限制：在 2 GB / 12 小时以内仍可继续使用当前流程，但更推荐桌面端处理高风险素材。</p>
                     </>
                   ) : null}

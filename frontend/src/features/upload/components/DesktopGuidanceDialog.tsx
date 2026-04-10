@@ -38,7 +38,7 @@ export function DesktopGuidanceDialog({
               {isLargeFile && (
                 <>
                   <p>
-                    Unlock 云端当前仍支持音频与视频文件直传；当素材特别大或网络不稳定时，
+                    Bottle 2.0 当前仍支持音频与视频文件直传；当素材特别大或网络不稳定时，
                     优先改用桌面端会更可靠。
                   </p>
                   <p>

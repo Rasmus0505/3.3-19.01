@@ -1,25 +1,24 @@
-# Unlock — English Learning
+# Bottle English Learning
 
 ## What This Is
 
-Unlock (formerly Bottle) is an English learning product built around the “Unlock Anything” principle: users bring any English material — video, audio, text, PDF, webpage, subtitles, or even a photo of a textbook — and the platform transforms it into personalized i+1 learning content through AI-powered processing. The product follows Krashen's Comprehensible Input hypothesis, using CEFR-based vocabulary analysis to ensure learners always work at their optimal difficulty level.
+Bottle is an English learning product for learners who want to study from materials they actually care about. Users bring their own English media and text, turn it into usable lessons or reading experiences, and then continue through sentence-based practice, review flows, and vocabulary study.
 
 The product is intentionally split by runtime capability: the desktop client is the full-power experience, while the web app provides the strongest browser-safe subset. The platform should stay easy for non-technical learners while keeping heavy media work off your server whenever possible.
 
 ## Core Value
 
-Users can unlock any English material into personalized i+1 learning packs — reading, vocabulary, comprehension, and dictation — without needing technical setup, powered by AI across the full pipeline.
+Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
-## Current Milestone: v3.0 — Unlock Anything
+## Current Milestone: v2.8 — 阅读生成流水线
 
-**Goal:** 产品从 Bottle 改名为 Unlock，实现”任意材料输入 -> AI 全链路处理 -> 完整学习包 + 成长可视化”的闭环体验，同时打造比赛级 demo 展示效果。
+**Goal:** 把任意英语阅读材料转化为用户个性化的 i+1 阅读包，并用比赛导向的方式展示诊断、生成过程、对照结果和学习接力。
 
 **Target features:**
-1. **品牌升级** — 产品从 Bottle 改名为 Unlock，更新前端品牌、标题、Logo 等全部用户可见表面
-2. **多模态材料输入** — 支持网页链接抓取、PDF 导入、字幕文件（.srt/.vtt）导入、图片 OCR 四种新输入源进入阅读/学习流程
-3. **完整学习包** — 从阅读包扩展为完整学习包：i+1 阅读包 + LLM 生成理解测验（选择/填空/排序）+ 词汇卡片（i+1 词汇提取 + 例句 + AI 场景图）+ 听写课程生成
-4. **阅读包完善** — 词汇解释面板、历史回看与难度徽章、生词本收词、下一步学习动作，融入学习包体系
-5. **学习仪表盘** — CEFR 等级进度条与词汇量增长曲线、每日学习热力图（GitHub 风格）、”已解锁 X 篇材料，掌握 Y 个新词”核心统计
+1. **材料诊断台** — 在生成前展示文章难度、用户等级、建议目标等级、i+1 词与超纲表达统计，而不是直接黑盒重写
+2. **阶段化生成流程** — 将阅读生成拆成可见的解析、判断、规划、重构、组装阶段，强化“任意材料 -> i+1 包”的产品叙事
+3. **阅读包结果页** — 将输出升级为可回看的阅读包资产，支持原文 / i+1 / 逐句对照以及词汇处理说明
+4. **学习接力** — 从阅读包直接进入生词本、历史资产回看和后续学习动作，而不是停留在一次性重写结果
 
 ## Current State
 
@@ -115,15 +114,11 @@ See `.planning/milestones/v2.4-REQUIREMENTS.md` for archived requirements.
 
 ### Active
 
-<!-- v3.0 — Unlock Anything -->
-- [ ] 产品从 Bottle 改名为 Unlock，前端品牌、标题、Logo 等全部用户可见表面更新
-- [ ] 用户可通过网页链接、PDF、字幕文件、图片 OCR 四种新输入源进入阅读/学习流程
-- [ ] 用户可从学习包获得 LLM 生成的理解测验（选择/填空/排序题）
-- [ ] 用户可获得 i+1 词汇卡片，含例句和 AI 生成场景图
-- [ ] 用户可从阅读包直接生成听写课程
-- [ ] 用户可在阅读包内查看词汇解释面板、从中收词到生词本
-- [ ] 用户可在历史中回看阅读包，带难度徽章和生成状态
-- [ ] 用户可在学习仪表盘查看 CEFR 进度、词汇增长、学习热力图和解锁统计
+<!-- v2.8 — 阅读生成流水线 -->
+- [x] 用户可在生成前看到阅读材料的难度诊断、建议目标等级和 i+1 / 超纲表达统计
+- [x] 用户可通过显式阶段化流程把任意阅读材料生成可回看的 i+1 阅读包，而不是只得到一次性重写文本
+- [ ] 用户可在阅读包内查看原文 / i+1 / 逐句对照和词汇处理说明，理解系统保留了什么、简化了什么
+- [ ] 用户可从阅读包直接进入生词本、历史回看和下一步学习动作，形成阅读后的学习闭环
 
 ### Out of Scope
 
@@ -162,16 +157,6 @@ See `.planning/milestones/v2.4-REQUIREMENTS.md` for archived requirements.
 - **Update Reliability**: Desktop update flows must fail safely and explain recovery clearly; a broken updater is worse than a manual reinstall path.
 - **Immersive Architecture**: Immersive state machine contract from Phase 8 must be preserved — bug fixes should not remove reducer structure or re-introduce ad-hoc state transitions.
 - **Wordbook Backward Compatibility**: Wordbook review flow, due queue, and mastery scheduling from Phase 17 must be preserved — enhancements should layer on top, not replace.
-
-## Milestone: v2.8 Summary
-
-**Shipped:** 2026-04-10 (partial — Phase 37 merged into v3.0)
-**Phases:** Phase 35, 36 (completed); Phase 37 requirements merged into v3.0
-**Key outcomes:**
-- Material diagnostic card: pre-generation CEFR analysis with difficulty estimation and i+1 word counts
-- Pipeline orchestrator: staged generation flow with visible progress (parse → judge → plan → rewrite → assemble)
-- Reading pack asset: persistent pack with original/i+1/comparison views, IndexedDB storage, session recovery
-- Phase 37 (learning handoff) requirements carried forward to v3.0 milestone
 
 ## Milestone: v2.7 Summary
 
@@ -234,12 +219,7 @@ See `.planning/milestones/v2.4-REQUIREMENTS.md` for archived requirements.
 | 阅读板块定位升级为“任意材料 -> i+1 阅读包”而不是“单次重写结果” | 更适合比赛展示，也更符合产品想让用户把兴趣材料转为可理解输入的核心定位 | 🔄 v2.8 |
 | 阅读生成必须显式展示诊断与阶段过程 | OpenMAIC 证明阶段感会显著提升可理解性和演示表现，黑盒 rewrite 不足以支撑比赛叙事 | 🔄 v2.8 |
 | OpenMAIC 作为编排与展示参考，而不是功能复制目标 | 复用其“输入材料 -> 分阶段生成 -> 资产化结果”的结构，避免把 Bottle 漂移成多智能体课堂产品 | 🔄 v2.8 |
-| 阅读结果以”阅读包资产”持久化，而不是只保存 rewrittenText | 历史回看、对照视图、词汇解释、学习接力都更容易围绕 pack 组织 | 🔄 v2.8 |
-| 产品从 Bottle 改名为 Unlock | “Unlock Anything” 是产品核心叙事，品牌名直接体现”解锁任意材料”的价值主张，也更适合比赛展示 | 🔄 v3.0 |
-| v3.0 学习包 = 阅读包 + 理解测验 + 词汇卡片 + 听写课程 | 单一阅读包不足以展示完整学习闭环，四种输出覆盖读、测、记、写四个学习维度 | 🔄 v3.0 |
-| 词汇卡片配 AI 生成场景图 | 图片模型是 AI 赋能的重要展示点，场景图增强词汇记忆效果 | 🔄 v3.0 |
-| 多模态输入：网页/PDF/字幕/OCR | 强化”Anything”概念，越多入口越能体现核心价值 | 🔄 v3.0 |
-| AI 对话练习推到 v3.0 之后 | v3.0 范围已经足够大，对话练习需要完整的 ASR+SOE+TTS+LLM 链路，独立里程碑更稳妥 | 🔄 v3.0 scope decision |
+| 阅读结果以“阅读包资产”持久化，而不是只保存 rewrittenText | 历史回看、对照视图、词汇解释、学习接力都更容易围绕 pack 组织 | 🔄 v2.8 |
 
 ## Evolution
 
@@ -259,4 +239,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-10 — Milestone v3.0 Unlock Anything started*
+*Last updated: 2026-04-10 after Phase 36 completion*

@@ -1,108 +1,81 @@
-# Requirements: Unlock — v3.0 Unlock Anything
+# Requirements: Bottle English Learning — v2.8 阅读生成流水线
 
 **Defined:** 2026-04-10
-**Core Value:** Users can unlock any English material into personalized i+1 learning packs — reading, vocabulary, comprehension, and dictation — powered by AI across the full pipeline.
+**Core Value:** Users can turn real English media into usable learning lessons quickly, without needing technical setup or pushing heavy processing onto your server.
 
 ## v1 Requirements
 
-### Brand Upgrade
+### Material Intake & Diagnosis
 
-- [ ] **BRAND-01**: User sees "Unlock" branding across all visible surfaces — app title, navigation, headers, footer, and meta tags — instead of "Bottle".
-- [ ] **BRAND-02**: App logo placeholder, favicon, and Open Graph metadata reflect the Unlock brand identity.
+- [x] **DIAG-01**: User can submit a reading material from the reading workspace and receive a pre-generation diagnostic card before any AI simplification starts.
+- [x] **DIAG-02**: User can see the estimated material difficulty, the user's current CEFR level, and the recommended target i+1 level for that material.
+- [x] **DIAG-03**: User can see counts of preserved i+1 words, above-i+1 expressions that need simplification, and the expected simplification impact for the material.
+- [x] **DIAG-04**: User can review estimated cost/time and explicitly confirm generation from the diagnostic card instead of triggering a blind one-click rewrite.
 
-### Multi-Modal Material Input
+### Generation Pipeline Experience
 
-- [ ] **INPUT-01**: User can paste a webpage URL and the system extracts article text into the reading pipeline without manual copy-paste.
-- [ ] **INPUT-02**: User can upload a PDF file and the system extracts English text into the reading pipeline.
-- [ ] **INPUT-03**: User can upload subtitle files (.srt or .vtt) and the system extracts the text into the reading pipeline.
-- [ ] **INPUT-04**: User can upload an image (photo of a textbook page, screenshot) and the system extracts English text via OCR into the reading pipeline.
+- [x] **PIPE-01**: User can watch a staged generation flow that explicitly shows material parsing, difficulty judgment, simplification planning, text rewriting, and reading-pack assembly.
+- [x] **PIPE-02**: User can see stage-specific progress and failure states that explain what failed and whether the material can still be opened in original mode.
+- [x] **PIPE-03**: If generation is interrupted by refresh or navigation, user can recover the latest in-progress state or completed output without restarting from scratch.
 
-### Reading Pack Completion
+### Reading Pack Output
 
-- [ ] **PACK-01**: User can inspect a structured vocabulary explanation panel inside the reading pack that separates preserved i+1 words from simplified expressions.
-- [ ] **PACK-02**: User can add preserved i+1 words and simplified expressions to wordbook directly from the reading pack.
-- [ ] **PACK-03**: User can reopen previously generated reading packs from history, showing difficulty badges and generation status.
-- [ ] **PACK-04**: User sees explicit next-step actions after reading pack generation — continue reading, compare with original, collect words, or generate quiz/dictation.
+- [x] **PACK-01**: User receives a persistent reading pack asset containing original text, i+1 rewritten text, target-level metadata, rewrite mappings, and diagnostic summary for one material.
+- [x] **PACK-02**: User can switch between original view, i+1 view, and sentence-by-sentence comparison view inside the reading pack.
+- [ ] **PACK-03**: User can inspect which words were preserved as i+1 learning opportunities and which expressions were simplified, through a structured explanation panel rather than only inline highlights.
+- [ ] **PACK-04**: User can reopen a previously generated reading pack from history and see its difficulty badge and generation status without regenerating.
 
-### Learning Pack — Comprehension Quiz
+### Learning Handoff
 
-- [ ] **QUIZ-01**: User can generate a comprehension quiz from a reading pack, with questions based on the article content via LLM.
-- [ ] **QUIZ-02**: Quiz supports multiple question types: single-choice, fill-in-the-blank, and sentence ordering.
-
-### Learning Pack — Vocabulary Cards
-
-- [ ] **VOCAB-01**: User can view i+1 vocabulary cards extracted from the reading pack, each showing the word, its CEFR level, and contextual definition.
-- [ ] **VOCAB-02**: Vocabulary cards include example sentences drawn from the reading pack content.
-- [ ] **VOCAB-03**: Vocabulary cards include AI-generated scene images that illustrate the word meaning.
-
-### Learning Pack — Dictation Course
-
-- [ ] **DICT-01**: User can generate a dictation course from reading pack sentences, entering the existing immersive dictation practice flow.
-
-### Learning Dashboard
-
-- [ ] **DASH-01**: User can view a CEFR level progress indicator and vocabulary growth curve showing words learned over time.
-- [ ] **DASH-02**: User can view a daily learning heatmap (GitHub-style calendar) showing study activity.
-- [ ] **DASH-03**: User can see core statistics: "unlocked X materials, mastered Y new words, completed Z quizzes".
+- [ ] **HAND-01**: User can add preserved i+1 words and simplified expressions to wordbook directly from the reading pack.
+- [ ] **HAND-02**: User can see a clear next action after generation, such as continue reading, compare with original, or collect target words for review.
 
 ## v2 Requirements
 
 ### Source Expansion
 
-- **SRC-01**: User can import content from additional sources (ebook formats, clipboard paste, audio transcription) into the reading pipeline.
+- **SRC-01**: User can import webpage, PDF, subtitle, or transcript sources directly into the reading generation pipeline without manual copy/paste.
 
-### Advanced Quiz
+### Pack Variants
 
-- **ADVQ-01**: User can take adaptive quizzes that adjust difficulty based on previous answers.
+- **VAR-01**: User can generate and keep multiple target-level variants of the same material without overwriting earlier reading packs.
 
-### AI Conversation Practice
+### Post-Reading Practice
 
-- **CONV-01**: User can practice spoken conversation with an AI partner based on reading pack content, using ASR + SOE + TTS.
-
-### Spaced Review Integration
-
-- **REV-01**: User can see a unified review queue that combines wordbook due items with quiz retry suggestions.
+- **POST-01**: User can generate reading-comprehension questions or review tasks from a finished reading pack.
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Multi-agent classroom or slide-generation (OpenMAIC-style) | v3.0 focuses on "material -> learning pack", not classroom simulation |
-| AI conversation / oral practice | Deferred to post-v3.0 — requires full ASR+SOE+TTS+LLM chain, separate milestone |
-| Full server-side document parsing | Conflicts with light-server constraint; client-side + lightweight API preferred |
-| Subscription / membership model | Per-use billing model preserved |
-| Desktop-only features in this milestone | v3.0 focuses on web experience; desktop parity is follow-up |
-| Forgetting curve visualization | Deferred — useful but not core to "Unlock Anything" narrative |
+| Multi-agent classroom or slide-generation experiences inside reading | This milestone is about i+1 reading-pack generation, not converting Bottle into an OpenMAIC-style classroom product |
+| Full server-side heavy document parsing pipeline | Conflicts with the local-first and light-server product boundary; demo scope can start from pasted text and existing reading materials |
+| Automatic quiz, summary, and audio generation as milestone-defining deliverables | Useful follow-ons, but they distract from the core "material -> i+1 pack" demo story |
+| Replacing lesson generation or immersive learning as the main product surface | v2.8 upgrades the reading workflow and should layer onto the existing Bottle product rather than displacing it |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BRAND-01 | Phase 38 | Pending |
-| BRAND-02 | Phase 38 | Pending |
-| INPUT-01 | Phase 39 | Pending |
-| INPUT-02 | Phase 39 | Pending |
-| INPUT-03 | Phase 39 | Pending |
-| INPUT-04 | Phase 39 | Pending |
-| PACK-01 | Phase 40 | Pending |
-| PACK-02 | Phase 40 | Pending |
-| PACK-03 | Phase 40 | Pending |
-| PACK-04 | Phase 40 | Pending |
-| QUIZ-01 | Phase 41 | Pending |
-| QUIZ-02 | Phase 41 | Pending |
-| VOCAB-01 | Phase 42 | Pending |
-| VOCAB-02 | Phase 42 | Pending |
-| VOCAB-03 | Phase 42 | Pending |
-| DICT-01 | Phase 43 | Pending |
-| DASH-01 | Phase 44 | Pending |
-| DASH-02 | Phase 44 | Pending |
-| DASH-03 | Phase 44 | Pending |
+| DIAG-01 | Phase 35 | Complete |
+| DIAG-02 | Phase 35 | Complete |
+| DIAG-03 | Phase 35 | Complete |
+| DIAG-04 | Phase 35 | Complete |
+| PIPE-01 | Phase 36 | Complete |
+| PIPE-02 | Phase 36 | Complete |
+| PIPE-03 | Phase 36 | Complete |
+| PACK-01 | Phase 36 | Complete |
+| PACK-02 | Phase 36 | Complete |
+| PACK-03 | Phase 37 | Pending |
+| PACK-04 | Phase 37 | Pending |
+| HAND-01 | Phase 37 | Pending |
+| HAND-02 | Phase 37 | Pending |
 
 **Coverage:**
-- v1 requirements: 19 total
-- Mapped to phases: 19
-- Unmapped: 0
+- v1 requirements: 13 total
+- Mapped to phases: 13
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-10*
-*Traceability updated: 2026-04-10*
+*Last updated: 2026-04-10 after v2.8 milestone draft*

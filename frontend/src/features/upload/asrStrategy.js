@@ -190,17 +190,17 @@ export function buildCloudAsrErrorMessage({
     case "SERVICE_UNAVAILABLE":
       return {
         code: normalizedCode,
-        message: "Unlock 云端当前不可用，请稍后重试。",
+        message: "Bottle 2.0 当前不可用，请稍后重试。",
       };
     case "RATE_LIMITED":
       return {
         code: normalizedCode,
-        message: "Unlock 云端请求过多，请稍后重试。",
+        message: "Bottle 2.0 请求过多，请稍后重试。",
       };
     case "CLOUD_FILE_ACCESS_FORBIDDEN":
       return {
         code: normalizedCode,
-        message: "Unlock 云端暂时无法访问已上传的文件，请稍后重试；若再次失败，请重新上传当前素材。",
+        message: "Bottle 2.0 暂时无法访问已上传的文件，请稍后重试；若再次失败，请重新上传当前素材。",
       };
     case "INSUFFICIENT_BALANCE":
       return {
@@ -215,17 +215,17 @@ export function buildCloudAsrErrorMessage({
     case "INVALID_MODEL":
       return {
         code: normalizedCode,
-        message: "Unlock 云端当前不可用，请稍后重试。",
+        message: "Bottle 2.0 当前不可用，请稍后重试。",
       };
     case "CLOUD_CONFIG_MISSING":
       return {
         code: normalizedCode,
-        message: "Unlock 云端未正确配置，请联系管理员。",
+        message: "Bottle 2.0 未正确配置，请联系管理员。",
       };
     default:
       return {
         code: normalizedCode,
-        message: "Unlock 云端当前不可用，请稍后重试。",
+        message: "Bottle 2.0 当前不可用，请稍后重试。",
       };
   }
 }

@@ -53,8 +53,8 @@ function _systemCostFor(modelName) {
 function billingDisplayRank(item) {
   const displayName = String(item?.display_name || "").trim();
   const modelName = String(item?.model_name || "").trim();
-  if (displayName === "Unlock 本地") return 0;
-  if (displayName === "Unlock 云端") return 1;
+  if (displayName === "Bottle 1.0") return 0;
+  if (displayName === "Bottle 2.0") return 1;
   if (modelName === "qwen-mt-flash") return 2;
   if (modelName === "deepseek-v3.2") return 3;
   if (modelName === "deepseek-v3.2-fast") return 4;
@@ -312,7 +312,7 @@ export function AdminRatesTab({ apiCall }) {
           <Settings2 className="size-4" />
           计费配置
         </CardTitle>
-        <CardDescription>这里只维护售价、成本参考、计费单位和启停状态；`Unlock 本地 / Unlock 云端` 作为主标题，技术模型名只保留为次级说明，运行时调优不再作为日常计费编辑的一部分。</CardDescription>
+        <CardDescription>这里只维护售价、成本参考、计费单位和启停状态；`Bottle 1.0 / Bottle 2.0` 作为主标题，技术模型名只保留为次级说明，运行时调优不再作为日常计费编辑的一部分。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {dirtyModels.length > 0 ? (
