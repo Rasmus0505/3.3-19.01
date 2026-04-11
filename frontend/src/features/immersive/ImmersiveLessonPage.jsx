@@ -52,6 +52,7 @@ import { isVideoFilename } from "./tokenNormalize";
 import { useImmersiveSessionController } from "./useImmersiveSessionController";
 import { useSentencePlayback } from "./useSentencePlayback";
 import { useTypingFeedbackSounds } from "./useTypingFeedbackSounds";
+import { PostLessonPlayer } from "./post-lesson/PostLessonPlayer";
 import "./immersive.css";
 
 const IMMERSIVE_CONTRACT_MARKERS = {
@@ -113,6 +114,8 @@ export function ImmersiveLessonPage({
   onExitImmersive,
   externalMediaReloadToken = 0,
 }) {
+  const [showPostLesson, setShowPostLesson] = useState(false);
+
   const [mediaMode, setMediaMode] = useState("video");
   const [mediaBlobUrl, setMediaBlobUrl] = useState("");
   const [mediaLoading, setMediaLoading] = useState(false);
@@ -1942,6 +1945,20 @@ export function ImmersiveLessonPage({
     .filter(Boolean)
     .join(" ");
 
+  const handleStartPostLesson = useCallback(() => setShowPostLesson(true), []);
+  const handleExitPostLesson = useCallback(() => setShowPostLesson(false), []);
+
+  if (showPostLesson) {
+    return (
+      <PostLessonPlayer
+        lesson={lesson}
+        accessToken={accessToken}
+        apiClient={apiClient}
+        onExit={handleExitPostLesson}
+      />
+    );
+  }
+
   return (
     <ImmersiveLessonShell
       videoPanelProps={{
@@ -2057,6 +2074,7 @@ export function ImmersiveLessonPage({
         focusTypingInput,
         isTouchDevice,
         shouldKeepControlFocus,
+        onStartPostLesson: handleStartPostLesson,
       }}
       explanationProps={{
         sentence: currentSentence,

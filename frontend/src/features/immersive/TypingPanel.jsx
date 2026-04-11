@@ -1,5 +1,5 @@
 import React, { forwardRef } from "react";
-import { Loader2, Volume2 } from "lucide-react";
+import { GraduationCap, Loader2, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 
 import AudioRecorder from "../../shared/components/AudioRecorder";
@@ -166,6 +166,7 @@ const TypingPanel = forwardRef(function TypingPanel(
     focusTypingInput,
     isTouchDevice,
     shouldKeepControlFocus,
+    onStartPostLesson,
   },
   ref,
 ) {
@@ -193,7 +194,17 @@ const TypingPanel = forwardRef(function TypingPanel(
         })}
       </div>
 
-      {phase === "lesson_completed" ? <p className="text-sm text-primary">课程已完成，恭喜你！</p> : null}
+      {phase === "lesson_completed" ? (
+        <div className="flex flex-col items-center gap-2 py-2">
+          <p className="text-sm text-primary">课程已完成，恭喜你！</p>
+          {onStartPostLesson && (
+            <Button size="sm" className="gap-2" onClick={onStartPostLesson}>
+              <GraduationCap className="w-4 h-4" />
+              开始课后学习
+            </Button>
+          )}
+        </div>
+      ) : null}
 
       <input
         ref={typingInputRef}
