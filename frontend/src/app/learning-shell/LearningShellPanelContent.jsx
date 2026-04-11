@@ -12,6 +12,7 @@ const LessonList = lazy(() => import("../../features/lessons/LessonList").then((
 const WordbookPanel = lazy(() => import("../../features/wordbook/WordbookPanel").then((module) => ({ default: module.WordbookPanel })));
 const UploadPanel = lazy(() => import("../../features/upload/UploadPanel").then((module) => ({ default: module.UploadPanel })));
 const ReadingPage = lazy(() => import("../../features/reading/ReadingPage").then((module) => ({ default: module.ReadingPage })));
+const DashboardPage = lazy(() => import("../../features/dashboard/DashboardPage").then((module) => ({ default: module.DashboardPage })));
 
 
 function PanelFallback() {
@@ -136,6 +137,14 @@ export function LearningShellPanelContent({
           <div className="flex min-h-[calc(100dvh-8.5rem)] flex-col">
             <ReadingPage accessToken={accessToken} apiCall={apiCall} />
           </div>
+        </Suspense>
+      );
+    }
+
+    if (activePanel === "dashboard") {
+      return (
+        <Suspense fallback={<PanelFallback />}>
+          <DashboardPage apiCall={apiCall} currentUser={currentUser} />
         </Suspense>
       );
     }

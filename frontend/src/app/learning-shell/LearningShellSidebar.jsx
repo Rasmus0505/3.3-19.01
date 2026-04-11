@@ -1,4 +1,4 @@
-import { BookOpenText, ChevronDown, History, LogIn, LogOut, RefreshCw, Search, Shield, Sparkles, UploadCloud, UserRound, Wifi, WifiOff } from "lucide-react";
+import { BarChart3, BookOpenText, ChevronDown, History, LogIn, LogOut, RefreshCw, Search, Shield, Sparkles, UploadCloud, UserRound, Wifi, WifiOff } from "lucide-react";
 
 import {
   SidebarContent,
@@ -29,6 +29,10 @@ export const PANEL_ITEMS = [
   {
     ...PANEL_ROUTE_ITEMS.find((item) => item.key === "wordbook"),
     icon: BookOpenText,
+  },
+  {
+    ...PANEL_ROUTE_ITEMS.find((item) => item.key === "dashboard"),
+    icon: BarChart3,
   },
   {
     ...PANEL_ROUTE_ITEMS.find((item) => item.key === "upload"),
@@ -81,7 +85,7 @@ export function LearningShellSidebar({
   const showAdminAction = Boolean(accessToken && isAdminUser);
   const showLogoutAction = Boolean(hasStoredToken);
   const visiblePanelItems = PANEL_ITEMS.filter((item) => {
-    if (item.key === "account" || item.key === "wordbook") {
+    if (item.key === "account" || item.key === "wordbook" || item.key === "dashboard") {
       return Boolean(accessToken);
     }
     return true;

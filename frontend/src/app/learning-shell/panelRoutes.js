@@ -20,6 +20,12 @@ export const PANEL_ROUTE_ITEMS = [
     matchPaths: ["/wordbook"],
   },
   {
+    key: "dashboard",
+    title: "学习数据",
+    path: "/dashboard",
+    matchPaths: ["/dashboard"],
+  },
+  {
     key: "upload",
     title: "上传素材",
     path: "/upload",
