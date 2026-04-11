@@ -112,10 +112,6 @@ export function DashboardPage({ apiCall, currentUser }) {
           animate="visible"
           className="mt-4 space-y-4"
         >
-          <motion.div variants={itemVariants}>
-            <AICoachCard apiCall={apiCall} stats={stats} report={report} userId={userId} useMock={useMock} />
-          </motion.div>
-
           <motion.div variants={itemVariants} className="grid gap-4 xl:grid-cols-3">
             <RadarChart report={report} />
             <HeatmapChart report={report} />
@@ -125,6 +121,10 @@ export function DashboardPage({ apiCall, currentUser }) {
           <motion.div variants={itemVariants} className="flex items-center gap-2 rounded-[22px] border border-slate-200/80 bg-slate-50/90 px-4 py-3 text-sm text-slate-600">
             <FlaskConical className="h-4 w-4 shrink-0 text-slate-500" />
             评分为理论代理指标，基于现有输入、完成、词汇和输出记录推导，用于证明“有效习得”而不是展示普通活跃度。
+          </motion.div>
+
+          <motion.div variants={itemVariants}>
+            <AICoachCard apiCall={apiCall} stats={stats} report={report} userId={userId} useMock={useMock} />
           </motion.div>
         </motion.div>
       ) : null}
