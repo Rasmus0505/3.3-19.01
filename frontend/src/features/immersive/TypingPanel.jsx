@@ -56,8 +56,8 @@ function renderWordSlots({
 }) {
   const renderToken = (token, index) => {
     const status = wordStatuses[index] || "pending";
-    // 句子已完成时，跳过仍为 pending 的单词（多余下划线）
-    if (sentenceTypingDone && status === "pending") return null;
+    // 句子已完成时，只保留 correct 状态的单词，隐藏其余（pending/active）
+    if (sentenceTypingDone && status !== "correct") return null;
     const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealComparableIndices[index] || []);
 
     return (

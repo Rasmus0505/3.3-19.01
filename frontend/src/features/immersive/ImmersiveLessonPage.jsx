@@ -547,66 +547,9 @@ export function ImmersiveLessonPage({
     focusTypingInput(isTouchDevice);
   }, [focusTypingInput, isTouchDevice, markExplanationViewed]);
 
-  // 检测 word-row 是否有多行，并计算每行的单词索引
-  const measureWordRowLines = useCallback(() => {
-    if (!wordRowFrameRef.current) return;
-    const container = wordRowFrameRef.current;
-    const slots = container.querySelectorAll('.immersive-word-slot');
-    if (slots.length === 0) {
-      setIsWordRowMultiLine(false);
-      setWordRowLines(null);
-      return;
-    }
-
-    let maxTop = 0;
-    let minTop = Infinity;
-    slots.forEach((slot) => {
-      const top = slot.getBoundingClientRect().top;
-      if (top > maxTop) maxTop = top;
-      if (top < minTop) minTop = top;
-    });
-    const hasMultiLine = maxTop - minTop > 20;
-    setIsWordRowMultiLine(hasMultiLine);
-
-    if (hasMultiLine) {
-      const rows = [];
-      let currentRow = [];
-      let currentTop = -1;
-      slots.forEach((slot, index) => {
-        const top = slot.getBoundingClientRect().top;
-        if (currentTop === -1) {
-          currentTop = top;
-          currentRow.push(index);
-        } else if (Math.abs(top - currentTop) < 20) {
-          currentRow.push(index);
-        } else {
-          rows.push(currentRow);
-          currentRow = [index];
-          currentTop = top;
-        }
-      });
-      if (currentRow.length > 0) {
-        rows.push(currentRow);
-      }
-      setWordRowLines(rows);
-    } else {
-      setWordRowLines(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    measureWordRowLines();
-  }, [expectedTokens, measureWordRowLines]);
-
-  useEffect(() => {
-    const container = wordRowFrameRef.current;
-    if (!container) return;
-    const observer = new ResizeObserver(() => {
-      measureWordRowLines();
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [measureWordRowLines]);
+  // 不再将单词分割到独立的行 div，让 flex-wrap 自然回流换行。
+  // 之前的 measureWordRowLines 会将单词锁入固定行 div，导致容器变宽后
+  // 单词无法回流（自锁循环）。现在始终使用单个 flex 容器。
 
   useEffect(() => {
     setSentenceJumpEditing(false);
