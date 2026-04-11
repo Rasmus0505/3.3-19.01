@@ -431,14 +431,14 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
           finalWordLevels[originalLower] = finalLevel || "";
 
           const finalLevelNum = levelToNum(finalLevel);
-          if (finalLevelNum <= userLevelNum) {
+          if (finalLevelNum < userLevelNum) {
             removedByLemmaWordsList.push({
               word: originalWord,
               lemma,
               finalLevel: finalLevel || "unknown",
-              reason: `原型 "${lemma}" 最终等级为 ${finalLevel || "unknown"}，低于等于用户等级 ${userLevel}`,
+              reason: `原型 "${lemma}" 最终等级为 ${finalLevel || "unknown"}，低于用户等级 ${userLevel}`,
             });
-          } else if (finalLevelNum === targetLevelNum) {
+          } else if (finalLevelNum === userLevelNum || finalLevelNum === targetLevelNum) {
             validI1WordsList.push(originalWord);
           } else {
             validAboveI1WordsList.push(originalWord);
