@@ -13,6 +13,7 @@ import { CourseSummary } from "./CourseSummary";
 import { useCourseState } from "./useCourseState";
 import { Button } from "../../../shared/ui";
 import { ArrowLeft, Loader2 } from "lucide-react";
+import { cn } from "../../../lib/utils";
 
 export function CoursePlayer({ pack, articleId, apiCall, accessToken, onExit }) {
   const {
@@ -51,55 +52,57 @@ export function CoursePlayer({ pack, articleId, apiCall, accessToken, onExit }) 
         </div>
       </div>
 
-      {/* Scene content */}
-      <div className="flex-1 overflow-hidden">
-        {activeScene === 1 && (
-          <SceneReading pack={pack} onComplete={() => completeScene(1)} />
-        )}
-        {activeScene === 2 && (
-          <SceneDiscussion
-            pack={pack}
-            courseData={courseData}
-            apiCall={apiCall}
-            accessToken={accessToken}
-            onSetDiscussion={setDiscussion}
-            onSetSettings={setSettings}
-            onComplete={() => completeScene(2)}
-          />
-        )}
-        {activeScene === 3 && (
-          <SceneVocabPractice
-            pack={pack}
-            courseData={courseData}
-            onComplete={() => completeScene(3)}
-          />
-        )}
-        {activeScene === 4 && (
-          <SceneQuiz
-            articleId={articleId}
-            pack={pack}
-            apiCall={apiCall}
-            onComplete={() => completeScene(4)}
-          />
-        )}
-        {activeScene === 5 && (
-          <SceneWriting
-            pack={pack}
-            apiCall={apiCall}
-            courseData={courseData}
-            onSetWriting={setWriting}
-            onComplete={() => completeScene(5)}
-          />
-        )}
-        {activeScene === 6 && (
-          <CourseSummary
-            courseData={courseData}
-            pack={pack}
-            onGoToScene={goToScene}
-            onExit={onExit}
-            onReset={resetCourse}
-          />
-        )}
+      {/* Scene content with transition */}
+      <div className="flex-1 overflow-hidden relative">
+        <div key={activeScene} className="absolute inset-0 animate-[fadeSlideIn_0.28s_ease-out_forwards]">
+          {activeScene === 1 && (
+            <SceneReading pack={pack} onComplete={() => completeScene(1)} />
+          )}
+          {activeScene === 2 && (
+            <SceneDiscussion
+              pack={pack}
+              courseData={courseData}
+              apiCall={apiCall}
+              accessToken={accessToken}
+              onSetDiscussion={setDiscussion}
+              onSetSettings={setSettings}
+              onComplete={() => completeScene(2)}
+            />
+          )}
+          {activeScene === 3 && (
+            <SceneVocabPractice
+              pack={pack}
+              courseData={courseData}
+              onComplete={() => completeScene(3)}
+            />
+          )}
+          {activeScene === 4 && (
+            <SceneQuiz
+              articleId={articleId}
+              pack={pack}
+              apiCall={apiCall}
+              onComplete={() => completeScene(4)}
+            />
+          )}
+          {activeScene === 5 && (
+            <SceneWriting
+              pack={pack}
+              apiCall={apiCall}
+              courseData={courseData}
+              onSetWriting={setWriting}
+              onComplete={() => completeScene(5)}
+            />
+          )}
+          {activeScene === 6 && (
+            <CourseSummary
+              courseData={courseData}
+              pack={pack}
+              onGoToScene={goToScene}
+              onExit={onExit}
+              onReset={resetCourse}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

@@ -103,20 +103,20 @@ export function AICoachCard({ apiCall, stats, report, userId, useMock = false })
   }, [fetchCoach, useMock, userId]);
 
   return (
-    <Card className="relative overflow-hidden rounded-[30px] border border-slate-200/80 bg-[linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.96))] text-white shadow-[0_36px_100px_-60px_rgba(15,23,42,0.95)]">
+    <Card className="relative overflow-hidden rounded-2xl border border-border bg-[linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.96))] text-white shadow-[0_36px_100px_-60px_rgba(15,23,42,0.95)]">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.22),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(52,211,153,0.12),transparent_28%)]" />
       <CardContent className="relative flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-semibold tracking-[0.2em] text-sky-100">
+            <Badge className="rounded-full border border-white/15 bg-background/10 px-3 py-1 text-[10px] font-semibold tracking-[0.2em] text-sky-100">
               THEORY VERDICT
             </Badge>
-            <Badge className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-semibold tracking-[0.2em] text-slate-200">
+            <Badge className="rounded-full border border-white/15 bg-background/10 px-3 py-1 text-[10px] font-semibold tracking-[0.2em] text-slate-200">
               {report?.predictedLevel || "B1 Input"}
             </Badge>
           </div>
           <div className="mt-3 flex items-start gap-3">
-            <div className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-sky-200">
+            <div className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-background/10 text-sky-200">
               <BookOpenCheck className="h-4.5 w-4.5" />
             </div>
             <div className="min-w-0">
@@ -131,7 +131,7 @@ export function AICoachCard({ apiCall, stats, report, userId, useMock = false })
         <Button
           size="sm"
           variant="secondary"
-          className="shrink-0 rounded-full border border-white/12 bg-white/10 px-4 text-xs font-semibold text-white hover:bg-white/16"
+          className="shrink-0 rounded-full border border-white/12 bg-background/10 px-4 text-xs font-semibold text-white hover:bg-background/16"
           onClick={handleRefresh}
           disabled={loading}
         >

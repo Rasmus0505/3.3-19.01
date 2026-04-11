@@ -13,12 +13,12 @@ import { VocabGrowthChart } from "./VocabGrowthChart";
 function DashboardSkeleton() {
   return (
     <div className="space-y-4">
-      <Skeleton className="h-[88px] rounded-[26px]" />
-      <Skeleton className="h-[128px] rounded-[30px]" />
+      <Skeleton className="h-[88px] rounded-2xl" />
+      <Skeleton className="h-[128px] rounded-2xl" />
       <div className="grid gap-4 xl:grid-cols-3">
-        <Skeleton className="h-[420px] rounded-[28px]" />
-        <Skeleton className="h-[420px] rounded-[28px]" />
-        <Skeleton className="h-[420px] rounded-[28px]" />
+        <Skeleton className="h-[420px] rounded-2xl" />
+        <Skeleton className="h-[420px] rounded-2xl" />
+        <Skeleton className="h-[420px] rounded-2xl" />
       </div>
     </div>
   );
@@ -57,14 +57,14 @@ export function DashboardPage({ apiCall, currentUser }) {
 
   return (
     <div className="mx-auto w-full max-w-[1480px] p-2 pb-6">
-      <div className="rounded-[28px] border border-slate-200/80 bg-white/88 px-5 py-4 shadow-[0_24px_70px_-52px_rgba(15,23,42,0.72)] backdrop-blur-xl">
+      <div className="rounded-2xl border border-border bg-background/90 px-5 py-4 shadow-lg backdrop-blur-xl">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[10px] font-semibold tracking-[0.2em] text-sky-700">
+              <Badge className="rounded-full border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950 px-3 py-1 text-[10px] font-semibold tracking-[0.2em] text-sky-700 dark:text-sky-300">
                 i+1 EVIDENCE BOARD
               </Badge>
-              <Badge className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-semibold tracking-[0.2em] text-slate-600">
+              <Badge className="rounded-full border border-border bg-muted px-3 py-1 text-[10px] font-semibold tracking-[0.2em] text-muted-foreground">
                 单屏理论版
               </Badge>
             </div>
@@ -73,14 +73,14 @@ export function DashboardPage({ apiCall, currentUser }) {
                 <Sparkles className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <h2 className="text-[28px] font-black tracking-tight text-slate-950">学习数据 · 可理解输入证据板</h2>
-                <p className="mt-1 text-sm leading-6 text-slate-600">{report.headerSummary}</p>
+                <h2 className="text-[28px] font-black tracking-tight text-foreground">学习数据 · 可理解输入证据板</h2>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">{report.headerSummary}</p>
               </div>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            <div className="rounded-full border border-slate-200/80 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
+            <div className="rounded-full border border-border bg-muted px-4 py-2 text-sm font-semibold text-foreground">
               <span className="mr-2 inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
               {report.predictedLevel}
             </div>
@@ -100,7 +100,7 @@ export function DashboardPage({ apiCall, currentUser }) {
       {showLoading ? <div className="mt-4"><DashboardSkeleton /></div> : null}
 
       {showError ? (
-        <div className="mt-4 rounded-[24px] border border-rose-200 bg-rose-50/90 px-5 py-4 text-sm text-rose-700">
+        <div className="mt-4 rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50/90 dark:bg-rose-950/50 px-5 py-4 text-sm text-rose-700 dark:text-rose-300">
           {error}
         </div>
       ) : null}
@@ -118,7 +118,7 @@ export function DashboardPage({ apiCall, currentUser }) {
             <VocabGrowthChart report={report} />
           </motion.div>
 
-          <motion.div variants={itemVariants} className="flex items-center gap-2 rounded-[22px] border border-slate-200/80 bg-slate-50/90 px-4 py-3 text-sm text-slate-600">
+          <motion.div variants={itemVariants} className="flex items-center gap-2 rounded-2xl border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
             <FlaskConical className="h-4 w-4 shrink-0 text-slate-500" />
             评分为理论代理指标，基于现有输入、完成、词汇和输出记录推导，用于证明“有效习得”而不是展示普通活跃度。
           </motion.div>

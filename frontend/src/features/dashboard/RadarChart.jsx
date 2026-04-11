@@ -22,14 +22,14 @@ export function RadarChart({ report }) {
   const dashOffset = circumference * (1 - (metric?.score || 0) / 100);
 
   return (
-    <Card className="relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-white/88 shadow-[0_24px_60px_-46px_rgba(15,23,42,0.65)] backdrop-blur-xl">
+    <Card className="relative overflow-hidden rounded-2xl border border-border bg-background/88 shadow-[0_24px_60px_-46px_rgba(15,23,42,0.65)] backdrop-blur-xl">
       <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.86))]" />
       <CardContent className="relative p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Metric 01</p>
-            <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">i+1 输入命中率</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{metric?.theory}</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Metric 01</p>
+            <h3 className="mt-2 text-xl font-black tracking-tight text-foreground">i+1 输入命中率</h3>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{metric?.theory}</p>
           </div>
           <Badge className="rounded-full border-0 bg-slate-950 px-3 py-1 text-[10px] font-semibold tracking-[0.18em] text-white">
             {metric?.label}
@@ -63,16 +63,16 @@ export function RadarChart({ report }) {
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <p className={`text-4xl font-black tracking-tight ${getScoreTone(metric?.score || 0)}`}>{metric?.score}</p>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">i+1 Fit</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">i+1 Fit</p>
               </div>
             </div>
           </div>
 
           <div className="space-y-4">
-            <p className="text-sm leading-6 text-slate-700">{metric?.insight}</p>
+            <p className="text-sm leading-6 text-foreground/80">{metric?.insight}</p>
 
-            <div className="rounded-[20px] border border-slate-200/80 bg-slate-50/90 p-4">
-              <div className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            <div className="rounded-[20px] border border-border bg-muted/50 p-4">
+              <div className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 <span>CEFR 输入层级分布</span>
                 <span>挑战区 {metric?.stretchRatio}%</span>
               </div>
@@ -88,22 +88,22 @@ export function RadarChart({ report }) {
               </div>
               <div className="mt-3 grid grid-cols-5 gap-2">
                 {metric?.bands?.map((band) => (
-                  <div key={band.level} className="rounded-2xl border border-slate-200/80 bg-white px-2.5 py-2 text-center">
-                    <p className="text-[11px] font-semibold tracking-[0.16em] text-slate-500">{band.level}</p>
-                    <p className="mt-1 text-sm font-bold text-slate-950">{band.sharePercent}%</p>
+                  <div key={band.level} className="rounded-2xl border border-border bg-background px-2.5 py-2 text-center">
+                    <p className="text-[11px] font-semibold tracking-[0.16em] text-muted-foreground">{band.level}</p>
+                    <p className="mt-1 text-sm font-bold text-foreground">{band.sharePercent}%</p>
                   </div>
                 ))}
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-[18px] border border-slate-200/80 bg-slate-50/90 px-3 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">过难输入</p>
-                <p className="mt-1 text-xl font-black text-slate-950">{metric?.overloadRatio}%</p>
+              <div className="rounded-[18px] border border-border bg-muted/50 px-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">过难输入</p>
+                <p className="mt-1 text-xl font-black text-foreground">{metric?.overloadRatio}%</p>
               </div>
-              <div className="rounded-[18px] border border-slate-200/80 bg-slate-50/90 px-3 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">完成支撑</p>
-                <p className="mt-1 text-xl font-black text-slate-950">{metric?.completionRate}%</p>
+              <div className="rounded-[18px] border border-border bg-muted/50 px-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">完成支撑</p>
+                <p className="mt-1 text-xl font-black text-foreground">{metric?.completionRate}%</p>
               </div>
             </div>
           </div>

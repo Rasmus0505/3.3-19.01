@@ -3555,3 +3555,48 @@
 .reading-cards__add-btn--done { color: oklch(0.5 0.14 145); border-color: oklch(0.75 0.12 145); }
 .reading-cards__add-btn:disabled { cursor: default; }
 
+/* ─── Course Scene Animations ──────────────────────────────── */
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes bubbleSlideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes breatheGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.15); }
+  50% { box-shadow: 0 0 0 6px rgba(124, 58, 237, 0); }
+}
+
+@keyframes trophyBounce {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.15); opacity: 1; }
+  70% { transform: scale(0.95); }
+  100% { transform: scale(1); }
+}
+
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.discussion-bubble-enter {
+  animation: bubbleSlideUp 0.22s cubic-bezier(0.21, 1, 0.36, 1) forwards;
+}
+
+.discussion-bubble--active {
+  animation: breatheGlow 2s ease-in-out infinite;
+}
+
+.course-trophy-enter {
+  animation: trophyBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.course-stat-enter {
+  animation: countUp 0.3s ease-out forwards;
+}
+

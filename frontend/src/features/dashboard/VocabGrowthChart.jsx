@@ -13,14 +13,14 @@ export function VocabGrowthChart({ report }) {
   const metric = report?.conversion;
 
   return (
-    <Card className="relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-white/88 shadow-[0_24px_60px_-46px_rgba(15,23,42,0.65)] backdrop-blur-xl">
+    <Card className="relative overflow-hidden rounded-2xl border border-border bg-background/88 shadow-[0_24px_60px_-46px_rgba(15,23,42,0.65)] backdrop-blur-xl">
       <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.86))]" />
       <CardContent className="relative p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Metric 03</p>
-            <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">输入转化率</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{metric?.theory}</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Metric 03</p>
+            <h3 className="mt-2 text-xl font-black tracking-tight text-foreground">输入转化率</h3>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{metric?.theory}</p>
           </div>
           <Badge className="rounded-full border-0 bg-slate-950 px-3 py-1 text-[10px] font-semibold tracking-[0.18em] text-white">
             {metric?.label}
@@ -30,8 +30,8 @@ export function VocabGrowthChart({ report }) {
         <div className="mt-5 space-y-4">
           <div className="flex items-end justify-between gap-4">
             <div>
-              <p className="text-5xl font-black tracking-tight text-slate-950">{metric?.score}</p>
-              <p className="mt-1 text-sm font-medium text-slate-600">从接触到内化的代理评分</p>
+              <p className="text-5xl font-black tracking-tight text-foreground">{metric?.score}</p>
+              <p className="mt-1 text-sm font-medium text-muted-foreground">从接触到内化的代理评分</p>
             </div>
             {metric?.outputMissing ? (
               <div className="flex items-center gap-2 rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
@@ -41,10 +41,10 @@ export function VocabGrowthChart({ report }) {
             ) : null}
           </div>
 
-          <p className="text-sm leading-6 text-slate-700">{metric?.insight}</p>
+          <p className="text-sm leading-6 text-foreground/80">{metric?.insight}</p>
 
-          <div className="rounded-[20px] border border-slate-200/80 bg-slate-50/90 p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">输入到输出的闭环漏斗</div>
+          <div className="rounded-[20px] border border-border bg-muted/50 p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">输入到输出的闭环漏斗</div>
             <div className="mt-4 space-y-3">
               {metric?.stages?.map((stage, index) => (
                 <motion.div
@@ -54,8 +54,8 @@ export function VocabGrowthChart({ report }) {
                   transition={{ delay: 0.08 + index * 0.05, duration: 0.24 }}
                 >
                   <div className="mb-1 flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-slate-700">{stage.label}</p>
-                    <p className="text-sm font-black text-slate-950">{stage.value}%</p>
+                    <p className="text-sm font-semibold text-foreground/80">{stage.label}</p>
+                    <p className="text-sm font-black text-foreground">{stage.value}%</p>
                   </div>
                   <div className="h-3 overflow-hidden rounded-full bg-slate-200">
                     <div
@@ -68,9 +68,9 @@ export function VocabGrowthChart({ report }) {
             </div>
           </div>
 
-          <div className="rounded-[18px] border border-slate-200/80 bg-slate-50/90 px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">理论解释</p>
-            <p className="mt-1 text-sm leading-6 text-slate-700">
+          <div className="rounded-[18px] border border-border bg-muted/50 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">理论解释</p>
+            <p className="mt-1 text-sm leading-6 text-foreground/80">
               这项分数不是在看你“学了多久”，而是在看输入有没有留下可被提取、可被输出验证的证据。
             </p>
           </div>

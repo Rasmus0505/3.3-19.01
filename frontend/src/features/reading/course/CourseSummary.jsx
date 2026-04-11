@@ -25,12 +25,12 @@ export function CourseSummary({ courseData, pack, onGoToScene, onExit, onReset }
 
   return (
     <div className="flex flex-col items-center justify-center flex-1 p-8 gap-6">
-      {/* Trophy */}
-      <div className="w-20 h-20 rounded-full bg-amber-50 dark:bg-amber-950 flex items-center justify-center">
+      {/* Trophy with bounce animation */}
+      <div className="w-20 h-20 rounded-full bg-amber-50 dark:bg-amber-950 flex items-center justify-center course-trophy-enter">
         <Trophy className="w-10 h-10 text-amber-500" />
       </div>
 
-      <div className="text-center">
+      <div className="text-center course-stat-enter" style={{ animationDelay: "0.3s", opacity: 0 }}>
         <h2 className="text-2xl font-bold mb-1">课程完成！</h2>
         <p className="text-muted-foreground text-sm">You've completed all learning activities.</p>
       </div>

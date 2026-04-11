@@ -21,26 +21,29 @@ const ROLE_CONFIG = {
   },
 };
 
-export function DiscussionBubble({ role, content, isActive }) {
+export function DiscussionBubble({ role, content, isActive, index = 0 }) {
   const config = ROLE_CONFIG[role] || ROLE_CONFIG.student;
   const Icon = config.icon;
   const isTeacher = role === "teacher";
 
   return (
-    <div className={cn("flex gap-3 max-w-[85%]", isTeacher ? "self-start" : "self-end flex-row-reverse")}>
-      {/* Avatar */}
+    <div
+      className={cn("flex gap-3 max-w-[85%] discussion-bubble-enter", isTeacher ? "self-start" : "self-end flex-row-reverse")}
+      style={{ animationDelay: `${index * 60}ms` }}
+    >
+      {/* Avatar — floats at bubble edge */}
       <div className={cn(
-        "w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-sm",
+        "w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-sm border-2 border-background",
         config.avatarClass,
       )}>
         <Icon className="w-4 h-4" />
       </div>
 
-      {/* Bubble */}
+      {/* Bubble with backdrop blur */}
       <div className={cn(
-        "relative px-4 py-2.5 rounded-2xl border text-sm leading-relaxed transition-all",
+        "relative px-4 py-2.5 rounded-2xl border text-sm leading-relaxed transition-all backdrop-blur-sm",
         config.bubbleClass,
-        isActive && "ring-2 ring-primary/30",
+        isActive && "discussion-bubble--active ring-2 ring-primary/30",
       )}>
         <span className="text-[10px] font-semibold text-muted-foreground block mb-0.5">
           {config.label}

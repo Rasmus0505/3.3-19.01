@@ -33,6 +33,7 @@ export function DiscussionPlayer({ messages, onComplete }) {
             key={idx}
             role={msg.role}
             content={msg.content}
+            index={idx}
           />
         ))}
       </div>
