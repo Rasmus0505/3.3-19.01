@@ -6,7 +6,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Card, Button, Badge, Input } from "../../../shared/ui";
 import { cn } from "../../../lib/utils";
-import { MessageSquare, Send, SkipForward } from "lucide-react";
+import { MessageSquare, Send, SkipForward, ArrowRight } from "lucide-react";
 import { VoiceWaveform } from "../components/VoiceWaveform";
 import { api } from "../../../shared/api/client";
 import { readSSEStream } from "../utils/readSSEStream";
@@ -32,7 +32,7 @@ const AGENT_CONFIG = {
   },
 };
 
-export function DiscussionRenderer({ scene, courseId }) {
+export function DiscussionRenderer({ scene, courseId, onComplete }) {
   const content = scene.content || {};
   const [discussionId, setDiscussionId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -238,7 +238,7 @@ export function DiscussionRenderer({ scene, courseId }) {
       </div>
 
       {/* Input area */}
-      {!isEnded && (
+      {!isEnded ? (
         <div className="border-t p-3 shrink-0">
           <div className="flex gap-2">
             <Input
@@ -266,6 +266,16 @@ export function DiscussionRenderer({ scene, courseId }) {
               <SkipForward className="w-4 h-4" />
             </Button>
           </div>
+        </div>
+      ) : (
+        <div className="border-t p-3 shrink-0 flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">讨论已结束</span>
+          {onComplete && (
+            <Button onClick={() => onComplete()} className="gap-2">
+              继续
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+          )}
         </div>
       )}
     </div>

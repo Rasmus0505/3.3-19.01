@@ -2,7 +2,7 @@
  * SceneSidebar — Left sidebar with scene navigation thumbnails.
  */
 import { cn } from "../../../lib/utils";
-import { BookOpen, HelpCircle, MessageSquare, MousePointer, Check, Loader2 } from "lucide-react";
+import { BookOpen, HelpCircle, MessageSquare, MousePointer, Check, CheckCircle2, Loader2 } from "lucide-react";
 
 const SCENE_ICONS = {
   dictation: BookOpen,
@@ -25,7 +25,7 @@ const SCENE_BG = {
   discussion: "bg-purple-50 dark:bg-purple-950",
 };
 
-export function SceneSidebar({ scenes, activeIdx, onSelect }) {
+export function SceneSidebar({ scenes, activeIdx, onSelect, completedScenes = new Set() }) {
   return (
     <div className="w-48 border-r bg-muted/30 flex flex-col shrink-0">
       <div className="p-3 border-b">
@@ -37,6 +37,7 @@ export function SceneSidebar({ scenes, activeIdx, onSelect }) {
         {scenes.map((scene, idx) => {
           const Icon = SCENE_ICONS[scene.scene_type] || BookOpen;
           const isActive = idx === activeIdx;
+          const isLearned = completedScenes.has(idx);
           const isReady = scene.status === "ready";
           const isPending = scene.status === "pending";
           const isGenerating = scene.status === "generating";
@@ -63,9 +64,10 @@ export function SceneSidebar({ scenes, activeIdx, onSelect }) {
                   {scene.title || `Scene ${idx + 1}`}
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">
-                  {isReady && <Check className="w-3 h-3 text-green-500" />}
-                  {isGenerating && <Loader2 className="w-3 h-3 text-amber-500 animate-spin" />}
-                  {isPending && <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30" />}
+                  {isLearned && <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
+                  {!isLearned && isReady && <Check className="w-3 h-3 text-green-500" />}
+                  {!isLearned && isGenerating && <Loader2 className="w-3 h-3 text-amber-500 animate-spin" />}
+                  {!isLearned && isPending && <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30" />}
                   <span className="text-[10px] text-muted-foreground capitalize">
                     {scene.scene_type}
                   </span>

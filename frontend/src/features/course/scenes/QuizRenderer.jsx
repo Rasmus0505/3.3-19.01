@@ -6,9 +6,9 @@
 import { useState, useCallback, useEffect } from "react";
 import { Card, Button, Badge } from "../../../shared/ui";
 import { cn } from "../../../lib/utils";
-import { HelpCircle, Check, X, RotateCcw, ChevronRight } from "lucide-react";
+import { HelpCircle, Check, X, RotateCcw, ChevronRight, ArrowRight } from "lucide-react";
 
-export function QuizRenderer({ scene }) {
+export function QuizRenderer({ scene, onComplete }) {
   const content = scene.content || {};
   const questions = content.questions || [];
   const [phase, setPhase] = useState("cover");
@@ -196,11 +196,20 @@ export function QuizRenderer({ scene }) {
           })}
         </div>
 
-        <div className="flex justify-center">
-          <Button onClick={() => { setPhase("cover"); setCurrentQ(0); setAnswers({}); setScores({}); }} className="gap-2">
+        <div className="flex justify-center gap-3">
+          <Button variant="outline" onClick={() => { setPhase("cover"); setCurrentQ(0); setAnswers({}); setScores({}); }} className="gap-2">
             <RotateCcw className="w-4 h-4" />
             Retry Quiz
           </Button>
+          {onComplete && (
+            <Button
+              onClick={() => onComplete({ quizScore: { correct, total } })}
+              className="gap-2"
+            >
+              继续
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+          )}
         </div>
       </div>
     );

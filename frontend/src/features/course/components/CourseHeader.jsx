@@ -13,8 +13,8 @@ const CEFR_LABELS = {
   C2: "Proficiency",
 };
 
-export function CourseHeader({ course, activeSceneIdx, totalScenes, onSceneChange }) {
-  const progress = totalScenes > 0 ? Math.round(((activeSceneIdx + 1) / totalScenes) * 100) : 0;
+export function CourseHeader({ course, activeSceneIdx, totalScenes, completedScenes = new Set(), onSceneChange }) {
+  const progress = totalScenes > 0 ? Math.round((completedScenes.size / totalScenes) * 100) : 0;
 
   return (
     <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shrink-0">

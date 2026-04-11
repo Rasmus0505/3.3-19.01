@@ -7,7 +7,7 @@
 import { useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button, Card } from "../../../shared/ui";
-import { BookOpen, Mic, MicOff, Play, CheckCircle2, XCircle } from "lucide-react";
+import { BookOpen, Mic, MicOff, Play, CheckCircle2, XCircle, ArrowRight } from "lucide-react";
 import { VoiceWaveform } from "../components/VoiceWaveform";
 
 // Normalize text for comparison: lowercase, strip punctuation
@@ -25,7 +25,7 @@ function diffWords(expected, spoken) {
   }));
 }
 
-export function DictationRenderer({ scene }) {
+export function DictationRenderer({ scene, onComplete }) {
   const navigate = useNavigate();
   const content = scene.content || {};
   const sourceText = content.source_text || "";
@@ -87,6 +87,14 @@ export function DictationRenderer({ scene }) {
           <Play className="w-4 h-4" />
           Start Dictation
         </Button>
+        {onComplete && (
+          <button
+            onClick={() => onComplete()}
+            className="mt-4 text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground transition-colors"
+          >
+            已完成听写，继续 →
+          </button>
+        )}
       </div>
     );
   }
@@ -203,6 +211,20 @@ export function DictationRenderer({ scene }) {
         <Card className="p-6 text-center text-muted-foreground">
           <p>Dictation content is being generated…</p>
         </Card>
+      )}
+
+      {/* Complete button */}
+      {sourceText && onComplete && (
+        <div className="mt-6 flex justify-end">
+          <Button
+            onClick={() => onComplete()}
+            variant={diff ? "default" : "outline"}
+            className="gap-2"
+          >
+            完成练习
+            <ArrowRight className="w-4 h-4" />
+          </Button>
+        </div>
       )}
     </div>
   );

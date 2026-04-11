@@ -3,9 +3,9 @@
  */
 import { useState } from "react";
 import { Card, Button } from "../../../shared/ui";
-import { MousePointer, AlertCircle, Maximize2, Minimize2 } from "lucide-react";
+import { MousePointer, AlertCircle, Maximize2, Minimize2, ArrowRight } from "lucide-react";
 
-export function InteractiveRenderer({ scene }) {
+export function InteractiveRenderer({ scene, onComplete }) {
   const content = scene.content || {};
   const html = content.html || "";
   const instructions = content.instructions || "";
@@ -58,6 +58,16 @@ export function InteractiveRenderer({ scene }) {
           title={scene.title || "Interactive Activity"}
         />
       </div>
+
+      {/* Complete button (only in non-fullscreen mode) */}
+      {!isFullscreen && onComplete && (
+        <div className="border-t p-3 flex justify-end shrink-0">
+          <Button onClick={() => onComplete()} variant="outline" className="gap-2">
+            活动完成，继续
+            <ArrowRight className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
