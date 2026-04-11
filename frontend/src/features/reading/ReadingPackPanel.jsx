@@ -2,6 +2,7 @@ import { BookOpenText, BookmarkPlus, Check, Layers3, Sparkles, Upload } from "lu
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { getAllRewriteRecords } from "./readingRewriteDB";
+import { syncReadingPackToServer } from "./api/readingRewriteApi";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { cn } from "../../lib/utils";
 import { ArticlePanel } from "./ArticlePanel";
@@ -201,7 +202,7 @@ function VocabPanel({ pack, apiCall, accessToken }) {
 /**
  * 下一步操作栏（PACK-04）
  */
-function NextStepsBar({ packViewMode, onPackViewModeChange, onShowVocab, onGenerateDictation, dictationLoading, onStartCourse }) {
+function NextStepsBar({ packViewMode, onPackViewModeChange, onShowVocab, onGenerateDictation, dictationLoading, onStartCourse, apiCall }) {
   return (
     <div className="reading-pack__next-steps">
       <span className="reading-pack__next-steps-label">下一步</span>
@@ -252,19 +253,19 @@ function NextStepsBar({ packViewMode, onPackViewModeChange, onShowVocab, onGener
           onClick={async () => {
             try {
               const records = await getAllRewriteRecords();
-              const res = await fetch("/api/debug/reading-pack", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(records),
-              });
-              const data = await res.json();
-              if (data.ok) toast.success(`已上传 ${data.count} 条记录`);
-              else toast.error("上传失败");
-            } catch { toast.error("上传失败"); }
+              let synced = 0;
+              for (const record of records) {
+                if (record.articleId && record.flowStatus !== "idle") {
+                  await syncReadingPackToServer(record, apiCall);
+                  synced++;
+                }
+              }
+              toast.success(`已同步 ${synced} 条记录到服务端`);
+            } catch { toast.error("同步失败"); }
           }}
         >
           <Upload className="inline w-3.5 h-3.5 mr-1" />
-          Debug 上传
+          同步到云端
         </button>
       </div>
     </div>
@@ -405,6 +406,7 @@ export function ReadingPackPanel({
         onGenerateDictation={onGenerateDictation}
         dictationLoading={dictationLoading}
         onStartCourse={onStartCourse}
+        apiCall={apiCall}
       />
     </section>
   );
