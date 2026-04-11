@@ -1,81 +1,77 @@
 import { motion } from "framer-motion";
-import { ArrowUpRight, Target } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { Badge, Card, CardContent } from "../../shared/ui";
 
-const LEVEL_STYLES = {
-  A1: "bg-slate-300 text-slate-700",
-  A2: "bg-sky-100 text-sky-700",
-  B1: "bg-cyan-100 text-cyan-700",
-  B2: "bg-emerald-100 text-emerald-700",
-  C1: "bg-violet-100 text-violet-700",
-};
+const STAGE_TONES = [
+  "from-slate-400 to-slate-500",
+  "from-sky-400 to-cyan-500",
+  "from-emerald-400 to-teal-500",
+  "from-violet-400 to-fuchsia-500",
+];
 
 export function VocabGrowthChart({ report }) {
-  const cefr = report?.cefr;
-  const targetItem = cefr?.items.find((item) => item.target) || cefr?.items[2];
+  const metric = report?.conversion;
 
   return (
-    <Card className="relative overflow-hidden rounded-[30px] border border-white/50 bg-white/80 shadow-[0_28px_80px_-44px_rgba(15,23,42,0.58)] backdrop-blur-xl">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.14),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.35),rgba(248,250,252,0.82))]" />
+    <Card className="relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-white/88 shadow-[0_24px_60px_-46px_rgba(15,23,42,0.65)] backdrop-blur-xl">
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.86))]" />
       <CardContent className="relative p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">CEFR Breakthrough</p>
-            <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">词汇层级突破面板</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              不做普通柱状图，直接展示当前词汇分布和下一层突破目标。
-            </p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Metric 03</p>
+            <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">输入转化率</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{metric?.theory}</p>
           </div>
-          <div className="text-right">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Lexicon</p>
-            <p className="mt-1 text-3xl font-black tracking-tight text-slate-950">{cefr?.total || 0}</p>
-          </div>
+          <Badge className="rounded-full border-0 bg-slate-950 px-3 py-1 text-[10px] font-semibold tracking-[0.18em] text-white">
+            {metric?.label}
+          </Badge>
         </div>
 
-        <div className="mt-5 overflow-hidden rounded-[24px] border border-slate-200/70 bg-slate-50/90 p-4">
-          <div className="flex h-4 overflow-hidden rounded-full bg-slate-200">
-            {cefr?.items.map((item) => (
-              <div
-                key={item.level}
-                className={`h-full ${LEVEL_STYLES[item.level]?.split(" ")[0] || "bg-slate-300"}`}
-                style={{ width: `${Math.max(item.share, item.count > 0 ? 4 : 0)}%` }}
-              />
-            ))}
+        <div className="mt-5 space-y-4">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="text-5xl font-black tracking-tight text-slate-950">{metric?.score}</p>
+              <p className="mt-1 text-sm font-medium text-slate-600">从接触到内化的代理评分</p>
+            </div>
+            {metric?.outputMissing ? (
+              <div className="flex items-center gap-2 rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                <AlertCircle className="h-4 w-4" />
+                <span className="text-xs font-semibold uppercase tracking-[0.16em]">输出证据不足</span>
+              </div>
+            ) : null}
           </div>
 
-          <div className="mt-4 grid gap-2 md:grid-cols-5">
-            {cefr?.items.map((item, index) => (
-              <motion.div
-                key={item.level}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.18 + index * 0.05, duration: 0.28 }}
-                className="rounded-[18px] border border-slate-200/70 bg-white/90 p-3"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <Badge className={`rounded-full border-0 px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] ${LEVEL_STYLES[item.level]}`}>
-                    {item.level}
-                  </Badge>
-                  {item.target ? <ArrowUpRight className="h-4 w-4 text-emerald-500" /> : null}
-                </div>
-                <p className="mt-3 text-2xl font-black tracking-tight text-slate-950">{item.count}</p>
-                <p className="mt-1 text-sm text-slate-600">{item.share}% 占比</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
+          <p className="text-sm leading-6 text-slate-700">{metric?.insight}</p>
 
-        <div className="mt-4 flex items-start gap-3 rounded-[22px] border border-emerald-200/70 bg-emerald-50/90 p-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-lg shadow-emerald-500/20">
-            <Target className="h-4 w-4" />
+          <div className="rounded-[20px] border border-slate-200/80 bg-slate-50/90 p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">输入到输出的闭环漏斗</div>
+            <div className="mt-4 space-y-3">
+              {metric?.stages?.map((stage, index) => (
+                <motion.div
+                  key={stage.label}
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.08 + index * 0.05, duration: 0.24 }}
+                >
+                  <div className="mb-1 flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-slate-700">{stage.label}</p>
+                    <p className="text-sm font-black text-slate-950">{stage.value}%</p>
+                  </div>
+                  <div className="h-3 overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className={`h-full rounded-full bg-gradient-to-r ${STAGE_TONES[index] || STAGE_TONES.at(-1)}`}
+                      style={{ width: `${stage.value}%` }}
+                    />
+                  </div>
+                </motion.div>
+              ))}
+            </div>
           </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Next Target</p>
-            <p className="mt-1 text-lg font-black tracking-tight text-emerald-950">
-              冲击 {targetItem?.level || report.predictedLevel} 层词汇密度
-            </p>
-            <p className="mt-1 text-sm leading-6 text-emerald-800">
-              当前高层级词汇还没完全撑开。优先补齐 {targetItem?.level || report.predictedLevel} 段材料，可以让整页战报更有“进阶感”。
+
+          <div className="rounded-[18px] border border-slate-200/80 bg-slate-50/90 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">理论解释</p>
+            <p className="mt-1 text-sm leading-6 text-slate-700">
+              这项分数不是在看你“学了多久”，而是在看输入有没有留下可被提取、可被输出验证的证据。
             </p>
           </div>
         </div>

@@ -1,31 +1,24 @@
 import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Database, Orbit, Sparkles } from "lucide-react";
+import { Database, FlaskConical, Sparkles } from "lucide-react";
 import { Badge, Button, Skeleton } from "../../shared/ui";
 import { useDashboardData } from "./useDashboardData";
 import { deriveBattleReport } from "./deriveBattleReport";
 import { MOCK_STATS } from "./mockData";
-import { StatsCards } from "./StatsCards";
 import { AICoachCard } from "./AICoachCard";
 import { HeatmapChart } from "./HeatmapChart";
 import { RadarChart } from "./RadarChart";
 import { VocabGrowthChart } from "./VocabGrowthChart";
-import { SignalPanel } from "./SignalPanel";
 
 function DashboardSkeleton() {
   return (
     <div className="space-y-4">
-      <Skeleton className="h-[220px] rounded-[32px]" />
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_400px]">
-        <Skeleton className="h-[380px] rounded-[32px]" />
-        <Skeleton className="h-[380px] rounded-[32px]" />
-      </div>
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.95fr)]">
-        <Skeleton className="h-[320px] rounded-[30px]" />
-        <div className="grid gap-4">
-          <Skeleton className="h-[188px] rounded-[30px]" />
-          <Skeleton className="h-[188px] rounded-[30px]" />
-        </div>
+      <Skeleton className="h-[88px] rounded-[26px]" />
+      <Skeleton className="h-[128px] rounded-[30px]" />
+      <div className="grid gap-4 xl:grid-cols-3">
+        <Skeleton className="h-[420px] rounded-[28px]" />
+        <Skeleton className="h-[420px] rounded-[28px]" />
+        <Skeleton className="h-[420px] rounded-[28px]" />
       </div>
     </div>
   );
@@ -35,16 +28,16 @@ const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
-    transition: { staggerChildren: 0.08, delayChildren: 0.05 },
+    transition: { staggerChildren: 0.08, delayChildren: 0.04 },
   },
 };
 
 const itemVariants = {
-  hidden: { opacity: 0, y: 22 },
+  hidden: { opacity: 0, y: 16 },
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.42, ease: "easeOut" },
+    transition: { duration: 0.38, ease: "easeOut" },
   },
 };
 
@@ -63,69 +56,51 @@ export function DashboardPage({ apiCall, currentUser }) {
   const showData = useMock || (!loading && !error && stats);
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] p-2 pb-8">
-      <div className="relative overflow-hidden rounded-[36px] border border-white/55 bg-[linear-gradient(135deg,rgba(255,255,255,0.95),rgba(240,249,255,0.92))] p-5 shadow-[0_40px_120px_-68px_rgba(15,23,42,0.7)] backdrop-blur-xl lg:p-6">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_24%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.12),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.88),rgba(239,246,255,0.78))]" />
-        <div className="absolute inset-y-0 right-8 w-px bg-gradient-to-b from-transparent via-slate-200/80 to-transparent" />
-        <div className="relative flex flex-col gap-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div className="max-w-4xl">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge className="rounded-full border border-cyan-200/70 bg-cyan-50 px-3 py-1 text-[10px] font-semibold tracking-[0.2em] text-cyan-700">
-                  AI LEARNING WAR ROOM
-                </Badge>
-                <Badge className="rounded-full border border-slate-200/70 bg-white/80 px-3 py-1 text-[10px] font-semibold tracking-[0.2em] text-slate-600">
-                  单屏竞赛版
-                </Badge>
-              </div>
-
-              <div className="mt-4 flex items-start gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[22px] bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-xl shadow-cyan-500/25">
-                  <Sparkles className="h-6 w-6" />
-                </div>
-                <div>
-                  <h2 className="text-[30px] font-black tracking-tight text-slate-950 lg:text-[36px]">学习数据 · AI 战报舱</h2>
-                  <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 lg:text-[15px]">
-                    {report.heroSummary}
-                  </p>
-                </div>
-              </div>
+    <div className="mx-auto w-full max-w-[1480px] p-2 pb-6">
+      <div className="rounded-[28px] border border-slate-200/80 bg-white/88 px-5 py-4 shadow-[0_24px_70px_-52px_rgba(15,23,42,0.72)] backdrop-blur-xl">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[10px] font-semibold tracking-[0.2em] text-sky-700">
+                i+1 EVIDENCE BOARD
+              </Badge>
+              <Badge className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-semibold tracking-[0.2em] text-slate-600">
+                单屏理论版
+              </Badge>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2 xl:max-w-[320px] xl:justify-end">
-              <div className="rounded-full border border-white/70 bg-white/85 px-4 py-2 shadow-sm">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Stage</p>
-                <p className="mt-1 flex items-center gap-2 text-sm font-bold text-slate-950">
-                  <Orbit className="h-3.5 w-3.5 text-cyan-500" />
-                  {report.stage.label}
-                </p>
+            <div className="mt-3 flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[18px] bg-gradient-to-br from-sky-500 to-cyan-600 text-white shadow-lg shadow-sky-500/20">
+                <Sparkles className="h-5 w-5" />
               </div>
-              <Button
-                variant={useMock ? "default" : "outline"}
-                size="sm"
-                className={`rounded-full px-4 text-xs font-semibold shadow-sm ${useMock ? "bg-slate-950 text-white hover:bg-slate-900" : "bg-white/85"}`}
-                onClick={toggleMock}
-              >
-                <Database className="mr-1.5 h-3.5 w-3.5" />
-                {useMock ? "切回真实数据" : "切到演示战报"}
-              </Button>
+              <div className="min-w-0">
+                <h2 className="text-[28px] font-black tracking-tight text-slate-950">学习数据 · 可理解输入证据板</h2>
+                <p className="mt-1 text-sm leading-6 text-slate-600">{report.headerSummary}</p>
+              </div>
             </div>
           </div>
 
-          {useMock ? (
-            <div className="relative rounded-[24px] border border-amber-200/60 bg-amber-50/90 px-4 py-3 text-sm text-amber-800">
-              当前使用预设竞赛数据，适合截图演示。切回真实数据后会立即恢复后端返回的统计和 AI 文案状态。
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <div className="rounded-full border border-slate-200/80 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
+              <span className="mr-2 inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+              {report.predictedLevel}
             </div>
-          ) : null}
-
-          <StatsCards items={report.heroMetrics} />
+            <Button
+              variant={useMock ? "default" : "outline"}
+              size="sm"
+              className={`rounded-full px-4 text-xs font-semibold ${useMock ? "bg-slate-950 text-white hover:bg-slate-900" : "bg-white"}`}
+              onClick={toggleMock}
+            >
+              <Database className="mr-1.5 h-3.5 w-3.5" />
+              {useMock ? "切回真实数据" : "切到演示数据"}
+            </Button>
+          </div>
         </div>
       </div>
 
       {showLoading ? <div className="mt-4"><DashboardSkeleton /></div> : null}
 
       {showError ? (
-        <div className="mt-4 rounded-[28px] border border-rose-200 bg-rose-50/90 px-6 py-5 text-sm text-rose-700">
+        <div className="mt-4 rounded-[24px] border border-rose-200 bg-rose-50/90 px-5 py-4 text-sm text-rose-700">
           {error}
         </div>
       ) : null}
@@ -137,17 +112,19 @@ export function DashboardPage({ apiCall, currentUser }) {
           animate="visible"
           className="mt-4 space-y-4"
         >
-          <motion.div variants={itemVariants} className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_400px]">
+          <motion.div variants={itemVariants}>
             <AICoachCard apiCall={apiCall} stats={stats} report={report} userId={userId} useMock={useMock} />
-            <SignalPanel report={report} />
           </motion.div>
 
-          <motion.div variants={itemVariants} className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.95fr)]">
+          <motion.div variants={itemVariants} className="grid gap-4 xl:grid-cols-3">
+            <RadarChart report={report} />
             <HeatmapChart report={report} />
-            <div className="grid gap-4">
-              <RadarChart report={report} />
-              <VocabGrowthChart report={report} />
-            </div>
+            <VocabGrowthChart report={report} />
+          </motion.div>
+
+          <motion.div variants={itemVariants} className="flex items-center gap-2 rounded-[22px] border border-slate-200/80 bg-slate-50/90 px-4 py-3 text-sm text-slate-600">
+            <FlaskConical className="h-4 w-4 shrink-0 text-slate-500" />
+            评分为理论代理指标，基于现有输入、完成、词汇和输出记录推导，用于证明“有效习得”而不是展示普通活跃度。
           </motion.div>
         </motion.div>
       ) : null}

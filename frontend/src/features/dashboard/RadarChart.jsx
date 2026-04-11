@@ -1,63 +1,112 @@
 import { motion } from "framer-motion";
 import { Badge, Card, CardContent } from "../../shared/ui";
 
+const BAND_COLORS = {
+  A1: "bg-slate-300",
+  A2: "bg-sky-200",
+  B1: "bg-cyan-300",
+  B2: "bg-emerald-300",
+  C1: "bg-violet-300",
+};
+
 function getScoreTone(score) {
-  if (score >= 80) return "from-cyan-500 to-blue-600";
-  if (score >= 65) return "from-emerald-400 to-teal-500";
-  if (score >= 50) return "from-amber-400 to-orange-500";
-  return "from-rose-400 to-pink-500";
+  if (score >= 80) return "text-emerald-600";
+  if (score >= 65) return "text-sky-600";
+  if (score >= 50) return "text-amber-600";
+  return "text-rose-600";
 }
 
 export function RadarChart({ report }) {
-  const items = report?.capabilityItems || [];
+  const metric = report?.inputFit;
+  const circumference = 2 * Math.PI * 48;
+  const dashOffset = circumference * (1 - (metric?.score || 0) / 100);
 
   return (
-    <Card className="relative overflow-hidden rounded-[30px] border border-white/50 bg-white/80 shadow-[0_28px_80px_-44px_rgba(15,23,42,0.58)] backdrop-blur-xl">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.16),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.4),rgba(248,250,252,0.84))]" />
+    <Card className="relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-white/88 shadow-[0_24px_60px_-46px_rgba(15,23,42,0.65)] backdrop-blur-xl">
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.86))]" />
       <CardContent className="relative p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">Capability Matrix</p>
-            <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">五维能力矩阵</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              用排序和能量条直接表达强弱关系，比雷达图更适合比赛截图。
-            </p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Metric 01</p>
+            <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">i+1 输入命中率</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{metric?.theory}</p>
           </div>
-          <div className="text-right">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Overall</p>
-            <p className="mt-1 text-3xl font-black tracking-tight text-slate-950">{report.overallScore}</p>
-          </div>
+          <Badge className="rounded-full border-0 bg-slate-950 px-3 py-1 text-[10px] font-semibold tracking-[0.18em] text-white">
+            {metric?.label}
+          </Badge>
         </div>
 
-        <div className="mt-5 grid gap-3">
-          {items.map((item, index) => (
-            <motion.div
-              key={item.key}
-              initial={{ opacity: 0, x: 12 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.16 + index * 0.05, duration: 0.3 }}
-              className="rounded-[22px] border border-slate-200/70 bg-slate-50/90 p-4"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <Badge className="rounded-full border-0 bg-slate-950 px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-white">
-                    NO.{item.rank}
-                  </Badge>
-                  <div>
-                    <p className="text-base font-bold text-slate-950">{item.label}</p>
-                    <p className="text-sm text-slate-600">{item.summary}</p>
-                  </div>
-                </div>
-                <p className="text-2xl font-black tracking-tight text-slate-950">{item.score}</p>
-              </div>
-              <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-200">
-                <div
-                  className={`h-full rounded-full bg-gradient-to-r ${getScoreTone(item.score)}`}
-                  style={{ width: `${item.score}%` }}
+        <div className="mt-5 grid gap-5 lg:grid-cols-[140px_minmax(0,1fr)] lg:items-center">
+          <div className="flex items-center justify-center">
+            <div className="relative h-32 w-32">
+              <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
+                <circle cx="60" cy="60" r="48" fill="none" stroke="rgba(148,163,184,0.18)" strokeWidth="10" />
+                <motion.circle
+                  cx="60"
+                  cy="60"
+                  r="48"
+                  fill="none"
+                  stroke="url(#fitGradient)"
+                  strokeWidth="10"
+                  strokeLinecap="round"
+                  initial={{ strokeDashoffset: circumference }}
+                  animate={{ strokeDashoffset: dashOffset }}
+                  transition={{ duration: 0.8, ease: "easeOut" }}
+                  strokeDasharray={circumference}
                 />
+                <defs>
+                  <linearGradient id="fitGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#38bdf8" />
+                    <stop offset="100%" stopColor="#10b981" />
+                  </linearGradient>
+                </defs>
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <p className={`text-4xl font-black tracking-tight ${getScoreTone(metric?.score || 0)}`}>{metric?.score}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">i+1 Fit</p>
               </div>
-            </motion.div>
-          ))}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <p className="text-sm leading-6 text-slate-700">{metric?.insight}</p>
+
+            <div className="rounded-[20px] border border-slate-200/80 bg-slate-50/90 p-4">
+              <div className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <span>CEFR 输入层级分布</span>
+                <span>挑战区 {metric?.stretchRatio}%</span>
+              </div>
+              <div className="mt-3 flex h-4 overflow-hidden rounded-full bg-slate-200">
+                {metric?.bands?.map((band) => (
+                  <div
+                    key={band.level}
+                    className={BAND_COLORS[band.level] || "bg-slate-300"}
+                    style={{ width: `${Math.max(band.sharePercent, band.count > 0 ? 4 : 0)}%` }}
+                    title={`${band.level}: ${band.sharePercent}%`}
+                  />
+                ))}
+              </div>
+              <div className="mt-3 grid grid-cols-5 gap-2">
+                {metric?.bands?.map((band) => (
+                  <div key={band.level} className="rounded-2xl border border-slate-200/80 bg-white px-2.5 py-2 text-center">
+                    <p className="text-[11px] font-semibold tracking-[0.16em] text-slate-500">{band.level}</p>
+                    <p className="mt-1 text-sm font-bold text-slate-950">{band.sharePercent}%</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-[18px] border border-slate-200/80 bg-slate-50/90 px-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">过难输入</p>
+                <p className="mt-1 text-xl font-black text-slate-950">{metric?.overloadRatio}%</p>
+              </div>
+              <div className="rounded-[18px] border border-slate-200/80 bg-slate-50/90 px-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">完成支撑</p>
+                <p className="mt-1 text-xl font-black text-slate-950">{metric?.completionRate}%</p>
+              </div>
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>
