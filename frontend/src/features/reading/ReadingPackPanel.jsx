@@ -1,6 +1,7 @@
-import { BookOpenText, BookmarkPlus, Check, Layers3, Sparkles } from "lucide-react";
+import { BookOpenText, BookmarkPlus, Check, Layers3, Sparkles, Upload } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { getAllRewriteRecords } from "./readingRewriteDB";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { cn } from "../../lib/utils";
 import { ArticlePanel } from "./ArticlePanel";
@@ -246,6 +247,25 @@ function NextStepsBar({ packViewMode, onPackViewModeChange, onShowVocab, onGener
             开始课程
           </button>
         ) : null}
+        <button
+          className="reading-pack__next-step-btn"
+          onClick={async () => {
+            try {
+              const records = await getAllRewriteRecords();
+              const res = await fetch("/api/debug/reading-pack", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(records),
+              });
+              const data = await res.json();
+              if (data.ok) toast.success(`已上传 ${data.count} 条记录`);
+              else toast.error("上传失败");
+            } catch { toast.error("上传失败"); }
+          }}
+        >
+          <Upload className="inline w-3.5 h-3.5 mr-1" />
+          Debug 上传
+        </button>
       </div>
     </div>
   );
