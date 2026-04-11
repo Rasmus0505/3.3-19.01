@@ -8,6 +8,7 @@ import { SceneReading } from "./SceneReading";
 import { SceneDiscussion } from "./SceneDiscussion";
 import { SceneVocabPractice } from "./SceneVocabPractice";
 import { SceneQuiz } from "./SceneQuiz";
+import { SceneWriting } from "./SceneWriting";
 import { CourseSummary } from "./CourseSummary";
 import { useCourseState } from "./useCourseState";
 import { Button } from "../../../shared/ui";
@@ -21,6 +22,7 @@ export function CoursePlayer({ pack, articleId, apiCall, accessToken, onExit }) 
     completeScene,
     goToScene,
     setDiscussion,
+    setWriting,
     setSettings,
     resetCourse,
   } = useCourseState(articleId);
@@ -81,6 +83,15 @@ export function CoursePlayer({ pack, articleId, apiCall, accessToken, onExit }) 
           />
         )}
         {activeScene === 5 && (
+          <SceneWriting
+            pack={pack}
+            apiCall={apiCall}
+            courseData={courseData}
+            onSetWriting={setWriting}
+            onComplete={() => completeScene(5)}
+          />
+        )}
+        {activeScene === 6 && (
           <CourseSummary
             courseData={courseData}
             pack={pack}

@@ -21,7 +21,7 @@ const ROLE_CONFIG = {
   },
 };
 
-export function DiscussionBubble({ role, content, isActive, isPlaying }) {
+export function DiscussionBubble({ role, content, isActive }) {
   const config = ROLE_CONFIG[role] || ROLE_CONFIG.student;
   const Icon = config.icon;
   const isTeacher = role === "teacher";
@@ -41,7 +41,6 @@ export function DiscussionBubble({ role, content, isActive, isPlaying }) {
         "relative px-4 py-2.5 rounded-2xl border text-sm leading-relaxed transition-all",
         config.bubbleClass,
         isActive && "ring-2 ring-primary/30",
-        isPlaying && "shadow-md",
       )}>
         <span className="text-[10px] font-semibold text-muted-foreground block mb-0.5">
           {config.label}

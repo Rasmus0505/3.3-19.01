@@ -2,7 +2,7 @@
  * CourseSummary — Completion screen shown after all 4 scenes.
  */
 import { Button, Card, Badge } from "../../../shared/ui";
-import { Trophy, BookOpen, MessageSquare, Puzzle, HelpCircle, ArrowLeft, RotateCcw } from "lucide-react";
+import { Trophy, BookOpen, MessageSquare, Puzzle, HelpCircle, Pencil, ArrowLeft, RotateCcw } from "lucide-react";
 
 export function CourseSummary({ courseData, pack, onGoToScene, onExit, onReset }) {
   const progress = courseData?.progress || {};
@@ -12,6 +12,7 @@ export function CourseSummary({ courseData, pack, onGoToScene, onExit, onReset }
     progress.scene2_completed,
     progress.scene3_completed,
     progress.scene4_completed,
+    progress.scene5_completed,
   ].filter(Boolean).length;
 
   const scenes = [
@@ -19,6 +20,7 @@ export function CourseSummary({ courseData, pack, onGoToScene, onExit, onReset }
     { num: 2, label: "讨论", icon: MessageSquare, done: progress.scene2_completed },
     { num: 3, label: "词汇", icon: Puzzle, done: progress.scene3_completed },
     { num: 4, label: "测验", icon: HelpCircle, done: progress.scene4_completed },
+    { num: 5, label: "写作", icon: Pencil, done: progress.scene5_completed },
   ];
 
   return (
@@ -37,7 +39,7 @@ export function CourseSummary({ courseData, pack, onGoToScene, onExit, onReset }
       <Card className="w-full max-w-sm p-6 space-y-4">
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">完成场景</span>
-          <span className="text-sm font-semibold">{completedCount} / 4</span>
+          <span className="text-sm font-semibold">{completedCount} / 5</span>
         </div>
 
         <div className="space-y-2">

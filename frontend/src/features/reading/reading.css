@@ -494,21 +494,86 @@
   border-top-color: oklch(0.25 0.02 85);
 }
 
-/* 重写版简化词：暖黄色背景（仅被简化替换的词显示），无下划线 */
+/* 重写版简化词：暖黄色背景 + 下划线，hover 显示原词 tooltip */
 .article-content .article-word--simplified {
   background-color: #FEF9C3;
   padding: 4px 8px;
   border-radius: 4px;
   color: oklch(0.20 0.02 85);
-  cursor: pointer;
+  cursor: help;
   position: relative;
   border-bottom: none;
+  text-decoration: underline;
+  text-decoration-color: oklch(0.75 0.12 85);
+  text-underline-offset: 3px;
+}
+
+/* 简化词 hover tooltip（复用 rewrite-highlight 的 tooltip 样式） */
+.article-content .article-word--simplified .rewrite-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: oklch(0.25 0.02 85);
+  color: oklch(0.97 0 0);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  z-index: 100;
+  pointer-events: none;
+  box-shadow: 0 2px 8px oklch(0 0 0 / 0.2);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.article-content .article-word--simplified:hover .rewrite-tooltip {
+  opacity: 1;
+}
+
+.article-content .article-word--simplified .rewrite-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: oklch(0.25 0.02 85);
 }
 
 /* 重写版非简化词：普通样式，无特殊背景 */
 .article-content .article-word--rewritten-normal {
   border-bottom: none;
   color: oklch(0.20 0.02 85);
+}
+
+/* ─── i+1 tab 内切换按钮 ─────────────────────────────────── */
+.reading-pack__view-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 6px 0 10px;
+}
+
+.reading-pack__toggle-btn {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid oklch(0.85 0.02 85);
+  background: transparent;
+  color: oklch(0.45 0.02 85);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.reading-pack__toggle-btn:hover {
+  background: oklch(0.96 0.02 85);
+}
+
+.reading-pack__toggle-btn--active {
+  background: oklch(0.93 0.16 85);
+  color: oklch(0.20 0.02 85);
+  border-color: oklch(0.80 0.12 85);
+  font-weight: 500;
 }
 
 /* ─── Loading / Empty / Error 态 ──────────────────────────── */

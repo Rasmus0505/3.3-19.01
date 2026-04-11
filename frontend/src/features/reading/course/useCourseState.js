@@ -11,6 +11,7 @@ const INITIAL_PROGRESS = {
   scene2_completed: false,
   scene3_completed: false,
   scene4_completed: false,
+  scene5_completed: false,
   completedAt: null,
 };
 
@@ -40,12 +41,13 @@ export function useCourseState(articleId) {
         setCourseData(record.courseData);
         // Resume at the first incomplete scene
         const p = record.courseData.progress || INITIAL_PROGRESS;
-        if (p.completedAt) setActiveScene(5);
+        if (p.completedAt) setActiveScene(6);
         else if (!p.scene1_completed) setActiveScene(1);
         else if (!p.scene2_completed) setActiveScene(2);
         else if (!p.scene3_completed) setActiveScene(3);
         else if (!p.scene4_completed) setActiveScene(4);
-        else setActiveScene(5);
+        else if (!p.scene5_completed) setActiveScene(5);
+        else setActiveScene(6);
       }
       setIsLoading(false);
     })();
@@ -69,19 +71,19 @@ export function useCourseState(articleId) {
         ...prev,
         progress: { ...prev.progress, [`scene${sceneNum}_completed`]: true },
       };
-      // Auto-set completedAt when all 4 scenes are done
+      // Auto-set completedAt when all 5 scenes are done
       const p = next.progress;
-      if (p.scene1_completed && p.scene2_completed && p.scene3_completed && p.scene4_completed && !p.completedAt) {
+      if (p.scene1_completed && p.scene2_completed && p.scene3_completed && p.scene4_completed && p.scene5_completed && !p.completedAt) {
         next.progress.completedAt = new Date().toISOString();
       }
       persist(next);
       return next;
     });
     // Advance to next scene
-    if (sceneNum < 4) {
+    if (sceneNum < 5) {
       setActiveScene(sceneNum + 1);
     } else {
-      setActiveScene(5); // summary
+      setActiveScene(6); // summary
     }
   }, [persist]);
 
@@ -92,6 +94,14 @@ export function useCourseState(articleId) {
   const setDiscussion = useCallback((discussion) => {
     setCourseData((prev) => {
       const next = { ...prev, discussion };
+      persist(next);
+      return next;
+    });
+  }, [persist]);
+
+  const setWriting = useCallback((writing) => {
+    setCourseData((prev) => {
+      const next = { ...prev, writing };
       persist(next);
       return next;
     });
@@ -119,6 +129,7 @@ export function useCourseState(articleId) {
     completeScene,
     goToScene,
     setDiscussion,
+    setWriting,
     setSettings,
     resetCourse,
   };

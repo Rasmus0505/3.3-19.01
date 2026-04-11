@@ -28,7 +28,6 @@ import {
   updateDiagnosticTarget,
 } from "./readingDiagnostics";
 import { estimateRewriteTokens } from "./api/readingRewriteApi";
-import { splitPackSentences } from "./readingPack";
 
 function CollapseDivider({ collapsed, onToggle, collapseLabel, expandLabel }) {
   return (
@@ -413,56 +412,6 @@ export function ReadingPage({ accessToken, apiCall }) {
     clearRewrite();
   }, [clearRewrite]);
 
-  const [dictationLoading, setDictationLoading] = useState(false);
-
-  const handleGenerateDictation = useCallback(async () => {
-    const pack = readingPack || {};
-    const text = pack.rewrittenText || pack.originalText || activeArticleText;
-    if (!text) {
-      toast.error("没有可用的阅读内容");
-      return;
-    }
-    if (!accessToken) {
-      toast.info("请先登录后生成听写课程");
-      return;
-    }
-
-    const sentences = splitPackSentences(text);
-    if (sentences.length === 0) {
-      toast.error("无法从阅读包中提取句子");
-      return;
-    }
-
-    setDictationLoading(true);
-    const toastId = toast.loading("正在生成听写课程…可能需要一分钟");
-    try {
-      const resp = await apiCall("/api/lessons/from-reading-pack", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sentences,
-          target_level: pack.targetLevel || diagnosticSnapshot?.selectedTargetLevel || "B1",
-          article_title: activeArticleText?.slice(0, 100) || "阅读包",
-        }),
-      });
-      const data = await resp.json();
-      toast.dismiss(toastId);
-      if (!resp.ok || !data.ok) {
-        toast.error(data.detail || "听写课程生成失败");
-        return;
-      }
-      toast.success(`听写课程已生成（${data.sentence_count} 句），即将跳转…`);
-      setTimeout(() => {
-        window.location.href = `/immersive/${data.lesson_id}`;
-      }, 1000);
-    } catch {
-      toast.dismiss(toastId);
-      toast.error("听写课程生成失败");
-    } finally {
-      setDictationLoading(false);
-    }
-  }, [accessToken, activeArticleText, apiCall, diagnosticSnapshot, readingPack]);
-
   const showAnalysisPanel = mode === "pack";
 
   return (
@@ -611,8 +560,6 @@ export function ReadingPage({ accessToken, apiCall }) {
                 activeLevels={activeLevels}
                 apiCall={apiCall}
                 accessToken={accessToken}
-                onGenerateDictation={handleGenerateDictation}
-                dictationLoading={dictationLoading}
                 onStartCourse={() => setMode("course")}
               />
             </div>

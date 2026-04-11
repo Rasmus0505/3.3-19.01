@@ -202,7 +202,7 @@ function VocabPanel({ pack, apiCall, accessToken }) {
 /**
  * 下一步操作栏（PACK-04）
  */
-function NextStepsBar({ packViewMode, onPackViewModeChange, onShowVocab, onGenerateDictation, dictationLoading, onStartCourse, apiCall }) {
+function NextStepsBar({ packViewMode, onPackViewModeChange, onShowVocab, onStartCourse, apiCall }) {
   return (
     <div className="reading-pack__next-steps">
       <span className="reading-pack__next-steps-label">下一步</span>
@@ -231,15 +231,6 @@ function NextStepsBar({ packViewMode, onPackViewModeChange, onShowVocab, onGener
         >
           收集单词
         </button>
-        {onGenerateDictation ? (
-          <button
-            className="reading-pack__next-step-btn"
-            onClick={onGenerateDictation}
-            disabled={dictationLoading}
-          >
-            {dictationLoading ? "生成中…" : "生成听写"}
-          </button>
-        ) : null}
         {onStartCourse ? (
           <button
             className="reading-pack__next-step-btn reading-pack__next-step-btn--primary"
@@ -285,8 +276,6 @@ export function ReadingPackPanel({
   activeLevels = [],
   apiCall,
   accessToken,
-  onGenerateDictation,
-  dictationLoading = false,
   onStartCourse,
 }) {
   if (!pack) {
@@ -295,6 +284,8 @@ export function ReadingPackPanel({
 
   const wordCount = (pack.rewrittenText || pack.originalText || "").split(/\s+/).filter(Boolean).length;
   const isTooShort = wordCount < 100;
+
+  const [showInlineOriginal, setShowInlineOriginal] = useState(false);
 
   const handleShowVocab = useCallback(() => {
     onPackViewModeChange("vocab");
@@ -363,8 +354,28 @@ export function ReadingPackPanel({
         </TabsContent>
 
         <TabsContent value="rewritten" className="reading-pack__tab-panel">
+          <div className="reading-pack__view-toggle">
+            <button
+              className={cn(
+                "reading-pack__toggle-btn",
+                !showInlineOriginal && "reading-pack__toggle-btn--active"
+              )}
+              onClick={() => setShowInlineOriginal(false)}
+            >
+              i+1 简化版
+            </button>
+            <button
+              className={cn(
+                "reading-pack__toggle-btn",
+                showInlineOriginal && "reading-pack__toggle-btn--active"
+              )}
+              onClick={() => setShowInlineOriginal(true)}
+            >
+              显示原文
+            </button>
+          </div>
           <ArticlePanel
-            text={pack.rewrittenText}
+            text={showInlineOriginal ? pack.originalText : pack.rewrittenText}
             contentWidth={contentWidth}
             onWidthChange={onWidthChange}
             onWordClick={onWordClick}
@@ -376,7 +387,7 @@ export function ReadingPackPanel({
             validAboveI1Words={pack.validAboveI1Words || []}
             removedWords={pack.removedWords || []}
             wordLevels={pack.wordLevels || {}}
-            viewMode="rewritten"
+            viewMode={showInlineOriginal ? "original" : "rewritten"}
           />
         </TabsContent>
 
@@ -403,8 +414,6 @@ export function ReadingPackPanel({
         packViewMode={packViewMode}
         onPackViewModeChange={onPackViewModeChange}
         onShowVocab={handleShowVocab}
-        onGenerateDictation={onGenerateDictation}
-        dictationLoading={dictationLoading}
         onStartCourse={onStartCourse}
         apiCall={apiCall}
       />

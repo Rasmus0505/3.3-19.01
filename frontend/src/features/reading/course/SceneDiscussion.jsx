@@ -144,8 +144,6 @@ export function SceneDiscussion({
       <div className="flex-1 overflow-hidden">
         <DiscussionPlayer
           messages={discussion.messages}
-          apiCall={apiCall}
-          accessToken={accessToken}
           onComplete={onComplete}
         />
       </div>

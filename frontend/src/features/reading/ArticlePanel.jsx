@@ -316,6 +316,13 @@ function ArticleWord({
       {viewMode === "original" && mapping?.confirmed && (
         <span className="rewrite-tooltip">{mapping.rewritten}</span>
       )}
+      {/* 重写版 hover 时显示原词 + 等级 tooltip */}
+      {viewMode === "rewritten" && mapping?.confirmed && (
+        <span className="rewrite-tooltip">
+          原词: {mapping.rewritten}
+          {(mapping.finalLevel || resolvedLevel) && ` (${mapping.finalLevel || resolvedLevel})`}
+        </span>
+      )}
     </span>
   );
 }

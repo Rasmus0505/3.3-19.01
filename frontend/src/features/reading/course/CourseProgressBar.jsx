@@ -2,13 +2,14 @@
  * CourseProgressBar — Horizontal step indicator for 4 course scenes.
  */
 import { cn } from "../../../lib/utils";
-import { Check, BookOpen, MessageSquare, Puzzle, HelpCircle, Trophy } from "lucide-react";
+import { Check, BookOpen, MessageSquare, Puzzle, HelpCircle, Pencil, Trophy } from "lucide-react";
 
 const STEPS = [
   { num: 1, label: "阅读", icon: BookOpen },
   { num: 2, label: "讨论", icon: MessageSquare },
   { num: 3, label: "词汇", icon: Puzzle },
   { num: 4, label: "测验", icon: HelpCircle },
+  { num: 5, label: "写作", icon: Pencil },
 ];
 
 export function CourseProgressBar({ activeScene, progress, onGoToScene }) {
@@ -53,7 +54,7 @@ export function CourseProgressBar({ activeScene, progress, onGoToScene }) {
       })}
 
       {/* Summary indicator */}
-      {activeScene === 5 && (
+      {activeScene === 6 && (
         <>
           <div className="w-6 h-px mx-1 bg-emerald-400" />
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 ring-1 ring-amber-200/50">
