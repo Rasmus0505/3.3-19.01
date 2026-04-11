@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from app.api.routers.llm_discussion import router as discussion_router
 from app.api.routers.llm_quiz import router as quiz_router
+from app.api.routers.llm_reading_course import router as reading_course_router
 from app.api.routers.llm_writing import router as writing_router
 from app.api.routers.llm_reading import generate_reading_material_endpoint, router as reading_router
 from app.api.routers.llm_sentence import (
@@ -54,6 +55,7 @@ router.include_router(vocabulary_router)
 router.include_router(sentence_router)
 router.include_router(quiz_router)
 router.include_router(discussion_router)
+router.include_router(reading_course_router)
 router.include_router(writing_router)
 
 __all__ = [

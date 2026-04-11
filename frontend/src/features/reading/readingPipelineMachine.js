@@ -1,9 +1,9 @@
 export const READING_PIPELINE_STAGES = [
-  { key: "parsing", label: "parsing" },
-  { key: "difficulty_judgment", label: "difficulty judgment" },
-  { key: "simplification_planning", label: "simplification planning" },
-  { key: "text_rewriting", label: "text rewriting" },
-  { key: "reading_pack_assembly", label: "reading-pack assembly" },
+  { key: "parsing", label: "读取材料" },
+  { key: "difficulty_judgment", label: "确认目标难度" },
+  { key: "simplification_planning", label: "规划简化策略" },
+  { key: "text_rewriting", label: "生成 i+1 文本" },
+  { key: "reading_course_generation", label: "生成阅读课堂" },
 ];
 
 export const READING_PIPELINE_STAGE_KEYS = READING_PIPELINE_STAGES.map((stage) => stage.key);
@@ -186,8 +186,9 @@ export function readingPipelineReducer(state, action) {
       };
     }
 
+    case "course_completed":
     case "pack_completed": {
-      const finalStage = action.stage || "reading_pack_assembly";
+      const finalStage = action.stage || "reading_course_generation";
       const nextStages = READING_PIPELINE_STAGE_KEYS.includes(finalStage)
         ? updateStages(currentState.stages, finalStage, (stage) => ({
             ...stage,
@@ -200,7 +201,7 @@ export function readingPipelineReducer(state, action) {
 
       return {
         ...currentState,
-        mode: "pack",
+        mode: "course",
         currentStage: null,
         lastCompletedStage: READING_PIPELINE_STAGE_KEYS.includes(finalStage) ? finalStage : currentState.lastCompletedStage,
         error: null,

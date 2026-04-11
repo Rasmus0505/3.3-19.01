@@ -45,7 +45,7 @@ export function DiagnosticPanel({
           <Gauge className="size-5" />
           <div>
             <p className="diagnostic-panel__empty-title">先放入一篇英文材料</p>
-            <p className="diagnostic-panel__empty-copy">粘贴新材料或打开历史草稿，先查看诊断结果，再决定是否生成 i+1 阅读包。</p>
+            <p className="diagnostic-panel__empty-copy">粘贴新材料或打开历史草稿，先查看诊断结果，再决定是否生成 i+1 阅读课堂。</p>
           </div>
         </div>
       </aside>

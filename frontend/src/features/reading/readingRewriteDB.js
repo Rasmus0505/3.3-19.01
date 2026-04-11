@@ -11,6 +11,7 @@
  * - 提供徽章查询：哪些文章已有重写记录
  */
 import { createInitialPipelineState, normalizePipelineState } from "./readingPipelineMachine";
+import { buildFallbackReadingCourseFromPack, looksLikeReadingCourse, normalizeReadingCourse } from "./readingCourse";
 
 const DB_NAME = "reading_rewrites_v3";
 const DB_VERSION = 1;
@@ -54,7 +55,8 @@ function openDB() {
  * @property {object}    wordLevels       — 二次筛选后的最终等级 {word: level}
  * @property {object|null} diagnosticSnapshot — 诊断阶段快照（Phase 35）
  * @property {object|null} pipeline    — Phase 36 显式阶段快照
- * @property {object|null} readingPack — Phase 36 阅读包资产
+ * @property {object|null} readingPack — 兼容旧阅读包数据
+ * @property {object|null} readingCourse — 新阅读课堂数据
  * @property {string|null} flowStatus — idle | diagnosed | pipeline | failed | generated
  * @property {"original"|"rewritten"} viewMode — 用户偏好的视图
  * @property {"original"|"rewritten"|"comparison"} packViewMode — 阅读包视图偏好
@@ -65,6 +67,9 @@ function openDB() {
 export function deriveFlowStatus(record = {}) {
   if (record.flowStatus) {
     return record.flowStatus;
+  }
+  if (looksLikeReadingCourse(record.readingCourse) || looksLikeReadingCourse(record.courseData)) {
+    return "generated";
   }
   if (record.readingPack?.status === "completed" || record.rewrittenText) {
     return "generated";
@@ -85,10 +90,18 @@ export function normalizeRewriteRecord(record) {
   if (!record) {
     return null;
   }
+  const fallbackCourse = record.readingPack
+    ? buildFallbackReadingCourseFromPack(record.readingPack, record.articleId)
+    : null;
+  const readingCourse = normalizeReadingCourse(
+    record.readingCourse || record.courseData,
+    fallbackCourse,
+  );
   return {
     ...record,
     pipeline: normalizePipelineState(record.pipeline || createInitialPipelineState()),
     readingPack: record.readingPack || null,
+    readingCourse,
     packViewMode: record.packViewMode || record.viewMode || "original",
     flowStatus: deriveFlowStatus(record),
     quiz: record.quiz ?? null,
@@ -254,6 +267,12 @@ export async function saveCourseDataToRecord(articleId, courseData) {
   const existing = await getRewriteRecord(articleId);
   if (!existing) return;
   await saveRewriteRecord({ ...existing, courseData });
+}
+
+export async function saveReadingCourseToRecord(articleId, readingCourse) {
+  const existing = await getRewriteRecord(articleId);
+  if (!existing) return;
+  await saveRewriteRecord({ ...existing, readingCourse });
 }
 
 export async function clearAllRewriteRecords() {

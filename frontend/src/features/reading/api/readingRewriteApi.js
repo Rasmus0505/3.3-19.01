@@ -177,7 +177,7 @@ export async function syncReadingPackToServer(record, apiCall) {
         diagnostic: record.diagnosticSnapshot || null,
         quiz: record.quiz || null,
         vocab_cards: record.vocabCards || null,
-        course_data: record.courseData || null,
+        course_data: record.readingCourse || record.courseData || null,
       }),
     });
   } catch {

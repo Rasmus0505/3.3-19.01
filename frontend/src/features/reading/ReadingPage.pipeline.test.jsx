@@ -35,6 +35,7 @@ vi.mock("../../hooks/useReadingRewrite", () => ({
     flowStatus: articleId ? mockRewriteState?.flowStatus ?? "idle" : "idle",
     pipelineState: mockRewriteState?.pipelineState ?? { stages: [] },
     readingPack: mockRewriteState?.readingPack ?? null,
+    readingCourse: mockRewriteState?.readingCourse ?? null,
     saveDiagnosticSnapshot: vi.fn(),
     clearRewrite: vi.fn(),
     handleRewrite: vi.fn(),
@@ -77,6 +78,10 @@ vi.mock("./DiagnosticPanel", () => ({
   DiagnosticPanel: () => <div>DiagnosticPanel</div>,
 }));
 
+vi.mock("./classroom/ReadingClassroom", () => ({
+  ReadingClassroom: ({ course }) => <div>{course?.article_title || "ReadingClassroom"}</div>,
+}));
+
 vi.mock("../wordbook/TranslationDialog", () => ({
   TranslationDialog: () => null,
 }));
@@ -104,11 +109,11 @@ describe("ReadingPage phase 36 flow", () => {
         resumeAvailable: true,
         error: { stage: "text_rewriting", message: "text rewriting failed" },
         stages: [
-          { key: "parsing", label: "parsing", status: "completed", progressPercent: 100 },
-          { key: "difficulty_judgment", label: "difficulty judgment", status: "completed", progressPercent: 100 },
-          { key: "simplification_planning", label: "simplification planning", status: "completed", progressPercent: 100 },
-          { key: "text_rewriting", label: "text rewriting", status: "failed", progressPercent: 70 },
-          { key: "reading_pack_assembly", label: "reading-pack assembly", status: "pending", progressPercent: 0 },
+          { key: "parsing", label: "读取材料", status: "completed", progressPercent: 100 },
+          { key: "difficulty_judgment", label: "确认目标难度", status: "completed", progressPercent: 100 },
+          { key: "simplification_planning", label: "规划简化策略", status: "completed", progressPercent: 100 },
+          { key: "text_rewriting", label: "生成 i+1 文本", status: "failed", progressPercent: 70 },
+          { key: "reading_course_generation", label: "生成阅读课堂", status: "pending", progressPercent: 0 },
         ],
       },
       historyMeta: {
@@ -125,37 +130,26 @@ describe("ReadingPage phase 36 flow", () => {
     await user.click(screen.getByRole("button", { name: "选择历史记录" }));
 
     await waitFor(() => {
-      expect(screen.getByText("把材料组装成可回看的阅读包")).toBeTruthy();
+      expect(screen.getByText("把材料组装成沉浸式阅读课堂")).toBeTruthy();
     });
-    expect(screen.getByText("在“text rewriting”阶段中断")).toBeTruthy();
+    expect(screen.getByText("在“生成 i+1 文本”阶段中断")).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: /查看原文/i }));
     expect(screen.getByTestId("left-panel-reading").textContent).toContain("Original article text.");
   });
 
-  it("reopens completed history directly into the pack surface", async () => {
+  it("reopens completed history directly into the classroom surface", async () => {
     const user = userEvent.setup();
     mockRewriteState = {
       flowStatus: "generated",
-      packViewMode: "original",
-      readingPack: {
-        status: "completed",
-        targetLevel: "B2",
-        assembledAt: 1710000000000,
-        originalText: "Original article text.",
-        rewrittenText: "Simplified article text.",
-        diagnosticSummary: {
-          materialDifficulty: "C1",
-          preservedI1Count: 4,
-          aboveI1Count: 3,
-        },
-        comparisonCards: [],
+      readingCourse: {
+        mode: "reading_classroom_v1",
+        article_title: "Reading Classroom",
+        scenes: [{ id: "intro", type: "intro", title: "进入课堂", content: {} }],
       },
       historyMeta: {
         flowStatus: "generated",
-        readingPack: {
-          status: "completed",
-        },
+        readingCourse: { mode: "reading_classroom_v1" },
       },
     };
 
@@ -163,10 +157,7 @@ describe("ReadingPage phase 36 flow", () => {
     await user.click(screen.getByRole("button", { name: "选择历史记录" }));
 
     await waitFor(() => {
-      expect(screen.getByText("这份材料现在是一份可回看的阅读包")).toBeTruthy();
+      expect(screen.getByText("Reading Classroom")).toBeTruthy();
     });
-    expect(screen.getByRole("tab", { name: "原文" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "i+1" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "逐句对照" })).toBeTruthy();
   });
 });

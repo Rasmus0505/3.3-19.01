@@ -3600,3 +3600,510 @@
   animation: countUp 0.3s ease-out forwards;
 }
 
+/* ─── Reading Classroom ──────────────────────────────── */
+
+.reading-classroom {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  height: 100%;
+  background:
+    radial-gradient(circle at top left, oklch(0.94 0.08 80 / 0.85), transparent 28%),
+    radial-gradient(circle at top right, oklch(0.92 0.08 210 / 0.85), transparent 30%),
+    linear-gradient(160deg, oklch(0.99 0.02 85) 0%, oklch(0.97 0.01 240) 100%);
+}
+
+.reading-classroom__sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+  border-right: 1px solid oklch(0.9 0 0 / 0.9);
+  background: oklch(0.99 0.01 85 / 0.8);
+  backdrop-filter: blur(18px);
+}
+
+.reading-classroom__teacher-card {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 0.875rem;
+  padding: 1rem;
+  border-radius: 20px;
+  color: oklch(0.25 0.04 45);
+  background: linear-gradient(145deg, oklch(0.9 0.06 84), oklch(0.95 0.03 210));
+  border: 1px solid oklch(0.85 0.03 84);
+}
+
+.reading-classroom__teacher-badge {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  color: white;
+  background: linear-gradient(145deg, oklch(0.58 0.16 35), oklch(0.64 0.11 220));
+}
+
+.reading-classroom__teacher-role,
+.reading-classroom__muted {
+  margin: 0;
+  font-size: 12px;
+  color: oklch(0.46 0.03 45);
+}
+
+.reading-classroom__teacher-name {
+  margin: 0.15rem 0 0.35rem;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.reading-classroom__teacher-persona {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.reading-classroom__progress-card {
+  border-radius: 18px;
+  border: 1px solid oklch(0.9 0 0);
+  background: oklch(1 0 0 / 0.82);
+}
+
+.reading-classroom__progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.reading-classroom__progress {
+  height: 10px;
+  margin-bottom: 0.5rem;
+}
+
+.reading-classroom__rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  overflow: auto;
+}
+
+.reading-classroom__rail-item {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+  padding: 0.85rem;
+  text-align: left;
+  border-radius: 18px;
+  border: 1px solid oklch(0.9 0 0);
+  background: oklch(1 0 0 / 0.72);
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.reading-classroom__rail-item:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: oklch(0.76 0.08 210);
+  box-shadow: 0 14px 30px oklch(0 0 0 / 0.06);
+}
+
+.reading-classroom__rail-item:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.reading-classroom__rail-item--active {
+  border-color: oklch(0.69 0.13 220);
+  background: linear-gradient(145deg, oklch(0.98 0.03 220), oklch(0.99 0.01 84));
+}
+
+.reading-classroom__rail-item--done {
+  border-color: oklch(0.74 0.1 155);
+}
+
+.reading-classroom__rail-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  color: oklch(0.39 0.07 220);
+  background: oklch(0.96 0.02 220);
+}
+
+.reading-classroom__rail-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.reading-classroom__rail-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: oklch(0.28 0.03 40);
+}
+
+.reading-classroom__rail-goal {
+  font-size: 12px;
+  line-height: 1.45;
+  color: oklch(0.5 0.02 40);
+}
+
+.reading-classroom__main {
+  overflow: auto;
+  padding: 1.5rem;
+}
+
+.reading-classroom__stage {
+  min-height: 100%;
+  padding: 1.25rem;
+  border-radius: 28px;
+  border: 1px solid oklch(0.9 0 0 / 0.9);
+  background:
+    linear-gradient(155deg, oklch(1 0 0 / 0.88), oklch(0.99 0.01 210 / 0.92)),
+    oklch(1 0 0);
+  box-shadow: 0 24px 80px oklch(0 0 0 / 0.07);
+}
+
+.reading-classroom__scene {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-height: 100%;
+}
+
+.reading-classroom__scene-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.reading-classroom__scene-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.reading-classroom__scene-mark {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 15px;
+  color: white;
+  background: linear-gradient(145deg, oklch(0.6 0.13 36), oklch(0.58 0.12 228));
+}
+
+.reading-classroom__scene-eyebrow {
+  margin: 0 0 0.2rem;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: oklch(0.52 0.03 45);
+}
+
+.reading-classroom__scene-title {
+  margin: 0;
+  font-size: clamp(28px, 3vw, 40px);
+  font-weight: 800;
+  color: oklch(0.25 0.04 40);
+}
+
+.reading-classroom__goal-badge {
+  font-size: 12px;
+  padding: 0.45rem 0.7rem;
+}
+
+.reading-classroom__scene-body {
+  flex: 1;
+}
+
+.reading-classroom__scene-footer {
+  padding-top: 0.25rem;
+}
+
+.reading-classroom__footer-actions,
+.reading-classroom__quiz-submit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.reading-classroom__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.reading-classroom__hero-card,
+.reading-classroom__message-card {
+  padding: 1.1rem 1.2rem;
+  border-radius: 20px;
+  border: 1px solid oklch(0.9 0 0);
+  background: oklch(1 0 0 / 0.88);
+}
+
+.reading-classroom__message-card--accent,
+.reading-classroom__hero-card {
+  background: linear-gradient(145deg, oklch(0.97 0.03 80), oklch(0.98 0.02 220));
+}
+
+.reading-classroom__hero-hook {
+  margin: 0 0 0.7rem;
+  font-size: clamp(24px, 2.6vw, 34px);
+  font-weight: 800;
+  line-height: 1.15;
+  color: oklch(0.22 0.04 40);
+}
+
+.reading-classroom__hero-open {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.75;
+  color: oklch(0.34 0.03 40);
+}
+
+.reading-classroom__objective-grid,
+.reading-classroom__keyword-grid,
+.reading-classroom__feedback-grid,
+.reading-classroom__explanation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.reading-classroom__objective-card,
+.reading-classroom__keyword-card,
+.reading-classroom__feedback-card,
+.reading-classroom__feedback-score,
+.reading-classroom__explanation-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+  border-radius: 18px;
+  border: 1px solid oklch(0.9 0 0);
+  background: oklch(1 0 0 / 0.84);
+}
+
+.reading-classroom__keyword-head,
+.reading-classroom__explanation-head,
+.reading-classroom__segment-head,
+.reading-classroom__quiz-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.reading-classroom__segment-card,
+.reading-classroom__quiz-card {
+  padding: 1rem;
+  border-radius: 22px;
+  border: 1px solid oklch(0.9 0 0);
+  background: oklch(1 0 0 / 0.82);
+}
+
+.reading-classroom__segment-head h3,
+.reading-classroom__quiz-question,
+.reading-classroom__feedback-card h3 {
+  margin: 0;
+}
+
+.reading-classroom__segment-head p,
+.reading-classroom__feedback-card p,
+.reading-classroom__feedback-score p {
+  margin: 0;
+  color: oklch(0.47 0.02 45);
+}
+
+.reading-classroom__segment-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.reading-classroom__segment-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 1rem;
+  border-radius: 18px;
+  background: oklch(0.98 0.01 220);
+}
+
+.reading-classroom__segment-pane--primary {
+  background: linear-gradient(145deg, oklch(0.97 0.03 84), oklch(0.99 0.01 220));
+}
+
+.reading-classroom__segment-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: oklch(0.52 0.03 45);
+}
+
+.reading-classroom__segment-pane p,
+.reading-classroom__message-card p,
+.reading-classroom__keyword-card p,
+.reading-classroom__explanation-card p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.reading-classroom__segment-notes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.reading-classroom__quiz-options,
+.reading-classroom__order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.reading-classroom__quiz-option {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.9rem 1rem;
+  text-align: left;
+  border-radius: 16px;
+  border: 1px solid oklch(0.88 0 0);
+  background: oklch(0.99 0 0);
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.reading-classroom__quiz-option--selected {
+  border-color: oklch(0.7 0.12 220);
+  background: oklch(0.96 0.02 220);
+}
+
+.reading-classroom__textarea {
+  min-height: 120px;
+  border-radius: 18px;
+  line-height: 1.7;
+}
+
+.reading-classroom__textarea--large {
+  min-height: 220px;
+}
+
+.reading-classroom__quiz-score {
+  font-size: 13px;
+  font-weight: 700;
+  color: oklch(0.42 0.1 150);
+}
+
+.reading-classroom__checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+
+.reading-classroom__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  background: oklch(0.97 0.01 84);
+  font-size: 12px;
+}
+
+.reading-classroom__feedback-score strong {
+  font-size: 42px;
+  line-height: 1;
+  color: oklch(0.34 0.13 220);
+}
+
+.reading-classroom__feedback-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid oklch(0.92 0 0);
+}
+
+.reading-classroom__feedback-row:last-child {
+  border-bottom: 0;
+}
+
+.reading-classroom__feedback-arrow {
+  color: oklch(0.56 0.03 45);
+}
+
+.reading-classroom__completion {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  align-items: center;
+  width: fit-content;
+  padding: 0.9rem 1.1rem;
+  border-radius: 18px;
+  border: 1px solid oklch(0.88 0 0);
+  background: oklch(1 0 0 / 0.8);
+}
+
+.reading-classroom__completion strong {
+  font-size: 28px;
+  line-height: 1;
+}
+
+@media (max-width: 1100px) {
+  .reading-classroom {
+    grid-template-columns: 1fr;
+  }
+
+  .reading-classroom__sidebar {
+    border-right: 0;
+    border-bottom: 1px solid oklch(0.9 0 0 / 0.9);
+  }
+
+  .reading-classroom__objective-grid,
+  .reading-classroom__keyword-grid,
+  .reading-classroom__feedback-grid,
+  .reading-classroom__explanation-grid,
+  .reading-classroom__segment-columns,
+  .reading-classroom__segment-notes {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .reading-classroom__main {
+    padding: 0.75rem;
+  }
+
+  .reading-classroom__stage {
+    padding: 0.9rem;
+    border-radius: 22px;
+  }
+
+  .reading-classroom__scene-head {
+    flex-direction: column;
+  }
+
+  .reading-classroom__scene-title {
+    font-size: 28px;
+  }
+}
+

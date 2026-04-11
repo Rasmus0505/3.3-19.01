@@ -5,55 +5,24 @@
  * Phase 36: 显式阶段流水线 + 阅读包资产页
  */
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { readCefrLevel } from "../../app/authStorage";
-import { parseResponse } from "../../shared/api/client";
-import { cn } from "../../lib/utils";
 import { computeCefrClassName } from "./ArticlePanel";
 import { getOrCreateAnalyzer } from "../../hooks/useRichLayout";
 import { TranslationDialog } from "../wordbook/TranslationDialog";
 import { useReadingRewrite } from "../../hooks/useReadingRewrite";
-import { useVocabularyFilter } from "./useVocabularyFilter";
 import { HistoryPanel, saveHistoryRecord } from "./HistoryPanel";
 import { LeftPanel } from "./LeftPanel";
-import { AnalysisPanel, getDefaultActiveLevels } from "./AnalysisPanel";
+import { getDefaultActiveLevels } from "./AnalysisPanel";
 import { DiagnosticPanel } from "./DiagnosticPanel";
 import { ReadingPipelinePanel } from "./ReadingPipelinePanel";
-import { ReadingPackPanel } from "./ReadingPackPanel";
-import { CoursePlayer } from "./course/CoursePlayer";
+import { ReadingClassroom } from "./classroom/ReadingClassroom";
 import {
   buildDiagnosticSnapshot,
   splitDiagnosticText,
   updateDiagnosticTarget,
 } from "./readingDiagnostics";
 import { estimateRewriteTokens } from "./api/readingRewriteApi";
-
-function CollapseDivider({ collapsed, onToggle, collapseLabel, expandLabel }) {
-  return (
-    <div className="reading-collapse-divider" aria-hidden={false}>
-      <button
-        type="button"
-        className={cn(
-          "reading-collapse-divider__btn",
-          collapsed && "reading-collapse-divider__btn--collapsed"
-        )}
-        onClick={onToggle}
-        aria-label={collapsed ? expandLabel : collapseLabel}
-        title={collapsed ? expandLabel : collapseLabel}
-      >
-        {collapsed ? (
-          <ChevronDown className="size-4 rotate-[-90deg]" />
-        ) : (
-          <>
-            <ChevronUp className="size-4" />
-            <span className="reading-collapse-divider__label">{collapseLabel}</span>
-          </>
-        )}
-      </button>
-    </div>
-  );
-}
 
 function PageFallback() {
   return (
@@ -70,22 +39,6 @@ function PageFallback() {
       </div>
     </div>
   );
-}
-
-function computeWordStats(lines, wordLevels = {}) {
-  const cefrCounts = { A1: 0, A2: 0, B1: 0, B2: 0, C1: 0, C2: 0, SUPER: 0 };
-  let total = 0;
-  for (const line of lines) {
-    for (const seg of line.segments) {
-      if (!seg.word) continue;
-      total += 1;
-      const effectiveLevel = wordLevels[seg.word.toLowerCase()] || seg.cefrLevel;
-      if (effectiveLevel && cefrCounts[effectiveLevel] !== undefined) {
-        cefrCounts[effectiveLevel] += 1;
-      }
-    }
-  }
-  return { total, cefrCounts };
 }
 
 async function collectSimplifyCandidatesFromRaw(text, targetLevel) {
@@ -110,14 +63,12 @@ export function ReadingPage({ accessToken, apiCall }) {
 
   const [contentWidth, setContentWidth] = useState(640);
   const [selectedWords, setSelectedWords] = useState([]);
-  const [articleLines, setArticleLines] = useState([]);
-  const [isAddingToWordbook, setIsAddingToWordbook] = useState(false);
+  const [, setArticleLines] = useState([]);
   const [translationDialog, setTranslationDialog] = useState({ open: false, text: "" });
   const [mode, setMode] = useState("input");
   const [activeArticleText, setActiveArticleText] = useState("");
   const [activeHistoryId, setActiveHistoryId] = useState(null);
   const [activeLevels, setActiveLevels] = useState(defaultActiveLevels);
-  const [analysisPanelOpen, setAnalysisPanelOpen] = useState(true);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [diagnosticError, setDiagnosticError] = useState(null);
@@ -131,15 +82,12 @@ export function ReadingPage({ accessToken, apiCall }) {
     removedWords,
     wordLevels,
     viewMode,
-    setViewMode,
-    packViewMode,
-    setPackViewMode,
     isRewriting,
     rewriteError,
     diagnosticSnapshot,
     flowStatus,
     pipelineState,
-    readingPack,
+    readingCourse,
     saveDiagnosticSnapshot,
     clearRewrite,
     handleRewrite,
@@ -150,18 +98,10 @@ export function ReadingPage({ accessToken, apiCall }) {
     onSuccess: () => setHistoryRefreshKey((value) => value + 1),
   });
 
-  const vocabularyFilter = useVocabularyFilter({
-    accessToken,
-    userLevel,
-    targetLevel: "B2",
-  });
-
-  const wordStats = useMemo(() => computeWordStats(articleLines, wordLevels), [articleLines, wordLevels]);
-
   useEffect(() => {
     if (!activeHistoryId || isRewriting) return;
-    if (readingPack || flowStatus === "generated") {
-      setMode("pack");
+    if (readingCourse || flowStatus === "generated") {
+      setMode("classroom");
       return;
     }
     if (flowStatus === "pipeline" || flowStatus === "failed" || pipelineState?.currentStage || pipelineState?.lastCompletedStage) {
@@ -173,22 +113,13 @@ export function ReadingPage({ accessToken, apiCall }) {
       return;
     }
     setMode("input");
-  }, [activeHistoryId, diagnosticSnapshot, flowStatus, isRewriting, pipelineState, readingPack]);
+  }, [activeHistoryId, diagnosticSnapshot, flowStatus, isRewriting, pipelineState, readingCourse]);
 
   useEffect(() => {
     if (mode !== "pipeline") {
       setShowPipelineOriginal(false);
     }
   }, [mode]);
-
-  const handleLevelToggle = useCallback((level) => {
-    setActiveLevels((prev) => {
-      if (prev.includes(level)) {
-        return prev.filter((item) => item !== level);
-      }
-      return [...prev, level];
-    });
-  }, []);
 
   const handleWordClick = useCallback((word, segment) => {
     const cefrClass = computeCefrClassName(segment.cefrLevel, userLevel);
@@ -198,65 +129,6 @@ export function ReadingPage({ accessToken, apiCall }) {
       return [...prev, { word, cefrLevel: segment.cefrLevel, cefrClass }];
     });
   }, [userLevel]);
-
-  const handleRemoveWord = useCallback((item) => {
-    setSelectedWords((prev) => prev.filter((word) => word.word !== item.word));
-  }, []);
-
-  const handleClearAll = useCallback(() => {
-    setSelectedWords([]);
-  }, []);
-
-  const handleTranslate = useCallback((item) => {
-    setTranslationDialog({ open: true, text: item.word });
-  }, []);
-
-  const handleAddAllToWordbook = useCallback(async () => {
-    if (selectedWords.length === 0) return;
-    if (!accessToken) {
-      toast.error("请先登录");
-      return;
-    }
-    if (!apiCall) {
-      toast.error(
-        import.meta.env.DEV
-          ? "无法发起请求：apiCall 未传入（检查 LearningShellPanelContent 是否传给 ReadingPage）"
-          : "无法发起请求：客户端未接入接口"
-      );
-      return;
-    }
-    setIsAddingToWordbook(true);
-    let successCount = 0;
-    let failCount = 0;
-    for (const item of selectedWords) {
-      try {
-        const resp = await apiCall("/api/wordbook/collect", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            lesson_id: null,
-            sentence_index: null,
-            entry_text: item.word,
-            entry_type: "word",
-            start_token_index: null,
-            end_token_index: null,
-          }),
-        });
-        await parseResponse(resp);
-        if (resp.ok) successCount += 1;
-        else failCount += 1;
-      } catch (_) {
-        failCount += 1;
-      }
-    }
-    setIsAddingToWordbook(false);
-    if (successCount > 0) {
-      toast.success(`已加入 ${successCount} 个词到生词本`);
-      setSelectedWords([]);
-    } else if (failCount > 0) {
-      toast.error(`加入失败 ${failCount} 个`);
-    }
-  }, [accessToken, apiCall, selectedWords]);
 
   const runDiagnosis = useCallback(async (
     text,
@@ -345,8 +217,8 @@ export function ReadingPage({ accessToken, apiCall }) {
     setSelectedWords([]);
     setArticleLines([]);
 
-    if (rewriteMeta?.readingPack?.status === "completed" || (rewriteMeta?.rewrittenText && rewriteMeta?.flowStatus === "generated")) {
-      setMode("pack");
+    if (rewriteMeta?.readingCourse?.mode === "reading_classroom_v1" || rewriteMeta?.courseData?.mode === "reading_classroom_v1") {
+      setMode("classroom");
       return;
     }
 
@@ -412,12 +284,10 @@ export function ReadingPage({ accessToken, apiCall }) {
     clearRewrite();
   }, [clearRewrite]);
 
-  const showAnalysisPanel = mode === "pack";
-
   return (
     <Suspense fallback={<PageFallback />}>
       <div className="reading-container">
-        {mode !== "course" && (
+        {mode !== "classroom" && (
           <HistoryPanel
             onSelect={handleSelectHistory}
             activeId={activeHistoryId}
@@ -503,99 +373,18 @@ export function ReadingPage({ accessToken, apiCall }) {
           </div>
         ) : null}
 
-        {mode === "course" ? (
+        {mode === "classroom" ? (
           <div style={{ height: "calc(100dvh - 5rem)", borderRadius: "0.75rem", overflow: "hidden", border: "1px solid var(--border)" }}>
-            <CoursePlayer
-              pack={readingPack || {
+            <ReadingClassroom
+              articleId={activeHistoryId}
+              course={readingCourse}
+              sourceTexts={{
                 originalText: activeArticleText,
                 rewrittenText: rewrittenText || activeArticleText,
-                mappings: rewriteMappings,
-                validI1Words,
-                validAboveI1Words,
-                removedWords,
-                wordLevels,
-                diagnosticSummary: {
-                  materialDifficulty: diagnosticSnapshot?.materialDifficulty || "--",
-                  preservedI1Count: diagnosticSnapshot?.preservedI1Count ?? 0,
-                  aboveI1Count: diagnosticSnapshot?.aboveI1Count ?? 0,
-                  targetLevel: diagnosticSnapshot?.selectedTargetLevel || "B1",
-                },
               }}
-              articleId={activeHistoryId}
               apiCall={apiCall}
-              accessToken={accessToken}
-              onExit={() => setMode("pack")}
+              onExit={() => setMode("diagnostic")}
             />
-          </div>
-        ) : null}
-
-        {mode === "pack" ? (
-          <div className="reading-pack-layout">
-            <div className="reading-pack-layout__main">
-              <ReadingPackPanel
-                pack={readingPack || {
-                  originalText: activeArticleText,
-                  rewrittenText: rewrittenText || activeArticleText,
-                  mappings: rewriteMappings,
-                  validI1Words,
-                  validAboveI1Words,
-                  removedWords,
-                  wordLevels,
-                  diagnosticSummary: {
-                    materialDifficulty: diagnosticSnapshot?.materialDifficulty || "--",
-                    preservedI1Count: diagnosticSnapshot?.preservedI1Count ?? 0,
-                    aboveI1Count: diagnosticSnapshot?.aboveI1Count ?? 0,
-                  },
-                  targetLevel: diagnosticSnapshot?.selectedTargetLevel || "--",
-                  comparisonCards: [],
-                }}
-                articleId={activeHistoryId}
-                packViewMode={packViewMode}
-                onPackViewModeChange={setPackViewMode}
-                contentWidth={contentWidth}
-                onWidthChange={setContentWidth}
-                onLinesReady={setArticleLines}
-                selectedWords={selectedWords}
-                onWordClick={handleWordClick}
-                activeLevels={activeLevels}
-                apiCall={apiCall}
-                accessToken={accessToken}
-                onStartCourse={() => setMode("course")}
-              />
-            </div>
-
-            <CollapseDivider
-              collapsed={!analysisPanelOpen}
-              onToggle={() => setAnalysisPanelOpen((value) => !value)}
-              collapseLabel="收起词汇表"
-              expandLabel="展开词汇表"
-            />
-            <div
-              className={cn(
-                "reading-analysis-column",
-                analysisPanelOpen ? "reading-analysis-column--open" : "reading-analysis-column--closed"
-              )}
-            >
-              {showAnalysisPanel && analysisPanelOpen ? (
-                <AnalysisPanel
-                  selectedWords={selectedWords}
-                  wordStats={wordStats}
-                  userLevel={userLevel}
-                  activeLevels={activeLevels}
-                  onLevelToggle={handleLevelToggle}
-                  onRemove={handleRemoveWord}
-                  onAddAllToWordbook={handleAddAllToWordbook}
-                  onClearAll={handleClearAll}
-                  onTranslate={handleTranslate}
-                  rewriteMappings={rewriteMappings}
-                  isAdding={isAddingToWordbook}
-                  rewriteError={rewriteError}
-                  vocabularyFilter={vocabularyFilter}
-                />
-              ) : (
-                <div className="reading-analysis-rail" />
-              )}
-            </div>
           </div>
         ) : null}
 

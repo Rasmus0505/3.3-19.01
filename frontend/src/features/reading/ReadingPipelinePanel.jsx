@@ -34,9 +34,9 @@ export function ReadingPipelinePanel({
       <div className="reading-pipeline__header">
         <div>
           <p className="reading-pipeline__eyebrow">阅读生成流水线</p>
-          <h2 className="reading-pipeline__title">把材料组装成可回看的阅读包</h2>
+          <h2 className="reading-pipeline__title">把材料组装成沉浸式阅读课堂</h2>
           <p className="reading-pipeline__copy">
-            当前重心是阶段推进、已完成节点和下一步将产出的内容，而不是黑盒式等待。
+            先完成 i+1 改写，再把文章编排成老师主导的阅读课堂，而不是停留在静态阅读包。
           </p>
         </div>
         <span className={cn("reading-pipeline__status", pipelineState?.error && "reading-pipeline__status--failed")}>
@@ -140,7 +140,7 @@ export function ReadingPipelinePanel({
             <div className="reading-pipeline__error">
               <p className="reading-pipeline__error-title">在“{activeStage?.label || pipelineState.error.stage}”阶段中断</p>
               <p className="reading-pipeline__error-copy">
-                你可以继续生成，或先打开原文继续阅读。
+                你可以继续生成，或先打开原文确认材料。
               </p>
             </div>
           ) : null}

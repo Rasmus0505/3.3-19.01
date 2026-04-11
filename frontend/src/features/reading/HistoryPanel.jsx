@@ -234,6 +234,8 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
                 (() => {
                   const rewriteMeta = rewriteMetaMap.get(record.id) || null;
                   const hasGenerated = Boolean(
+                    rewriteMeta?.readingCourse?.mode === "reading_classroom_v1" ||
+                    rewriteMeta?.courseData?.mode === "reading_classroom_v1" ||
                     rewriteMeta?.readingPack?.status === "completed" ||
                     (rewriteMeta?.rewrittenText && rewriteMeta?.flowStatus === "generated")
                   );
@@ -246,7 +248,7 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
                       rewriteMeta?.pipeline?.lastCompletedStage)
                   );
                   const statusLabel = hasGenerated
-                    ? "阅读包"
+                    ? "阅读课堂"
                     : hasInterruptedPipeline
                       ? "生成中断"
                       : hasDiagnostic

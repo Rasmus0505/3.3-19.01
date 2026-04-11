@@ -16,8 +16,8 @@ import {
   updatePackViewMode as dbUpdatePackViewMode,
   updateViewMode as dbUpdateViewMode,
 } from "../features/reading/readingRewriteDB";
+import { normalizeReadingCourse } from "../features/reading/readingCourse";
 import { buildDiagnosticSnapshot, updateDiagnosticTarget } from "../features/reading/readingDiagnostics";
-import { buildReadingPack } from "../features/reading/readingPack";
 import {
   createInitialPipelineState,
   readingPipelineReducer,
@@ -116,6 +116,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
   const [diagnosticSnapshot, setDiagnosticSnapshot] = useState(null);
   const [flowStatus, setFlowStatus] = useState("idle");
   const [readingPack, setReadingPack] = useState(null);
+  const [readingCourse, setReadingCourse] = useState(null);
   const [pipelineState, setPipelineState] = useState(createInitialPipelineState());
 
   const savedArticleIdRef = useRef(null);
@@ -139,6 +140,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
     setViewModeState("original");
     setPackViewModeState("original");
     setReadingPack(null);
+    setReadingCourse(null);
     syncPipelineState(createInitialPipelineState());
   }, [syncPipelineState]);
 
@@ -159,6 +161,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         diagnosticSnapshot: patch.diagnosticSnapshot ?? existing.diagnosticSnapshot ?? null,
         pipeline: patch.pipeline ?? existing.pipeline ?? createInitialPipelineState(),
         readingPack: patch.readingPack ?? existing.readingPack ?? null,
+        readingCourse: patch.readingCourse ?? existing.readingCourse ?? null,
         flowStatus: patch.flowStatus ?? existing.flowStatus ?? "idle",
         viewMode: patch.viewMode ?? existing.viewMode ?? "original",
         packViewMode: patch.packViewMode ?? existing.packViewMode ?? patch.viewMode ?? existing.viewMode ?? "original",
@@ -178,7 +181,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
       const nextPipeline = readingPipelineReducer(pipelineStateRef.current, action);
       syncPipelineState(nextPipeline);
       const nextFlowStatus =
-        action.type === "pack_completed"
+        action.type === "course_completed" || action.type === "pack_completed"
           ? "generated"
           : action.type === "stage_failed"
             ? "failed"
@@ -218,6 +221,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         setViewModeState(normalized.viewMode || "original");
         setPackViewModeState(normalized.packViewMode || normalized.viewMode || "original");
         setReadingPack(normalized.readingPack || null);
+        setReadingCourse(normalized.readingCourse || null);
         setRewriteError(normalized.pipeline?.error?.message || null);
         syncPipelineState(normalized.pipeline || createInitialPipelineState());
       } catch (error) {
@@ -268,6 +272,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
       setViewModeState("original");
       setPackViewModeState("original");
       setReadingPack(null);
+      setReadingCourse(null);
       syncPipelineState(initialPipeline);
       await persistRecord({
         articleId: articleIdOverride,
@@ -282,6 +287,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         removedWords: [],
         wordLevels: {},
         readingPack: null,
+        readingCourse: null,
         viewMode: "original",
         packViewMode: "original",
       });
@@ -317,6 +323,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
       setRewriteError(null);
       setFlowStatus("pipeline");
       setReadingPack(null);
+      setReadingCourse(null);
 
       const startStage = async (stage, headline, detail, progressPercent = 0, patch = {}) => {
         activeStage = stage;
@@ -332,6 +339,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
             originalText: safeOriginalText,
             diagnosticSnapshot: patch.diagnosticSnapshot ?? diagnosticSnapshot,
             readingPack: null,
+            readingCourse: patch.readingCourse ?? null,
             viewMode: "original",
             packViewMode: patch.packViewMode ?? packViewMode,
             ...patch,
@@ -350,6 +358,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
             originalText: safeOriginalText,
             diagnosticSnapshot: patch.diagnosticSnapshot ?? diagnosticSnapshot,
             readingPack: patch.readingPack ?? null,
+            readingCourse: patch.readingCourse ?? null,
             viewMode: patch.viewMode ?? "original",
             packViewMode: patch.packViewMode ?? packViewMode,
             ...patch,
@@ -370,6 +379,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
             originalText: safeOriginalText,
             diagnosticSnapshot,
             readingPack: null,
+            readingCourse: null,
             viewMode: "original",
             packViewMode,
           },
@@ -532,7 +542,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
           packViewMode: "original",
         });
 
-        await startStage("reading_pack_assembly", "组装阅读包", "正在写入阅读包资产与逐句对照", 90, {
+        await startStage("reading_course_generation", "生成阅读课堂", "正在把文章改造成沉浸式课堂", 90, {
           diagnosticSnapshot: nextDiagnosticSnapshot,
           rewrittenText: nextRewrittenText,
           mappings: nextMappings,
@@ -542,26 +552,37 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
           wordLevels: finalWordLevels,
         });
 
-        const assembledAt = Date.now();
-        const nextReadingPack = buildReadingPack({
-          articleId: articleId || savedArticleIdRef.current,
-          originalText: safeOriginalText,
-          rewrittenText: nextRewrittenText,
-          mappings: nextMappings,
-          diagnosticSnapshot: nextDiagnosticSnapshot,
-          wordLevels: finalWordLevels,
-          validI1Words: uniqueValidI1Words,
-          validAboveI1Words: uniqueFinalAboveI1Words,
-          removedWords: finalRemoved,
-          assembledAt,
+        const classroomResp = await apiCall("/api/llm/reading-course/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            article_id: articleId || savedArticleIdRef.current,
+            article_title: safeOriginalText.split(/\n+/)[0]?.slice(0, 120) || "Reading Classroom",
+            original_text: safeOriginalText,
+            rewritten_text: nextRewrittenText,
+            target_level: nextDiagnosticSnapshot.selectedTargetLevel,
+            valid_i1_words: uniqueValidI1Words,
+            valid_above_i1_words: uniqueFinalAboveI1Words,
+            word_levels: finalWordLevels,
+          }),
         });
-        setReadingPack(nextReadingPack);
+        if (!classroomResp.ok) {
+          const errorPayload = await classroomResp.json().catch(() => ({}));
+          throw new Error(errorPayload.detail || "阅读课堂生成失败");
+        }
+
+        const classroomData = await classroomResp.json();
+        const nextReadingCourse = normalizeReadingCourse(classroomData.course);
+        if (!nextReadingCourse) {
+          throw new Error("阅读课堂返回了无效结构");
+        }
+        setReadingCourse(nextReadingCourse);
 
         const finalPipelineState = await persistPipelineAction(
           {
-            type: "pack_completed",
-            stage: "reading_pack_assembly",
-            detail: "阅读包已生成完成",
+            type: "course_completed",
+            stage: "reading_course_generation",
+            detail: "阅读课堂已生成完成",
           },
           {
             originalText: safeOriginalText,
@@ -572,11 +593,11 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
             validAboveI1Words: uniqueFinalAboveI1Words,
             removedWords: finalRemoved,
             wordLevels: finalWordLevels,
-            readingPack: nextReadingPack,
+            readingCourse: nextReadingCourse,
             flowStatus: "generated",
             viewMode: "original",
             packViewMode: "original",
-            rewrittenAt: assembledAt,
+            rewrittenAt: Date.now(),
           }
         );
 
@@ -584,7 +605,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         setFlowStatus("generated");
 
         toast.success(
-          "处理完成" +
+          "阅读课堂已生成" +
             (uniqueValidI1Words.length > 0 ? `（${uniqueValidI1Words.length} 个 i+1 词汇保留）` : "") +
             (finalRemoved.length > 0 ? `，过滤 ${finalRemoved.length} 个已掌握词汇` : "")
         );
@@ -627,6 +648,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
     flowStatus,
     pipelineState,
     readingPack,
+    readingCourse,
     saveDiagnosticSnapshot,
     clearRewrite,
     handleRewrite,
