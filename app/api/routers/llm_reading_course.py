@@ -1,4 +1,4 @@
-"""Reading classroom generation endpoint."""
+"""Reading classroom generation and live discussion endpoints."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import json
 import logging
 import re
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -42,8 +43,38 @@ class ReadingCourseGenerateResponse(BaseModel):
     course: dict
 
 
+class DiscussionHistoryItem(BaseModel):
+    role: str = Field(..., pattern="^(user|assistant)$")
+    content: str = Field(..., min_length=1, max_length=2000)
+
+
+class ReadingCourseDiscussionRequest(BaseModel):
+    course: dict[str, Any]
+    scene_id: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=1, max_length=2000)
+    history: list[DiscussionHistoryItem] = Field(default_factory=list)
+
+
+class ReadingCourseDiscussionResponse(BaseModel):
+    ok: bool
+    reply: str
+    usage: dict | None = None
+
+
 def _utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _safe_dict(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _safe_list(value: object) -> list:
+    return value if isinstance(value, list) else []
+
+
+def _trim(value: object, limit: int) -> str:
+    return str(value or "").strip()[:limit]
 
 
 def _dedupe_words(words: list[str], limit: int = MAX_KEYWORDS) -> list[str]:
@@ -85,456 +116,285 @@ def _chunk_sentences(sentences: list[str], chunks: int = 3) -> list[list[str]]:
     return groups
 
 
-def _build_segment_payloads(original_text: str, rewritten_text: str) -> list[dict]:
+def _build_segments(original_text: str, rewritten_text: str) -> list[dict]:
     original_groups = _chunk_sentences(_split_sentences(original_text), 3)
     rewritten_groups = _chunk_sentences(_split_sentences(rewritten_text), 3)
     total = max(len(original_groups), len(rewritten_groups), 1)
-    segments: list[dict] = []
-    for index in range(total):
-        rewritten_segment = " ".join(rewritten_groups[index]) if index < len(rewritten_groups) else ""
-        original_segment = " ".join(original_groups[index]) if index < len(original_groups) else ""
-        segments.append(
-            {
-                "id": f"segment-{index + 1}",
-                "heading": f"Part {index + 1}",
-                "rewritten_text": rewritten_segment,
-                "original_text": original_segment,
-                "focus": "Identify the main idea and one supporting detail.",
-                "teacher_note": "Focus on the logic of this part before checking difficult wording.",
-                "question": "What is the most important idea in this part?",
-            }
-        )
-    return segments
-
-
-def _build_fallback_quiz(segments: list[dict], keywords: list[str]) -> list[dict]:
-    quiz: list[dict] = []
-    if segments:
-        quiz.append(
-            {
-                "type": "mcq",
-                "question": "What should you focus on first when reading this article?",
-                "options": [
-                    "The main idea of each part",
-                    "Every difficult word separately",
-                    "Only the title",
-                    "Only the last sentence",
-                ],
-                "answer": "The main idea of each part",
-            }
-        )
-    if keywords:
-        quiz.append(
-            {
-                "type": "fill",
-                "sentence": f"One key word from this lesson is ___ .",
-                "answer": keywords[0],
-            }
-        )
-    if len(segments) >= 3:
-        quiz.append(
-            {
-                "type": "order",
-                "sentences": [segment["heading"] for segment in segments[:3]],
-                "correct_order": [0, 1, 2],
-            }
-        )
-    return quiz
+    return [
+        {
+            "id": f"segment-{index + 1}",
+            "heading": f"Part {index + 1}",
+            "rewritten_text": " ".join(rewritten_groups[index]) if index < len(rewritten_groups) else "",
+            "original_text": " ".join(original_groups[index]) if index < len(original_groups) else "",
+            "focus": "Identify the main idea and one supporting detail.",
+            "teacher_note": "Stay with the logic first, then return to the difficult wording.",
+            "question": "What is the key message of this part?",
+        }
+        for index in range(total)
+    ]
 
 
 def _build_fallback_course(body: ReadingCourseGenerateRequest) -> dict:
     keywords = _dedupe_words([*body.valid_above_i1_words, *body.valid_i1_words])
-    segments = _build_segment_payloads(body.original_text, body.rewritten_text)
-    explanation_points = [
+    segments = _build_segments(body.original_text, body.rewritten_text)
+    title_seed = str(body.article_title or "").strip() or "Reading Classroom"
+    scenes = [
         {
-            "label": word,
-            "explanation": f'This word may feel above {body.target_level}, so treat it as context-supported vocabulary.',
-            "example": f'Try paraphrasing "{word}" in simpler English before returning to the original phrase.',
-        }
-        for word in keywords[:3]
+            "id": "entry",
+            "type": "entry",
+            "title": "进入课堂",
+            "goal": "先知道这节阅读课要怎么推进。",
+            "beats": [
+                {"id": "entry-1", "type": "hero", "speaker": "teacher", "title": "今天这节课怎么学", "text": "We will move through this article as a guided classroom, not as a wall of text."},
+                {"id": "entry-2", "type": "bullet_list", "title": "课堂目标", "items": ["先用 i+1 版本抓住主线意思", "遇到关键难点再回看原文支撑", "最后把理解变成你自己的英文输出"]},
+                {"id": "entry-3", "type": "teacher_talk", "speaker": "teacher", "text": "Stay with the flow. You do not need to solve every difficult word before the meaning appears."},
+            ],
+        },
+        {
+            "id": "preview",
+            "type": "preview",
+            "title": "预热与关键词",
+            "goal": "先建立阅读预期，再带着关注点进入正文。",
+            "beats": [
+                {"id": "preview-1", "type": "teacher_talk", "speaker": "teacher", "text": "Before we read closely, scan the watchwords and predict what kind of argument or story is coming."},
+                {"id": "preview-2", "type": "keyword_grid", "title": "Watchwords", "keywords": [{"word": word, "reason": f"Important for understanding the text at {body.target_level} level.", "tip": "Try paraphrasing it in simpler English before checking the full sentence again."} for word in keywords]},
+                {"id": "preview-3", "type": "teacher_talk", "speaker": "teacher", "text": "When you already know the likely pressure points, the reading becomes much smoother."},
+            ],
+        },
+        {
+            "id": "guided-reading",
+            "type": "guided_reading",
+            "title": "老师带读",
+            "goal": "一段一段推进理解，不再上下扫整篇文章。",
+            "beats": [{"id": segment["id"], "type": "reading_segment", "speaker": "teacher", "title": segment["heading"], "segment": segment, "aside": segment["focus"], "cta": segment["question"]} for segment in segments],
+        },
+        {
+            "id": "deep-explain",
+            "type": "deep_explain",
+            "title": "讲透难点",
+            "goal": "把真正值钱的词、表达和逻辑讲明白。",
+            "beats": [
+                {"id": "deep-explain-1", "type": "teacher_talk", "speaker": "teacher", "text": "Now we slow down only for the places that actually change your understanding of the article."},
+                {"id": "deep-explain-2", "type": "explanation_grid", "title": "重点拆解", "points": [{"label": word, "explanation": f'Link "{word}" back to the surrounding sentence before translating it word by word.', "example": "Explain the idea in simpler English, then compare it with the original wording."} for word in (keywords[:4] or ["structure", "signal", "detail"])]},
+            ],
+        },
+        {
+            "id": "checkpoint",
+            "type": "checkpoint",
+            "title": "理解检查",
+            "goal": "确认你已经抓住文章主线。",
+            "beats": [{"id": "checkpoint-1", "type": "teacher_talk", "speaker": "teacher", "text": "Answer quickly. This checkpoint is here to confirm direction, not to trap you."}],
+            "task": {
+                "instructions": "Answer the questions before moving to the discussion scene.",
+                "questions": [
+                    {"type": "mcq", "question": "What should you focus on first when reading this lesson?", "options": ["The main idea of each part", "Every difficult word separately", "Only the title", "Only the final paragraph"], "answer": "The main idea of each part"},
+                    {"type": "fill", "sentence": "One useful lesson word is ___.", "answer": keywords[0] if keywords else "main idea"},
+                ],
+            },
+        },
+        {
+            "id": "discussion",
+            "type": "discussion",
+            "title": "课堂讨论",
+            "goal": "先看老师和同学怎么谈，再决定你要不要追问。",
+            "beats": [
+                {"id": "discussion-1", "type": "conversation", "title": "示范讨论", "messages": [
+                    {"speaker": "teacher", "text": "Read the main direction first. The article becomes easier once you stop fighting every difficult phrase."},
+                    {"speaker": "student", "text": "So the wording supports the argument, but it is not the first thing I should solve?"},
+                    {"speaker": "assistant", "text": "Exactly. Build the meaning route first, then return for precision."},
+                ]},
+                {"id": "discussion-2", "type": "teacher_talk", "speaker": "teacher", "text": "If one point still feels fuzzy, ask it now instead of carrying confusion into the writing task."},
+            ],
+            "live_hook": {
+                "enabled": True,
+                "prompt": "Continue the classroom discussion as the lead reading teacher. Keep the explanation concise, natural, and tied to the article.",
+                "suggested_questions": [
+                    "Can you restate the main claim in simpler English?",
+                    "Which sentence should I reread if I still feel lost?",
+                    "What is the most important word or phrase in this article?",
+                ],
+            },
+        },
+        {
+            "id": "output",
+            "type": "output",
+            "title": "你的输出",
+            "goal": "把输入转成你自己的表达。",
+            "beats": [{"id": "output-1", "type": "teacher_talk", "speaker": "teacher", "text": "Now use your own English. Short, clear, and controlled is better than sounding advanced but vague."}],
+            "task": {
+                "prompt": "Write 3-4 sentences to explain the article's main idea and one supporting detail.",
+                "guidance": "Use at least one lesson word and keep your explanation clear.",
+                "checklist": ["State the main idea", "Add one supporting detail", "Use one lesson word or phrase"],
+            },
+        },
+        {
+            "id": "wrap-up",
+            "type": "wrap_up",
+            "title": "收束与下一步",
+            "goal": "把今天的节奏和重点收回来。",
+            "beats": [
+                {"id": "wrap-1", "type": "teacher_talk", "speaker": "teacher", "text": "Meaning first, precision second, output last. That is the rhythm of this reading class."},
+                {"id": "wrap-2", "type": "bullet_list", "title": "带走三件事", "items": ["Use the i+1 version to enter the text quickly", "Return to the original wording only when precision matters", "Turn reading into output so the language sticks"]},
+                {"id": "wrap-3", "type": "teacher_talk", "speaker": "teacher", "text": "Pick one segment after class and paraphrase it aloud in your own English."},
+            ],
+        },
     ]
-    if not explanation_points:
-        explanation_points = [
-            {
-                "label": "Structure",
-                "explanation": "Track the claim, support, and conclusion in each part before checking details.",
-                "example": "Ask yourself: what is the writer trying to prove here?",
-            }
-        ]
-
-    title_seed = str(body.article_title or "").strip()
-    if not title_seed:
-        title_seed = "Reading Classroom"
-
     return {
-        "schema_version": 1,
-        "mode": "reading_classroom_v1",
+        "schema_version": 2,
+        "mode": "reading_classroom_v2",
         "article_id": body.article_id,
         "article_title": title_seed[:120],
         "target_level": body.target_level,
         "generated_at": _utc_iso(),
-        "teacher": {
-            "name": "Coach Mira",
-            "persona": "A calm reading coach who keeps the lesson focused on meaning, structure, and usable English.",
-            "tone": "clear and encouraging",
+        "course_meta": {"cover_kicker": "Immersive Reading", "summary": "Teacher-led reading flow with guided explanation, discussion, and output.", "estimated_minutes": max(8, len(scenes) * 2)},
+        "cast": {
+            "teacher": {"name": "Coach Mira", "persona": "A calm reading coach who helps you move from meaning to language and then to output.", "tone": "focused and encouraging"},
+            "assistant": {"name": "Noah", "persona": "A concise teaching assistant who reframes ideas in simpler English.", "tone": "clear and practical"},
+            "students": [{"name": "Lena", "persona": "A curious student who asks the question you were about to ask."}],
         },
-        "source": {
-            "primary_text": "rewritten",
-            "word_counts": {
-                "original": len(_split_sentences(body.original_text)),
-                "rewritten": len(_split_sentences(body.rewritten_text)),
-            },
-        },
-        "scenes": [
-            {
-                "id": "intro",
-                "type": "intro",
-                "title": "进入课堂",
-                "goal": "建立阅读目标和课堂节奏。",
-                "content": {
-                    "hook": "This lesson turns one article into a guided reading classroom.",
-                    "teacher_opening": "We will read for meaning first, then unpack vocabulary, structure, and your own response.",
-                    "objectives": [
-                        "Understand the article through i+1 text first",
-                        "Return to the original wording for difficult points",
-                        "Finish with a short output task",
-                    ],
-                },
-            },
-            {
-                "id": "warmup",
-                "type": "warmup",
-                "title": "预热与关键词",
-                "goal": "先建立本课的关注点和关键词。",
-                "content": {
-                    "preview": "Before reading closely, scan the key words and predict the article focus.",
-                    "keywords": [
-                        {
-                            "word": word,
-                            "reason": f"Important for understanding the text at {body.target_level} level.",
-                            "tip": "Try to explain it with simpler English before reading the full article.",
-                        }
-                        for word in keywords
-                    ],
-                    "check_in": "Which word do you already know well, and which one do you want to watch for?",
-                },
-            },
-            {
-                "id": "close-reading",
-                "type": "close_reading",
-                "title": "分段精读",
-                "goal": "按段推进主线理解，再回看原文细节。",
-                "content": {
-                    "segments": segments,
-                },
-            },
-            {
-                "id": "explanation",
-                "type": "explanation",
-                "title": "难点拆解",
-                "goal": "把难词、表达和结构重新讲清楚。",
-                "content": {
-                    "points": explanation_points,
-                },
-            },
-            {
-                "id": "quiz",
-                "type": "quiz",
-                "title": "理解检查",
-                "goal": "检查你是否抓住文章重点。",
-                "content": {
-                    "instructions": "Answer the questions before moving to the output task.",
-                    "questions": _build_fallback_quiz(segments, keywords),
-                },
-            },
-            {
-                "id": "output",
-                "type": "output",
-                "title": "输出任务",
-                "goal": "用自己的英语重新组织文章内容。",
-                "content": {
-                    "prompt": "Write 3-4 sentences to explain the main idea of the article and one detail that matters.",
-                    "guidance": "Use at least one key word from the lesson and keep your language clear.",
-                    "checklist": [
-                        "State the main idea",
-                        "Add one supporting detail",
-                        "Use one lesson word or phrase",
-                    ],
-                },
-            },
-            {
-                "id": "wrap-up",
-                "type": "wrap_up",
-                "title": "课堂收束",
-                "goal": "回收重点并告诉你下一步怎么练。",
-                "content": {
-                    "takeaways": [
-                        "Read the i+1 version for main meaning first",
-                        "Use the original text to confirm difficult wording",
-                        "Turn reading into output to make it stick",
-                    ],
-                    "teacher_closing": "You do not need to decode every word first. Build the meaning, then refine the language.",
-                    "next_step": "Re-read one close-reading segment aloud and paraphrase it in your own words.",
-                },
-            },
-        ],
+        "source": {"primary_text": "rewritten", "segment_count": len(segments), "keywords": keywords, "word_counts": {"original": len(_split_sentences(body.original_text)), "rewritten": len(_split_sentences(body.rewritten_text))}},
+        "scenes": scenes,
+        "runtime": {"activeSceneIndex": 0, "revealCountsByScene": {"entry": 1}, "completedSceneIds": [], "quiz": {}, "output": {}, "discussion": {}, "completedAt": None, "lastViewedAt": int(datetime.now(timezone.utc).timestamp() * 1000), "totalScenes": len(scenes)},
     }
 
 
-def _build_messages(body: ReadingCourseGenerateRequest, segments: list[dict], keywords: list[str]) -> list[dict]:
-    system = """You are designing a reading-focused English classroom, not a generic course.
-Return ONLY valid JSON with this exact top-level shape:
-{
-  "title": "string",
-  "teacher": {"name": "string", "persona": "string", "tone": "string"},
-  "intro": {"title": "string", "hook": "string", "teacher_opening": "string", "objectives": ["string"]},
-  "warmup": {
-    "title": "string",
-    "preview": "string",
-    "keywords": [{"word": "string", "reason": "string", "tip": "string"}],
-    "check_in": "string"
-  },
-  "close_reading": {
-    "title": "string",
-    "segments": [{"heading": "string", "focus": "string", "teacher_note": "string", "question": "string"}]
-  },
-  "explanation": {
-    "title": "string",
-    "points": [{"label": "string", "explanation": "string", "example": "string"}]
-  },
-  "quiz": {
-    "title": "string",
-    "instructions": "string",
-    "questions": []
-  },
-  "output": {
-    "title": "string",
-    "prompt": "string",
-    "guidance": "string",
-    "checklist": ["string"]
-  },
-  "wrap_up": {
-    "title": "string",
-    "takeaways": ["string"],
-    "teacher_closing": "string",
-    "next_step": "string"
-  }
-}
-
-Rules:
-- This is a reading-specific classroom for one article.
-- Use rewritten text as the main teaching base, original text as support.
-- Teacher is the clear lead voice. At most imply a student, but do not create multi-agent chaos.
-- Keep the UI copy concise and practical.
-- close_reading.segments must have the same count as the provided segments.
-- explanation.points should focus on difficult vocabulary, phrasing, or logic.
-- quiz.questions may include mcq, fill, and order questions only.
-- Output must be compact, useful, and implementation-ready."""
-
-    user_content = (
-        f"Article title: {body.article_title or 'Reading Classroom'}\n"
-        f"Target level: {body.target_level}\n"
-        f"Priority keywords: {', '.join(keywords) if keywords else '(choose important words yourself)'}\n\n"
-        f"Rewritten text:\n{body.rewritten_text[:MAX_TEXT_CHARS]}\n\n"
-        f"Original text:\n{body.original_text[:MAX_TEXT_CHARS]}\n\n"
-        "Prepared close-reading segments:\n"
-        + json.dumps(
-            [
-                {
-                    "id": segment["id"],
-                    "rewritten_text": segment["rewritten_text"],
-                    "original_text": segment["original_text"],
+def _sanitize_scene(fallback_scene: dict, scene_payload: dict) -> dict:
+    next_scene = json.loads(json.dumps(fallback_scene))
+    next_scene["title"] = _trim(scene_payload.get("title") or next_scene["title"], 80) or next_scene["title"]
+    next_scene["goal"] = _trim(scene_payload.get("goal") or next_scene["goal"], 160) or next_scene["goal"]
+    beats = _safe_list(scene_payload.get("beats"))
+    if beats:
+        next_beats: list[dict] = []
+        for index, beat in enumerate(beats[:6]):
+            item = _safe_dict(beat)
+            fallback_beat = next_scene["beats"][min(index, len(next_scene["beats"]) - 1)]
+            beat_type = _trim(item.get("type") or fallback_beat.get("type"), 40) or fallback_beat.get("type")
+            next_beat = {
+                "id": _trim(item.get("id") or fallback_beat.get("id"), 60) or fallback_beat.get("id"),
+                "type": beat_type,
+                "speaker": _trim(item.get("speaker") or fallback_beat.get("speaker"), 24) if item.get("speaker") or fallback_beat.get("speaker") else None,
+                "title": _trim(item.get("title") or fallback_beat.get("title"), 120),
+                "text": _trim(item.get("text") or fallback_beat.get("text"), 420),
+                "aside": _trim(item.get("aside") or fallback_beat.get("aside"), 220),
+                "cta": _trim(item.get("cta") or fallback_beat.get("cta"), 220),
+            }
+            if beat_type == "bullet_list":
+                items = [_trim(v, 160) for v in _safe_list(item.get("items")) if _trim(v, 160)]
+                next_beat["items"] = items or fallback_beat.get("items", [])
+            if beat_type == "keyword_grid":
+                keywords = []
+                for raw_keyword in _safe_list(item.get("keywords"))[:MAX_KEYWORDS]:
+                    keyword = _safe_dict(raw_keyword)
+                    word = _trim(keyword.get("word"), 40)
+                    if not word:
+                        continue
+                    keywords.append({"word": word, "reason": _trim(keyword.get("reason"), 180), "tip": _trim(keyword.get("tip"), 180)})
+                next_beat["keywords"] = keywords or fallback_beat.get("keywords", [])
+            if beat_type == "explanation_grid":
+                points = []
+                for raw_point in _safe_list(item.get("points"))[:6]:
+                    point = _safe_dict(raw_point)
+                    label = _trim(point.get("label"), 80)
+                    explanation = _trim(point.get("explanation"), 320)
+                    if not label or not explanation:
+                        continue
+                    points.append({"label": label, "explanation": explanation, "example": _trim(point.get("example"), 220)})
+                next_beat["points"] = points or fallback_beat.get("points", [])
+            if beat_type == "conversation":
+                messages = []
+                for raw_message in _safe_list(item.get("messages"))[:6]:
+                    message = _safe_dict(raw_message)
+                    text = _trim(message.get("text") or message.get("content"), 320)
+                    if not text:
+                        continue
+                    messages.append({"speaker": _trim(message.get("speaker") or message.get("role") or "teacher", 24), "text": text})
+                next_beat["messages"] = messages or fallback_beat.get("messages", [])
+            if beat_type == "reading_segment":
+                segment = _safe_dict(item.get("segment"))
+                fallback_segment = _safe_dict(fallback_beat.get("segment"))
+                next_beat["segment"] = {
+                    **fallback_segment,
+                    "heading": _trim(segment.get("heading") or fallback_segment.get("heading"), 80) or fallback_segment.get("heading"),
+                    "focus": _trim(segment.get("focus") or fallback_segment.get("focus"), 220) or fallback_segment.get("focus"),
+                    "teacher_note": _trim(segment.get("teacher_note") or fallback_segment.get("teacher_note"), 320) or fallback_segment.get("teacher_note"),
+                    "question": _trim(segment.get("question") or fallback_segment.get("question"), 220) or fallback_segment.get("question"),
                 }
-                for segment in segments
-            ],
-            ensure_ascii=False,
-        )
-    )
-    return [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user_content},
-    ]
-
-
-def _safe_list(value: object) -> list:
-    return value if isinstance(value, list) else []
-
-
-def _safe_dict(value: object) -> dict:
-    return value if isinstance(value, dict) else {}
-
-
-def _merge_course_payload(base_course: dict, ai_payload: dict | None) -> dict:
-    if not isinstance(ai_payload, dict):
-        return base_course
-
-    next_course = json.loads(json.dumps(base_course))
-
-    teacher = _safe_dict(ai_payload.get("teacher"))
-    if teacher:
-        next_course["teacher"] = {
-            "name": str(teacher.get("name") or next_course["teacher"]["name"])[:60],
-            "persona": str(teacher.get("persona") or next_course["teacher"]["persona"])[:240],
-            "tone": str(teacher.get("tone") or next_course["teacher"]["tone"])[:80],
+                if not next_beat["title"]:
+                    next_beat["title"] = next_beat["segment"]["heading"]
+            next_beats.append(next_beat)
+        next_scene["beats"] = next_beats or next_scene["beats"]
+    task = _safe_dict(scene_payload.get("task"))
+    if task and next_scene.get("task"):
+        if next_scene["type"] == "checkpoint":
+            questions = [question for question in _safe_list(task.get("questions")) if isinstance(question, dict) and _validate_question(question)]
+            next_scene["task"]["instructions"] = _trim(task.get("instructions") or next_scene["task"].get("instructions"), 220)
+            if questions:
+                next_scene["task"]["questions"] = questions[:6]
+        if next_scene["type"] == "output":
+            next_scene["task"]["prompt"] = _trim(task.get("prompt") or next_scene["task"].get("prompt"), 240)
+            next_scene["task"]["guidance"] = _trim(task.get("guidance") or next_scene["task"].get("guidance"), 220)
+            checklist = [_trim(v, 160) for v in _safe_list(task.get("checklist")) if _trim(v, 160)]
+            if checklist:
+                next_scene["task"]["checklist"] = checklist[:5]
+    live_hook = _safe_dict(scene_payload.get("live_hook"))
+    if live_hook and next_scene.get("live_hook"):
+        next_scene["live_hook"] = {
+            "enabled": live_hook.get("enabled") is not False,
+            "prompt": _trim(live_hook.get("prompt") or next_scene["live_hook"].get("prompt"), 320),
+            "suggested_questions": [_trim(v, 160) for v in _safe_list(live_hook.get("suggested_questions")) if _trim(v, 160)][:5] or next_scene["live_hook"].get("suggested_questions", []),
         }
+    return next_scene
 
-    title = str(ai_payload.get("title") or "").strip()
+
+def _merge_course_payload(fallback_course: dict, ai_payload: dict | None) -> dict:
+    if not isinstance(ai_payload, dict):
+        return fallback_course
+    course = json.loads(json.dumps(fallback_course))
+    title = _trim(ai_payload.get("title"), 120)
     if title:
-        next_course["article_title"] = title[:120]
-
-    intro = _safe_dict(ai_payload.get("intro"))
-    if intro:
-        next_course["scenes"][0]["title"] = str(intro.get("title") or next_course["scenes"][0]["title"])
-        next_course["scenes"][0]["content"]["hook"] = str(intro.get("hook") or next_course["scenes"][0]["content"]["hook"])
-        next_course["scenes"][0]["content"]["teacher_opening"] = str(
-            intro.get("teacher_opening") or next_course["scenes"][0]["content"]["teacher_opening"]
-        )
-        objectives = [str(item).strip() for item in _safe_list(intro.get("objectives")) if str(item).strip()]
-        if objectives:
-            next_course["scenes"][0]["content"]["objectives"] = objectives[:4]
-
-    warmup = _safe_dict(ai_payload.get("warmup"))
-    if warmup:
-        next_course["scenes"][1]["title"] = str(warmup.get("title") or next_course["scenes"][1]["title"])
-        next_course["scenes"][1]["content"]["preview"] = str(
-            warmup.get("preview") or next_course["scenes"][1]["content"]["preview"]
-        )
-        next_course["scenes"][1]["content"]["check_in"] = str(
-            warmup.get("check_in") or next_course["scenes"][1]["content"]["check_in"]
-        )
-        keywords = []
-        for item in _safe_list(warmup.get("keywords")):
-            if not isinstance(item, dict):
-                continue
-            word = str(item.get("word") or "").strip()
-            if not word:
-                continue
-            keywords.append(
-                {
-                    "word": word[:40],
-                    "reason": str(item.get("reason") or "").strip()[:160],
-                    "tip": str(item.get("tip") or "").strip()[:160],
-                }
-            )
-        if keywords:
-            next_course["scenes"][1]["content"]["keywords"] = keywords[:MAX_KEYWORDS]
-
-    close_reading = _safe_dict(ai_payload.get("close_reading"))
-    close_reading_segments = _safe_list(close_reading.get("segments"))
-    if close_reading:
-        next_course["scenes"][2]["title"] = str(
-            close_reading.get("title") or next_course["scenes"][2]["title"]
-        )
-    if close_reading_segments:
-        for index, segment in enumerate(next_course["scenes"][2]["content"]["segments"]):
-            if index >= len(close_reading_segments):
-                break
-            item = _safe_dict(close_reading_segments[index])
-            segment["heading"] = str(item.get("heading") or segment["heading"])[:80]
-            segment["focus"] = str(item.get("focus") or segment["focus"])[:220]
-            segment["teacher_note"] = str(item.get("teacher_note") or segment["teacher_note"])[:320]
-            segment["question"] = str(item.get("question") or segment["question"])[:220]
-
-    explanation = _safe_dict(ai_payload.get("explanation"))
-    if explanation:
-        next_course["scenes"][3]["title"] = str(
-            explanation.get("title") or next_course["scenes"][3]["title"]
-        )
-        points = []
-        for item in _safe_list(explanation.get("points")):
-            if not isinstance(item, dict):
-                continue
-            label = str(item.get("label") or "").strip()
-            explanation_text = str(item.get("explanation") or "").strip()
-            if not label or not explanation_text:
-                continue
-            points.append(
-                {
-                    "label": label[:80],
-                    "explanation": explanation_text[:320],
-                    "example": str(item.get("example") or "").strip()[:220],
-                }
-            )
-        if points:
-            next_course["scenes"][3]["content"]["points"] = points[:5]
-
-    quiz = _safe_dict(ai_payload.get("quiz"))
-    if quiz:
-        next_course["scenes"][4]["title"] = str(quiz.get("title") or next_course["scenes"][4]["title"])
-        next_course["scenes"][4]["content"]["instructions"] = str(
-            quiz.get("instructions") or next_course["scenes"][4]["content"]["instructions"]
-        )
-        questions = [
-            question
-            for question in _safe_list(quiz.get("questions"))
-            if isinstance(question, dict) and _validate_question(question)
-        ]
-        if questions:
-            next_course["scenes"][4]["content"]["questions"] = questions[:6]
-
-    output = _safe_dict(ai_payload.get("output"))
-    if output:
-        next_course["scenes"][5]["title"] = str(output.get("title") or next_course["scenes"][5]["title"])
-        next_course["scenes"][5]["content"]["prompt"] = str(
-            output.get("prompt") or next_course["scenes"][5]["content"]["prompt"]
-        )
-        next_course["scenes"][5]["content"]["guidance"] = str(
-            output.get("guidance") or next_course["scenes"][5]["content"]["guidance"]
-        )
-        checklist = [str(item).strip() for item in _safe_list(output.get("checklist")) if str(item).strip()]
-        if checklist:
-            next_course["scenes"][5]["content"]["checklist"] = checklist[:4]
-
-    wrap_up = _safe_dict(ai_payload.get("wrap_up"))
-    if wrap_up:
-        next_course["scenes"][6]["title"] = str(wrap_up.get("title") or next_course["scenes"][6]["title"])
-        takeaways = [str(item).strip() for item in _safe_list(wrap_up.get("takeaways")) if str(item).strip()]
-        if takeaways:
-            next_course["scenes"][6]["content"]["takeaways"] = takeaways[:4]
-        next_course["scenes"][6]["content"]["teacher_closing"] = str(
-            wrap_up.get("teacher_closing") or next_course["scenes"][6]["content"]["teacher_closing"]
-        )
-        next_course["scenes"][6]["content"]["next_step"] = str(
-            wrap_up.get("next_step") or next_course["scenes"][6]["content"]["next_step"]
-        )
-
-    return next_course
+        course["article_title"] = title
+    course_meta = _safe_dict(ai_payload.get("course_meta"))
+    if course_meta:
+        course["course_meta"]["cover_kicker"] = _trim(course_meta.get("cover_kicker") or course["course_meta"]["cover_kicker"], 60)
+        course["course_meta"]["summary"] = _trim(course_meta.get("summary") or course["course_meta"]["summary"], 240)
+        course["course_meta"]["estimated_minutes"] = max(6, int(course_meta.get("estimated_minutes") or course["course_meta"]["estimated_minutes"]))
+    cast = _safe_dict(ai_payload.get("cast"))
+    if cast:
+        teacher = _safe_dict(cast.get("teacher"))
+        assistant = _safe_dict(cast.get("assistant"))
+        if teacher:
+            course["cast"]["teacher"] = {"name": _trim(teacher.get("name") or course["cast"]["teacher"]["name"], 60), "persona": _trim(teacher.get("persona") or course["cast"]["teacher"]["persona"], 240), "tone": _trim(teacher.get("tone") or course["cast"]["teacher"]["tone"], 80)}
+        if assistant:
+            course["cast"]["assistant"] = {"name": _trim(assistant.get("name") or course["cast"]["assistant"]["name"], 60), "persona": _trim(assistant.get("persona") or course["cast"]["assistant"]["persona"], 240), "tone": _trim(assistant.get("tone") or course["cast"]["assistant"]["tone"], 80)}
+    scenes = _safe_list(ai_payload.get("scenes"))
+    if scenes:
+        merged_scenes = []
+        for fallback_scene in course["scenes"]:
+            scene_payload = next((item for item in scenes if _trim(_safe_dict(item).get("id"), 60) == fallback_scene["id"]), None)
+            merged_scenes.append(_sanitize_scene(fallback_scene, _safe_dict(scene_payload)) if scene_payload else fallback_scene)
+        course["scenes"] = merged_scenes
+    return course
 
 
-@router.post(
-    "/reading-course/generate",
-    response_model=ReadingCourseGenerateResponse,
-    responses={503: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
-)
-def generate_reading_course_endpoint(
-    body: ReadingCourseGenerateRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+@router.post("/reading-course/generate", response_model=ReadingCourseGenerateResponse, responses={503: {"model": ErrorResponse}, 422: {"model": ErrorResponse}})
+def generate_reading_course_endpoint(body: ReadingCourseGenerateRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     from app.api.routers import llm as llm_root
 
     api_key = _require_api_key()
     llm_root.ensure_default_billing_rates(db)
-
-    keywords = _dedupe_words([*body.valid_above_i1_words, *body.valid_i1_words])
     fallback_course = _build_fallback_course(body)
-    messages = _build_messages(body, fallback_course["scenes"][2]["content"]["segments"], keywords)
-
+    messages = [
+        {"role": "system", "content": "Design a teacher-led immersive English reading classroom. Return only valid JSON with keys: title, course_meta, cast, scenes. Preserve scene ids and order from the provided fallback structure. Keep the class compact, single-screen, and implementation-ready."},
+        {"role": "user", "content": "Rewrite and refine this fallback classroom structure:\n" + json.dumps(fallback_course, ensure_ascii=False) + "\n\nRewritten article:\n" + body.rewritten_text[:MAX_TEXT_CHARS] + "\n\nOriginal article:\n" + body.original_text[:MAX_TEXT_CHARS]},
+    ]
     try:
-        raw_response, usage = llm_root.call_deepseek(
-            messages=messages,
-            api_key=api_key,
-            enable_thinking=False,
-            stream=False,
-            temperature=0.55,
-            max_tokens=4096,
-        )
+        raw_response, usage = llm_root.call_deepseek(messages=messages, api_key=api_key, enable_thinking=False, stream=False, temperature=0.45, max_tokens=4096)
     except Exception as exc:
-        logger.warning("Reading course generation LLM call failed, returning fallback: %s", exc)
+        logger.warning("Reading course generation failed, returning fallback: %s", exc)
         return ReadingCourseGenerateResponse(ok=True, course=fallback_course)
 
     recovered = recover_json_payload(raw_response) or strip_json_fences(raw_response)
-    parsed_payload: dict | None = None
+    parsed_payload = None
     try:
         parsed = json.loads(recovered)
         if isinstance(parsed, dict):
@@ -543,27 +403,76 @@ def generate_reading_course_endpoint(
         logger.warning("Reading course JSON parse failed. Raw: %.300s", raw_response)
 
     course = _merge_course_payload(fallback_course, parsed_payload)
-
     try:
         rate = llm_root.get_model_rate(db, llm_root.LLM_MODEL_DEEPSEEK_FAST)
         if rate:
             total_tokens = usage.prompt_tokens + usage.completion_tokens
-            charge = llm_root.calculate_llm_charge_by_tokens(
-                total_tokens=total_tokens,
-                points_per_1k_tokens=rate.points_per_1k_tokens,
-            )
+            charge = llm_root.calculate_llm_charge_by_tokens(total_tokens=total_tokens, points_per_1k_tokens=rate.points_per_1k_tokens)
             if charge > 0:
-                llm_root.consume_points(
-                    db,
-                    user_id=current_user.id,
-                    points=charge,
-                    model_name=llm_root.LLM_MODEL_DEEPSEEK_FAST,
-                    lesson_id=None,
-                    event_type=llm_root.EVENT_CONSUME_LLM,
-                    note=f"reading course generation, tokens={total_tokens}",
-                )
+                llm_root.consume_points(db, user_id=current_user.id, points=charge, model_name=llm_root.LLM_MODEL_DEEPSEEK_FAST, lesson_id=None, event_type=llm_root.EVENT_CONSUME_LLM, note=f"reading course generation, tokens={total_tokens}")
                 db.commit()
     except Exception:
         logger.warning("Reading course billing failed silently for user %s", current_user.id)
-
     return ReadingCourseGenerateResponse(ok=True, course=course)
+
+
+def _find_scene(course: dict[str, Any], scene_id: str) -> dict[str, Any] | None:
+    for scene in _safe_list(course.get("scenes")):
+        item = _safe_dict(scene)
+        if str(item.get("id") or "") == scene_id:
+            return item
+    return None
+
+
+@router.post("/reading-course/discussion", response_model=ReadingCourseDiscussionResponse, responses={503: {"model": ErrorResponse}, 422: {"model": ErrorResponse}})
+def continue_reading_course_discussion(body: ReadingCourseDiscussionRequest, current_user: User = Depends(get_current_user)):
+    from app.infra.llm.deepseek import call_deepseek
+
+    api_key = _require_api_key()
+    scene = _find_scene(body.course, body.scene_id)
+    if not scene:
+        raise HTTPException(status_code=404, detail="Scene not found in course payload")
+
+    teacher = _safe_dict(_safe_dict(body.course.get("cast")).get("teacher"))
+    live_hook = _safe_dict(scene.get("live_hook") or scene.get("liveHook"))
+    scene_summary_lines = []
+    for beat in _safe_list(scene.get("beats"))[:4]:
+        item = _safe_dict(beat)
+        if item.get("type") == "reading_segment":
+            segment = _safe_dict(item.get("segment"))
+            scene_summary_lines.append(f"- {segment.get('heading')}: {_trim(segment.get('rewritten_text'), 220)}")
+        elif item.get("type") == "conversation":
+            for message in _safe_list(item.get("messages"))[:4]:
+                msg = _safe_dict(message)
+                scene_summary_lines.append(f"- {_trim(msg.get('speaker'), 24)}: {_trim(msg.get('text') or msg.get('content'), 220)}")
+        else:
+            text = _trim(item.get("text"), 220)
+            if text:
+                scene_summary_lines.append(f"- {item.get('type')}: {text}")
+
+    system_prompt = (
+        "You are the lead teacher in an immersive English reading classroom.\n"
+        "Keep each reply to 2-4 sentences. Stay teacher-led, concise, and tied to the article.\n"
+        "If the learner writes Chinese, you may mix Chinese and English lightly, but keep the answer mostly English when possible.\n"
+        f"Course title: {_trim(body.course.get('article_title'), 120)}\n"
+        f"Target level: {_trim(body.course.get('target_level'), 8)}\n"
+        f"Teacher: {_trim(teacher.get('name') or 'Teacher', 60)}\n"
+        f"Teacher persona: {_trim(teacher.get('persona'), 220)}\n"
+        f"Scene title: {_trim(scene.get('title'), 120)}\n"
+        f"Scene goal: {_trim(scene.get('goal'), 220)}\n"
+        + (f"Live hook: {_trim(live_hook.get('prompt'), 320)}\n" if live_hook else "")
+        + "Scene material:\n"
+        + "\n".join(scene_summary_lines[:8])
+    )
+    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+    for item in body.history[-8:]:
+        messages.append({"role": item.role, "content": item.content})
+    messages.append({"role": "user", "content": body.message})
+    try:
+        reply, usage = call_deepseek(messages, api_key, enable_thinking=False, temperature=0.65, max_tokens=320)
+    except Exception as exc:
+        logger.exception("reading_course discussion failed user_id=%s scene_id=%s", current_user.id, body.scene_id)
+        raise HTTPException(status_code=502, detail=f"AI response failed: {type(exc).__name__}") from exc
+    if not reply or not reply.strip():
+        raise HTTPException(status_code=502, detail="AI returned empty response")
+    return ReadingCourseDiscussionResponse(ok=True, reply=reply.strip(), usage={"prompt_tokens": usage.prompt_tokens, "completion_tokens": usage.completion_tokens})
