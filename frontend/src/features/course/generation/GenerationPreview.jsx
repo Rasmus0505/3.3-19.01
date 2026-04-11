@@ -2,13 +2,14 @@
  * GenerationPreview — Course generation progress page with step visualizers.
  */
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { Card, Button, Badge, Progress } from "../../../shared/ui";
 import { cn } from "../../../lib/utils";
 import { Loader2, Check, Unlock, Sparkles } from "lucide-react";
-import { api } from "../../../shared/api/client";
+import { api, parseResponse, toErrorText } from "../../../shared/api/client";
 import { readSSEStream } from "../utils/readSSEStream";
 import { SCENE_TYPE_ICONS } from "../constants";
+import { useAppStore } from "../../../store";
 
 const STEP_LABELS = [
   { key: "outlining", label: "Analyzing Material", icon: Sparkles },
@@ -17,26 +18,57 @@ const STEP_LABELS = [
   { key: "completed", label: "Course Ready!", icon: Unlock },
 ];
 
-export function GenerationPreview({ courseId, materialText, onComplete }) {
+export function GenerationPreview({ onComplete }) {
+  const { courseId } = useParams();
   const navigate = useNavigate();
+  const accessToken = useAppStore((s) => s.accessToken);
+  const markAuthExpired = useAppStore((s) => s.markAuthExpired);
   const [stage, setStage] = useState("outlining");
   const [percent, setPercent] = useState(0);
   const [sceneProgress, setSceneProgress] = useState([]);
   const [error, setError] = useState("");
+  const startedRef = useRef(false);
 
   useEffect(() => {
+    if (!courseId || startedRef.current) return;
+    startedRef.current = true;
     startGeneration();
-  }, []);
+  }, [courseId]);
 
   const startGeneration = async () => {
+    if (!courseId) {
+      setError("Missing course id");
+      return;
+    }
+    if (!accessToken) {
+      setError("请先登录");
+      return;
+    }
     try {
       const res = await api(`/api/courses/${courseId}/generate/stream`, {
         method: "POST",
-      });
+      }, accessToken);
+      if (!res.ok && !res.body) {
+        const data = await parseResponse(res);
+        const message = toErrorText(data, "Generation failed");
+        if (res.status === 401 || res.status === 403) {
+          markAuthExpired(message);
+        }
+        setError(message);
+        return;
+      }
 
       if (!res.body) {
-        const fallbackRes = await api(`/api/courses/${courseId}/generate`, { method: "POST" });
-        const data = await fallbackRes.json();
+        const fallbackRes = await api(`/api/courses/${courseId}/generate`, { method: "POST" }, accessToken);
+        const data = await parseResponse(fallbackRes);
+        if (!fallbackRes.ok) {
+          const message = toErrorText(data, "Generation failed");
+          if (fallbackRes.status === 401 || fallbackRes.status === 403) {
+            markAuthExpired(message);
+          }
+          setError(message);
+          return;
+        }
         if (data.status === "ready") {
           setStage("completed");
           setPercent(100);

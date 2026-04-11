@@ -1,0 +1,1 @@
+import{j as r}from"./index-DjBWEESd.js";import{L as o}from"./LearningShell-CQz0nna_.js";import"./index-CxeBWGO0.js";import"./input-CUkZZhGQ.js";import"./badge-DmmmC4l7.js";import"./learningSettings-BeLT0U6J.js";import"./lock-open-BoFu4wLA.js";import"./sparkles-DJhJmaEE.js";function x(){return r.jsx(o,{})}export{x as LearningPage};
