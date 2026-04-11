@@ -128,6 +128,7 @@ def create_course(
         cefr_level_original=payload.cefr_level_original,
         cefr_level_target=payload.cefr_level_target,
     )
+    course.material_text = payload.material_text
     db.commit()
     return _to_course_response(course)
 
@@ -144,13 +145,7 @@ def generate_course_full(
     if course.status not in ("draft", "failed"):
         return error_response(400, "INVALID_STATUS", "Course is not in a generatable state")
 
-    # Get material from first scene's content or from outline
-    material_text = ""
-    if course.outline_json:
-        material_text = json.dumps(course.outline_json)
-    else:
-        # Use a placeholder — in real use, material comes from upload/text
-        material_text = f"Course: {course.title}"
+    material_text = course.material_text or f"Course: {course.title}"
 
     try:
         course = build_course_full(db, course, material_text)
@@ -176,11 +171,7 @@ def generate_course_stream(
     if course.status not in ("draft", "failed"):
         return error_response(400, "INVALID_STATUS", "Course is not in a generatable state")
 
-    material_text = ""
-    if course.outline_json:
-        material_text = json.dumps(course.outline_json)
-    else:
-        material_text = f"Course: {course.title}"
+    material_text = course.material_text or f"Course: {course.title}"
 
     bind = db.get_bind()
     event_queue: queue.Queue[tuple[str, dict] | None] = queue.Queue()
@@ -296,7 +287,7 @@ def generate_scenes(
     if course.status not in ("outlining", "failed"):
         return error_response(400, "INVALID_STATUS", "Scene generation requires outline first")
 
-    material_text = json.dumps(course.outline_json) if course.outline_json else ""
+    material_text = course.material_text or (json.dumps(course.outline_json) if course.outline_json else "")
 
     try:
         course = build_course_content(db, course, material_text)

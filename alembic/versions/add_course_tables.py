@@ -22,6 +22,7 @@ def upgrade() -> None:
         sa.Column("title", sa.String(255), nullable=False),
         sa.Column("source_type", sa.String(32), nullable=False),
         sa.Column("source_material_hash", sa.String(64), nullable=False, server_default=""),
+        sa.Column("material_text", sa.Text(), nullable=True),
         sa.Column("cefr_level_original", sa.String(10), nullable=False, server_default=""),
         sa.Column("cefr_level_target", sa.String(10), nullable=False, server_default=""),
         sa.Column("outline_json", sa.JSON(), nullable=True),

@@ -2,9 +2,8 @@
  * InteractiveRenderer — Renders AI-generated HTML in a sandboxed iframe.
  */
 import { useState } from "react";
-import { Card } from "../../../components/ui/card";
+import { Card, Button } from "../../../shared/ui";
 import { MousePointer, AlertCircle, Maximize2, Minimize2 } from "lucide-react";
-import { Button } from "../../../components/ui/button";
 
 export function InteractiveRenderer({ scene }) {
   const content = scene.content || {};

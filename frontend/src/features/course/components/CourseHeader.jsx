@@ -2,9 +2,7 @@
  * CourseHeader — Top bar with course title, I+1 badge, progress, navigation.
  */
 import { ArrowLeft, ArrowRight, Unlock, BadgeCheck } from "lucide-react";
-import { Button } from "../../../components/ui/button";
-import { Badge } from "../../../components/ui/badge";
-import { Progress } from "../../../components/ui/progress";
+import { Button, Badge, Progress } from "../../../shared/ui";
 
 const CEFR_LABELS = {
   A1: "Beginner",

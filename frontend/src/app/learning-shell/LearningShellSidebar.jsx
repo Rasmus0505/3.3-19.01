@@ -39,10 +39,7 @@ export const PANEL_ITEMS = [
     icon: BookOpenText,
   },
   {
-    key: "course",
-    title: "课程生成",
-    path: "/course",
-    matchPaths: ["/course", "/course/create"],
+    ...PANEL_ROUTE_ITEMS.find((item) => item.key === "course"),
     icon: Unlock,
   },
 ];

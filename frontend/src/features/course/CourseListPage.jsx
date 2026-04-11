@@ -1,14 +1,10 @@
 /**
- * CourseListPage — Glassmorphism-styled course library page.
- *
- * Shows all the user's generated courses with AI model badges,
- * CEFR level transitions, and status indicators.
+ * CourseListPage — Course library panel (rendered inside shell).
  */
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../../store";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
+import { Button, Card, CardContent } from "../../shared/ui";
 import {
   BookOpen,
   CheckCircle2,
@@ -21,20 +17,7 @@ import {
 } from "lucide-react";
 import { ModelBadges } from "./components/ModelBadges";
 import { cn } from "../../lib/utils";
-
-const SCENE_TYPE_COLORS = {
-  dictation: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  quiz: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-  interactive: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  discussion: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
-};
-
-const SCENE_TYPE_ICONS = {
-  dictation: "🎧",
-  quiz: "📝",
-  interactive: "🎮",
-  discussion: "💬",
-};
+import { SCENE_TYPE_COLORS, SCENE_TYPE_EMOJI } from "./constants";
 
 const STATUS_META = {
   ready: { icon: CheckCircle2, color: "text-emerald-500", label: "Ready" },
@@ -49,7 +32,7 @@ function StatusIcon({ status }) {
   const Icon = meta.icon;
   return (
     <span className={cn("flex items-center gap-1 text-xs", meta.color)}>
-      <Icon className="w-3.5 h-3.5" />
+      <Icon className="size-3.5" />
       {meta.label}
     </span>
   );
@@ -58,11 +41,9 @@ function StatusIcon({ status }) {
 function CEFRTransition({ from, to }) {
   return (
     <span className="inline-flex items-center gap-1 text-xs font-medium">
-      <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{from}</span>
+      <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">{from}</span>
       <span className="text-muted-foreground/50">→</span>
-      <span className="px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300">
-        {to}
-      </span>
+      <span className="rounded bg-primary/10 px-1.5 py-0.5 text-primary">{to}</span>
     </span>
   );
 }
@@ -71,68 +52,66 @@ function CourseCard({ course, onClick }) {
   const sceneTypes = [...new Set((course.scenes || []).map((s) => s.scene_type))];
 
   return (
-    <div
-      className={cn(
-        "glass-card rounded-2xl p-5 cursor-pointer group",
-        "hover:-translate-y-0.5 hover:shadow-2xl transition-all duration-200",
-        course.status === "ready" && "hover:glow-purple",
-      )}
+    <Card
+      className="cursor-pointer transition-shadow hover:shadow-sm"
       onClick={onClick}
     >
-      {/* Header row */}
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-blue-500 flex items-center justify-center shrink-0">
-            <Unlock className="w-4 h-4 text-white" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="font-semibold text-sm leading-tight line-clamp-1 group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
-              {course.title}
-            </h3>
-            <div className="flex items-center gap-2 mt-0.5">
-              <CEFRTransition from={course.cefr_level_original} to={course.cefr_level_target} />
+      <CardContent className="p-5">
+        {/* Header row */}
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl border bg-primary/10">
+              <Unlock className="size-4 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="line-clamp-1 text-sm font-semibold leading-tight">
+                {course.title}
+              </h3>
+              <div className="mt-0.5 flex items-center gap-2">
+                <CEFRTransition from={course.cefr_level_original} to={course.cefr_level_target} />
+              </div>
             </div>
           </div>
+          <StatusIcon status={course.status} />
         </div>
-        <StatusIcon status={course.status} />
-      </div>
 
-      {/* Scene type pills */}
-      {sceneTypes.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          {sceneTypes.map((type) => (
-            <span
-              key={type}
-              className={cn("px-2 py-0.5 rounded-full text-xs font-medium", SCENE_TYPE_COLORS[type])}
-            >
-              {SCENE_TYPE_ICONS[type]} {type}
+        {/* Scene type pills */}
+        {sceneTypes.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {sceneTypes.map((type) => (
+              <span
+                key={type}
+                className={cn("rounded-full px-2 py-0.5 text-xs font-medium", SCENE_TYPE_COLORS[type])}
+              >
+                {SCENE_TYPE_EMOJI[type]} {type}
+              </span>
+            ))}
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              {course.scene_count} scenes
             </span>
-          ))}
-          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
-            {course.scene_count} scenes
-          </span>
-        </div>
-      )}
-
-      {/* Model badges */}
-      {course.models_used?.length > 0 && (
-        <div className="mt-2">
-          <ModelBadges models={course.models_used} maxVisible={4} />
-        </div>
-      )}
-
-      {/* Footer */}
-      <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
-        <span className="text-xs text-muted-foreground">
-          {course.created_at ? new Date(course.created_at).toLocaleDateString("zh-CN") : "—"}
-        </span>
-        {course.status === "ready" && (
-          <span className="text-xs text-violet-600 dark:text-violet-400 font-medium flex items-center gap-1">
-            <Zap className="w-3 h-3" /> Open
-          </span>
+          </div>
         )}
-      </div>
-    </div>
+
+        {/* Model badges */}
+        {course.models_used?.length > 0 && (
+          <div className="mt-2">
+            <ModelBadges models={course.models_used} maxVisible={4} />
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
+          <span className="text-xs text-muted-foreground">
+            {course.created_at ? new Date(course.created_at).toLocaleDateString("zh-CN") : "—"}
+          </span>
+          {course.status === "ready" && (
+            <span className="flex items-center gap-1 text-xs font-medium text-primary">
+              <Zap className="size-3" /> Open
+            </span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -145,87 +124,64 @@ export function CourseListPage() {
   }, [fetchCourses]);
 
   return (
-    <div className="relative min-h-full overflow-hidden">
-      {/* Background gradient blobs */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full opacity-20"
-        style={{ background: "radial-gradient(circle, #7c3aed 0%, transparent 70%)" }}
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -bottom-20 -right-20 w-[500px] h-[500px] rounded-full opacity-15"
-        style={{ background: "radial-gradient(circle, #3b82f6 0%, transparent 70%)" }}
-      />
+    <div className="space-y-4">
+      {/* Page header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">My Courses</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            AI-generated I+1 learning courses from your materials
+          </p>
+        </div>
+        <Button onClick={() => navigate("/course/create")} className="gap-2">
+          <Plus className="size-4" />
+          New Course
+        </Button>
+      </div>
 
-      <div className="relative z-10 max-w-5xl mx-auto px-4 py-8">
-        {/* Page header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-bold brand-gradient-text">My Courses</h1>
-            <p className="text-muted-foreground text-sm mt-1">
-              AI-generated I+1 learning courses from your materials
-            </p>
+      {/* Loading */}
+      {courseLoading && (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="size-6 animate-spin text-primary" />
+          <span className="ml-2 text-sm text-muted-foreground">Loading courses…</span>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!courseLoading && courses.length === 0 && (
+        <div className="rounded-2xl border border-dashed bg-muted/15 px-6 py-10 text-center">
+          <div className="mx-auto mb-5 flex size-16 items-center justify-center rounded-2xl border bg-primary/10">
+            <BookOpen className="size-8 text-primary" />
           </div>
-          <Button
-            onClick={() => navigate("/course/create")}
-            className="gap-2"
-            style={{ background: "linear-gradient(135deg, #7c3aed, #3b82f6)" }}
-          >
-            <Plus className="w-4 h-4" />
-            New Course
+          <h2 className="text-base font-medium">No courses yet</h2>
+          <p className="mx-auto mb-6 mt-2 max-w-md text-sm text-muted-foreground">
+            Paste any English text and let AI transform it into an interactive I+1 learning course.
+          </p>
+          <Button onClick={() => navigate("/course/create")} size="lg" className="gap-2">
+            <Unlock className="size-5" />
+            Create Your First Course
           </Button>
         </div>
+      )}
 
-        {/* Loading */}
-        {courseLoading && (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-6 h-6 animate-spin text-violet-500 mr-2" />
-            <span className="text-muted-foreground text-sm">Loading courses…</span>
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!courseLoading && courses.length === 0 && (
-          <div className="glass-card rounded-3xl p-12 text-center">
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 dark:from-violet-900/30 dark:to-blue-900/30 flex items-center justify-center mx-auto mb-5">
-              <BookOpen className="w-10 h-10 text-violet-500" />
-            </div>
-            <h2 className="text-xl font-semibold mb-2">No courses yet</h2>
-            <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-              Paste any English text and let AI transform it into an interactive I+1 learning course.
-            </p>
-            <Button
-              onClick={() => navigate("/course/create")}
-              size="lg"
-              className="gap-2"
-              style={{ background: "linear-gradient(135deg, #7c3aed, #3b82f6)" }}
-            >
-              <Unlock className="w-5 h-5" />
-              Create Your First Course
-            </Button>
-          </div>
-        )}
-
-        {/* Course grid */}
-        {!courseLoading && courses.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {courses.map((course) => (
-              <CourseCard
-                key={course.id}
-                course={course}
-                onClick={() => {
-                  if (course.status === "ready") {
-                    navigate(`/course/${course.id}`);
-                  } else if (course.status === "draft") {
-                    navigate(`/course/${course.id}/generate`);
-                  }
-                }}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      {/* Course grid */}
+      {!courseLoading && courses.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {courses.map((course) => (
+            <CourseCard
+              key={course.id}
+              course={course}
+              onClick={() => {
+                if (course.status === "ready") {
+                  navigate(`/course/${course.id}`);
+                } else if (course.status === "draft") {
+                  navigate(`/course/${course.id}/generate`);
+                }
+              }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

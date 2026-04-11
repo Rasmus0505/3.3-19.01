@@ -4,14 +4,12 @@
  * SSE streaming for real-time agent responses.
  */
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Card } from "../../../components/ui/card";
-import { Button } from "../../../components/ui/button";
-import { Badge } from "../../../components/ui/badge";
-import { Input } from "../../../components/ui/input";
+import { Card, Button, Badge, Input } from "../../../shared/ui";
 import { cn } from "../../../lib/utils";
-import { MessageSquare, Send, SkipForward, Volume2 } from "lucide-react";
+import { MessageSquare, Send, SkipForward } from "lucide-react";
 import { VoiceWaveform } from "../components/VoiceWaveform";
 import { api } from "../../../shared/api/client";
+import { readSSEStream } from "../utils/readSSEStream";
 
 const AGENT_CONFIG = {
   teacher: {
@@ -45,10 +43,17 @@ export function DiscussionRenderer({ scene, courseId }) {
   const [isEnded, setIsEnded] = useState(false);
   const [summary, setSummary] = useState("");
   const messagesEndRef = useRef(null);
+  const abortRef = useRef(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const handleSSEMessage = useCallback((event, data) => {
     switch (event) {
@@ -75,136 +80,53 @@ export function DiscussionRenderer({ scene, courseId }) {
     }
   }, []);
 
-  const startDiscussion = async () => {
-    setIsStarted(true);
+  const streamSSE = async (url, body) => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setIsStreaming(true);
 
     try {
-      const res = await api("/api/discussion/start", {
+      const res = await api(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          course_id: courseId,
-          scene_id: scene.id,
-          topic: content.topic || scene.title,
-          target_level: content.vocabulary_focus ? "B1" : "B1",
-          key_points: content.key_points || [],
-          vocabulary_focus: content.vocabulary_focus || [],
-          teacher_prompt: content.teacher_prompt || "",
-        }),
+        body: JSON.stringify(body),
+        signal: controller.signal,
       });
-
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
-
-      if (!reader) return;
-
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        let currentEvent = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            currentEvent = line.slice(7).trim();
-          } else if (line.startsWith("data: ") && currentEvent) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              handleSSEMessage(currentEvent, data);
-            } catch {}
-            currentEvent = "";
-          }
-        }
-      }
+      await readSSEStream(res, handleSSEMessage, controller.signal);
     } catch (err) {
-      console.error("Discussion start failed:", err);
+      if (err?.name !== "AbortError") {
+        console.error("SSE stream failed:", err);
+      }
+    } finally {
       setIsStreaming(false);
     }
+  };
+
+  const startDiscussion = async () => {
+    setIsStarted(true);
+    await streamSSE("/api/discussion/start", {
+      course_id: courseId,
+      scene_id: scene.id,
+      topic: content.topic || scene.title,
+      target_level: scene.course_cefr_target || content.target_level || "B1",
+      key_points: content.key_points || [],
+      vocabulary_focus: content.vocabulary_focus || [],
+      teacher_prompt: content.teacher_prompt || "",
+    });
   };
 
   const sendReply = async () => {
     if (!userInput.trim() || !discussionId || isStreaming) return;
-
     const message = userInput.trim();
     setUserInput("");
-    setIsStreaming(true);
-
-    // Add user message immediately
     setMessages((prev) => [...prev, { role: "user", content: message, timestamp: Date.now() }]);
-
-    try {
-      const res = await api("/api/discussion/reply", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ discussion_id: discussionId, message }),
-      });
-
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
-      if (!reader) return;
-
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-        let currentEvent = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) currentEvent = line.slice(7).trim();
-          else if (line.startsWith("data: ") && currentEvent) {
-            try { handleSSEMessage(currentEvent, JSON.parse(line.slice(6))); } catch {}
-            currentEvent = "";
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Reply failed:", err);
-      setIsStreaming(false);
-    }
+    await streamSSE("/api/discussion/reply", { discussion_id: discussionId, message });
   };
 
   const skipTurn = async () => {
     if (!discussionId || isStreaming) return;
-    setIsStreaming(true);
-
-    try {
-      const res = await api("/api/discussion/skip", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ discussion_id: discussionId, message: "" }),
-      });
-
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
-      if (!reader) return;
-
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-        let currentEvent = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) currentEvent = line.slice(7).trim();
-          else if (line.startsWith("data: ") && currentEvent) {
-            try { handleSSEMessage(currentEvent, JSON.parse(line.slice(6))); } catch {}
-            currentEvent = "";
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Skip failed:", err);
-      setIsStreaming(false);
-    }
+    await streamSSE("/api/discussion/skip", { discussion_id: discussionId, message: "skip" });
   };
 
   // --- Not started state ---

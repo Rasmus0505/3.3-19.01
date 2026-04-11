@@ -30,8 +30,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/discussion", tags=["discussion"])
 
 # In-memory discussion state store (session-scoped)
-# Key: discussion_id, Value: DiscussionState
-_discussion_store: dict[str, DiscussionState] = {}
+# Key: discussion_id, Value: (DiscussionState, created_at_timestamp)
+_discussion_store: dict[str, tuple[DiscussionState, float]] = {}
+_DISCUSSION_TTL_SECONDS = 30 * 60  # 30 minutes
+
+
+def _cleanup_expired_discussions() -> None:
+    """Remove discussions older than TTL."""
+    now = time.time()
+    expired = [k for k, (_, ts) in _discussion_store.items() if now - ts > _DISCUSSION_TTL_SECONDS]
+    for k in expired:
+        _discussion_store.pop(k, None)
 
 
 class DiscussionStartRequest(BaseModel):
@@ -92,7 +101,8 @@ def start_discussion_endpoint(
             )
 
             discussion_id = str(uuid.uuid4())
-            _discussion_store[discussion_id] = state
+            _cleanup_expired_discussions()
+            _discussion_store[discussion_id] = (state, time.time())
 
             # Send discussion ID
             yield _format_sse_event("discussion_start", {
@@ -124,9 +134,10 @@ def reply_discussion(
     current_user: User = Depends(get_current_user),
 ):
     """User sends a message. AI student and teacher respond in turn via SSE stream."""
-    state = _discussion_store.get(payload.discussion_id)
-    if not state:
+    entry = _discussion_store.get(payload.discussion_id)
+    if not entry:
         return error_response(404, "DISCUSSION_NOT_FOUND", "Discussion session not found")
+    state = entry[0]
 
     if state.turn_count >= state.max_turns:
         return error_response(400, "DISCUSSION_ENDED", "Maximum discussion turns reached")
@@ -162,9 +173,10 @@ def skip_user_turn(
     current_user: User = Depends(get_current_user),
 ):
     """User skips their turn. AI agents continue without user input."""
-    state = _discussion_store.get(payload.discussion_id)
-    if not state:
+    entry = _discussion_store.get(payload.discussion_id)
+    if not entry:
         return error_response(404, "DISCUSSION_NOT_FOUND", "Discussion session not found")
+    state = entry[0]
 
     def _stream():
         try:
@@ -196,9 +208,10 @@ def end_discussion(
     current_user: User = Depends(get_current_user),
 ):
     """End the discussion and get a summary."""
-    state = _discussion_store.get(payload.discussion_id)
-    if not state:
+    entry = _discussion_store.get(payload.discussion_id)
+    if not entry:
         return error_response(404, "DISCUSSION_NOT_FOUND", "Discussion session not found")
+    state = entry[0]
 
     try:
         summary = generate_discussion_summary(state)

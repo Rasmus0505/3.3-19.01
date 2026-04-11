@@ -13,23 +13,8 @@ import { DictationRenderer } from "./scenes/DictationRenderer";
 import { QuizRenderer } from "./scenes/QuizRenderer";
 import { InteractiveRenderer } from "./scenes/InteractiveRenderer";
 import { DiscussionRenderer } from "./scenes/DiscussionRenderer";
-import { Card } from "../../components/ui/card";
-import { Button } from "../../components/ui/button";
-import { Loader2, BookOpen, MessageSquare, HelpCircle, MousePointer } from "lucide-react";
-
-const SCENE_ICONS = {
-  dictation: BookOpen,
-  quiz: HelpCircle,
-  interactive: MousePointer,
-  discussion: MessageSquare,
-};
-
-const SCENE_LABELS = {
-  dictation: "听写练习",
-  quiz: "知识测验",
-  interactive: "互动活动",
-  discussion: "AI课堂",
-};
+import { Card, Button } from "../../shared/ui";
+import { Loader2 } from "lucide-react";
 
 export function CoursePlayerPage() {
   const { courseId } = useParams();

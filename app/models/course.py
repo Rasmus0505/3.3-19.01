@@ -20,6 +20,7 @@ class Course(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     source_type: Mapped[str] = mapped_column(String(32), nullable=False, comment="素材类型: upload/url/text/ocr")
     source_material_hash: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    material_text: Mapped[str | None] = mapped_column(Text, nullable=True, comment="原始素材文本")
     cefr_level_original: Mapped[str] = mapped_column(String(10), nullable=False, default="", comment="原始素材CEFR难度")
     cefr_level_target: Mapped[str] = mapped_column(String(10), nullable=False, default="", comment="I+1目标CEFR难度")
     outline_json: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="Stage1课程大纲")

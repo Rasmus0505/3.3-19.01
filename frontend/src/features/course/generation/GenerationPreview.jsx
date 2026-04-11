@@ -3,13 +3,12 @@
  */
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card } from "../../../components/ui/card";
-import { Button } from "../../../components/ui/button";
-import { Badge } from "../../../components/ui/badge";
-import { Progress } from "../../../components/ui/progress";
+import { Card, Button, Badge, Progress } from "../../../shared/ui";
 import { cn } from "../../../lib/utils";
-import { Loader2, Check, Unlock, BookOpen, HelpCircle, MousePointer, MessageSquare, Sparkles } from "lucide-react";
+import { Loader2, Check, Unlock, Sparkles } from "lucide-react";
 import { api } from "../../../shared/api/client";
+import { readSSEStream } from "../utils/readSSEStream";
+import { SCENE_TYPE_ICONS } from "../constants";
 
 const STEP_LABELS = [
   { key: "outlining", label: "Analyzing Material", icon: Sparkles },
@@ -17,13 +16,6 @@ const STEP_LABELS = [
   { key: "generating", label: "Generating Content", icon: Loader2 },
   { key: "completed", label: "Course Ready!", icon: Unlock },
 ];
-
-const SCENE_ICONS = {
-  dictation: BookOpen,
-  quiz: HelpCircle,
-  interactive: MousePointer,
-  discussion: MessageSquare,
-};
 
 export function GenerationPreview({ courseId, materialText, onComplete }) {
   const navigate = useNavigate();
@@ -42,10 +34,7 @@ export function GenerationPreview({ courseId, materialText, onComplete }) {
         method: "POST",
       });
 
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
-      if (!reader) {
-        // Fallback to non-streaming
+      if (!res.body) {
         const fallbackRes = await api(`/api/courses/${courseId}/generate`, { method: "POST" });
         const data = await fallbackRes.json();
         if (data.status === "ready") {
@@ -55,28 +44,7 @@ export function GenerationPreview({ courseId, materialText, onComplete }) {
         return;
       }
 
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        let currentEvent = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            currentEvent = line.slice(7).trim();
-          } else if (line.startsWith("data: ") && currentEvent) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              handleEvent(currentEvent, data);
-            } catch {}
-            currentEvent = "";
-          }
-        }
-      }
+      await readSSEStream(res, handleEvent);
     } catch (err) {
       setError(err?.message || "Generation failed");
     }
@@ -188,7 +156,7 @@ export function GenerationPreview({ courseId, materialText, onComplete }) {
             </h4>
             <div className="space-y-1">
               {sceneProgress.map((scene) => {
-                const SceneIcon = SCENE_ICONS[scene.type] || BookOpen;
+                const SceneIcon = SCENE_TYPE_ICONS[scene.type] || BookOpen;
                 return (
                   <div key={scene.idx} className="flex items-center gap-2 px-2 py-1.5 rounded text-sm">
                     <SceneIcon className="w-4 h-4 text-muted-foreground" />

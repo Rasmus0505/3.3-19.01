@@ -344,12 +344,6 @@ export function useLearningShellController({
     if (immersiveLayoutActive) {
       setImmersiveActive(false);
     }
-    // Handle course panel — navigate to course list
-    if (nextPanel === "course") {
-      navigate("/course");
-      setMobileNavOpen(false);
-      return;
-    }
     navigate(getPanelPath(nextPanel));
     setMobileNavOpen(false);
   }

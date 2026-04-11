@@ -6,8 +6,7 @@
  */
 import { useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button } from "../../../components/ui/button";
-import { Card } from "../../../components/ui/card";
+import { Button, Card } from "../../../shared/ui";
 import { BookOpen, Mic, MicOff, Play, CheckCircle2, XCircle } from "lucide-react";
 import { VoiceWaveform } from "../components/VoiceWaveform";
 

@@ -3,20 +3,32 @@
  *
  * Flow: Cover → Answering → Grading → Reviewing
  */
-import { useState } from "react";
-import { Card } from "../../../components/ui/card";
-import { Button } from "../../../components/ui/button";
-import { Badge } from "../../../components/ui/badge";
+import { useState, useCallback, useEffect } from "react";
+import { Card, Button, Badge } from "../../../shared/ui";
 import { cn } from "../../../lib/utils";
 import { HelpCircle, Check, X, RotateCcw, ChevronRight } from "lucide-react";
 
 export function QuizRenderer({ scene }) {
   const content = scene.content || {};
   const questions = content.questions || [];
-  const [phase, setPhase] = useState(questions.length > 0 ? "cover" : "cover");
+  const [phase, setPhase] = useState("cover");
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState({});
   const [scores, setScores] = useState({});
+
+  const gradeQuiz = useCallback(() => {
+    const newScores = {};
+    questions.forEach((q, idx) => {
+      const answer = answers[idx];
+      if (q.type === "multiple_choice") {
+        newScores[idx] = answer === q.correct_index;
+      } else {
+        newScores[idx] = typeof answer === "string" && answer.toLowerCase().trim() === (q.answer || "").toLowerCase().trim();
+      }
+    });
+    setScores(newScores);
+    setPhase("reviewing");
+  }, [answers, questions]);
 
   if (questions.length === 0) {
     return (
@@ -53,10 +65,6 @@ export function QuizRenderer({ scene }) {
   // --- Answering Phase ---
   if (phase === "answering") {
     const q = questions[currentQ];
-    if (!q) {
-      setPhase("grading");
-      return null;
-    }
 
     const isMultipleChoice = q.type === "multiple_choice";
     const selectedAnswer = answers[currentQ];
@@ -126,22 +134,7 @@ export function QuizRenderer({ scene }) {
     );
   }
 
-  // --- Grading Phase ---
-  if (phase === "grading") {
-    // Auto-grade
-    const newScores = {};
-    questions.forEach((q, idx) => {
-      const answer = answers[idx];
-      if (q.type === "multiple_choice") {
-        newScores[idx] = answer === q.correct_index;
-      } else {
-        newScores[idx] = typeof answer === "string" && answer.toLowerCase().trim() === (q.answer || "").toLowerCase().trim();
-      }
-    });
-    setScores(newScores);
-    setPhase("reviewing");
-    return null;
-  }
+  // --- Grading Phase (handled by gradeQuiz callback) ---
 
   // --- Reviewing Phase ---
   if (phase === "reviewing") {

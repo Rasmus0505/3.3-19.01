@@ -1,7 +1,7 @@
 /**
  * ModelBadges — Display which AI models were used in generating the course.
  */
-import { Badge } from "../../../components/ui/badge";
+import { Badge } from "../../../shared/ui";
 import { Cpu } from "lucide-react";
 
 const MODEL_LABELS = {
