@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.api.routers.llm_discussion import router as discussion_router
 from app.api.routers.llm_quiz import router as quiz_router
 from app.api.routers.llm_reading import generate_reading_material_endpoint, router as reading_router
 from app.api.routers.llm_sentence import (
@@ -51,6 +52,7 @@ router.include_router(usage_router)
 router.include_router(vocabulary_router)
 router.include_router(sentence_router)
 router.include_router(quiz_router)
+router.include_router(discussion_router)
 
 __all__ = [
     "CEFR_LEVELS",

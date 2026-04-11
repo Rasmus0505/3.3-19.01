@@ -21,6 +21,7 @@ import { AnalysisPanel, getDefaultActiveLevels } from "./AnalysisPanel";
 import { DiagnosticPanel } from "./DiagnosticPanel";
 import { ReadingPipelinePanel } from "./ReadingPipelinePanel";
 import { ReadingPackPanel } from "./ReadingPackPanel";
+import { CoursePlayer } from "./course/CoursePlayer";
 import {
   buildDiagnosticSnapshot,
   splitDiagnosticText,
@@ -551,6 +552,32 @@ export function ReadingPage({ accessToken, apiCall }) {
           </div>
         ) : null}
 
+        {mode === "course" ? (
+          <div className="reading-pack-layout" style={{ height: "calc(100dvh - 8.5rem)" }}>
+            <CoursePlayer
+              pack={readingPack || {
+                originalText: activeArticleText,
+                rewrittenText: rewrittenText || activeArticleText,
+                mappings: rewriteMappings,
+                validI1Words,
+                validAboveI1Words,
+                removedWords,
+                wordLevels,
+                diagnosticSummary: {
+                  materialDifficulty: diagnosticSnapshot?.materialDifficulty || "--",
+                  preservedI1Count: diagnosticSnapshot?.preservedI1Count ?? 0,
+                  aboveI1Count: diagnosticSnapshot?.aboveI1Count ?? 0,
+                  targetLevel: diagnosticSnapshot?.selectedTargetLevel || "B1",
+                },
+              }}
+              articleId={activeHistoryId}
+              apiCall={apiCall}
+              accessToken={accessToken}
+              onExit={() => setMode("pack")}
+            />
+          </div>
+        ) : null}
+
         {mode === "pack" ? (
           <div className="reading-pack-layout">
             <div className="reading-pack-layout__main">
@@ -584,6 +611,7 @@ export function ReadingPage({ accessToken, apiCall }) {
                 accessToken={accessToken}
                 onGenerateDictation={handleGenerateDictation}
                 dictationLoading={dictationLoading}
+                onStartCourse={() => setMode("course")}
               />
             </div>
 

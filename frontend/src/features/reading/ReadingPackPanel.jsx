@@ -200,7 +200,7 @@ function VocabPanel({ pack, apiCall, accessToken }) {
 /**
  * 下一步操作栏（PACK-04）
  */
-function NextStepsBar({ packViewMode, onPackViewModeChange, onShowVocab, onGenerateDictation, dictationLoading }) {
+function NextStepsBar({ packViewMode, onPackViewModeChange, onShowVocab, onGenerateDictation, dictationLoading, onStartCourse }) {
   return (
     <div className="reading-pack__next-steps">
       <span className="reading-pack__next-steps-label">下一步</span>
@@ -238,6 +238,14 @@ function NextStepsBar({ packViewMode, onPackViewModeChange, onShowVocab, onGener
             {dictationLoading ? "生成中…" : "生成听写"}
           </button>
         ) : null}
+        {onStartCourse ? (
+          <button
+            className="reading-pack__next-step-btn reading-pack__next-step-btn--primary"
+            onClick={onStartCourse}
+          >
+            开始课程
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -258,6 +266,7 @@ export function ReadingPackPanel({
   accessToken,
   onGenerateDictation,
   dictationLoading = false,
+  onStartCourse,
 }) {
   if (!pack) {
     return null;
@@ -375,6 +384,7 @@ export function ReadingPackPanel({
         onShowVocab={handleShowVocab}
         onGenerateDictation={onGenerateDictation}
         dictationLoading={dictationLoading}
+        onStartCourse={onStartCourse}
       />
     </section>
   );

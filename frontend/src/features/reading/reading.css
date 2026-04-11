@@ -2635,6 +2635,18 @@
   font-weight: 600;
 }
 
+.reading-pack__next-step-btn--primary {
+  background: oklch(0.55 0.20 270);
+  border-color: oklch(0.45 0.22 270);
+  color: white;
+  font-weight: 600;
+}
+
+.reading-pack__next-step-btn--primary:hover {
+  background: oklch(0.48 0.22 270);
+  border-color: oklch(0.40 0.24 270);
+}
+
 /* ─── Rewrite Summary (AnalysisPanel) ───────────────────────── */
 .analysis-section--rewrite-summary {
   padding-bottom: 12px;

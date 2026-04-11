@@ -93,6 +93,7 @@ export function normalizeRewriteRecord(record) {
     flowStatus: deriveFlowStatus(record),
     quiz: record.quiz ?? null,
     vocabCards: record.vocabCards ?? null,
+    courseData: record.courseData ?? null,
   };
 }
 
@@ -241,6 +242,18 @@ export async function saveQuizToRecord(articleId, quiz) {
   const existing = await getRewriteRecord(articleId);
   if (!existing) return;
   await saveRewriteRecord({ ...existing, quiz });
+}
+
+/**
+ * Save course data (discussion script + progress) to an article's record.
+ * @param {string} articleId
+ * @param {object} courseData — { discussion, progress, settings }
+ * @returns {Promise<void>}
+ */
+export async function saveCourseDataToRecord(articleId, courseData) {
+  const existing = await getRewriteRecord(articleId);
+  if (!existing) return;
+  await saveRewriteRecord({ ...existing, courseData });
 }
 
 export async function clearAllRewriteRecords() {
