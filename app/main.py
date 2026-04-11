@@ -27,6 +27,7 @@ from app.api.routers.billing.wallet import router as wallet_router
 from app.api.routers.dashscope_upload import router as dashscope_upload_router
 
 from app.api.routers.learning_dashboard import router as dashboard_router
+from app.api.routers.lesson_chat import router as lesson_chat_router
 from app.api.routers.reading_packs import router as reading_packs_router
 from app.api.routers.lessons.cloud_transcribe import router as cloud_transcribe_router
 from app.api.routers.lessons.router import router as lessons_router
@@ -767,6 +768,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
 
     app.include_router(reading_packs_router)
     app.include_router(dashboard_router)
+    app.include_router(lesson_chat_router)
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa_fallback_page(full_path: str) -> FileResponse:

@@ -1,4 +1,4 @@
-import ComprehensionCheckPanel from "../ComprehensionCheckPanel";
+import ChatPanel from "../ChatPanel";
 import ExplanationSidebarContent from "../ExplanationSidebarContent";
 import ImmersiveLayout from "../ImmersiveLayout";
 import TypingPanel from "../TypingPanel";
@@ -8,7 +8,7 @@ export default function ImmersiveLessonShell({
   videoPanelProps,
   typingPanelProps,
   explanationProps,
-  questionProps,
+  chatProps,
 }) {
   const { ref: typingPanelRef, ...restTypingPanelProps } = typingPanelProps;
 
@@ -32,7 +32,7 @@ export default function ImmersiveLessonShell({
         </div>
       }
       rightBottomContent={
-        <ComprehensionCheckPanel {...questionProps} />
+        <ChatPanel {...chatProps} />
       }
     />
   );

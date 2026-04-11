@@ -2089,10 +2089,11 @@ export function ImmersiveLessonPage({
         onReplayAudio: handleReplayExplanation,
         onStartPractice: handleStartPractice,
       }}
-      questionProps={{
-        explanation: showExplanation ? currentExplanation : null,
-        currentSentenceIndex,
-        lessonSentences: lesson?.sentences || [],
+      chatProps={{
+        lessonId: lesson?.id,
+        currentSentence,
+        accessToken,
+        apiClient,
       }}
     />
   );
