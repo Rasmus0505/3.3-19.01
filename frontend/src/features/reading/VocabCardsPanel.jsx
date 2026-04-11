@@ -11,6 +11,19 @@ import { getRewriteRecord, saveRewriteRecord } from "./readingRewriteDB";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function getApiErrorMessage(payload, fallback) {
+  if (typeof payload?.detail === "string" && payload.detail.trim()) {
+    return payload.detail.trim();
+  }
+  if (Array.isArray(payload?.detail) && payload.detail.length > 0) {
+    return payload.detail
+      .map((item) => item?.msg || item?.message || item?.detail || "")
+      .filter(Boolean)
+      .join("；") || fallback;
+  }
+  return fallback;
+}
+
 async function saveVocabCardsToRecord(articleId, vocabCards) {
   const existing = await getRewriteRecord(articleId);
   if (!existing) return;
@@ -143,6 +156,7 @@ export function VocabCardsPanel({ pack, articleId, apiCall, accessToken }) {
   const [status, setStatus] = useState("idle"); // idle | selecting | loading | ready | error
   const [cards, setCards] = useState([]);
   const [selectedWords, setSelectedWords] = useState([]);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const allWords = [
     ...(pack.validI1Words || []),
@@ -180,6 +194,7 @@ export function VocabCardsPanel({ pack, articleId, apiCall, accessToken }) {
       toast.info("请先选择词汇");
       return;
     }
+    setErrorMessage("");
     setStatus("loading");
     try {
       const resp = await apiCall("/api/vocab-cards/generate", {
@@ -195,15 +210,17 @@ export function VocabCardsPanel({ pack, articleId, apiCall, accessToken }) {
           context_text: pack.rewrittenText || pack.originalText || "",
         }),
       });
-      const data = await resp.json();
+      const data = await resp.json().catch(() => ({}));
       if (!resp.ok || !data.ok) {
+        setErrorMessage(getApiErrorMessage(data, "卡片生成失败，请重试"));
         setStatus("error");
         return;
       }
       setCards(data.cards);
       setStatus("ready");
       await saveVocabCardsToRecord(articleId, data.cards);
-    } catch {
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "卡片生成失败，请重试");
       setStatus("error");
     }
   }
@@ -322,7 +339,9 @@ export function VocabCardsPanel({ pack, articleId, apiCall, accessToken }) {
   if (status === "error") {
     return (
       <div className="reading-cards reading-cards--error">
-        <p className="reading-cards__hint reading-cards__hint--error">卡片生成失败，请重试</p>
+        <p className="reading-cards__hint reading-cards__hint--error">
+          {errorMessage || "卡片生成失败，请重试"}
+        </p>
         <button className="reading-cards__generate-btn" onClick={handleGenerate}>
           重试
         </button>
@@ -338,7 +357,7 @@ export function VocabCardsPanel({ pack, articleId, apiCall, accessToken }) {
         <span className="reading-cards__count">{cards.length} 张卡片</span>
         <button
           className="reading-cards__regen-btn"
-          onClick={() => { setStatus("idle"); setCards([]); }}
+          onClick={() => { setStatus("idle"); setCards([]); setErrorMessage(""); }}
           title="重新选择词汇生成卡片"
         >
           <RefreshCw className="size-3.5" />

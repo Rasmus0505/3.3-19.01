@@ -59,13 +59,43 @@ def _build_messages(words: list[dict], target_level: str, context_text: str) -> 
     ]
 
 
+def _extract_cards_payload(payload: object) -> list[dict] | None:
+    if isinstance(payload, list):
+        return payload
+
+    if not isinstance(payload, dict):
+        return None
+
+    for key in ("cards", "items", "results"):
+        candidate = payload.get(key)
+        if isinstance(candidate, list):
+            return candidate
+
+    data = payload.get("data")
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        nested = _extract_cards_payload(data)
+        if nested is not None:
+            return nested
+
+    if "word" in payload:
+        return [payload]
+
+    list_values = [value for value in payload.values() if isinstance(value, list)]
+    if len(list_values) == 1:
+        return list_values[0]
+
+    return None
+
+
 # ─── Card text generation ────────────────────────────────────────────────────
 
 
 @router.post(
     "/generate",
     response_model=VocabCardGenerateResponse,
-    responses={503: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+    responses={502: {"model": ErrorResponse}, 503: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
 )
 def generate_vocab_cards(
     body: VocabCardGenerateRequest,
@@ -97,12 +127,13 @@ def generate_vocab_cards(
 
     recovered = recover_json_payload(raw_response) or strip_json_fences(raw_response)
     try:
-        cards_raw = json.loads(recovered)
-        if not isinstance(cards_raw, list):
-            raise ValueError("Expected a JSON array")
+        parsed = json.loads(recovered)
+        cards_raw = _extract_cards_payload(parsed)
+        if cards_raw is None:
+            raise ValueError("Expected a card array or wrapped card payload")
     except Exception as exc:
         logger.warning("Vocab card JSON parse failed. Raw: %.300s", raw_response)
-        raise HTTPException(status_code=422, detail="Card generation returned invalid JSON") from exc
+        raise HTTPException(status_code=502, detail="Card generation returned invalid JSON") from exc
 
     # Build result, matching by word
     word_input_map = {w.word.lower(): w for w in body.words}
@@ -124,6 +155,9 @@ def generate_vocab_cards(
                 image_url=None,
             )
         )
+
+    if not cards:
+        raise HTTPException(status_code=502, detail="Card generation returned no valid cards")
 
     # Billing — silent failure so cards still return
     try:
