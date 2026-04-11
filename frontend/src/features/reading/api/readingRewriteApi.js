@@ -148,3 +148,39 @@ export async function simplifyWords(sentence, words, targetLevel, accessToken, e
     traceId: data.trace_id,
   };
 }
+
+
+/**
+ * Sync a reading pack record to the backend (fire-and-forget).
+ * Maps IndexedDB RewriteRecord fields to the backend API schema.
+ * @param {object} record — IndexedDB RewriteRecord
+ * @param {Function} apiCall — authenticated fetch wrapper
+ */
+export async function syncReadingPackToServer(record, apiCall) {
+  if (!record?.articleId || !apiCall) return;
+  try {
+    await apiCall("/api/reading-packs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        article_id: record.articleId,
+        title: (record.originalText || "").slice(0, 60),
+        original_text: record.originalText || "",
+        rewritten_text: record.rewrittenText || "",
+        target_level: record.diagnosticSnapshot?.selectedTargetLevel || "B1",
+        flow_status: record.flowStatus || "idle",
+        mappings: record.mappings || null,
+        word_levels: record.wordLevels || null,
+        valid_i1_words: record.validI1Words || null,
+        valid_above_i1_words: record.validAboveI1Words || null,
+        removed_words: record.removedWords || null,
+        diagnostic: record.diagnosticSnapshot || null,
+        quiz: record.quiz || null,
+        vocab_cards: record.vocabCards || null,
+        course_data: record.courseData || null,
+      }),
+    });
+  } catch {
+    // Silent failure — backend sync is best-effort
+  }
+}

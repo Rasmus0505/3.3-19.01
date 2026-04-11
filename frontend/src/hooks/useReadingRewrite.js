@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readCefrLevel } from "../app/authStorage";
+import { syncReadingPackToServer } from "../features/reading/api/readingRewriteApi";
 import {
   getRewriteRecord,
   normalizeRewriteRecord,
@@ -165,9 +166,11 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
       });
       await dbSave(nextRecord);
       savedArticleIdRef.current = resolvedArticleId;
+      // Fire-and-forget sync to backend
+      syncReadingPackToServer(nextRecord, apiCall);
       return nextRecord;
     },
-    [articleId]
+    [articleId, apiCall]
   );
 
   const persistPipelineAction = useCallback(

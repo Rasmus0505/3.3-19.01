@@ -14,6 +14,7 @@ from app.models.billing import (
 
 from app.models.lesson import Lesson, LessonGenerationTask, LessonProgress, LessonSentence, MediaAsset, WordbookEntry, WordbookEntrySource
 from app.models.llm_usage import LLMUsageLog
+from app.models.reading_pack import ReadingPack
 from app.models.soe_result import SOEResult
 from app.models.user import User, UserLoginEvent
 from app.models.voice_profile import VoiceProfile
@@ -43,4 +44,5 @@ __all__ = [
     "SOEResult",
     "LLMUsageLog",
     "VoiceProfile",
+    "ReadingPack",
 ]
