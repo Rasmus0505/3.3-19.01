@@ -12,6 +12,8 @@ from app.infra.ocr.base import OCRConfig, OCRProvider, OCRResult, OCRWordInfo
 from app.infra.ocr import DashScopeOCRProvider
 from app.infra.translation.base import TranslationProvider, TranslationResult, TranslationRequest
 from app.infra.translation import QwenMTProvider
+from app.infra.vision.base import VisionConfig, VisionProvider, VisionResult
+from app.infra.vision import QwenVisionProvider
 
 __all__ = [
     "ASRProvider",
@@ -32,4 +34,8 @@ __all__ = [
     "TranslationResult",
     "TranslationRequest",
     "QwenMTProvider",
+    "VisionConfig",
+    "VisionProvider",
+    "VisionResult",
+    "QwenVisionProvider",
 ]

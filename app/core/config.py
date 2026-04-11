@@ -267,3 +267,22 @@ QWEN_OCR_TIMEOUT_SECONDS = _get_env_int(
     "QWEN_OCR_TIMEOUT_SECONDS",
     180,
 )
+
+# ===== Vision Configuration =====
+
+QWEN_VISION_BASE_URL = _get_env_text(
+    "QWEN_VISION_BASE_URL",
+    "VISION_BASE_URL",
+    default="https://dashscope.aliyuncs.com/compatible-mode/v1",
+)
+
+QWEN_VISION_MODEL = _get_env_text(
+    "QWEN_VISION_MODEL",
+    "VISION_MODEL",
+    default="qwen3-vl-flash",
+)
+
+QWEN_VISION_TIMEOUT_SECONDS = _get_env_int(
+    "QWEN_VISION_TIMEOUT_SECONDS",
+    45,
+)

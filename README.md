@@ -75,6 +75,8 @@
 - `FASTER_WHISPER_CPU_THREADS=4`
 - `MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 - `MT_MODEL=qwen-mt-flash`
+- `QWEN_VISION_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
+- `QWEN_VISION_MODEL=qwen3-vl-flash`
 - `ASR_SEGMENT_TARGET_SECONDS=300`
 - `ASR_SEGMENT_SEARCH_WINDOW_SECONDS=45`
 
@@ -206,6 +208,25 @@ $env:JWT_SECRET="change-me"
 python -m alembic -c alembic.ini upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
+
+### Qwen3-VL Flash 基础接入
+
+仓库现在额外提供了一套独立的通用图像理解基础能力，默认模型为 `qwen3-vl-flash`。
+
+- 这次接入只提供后端基础封装与 smoke test，不会替换当前生产 OCR 流程
+- 默认配置：
+  - `QWEN_VISION_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
+  - `QWEN_VISION_MODEL=qwen3-vl-flash`
+  - `QWEN_VISION_TIMEOUT_SECONDS=45`
+
+本地联通验证：
+
+```powershell
+$env:DASHSCOPE_API_KEY=((Get-Content .env.local | Select-String '^DASHSCOPE_API_KEY=').ToString().Split('=',2)[1])
+python scripts/smoke_test_qwen3_vl_flash.py
+```
+
+如果你已经在当前 shell 显式设置过 `DASHSCOPE_API_KEY`，可以直接运行 smoke test 脚本，无需再从 `.env.local` 加载。
 
 ### 本地网站 Bottle 1.0 运行时
 
