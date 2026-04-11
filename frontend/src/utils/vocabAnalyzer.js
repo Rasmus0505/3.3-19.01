@@ -532,17 +532,27 @@ class VocabAnalyzer {
     }
 
     // 1. 直接查表
+    let surfaceResult = null;
     if (this.wordMap.has(lower)) {
       const info = this.wordMap.get(lower);
-      return { word: lower, level: info.level, isUnknown: false };
+      surfaceResult = { word: lower, level: info.level, isUnknown: false };
     }
 
-    // 2. 尝试词形还原
+    // 2. 词形还原二次判断 — 即使直接查表命中也要检查还原后的词
+    // 词典不完善，变形词（如 moms=C1）可能被标过高等级，而原型（mom=A1）才是真实等级
     const lemma = this._lemmatize(lower);
     if (lemma !== lower && this.wordMap.has(lemma)) {
-      const info = this.wordMap.get(lemma);
-      return { word: lemma, level: info.level, isUnknown: false, original: lower };
+      const lemmaInfo = this.wordMap.get(lemma);
+      const lemmaResult = { word: lemma, level: lemmaInfo.level, isUnknown: false, original: lower };
+      if (!surfaceResult) return lemmaResult;
+      // 取等级更低的（更接近真实水平）
+      if (this._levelToNum(lemmaResult.level) < this._levelToNum(surfaceResult.level)) {
+        return lemmaResult;
+      }
     }
+
+    // 如果直接查表已命中且无更低的还原结果，返回表面结果
+    if (surfaceResult) return surfaceResult;
 
     // 3. 尝试还原不标准缩写（dont→do, cant→can …，不经撇号正则）
     const nonstandard = this._normalizeNonstandardContraction(lower);

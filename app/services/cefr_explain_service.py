@@ -203,18 +203,27 @@ class CefrExplainService:
         return {"words": {}}
 
     def _lookup_word(self, word: str) -> str | None:
-        """查询单词的 CEFR 等级（复用 vocabAnalyzer.js 的 5 级查询逻辑）"""
+        """查询单词的 CEFR 等级（含二次判断：词形还原后取更低等级）"""
         word_lower = word.lower()
         word_map = self.vocab_data.get("words", {})
 
         # Step 1: 直接查表
-        if word_lower in word_map:
-            return word_map[word_lower].get("level")
+        surface_level = word_map[word_lower].get("level") if word_lower in word_map else None
 
-        # Step 2: 词形还原（不规则映射 + 后缀规则）
+        # Step 2: 词形还原二次判断 — 即使直接查表命中也检查还原后的词
+        # 词典不完善，变形词（如 moms=C1）可能标过高，原型（mom=A1）才是真实等级
         lemma = self._lemmatize(word_lower)
         if lemma != word_lower and lemma in word_map:
-            return word_map[lemma].get("level")
+            lemma_level = word_map[lemma].get("level")
+            if lemma_level:
+                if not surface_level:
+                    return lemma_level
+                # 取等级更低的
+                if self._level_num(lemma_level) < self._level_num(surface_level):
+                    return lemma_level
+
+        if surface_level:
+            return surface_level
 
         # Step 3: 非标准缩写还原（dont → do, cant → can）
         nonstandard = self._normalize_nonstandard_contraction(word_lower)
@@ -229,15 +238,27 @@ class CefrExplainService:
         return None
 
     def _lookup_surface_word(self, word: str) -> str | None:
-        """查询表面词形的 CEFR 等级。
+        """查询表面词形的 CEFR 等级（含二次判断）。
 
-        首筛只看素材里当前出现的词形，不提前做词形还原。
+        即使词典直接命中，也要检查词形还原后是否等级更低，取更低的等级。
+        这样可以避免 moms=C1 而 mom=A1 导致的误判。
         """
         word_lower = word.lower()
         word_map = self.vocab_data.get("words", {})
-        if word_lower in word_map:
-            return word_map[word_lower].get("level")
-        return None
+
+        surface_level = word_map[word_lower].get("level") if word_lower in word_map else None
+
+        # 二次判断：词形还原后取更低等级
+        lemma = self._lemmatize(word_lower)
+        if lemma != word_lower and lemma in word_map:
+            lemma_level = word_map[lemma].get("level")
+            if lemma_level:
+                if not surface_level:
+                    return lemma_level
+                if self._level_num(lemma_level) < self._level_num(surface_level):
+                    return lemma_level
+
+        return surface_level
 
     def _lookup_dictionary_form_level(self, word: str) -> str | None:
         """查询词典里的最终词形等级。
@@ -547,6 +568,80 @@ Return ONLY valid JSON, no explanations."""
                 ],
                 "listen_tips": "句子中包含高级词汇,建议重点理解这些词的含义"
             }
+
+    def generate_explanations_batch(self, items: list[tuple[str, list[dict]]]) -> list[dict]:
+        """批量生成多句讲解（一次 LLM 调用），大幅减少长视频的生成时间。
+
+        Args:
+            items: [(sentence_text, explanation_words), ...]
+
+        Returns:
+            list[dict]: 每句的讲解结果，顺序与输入一致
+        """
+        if not items:
+            return []
+
+        # 构建批量 prompt
+        batch_parts = []
+        for i, (sentence, words_above) in enumerate(items):
+            words_str = ", ".join(w["word"] for w in words_above)
+            batch_parts.append(f"[Sentence {i + 1}]\nSentence: {sentence}\nWords: {words_str}")
+
+        user_prompt = f"""目标等级: {self.target_level}
+
+请为以下每句话中标注的词汇生成简洁讲解。
+
+{chr(10).join(batch_parts)}
+
+请返回一个 JSON 数组，每个元素对应一句话，格式如下：
+[
+  {{
+    "key_explanations": [
+      {{"word": "...", "meaning": "...", "usage_in_sentence": "...", "common_collocations": "..."}}
+    ],
+    "sentence_summary": "..."
+  }}
+]
+
+只返回有效 JSON，不要有其他解释。"""
+
+        messages = [
+            {"role": "system", "content": EXPLAIN_SENTENCE_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        try:
+            content, _ = call_deepseek(
+                messages=messages,
+                api_key=DASHSCOPE_API_KEY,
+                enable_thinking=False,
+                stream=False,
+                temperature=0.3,
+                max_tokens=min(4000, 500 * len(items)),
+            )
+
+            if content.startswith("```"):
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
+            content = content.strip()
+
+            results_raw = json.loads(content)
+            if not isinstance(results_raw, list):
+                results_raw = [results_raw]
+
+            # 确保输出数量与输入匹配
+            results = []
+            for i, (sentence, _) in enumerate(items):
+                if i < len(results_raw):
+                    results.append(self._convert_to_new_format(results_raw[i], sentence))
+                else:
+                    results.append({"simplified_sentence": None, "key_explanations": [], "listen_tips": ""})
+            return results
+
+        except Exception as e:
+            logger.error(f"Batch explanation failed: {e}")
+            raise
 
     def _convert_to_new_format(self, llm_result: dict, sentence: str) -> dict:
         """

@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import logging
 import re
 
 from app.services.cefr_explain_service import CefrExplainService
+
+logger = logging.getLogger(__name__)
+
+# 批量讲解：每批最多合并的句子数（避免单次 LLM 调用 token 过多）
+_EXPLANATION_BATCH_SIZE = 8
 
 
 def _create_service(*, target_level: str) -> CefrExplainService:
@@ -38,8 +44,10 @@ def process_sentences_with_cefr(
     if all_words_above:
         llm_lemmas = service.llm_lemmatize(all_words_above)
 
-    enriched_sentences: list[dict] = []
+    # ── Phase 1: 为每句构建 word_levels + filter_result，收集需要讲解的句子 ──
     word_regex = re.compile(r"[a-zA-Z]+(?:'[a-zA-Z]+)?")
+    sentence_meta: list[dict] = []  # per-sentence metadata
+    needs_explanation_queue: list[int] = []  # indices into sentence_meta
 
     for idx, sentence in enumerate(sentences):
         sentence_text = sentence.get("text_en", "")
@@ -70,66 +78,86 @@ def process_sentences_with_cefr(
                 continue
             surface_level = service._lookup_surface_word(word)
             if surface_level:
+                final_level = service._get_final_lemma_level(word, llm_lemma=None, surface_level=surface_level)
                 word_levels[word] = {
                     "surface_level": surface_level,
                     "llm_lemma": None,
-                    "final_level": surface_level,
+                    "final_level": final_level or surface_level,
                 }
 
-        if not words_above:
-            sentence["cefr_vocab_json"] = {
-                "words": [],
-                "filter_result": {},
-                "llm_lemmas": llm_lemmas if all_words_above else {},
-                "word_levels": word_levels,
-            }
-            sentence["needs_explanation"] = False
-            sentence["explanation_text"] = None
-            sentence["simplified_sentence"] = None
-            sentence["explanation_audio_url"] = None
-            sentence["key_explanations_json"] = None
-            enriched_sentences.append(sentence)
-            continue
+        filter_result = {}
+        explanation_words: list[dict] = []
+        if words_above:
+            filter_result = service.filter_words_by_level(words_above, llm_lemmas=llm_lemmas)
+            explanation_words = list(filter_result.get("valid_above_i1_words") or [])
 
-        filter_result = service.filter_words_by_level(words_above, llm_lemmas=llm_lemmas)
-        # 只讲解 i+2 及以上的词汇,不讲解 i+1 词汇
-        explanation_words = list(filter_result.get("valid_above_i1_words") or [])
-
-        if not explanation_words:
-            sentence["cefr_vocab_json"] = {
-                "words": words_above,
-                "filter_result": filter_result,
-                "llm_lemmas": llm_lemmas if all_words_above else {},
-                "word_levels": word_levels,
-            }
-            sentence["needs_explanation"] = False
-            sentence["explanation_text"] = None
-            sentence["simplified_sentence"] = None
-            sentence["explanation_audio_url"] = None
-            sentence["key_explanations_json"] = None
-            enriched_sentences.append(sentence)
-            continue
-
-        try:
-            explanation = service.generate_explanation(sentence_text, explanation_words)
-        except Exception:
-            explanation = {
-                "simplified_sentence": None,
-                "key_explanations": [],
-                "listen_tips": "",
-            }
-
-        sentence["cefr_vocab_json"] = {
-            "words": words_above,
-            "filter_result": filter_result,
-            "llm_lemmas": llm_lemmas if all_words_above else {},
+        meta = {
+            "idx": idx,
+            "sentence_text": sentence_text,
+            "words_above": words_above,
             "word_levels": word_levels,
+            "filter_result": filter_result,
+            "explanation_words": explanation_words,
+            "explanation": None,
         }
-        sentence["needs_explanation"] = True
-        sentence["explanation_text"] = explanation.get("listen_tips", "") or None
-        sentence["simplified_sentence"] = None
-        sentence["explanation_audio_url"] = None
-        sentence["key_explanations_json"] = explanation.get("key_explanations") or None
+        sentence_meta.append(meta)
+
+        if explanation_words:
+            needs_explanation_queue.append(idx)
+
+    # ── Phase 2: 批量生成讲解（多句合并为一次 LLM 调用） ──
+    for batch_start in range(0, len(needs_explanation_queue), _EXPLANATION_BATCH_SIZE):
+        batch_indices = needs_explanation_queue[batch_start:batch_start + _EXPLANATION_BATCH_SIZE]
+
+        if len(batch_indices) == 1:
+            # 单句直接调用
+            meta = sentence_meta[batch_indices[0]]
+            try:
+                meta["explanation"] = service.generate_explanation(meta["sentence_text"], meta["explanation_words"])
+            except Exception:
+                meta["explanation"] = {"simplified_sentence": None, "key_explanations": [], "listen_tips": ""}
+        else:
+            # 批量调用
+            try:
+                batch_explanations = service.generate_explanations_batch(
+                    [(sentence_meta[i]["sentence_text"], sentence_meta[i]["explanation_words"]) for i in batch_indices]
+                )
+                for i, exp in zip(batch_indices, batch_explanations):
+                    sentence_meta[i]["explanation"] = exp
+            except Exception:
+                logger.warning("batch explanation failed, falling back to single calls")
+                for i in batch_indices:
+                    meta = sentence_meta[i]
+                    try:
+                        meta["explanation"] = service.generate_explanation(meta["sentence_text"], meta["explanation_words"])
+                    except Exception:
+                        meta["explanation"] = {"simplified_sentence": None, "key_explanations": [], "listen_tips": ""}
+
+    # ── Phase 3: 组装结果 ──
+    enriched_sentences: list[dict] = []
+    for idx, sentence in enumerate(sentences):
+        meta = sentence_meta[idx]
+        sentence["cefr_vocab_json"] = {
+            "words": meta["words_above"],
+            "filter_result": meta["filter_result"],
+            "llm_lemmas": llm_lemmas if all_words_above else {},
+            "word_levels": meta["word_levels"],
+        }
+
+        explanation = meta["explanation"]
+        if explanation:
+            sentence["needs_explanation"] = True
+            sentence["explanation_text"] = explanation.get("listen_tips", "") or None
+            sentence["simplified_sentence"] = None
+            sentence["explanation_audio_url"] = None
+            sentence["key_explanations_json"] = explanation.get("key_explanations") or None
+        else:
+            sentence["needs_explanation"] = False
+            sentence["explanation_text"] = None
+            sentence["simplified_sentence"] = None
+            sentence["explanation_audio_url"] = None
+            sentence["key_explanations_json"] = None
+
         enriched_sentences.append(sentence)
 
     return enriched_sentences
