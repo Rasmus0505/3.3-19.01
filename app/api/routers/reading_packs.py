@@ -7,16 +7,27 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
-from app.db import get_db
+from app.db import Base, engine, get_db
 from app.models.reading_pack import ReadingPack
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/reading-packs", tags=["reading-packs"])
+
+# Auto-create table on module load if it doesn't exist
+try:
+    insp = inspect(engine)
+    table_names = insp.get_table_names(schema="app") if insp.has_schema("app") else insp.get_table_names()
+    if "reading_packs" not in table_names:
+        ReadingPack.__table__.create(engine, checkfirst=True)
+        logger.info("reading_packs table auto-created")
+except Exception as exc:
+    logger.warning("reading_packs auto-create check failed (will retry on first request): %s", exc)
 
 
 # ─── Schemas ─────────────────────────────────────────────────────────────────
@@ -94,11 +105,17 @@ def sync_reading_pack(
     current_user: User = Depends(get_current_user),
 ):
     """Upsert a reading pack record. Called by the frontend after generation or progress update."""
-    existing = (
-        db.query(ReadingPack)
-        .filter(ReadingPack.user_id == current_user.id, ReadingPack.article_id == body.article_id)
-        .first()
-    )
+    try:
+        existing = (
+            db.query(ReadingPack)
+            .filter(ReadingPack.user_id == current_user.id, ReadingPack.article_id == body.article_id)
+            .first()
+        )
+    except Exception:
+        # Table might not exist yet — try to create it
+        db.rollback()
+        ReadingPack.__table__.create(engine, checkfirst=True)
+        existing = None
 
     if existing:
         existing.title = body.title or existing.title
