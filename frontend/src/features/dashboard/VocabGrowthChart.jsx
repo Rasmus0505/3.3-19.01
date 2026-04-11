@@ -1,104 +1,85 @@
 import { motion } from "framer-motion";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "../../shared/ui";
+import { ArrowUpRight, Target } from "lucide-react";
+import { Badge, Card, CardContent } from "../../shared/ui";
 
-const LEVEL_CONFIG = [
-  { level: "A1", color: "#60a5fa", label: "入门" },
-  { level: "A2", color: "#3b82f6", label: "基础" },
-  { level: "B1", color: "#22c55e", label: "中级" },
-  { level: "B2", color: "#f97316", label: "中高级" },
-  { level: "C1", color: "#a855f7", label: "高级" },
-];
+const LEVEL_STYLES = {
+  A1: "bg-slate-300 text-slate-700",
+  A2: "bg-sky-100 text-sky-700",
+  B1: "bg-cyan-100 text-cyan-700",
+  B2: "bg-emerald-100 text-emerald-700",
+  C1: "bg-violet-100 text-violet-700",
+};
 
-function CustomTooltip({ active, payload }) {
-  if (!active || !payload?.[0]) return null;
-  const item = payload[0].payload;
-  return (
-    <div className="rounded-lg border bg-popover/95 px-3 py-2 text-xs shadow-xl backdrop-blur">
-      <p className="font-semibold">{item.level} · {item.label}</p>
-      <p className="text-muted-foreground">{item.count} 词</p>
-    </div>
-  );
-}
-
-export function VocabGrowthChart({ vocabularyByLevel = {} }) {
-  const data = LEVEL_CONFIG.map((cfg) => ({
-    level: cfg.level,
-    label: cfg.label,
-    count: vocabularyByLevel[cfg.level] || 0,
-    color: cfg.color,
-  }));
-
-  const total = data.reduce((sum, d) => sum + d.count, 0);
+export function VocabGrowthChart({ report }) {
+  const cefr = report?.cefr;
+  const targetItem = cefr?.items.find((item) => item.target) || cefr?.items[2];
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 24 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 260, damping: 24 }}
-    >
-      <Card className="overflow-hidden border-0 shadow-lg">
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent" />
-        <CardHeader className="relative pb-2">
-          <div className="flex items-baseline justify-between">
-            <CardTitle className="text-sm font-semibold">词汇分布 (CEFR)</CardTitle>
-            <span className="text-[11px] text-muted-foreground">共 {total} 词</span>
+    <Card className="relative overflow-hidden rounded-[30px] border border-white/50 bg-white/80 shadow-[0_28px_80px_-44px_rgba(15,23,42,0.58)] backdrop-blur-xl">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.14),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.35),rgba(248,250,252,0.82))]" />
+      <CardContent className="relative p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">CEFR Breakthrough</p>
+            <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">词汇层级突破面板</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              不做普通柱状图，直接展示当前词汇分布和下一层突破目标。
+            </p>
           </div>
-        </CardHeader>
-        <CardContent className="relative">
-          {total === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">暂无生词本数据</p>
-          ) : (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3 }}
-            >
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={data} margin={{ top: 10, right: 10, bottom: 5, left: -15 }}>
-                  <XAxis
-                    dataKey="level"
-                    tick={{ fontSize: 12, fontWeight: 600 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--muted) / 0.3)", radius: 6 }} />
-                  <Bar
-                    dataKey="count"
-                    radius={[8, 8, 0, 0]}
-                    maxBarSize={52}
-                    animationBegin={400}
-                    animationDuration={1000}
-                    animationEasing="ease-out"
-                  >
-                    {data.map((entry) => (
-                      <Cell key={entry.level} fill={entry.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+          <div className="text-right">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Lexicon</p>
+            <p className="mt-1 text-3xl font-black tracking-tight text-slate-950">{cefr?.total || 0}</p>
+          </div>
+        </div>
 
-              {/* Level legend */}
-              <div className="mt-2 flex flex-wrap justify-center gap-3">
-                {data.map((d) => (
-                  <motion.div
-                    key={d.level}
-                    className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.8 }}
-                  >
-                    <div className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: d.color }} />
-                    <span>{d.level}</span>
-                    <span className="text-[10px]">({d.label})</span>
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </CardContent>
-      </Card>
-    </motion.div>
+        <div className="mt-5 overflow-hidden rounded-[24px] border border-slate-200/70 bg-slate-50/90 p-4">
+          <div className="flex h-4 overflow-hidden rounded-full bg-slate-200">
+            {cefr?.items.map((item) => (
+              <div
+                key={item.level}
+                className={`h-full ${LEVEL_STYLES[item.level]?.split(" ")[0] || "bg-slate-300"}`}
+                style={{ width: `${Math.max(item.share, item.count > 0 ? 4 : 0)}%` }}
+              />
+            ))}
+          </div>
+
+          <div className="mt-4 grid gap-2 md:grid-cols-5">
+            {cefr?.items.map((item, index) => (
+              <motion.div
+                key={item.level}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.18 + index * 0.05, duration: 0.28 }}
+                className="rounded-[18px] border border-slate-200/70 bg-white/90 p-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <Badge className={`rounded-full border-0 px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] ${LEVEL_STYLES[item.level]}`}>
+                    {item.level}
+                  </Badge>
+                  {item.target ? <ArrowUpRight className="h-4 w-4 text-emerald-500" /> : null}
+                </div>
+                <p className="mt-3 text-2xl font-black tracking-tight text-slate-950">{item.count}</p>
+                <p className="mt-1 text-sm text-slate-600">{item.share}% 占比</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 flex items-start gap-3 rounded-[22px] border border-emerald-200/70 bg-emerald-50/90 p-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-lg shadow-emerald-500/20">
+            <Target className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Next Target</p>
+            <p className="mt-1 text-lg font-black tracking-tight text-emerald-950">
+              冲击 {targetItem?.level || report.predictedLevel} 层词汇密度
+            </p>
+            <p className="mt-1 text-sm leading-6 text-emerald-800">
+              当前高层级词汇还没完全撑开。优先补齐 {targetItem?.level || report.predictedLevel} 段材料，可以让整页战报更有“进阶感”。
+            </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

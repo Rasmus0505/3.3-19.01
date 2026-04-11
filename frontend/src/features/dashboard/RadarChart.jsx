@@ -1,173 +1,65 @@
 import { motion } from "framer-motion";
-import { Card, CardContent, CardHeader, CardTitle } from "../../shared/ui";
+import { Badge, Card, CardContent } from "../../shared/ui";
 
-const LABELS = [
-  { key: "listening", label: "听力", color: "#3b82f6" },
-  { key: "reading", label: "阅读", color: "#22c55e" },
-  { key: "vocabulary", label: "词汇", color: "#a855f7" },
-  { key: "grammar", label: "语法", color: "#f97316" },
-  { key: "speaking", label: "口语", color: "#ec4899" },
-];
-
-const SIZE = 300;
-const CX = SIZE / 2;
-const CY = SIZE / 2;
-const R = 105;
-
-function polarToXY(angle, radius) {
-  const rad = ((angle - 90) * Math.PI) / 180;
-  return [CX + radius * Math.cos(rad), CY + radius * Math.sin(rad)];
+function getScoreTone(score) {
+  if (score >= 80) return "from-cyan-500 to-blue-600";
+  if (score >= 65) return "from-emerald-400 to-teal-500";
+  if (score >= 50) return "from-amber-400 to-orange-500";
+  return "from-rose-400 to-pink-500";
 }
 
-function polygonPoints(values, maxR) {
-  return values
-    .map((v, i) => {
-      const angle = (360 / values.length) * i;
-      return polarToXY(angle, (v / 100) * maxR);
-    })
-    .map(([x, y]) => `${x},${y}`)
-    .join(" ");
-}
-
-function gridPolygon(level) {
-  const r = R * level;
-  return Array.from({ length: 5 }, (_, i) => polarToXY((360 / 5) * i, r))
-    .map(([x, y]) => `${x},${y}`)
-    .join(" ");
-}
-
-export function RadarChart({ skillScores = {} }) {
-  const values = LABELS.map((l) => skillScores[l.key] || 0);
-  const avgScore = values.length > 0 ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0;
+export function RadarChart({ report }) {
+  const items = report?.capabilityItems || [];
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.96 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
-    >
-      <Card className="overflow-hidden border-0 shadow-lg">
-        <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 to-transparent" />
-        <CardHeader className="relative pb-2">
-          <div className="flex items-baseline justify-between">
-            <CardTitle className="text-sm font-semibold">能力雷达</CardTitle>
-            <span className="text-[11px] text-muted-foreground">综合 {avgScore} 分</span>
+    <Card className="relative overflow-hidden rounded-[30px] border border-white/50 bg-white/80 shadow-[0_28px_80px_-44px_rgba(15,23,42,0.58)] backdrop-blur-xl">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.16),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.4),rgba(248,250,252,0.84))]" />
+      <CardContent className="relative p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">Capability Matrix</p>
+            <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">五维能力矩阵</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              用排序和能量条直接表达强弱关系，比雷达图更适合比赛截图。
+            </p>
           </div>
-        </CardHeader>
-        <CardContent className="relative flex items-center justify-center pb-2">
-          <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-auto w-full max-w-[280px]">
-            {/* Defs for gradient */}
-            <defs>
-              <linearGradient id="radarFill" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="hsl(270 80% 60%)" stopOpacity="0.3" />
-                <stop offset="100%" stopColor="hsl(230 80% 60%)" stopOpacity="0.15" />
-              </linearGradient>
-              <linearGradient id="radarStroke" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="hsl(270 80% 60%)" />
-                <stop offset="100%" stopColor="hsl(230 80% 60%)" />
-              </linearGradient>
-              <filter id="glow">
-                <feGaussianBlur stdDeviation="3" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-            </defs>
+          <div className="text-right">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Overall</p>
+            <p className="mt-1 text-3xl font-black tracking-tight text-slate-950">{report.overallScore}</p>
+          </div>
+        </div>
 
-            {/* Grid rings */}
-            {[0.33, 0.66, 1].map((level) => (
-              <polygon
-                key={level}
-                points={gridPolygon(level)}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="0.5"
-                className="text-border/50"
-                strokeDasharray={level < 1 ? "2 3" : "none"}
-              />
-            ))}
-
-            {/* Axis lines */}
-            {LABELS.map((_, i) => {
-              const [x, y] = polarToXY((360 / 5) * i, R);
-              return (
-                <line
-                  key={i}
-                  x1={CX}
-                  y1={CY}
-                  x2={x}
-                  y2={y}
-                  stroke="currentColor"
-                  strokeWidth="0.5"
-                  className="text-border/40"
+        <div className="mt-5 grid gap-3">
+          {items.map((item, index) => (
+            <motion.div
+              key={item.key}
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.16 + index * 0.05, duration: 0.3 }}
+              className="rounded-[22px] border border-slate-200/70 bg-slate-50/90 p-4"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <Badge className="rounded-full border-0 bg-slate-950 px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-white">
+                    NO.{item.rank}
+                  </Badge>
+                  <div>
+                    <p className="text-base font-bold text-slate-950">{item.label}</p>
+                    <p className="text-sm text-slate-600">{item.summary}</p>
+                  </div>
+                </div>
+                <p className="text-2xl font-black tracking-tight text-slate-950">{item.score}</p>
+              </div>
+              <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className={`h-full rounded-full bg-gradient-to-r ${getScoreTone(item.score)}`}
+                  style={{ width: `${item.score}%` }}
                 />
-              );
-            })}
-
-            {/* Animated data polygon */}
-            <motion.polygon
-              points={polygonPoints(values.map(() => 0), R)}
-              animate={{ points: polygonPoints(values, R) }}
-              transition={{ duration: 1.2, ease: "easeOut", delay: 0.3 }}
-              fill="url(#radarFill)"
-              stroke="url(#radarStroke)"
-              strokeWidth="2.5"
-              strokeLinejoin="round"
-              filter="url(#glow)"
-            />
-
-            {/* Data points with glow */}
-            {values.map((v, i) => {
-              const [x, y] = polarToXY((360 / 5) * i, (v / 100) * R);
-              return (
-                <motion.g key={i}>
-                  <motion.circle
-                    cx={CX}
-                    cy={CY}
-                    animate={{ cx: x, cy: y }}
-                    transition={{ duration: 1.2, ease: "easeOut", delay: 0.3 + i * 0.05 }}
-                    r="5"
-                    fill={LABELS[i].color}
-                    opacity="0.3"
-                  />
-                  <motion.circle
-                    cx={CX}
-                    cy={CY}
-                    animate={{ cx: x, cy: y }}
-                    transition={{ duration: 1.2, ease: "easeOut", delay: 0.3 + i * 0.05 }}
-                    r="3"
-                    fill={LABELS[i].color}
-                  />
-                </motion.g>
-              );
-            })}
-
-            {/* Labels */}
-            {LABELS.map((l, i) => {
-              const [x, y] = polarToXY((360 / 5) * i, R + 28);
-              return (
-                <motion.text
-                  key={i}
-                  x={x}
-                  y={y}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  className="fill-foreground text-[11px] font-semibold"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.8 + i * 0.1 }}
-                >
-                  {l.label}
-                  <tspan x={x} dy="14" className="fill-muted-foreground text-[10px] font-normal">
-                    {values[i]}
-                  </tspan>
-                </motion.text>
-              );
-            })}
-          </svg>
-        </CardContent>
-      </Card>
-    </motion.div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
