@@ -11,6 +11,7 @@ from app.models.billing import (
     WalletAccount,
     WalletLedger,
 )
+from app.models.course import Course, CourseScene
 from app.models.lesson import Lesson, LessonGenerationTask, LessonProgress, LessonSentence, MediaAsset, WordbookEntry, WordbookEntrySource
 from app.models.llm_usage import LLMUsageLog
 from app.models.soe_result import SOEResult
@@ -21,6 +22,8 @@ __all__ = [
     "Announcement",
     "User",
     "UserLoginEvent",
+    "Course",
+    "CourseScene",
     "Lesson",
     "LessonSentence",
     "LessonProgress",

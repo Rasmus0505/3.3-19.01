@@ -9,6 +9,8 @@ APP_SCHEMA = "app"
 BUSINESS_TABLES = (
     "users",
     "user_login_events",
+    "courses",
+    "course_scenes",
     "lessons",
     "lesson_sentences",
     "lesson_progress",

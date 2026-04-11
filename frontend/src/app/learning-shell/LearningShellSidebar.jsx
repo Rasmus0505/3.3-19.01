@@ -1,4 +1,4 @@
-import { BookOpenText, ChevronDown, History, LogIn, LogOut, RefreshCw, Search, Shield, Sparkles, UploadCloud, UserRound, Wifi, WifiOff } from "lucide-react";
+import { BookOpenText, ChevronDown, History, LogIn, LogOut, RefreshCw, Search, Shield, Sparkles, UploadCloud, UserRound, Wifi, WifiOff, Unlock } from "lucide-react";
 
 import {
   SidebarContent,
@@ -37,6 +37,13 @@ export const PANEL_ITEMS = [
   {
     ...PANEL_ROUTE_ITEMS.find((item) => item.key === "reading"),
     icon: BookOpenText,
+  },
+  {
+    key: "course",
+    title: "课程生成",
+    path: "/course",
+    matchPaths: ["/course", "/course/create"],
+    icon: Unlock,
   },
 ];
 
