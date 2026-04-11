@@ -468,11 +468,13 @@ export function ReadingPage({ accessToken, apiCall }) {
   return (
     <Suspense fallback={<PageFallback />}>
       <div className="reading-container">
-        <HistoryPanel
-          onSelect={handleSelectHistory}
-          activeId={activeHistoryId}
-          refreshKey={historyRefreshKey}
-        />
+        {mode !== "course" && (
+          <HistoryPanel
+            onSelect={handleSelectHistory}
+            activeId={activeHistoryId}
+            refreshKey={historyRefreshKey}
+          />
+        )}
 
         {mode === "diagnostic" ? (
           <div className="reading-diagnostic-layout">
@@ -553,7 +555,7 @@ export function ReadingPage({ accessToken, apiCall }) {
         ) : null}
 
         {mode === "course" ? (
-          <div className="reading-pack-layout" style={{ height: "calc(100dvh - 8.5rem)" }}>
+          <div style={{ height: "calc(100dvh - 5rem)", borderRadius: "0.75rem", overflow: "hidden", border: "1px solid var(--border)" }}>
             <CoursePlayer
               pack={readingPack || {
                 originalText: activeArticleText,
