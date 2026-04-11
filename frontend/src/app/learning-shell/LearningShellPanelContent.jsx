@@ -12,8 +12,7 @@ const LessonList = lazy(() => import("../../features/lessons/LessonList").then((
 const WordbookPanel = lazy(() => import("../../features/wordbook/WordbookPanel").then((module) => ({ default: module.WordbookPanel })));
 const UploadPanel = lazy(() => import("../../features/upload/UploadPanel").then((module) => ({ default: module.UploadPanel })));
 const ReadingPage = lazy(() => import("../../features/reading/ReadingPage").then((module) => ({ default: module.ReadingPage })));
-const CourseListPanel = lazy(() => import("../../features/course/CourseListPage").then((module) => ({ default: module.CourseListPage })));
-const CourseCreatePanel = lazy(() => import("../../features/course/CourseCreatePage").then((module) => ({ default: module.CourseCreatePage })));
+
 
 function PanelFallback() {
   return <div className="rounded-2xl border bg-card p-4 text-sm text-muted-foreground">内容加载中...</div>;
@@ -137,22 +136,6 @@ export function LearningShellPanelContent({
           <div className="flex min-h-[calc(100dvh-8.5rem)] flex-col">
             <ReadingPage accessToken={accessToken} apiCall={apiCall} />
           </div>
-        </Suspense>
-      );
-    }
-
-    if (activePanel === "course") {
-      return (
-        <Suspense fallback={<PanelFallback />}>
-          <CourseListPanel />
-        </Suspense>
-      );
-    }
-
-    if (activePanel === "course-create") {
-      return (
-        <Suspense fallback={<PanelFallback />}>
-          <CourseCreatePanel />
         </Suspense>
       );
     }

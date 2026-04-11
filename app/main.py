@@ -24,9 +24,7 @@ from app.api.routers.asr_models import router as asr_models_router
 from app.api.routers.auth.router import router as auth_router
 from app.api.routers.billing.router import router as billing_router
 from app.api.routers.billing.wallet import router as wallet_router
-from app.api.routers.course import router as course_router
 from app.api.routers.dashscope_upload import router as dashscope_upload_router
-from app.api.routers.discussion import router as discussion_router
 from app.api.routers.lessons.cloud_transcribe import router as cloud_transcribe_router
 from app.api.routers.lessons.router import router as lessons_router
 from app.api.routers.dictation import router as dictation_router
@@ -748,8 +746,6 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(admin_sql_console_router)
     app.include_router(admin_announcements_router)
     app.include_router(transcribe_router)
-    app.include_router(course_router)
-    app.include_router(discussion_router)
     app.include_router(lessons_router)
     app.include_router(cloud_transcribe_router)
     app.include_router(dashscope_upload_router)

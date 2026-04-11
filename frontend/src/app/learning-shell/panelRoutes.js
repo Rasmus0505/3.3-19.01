@@ -31,18 +31,6 @@ export const PANEL_ROUTE_ITEMS = [
     path: "/reading",
     matchPaths: ["/reading"],
   },
-  {
-    key: "course-create",
-    title: "创建课程",
-    path: "/course/create",
-    matchPaths: ["/course/create"],
-  },
-  {
-    key: "course",
-    title: "课程生成",
-    path: "/course",
-    matchPaths: ["/course"],
-  },
 ];
 
 export const LEARNING_PAGE_PATHS = Array.from(new Set(PANEL_ROUTE_ITEMS.flatMap((item) => item.matchPaths)));
