@@ -1,6 +1,9 @@
 """TTS (Text-to-Speech) synthesis API endpoints."""
 from __future__ import annotations
 
+import base64
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -21,6 +24,24 @@ from app.services.tts_service import (
     get_available_voices,
     synthesize_speech,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _synthesize_via_tts_v2(text: str, voice: str, model: str = "cosyvoice-v1") -> str:
+    """Use dashscope.audio.tts_v2.SpeechSynthesizer to get raw audio bytes,
+    return as a base64 data URI so the browser can play it without CORS issues."""
+    import dashscope
+    from dashscope.audio.tts_v2 import SpeechSynthesizer
+    from app.core.config import DASHSCOPE_API_KEY
+
+    dashscope.api_key = DASHSCOPE_API_KEY
+    synth = SpeechSynthesizer(model=model, voice=voice)
+    audio_bytes: bytes = synth.call(text)
+    if not audio_bytes:
+        raise TTSError("TTS_EMPTY", "SpeechSynthesizer returned empty audio")
+    b64 = base64.b64encode(audio_bytes).decode()
+    return f"data:audio/mpeg;base64,{b64}"
 
 
 router = APIRouter(prefix="/api/tts", tags=["tts"])
@@ -79,19 +100,35 @@ async def synthesize_text(
 
     Returns an audio URL that is valid for 24 hours.
     """
+    # Determine which model to use; default to cosyvoice-v1 for the reading classroom
+    model = request.model or "cosyvoice-v1"
+    voice = request.voice or "longxiaochun"
+
+    # Try tts_v2 SpeechSynthesizer first — returns raw audio bytes → base64 data URI.
+    # This avoids CORS/autoplay issues with DashScope CDN URLs.
+    try:
+        audio_url = _synthesize_via_tts_v2(request.text, voice, model)
+        return TTSResponse(
+            ok=True,
+            audio_url=audio_url,
+            model=model,
+            voice=voice,
+            characters=len(request.text),
+            finish_reason="complete",
+        )
+    except Exception as tts_v2_exc:
+        logger.warning("tts_v2 failed (%s), falling back to synthesize_speech", tts_v2_exc)
+
+    # Fallback: legacy synthesize_speech (may return CDN URL)
     try:
         result = synthesize_speech(
             text=request.text,
-            voice=request.voice,
-            model=request.model,
+            voice=voice,
+            model=model,
             language_type=request.language_type or "Auto",
         )
-
-        # Prefer audio_data (base64) over audio_url for browser autoplay compatibility.
-        # DashScope CDN URLs can be blocked by browser autoplay policy; base64 data URIs are not.
         audio_url = result.audio_url
         if result.audio_data and not audio_url:
-            # audio_data is raw base64; wrap as data URI so frontend can use it directly
             audio_url = f"data:audio/mpeg;base64,{result.audio_data}"
 
         return TTSResponse(

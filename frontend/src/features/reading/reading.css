@@ -5143,7 +5143,7 @@
 /* ── Roundtable ───────────────────────────────────────────────────────────── */
 
 .rc-roundtable-wrap {
-  flex: 1;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -5347,4 +5347,306 @@
   .rc-canvas { max-height: 44%; }
   .rc-bubble { max-width: 88%; }
   .rc-sidebar__inner { width: 200px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   OpenMAIC-style Roundtable Stage Bar  (rt-*)
+   Fixed 192px height, three-column layout: teacher | bubble | students
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.rt-stage {
+  display: flex;
+  align-items: stretch;
+  height: 192px;
+  width: 100%;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+  overflow: hidden;
+}
+
+/* ── Teacher column (left, 90px) ────────────────────────────────────── */
+
+.rt-teacher {
+  width: 90px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-right: 1px solid var(--border);
+  padding: 0.75rem 0.5rem;
+  background: linear-gradient(180deg, oklch(from var(--primary) l c h / 0.04) 0%, transparent 100%);
+  position: relative;
+}
+
+.rt-teacher__avatar-wrap {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+  overflow: hidden;
+}
+
+.rt-teacher__avatar-wrap--active {
+  border-color: #a78bfa;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.4);
+  transform: scale(1.05);
+}
+
+.rt-teacher__avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.rt-teacher__dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #22c55e;
+  border: 2px solid var(--card);
+  animation: rc-dot-pulse 1.6s ease-in-out infinite;
+}
+
+.rt-teacher__name {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+/* ── Center speech area (flex-1) ────────────────────────────────────── */
+
+.rt-center {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0.75rem 1rem;
+  gap: 0.5rem;
+  overflow: hidden;
+}
+
+/* Speech bubble */
+.rt-bubble {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: 1.25rem;
+  border: 1px solid var(--border);
+  max-width: 100%;
+  backdrop-filter: blur(16px);
+}
+
+.rt-bubble--teacher {
+  background: oklch(from var(--primary) l c h / 0.05);
+  border-color: oklch(from var(--primary) l c h / 0.2);
+  border-radius: 1.25rem 1.25rem 1.25rem 0.25rem;
+}
+
+.rt-bubble--student {
+  background: oklch(0.55 0.15 230 / 0.06);
+  border-color: oklch(0.55 0.15 230 / 0.25);
+  border-radius: 1.25rem 1.25rem 0.25rem 1.25rem;
+  align-self: flex-end;
+}
+
+.rt-bubble--idle {
+  background: var(--muted);
+  border-style: dashed;
+  opacity: 0.6;
+  border-radius: 1.25rem;
+}
+
+.rt-bubble__idle-text {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+/* Mini avatar badge on bubble */
+.rt-bubble__avatar {
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  overflow: hidden;
+}
+
+.rt-bubble__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rt-bubble__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.rt-bubble__name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.rt-bubble__name {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.rt-bubble__text {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--foreground);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+/* Message history (compact, above bubble) */
+.rt-history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 2.5rem;
+  overflow: hidden;
+  opacity: 0.45;
+}
+
+.rt-history__item {
+  font-size: 0.68rem;
+  line-height: 1.3;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Breathing bars ─────────────────────────────────────────────────── */
+
+.rt-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+  width: 14px;
+}
+
+.rt-bars__bar {
+  width: 4px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Students column (right, 140px) ─────────────────────────────────── */
+
+.rt-students {
+  width: 140px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0.5rem;
+  border-left: 1px solid var(--border);
+  gap: 0.5rem;
+  background: oklch(0 0 0 / 0.01);
+}
+
+.rt-students__row {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.rt-students__avatar-wrap {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  overflow: visible;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.rt-students__avatar-wrap--active {
+  border-color: #60a5fa;
+  box-shadow: 0 0 8px rgba(96, 165, 250, 0.4);
+}
+
+.rt-students__avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+.rt-students__dot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #22c55e;
+  border: 1.5px solid var(--card);
+  animation: rc-dot-pulse 1.6s ease-in-out infinite;
+}
+
+.rt-students__latest {
+  font-size: 0.68rem;
+  color: var(--muted-foreground);
+  text-align: center;
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  padding: 0 0.25rem;
+}
+
+.rt-students__user-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.rt-students__user-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--border);
+}
+
+.rt-students__user-label {
+  font-size: 0.6rem;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
 }
