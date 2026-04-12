@@ -11,7 +11,7 @@
  * - 提供徽章查询：哪些文章已有重写记录
  */
 import { createInitialPipelineState, normalizePipelineState } from "./readingPipelineMachine";
-import { buildFallbackReadingCourseFromPack, looksLikeReadingCourse, normalizeReadingCourse } from "./readingCourse";
+import { buildFallbackReadingCourseFromPack, looksLikeReadingCourse, looksLikeV3Course, normalizeReadingCourse, normalizeV3Course } from "./readingCourse";
 
 const DB_NAME = "reading_rewrites_v3";
 const DB_VERSION = 1;
@@ -68,7 +68,11 @@ export function deriveFlowStatus(record = {}) {
   if (record.flowStatus) {
     return record.flowStatus;
   }
-  if (looksLikeReadingCourse(record.readingCourse) || looksLikeReadingCourse(record.courseData)) {
+  if (
+    looksLikeV3Course(record.readingCourse) ||
+    looksLikeReadingCourse(record.readingCourse) ||
+    looksLikeReadingCourse(record.courseData)
+  ) {
     return "generated";
   }
   if (record.readingPack?.status === "completed" || record.rewrittenText) {
@@ -93,10 +97,10 @@ export function normalizeRewriteRecord(record) {
   const fallbackCourse = record.readingPack
     ? buildFallbackReadingCourseFromPack(record.readingPack, record.articleId)
     : null;
-  const readingCourse = normalizeReadingCourse(
-    record.readingCourse || record.courseData,
-    fallbackCourse,
-  );
+  const rawCourse = record.readingCourse || record.courseData;
+  const readingCourse = looksLikeV3Course(rawCourse)
+    ? normalizeV3Course(rawCourse)
+    : normalizeReadingCourse(rawCourse, fallbackCourse);
   return {
     ...record,
     pipeline: normalizePipelineState(record.pipeline || createInitialPipelineState()),

@@ -16,7 +16,7 @@ import {
   updatePackViewMode as dbUpdatePackViewMode,
   updateViewMode as dbUpdateViewMode,
 } from "../features/reading/readingRewriteDB";
-import { normalizeReadingCourse } from "../features/reading/readingCourse";
+import { looksLikeV3Course, normalizeReadingCourse, normalizeV3Course } from "../features/reading/readingCourse";
 import { buildDiagnosticSnapshot, updateDiagnosticTarget } from "../features/reading/readingDiagnostics";
 import {
   createInitialPipelineState,
@@ -841,7 +841,8 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
           wordLevels: finalWordLevels,
         });
 
-        const classroomResp = await apiCall("/api/llm/reading-course/generate", {
+        // Use v3 endpoint — dynamic sections, rewrite-highlighted reading experience
+        const classroomResp = await apiCall("/api/llm/reading-course/generate-v3", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -850,7 +851,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
             original_text: safeOriginalText,
             rewritten_text: nextRewrittenText,
             target_level: nextDiagnosticSnapshot.selectedTargetLevel,
-            valid_i1_words: uniqueValidI1Words,
+            rewrite_mappings: nextMappings,
             valid_above_i1_words: uniqueFinalAboveI1Words,
             word_levels: finalWordLevels,
           }),
@@ -861,7 +862,12 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         }
 
         const classroomData = await classroomResp.json();
-        const nextReadingCourse = normalizeReadingCourse(classroomData.course);
+        let nextReadingCourse = null;
+        if (looksLikeV3Course(classroomData.course)) {
+          nextReadingCourse = normalizeV3Course(classroomData.course);
+        } else {
+          nextReadingCourse = normalizeReadingCourse(classroomData.course);
+        }
         if (!nextReadingCourse) {
           throw new Error("阅读课堂返回了无效结构");
         }

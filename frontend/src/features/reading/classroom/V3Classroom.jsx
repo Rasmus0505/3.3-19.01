@@ -1,0 +1,434 @@
+/**
+ * V3Classroom — main controller for schema_version: 3 courses.
+ *
+ * Each section walks through four phases:
+ *   read → explain → quiz → discuss
+ *
+ * Phase "read":   ReadingSection (silent, user reads)
+ * Phase "explain": ExplainSection (spotlight + TTS)
+ * Phase "quiz":   QuizSection
+ * Phase "discuss": DiscussSection
+ */
+import { useCallback, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ArrowLeft, Volume2, VolumeX } from "lucide-react";
+import { Button } from "../../../shared/ui";
+import { cn } from "../../../lib/utils";
+import { saveReadingCourseToRecord } from "../readingRewriteDB";
+import { SectionProgress } from "./SectionProgress";
+import { Roundtable } from "./Roundtable";
+import { ReadingSection } from "./sections/ReadingSection";
+
+const PHASES = ["read", "explain", "quiz", "discuss"];
+
+function resolvePublicUrl(path) {
+  const base =
+    typeof import.meta !== "undefined" && import.meta.env?.BASE_URL
+      ? String(import.meta.env.BASE_URL)
+      : "/";
+  return `${base.replace(/\/?$/, "/")}${String(path || "").replace(/^\/+/, "")}`;
+}
+
+// ── Minimal Roundtable wrapper (56px) for read/quiz phases ───────────────────
+
+function MiniRoundtable({ teacherName, hint }) {
+  return (
+    <div className="v3-mini-rt">
+      <img
+        src={resolvePublicUrl("/avatars/teacher.png")}
+        alt={teacherName}
+        className="v3-mini-rt__avatar"
+      />
+      <span className="v3-mini-rt__hint">{hint}</span>
+    </div>
+  );
+}
+
+// ── QuizSection (inline for Phase 1 scope) ───────────────────────────────────
+
+function QuizSection({ section, onComplete, onSkip }) {
+  const questions = section?.quiz || [];
+  const [answers, setAnswers] = useState({});
+  const [submitted, setSubmitted] = useState(false);
+
+  const score = useMemo(() => {
+    if (!submitted) return null;
+    const correct = questions.filter((q, i) => {
+      const answer = answers[i];
+      return answer === (q.answer || q.correct_answer);
+    }).length;
+    return Math.round((correct / Math.max(questions.length, 1)) * 100);
+  }, [submitted, answers, questions]);
+
+  if (questions.length === 0) {
+    return (
+      <div className="v3-quiz v3-quiz--empty">
+        <p>本节暂无题目</p>
+        <Button onClick={onComplete}>继续</Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="v3-quiz">
+      {questions.map((q, qi) => (
+        <div key={qi} className="v3-quiz__question">
+          <p className="v3-quiz__q-text">
+            <span className="v3-quiz__q-num">Q{qi + 1}</span>
+            {q.question}
+          </p>
+          <div className="v3-quiz__options">
+            {(q.options || []).map((opt) => {
+              const val = typeof opt === "object" ? opt.value : opt;
+              const label = typeof opt === "object" ? opt.label : opt;
+              const selected = answers[qi] === val;
+              const isCorrect = submitted && val === (q.answer || q.correct_answer);
+              const isWrong = submitted && selected && !isCorrect;
+              return (
+                <button
+                  key={val}
+                  type="button"
+                  disabled={submitted}
+                  className={cn(
+                    "v3-quiz__option",
+                    selected && "v3-quiz__option--selected",
+                    isCorrect && "v3-quiz__option--correct",
+                    isWrong && "v3-quiz__option--wrong",
+                  )}
+                  onClick={() => !submitted && setAnswers((a) => ({ ...a, [qi]: val }))}
+                >
+                  <span className="v3-quiz__option-key">{val}</span>
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          {submitted && q.analysis && (
+            <p className="v3-quiz__analysis">{q.analysis}</p>
+          )}
+        </div>
+      ))}
+
+      <div className="v3-quiz__footer">
+        {!submitted ? (
+          <>
+            <Button
+              onClick={() => setSubmitted(true)}
+              disabled={Object.keys(answers).length < questions.length}
+            >
+              提交
+            </Button>
+            <Button variant="ghost" onClick={onSkip}>跳过</Button>
+          </>
+        ) : (
+          <>
+            <span className="v3-quiz__score">得分 {score}%</span>
+            <Button onClick={onComplete}>继续</Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── DiscussSection (inline for Phase 1 scope) ─────────────────────────────────
+
+function DiscussSection({ section, course, apiCall, onComplete, onSkip }) {
+  const [messages, setMessages] = useState([]);
+  const [draft, setDraft] = useState("");
+  const [loading, setLoading] = useState(false);
+  const teacher = course?.participants?.find((p) => p.role === "teacher");
+
+  const send = async () => {
+    if (!draft.trim() || !apiCall) return;
+    const userMsg = draft.trim();
+    setDraft("");
+    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    setLoading(true);
+    try {
+      const res = await apiCall("/api/llm/reading-course/discussion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          course,
+          scene_id: section.id,
+          message: userMsg,
+          history: messages,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
+      }
+    } catch (e) {
+      // silent
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="v3-discuss">
+      <div className="v3-discuss__messages">
+        {messages.length === 0 && (
+          <p className="v3-discuss__hint">有问题尽管问，或者跳过继续下一节</p>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} className={cn("v3-discuss__msg", m.role === "user" ? "v3-discuss__msg--user" : "v3-discuss__msg--teacher")}>
+            {m.role === "assistant" && (
+              <img src={resolvePublicUrl("/avatars/teacher.png")} alt="teacher" className="v3-discuss__avatar" />
+            )}
+            <p>{m.content}</p>
+          </div>
+        ))}
+        {loading && <p className="v3-discuss__loading">Coach Mira 正在回复…</p>}
+      </div>
+      <div className="v3-discuss__compose">
+        <textarea
+          className="v3-discuss__input"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="问老师任何问题…"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              send();
+            }
+          }}
+        />
+        <div className="v3-discuss__actions">
+          <Button size="sm" onClick={send} disabled={!draft.trim() || loading}>发送</Button>
+          <Button size="sm" variant="ghost" onClick={onSkip}>跳过，下一节</Button>
+          {messages.length > 0 && (
+            <Button size="sm" variant="outline" onClick={onComplete}>结束讨论，下一节</Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main V3Classroom ──────────────────────────────────────────────────────────
+
+export function V3Classroom({ articleId, course, apiCall, onExit }) {
+  const [runtime, setRuntime] = useState(() => ({
+    activeSectionIndex: Number(course.runtime?.activeSectionIndex) || 0,
+    activePhase: course.runtime?.activePhase || "read",
+    completedSections: Array.isArray(course.runtime?.completedSections)
+      ? course.runtime.completedSections
+      : [],
+    confusedWordsBySection: course.runtime?.confusedWordsBySection || {},
+    quizResultsBySection: course.runtime?.quizResultsBySection || {},
+  }));
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [confusedWords, setConfusedWords] = useState([]);
+  const courseRef = useRef(course);
+
+  const sections = course.sections || [];
+  const activeSection = sections[runtime.activeSectionIndex] || null;
+  const teacher = course.participants?.find((p) => p.role === "teacher") || { name: "Coach Mira" };
+
+  const persistRuntime = useCallback(
+    async (nextRuntime) => {
+      setRuntime(nextRuntime);
+      if (articleId) {
+        await saveReadingCourseToRecord(articleId, {
+          ...courseRef.current,
+          runtime: nextRuntime,
+        });
+      }
+    },
+    [articleId],
+  );
+
+  const advancePhase = useCallback(() => {
+    const currentPhaseIndex = PHASES.indexOf(runtime.activePhase);
+    const nextPhaseIndex = currentPhaseIndex + 1;
+
+    if (nextPhaseIndex >= PHASES.length) {
+      // Move to next section
+      const nextSectionIndex = runtime.activeSectionIndex + 1;
+      if (nextSectionIndex >= sections.length) {
+        // Course complete
+        persistRuntime({
+          ...runtime,
+          activePhase: "complete",
+        });
+        return;
+      }
+      persistRuntime({
+        ...runtime,
+        activeSectionIndex: nextSectionIndex,
+        activePhase: "read",
+        completedSections: [...runtime.completedSections, activeSection?.id].filter(Boolean),
+      });
+      setConfusedWords([]);
+      return;
+    }
+
+    persistRuntime({
+      ...runtime,
+      activePhase: PHASES[nextPhaseIndex],
+    });
+  }, [runtime, sections.length, activeSection, persistRuntime]);
+
+  const handleMarkConfused = useCallback((word) => {
+    setConfusedWords((prev) => {
+      if (prev.includes(word)) return prev;
+      return [...prev, word];
+    });
+  }, []);
+
+  const handleAddToWordbook = useCallback((word) => {
+    // TODO: integrate with existing wordbook API
+    console.info("[V3] Add to wordbook:", word);
+  }, []);
+
+  const isComplete = runtime.activePhase === "complete";
+
+  // Roundtable state based on phase
+  const rtState = {
+    read:    "mini",
+    explain: "expanded",
+    quiz:    "mini",
+    discuss: "full",
+  }[runtime.activePhase] || "mini";
+
+  return (
+    <div className="v3-shell">
+      {/* Header */}
+      <header className="v3-header">
+        <SectionProgress
+          sectionIndex={runtime.activeSectionIndex}
+          totalSections={sections.length}
+          phase={runtime.activePhase}
+        />
+        <div className="v3-header__actions">
+          <button
+            type="button"
+            className="v3-header__icon-btn"
+            onClick={() => setTtsEnabled((v) => !v)}
+            aria-label="Toggle TTS"
+          >
+            {ttsEnabled ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
+          </button>
+          <button type="button" className="v3-header__exit-btn" onClick={onExit}>
+            <ArrowLeft className="size-4" />
+            <span>返回</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Main content */}
+      <div className="v3-main">
+        <AnimatePresence mode="wait">
+          {isComplete ? (
+            <motion.div
+              key="complete"
+              className="v3-complete"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <img src={resolvePublicUrl("/avatars/teacher.png")} alt="teacher" className="v3-complete__avatar" />
+              <h2>课程完成！</h2>
+              <p>你已经完成了这篇文章的全部 {sections.length} 个章节。</p>
+              <Button onClick={onExit}>返回材料页</Button>
+            </motion.div>
+          ) : (
+            <motion.div
+              key={`${runtime.activeSectionIndex}-${runtime.activePhase}`}
+              className="v3-content"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+            >
+              {runtime.activePhase === "read" && activeSection && (
+                <ReadingSection
+                  section={activeSection}
+                  rewriteMappings={course.rewrite_mappings}
+                  confusedWords={confusedWords}
+                  spotlitWord={null}
+                  onWordClick={() => {}}
+                  onMarkConfused={handleMarkConfused}
+                  onAddToWordbook={handleAddToWordbook}
+                  apiCall={apiCall}
+                  targetLevel={course.target_level}
+                />
+              )}
+
+              {runtime.activePhase === "explain" && activeSection && (
+                <div className="v3-explain-placeholder">
+                  <ReadingSection
+                    section={activeSection}
+                    rewriteMappings={course.rewrite_mappings}
+                    confusedWords={confusedWords}
+                    spotlitWord={null}
+                    onWordClick={() => {}}
+                    onMarkConfused={handleMarkConfused}
+                    onAddToWordbook={handleAddToWordbook}
+                    apiCall={apiCall}
+                    targetLevel={course.target_level}
+                  />
+                </div>
+              )}
+
+              {runtime.activePhase === "quiz" && activeSection && (
+                <QuizSection
+                  section={activeSection}
+                  onComplete={advancePhase}
+                  onSkip={advancePhase}
+                />
+              )}
+
+              {runtime.activePhase === "discuss" && activeSection && (
+                <DiscussSection
+                  section={activeSection}
+                  course={course}
+                  apiCall={apiCall}
+                  onComplete={advancePhase}
+                  onSkip={advancePhase}
+                />
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Bottom: Roundtable or mini bar */}
+      <div className={cn("v3-bottom", `v3-bottom--${rtState}`)}>
+        {rtState === "mini" ? (
+          <MiniRoundtable
+            teacherName={teacher.name}
+            hint={
+              runtime.activePhase === "read"
+                ? "阅读完成后点击「开始讲解」"
+                : runtime.activePhase === "quiz"
+                  ? "完成题目后继续"
+                  : "Coach Mira 正在等待"
+            }
+          />
+        ) : (
+          <Roundtable messages={[]} activeSpeechActionId={null} cast={null} />
+        )}
+
+        {/* Phase action buttons */}
+        {!isComplete && (
+          <div className="v3-phase-actions">
+            {runtime.activePhase === "read" && (
+              <Button onClick={advancePhase} className="v3-phase-actions__primary">
+                开始讲解 →
+              </Button>
+            )}
+            {runtime.activePhase === "explain" && (
+              <Button variant="outline" size="sm" onClick={advancePhase}>
+                跳过讲解
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

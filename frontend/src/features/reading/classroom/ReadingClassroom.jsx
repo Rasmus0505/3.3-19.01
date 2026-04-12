@@ -13,8 +13,9 @@ import {
 } from "lucide-react";
 import { Badge, Button, Card, Progress, Textarea } from "../../../shared/ui";
 import { cn } from "../../../lib/utils";
-import { normalizeReadingCourse } from "../readingCourse";
+import { looksLikeV3Course, normalizeReadingCourse, normalizeV3Course } from "../readingCourse";
 import { saveReadingCourseToRecord } from "../readingRewriteDB";
+import { V3Classroom } from "./V3Classroom";
 import { getReadingDerivedState } from "./readingDerivedState";
 import { ProactiveCard } from "./ProactiveCard";
 import { Roundtable } from "./Roundtable";
@@ -447,6 +448,25 @@ function OutputPanel({ scene, outputState, onSetDraft, onEvaluate }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function ReadingClassroom({ articleId, course, sourceTexts, apiCall, onExit }) {
+  // Route v3 courses to the new V3Classroom
+  if (looksLikeV3Course(course)) {
+    const v3 = normalizeV3Course(course);
+    if (v3) {
+      return (
+        <V3Classroom
+          articleId={articleId}
+          course={v3}
+          apiCall={apiCall}
+          onExit={onExit}
+        />
+      );
+    }
+  }
+  // fallthrough → original v2 classroom below
+  return _ReadingClassroomV2({ articleId, course, sourceTexts, apiCall, onExit });
+}
+
+function _ReadingClassroomV2({ articleId, course, sourceTexts, apiCall, onExit }) {
   const [liveCourse, setLiveCourse] = useState(() => normalizeReadingCourse(course));
   const courseRef = useRef(liveCourse);
   const [supportOpen, setSupportOpen] = useState({});

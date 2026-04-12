@@ -538,3 +538,307 @@ def continue_reading_course_discussion(body: ReadingCourseDiscussionRequest, cur
     if not reply or not reply.strip():
         raise HTTPException(status_code=502, detail="AI returned empty response")
     return ReadingCourseDiscussionResponse(ok=True, reply=reply.strip(), usage={"prompt_tokens": usage.prompt_tokens, "completion_tokens": usage.completion_tokens})
+
+
+# ─────────────────────────────────────────────────────────────
+# V3 Course Generation — Dynamic Sections
+# ─────────────────────────────────────────────────────────────
+
+class V3CourseGenerateRequest(BaseModel):
+    article_id: str = Field(..., min_length=1)
+    article_title: str = ""
+    original_text: str = Field(..., min_length=20)
+    rewritten_text: str = Field(..., min_length=20)
+    target_level: str = Field("B1", pattern="^(A1|A2|B1|B2|C1|C2)$")
+    rewrite_mappings: list[dict] = Field(default_factory=list)  # [{original, replacement}]
+    valid_above_i1_words: list[str] = Field(default_factory=list)
+    word_levels: dict[str, str] = Field(default_factory=dict)
+
+
+class V3CourseGenerateResponse(BaseModel):
+    ok: bool
+    course: dict
+
+
+def _split_into_paragraphs(text: str, max_words_per_section: int = 250) -> list[str]:
+    """Split text by blank lines (natural paragraphs). Long paragraphs are halved."""
+    normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    raw_paragraphs = [p.strip() for p in normalized.split("\n\n") if p.strip()]
+    if not raw_paragraphs:
+        raw_paragraphs = [normalized]
+
+    result: list[str] = []
+    for para in raw_paragraphs:
+        words = para.split()
+        if len(words) <= max_words_per_section:
+            result.append(para)
+        else:
+            # Split long paragraph at sentence boundary near the midpoint
+            sentences = re.split(r"(?<=[.!?])\s+", para)
+            mid = len(sentences) // 2
+            result.append(" ".join(sentences[:mid]))
+            result.append(" ".join(sentences[mid:]))
+    return [p for p in result if p]
+
+
+_V3_SYSTEM_PROMPT = """You are an English reading course designer.
+
+Given a rewritten (i+1) article split into sections, generate a JSON course with this EXACT shape:
+{
+  "title": "string",
+  "sections": [
+    {
+      "id": "section-1",
+      "title": "string (short section heading)",
+      "summary": "string (1-2 sentences in Chinese: what this section is about)",
+      "spotlight_words": ["word1", "word2"],
+      "quiz": [
+        {
+          "type": "single",
+          "question": "string",
+          "options": [{"label": "string", "value": "A"}, ...],
+          "answer": "A",
+          "analysis": "string (1 sentence explaining why)"
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- Return ONLY valid JSON. No markdown fences, no explanation.
+- sections array must have same count and order as provided sections.
+- title: 4-8 word heading capturing the section's main point.
+- summary: 1-2 sentences in Chinese summarizing what the learner will read.
+- spotlight_words: 2-3 words from THIS section that are pedagogically important (vocabulary, discourse markers, or key concepts). Choose words that ACTUALLY APPEAR in the section text.
+- quiz: exactly 1 question testing comprehension of THIS section. Use single-choice (4 options A-D). Question must be answerable from the section text alone.
+- analysis: 1 concise sentence explaining the correct answer.
+"""
+
+
+def _build_v3_fallback(body: V3CourseGenerateRequest, rewritten_paragraphs: list[str]) -> dict:
+    sections = []
+    for i, para in enumerate(rewritten_paragraphs):
+        words = para.split()
+        section_id = f"section-{i + 1}"
+        # Pick first few meaningful words as spotlight candidates
+        content_words = [w.strip(".,!?\"'()[]") for w in words if len(w) > 4][:3]
+        sections.append({
+            "id": section_id,
+            "title": f"Part {i + 1}",
+            "summary": "阅读本段，注意主要观点和关键词汇。",
+            "rewritten_text": para,
+            "spotlight_words": content_words[:2] if content_words else [],
+            "quiz": [
+                {
+                    "type": "single",
+                    "question": "What is the main idea of this section?",
+                    "options": [
+                        {"label": "Option A", "value": "A"},
+                        {"label": "Option B", "value": "B"},
+                        {"label": "Option C", "value": "C"},
+                        {"label": "Option D", "value": "D"},
+                    ],
+                    "answer": "A",
+                    "analysis": "The main idea is stated in the opening sentence.",
+                }
+            ],
+        })
+
+    return {
+        "schema_version": 3,
+        "mode": "reading_classroom_v3",
+        "article_id": body.article_id,
+        "article_title": str(body.article_title or "").strip()[:120] or "Reading Classroom",
+        "target_level": body.target_level,
+        "generated_at": _utc_iso(),
+        "rewrite_mappings": body.rewrite_mappings,
+        "participants": [
+            {"id": "teacher", "name": "Coach Mira", "role": "teacher", "color": "#7c3aed", "voice": "longxiaochun"},
+            {"id": "student-lily", "name": "Lily", "role": "student", "color": "#2563eb", "voice": "longxiaoxia"},
+        ],
+        "sections": sections,
+        "runtime": {
+            "activeSectionIndex": 0,
+            "activePhase": "read",
+            "completedSections": [],
+            "lastViewedAt": int(datetime.now(timezone.utc).timestamp() * 1000),
+        },
+    }
+
+
+def _merge_v3_sections(fallback_sections: list[dict], ai_sections: list[dict]) -> list[dict]:
+    result = []
+    for i, fallback in enumerate(fallback_sections):
+        if i >= len(ai_sections):
+            result.append(fallback)
+            continue
+        ai = _safe_dict(ai_sections[i])
+
+        merged = dict(fallback)  # keep rewritten_text and id from fallback
+        merged["title"] = _trim(ai.get("title") or fallback["title"], 80) or fallback["title"]
+        merged["summary"] = _trim(ai.get("summary") or fallback["summary"], 320) or fallback["summary"]
+
+        # spotlight_words
+        sw = [_trim(w, 40) for w in _safe_list(ai.get("spotlight_words")) if _trim(w, 40)]
+        merged["spotlight_words"] = sw[:3] if sw else fallback["spotlight_words"]
+
+        # quiz
+        ai_quiz = _safe_list(ai.get("quiz"))
+        valid_quiz = [q for q in ai_quiz if isinstance(q, dict) and _validate_question(q)]
+        merged["quiz"] = valid_quiz[:2] if valid_quiz else fallback["quiz"]
+
+        result.append(merged)
+    return result
+
+
+@router.post(
+    "/reading-course/generate-v3",
+    response_model=V3CourseGenerateResponse,
+    responses={503: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+)
+def generate_v3_course_endpoint(
+    body: V3CourseGenerateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Generate a v3 dynamic-section reading course."""
+    from app.api.routers import llm as llm_root
+
+    api_key = _require_api_key()
+    llm_root.ensure_default_billing_rates(db)
+
+    # Split rewritten text into sections by natural paragraphs
+    rewritten_paragraphs = _split_into_paragraphs(body.rewritten_text)
+    if not rewritten_paragraphs:
+        rewritten_paragraphs = [body.rewritten_text]
+
+    fallback = _build_v3_fallback(body, rewritten_paragraphs)
+
+    # Ask LLM to enrich: titles, summaries, spotlight words, quiz per section
+    sections_for_llm = [
+        {"id": f"section-{i + 1}", "text": para[:1200]}
+        for i, para in enumerate(rewritten_paragraphs)
+    ]
+    user_content = (
+        f"Article title: {body.article_title or 'Reading Classroom'}\n"
+        f"Target CEFR level: {body.target_level}\n"
+        f"Key vocabulary (i+1 words): {', '.join(body.valid_above_i1_words[:10])}\n\n"
+        "Sections to process:\n"
+        + json.dumps(sections_for_llm, ensure_ascii=False)
+    )
+    messages = [
+        {"role": "system", "content": _V3_SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+
+    try:
+        raw_response, usage = llm_root.call_deepseek(
+            messages=messages,
+            api_key=api_key,
+            enable_thinking=False,
+            stream=False,
+            temperature=0.5,
+            max_tokens=max(2048, len(rewritten_paragraphs) * 600),
+        )
+    except Exception as exc:
+        logger.warning("V3 course generation LLM failed, returning fallback: %s", exc)
+        return V3CourseGenerateResponse(ok=True, course=fallback)
+
+    recovered = recover_json_payload(raw_response) or strip_json_fences(raw_response)
+    try:
+        parsed = json.loads(recovered)
+        ai_sections = _safe_list(_safe_dict(parsed).get("sections"))
+        if ai_sections:
+            fallback["sections"] = _merge_v3_sections(fallback["sections"], ai_sections)
+        title = _trim(_safe_dict(parsed).get("title"), 120)
+        if title:
+            fallback["article_title"] = title
+    except Exception:
+        logger.warning("V3 course JSON parse failed. Raw: %.300s", raw_response)
+
+    # Billing
+    try:
+        rate = llm_root.get_model_rate(db, llm_root.LLM_MODEL_DEEPSEEK_FAST)
+        if rate:
+            total_tokens = usage.prompt_tokens + usage.completion_tokens
+            charge = llm_root.calculate_llm_charge_by_tokens(
+                total_tokens=total_tokens,
+                points_per_1k_tokens=rate.points_per_1k_tokens,
+            )
+            if charge > 0:
+                llm_root.consume_points(
+                    db,
+                    user_id=current_user.id,
+                    points=charge,
+                    model_name=llm_root.LLM_MODEL_DEEPSEEK_FAST,
+                    lesson_id=None,
+                    event_type=llm_root.EVENT_CONSUME_LLM,
+                    note=f"v3 course generation, tokens={total_tokens}",
+                )
+                db.commit()
+    except Exception:
+        logger.warning("V3 course billing failed silently for user %s", current_user.id)
+
+    return V3CourseGenerateResponse(ok=True, course=fallback)
+
+
+# ─────────────────────────────────────────────────────────────
+# Word Definition — real-time LLM lookup for word card
+# ─────────────────────────────────────────────────────────────
+
+class WordDefinitionRequest(BaseModel):
+    word: str = Field(..., min_length=1, max_length=80)
+    context_sentence: str = Field("", max_length=400)
+    target_level: str = Field("B1", pattern="^(A1|A2|B1|B2|C1|C2)$")
+
+
+class WordDefinitionResponse(BaseModel):
+    ok: bool
+    word: str
+    definition: str
+    cefr: str
+    phonetic: str = ""
+
+
+@router.post(
+    "/reading-course/word-definition",
+    response_model=WordDefinitionResponse,
+    responses={502: {"model": ErrorResponse}},
+)
+def get_word_definition(
+    body: WordDefinitionRequest,
+    current_user: User = Depends(get_current_user),
+):
+    from app.infra.llm.deepseek import call_deepseek
+
+    api_key = _require_api_key()
+    system = (
+        "You are a concise English dictionary for language learners.\n"
+        "Return ONLY valid JSON with exactly these fields:\n"
+        '{"definition": "Chinese definition (1 sentence, max 20 chars)", "cefr": "A1/A2/B1/B2/C1/C2", "phonetic": "IPA or empty string"}\n'
+        "No markdown. No extra fields. Definition must be in Chinese."
+    )
+    context_hint = f"\nContext: {body.context_sentence}" if body.context_sentence else ""
+    user_msg = f"Word: {body.word}{context_hint}\nLearner target level: {body.target_level}"
+
+    try:
+        raw, _ = call_deepseek(
+            [{"role": "system", "content": system}, {"role": "user", "content": user_msg}],
+            api_key,
+            enable_thinking=False,
+            temperature=0.2,
+            max_tokens=120,
+        )
+        recovered = recover_json_payload(raw) or strip_json_fences(raw)
+        parsed = json.loads(recovered)
+        return WordDefinitionResponse(
+            ok=True,
+            word=body.word,
+            definition=_trim(parsed.get("definition", ""), 80) or body.word,
+            cefr=_trim(parsed.get("cefr", ""), 4) or "?",
+            phonetic=_trim(parsed.get("phonetic", ""), 80),
+        )
+    except Exception as exc:
+        logger.warning("word_definition failed for %r: %s", body.word, exc)
+        raise HTTPException(status_code=502, detail="Definition lookup failed")

@@ -761,6 +761,45 @@ function normalizeRuntime(runtime, scenes) {
   };
 }
 
+export function looksLikeV3Course(value) {
+  return Boolean(
+    value &&
+    value.mode === "reading_classroom_v3" &&
+    Array.isArray(value.sections) &&
+    value.sections.length > 0,
+  );
+}
+
+export function normalizeV3Course(value) {
+  if (!looksLikeV3Course(value)) return null;
+  const sections = value.sections.map((s, i) => ({
+    id: String(s.id || `section-${i + 1}`),
+    title: String(s.title || `Part ${i + 1}`),
+    summary: String(s.summary || ""),
+    rewritten_text: String(s.rewritten_text || ""),
+    spotlight_words: Array.isArray(s.spotlight_words) ? s.spotlight_words.map(String) : [],
+    quiz: Array.isArray(s.quiz) ? s.quiz : [],
+  }));
+  return {
+    ...value,
+    schema_version: 3,
+    mode: "reading_classroom_v3",
+    sections,
+    rewrite_mappings: Array.isArray(value.rewrite_mappings) ? value.rewrite_mappings : [],
+    participants: Array.isArray(value.participants) ? value.participants : [],
+    runtime: {
+      activeSectionIndex: Number(value.runtime?.activeSectionIndex) || 0,
+      activePhase: value.runtime?.activePhase || "read",
+      completedSections: Array.isArray(value.runtime?.completedSections)
+        ? value.runtime.completedSections
+        : [],
+      confusedWordsBySection: value.runtime?.confusedWordsBySection || {},
+      quizResultsBySection: value.runtime?.quizResultsBySection || {},
+      lastViewedAt: value.runtime?.lastViewedAt || Date.now(),
+    },
+  };
+}
+
 export function looksLikeReadingCourse(value) {
   return Boolean(
     value &&
