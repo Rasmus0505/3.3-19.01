@@ -233,6 +233,83 @@ def _parse_lemmas_response(raw_response: str, words: list[str]) -> tuple[list[st
     return local_fallback, "local_fallback"
 
 
+def _preview_llm_raw_text(raw_response: str, limit: int = 240) -> str:
+    normalized = re.sub(r"\s+", " ", str(raw_response or "")).strip()
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[:limit] + "..."
+
+
+def _iter_json_candidates(raw_response: str) -> list[tuple[str, str]]:
+    candidates: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def add_candidate(source: str, value: str | None) -> None:
+        normalized = str(value or "").strip()
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        candidates.append((source, normalized))
+
+    stripped = strip_json_fences(raw_response)
+    add_candidate("strip_json_fences", stripped)
+
+    recovered = recover_json_payload(raw_response)
+    if recovered and recovered != stripped:
+        add_candidate("recover_json_payload", recovered)
+
+    return candidates
+
+
+def _parse_simplify_words_response(raw_response: str) -> tuple[list[str] | None, dict[str, str], str | None, str | None]:
+    candidates = _iter_json_candidates(raw_response)
+    if not candidates:
+        normalized = strip_json_fences(raw_response)
+        if not normalized:
+            return None, {}, None, "blank_content"
+        return None, {}, None, "json_parse_failed"
+
+    last_parse_error: Exception | None = None
+    last_structure_error: str | None = None
+
+    for source, candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except Exception as exc:
+            last_parse_error = exc
+            continue
+
+        if isinstance(parsed, dict):
+            raw_simplified_words = parsed.get("simplified_words")
+            if raw_simplified_words is None:
+                last_structure_error = "missing_simplified_words"
+                continue
+            if not isinstance(raw_simplified_words, list):
+                last_structure_error = "invalid_simplified_words_type"
+                continue
+            raw_word_levels = parsed.get("word_levels")
+            if raw_word_levels is not None and not isinstance(raw_word_levels, dict):
+                last_structure_error = "invalid_word_levels_type"
+                continue
+            return (
+                [str(item) for item in raw_simplified_words],
+                {str(key): str(value) for key, value in (raw_word_levels or {}).items()},
+                source,
+                None,
+            )
+
+        if isinstance(parsed, list):
+            return [str(item) for item in parsed], {}, source, None
+
+        last_structure_error = "unexpected_json_type"
+
+    if last_structure_error:
+        return None, {}, None, last_structure_error
+    if last_parse_error:
+        return None, {}, None, "json_parse_failed"
+    return None, {}, None, "json_parse_failed"
+
+
 SIMPLIFY_WORDS_SYSTEM_PROMPT = (
     "You are an English text simplifier for language learners.\n"
     "Given a sentence and a list of words/phrases to simplify from that sentence,\n"
@@ -701,68 +778,65 @@ def simplify_words_endpoint(
     if not raw_response:
         raise HTTPException(status_code=503, detail="模型返回为空，请稍后重试")
 
-    simplified_words: list[str] = []
-    word_levels: dict[str, str] = {}
-    parsed = None
+    simplified_words, word_levels, parse_source, parse_failure = _parse_simplify_words_response(raw_response)
+    raw_preview = _preview_llm_raw_text(raw_response)
 
-    try:
-        parsed = json.loads(strip_json_fences(raw_response))
-        if isinstance(parsed, dict):
-            if "simplified_words" not in parsed or not isinstance(parsed.get("simplified_words"), list):
-                raise HTTPException(status_code=502, detail="Expected JSON object with 'simplified_words' array")
-            simplified_words = [str(item) for item in parsed["simplified_words"]]
-            raw_word_levels = parsed.get("word_levels")
-            if raw_word_levels is not None and not isinstance(raw_word_levels, dict):
-                raise HTTPException(status_code=502, detail="word_levels must be a JSON object")
-            word_levels = {str(key): str(value) for key, value in (raw_word_levels or {}).items()}
-        elif isinstance(parsed, list):
-            simplified_words = [str(item) for item in parsed]
-        else:
-            raise HTTPException(status_code=502, detail="Expected JSON object with 'simplified_words' and 'word_levels'")
-    except HTTPException:
-        raise
-    except Exception as exc:
-        recovered = recover_json_payload(raw_response)
-        if recovered:
-            try:
-                parsed = json.loads(recovered)
-                logger.warning(
-                    "[DEBUG] llm.simplify_words_recovered user_id=%s original_err=%s",
-                    current_user.id,
-                    str(exc)[:100],
-                )
-            except Exception:
-                parsed = None
-        if parsed is None:
-            logger.warning(
-                "[DEBUG] llm.simplify_words_parse_failed user_id=%s raw=%s error=%s",
-                current_user.id,
-                raw_response[:200],
-                str(exc)[:100],
-            )
-            raise HTTPException(status_code=502, detail=f"模型响应格式错误，请稍后重试: {str(exc)[:80]}")
-        if isinstance(parsed, dict):
-            simplified_words = [str(item) for item in parsed.get("simplified_words", [])]
-            raw_word_levels = parsed.get("word_levels")
-            if isinstance(raw_word_levels, dict):
-                word_levels = {str(key): str(value) for key, value in raw_word_levels.items()}
-        elif isinstance(parsed, list):
-            simplified_words = [str(item) for item in parsed]
+    if parse_failure == "blank_content":
+        logger.warning(
+            "[DEBUG] llm.simplify_words_blank_content trace_id=%s user_id=%s response_len=%s words_count=%s raw=%s",
+            trace_id,
+            current_user.id,
+            len(raw_response or ""),
+            len(body.words),
+            raw_preview,
+        )
+        raise HTTPException(status_code=502, detail="模型返回了空白内容，请稍后重试")
+
+    if parse_failure == "json_parse_failed":
+        logger.warning(
+            "[DEBUG] llm.simplify_words_parse_failed trace_id=%s user_id=%s response_len=%s words_count=%s raw=%s",
+            trace_id,
+            current_user.id,
+            len(raw_response or ""),
+            len(body.words),
+            raw_preview,
+        )
+        raise HTTPException(status_code=502, detail="模型响应格式错误，请稍后重试")
+
+    if parse_failure:
+        logger.warning(
+            "[DEBUG] llm.simplify_words_invalid_structure trace_id=%s user_id=%s reason=%s response_len=%s words_count=%s raw=%s",
+            trace_id,
+            current_user.id,
+            parse_failure,
+            len(raw_response or ""),
+            len(body.words),
+            raw_preview,
+        )
+        raise HTTPException(status_code=502, detail="模型响应结构无效，请稍后重试")
+
+    if parse_source and parse_source != "strip_json_fences":
+        logger.warning(
+            "[DEBUG] llm.simplify_words_recovered trace_id=%s user_id=%s source=%s words=%s",
+            trace_id,
+            current_user.id,
+            parse_source,
+            body.words,
+        )
 
     if len(simplified_words) != len(body.words):
         logger.warning(
-            "[DEBUG] llm.simplify_words_count_mismatch user_id=%s expected=%s got=%s raw=%s",
+            "[DEBUG] llm.simplify_words_count_mismatch trace_id=%s user_id=%s source=%s expected=%s got=%s raw=%s",
+            trace_id,
             current_user.id,
+            parse_source or "unknown",
             len(body.words),
             len(simplified_words),
-            raw_response[:300],
+            raw_preview,
         )
         raise HTTPException(
             status_code=502,
-            detail=(
-                f"simplified_words length {len(simplified_words)} does not match "
-                f"input words length {len(body.words)}"
-            ),
+            detail="模型响应数量与输入不一致，请稍后重试",
         )
 
     total_tokens = usage.prompt_tokens + usage.completion_tokens

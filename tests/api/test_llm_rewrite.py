@@ -251,7 +251,95 @@ class TestSimplifyWords:
                                 )
         assert response.status_code == 502
         data = response.json()
-        assert "parse" in data["detail"].lower() or "格式错误" in data["detail"]
+        assert data["detail"] == "模型响应格式错误，请稍后重试"
+
+    def test_recovers_fenced_json_object(self, client):
+        """模型返回 fenced JSON object 时应成功恢复。"""
+        with patch("app.api.routers.llm.ensure_default_billing_rates"):
+            with patch("app.api.routers.llm.get_model_rate") as mock_rate:
+                mock_rate.return_value = MagicMock(points_per_1k_tokens=5)
+                with patch("app.api.routers.llm._require_api_key", return_value="fake-key"):
+                    with patch("app.api.routers.llm.call_deepseek") as mock_call:
+                        mock_call.return_value = (
+                            '```json\n{"simplified_words": ["avoid"], "word_levels": {"eschew": "C1"}}\n```',
+                            MagicMock(
+                                prompt_tokens=50, completion_tokens=10,
+                                reasoning_tokens=0, total_tokens=60,
+                            ),
+                        )
+                        with patch("app.api.routers.llm.consume_points"):
+                            with patch("app.services.llm_usage_service.log_llm_usage"):
+                                response = client.post(
+                                    "/api/llm/simplify-words",
+                                    json={
+                                        "sentence": "I eschew that idea.",
+                                        "words": ["eschew"],
+                                        "target_level": "B1",
+                                        "enable_thinking": False,
+                                    },
+                                )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["simplified_words"] == ["avoid"]
+        assert data["word_levels"] == {"eschew": "C1"}
+
+    def test_recovers_json_with_explanatory_text(self, client):
+        """模型返回解释文字包裹的 JSON 时应成功恢复。"""
+        with patch("app.api.routers.llm.ensure_default_billing_rates"):
+            with patch("app.api.routers.llm.get_model_rate") as mock_rate:
+                mock_rate.return_value = MagicMock(points_per_1k_tokens=5)
+                with patch("app.api.routers.llm._require_api_key", return_value="fake-key"):
+                    with patch("app.api.routers.llm.call_deepseek") as mock_call:
+                        mock_call.return_value = (
+                            'Here is the result:\n{"simplified_words": ["reading"], "word_levels": {"perusing": "B2"}}\nThanks.',
+                            MagicMock(
+                                prompt_tokens=50, completion_tokens=10,
+                                reasoning_tokens=0, total_tokens=60,
+                            ),
+                        )
+                        with patch("app.api.routers.llm.consume_points"):
+                            with patch("app.services.llm_usage_service.log_llm_usage"):
+                                response = client.post(
+                                    "/api/llm/simplify-words",
+                                    json={
+                                        "sentence": "I enjoy perusing newspapers.",
+                                        "words": ["perusing"],
+                                        "target_level": "B1",
+                                        "enable_thinking": False,
+                                    },
+                                )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["simplified_words"] == ["reading"]
+        assert data["word_levels"] == {"perusing": "B2"}
+
+    def test_blank_fenced_content_returns_502(self, client):
+        """模型只返回空白 fenced 内容时应给出业务化错误。"""
+        with patch("app.api.routers.llm.ensure_default_billing_rates"):
+            with patch("app.api.routers.llm.get_model_rate") as mock_rate:
+                mock_rate.return_value = MagicMock(points_per_1k_tokens=5)
+                with patch("app.api.routers.llm._require_api_key", return_value="fake-key"):
+                    with patch("app.api.routers.llm.call_deepseek") as mock_call:
+                        mock_call.return_value = (
+                            "```json\n\n```",
+                            MagicMock(
+                                prompt_tokens=50, completion_tokens=10,
+                                reasoning_tokens=0, total_tokens=60,
+                            ),
+                        )
+                        with patch("app.api.routers.llm.consume_points"):
+                            with patch("app.services.llm_usage_service.log_llm_usage"):
+                                response = client.post(
+                                    "/api/llm/simplify-words",
+                                    json={
+                                        "sentence": "Hello world.",
+                                        "words": ["hello"],
+                                        "target_level": "B1",
+                                        "enable_thinking": False,
+                                    },
+                                )
+        assert response.status_code == 502
+        assert response.json()["detail"] == "模型返回了空白内容，请稍后重试"
 
     def test_non_array_json_returns_502(self, client):
         """模型返回非数组 JSON 时应返回 502。"""
@@ -279,6 +367,35 @@ class TestSimplifyWords:
                                     },
                                 )
         assert response.status_code == 502
+        assert response.json()["detail"] == "模型响应结构无效，请稍后重试"
+
+    def test_invalid_word_levels_type_returns_502(self, client):
+        """word_levels 不是对象时应返回结构错误。"""
+        with patch("app.api.routers.llm.ensure_default_billing_rates"):
+            with patch("app.api.routers.llm.get_model_rate") as mock_rate:
+                mock_rate.return_value = MagicMock(points_per_1k_tokens=5)
+                with patch("app.api.routers.llm._require_api_key", return_value="fake-key"):
+                    with patch("app.api.routers.llm.call_deepseek") as mock_call:
+                        mock_call.return_value = (
+                            '{"simplified_words": ["read"], "word_levels": ["B2"]}',
+                            MagicMock(
+                                prompt_tokens=50, completion_tokens=10,
+                                reasoning_tokens=0, total_tokens=60,
+                            ),
+                        )
+                        with patch("app.api.routers.llm.consume_points"):
+                            with patch("app.services.llm_usage_service.log_llm_usage"):
+                                response = client.post(
+                                    "/api/llm/simplify-words",
+                                    json={
+                                        "sentence": "I enjoy perusing newspapers.",
+                                        "words": ["perusing"],
+                                        "target_level": "B1",
+                                        "enable_thinking": False,
+                                    },
+                                )
+        assert response.status_code == 502
+        assert response.json()["detail"] == "模型响应结构无效，请稍后重试"
 
     def test_simplified_words_matching_input_count(self, client):
         """简化词数量应与输入词数量匹配。"""
@@ -309,3 +426,31 @@ class TestSimplifyWords:
         data = response.json()
         assert len(data["simplified_words"]) == 3
         assert data["input_words"] == ["word1", "word2", "word3"]
+
+    def test_mismatched_simplified_word_count_returns_502(self, client):
+        """数量不匹配时应返回稳定的业务错误。"""
+        with patch("app.api.routers.llm.ensure_default_billing_rates"):
+            with patch("app.api.routers.llm.get_model_rate") as mock_rate:
+                mock_rate.return_value = MagicMock(points_per_1k_tokens=5)
+                with patch("app.api.routers.llm._require_api_key", return_value="fake-key"):
+                    with patch("app.api.routers.llm.call_deepseek") as mock_call:
+                        mock_call.return_value = (
+                            '["avoid"]',
+                            MagicMock(
+                                prompt_tokens=50, completion_tokens=10,
+                                reasoning_tokens=0, total_tokens=60,
+                            ),
+                        )
+                        with patch("app.api.routers.llm.consume_points"):
+                            with patch("app.services.llm_usage_service.log_llm_usage"):
+                                response = client.post(
+                                    "/api/llm/simplify-words",
+                                    json={
+                                        "sentence": "I loathe and eschew it.",
+                                        "words": ["loathe", "eschew"],
+                                        "target_level": "B1",
+                                        "enable_thinking": False,
+                                    },
+                                )
+        assert response.status_code == 502
+        assert response.json()["detail"] == "模型响应数量与输入不一致，请稍后重试"
