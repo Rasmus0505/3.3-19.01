@@ -30,6 +30,8 @@ import {
 import { getOrCreateAnalyzer } from "../utils/vocabAnalyzer";
 
 const CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"];
+const EXTRACT_LEMMAS_MAX_CONTEXT_CHARS = 2800;
+const SIMPLIFY_WORDS_MAX_CONTEXT_CHARS = 1800;
 
 function levelToNum(level) {
   const idx = CEFR_ORDER.indexOf(level);
@@ -52,6 +54,130 @@ function toUniqueLowerWordList(words = []) {
     out.push(normalized);
   }
   return out;
+}
+
+function escapeRegExp(text) {
+  return String(text || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function splitRewriteContextUnits(text) {
+  const normalized = String(text || "").replace(/\r/g, "\n").trim();
+  if (!normalized) return [];
+  return normalized
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function contextContainsWord(context, word) {
+  const normalizedContext = String(context || "");
+  const normalizedWord = String(word || "").trim();
+  if (!normalizedContext || !normalizedWord) return false;
+  return new RegExp(`\\b${escapeRegExp(normalizedWord)}\\b`, "i").test(normalizedContext);
+}
+
+function truncateContextAroundWord(text, word, maxChars) {
+  const normalizedText = String(text || "").trim();
+  if (!normalizedText || normalizedText.length <= maxChars) {
+    return normalizedText;
+  }
+  const normalizedWord = String(word || "").trim();
+  const matcher = normalizedWord
+    ? new RegExp(`\\b${escapeRegExp(normalizedWord)}\\b`, "i")
+    : null;
+  const match = matcher ? matcher.exec(normalizedText) : null;
+  if (!match) {
+    return normalizedText.slice(0, maxChars).trim();
+  }
+  const center = match.index + Math.floor(match[0].length / 2);
+  let start = Math.max(0, center - Math.floor(maxChars / 2));
+  let end = Math.min(normalizedText.length, start + maxChars);
+  start = Math.max(0, end - maxChars);
+  return normalizedText.slice(start, end).trim();
+}
+
+function buildBatchContext(units, fullText, words, maxChars) {
+  if (!Array.isArray(words) || words.length === 0) {
+    return truncateContextAroundWord(fullText, "", maxChars);
+  }
+
+  const selectedUnits = [];
+  let currentLength = 0;
+
+  for (const unit of units) {
+    if (!words.some((word) => contextContainsWord(unit, word))) {
+      continue;
+    }
+    const nextLength = currentLength === 0 ? unit.length : currentLength + 1 + unit.length;
+    if (nextLength > maxChars) {
+      if (selectedUnits.length === 0) {
+        const firstMatchingWord = words.find((word) => contextContainsWord(unit, word)) || words[0];
+        return truncateContextAroundWord(unit, firstMatchingWord, maxChars);
+      }
+      break;
+    }
+    selectedUnits.push(unit);
+    currentLength = nextLength;
+    const joined = selectedUnits.join(" ");
+    if (words.every((word) => contextContainsWord(joined, word))) {
+      return joined;
+    }
+  }
+
+  if (selectedUnits.length > 0) {
+    return selectedUnits.join(" ");
+  }
+
+  return truncateContextAroundWord(fullText, words[0], maxChars);
+}
+
+export function createWordContextBatches(text, words, maxChars) {
+  const normalizedWords = (Array.isArray(words) ? words : [])
+    .map((word) => String(word || "").trim())
+    .filter(Boolean);
+  if (normalizedWords.length === 0) return [];
+
+  const units = splitRewriteContextUnits(text);
+  const fallbackUnits = units.length > 0 ? units : [String(text || "").trim()];
+  const batches = [];
+  let startIndex = 0;
+
+  while (startIndex < normalizedWords.length) {
+    let bestBatch = null;
+
+    for (let endIndex = startIndex; endIndex < normalizedWords.length; endIndex += 1) {
+      const candidateWords = normalizedWords.slice(startIndex, endIndex + 1);
+      const candidateContext = buildBatchContext(fallbackUnits, text, candidateWords, maxChars);
+      const coversAllCandidateWords = candidateWords.every((word) => contextContainsWord(candidateContext, word));
+
+      if (!coversAllCandidateWords) {
+        if (!bestBatch) {
+          bestBatch = {
+            words: [candidateWords[0]],
+            context: buildBatchContext(fallbackUnits, text, [candidateWords[0]], maxChars),
+          };
+        }
+        break;
+      }
+
+      bestBatch = {
+        words: candidateWords,
+        context: candidateContext,
+      };
+    }
+
+    if (!bestBatch) {
+      bestBatch = {
+        words: [normalizedWords[startIndex]],
+        context: buildBatchContext(fallbackUnits, text, [normalizedWords[startIndex]], maxChars),
+      };
+    }
+
+    batches.push(bestBatch);
+    startIndex += bestBatch.words.length;
+  }
+
+  return batches;
 }
 
 function applySimplifiedWords(originalText, words, replacements) {
@@ -420,9 +546,16 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
 
         const inputWords = Array.isArray(words) ? words : [];
         const originalWords = inputWords.map((word) => word.word);
-        const lemmas = inputWords.length > 0
-          ? (await extractLemmas(safeOriginalText, originalWords, accessToken)).lemmas
-          : [];
+        const lemmaBatches = createWordContextBatches(
+          safeOriginalText,
+          originalWords,
+          EXTRACT_LEMMAS_MAX_CONTEXT_CHARS,
+        );
+        const lemmas = [];
+        for (const batch of lemmaBatches) {
+          const batchResult = await extractLemmas(batch.context, batch.words, accessToken);
+          lemmas.push(...batchResult.lemmas);
+        }
 
         const analyzer = await getOrCreateAnalyzer();
         const validI1WordsList = [];
@@ -487,15 +620,26 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
           validAboveI1WordsList.forEach((word) => {
             aboveWordLevels[word.toLowerCase()] = finalWordLevels[word.toLowerCase()] || targetLevel;
           });
-          const simplifyResult = await simplifyWords(
+          const simplifyBatches = createWordContextBatches(
             safeOriginalText,
             validAboveI1WordsList,
-            targetLevel,
-            accessToken,
-            false,
-            aboveWordLevels,
+            SIMPLIFY_WORDS_MAX_CONTEXT_CHARS,
           );
-          simplifiedWords = simplifyResult.simplifiedWords || [];
+          for (const batch of simplifyBatches) {
+            const batchWordLevels = {};
+            batch.words.forEach((word) => {
+              batchWordLevels[word.toLowerCase()] = aboveWordLevels[word.toLowerCase()] || targetLevel;
+            });
+            const simplifyResult = await simplifyWords(
+              batch.context,
+              batch.words,
+              targetLevel,
+              accessToken,
+              false,
+              batchWordLevels,
+            );
+            simplifiedWords.push(...(simplifyResult.simplifiedWords || []));
+          }
         }
 
         const nextRewrittenText = applySimplifiedWords(safeOriginalText, validAboveI1WordsList, simplifiedWords);
