@@ -598,9 +598,9 @@ Given a rewritten (i+1) article split into sections, generate a JSON course with
       "spotlight_words": ["word1", "word2"],
       "quiz": [
         {
-          "type": "single",
+          "type": "mcq",
           "question": "string",
-          "options": [{"label": "string", "value": "A"}, ...],
+          "options": [{"label": "string", "value": "A"}, {"label": "string", "value": "B"}, {"label": "string", "value": "C"}, {"label": "string", "value": "D"}],
           "answer": "A",
           "analysis": "string (1 sentence explaining why)"
         }
@@ -615,7 +615,7 @@ Rules:
 - title: 4-8 word heading capturing the section's main point.
 - summary: 1-2 sentences in Chinese summarizing what the learner will read.
 - spotlight_words: 2-3 words from THIS section that are pedagogically important (vocabulary, discourse markers, or key concepts). Choose words that ACTUALLY APPEAR in the section text.
-- quiz: exactly 1 question testing comprehension of THIS section. Use single-choice (4 options A-D). Question must be answerable from the section text alone.
+- quiz: exactly 1 question testing comprehension of THIS section. type MUST be "mcq". Write 4 real options (A/B/C/D) directly about the section content — no placeholders. Question must be answerable from the section text alone.
 - analysis: 1 concise sentence explaining the correct answer.
 """
 
@@ -635,13 +635,13 @@ def _build_v3_fallback(body: V3CourseGenerateRequest, rewritten_paragraphs: list
             "spotlight_words": content_words[:2] if content_words else [],
             "quiz": [
                 {
-                    "type": "single",
+                    "type": "mcq",
                     "question": "What is the main idea of this section?",
                     "options": [
-                        {"label": "Option A", "value": "A"},
-                        {"label": "Option B", "value": "B"},
-                        {"label": "Option C", "value": "C"},
-                        {"label": "Option D", "value": "D"},
+                        {"label": "The main idea of the section", "value": "A"},
+                        {"label": "A supporting detail", "value": "B"},
+                        {"label": "An unrelated point", "value": "C"},
+                        {"label": "The author's conclusion only", "value": "D"},
                     ],
                     "answer": "A",
                     "analysis": "The main idea is stated in the opening sentence.",
