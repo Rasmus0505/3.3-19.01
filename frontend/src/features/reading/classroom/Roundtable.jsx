@@ -31,10 +31,12 @@ function BreathingBars({ color = "#7c3aed" }) {
 // ─── Role configuration ───────────────────────────────────────────────────────
 
 const ROLE_CFG = {
-  teacher:   { avatar: "/avatars/teacher.png",  accent: "#7c3aed", side: "left"  },
-  assistant: { avatar: "/avatars/assist.png",   accent: "#7c3aed", side: "left"  },
-  student:   { avatar: "/avatars/curious.png",  accent: "#2563eb", side: "right" },
-  user:      { avatar: "/avatars/user.png",     accent: "#059669", side: "right" },
+  teacher:         { avatar: "/avatars/teacher.png", accent: "#7c3aed", side: "left" },
+  assistant:       { avatar: "/avatars/assist.png", accent: "#8b5cf6", side: "left" },
+  student:         { avatar: "/avatars/curious.png", accent: "#2563eb", side: "right" },
+  "student-curious": { avatar: "/avatars/curious.png", accent: "#2563eb", side: "right" },
+  "student-thinker": { avatar: "/avatars/thinker.png", accent: "#1d4ed8", side: "right" },
+  user:            { avatar: "/avatars/user.png", accent: "#059669", side: "right" },
 };
 
 function resolvePublicAssetUrl(path) {
@@ -45,21 +47,72 @@ function resolvePublicAssetUrl(path) {
   return `${base.replace(/\/?$/, "/")}${String(path || "").replace(/^\/+/, "")}`;
 }
 
-function cfg(role) {
-  const config = ROLE_CFG[String(role || "").toLowerCase()] || ROLE_CFG.teacher;
+function normalizeAvatarKey(role, avatarKey) {
+  const explicitAvatarKey = String(avatarKey || "").trim().toLowerCase();
+  if (explicitAvatarKey) return explicitAvatarKey;
+  const normalizedRole = String(role || "").trim().toLowerCase();
+  if (normalizedRole === "assistant" || normalizedRole === "user") return normalizedRole;
+  if (normalizedRole === "student") return "student-curious";
+  return "teacher";
+}
+
+function cfg(role, avatarKey) {
+  const config =
+    ROLE_CFG[normalizeAvatarKey(role, avatarKey)] ||
+    ROLE_CFG[String(role || "").toLowerCase()] ||
+    ROLE_CFG.teacher;
   return {
     ...config,
     avatar: resolvePublicAssetUrl(config.avatar),
   };
 }
 
+function buildStudentRoster(cast) {
+  const configuredStudents = Array.isArray(cast?.students) ? cast.students : [];
+  const defaults = [
+    {
+      avatarKey: "student-curious",
+      name: "Lena",
+      avatar: resolvePublicAssetUrl("/avatars/curious.png"),
+    },
+    {
+      avatarKey: "student-thinker",
+      name: "Max",
+      avatar: resolvePublicAssetUrl("/avatars/thinker.png"),
+    },
+  ];
+
+  return defaults.map((fallback, index) => {
+    const byAvatarKey = configuredStudents.find(
+      (student) =>
+        String(student?.avatarKey || student?.avatar_key || "").trim().toLowerCase() ===
+        fallback.avatarKey,
+    );
+    const student = byAvatarKey || configuredStudents[index] || {};
+    return {
+      id: fallback.avatarKey,
+      avatarKey: fallback.avatarKey,
+      name: String(student.name || fallback.name),
+      avatar: fallback.avatar,
+    };
+  });
+}
+
 function getDisplayName(msg, cast) {
   if (msg.name) return msg.name;
+  const avatarKey = normalizeAvatarKey(msg.role, msg.avatarKey);
+  if (avatarKey === "teacher") return cast?.teacher?.name || "Coach Mira";
+  if (avatarKey === "assistant") return cast?.assistant?.name || "Assistant";
+  if (avatarKey === "user") return "You";
+
+  const student = buildStudentRoster(cast).find((item) => item.avatarKey === avatarKey);
+  if (student) return student.name;
+
   const r = String(msg.role || "teacher").toLowerCase();
-  if (r === "teacher")   return cast?.teacher?.name   || "Coach Mira";
+  if (r === "teacher") return cast?.teacher?.name || "Coach Mira";
   if (r === "assistant") return cast?.assistant?.name || "Assistant";
-  if (r === "user")      return "You";
-  return Array.isArray(cast?.students) && cast.students[0]?.name || "Lily";
+  if (r === "user") return "You";
+  return "Student";
 }
 
 // ─── Teacher column (left, 90px) ─────────────────────────────────────────────
@@ -92,7 +145,7 @@ function SpeechBubble({ message, isActive }) {
     </div>
   );
 
-  const c = cfg(message.role);
+  const c = cfg(message.role, message.avatarKey);
   const isTeacher = message.role === "teacher" || message.role === "assistant";
 
   return (
@@ -126,23 +179,12 @@ function SpeechBubble({ message, isActive }) {
 
 // ─── Students column (right, 140px) ──────────────────────────────────────────
 
-function StudentsColumn({ messages, activeSpeakerId, cast }) {
-  const students = [
-    {
-      id: "student-lily",
-      name: Array.isArray(cast?.students) ? cast.students[0]?.name || "Lily" : "Lily",
-      avatar: resolvePublicAssetUrl("/avatars/curious.png"),
-    },
-    {
-      id: "student-max",
-      name: Array.isArray(cast?.students) ? cast.students[1]?.name || "Max" : "Max",
-      avatar: resolvePublicAssetUrl("/avatars/thinker.png"),
-    },
-  ];
+function StudentsColumn({ messages, activeAvatarKey, cast }) {
+  const students = buildStudentRoster(cast);
 
   // Last student message
   const latestStudent = [...messages].reverse().find(
-    (m) => m.role === "student"
+    (m) => normalizeAvatarKey(m.role, m.avatarKey).startsWith("student")
   );
 
   return (
@@ -150,7 +192,7 @@ function StudentsColumn({ messages, activeSpeakerId, cast }) {
       {/* Student avatars row */}
       <div className="rt-students__row">
         {students.map((s) => {
-          const isActive = latestStudent?.role === "student" && activeSpeakerId && s.id === "student";
+          const isActive = activeAvatarKey === s.avatarKey;
           return (
             <div
               key={s.id}
@@ -186,6 +228,7 @@ export function Roundtable({ messages = [], activeSpeechActionId = null, cast = 
     ? messages.find((m) => m.id === activeSpeechActionId)
     : null;
   const activeSpeaker = activeMsg?.role || null;
+  const activeAvatarKey = normalizeAvatarKey(activeMsg?.role, activeMsg?.avatarKey);
 
   // The bubble shows the most recent message overall
   const latestMessage = messages.length > 0
@@ -226,7 +269,7 @@ export function Roundtable({ messages = [], activeSpeechActionId = null, cast = 
         )}
       </div>
 
-      <StudentsColumn messages={messages} activeSpeakerId={activeSpeechActionId} cast={cast} />
+      <StudentsColumn messages={messages} activeAvatarKey={activeAvatarKey} cast={cast} />
     </div>
   );
 }

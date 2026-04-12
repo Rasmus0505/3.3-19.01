@@ -13,15 +13,36 @@ function estimateSpeechDurationMs(text) {
   return Math.max(2000, Math.min(7000, words * 380));
 }
 
-// Valid CosyVoice v1 system preset voices on DashScope
-const ROLE_VOICES = {
-  teacher:   "longxiaochun",  // female, calm
-  assistant: "longshuo",      // male, clear
-  student:   "longxiaoxia",   // female, younger
+export const READING_CLASSROOM_TTS_MODEL = "qwen3-tts-flash";
+
+// Aliyun official system voices chosen to match the current classroom avatars.
+const AVATAR_VOICES = {
+  teacher: "Jennifer",
+  assistant: "Ryan",
+  "student-curious": "Mia",
+  "student-thinker": "Aiden",
 };
 
-function getVoiceForRole(role) {
-  return ROLE_VOICES[String(role || "").toLowerCase()] || ROLE_VOICES.teacher;
+function normalizeActionAvatarKey(action) {
+  const explicitAvatarKey = String(action?.avatarKey || "").trim().toLowerCase();
+  if (explicitAvatarKey) return explicitAvatarKey;
+  const normalizedRole = String(action?.role || "").trim().toLowerCase();
+  if (normalizedRole === "assistant" || normalizedRole === "user") return normalizedRole;
+  if (normalizedRole === "student") return "student-curious";
+  return "teacher";
+}
+
+export function getReadingClassroomTtsConfig(action) {
+  if (!action) return null;
+  if (String(action.role || "").trim().toLowerCase() === "user") return null;
+
+  const avatarKey = normalizeActionAvatarKey(action);
+  const voice = AVATAR_VOICES[avatarKey] || AVATAR_VOICES.teacher;
+  return {
+    model: READING_CLASSROOM_TTS_MODEL,
+    voice,
+    languageType: "English",
+  };
 }
 
 // Scenes that require user interaction — pause before them, don't auto-advance
@@ -152,47 +173,49 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
       };
 
       if (apiCall && state.ttsEnabled) {
-        const voice = getVoiceForRole(nextAction.role);
-        apiCall("/api/tts/synthesize", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: nextAction.text,
-            voice,
-            model: "cosyvoice-v1",
-            language_type: "English",
-          }),
-        })
-          .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`TTS HTTP ${res.status}`))))
-          .then((data) => {
-            const src = data?.audio_url;
-            if (!src) throw new Error("no audio_url");
-            const audio = new Audio(src);
-            audioRef.current = audio;
-            audio.onended = onSpeechEnd;
-            audio.onerror = (e) => {
-              console.warn("[TTS] audio error, falling back to timer:", e?.type);
-              audioRef.current = null;
-              dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: null });
-              settle();
-            };
-            // play() returns a promise; autoplay may be blocked on first page load
-            const playPromise = audio.play();
-            if (playPromise !== undefined) {
-              playPromise.catch((err) => {
-                console.warn("[TTS] autoplay blocked, using timer fallback:", err?.message);
+        const ttsConfig = getReadingClassroomTtsConfig(nextAction);
+        if (ttsConfig) {
+          apiCall("/api/tts/synthesize", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: nextAction.text,
+              voice: ttsConfig.voice,
+              model: ttsConfig.model,
+              language_type: ttsConfig.languageType,
+            }),
+          })
+            .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`TTS HTTP ${res.status}`))))
+            .then((data) => {
+              const src = data?.audio_url;
+              if (!src) throw new Error("no audio_url");
+              const audio = new Audio(src);
+              audioRef.current = audio;
+              audio.onended = onSpeechEnd;
+              audio.onerror = (e) => {
+                console.warn("[TTS] audio error, falling back to timer:", e?.type);
                 audioRef.current = null;
                 dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: null });
-                timerRef.current = setTimeout(settle, estimateSpeechDurationMs(nextAction.text));
-              });
-            }
-          })
-          .catch((err) => {
-            console.warn("[TTS] synthesis failed, using timer:", err?.message);
-            dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: null });
-            timerRef.current = setTimeout(settle, estimateSpeechDurationMs(nextAction.text));
-          });
-        return;
+                settle();
+              };
+              // play() returns a promise; autoplay may be blocked on first page load
+              const playPromise = audio.play();
+              if (playPromise !== undefined) {
+                playPromise.catch((err) => {
+                  console.warn("[TTS] autoplay blocked, using timer fallback:", err?.message);
+                  audioRef.current = null;
+                  dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: null });
+                  timerRef.current = setTimeout(settle, estimateSpeechDurationMs(nextAction.text));
+                });
+              }
+            })
+            .catch((err) => {
+              console.warn("[TTS] synthesis failed, using timer:", err?.message);
+              dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: null });
+              timerRef.current = setTimeout(settle, estimateSpeechDurationMs(nextAction.text));
+            });
+          return;
+        }
       }
 
       // TTS disabled — timer fallback

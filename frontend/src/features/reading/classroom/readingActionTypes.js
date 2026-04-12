@@ -6,11 +6,22 @@ export const READING_ACTION_TYPES = {
   OUTPUT: "output",
 };
 
+function normalizeAvatarKey(role, avatarKey) {
+  const explicitAvatarKey = String(avatarKey || "").trim().toLowerCase();
+  if (explicitAvatarKey) return explicitAvatarKey;
+  const normalizedRole = String(role || "teacher").trim().toLowerCase();
+  if (normalizedRole === "assistant" || normalizedRole === "user") return normalizedRole;
+  if (normalizedRole === "student") return "student-curious";
+  return "teacher";
+}
+
 function createAction(base = {}) {
   return {
     id: String(base.id || crypto.randomUUID()),
     type: String(base.type || READING_ACTION_TYPES.SPEECH),
     role: base.role ? String(base.role) : "teacher",
+    avatarKey: normalizeAvatarKey(base.role, base.avatarKey),
+    name: base.name ? String(base.name) : "",
     title: base.title ? String(base.title) : "",
     text: base.text ? String(base.text) : "",
     panel: base.panel && typeof base.panel === "object" ? base.panel : null,
@@ -25,6 +36,8 @@ function speechFromBeat(beat) {
     id: `${beat.id}-speech`,
     type: READING_ACTION_TYPES.SPEECH,
     role: beat.speaker || "teacher",
+    avatarKey: beat.avatarKey,
+    name: beat.name,
     title: beat.title || "",
     text: beat.text || beat.segment?.teacher_note || "",
   });
@@ -35,6 +48,8 @@ function spotlightFromBeat(beat) {
     id: `${beat.id}-spotlight`,
     type: READING_ACTION_TYPES.SPOTLIGHT,
     role: beat.speaker || "teacher",
+    avatarKey: beat.avatarKey,
+    name: beat.name,
     title: beat.title || beat.segment?.heading || "",
     panel: {
       kind: beat.type,
@@ -69,6 +84,8 @@ export function buildSceneActionSequence(scene) {
             id: `${beat.id}-lead`,
             type: READING_ACTION_TYPES.SPEECH,
             role: beat.speaker || "teacher",
+            avatarKey: beat.avatarKey,
+            name: beat.name,
             title: beat.segment?.heading || beat.title || "",
             text: teacherText,
           }),
@@ -93,6 +110,8 @@ export function buildSceneActionSequence(scene) {
             id: `${beat.id}-msg-${index + 1}`,
             type: READING_ACTION_TYPES.SPEECH,
             role: String(message.speaker || message.role || "teacher"),
+            avatarKey: message.avatarKey || message.avatar_key || message.speakerKey || message.speaker_key,
+            name: message.name,
             title: beat.title || "",
             text,
           }),

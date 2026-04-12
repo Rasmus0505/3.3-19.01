@@ -44,6 +44,8 @@ export function getReadingDerivedState(course, playbackState, runtime) {
         {
           id: action.id,
           role: asRoundtableRole(action.role),
+          avatarKey: action.avatarKey || "",
+          name: action.name || "",
           content: action.text,
           source: "playback",
         },
@@ -56,6 +58,8 @@ export function getReadingDerivedState(course, playbackState, runtime) {
   const liveMessages = (runtime?.discussion?.[activeScene.id]?.messages || []).map((msg, i) => ({
     id: `${activeScene.id}-live-${i + 1}`,
     role: msg.role === "assistant" ? "teacher" : "user",
+    avatarKey: msg.role === "assistant" ? "teacher" : "user",
+    name: msg.role === "assistant" ? course?.cast?.teacher?.name || "Coach Mira" : "You",
     content: msg.content,
     source: "live",
   }));

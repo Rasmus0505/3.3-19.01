@@ -73,12 +73,44 @@ function createRuntimeV2(scenes) {
   };
 }
 
+const DEFAULT_READING_CAST_STUDENTS = [
+  {
+    avatarKey: "student-curious",
+    name: "Lena",
+    persona: "A curious student who asks the question you were about to ask.",
+  },
+  {
+    avatarKey: "student-thinker",
+    name: "Max",
+    persona: "A thoughtful student who pauses, connects ideas, and checks the logic.",
+  },
+];
+
+function buildCastStudents(students = []) {
+  return DEFAULT_READING_CAST_STUDENTS.map((fallback, index) => {
+    const fromAvatarKey = students.find(
+      (student) =>
+        String(student?.avatarKey || student?.avatar_key || "").trim().toLowerCase() ===
+        fallback.avatarKey,
+    );
+    const student = fromAvatarKey || students[index] || {};
+    return {
+      avatarKey: String(student.avatarKey || student.avatar_key || fallback.avatarKey),
+      name: String(student.name || fallback.name),
+      persona: String(student.persona || fallback.persona),
+    };
+  });
+}
+
 function toConversationMessages(segments = []) {
+  const students = buildCastStudents();
   return segments.slice(0, 2).flatMap((segment, index) => {
+    const student = students[index % students.length];
     const heading = segment.heading || `Part ${index + 1}`;
     return [
       {
         speaker: index === 0 ? "teacher" : "assistant",
+        avatarKey: index === 0 ? "teacher" : "assistant",
         text:
           index === 0
             ? `Let's anchor on ${heading}. The writer is pushing one central idea before layering detail.`
@@ -86,6 +118,8 @@ function toConversationMessages(segments = []) {
       },
       {
         speaker: "student",
+        avatarKey: student.avatarKey,
+        name: student.name,
         text:
           index === 0
             ? `So I should read for the main direction first, then come back for the precise wording?`
@@ -105,6 +139,8 @@ function createScene(type, title, goal, beats = [], extra = {}) {
       id: String(beat?.id || buildBeatId(extra.id || type, index)),
       type: String(beat?.type || "teacher_talk"),
       speaker: beat?.speaker ? String(beat.speaker) : null,
+      avatarKey: beat?.avatarKey ? String(beat.avatarKey) : "",
+      name: beat?.name ? String(beat.name) : "",
       title: beat?.title ? String(beat.title) : "",
       text: beat?.text ? String(beat.text) : "",
       items: Array.isArray(beat?.items) ? beat.items : [],
@@ -361,12 +397,7 @@ function buildV2Course({
         persona: "A concise teaching assistant who reframes ideas in simpler English.",
         tone: "clear and practical",
       },
-      students: [
-        {
-          name: "Lena",
-          persona: "A curious student who asks the question you were about to ask.",
-        },
-      ],
+      students: buildCastStudents(),
     },
     source: {
       primary_text: "rewritten",
@@ -573,7 +604,7 @@ function upgradeV1CourseToV2(course) {
         persona: "A concise teaching assistant who reframes ideas simply.",
         tone: "clear",
       },
-      students: [{ name: "Lena", persona: "A curious student who asks follow-up questions." }],
+      students: buildCastStudents(course?.cast?.students),
     },
     source: course?.source || {
       primary_text: "rewritten",
@@ -592,6 +623,10 @@ function normalizeMessage(message, index) {
   return {
     id: String(message.id || `message-${index + 1}`),
     speaker: String(message.speaker || message.role || "teacher"),
+    avatarKey: String(
+      message.avatarKey || message.avatar_key || message.speakerKey || message.speaker_key || "",
+    ),
+    name: String(message.name || ""),
     text,
   };
 }
@@ -601,6 +636,8 @@ function normalizeBeat(beat, sceneId, index) {
     id: String(beat?.id || buildBeatId(sceneId, index)),
     type: String(beat?.type || "teacher_talk"),
     speaker: beat?.speaker ? String(beat.speaker) : null,
+    avatarKey: String(beat?.avatarKey || beat?.avatar_key || ""),
+    name: String(beat?.name || ""),
     title: String(beat?.title || ""),
     text: String(beat?.text || ""),
     aside: String(beat?.aside || ""),
@@ -810,12 +847,7 @@ export function normalizeReadingCourse(value, fallback = null) {
         persona: String(course.cast?.assistant?.persona || "A concise teaching assistant."),
         tone: String(course.cast?.assistant?.tone || "clear"),
       },
-      students: Array.isArray(course.cast?.students)
-        ? course.cast.students.map((student, index) => ({
-            name: String(student?.name || `Student ${index + 1}`),
-            persona: String(student?.persona || "A curious student."),
-          }))
-        : [{ name: "Lena", persona: "A curious student." }],
+      students: buildCastStudents(course.cast?.students),
     },
     source: {
       ...(course.source || {}),
