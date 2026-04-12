@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, Trash2, MessageCircle } from "lucide-react";
+import { Send, Trash2, Mic } from "lucide-react";
 import { useLessonChat } from "./useLessonChat";
 import { VoiceRecorder } from "./VoiceRecorder";
 import { ChatMessage, ChatTypingIndicator } from "./ChatMessage";
@@ -12,12 +12,9 @@ export default function ChatPanel({ lessonId, currentSentence, accessToken, apiC
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-    }
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages, isLoading]);
 
   const handleSend = useCallback(() => {
@@ -46,47 +43,34 @@ export default function ChatPanel({ lessonId, currentSentence, accessToken, apiC
     [sendVoiceMessage],
   );
 
-  const refText = currentSentence?.text_en || "";
   const isEmpty = messages.length === 0 && !isLoading;
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="chat-panel">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border/40 shrink-0">
-        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-          <MessageCircle className="w-3.5 h-3.5" />
-          <span>AI 口语练习</span>
-        </div>
+      <div className="chat-panel__header">
+        <span className="chat-panel__title">AI 口语练习</span>
         {messages.length > 0 && (
           <button
             type="button"
             onClick={clearHistory}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
+            className="chat-panel__clear-btn"
             title="清空对话"
           >
-            <Trash2 className="w-3 h-3" />
+            <Trash2 className="size-3.5" />
           </button>
         )}
       </div>
 
-      {/* Messages area */}
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
+      {/* Messages */}
+      <div ref={scrollRef} className="chat-panel__messages">
         {isEmpty ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3 text-center text-muted-foreground">
-            <div className="w-12 h-12 rounded-full bg-muted/30 flex items-center justify-center">
-              <MessageCircle className="w-6 h-6 opacity-40" />
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-foreground/60">AI Teacher</p>
-              <p className="text-xs leading-relaxed">
-                和 AI 讨论这句话的听力内容
-                <br />
-                打字或按住录音按钮开始
-              </p>
-            </div>
+          <div className="chat-empty">
+            <p className="chat-empty__hint">和 AI 讨论这句话的听力内容</p>
+            <p className="chat-empty__sub">打字或按住录音按钮开始</p>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
+          <>
             {messages.map((msg) => (
               <ChatMessage
                 key={msg.id}
@@ -96,21 +80,19 @@ export default function ChatPanel({ lessonId, currentSentence, accessToken, apiC
               />
             ))}
             {isLoading && <ChatTypingIndicator />}
-          </div>
+          </>
         )}
       </div>
 
       {/* Error */}
       {error && (
-        <div className="px-3 py-1 text-[11px] text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 shrink-0">
-          {error}
-        </div>
+        <div className="chat-panel__error">{error}</div>
       )}
 
       {/* Input bar */}
-      <div className="flex items-end gap-1.5 px-2 py-2 border-t border-border/40 shrink-0">
+      <div className="chat-panel__input-bar">
         <VoiceRecorder
-          refText={refText}
+          refText={currentSentence?.text_en || ""}
           lessonId={lessonId}
           accessToken={accessToken}
           apiClient={apiClient}
@@ -123,18 +105,18 @@ export default function ChatPanel({ lessonId, currentSentence, accessToken, apiC
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="输入消息..."
+          placeholder="输入消息…"
           disabled={isLoading}
-          className="flex-1 min-w-0 rounded-lg border border-border/60 bg-background px-3 py-1.5 text-sm outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 disabled:opacity-50"
+          className="chat-panel__input"
         />
         <button
           type="button"
           onClick={handleSend}
           disabled={!inputValue.trim() || isLoading}
-          className="inline-flex items-center justify-center rounded-full w-9 h-9 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+          className="chat-panel__send-btn"
           title="发送"
         >
-          <Send className="w-4 h-4" />
+          <Send className="size-3.5" />
         </button>
       </div>
     </div>

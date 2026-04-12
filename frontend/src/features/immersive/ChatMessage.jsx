@@ -1,15 +1,15 @@
 import { useState } from "react";
-import { Volume2, Loader2, User, Bot } from "lucide-react";
+import { Volume2, Loader2 } from "lucide-react";
 import { parseResponse } from "../../shared/api/client";
 
 function SoeScoreBadge({ soeData }) {
   if (!soeData) return null;
   const { pronunciation_score, fluency_score } = soeData;
   return (
-    <span className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground bg-muted/60 rounded-full px-2 py-0.5 mt-1">
-      <span>发音 <strong className="text-foreground">{Math.round(pronunciation_score)}</strong></span>
-      <span className="text-muted-foreground/40">|</span>
-      <span>流畅 <strong className="text-foreground">{Math.round(fluency_score)}</strong></span>
+    <span className="chat-soe-badge">
+      发音 <strong>{Math.round(pronunciation_score)}</strong>
+      <span className="chat-soe-badge__sep">·</span>
+      流畅 <strong>{Math.round(fluency_score)}</strong>
     </span>
   );
 }
@@ -30,21 +30,12 @@ function TtsButton({ text, accessToken, apiClient }) {
         },
         accessToken,
       );
-      if (!resp.ok) {
-        setPlaying(false);
-        return;
-      }
+      if (!resp.ok) { setPlaying(false); return; }
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
-      audio.onended = () => {
-        setPlaying(false);
-        URL.revokeObjectURL(url);
-      };
-      audio.onerror = () => {
-        setPlaying(false);
-        URL.revokeObjectURL(url);
-      };
+      audio.onended = () => { setPlaying(false); URL.revokeObjectURL(url); };
+      audio.onerror = () => { setPlaying(false); URL.revokeObjectURL(url); };
       audio.play().catch(() => setPlaying(false));
     } catch {
       setPlaying(false);
@@ -56,10 +47,12 @@ function TtsButton({ text, accessToken, apiClient }) {
       type="button"
       onClick={handlePlay}
       disabled={playing}
-      className="inline-flex items-center justify-center w-6 h-6 rounded-full hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors"
+      className="chat-tts-btn"
       title="播放语音"
     >
-      {playing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Volume2 className="w-3 h-3" />}
+      {playing
+        ? <Loader2 className="size-3 animate-spin" />
+        : <Volume2 className="size-3" />}
     </button>
   );
 }
@@ -67,42 +60,32 @@ function TtsButton({ text, accessToken, apiClient }) {
 export function ChatMessage({ message, accessToken, apiClient }) {
   const isUser = message.role === "user";
 
-  return (
-    <div className={`flex gap-3 max-w-[85%] chat-bubble-enter ${isUser ? "self-end flex-row-reverse" : "self-start"}`}>
-      {/* Avatar */}
-      <div
-        className={[
-          "w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-sm border-2 border-background",
-          isUser
-            ? "bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-300"
-            : "bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-300",
-        ].join(" ")}
-      >
-        {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+  if (isUser) {
+    return (
+      <div className="chat-msg chat-msg--user">
+        <div className="chat-msg__bubble chat-msg__bubble--user">
+          <p className="chat-msg__text">{message.content}</p>
+        </div>
+        {message.soeData && (
+          <SoeScoreBadge soeData={message.soeData} />
+        )}
       </div>
+    );
+  }
 
-      {/* Bubble */}
-      <div className="flex flex-col gap-0.5">
-        <div
-          className={[
-            "relative px-4 py-2.5 rounded-2xl text-sm leading-relaxed border transition-all backdrop-blur-sm",
-            isUser
-              ? "bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200/60 dark:border-emerald-800/60 rounded-br-sm"
-              : "bg-blue-50 dark:bg-blue-950/60 border-blue-200/60 dark:border-blue-800/60 rounded-bl-sm",
-          ].join(" ")}
-        >
-          <span className="text-[10px] font-semibold text-muted-foreground block mb-0.5">
-            {isUser ? "You" : "AI Teacher"}
-          </span>
-          <p className="whitespace-pre-wrap">{message.content}</p>
-        </div>
-
-        <div className={`flex items-center gap-1 ${isUser ? "justify-end" : "justify-start"}`}>
-          {isUser && message.soeData && <SoeScoreBadge soeData={message.soeData} />}
-          {!isUser && accessToken && apiClient && (
+  return (
+    <div className="chat-msg chat-msg--ai">
+      <div className="chat-msg__avatar">
+        <img src="/avatars/teacher.png" alt="AI" className="chat-msg__avatar-img" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+      </div>
+      <div className="chat-msg__ai-body">
+        <span className="chat-msg__ai-name">AI Teacher</span>
+        <p className="chat-msg__text">{message.content}</p>
+        {accessToken && apiClient && (
+          <div className="chat-msg__actions">
             <TtsButton text={message.content} accessToken={accessToken} apiClient={apiClient} />
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -110,16 +93,16 @@ export function ChatMessage({ message, accessToken, apiClient }) {
 
 export function ChatTypingIndicator() {
   return (
-    <div className="flex gap-3 self-start max-w-[85%] chat-bubble-enter">
-      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-sm border-2 border-background bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-300">
-        <Bot className="w-4 h-4" />
+    <div className="chat-msg chat-msg--ai">
+      <div className="chat-msg__avatar">
+        <img src="/avatars/teacher.png" alt="AI" className="chat-msg__avatar-img" onError={(e) => { e.currentTarget.style.display = "none"; }} />
       </div>
-      <div className="relative px-4 py-2.5 rounded-2xl rounded-bl-sm bg-blue-50 dark:bg-blue-950/60 border border-blue-200/60 dark:border-blue-800/60 backdrop-blur-sm">
-        <span className="text-[10px] font-semibold text-muted-foreground block mb-0.5">AI Teacher</span>
-        <div className="flex gap-1 items-center h-5">
-          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: "0ms" }} />
-          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: "150ms" }} />
-          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+      <div className="chat-msg__ai-body">
+        <span className="chat-msg__ai-name">AI Teacher</span>
+        <div className="chat-typing-dots">
+          <span style={{ animationDelay: "0ms" }} />
+          <span style={{ animationDelay: "160ms" }} />
+          <span style={{ animationDelay: "320ms" }} />
         </div>
       </div>
     </div>
