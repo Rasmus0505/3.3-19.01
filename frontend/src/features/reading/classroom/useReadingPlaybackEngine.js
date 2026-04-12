@@ -13,16 +13,19 @@ function estimateSpeechDurationMs(text) {
   return Math.max(1200, Math.min(6000, words * 340));
 }
 
-// Default voice mapping per role. Falls back to a safe default.
+// Valid CosyVoice v1 system preset voices on DashScope
 const ROLE_VOICES = {
-  teacher: "longxiaochun",
-  assistant: "longshuo",
-  student: "loongstella",
+  teacher:   "longxiaochun",  // female, calm
+  assistant: "longshuo",      // male, clear
+  student:   "longxiaoxia",   // female, younger
 };
 
 function getVoiceForRole(role) {
   return ROLE_VOICES[String(role || "").toLowerCase()] || ROLE_VOICES.teacher;
 }
+
+// Scenes that require user interaction — do NOT auto-advance past them
+const INTERACTIVE_SCENE_TYPES = new Set(["checkpoint", "output"]);
 
 export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback }) {
   const [state, dispatch] = useReducer(readingPlaybackReducer, course, createReadingPlaybackState);
@@ -68,7 +71,36 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
 
     const cursor = Number(state.actionCursorByScene?.[activeScene.id]) || 0;
     const nextAction = sceneActions[cursor];
-    if (!nextAction) return;
+
+    // ── All actions in this scene are done ───────────────────────────────────
+    if (!nextAction) {
+      const nextSceneIndex = state.activeSceneIndex + 1;
+      if (nextSceneIndex >= scenes.length) return; // course complete
+
+      const nextScene = scenes[nextSceneIndex];
+      if (INTERACTIVE_SCENE_TYPES.has(nextScene?.type)) {
+        // Interactive scene: advance but pause so user can complete task
+        timerRef.current = setTimeout(() => {
+          dispatch({
+            type: READING_PLAYBACK_EVENTS.GO_TO_SCENE,
+            index: nextSceneIndex,
+            sceneId: nextScene.id,
+            mode: "paused",
+          });
+        }, 800);
+      } else {
+        // Non-interactive: auto-advance and keep playing after 1.5s pause
+        timerRef.current = setTimeout(() => {
+          dispatch({
+            type: READING_PLAYBACK_EVENTS.GO_TO_SCENE,
+            index: nextSceneIndex,
+            sceneId: nextScene.id,
+            mode: "playing",
+          });
+        }, 1500);
+      }
+      return;
+    }
 
     // Advance cursor immediately so the action becomes visible
     dispatch({
@@ -102,7 +134,7 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
       return;
     }
 
-    // speech action → TTS or timer fallback
+    // speech action → TTS (Alibaba Cloud) or timer fallback
     if (nextAction.type === READING_ACTION_TYPES.SPEECH && nextAction.text) {
       dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: nextAction.id });
 
@@ -119,26 +151,25 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
           body: JSON.stringify({
             text: nextAction.text,
             voice,
+            model: "cosyvoice-v1",   // standard preset model, not the vc clone model
             language_type: "English",
           }),
         })
-          .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`TTS ${res.status}`))))
+          .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`TTS HTTP ${res.status}`))))
           .then((data) => {
-            if (!data?.audio_url) throw new Error("no audio_url");
+            if (!data?.audio_url) throw new Error("no audio_url in response");
             const audio = new Audio(data.audio_url);
             audioRef.current = audio;
-            audio.onended = settle;
-            audio.onerror = () => {
-              audioRef.current = null;
-              settle();
-            };
-            audio.play().catch(() => {
+            audio.onended = () => { audioRef.current = null; settle(); };
+            audio.onerror = () => { audioRef.current = null; settle(); };
+            audio.play().catch((err) => {
+              console.warn("[TTS] audio.play() failed:", err?.message);
               audioRef.current = null;
               settle();
             });
           })
-          .catch(() => {
-            // TTS failed — fall back to estimated duration
+          .catch((err) => {
+            console.warn("[TTS] 合成失败，降级为计时器:", err?.message);
             timerRef.current = setTimeout(settle, estimateSpeechDurationMs(nextAction.text));
           });
         return;
@@ -156,7 +187,9 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
   }, [
     activeScene,
     sceneActions,
+    scenes,
     state.actionCursorByScene,
+    state.activeSceneIndex,
     state.mode,
     state.sequence,
     state.ttsEnabled,
@@ -169,10 +202,7 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
     },
     pause() {
       if (timerRef.current) clearTimeout(timerRef.current);
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       dispatch({ type: READING_PLAYBACK_EVENTS.PAUSE });
     },
     resume() {
@@ -183,23 +213,14 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
     },
     goToScene(index, sceneId) {
       if (timerRef.current) clearTimeout(timerRef.current);
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       dispatch({ type: READING_PLAYBACK_EVENTS.GO_TO_SCENE, index, sceneId, mode: "paused" });
     },
-    revealNext(sceneId, totalActions) {
-      dispatch({ type: READING_PLAYBACK_EVENTS.REVEAL_NEXT_ACTION, sceneId, totalActions });
-    },
     enterLive(sceneId) {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       dispatch({ type: READING_PLAYBACK_EVENTS.ENTER_LIVE, sceneId });
     },
-    exitLive(nextMode = "paused") {
+    exitLive(nextMode = "playing") {
       dispatch({ type: READING_PLAYBACK_EVENTS.EXIT_LIVE, nextMode });
     },
     toggleTTS(enabled) {

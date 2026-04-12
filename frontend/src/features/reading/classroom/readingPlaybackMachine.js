@@ -78,9 +78,11 @@ export function readingPlaybackReducer(state, event) {
         ...state,
         activeSceneIndex: Math.max(0, Number(event.index) || 0),
         mode: event.mode || "paused",
+        activeSpeechActionId: null,
         actionCursorByScene: {
           ...state.actionCursorByScene,
-          ...(event.sceneId ? { [event.sceneId]: Math.max(1, Number(state.actionCursorByScene?.[event.sceneId]) || 0) } : {}),
+          // Always reset to 0 for the target scene so playback starts from first action
+          ...(event.sceneId ? { [event.sceneId]: 0 } : {}),
         },
       };
     case READING_PLAYBACK_EVENTS.REVEAL_NEXT_ACTION:

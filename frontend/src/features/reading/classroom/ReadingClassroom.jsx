@@ -339,6 +339,15 @@ export function ReadingClassroom({ articleId, course, sourceTexts, apiCall, onEx
     [liveCourse, playbackState, runtime],
   );
 
+  // Auto-start playback 800ms after entering a new course
+  useEffect(() => {
+    if (!liveCourse?.article_id) return;
+    const timer = setTimeout(() => {
+      playbackActions.start();
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [liveCourse?.article_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const activeScene = derived?.activeScene || null;
   const activeSceneId = activeScene?.id;
 
@@ -393,7 +402,14 @@ export function ReadingClassroom({ articleId, course, sourceTexts, apiCall, onEx
             : cur.completedAt || null,
       };
     });
-    playbackActions.goToScene(nextIndex, liveCourse?.scenes?.[nextIndex]?.id);
+    // After completing an interactive scene, dispatch GO_TO_SCENE directly with playing mode
+    const nextScene = liveCourse?.scenes?.[nextIndex];
+    if (nextScene) {
+      // Use internal dispatch via start after goToScene resets the cursor
+      playbackActions.goToScene(nextIndex, nextScene.id);
+      // Small delay to let state settle, then auto-start
+      setTimeout(() => playbackActions.start(), 300);
+    }
   }, [activeScene, liveCourse, playbackActions, runtime.activeSceneIndex, updateRuntime]);
 
   // ── Quiz handlers ─────────────────────────────────────────────────────────
@@ -829,34 +845,36 @@ export function ReadingClassroom({ articleId, course, sourceTexts, apiCall, onEx
         {/* Footer controls */}
         <footer className="rc-footer">
           <div className="rc-footer__left">
-            {derived.canStart && (
+            {/* Play button only shown if truly idle (auto-start hasn't fired yet) */}
+            {derived.isIdle && (
               <Button onClick={playbackActions.start} className="gap-1.5">
                 <Play className="size-4" />
-                Play
+                开始
               </Button>
             )}
             {derived.canPause && (
               <Button variant="outline" onClick={playbackActions.pause} className="gap-1.5">
                 <Pause className="size-4" />
-                Pause
+                暂停
+              </Button>
+            )}
+            {derived.isPaused && !derived.isIdle && (
+              <Button onClick={playbackActions.resume} className="gap-1.5">
+                <Play className="size-4" />
+                继续播放
               </Button>
             )}
           </div>
           <div className="rc-footer__right">
-            {derived.canAdvanceScene && (
+            {/* Only show manual advance for interactive scenes (quiz/output) after task done */}
+            {derived.canAdvanceScene && derived.taskAction && (
               <Button onClick={markSceneCompleteAndAdvance} className="gap-1.5">
                 {isLastScene ? "完成课程" : "下一场景"}
                 <ArrowRight className="size-4" />
               </Button>
             )}
-            {!derived.canAdvanceScene && derived.allActionsRevealed && (
-              <span className="rc-footer__hint">
-                {derived.isLiveMode
-                  ? "Finish the discussion to continue."
-                  : !derived.taskCompleted
-                    ? "Complete the task to continue."
-                    : ""}
-              </span>
+            {derived.isLiveMode && (
+              <span className="rc-footer__hint">讨论结束后课程自动继续</span>
             )}
           </div>
         </footer>
