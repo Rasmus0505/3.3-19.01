@@ -9,16 +9,20 @@
  * Phase "quiz":   QuizSection
  * Phase "discuss": DiscussSection
  */
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, Volume2, VolumeX } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+// Volume controls moved to PlaybackToolbar
 import { Button } from "../../../shared/ui";
 import { cn } from "../../../lib/utils";
 import { saveReadingCourseToRecord } from "../readingRewriteDB";
 import { SectionProgress } from "./SectionProgress";
+import { PlaybackToolbar } from "./PlaybackToolbar";
 import { Roundtable } from "./Roundtable";
 import { ReadingSection } from "./sections/ReadingSection";
 import { ExplainSection } from "./sections/ExplainSection";
+
+const PLAYBACK_SPEEDS = [1, 1.25, 1.5, 2];
 
 const PHASES = ["read", "explain", "quiz", "discuss"];
 
@@ -185,11 +189,13 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
     quizResultsBySection: course.runtime?.quizResultsBySection || {},
   }));
   const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [speed, setSpeed] = useState(1);
+  const [isPaused, setIsPaused] = useState(false);
   const [confusedWords, setConfusedWords] = useState([]);
-  // Roundtable messages — updated by ExplainSection as speech actions fire
   const [roundtableMessages, setRoundtableMessages] = useState([]);
   const [activeSpeechId, setActiveSpeechId] = useState(null);
   const courseRef = useRef(course);
+  const explainRef = useRef(null); // ref to ExplainSection imperative handle
 
   const sections = course.sections || [];
   const activeSection = sections[runtime.activeSectionIndex] || null;
@@ -238,6 +244,37 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
       activePhase: PHASES[nextPhaseIndex],
     });
   }, [runtime, sections.length, activeSection, persistRuntime]);
+
+  const handlePlayPause = useCallback(() => {
+    if (isPaused) {
+      explainRef.current?.resume();
+      setIsPaused(false);
+    } else {
+      explainRef.current?.pause();
+      setIsPaused(true);
+    }
+  }, [isPaused]);
+
+  const handleCycleSpeed = useCallback(() => {
+    setSpeed((cur) => {
+      const idx = PLAYBACK_SPEEDS.indexOf(cur);
+      return PLAYBACK_SPEEDS[(idx + 1) % PLAYBACK_SPEEDS.length];
+    });
+  }, []);
+
+  // Space bar shortcut for play/pause during explain phase
+  useEffect(() => {
+    if (runtime.activePhase !== "explain") return;
+    const handler = (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+      if (e.key === " " || e.key === "Spacebar") {
+        e.preventDefault();
+        handlePlayPause();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [runtime.activePhase, handlePlayPause]);
 
   const handleMarkConfused = useCallback((word) => {
     setConfusedWords((prev) => {
@@ -339,14 +376,6 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
           phase={runtime.activePhase}
         />
         <div className="v3-header__actions">
-          <button
-            type="button"
-            className="v3-header__icon-btn"
-            onClick={() => setTtsEnabled((v) => !v)}
-            aria-label="Toggle TTS"
-          >
-            {ttsEnabled ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
-          </button>
           <button type="button" className="v3-header__exit-btn" onClick={onExit}>
             <ArrowLeft className="size-4" />
             <span>返回</span>
@@ -395,13 +424,16 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
 
               {runtime.activePhase === "explain" && activeSection && (
                 <ExplainSection
+                  ref={explainRef}
                   section={activeSection}
                   course={course}
                   confusedWords={confusedWords}
                   apiCall={apiCall}
                   ttsEnabled={ttsEnabled}
+                  speed={speed}
                   onSpeechLine={handleSpeechLine}
                   onSpeechEnd={handleSpeechEnd}
+                  onPauseChange={setIsPaused}
                   onComplete={advancePhase}
                 />
               )}
@@ -436,6 +468,31 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
         layout
         transition={{ duration: 0.25, ease: [0.21, 1, 0.36, 1] }}
       >
+        {/* Playback control toolbar — only shown during explain/discuss */}
+        {rtState !== "mini" && !isComplete && (
+          <PlaybackToolbar
+            isPlaying={runtime.activePhase === "explain"}
+            isPaused={isPaused}
+            speed={speed}
+            ttsEnabled={ttsEnabled}
+            sectionIndex={runtime.activeSectionIndex}
+            totalSections={sections.length}
+            onPlayPause={handlePlayPause}
+            onPrev={() => {
+              if (runtime.activeSectionIndex > 0) {
+                persistRuntime({
+                  ...runtime,
+                  activeSectionIndex: runtime.activeSectionIndex - 1,
+                  activePhase: "read",
+                });
+              }
+            }}
+            onNext={advancePhase}
+            onCycleSpeed={handleCycleSpeed}
+            onToggleTTS={() => setTtsEnabled((v) => !v)}
+          />
+        )}
+
         {rtState === "mini" ? (
           <MiniRoundtable
             teacherName={teacher.name}
@@ -449,6 +506,7 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
           <Roundtable
             messages={roundtableMessages}
             activeSpeechActionId={activeSpeechId}
+            isPaused={isPaused}
             cast={{
               teacher: { name: teacher.name },
               students: course.participants?.filter((p) => p.role === "student") || [],

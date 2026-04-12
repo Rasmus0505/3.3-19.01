@@ -1,98 +1,85 @@
 /**
- * Roundtable — the bottom stage bar, modelled after OpenMAIC's 192px roundtable.
- * Layout: [Teacher 90px] | [Speech bubble flex-1] | [Students 140px]
+ * Roundtable — bottom stage bar, OpenMAIC style.
+ * Three-column: [Teacher 90px] | [Speech bubble flex-1] | [Students 80px]
+ *
+ * Props:
+ *   messages          — array of {id, role, content, name, avatarKey?}
+ *   activeSpeechActionId — id of currently speaking message
+ *   isPaused          — if true, waveform bars stop → show Play icon
+ *   cast              — { teacher: {name}, students: [{name}] }
  */
 import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { Play } from "lucide-react";
 import { cn } from "../../../lib/utils";
 
-// ─── Breathing bars (shown while a participant is speaking) ───────────────────
+// ─── Breathing bars / paused indicator ───────────────────────────────────────
 
-function BreathingBars({ color = "#7c3aed" }) {
+function BreathingBars({ color = "#7c3aed", isPaused = false }) {
+  if (isPaused) {
+    return (
+      <Play
+        className="rt-bars__paused-icon"
+        style={{ color }}
+        aria-hidden="true"
+      />
+    );
+  }
   return (
     <div className="rt-bars" aria-hidden="true">
-      {[
-        { dur: 0.6, delay: 0 },
-        { dur: 0.4, delay: 0.1 },
-        { dur: 0.5, delay: 0.05 },
-      ].map(({ dur, delay }, i) => (
-        <motion.div
-          key={i}
-          className="rt-bars__bar"
-          style={{ background: color }}
-          animate={{ height: ["20%", "100%", "20%"] }}
-          transition={{ repeat: Infinity, duration: dur, delay, ease: "easeInOut" }}
-        />
-      ))}
+      <div className="rt-bars__bar rt-bars__bar--1" style={{ background: color }} />
+      <div className="rt-bars__bar rt-bars__bar--2" style={{ background: color }} />
+      <div className="rt-bars__bar rt-bars__bar--3" style={{ background: color }} />
     </div>
   );
 }
 
-// ─── Role configuration ───────────────────────────────────────────────────────
-
-const ROLE_CFG = {
-  teacher:         { avatar: "/avatars/teacher.png", accent: "#7c3aed", side: "left" },
-  assistant:       { avatar: "/avatars/assist.png", accent: "#8b5cf6", side: "left" },
-  student:         { avatar: "/avatars/curious.png", accent: "#2563eb", side: "right" },
-  "student-curious": { avatar: "/avatars/curious.png", accent: "#2563eb", side: "right" },
-  "student-thinker": { avatar: "/avatars/thinker.png", accent: "#1d4ed8", side: "right" },
-  user:            { avatar: "/avatars/user.png", accent: "#059669", side: "right" },
-};
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function resolvePublicAssetUrl(path) {
   const base =
-    typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL
+    typeof import.meta !== "undefined" && import.meta.env?.BASE_URL
       ? String(import.meta.env.BASE_URL)
       : "/";
   return `${base.replace(/\/?$/, "/")}${String(path || "").replace(/^\/+/, "")}`;
 }
 
+const ROLE_CFG = {
+  teacher:           { avatar: "/avatars/teacher.png",  accent: "#7c3aed" },
+  assistant:         { avatar: "/avatars/assist.png",   accent: "#8b5cf6" },
+  student:           { avatar: "/avatars/curious.png",  accent: "#2563eb" },
+  "student-curious": { avatar: "/avatars/curious.png",  accent: "#2563eb" },
+  "student-thinker": { avatar: "/avatars/thinker.png",  accent: "#1d4ed8" },
+  user:              { avatar: "/avatars/user.png",      accent: "#059669" },
+};
+
 function normalizeAvatarKey(role, avatarKey) {
-  const explicitAvatarKey = String(avatarKey || "").trim().toLowerCase();
-  if (explicitAvatarKey) return explicitAvatarKey;
-  const normalizedRole = String(role || "").trim().toLowerCase();
-  if (normalizedRole === "assistant" || normalizedRole === "user") return normalizedRole;
-  if (normalizedRole === "student") return "student-curious";
+  const explicit = String(avatarKey || "").trim().toLowerCase();
+  if (explicit) return explicit;
+  const r = String(role || "").trim().toLowerCase();
+  if (r === "assistant" || r === "user") return r;
+  if (r === "student") return "student-curious";
   return "teacher";
 }
 
-function cfg(role, avatarKey) {
-  const config =
-    ROLE_CFG[normalizeAvatarKey(role, avatarKey)] ||
-    ROLE_CFG[String(role || "").toLowerCase()] ||
-    ROLE_CFG.teacher;
-  return {
-    ...config,
-    avatar: resolvePublicAssetUrl(config.avatar),
-  };
+function cfgFor(role, avatarKey) {
+  const key = normalizeAvatarKey(role, avatarKey);
+  const base = ROLE_CFG[key] || ROLE_CFG.teacher;
+  return { ...base, avatar: resolvePublicAssetUrl(base.avatar) };
 }
 
 function buildStudentRoster(cast) {
-  const configuredStudents = Array.isArray(cast?.students) ? cast.students : [];
+  const configured = Array.isArray(cast?.students) ? cast.students : [];
   const defaults = [
-    {
-      avatarKey: "student-curious",
-      name: "Lena",
-      avatar: resolvePublicAssetUrl("/avatars/curious.png"),
-    },
-    {
-      avatarKey: "student-thinker",
-      name: "Max",
-      avatar: resolvePublicAssetUrl("/avatars/thinker.png"),
-    },
+    { avatarKey: "student-curious", name: "Lily", avatar: resolvePublicAssetUrl("/avatars/curious.png") },
+    { avatarKey: "student-thinker", name: "Max",  avatar: resolvePublicAssetUrl("/avatars/thinker.png") },
   ];
-
-  return defaults.map((fallback, index) => {
-    const byAvatarKey = configuredStudents.find(
-      (student) =>
-        String(student?.avatarKey || student?.avatar_key || "").trim().toLowerCase() ===
-        fallback.avatarKey,
-    );
-    const student = byAvatarKey || configuredStudents[index] || {};
+  return defaults.map((fallback, i) => {
+    const s = configured[i] || {};
     return {
       id: fallback.avatarKey,
       avatarKey: fallback.avatarKey,
-      name: String(student.name || fallback.name),
+      name: String(s.name || fallback.name),
       avatar: fallback.avatar,
     };
   });
@@ -100,53 +87,47 @@ function buildStudentRoster(cast) {
 
 function getDisplayName(msg, cast) {
   if (msg.name) return msg.name;
-  const avatarKey = normalizeAvatarKey(msg.role, msg.avatarKey);
-  if (avatarKey === "teacher") return cast?.teacher?.name || "Coach Mira";
-  if (avatarKey === "assistant") return cast?.assistant?.name || "Assistant";
-  if (avatarKey === "user") return "You";
-
-  const student = buildStudentRoster(cast).find((item) => item.avatarKey === avatarKey);
-  if (student) return student.name;
-
-  const r = String(msg.role || "teacher").toLowerCase();
-  if (r === "teacher") return cast?.teacher?.name || "Coach Mira";
-  if (r === "assistant") return cast?.assistant?.name || "Assistant";
-  if (r === "user") return "You";
-  return "Student";
+  const key = normalizeAvatarKey(msg.role, msg.avatarKey);
+  if (key === "teacher")   return cast?.teacher?.name || "Coach Mira";
+  if (key === "assistant") return cast?.assistant?.name || "Assistant";
+  if (key === "user")      return "You";
+  const s = buildStudentRoster(cast).find((x) => x.avatarKey === key);
+  return s?.name || "Student";
 }
 
-// ─── Teacher column (left, 90px) ─────────────────────────────────────────────
+// ─── Teacher column (90px, left) ─────────────────────────────────────────────
 
-function TeacherColumn({ cast, activeSpeaker, messages }) {
-  const isActive = activeSpeaker === "teacher" || activeSpeaker === "assistant";
+function TeacherColumn({ cast, isTeacherActive, isPaused }) {
   const name = cast?.teacher?.name || "Coach Mira";
-  // Show latest teacher message as subtitle
-  const latestTeacher = [...messages].reverse().find(
-    (m) => m.role === "teacher" || m.role === "assistant"
-  );
-
   return (
     <div className="rt-teacher">
-      <div className={cn("rt-teacher__avatar-wrap", isActive && "rt-teacher__avatar-wrap--active")}>
-        <img src={resolvePublicAssetUrl("/avatars/teacher.png")} alt={name} className="rt-teacher__avatar" />
-        {isActive && <span className="rt-teacher__dot" />}
+      <div className={cn("rt-teacher__avatar-wrap", isTeacherActive && "rt-teacher__avatar-wrap--active")}>
+        <img
+          src={resolvePublicAssetUrl("/avatars/teacher.png")}
+          alt={name}
+          className="rt-teacher__avatar"
+        />
+        {isTeacherActive && !isPaused && <span className="rt-teacher__dot" />}
       </div>
       <span className="rt-teacher__name">{name}</span>
     </div>
   );
 }
 
-// ─── Speech bubble (center) ───────────────────────────────────────────────────
+// ─── Speech bubble (center, flex-1) ──────────────────────────────────────────
 
-function SpeechBubble({ message, isActive }) {
-  if (!message) return (
-    <div className="rt-bubble rt-bubble--idle">
-      <p className="rt-bubble__idle-text">Press play to begin the lesson…</p>
-    </div>
-  );
+function SpeechBubble({ message, isActive, isPaused, cast }) {
+  const c = cfgFor(message?.role, message?.avatarKey);
+  const isTeacher = !message || message.role === "teacher" || message.role === "assistant";
+  const name = message ? getDisplayName(message, cast) : null;
 
-  const c = cfg(message.role, message.avatarKey);
-  const isTeacher = message.role === "teacher" || message.role === "assistant";
+  if (!message) {
+    return (
+      <div className="rt-bubble rt-bubble--idle">
+        <p className="rt-bubble__idle-text">准备好了就按播放…</p>
+      </div>
+    );
+  }
 
   return (
     <motion.div
@@ -156,20 +137,15 @@ function SpeechBubble({ message, isActive }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: [0.21, 1, 0.36, 1] }}
     >
-      {/* Small avatar badge on bubble */}
-      <div
-        className="rt-bubble__avatar"
-        style={{ borderColor: c.accent }}
-      >
+      <div className="rt-bubble__avatar" style={{ borderColor: c.accent }}>
         <img src={c.avatar} alt={message.role} />
       </div>
-
       <div className="rt-bubble__body">
         <div className="rt-bubble__name-row">
           <span className="rt-bubble__name" style={{ color: c.accent }}>
-            {message.name || message.role}
+            {name?.toUpperCase()}
           </span>
-          {isActive && <BreathingBars color={c.accent} />}
+          {isActive && <BreathingBars color={c.accent} isPaused={isPaused} />}
         </div>
         <p className="rt-bubble__text">{message.content}</p>
       </div>
@@ -177,22 +153,21 @@ function SpeechBubble({ message, isActive }) {
   );
 }
 
-// ─── Students column (right, 140px) ──────────────────────────────────────────
+// ─── Students column (80px, right) ───────────────────────────────────────────
 
-function StudentsColumn({ messages, activeAvatarKey, cast }) {
+function StudentsColumn({ messages, activeSpeechActionId, cast }) {
   const students = buildStudentRoster(cast);
-
-  // Last student message
-  const latestStudent = [...messages].reverse().find(
-    (m) => normalizeAvatarKey(m.role, m.avatarKey).startsWith("student")
-  );
+  const activeMsg = activeSpeechActionId
+    ? messages.find((m) => m.id === activeSpeechActionId)
+    : null;
+  const activeKey = normalizeAvatarKey(activeMsg?.role, activeMsg?.avatarKey);
 
   return (
     <div className="rt-students">
-      {/* Student avatars row */}
-      <div className="rt-students__row">
+      {/* Student avatars — vertical stack */}
+      <div className="rt-students__list">
         {students.map((s) => {
-          const isActive = activeAvatarKey === s.avatarKey;
+          const isActive = activeKey === s.avatarKey;
           return (
             <div
               key={s.id}
@@ -206,15 +181,17 @@ function StudentsColumn({ messages, activeAvatarKey, cast }) {
         })}
       </div>
 
-      {/* Latest student speech */}
-      {latestStudent && (
-        <p className="rt-students__latest">{latestStudent.content}</p>
-      )}
+      {/* Spacer */}
+      <div className="rt-students__spacer" />
 
-      {/* User avatar (bottom) */}
-      <div className="rt-students__user-wrap">
-        <img src={resolvePublicAssetUrl("/avatars/user.png")} alt="You" className="rt-students__user-avatar" />
-        <span className="rt-students__user-label">You</span>
+      {/* User avatar — bottom */}
+      <div className="rt-students__user-wrap" title="You">
+        <img
+          src={resolvePublicAssetUrl("/avatars/user.png")}
+          alt="You"
+          className="rt-students__user-avatar"
+        />
+        <span className="rt-students__user-label">YOU</span>
       </div>
     </div>
   );
@@ -222,42 +199,43 @@ function StudentsColumn({ messages, activeAvatarKey, cast }) {
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
-export function Roundtable({ messages = [], activeSpeechActionId = null, cast = null }) {
-  // Determine who is currently speaking based on activeSpeechActionId
+export function Roundtable({
+  messages = [],
+  activeSpeechActionId = null,
+  isPaused = false,
+  cast = null,
+}) {
   const activeMsg = activeSpeechActionId
     ? messages.find((m) => m.id === activeSpeechActionId)
     : null;
-  const activeSpeaker = activeMsg?.role || null;
-  const activeAvatarKey = normalizeAvatarKey(activeMsg?.role, activeMsg?.avatarKey);
+  const isTeacherActive =
+    activeMsg?.role === "teacher" || activeMsg?.role === "assistant";
 
-  // The bubble shows the most recent message overall
   const latestMessage = messages.length > 0
     ? { ...messages[messages.length - 1], name: getDisplayName(messages[messages.length - 1], cast) }
     : null;
-
-  const isLatestActive = latestMessage && latestMessage.id === activeSpeechActionId;
+  const isLatestActive = latestMessage?.id === activeSpeechActionId;
 
   return (
     <div className="rt-stage">
-      <TeacherColumn cast={cast} activeSpeaker={activeSpeaker} messages={messages} />
+      <TeacherColumn cast={cast} isTeacherActive={isTeacherActive} isPaused={isPaused} />
 
       <div className="rt-center">
         <AnimatePresence mode="wait">
-          {latestMessage && (
+          {latestMessage ? (
             <SpeechBubble
               key={latestMessage.id}
               message={latestMessage}
               isActive={isLatestActive}
+              isPaused={isPaused}
+              cast={cast}
             />
-          )}
-          {!latestMessage && (
-            <div key="idle" className="rt-bubble rt-bubble--idle">
-              <p className="rt-bubble__idle-text">Press play to begin the lesson…</p>
-            </div>
+          ) : (
+            <SpeechBubble key="idle" message={null} isActive={false} isPaused={false} cast={cast} />
           )}
         </AnimatePresence>
 
-        {/* Scrollable message history (older messages, compact) */}
+        {/* Compact history */}
         {messages.length > 1 && (
           <div className="rt-history">
             {messages.slice(0, -1).map((m, i) => (
@@ -269,7 +247,11 @@ export function Roundtable({ messages = [], activeSpeechActionId = null, cast = 
         )}
       </div>
 
-      <StudentsColumn messages={messages} activeAvatarKey={activeAvatarKey} cast={cast} />
+      <StudentsColumn
+        messages={messages}
+        activeSpeechActionId={activeSpeechActionId}
+        cast={cast}
+      />
     </div>
   );
 }

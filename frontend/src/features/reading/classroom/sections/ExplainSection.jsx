@@ -1,16 +1,13 @@
 /**
  * ExplainSection — Phase 2: explain.
  *
- * Flow:
- * 1. On mount, fetch explain actions from /api/llm/reading-course/generate-explain
- * 2. Process actions sequentially:
- *    - spotlight: highlight target word in article text
- *    - speech: play TTS (or timer fallback), show in Roundtable
- *    - pause: wait duration_ms then continue
- * 3. On completion, show "进入做题" button
+ * Supports:
+ * - Pause/resume (TTS and timer-fallback)
+ * - Playback speed (applied to timer fallback; TTS speed via audio.playbackRate)
+ * - Spotlight on target word
+ * - Precise activeSpeechId tracking via callbacks
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, forwardRef } from "react";
 import { Loader2 } from "lucide-react";
 import { ReadingSection } from "./ReadingSection";
 
@@ -20,39 +17,100 @@ const ROLE_VOICES = {
   student: "longxiaoxia",
 };
 
-function estimateDurationMs(text) {
+function estimateDurationMs(text, speed = 1) {
   const words = String(text || "").trim().split(/\s+/).filter(Boolean).length;
-  return Math.max(2000, Math.min(8000, words * 380));
+  const base = Math.max(2000, Math.min(8000, words * 380));
+  return Math.round(base / speed);
 }
 
-export function ExplainSection({
-  section,
-  course,
-  confusedWords = [],
-  apiCall,
-  ttsEnabled = true,
-  onSpeechLine,        // callback: (text, speaker, speechId) → used by parent to update Roundtable + activeSpeechId
-  onSpeechEnd,         // callback: (speechId) → clear activeSpeechId in parent
-  onComplete,
-}) {
-  const [status, setStatus] = useState("loading"); // loading | playing | done | error
+export const ExplainSection = forwardRef(function ExplainSection(
+  {
+    section,
+    course,
+    confusedWords = [],
+    apiCall,
+    ttsEnabled = true,
+    speed = 1,
+    onSpeechLine,   // (text, speaker, speechId)
+    onSpeechEnd,    // (speechId)
+    onPauseChange,  // (isPaused: boolean)
+    onComplete,
+  },
+  ref,
+) {
+  const [status, setStatus] = useState("loading"); // loading | playing | paused | done | error
   const [actions, setActions] = useState([]);
   const [spotlitWord, setSpotlitWord] = useState(null);
-  const [currentActionIndex, setCurrentActionIndex] = useState(-1);
 
   const audioRef = useRef(null);
   const timerRef = useRef(null);
   const abortRef = useRef(false);
+  const isPausedRef = useRef(false);
+  const pausedRemainingRef = useRef(0);  // ms remaining when timer was paused
+  const pausedTimerStartRef = useRef(0); // timestamp when timer started
+  const pendingSettleRef = useRef(null); // settle fn for the action we paused mid-way
+  const speedRef = useRef(speed);
+  speedRef.current = speed;
 
-  // ── Fetch explain actions ───────────────────────────────────────────────────
+  // ── Expose pause/resume to parent via ref ─────────────────────────────────
+  useImperativeHandle(ref, () => ({
+    pause() {
+      if (isPausedRef.current) return;
+      isPausedRef.current = true;
+
+      // Pause audio
+      if (audioRef.current && !audioRef.current.paused) {
+        audioRef.current.pause();
+      }
+
+      // Pause timer — save remaining time
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+        const elapsed = Date.now() - pausedTimerStartRef.current;
+        pausedRemainingRef.current = Math.max(0, pausedRemainingRef.current - elapsed);
+      }
+
+      setStatus("paused");
+      onPauseChange?.(true);
+    },
+
+    resume() {
+      if (!isPausedRef.current) return;
+      isPausedRef.current = false;
+
+      // Resume audio
+      if (audioRef.current && audioRef.current.paused) {
+        audioRef.current.play().catch(() => {
+          // Audio element became stale — fall back to timer
+          audioRef.current = null;
+          if (pendingSettleRef.current && pausedRemainingRef.current > 0) {
+            pausedTimerStartRef.current = Date.now();
+            timerRef.current = setTimeout(pendingSettleRef.current, pausedRemainingRef.current);
+          } else {
+            pendingSettleRef.current?.();
+          }
+        });
+      } else if (pausedRemainingRef.current > 0 && pendingSettleRef.current) {
+        // Resume timer
+        pausedTimerStartRef.current = Date.now();
+        timerRef.current = setTimeout(pendingSettleRef.current, pausedRemainingRef.current);
+      }
+
+      setStatus("playing");
+      onPauseChange?.(false);
+    },
+  }), [onPauseChange]);
+
+  // ── Fetch explain actions ─────────────────────────────────────────────────
   useEffect(() => {
     abortRef.current = false;
+    isPausedRef.current = false;
     if (!apiCall || !section) return;
 
     setStatus("loading");
     setActions([]);
     setSpotlitWord(null);
-    setCurrentActionIndex(-1);
 
     const teacher = course?.participants?.find((p) => p.role === "teacher");
 
@@ -81,45 +139,53 @@ export function ExplainSection({
         if (!abortRef.current) setStatus("error");
       });
 
-    return () => {
-      abortRef.current = true;
-    };
+    return () => { abortRef.current = true; };
   }, [section?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Sequential action processor ────────────────────────────────────────────
+  // Helper: schedule a timer that respects pause state
+  const scheduleTimer = useCallback((fn, ms) => {
+    pendingSettleRef.current = fn;
+    pausedRemainingRef.current = ms;
+    pausedTimerStartRef.current = Date.now();
+    if (!isPausedRef.current) {
+      timerRef.current = setTimeout(fn, ms);
+    }
+    // If paused, timer will start on resume()
+  }, []);
+
+  // ── Sequential action processor ───────────────────────────────────────────
   const processAction = useCallback(
     (index, actionList) => {
       if (abortRef.current) return;
       if (index >= actionList.length) {
         setSpotlitWord(null);
         setStatus("done");
+        pendingSettleRef.current = null;
         return;
       }
 
-      setCurrentActionIndex(index);
       const action = actionList[index];
       const next = () => processAction(index + 1, actionList);
 
       if (action.type === "spotlight") {
         setSpotlitWord(action.target_word || null);
-        // Spotlight is fire-and-forget, wait 600ms then continue
-        timerRef.current = setTimeout(next, 600);
+        scheduleTimer(next, 600);
         return;
       }
 
       if (action.type === "pause") {
-        timerRef.current = setTimeout(next, action.duration_ms || 1500);
+        scheduleTimer(next, action.duration_ms || 1500);
         return;
       }
 
       if (action.type === "speech" && action.text) {
         const speechId = `speech-${index}-${Date.now()}`;
-        // Notify parent: add message to Roundtable + set activeSpeechId
         onSpeechLine?.(action.text, action.speaker || "teacher", speechId);
 
         const settle = () => {
           if (abortRef.current) return;
-          onSpeechEnd?.(speechId); // clear activeSpeechId in parent
+          pendingSettleRef.current = null;
+          onSpeechEnd?.(speechId);
           next();
         };
 
@@ -139,32 +205,45 @@ export function ExplainSection({
             .then((data) => {
               if (abortRef.current) return;
               const audio = new Audio(data.audio_url);
+              audio.playbackRate = speedRef.current;
               audioRef.current = audio;
+              pendingSettleRef.current = settle;
+              pausedRemainingRef.current = 0; // audio handles its own timing
+
               audio.onended = () => { audioRef.current = null; settle(); };
-              audio.onerror = () => { audioRef.current = null; settle(); };
-              audio.play().catch(() => {
+              audio.onerror = () => {
                 audioRef.current = null;
-                timerRef.current = setTimeout(settle, estimateDurationMs(action.text));
-              });
+                scheduleTimer(settle, estimateDurationMs(action.text, speedRef.current));
+              };
+
+              if (isPausedRef.current) {
+                // Will resume when resume() is called — audio loaded but not playing
+                audio.load();
+              } else {
+                audio.play().catch(() => {
+                  audioRef.current = null;
+                  scheduleTimer(settle, estimateDurationMs(action.text, speedRef.current));
+                });
+              }
             })
             .catch(() => {
-              timerRef.current = setTimeout(settle, estimateDurationMs(action.text));
+              scheduleTimer(settle, estimateDurationMs(action.text, speedRef.current));
             });
           return;
         }
 
         // TTS disabled — timer fallback
-        timerRef.current = setTimeout(settle, estimateDurationMs(action.text));
+        scheduleTimer(settle, estimateDurationMs(action.text, speedRef.current));
         return;
       }
 
       // Unknown action — skip
-      timerRef.current = setTimeout(next, 300);
+      scheduleTimer(next, 300);
     },
-    [apiCall, ttsEnabled, onSpeechLine],
+    [apiCall, ttsEnabled, onSpeechLine, onSpeechEnd, scheduleTimer],
   );
 
-  // Start processing when actions are loaded and status becomes "playing"
+  // Start processing when actions loaded
   useEffect(() => {
     if (status !== "playing" || actions.length === 0) return;
     processAction(0, actions);
@@ -174,7 +253,12 @@ export function ExplainSection({
       if (timerRef.current) clearTimeout(timerRef.current);
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     };
-  }, [status, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [status === "playing" && actions.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Update audio playback rate when speed changes
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.playbackRate = speed;
+  }, [speed]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -187,23 +271,18 @@ export function ExplainSection({
 
   return (
     <div className="v3-explain">
-      {/* Loading state */}
       {status === "loading" && (
         <div className="v3-explain__loading">
           <Loader2 className="size-5 animate-spin text-muted-foreground" />
           <span>Coach Mira 正在准备讲解…</span>
         </div>
       )}
-
-      {/* Error state */}
       {status === "error" && (
         <div className="v3-explain__error">
           <p>讲解加载失败，请跳过</p>
         </div>
       )}
-
-      {/* Article with spotlight */}
-      {(status === "playing" || status === "done") && (
+      {(status === "playing" || status === "paused" || status === "done") && (
         <ReadingSection
           section={section}
           rewriteMappings={course?.rewrite_mappings || []}
@@ -216,11 +295,6 @@ export function ExplainSection({
           targetLevel={course?.target_level || "B1"}
         />
       )}
-
-      {/* Spotlight dim overlay — dims non-spotlit text when a word is focused */}
-      {spotlitWord && (
-        <div className="v3-explain__spotlight-active" aria-hidden="true" />
-      )}
     </div>
   );
-}
+});
