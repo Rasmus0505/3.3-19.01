@@ -561,9 +561,13 @@ class V3CourseGenerateResponse(BaseModel):
 
 
 def _split_into_paragraphs(text: str, max_words_per_section: int = 250) -> list[str]:
-    """Split text by blank lines (natural paragraphs). Long paragraphs are halved."""
+    """Split text by blank lines or single newlines (natural paragraphs). Long paragraphs are halved."""
     normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    # Try double-newline splits first; fall back to single-newline
     raw_paragraphs = [p.strip() for p in normalized.split("\n\n") if p.strip()]
+    if len(raw_paragraphs) <= 1:
+        # Article uses single newlines as paragraph breaks
+        raw_paragraphs = [p.strip() for p in normalized.split("\n") if p.strip()]
     if not raw_paragraphs:
         raw_paragraphs = [normalized]
 

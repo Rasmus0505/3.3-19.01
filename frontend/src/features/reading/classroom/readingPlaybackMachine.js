@@ -9,6 +9,8 @@ export const READING_PLAYBACK_EVENTS = {
   GO_TO_SCENE: "GO_TO_SCENE",
   REVEAL_NEXT_ACTION: "REVEAL_NEXT_ACTION",
   SET_ACTIVE_SPEECH: "SET_ACTIVE_SPEECH",
+  SET_PENDING_SPEECH: "SET_PENDING_SPEECH",
+  CLEAR_PENDING_SPEECH: "CLEAR_PENDING_SPEECH",
   TOGGLE_TTS: "TOGGLE_TTS",
   ENTER_LIVE: "ENTER_LIVE",
   EXIT_LIVE: "EXIT_LIVE",
@@ -39,12 +41,19 @@ function buildActionCursor(course) {
 export function createReadingPlaybackState(course) {
   const scenes = course?.scenes || [];
   const runtime = course?.runtime || {};
+  const sceneIds = new Set(scenes.map((scene) => scene.id));
+  const pendingSpeechActionId = String(runtime.pendingSpeechActionId || "").trim() || null;
+  const pendingSpeechSceneId = sceneIds.has(runtime.pendingSpeechSceneId)
+    ? runtime.pendingSpeechSceneId
+    : null;
   return {
     mode: runtime.engineMode || "idle",
     activeSceneIndex: clamp(Number(runtime.activeSceneIndex) || 0, 0, Math.max(0, scenes.length - 1)),
     actionCursorByScene: buildActionCursor(course),
     ttsEnabled: runtime.ttsEnabled !== false,
     activeSpeechActionId: null,
+    pendingSpeechActionId,
+    pendingSpeechSceneId: pendingSpeechActionId ? pendingSpeechSceneId : null,
     liveDiscussionSceneId: runtime.liveDiscussionSceneId || null,
     sequence: 0,
   };
@@ -58,6 +67,9 @@ export function playbackStateToRuntimePatch(state) {
     engineMode: state.mode,
     ttsEnabled: state.ttsEnabled,
     liveDiscussionSceneId: state.liveDiscussionSceneId,
+    pendingSpeechActionId: state.pendingSpeechActionId,
+    pendingSpeechSceneId: state.pendingSpeechSceneId,
+    resumeFromInterruptedSpeech: Boolean(state.pendingSpeechActionId),
   };
 }
 
@@ -79,6 +91,8 @@ export function readingPlaybackReducer(state, event) {
         activeSceneIndex: Math.max(0, Number(event.index) || 0),
         mode: event.mode || "paused",
         activeSpeechActionId: null,
+        pendingSpeechActionId: null,
+        pendingSpeechSceneId: null,
         actionCursorByScene: {
           ...state.actionCursorByScene,
           // Always reset to 0 for the target scene so playback starts from first action
@@ -98,6 +112,18 @@ export function readingPlaybackReducer(state, event) {
         ...state,
         activeSpeechActionId: event.actionId || null,
       };
+    case READING_PLAYBACK_EVENTS.SET_PENDING_SPEECH:
+      return {
+        ...state,
+        pendingSpeechActionId: event.actionId || null,
+        pendingSpeechSceneId: event.sceneId || null,
+      };
+    case READING_PLAYBACK_EVENTS.CLEAR_PENDING_SPEECH:
+      return {
+        ...state,
+        pendingSpeechActionId: null,
+        pendingSpeechSceneId: null,
+      };
     case READING_PLAYBACK_EVENTS.TOGGLE_TTS:
       return {
         ...state,
@@ -107,6 +133,9 @@ export function readingPlaybackReducer(state, event) {
       return {
         ...state,
         mode: "live",
+        activeSpeechActionId: null,
+        pendingSpeechActionId: null,
+        pendingSpeechSceneId: null,
         liveDiscussionSceneId: event.sceneId || state.liveDiscussionSceneId,
       };
     case READING_PLAYBACK_EVENTS.EXIT_LIVE:

@@ -5422,11 +5422,11 @@
 .v3-complete p  { color: var(--muted-foreground); font-size: 0.9rem; }
 
 .v3-bottom { flex-shrink: 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; transition: height 0.25s ease; overflow: hidden; }
-.v3-bottom--mini     { height: 56px; }
-.v3-bottom--expanded { height: 160px; }
-.v3-bottom--full     { height: 220px; }
+.v3-bottom--mini     { height: 80px; }
+.v3-bottom--expanded { height: 240px; }
+.v3-bottom--full     { height: 300px; }
 
-.v3-phase-actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-top: 1px solid var(--border); flex-shrink: 0; }
+.v3-phase-actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-top: 1px solid var(--border); border-bottom: none; flex-shrink: 0; background: var(--background); }
 .v3-phase-actions__primary { min-width: 120px; }
 
 .v3-mini-rt { display: flex; align-items: center; gap: 0.625rem; padding: 0 1rem; height: 100%; }
@@ -6542,6 +6542,3 @@
   font-weight: 700;
 }
 
-/* v3-bottom height expansion for toolbar */
-.v3-bottom--expanded { height: 200px; }
-.v3-bottom--full     { height: 260px; }

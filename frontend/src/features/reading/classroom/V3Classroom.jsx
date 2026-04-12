@@ -9,7 +9,7 @@
  * Phase "quiz":   QuizSection
  * Phase "discuss": DiscussSection
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
 // Volume controls moved to PlaybackToolbar
@@ -462,6 +462,27 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
         </AnimatePresence>
       </div>
 
+      {/* Phase action buttons — above the bottom bar, always visible */}
+      {!isComplete && (runtime.activePhase === "read" || runtime.activePhase === "explain") && (
+        <div className="v3-phase-actions">
+          {runtime.activePhase === "read" && (
+            <Button onClick={advancePhase} className="v3-phase-actions__primary">
+              开始讲解 →
+            </Button>
+          )}
+          {runtime.activePhase === "explain" && (
+            <>
+              <Button variant="outline" size="sm" onClick={advancePhase}>
+                跳过讲解
+              </Button>
+              <Button size="sm" onClick={advancePhase} className="v3-phase-actions__primary">
+                进入做题 →
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Bottom: Roundtable (explain/discuss) or mini bar (read/quiz) */}
       <motion.div
         className={cn("v3-bottom", `v3-bottom--${rtState}`)}
@@ -512,27 +533,6 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
               students: course.participants?.filter((p) => p.role === "student") || [],
             }}
           />
-        )}
-
-        {/* Phase action buttons */}
-        {!isComplete && (
-          <div className="v3-phase-actions">
-            {runtime.activePhase === "read" && (
-              <Button onClick={advancePhase} className="v3-phase-actions__primary">
-                开始讲解 →
-              </Button>
-            )}
-            {runtime.activePhase === "explain" && (
-              <>
-                <Button variant="outline" size="sm" onClick={advancePhase}>
-                  跳过讲解
-                </Button>
-                <Button size="sm" onClick={advancePhase} className="v3-phase-actions__primary">
-                  进入做题 →
-                </Button>
-              </>
-            )}
-          </div>
         )}
       </motion.div>
     </div>

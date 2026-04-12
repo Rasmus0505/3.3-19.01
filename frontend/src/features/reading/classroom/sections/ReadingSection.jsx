@@ -13,10 +13,19 @@ import { WordCard } from "../../classroom/WordCard";
 import { SelectionToolbar } from "../../classroom/SelectionToolbar";
 
 // Build a lookup map: lowercased replacement word → { original, cefr }
+// Pipeline format: { original: replacementWord, rewritten: hardOriginalWord, finalLevel }
+// Legacy format:   { replacement: replacementWord, original: hardOriginalWord, originalCefr }
 function buildMappingLookup(rewriteMappings) {
   const map = new Map();
   for (const m of Array.isArray(rewriteMappings) ? rewriteMappings : []) {
-    if (m.replacement && m.original) {
+    // Pipeline format: m.original = the new easier word in text; m.rewritten = the hard source word
+    if (m.original && m.rewritten && m.original !== m.rewritten) {
+      map.set(String(m.original).toLowerCase(), {
+        original: m.rewritten,
+        cefr: m.finalLevel || m.cefr || "?",
+      });
+    // Legacy format: m.replacement = new word, m.original = hard word
+    } else if (m.replacement && m.original) {
       map.set(String(m.replacement).toLowerCase(), {
         original: m.original,
         cefr: m.originalCefr || m.cefr || "?",

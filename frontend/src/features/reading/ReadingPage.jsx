@@ -68,6 +68,7 @@ export function ReadingPage({ accessToken, apiCall }) {
   const [mode, setMode] = useState("input");
   const [activeArticleText, setActiveArticleText] = useState("");
   const [activeHistoryId, setActiveHistoryId] = useState(null);
+  const [historyCourseOverride, setHistoryCourseOverride] = useState(null);
   const [activeLevels, setActiveLevels] = useState(defaultActiveLevels);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [isDiagnosing, setIsDiagnosing] = useState(false);
@@ -184,6 +185,7 @@ export function ReadingPage({ accessToken, apiCall }) {
     const id = crypto.randomUUID();
     setActiveArticleText(text);
     setActiveHistoryId(id);
+    setHistoryCourseOverride(null);
     setSelectedWords([]);
     setArticleLines([]);
     clearRewrite();
@@ -211,13 +213,21 @@ export function ReadingPage({ accessToken, apiCall }) {
 
   const handleSelectHistory = useCallback(async (record, rewriteMeta) => {
     clearRewrite();
+    setHistoryCourseOverride(null);
     setDiagnosticError(null);
     setActiveArticleText(record.text);
     setActiveHistoryId(record.id);
     setSelectedWords([]);
     setArticleLines([]);
 
-    if (rewriteMeta?.readingCourse?.mode === "reading_classroom_v1" || rewriteMeta?.courseData?.mode === "reading_classroom_v1") {
+    const immediateCourse = rewriteMeta?.readingCourse || rewriteMeta?.courseData || null;
+    setHistoryCourseOverride(immediateCourse);
+
+    if (
+      immediateCourse?.mode?.startsWith?.("reading_classroom_") ||
+      (Array.isArray(immediateCourse?.scenes) && immediateCourse.scenes.length > 0) ||
+      (Array.isArray(immediateCourse?.sections) && immediateCourse.sections.length > 0)
+    ) {
       setMode("classroom");
       return;
     }
@@ -278,11 +288,14 @@ export function ReadingPage({ accessToken, apiCall }) {
     setMode("input");
     setActiveArticleText("");
     setActiveHistoryId(null);
+    setHistoryCourseOverride(null);
     setSelectedWords([]);
     setArticleLines([]);
     setDiagnosticError(null);
     clearRewrite();
   }, [clearRewrite]);
+
+  const classroomCourse = readingCourse || historyCourseOverride;
 
   return (
     <Suspense fallback={<PageFallback />}>
@@ -375,16 +388,22 @@ export function ReadingPage({ accessToken, apiCall }) {
 
         {mode === "classroom" ? (
           <div style={{ height: "calc(100dvh - 5rem)", borderRadius: "0.75rem", overflow: "hidden", border: "1px solid var(--border)" }}>
-            <ReadingClassroom
-              articleId={activeHistoryId}
-              course={readingCourse}
-              sourceTexts={{
-                originalText: activeArticleText,
-                rewrittenText: rewrittenText || activeArticleText,
-              }}
-              apiCall={apiCall}
-              onExit={() => setMode("diagnostic")}
-            />
+            {classroomCourse ? (
+              <ReadingClassroom
+                articleId={activeHistoryId}
+                course={classroomCourse}
+                sourceTexts={{
+                  originalText: activeArticleText,
+                  rewrittenText: rewrittenText || activeArticleText,
+                }}
+                apiCall={apiCall}
+                onExit={() => setMode("diagnostic")}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center bg-muted/20 text-sm text-muted-foreground">
+                正在恢复课程进度...
+              </div>
+            )}
           </div>
         ) : null}
 

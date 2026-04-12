@@ -56,12 +56,28 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
   const processingRef = useRef(false);
   const timerRef = useRef(null);
   const audioRef = useRef(null);
+  const executionRef = useRef(0);
   const persistedRef = useRef("");
   const courseIdentity = `${course?.article_id || ""}::${course?.generated_at || ""}`;
 
+  const invalidateExecution = () => {
+    executionRef.current += 1;
+    processingRef.current = false;
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      audioRef.current = null;
+    }
+  };
+
   // Reload state when the course changes identity (new article generated)
   useEffect(() => {
-    processingRef.current = false;
+    invalidateExecution();
     dispatch({ type: READING_PLAYBACK_EVENTS.LOAD_COURSE, course });
   }, [courseIdentity]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -76,9 +92,7 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      processingRef.current = false;
-      if (timerRef.current) clearTimeout(timerRef.current);
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+      invalidateExecution();
     };
   }, []);
 
@@ -101,11 +115,26 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
     if (processingRef.current) return; // already handling an action
 
     const cursor = Number(state.actionCursorByScene?.[activeScene.id]) || 0;
-    const nextAction = sceneActions[cursor];
+    const pendingAction =
+      state.pendingSpeechActionId && state.pendingSpeechSceneId === activeScene.id
+        ? sceneActions.find(
+            (action) =>
+              action.id === state.pendingSpeechActionId &&
+              action.type === READING_ACTION_TYPES.SPEECH,
+          ) || null
+        : null;
+    const nextAction = pendingAction || sceneActions[cursor];
+
+    if (state.pendingSpeechActionId && !pendingAction && state.pendingSpeechSceneId === activeScene.id) {
+      dispatch({ type: READING_PLAYBACK_EVENTS.CLEAR_PENDING_SPEECH });
+      return;
+    }
 
     // ── All actions in this scene done → auto-advance ───────────────────────
     if (!nextAction) {
       processingRef.current = true;
+      const executionId = executionRef.current + 1;
+      executionRef.current = executionId;
       const nextSceneIndex = state.activeSceneIndex + 1;
       if (nextSceneIndex >= scenes.length) {
         processingRef.current = false;
@@ -115,6 +144,7 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
       const delay = INTERACTIVE_SCENE_TYPES.has(nextScene?.type) ? 800 : 1500;
       const nextMode = INTERACTIVE_SCENE_TYPES.has(nextScene?.type) ? "paused" : "playing";
       timerRef.current = setTimeout(() => {
+        if (executionId !== executionRef.current) return;
         processingRef.current = false;
         dispatch({
           type: READING_PLAYBACK_EVENTS.GO_TO_SCENE,
@@ -126,16 +156,35 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
       return;
     }
 
-    // ── Mark as processing and advance cursor ───────────────────────────────
     processingRef.current = true;
-    dispatch({
-      type: READING_PLAYBACK_EVENTS.REVEAL_NEXT_ACTION,
-      sceneId: activeScene.id,
-      totalActions: sceneActions.length,
-    });
+    const executionId = executionRef.current + 1;
+    executionRef.current = executionId;
+    const isResumingPendingSpeech = Boolean(pendingAction);
+
+    if (!isResumingPendingSpeech) {
+      dispatch({
+        type: READING_PLAYBACK_EVENTS.REVEAL_NEXT_ACTION,
+        sceneId: activeScene.id,
+        totalActions: sceneActions.length,
+      });
+    }
 
     // settle: called when an action finishes to allow the next to run
-    const settle = () => {
+    const settle = ({ clearPendingSpeech = false } = {}) => {
+      if (executionId !== executionRef.current) return;
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      if (audioRef.current) {
+        audioRef.current.onended = null;
+        audioRef.current.onerror = null;
+        audioRef.current = null;
+      }
+      dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: null });
+      if (clearPendingSpeech) {
+        dispatch({ type: READING_PLAYBACK_EVENTS.CLEAR_PENDING_SPEECH });
+      }
       processingRef.current = false;
       dispatch({ type: READING_PLAYBACK_EVENTS.ACTION_SETTLED });
     };
@@ -158,18 +207,40 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
 
     // spotlight → fire-and-forget
     if (nextAction.type === READING_ACTION_TYPES.SPOTLIGHT) {
-      timerRef.current = setTimeout(settle, 600);
+      timerRef.current = setTimeout(() => settle(), 600);
       return;
     }
 
     // speech → TTS then settle
     if (nextAction.type === READING_ACTION_TYPES.SPEECH && nextAction.text) {
+      if (!isResumingPendingSpeech) {
+        dispatch({
+          type: READING_PLAYBACK_EVENTS.SET_PENDING_SPEECH,
+          actionId: nextAction.id,
+          sceneId: activeScene.id,
+        });
+      }
       dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: nextAction.id });
 
+      const startTimerFallback = (reason) => {
+        if (executionId !== executionRef.current) return;
+        if (audioRef.current) {
+          audioRef.current.onended = null;
+          audioRef.current.onerror = null;
+          audioRef.current = null;
+        }
+        if (reason) {
+          console.warn("[TTS] using timer fallback:", reason);
+        }
+        timerRef.current = setTimeout(
+          () => settle({ clearPendingSpeech: true }),
+          estimateSpeechDurationMs(nextAction.text),
+        );
+      };
+
       const onSpeechEnd = () => {
-        audioRef.current = null;
-        dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: null });
-        settle();
+        if (executionId !== executionRef.current) return;
+        settle({ clearPendingSpeech: true });
       };
 
       if (apiCall && state.ttsEnabled) {
@@ -187,47 +258,40 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
           })
             .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`TTS HTTP ${res.status}`))))
             .then((data) => {
+              if (executionId !== executionRef.current) return;
               const src = data?.audio_url;
               if (!src) throw new Error("no audio_url");
               const audio = new Audio(src);
               audioRef.current = audio;
               audio.onended = onSpeechEnd;
               audio.onerror = (e) => {
-                console.warn("[TTS] audio error, falling back to timer:", e?.type);
-                audioRef.current = null;
-                dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: null });
-                settle();
+                if (executionId !== executionRef.current) return;
+                startTimerFallback(`audio error ${e?.type || "unknown"}`);
               };
               // play() returns a promise; autoplay may be blocked on first page load
               const playPromise = audio.play();
               if (playPromise !== undefined) {
                 playPromise.catch((err) => {
-                  console.warn("[TTS] autoplay blocked, using timer fallback:", err?.message);
-                  audioRef.current = null;
-                  dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: null });
-                  timerRef.current = setTimeout(settle, estimateSpeechDurationMs(nextAction.text));
+                  if (executionId !== executionRef.current) return;
+                  startTimerFallback(`autoplay blocked ${err?.message || "unknown"}`);
                 });
               }
             })
             .catch((err) => {
-              console.warn("[TTS] synthesis failed, using timer:", err?.message);
-              dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: null });
-              timerRef.current = setTimeout(settle, estimateSpeechDurationMs(nextAction.text));
+              if (executionId !== executionRef.current) return;
+              startTimerFallback(`synthesis failed ${err?.message || "unknown"}`);
             });
           return;
         }
       }
 
       // TTS disabled — timer fallback
-      timerRef.current = setTimeout(() => {
-        dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: null });
-        settle();
-      }, estimateSpeechDurationMs(nextAction.text));
+      startTimerFallback("tts disabled");
       return;
     }
 
     // Unknown action type
-    timerRef.current = setTimeout(settle, 400);
+    timerRef.current = setTimeout(() => settle(), 400);
   }, [
     // Only re-run on mode changes and explicit ACTION_SETTLED ticks (sequence).
     // Deliberately NOT including state.actionCursorByScene to prevent re-entrant loops.
@@ -235,6 +299,8 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
     state.sequence,
     state.activeSceneIndex,
     state.ttsEnabled,
+    state.pendingSpeechActionId,
+    state.pendingSpeechSceneId,
     activeScene,
     sceneActions,
     scenes,
@@ -243,34 +309,30 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
 
   const engineActions = {
     start() {
-      processingRef.current = false;
+      invalidateExecution();
       dispatch({ type: READING_PLAYBACK_EVENTS.START });
     },
     pause() {
-      processingRef.current = false;
-      if (timerRef.current) clearTimeout(timerRef.current);
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+      invalidateExecution();
       dispatch({ type: READING_PLAYBACK_EVENTS.PAUSE });
     },
     resume() {
-      processingRef.current = false;
+      invalidateExecution();
       dispatch({ type: READING_PLAYBACK_EVENTS.RESUME });
     },
     setMode(mode) {
       dispatch({ type: READING_PLAYBACK_EVENTS.SET_MODE, mode });
     },
     goToScene(index, sceneId) {
-      processingRef.current = false;
-      if (timerRef.current) clearTimeout(timerRef.current);
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+      invalidateExecution();
       dispatch({ type: READING_PLAYBACK_EVENTS.GO_TO_SCENE, index, sceneId, mode: "paused" });
     },
     enterLive(sceneId) {
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+      invalidateExecution();
       dispatch({ type: READING_PLAYBACK_EVENTS.ENTER_LIVE, sceneId });
     },
     exitLive(nextMode = "playing") {
-      processingRef.current = false;
+      invalidateExecution();
       dispatch({ type: READING_PLAYBACK_EVENTS.EXIT_LIVE, nextMode });
     },
     toggleTTS(enabled) {

@@ -519,14 +519,31 @@ function _ReadingClassroomV2({ articleId, course, sourceTexts, apiCall, onExit }
     [liveCourse, playbackState, runtime],
   );
 
-  // Auto-start playback 800ms after entering a new course
+  const shouldAutoStart = useMemo(() => {
+    if (!liveCourse?.article_id) return false;
+    if (runtime.engineMode === "paused" || runtime.engineMode === "playing" || runtime.engineMode === "live") {
+      return false;
+    }
+    const hasSavedProgress = Boolean(
+      runtime.pendingSpeechActionId ||
+      runtime.activeSceneIndex > 0 ||
+      (runtime.completedSceneIds || []).length > 0 ||
+      Object.keys(runtime.quiz || {}).length > 0 ||
+      Object.keys(runtime.output || {}).length > 0 ||
+      Object.keys(runtime.discussion || {}).length > 0 ||
+      Object.values(runtime.actionCursorByScene || {}).some((count) => Number(count) > 1),
+    );
+    return !hasSavedProgress;
+  }, [liveCourse?.article_id, runtime]);
+
+  // Auto-start only for a fresh course with no persisted classroom progress.
   useEffect(() => {
-    if (!liveCourse?.article_id) return;
+    if (!shouldAutoStart) return;
     const timer = setTimeout(() => {
       playbackActions.start();
     }, 800);
     return () => clearTimeout(timer);
-  }, [liveCourse?.article_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [liveCourse?.article_id, shouldAutoStart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeScene = derived?.activeScene || null;
   const activeSceneId = activeScene?.id;
