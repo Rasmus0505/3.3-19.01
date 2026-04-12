@@ -174,6 +174,38 @@ def collect_wordbook_freeform(
     )
 
 
+@router.patch("/batch-status")
+async def batch_update_status_endpoint(
+    request: BatchStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update status for multiple words (mark as mastered)."""
+    count = batch_update_status(
+        db,
+        user_id=current_user.id,
+        word_ids=request.entry_ids,
+        is_learned=request.status == "mastered",
+    )
+    return {"success": True, "updated_count": count}
+
+
+@router.patch("/batch-move")
+async def batch_move_words_endpoint(
+    request: BatchMoveRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Move multiple words to another lesson."""
+    count = batch_move_words(
+        db,
+        user_id=current_user.id,
+        word_ids=request.entry_ids,
+        target_lesson_id=request.target_lesson_id,
+    )
+    return {"success": True, "moved_count": count}
+
+
 @router.patch(
     "/{entry_id}",
     response_model=WordbookMutationResponse,
@@ -239,30 +271,8 @@ async def batch_delete_words_endpoint(
     current_user: User = Depends(get_current_user),
 ):
     """Delete multiple words by ID."""
-    count = batch_delete_words(db, request.entry_ids)
+    count = batch_delete_words(db, user_id=current_user.id, word_ids=request.entry_ids)
     return {"success": True, "deleted_count": count}
-
-
-@router.patch("/batch-status")
-async def batch_update_status_endpoint(
-    request: BatchStatusUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Update status for multiple words (mark as mastered)."""
-    count = batch_update_status(db, request.entry_ids, request.status == "mastered")
-    return {"success": True, "updated_count": count}
-
-
-@router.patch("/batch-move")
-async def batch_move_words_endpoint(
-    request: BatchMoveRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Move multiple words to another lesson."""
-    count = batch_move_words(db, request.entry_ids, request.target_list_id)
-    return {"success": True, "moved_count": count}
 
 
 @router.post("/batch-translate")
@@ -272,7 +282,7 @@ async def batch_translate_words_endpoint(
     current_user: User = Depends(get_current_user),
 ):
     """Translate multiple words and save results."""
-    translations = batch_translate_words(db, request.entry_ids)
+    translations = batch_translate_words(db, user_id=current_user.id, word_ids=request.entry_ids)
     return {"success": True, "translations": translations}
 
 

@@ -78,7 +78,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
   const [speakingErrorId, setSpeakingErrorId] = useState(null);
 
   // Pronunciation function using Web Speech API
-  const speakWord = useCallback((word) => {
+  const speakWord = useCallback((entryId, word) => {
     if (!('speechSynthesis' in window)) {
       toast.error('当前浏览器不支持语音合成');
       return;
@@ -90,12 +90,12 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
     utterance.lang = 'en-US';
     utterance.rate = 0.9;
 
-    utterance.onstart = () => setSpeakingId(word);
+    utterance.onstart = () => setSpeakingId(entryId);
     utterance.onend = () => setSpeakingId(null);
     utterance.onerror = (event) => {
       console.error('Speech synthesis error:', event.error);
       setSpeakingId(null);
-      setSpeakingErrorId(word);
+      setSpeakingErrorId(entryId);
       setTimeout(() => setSpeakingErrorId(null), 2000);
     };
 
@@ -546,7 +546,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
 
                 {items.map((item) => {
                   const busy = busyEntryId === Number(item.id || 0);
-                  const isMastered = Number(item.memory_score || 0) >= 0.85;
+                  const isMastered = item.status === "mastered";
                   const isSelected = selectedIds.has(Number(item.id || 0));
                   return (
                     <div
@@ -585,7 +585,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                                       variant="ghost"
                                       className="h-8 w-8 p-0"
                                       disabled={speakingId === item.id}
-                                      onClick={() => speakWord(item.entry_text)}
+                                      onClick={() => speakWord(item.id, item.entry_text)}
                                     >
                                       {speakingId === item.id ? (
                                         <Loader2 className="size-4 animate-spin" />
@@ -602,7 +602,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                                 </Tooltip>
                               </div>
                               <Badge variant={isMastered ? "secondary" : "outline"}>
-                                {isMastered ? "已掌握" : `记忆率 ${formatMemoryScore(item.memory_score)}`}
+                                {isMastered ? "已掌握" : "待复习"}
                               </Badge>
                             </div>
                             {item.word_translation ? (
@@ -618,7 +618,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                               <p>记忆率：{formatMemoryScore(item.memory_score)}</p>
                             </div>
                             <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                              <span>来源课程：{item.source_lesson_title || "未知课程"}</span>
+                              <span>来源课程：{item.source_lesson_title || "未关联课程"}</span>
                               <span>收录记录：{Number(item.source_count || 0)} 条</span>
                               <span>答错次数：{Number(item.wrong_count || 0)} 次</span>
                               <span>最近收录：{formatDateTime(item.latest_collected_at)}</span>
@@ -720,7 +720,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                                 variant="ghost"
                                 className="h-8 w-8 p-0"
                                 disabled={speakingId === reviewItem.id}
-                                onClick={() => speakWord(reviewItem.entry_text)}
+                                onClick={() => speakWord(reviewItem.id, reviewItem.entry_text)}
                               >
                                 {speakingId === reviewItem.id ? (
                                   <Loader2 className="size-4 animate-spin" />
@@ -773,11 +773,11 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                               onClick={() => void openLessonPopup(reviewItem.source_lesson_id, reviewItem.latest_sentence_idx)}
                             >
                               <Play className="size-4" />
-                              播放课程
+                              来源回看
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent className="bg-black/80 text-white border-0 backdrop-blur-sm">
-                            <p>查看来源课程并播放</p>
+                              <p>回看来源课程并定位到该句</p>
                           </TooltipContent>
                         </Tooltip>
                       ) : null}
@@ -832,6 +832,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
         onClose={closeLessonPopup}
         lessonId={lessonPopup.lessonId}
         sentenceIndex={lessonPopup.sentenceIndex}
+        apiCall={apiCall}
       />
 
       <TranslationDialog

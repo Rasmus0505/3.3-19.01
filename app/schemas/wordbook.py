@@ -26,6 +26,7 @@ class WordbookEntryResponse(BaseModel):
     latest_sentence_idx: int
     latest_sentence_en: str
     latest_sentence_zh: str
+    word_translation: str = ""
     latest_collected_at: datetime
     next_review_at: datetime | None = None
     last_reviewed_at: datetime | None = None
@@ -123,12 +124,12 @@ class WordbookReviewPreviewResponse(BaseModel):
 
 class BatchStatusUpdate(BaseModel):
     entry_ids: list[int]
-    status: str
+    status: WordbookEntryStatus
 
 
 class BatchMoveRequest(BaseModel):
     entry_ids: list[int]
-    target_list_id: int
+    target_lesson_id: int
 
 
 class BatchDeleteRequest(BaseModel):

@@ -38,6 +38,7 @@ def count_due_wordbook_entries(db: Session, *, user_id: int) -> int:
         db.scalar(
             select(func.count(WordbookEntry.id)).where(
                 WordbookEntry.user_id == user_id,
+                WordbookEntry.status == "active",
                 WordbookEntry.next_review_at <= now_shanghai_naive(),
             )
         )
@@ -129,6 +130,7 @@ def list_due_wordbook_entries(db: Session, *, user_id: int) -> list[dict[str, ob
         .outerjoin(source_count_sq, source_count_sq.c.entry_id == WordbookEntry.id)
         .where(
             WordbookEntry.user_id == user_id,
+            WordbookEntry.status == "active",
             WordbookEntry.next_review_at <= now_shanghai_naive(),
         )
         .order_by(WordbookEntry.next_review_at.asc(), WordbookEntry.id.asc())

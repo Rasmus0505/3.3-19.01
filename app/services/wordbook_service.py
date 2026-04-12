@@ -18,7 +18,13 @@ from app.repositories.wordbook import (
     list_due_wordbook_entries,
     list_wordbook_entries,
 )
-from app.services.wordbook_review_scheduler import REVIEW_GRADES, apply_review_grade, build_initial_review_state, _resolve_interval_hours
+from app.services.wordbook_review_scheduler import (
+    REVIEW_GRADES,
+    _resolve_interval_hours,
+    apply_review_grade,
+    build_initial_review_state,
+    clamp_memory_score,
+)
 from app.services.lesson_builder import tokenize_learning_sentence
 
 
@@ -339,6 +345,7 @@ def review_wordbook_entry(db: Session, *, entry_id: int, user_id: int, grade: st
     previous_memory_score = float(getattr(entry, "memory_score", 0.0) or 0.0)
     now = now_shanghai_naive()
     next_review = getattr(entry, "next_review_at", None)
+    previous_hours = 0.0
     if next_review and next_review > now:
         previous_hours = (next_review - now).total_seconds() / 3600
         previous_interval = _format_interval_hours(previous_hours)
@@ -458,45 +465,60 @@ def preview_wordbook_review_grades(db: Session, *, entry_id: int, user_id: int) 
     }
 
 
-def batch_update_status(db: Session, word_ids: list[int], is_learned: bool) -> int:
+def batch_update_status(db: Session, *, user_id: int, word_ids: list[int], is_learned: bool) -> int:
     """Update is_learned status for multiple words. Returns count of updated."""
     safe_status = WORD_STATUS_MASTERED if is_learned else WORD_STATUS_ACTIVE
-    result = db.query(WordbookEntry).filter(WordbookEntry.id.in_(word_ids)).update(
+    result = db.query(WordbookEntry).filter(
+        WordbookEntry.user_id == user_id,
+        WordbookEntry.id.in_(word_ids),
+    ).update(
         {"status": safe_status}, synchronize_session=False
     )
     db.commit()
     return result
 
 
-def batch_move_words(db: Session, word_ids: list[int], target_lesson_id: int) -> int:
+def batch_move_words(db: Session, *, user_id: int, word_ids: list[int], target_lesson_id: int) -> int:
     """Move words to another lesson. Returns count of moved."""
     from app.models import Lesson
 
-    target_lesson = db.query(Lesson).filter(Lesson.id == target_lesson_id).first()
+    target_lesson = db.query(Lesson).filter(
+        Lesson.id == target_lesson_id,
+        Lesson.user_id == user_id,
+    ).first()
     if not target_lesson:
         raise HTTPException(status_code=404, detail=f"Lesson {target_lesson_id} not found")
 
-    result = db.query(WordbookEntry).filter(WordbookEntry.id.in_(word_ids)).update(
+    result = db.query(WordbookEntry).filter(
+        WordbookEntry.user_id == user_id,
+        WordbookEntry.id.in_(word_ids),
+    ).update(
         {"latest_lesson_id": target_lesson_id}, synchronize_session=False
     )
     db.commit()
     return result
 
 
-def batch_delete_words(db: Session, word_ids: list[int]) -> int:
+def batch_delete_words(db: Session, *, user_id: int, word_ids: list[int]) -> int:
     """Delete multiple words. Returns count of deleted."""
-    result = db.query(WordbookEntry).filter(WordbookEntry.id.in_(word_ids)).delete(
+    result = db.query(WordbookEntry).filter(
+        WordbookEntry.user_id == user_id,
+        WordbookEntry.id.in_(word_ids),
+    ).delete(
         synchronize_session=False
     )
     db.commit()
     return result
 
 
-def batch_translate_words(db: Session, word_ids: list[int]) -> list[dict]:
+def batch_translate_words(db: Session, *, user_id: int, word_ids: list[int]) -> list[dict]:
     """Translate multiple words and save results. Returns list of translations."""
     from app.services.translation_qwen_mt import translate_to_zh
 
-    words = db.query(WordbookEntry).filter(WordbookEntry.id.in_(word_ids)).all()
+    words = db.query(WordbookEntry).filter(
+        WordbookEntry.user_id == user_id,
+        WordbookEntry.id.in_(word_ids),
+    ).all()
     translations = []
 
     for word in words:
