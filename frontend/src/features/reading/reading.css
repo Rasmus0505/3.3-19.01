@@ -12,8 +12,10 @@
   flex-direction: column;
   gap: 0;
   width: 100%;
-  flex: 1;
-  min-height: 0;
+  /* Lock to viewport — NO page-level scrolling allowed */
+  height: calc(100dvh - 5rem);
+  max-height: calc(100dvh - 5rem);
+  overflow: hidden;
 }
 
 /* ─── 阅读素材（粘贴 / 编辑）────────────────────────────── */
@@ -146,26 +148,34 @@
 .reading-diagnostic-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(320px, 420px);
-  gap: 24px;
+  gap: 16px;
   align-items: stretch;
   width: 100%;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
-.reading-diagnostic-layout__preview,
+.reading-diagnostic-layout__preview {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;  /* LeftPanel inside will handle its own scroll */
+}
+
 .reading-diagnostic-layout__dashboard {
   min-width: 0;
   min-height: 0;
+  overflow: hidden;  /* DiagnosticPanel handles its own scroll */
 }
 
 .reading-pipeline-layout {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 0;
   width: 100%;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .reading-pipeline-layout__original {
@@ -213,6 +223,7 @@
   width: 100%;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 /* 右侧等级词汇表列：展开宽度由列控制，收起为窄轨 + 展开按钮 */
@@ -926,10 +937,16 @@
 /* ─── HistoryPanel ───────────────────────────────────────── */
 .history-panel {
   flex-shrink: 0;
-  padding: 10px 14px;
-  background: oklch(0.98 0.01 85);
-  border-bottom: 1px solid oklch(0.88 0.01 85);
-  margin-bottom: 12px;
+  /* Fixed height — never grows to push content down */
+  height: auto;
+  max-height: 80px;
+  padding: 6px 12px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
 }
 
 .history-panel--collapsed {
@@ -939,8 +956,8 @@
 .history-panel__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
+  gap: 8px;
+  /* No margin-bottom — list is directly below */
 }
 
 .history-panel__header-left {
@@ -1019,24 +1036,34 @@
 
 .history-panel__list {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: row;
+  flex-wrap: nowrap;
   gap: 6px;
-  max-height: 100px;
-  overflow-y: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  /* Scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 
 .history-panel__item {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 10px;
-  background: white;
-  border: 1px solid oklch(0.88 0.01 85);
-  border-radius: 8px;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
   cursor: pointer;
   text-align: left;
-  max-width: 280px;
+  /* Fixed width for horizontal scroll */
+  min-width: 160px;
+  max-width: 220px;
+  flex-shrink: 0;
   transition: box-shadow 0.15s, border-color 0.15s;
+  white-space: nowrap;
 }
 
 .history-panel__item:hover {
@@ -1057,13 +1084,37 @@
 .history-panel__item-preview {
   font-size: 12px;
   color: oklch(0.25 0.02 85);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 260px;
 }
 
+/* In horizontal list mode, hide badges and meta to save space */
 .history-panel__item-badges {
+  display: none;
+}
+
+.history-panel__item-meta {
+  display: none;
+}
+
+.history-panel__more-btn {
+  display: none; /* Not needed for horizontal scroll */
+}
+
+/* Keep only the generated sparkle visible */
+.history-panel__item-sparkle {
+  flex-shrink: 0;
+}
+
+/* Override for non-collapsed state display */
+.history-panel__item-badges-orig {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
