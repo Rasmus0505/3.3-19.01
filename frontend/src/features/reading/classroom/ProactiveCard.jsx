@@ -1,35 +1,59 @@
+import { motion } from "framer-motion";
 import { MessageSquareQuote, Sparkles } from "lucide-react";
-import { Badge, Button, Card } from "../../../shared/ui";
+import { Button, Card } from "../../../shared/ui";
 
 export function ProactiveCard({ action, onJoin, onSkip, liveActive = false }) {
   if (!action) return null;
 
   return (
-    <Card className="reading-classroom-v2__proactive-card">
-      <div className="reading-classroom-v2__proactive-head">
-        <div className="reading-classroom-v2__proactive-icon">
-          <MessageSquareQuote className="size-5" />
+    <motion.div
+      initial={{ opacity: 0, scale: 0.96, y: 8 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.94, y: -6 }}
+      transition={{ duration: 0.25, ease: [0.21, 1, 0.36, 1] }}
+    >
+      <Card className="rc-proactive">
+        <div className="rc-proactive__head">
+          <div className="rc-proactive__icon">
+            <MessageSquareQuote className="size-4" />
+          </div>
+          <div>
+            <span className="rc-proactive__label">
+              {liveActive ? "Discussion open" : "Join the discussion?"}
+            </span>
+            <p className="rc-proactive__topic">
+              {action.prompt || action.title || "The teacher is opening up the floor."}
+            </p>
+          </div>
         </div>
-        <div>
-          <Badge variant="outline">{liveActive ? "Discussion live" : "Discussion invite"}</Badge>
-          <h3>{action.title || "Join the classroom discussion"}</h3>
+
+        {(action.suggestedQuestions || []).length > 0 && (
+          <div className="rc-proactive__suggestions">
+            {action.suggestedQuestions.map((q) => (
+              <button
+                key={q}
+                type="button"
+                className="rc-proactive__pill"
+                onClick={() => onJoin(q)}
+              >
+                <Sparkles className="size-3" />
+                <span>{q}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="rc-proactive__actions">
+          <Button size="sm" onClick={() => onJoin("")}>
+            {liveActive ? "Send a message" : "Join"}
+          </Button>
+          {!liveActive && (
+            <Button size="sm" variant="ghost" onClick={onSkip}>
+              Skip
+            </Button>
+          )}
         </div>
-      </div>
-      <p>{action.prompt || "The teacher is opening a discussion around this reading moment."}</p>
-      {(action.suggestedQuestions || []).length > 0 ? (
-        <div className="reading-classroom-v2__proactive-suggestions">
-          {action.suggestedQuestions.map((item) => (
-            <button key={item} type="button" className="reading-classroom-v2__suggestion" onClick={() => onJoin(item)}>
-              <Sparkles className="size-3.5" />
-              <span>{item}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-      <div className="reading-classroom-v2__proactive-actions">
-        <Button onClick={() => onJoin()}>{liveActive ? "Continue discussion" : "Join discussion"}</Button>
-        {!liveActive ? <Button variant="ghost" onClick={onSkip}>Skip for now</Button> : null}
-      </div>
-    </Card>
+      </Card>
+    </motion.div>
   );
 }

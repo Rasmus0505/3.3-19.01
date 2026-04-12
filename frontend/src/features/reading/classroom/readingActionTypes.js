@@ -14,7 +14,6 @@ function createAction(base = {}) {
     title: base.title ? String(base.title) : "",
     text: base.text ? String(base.text) : "",
     panel: base.panel && typeof base.panel === "object" ? base.panel : null,
-    messages: Array.isArray(base.messages) ? base.messages : [],
     prompt: base.prompt ? String(base.prompt) : "",
     suggestedQuestions: Array.isArray(base.suggestedQuestions) ? base.suggestedQuestions : [],
     task: base.task && typeof base.task === "object" ? base.task : null,
@@ -49,22 +48,6 @@ function spotlightFromBeat(beat) {
   });
 }
 
-function discussionFromBeat(scene, beat) {
-  return createAction({
-    id: `${beat.id}-discussion`,
-    type: READING_ACTION_TYPES.DISCUSSION,
-    role: "teacher",
-    title: beat.title || scene.title,
-    messages: (beat.messages || []).map((message, index) => ({
-      id: `${beat.id}-message-${index + 1}`,
-      role: message.speaker || message.role || "teacher",
-      content: message.text || message.content || "",
-    })),
-    prompt: scene.liveHook?.prompt || "",
-    suggestedQuestions: scene.liveHook?.suggestedQuestions || [],
-  });
-}
-
 export function buildSceneActionSequence(scene) {
   const actions = [];
 
@@ -72,20 +55,25 @@ export function buildSceneActionSequence(scene) {
     if (!beat || typeof beat !== "object") return;
 
     if (beat.type === "teacher_talk" || beat.type === "hero") {
-      actions.push(speechFromBeat(beat));
+      if (beat.text || beat.segment?.teacher_note) {
+        actions.push(speechFromBeat(beat));
+      }
       return;
     }
 
     if (beat.type === "reading_segment") {
-      actions.push(
-        createAction({
-          id: `${beat.id}-lead`,
-          type: READING_ACTION_TYPES.SPEECH,
-          role: beat.speaker || "teacher",
-          title: beat.segment?.heading || beat.title || "",
-          text: beat.segment?.teacher_note || beat.aside || `Let's work through ${beat.segment?.heading || beat.title || "this part"}.`,
-        }),
-      );
+      const teacherText = beat.segment?.teacher_note || beat.aside;
+      if (teacherText) {
+        actions.push(
+          createAction({
+            id: `${beat.id}-lead`,
+            type: READING_ACTION_TYPES.SPEECH,
+            role: beat.speaker || "teacher",
+            title: beat.segment?.heading || beat.title || "",
+            text: teacherText,
+          }),
+        );
+      }
       actions.push(spotlightFromBeat(beat));
       return;
     }
@@ -96,11 +84,40 @@ export function buildSceneActionSequence(scene) {
     }
 
     if (beat.type === "conversation") {
-      actions.push(discussionFromBeat(scene, beat));
+      // Each message becomes an individual speech action — dialogue plays out one line at a time
+      (beat.messages || []).forEach((message, index) => {
+        const text = String(message.text || message.content || "").trim();
+        if (!text) return;
+        actions.push(
+          createAction({
+            id: `${beat.id}-msg-${index + 1}`,
+            type: READING_ACTION_TYPES.SPEECH,
+            role: String(message.speaker || message.role || "teacher"),
+            title: beat.title || "",
+            text,
+          }),
+        );
+      });
+      // After the scripted dialogue, optionally open live discussion
+      if (scene.liveHook?.enabled !== false) {
+        actions.push(
+          createAction({
+            id: `${beat.id}-live`,
+            type: READING_ACTION_TYPES.DISCUSSION,
+            role: "teacher",
+            title: beat.title || scene.title || "",
+            prompt: scene.liveHook?.prompt || "",
+            suggestedQuestions: scene.liveHook?.suggestedQuestions || [],
+          }),
+        );
+      }
       return;
     }
 
-    actions.push(speechFromBeat(beat));
+    // Fallback: any beat with text becomes a speech action
+    if (beat.text) {
+      actions.push(speechFromBeat(beat));
+    }
   });
 
   if (scene?.task && scene.type === "checkpoint") {

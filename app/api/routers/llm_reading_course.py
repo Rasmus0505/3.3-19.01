@@ -376,6 +376,42 @@ def _merge_course_payload(fallback_course: dict, ai_payload: dict | None) -> dic
     return course
 
 
+_COURSE_SYSTEM_PROMPT = """You are a course designer for an immersive English reading classroom app.
+
+The classroom has three participants:
+- teacher (Coach Mira): calm, encouraging reading coach. Speaks 2-3 sentences at a time.
+- student-lily (Lily): curious, asks "why" and "what does X mean?". Speaks 1-2 sentences.
+- student-max (Max): analytical, notices structure and patterns. Speaks 1-2 sentences.
+
+You will receive a fallback course structure. Your job is to REWRITE the content of every scene so it is:
+1. Directly based on the actual article text provided.
+2. Rich with natural teacher/student dialogue in the beats.
+3. Pedagogically sound for the target CEFR level.
+
+CRITICAL RULES:
+- Return ONLY valid JSON. No markdown, no explanation outside the JSON.
+- Preserve every scene id exactly (entry, preview, guided-reading, deep-explain, checkpoint, discussion, output, wrap-up).
+- For each scene, rewrite: title, goal, and every beat's text/messages/keywords/points using content from the article.
+- For conversation beats: write 3-5 realistic exchanges between teacher/student-lily/student-max. Use their speaker names exactly.
+- For checkpoint questions: write questions that test comprehension of THIS article specifically. Do not use generic placeholders.
+- For output task: write a prompt that asks the learner to respond to something specific in the article.
+- Keep beat text concise: teacher_talk max 60 words, conversation messages max 25 words each.
+- keyword_grid: choose words that actually appear in the article and matter for comprehension.
+- explanation_grid: explain vocabulary or grammar structures that appear in the article.
+
+Return JSON matching this exact top-level shape:
+{
+  "title": "string",
+  "course_meta": {"cover_kicker": "string", "summary": "string", "estimated_minutes": int},
+  "cast": {
+    "teacher": {"name": "Coach Mira", "persona": "string", "tone": "string"},
+    "assistant": {"name": "Noah", "persona": "string", "tone": "string"},
+    "students": [{"name": "Lily", "persona": "string"}, {"name": "Max", "persona": "string"}]
+  },
+  "scenes": [ ...same structure as fallback, same scene ids... ]
+}"""
+
+
 @router.post("/reading-course/generate", response_model=ReadingCourseGenerateResponse, responses={503: {"model": ErrorResponse}, 422: {"model": ErrorResponse}})
 def generate_reading_course_endpoint(body: ReadingCourseGenerateRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     from app.api.routers import llm as llm_root
@@ -383,12 +419,38 @@ def generate_reading_course_endpoint(body: ReadingCourseGenerateRequest, current
     api_key = _require_api_key()
     llm_root.ensure_default_billing_rates(db)
     fallback_course = _build_fallback_course(body)
+
+    # Send the fallback as the structural template + article text for content grounding
+    user_content = (
+        f"Target CEFR level: {body.target_level}\n"
+        f"Key vocabulary: {', '.join(_dedupe_words([*body.valid_above_i1_words, *body.valid_i1_words])[:12])}\n\n"
+        f"REWRITTEN ARTICLE (i+1 version — use this as primary teaching material):\n{body.rewritten_text[:MAX_TEXT_CHARS]}\n\n"
+        f"ORIGINAL ARTICLE (for reference):\n{body.original_text[:3000]}\n\n"
+        f"FALLBACK STRUCTURE TO REWRITE (preserve scene ids, rewrite all text content):\n"
+        + json.dumps(
+            {
+                "scenes": [
+                    {
+                        "id": s["id"],
+                        "type": s["type"],
+                        "title": s["title"],
+                        "goal": s["goal"],
+                        "beats": s.get("beats", []),
+                        "task": s.get("task"),
+                        "live_hook": s.get("live_hook"),
+                    }
+                    for s in fallback_course["scenes"]
+                ]
+            },
+            ensure_ascii=False,
+        )
+    )
     messages = [
-        {"role": "system", "content": "Design a teacher-led immersive English reading classroom. Return only valid JSON with keys: title, course_meta, cast, scenes. Preserve scene ids and order from the provided fallback structure. Keep the class compact, single-screen, and implementation-ready."},
-        {"role": "user", "content": "Rewrite and refine this fallback classroom structure:\n" + json.dumps(fallback_course, ensure_ascii=False) + "\n\nRewritten article:\n" + body.rewritten_text[:MAX_TEXT_CHARS] + "\n\nOriginal article:\n" + body.original_text[:MAX_TEXT_CHARS]},
+        {"role": "system", "content": _COURSE_SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
     ]
     try:
-        raw_response, usage = llm_root.call_deepseek(messages=messages, api_key=api_key, enable_thinking=False, stream=False, temperature=0.45, max_tokens=4096)
+        raw_response, usage = llm_root.call_deepseek(messages=messages, api_key=api_key, enable_thinking=False, stream=False, temperature=0.5, max_tokens=8192)
     except Exception as exc:
         logger.warning("Reading course generation failed, returning fallback: %s", exc)
         return ReadingCourseGenerateResponse(ok=True, course=fallback_course)

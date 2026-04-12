@@ -1,62 +1,111 @@
+import { useEffect, useRef } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "../../../lib/utils";
 import { GraduationCap, User, Bot } from "lucide-react";
 
+// Waveform bars shown while the active speech action is playing
+function WaveformBars() {
+  return (
+    <span className="rc-waveform" aria-hidden="true">
+      {[0, 1, 2, 3].map((i) => (
+        <span key={i} className="rc-waveform__bar" style={{ animationDelay: `${i * 0.1}s` }} />
+      ))}
+    </span>
+  );
+}
+
+// Role → visual config
 const ROLE_CONFIG = {
   teacher: {
-    label: "Teacher",
     icon: GraduationCap,
-    bubbleClass: "reading-classroom-v2__roundtable-bubble--teacher",
-    avatarClass: "reading-classroom-v2__roundtable-avatar--teacher",
-    rowClass: "reading-classroom-v2__roundtable-row--left",
+    bubbleClass: "rc-bubble--teacher",
+    rowClass: "rc-row--left",
   },
   assistant: {
-    label: "Assistant",
     icon: Bot,
-    bubbleClass: "reading-classroom-v2__roundtable-bubble--assistant",
-    avatarClass: "reading-classroom-v2__roundtable-avatar--assistant",
-    rowClass: "reading-classroom-v2__roundtable-row--left",
+    bubbleClass: "rc-bubble--assistant",
+    rowClass: "rc-row--left",
   },
   student: {
-    label: "Student",
     icon: User,
-    bubbleClass: "reading-classroom-v2__roundtable-bubble--student",
-    avatarClass: "reading-classroom-v2__roundtable-avatar--student",
-    rowClass: "reading-classroom-v2__roundtable-row--right",
+    bubbleClass: "rc-bubble--student",
+    rowClass: "rc-row--right",
   },
   user: {
-    label: "You",
     icon: User,
-    bubbleClass: "reading-classroom-v2__roundtable-bubble--user",
-    avatarClass: "reading-classroom-v2__roundtable-avatar--user",
-    rowClass: "reading-classroom-v2__roundtable-row--right",
+    bubbleClass: "rc-bubble--user",
+    rowClass: "rc-row--right",
   },
 };
 
-export function Roundtable({ messages = [], activeSpeechActionId = null }) {
+function getConfig(role) {
+  return ROLE_CONFIG[String(role || "").toLowerCase()] || ROLE_CONFIG.teacher;
+}
+
+// Resolve display name from message, then cast, then role label defaults
+function getDisplayName(message, cast) {
+  if (message.name) return message.name;
+  const role = String(message.role || "teacher").toLowerCase();
+  if (role === "teacher") return cast?.teacher?.name || "Teacher";
+  if (role === "assistant") return cast?.assistant?.name || "Assistant";
+  if (role === "user") return "You";
+  // Student — try to match by index or name in cast.students
+  const students = Array.isArray(cast?.students) ? cast.students : [];
+  if (students.length > 0) return students[0].name;
+  return "Student";
+}
+
+export function Roundtable({ messages = [], activeSpeechActionId = null, cast = null }) {
+  const bottomRef = useRef(null);
+
+  // Auto-scroll to newest message
+  useEffect(() => {
+    if (bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [messages.length]);
+
+  if (messages.length === 0) {
+    return (
+      <div className="rc-roundtable rc-roundtable--empty">
+        <p>Press play — the classroom conversation will appear here.</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="reading-classroom-v2__roundtable">
-      {messages.length === 0 ? (
-        <div className="reading-classroom-v2__roundtable-empty">
-          <p>The classroom conversation will appear here as playback progresses.</p>
-        </div>
-      ) : (
-        messages.map((message, index) => {
-          const config = ROLE_CONFIG[message.role] || ROLE_CONFIG.teacher;
+    <div className="rc-roundtable">
+      <AnimatePresence initial={false}>
+        {messages.map((message, index) => {
+          const config = getConfig(message.role);
           const Icon = config.icon;
-          const active = message.id === activeSpeechActionId;
+          const isActive = message.id === activeSpeechActionId;
+          const displayName = getDisplayName(message, cast);
+
           return (
-            <div key={message.id || `${message.role}-${index}`} className={cn("reading-classroom-v2__roundtable-row", config.rowClass)}>
-              <div className={cn("reading-classroom-v2__roundtable-avatar", config.avatarClass)}>
+            <motion.div
+              key={message.id || `${message.role}-${index}`}
+              className={cn("rc-row", config.rowClass)}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22, ease: [0.21, 1, 0.36, 1] }}
+            >
+              <div className="rc-avatar">
                 <Icon className="size-4" />
+                {isActive && <span className="rc-avatar__dot" />}
               </div>
-              <div className={cn("reading-classroom-v2__roundtable-bubble", config.bubbleClass, active && "reading-classroom-v2__roundtable-bubble--active")}>
-                <span>{config.label}</span>
-                <p>{message.content}</p>
+              <div className={cn("rc-bubble", config.bubbleClass, isActive && "rc-bubble--speaking")}>
+                <span className="rc-bubble__name">
+                  {displayName}
+                  {isActive && <WaveformBars />}
+                </span>
+                <p className="rc-bubble__text">{message.content}</p>
               </div>
-            </div>
+            </motion.div>
           );
-        })
-      )}
+        })}
+      </AnimatePresence>
+      <div ref={bottomRef} />
     </div>
   );
 }

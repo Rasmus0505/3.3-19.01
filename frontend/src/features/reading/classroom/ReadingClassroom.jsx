@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, CheckCircle2, GraduationCap, Pause, Play, Volume2, VolumeX } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  ChevronLeft,
+  GraduationCap,
+  Pause,
+  Play,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { Badge, Button, Card, Progress, Textarea } from "../../../shared/ui";
+import { cn } from "../../../lib/utils";
 import { normalizeReadingCourse } from "../readingCourse";
 import { saveReadingCourseToRecord } from "../readingRewriteDB";
 import { getReadingDerivedState } from "./readingDerivedState";
@@ -8,54 +20,59 @@ import { ProactiveCard } from "./ProactiveCard";
 import { Roundtable } from "./Roundtable";
 import { useReadingPlaybackEngine } from "./useReadingPlaybackEngine";
 
+// ─── Quiz helpers ────────────────────────────────────────────────────────────
+
 function scoreQuestion(question, answer) {
   if (!question) return false;
   if (question.type === "mcq") return answer === question.answer;
-  if (question.type === "fill") return String(answer || "").trim().toLowerCase() === String(question.answer || "").trim().toLowerCase();
-  if (question.type === "order") return JSON.stringify(answer || []) === JSON.stringify(question.correct_order || []);
+  if (question.type === "fill")
+    return String(answer || "").trim().toLowerCase() ===
+      String(question.answer || "").trim().toLowerCase();
+  if (question.type === "order")
+    return JSON.stringify(answer || []) === JSON.stringify(question.correct_order || []);
   return false;
 }
 
-function renderSpotlightPanel(action, supportOpen, setSupportOpen) {
+// ─── Canvas content renderer (spotlight panel) ───────────────────────────────
+
+function SpotlightPanel({ action, supportOpen, onToggleSupport }) {
   if (!action?.panel) {
     return (
-      <Card className="reading-classroom-v2__canvas-card reading-classroom-v2__canvas-card--empty">
-        <p>The teacher will spotlight key material here as playback progresses.</p>
-      </Card>
+      <div className="rc-canvas__placeholder">
+        <GraduationCap className="size-8 opacity-20" />
+        <p>Content will appear here as the lesson plays.</p>
+      </div>
     );
   }
 
-  const panel = action.panel;
+  const { panel } = action;
 
   if (panel.kind === "bullet_list") {
     return (
-      <Card className="reading-classroom-v2__canvas-card">
-        <h3>{action.title}</h3>
-        <div className="reading-classroom-v2__bullet-list">
+      <Card className="rc-canvas__card">
+        {action.title && <h3 className="rc-canvas__heading">{action.title}</h3>}
+        <ul className="rc-canvas__bullets">
           {(panel.items || []).map((item) => (
-            <div key={item} className="reading-classroom-v2__bullet-item">
-              <CheckCircle2 className="size-4" />
+            <li key={item} className="rc-canvas__bullet">
+              <CheckCircle2 className="size-4 shrink-0 text-primary" />
               <span>{item}</span>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       </Card>
     );
   }
 
   if (panel.kind === "keyword_grid") {
     return (
-      <Card className="reading-classroom-v2__canvas-card">
-        <h3>{action.title}</h3>
-        <div className="reading-classroom-v2__keyword-grid">
-          {(panel.keywords || []).map((item) => (
-            <article key={item.word} className="reading-classroom-v2__keyword-card">
-              <div className="reading-classroom-v2__keyword-top">
-                <strong>{item.word}</strong>
-                <Badge variant="outline">watch</Badge>
-              </div>
-              <p>{item.reason}</p>
-              {item.tip ? <span>{item.tip}</span> : null}
+      <Card className="rc-canvas__card">
+        {action.title && <h3 className="rc-canvas__heading">{action.title}</h3>}
+        <div className="rc-canvas__keyword-grid">
+          {(panel.keywords || []).map((kw) => (
+            <article key={kw.word} className="rc-canvas__keyword-card">
+              <strong>{kw.word}</strong>
+              {kw.reason && <p>{kw.reason}</p>}
+              {kw.tip && <span className="rc-canvas__keyword-tip">{kw.tip}</span>}
             </article>
           ))}
         </div>
@@ -65,14 +82,14 @@ function renderSpotlightPanel(action, supportOpen, setSupportOpen) {
 
   if (panel.kind === "explanation_grid") {
     return (
-      <Card className="reading-classroom-v2__canvas-card">
-        <h3>{action.title}</h3>
-        <div className="reading-classroom-v2__explain-grid">
-          {(panel.points || []).map((point) => (
-            <article key={point.label} className="reading-classroom-v2__explain-card">
-              <strong>{point.label}</strong>
-              <p>{point.explanation}</p>
-              {point.example ? <span>{point.example}</span> : null}
+      <Card className="rc-canvas__card">
+        {action.title && <h3 className="rc-canvas__heading">{action.title}</h3>}
+        <div className="rc-canvas__explain-grid">
+          {(panel.points || []).map((pt) => (
+            <article key={pt.label} className="rc-canvas__explain-card">
+              <strong>{pt.label}</strong>
+              <p>{pt.explanation}</p>
+              {pt.example && <span className="rc-canvas__explain-example">{pt.example}</span>}
             </article>
           ))}
         </div>
@@ -81,54 +98,199 @@ function renderSpotlightPanel(action, supportOpen, setSupportOpen) {
   }
 
   if (panel.kind === "reading_segment") {
+    const seg = panel.segment || {};
     const key = action.id;
-    const segment = panel.segment || {};
+    const isOpen = Boolean(supportOpen?.[key]);
     return (
-      <Card className="reading-classroom-v2__canvas-card">
-        <div className="reading-classroom-v2__segment-head">
-          <div>
-            <Badge variant="outline">Main Reading</Badge>
-            <h3>{segment.heading || action.title}</h3>
+      <Card className="rc-canvas__card rc-canvas__card--segment">
+        <div className="rc-canvas__segment-head">
+          <Badge variant="outline">Main Reading</Badge>
+          <h3 className="rc-canvas__heading">{seg.heading || action.title}</h3>
+        </div>
+        {panel.aside && <p className="rc-canvas__segment-focus">{panel.aside}</p>}
+        <div className="rc-canvas__segment-text rc-canvas__segment-text--primary">
+          <span className="rc-canvas__segment-label">i+1 version</span>
+          <p>{seg.rewritten_text}</p>
+        </div>
+        {seg.original_text && (
+          <div className="rc-canvas__segment-support">
+            <button
+              type="button"
+              className="rc-canvas__support-toggle"
+              onClick={() => onToggleSupport(key)}
+            >
+              {isOpen ? "Hide original" : "Show original text"}
+            </button>
+            <AnimatePresence>
+              {isOpen && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="rc-canvas__segment-text"
+                >
+                  <span className="rc-canvas__segment-label">Original</span>
+                  <p>{seg.original_text}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
-          <Badge variant="outline">i+1 first</Badge>
-        </div>
-        {panel.aside ? <p className="reading-classroom-v2__segment-focus">{panel.aside}</p> : null}
-        <div className="reading-classroom-v2__segment-pane reading-classroom-v2__segment-pane--primary">
-          <span>Rewritten</span>
-          <p>{segment.rewritten_text}</p>
-        </div>
-        {segment.original_text ? (
-          <div className="reading-classroom-v2__segment-support">
-            <Button variant="ghost" size="sm" className="reading-classroom-v2__support-toggle" onClick={() => setSupportOpen((current) => ({ ...current, [key]: !current[key] }))}>
-              {supportOpen[key] ? "Hide original support" : "Show original support"}
-            </Button>
-            {supportOpen[key] ? (
-              <div className="reading-classroom-v2__segment-pane">
-                <span>Original Support</span>
-                <p>{segment.original_text}</p>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-        <div className="reading-classroom-v2__segment-notes">
-          {segment.question ? <strong>{segment.question}</strong> : null}
-        </div>
+        )}
+        {seg.question && <p className="rc-canvas__segment-question">{seg.question}</p>}
       </Card>
     );
   }
 
   return (
-    <Card className="reading-classroom-v2__canvas-card">
-      <h3>{action.title}</h3>
-      <p>Spotlight content ready.</p>
+    <Card className="rc-canvas__card">
+      {action.title && <h3 className="rc-canvas__heading">{action.title}</h3>}
+      <p className="text-muted-foreground text-sm">Content ready.</p>
     </Card>
   );
 }
+
+// ─── Quiz panel ──────────────────────────────────────────────────────────────
+
+function QuizPanel({ scene, quizState, onSetAnswer, onSubmit }) {
+  const questions = scene.task?.questions || [];
+  const submitted = Boolean(quizState.submitted);
+  return (
+    <Card className="rc-canvas__card">
+      <div className="rc-canvas__task-head">
+        <h3 className="rc-canvas__heading">理解检查</h3>
+        <Badge variant="outline">{questions.length} questions</Badge>
+      </div>
+      {scene.task?.instructions && (
+        <p className="rc-canvas__task-copy">{scene.task.instructions}</p>
+      )}
+      <div className="rc-canvas__question-stack">
+        {questions.map((q, qi) => (
+          <article key={`${scene.id}-q${qi}`} className="rc-canvas__question">
+            <p className="rc-canvas__question-text">
+              <Badge variant="outline" className="mr-2">Q{qi + 1}</Badge>
+              {q.question || q.sentence}
+            </p>
+            {q.type === "mcq" && (
+              <div className="rc-canvas__option-list">
+                {(q.options || []).map((opt) => {
+                  const val = typeof opt === "object" ? opt.value || opt.label : opt;
+                  const label = typeof opt === "object" ? opt.label : opt;
+                  const selected = quizState.answers?.[qi] === val;
+                  const correct = submitted && scoreQuestion(q, val);
+                  const wrong = submitted && selected && !correct;
+                  return (
+                    <button
+                      key={val}
+                      type="button"
+                      disabled={submitted}
+                      className={cn(
+                        "rc-canvas__option",
+                        selected && "rc-canvas__option--selected",
+                        correct && "rc-canvas__option--correct",
+                        wrong && "rc-canvas__option--wrong",
+                      )}
+                      onClick={() => !submitted && onSetAnswer(qi, val)}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {q.type === "fill" && (
+              <Textarea
+                value={quizState.answers?.[qi] || ""}
+                disabled={submitted}
+                onChange={(e) => onSetAnswer(qi, e.target.value)}
+                placeholder="Type your answer…"
+                className="rc-canvas__textarea"
+              />
+            )}
+            {submitted && q.analysis && (
+              <p className="rc-canvas__question-analysis">{q.analysis}</p>
+            )}
+          </article>
+        ))}
+      </div>
+      <div className="rc-canvas__task-actions">
+        {!submitted ? (
+          <Button onClick={onSubmit}>Submit</Button>
+        ) : (
+          <p className="rc-canvas__score">Score: {quizState.score ?? 0}%</p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+// ─── Output panel ─────────────────────────────────────────────────────────────
+
+function OutputPanel({ scene, outputState, onSetDraft, onEvaluate }) {
+  const busy = outputState.status === "evaluating";
+  const done = Boolean(outputState.evaluation);
+  return (
+    <Card className="rc-canvas__card">
+      <div className="rc-canvas__task-head">
+        <h3 className="rc-canvas__heading">你的输出</h3>
+        <Badge variant="outline">Writing</Badge>
+      </div>
+      {scene.task?.prompt && <p className="rc-canvas__task-copy">{scene.task.prompt}</p>}
+      {scene.task?.guidance && (
+        <p className="rc-canvas__task-copy rc-canvas__task-copy--muted">{scene.task.guidance}</p>
+      )}
+      {(scene.task?.checklist || []).length > 0 && (
+        <ul className="rc-canvas__bullets rc-canvas__bullets--small">
+          {scene.task.checklist.map((item) => (
+            <li key={item} className="rc-canvas__bullet">
+              <CheckCircle2 className="size-3.5 shrink-0 text-primary" />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Textarea
+        value={outputState.draft || ""}
+        onChange={(e) => onSetDraft(e.target.value)}
+        placeholder="Write your response here…"
+        className="rc-canvas__textarea rc-canvas__textarea--large"
+        disabled={busy || done}
+      />
+      <div className="rc-canvas__task-actions">
+        {!done && (
+          <Button
+            onClick={onEvaluate}
+            disabled={busy || !String(outputState.draft || "").trim()}
+          >
+            {busy ? "Generating feedback…" : "Submit for feedback"}
+          </Button>
+        )}
+        {outputState.error && (
+          <span className="rc-canvas__error">{outputState.error}</span>
+        )}
+      </div>
+      {done && outputState.evaluation && (
+        <div className="rc-canvas__feedback">
+          <div className="rc-canvas__feedback-score">
+            <span>Score</span>
+            <strong>{outputState.evaluation.score ?? "–"}</strong>
+          </div>
+          {outputState.evaluation.feedback && (
+            <p className="rc-canvas__feedback-text">{outputState.evaluation.feedback}</p>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export function ReadingClassroom({ articleId, course, sourceTexts, apiCall, onExit }) {
   const [liveCourse, setLiveCourse] = useState(() => normalizeReadingCourse(course));
   const courseRef = useRef(liveCourse);
   const [supportOpen, setSupportOpen] = useState({});
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
     const normalized = normalizeReadingCourse(course);
@@ -136,90 +298,182 @@ export function ReadingClassroom({ articleId, course, sourceTexts, apiCall, onEx
     courseRef.current = normalized;
   }, [course]);
 
-  const persistCourse = useCallback(async (nextCourse) => {
-    const normalized = normalizeReadingCourse(nextCourse);
-    setLiveCourse(normalized);
-    courseRef.current = normalized;
-    if (articleId && normalized) {
-      await saveReadingCourseToRecord(articleId, normalized);
-    }
-  }, [articleId]);
+  const persistCourse = useCallback(
+    async (nextCourse) => {
+      const normalized = normalizeReadingCourse(nextCourse);
+      setLiveCourse(normalized);
+      courseRef.current = normalized;
+      if (articleId && normalized) {
+        await saveReadingCourseToRecord(articleId, normalized);
+      }
+    },
+    [articleId],
+  );
 
-  const persistRuntime = useCallback(async (runtimePatch) => {
-    const current = courseRef.current;
-    if (!current) return;
-    await persistCourse({
-      ...current,
-      runtime: {
-        ...(current.runtime || {}),
-        ...runtimePatch,
-        totalScenes: current.scenes.length,
-        lastViewedAt: Date.now(),
-      },
-    });
-  }, [persistCourse]);
+  const persistRuntime = useCallback(
+    async (runtimePatch) => {
+      const current = courseRef.current;
+      if (!current) return;
+      await persistCourse({
+        ...current,
+        runtime: {
+          ...(current.runtime || {}),
+          ...runtimePatch,
+          totalScenes: current.scenes.length,
+          lastViewedAt: Date.now(),
+        },
+      });
+    },
+    [persistCourse],
+  );
 
   const { playbackState, actions: playbackActions } = useReadingPlaybackEngine({
     course: liveCourse,
+    apiCall,
     onPersistPlayback: persistRuntime,
   });
 
   const runtime = liveCourse?.runtime || {};
-  const derived = useMemo(() => getReadingDerivedState(liveCourse, playbackState, runtime), [liveCourse, playbackState, runtime]);
+  const derived = useMemo(
+    () => getReadingDerivedState(liveCourse, playbackState, runtime),
+    [liveCourse, playbackState, runtime],
+  );
 
   const activeScene = derived?.activeScene || null;
   const activeSceneId = activeScene?.id;
-  const quizState = activeSceneId ? runtime.quiz?.[activeSceneId] || { answers: {} } : { answers: {} };
-  const outputState = activeSceneId ? runtime.output?.[activeSceneId] || { draft: "", status: "idle" } : { draft: "", status: "idle" };
-  const discussionState = activeSceneId ? runtime.discussion?.[activeSceneId] || { draft: "", messages: [], status: "idle", error: null } : { draft: "", messages: [], status: "idle", error: null };
 
-  const updateRuntime = useCallback(async (updater) => {
-    const current = courseRef.current;
-    if (!current) return;
-    const nextRuntime = updater(current.runtime || {});
-    await persistCourse({
-      ...current,
-      runtime: {
-        ...(current.runtime || {}),
-        ...nextRuntime,
-        totalScenes: current.scenes.length,
-        lastViewedAt: Date.now(),
-      },
-    });
-  }, [persistCourse]);
+  const quizState = activeSceneId
+    ? runtime.quiz?.[activeSceneId] || { answers: {} }
+    : { answers: {} };
+  const outputState = activeSceneId
+    ? runtime.output?.[activeSceneId] || { draft: "", status: "idle" }
+    : { draft: "", status: "idle" };
+  const discussionState = activeSceneId
+    ? runtime.discussion?.[activeSceneId] || { draft: "", messages: [], status: "idle" }
+    : { draft: "", messages: [], status: "idle" };
+
+  // ── Runtime updater ───────────────────────────────────────────────────────
+
+  const updateRuntime = useCallback(
+    async (updater) => {
+      const current = courseRef.current;
+      if (!current) return;
+      const nextRuntime = updater(current.runtime || {});
+      await persistCourse({
+        ...current,
+        runtime: {
+          ...(current.runtime || {}),
+          ...nextRuntime,
+          totalScenes: current.scenes.length,
+          lastViewedAt: Date.now(),
+        },
+      });
+    },
+    [persistCourse],
+  );
+
+  // ── Scene advance ─────────────────────────────────────────────────────────
 
   const markSceneCompleteAndAdvance = useCallback(async () => {
     if (!activeScene) return;
-    await updateRuntime((current) => {
-      const completed = new Set(current.completedSceneIds || []);
+    const nextIndex = Math.min(
+      (runtime.activeSceneIndex || 0) + 1,
+      (liveCourse?.scenes || []).length - 1,
+    );
+    await updateRuntime((cur) => {
+      const completed = new Set(cur.completedSceneIds || []);
       completed.add(activeScene.id);
-      const nextIndex = Math.min((current.activeSceneIndex || 0) + 1, (liveCourse?.scenes || []).length - 1);
       return {
-        ...current,
+        ...cur,
         completedSceneIds: Array.from(completed),
         activeSceneIndex: nextIndex,
-        completedAt: completed.size >= (liveCourse?.scenes || []).length ? new Date().toISOString() : current.completedAt || null,
+        completedAt:
+          completed.size >= (liveCourse?.scenes || []).length
+            ? new Date().toISOString()
+            : cur.completedAt || null,
       };
     });
-    playbackActions.goToScene(Math.min((runtime.activeSceneIndex || 0) + 1, (liveCourse?.scenes || []).length - 1), liveCourse?.scenes?.[Math.min((runtime.activeSceneIndex || 0) + 1, (liveCourse?.scenes || []).length - 1)]?.id);
-  }, [activeScene, liveCourse?.scenes, playbackActions, runtime.activeSceneIndex, updateRuntime]);
+    playbackActions.goToScene(nextIndex, liveCourse?.scenes?.[nextIndex]?.id);
+  }, [activeScene, liveCourse, playbackActions, runtime.activeSceneIndex, updateRuntime]);
 
-  const setQuizAnswer = async (questionIndex, answer) => activeSceneId && updateRuntime((current) => ({ ...current, quiz: { ...(current.quiz || {}), [activeSceneId]: { ...((current.quiz || {})[activeSceneId] || {}), answers: { ...(((current.quiz || {})[activeSceneId] || {}).answers || {}), [questionIndex]: answer } } } }));
-  const submitQuiz = async () => {
+  // ── Quiz handlers ─────────────────────────────────────────────────────────
+
+  const setQuizAnswer = (qi, val) => {
+    if (!activeSceneId) return;
+    updateRuntime((cur) => ({
+      ...cur,
+      quiz: {
+        ...(cur.quiz || {}),
+        [activeSceneId]: {
+          ...((cur.quiz || {})[activeSceneId] || {}),
+          answers: {
+            ...((cur.quiz || {})[activeSceneId]?.answers || {}),
+            [qi]: val,
+          },
+        },
+      },
+    }));
+  };
+
+  const submitQuiz = () => {
     if (!activeSceneId || !activeScene?.task) return;
     const questions = activeScene.task.questions || [];
     const answers = quizState.answers || {};
-    const score = questions.length ? Math.round((questions.filter((question, index) => scoreQuestion(question, answers[index])).length / questions.length) * 100) : 100;
-    await updateRuntime((current) => ({ ...current, quiz: { ...(current.quiz || {}), [activeSceneId]: { ...((current.quiz || {})[activeSceneId] || {}), answers, submitted: true, score } } }));
+    const score = questions.length
+      ? Math.round(
+          (questions.filter((q, i) => scoreQuestion(q, answers[i])).length / questions.length) *
+            100,
+        )
+      : 100;
+    updateRuntime((cur) => ({
+      ...cur,
+      quiz: {
+        ...(cur.quiz || {}),
+        [activeSceneId]: {
+          ...((cur.quiz || {})[activeSceneId] || {}),
+          answers,
+          submitted: true,
+          score,
+        },
+      },
+    }));
   };
 
-  const setOutputDraft = async (draft) => activeSceneId && updateRuntime((current) => ({ ...current, output: { ...(current.output || {}), [activeSceneId]: { ...((current.output || {})[activeSceneId] || {}), draft, status: "editing", error: null } } }));
+  // ── Output handlers ───────────────────────────────────────────────────────
+
+  const setOutputDraft = (draft) => {
+    if (!activeSceneId) return;
+    updateRuntime((cur) => ({
+      ...cur,
+      output: {
+        ...(cur.output || {}),
+        [activeSceneId]: {
+          ...((cur.output || {})[activeSceneId] || {}),
+          draft,
+          status: "editing",
+          error: null,
+        },
+      },
+    }));
+  };
+
   const evaluateOutput = async () => {
     if (!activeSceneId || !apiCall || !String(outputState.draft || "").trim()) return;
     const draft = String(outputState.draft).trim();
-    await updateRuntime((current) => ({ ...current, output: { ...(current.output || {}), [activeSceneId]: { ...((current.output || {})[activeSceneId] || {}), draft, status: "evaluating", error: null } } }));
+    await updateRuntime((cur) => ({
+      ...cur,
+      output: {
+        ...(cur.output || {}),
+        [activeSceneId]: {
+          ...((cur.output || {})[activeSceneId] || {}),
+          draft,
+          status: "evaluating",
+          error: null,
+        },
+      },
+    }));
     try {
-      const response = await apiCall("/api/llm/writing/evaluate", {
+      const res = await apiCall("/api/llm/writing/evaluate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -229,142 +483,384 @@ export function ReadingClassroom({ articleId, course, sourceTexts, apiCall, onEx
           target_level: liveCourse?.target_level || "B1",
         }),
       });
-      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || "写作反馈生成失败");
-      const payload = await response.json();
-      await updateRuntime((current) => ({ ...current, output: { ...(current.output || {}), [activeSceneId]: { ...((current.output || {})[activeSceneId] || {}), draft, status: "completed", evaluation: payload.evaluation, error: null } } }));
-    } catch (error) {
-      await updateRuntime((current) => ({ ...current, output: { ...(current.output || {}), [activeSceneId]: { ...((current.output || {})[activeSceneId] || {}), draft, status: "editing", error: error?.message || "写作反馈生成失败" } } }));
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "反馈生成失败");
+      const payload = await res.json();
+      await updateRuntime((cur) => ({
+        ...cur,
+        output: {
+          ...(cur.output || {}),
+          [activeSceneId]: {
+            ...((cur.output || {})[activeSceneId] || {}),
+            draft,
+            status: "completed",
+            evaluation: payload.evaluation,
+            error: null,
+          },
+        },
+      }));
+    } catch (err) {
+      await updateRuntime((cur) => ({
+        ...cur,
+        output: {
+          ...(cur.output || {}),
+          [activeSceneId]: {
+            ...((cur.output || {})[activeSceneId] || {}),
+            draft,
+            status: "editing",
+            error: err?.message || "反馈生成失败",
+          },
+        },
+      }));
     }
   };
 
-  const setDiscussionDraft = async (draft) => activeSceneId && updateRuntime((current) => ({ ...current, discussion: { ...(current.discussion || {}), [activeSceneId]: { ...((current.discussion || {})[activeSceneId] || {}), draft, error: null } } }));
+  // ── Discussion handlers ───────────────────────────────────────────────────
+
+  const setDiscussionDraft = (draft) => {
+    if (!activeSceneId) return;
+    updateRuntime((cur) => ({
+      ...cur,
+      discussion: {
+        ...(cur.discussion || {}),
+        [activeSceneId]: {
+          ...((cur.discussion || {})[activeSceneId] || {}),
+          draft,
+          error: null,
+        },
+      },
+    }));
+  };
+
   const sendDiscussion = async (preset = "") => {
     if (!activeSceneId || !apiCall) return;
     const draft = String(preset || discussionState.draft || "").trim();
     if (!draft) return;
     playbackActions.enterLive(activeSceneId);
-    const nextMessages = [...(discussionState.messages || []), { role: "user", content: draft }];
-    await updateRuntime((current) => ({ ...current, discussion: { ...(current.discussion || {}), [activeSceneId]: { ...((current.discussion || {})[activeSceneId] || {}), draft: "", messages: nextMessages, status: "loading", error: null } } }));
+    const prevMessages = discussionState.messages || [];
+    const nextMessages = [...prevMessages, { role: "user", content: draft }];
+    await updateRuntime((cur) => ({
+      ...cur,
+      discussion: {
+        ...(cur.discussion || {}),
+        [activeSceneId]: {
+          ...((cur.discussion || {})[activeSceneId] || {}),
+          draft: "",
+          messages: nextMessages,
+          status: "loading",
+          error: null,
+        },
+      },
+    }));
     try {
-      const response = await apiCall("/api/llm/reading-course/discussion", {
+      const res = await apiCall("/api/llm/reading-course/discussion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ course: courseRef.current, scene_id: activeSceneId, message: draft, history: nextMessages }),
+        body: JSON.stringify({
+          course: courseRef.current,
+          scene_id: activeSceneId,
+          message: draft,
+          history: nextMessages,
+        }),
       });
-      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || "讨论回复生成失败");
-      const payload = await response.json();
-      await updateRuntime((current) => ({ ...current, discussion: { ...(current.discussion || {}), [activeSceneId]: { ...((current.discussion || {})[activeSceneId] || {}), messages: [...nextMessages, { role: "assistant", content: payload.reply }], status: "idle", error: null, draft: "" } } }));
-    } catch (error) {
-      await updateRuntime((current) => ({ ...current, discussion: { ...(current.discussion || {}), [activeSceneId]: { ...((current.discussion || {})[activeSceneId] || {}), messages: nextMessages, status: "idle", error: error?.message || "讨论回复生成失败", draft } } }));
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "讨论回复失败");
+      const payload = await res.json();
+      await updateRuntime((cur) => ({
+        ...cur,
+        discussion: {
+          ...(cur.discussion || {}),
+          [activeSceneId]: {
+            ...((cur.discussion || {})[activeSceneId] || {}),
+            messages: [...nextMessages, { role: "assistant", content: payload.reply }],
+            status: "idle",
+            error: null,
+            draft: "",
+          },
+        },
+      }));
+    } catch (err) {
+      await updateRuntime((cur) => ({
+        ...cur,
+        discussion: {
+          ...(cur.discussion || {}),
+          [activeSceneId]: {
+            ...((cur.discussion || {})[activeSceneId] || {}),
+            messages: nextMessages,
+            status: "idle",
+            error: err?.message || "讨论回复失败",
+            draft,
+          },
+        },
+      }));
     }
   };
 
+  // ── Render guards ─────────────────────────────────────────────────────────
+
   if (!derived || !activeScene) return null;
 
-  const shouldShowDiscussionCard =
-    derived.isLiveMode ||
-    derived.currentVisibleAction?.type === "discussion";
+  // ── Canvas content decision ───────────────────────────────────────────────
 
-  const spotlightContent = derived.taskAction?.type === "quiz"
-    ? (
-      <Card className="reading-classroom-v2__canvas-card">
-        <div className="reading-classroom-v2__task-head"><h3>理解检查</h3><Badge variant="outline">{(activeScene.task?.questions || []).length} questions</Badge></div>
-        <p className="reading-classroom-v2__task-copy">{activeScene.task?.instructions}</p>
-        <div className="reading-classroom-v2__task-stack">
-          {(activeScene.task?.questions || []).map((question, index) => (
-            <article key={`${activeScene.id}-${index}`} className="reading-classroom-v2__question">
-              <div className="reading-classroom-v2__question-top"><Badge variant="outline">Q{index + 1}</Badge><span>{question.type}</span></div>
-              <h4>{question.question || question.sentence}</h4>
-              {question.type === "mcq" ? <div className="reading-classroom-v2__option-list">{(question.options || []).map((option) => <button key={option} type="button" className={`reading-classroom-v2__option ${quizState.answers?.[index] === option ? "reading-classroom-v2__option--selected" : ""}`} onClick={() => setQuizAnswer(index, option)}>{option}</button>)}</div> : null}
-              {question.type === "fill" ? <Textarea value={quizState.answers?.[index] || ""} onChange={(event) => setQuizAnswer(index, event.target.value)} placeholder="Type your answer" className="reading-classroom-v2__textarea" /> : null}
-              {question.type === "order" ? <div className="reading-classroom-v2__option-list">{(question.sentences || []).map((sentence, sentenceIndex) => { const current = quizState.answers?.[index] || []; const present = current.includes(sentenceIndex); const nextValue = present ? current.filter((item) => item !== sentenceIndex) : [...current, sentenceIndex]; return <button key={`${sentence}-${sentenceIndex}`} type="button" className={`reading-classroom-v2__option ${present ? "reading-classroom-v2__option--selected" : ""}`} onClick={() => setQuizAnswer(index, nextValue)}><strong>{present ? current.indexOf(sentenceIndex) + 1 : "?"}</strong><span>{sentence}</span></button>; })}</div> : null}
-            </article>
-          ))}
-        </div>
-        <div className="reading-classroom-v2__task-actions"><Button onClick={submitQuiz}>提交理解检查</Button>{typeof quizState.score === "number" ? <span>Score {quizState.score}%</span> : null}</div>
-      </Card>
-    )
-    : derived.taskAction?.type === "output"
-      ? (
-        <Card className="reading-classroom-v2__canvas-card">
-          <div className="reading-classroom-v2__task-head"><h3>你的输出</h3><Badge variant="outline">Writing</Badge></div>
-          <p className="reading-classroom-v2__task-copy">{activeScene.task?.prompt}</p>
-          {activeScene.task?.guidance ? <p className="reading-classroom-v2__task-copy reading-classroom-v2__task-copy--muted">{activeScene.task.guidance}</p> : null}
-          <div className="reading-classroom-v2__bullet-list">{(activeScene.task?.checklist || []).map((item) => <div key={item} className="reading-classroom-v2__bullet-item"><CheckCircle2 className="size-4" /><span>{item}</span></div>)}</div>
-          <Textarea value={outputState.draft || ""} onChange={(event) => setOutputDraft(event.target.value)} placeholder="Write your response here..." className="reading-classroom-v2__textarea reading-classroom-v2__textarea--large" />
-          <div className="reading-classroom-v2__task-actions"><Button onClick={evaluateOutput} disabled={!String(outputState.draft || "").trim() || outputState.status === "evaluating"}>{outputState.status === "evaluating" ? "Generating feedback..." : "提交并获取反馈"}</Button>{outputState.error ? <span className="reading-classroom-v2__error">{outputState.error}</span> : null}</div>
-          {outputState.evaluation ? <div className="reading-classroom-v2__feedback-grid"><article className="reading-classroom-v2__feedback-card"><span>Writing Score</span><strong>{outputState.evaluation.score ?? "--"}</strong><p>{outputState.evaluation.feedback}</p></article></div> : null}
-        </Card>
-      )
-      : shouldShowDiscussionCard && derived.discussionAction
-        ? <ProactiveCard action={derived.discussionAction} liveActive={derived.isLiveMode} onJoin={sendDiscussion} onSkip={() => playbackActions.exitLive("paused")} />
-        : renderSpotlightPanel(derived.spotlightAction, supportOpen, setSupportOpen);
+  let canvasContent;
+
+  if (derived.taskAction?.type === "quiz" && derived.allActionsRevealed) {
+    canvasContent = (
+      <QuizPanel
+        scene={activeScene}
+        quizState={quizState}
+        onSetAnswer={setQuizAnswer}
+        onSubmit={submitQuiz}
+      />
+    );
+  } else if (derived.taskAction?.type === "output" && derived.allActionsRevealed) {
+    canvasContent = (
+      <OutputPanel
+        scene={activeScene}
+        outputState={outputState}
+        onSetDraft={setOutputDraft}
+        onEvaluate={evaluateOutput}
+      />
+    );
+  } else {
+    canvasContent = (
+      <SpotlightPanel
+        action={derived.spotlightAction}
+        supportOpen={supportOpen}
+        onToggleSupport={(key) =>
+          setSupportOpen((prev) => ({ ...prev, [key]: !prev[key] }))
+        }
+      />
+    );
+  }
+
+  const showDiscussion =
+    derived.isLiveMode ||
+    (derived.discussionAction && derived.allActionsRevealed);
+
+  const isLastScene =
+    playbackState.activeSceneIndex === (liveCourse?.scenes || []).length - 1;
+
+  // ── Layout ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="reading-classroom-v2">
-      <aside className="reading-classroom-v2__sidebar">
-        <Card className="reading-classroom-v2__coach">
-          <div className="reading-classroom-v2__coach-badge"><GraduationCap className="size-5" /></div>
-          <div><p>Reading Classroom Engine</p><h1>{liveCourse.cast?.teacher?.name}</h1><span>{liveCourse.cast?.teacher?.persona}</span></div>
-        </Card>
-        <Card className="reading-classroom-v2__overview">
-          <div className="reading-classroom-v2__overview-head"><div><span>{liveCourse.courseMeta?.coverKicker}</span><h2>{liveCourse.article_title}</h2></div><Badge variant="outline">{liveCourse.target_level}</Badge></div>
-          <p>{liveCourse.courseMeta?.summary}</p>
-          <Progress value={derived.progressPercent} />
-          <div className="reading-classroom-v2__overview-foot"><span>{derived.progressPercent}% completed</span><span>{liveCourse.courseMeta?.estimatedMinutes} min</span></div>
-        </Card>
-        <div className="reading-classroom-v2__rail">
-          {derived.scenes.map((scene, index) => (
-            <button key={scene.id} type="button" className={`reading-classroom-v2__rail-item ${index === playbackState.activeSceneIndex ? "reading-classroom-v2__rail-item--active" : ""}`} onClick={() => playbackActions.goToScene(index, scene.id)}>
-              <strong>{scene.title}</strong>
-              <span>{scene.goal}</span>
-            </button>
-          ))}
-        </div>
-      </aside>
+    <div className="rc-shell">
+      {/* Sidebar */}
+      <AnimatePresence initial={false}>
+        {sidebarOpen && (
+          <motion.aside
+            className="rc-sidebar"
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 220, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.21, 1, 0.36, 1] }}
+          >
+            <div className="rc-sidebar__inner">
+              {/* Course overview */}
+              <div className="rc-sidebar__overview">
+                <div className="rc-sidebar__teacher">
+                  <GraduationCap className="size-4" />
+                  <span>{liveCourse.cast?.teacher?.name || "Teacher"}</span>
+                </div>
+                <p className="rc-sidebar__title">{liveCourse.article_title}</p>
+                <div className="rc-sidebar__meta">
+                  <Badge variant="outline">{liveCourse.target_level}</Badge>
+                  <span>{derived.progressPercent}%</span>
+                </div>
+                <Progress value={derived.progressPercent} className="rc-sidebar__progress" />
+              </div>
 
-      <main className="reading-classroom-v2__main">
-        <header className="reading-classroom-v2__header">
-          <div><Badge variant="outline">{playbackState.activeSceneIndex + 1} / {derived.scenes.length}</Badge><h2>{activeScene.title}</h2><p>{activeScene.goal}</p></div>
-          <div className="reading-classroom-v2__header-actions">
-            <Button variant="ghost" onClick={() => playbackActions.toggleTTS()} className="gap-2">{playbackState.ttsEnabled ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}{playbackState.ttsEnabled ? "TTS On" : "TTS Off"}</Button>
-            <Button variant="ghost" onClick={onExit} className="gap-2"><ArrowLeft className="size-4" />返回材料</Button>
+              {/* Scene rail */}
+              <nav className="rc-sidebar__rail">
+                {derived.scenes.map((scene, index) => {
+                  const isActive = index === playbackState.activeSceneIndex;
+                  const isDone = runtime.completedSceneIds?.includes(scene.id);
+                  return (
+                    <button
+                      key={scene.id}
+                      type="button"
+                      className={cn(
+                        "rc-sidebar__item",
+                        isActive && "rc-sidebar__item--active",
+                        isDone && "rc-sidebar__item--done",
+                      )}
+                      onClick={() => playbackActions.goToScene(index, scene.id)}
+                    >
+                      <span className="rc-sidebar__item-num">{index + 1}</span>
+                      <span className="rc-sidebar__item-title">{scene.title}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+          </motion.aside>
+        )}
+      </AnimatePresence>
+
+      {/* Main */}
+      <div className="rc-main">
+        {/* Header */}
+        <header className="rc-header">
+          <div className="rc-header__left">
+            <button
+              type="button"
+              className="rc-header__icon-btn"
+              onClick={() => setSidebarOpen((v) => !v)}
+              aria-label="Toggle sidebar"
+            >
+              <ChevronLeft
+                className={cn("size-4 transition-transform", !sidebarOpen && "rotate-180")}
+              />
+            </button>
+            <Badge variant="outline" className="rc-header__scene-num">
+              {playbackState.activeSceneIndex + 1} / {derived.scenes.length}
+            </Badge>
+            <span className="rc-header__scene-title">{activeScene.title}</span>
+          </div>
+          <div className="rc-header__right">
+            <button
+              type="button"
+              className="rc-header__icon-btn"
+              onClick={() => playbackActions.toggleTTS()}
+              aria-label="Toggle TTS"
+            >
+              {playbackState.ttsEnabled ? (
+                <Volume2 className="size-4" />
+              ) : (
+                <VolumeX className="size-4" />
+              )}
+            </button>
+            <button
+              type="button"
+              className="rc-header__exit-btn"
+              onClick={onExit}
+            >
+              <ArrowLeft className="size-4" />
+              <span>返回</span>
+            </button>
           </div>
         </header>
 
-        <section className="reading-classroom-v2__stage">
-          <div className="reading-classroom-v2__canvas-shell">
-            <div className="reading-classroom-v2__canvas">
-              <div className="reading-classroom-v2__canvas-stage">{spotlightContent}</div>
-              <div className="reading-classroom-v2__canvas-roundtable">
-                <Roundtable messages={derived.roundtableMessages} activeSpeechActionId={playbackState.activeSpeechActionId} />
-                {derived.discussionAction ? (
-                  <div className="reading-classroom-v2__discussion-compose">
-                    <Textarea value={discussionState.draft || ""} onChange={(event) => setDiscussionDraft(event.target.value)} placeholder="Ask one focused question about this scene..." className="reading-classroom-v2__textarea" />
-                    <div className="reading-classroom-v2__task-actions">
-                      <Button onClick={() => sendDiscussion()} disabled={!String(discussionState.draft || "").trim() || discussionState.status === "loading"}>{discussionState.status === "loading" ? "Thinking..." : "Ask"}</Button>
-                      {derived.isLiveMode ? <Button variant="ghost" onClick={() => playbackActions.exitLive("paused")}>Finish discussion</Button> : null}
-                    </div>
-                    {discussionState.error ? <p className="reading-classroom-v2__error">{discussionState.error}</p> : null}
-                  </div>
-                ) : null}
-              </div>
-            </div>
+        {/* Stage: canvas + roundtable */}
+        <div className="rc-stage">
+          {/* 16:9 canvas */}
+          <div className="rc-canvas">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={`${activeSceneId}-canvas`}
+                className="rc-canvas__inner"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.2 }}
+              >
+                {canvasContent}
+              </motion.div>
+            </AnimatePresence>
           </div>
 
-          <footer className="reading-classroom-v2__footer">
-            <div className="reading-classroom-v2__footer-left">
-              {derived.canStart ? <Button onClick={playbackActions.start} className="gap-2"><Play className="size-4" />Play scene</Button> : null}
-              {derived.canPause ? <Button onClick={playbackActions.pause} variant="outline" className="gap-2"><Pause className="size-4" />Pause</Button> : null}
-              {derived.canResume ? <Button onClick={playbackActions.resume} variant="outline" className="gap-2"><Play className="size-4" />Resume</Button> : null}
-            </div>
-            <div className="reading-classroom-v2__footer-right">
-              {derived.hasMoreActions && !derived.isPlaying ? <Button variant="ghost" onClick={() => playbackActions.revealNext(activeScene.id, derived.sceneActions.length)}>Reveal next action</Button> : null}
-              {derived.canAdvanceScene ? <Button onClick={markSceneCompleteAndAdvance} className="gap-2">{playbackState.activeSceneIndex === derived.scenes.length - 1 ? "完成课程" : "进入下一场景"}<ArrowRight className="size-4" /></Button> : <span className="reading-classroom-v2__footer-note">{derived.isLiveMode ? "Finish the live discussion to continue." : "Playback or current task is still in progress."}</span>}
-            </div>
-          </footer>
-        </section>
-      </main>
+          {/* Roundtable */}
+          <div className="rc-roundtable-wrap">
+            <Roundtable
+              messages={derived.roundtableMessages}
+              activeSpeechActionId={playbackState.activeSpeechActionId}
+              cast={liveCourse.cast}
+            />
+
+            {/* Live discussion compose */}
+            <AnimatePresence>
+              {showDiscussion && (
+                <motion.div
+                  className="rc-discussion-compose"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  {!derived.isLiveMode ? (
+                    <ProactiveCard
+                      action={derived.discussionAction}
+                      liveActive={false}
+                      onJoin={sendDiscussion}
+                      onSkip={() => playbackActions.exitLive("paused")}
+                    />
+                  ) : (
+                    <div className="rc-discussion-input">
+                      <Textarea
+                        value={discussionState.draft || ""}
+                        onChange={(e) => setDiscussionDraft(e.target.value)}
+                        placeholder="Ask the teacher anything about this reading…"
+                        className="rc-discussion-input__textarea"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                            e.preventDefault();
+                            sendDiscussion();
+                          }
+                        }}
+                      />
+                      <div className="rc-discussion-input__actions">
+                        <Button
+                          size="sm"
+                          onClick={() => sendDiscussion()}
+                          disabled={
+                            !String(discussionState.draft || "").trim() ||
+                            discussionState.status === "loading"
+                          }
+                        >
+                          {discussionState.status === "loading" ? "Thinking…" : "Send"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => playbackActions.exitLive("paused")}
+                        >
+                          End discussion
+                        </Button>
+                      </div>
+                      {discussionState.error && (
+                        <p className="rc-discussion-input__error">{discussionState.error}</p>
+                      )}
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Footer controls */}
+        <footer className="rc-footer">
+          <div className="rc-footer__left">
+            {derived.canStart && (
+              <Button onClick={playbackActions.start} className="gap-1.5">
+                <Play className="size-4" />
+                Play
+              </Button>
+            )}
+            {derived.canPause && (
+              <Button variant="outline" onClick={playbackActions.pause} className="gap-1.5">
+                <Pause className="size-4" />
+                Pause
+              </Button>
+            )}
+          </div>
+          <div className="rc-footer__right">
+            {derived.canAdvanceScene && (
+              <Button onClick={markSceneCompleteAndAdvance} className="gap-1.5">
+                {isLastScene ? "完成课程" : "下一场景"}
+                <ArrowRight className="size-4" />
+              </Button>
+            )}
+            {!derived.canAdvanceScene && derived.allActionsRevealed && (
+              <span className="rc-footer__hint">
+                {derived.isLiveMode
+                  ? "Finish the discussion to continue."
+                  : !derived.taskCompleted
+                    ? "Complete the task to continue."
+                    : ""}
+              </span>
+            )}
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }

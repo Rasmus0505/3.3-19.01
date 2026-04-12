@@ -1,9 +1,10 @@
 import { buildSceneActionSequence, READING_ACTION_TYPES } from "./readingActionTypes";
 
 function asRoundtableRole(role) {
-  if (role === "assistant") return "assistant";
-  if (role === "student") return "student";
-  if (role === "user") return "user";
+  const r = String(role || "").toLowerCase();
+  if (r === "assistant") return "assistant";
+  if (r === "student") return "student";
+  if (r === "user") return "user";
   return "teacher";
 }
 
@@ -15,41 +16,54 @@ export function getReadingDerivedState(course, playbackState, runtime) {
   if (!activeScene) return null;
 
   const sceneActions = buildSceneActionSequence(activeScene);
-  const visibleActionCount = Math.min(
-    sceneActions.length,
-    Number(playbackState.actionCursorByScene?.[activeScene.id]) || 0,
-  );
-  const visibleActions = sceneActions.slice(0, visibleActionCount);
+  const cursor = Number(playbackState.actionCursorByScene?.[activeScene.id]) || 0;
+  const visibleActions = sceneActions.slice(0, Math.min(sceneActions.length, cursor));
   const currentVisibleAction = visibleActions[visibleActions.length - 1] || null;
-  const nextAction = sceneActions[visibleActionCount] || null;
-  const spotlightAction = [...visibleActions].reverse().find((action) => action.type === READING_ACTION_TYPES.SPOTLIGHT) || null;
-  const discussionAction = [...visibleActions].reverse().find((action) => action.type === READING_ACTION_TYPES.DISCUSSION) || null;
-  const taskAction = [...visibleActions].reverse().find((action) => action.type === READING_ACTION_TYPES.QUIZ || action.type === READING_ACTION_TYPES.OUTPUT) || null;
 
+  // Last spotlight visible
+  const spotlightAction =
+    [...visibleActions].reverse().find((a) => a.type === READING_ACTION_TYPES.SPOTLIGHT) || null;
+
+  // Last discussion action visible
+  const discussionAction =
+    [...visibleActions].reverse().find((a) => a.type === READING_ACTION_TYPES.DISCUSSION) || null;
+
+  // Task action (quiz or output)
+  const taskAction =
+    [...visibleActions]
+      .reverse()
+      .find(
+        (a) =>
+          a.type === READING_ACTION_TYPES.QUIZ || a.type === READING_ACTION_TYPES.OUTPUT,
+      ) || null;
+
+  // Build roundtable messages from visible speech actions
   const scriptedMessages = visibleActions.flatMap((action) => {
     if (action.type === READING_ACTION_TYPES.SPEECH) {
-      return [{ id: action.id, role: asRoundtableRole(action.role), content: action.text, source: "playback" }];
-    }
-    if (action.type === READING_ACTION_TYPES.DISCUSSION) {
-      return (action.messages || []).map((message) => ({
-        id: message.id,
-        role: asRoundtableRole(message.role),
-        content: message.content,
-        source: "scripted_discussion",
-      }));
+      return [
+        {
+          id: action.id,
+          role: asRoundtableRole(action.role),
+          content: action.text,
+          source: "playback",
+        },
+      ];
     }
     return [];
   });
 
-  const liveDiscussionMessages = (runtime?.discussion?.[activeScene.id]?.messages || []).map((message, index) => ({
-    id: `${activeScene.id}-live-${index + 1}`,
-    role: message.role === "assistant" ? "teacher" : "user",
-    content: message.content,
-    source: "live_discussion",
+  // Live discussion messages from runtime
+  const liveMessages = (runtime?.discussion?.[activeScene.id]?.messages || []).map((msg, i) => ({
+    id: `${activeScene.id}-live-${i + 1}`,
+    role: msg.role === "assistant" ? "teacher" : "user",
+    content: msg.content,
+    source: "live",
   }));
 
   const completedScenes = new Set(runtime?.completedSceneIds || []);
-  const progressPercent = scenes.length > 0 ? Math.round((completedScenes.size / scenes.length) * 100) : 0;
+  const progressPercent =
+    scenes.length > 0 ? Math.round((completedScenes.size / scenes.length) * 100) : 0;
+
   const taskCompleted =
     taskAction?.type === READING_ACTION_TYPES.QUIZ
       ? Boolean(runtime?.quiz?.[activeScene.id]?.submitted)
@@ -57,25 +71,32 @@ export function getReadingDerivedState(course, playbackState, runtime) {
         ? Boolean(runtime?.output?.[activeScene.id]?.evaluation)
         : true;
 
+  const allActionsRevealed = cursor >= sceneActions.length;
+
   return {
     scenes,
     activeScene,
     sceneActions,
     visibleActions,
     currentVisibleAction,
-    nextAction,
     spotlightAction,
     discussionAction,
     taskAction,
-    roundtableMessages: [...scriptedMessages, ...liveDiscussionMessages],
+    roundtableMessages: [...scriptedMessages, ...liveMessages],
     progressPercent,
-    hasMoreActions: visibleActionCount < sceneActions.length,
-    canAdvanceScene: visibleActionCount >= sceneActions.length && taskCompleted && playbackState.mode !== "live",
+    hasMoreActions: cursor < sceneActions.length,
+    allActionsRevealed,
+    taskCompleted,
+    canAdvanceScene:
+      allActionsRevealed &&
+      taskCompleted &&
+      playbackState.mode !== "live" &&
+      playbackState.mode !== "playing",
     isLiveMode: playbackState.mode === "live",
     isPlaying: playbackState.mode === "playing",
     isPaused: playbackState.mode === "paused",
-    canStart: playbackState.mode === "idle",
-    canResume: playbackState.mode === "paused",
+    isIdle: playbackState.mode === "idle",
+    canStart: playbackState.mode === "idle" || playbackState.mode === "paused",
     canPause: playbackState.mode === "playing",
   };
 }
