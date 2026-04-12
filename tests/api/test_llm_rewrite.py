@@ -85,6 +85,64 @@ class TestEstimateTokens:
             assert response.status_code in (401, 403)
 
 
+# ── /extract-lemmas tests ────────────────────────────────────────────────
+
+class TestExtractLemmas:
+    def test_falls_back_to_local_lemmatizer_when_llm_returns_invalid_json(self, client):
+        """POST /api/llm/extract-lemmas 在模型返回脏格式时应使用本地还原兜底。"""
+        with patch("app.api.routers.llm.ensure_default_billing_rates"):
+            with patch("app.api.routers.llm.get_model_rate") as mock_rate:
+                mock_rate.return_value = MagicMock(points_per_1k_tokens=5)
+                with patch("app.api.routers.llm._require_api_key", return_value="fake-key"):
+                    with patch("app.api.routers.llm.call_deepseek") as mock_call:
+                        mock_call.return_value = (
+                            "running -> run\ncommuting -> commute",
+                            MagicMock(
+                                prompt_tokens=40, completion_tokens=10,
+                                reasoning_tokens=0, total_tokens=50,
+                            ),
+                        )
+                        with patch("app.services.llm_usage_service.log_llm_usage"):
+                            response = client.post(
+                                "/api/llm/extract-lemmas",
+                                json={
+                                    "sentence": "Running keeps commuting habits expensive.",
+                                    "words": ["running", "commuting"],
+                                },
+                            )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert data["lemmas"] == ["run", "commute"]
+
+    def test_repairs_count_mismatch_with_local_fallback(self, client):
+        """当 lemmas 数量不足时，接口应补齐本地还原结果而不是返回 502。"""
+        with patch("app.api.routers.llm.ensure_default_billing_rates"):
+            with patch("app.api.routers.llm.get_model_rate") as mock_rate:
+                mock_rate.return_value = MagicMock(points_per_1k_tokens=5)
+                with patch("app.api.routers.llm._require_api_key", return_value="fake-key"):
+                    with patch("app.api.routers.llm.call_deepseek") as mock_call:
+                        mock_call.return_value = (
+                            '{"lemmas": ["run"]}',
+                            MagicMock(
+                                prompt_tokens=40, completion_tokens=10,
+                                reasoning_tokens=0, total_tokens=50,
+                            ),
+                        )
+                        with patch("app.services.llm_usage_service.log_llm_usage"):
+                            response = client.post(
+                                "/api/llm/extract-lemmas",
+                                json={
+                                    "sentence": "Running keeps commuting habits expensive.",
+                                    "words": ["running", "commuting"],
+                                },
+                            )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert data["lemmas"] == ["run", "commute"]
+
+
 # ── /simplify-words tests ─────────────────────────────────────────────────
 
 class TestSimplifyWords:
@@ -193,7 +251,7 @@ class TestSimplifyWords:
                                 )
         assert response.status_code == 502
         data = response.json()
-        assert "parse" in data["detail"].lower() or "Failed to parse" in data["detail"]
+        assert "parse" in data["detail"].lower() or "格式错误" in data["detail"]
 
     def test_non_array_json_returns_502(self, client):
         """模型返回非数组 JSON 时应返回 502。"""

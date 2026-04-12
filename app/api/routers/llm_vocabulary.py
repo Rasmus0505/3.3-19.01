@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from functools import lru_cache
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
@@ -24,11 +26,211 @@ from app.schemas import ErrorResponse
 
 router = APIRouter()
 
+LOCAL_IRREGULAR_LEMMAS: dict[str, str] = {
+    "ran": "run",
+    "won": "win",
+    "begun": "begin",
+    "written": "write",
+    "taken": "take",
+    "given": "give",
+    "seen": "see",
+    "been": "be",
+    "gone": "go",
+    "made": "make",
+    "known": "know",
+    "thought": "think",
+    "told": "tell",
+    "found": "find",
+    "said": "say",
+    "got": "get",
+    "perusing": "peruse",
+    "pursuing": "pursue",
+    "creating": "create",
+    "sharing": "share",
+    "moving": "move",
+    "commuting": "commute",
+    "scrutinizing": "scrutinize",
+}
+
+LOCAL_SUFFIX_RULES: list[tuple[str, str]] = [
+    ("ies", "y"),
+    ("es", ""),
+    ("ed", ""),
+    ("ing", ""),
+    ("ly", ""),
+    ("ness", ""),
+    ("ment", ""),
+    ("tion", "t"),
+    ("s", ""),
+]
+
+LOCAL_NONSTANDARD_CONTRACTIONS: dict[str, str] = {
+    "dont": "do",
+    "cant": "can",
+    "wont": "will",
+    "im": "i",
+    "ive": "i",
+    "id": "i",
+    "ill": "i",
+    "theyve": "they",
+    "theyll": "they",
+    "theyd": "they",
+    "weve": "we",
+    "well": "we",
+    "wed": "we",
+    "youll": "you",
+    "youd": "you",
+    "its": "it",
+    "thats": "that",
+    "whats": "what",
+    "wheres": "where",
+    "whos": "who",
+    "whens": "when",
+    "hows": "how",
+    "lets": "let",
+    "didnt": "do",
+    "doesnt": "do",
+    "isnt": "is",
+    "wasnt": "be",
+    "arent": "be",
+    "werent": "be",
+    "havent": "have",
+    "hasnt": "have",
+}
+
 
 def _llm_module():
     from app.api.routers import llm as llm_root
 
     return llm_root
+
+
+@lru_cache(maxsize=1)
+def _load_vocab_words() -> set[str]:
+    vocab_path = Path(__file__).resolve().parents[2] / "data" / "vocab" / "cefr_vocab_fixed.json"
+    if not vocab_path.exists():
+        return set()
+    with open(vocab_path, "r", encoding="utf-8") as file:
+        payload = json.load(file)
+    return set(payload.get("words", {}).keys())
+
+
+def _strip_contraction(word: str) -> str | None:
+    lowered = str(word or "").lower()
+    matched = re.match(r"^(.+?)n't$", lowered, re.IGNORECASE)
+    if matched:
+        base = matched.group(1).lower()
+        return {"wont": "will"}.get(base, base)
+    matched = re.match(r"^(.+?)'(s|d|m|re|ve|ll)$", lowered, re.IGNORECASE)
+    if matched:
+        return matched.group(1).lower()
+    return None
+
+
+def _candidate_local_lemmas(word: str) -> list[str]:
+    lowered = str(word or "").strip().lower()
+    if not lowered:
+        return [""]
+
+    candidates: list[str] = []
+
+    irregular = LOCAL_IRREGULAR_LEMMAS.get(lowered)
+    if irregular:
+        candidates.insert(0, irregular)
+
+    nonstandard = LOCAL_NONSTANDARD_CONTRACTIONS.get(lowered)
+    if nonstandard:
+        candidates.insert(0, nonstandard)
+
+    stripped = _strip_contraction(lowered)
+    if stripped:
+        candidates.insert(0, stripped)
+
+    for suffix, replacement in LOCAL_SUFFIX_RULES:
+        if lowered.endswith(suffix) and len(lowered) > len(suffix) + 2:
+            base = lowered[: -len(suffix)] + replacement
+            candidates.append(base)
+            if suffix in {"ing", "ed"}:
+                if len(base) >= 2 and base[-1] == base[-2]:
+                    candidates.append(base[:-1])
+                if not base.endswith("e"):
+                    candidates.append(base + "e")
+            if suffix == "es":
+                candidates.append(lowered[:-1])
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = str(candidate or "").strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    if lowered not in seen:
+        deduped.append(lowered)
+    return deduped or [lowered]
+
+
+def _local_lemmatize_word(word: str) -> str:
+    vocab_words = _load_vocab_words()
+    candidates = _candidate_local_lemmas(word)
+    for candidate in candidates:
+        if candidate in vocab_words:
+            return candidate
+    return candidates[0]
+
+
+def _coerce_lemmas_from_payload(parsed: object, words: list[str]) -> list[str] | None:
+    if isinstance(parsed, dict):
+        if isinstance(parsed.get("lemmas"), list):
+            raw_lemmas = parsed.get("lemmas") or []
+            return [
+                str(raw_lemmas[index]).strip().lower() if index < len(raw_lemmas) and str(raw_lemmas[index]).strip()
+                else _local_lemmatize_word(word)
+                for index, word in enumerate(words)
+            ]
+
+        if parsed and all(isinstance(value, (str, int, float, bool)) or value is None for value in parsed.values()):
+            normalized_mapping = {str(key).strip().lower(): str(value or "").strip().lower() for key, value in parsed.items()}
+            return [
+                normalized_mapping.get(str(word).strip().lower()) or _local_lemmatize_word(word)
+                for word in words
+            ]
+
+    if isinstance(parsed, list):
+        return [
+            str(parsed[index]).strip().lower() if index < len(parsed) and str(parsed[index]).strip()
+            else _local_lemmatize_word(word)
+            for index, word in enumerate(words)
+        ]
+
+    return None
+
+
+def _parse_lemmas_response(raw_response: str, words: list[str]) -> tuple[list[str], str]:
+    candidates: list[tuple[str, str]] = []
+    stripped = strip_json_fences(raw_response)
+    if stripped:
+        candidates.append(("strip_json_fences", stripped))
+    recovered = recover_json_payload(raw_response)
+    if recovered and recovered != stripped:
+        candidates.append(("recover_json_payload", recovered))
+
+    strict_match = re.search(r'\{"lemmas":\s*\[.*?\]\}', raw_response, re.DOTALL)
+    if strict_match:
+        candidates.append(("strict_lemmas_regex", strict_match.group(0)))
+
+    for source, candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except Exception:
+            continue
+        lemmas = _coerce_lemmas_from_payload(parsed, words)
+        if lemmas:
+            return lemmas, source
+
+    local_fallback = [_local_lemmatize_word(word) for word in words]
+    return local_fallback, "local_fallback"
 
 
 SIMPLIFY_WORDS_SYSTEM_PROMPT = (
@@ -379,25 +581,21 @@ def extract_lemmas_endpoint(
     if not raw_response:
         raise HTTPException(status_code=503, detail="模型返回为空")
 
-    try:
-        parsed = json.loads(strip_json_fences(raw_response))
-        if not isinstance(parsed, dict) or "lemmas" not in parsed:
-            raise HTTPException(status_code=502, detail="Expected JSON object with 'lemmas' array")
-        lemmas = [str(item) for item in parsed["lemmas"]]
-        if len(lemmas) != len(body.words):
-            raise HTTPException(status_code=502, detail=f"lemmas count ({len(lemmas)}) != words count ({len(body.words)})")
-    except HTTPException:
-        raise
-    except Exception:
-        match = re.search(r'\{"lemmas":\s*\[.*?\]\}', raw_response, re.DOTALL)
-        if match:
-            try:
-                parsed = json.loads(match.group(0))
-                lemmas = [str(item) for item in parsed["lemmas"]]
-            except Exception:
-                raise HTTPException(status_code=502, detail="无法解析 LLM 返回的 JSON")
-        else:
-            raise HTTPException(status_code=502, detail="LLM 返回格式错误")
+    lemmas, parse_source = _parse_lemmas_response(raw_response, body.words)
+    if parse_source == "local_fallback":
+        logger.warning(
+            "[DEBUG] llm.extract_lemmas_local_fallback user_id=%s words=%s raw=%s",
+            current_user.id,
+            body.words,
+            raw_response[:300],
+        )
+    elif parse_source != "strip_json_fences":
+        logger.warning(
+            "[DEBUG] llm.extract_lemmas_recovered user_id=%s source=%s words=%s",
+            current_user.id,
+            parse_source,
+            body.words,
+        )
 
     total_tokens = usage.prompt_tokens + usage.completion_tokens
     charge_cents = llm_root.calculate_llm_charge_by_tokens(
