@@ -5166,21 +5166,35 @@
 
 .rc-roundtable--empty p { font-size: 0.8rem; color: var(--muted-foreground); text-align: center; }
 
+.rc-roundtable__empty-avatar {
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  object-fit: cover;
+  opacity: 0.4;
+  border: 2px solid var(--border);
+}
+
 .rc-row { display: flex; align-items: flex-end; gap: 0.5rem; }
 .rc-row--right { flex-direction: row-reverse; }
 
 .rc-avatar {
   position: relative;
   flex-shrink: 0;
-  width: 1.875rem;
-  height: 1.875rem;
+  width: 2.5rem;
+  height: 2.5rem;
   border-radius: 50%;
   background: var(--muted);
-  border: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--muted-foreground);
+  border: 2px solid transparent;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.rc-avatar__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
 }
 
 .rc-avatar__dot {

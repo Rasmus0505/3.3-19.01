@@ -87,9 +87,16 @@ async def synthesize_text(
             language_type=request.language_type or "Auto",
         )
 
+        # Prefer audio_data (base64) over audio_url for browser autoplay compatibility.
+        # DashScope CDN URLs can be blocked by browser autoplay policy; base64 data URIs are not.
+        audio_url = result.audio_url
+        if result.audio_data and not audio_url:
+            # audio_data is raw base64; wrap as data URI so frontend can use it directly
+            audio_url = f"data:audio/mpeg;base64,{result.audio_data}"
+
         return TTSResponse(
             ok=True,
-            audio_url=result.audio_url,
+            audio_url=audio_url,
             model=result.model,
             voice=result.voice,
             characters=result.characters,

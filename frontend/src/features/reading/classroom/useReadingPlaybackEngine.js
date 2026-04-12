@@ -10,7 +10,7 @@ import {
 // Estimate reading duration when TTS is unavailable
 function estimateSpeechDurationMs(text) {
   const words = String(text || "").trim().split(/\s+/).filter(Boolean).length;
-  return Math.max(1200, Math.min(6000, words * 340));
+  return Math.max(2000, Math.min(7000, words * 380));
 }
 
 // Valid CosyVoice v1 system preset voices on DashScope
@@ -24,11 +24,15 @@ function getVoiceForRole(role) {
   return ROLE_VOICES[String(role || "").toLowerCase()] || ROLE_VOICES.teacher;
 }
 
-// Scenes that require user interaction — do NOT auto-advance past them
+// Scenes that require user interaction — pause before them, don't auto-advance
 const INTERACTIVE_SCENE_TYPES = new Set(["checkpoint", "output"]);
 
 export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback }) {
   const [state, dispatch] = useReducer(readingPlaybackReducer, course, createReadingPlaybackState);
+
+  // processingRef prevents re-entrant action execution.
+  // The useEffect that drives playback must not fire again until the current action settles.
+  const processingRef = useRef(false);
   const timerRef = useRef(null);
   const audioRef = useRef(null);
   const persistedRef = useRef("");
@@ -36,6 +40,7 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
 
   // Reload state when the course changes identity (new article generated)
   useEffect(() => {
+    processingRef.current = false;
     dispatch({ type: READING_PLAYBACK_EVENTS.LOAD_COURSE, course });
   }, [courseIdentity]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -50,11 +55,9 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      processingRef.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     };
   }, []);
 
@@ -65,82 +68,87 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
     [activeScene],
   );
 
-  // Core playback loop — runs whenever mode=playing or a prior action settles
+  // Core playback loop.
+  // Triggered only by ACTION_SETTLED (sequence bump) and mode changes — NOT by cursor changes.
+  // processingRef.current guards against re-entrant execution.
   useEffect(() => {
-    if (!activeScene || state.mode !== "playing") return;
+    if (state.mode !== "playing") {
+      processingRef.current = false;
+      return;
+    }
+    if (!activeScene) return;
+    if (processingRef.current) return; // already handling an action
 
     const cursor = Number(state.actionCursorByScene?.[activeScene.id]) || 0;
     const nextAction = sceneActions[cursor];
 
-    // ── All actions in this scene are done ───────────────────────────────────
+    // ── All actions in this scene done → auto-advance ───────────────────────
     if (!nextAction) {
+      processingRef.current = true;
       const nextSceneIndex = state.activeSceneIndex + 1;
-      if (nextSceneIndex >= scenes.length) return; // course complete
-
-      const nextScene = scenes[nextSceneIndex];
-      if (INTERACTIVE_SCENE_TYPES.has(nextScene?.type)) {
-        // Interactive scene: advance but pause so user can complete task
-        timerRef.current = setTimeout(() => {
-          dispatch({
-            type: READING_PLAYBACK_EVENTS.GO_TO_SCENE,
-            index: nextSceneIndex,
-            sceneId: nextScene.id,
-            mode: "paused",
-          });
-        }, 800);
-      } else {
-        // Non-interactive: auto-advance and keep playing after 1.5s pause
-        timerRef.current = setTimeout(() => {
-          dispatch({
-            type: READING_PLAYBACK_EVENTS.GO_TO_SCENE,
-            index: nextSceneIndex,
-            sceneId: nextScene.id,
-            mode: "playing",
-          });
-        }, 1500);
+      if (nextSceneIndex >= scenes.length) {
+        processingRef.current = false;
+        return; // course complete
       }
+      const nextScene = scenes[nextSceneIndex];
+      const delay = INTERACTIVE_SCENE_TYPES.has(nextScene?.type) ? 800 : 1500;
+      const nextMode = INTERACTIVE_SCENE_TYPES.has(nextScene?.type) ? "paused" : "playing";
+      timerRef.current = setTimeout(() => {
+        processingRef.current = false;
+        dispatch({
+          type: READING_PLAYBACK_EVENTS.GO_TO_SCENE,
+          index: nextSceneIndex,
+          sceneId: nextScene.id,
+          mode: nextMode,
+        });
+      }, delay);
       return;
     }
 
-    // Advance cursor immediately so the action becomes visible
+    // ── Mark as processing and advance cursor ───────────────────────────────
+    processingRef.current = true;
     dispatch({
       type: READING_PLAYBACK_EVENTS.REVEAL_NEXT_ACTION,
       sceneId: activeScene.id,
       totalActions: sceneActions.length,
     });
 
-    // discussion action → enter live mode and wait for user
+    // settle: called when an action finishes to allow the next to run
+    const settle = () => {
+      processingRef.current = false;
+      dispatch({ type: READING_PLAYBACK_EVENTS.ACTION_SETTLED });
+    };
+
+    // discussion → enter live mode
     if (nextAction.type === READING_ACTION_TYPES.DISCUSSION) {
       dispatch({ type: READING_PLAYBACK_EVENTS.ENTER_LIVE, sceneId: activeScene.id });
+      processingRef.current = false;
       dispatch({ type: READING_PLAYBACK_EVENTS.ACTION_SETTLED });
       return;
     }
 
-    // quiz / output action → pause so user can complete the task
-    if (
-      nextAction.type === READING_ACTION_TYPES.QUIZ ||
-      nextAction.type === READING_ACTION_TYPES.OUTPUT
-    ) {
+    // quiz / output → pause for user
+    if (nextAction.type === READING_ACTION_TYPES.QUIZ || nextAction.type === READING_ACTION_TYPES.OUTPUT) {
       dispatch({ type: READING_PLAYBACK_EVENTS.PAUSE });
+      processingRef.current = false;
       dispatch({ type: READING_PLAYBACK_EVENTS.ACTION_SETTLED });
       return;
     }
 
-    // spotlight action → fire-and-forget, short pause then continue
+    // spotlight → fire-and-forget
     if (nextAction.type === READING_ACTION_TYPES.SPOTLIGHT) {
-      timerRef.current = setTimeout(() => {
-        dispatch({ type: READING_PLAYBACK_EVENTS.ACTION_SETTLED });
-      }, 600);
+      timerRef.current = setTimeout(settle, 600);
       return;
     }
 
-    // speech action → TTS (Alibaba Cloud) or timer fallback
+    // speech → TTS then settle
     if (nextAction.type === READING_ACTION_TYPES.SPEECH && nextAction.text) {
       dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: nextAction.id });
 
-      const settle = () => {
+      const onSpeechEnd = () => {
+        audioRef.current = null;
         dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: null });
-        dispatch({ type: READING_PLAYBACK_EVENTS.ACTION_SETTLED });
+        settle();
       };
 
       if (apiCall && state.ttsEnabled) {
@@ -151,67 +159,85 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
           body: JSON.stringify({
             text: nextAction.text,
             voice,
-            model: "cosyvoice-v1",   // standard preset model, not the vc clone model
+            model: "cosyvoice-v1",
             language_type: "English",
           }),
         })
           .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`TTS HTTP ${res.status}`))))
           .then((data) => {
-            if (!data?.audio_url) throw new Error("no audio_url in response");
-            const audio = new Audio(data.audio_url);
+            const src = data?.audio_url;
+            if (!src) throw new Error("no audio_url");
+            const audio = new Audio(src);
             audioRef.current = audio;
-            audio.onended = () => { audioRef.current = null; settle(); };
-            audio.onerror = () => { audioRef.current = null; settle(); };
-            audio.play().catch((err) => {
-              console.warn("[TTS] audio.play() failed:", err?.message);
+            audio.onended = onSpeechEnd;
+            audio.onerror = (e) => {
+              console.warn("[TTS] audio error, falling back to timer:", e?.type);
               audioRef.current = null;
+              dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: null });
               settle();
-            });
+            };
+            // play() returns a promise; autoplay may be blocked on first page load
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+              playPromise.catch((err) => {
+                console.warn("[TTS] autoplay blocked, using timer fallback:", err?.message);
+                audioRef.current = null;
+                dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: null });
+                timerRef.current = setTimeout(settle, estimateSpeechDurationMs(nextAction.text));
+              });
+            }
           })
           .catch((err) => {
-            console.warn("[TTS] 合成失败，降级为计时器:", err?.message);
+            console.warn("[TTS] synthesis failed, using timer:", err?.message);
+            dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: null });
             timerRef.current = setTimeout(settle, estimateSpeechDurationMs(nextAction.text));
           });
         return;
       }
 
-      // TTS disabled or no apiCall — use timing fallback
-      timerRef.current = setTimeout(settle, estimateSpeechDurationMs(nextAction.text));
+      // TTS disabled — timer fallback
+      timerRef.current = setTimeout(() => {
+        dispatch({ type: READING_PLAYBACK_EVENTS.SET_ACTIVE_SPEECH, actionId: null });
+        settle();
+      }, estimateSpeechDurationMs(nextAction.text));
       return;
     }
 
-    // Unknown action type — short delay and continue
-    timerRef.current = setTimeout(() => {
-      dispatch({ type: READING_PLAYBACK_EVENTS.ACTION_SETTLED });
-    }, 400);
+    // Unknown action type
+    timerRef.current = setTimeout(settle, 400);
   }, [
+    // Only re-run on mode changes and explicit ACTION_SETTLED ticks (sequence).
+    // Deliberately NOT including state.actionCursorByScene to prevent re-entrant loops.
+    state.mode,
+    state.sequence,
+    state.activeSceneIndex,
+    state.ttsEnabled,
     activeScene,
     sceneActions,
     scenes,
-    state.actionCursorByScene,
-    state.activeSceneIndex,
-    state.mode,
-    state.sequence,
-    state.ttsEnabled,
     apiCall,
   ]);
 
   const engineActions = {
     start() {
+      processingRef.current = false;
       dispatch({ type: READING_PLAYBACK_EVENTS.START });
     },
     pause() {
+      processingRef.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       dispatch({ type: READING_PLAYBACK_EVENTS.PAUSE });
     },
     resume() {
+      processingRef.current = false;
       dispatch({ type: READING_PLAYBACK_EVENTS.RESUME });
     },
     setMode(mode) {
       dispatch({ type: READING_PLAYBACK_EVENTS.SET_MODE, mode });
     },
     goToScene(index, sceneId) {
+      processingRef.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       dispatch({ type: READING_PLAYBACK_EVENTS.GO_TO_SCENE, index, sceneId, mode: "paused" });
@@ -221,6 +247,7 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
       dispatch({ type: READING_PLAYBACK_EVENTS.ENTER_LIVE, sceneId });
     },
     exitLive(nextMode = "playing") {
+      processingRef.current = false;
       dispatch({ type: READING_PLAYBACK_EVENTS.EXIT_LIVE, nextMode });
     },
     toggleTTS(enabled) {
@@ -228,10 +255,5 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
     },
   };
 
-  return {
-    playbackState: state,
-    activeScene,
-    sceneActions,
-    actions: engineActions,
-  };
+  return { playbackState: state, activeScene, sceneActions, actions: engineActions };
 }
