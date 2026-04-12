@@ -795,6 +795,7 @@ class ExplainGenerateRequest(BaseModel):
     section_id: str = Field(..., min_length=1)
     section_text: str = Field(..., min_length=10, max_length=3000)
     confused_words: list[str] = Field(default_factory=list)
+    color_marks: list[dict] = Field(default_factory=list)  # [{text, color}]
     default_spotlight_words: list[str] = Field(default_factory=list)
     target_level: str = Field("B1", pattern="^(A1|A2|B1|B2|C1|C2)$")
     article_title: str = ""
@@ -810,6 +811,8 @@ _EXPLAIN_SYSTEM_PROMPT = """You are generating a short teaching script for a rea
 
 The teacher will walk the student through 2-3 key words or phrases from the section text.
 For each word, produce a spotlight action then a speech action then a pause action.
+
+If the user has highlighted text (color_marks provided), address EACH highlighted segment FIRST — before the default spotlight words. Include a spotlight action for the highlighted word/phrase and a speech action explaining why it matters in context.
 
 Return ONLY valid JSON:
 {
@@ -865,11 +868,17 @@ def generate_explain_actions(
         words = [w.strip(".,!?\"'()[]") for w in body.section_text.split() if len(w) > 6]
         candidates = list(dict.fromkeys(words))[:2]
 
+    color_marks_desc = ""
+    if body.color_marks:
+        marks_list = "; ".join(f'"{m.get("text","")}" ({m.get("color","")})' for m in body.color_marks[:6] if m.get("text"))
+        color_marks_desc = f"User-highlighted text (address these FIRST): {marks_list}\n"
+
     user_msg = (
         f"Article title: {body.article_title or 'Reading'}\n"
         f"Target level: {body.target_level}\n"
         f"Teacher name: {body.teacher_name}\n"
         f"Confused words (must teach first): {', '.join(confused) or 'none'}\n"
+        f"{color_marks_desc}"
         f"Default spotlight words: {', '.join(defaults) or 'none'}\n\n"
         f"Section text:\n{body.section_text[:2000]}"
     )
@@ -929,6 +938,132 @@ def generate_explain_actions(
             {"type": "pause", "duration_ms": 1500},
             {"type": "speech", "speaker": "teacher",
              "text": "Take a moment to re-read this section with these points in mind."},
+        ])
+
+
+# ─────────────────────────────────────────────────────────────
+# Discuss Actions — auto-generated AI discussion script
+# ─────────────────────────────────────────────────────────────
+
+class DiscussGenerateRequest(BaseModel):
+    section_id: str = Field(..., min_length=1)
+    section_text: str = Field(..., min_length=10, max_length=3000)
+    quiz_questions: list[dict] = Field(default_factory=list)
+    article_title: str = ""
+    teacher_name: str = "Coach Mira"
+    student_names: list[str] = Field(default_factory=list)
+    target_level: str = Field("B1", pattern="^(A1|A2|B1|B2|C1|C2)$")
+
+
+class DiscussGenerateResponse(BaseModel):
+    ok: bool
+    actions: list[dict]
+
+
+_DISCUSS_SYSTEM_PROMPT = """You are generating a short classroom discussion script for an English reading classroom.
+
+After the quiz, the teacher opens a discussion about the section content. A student responds and the teacher replies.
+This should feel like a natural, lively 2-3 turn conversation — not a lecture.
+
+Return ONLY valid JSON:
+{
+  "actions": [
+    {"type": "speech", "speaker": "teacher", "text": "Discussion opener (1-2 sentences, poses an interesting question or observation about the section)"},
+    {"type": "pause", "duration_ms": 800},
+    {"type": "speech", "speaker": "student", "text": "Student response (1-2 sentences, curious or analytical reaction)"},
+    {"type": "pause", "duration_ms": 600},
+    {"type": "speech", "speaker": "teacher", "text": "Teacher follow-up (1-2 sentences, deepens the point or adds nuance)"},
+    {"type": "pause", "duration_ms": 600},
+    {"type": "speech", "speaker": "student", "text": "Student follow-up (optional, 1 sentence)"},
+    {"type": "pause", "duration_ms": 600},
+    {"type": "speech", "speaker": "teacher", "text": "Closing remark inviting the user to join: 'What do you think?' or similar (1 sentence)"}
+  ]
+}
+
+Rules:
+- ONLY valid JSON. No markdown.
+- speaker must be exactly "teacher" or "student".
+- Content must reference THIS section text specifically — no generic responses.
+- Keep each speech under 40 words.
+- End with the teacher inviting the user to contribute.
+"""
+
+
+@router.post(
+    "/reading-course/generate-discuss",
+    response_model=DiscussGenerateResponse,
+    responses={502: {"model": ErrorResponse}},
+)
+def generate_discuss_actions(
+    body: DiscussGenerateRequest,
+    current_user: User = Depends(get_current_user),
+):
+    from app.infra.llm.deepseek import call_deepseek
+
+    api_key = _require_api_key()
+
+    student_name = body.student_names[0] if body.student_names else "Lily"
+    quiz_ctx = ""
+    if body.quiz_questions:
+        q = body.quiz_questions[0]
+        quiz_ctx = f"Quiz question for this section: {q.get('question', '')}\n"
+
+    user_msg = (
+        f"Article title: {body.article_title or 'Reading'}\n"
+        f"Target level: {body.target_level}\n"
+        f"Teacher name: {body.teacher_name}\n"
+        f"Student name: {student_name}\n"
+        f"{quiz_ctx}\n"
+        f"Section text:\n{body.section_text[:2000]}"
+    )
+
+    try:
+        raw, _ = call_deepseek(
+            [
+                {"role": "system", "content": _DISCUSS_SYSTEM_PROMPT},
+                {"role": "user", "content": user_msg},
+            ],
+            api_key,
+            enable_thinking=False,
+            temperature=0.6,
+            max_tokens=600,
+        )
+        recovered = recover_json_payload(raw) or strip_json_fences(raw)
+        parsed = json.loads(recovered)
+        actions = _safe_list(_safe_dict(parsed).get("actions"))
+
+        clean_actions: list[dict] = []
+        for a in actions[:12]:
+            item = _safe_dict(a)
+            action_type = _trim(item.get("type"), 20)
+            if action_type == "speech":
+                text = _trim(item.get("text"), 300)
+                if text:
+                    clean_actions.append({
+                        "type": "speech",
+                        "speaker": _trim(item.get("speaker") or "teacher", 30),
+                        "text": text,
+                    })
+            elif action_type == "pause":
+                duration = max(400, min(2000, int(item.get("duration_ms") or 600)))
+                clean_actions.append({"type": "pause", "duration_ms": duration})
+
+        if not clean_actions:
+            raise ValueError("empty actions")
+
+        return DiscussGenerateResponse(ok=True, actions=clean_actions)
+
+    except Exception as exc:
+        logger.warning("generate_discuss_actions failed: %s", exc)
+        return DiscussGenerateResponse(ok=True, actions=[
+            {"type": "speech", "speaker": "teacher",
+             "text": "What did you find most interesting about this section? Feel free to share your thoughts."},
+            {"type": "pause", "duration_ms": 800},
+            {"type": "speech", "speaker": "student",
+             "text": "I think the main point here connects to what we read earlier."},
+            {"type": "pause", "duration_ms": 600},
+            {"type": "speech", "speaker": "teacher",
+             "text": "Exactly. What do you think about it?"},
         ])
 
 

@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 // Volume controls moved to PlaybackToolbar
 import { Button } from "../../../shared/ui";
 import { cn } from "../../../lib/utils";
@@ -21,6 +21,7 @@ import { PlaybackToolbar } from "./PlaybackToolbar";
 import { Roundtable } from "./Roundtable";
 import { ReadingSection } from "./sections/ReadingSection";
 import { ExplainSection } from "./sections/ExplainSection";
+import { DiscussSection } from "./sections/DiscussSection";
 
 const PLAYBACK_SPEEDS = [1, 1.25, 1.5, 2];
 
@@ -136,46 +137,6 @@ function QuizSection({ section, onComplete, onSkip }) {
   );
 }
 
-// ── DiscussSection (inline for Phase 1 scope) ─────────────────────────────────
-
-// DiscussSection renders only the compose bar — messages go into shared Roundtable via onMessage
-function DiscussSection({ section, course, apiCall, onMessage, onComplete, onSkip, loading: parentLoading }) {
-  const [draft, setDraft] = useState("");
-
-  const send = () => onMessage?.(draft);
-
-  return (
-    <div className="v3-discuss-compose-only">
-      <p className="v3-discuss__hint">有问题尽管问，或者跳过继续下一节</p>
-      <div className="v3-discuss__compose">
-        <textarea
-          className="v3-discuss__input"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="问老师任何问题… (Ctrl+Enter 发送)"
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-              e.preventDefault();
-              if (draft.trim() && !parentLoading) { send(); setDraft(""); }
-            }
-          }}
-        />
-        <div className="v3-discuss__actions">
-          <Button
-            size="sm"
-            onClick={() => { send(); setDraft(""); }}
-            disabled={!draft.trim() || parentLoading}
-          >
-            {parentLoading ? "回复中…" : "发送"}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onSkip}>跳过，下一节</Button>
-          <Button size="sm" variant="outline" onClick={onComplete}>结束，下一节</Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── Main V3Classroom ──────────────────────────────────────────────────────────
 
 export function V3Classroom({ articleId, course, apiCall, onExit }) {
@@ -192,10 +153,12 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
   const [speed, setSpeed] = useState(1);
   const [isPaused, setIsPaused] = useState(false);
   const [confusedWords, setConfusedWords] = useState([]);
+  const [colorMarks, setColorMarks] = useState([]);
   const [roundtableMessages, setRoundtableMessages] = useState([]);
   const [activeSpeechId, setActiveSpeechId] = useState(null);
   const courseRef = useRef(course);
-  const explainRef = useRef(null); // ref to ExplainSection imperative handle
+  const explainRef = useRef(null);
+  const discussRef = useRef(null);
 
   const sections = course.sections || [];
   const activeSection = sections[runtime.activeSectionIndex] || null;
@@ -246,14 +209,15 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
   }, [runtime, sections.length, activeSection, persistRuntime]);
 
   const handlePlayPause = useCallback(() => {
+    const activeRef = runtime.activePhase === "discuss" ? discussRef : explainRef;
     if (isPaused) {
-      explainRef.current?.resume();
+      activeRef.current?.resume();
       setIsPaused(false);
     } else {
-      explainRef.current?.pause();
+      activeRef.current?.pause();
       setIsPaused(true);
     }
-  }, [isPaused]);
+  }, [isPaused, runtime.activePhase]);
 
   const handleCycleSpeed = useCallback(() => {
     setSpeed((cur) => {
@@ -280,6 +244,14 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
     setConfusedWords((prev) => {
       if (prev.includes(word)) return prev;
       return [...prev, word];
+    });
+  }, []);
+
+  const handleColorMark = useCallback((text, color) => {
+    setColorMarks((prev) => {
+      // Remove existing mark for same text if any, then add new
+      const filtered = prev.filter((m) => m.text !== text);
+      return [...filtered, { text, color }];
     });
   }, []);
 
@@ -413,10 +385,12 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
                   section={activeSection}
                   rewriteMappings={course.rewrite_mappings}
                   confusedWords={confusedWords}
+                  colorMarks={colorMarks}
                   spotlitWord={null}
                   onWordClick={() => {}}
                   onMarkConfused={handleMarkConfused}
                   onAddToWordbook={handleAddToWordbook}
+                  onColorMark={handleColorMark}
                   apiCall={apiCall}
                   targetLevel={course.target_level}
                 />
@@ -428,6 +402,7 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
                   section={activeSection}
                   course={course}
                   confusedWords={confusedWords}
+                  colorMarks={colorMarks}
                   apiCall={apiCall}
                   ttsEnabled={ttsEnabled}
                   speed={speed}
@@ -448,13 +423,18 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
 
               {runtime.activePhase === "discuss" && activeSection && (
                 <DiscussSection
+                  ref={discussRef}
                   section={activeSection}
                   course={course}
                   apiCall={apiCall}
+                  ttsEnabled={ttsEnabled}
+                  speed={speed}
+                  onSpeechLine={handleSpeechLine}
+                  onSpeechEnd={handleSpeechEnd}
+                  onPauseChange={setIsPaused}
                   onMessage={handleDiscussMessage}
                   loading={discussLoading}
                   onComplete={advancePhase}
-                  onSkip={advancePhase}
                 />
               )}
             </motion.div>
@@ -462,24 +442,42 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
         </AnimatePresence>
       </div>
 
-      {/* Phase action buttons — above the bottom bar, always visible */}
-      {!isComplete && (runtime.activePhase === "read" || runtime.activePhase === "explain") && (
+      {/* Phase action buttons — read phase only */}
+      {!isComplete && runtime.activePhase === "read" && (
         <div className="v3-phase-actions">
-          {runtime.activePhase === "read" && (
-            <Button onClick={advancePhase} className="v3-phase-actions__primary">
-              开始讲解 →
-            </Button>
-          )}
-          {runtime.activePhase === "explain" && (
-            <>
-              <Button variant="outline" size="sm" onClick={advancePhase}>
-                跳过讲解
-              </Button>
-              <Button size="sm" onClick={advancePhase} className="v3-phase-actions__primary">
-                进入做题 →
-              </Button>
-            </>
-          )}
+          <Button onClick={advancePhase} className="v3-phase-actions__primary">
+            开始讲解 →
+          </Button>
+        </div>
+      )}
+
+      {/* Bottom nav — always visible except complete screen */}
+      {!isComplete && (
+        <div className="v3-nav">
+          <button
+            type="button"
+            className="v3-nav__btn"
+            disabled={runtime.activeSectionIndex === 0}
+            onClick={() => {
+              if (runtime.activeSectionIndex > 0) {
+                persistRuntime({ ...runtime, activeSectionIndex: runtime.activeSectionIndex - 1, activePhase: "read" });
+              }
+            }}
+          >
+            <ChevronLeft className="size-4" />
+            <span>上一节</span>
+          </button>
+          <span className="v3-nav__label">
+            第 {runtime.activeSectionIndex + 1} 节 / 共 {sections.length} 节
+          </span>
+          <button
+            type="button"
+            className="v3-nav__btn"
+            onClick={advancePhase}
+          >
+            <span>下一节</span>
+            <ChevronRight className="size-4" />
+          </button>
         </div>
       )}
 
@@ -492,7 +490,7 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
         {/* Playback control toolbar — only shown during explain/discuss */}
         {rtState !== "mini" && !isComplete && (
           <PlaybackToolbar
-            isPlaying={runtime.activePhase === "explain"}
+            isPlaying={runtime.activePhase === "explain" || runtime.activePhase === "discuss"}
             isPaused={isPaused}
             speed={speed}
             ttsEnabled={ttsEnabled}

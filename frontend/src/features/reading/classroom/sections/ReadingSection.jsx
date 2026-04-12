@@ -35,24 +35,25 @@ function buildMappingLookup(rewriteMappings) {
   return map;
 }
 
-// Tokenize text into word/punctuation/space tokens preserving positions
+// Tokenize text into word/punctuation/space tokens, each with its character offset
 function tokenize(text) {
   const tokens = [];
   const regex = /([a-zA-Z''-]+|[^a-zA-Z''-]+)/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
-    tokens.push({ text: match[0], isWord: /[a-zA-Z]/.test(match[0]) });
+    tokens.push({ text: match[0], isWord: /[a-zA-Z]/.test(match[0]), offset: match.index });
   }
   return tokens;
 }
 
 // Single word token — handles highlight state, hover tooltip, click
-function WordToken({ text, isHighlighted, isConfused, originalInfo, onClick, onMouseEnter, onMouseLeave, isSpotlit }) {
+function WordToken({ text, isHighlighted, isConfused, originalInfo, onClick, onMouseEnter, onMouseLeave, isSpotlit, markColor }) {
   const classes = cn(
     "rc-word",
     isHighlighted && "rc-word--rewritten",
     isConfused && "rc-word--confused",
     isSpotlit && "rc-word--spotlit",
+    markColor && `rc-mark rc-mark--${markColor}`,
   );
 
   if (!isHighlighted) {
@@ -103,14 +104,33 @@ function RewriteTooltip({ data }) {
   );
 }
 
+// Build a set of character ranges for each colorMark in the full text
+function buildColorRanges(text, colorMarks) {
+  if (!Array.isArray(colorMarks) || colorMarks.length === 0) return [];
+  const ranges = [];
+  for (const mark of colorMarks) {
+    if (!mark?.text) continue;
+    let start = 0;
+    while (true) {
+      const idx = text.indexOf(mark.text, start);
+      if (idx === -1) break;
+      ranges.push({ start: idx, end: idx + mark.text.length, color: mark.color });
+      start = idx + mark.text.length;
+    }
+  }
+  return ranges;
+}
+
 export function ReadingSection({
   section,
   rewriteMappings = [],
   confusedWords = [],
+  colorMarks = [],
   spotlitWord = null,
   onWordClick,
   onMarkConfused,
   onAddToWordbook,
+  onColorMark,
   apiCall,
   targetLevel,
 }) {
@@ -124,6 +144,7 @@ export function ReadingSection({
   const confusedSet = new Set((confusedWords || []).map((w) => w.toLowerCase()));
   const text = section?.rewritten_text || "";
   const tokens = tokenize(text);
+  const colorRanges = buildColorRanges(text, colorMarks);
 
   const handleWordClick = useCallback((word) => {
     setSelectedWord(word);
@@ -172,13 +193,16 @@ export function ReadingSection({
       <div className="rc-reading-section__text">
         {tokens.map((token, i) => {
           if (!token.isWord) {
-            return <span key={i}>{token.text}</span>;
+            // check color mark for non-word tokens too
+            const markColor = colorRanges.find((r) => token.offset >= r.start && token.offset < r.end)?.color;
+            return <span key={i} className={markColor ? `rc-mark rc-mark--${markColor}` : undefined}>{token.text}</span>;
           }
           const lower = token.text.toLowerCase();
           const originalInfo = mappingLookup.get(lower);
           const isHighlighted = Boolean(originalInfo);
           const isConfused = confusedSet.has(lower);
           const isSpotlit = spotlitWord && lower === spotlitWord.toLowerCase();
+          const markColor = colorRanges.find((r) => token.offset >= r.start && token.offset < r.end)?.color;
 
           return (
             <WordToken
@@ -188,6 +212,7 @@ export function ReadingSection({
               isConfused={isConfused}
               originalInfo={originalInfo}
               isSpotlit={isSpotlit}
+              markColor={markColor}
               onClick={handleWordClick}
               onMouseEnter={isHighlighted ? setHoveredRewrite : () => {}}
               onMouseLeave={() => setHoveredRewrite(null)}
@@ -233,6 +258,11 @@ export function ReadingSection({
           <SelectionToolbar
             text={selectionToolbar.text}
             rect={selectionToolbar.rect}
+            onColorMark={(text, color) => {
+              onColorMark?.(text, color);
+              setSelectionToolbar(null);
+              window.getSelection()?.removeAllRanges();
+            }}
             onMarkConfused={() => {
               onMarkConfused?.(selectionToolbar.text);
               setSelectionToolbar(null);
