@@ -150,6 +150,166 @@ function SpotlightPanel({ action, supportOpen, onToggleSupport }) {
   );
 }
 
+// ─── SceneCanvas — always-visible content based on scene type ────────────────
+// Renders immediately when scene loads, no need to wait for spotlight actions.
+
+function SceneCanvas({ scene, supportOpen, onToggleSupport }) {
+  const type = scene?.type;
+  const beats = scene?.beats || [];
+
+  // entry / wrap_up → objectives / takeaways slide
+  if (type === "entry" || type === "wrap_up") {
+    const heroBeat = beats.find((b) => b.type === "hero");
+    const bulletBeat = beats.find((b) => b.type === "bullet_list");
+    const teacherBeat = beats.find((b) => b.type === "teacher_talk");
+    return (
+      <div className="sc-slide">
+        <div className="sc-slide__kicker">{type === "entry" ? "进入课堂" : "课堂收束"}</div>
+        <h2 className="sc-slide__title">{heroBeat?.title || scene.title}</h2>
+        {(heroBeat?.text || teacherBeat?.text) && (
+          <p className="sc-slide__subtitle">{heroBeat?.text || teacherBeat?.text}</p>
+        )}
+        {bulletBeat?.items?.length > 0 && (
+          <ul className="sc-slide__bullets">
+            {bulletBeat.items.map((item) => (
+              <li key={item} className="sc-slide__bullet">
+                <CheckCircle2 className="size-4 shrink-0 text-primary" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
+  // preview → keyword grid
+  if (type === "preview") {
+    const kwBeat = beats.find((b) => b.type === "keyword_grid");
+    const teacherBeat = beats.find((b) => b.type === "teacher_talk");
+    return (
+      <div className="sc-slide">
+        <div className="sc-slide__kicker">本课关键词</div>
+        {teacherBeat?.text && <p className="sc-slide__subtitle sc-slide__subtitle--sm">{teacherBeat.text}</p>}
+        {kwBeat?.keywords?.length > 0 && (
+          <div className="sc-kw-grid">
+            {kwBeat.keywords.map((kw) => (
+              <article key={kw.word} className="sc-kw-card">
+                <strong>{kw.word}</strong>
+                {kw.reason && <p>{kw.reason}</p>}
+                {kw.tip && <span>{kw.tip}</span>}
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // guided_reading → reading segments
+  if (type === "guided_reading") {
+    const segBeats = beats.filter((b) => b.type === "reading_segment");
+    if (segBeats.length > 0) {
+      return (
+        <div className="sc-reading">
+          {segBeats.map((beat) => {
+            const seg = beat.segment || {};
+            const key = beat.id;
+            const isOpen = Boolean(supportOpen?.[key]);
+            return (
+              <div key={key} className="sc-reading__segment">
+                <div className="sc-reading__head">
+                  <Badge variant="outline">{seg.heading || beat.title || "Part"}</Badge>
+                  {seg.focus && <span className="sc-reading__focus">{seg.focus}</span>}
+                </div>
+                <div className="sc-reading__text sc-reading__text--primary">
+                  <span className="sc-reading__label">i+1 版本</span>
+                  <p>{seg.rewritten_text}</p>
+                </div>
+                {seg.original_text && (
+                  <>
+                    <button type="button" className="rc-canvas__support-toggle" onClick={() => onToggleSupport(key)}>
+                      {isOpen ? "收起原文" : "查看原文"}
+                    </button>
+                    <AnimatePresence>
+                      {isOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="sc-reading__text"
+                        >
+                          <span className="sc-reading__label">原文</span>
+                          <p>{seg.original_text}</p>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </>
+                )}
+                {seg.question && <p className="sc-reading__question">{seg.question}</p>}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+  }
+
+  // deep_explain → explanation grid
+  if (type === "deep_explain") {
+    const exBeat = beats.find((b) => b.type === "explanation_grid");
+    return (
+      <div className="sc-slide">
+        <div className="sc-slide__kicker">难点拆解</div>
+        {exBeat?.points?.length > 0 && (
+          <div className="sc-ex-grid">
+            {exBeat.points.map((pt) => (
+              <article key={pt.label} className="sc-ex-card">
+                <strong>{pt.label}</strong>
+                <p>{pt.explanation}</p>
+                {pt.example && <span>{pt.example}</span>}
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // discussion → show the conversation beats as a preview
+  if (type === "discussion") {
+    const convBeat = beats.find((b) => b.type === "conversation");
+    const teacherBeat = beats.find((b) => b.type === "teacher_talk");
+    return (
+      <div className="sc-slide">
+        <div className="sc-slide__kicker">课堂讨论</div>
+        {teacherBeat?.text && <p className="sc-slide__subtitle">{teacherBeat.text}</p>}
+        {convBeat?.messages?.length > 0 && (
+          <div className="sc-conv">
+            {convBeat.messages.slice(0, 3).map((msg, i) => (
+              <div key={i} className={`sc-conv__line sc-conv__line--${msg.speaker || "teacher"}`}>
+                <span className="sc-conv__speaker">{msg.speaker || "Teacher"}</span>
+                <span className="sc-conv__text">{msg.text || msg.content}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Fallback: generic slide from first teacher_talk or hero beat
+  const fallbackBeat = beats.find((b) => b.type === "hero" || b.type === "teacher_talk");
+  return (
+    <div className="sc-slide">
+      <div className="sc-slide__kicker">{scene.goal || scene.title}</div>
+      {fallbackBeat?.title && <h2 className="sc-slide__title">{fallbackBeat.title}</h2>}
+      {fallbackBeat?.text && <p className="sc-slide__subtitle">{fallbackBeat.text}</p>}
+    </div>
+  );
+}
+
 // ─── Quiz panel ──────────────────────────────────────────────────────────────
 
 function QuizPanel({ scene, quizState, onSetAnswer, onSubmit }) {
@@ -615,10 +775,12 @@ export function ReadingClassroom({ articleId, course, sourceTexts, apiCall, onEx
   if (!derived || !activeScene) return null;
 
   // ── Canvas content decision ───────────────────────────────────────────────
+  // Always show scene-appropriate content from the moment the scene loads.
+  // Don't wait for spotlight actions — the canvas should never be empty.
 
   let canvasContent;
 
-  if (derived.taskAction?.type === "quiz" && derived.allActionsRevealed) {
+  if (activeScene.type === "checkpoint") {
     canvasContent = (
       <QuizPanel
         scene={activeScene}
@@ -627,7 +789,7 @@ export function ReadingClassroom({ articleId, course, sourceTexts, apiCall, onEx
         onSubmit={submitQuiz}
       />
     );
-  } else if (derived.taskAction?.type === "output" && derived.allActionsRevealed) {
+  } else if (activeScene.type === "output") {
     canvasContent = (
       <OutputPanel
         scene={activeScene}
@@ -637,9 +799,11 @@ export function ReadingClassroom({ articleId, course, sourceTexts, apiCall, onEx
       />
     );
   } else {
+    // For all other scene types, render content derived from the scene beats directly.
+    // This replaces the empty spotlight placeholder with real content immediately.
     canvasContent = (
-      <SpotlightPanel
-        action={derived.spotlightAction}
+      <SceneCanvas
+        scene={activeScene}
         supportOpen={supportOpen}
         onToggleSupport={(key) =>
           setSupportOpen((prev) => ({ ...prev, [key]: !prev[key] }))
@@ -773,7 +937,7 @@ export function ReadingClassroom({ articleId, course, sourceTexts, apiCall, onEx
             </AnimatePresence>
           </div>
 
-          {/* Roundtable */}
+          {/* Roundtable — fixed 192px bottom stage bar */}
           <div className="rc-roundtable-wrap">
             <Roundtable
               messages={derived.roundtableMessages}

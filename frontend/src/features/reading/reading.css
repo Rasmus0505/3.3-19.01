@@ -5650,3 +5650,226 @@
   letter-spacing: 0.05em;
   font-weight: 600;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SceneCanvas — always-visible scene content  (sc-*)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Slide layout (entry, preview, wrap_up, deep_explain, discussion) */
+.sc-slide {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.875rem;
+  padding: 1.5rem 2rem;
+}
+
+.sc-slide__kicker {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--primary);
+}
+
+.sc-slide__title {
+  font-size: 1.4rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: var(--foreground);
+}
+
+.sc-slide__subtitle {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+  max-width: 640px;
+}
+
+.sc-slide__subtitle--sm {
+  font-size: 0.8rem;
+}
+
+.sc-slide__bullets {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sc-slide__bullet {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--foreground);
+}
+
+/* Keyword grid */
+.sc-kw-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.5rem;
+}
+
+.sc-kw-card {
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.625rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sc-kw-card strong {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.sc-kw-card p {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  line-height: 1.4;
+}
+
+.sc-kw-card span {
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+/* Explanation grid */
+.sc-ex-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.5rem;
+}
+
+.sc-ex-card {
+  padding: 0.75rem;
+  border-radius: 0.625rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.sc-ex-card strong {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.sc-ex-card p {
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.sc-ex-card span {
+  font-size: 0.72rem;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+/* Reading segment */
+.sc-reading {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  overflow-y: auto;
+}
+
+.sc-reading__segment {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.sc-reading__head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.sc-reading__focus {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+.sc-reading__text {
+  border-radius: 0.5rem;
+  background: var(--muted);
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.sc-reading__text--primary {
+  background: oklch(from var(--primary) l c h / 0.06);
+}
+
+.sc-reading__label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+}
+
+.sc-reading__text p {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--foreground);
+}
+
+.sc-reading__question {
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-left: 3px solid var(--primary);
+  padding-left: 0.625rem;
+  color: var(--foreground);
+}
+
+/* Discussion preview */
+.sc-conv {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 600px;
+}
+
+.sc-conv__line {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.sc-conv__speaker {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: capitalize;
+  color: var(--primary);
+  padding-top: 0.1rem;
+  min-width: 60px;
+}
+
+.sc-conv__text {
+  font-size: 0.83rem;
+  line-height: 1.5;
+  color: var(--foreground);
+}
