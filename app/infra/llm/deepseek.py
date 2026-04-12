@@ -37,7 +37,7 @@ class LLMTokenUsage:
 
 
 def _client(api_key: str) -> OpenAI:
-    return OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL, max_retries=0)
+    return OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL, max_retries=2, timeout=DEEPSEEK_TIMEOUT_SECONDS)
 
 
 def _extract_usage(completion: object) -> LLMTokenUsage:

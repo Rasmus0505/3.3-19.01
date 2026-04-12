@@ -676,7 +676,21 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
           pushDebugEvent("lemma_batch_request", {
             batch: sanitizeBatchDebug(batch, batchIndex),
           });
-          const batchResult = await extractLemmas(batch.context, batch.words, accessToken);
+          let batchResult = null;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              batchResult = await extractLemmas(batch.context, batch.words, accessToken);
+              break;
+            } catch (batchErr) {
+              pushDebugEvent("lemma_batch_retry", {
+                batchIndex,
+                attempt: attempt + 1,
+                error: batchErr?.message || String(batchErr),
+              }, "warn");
+              if (attempt >= 2) throw batchErr;
+              await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+            }
+          }
           pushDebugEvent("lemma_batch_response", {
             batchIndex,
             traceId: batchResult.traceId || null,
@@ -767,14 +781,28 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
               batch: sanitizeBatchDebug(batch, batchIndex),
               wordLevels: batchWordLevels,
             });
-            const simplifyResult = await simplifyWords(
-              batch.context,
-              batch.words,
-              targetLevel,
-              accessToken,
-              false,
-              batchWordLevels,
-            );
+            let simplifyResult = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                simplifyResult = await simplifyWords(
+                  batch.context,
+                  batch.words,
+                  targetLevel,
+                  accessToken,
+                  false,
+                  batchWordLevels,
+                );
+                break;
+              } catch (batchErr) {
+                pushDebugEvent("simplify_batch_retry", {
+                  batchIndex,
+                  attempt: attempt + 1,
+                  error: batchErr?.message || String(batchErr),
+                }, "warn");
+                if (attempt >= 2) throw batchErr;
+                await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+              }
+            }
             pushDebugEvent("simplify_batch_response", {
               batchIndex,
               traceId: simplifyResult.traceId || null,
