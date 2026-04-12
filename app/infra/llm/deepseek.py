@@ -12,20 +12,25 @@ import json
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass
 from typing import Generator
 
-from openai import OpenAI
+from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 
 from app.core.timezone import now_shanghai_naive
 
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1").strip()
 DEEPSEEK_MODEL_THINKING = "deepseek-v3.2"
 DEEPSEEK_MODEL_FAST = "deepseek-v3.2"
-DEEPSEEK_TIMEOUT_SECONDS = max(10, int((os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "60") or "60").strip() or "60"))
+DEEPSEEK_TIMEOUT_SECONDS = max(10, int((os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "90") or "90").strip() or "90"))
 DEEPSEEK_MAX_TOKENS = max(100, int((os.getenv("DEEPSEEK_MAX_TOKENS", "4096") or "4096").strip() or "4096"))
+DEEPSEEK_MAX_RETRIES = 3
 
 logger = logging.getLogger(__name__)
+
+# Reuse a single client per API key to keep HTTP connections alive
+_client_cache: dict[str, OpenAI] = {}
 
 
 @dataclass(frozen=True)
@@ -37,7 +42,14 @@ class LLMTokenUsage:
 
 
 def _client(api_key: str) -> OpenAI:
-    return OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL, max_retries=2, timeout=DEEPSEEK_TIMEOUT_SECONDS)
+    if api_key not in _client_cache:
+        _client_cache[api_key] = OpenAI(
+            api_key=api_key,
+            base_url=DEEPSEEK_BASE_URL,
+            max_retries=0,  # We handle retries ourselves for better logging
+            timeout=DEEPSEEK_TIMEOUT_SECONDS,
+        )
+    return _client_cache[api_key]
 
 
 def _extract_usage(completion: object) -> LLMTokenUsage:
@@ -61,6 +73,10 @@ def _extract_usage(completion: object) -> LLMTokenUsage:
     )
 
 
+def _estimate_prompt_chars(messages: list[dict]) -> int:
+    return sum(len(str(m.get("content", ""))) for m in messages)
+
+
 def call_deepseek(
     messages: list[dict],
     api_key: str,
@@ -72,69 +88,127 @@ def call_deepseek(
     _retry_count: int = 0,
 ) -> tuple[str, LLMTokenUsage]:
     """
-    Call DeepSeek V3.2 API.
+    Call DeepSeek V3.2 API with automatic retry on transient errors.
 
     Returns (content, usage).
-    Automatically retries on empty responses (up to 2 times).
+    Retries on: timeout, connection error, 5xx status, empty response.
     Raises ValueError if content is empty after all retries.
     """
     client = _client(api_key)
     model = DEEPSEEK_MODEL_THINKING if enable_thinking else DEEPSEEK_MODEL_FAST
     effective_max_tokens = max_tokens or DEEPSEEK_MAX_TOKENS
+    prompt_chars = _estimate_prompt_chars(messages)
 
     extra_body: dict = {}
     if not enable_thinking:
         extra_body["enable_thinking"] = False
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=effective_max_tokens,
-        stream=stream,
-        extra_body=extra_body if extra_body else None,
-        timeout=DEEPSEEK_TIMEOUT_SECONDS,
-    )
+    last_error: Exception | None = None
 
-    if stream:
-        content_chunks: list[str] = []
-        for chunk in response:
-            delta = chunk.choices[0].delta
-            if delta and getattr(delta, "content", None):
-                content_chunks.append(delta.content)
-        content = "".join(content_chunks)
-        usage = _extract_usage(response)
-        return content, usage
-
-    if not response.choices:
-        if _retry_count < 2:
-            logger.warning(f"[call_deepseek] Empty choices, retrying ({_retry_count + 1}/2)")
-            return call_deepseek(
-                messages, api_key,
-                enable_thinking=enable_thinking, stream=stream,
-                temperature=temperature, max_tokens=max_tokens,
-                _retry_count=_retry_count + 1
+    for attempt in range(DEEPSEEK_MAX_RETRIES):
+        try:
+            t0 = time.monotonic()
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=effective_max_tokens,
+                stream=stream,
+                extra_body=extra_body if extra_body else None,
             )
-        raise ValueError("LLM returned no choices after retries")
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
 
-    choice = response.choices[0]
-    raw_content = getattr(choice.message, "content", "") or ""
-    content = str(raw_content).strip()
+            if stream:
+                content_chunks: list[str] = []
+                for chunk in response:
+                    delta = chunk.choices[0].delta
+                    if delta and getattr(delta, "content", None):
+                        content_chunks.append(delta.content)
+                content = "".join(content_chunks)
+                usage = _extract_usage(response)
+                return content, usage
 
-    # Check for empty content with retry
-    if not content:
-        if _retry_count < 2:
-            logger.warning(f"[call_deepseek] Empty content, retrying ({_retry_count + 1}/2)")
-            return call_deepseek(
-                messages, api_key,
-                enable_thinking=enable_thinking, stream=stream,
-                temperature=temperature, max_tokens=max_tokens,
-                _retry_count=_retry_count + 1
+            if not response.choices:
+                logger.warning(
+                    "[call_deepseek] Empty choices attempt=%d/%d elapsed=%dms prompt_chars=%d model=%s",
+                    attempt + 1, DEEPSEEK_MAX_RETRIES, elapsed_ms, prompt_chars, model,
+                )
+                last_error = ValueError("LLM returned no choices")
+                if attempt < DEEPSEEK_MAX_RETRIES - 1:
+                    time.sleep(min(2 ** attempt, 8))
+                continue
+
+            choice = response.choices[0]
+            raw_content = getattr(choice.message, "content", "") or ""
+            content = str(raw_content).strip()
+
+            if not content:
+                logger.warning(
+                    "[call_deepseek] Empty content attempt=%d/%d elapsed=%dms prompt_chars=%d model=%s finish_reason=%s",
+                    attempt + 1, DEEPSEEK_MAX_RETRIES, elapsed_ms, prompt_chars, model,
+                    getattr(choice, "finish_reason", "unknown"),
+                )
+                last_error = ValueError("LLM returned empty content")
+                if attempt < DEEPSEEK_MAX_RETRIES - 1:
+                    time.sleep(min(2 ** attempt, 8))
+                continue
+
+            logger.info(
+                "[call_deepseek] OK attempt=%d elapsed=%dms prompt_chars=%d content_len=%d model=%s",
+                attempt + 1, elapsed_ms, prompt_chars, len(content), model,
             )
-        raise ValueError("LLM returned empty content after retries")
+            usage = _extract_usage(response)
+            return content, usage
 
-    usage = _extract_usage(response)
-    return content, usage
+        except APITimeoutError as exc:
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            logger.warning(
+                "[call_deepseek] TIMEOUT attempt=%d/%d elapsed=%dms prompt_chars=%d timeout_cfg=%ds model=%s error=%s",
+                attempt + 1, DEEPSEEK_MAX_RETRIES, elapsed_ms, prompt_chars,
+                DEEPSEEK_TIMEOUT_SECONDS, model, str(exc)[:200],
+            )
+            last_error = exc
+            if attempt < DEEPSEEK_MAX_RETRIES - 1:
+                time.sleep(min(2 ** attempt, 8))
+
+        except APIStatusError as exc:
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            # Extract response body for diagnosis
+            resp_text = ""
+            try:
+                resp_text = str(exc.response.text)[:500] if hasattr(exc, "response") and exc.response else ""
+            except Exception:
+                pass
+            logger.error(
+                "[call_deepseek] STATUS_ERROR attempt=%d/%d status=%s elapsed=%dms prompt_chars=%d model=%s error=%s body=%s",
+                attempt + 1, DEEPSEEK_MAX_RETRIES, exc.status_code, elapsed_ms,
+                prompt_chars, model, str(exc)[:200], resp_text,
+            )
+            last_error = exc
+            # Retry on 5xx (server-side), 429 (rate limit); fail fast on 4xx
+            if exc.status_code in (429, 500, 502, 503, 504):
+                wait = min(2 ** attempt, 8)
+                if exc.status_code == 429:
+                    wait = max(wait, 5)  # Rate limit needs longer backoff
+                if attempt < DEEPSEEK_MAX_RETRIES - 1:
+                    time.sleep(wait)
+                continue
+            raise  # 4xx client errors are not retryable
+
+        except APIConnectionError as exc:
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            logger.warning(
+                "[call_deepseek] CONNECTION_ERROR attempt=%d/%d elapsed=%dms prompt_chars=%d model=%s error=%s",
+                attempt + 1, DEEPSEEK_MAX_RETRIES, elapsed_ms, prompt_chars, model, str(exc)[:200],
+            )
+            last_error = exc
+            if attempt < DEEPSEEK_MAX_RETRIES - 1:
+                time.sleep(min(2 ** attempt, 8))
+
+    # All retries exhausted
+    if isinstance(last_error, ValueError):
+        raise last_error
+    raise last_error or ValueError("LLM call failed after all retries")
 
 
 def generate_reading_material(

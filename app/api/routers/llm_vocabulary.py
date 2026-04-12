@@ -772,11 +772,20 @@ def simplify_words_endpoint(
             max_tokens=dynamic_max_tokens,
         )
     except ValueError as exc:
-        logger.warning("[DEBUG] llm.simplify_words_empty user_id=%s error=%s", current_user.id, str(exc)[:200])
+        logger.warning("[simplify-words] Empty content user_id=%s words=%d sentence_len=%d error=%s",
+                       current_user.id, len(body.words), len(body.sentence), str(exc)[:300])
         raise HTTPException(status_code=503, detail=f"模型返回为空，请稍后重试: {str(exc)[:100]}")
     except Exception as exc:
-        logger.exception("[DEBUG] llm.simplify_words_failed user_id=%s error=%s", current_user.id, str(exc)[:200])
-        raise HTTPException(status_code=502, detail=f"LLM 调用失败: {str(exc)[:150]}")
+        exc_type = type(exc).__name__
+        exc_module = type(exc).__module__ or ""
+        status_code = getattr(exc, "status_code", None)
+        logger.exception(
+            "[simplify-words] FAILED user_id=%s words=%d sentence_len=%d max_tokens=%d "
+            "exc_type=%s.%s status=%s error=%s",
+            current_user.id, len(body.words), len(body.sentence), dynamic_max_tokens,
+            exc_module, exc_type, status_code, str(exc)[:500],
+        )
+        raise HTTPException(status_code=502, detail=f"LLM 调用失败 ({exc_type}): {str(exc)[:200]}")
 
     if not raw_response:
         raise HTTPException(status_code=503, detail="模型返回为空，请稍后重试")
