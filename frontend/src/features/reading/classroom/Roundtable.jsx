@@ -37,8 +37,20 @@ const ROLE_CFG = {
   user:      { avatar: "/avatars/user.png",     accent: "#059669", side: "right" },
 };
 
+function resolvePublicAssetUrl(path) {
+  const base =
+    typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL
+      ? String(import.meta.env.BASE_URL)
+      : "/";
+  return `${base.replace(/\/?$/, "/")}${String(path || "").replace(/^\/+/, "")}`;
+}
+
 function cfg(role) {
-  return ROLE_CFG[String(role || "").toLowerCase()] || ROLE_CFG.teacher;
+  const config = ROLE_CFG[String(role || "").toLowerCase()] || ROLE_CFG.teacher;
+  return {
+    ...config,
+    avatar: resolvePublicAssetUrl(config.avatar),
+  };
 }
 
 function getDisplayName(msg, cast) {
@@ -63,7 +75,7 @@ function TeacherColumn({ cast, activeSpeaker, messages }) {
   return (
     <div className="rt-teacher">
       <div className={cn("rt-teacher__avatar-wrap", isActive && "rt-teacher__avatar-wrap--active")}>
-        <img src="/avatars/teacher.png" alt={name} className="rt-teacher__avatar" />
+        <img src={resolvePublicAssetUrl("/avatars/teacher.png")} alt={name} className="rt-teacher__avatar" />
         {isActive && <span className="rt-teacher__dot" />}
       </div>
       <span className="rt-teacher__name">{name}</span>
@@ -119,12 +131,12 @@ function StudentsColumn({ messages, activeSpeakerId, cast }) {
     {
       id: "student-lily",
       name: Array.isArray(cast?.students) ? cast.students[0]?.name || "Lily" : "Lily",
-      avatar: "/avatars/curious.png",
+      avatar: resolvePublicAssetUrl("/avatars/curious.png"),
     },
     {
       id: "student-max",
       name: Array.isArray(cast?.students) ? cast.students[1]?.name || "Max" : "Max",
-      avatar: "/avatars/thinker.png",
+      avatar: resolvePublicAssetUrl("/avatars/thinker.png"),
     },
   ];
 
@@ -159,7 +171,7 @@ function StudentsColumn({ messages, activeSpeakerId, cast }) {
 
       {/* User avatar (bottom) */}
       <div className="rt-students__user-wrap">
-        <img src="/avatars/user.png" alt="You" className="rt-students__user-avatar" />
+        <img src={resolvePublicAssetUrl("/avatars/user.png")} alt="You" className="rt-students__user-avatar" />
         <span className="rt-students__user-label">You</span>
       </div>
     </div>

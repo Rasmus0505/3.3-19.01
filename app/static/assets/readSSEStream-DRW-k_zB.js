@@ -1,2 +1,0 @@
-async function u(o,c,i){const r=o.body?.getReader();if(!r)return;const d=new TextDecoder;let a="";try{for(;!i?.aborted;){const{done:l,value:f}=await r.read();if(l)break;a+=d.decode(f,{stream:!0});const n=a.split(`
-`);a=n.pop()||"";let t="";for(const e of n)if(e.startsWith("event: "))t=e.slice(7).trim();else if(e.startsWith("data: ")&&t){try{const s=JSON.parse(e.slice(6));c(t,s)}catch(s){console.warn("SSE JSON parse failed:",s,e)}t=""}}}finally{r.releaseLock()}}export{u as r};
