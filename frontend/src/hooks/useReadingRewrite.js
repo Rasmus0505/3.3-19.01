@@ -32,6 +32,10 @@ import { getOrCreateAnalyzer } from "../utils/vocabAnalyzer";
 const CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"];
 const EXTRACT_LEMMAS_MAX_CONTEXT_CHARS = 2800;
 const SIMPLIFY_WORDS_MAX_CONTEXT_CHARS = 1800;
+// Hard cap on words per batch to prevent LLM token overflow.
+// 15 words × ~30 tokens/word ≈ 450 tokens — well within 2048 limit.
+const SIMPLIFY_WORDS_MAX_PER_BATCH = 15;
+const EXTRACT_LEMMAS_MAX_PER_BATCH = 20;
 
 function levelToNum(level) {
   const idx = CEFR_ORDER.indexOf(level);
@@ -131,7 +135,7 @@ function buildBatchContext(units, fullText, words, maxChars) {
   return truncateContextAroundWord(fullText, words[0], maxChars);
 }
 
-export function createWordContextBatches(text, words, maxChars) {
+export function createWordContextBatches(text, words, maxChars, maxWordsPerBatch = 15) {
   const normalizedWords = (Array.isArray(words) ? words : [])
     .map((word) => String(word || "").trim())
     .filter(Boolean);
@@ -144,8 +148,10 @@ export function createWordContextBatches(text, words, maxChars) {
 
   while (startIndex < normalizedWords.length) {
     let bestBatch = null;
+    // Never exceed maxWordsPerBatch regardless of context fit
+    const endLimit = Math.min(normalizedWords.length, startIndex + maxWordsPerBatch);
 
-    for (let endIndex = startIndex; endIndex < normalizedWords.length; endIndex += 1) {
+    for (let endIndex = startIndex; endIndex < endLimit; endIndex += 1) {
       const candidateWords = normalizedWords.slice(startIndex, endIndex + 1);
       const candidateContext = buildBatchContext(fallbackUnits, text, candidateWords, maxChars);
       const coversAllCandidateWords = candidateWords.every((word) => contextContainsWord(candidateContext, word));
@@ -659,6 +665,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
           safeOriginalText,
           originalWords,
           EXTRACT_LEMMAS_MAX_CONTEXT_CHARS,
+          EXTRACT_LEMMAS_MAX_PER_BATCH,
         );
         pushDebugEvent("lemma_batches_prepared", {
           batchCount: lemmaBatches.length,
@@ -745,6 +752,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
             safeOriginalText,
             validAboveI1WordsList,
             SIMPLIFY_WORDS_MAX_CONTEXT_CHARS,
+            SIMPLIFY_WORDS_MAX_PER_BATCH,
           );
           pushDebugEvent("simplify_batches_prepared", {
             batchCount: simplifyBatches.length,

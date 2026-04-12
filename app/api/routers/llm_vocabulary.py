@@ -759,8 +759,8 @@ def simplify_words_endpoint(
         {"role": "user", "content": user_message},
     ]
 
-    # Allocate ~30 tokens per word for the JSON response; minimum 512, max 2048
-    dynamic_max_tokens = max(512, min(2048, len(body.words) * 30 + 128))
+    # Allocate ~30 tokens per word for the JSON response; minimum 512, max 4096
+    dynamic_max_tokens = max(512, min(4096, len(body.words) * 30 + 128))
 
     try:
         raw_response, usage = llm_root.call_deepseek(
@@ -985,8 +985,8 @@ def _do_filter_and_simplify(body: FilterAndSimplifyRequest, current_user: User, 
         {"role": "user", "content": user_message},
     ]
 
-    # Allocate ~35 tokens per word for filter+simplify (more complex output); min 768, max 2048
-    dynamic_max_tokens_fs = max(768, min(2048, len(body.words) * 35 + 256))
+    # Allocate ~35 tokens per word for filter+simplify (more complex output); min 768, max 4096
+    dynamic_max_tokens_fs = max(768, min(4096, len(body.words) * 35 + 256))
 
     try:
         raw_response, usage = llm_root.call_deepseek(
