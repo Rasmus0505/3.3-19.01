@@ -1,165 +1,193 @@
-import { AlertCircle, ArrowRight, CheckCircle2, PlayCircle } from "lucide-react";
+/**
+ * ReadingPipelinePanel — OpenMAIC-style minimal generation progress screen.
+ * Full-screen centered, progress dots + animated stage icon + stage name.
+ */
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  AlertCircle,
+  BookOpen,
+  BrainCircuit,
+  CheckCircle2,
+  FileText,
+  GraduationCap,
+  Sparkles,
+  Wand2,
+} from "lucide-react";
 import { Button } from "../../shared/ui";
-import { Progress } from "../../components/ui/progress";
 import { cn } from "../../lib/utils";
 
-function getVisualStatus(stage, currentStage, errorStage) {
-  if (errorStage && stage.key === errorStage) return "failed";
-  if (stage.status === "completed") return "completed";
-  if (stage.key === currentStage || stage.status === "running") return "running";
-  return "pending";
+// Icon per stage key
+const STAGE_ICONS = {
+  parsing:               FileText,
+  difficulty_judgment:   BrainCircuit,
+  simplification_planning: Wand2,
+  text_rewriting:        BookOpen,
+  reading_course_generation: GraduationCap,
+};
+
+function StageIcon({ stageKey, className }) {
+  const Icon = STAGE_ICONS[stageKey] || Wand2;
+  return <Icon className={className} />;
+}
+
+// Pulsing ring around the central icon while running
+function PulsingRing({ color = "oklch(from var(--primary) l c h / 0.15)" }) {
+  return (
+    <motion.div
+      className="absolute inset-0 rounded-full"
+      style={{ background: color }}
+      animate={{ scale: [1, 1.18, 1], opacity: [0.7, 0, 0.7] }}
+      transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+    />
+  );
 }
 
 export function ReadingPipelinePanel({
   pipelineState,
   isGenerating = false,
   onContinue,
-  onViewOriginal,
 }) {
-  const currentStage = pipelineState?.currentStage || null;
-  const lastCompletedStage = pipelineState?.lastCompletedStage || null;
-  const errorStage = pipelineState?.error?.stage || null;
   const stages = Array.isArray(pipelineState?.stages) ? pipelineState.stages : [];
+  const currentStage = pipelineState?.currentStage || null;
+  const errorStage = pipelineState?.error?.stage || null;
+  const hasError = Boolean(pipelineState?.error);
+
   const activeStage =
-    stages.find((stage) => stage.key === currentStage) ||
-    stages.find((stage) => stage.key === errorStage) ||
-    stages.find((stage) => stage.key === lastCompletedStage) ||
+    stages.find((s) => s.key === currentStage) ||
+    stages.find((s) => s.key === errorStage) ||
+    stages.find((s) => s.key === pipelineState?.lastCompletedStage) ||
     stages[0] ||
     null;
-  const nextStage =
-    stages.find((stage) => stage.status === "pending" && stage.key !== currentStage) || null;
+
+  const activeIndex = activeStage ? stages.findIndex((s) => s.key === activeStage.key) : 0;
+  const isComplete = !hasError && !currentStage && stages.length > 0 &&
+    stages.every((s) => s.status === "completed");
 
   return (
-    <section className="reading-pipeline">
-      <div className="reading-pipeline__header">
-        <div>
-          <p className="reading-pipeline__eyebrow">阅读生成流水线</p>
-          <h2 className="reading-pipeline__title">把材料组装成沉浸式阅读课堂</h2>
-          <p className="reading-pipeline__copy">
-            先完成 i+1 改写，再把文章编排成老师主导的阅读课堂，而不是停留在静态阅读包。
-          </p>
-        </div>
-        <span className={cn("reading-pipeline__status", pipelineState?.error && "reading-pipeline__status--failed")}>
-          {pipelineState?.error ? <AlertCircle className="size-4" /> : <PlayCircle className="size-4" />}
-          {pipelineState?.error ? "生成中断" : isGenerating ? "生成中" : "待继续"}
-        </span>
+    <div className="rpp-shell">
+      {/* Background ambient blobs */}
+      <div className="rpp-bg" aria-hidden="true">
+        <div className="rpp-bg__blob rpp-bg__blob--1" />
+        <div className="rpp-bg__blob rpp-bg__blob--2" />
       </div>
 
-      {(pipelineState?.resumeAvailable || pipelineState?.restoredFromStorage) && lastCompletedStage ? (
-        <div className="reading-pipeline__banner">
-          <CheckCircle2 className="size-4" />
-          <div>
-            <p className="reading-pipeline__banner-title">已恢复到上次进度</p>
-            <p className="reading-pipeline__banner-copy">
-              最近完成阶段：{stages.find((stage) => stage.key === lastCompletedStage)?.label || lastCompletedStage}
-            </p>
+      <div className="rpp-card">
+        {/* Progress dots */}
+        {stages.length > 0 && (
+          <div className="rpp-dots">
+            {stages.map((stage, idx) => {
+              const past = idx < activeIndex;
+              const active = idx === activeIndex && !isComplete && !hasError;
+              return (
+                <div
+                  key={stage.key}
+                  className={cn(
+                    "rpp-dot",
+                    active  && "rpp-dot--active",
+                    past    && "rpp-dot--past",
+                    hasError && idx === activeIndex && "rpp-dot--error",
+                    isComplete && "rpp-dot--done",
+                  )}
+                />
+              );
+            })}
           </div>
-        </div>
-      ) : null}
+        )}
 
-      <div className="reading-pipeline__body">
-        <div className="reading-pipeline__rail">
-          {stages.map((stage, index) => {
-            const visualStatus = getVisualStatus(stage, currentStage, errorStage);
-            return (
-              <div
-                key={stage.key}
-                className={cn(
-                  "reading-pipeline__rail-item",
-                  visualStatus === "running" && "reading-pipeline__rail-item--running",
-                  visualStatus === "completed" && "reading-pipeline__rail-item--completed",
-                  visualStatus === "failed" && "reading-pipeline__rail-item--failed",
-                )}
+        {/* Central visualizer */}
+        <div className="rpp-visual">
+          <AnimatePresence mode="wait">
+            {hasError ? (
+              <motion.div
+                key="error"
+                className="rpp-visual__circle rpp-visual__circle--error"
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.8, opacity: 0 }}
+                transition={{ duration: 0.3 }}
               >
-                <div className="reading-pipeline__rail-marker">{index + 1}</div>
-                <div>
-                  <p className="reading-pipeline__rail-label">{stage.label}</p>
-                  <p className="reading-pipeline__rail-state">
-                    {visualStatus === "completed"
-                      ? "已完成"
-                      : visualStatus === "running"
-                        ? "进行中"
-                        : visualStatus === "failed"
-                          ? "失败"
-                          : "等待开始"}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
+                <AlertCircle className="size-12 text-red-500" />
+              </motion.div>
+            ) : isComplete ? (
+              <motion.div
+                key="done"
+                className="rpp-visual__circle rpp-visual__circle--done"
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.8, opacity: 0 }}
+                transition={{ duration: 0.35 }}
+              >
+                <CheckCircle2 className="size-12 text-green-500" />
+              </motion.div>
+            ) : (
+              <motion.div
+                key={activeStage?.key || "init"}
+                className="rpp-visual__circle rpp-visual__circle--active"
+                initial={{ scale: 0.85, opacity: 0, filter: "blur(8px)" }}
+                animate={{ scale: 1,    opacity: 1, filter: "blur(0px)" }}
+                exit={{  scale: 1.1,  opacity: 0, filter: "blur(8px)" }}
+                transition={{ duration: 0.35 }}
+              >
+                <PulsingRing />
+                <StageIcon stageKey={activeStage?.key} className="size-12 text-primary relative z-10" />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
-        <div className="reading-pipeline__card">
-          <div className="reading-pipeline__card-top">
-            <div>
-              <p className="reading-pipeline__card-label">当前阶段</p>
-              <h3 className="reading-pipeline__card-title">
-                {activeStage?.label || "正在启动流水线"}
-              </h3>
-            </div>
-            {activeStage ? (
-              <span className="reading-pipeline__card-pill">
-                {pipelineState?.error
-                  ? "需要恢复"
-                  : currentStage
-                    ? "推进中"
-                    : lastCompletedStage
-                      ? "已完成"
-                      : "准备中"}
-              </span>
-            ) : null}
-          </div>
-
-          <p className="reading-pipeline__card-copy">
-            {pipelineState?.error?.message ||
-              activeStage?.detail ||
-              "正在准备当前阶段的输入与输出。"}
-          </p>
-
-          <Progress
-            className="reading-pipeline__progress"
-            value={activeStage?.progressPercent || (pipelineState?.error ? 100 : 12)}
-          />
-
-          <div className="reading-pipeline__meta">
-            {lastCompletedStage ? (
-              <div className="reading-pipeline__meta-card">
-                <span className="reading-pipeline__meta-label">上一步</span>
-                <strong>{stages.find((stage) => stage.key === lastCompletedStage)?.label || lastCompletedStage}</strong>
-              </div>
-            ) : null}
-            {nextStage ? (
-              <div className="reading-pipeline__meta-card reading-pipeline__meta-card--muted">
-                <span className="reading-pipeline__meta-label">下一步</span>
-                <strong>{nextStage.label}</strong>
-              </div>
-            ) : null}
-          </div>
-
-          {pipelineState?.error ? (
-            <div className="reading-pipeline__error">
-              <p className="reading-pipeline__error-title">在“{activeStage?.label || pipelineState.error.stage}”阶段中断</p>
-              <p className="reading-pipeline__error-copy">
-                你可以继续生成，或先打开原文确认材料。若要排查，请在浏览器控制台搜索 `ReadingRewriteDebug` 并复制日志。
-              </p>
-            </div>
-          ) : null}
-
-          <div className="reading-pipeline__actions">
-            <Button
-              className="reading-pipeline__primary"
-              onClick={onContinue}
-              disabled={isGenerating}
+        {/* Stage name + sub-text */}
+        <div className="rpp-text">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={hasError ? "err-text" : isComplete ? "done-text" : activeStage?.key || "init-text"}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.25 }}
+              className="rpp-text__inner"
             >
-              {isGenerating ? "生成中..." : "继续生成"}
-            </Button>
-            <Button variant="outline" onClick={onViewOriginal}>
-              查看原文
-              <ArrowRight className="size-4" />
+              <h2 className="rpp-text__title">
+                {hasError
+                  ? "生成中断"
+                  : isComplete
+                    ? "课堂已就绪"
+                    : (activeStage?.label || "准备中")}
+              </h2>
+              {hasError && (
+                <p className="rpp-text__sub rpp-text__sub--error">
+                  {pipelineState?.error?.message || "请重试"}
+                </p>
+              )}
+              {!hasError && !isComplete && (
+                <p className="rpp-text__sub">
+                  {activeStage?.detail || "正在处理…"}
+                </p>
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        {/* "AI Working" footer indicator */}
+        {!hasError && !isComplete && (
+          <motion.div
+            className="rpp-working"
+            animate={{ opacity: [0.4, 0.8, 0.4] }}
+            transition={{ repeat: Infinity, duration: 2 }}
+          >
+            <Sparkles className="size-3" />
+            AI 生成���
+          </motion.div>
+        )}
+
+        {/* Actions: only show when error or paused */}
+        {(hasError || (!isGenerating && !isComplete)) && (
+          <div className="rpp-actions">
+            <Button onClick={onContinue} disabled={isGenerating}>
+              {isGenerating ? "生成中…" : hasError ? "重试" : "继续生成"}
             </Button>
           </div>
-        </div>
+        )}
       </div>
-    </section>
+    </div>
   );
 }

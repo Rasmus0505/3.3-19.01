@@ -5349,6 +5349,163 @@
   .rc-sidebar__inner { width: 200px; }
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   DiagnosticPanel compact  (dp-*)
+   ═══════════════════════════════════════════════════════════════ */
+
+.diagnostic-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.diagnostic-panel--loading,
+.diagnostic-panel--empty {
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+}
+
+.diagnostic-panel__loading-title { font-size: 0.82rem; color: var(--muted-foreground); }
+
+.dp-triad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; }
+
+.dp-metric {
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 0.5rem 0.625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.dp-metric--accent { background: oklch(from var(--primary) l c h / 0.08); border-color: oklch(from var(--primary) l c h / 0.2); }
+.dp-metric--soft   { background: oklch(from var(--primary) l c h / 0.04); }
+.dp-metric__label  { font-size: 0.62rem; color: var(--muted-foreground); font-weight: 500; }
+.dp-metric__value  { font-size: 1rem; font-weight: 800; color: var(--foreground); line-height: 1.2; }
+
+.dp-fit { font-size: 0.75rem; color: var(--muted-foreground); line-height: 1.4; padding: 0 0.1rem; }
+
+.dp-section        { display: flex; flex-direction: column; gap: 0.35rem; }
+.dp-section__label { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-foreground); }
+.dp-levels         { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+
+.dp-level {
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.dp-level:hover      { border-color: var(--primary); }
+.dp-level--active    { border-color: var(--primary); background: oklch(from var(--primary) l c h / 0.1); color: var(--primary); }
+.dp-level--rec       { border-style: dashed; }
+.dp-level__rec       { font-size: 0.55rem; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.dp-impact           { display: flex; align-items: center; gap: 0.5rem; background: var(--muted); border-radius: 0.5rem; padding: 0.5rem 0.75rem; }
+.dp-impact__item     { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0.1rem; }
+.dp-impact__item strong { font-size: 1.05rem; font-weight: 800; }
+.dp-impact__item span   { font-size: 0.62rem; color: var(--muted-foreground); }
+.dp-impact__item--warn strong { color: oklch(0.65 0.18 55); }
+.dp-impact__sep      { width: 1px; height: 1.5rem; background: var(--border); flex-shrink: 0; }
+
+.dp-dist             { height: 8px; border-radius: 4px; overflow: hidden; display: flex; background: var(--muted); }
+.dp-dist__seg        { display: block; height: 100%; }
+.dp-dist__seg--a1    { background: oklch(0.65 0.18 150); }
+.dp-dist__seg--a2    { background: oklch(0.65 0.18 170); }
+.dp-dist__seg--b1    { background: oklch(0.65 0.18 220); }
+.dp-dist__seg--b2    { background: oklch(0.6  0.18 260); }
+.dp-dist__seg--c1    { background: oklch(0.6  0.2  290); }
+.dp-dist__seg--c2    { background: oklch(0.55 0.22 310); }
+.dp-dist__seg--super { background: oklch(0.6  0.22 25);  }
+
+.dp-error { font-size: 0.75rem; color: oklch(0.6 0.2 25); background: oklch(0.6 0.2 25 / 0.08); padding: 0.4rem 0.6rem; border-radius: 0.375rem; }
+
+.dp-footer          { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: auto; padding-top: 0.25rem; }
+.dp-estimate        { display: flex; gap: 0.75rem; font-size: 0.72rem; color: var(--muted-foreground); }
+.dp-actions         { display: flex; gap: 0.35rem; align-items: center; }
+.dp-actions__primary { gap: 0.3rem; }
+
+/* ═══════════════════════════════════════════════════════════
+   ReadingPipelinePanel — OpenMAIC style  (rpp-*)
+   ═══════════════════════════════════════════════════════════ */
+
+.rpp-shell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(160deg, var(--background) 0%, oklch(from var(--primary) l c h / 0.04) 100%);
+  overflow: hidden;
+}
+
+.rpp-bg              { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.rpp-bg__blob        { position: absolute; width: 24rem; height: 24rem; border-radius: 50%; filter: blur(80px); animation: rpp-pulse 5s ease-in-out infinite; }
+.rpp-bg__blob--1     { top: -4rem; left: 20%; background: oklch(from var(--primary) l c h / 0.08); animation-duration: 4s; }
+.rpp-bg__blob--2     { bottom: -4rem; right: 20%; background: oklch(0.6 0.15 280 / 0.06); animation-duration: 6s; }
+
+@keyframes rpp-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%       { opacity: 1;   transform: scale(1.08); }
+}
+
+.rpp-card { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 1.5rem; padding: 2.5rem 2rem; max-width: 26rem; width: 100%; }
+
+.rpp-dots            { display: flex; gap: 0.4rem; align-items: center; }
+.rpp-dot             { height: 6px; border-radius: 3px; background: oklch(from var(--primary) l c h / 0.18); width: 6px; transition: width 0.4s, background 0.4s; }
+.rpp-dot--active     { width: 2rem; background: var(--primary); }
+.rpp-dot--past       { background: oklch(from var(--primary) l c h / 0.3); }
+.rpp-dot--error      { width: 2rem; background: oklch(0.6 0.2 25); }
+.rpp-dot--done       { background: oklch(0.65 0.18 150); }
+
+.rpp-visual          { position: relative; width: 9rem; height: 9rem; display: flex; align-items: center; justify-content: center; }
+
+.rpp-visual__circle  { position: relative; width: 7rem; height: 7rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid transparent; }
+.rpp-visual__circle--active { background: oklch(from var(--primary) l c h / 0.08); border-color: oklch(from var(--primary) l c h / 0.2); }
+.rpp-visual__circle--done   { background: oklch(0.65 0.18 150 / 0.1); border-color: oklch(0.65 0.18 150 / 0.3); }
+.rpp-visual__circle--error  { background: oklch(0.6 0.2 25 / 0.08); border-color: oklch(0.6 0.2 25 / 0.25); }
+
+.rpp-text            { text-align: center; width: 100%; }
+.rpp-text__inner     { display: flex; flex-direction: column; gap: 0.4rem; }
+.rpp-text__title     { font-size: 1.35rem; font-weight: 800; letter-spacing: -0.01em; }
+.rpp-text__sub       { font-size: 0.85rem; color: var(--muted-foreground); line-height: 1.5; max-width: 22rem; margin: 0 auto; }
+.rpp-text__sub--error { color: oklch(0.6 0.2 25); }
+
+.rpp-working         { display: flex; align-items: center; gap: 0.35rem; font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: oklch(from var(--primary) l c h / 0.45); }
+.rpp-actions         { display: flex; gap: 0.5rem; }
+
+/* HistoryPanel more/less button */
+.history-panel__more-btn {
+  width: 100%;
+  padding: 0.3rem;
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: center;
+  border-top: 1px dashed var(--border);
+  margin-top: 0.2rem;
+  transition: color 0.12s;
+}
+
+.history-panel__more-btn:hover { color: var(--foreground); }
+
 /* ═══════════════════════════════════════════════════════════════════════
    OpenMAIC-style Roundtable Stage Bar  (rt-*)
    Fixed 192px height, three-column layout: teacher | bubble | students

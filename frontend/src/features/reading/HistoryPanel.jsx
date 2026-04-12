@@ -134,11 +134,13 @@ function formatTime(ts) {
  * @param {Function} props.onSelect — 点击历史记录回调 (record) => void
  * @param {string|null} props.activeId — 当前选中的历史记录 id
  */
+const VISIBLE_COUNT = 3; // always-visible items, rest fold
+
 export function HistoryPanel({ onSelect, activeId, refreshKey }) {
   const [records, setRecords] = useState([]);
   const [rewriteMetaMap, setRewriteMetaMap] = useState(new Map());
   const [loading, setLoading] = useState(true);
-  const [collapsed, setCollapsed] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const fetched = useRef(false);
 
   const load = useCallback(async () => {
@@ -193,44 +195,35 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
     );
   }
 
+  const visibleRecords = expanded ? records : records.slice(0, VISIBLE_COUNT);
+  const hasMore = records.length > VISIBLE_COUNT;
+
   return (
-    <div className={cn("history-panel", collapsed && "history-panel--collapsed")}>
+    <div className="history-panel">
       <div className="history-panel__header">
         <div className="history-panel__header-left">
           <Clock className="history-panel__icon" />
-          <span className="history-panel__title">阅读历史</span>
+          <span className="history-panel__title">历史</span>
           {records.length > 0 && (
             <span className="history-panel__badge">{records.length}</span>
           )}
         </div>
-        <div className="history-panel__header-actions">
-          {records.length > 0 && (
-            <button
-              className="history-panel__clear-btn"
-              onClick={handleClearAll}
-              title="清空历史"
-            >
-              <Trash2 className="size-3.5" />
-            </button>
-          )}
+        {records.length > 0 && (
           <button
-            className="history-panel__collapse-btn"
-            onClick={() => setCollapsed((c) => !c)}
+            className="history-panel__clear-btn"
+            onClick={handleClearAll}
+            title="清空历史"
           >
-            {collapsed ? "展开" : "收起"}
+            <Trash2 className="size-3.5" />
           </button>
-        </div>
+        )}
       </div>
 
-      {!collapsed && (
-        <>
-          {records.length === 0 ? (
-            <div className="history-panel__empty">
-              暂无阅读历史，在左侧粘贴文章即可开始阅读
-            </div>
-          ) : (
-            <div className="history-panel__list">
-              {records.map((record) => (
+      {records.length === 0 ? (
+        <div className="history-panel__empty">暂无记录</div>
+      ) : (
+        <div className="history-panel__list">
+          {visibleRecords.map((record) => (
                 (() => {
                   const rewriteMeta = rewriteMetaMap.get(record.id) || null;
                   const hasGenerated = Boolean(
@@ -324,9 +317,15 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
                   );
                 })()
               ))}
-            </div>
+          {hasMore && (
+            <button
+              className="history-panel__more-btn"
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? "收起" : `还有 ${records.length - VISIBLE_COUNT} 条`}
+            </button>
           )}
-        </>
+        </div>
       )}
     </div>
   );
