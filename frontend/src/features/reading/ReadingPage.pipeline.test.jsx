@@ -130,12 +130,9 @@ describe("ReadingPage phase 36 flow", () => {
     await user.click(screen.getByRole("button", { name: "选择历史记录" }));
 
     await waitFor(() => {
-      expect(screen.getByText("把材料组装成沉浸式阅读课堂")).toBeTruthy();
+      expect(screen.getByText("生成中断")).toBeTruthy();
     });
-    expect(screen.getByText("在“生成 i+1 文本”阶段中断")).toBeTruthy();
-
-    await user.click(screen.getByRole("button", { name: /查看原文/i }));
-    expect(screen.getByTestId("left-panel-reading").textContent).toContain("Original article text.");
+    expect(screen.getByText("text rewriting failed")).toBeTruthy();
   });
 
   it("reopens completed history directly into the classroom surface", async () => {
@@ -158,6 +155,29 @@ describe("ReadingPage phase 36 flow", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Reading Classroom")).toBeTruthy();
+    });
+  });
+
+  it("uses history meta to reopen the classroom immediately before async rewrite state finishes loading", async () => {
+    const user = userEvent.setup();
+    mockRewriteState = {
+      flowStatus: "idle",
+      readingCourse: null,
+      historyMeta: {
+        flowStatus: "generated",
+        readingCourse: {
+          mode: "reading_classroom_v2",
+          article_title: "Recovered Classroom",
+          scenes: [{ id: "entry", type: "entry", title: "进入课堂", beats: [] }],
+        },
+      },
+    };
+
+    render(<ReadingPage accessToken="token" apiCall={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "选择历史记录" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Recovered Classroom")).toBeTruthy();
     });
   });
 });

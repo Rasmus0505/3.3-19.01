@@ -101,7 +101,7 @@ export function ReadingPage({ accessToken, apiCall }) {
 
   useEffect(() => {
     if (!activeHistoryId || isRewriting) return;
-    if (readingCourse || flowStatus === "generated") {
+    if (historyCourseOverride || readingCourse || flowStatus === "generated") {
       setMode("classroom");
       return;
     }
@@ -114,7 +114,7 @@ export function ReadingPage({ accessToken, apiCall }) {
       return;
     }
     setMode("input");
-  }, [activeHistoryId, diagnosticSnapshot, flowStatus, isRewriting, pipelineState, readingCourse]);
+  }, [activeHistoryId, diagnosticSnapshot, flowStatus, historyCourseOverride, isRewriting, pipelineState, readingCourse]);
 
   useEffect(() => {
     if (mode !== "pipeline") {
