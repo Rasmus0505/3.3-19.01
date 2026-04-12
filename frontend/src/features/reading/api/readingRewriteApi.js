@@ -9,6 +9,30 @@
  */
 import { api } from "../../../shared/api/client.js";
 
+function createReadingRewriteApiError(message, debug = {}) {
+  const error = new Error(message);
+  error.name = "ReadingRewriteApiError";
+  error.debug = debug;
+  return error;
+}
+
+async function readErrorPayload(response) {
+  const rawText = await response.text().catch(() => "");
+  let parsed = {};
+  if (rawText) {
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      parsed = {};
+    }
+  }
+  return {
+    rawText,
+    parsed,
+    detail: parsed.detail || "",
+  };
+}
+
 /**
  * Step 1: 提取词汇的原型词（词形还原）
  * @param {string} sentence — 原文
@@ -27,8 +51,16 @@ export async function extractLemmas(sentence, words, accessToken) {
   });
 
   if (!resp.ok) {
-    const data = await resp.json().catch(() => ({}));
-    throw new Error(data.detail || "提取原型词请求失败");
+    const payload = await readErrorPayload(resp);
+    throw createReadingRewriteApiError(payload.detail || "提取原型词请求失败", {
+      endpoint: "/api/llm/extract-lemmas",
+      status: resp.status,
+      sentenceLength: String(sentence || "").length,
+      wordsCount: Array.isArray(words) ? words.length : 0,
+      words,
+      detail: payload.detail || "",
+      rawText: payload.rawText || "",
+    });
   }
   const data = await resp.json();
   return {
@@ -48,8 +80,14 @@ export async function estimateRewriteTokens(text, accessToken) {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!resp.ok) {
-    const data = await resp.json().catch(() => ({}));
-    throw new Error(data.detail || "估算失败");
+    const payload = await readErrorPayload(resp);
+    throw createReadingRewriteApiError(payload.detail || "估算失败", {
+      endpoint: "/api/llm/estimate-tokens",
+      status: resp.status,
+      textLength: String(text || "").length,
+      detail: payload.detail || "",
+      rawText: payload.rawText || "",
+    });
   }
   const data = await resp.json();
   return {
@@ -95,8 +133,18 @@ export async function filterAndSimplifyWords(sentence, words, wordLevels, target
   });
 
   if (!resp.ok) {
-    const data = await resp.json().catch(() => ({}));
-    throw new Error(data.detail || "筛选并简化词汇请求失败");
+    const payload = await readErrorPayload(resp);
+    throw createReadingRewriteApiError(payload.detail || "筛选并简化词汇请求失败", {
+      endpoint: "/api/llm/filter-and-simplify-words",
+      status: resp.status,
+      sentenceLength: String(sentence || "").length,
+      wordsCount: Array.isArray(words) ? words.length : 0,
+      words,
+      targetLevel,
+      userLevel,
+      detail: payload.detail || "",
+      rawText: payload.rawText || "",
+    });
   }
   const data = await resp.json();
   return {
@@ -137,8 +185,19 @@ export async function simplifyWords(sentence, words, targetLevel, accessToken, e
   });
 
   if (!resp.ok) {
-    const data = await resp.json().catch(() => ({}));
-    throw new Error(data.detail || "简化词汇请求失败");
+    const payload = await readErrorPayload(resp);
+    throw createReadingRewriteApiError(payload.detail || "简化词汇请求失败", {
+      endpoint: "/api/llm/simplify-words",
+      status: resp.status,
+      sentenceLength: String(sentence || "").length,
+      wordsCount: Array.isArray(words) ? words.length : 0,
+      words,
+      targetLevel,
+      enableThinking: Boolean(enableThinking),
+      wordLevels,
+      detail: payload.detail || "",
+      rawText: payload.rawText || "",
+    });
   }
   const data = await resp.json();
   return {

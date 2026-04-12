@@ -140,7 +140,7 @@ export function ReadingPipelinePanel({
             <div className="reading-pipeline__error">
               <p className="reading-pipeline__error-title">在“{activeStage?.label || pipelineState.error.stage}”阶段中断</p>
               <p className="reading-pipeline__error-copy">
-                你可以继续生成，或先打开原文确认材料。
+                你可以继续生成，或先打开原文确认材料。若要排查，请在浏览器控制台搜索 `ReadingRewriteDebug` 并复制日志。
               </p>
             </div>
           ) : null}

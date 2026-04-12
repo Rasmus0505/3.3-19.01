@@ -228,6 +228,51 @@ function buildFallbackDiagnosticSnapshot(text, userLevel, selectedTargetLevel) {
   });
 }
 
+function createDebugSessionId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `reading-rewrite-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function previewText(text, maxLength = 180) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength)}...`;
+}
+
+function sanitizeBatchDebug(batch, index) {
+  return {
+    index,
+    words: Array.isArray(batch?.words) ? batch.words.map((word) => String(word || "")) : [],
+    wordsCount: Array.isArray(batch?.words) ? batch.words.length : 0,
+    contextLength: String(batch?.context || "").length,
+    contextPreview: previewText(batch?.context, 220),
+  };
+}
+
+function getRewriteDebugStore() {
+  if (typeof window === "undefined") return null;
+  if (!window.__readingRewriteDebug) {
+    window.__readingRewriteDebug = {
+      latestSessionId: null,
+      latest: null,
+      sessions: {},
+    };
+  }
+  return window.__readingRewriteDebug;
+}
+
+function serializeErrorDebug(error) {
+  if (!error) return null;
+  return {
+    name: error.name || "Error",
+    message: error.message || String(error),
+    debug: error.debug || null,
+  };
+}
+
 export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }) {
   const [rewrittenText, setRewrittenText] = useState(null);
   const [rewriteMappings, setRewriteMappings] = useState([]);
@@ -247,10 +292,34 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
 
   const savedArticleIdRef = useRef(null);
   const pipelineStateRef = useRef(createInitialPipelineState());
+  const debugSessionRef = useRef(null);
 
   const syncPipelineState = useCallback((nextState) => {
     pipelineStateRef.current = nextState;
     setPipelineState(nextState);
+  }, []);
+
+  const pushDebugEvent = useCallback((eventType, payload = {}, level = "log") => {
+    const session = debugSessionRef.current;
+    const event = {
+      eventType,
+      timestamp: new Date().toISOString(),
+      ...payload,
+    };
+
+    if (session) {
+      session.events.push(event);
+      session.lastEvent = event;
+      const store = getRewriteDebugStore();
+      if (store) {
+        store.latestSessionId = session.id;
+        store.latest = session;
+        store.sessions[session.id] = session;
+      }
+    }
+
+    const logger = console[level] || console.log;
+    logger(`[ReadingRewriteDebug${session?.id ? `:${session.id}` : ""}] ${eventType}`, event);
   }, []);
 
   const resetLocalState = useCallback(() => {
@@ -445,14 +514,42 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
 
       const safeOriginalText = String(originalText || "").trim();
       let activeStage = "parsing";
+      const debugSession = {
+        id: createDebugSessionId(),
+        createdAt: new Date().toISOString(),
+        articleId: articleId || savedArticleIdRef.current || null,
+        originalTextLength: safeOriginalText.length,
+        targetLevelOverride: targetLevelOverride || null,
+        inputWordsCount: Array.isArray(words) ? words.length : 0,
+        inputWordsSample: (Array.isArray(words) ? words : []).slice(0, 20).map((word) => ({
+          word: String(word?.word || ""),
+          level: String(word?.level || ""),
+        })),
+        events: [],
+      };
+      debugSessionRef.current = debugSession;
+
       setIsRewriting(true);
       setRewriteError(null);
       setFlowStatus("pipeline");
       setReadingPack(null);
       setReadingCourse(null);
+      pushDebugEvent("rewrite_started", {
+        articleId: debugSession.articleId,
+        originalTextLength: safeOriginalText.length,
+        targetLevelOverride: targetLevelOverride || null,
+        inputWordsCount: debugSession.inputWordsCount,
+        inputWordsSample: debugSession.inputWordsSample,
+      });
 
       const startStage = async (stage, headline, detail, progressPercent = 0, patch = {}) => {
         activeStage = stage;
+        pushDebugEvent("stage_started", {
+          stage,
+          headline,
+          detail,
+          progressPercent,
+        });
         return persistPipelineAction(
           {
             type: "stage_started",
@@ -474,6 +571,10 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
       };
 
       const completeStage = async (stage, detail, patch = {}) => {
+        pushDebugEvent("stage_completed", {
+          stage,
+          detail,
+        });
         return persistPipelineAction(
           {
             type: "stage_completed",
@@ -495,6 +596,14 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
       const failStage = async (stage, message) => {
         setRewriteError(message);
         setFlowStatus("failed");
+        pushDebugEvent(
+          "stage_failed",
+          {
+            stage,
+            message,
+          },
+          "error",
+        );
         await persistPipelineAction(
           {
             type: "stage_failed",
@@ -551,9 +660,21 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
           originalWords,
           EXTRACT_LEMMAS_MAX_CONTEXT_CHARS,
         );
+        pushDebugEvent("lemma_batches_prepared", {
+          batchCount: lemmaBatches.length,
+          batches: lemmaBatches.map(sanitizeBatchDebug),
+        });
         const lemmas = [];
-        for (const batch of lemmaBatches) {
+        for (const [batchIndex, batch] of lemmaBatches.entries()) {
+          pushDebugEvent("lemma_batch_request", {
+            batch: sanitizeBatchDebug(batch, batchIndex),
+          });
           const batchResult = await extractLemmas(batch.context, batch.words, accessToken);
+          pushDebugEvent("lemma_batch_response", {
+            batchIndex,
+            traceId: batchResult.traceId || null,
+            lemmas: Array.isArray(batchResult.lemmas) ? batchResult.lemmas : [],
+          });
           lemmas.push(...batchResult.lemmas);
         }
 
@@ -625,10 +746,18 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
             validAboveI1WordsList,
             SIMPLIFY_WORDS_MAX_CONTEXT_CHARS,
           );
-          for (const batch of simplifyBatches) {
+          pushDebugEvent("simplify_batches_prepared", {
+            batchCount: simplifyBatches.length,
+            batches: simplifyBatches.map(sanitizeBatchDebug),
+          });
+          for (const [batchIndex, batch] of simplifyBatches.entries()) {
             const batchWordLevels = {};
             batch.words.forEach((word) => {
               batchWordLevels[word.toLowerCase()] = aboveWordLevels[word.toLowerCase()] || targetLevel;
+            });
+            pushDebugEvent("simplify_batch_request", {
+              batch: sanitizeBatchDebug(batch, batchIndex),
+              wordLevels: batchWordLevels,
             });
             const simplifyResult = await simplifyWords(
               batch.context,
@@ -638,6 +767,14 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
               false,
               batchWordLevels,
             );
+            pushDebugEvent("simplify_batch_response", {
+              batchIndex,
+              traceId: simplifyResult.traceId || null,
+              simplifiedWords: Array.isArray(simplifyResult.simplifiedWords)
+                ? simplifyResult.simplifiedWords
+                : [],
+              returnedWordLevels: simplifyResult.wordLevels || {},
+            });
             simplifiedWords.push(...(simplifyResult.simplifiedWords || []));
           }
         }
@@ -756,9 +893,19 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
         onSuccess?.(articleId, nextRewrittenText);
       } catch (error) {
         const message = error?.message || "网络错误";
+        pushDebugEvent(
+          "rewrite_exception",
+          {
+            stage: activeStage,
+            serializedError: serializeErrorDebug(error),
+            originalTextLength: safeOriginalText.length,
+            pipelineState: pipelineStateRef.current,
+          },
+          "error",
+        );
         await failStage(activeStage, message);
         const { toast } = await import("sonner");
-        toast.error("重写失败：" + message);
+        toast.error("重写失败：" + message + "。调试信息已输出到控制台 ReadingRewriteDebug");
       } finally {
         setIsRewriting(false);
       }
@@ -770,6 +917,7 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
       diagnosticSnapshot,
       onSuccess,
       packViewMode,
+      pushDebugEvent,
       persistPipelineAction,
       syncPipelineState,
     ]
