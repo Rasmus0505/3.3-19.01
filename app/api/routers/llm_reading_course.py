@@ -784,6 +784,151 @@ def generate_v3_course_endpoint(
 
 
 # ─────────────────────────────────────────────────────────────
+# Explain Actions — real-time generation for explain phase
+# ─────────────────────────────────────────────────────────────
+
+class ExplainGenerateRequest(BaseModel):
+    section_id: str = Field(..., min_length=1)
+    section_text: str = Field(..., min_length=10, max_length=3000)
+    confused_words: list[str] = Field(default_factory=list)
+    default_spotlight_words: list[str] = Field(default_factory=list)
+    target_level: str = Field("B1", pattern="^(A1|A2|B1|B2|C1|C2)$")
+    article_title: str = ""
+    teacher_name: str = "Coach Mira"
+
+
+class ExplainGenerateResponse(BaseModel):
+    ok: bool
+    actions: list[dict]
+
+
+_EXPLAIN_SYSTEM_PROMPT = """You are generating a short teaching script for a reading classroom explain phase.
+
+The teacher will walk the student through 2-3 key words or phrases from the section text.
+For each word, produce a spotlight action then a speech action then a pause action.
+
+Return ONLY valid JSON:
+{
+  "actions": [
+    {"type": "spotlight", "target_word": "word_exactly_as_in_text", "sentence_hint": "exact sentence containing the word"},
+    {"type": "speech", "speaker": "teacher", "text": "Teacher explanation (2-3 sentences, max 60 words)"},
+    {"type": "pause", "duration_ms": 1500},
+    ...repeat for each word...
+    {"type": "speech", "speaker": "teacher", "text": "Brief closing remark (1 sentence)"}
+  ]
+}
+
+Rules:
+- ONLY valid JSON. No markdown, no extra text.
+- target_word must appear EXACTLY in the section text (case-insensitive match is fine, but return the form as in text).
+- sentence_hint: copy the full sentence containing the word from the section text.
+- Choose 2-3 words: prioritize confused_words list first, then default_spotlight_words.
+- Speech is natural, concise, tied to the specific sentence. Mention the sentence context, not generic definitions.
+- End with a brief encouraging closing remark from the teacher.
+- No greetings, no "welcome back", no "let's get started" — jump straight into the first spotlight.
+"""
+
+
+@router.post(
+    "/reading-course/generate-explain",
+    response_model=ExplainGenerateResponse,
+    responses={502: {"model": ErrorResponse}},
+)
+def generate_explain_actions(
+    body: ExplainGenerateRequest,
+    current_user: User = Depends(get_current_user),
+):
+    from app.infra.llm.deepseek import call_deepseek
+
+    api_key = _require_api_key()
+
+    # Determine which words to spotlight (confused first, then defaults)
+    confused = [w for w in body.confused_words if w and len(w) < 60]
+    defaults = [w for w in body.default_spotlight_words if w and len(w) < 60]
+    # Combine and dedupe, max 3
+    seen: set[str] = set()
+    candidates: list[str] = []
+    for w in confused + defaults:
+        lw = w.lower()
+        if lw not in seen:
+            seen.add(lw)
+            candidates.append(w)
+        if len(candidates) >= 3:
+            break
+
+    if not candidates:
+        # Fallback: pick 2 words longer than 6 chars from section text
+        words = [w.strip(".,!?\"'()[]") for w in body.section_text.split() if len(w) > 6]
+        candidates = list(dict.fromkeys(words))[:2]
+
+    user_msg = (
+        f"Article title: {body.article_title or 'Reading'}\n"
+        f"Target level: {body.target_level}\n"
+        f"Teacher name: {body.teacher_name}\n"
+        f"Confused words (must teach first): {', '.join(confused) or 'none'}\n"
+        f"Default spotlight words: {', '.join(defaults) or 'none'}\n\n"
+        f"Section text:\n{body.section_text[:2000]}"
+    )
+
+    try:
+        raw, _ = call_deepseek(
+            [
+                {"role": "system", "content": _EXPLAIN_SYSTEM_PROMPT},
+                {"role": "user", "content": user_msg},
+            ],
+            api_key,
+            enable_thinking=False,
+            temperature=0.4,
+            max_tokens=800,
+        )
+        recovered = recover_json_payload(raw) or strip_json_fences(raw)
+        parsed = json.loads(recovered)
+        actions = _safe_list(_safe_dict(parsed).get("actions"))
+
+        # Validate and sanitize each action
+        clean_actions: list[dict] = []
+        for a in actions[:12]:  # cap at 12 actions
+            item = _safe_dict(a)
+            action_type = _trim(item.get("type"), 20)
+            if action_type == "spotlight":
+                target = _trim(item.get("target_word"), 80)
+                if target:
+                    clean_actions.append({
+                        "type": "spotlight",
+                        "target_word": target,
+                        "sentence_hint": _trim(item.get("sentence_hint"), 300),
+                    })
+            elif action_type == "speech":
+                text = _trim(item.get("text"), 400)
+                if text:
+                    clean_actions.append({
+                        "type": "speech",
+                        "speaker": _trim(item.get("speaker") or "teacher", 30),
+                        "text": text,
+                    })
+            elif action_type == "pause":
+                duration = max(500, min(3000, int(item.get("duration_ms") or 1500)))
+                clean_actions.append({"type": "pause", "duration_ms": duration})
+
+        if not clean_actions:
+            raise ValueError("empty actions")
+
+        return ExplainGenerateResponse(ok=True, actions=clean_actions)
+
+    except Exception as exc:
+        logger.warning("generate_explain_actions failed: %s", exc)
+        # Fallback: minimal explain script
+        fallback_word = candidates[0] if candidates else "this concept"
+        return ExplainGenerateResponse(ok=True, actions=[
+            {"type": "speech", "speaker": "teacher",
+             "text": f"Let's look at the key ideas in this section. Pay attention to how the author uses '{fallback_word}' here."},
+            {"type": "pause", "duration_ms": 1500},
+            {"type": "speech", "speaker": "teacher",
+             "text": "Take a moment to re-read this section with these points in mind."},
+        ])
+
+
+# ─────────────────────────────────────────────────────────────
 # Word Definition — real-time LLM lookup for word card
 # ─────────────────────────────────────────────────────────────
 

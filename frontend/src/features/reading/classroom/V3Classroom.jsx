@@ -18,6 +18,7 @@ import { saveReadingCourseToRecord } from "../readingRewriteDB";
 import { SectionProgress } from "./SectionProgress";
 import { Roundtable } from "./Roundtable";
 import { ReadingSection } from "./sections/ReadingSection";
+import { ExplainSection } from "./sections/ExplainSection";
 
 const PHASES = ["read", "explain", "quiz", "discuss"];
 
@@ -222,6 +223,9 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
   }));
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const [confusedWords, setConfusedWords] = useState([]);
+  // Roundtable messages — updated by ExplainSection as speech actions fire
+  const [roundtableMessages, setRoundtableMessages] = useState([]);
+  const [activeSpeechId, setActiveSpeechId] = useState(null);
   const courseRef = useRef(course);
 
   const sections = course.sections || [];
@@ -283,6 +287,35 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
     // TODO: integrate with existing wordbook API
     console.info("[V3] Add to wordbook:", word);
   }, []);
+
+  // Called by ExplainSection when each speech action fires
+  const handleSpeechLine = useCallback((text, speaker) => {
+    const id = `explain-${Date.now()}`;
+    const cast = course?.participants || [];
+    const participant = cast.find((p) => p.role === speaker || p.id === speaker);
+    const role = speaker === "teacher" || speaker === "assistant" ? "teacher" : "student";
+    const name = participant?.name || (role === "teacher" ? "Coach Mira" : speaker);
+
+    setActiveSpeechId(id);
+    setRoundtableMessages((prev) => [
+      ...prev.slice(-4), // keep last 4 messages to avoid overflow
+      { id, role, content: text, name },
+    ]);
+    // Clear active state after estimated duration
+    const words = String(text || "").split(/\s+/).length;
+    const ms = Math.max(2000, words * 380);
+    setTimeout(() => setActiveSpeechId(null), ms);
+  }, [course?.participants]);
+
+  // Reset roundtable when entering explain phase
+  const prevPhaseRef = useRef(runtime.activePhase);
+  if (prevPhaseRef.current !== runtime.activePhase) {
+    prevPhaseRef.current = runtime.activePhase;
+    if (runtime.activePhase === "explain") {
+      setRoundtableMessages([]);
+      setActiveSpeechId(null);
+    }
+  }
 
   const isComplete = runtime.activePhase === "complete";
 
@@ -359,19 +392,15 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
               )}
 
               {runtime.activePhase === "explain" && activeSection && (
-                <div className="v3-explain-placeholder">
-                  <ReadingSection
-                    section={activeSection}
-                    rewriteMappings={course.rewrite_mappings}
-                    confusedWords={confusedWords}
-                    spotlitWord={null}
-                    onWordClick={() => {}}
-                    onMarkConfused={handleMarkConfused}
-                    onAddToWordbook={handleAddToWordbook}
-                    apiCall={apiCall}
-                    targetLevel={course.target_level}
-                  />
-                </div>
+                <ExplainSection
+                  section={activeSection}
+                  course={course}
+                  confusedWords={confusedWords}
+                  apiCall={apiCall}
+                  ttsEnabled={ttsEnabled}
+                  onSpeechLine={handleSpeechLine}
+                  onComplete={advancePhase}
+                />
               )}
 
               {runtime.activePhase === "quiz" && activeSection && (
@@ -410,7 +439,11 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
             }
           />
         ) : (
-          <Roundtable messages={[]} activeSpeechActionId={null} cast={null} />
+          <Roundtable
+            messages={roundtableMessages}
+            activeSpeechActionId={activeSpeechId}
+            cast={{ teacher: { name: teacher.name }, students: course.participants?.filter((p) => p.role === "student") || [] }}
+          />
         )}
 
         {/* Phase action buttons */}
@@ -422,9 +455,14 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
               </Button>
             )}
             {runtime.activePhase === "explain" && (
-              <Button variant="outline" size="sm" onClick={advancePhase}>
-                跳过讲解
-              </Button>
+              <>
+                <Button variant="outline" size="sm" onClick={advancePhase}>
+                  跳过讲解
+                </Button>
+                <Button size="sm" onClick={advancePhase} className="v3-phase-actions__primary">
+                  进入做题 →
+                </Button>
+              </>
             )}
           </div>
         )}

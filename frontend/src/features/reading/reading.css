@@ -5524,6 +5524,35 @@
 .v3-discuss__input { width: 100%; padding: 0.625rem 0.75rem; font-size: 0.83rem; border-radius: 0.5rem; border: 1px solid var(--border); background: var(--card); resize: none; min-height: 64px; font-family: inherit; line-height: 1.5; }
 .v3-discuss__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 
+/* ExplainSection */
+.v3-explain { position: relative; }
+
+.v3-explain__loading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2rem;
+  font-size: 0.85rem;
+  color: var(--muted-foreground);
+  justify-content: center;
+}
+
+.v3-explain__error {
+  padding: 1rem;
+  font-size: 0.82rem;
+  color: oklch(0.6 0.2 25);
+  text-align: center;
+}
+
+/* When spotlight is active, dim the reading text slightly via pointer-events overlay */
+.v3-explain__spotlight-active {
+  position: absolute;
+  inset: 0;
+  background: oklch(0 0 0 / 0.04);
+  pointer-events: none;
+  border-radius: 0.375rem;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    DiagnosticPanel compact  (dp-*)
    ═══════════════════════════════════════════════════════════════ */
