@@ -134,75 +134,38 @@ function QuizSection({ section, onComplete, onSkip }) {
 
 // ── DiscussSection (inline for Phase 1 scope) ─────────────────────────────────
 
-function DiscussSection({ section, course, apiCall, onComplete, onSkip }) {
-  const [messages, setMessages] = useState([]);
+// DiscussSection renders only the compose bar — messages go into shared Roundtable via onMessage
+function DiscussSection({ section, course, apiCall, onMessage, onComplete, onSkip, loading: parentLoading }) {
   const [draft, setDraft] = useState("");
-  const [loading, setLoading] = useState(false);
-  const teacher = course?.participants?.find((p) => p.role === "teacher");
 
-  const send = async () => {
-    if (!draft.trim() || !apiCall) return;
-    const userMsg = draft.trim();
-    setDraft("");
-    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
-    setLoading(true);
-    try {
-      const res = await apiCall("/api/llm/reading-course/discussion", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          course,
-          scene_id: section.id,
-          message: userMsg,
-          history: messages,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
-      }
-    } catch (e) {
-      // silent
-    } finally {
-      setLoading(false);
-    }
-  };
+  const send = () => onMessage?.(draft);
 
   return (
-    <div className="v3-discuss">
-      <div className="v3-discuss__messages">
-        {messages.length === 0 && (
-          <p className="v3-discuss__hint">有问题尽管问，或者跳过继续下一节</p>
-        )}
-        {messages.map((m, i) => (
-          <div key={i} className={cn("v3-discuss__msg", m.role === "user" ? "v3-discuss__msg--user" : "v3-discuss__msg--teacher")}>
-            {m.role === "assistant" && (
-              <img src={resolvePublicUrl("/avatars/teacher.png")} alt="teacher" className="v3-discuss__avatar" />
-            )}
-            <p>{m.content}</p>
-          </div>
-        ))}
-        {loading && <p className="v3-discuss__loading">Coach Mira 正在回复…</p>}
-      </div>
+    <div className="v3-discuss-compose-only">
+      <p className="v3-discuss__hint">有问题尽管问，或者跳过继续下一节</p>
       <div className="v3-discuss__compose">
         <textarea
           className="v3-discuss__input"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="问老师任何问题…"
+          placeholder="问老师任何问题… (Ctrl+Enter 发送)"
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
               e.preventDefault();
-              send();
+              if (draft.trim() && !parentLoading) { send(); setDraft(""); }
             }
           }}
         />
         <div className="v3-discuss__actions">
-          <Button size="sm" onClick={send} disabled={!draft.trim() || loading}>发送</Button>
+          <Button
+            size="sm"
+            onClick={() => { send(); setDraft(""); }}
+            disabled={!draft.trim() || parentLoading}
+          >
+            {parentLoading ? "回复中…" : "发送"}
+          </Button>
           <Button size="sm" variant="ghost" onClick={onSkip}>跳过，下一节</Button>
-          {messages.length > 0 && (
-            <Button size="sm" variant="outline" onClick={onComplete}>结束讨论，下一节</Button>
-          )}
+          <Button size="sm" variant="outline" onClick={onComplete}>结束，下一节</Button>
         </div>
       </div>
     </div>
@@ -289,31 +252,70 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
   }, []);
 
   // Called by ExplainSection when each speech action fires
-  const handleSpeechLine = useCallback((text, speaker) => {
-    const id = `explain-${Date.now()}`;
+  const handleSpeechLine = useCallback((text, speaker, speechId) => {
     const cast = course?.participants || [];
     const participant = cast.find((p) => p.role === speaker || p.id === speaker);
     const role = speaker === "teacher" || speaker === "assistant" ? "teacher" : "student";
     const name = participant?.name || (role === "teacher" ? "Coach Mira" : speaker);
 
-    setActiveSpeechId(id);
+    setActiveSpeechId(speechId);
     setRoundtableMessages((prev) => [
-      ...prev.slice(-4), // keep last 4 messages to avoid overflow
-      { id, role, content: text, name },
+      ...prev.slice(-4),
+      { id: speechId, role, content: text, name },
     ]);
-    // Clear active state after estimated duration
-    const words = String(text || "").split(/\s+/).length;
-    const ms = Math.max(2000, words * 380);
-    setTimeout(() => setActiveSpeechId(null), ms);
   }, [course?.participants]);
 
-  // Reset roundtable when entering explain phase
+  // Called when TTS finishes — precisely clears the active speech indicator
+  const handleSpeechEnd = useCallback((speechId) => {
+    setActiveSpeechId((cur) => cur === speechId ? null : cur);
+  }, []);
+
+  // Discuss phase: send user message → AI reply → add both to Roundtable
+  const [discussLoading, setDiscussLoading] = useState(false);
+  const discussHistoryRef = useRef([]);
+
+  const handleDiscussMessage = useCallback(async (text) => {
+    if (!text?.trim() || !apiCall) return;
+    const userMsg = text.trim();
+    const teacherName = teacher?.name || "Coach Mira";
+
+    const userId = `user-${Date.now()}`;
+    setRoundtableMessages((prev) => [...prev, { id: userId, role: "user", content: userMsg, name: "You" }]);
+    discussHistoryRef.current = [...discussHistoryRef.current, { role: "user", content: userMsg }];
+    setDiscussLoading(true);
+
+    try {
+      const res = await apiCall("/api/llm/reading-course/discussion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          course,
+          scene_id: activeSection?.id || "",
+          message: userMsg,
+          history: discussHistoryRef.current.slice(-8),
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const replyId = `reply-${Date.now()}`;
+        setRoundtableMessages((prev) => [...prev, { id: replyId, role: "teacher", content: data.reply, name: teacherName }]);
+        discussHistoryRef.current = [...discussHistoryRef.current, { role: "assistant", content: data.reply }];
+      }
+    } catch {
+      // silent
+    } finally {
+      setDiscussLoading(false);
+    }
+  }, [apiCall, course, activeSection, teacher]);
+
+  // Reset roundtable when phase changes
   const prevPhaseRef = useRef(runtime.activePhase);
   if (prevPhaseRef.current !== runtime.activePhase) {
     prevPhaseRef.current = runtime.activePhase;
-    if (runtime.activePhase === "explain") {
+    if (runtime.activePhase === "explain" || runtime.activePhase === "discuss") {
       setRoundtableMessages([]);
       setActiveSpeechId(null);
+      discussHistoryRef.current = [];
     }
   }
 
@@ -399,6 +401,7 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
                   apiCall={apiCall}
                   ttsEnabled={ttsEnabled}
                   onSpeechLine={handleSpeechLine}
+                  onSpeechEnd={handleSpeechEnd}
                   onComplete={advancePhase}
                 />
               )}
@@ -416,6 +419,8 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
                   section={activeSection}
                   course={course}
                   apiCall={apiCall}
+                  onMessage={handleDiscussMessage}
+                  loading={discussLoading}
                   onComplete={advancePhase}
                   onSkip={advancePhase}
                 />
@@ -425,24 +430,29 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
         </AnimatePresence>
       </div>
 
-      {/* Bottom: Roundtable or mini bar */}
-      <div className={cn("v3-bottom", `v3-bottom--${rtState}`)}>
+      {/* Bottom: Roundtable (explain/discuss) or mini bar (read/quiz) */}
+      <motion.div
+        className={cn("v3-bottom", `v3-bottom--${rtState}`)}
+        layout
+        transition={{ duration: 0.25, ease: [0.21, 1, 0.36, 1] }}
+      >
         {rtState === "mini" ? (
           <MiniRoundtable
             teacherName={teacher.name}
             hint={
               runtime.activePhase === "read"
                 ? "阅读完成后点击「开始讲解」"
-                : runtime.activePhase === "quiz"
-                  ? "完成题目后继续"
-                  : "Coach Mira 正在等待"
+                : "完成题目后继续"
             }
           />
         ) : (
           <Roundtable
             messages={roundtableMessages}
             activeSpeechActionId={activeSpeechId}
-            cast={{ teacher: { name: teacher.name }, students: course.participants?.filter((p) => p.role === "student") || [] }}
+            cast={{
+              teacher: { name: teacher.name },
+              students: course.participants?.filter((p) => p.role === "student") || [],
+            }}
           />
         )}
 
@@ -466,7 +476,7 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
             )}
           </div>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }

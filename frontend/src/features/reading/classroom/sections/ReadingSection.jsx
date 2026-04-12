@@ -38,11 +38,18 @@ function tokenize(text) {
 }
 
 // Single word token — handles highlight state, hover tooltip, click
-function WordToken({ text, isHighlighted, originalInfo, onClick, onMouseEnter, onMouseLeave, isSpotlit }) {
+function WordToken({ text, isHighlighted, isConfused, originalInfo, onClick, onMouseEnter, onMouseLeave, isSpotlit }) {
+  const classes = cn(
+    "rc-word",
+    isHighlighted && "rc-word--rewritten",
+    isConfused && "rc-word--confused",
+    isSpotlit && "rc-word--spotlit",
+  );
+
   if (!isHighlighted) {
     return (
       <span
-        className={cn("rc-word", isSpotlit && "rc-word--spotlit")}
+        className={classes}
         onClick={() => onClick(text)}
         onMouseEnter={() => onMouseEnter(null)}
       >
@@ -53,7 +60,7 @@ function WordToken({ text, isHighlighted, originalInfo, onClick, onMouseEnter, o
 
   return (
     <span
-      className={cn("rc-word rc-word--rewritten", isSpotlit && "rc-word--spotlit")}
+      className={classes}
       onClick={() => onClick(text)}
       onMouseEnter={(e) => onMouseEnter({ word: text, originalInfo, rect: e.currentTarget.getBoundingClientRect() })}
       onMouseLeave={onMouseLeave}
@@ -169,6 +176,7 @@ export function ReadingSection({
               key={i}
               text={token.text}
               isHighlighted={isHighlighted}
+              isConfused={isConfused}
               originalInfo={originalInfo}
               isSpotlit={isSpotlit}
               onClick={handleWordClick}

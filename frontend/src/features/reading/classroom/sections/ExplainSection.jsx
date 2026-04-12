@@ -31,7 +31,8 @@ export function ExplainSection({
   confusedWords = [],
   apiCall,
   ttsEnabled = true,
-  onSpeechLine,        // callback: (text, speaker) → used by parent to update Roundtable
+  onSpeechLine,        // callback: (text, speaker, speechId) → used by parent to update Roundtable + activeSpeechId
+  onSpeechEnd,         // callback: (speechId) → clear activeSpeechId in parent
   onComplete,
 }) {
   const [status, setStatus] = useState("loading"); // loading | playing | done | error
@@ -112,11 +113,13 @@ export function ExplainSection({
       }
 
       if (action.type === "speech" && action.text) {
-        // Notify parent to show in Roundtable
-        onSpeechLine?.(action.text, action.speaker || "teacher");
+        const speechId = `speech-${index}-${Date.now()}`;
+        // Notify parent: add message to Roundtable + set activeSpeechId
+        onSpeechLine?.(action.text, action.speaker || "teacher", speechId);
 
         const settle = () => {
           if (abortRef.current) return;
+          onSpeechEnd?.(speechId); // clear activeSpeechId in parent
           next();
         };
 
