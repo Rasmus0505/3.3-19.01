@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, Trash2, Mic } from "lucide-react";
+import { Send, Trash2 } from "lucide-react";
 import { useLessonChat } from "./useLessonChat";
 import { VoiceRecorder } from "./VoiceRecorder";
 import { ChatMessage, ChatTypingIndicator } from "./ChatMessage";
@@ -9,6 +9,7 @@ export default function ChatPanel({ lessonId, currentSentence, accessToken, apiC
     useLessonChat({ lessonId, accessToken, apiClient });
 
   const [inputValue, setInputValue] = useState("");
+  const [voiceError, setVoiceError] = useState("");
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -20,6 +21,7 @@ export default function ChatPanel({ lessonId, currentSentence, accessToken, apiC
   const handleSend = useCallback(() => {
     const text = inputValue.trim();
     if (!text || isLoading) return;
+    setVoiceError("");
     setInputValue("");
     sendMessage(text);
   }, [inputValue, isLoading, sendMessage]);
@@ -37,8 +39,14 @@ export default function ChatPanel({ lessonId, currentSentence, accessToken, apiC
 
   const handleVoiceResult = useCallback(
     (result, errorMsg) => {
-      if (errorMsg) return;
-      if (result) sendVoiceMessage(result);
+      if (errorMsg) {
+        setVoiceError(String(errorMsg || "语音评测失败"));
+        return;
+      }
+      setVoiceError("");
+      if (result) {
+        void sendVoiceMessage(result);
+      }
     },
     [sendVoiceMessage],
   );
@@ -85,15 +93,17 @@ export default function ChatPanel({ lessonId, currentSentence, accessToken, apiC
       </div>
 
       {/* Error */}
-      {error && (
+      {error ? (
         <div className="chat-panel__error">{error}</div>
-      )}
+      ) : null}
+      {voiceError ? <div className="chat-panel__error">{voiceError}</div> : null}
 
       {/* Input bar */}
       <div className="chat-panel__input-bar">
         <VoiceRecorder
           refText={currentSentence?.text_en || ""}
           lessonId={lessonId}
+          sentenceIdx={currentSentence?.idx}
           accessToken={accessToken}
           apiClient={apiClient}
           onResult={handleVoiceResult}
