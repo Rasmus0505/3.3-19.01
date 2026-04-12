@@ -68,29 +68,32 @@ export function ChatMessage({ message, accessToken, apiClient }) {
   const isUser = message.role === "user";
 
   return (
-    <div className={`flex gap-2 max-w-[90%] ${isUser ? "self-end flex-row-reverse" : "self-start"}`}>
+    <div className={`flex gap-3 max-w-[85%] chat-bubble-enter ${isUser ? "self-end flex-row-reverse" : "self-start"}`}>
       {/* Avatar */}
       <div
         className={[
-          "w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs",
+          "w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-sm border-2 border-background",
           isUser
             ? "bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-300"
             : "bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-300",
         ].join(" ")}
       >
-        {isUser ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
+        {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
       </div>
 
       {/* Bubble */}
       <div className="flex flex-col gap-0.5">
         <div
           className={[
-            "px-3 py-2 rounded-2xl text-sm leading-relaxed border",
+            "relative px-4 py-2.5 rounded-2xl text-sm leading-relaxed border transition-all backdrop-blur-sm",
             isUser
               ? "bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200/60 dark:border-emerald-800/60 rounded-br-sm"
               : "bg-blue-50 dark:bg-blue-950/60 border-blue-200/60 dark:border-blue-800/60 rounded-bl-sm",
           ].join(" ")}
         >
+          <span className="text-[10px] font-semibold text-muted-foreground block mb-0.5">
+            {isUser ? "You" : "AI Teacher"}
+          </span>
           <p className="whitespace-pre-wrap">{message.content}</p>
         </div>
 
@@ -107,11 +110,12 @@ export function ChatMessage({ message, accessToken, apiClient }) {
 
 export function ChatTypingIndicator() {
   return (
-    <div className="flex gap-2 self-start max-w-[90%]">
-      <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-300">
-        <Bot className="w-3.5 h-3.5" />
+    <div className="flex gap-3 self-start max-w-[85%] chat-bubble-enter">
+      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-sm border-2 border-background bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-300">
+        <Bot className="w-4 h-4" />
       </div>
-      <div className="px-3 py-2 rounded-2xl rounded-bl-sm bg-blue-50 dark:bg-blue-950/60 border border-blue-200/60 dark:border-blue-800/60">
+      <div className="relative px-4 py-2.5 rounded-2xl rounded-bl-sm bg-blue-50 dark:bg-blue-950/60 border border-blue-200/60 dark:border-blue-800/60 backdrop-blur-sm">
+        <span className="text-[10px] font-semibold text-muted-foreground block mb-0.5">AI Teacher</span>
         <div className="flex gap-1 items-center h-5">
           <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: "0ms" }} />
           <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: "150ms" }} />

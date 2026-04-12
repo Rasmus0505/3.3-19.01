@@ -1,6 +1,6 @@
 import { cn } from "../../../lib/utils";
 import { Alert, AlertDescription, Button, Switch } from "../../../shared/ui";
-import { getShortcutLabel, SHORTCUT_ACTIONS } from "../../immersive/learningSettings";
+import { getShortcutLabel, SHORTCUT_ACTIONS, HINT_AFTER_REPLAY_OPTIONS } from "../../immersive/learningSettings";
 
 export function LessonLearningSettingsSection({
   learningSettings,
@@ -18,6 +18,19 @@ export function LessonLearningSettingsSection({
           checked={learningSettings.playbackPreferences?.autoReplayAnsweredSentence !== false}
           onCheckedChange={(checked) => onPlaybackPreferenceChange("autoReplayAnsweredSentence", checked)}
         />
+      </div>
+
+      <div className="mt-2 flex items-center gap-3 border-b border-border/60 pb-3">
+        <span className="text-sm text-foreground">重播提示触发次数</span>
+        <select
+          value={learningSettings.playbackPreferences?.hintAfterReplayCount ?? 3}
+          onChange={(e) => onPlaybackPreferenceChange("hintAfterReplayCount", Number(e.target.value))}
+          className="rounded-lg border border-border/60 bg-background px-2 py-1 text-sm outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+        >
+          {HINT_AFTER_REPLAY_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
       </div>
 
       <div className="mt-3 flex flex-row flex-wrap items-stretch gap-3">

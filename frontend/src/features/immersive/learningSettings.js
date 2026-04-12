@@ -100,7 +100,16 @@ export const DEFAULT_PLAYBACK_PREFERENCES = {
   autoReplayAnsweredSentence: true,
   singleSentenceLoopEnabled: false,
   lessonPlaybackRateOverrides: {},
+  hintAfterReplayCount: 3,
 };
+
+export const HINT_AFTER_REPLAY_OPTIONS = [
+  { value: 0, label: "从不" },
+  { value: 2, label: "2次" },
+  { value: 3, label: "3次" },
+  { value: 4, label: "4次" },
+  { value: 5, label: "5次" },
+];
 
 function sanitizeLessonPlaybackRateOverrides(rawOverrides = {}) {
   if (!rawOverrides || typeof rawOverrides !== "object" || Array.isArray(rawOverrides)) {
@@ -493,7 +502,10 @@ export function sanitizeUiPreferences(rawPreferences = {}) {
   };
 }
 
+const VALID_HINT_AFTER_REPLAY_VALUES = new Set([0, 2, 3, 4, 5]);
+
 export function sanitizePlaybackPreferences(rawPreferences = {}) {
+  const rawHintCount = Number(rawPreferences?.hintAfterReplayCount);
   return {
     autoReplayAnsweredSentence:
       typeof rawPreferences?.autoReplayAnsweredSentence === "boolean"
@@ -504,6 +516,9 @@ export function sanitizePlaybackPreferences(rawPreferences = {}) {
         ? rawPreferences.singleSentenceLoopEnabled
         : DEFAULT_PLAYBACK_PREFERENCES.singleSentenceLoopEnabled,
     lessonPlaybackRateOverrides: sanitizeLessonPlaybackRateOverrides(rawPreferences?.lessonPlaybackRateOverrides),
+    hintAfterReplayCount: VALID_HINT_AFTER_REPLAY_VALUES.has(rawHintCount)
+      ? rawHintCount
+      : DEFAULT_PLAYBACK_PREFERENCES.hintAfterReplayCount,
   };
 }
 

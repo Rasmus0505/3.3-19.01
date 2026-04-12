@@ -149,6 +149,7 @@ export function ImmersiveLessonPage({
   const [sentenceJumpEditing, setSentenceJumpEditing] = useState(false);
   const [soeResult, setSoeResult] = useState(null);
   const [soeLoading, setSoeLoading] = useState(false);
+  const [sentenceReplayCount, setSentenceReplayCount] = useState(0);
   const audioRecorderRef = useRef(null);
 
   // 先从 sessionState 解构出 currentSentenceIndex（hook 依赖它）
@@ -169,6 +170,11 @@ export function ImmersiveLessonPage({
 
   // currentSentence 必须在 hook 调用之前定义
   const currentSentence = lesson?.sentences?.[currentSentenceIndex] || null;
+
+  // 句子切换时重置重播计数
+  useEffect(() => {
+    setSentenceReplayCount(0);
+  }, [currentSentenceIndex]);
 
   // 讲解 Hook
   const {
@@ -410,6 +416,8 @@ export function ImmersiveLessonPage({
     ? previousSentence.text_zh || "(翻译失败，暂缺)"
     : "(暂无上一句中文翻译)";
   const autoReplayAnsweredSentence = learningSettings.playbackPreferences?.autoReplayAnsweredSentence !== false;
+  const hintAfterReplayCount = learningSettings.playbackPreferences?.hintAfterReplayCount ?? 3;
+  const showKeywordHints = hintAfterReplayCount > 0 && sentenceReplayCount >= hintAfterReplayCount;
   const translationHeading = translationDisplayMode === "current_answered" ? "本句" : "上一句";
   const translationEn = translationDisplayMode === "current_answered" ? currentSentenceEn : previousSentenceEn;
   const translationZh = translationDisplayMode === "current_answered" ? currentSentenceZh : previousSentenceZh;
@@ -1538,6 +1546,7 @@ export function ImmersiveLessonPage({
   const replayCurrentSentence = useCallback(
     (source = "manual_replay") => {
       if (!currentSentence || mediaLoading || phase === "transition" || needsBinding) return;
+      setSentenceReplayCount((prev) => prev + 1);
       const nextStage = replayAssistStageRef.current + 1;
       const assistance = resolveReplayAssistance(learningSettings, nextStage);
       const snapshotForAssist = cloneWordSnapshot(
@@ -2088,6 +2097,10 @@ export function ImmersiveLessonPage({
         onResumeAudio: handleResumeExplanation,
         onReplayAudio: handleReplayExplanation,
         onStartPractice: handleStartPractice,
+        wordStatuses,
+        expectedTokens,
+        sentenceTypingDone,
+        showKeywordHints,
       }}
       chatProps={{
         lessonId: lesson?.id,

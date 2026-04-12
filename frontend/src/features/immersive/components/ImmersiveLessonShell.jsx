@@ -32,7 +32,9 @@ export default function ImmersiveLessonShell({
         </div>
       }
       rightBottomContent={
-        <ChatPanel {...chatProps} />
+        <div className="immersive-chat-shell">
+          <ChatPanel {...chatProps} />
+        </div>
       }
     />
   );

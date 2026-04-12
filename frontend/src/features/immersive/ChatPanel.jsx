@@ -72,13 +72,18 @@ export default function ChatPanel({ lessonId, currentSentence, accessToken, apiC
       {/* Messages area */}
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
         {isEmpty ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2 text-center text-muted-foreground">
-            <MessageCircle className="w-8 h-8 opacity-30" />
-            <p className="text-xs">
-              和 AI 讨论听力内容
-              <br />
-              打字或录音开始对话
-            </p>
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-center text-muted-foreground">
+            <div className="w-12 h-12 rounded-full bg-muted/30 flex items-center justify-center">
+              <MessageCircle className="w-6 h-6 opacity-40" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-foreground/60">AI Teacher</p>
+              <p className="text-xs leading-relaxed">
+                和 AI 讨论这句话的听力内容
+                <br />
+                打字或按住录音按钮开始
+              </p>
+            </div>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
