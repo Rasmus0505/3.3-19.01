@@ -759,6 +759,9 @@ def simplify_words_endpoint(
         {"role": "user", "content": user_message},
     ]
 
+    # Allocate ~30 tokens per word for the JSON response; minimum 512, max 2048
+    dynamic_max_tokens = max(512, min(2048, len(body.words) * 30 + 128))
+
     try:
         raw_response, usage = llm_root.call_deepseek(
             messages=messages,
@@ -766,7 +769,7 @@ def simplify_words_endpoint(
             enable_thinking=body.enable_thinking,
             stream=False,
             temperature=0.3,
-            max_tokens=512,
+            max_tokens=dynamic_max_tokens,
         )
     except ValueError as exc:
         logger.warning("[DEBUG] llm.simplify_words_empty user_id=%s error=%s", current_user.id, str(exc)[:200])
@@ -982,6 +985,9 @@ def _do_filter_and_simplify(body: FilterAndSimplifyRequest, current_user: User, 
         {"role": "user", "content": user_message},
     ]
 
+    # Allocate ~35 tokens per word for filter+simplify (more complex output); min 768, max 2048
+    dynamic_max_tokens_fs = max(768, min(2048, len(body.words) * 35 + 256))
+
     try:
         raw_response, usage = llm_root.call_deepseek(
             messages=messages,
@@ -989,7 +995,7 @@ def _do_filter_and_simplify(body: FilterAndSimplifyRequest, current_user: User, 
             enable_thinking=body.enable_thinking,
             stream=False,
             temperature=0.3,
-            max_tokens=768,
+            max_tokens=dynamic_max_tokens_fs,
         )
         logger.info("[filter-simplify] LLM call succeeded, response length=%d", len(raw_response) if raw_response else 0)
     except ValueError as exc:
